@@ -7,4 +7,7 @@ export {
   handleRespondPermission,
   handleSetPermissions,
   handleResumeAgent,
+  handleSummarizeSession,
+  handleChangeModel,
+  handleListModels,
 } from "./handlers.js";

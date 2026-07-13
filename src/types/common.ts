@@ -34,6 +34,8 @@ export interface AgentSession {
   costUsd?: number;
   /** Duration in seconds since session start */
   durationSec?: number;
+  /** Preview of the last message in the session (truncated) */
+  lastMessage?: string;
   /** Harness-specific extra data */
   meta?: Record<string, unknown>;
 }
@@ -93,4 +95,13 @@ export interface HarnessAdapter {
 
   /** Set permissions for a session */
   setPermissions(sessionId: string, options: SetPermissionsOptions): Promise<{ ok: boolean; error?: string }>;
+
+  /** Change the model used by a session or globally for this harness */
+  changeModel?(sessionId: string, model: string): Promise<{ ok: boolean; error?: string }>;
+
+  /** Get the full transcript of a session for summarization */
+  getTranscript?(id: string): Promise<string | null>;
+
+  /** List available models for this harness */
+  listModels?(): Promise<string[]>;
 }

@@ -14,6 +14,9 @@ import {
   handleRespondPermission,
   handleSetPermissions,
   handleResumeAgent,
+  handleSummarizeSession,
+  handleChangeModel,
+  handleListModels,
 } from "./mcp-tools/handlers.js";
 
 // ===== Configuration from environment =====
@@ -22,6 +25,11 @@ const ENABLE_OPENCODE = parseEnvBool(process.env.ENABLE_OPENCODE, true);
 const ENABLE_CLAUDE = parseEnvBool(process.env.ENABLE_CLAUDE, true);
 const ENABLE_CLAUDE_SDK = parseEnvBool(process.env.ENABLE_CLAUDE_SDK, true);
 const ENABLE_CODEX = parseEnvBool(process.env.ENABLE_CODEX, true);
+
+// Summarizer config (defaults to gemma4 at llm.bezrabotnyi.com)
+process.env.SUMMARIZER_API_BASE = process.env.SUMMARIZER_API_BASE || "https://llm.bezrabotnyi.com/v1";
+process.env.SUMMARIZER_MODEL = process.env.SUMMARIZER_MODEL || "gemma4";
+process.env.SUMMARIZER_API_KEY = process.env.SUMMARIZER_API_KEY || "sk-305630";
 
 function parseEnvBool(val: string | undefined, fallback: boolean): boolean {
   if (!val) return fallback;
@@ -50,7 +58,6 @@ async function initAdapters() {
   }
 
   if (ENABLE_CLAUDE) {
-    // Try Claude Agent SDK first (richer API), fall back to CLI adapter
     if (ENABLE_CLAUDE_SDK) {
       const sdkAdapter = new ClaudeSDKAdapter();
       inits.push(
@@ -61,7 +68,6 @@ async function initAdapters() {
           })
           .catch((err) => {
             console.error(`[agent-herder] Claude SDK adapter failed, trying CLI fallback: ${(err as Error).message}`);
-            // Fallback to CLI adapter
             const cliAdapter = new ClaudeCodeAdapter({
               claudeBin: process.env.CLAUDE_BIN,
             });
@@ -111,11 +117,14 @@ async function initAdapters() {
 function registerTools(server: McpServer) {
   server.tool(
     "list_agents",
-    "List all coding agent sessions across connected harnesses. Shows status, model, cost, and pending permissions.",
+    "List all coding agent sessions. Filter by harness, status, age (maxAge seconds), or folder (CWD prefix like ~/apps). Can show last message preview.",
     {
-      harness: z.enum(["all", "opencode", "claude", "codex"]).optional().default("all"),
-      status: z.enum(["all", "running", "idle", "needs_input", "stopped", "error"]).optional().default("all"),
-      limit: z.number().int().min(1).max(100).optional().default(50),
+      harness: z.enum(["all", "opencode", "claude", "codex"]).optional().default("all").describe("Filter by harness"),
+      status: z.enum(["all", "running", "idle", "needs_input", "stopped", "error"]).optional().default("all").describe("Filter by status"),
+      limit: z.number().int().min(1).max(100).optional().default(50).describe("Max sessions"),
+      maxAge: z.number().int().min(0).optional().describe("Max session age in seconds (e.g. 3600=1h, 86400=24h)"),
+      folder: z.string().optional().describe("Filter by CWD prefix (e.g. '~/apps')"),
+      includeLastMessage: z.boolean().optional().default(false).describe("Include last message preview"),
     },
     async (args) => {
       const result = await handleListAgents(adapters, args);
@@ -125,7 +134,7 @@ function registerTools(server: McpServer) {
 
   server.tool(
     "agent_info",
-    "Get detailed info about a specific agent session.",
+    "Get detailed info about a specific session. Always shows model and last message.",
     {
       sessionId: z.string().describe("Session ID to inspect"),
       harness: z.enum(["opencode", "claude", "codex"]).optional().describe("Harness type"),
@@ -166,7 +175,7 @@ function registerTools(server: McpServer) {
 
   server.tool(
     "respond_permission",
-    "Respond to a pending permission request from an agent (allow/deny). Only OpenCode supports this remotely.",
+    "Respond to a pending permission request (allow/deny). OpenCode and Claude SDK support this.",
     {
       sessionId: z.string().describe("Session with pending permission"),
       harness: z.enum(["opencode", "claude", "codex"]).optional(),
@@ -182,7 +191,7 @@ function registerTools(server: McpServer) {
 
   server.tool(
     "set_permissions",
-    "Set permissions for an agent (allowed tools, mode). Note: Claude/Codex set these at launch time.",
+    "Set permissions for an agent. Claude/Codex set these at launch time.",
     {
       sessionId: z.string().describe("Target session ID"),
       harness: z.enum(["opencode", "claude", "codex"]).optional(),
@@ -197,7 +206,7 @@ function registerTools(server: McpServer) {
 
   server.tool(
     "resume_agent",
-    "Resume a stopped agent session. Optionally provide a message to kick it off.",
+    "Resume a stopped agent session. Optionally provide a message.",
     {
       sessionId: z.string().describe("Session ID to resume"),
       harness: z.enum(["opencode", "claude", "codex"]).optional(),
@@ -208,6 +217,46 @@ function registerTools(server: McpServer) {
       return { content: [{ type: "text" as const, text: result }] };
     }
   );
+
+  server.tool(
+    "summarize_session",
+    "Summarize a session transcript using built-in gemma4 LLM. Returns structured summary (Task, Progress, Current State, Issues). Use quick=true for 1-3 sentences.",
+    {
+      sessionId: z.string().describe("Session ID to summarize"),
+      harness: z.enum(["opencode", "claude", "codex"]).optional().describe("Harness (optional)"),
+      quick: z.boolean().optional().default(false).describe("Quick 1-3 sentence summary"),
+    },
+    async (args) => {
+      const result = await handleSummarizeSession(adapters, args);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "change_model",
+    "Change the AI model for a harness. For OpenCode: per-session or global. For Claude/Codex: updates default for future sessions.",
+    {
+      sessionId: z.string().optional().describe("Session ID (omit for global default)"),
+      harness: z.enum(["opencode", "claude", "codex"]).describe("Target harness"),
+      model: z.string().describe("Model name (e.g. 'claude-sonnet-4-20250514', 'gpt-4o', 'o4-mini')"),
+    },
+    async (args) => {
+      const result = await handleChangeModel(adapters, args);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "list_models",
+    "List available AI models for each harness.",
+    {
+      harness: z.enum(["opencode", "claude", "codex"]).optional().describe("Harness (omit for all)"),
+    },
+    async (args) => {
+      const result = await handleListModels(adapters, args);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
 }
 
 // ===== Main =====
@@ -215,17 +264,13 @@ function registerTools(server: McpServer) {
 async function main() {
   const server = new McpServer({
     name: "agent-herder",
-    version: "0.1.0",
-    description: "Monitor and control coding agents (OpenCode, Claude Code SDK, Codex CLI)",
+    version: "0.2.0",
+    description: "Monitor and control coding agents (OpenCode, Claude Code SDK, Codex CLI) with summarization and model management",
   });
 
-  // Initialize adapters before registering tools
   await initAdapters();
-
-  // Register all tools
   registerTools(server);
 
-  // Start the MCP server on stdio
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("[agent-herder] MCP server running on stdio");

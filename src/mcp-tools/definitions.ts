@@ -15,6 +15,18 @@ export const ListAgentsSchema = z.object({
     .default("all")
     .describe("Filter by agent status."),
   limit: z.number().int().min(1).max(100).optional().default(50).describe("Max sessions to return."),
+  maxAge: z.number().int().min(0).optional().describe(
+    "Maximum session age in seconds. Only return sessions active within this window. " +
+    "Examples: 3600 = last hour, 86400 = last 24h, 604800 = last week. 0 or omit = no limit."
+  ),
+  folder: z.string().optional().describe(
+    "Filter sessions by working directory prefix. " +
+    "For example, '~/apps' will show only sessions whose CWD starts with that path. " +
+    "Useful for finding all agent sessions working within a specific project tree."
+  ),
+  includeLastMessage: z.boolean().optional().default(false).describe(
+    "If true, include a preview of the last message in each session."
+  ),
 });
 
 export const AgentInfoSchema = z.object({
@@ -60,6 +72,28 @@ export const ResumeAgentSchema = z.object({
   message: z.string().optional().describe("Optional message to send when resuming."),
 });
 
+export const SummarizeSessionSchema = z.object({
+  sessionId: z.string().describe("The session ID to summarize."),
+  harness: z.enum(["opencode", "claude", "codex"]).optional().describe("Harness (optional if ID is unique)."),
+  quick: z.boolean().optional().default(false).describe(
+    "If true, produce a 1-3 sentence quick summary (cheaper). If false, produce a detailed structured summary."
+  ),
+});
+
+export const ChangeModelSchema = z.object({
+  sessionId: z.string().optional().describe(
+    "Session ID to change model for. If omitted, changes the global default for the harness."
+  ),
+  harness: z.enum(["opencode", "claude", "codex"]).describe("Which harness to change model for."),
+  model: z.string().describe("The model name to use (e.g. 'claude-sonnet-4-20250514', 'gpt-4o', 'o4-mini')."),
+});
+
+export const ListModelsSchema = z.object({
+  harness: z.enum(["opencode", "claude", "codex"]).optional().describe(
+    "Which harness to list models for. If omitted, lists models from all harnesses."
+  ),
+});
+
 // ===== Tool definitions (static metadata) =====
 
 export const toolDefinitions: Tool[] = [
@@ -67,13 +101,17 @@ export const toolDefinitions: Tool[] = [
     name: "list_agents",
     description:
       "List all coding agent sessions across connected harnesses (OpenCode, Claude Code, Codex CLI). " +
-      "Shows which agents are running, idle, need input, or stopped. Filter by harness or status.",
+      "Shows which agents are running, idle, need input, or stopped. Filter by harness, status, age, or folder. " +
+      "Can include last message previews for quick context.",
     inputSchema: {
       type: "object" as const,
       properties: {
         harness: { type: "string", enum: ["all", "opencode", "claude", "codex"], default: "all", description: "Filter by harness" },
         status: { type: "string", enum: ["all", "running", "idle", "needs_input", "stopped", "error"], default: "all", description: "Filter by status" },
         limit: { type: "number", default: 50, description: "Max sessions to return" },
+        maxAge: { type: "number", description: "Max session age in seconds (e.g. 3600 for 1h, 86400 for 24h)" },
+        folder: { type: "string", description: "Filter by CWD prefix (e.g. '~/apps' for sessions in that tree)" },
+        includeLastMessage: { type: "boolean", default: false, description: "Include last message preview" },
       },
     },
   },
@@ -81,7 +119,8 @@ export const toolDefinitions: Tool[] = [
     name: "agent_info",
     description:
       "Get detailed information about a specific agent session including status, model, " +
-      "cost, duration, and any pending permission requests.",
+      "cost, duration, last message, and any pending permission requests. " +
+      "Always shows the last message for quick context.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -123,7 +162,7 @@ export const toolDefinitions: Tool[] = [
     name: "respond_permission",
     description:
       "Respond to a pending permission request from an agent (e.g. allow or deny a tool call). " +
-      "Note: only OpenCode supports remote permission response. Claude Code and Codex handle permissions at launch time.",
+      "Note: only OpenCode and Claude SDK support remote permission response.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -164,6 +203,50 @@ export const toolDefinitions: Tool[] = [
         message: { type: "string", description: "Optional message to send when resuming" },
       },
       required: ["sessionId"],
+    },
+  },
+  {
+    name: "summarize_session",
+    description:
+      "Summarize a session's transcript using a built-in LLM (gemma4). " +
+      "Produces a structured summary with Task, Progress, Current State, and Issues/Next Steps. " +
+      "Use this instead of reading the full transcript to save tokens and context. " +
+      "Supports 'quick' mode for a 1-3 sentence summary.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        sessionId: { type: "string", description: "Session ID to summarize" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex"], description: "Harness (optional)" },
+        quick: { type: "boolean", default: false, description: "Quick 1-3 sentence summary instead of detailed" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "change_model",
+    description:
+      "Change the AI model for a harness. For OpenCode, changes model per-session or globally. " +
+      "For Claude and Codex, model is set at session creation time — this updates the default " +
+      "for future sessions or the next message sent via agent-herder.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        sessionId: { type: "string", description: "Session ID (optional, changes global default if omitted)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex"], description: "Target harness" },
+        model: { type: "string", description: "Model name (e.g. 'claude-sonnet-4-20250514', 'gpt-4o', 'o4-mini')" },
+      },
+      required: ["harness", "model"],
+    },
+  },
+  {
+    name: "list_models",
+    description:
+      "List available AI models for a harness. Shows model names that can be used with change_model.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        harness: { type: "string", enum: ["opencode", "claude", "codex"], description: "Harness to list models for (omit = all)" },
+      },
     },
   },
 ];

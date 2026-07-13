@@ -35,20 +35,44 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 
   async listSessions(): Promise<AgentSession[]> {
-    const sessions = await this.fetchJson<{ id: string; title?: string; path?: string; createdAt?: string; updatedAt?: string; model?: string; costUsd?: number }[]>("/session");
+    const sessions = await this.fetchJson<Array<{
+      id: string; title?: string; path?: string; createdAt?: string;
+      updatedAt?: string; model?: string; costUsd?: number;
+    }>>("/session");
 
     // Get statuses for all sessions
     let statuses: Record<string, { status?: string; needsPermission?: boolean; permission?: { id: string; type: string; description: string; toolName?: string; details?: string } }> = {};
     try {
       statuses = await this.fetchJson<Record<string, unknown>>("/session/status") as typeof statuses;
     } catch {
-      // status endpoint may fail, we'll derive status from other data
+      // status endpoint may fail
     }
 
-    return sessions.map((s) => {
+    return Promise.all(sessions.map(async (s) => {
       const st = statuses[s.id] as typeof statuses[string] | undefined;
       const status = this.mapStatus(st?.status);
       const perm = st?.permission as { id: string; type: string; description: string; toolName?: string; details?: string } | undefined;
+
+      // Try to get last message from the session messages endpoint
+      let lastMessage: string | undefined;
+      try {
+        const messages = await this.fetchJson<Array<{ role?: string; content?: string | Array<{ type?: string; text?: string }> }>>(
+          `/session/${s.id}/message?limit=1`
+        );
+        if (messages && messages.length > 0) {
+          const last = messages[messages.length - 1];
+          if (last.content) {
+            if (typeof last.content === "string") {
+              lastMessage = last.content.slice(0, 300);
+            } else if (Array.isArray(last.content)) {
+              const textBlock = last.content.find((b) => b.type === "text");
+              if (textBlock?.text) lastMessage = textBlock.text.slice(0, 300);
+            }
+          }
+        }
+      } catch {
+        // messages endpoint may not exist or may fail
+      }
 
       return {
         id: s.id,
@@ -68,9 +92,10 @@ export class OpenCodeAdapter implements HarnessAdapter {
         } : undefined,
         costUsd: s.costUsd,
         durationSec: s.createdAt ? (Date.now() - new Date(s.createdAt).getTime()) / 1000 : undefined,
+        lastMessage,
         meta: { createdAt: s.createdAt },
       };
-    });
+    }));
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
@@ -80,7 +105,6 @@ export class OpenCodeAdapter implements HarnessAdapter {
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
     if (options.queue) {
-      // Async — fire and forget
       const res = await this.fetch(`/session/${id}/prompt_async`, {
         method: "POST",
         body: JSON.stringify({
@@ -90,7 +114,6 @@ export class OpenCodeAdapter implements HarnessAdapter {
       return { ok: res.ok, error: res.ok ? undefined : `HTTP ${res.status}` };
     }
 
-    // Synchronous — wait for response
     const res = await this.fetch(`/session/${id}/message`, {
       method: "POST",
       body: JSON.stringify({
@@ -120,8 +143,6 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 
   async setPermissions(sessionId: string, options: SetPermissionsOptions): Promise<{ ok: boolean; error?: string }> {
-    // OpenCode handles permissions via config, not per-session.
-    // We can update the config PATCH endpoint.
     const updates: Record<string, unknown> = {};
     if (options.allowedTools) {
       updates.allowedTools = options.allowedTools.split(",").map((t) => t.trim());
@@ -134,6 +155,84 @@ export class OpenCodeAdapter implements HarnessAdapter {
       body: JSON.stringify(updates),
     });
     return { ok: res.ok, error: res.ok ? undefined : `HTTP ${res.status}` };
+  }
+
+  async changeModel(sessionId: string, model: string): Promise<{ ok: boolean; error?: string }> {
+    // OpenCode supports changing model via PATCH /config or per-session
+    // Try per-session first, then fall back to global config
+    try {
+      const res = await this.fetch(`/session/${sessionId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ model }),
+      });
+      if (res.ok) return { ok: true };
+    } catch {
+      // Per-session change not supported, try global
+    }
+
+    // Fall back to global config change
+    try {
+      const res = await this.fetch("/config", {
+        method: "PATCH",
+        body: JSON.stringify({ model }),
+      });
+      if (res.ok) {
+        return { ok: true, error: `Model changed to '${model}' globally (applies to new messages in all sessions).` };
+      }
+      return { ok: false, error: `Failed to change model: HTTP ${res ? res.status : "no response"}` };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
+  async listModels(): Promise<string[]> {
+    // OpenCode uses provider-based model names
+    // Try to fetch from config, otherwise return common ones
+    try {
+      const config = await this.fetchJson<{ model?: string; provider?: string; models?: string[] }>("/config");
+      if (config.models) return config.models;
+      if (config.model) return [config.model];
+    } catch { /* fallback */ }
+
+    return [
+      "openai/gpt-4o",
+      "openai/gpt-4o-mini",
+      "anthropic/claude-sonnet-4-20250514",
+      "anthropic/claude-3-5-sonnet-20241022",
+      "google/gemini-2.5-pro",
+      "google/gemini-2.5-flash",
+      "deepseek/deepseek-chat",
+      "deepseek/deepseek-reasoner",
+      "ollama/llama3",
+      "ollama/codellama",
+    ];
+  }
+
+  async getTranscript(id: string): Promise<string | null> {
+    try {
+      const messages = await this.fetchJson<Array<{
+        role?: string; content?: string | Array<{ type?: string; text?: string; input?: Record<string, unknown> }>;
+      }>>(`/session/${id}/message?limit=200`);
+
+      if (!messages || messages.length === 0) return null;
+
+      const parts: string[] = [];
+      for (const msg of messages) {
+        const role = msg.role || "unknown";
+        if (typeof msg.content === "string") {
+          parts.push(`${role}: ${msg.content.slice(0, 2000)}`);
+        } else if (Array.isArray(msg.content)) {
+          const textParts: string[] = [];
+          for (const block of msg.content) {
+            if (block.type === "text" && block.text) textParts.push(block.text);
+          }
+          if (textParts.length > 0) parts.push(`${role}: ${textParts.join(" ").slice(0, 2000)}`);
+        }
+      }
+      return parts.join("\n\n") || null;
+    } catch {
+      return null;
+    }
   }
 
   // ---- helpers ----

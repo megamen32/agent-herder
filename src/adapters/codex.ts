@@ -3,17 +3,27 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, basename } from "node:path";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 
 const execFileAsync = promisify(execFile);
+
+interface CodexSessionData {
+  prompt?: string;
+  title?: string;
+  cwd?: string;
+  model?: string;
+  updatedAt?: string;
+  createdAt?: string;
+  messageCount?: number;
+  costUsd?: number;
+  messages?: Array<{ role?: string; content?: string }>;
+}
 
 /**
  * Codex CLI adapter.
  *
- * Codex can run as an MCP server itself (`codex -m <model> -c ...`).
- * We interact via:
- *   - CLI commands for session listing (codex stores state in ~/.codex/)
- *   - Direct CLI invocation for sending messages
+ * Codex stores state in ~/.codex/sessions/*.json
+ * We interact via CLI commands for session listing and direct invocation for messages.
  *
  * Prerequisites:
  *   - `codex` CLI installed
@@ -52,8 +62,19 @@ export class CodexAdapter implements HarnessAdapter {
         if (!file.endsWith(".json")) continue;
         const filePath = join(sessionsDir, file);
         try {
-          const data = JSON.parse(await readFile(filePath, "utf-8"));
+          const data: CodexSessionData = JSON.parse(await readFile(filePath, "utf-8"));
           const sessionId = basename(file, ".json");
+
+          // Extract last message from session data
+          let lastMessage: string | undefined;
+          if (Array.isArray(data.messages) && data.messages.length > 0) {
+            const last = data.messages[data.messages.length - 1];
+            if (last.content && typeof last.content === "string") {
+              lastMessage = last.content.length > 300
+                ? last.content.slice(0, 300) + "..."
+                : last.content;
+            }
+          }
 
           sessions.push({
             id: sessionId,
@@ -62,13 +83,14 @@ export class CodexAdapter implements HarnessAdapter {
             title: data.prompt?.slice(0, 120) || data.title || "Untitled session",
             cwd: data.cwd || process.cwd(),
             lastActivity: data.updatedAt || data.createdAt || (await stat(filePath)).mtime.toISOString(),
-            model: data.model,
+            model: data.model || this.detectModelFromContent(data),
             needsPermission: false,
-            messageCount: data.messageCount,
+            messageCount: data.messageCount ?? (data.messages?.length),
             costUsd: data.costUsd,
             durationSec: data.createdAt
               ? (Date.now() - new Date(data.createdAt).getTime()) / 1000
               : undefined,
+            lastMessage,
             meta: { filePath },
           });
         } catch {
@@ -157,18 +179,87 @@ export class CodexAdapter implements HarnessAdapter {
     return { ok: true };
   }
 
+  async changeModel(_sessionId: string, model: string): Promise<{ ok: boolean; error?: string }> {
+    // Codex uses --model flag at launch. Can't change mid-session.
+    // Update the global config file if it exists.
+    const configFile = join(this.codexDir, "config.json");
+    try {
+      const config = JSON.parse(await readFile(configFile, "utf-8")) as Record<string, unknown>;
+      config.model = model;
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(configFile, JSON.stringify(config, null, 2));
+      return {
+        ok: true,
+        error: `Default model updated to '${model}' in ${configFile}. Applies to new sessions only.`,
+      };
+    } catch {
+      return {
+        ok: false,
+        error: `Codex cannot change model for existing sessions. Start new sessions with --model ${model} or update ~/.codex/config.json.`,
+      };
+    }
+  }
+
+  async listModels(): Promise<string[]> {
+    // Codex uses OpenAI model names
+    return [
+      "o4-mini",
+      "o3",
+      "o3-mini",
+      "gpt-4.1",
+      "gpt-4.1-mini",
+      "gpt-4.1-nano",
+      "gpt-4o",
+      "gpt-4o-mini",
+      "codex-mini",
+    ];
+  }
+
+  async getTranscript(id: string): Promise<string | null> {
+    const sessionsDir = join(this.codexDir, "sessions");
+    const filePath = join(sessionsDir, `${id}.json`);
+    try {
+      const data: CodexSessionData = JSON.parse(await readFile(filePath, "utf-8"));
+      if (!Array.isArray(data.messages) || data.messages.length === 0) return null;
+
+      const parts: string[] = [];
+      for (const msg of data.messages) {
+        const role = msg.role || "unknown";
+        if (typeof msg.content === "string" && msg.content.trim()) {
+          parts.push(`${role}: ${msg.content.slice(0, 2000)}`);
+        }
+      }
+      return parts.join("\n\n") || null;
+    } catch {
+      return null;
+    }
+  }
+
   // ---- Internal ----
+
+  /**
+   * Try to detect the model from the session content if not explicitly set.
+   */
+  private detectModelFromContent(data: CodexSessionData): string | undefined {
+    // Check if messages contain model info in system prompt
+    if (Array.isArray(data.messages)) {
+      for (const msg of data.messages) {
+        if (msg.role === "system" && typeof msg.content === "string") {
+          const modelMatch = msg.content.match(/model[:\s]+([a-zA-Z0-9._-]+)/i);
+          if (modelMatch) return modelMatch[1];
+        }
+      }
+    }
+    return undefined;
+  }
 
   private async getRunningCodexPids(): Promise<Map<string, number>> {
     const result = new Map<string, number>();
     try {
       const { stdout } = await execFileAsync("pgrep", ["-af", "codex"], { timeout: 5000 });
       for (const line of stdout.split("\n")) {
-        // codex doesn't expose session ID in cmdline easily,
-        // so we track PIDs generically
         const match = line.match(/^(\d+)\s+/);
         if (match) {
-          // We can't map to session ID, use process tracking
           result.set(`pid-${match[1]}`, parseInt(match[1], 10));
         }
       }
