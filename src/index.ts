@@ -29,7 +29,9 @@ const ENABLE_CODEX = parseEnvBool(process.env.ENABLE_CODEX, true);
 // Summarizer config (defaults to gemma4 at llm.bezrabotnyi.com)
 process.env.SUMMARIZER_API_BASE = process.env.SUMMARIZER_API_BASE || "https://llm.bezrabotnyi.com/v1";
 process.env.SUMMARIZER_MODEL = process.env.SUMMARIZER_MODEL || "gemma4";
-process.env.SUMMARIZER_API_KEY = process.env.SUMMARIZER_API_KEY || "sk-305630";
+if (!process.env.SUMMARIZER_API_KEY) {
+  console.error("[agent-herder] WARNING: SUMMARIZER_API_KEY not set. summarize_session tool will not work.");
+}
 
 function parseEnvBool(val: string | undefined, fallback: boolean): boolean {
   if (!val) return fallback;
