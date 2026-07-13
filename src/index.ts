@@ -5,7 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { HarnessAdapter } from "./types/index.js";
-import { OpenCodeAdapter, ClaudeCodeAdapter, CodexAdapter } from "./adapters/index.js";
+import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter } from "./adapters/index.js";
 import {
   handleListAgents,
   handleAgentInfo,
@@ -20,6 +20,7 @@ import {
 
 const ENABLE_OPENCODE = parseEnvBool(process.env.ENABLE_OPENCODE, true);
 const ENABLE_CLAUDE = parseEnvBool(process.env.ENABLE_CLAUDE, true);
+const ENABLE_CLAUDE_SDK = parseEnvBool(process.env.ENABLE_CLAUDE_SDK, true);
 const ENABLE_CODEX = parseEnvBool(process.env.ENABLE_CODEX, true);
 
 function parseEnvBool(val: string | undefined, fallback: boolean): boolean {
@@ -49,16 +50,40 @@ async function initAdapters() {
   }
 
   if (ENABLE_CLAUDE) {
-    const adapter = new ClaudeCodeAdapter({
-      claudeBin: process.env.CLAUDE_BIN,
-    });
-    adapters.set("claude", adapter);
-    inits.push(
-      adapter.init().catch((err) => {
-        console.error(`[agent-herder] Claude Code adapter failed to init: ${(err as Error).message}`);
-        adapters.delete("claude");
-      })
-    );
+    // Try Claude Agent SDK first (richer API), fall back to CLI adapter
+    if (ENABLE_CLAUDE_SDK) {
+      const sdkAdapter = new ClaudeSDKAdapter();
+      inits.push(
+        sdkAdapter.init()
+          .then(() => {
+            adapters.set("claude", sdkAdapter);
+            console.error("[agent-herder] Claude Agent SDK adapter initialized");
+          })
+          .catch((err) => {
+            console.error(`[agent-herder] Claude SDK adapter failed, trying CLI fallback: ${(err as Error).message}`);
+            // Fallback to CLI adapter
+            const cliAdapter = new ClaudeCodeAdapter({
+              claudeBin: process.env.CLAUDE_BIN,
+            });
+            cliAdapter.init()
+              .then(() => adapters.set("claude", cliAdapter))
+              .catch((err2) => {
+                console.error(`[agent-herder] Claude CLI adapter also failed: ${(err2 as Error).message}`);
+              });
+          })
+      );
+    } else {
+      const adapter = new ClaudeCodeAdapter({
+        claudeBin: process.env.CLAUDE_BIN,
+      });
+      adapters.set("claude", adapter);
+      inits.push(
+        adapter.init().catch((err) => {
+          console.error(`[agent-herder] Claude Code adapter failed to init: ${(err as Error).message}`);
+          adapters.delete("claude");
+        })
+      );
+    }
   }
 
   if (ENABLE_CODEX) {
@@ -191,7 +216,7 @@ async function main() {
   const server = new McpServer({
     name: "agent-herder",
     version: "0.1.0",
-    description: "Monitor and control coding agents (OpenCode, Claude Code, Codex CLI)",
+    description: "Monitor and control coding agents (OpenCode, Claude Code SDK, Codex CLI)",
   });
 
   // Initialize adapters before registering tools
