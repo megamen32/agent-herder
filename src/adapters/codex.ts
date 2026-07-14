@@ -1,33 +1,41 @@
 import { HarnessAdapter, AgentSession, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { readFile, readdir, stat } from "node:fs/promises";
-import { join, basename } from "node:path";
+import { open, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { homedir } from "node:os";
 
 const execFileAsync = promisify(execFile);
 
-interface CodexSessionData {
-  prompt?: string;
-  title?: string;
+interface CodexSessionIndexEntry {
+  id: string;
+  thread_name?: string;
+  updated_at?: string;
+}
+
+interface CodexSessionState {
   cwd?: string;
+  filePath: string;
+  lastMessage?: string;
   model?: string;
-  updatedAt?: string;
-  createdAt?: string;
-  messageCount?: number;
-  costUsd?: number;
-  messages?: Array<{ role?: string; content?: string }>;
+  updatedAtMs: number;
+}
+
+interface CodexTranscriptItem {
+  type?: string;
+  payload?: {
+    type?: string;
+    role?: string;
+    model?: string;
+    content?: Array<{ type?: string; text?: string }>;
+  };
 }
 
 /**
- * Codex CLI adapter.
+ * Codex CLI adapter backed by Codex's current JSONL session index.
  *
- * Codex stores state in ~/.codex/sessions/*.json
- * We interact via CLI commands for session listing and direct invocation for messages.
- *
- * Prerequisites:
- *   - `codex` CLI installed
- *   - OPENAI_API_KEY set
+ * session_index.jsonl contains IDs accepted by `codex exec resume`; dated
+ * rollout JSONL files supply the original working directory and transcript.
  */
 export class CodexAdapter implements HarnessAdapter {
   readonly type = "codex" as const;
@@ -45,61 +53,35 @@ export class CodexAdapter implements HarnessAdapter {
     try {
       await execFileAsync(this.codexBin, ["--version"], { timeout: 10000 });
     } catch {
-      throw new Error(
-        `'${this.codexBin}' not found or not executable. Make sure Codex CLI is installed.`
-      );
+      throw new Error(`'${this.codexBin}' not found or not executable. Make sure Codex CLI is installed.`);
     }
   }
 
   async listSessions(): Promise<AgentSession[]> {
-    const sessionsDir = join(this.codexDir, "sessions");
-    const sessions: AgentSession[] = [];
-    const runningPids = await this.getRunningCodexPids();
+    const [index, sessionStates, runningPids] = await Promise.all([
+      this.readSessionIndex(),
+      this.readSessionStates(),
+      this.getRunningCodexPids(),
+    ]);
 
-    try {
-      const files = await readdir(sessionsDir);
-      for (const file of files) {
-        if (!file.endsWith(".json")) continue;
-        const filePath = join(sessionsDir, file);
-        try {
-          const data: CodexSessionData = JSON.parse(await readFile(filePath, "utf-8"));
-          const sessionId = basename(file, ".json");
-
-          // Extract last message from session data
-          let lastMessage: string | undefined;
-          if (Array.isArray(data.messages) && data.messages.length > 0) {
-            const last = data.messages[data.messages.length - 1];
-            if (last.content && typeof last.content === "string") {
-              lastMessage = last.content.length > 300
-                ? last.content.slice(0, 300) + "..."
-                : last.content;
-            }
-          }
-
-          sessions.push({
-            id: sessionId,
-            harness: "codex",
-            status: runningPids.has(sessionId) ? "running" : "stopped",
-            title: data.prompt?.slice(0, 120) || data.title || "Untitled session",
-            cwd: data.cwd || process.cwd(),
-            lastActivity: data.updatedAt || data.createdAt || (await stat(filePath)).mtime.toISOString(),
-            model: data.model || this.detectModelFromContent(data),
-            needsPermission: false,
-            messageCount: data.messageCount ?? (data.messages?.length),
-            costUsd: data.costUsd,
-            durationSec: data.createdAt
-              ? (Date.now() - new Date(data.createdAt).getTime()) / 1000
-              : undefined,
-            lastMessage,
-            meta: { filePath },
-          });
-        } catch {
-          // skip
-        }
-      }
-    } catch {
-      // no sessions dir
-    }
+    const sessions = index.map((entry) => {
+      const state = sessionStates.get(entry.id);
+      return {
+        id: entry.id,
+        harness: "codex" as const,
+        status: runningPids.has(entry.id) ? "running" as const : "stopped" as const,
+        title: entry.thread_name || "Untitled session",
+        cwd: state?.cwd || process.cwd(),
+        lastActivity: entry.updated_at || new Date(0).toISOString(),
+        model: state?.model,
+        needsPermission: false,
+        lastMessage: state?.lastMessage,
+        meta: {
+          sessionIndexPath: join(this.codexDir, "session_index.jsonl"),
+          sessionFilePath: state?.filePath,
+        },
+      };
+    });
 
     sessions.sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
     return sessions;
@@ -107,22 +89,20 @@ export class CodexAdapter implements HarnessAdapter {
 
   async getSession(id: string): Promise<AgentSession | null> {
     const all = await this.listSessions();
-    return all.find((s) => s.id === id) || null;
+    return all.find((session) => session.id === id) || null;
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
     const session = await this.getSession(id);
     if (!session) return { ok: false, error: `Session ${id} not found` };
 
-    const args = [
-      "--full-auto",
-      options.message,
-      "--cwd",
-      session.cwd,
-    ];
+    // `codex <prompt>` starts an unrelated conversation. exec resume attaches
+    // the prompt to the indexed thread while remaining suitable for an MCP call.
+    const args = ["exec", "resume"];
+    if (session.model) args.push("--model", session.model);
+    args.push(id, options.message);
 
     if (options.queue) {
-      const { spawn } = await import("node:child_process");
       const child = spawn(this.codexBin, args, {
         cwd: session.cwd,
         detached: true,
@@ -133,10 +113,7 @@ export class CodexAdapter implements HarnessAdapter {
     }
 
     try {
-      await execFileAsync(this.codexBin, args, {
-        cwd: session.cwd,
-        timeout: 300000,
-      });
+      await execFileAsync(this.codexBin, args, { cwd: session.cwd, timeout: 300000 });
       return { ok: true };
     } catch (err) {
       return { ok: false, error: (err as Error).message };
@@ -164,7 +141,7 @@ export class CodexAdapter implements HarnessAdapter {
   ): Promise<{ ok: boolean; error?: string }> {
     return {
       ok: false,
-      error: "Codex CLI does not support remote permission response. Use --full-auto or --approve-tools flags when starting.",
+      error: "Codex CLI does not support remote permission response. Configure permissions when starting the session.",
     };
   }
 
@@ -172,85 +149,184 @@ export class CodexAdapter implements HarnessAdapter {
     if (options.allowedTools || options.mode) {
       return {
         ok: false,
-        error:
-          "Codex CLI permissions are set at launch time. Use --full-auto, --approve-tools, or --suggest flags.",
+        error: "Codex CLI permissions are set at launch time via --ask-for-approval and --sandbox.",
       };
     }
     return { ok: true };
   }
 
   async changeModel(_sessionId: string, model: string): Promise<{ ok: boolean; error?: string }> {
-    // Codex uses --model flag at launch. Can't change mid-session.
-    // Update the global config file if it exists.
     const configFile = join(this.codexDir, "config.json");
     try {
       const config = JSON.parse(await readFile(configFile, "utf-8")) as Record<string, unknown>;
       config.model = model;
-      const { writeFile } = await import("node:fs/promises");
       await writeFile(configFile, JSON.stringify(config, null, 2));
-      return {
-        ok: true,
-        error: `Default model updated to '${model}' in ${configFile}. Applies to new sessions only.`,
-      };
+      return { ok: true, error: `Default model updated to '${model}' in ${configFile}. Applies to new sessions only.` };
     } catch {
       return {
         ok: false,
-        error: `Codex cannot change model for existing sessions. Start new sessions with --model ${model} or update ~/.codex/config.json.`,
+        error: `Codex cannot change model for existing sessions. Start new sessions with --model ${model}.`,
       };
     }
   }
 
   async listModels(): Promise<string[]> {
-    // Codex uses OpenAI model names
-    return [
-      "o4-mini",
-      "o3",
-      "o3-mini",
-      "gpt-4.1",
-      "gpt-4.1-mini",
-      "gpt-4.1-nano",
-      "gpt-4o",
-      "gpt-4o-mini",
-      "codex-mini",
-    ];
+    return ["o4-mini", "o3", "o3-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o", "gpt-4o-mini", "codex-mini"];
   }
 
   async getTranscript(id: string): Promise<string | null> {
-    const sessionsDir = join(this.codexDir, "sessions");
-    const filePath = join(sessionsDir, `${id}.json`);
-    try {
-      const data: CodexSessionData = JSON.parse(await readFile(filePath, "utf-8"));
-      if (!Array.isArray(data.messages) || data.messages.length === 0) return null;
+    const state = (await this.readSessionStates()).get(id);
+    if (!state) return null;
 
-      const parts: string[] = [];
-      for (const msg of data.messages) {
-        const role = msg.role || "unknown";
-        if (typeof msg.content === "string" && msg.content.trim()) {
-          parts.push(`${role}: ${msg.content.slice(0, 2000)}`);
-        }
-      }
-      return parts.join("\n\n") || null;
+    try {
+      const content = await readFile(state.filePath, "utf-8");
+      const messages = content.split("\n").flatMap((line) => this.extractTranscriptMessage(line));
+      return messages.join("\n\n") || null;
     } catch {
       return null;
     }
   }
 
-  // ---- Internal ----
+  private extractTranscriptMessage(line: string): string[] {
+    try {
+      const item = JSON.parse(line) as CodexTranscriptItem;
+      if (item.type !== "response_item" || item.payload?.type !== "message") return [];
+      const text = item.payload.content
+        ?.filter((part) => part.type === "input_text" || part.type === "output_text")
+        .map((part) => part.text || "")
+        .join("\n")
+        .trim();
+      return text ? [`${item.payload.role || "unknown"}: ${text.slice(0, 2000)}`] : [];
+    } catch {
+      return [];
+    }
+  }
 
-  /**
-   * Try to detect the model from the session content if not explicitly set.
-   */
-  private detectModelFromContent(data: CodexSessionData): string | undefined {
-    // Check if messages contain model info in system prompt
-    if (Array.isArray(data.messages)) {
-      for (const msg of data.messages) {
-        if (msg.role === "system" && typeof msg.content === "string") {
-          const modelMatch = msg.content.match(/model[:\s]+([a-zA-Z0-9._-]+)/i);
-          if (modelMatch) return modelMatch[1];
+  private async readSessionIndex(): Promise<CodexSessionIndexEntry[]> {
+    try {
+      const content = await readFile(join(this.codexDir, "session_index.jsonl"), "utf-8");
+      return content.split("\n").flatMap((line) => {
+        try {
+          const entry = JSON.parse(line) as CodexSessionIndexEntry;
+          return typeof entry.id === "string" ? [entry] : [];
+        } catch {
+          return [];
         }
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  private async readSessionStates(): Promise<Map<string, CodexSessionState>> {
+    const result = new Map<string, CodexSessionState>();
+    const sessionFiles = await this.findJsonlFiles(join(this.codexDir, "sessions"));
+    await Promise.all(sessionFiles.map(async (filePath) => {
+      try {
+        const header = await this.readSessionHeader(filePath);
+        const sessionId = this.getHeaderString(header, "session_id");
+        if (sessionId) {
+          const tail = await this.readSessionTail(filePath);
+          const state: CodexSessionState = {
+            cwd: this.getHeaderString(header, "cwd"),
+            filePath,
+            lastMessage: tail.lastMessage,
+            // The initial turn context persists the model for the thread. A
+            // tail context wins when a later turn explicitly changed it.
+            model: tail.model || this.extractLatestTurnModel(header),
+            updatedAtMs: tail.updatedAtMs,
+          };
+          const current = result.get(sessionId);
+          if (!current || state.updatedAtMs >= current.updatedAtMs) result.set(sessionId, state);
+        }
+      } catch {
+        // Ignore incomplete or corrupt rollout files while Codex is writing them.
       }
+    }));
+    return result;
+  }
+
+  private async readSessionHeader(filePath: string): Promise<string> {
+    const file = await open(filePath, "r");
+    try {
+      // Initial turn_context follows large persisted prompts, but remains near
+      // the start of the rollout; it supplies the session's persisted model.
+      const buffer = Buffer.alloc(128 * 1024);
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+      return buffer.subarray(0, bytesRead).toString("utf-8");
+    } finally {
+      await file.close();
+    }
+  }
+
+  private async readSessionTail(
+    filePath: string
+  ): Promise<{ lastMessage?: string; model?: string; updatedAtMs: number }> {
+    const file = await open(filePath, "r");
+    try {
+      const fileStat = await stat(filePath);
+      const fileSize = fileStat.size;
+      const bytesToRead = Math.min(fileSize, 32 * 1024);
+      const buffer = Buffer.alloc(bytesToRead);
+      const { bytesRead } = await file.read(buffer, 0, bytesToRead, fileSize - bytesToRead);
+      const lines = buffer.subarray(0, bytesRead).toString("utf-8").split("\n").reverse();
+      let lastMessage: string | undefined;
+      let model: string | undefined;
+      for (const line of lines) {
+        if (!lastMessage) {
+          const message = this.extractTranscriptMessage(line)[0];
+          if (message) lastMessage = message.slice(0, 300);
+        }
+        if (!model) model = this.extractTurnModel(line);
+        if (lastMessage && model) break;
+      }
+      return { lastMessage, model, updatedAtMs: fileStat.mtimeMs };
+    } finally {
+      await file.close();
+    }
+  }
+
+  private extractTurnModel(line: string): string | undefined {
+    try {
+      const item = JSON.parse(line) as CodexTranscriptItem;
+      return item.type === "turn_context" && typeof item.payload?.model === "string"
+        ? item.payload.model
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private extractLatestTurnModel(content: string): string | undefined {
+    for (const line of content.split("\n").reverse()) {
+      const model = this.extractTurnModel(line);
+      if (model) return model;
     }
     return undefined;
+  }
+
+  private getHeaderString(header: string, key: "session_id" | "cwd"): string | undefined {
+    const match = header.match(new RegExp(`"${key}":"((?:[^"\\\\]|\\\\.)*)"`));
+    if (!match) return undefined;
+    try {
+      return JSON.parse(`"${match[1]}"`) as string;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async findJsonlFiles(directory: string): Promise<string[]> {
+    try {
+      const entries = await readdir(directory, { withFileTypes: true });
+      const nested = await Promise.all(entries.map(async (entry) => {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) return this.findJsonlFiles(path);
+        return entry.isFile() && entry.name.endsWith(".jsonl") ? [path] : [];
+      }));
+      return nested.flat();
+    } catch {
+      return [];
+    }
   }
 
   private async getRunningCodexPids(): Promise<Map<string, number>> {
@@ -258,13 +334,11 @@ export class CodexAdapter implements HarnessAdapter {
     try {
       const { stdout } = await execFileAsync("pgrep", ["-af", "codex"], { timeout: 5000 });
       for (const line of stdout.split("\n")) {
-        const match = line.match(/^(\d+)\s+/);
-        if (match) {
-          result.set(`pid-${match[1]}`, parseInt(match[1], 10));
-        }
+        const match = line.match(/^(\d+)\s+.*\bcodex\b.*\bexec\s+resume\s+(\S+)/);
+        if (match) result.set(match[2], parseInt(match[1], 10));
       }
     } catch {
-      // no matches
+      // pgrep returns non-zero when no Codex processes are running.
     }
     return result;
   }
