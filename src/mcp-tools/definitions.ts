@@ -36,6 +36,21 @@ export const AuditWorktreesSchema = z.object({
   ),
 });
 
+export const SearchTranscriptsSchema = z.object({
+  query: z.string().min(1).describe("Text or regular expression to search for in session transcripts."),
+  harness: z
+    .enum(["all", "opencode", "claude", "codex"])
+    .optional()
+    .default("all")
+    .describe("Restrict the search to one harness."),
+  folder: z.string().optional().describe("Restrict sessions to a CWD prefix, for example '~/apps'."),
+  maxAge: z.number().int().min(0).optional().describe("Only search sessions active within this many seconds."),
+  regex: z.boolean().optional().default(false).describe("Treat query as a regular expression, like rg."),
+  caseSensitive: z.boolean().optional().default(false).describe("Use case-sensitive matching."),
+  maxSessions: z.number().int().min(1).max(5000).optional().default(1000).describe("Maximum sessions to inspect."),
+  maxMatches: z.number().int().min(1).max(1000).optional().default(100).describe("Maximum matching lines to return."),
+});
+
 export const AgentInfoSchema = z.object({
   sessionId: z.string().describe("The session ID to inspect."),
   harness: z
@@ -134,6 +149,26 @@ export const toolDefinitions: Tool[] = [
         includeClean: { type: "boolean", default: false, description: "Include clean and unlocked worktrees" },
       },
       required: ["repoPath"],
+    },
+  },
+  {
+    name: "search_transcripts",
+    description:
+      "Search all available Claude, Codex, and OpenCode session transcripts for text or a regular expression. " +
+      "Returns matching lines with harness, session ID, CWD, and line number.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        query: { type: "string", description: "Text or regular expression" },
+        harness: { type: "string", enum: ["all", "opencode", "claude", "codex"], default: "all" },
+        folder: { type: "string", description: "CWD prefix filter" },
+        maxAge: { type: "number", description: "Maximum session age in seconds" },
+        regex: { type: "boolean", default: false, description: "Treat query as a regular expression" },
+        caseSensitive: { type: "boolean", default: false, description: "Use case-sensitive matching" },
+        maxSessions: { type: "number", default: 1000, description: "Maximum sessions to inspect" },
+        maxMatches: { type: "number", default: 100, description: "Maximum matching lines to return" },
+      },
+      required: ["query"],
     },
   },
   {

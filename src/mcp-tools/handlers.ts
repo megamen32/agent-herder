@@ -12,10 +12,12 @@ import {
   ChangeModelSchema,
   ListModelsSchema,
   AuditWorktreesSchema,
+  SearchTranscriptsSchema,
 } from "./definitions.js";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { auditWorktrees } from "../worktree-audit.js";
+import { searchLocalTranscripts, LocalTranscriptHarness } from "../transcript-search.js";
 
 /**
  * Format an agent session for display as MCP tool result text.
@@ -183,6 +185,97 @@ export async function handleAuditWorktrees(args: unknown): Promise<string> {
     }
   }
   return lines.join("\n");
+}
+
+/**
+ * Search available agent transcripts without invoking a shell or exposing raw
+ * transcript contents beyond matching lines and short snippets.
+ */
+export async function handleSearchTranscripts(
+  adapters: Map<string, HarnessAdapter>,
+  args: unknown
+): Promise<string> {
+  const parsed = SearchTranscriptsSchema.parse(args);
+  const targets = parsed.harness === "all"
+    ? [...adapters.values()]
+    : [adapters.get(parsed.harness)].filter(Boolean) as HarnessAdapter[];
+  const localHarnesses = targets
+    .map((adapter) => adapter.type)
+    .filter((harness): harness is LocalTranscriptHarness => harness === "claude" || harness === "codex");
+  const local = await searchLocalTranscripts({
+    harnesses: localHarnesses,
+    query: parsed.query,
+    regex: parsed.regex,
+    caseSensitive: parsed.caseSensitive,
+    folder: parsed.folder,
+    maxAge: parsed.maxAge,
+    maxSessions: parsed.maxSessions,
+    maxMatches: parsed.maxMatches,
+  });
+  const remote = await searchRemoteTranscripts(
+    targets.filter((adapter) => adapter.type === "opencode"),
+    parsed
+  );
+  const matches = [
+    ...local.matches.map((match) => `[${match.harness}] ${match.agentId ? `${match.agentId} ` : ""}${match.sessionId} ${match.cwd}\n  ${match.filePath}:${match.lineNumber}: ${match.snippet}`),
+    ...remote.matches,
+  ].slice(0, parsed.maxMatches);
+  const searched = local.scannedFiles + remote.searched;
+  const unavailable = remote.unavailable;
+  const header = `Searched ${searched} transcript source(s), found ${matches.length} matching line(s).`;
+  const notices = [
+    local.matchedFiles >= parsed.maxSessions ? `Session limit: ${parsed.maxSessions}.` : "",
+    unavailable > 0 ? `Unavailable transcripts: ${unavailable}.` : "",
+    matches.length >= parsed.maxMatches ? `Match limit: ${parsed.maxMatches}.` : "",
+  ].filter(Boolean);
+  return [header, ...notices, "", ...(matches.length > 0 ? matches : ["No matches."])].join("\n");
+}
+
+async function searchRemoteTranscripts(
+  adapters: HarnessAdapter[],
+  parsed: ReturnType<typeof SearchTranscriptsSchema.parse>
+): Promise<{ searched: number; unavailable: number; matches: string[] }> {
+  const sessions: Array<{ adapter: HarnessAdapter; session: AgentSession }> = [];
+  for (const adapter of adapters) {
+    if (!adapter.getTranscript) continue;
+    try {
+      for (const session of await adapter.listSessions()) {
+        if (parsed.folder && !expandPath(session.cwd).startsWith(expandPath(parsed.folder))) continue;
+        if (parsed.maxAge !== undefined && parsed.maxAge > 0 && new Date(session.lastActivity).getTime() < Date.now() - parsed.maxAge * 1000) continue;
+        sessions.push({ adapter, session });
+      }
+    } catch {
+      continue;
+    }
+  }
+  const source = parsed.regex ? parsed.query : parsed.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let matcher: RegExp;
+  try {
+    matcher = new RegExp(source, parsed.caseSensitive ? "" : "i");
+  } catch (err) {
+    return { searched: 0, unavailable: 0, matches: [`Invalid regular expression: ${(err as Error).message}`] };
+  }
+  let searched = 0;
+  let unavailable = 0;
+  const matches: string[] = [];
+  for (const { adapter, session } of sessions.slice(0, parsed.maxSessions)) {
+    try {
+      const transcript = await adapter.getTranscript!(session.id);
+      if (!transcript) {
+        unavailable++;
+        continue;
+      }
+      searched++;
+      for (const [index, line] of transcript.split(/\r?\n/).entries()) {
+        if (matcher.test(line)) matches.push(`[${session.harness}] ${session.id} ${session.cwd}\n  line ${index + 1}: ${line.trim().slice(0, 300)}`);
+        if (matches.length >= parsed.maxMatches) break;
+      }
+    } catch {
+      unavailable++;
+    }
+    if (matches.length >= parsed.maxMatches) break;
+  }
+  return { searched, unavailable, matches };
 }
 
 export async function handleAgentInfo(

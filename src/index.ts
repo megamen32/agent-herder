@@ -18,6 +18,7 @@ import {
   handleChangeModel,
   handleListModels,
   handleAuditWorktrees,
+  handleSearchTranscripts,
 } from "./mcp-tools/handlers.js";
 
 // ===== Configuration from environment =====
@@ -144,6 +145,25 @@ function registerTools(server: McpServer) {
     },
     async (args) => {
       const result = await handleAuditWorktrees(args);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "search_transcripts",
+    "Search all available Claude, Codex, and OpenCode session transcripts for text or a regular expression.",
+    {
+      query: z.string().min(1).describe("Text or regular expression to search for"),
+      harness: z.enum(["all", "opencode", "claude", "codex"]).optional().default("all").describe("Harness filter"),
+      folder: z.string().optional().describe("CWD prefix filter"),
+      maxAge: z.number().int().min(0).optional().describe("Maximum session age in seconds"),
+      regex: z.boolean().optional().default(false).describe("Treat query as a regular expression"),
+      caseSensitive: z.boolean().optional().default(false).describe("Use case-sensitive matching"),
+      maxSessions: z.number().int().min(1).max(5000).optional().default(1000).describe("Maximum sessions to inspect"),
+      maxMatches: z.number().int().min(1).max(1000).optional().default(100).describe("Maximum matching lines"),
+    },
+    async (args) => {
+      const result = await handleSearchTranscripts(adapters, args);
       return { content: [{ type: "text" as const, text: result }] };
     }
   );

@@ -5,7 +5,7 @@ import {
   query,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKSessionInfo, PermissionResult, PermissionMode } from "@anthropic-ai/claude-agent-sdk";
-import { readFile, readdir, access } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -31,6 +31,8 @@ export class ClaudeSDKAdapter implements HarnessAdapter {
   >();
 
   private claudeDir = join(homedir(), ".claude");
+  private readonly sessionFiles = new Map<string, string>();
+  private sessionFileIndexPromise?: Promise<void>;
 
   async init(): Promise<void> {
     try {
@@ -254,22 +256,38 @@ export class ClaudeSDKAdapter implements HarnessAdapter {
    * Find the JSONL file path for a session by scanning project hashes.
    */
   private async findSessionFile(sessionId: string): Promise<string | null> {
-    const projectsDir = join(this.claudeDir, "projects");
-    try {
-      const projectHashes = await readdir(projectsDir);
-      for (const hash of projectHashes) {
-        const filePath = join(projectsDir, hash, "sessions", `${sessionId}.jsonl`);
+    await this.ensureSessionFileIndex();
+    return this.sessionFiles.get(sessionId) || null;
+  }
+
+  /**
+   * Build the local session-file index once per adapter instance. Without this
+   * cache, searching N transcripts rescans every Claude project directory N
+   * times and becomes quadratic on a busy machine.
+   */
+  private async ensureSessionFileIndex(): Promise<void> {
+    if (!this.sessionFileIndexPromise) {
+      this.sessionFileIndexPromise = (async () => {
+        const projectsDir = join(this.claudeDir, "projects");
         try {
-          await access(filePath);
-          return filePath;
+          const projectHashes = await readdir(projectsDir);
+          await Promise.all(projectHashes.map(async (hash) => {
+            const sessionDir = join(projectsDir, hash, "sessions");
+            try {
+              const files = await readdir(sessionDir);
+              for (const file of files) {
+                if (file.endsWith(".jsonl")) this.sessionFiles.set(file.slice(0, -6), join(sessionDir, file));
+              }
+            } catch {
+              // A project can disappear while Claude rotates its session files.
+            }
+          }));
         } catch {
-          continue;
+          // Claude may not have a local project store yet.
         }
-      }
-    } catch {
-      return null;
+      })();
     }
-    return null;
+    await this.sessionFileIndexPromise;
   }
 
   /**

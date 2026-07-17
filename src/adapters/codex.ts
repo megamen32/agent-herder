@@ -43,6 +43,7 @@ export class CodexAdapter implements HarnessAdapter {
 
   private codexBin: string;
   private codexDir: string;
+  private sessionStatesCache?: Map<string, CodexSessionState>;
 
   constructor(config: { codexBin?: string; codexDir?: string } = {}) {
     this.codexBin = config.codexBin || process.env.CODEX_BIN || "codex";
@@ -63,6 +64,7 @@ export class CodexAdapter implements HarnessAdapter {
       this.readSessionStates(),
       this.getRunningCodexPids(),
     ]);
+    this.sessionStatesCache = sessionStates;
 
     const sessions = index.map((entry) => {
       const state = sessionStates.get(entry.id);
@@ -175,7 +177,7 @@ export class CodexAdapter implements HarnessAdapter {
   }
 
   async getTranscript(id: string): Promise<string | null> {
-    const state = (await this.readSessionStates()).get(id);
+    const state = this.sessionStatesCache?.get(id) || (await this.readSessionStates()).get(id);
     if (!state) return null;
 
     try {
