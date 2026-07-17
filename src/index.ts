@@ -17,6 +17,7 @@ import {
   handleSummarizeSession,
   handleChangeModel,
   handleListModels,
+  handleAuditWorktrees,
 } from "./mcp-tools/handlers.js";
 
 // ===== Configuration from environment =====
@@ -130,6 +131,19 @@ function registerTools(server: McpServer) {
     },
     async (args) => {
       const result = await handleListAgents(adapters, args);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "audit_worktrees",
+    "Read-only Git worktree audit: dirty files, lock/PID state, and Claude/Codex/OpenCode processes whose cwd is inside each worktree.",
+    {
+      repoPath: z.string().describe("Absolute or home-relative path to a Git repository"),
+      includeClean: z.boolean().optional().default(false).describe("Include clean and unlocked worktrees"),
+    },
+    async (args) => {
+      const result = await handleAuditWorktrees(args);
       return { content: [{ type: "text" as const, text: result }] };
     }
   );

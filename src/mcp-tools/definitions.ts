@@ -29,6 +29,13 @@ export const ListAgentsSchema = z.object({
   ),
 });
 
+export const AuditWorktreesSchema = z.object({
+  repoPath: z.string().describe("Absolute or home-relative path to a Git repository."),
+  includeClean: z.boolean().optional().default(false).describe(
+    "Include clean and unlocked worktrees. By default, only dirty, locked, or actively owned worktrees are returned."
+  ),
+});
+
 export const AgentInfoSchema = z.object({
   sessionId: z.string().describe("The session ID to inspect."),
   harness: z
@@ -113,6 +120,20 @@ export const toolDefinitions: Tool[] = [
         folder: { type: "string", description: "Filter by CWD prefix (e.g. '~/apps' for sessions in that tree)" },
         includeLastMessage: { type: "boolean", default: false, description: "Include last message preview" },
       },
+    },
+  },
+  {
+    name: "audit_worktrees",
+    description:
+      "Read-only audit of Git worktrees. Reports dirty files, lock reasons and PIDs, whether lock PIDs are still running, " +
+      "and Claude/Codex/OpenCode processes whose cwd is inside each worktree.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        repoPath: { type: "string", description: "Absolute or home-relative Git repository path" },
+        includeClean: { type: "boolean", default: false, description: "Include clean and unlocked worktrees" },
+      },
+      required: ["repoPath"],
     },
   },
   {

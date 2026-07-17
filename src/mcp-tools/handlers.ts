@@ -11,9 +11,11 @@ import {
   SummarizeSessionSchema,
   ChangeModelSchema,
   ListModelsSchema,
+  AuditWorktreesSchema,
 } from "./definitions.js";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { auditWorktrees } from "../worktree-audit.js";
 
 /**
  * Format an agent session for display as MCP tool result text.
@@ -150,6 +152,37 @@ export async function handleListAgents(
   ];
 
   return summary.join("\n");
+}
+
+/**
+ * Return a human-readable, read-only Git worktree ownership audit.
+ */
+export async function handleAuditWorktrees(args: unknown): Promise<string> {
+  const parsed = AuditWorktreesSchema.parse(args);
+  const entries = await auditWorktrees(expandPath(parsed.repoPath), parsed.includeClean);
+  if (entries.length === 0) return "No dirty, locked, or actively owned worktrees found.";
+
+  const lines = [`Worktree audit for ${expandPath(parsed.repoPath)}:`, ""];
+  for (const entry of entries) {
+    const labels = [entry.dirtyFiles.length > 0 ? `dirty=${entry.dirtyFiles.length}` : "clean"];
+    if (entry.lock) {
+      const pidLabel = entry.lock.pid === undefined ? "no pid" : `pid=${entry.lock.pid} ${entry.lock.pidStatus}`;
+      labels.push(`locked (${pidLabel})`);
+    }
+    lines.push(`${entry.path} [${entry.branch || "detached"}] ${labels.join(", ")}`);
+    if (entry.dirtyFiles.length > 0) {
+      lines.push(`  Files: ${entry.dirtyFiles.join(", ")}`);
+    }
+    if (entry.lock?.reason) lines.push(`  Lock reason: ${entry.lock.reason}`);
+    if (entry.activeAgents.length === 0) {
+      lines.push("  Active harness processes: none");
+    } else {
+      for (const process of entry.activeAgents) {
+        lines.push(`  Active ${process.harness}: pid=${process.pid} cwd=${process.cwd} cmd=${process.command}`);
+      }
+    }
+  }
+  return lines.join("\n");
 }
 
 export async function handleAgentInfo(
