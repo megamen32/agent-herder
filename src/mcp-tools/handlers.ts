@@ -3,6 +3,8 @@ import { summarizeTranscript, quickSummary } from "../summarizer.js";
 import {
   ListAgentsSchema,
   AgentInfoSchema,
+  FindParentSchema,
+  ListChildrenSchema,
   SendMessageSchema,
   StopAgentSchema,
   RespondPermissionSchema,
@@ -288,6 +290,38 @@ export async function handleAgentInfo(
   return formatSession(found.session, true);
 }
 
+export async function handleFindParent(
+  adapters: Map<string, HarnessAdapter>,
+  args: unknown
+): Promise<string> {
+  const parsed = FindParentSchema.parse(args);
+  const found = await findSession(adapters, parsed.sessionId, parsed.harness);
+  if (!found) return `Session '${parsed.sessionId}' not found.`;
+  if (!found.adapter.getParent) return `Finding a parent is not supported by the ${found.adapter.name} adapter.`;
+
+  const parent = await found.adapter.getParent(parsed.sessionId);
+  if (!parent) return `No parent found for [${found.session.harness}] ${parsed.sessionId}.`;
+  return [`Parent of [${found.session.harness}] ${parsed.sessionId}:`, "", formatSession(parent, true)].join("\n");
+}
+
+export async function handleListChildren(
+  adapters: Map<string, HarnessAdapter>,
+  args: unknown
+): Promise<string> {
+  const parsed = ListChildrenSchema.parse(args);
+  const found = await findSession(adapters, parsed.sessionId, parsed.harness);
+  if (!found) return `Session '${parsed.sessionId}' not found.`;
+  if (!found.adapter.listChildren) return `Listing children is not supported by the ${found.adapter.name} adapter.`;
+
+  const children = await found.adapter.listChildren(parsed.sessionId);
+  if (children.length === 0) return `No children found for [${found.session.harness}] ${parsed.sessionId}.`;
+  return [
+    `Children of [${found.session.harness}] ${parsed.sessionId} (${children.length}):`,
+    "",
+    ...children.map((child) => formatSession(child, true)),
+  ].join("\n");
+}
+
 export async function handleSendMessage(
   adapters: Map<string, HarnessAdapter>,
   args: unknown
@@ -372,6 +406,11 @@ export async function handleResumeAgent(
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
 
+  if (found.adapter.resumeSession) {
+    const resumed = await found.adapter.resumeSession(parsed.sessionId);
+    if (!resumed.ok) return `Failed to resume: ${resumed.error}`;
+  }
+
   if (parsed.message) {
     const result = await found.adapter.sendMessage(parsed.sessionId, {
       message: parsed.message,
@@ -383,7 +422,9 @@ export async function handleResumeAgent(
     return `Failed to resume: ${result.error}`;
   }
 
-  return `Agent [${found.session.harness}] ${parsed.sessionId} is ${found.session.status}. To resume, provide a message to send.`;
+  return found.adapter.resumeSession
+    ? `Resumed agent [${found.session.harness}] ${parsed.sessionId}.`
+    : `Agent [${found.session.harness}] ${parsed.sessionId} is ${found.session.status}. To resume, provide a message to send.`;
 }
 
 /**

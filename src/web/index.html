@@ -1,0 +1,1524 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Agent Herder</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: #111827;
+      --panel-2: #172033;
+      --panel-3: #1f2937;
+      --line: #334155;
+      --line-strong: #475569;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #60a5fa;
+      --accent-strong: #2563eb;
+      --danger: #f87171;
+      --success: #34d399;
+      --warning: #fbbf24;
+      font: 16px/1.4 system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body { margin: 0; background: radial-gradient(circle at top, #111827 0%, var(--bg) 60%); }
+
+    button, input, select, textarea {
+      font: inherit;
+      color: inherit;
+      background: var(--panel-3);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      min-height: 44px;
+      padding: 10px 12px;
+    }
+
+    textarea { resize: vertical; min-height: 96px; width: 100%; }
+    button { cursor: pointer; background: linear-gradient(180deg, #2f6df5, var(--accent-strong)); border: 0; font-weight: 650; }
+    button.secondary { background: var(--panel-3); border: 1px solid var(--line); }
+    button.ghost { background: transparent; border: 1px solid var(--line); }
+    button.danger { background: linear-gradient(180deg, #ef4444, #b91c1c); }
+    button:disabled, input:disabled, select:disabled, textarea:disabled { opacity: .6; cursor: not-allowed; }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px 10px;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+      background: linear-gradient(180deg, rgba(11,16,32,.96), rgba(11,16,32,.8));
+      border-bottom: 1px solid rgba(51,65,85,.75);
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 1.1rem;
+      line-height: 1.1;
+      letter-spacing: .01em;
+    }
+
+    .brand .subtle, .hint, .meta, .statusline, .kv, .detail-note, .empty {
+      color: var(--muted);
+    }
+
+    .topbar-actions, .toolbar, .session-actions, .detail-actions, .permission-actions, .convert-actions, .navigation {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .toolbar {
+      padding: 10px 16px 14px;
+      border-bottom: 1px solid rgba(51,65,85,.55);
+      background: rgba(15,23,42,.66);
+    }
+
+    .toolbar .spacer { flex: 1 1 auto; }
+
+    .toolbar input, .toolbar select {
+      min-width: 180px;
+      flex: 1 1 180px;
+    }
+
+    .toolbar .small { flex: 0 0 auto; min-width: auto; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(320px, 410px) minmax(0, 1fr);
+      min-height: 0;
+    }
+
+    .sidebar, .detail {
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .sidebar {
+      border-right: 1px solid rgba(51,65,85,.55);
+      background: linear-gradient(180deg, rgba(15,23,42,.9), rgba(15,23,42,.76));
+    }
+
+    .detail {
+      background: linear-gradient(180deg, rgba(17,24,39,.96), rgba(11,16,32,.96));
+    }
+
+    .pane-head {
+      padding: 16px 16px 8px;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: linear-gradient(180deg, rgba(15,23,42,.95), rgba(15,23,42,.82));
+      border-bottom: 1px solid rgba(51,65,85,.35);
+    }
+
+    .pane-head h2, .pane-head h3 {
+      margin: 0 0 4px;
+      font-size: 1rem;
+    }
+
+    .pane-body { padding: 12px 16px 18px; }
+
+    .error {
+      margin: 0;
+      min-height: 1.4em;
+      color: #fecaca;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .session-tree {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    details.project {
+      border: 1px solid rgba(51,65,85,.7);
+      border-radius: 18px;
+      background: rgba(17,24,39,.72);
+      overflow: clip;
+    }
+
+    details.project > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 14px 14px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    details.project > summary::-webkit-details-marker { display: none; }
+
+    .project-title {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+
+    .project-name {
+      min-width: 0;
+      display: inline-flex;
+      gap: 8px;
+      align-items: baseline;
+      overflow-wrap: anywhere;
+    }
+
+    .project-chevron {
+      flex: 0 0 1em;
+      color: var(--accent);
+      font-size: 1.15em;
+      line-height: 1;
+      transition: transform .15s ease;
+    }
+
+    details.project[open] .project-chevron { transform: rotate(90deg); }
+
+    .project-path {
+      font-size: .9rem;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .project-count {
+      flex: 0 0 auto;
+      min-width: 32px;
+      text-align: center;
+      border-radius: 999px;
+      padding: 4px 10px;
+      background: rgba(96,165,250,.14);
+      color: #bfdbfe;
+      font-size: .85rem;
+    }
+
+    .session-list {
+      border-top: 1px solid rgba(51,65,85,.5);
+      display: grid;
+      gap: 4px;
+      padding: 6px;
+    }
+
+    .session-row {
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 16px;
+      padding: 12px;
+      min-height: auto;
+      display: grid;
+      gap: 8px;
+    }
+
+    .session-row.active {
+      background: rgba(37,99,235,.18);
+      border-color: rgba(96,165,250,.4);
+      box-shadow: inset 0 0 0 1px rgba(96,165,250,.1);
+    }
+
+    .session-row-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: start;
+    }
+
+    .session-title {
+      margin: 0;
+      font-size: .98rem;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: rgba(148,163,184,.12);
+      border: 1px solid rgba(148,163,184,.2);
+      color: #cbd5e1;
+      font-size: .8rem;
+    }
+
+    .badge.status-running { color: #86efac; border-color: rgba(52,211,153,.28); background: rgba(16,185,129,.12); }
+    .badge.status-idle { color: #bfdbfe; border-color: rgba(96,165,250,.28); background: rgba(37,99,235,.14); }
+    .badge.status-needs_input { color: #fde68a; border-color: rgba(245,158,11,.28); background: rgba(245,158,11,.12); }
+    .badge.status-stopped { color: #cbd5e1; }
+    .badge.status-error { color: #fecaca; border-color: rgba(248,113,113,.35); background: rgba(248,113,113,.12); }
+
+    .session-preview {
+      color: var(--muted);
+      font-size: .9rem;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+
+    .detail-shell {
+      display: grid;
+      gap: 12px;
+    }
+
+    .detail-empty {
+      border: 1px dashed rgba(148,163,184,.35);
+      border-radius: 20px;
+      padding: 20px;
+      color: var(--muted);
+      background: rgba(15,23,42,.35);
+    }
+
+    .detail-card {
+      border: 1px solid rgba(51,65,85,.75);
+      border-radius: 22px;
+      background: rgba(15,23,42,.8);
+      box-shadow: 0 14px 40px rgba(0,0,0,.22);
+      overflow: clip;
+    }
+
+    .detail-hero {
+      padding: 16px;
+      border-bottom: 1px solid rgba(51,65,85,.45);
+      display: grid;
+      gap: 12px;
+    }
+
+    .detail-hero-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .detail-hero h2 {
+      margin: 0;
+      font-size: 1.2rem;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+
+    .detail-hero .subtitle {
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .kv-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 10px;
+    }
+
+    .kv {
+      padding: 10px 12px;
+      border-radius: 16px;
+      background: rgba(148,163,184,.08);
+      border: 1px solid rgba(148,163,184,.13);
+      overflow-wrap: anywhere;
+    }
+
+    .kv strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--text);
+      font-size: .82rem;
+      letter-spacing: .02em;
+      text-transform: uppercase;
+    }
+
+    .detail-section {
+      padding: 14px 16px 16px;
+      border-top: 1px solid rgba(51,65,85,.38);
+    }
+
+    .detail-section h3 {
+      margin: 0 0 10px;
+      font-size: .98rem;
+    }
+
+    .lineage-block, .history-block, .people-block, .messages-block {
+      display: grid;
+      gap: 10px;
+    }
+
+    .tag-list, .child-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tag {
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,.18);
+      background: rgba(148,163,184,.09);
+      color: #dbeafe;
+      font-size: .85rem;
+      overflow-wrap: anywhere;
+    }
+
+    .child-card {
+      padding: 10px 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(148,163,184,.15);
+      background: rgba(148,163,184,.06);
+      min-width: 0;
+      flex: 1 1 210px;
+    }
+
+    button.child-card { text-align: left; min-height: auto; background: rgba(148,163,184,.06); border: 1px solid rgba(148,163,184,.15); }
+
+    .child-card strong, .message-head strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .message-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .message {
+      border: 1px solid rgba(51,65,85,.7);
+      border-radius: 18px;
+      background: rgba(17,24,39,.8);
+      overflow: clip;
+    }
+
+    .message-head {
+      padding: 12px 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: start;
+      border-bottom: 1px solid rgba(51,65,85,.4);
+    }
+
+    .message-head .role {
+      color: #93c5fd;
+      font-size: .82rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: 2px;
+    }
+
+    .message-meta {
+      color: var(--muted);
+      font-size: .84rem;
+      overflow-wrap: anywhere;
+    }
+
+    .message-body {
+      padding: 12px 14px 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .message-text {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    details.part {
+      border: 1px solid rgba(96,165,250,.18);
+      border-radius: 14px;
+      background: rgba(37,99,235,.08);
+      overflow: clip;
+    }
+
+    details.part > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-weight: 650;
+    }
+
+    details.part > summary::-webkit-details-marker { display: none; }
+
+    .part-body {
+      padding: 0 12px 12px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: #dbeafe;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font: inherit;
+      color: #dbeafe;
+    }
+
+    .detail-actions {
+      padding: 16px;
+      border-bottom: 1px solid rgba(51,65,85,.4);
+      background: rgba(15,23,42,.72);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: 0 8px 18px rgba(0,0,0,.18);
+    }
+
+    .action-status {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 2px;
+    }
+
+    .action-status-title {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .detail-actions form {
+      display: grid;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .detail-actions textarea { width: 100%; }
+
+    .inline-form {
+      display: grid;
+      gap: 10px;
+    }
+
+    .inline-fields {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .inline-fields > * { flex: 1 1 220px; }
+    .inline-fields .small { flex: 0 0 auto; min-width: 140px; }
+
+    .notice {
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(148,163,184,.08);
+      border: 1px solid rgba(148,163,184,.14);
+      color: #dbeafe;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .notice.warning { border-color: rgba(251,191,36,.28); background: rgba(251,191,36,.08); color: #fde68a; }
+    .notice.error { border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.1); color: #fecaca; }
+
+    .mobile-back {
+      display: none;
+      margin-right: auto;
+    }
+
+    @media (max-width: 960px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { border-right: 0; border-bottom: 1px solid rgba(51,65,85,.55); }
+      body[data-view="detail"] .sidebar { display: none; }
+      body[data-view="detail"] .detail { display: block; }
+      body[data-view="tree"] .detail { display: none; }
+      .mobile-back { display: inline-flex; }
+    }
+
+    @media (min-width: 961px) {
+      body[data-view="detail"] .sidebar, body[data-view="tree"] .sidebar { display: block; }
+      body[data-view="detail"] .detail, body[data-view="tree"] .detail { display: block; }
+    }
+  </style>
+</head>
+<body data-view="tree">
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <h1>Agent Herder</h1>
+      <div class="subtle">Operational dashboard for live agent sessions</div>
+    </div>
+    <div class="topbar-actions">
+      <button class="secondary mobile-back" id="backButton" type="button">Back to tree</button>
+      <button class="secondary" id="refreshButton" type="button">Refresh now</button>
+      <button class="secondary" id="pollingToggle" type="button">Pause polling</button>
+    </div>
+  </header>
+
+  <div class="toolbar" aria-label="filters">
+    <select id="harnessFilter" aria-label="Harness filter">
+      <option value="">All harnesses</option>
+    </select>
+    <input id="cwdFilter" placeholder="Filter by CWD prefix" aria-label="CWD prefix">
+    <select id="statusFilter" aria-label="Status filter">
+      <option value="">All statuses</option>
+      <option value="running">running</option>
+      <option value="idle">idle</option>
+      <option value="needs_input">needs_input</option>
+      <option value="stopped">stopped</option>
+      <option value="error">error</option>
+    </select>
+    <select id="sortFilter" aria-label="Sort sessions">
+      <option value="activity">Sort: recent activity</option>
+      <option value="status">Sort: status priority</option>
+      <option value="provider">Sort: provider</option>
+      <option value="title">Sort: title</option>
+      <option value="cwd">Sort: CWD</option>
+    </select>
+    <select id="groupFilter" aria-label="Group sessions">
+      <option value="project">Group: project / CWD</option>
+      <option value="status">Group: status</option>
+      <option value="none">Group: none</option>
+    </select>
+    <button class="small" id="applyFilters" type="button">Apply filters</button>
+    <div class="spacer"></div>
+    <div class="hint" id="pollingState">Polling every 2s</div>
+  </div>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="pane-head">
+        <h2>Projects / sessions</h2>
+        <div class="hint">Select a session to inspect live details and actions.</div>
+      </div>
+      <div class="pane-body">
+        <p class="error" id="sessionError" role="status" aria-live="polite"></p>
+        <div class="session-tree" id="sessionTree" aria-live="polite"></div>
+      </div>
+    </aside>
+
+    <section class="detail">
+      <div class="pane-head">
+        <h2>Session details</h2>
+        <div class="hint">Details load on demand from the backend routes.</div>
+      </div>
+      <div class="pane-body">
+        <p class="error" id="detailError" role="status" aria-live="polite"></p>
+        <div class="detail-shell" id="detailShell">
+          <div class="detail-empty">
+            Choose a session from the tree to load its status, lineage, recent messages, and actions.
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+  const state = {
+    sessions: [],
+    selected: null,
+    paused: false,
+    pollingTimer: null,
+    loadingSessions: false,
+    loadingDetails: false,
+    sort: "activity",
+    grouping: "project",
+    collapsedProjects: new Set(),
+    expandedProjects: new Set(),
+    filters: {
+      harness: "",
+      cwd: "",
+      status: "",
+    },
+  };
+
+  const elements = {
+    sessionTree: document.getElementById("sessionTree"),
+    detailShell: document.getElementById("detailShell"),
+    sessionError: document.getElementById("sessionError"),
+    detailError: document.getElementById("detailError"),
+    pollingState: document.getElementById("pollingState"),
+    pollingToggle: document.getElementById("pollingToggle"),
+    refreshButton: document.getElementById("refreshButton"),
+    backButton: document.getElementById("backButton"),
+    harnessFilter: document.getElementById("harnessFilter"),
+    cwdFilter: document.getElementById("cwdFilter"),
+    statusFilter: document.getElementById("statusFilter"),
+    sortFilter: document.getElementById("sortFilter"),
+    groupFilter: document.getElementById("groupFilter"),
+    applyFilters: document.getElementById("applyFilters"),
+  };
+
+  const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  }[char]));
+
+  const providerFor = (session) => session?.meta?.provider || session?.harness || "";
+
+  const sessionKey = (provider, id) => `${provider}:${id}`;
+  const nativeIdFor = (session) => session?.meta?.nativeSessionId || session?.id || "";
+  const sessionKeyFor = (session) => sessionKey(providerFor(session), nativeIdFor(session));
+  const selectedKey = () => state.selected
+    ? sessionKey(state.selected.provider, state.selected.session?.meta?.nativeSessionId || state.selected.id)
+    : null;
+
+  function setError(target, message) {
+    target.textContent = message || "";
+  }
+
+  function currentHash() {
+    const raw = decodeURIComponent(location.hash.replace(/^#/, ""));
+    if (!raw) return null;
+    const parts = raw.split("/");
+    if (parts.length !== 2) return null;
+    return { provider: parts[0], id: parts[1] };
+  }
+
+  function updateHash(provider, id, options = {}) {
+    const next = `#${encodeURIComponent(provider)}/${encodeURIComponent(id)}`;
+    if (location.hash !== next) {
+      if (options.replace) history.replaceState(null, "", next);
+      else history.pushState(null, "", next);
+    }
+  }
+
+  function returnToTree() {
+    state.selected = null;
+    if (location.hash) {
+      history.replaceState(null, "", location.pathname + location.search);
+    }
+    document.body.dataset.view = "tree";
+    renderSessionTree();
+    renderDetail();
+  }
+
+  function apiErrorText(data, response) {
+    if (data && typeof data.error === "string" && data.error) return data.error;
+    return `${response.status} ${response.statusText || "Request failed"}`;
+  }
+
+  async function fetchJson(url, options) {
+    const response = await fetch(url, {
+      headers: { "content-type": "application/json" },
+      ...options,
+    });
+    const text = await response.text();
+    let data = null;
+    if (text) {
+      try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    }
+    return { response, data };
+  }
+
+  async function fetchSessions() {
+    const params = new URLSearchParams();
+    if (state.filters.harness) params.set("harness", state.filters.harness);
+    if (state.filters.cwd) params.set("cwd", state.filters.cwd);
+    if (state.filters.status) params.set("status", state.filters.status);
+
+    state.loadingSessions = true;
+    setError(elements.sessionError, "");
+    try {
+      const { response, data } = await fetchJson(`/api/sessions?${params.toString()}`);
+      if (!response.ok) throw new Error(apiErrorText(data, response));
+      state.sessions = Array.isArray(data?.sessions) ? data.sessions : [];
+      renderHarnessFilter();
+      renderSessionTree();
+      if (state.selected) {
+        const stillPresent = state.sessions.some((session) =>
+          sessionKeyFor(session) === selectedKey()
+        );
+        if (!stillPresent) {
+          state.selected = null;
+          renderDetail();
+        }
+      }
+      await maybeSelectFromHash();
+    } catch (error) {
+      setError(elements.sessionError, error.message || String(error));
+    } finally {
+      state.loadingSessions = false;
+    }
+  }
+
+  function renderHarnessFilter() {
+    const providers = [...new Set(state.sessions.map((session) => providerFor(session)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const current = elements.harnessFilter.value;
+    elements.harnessFilter.innerHTML = ['<option value="">All harnesses</option>', ...providers.map((provider) => `<option value="${esc(provider)}">${esc(provider)}</option>`)].join("");
+    if (providers.includes(current)) {
+      elements.harnessFilter.value = current;
+    }
+  }
+
+  const statusOrder = new Map([
+    ["running", 0],
+    ["needs_input", 1],
+    ["error", 2],
+    ["idle", 3],
+    ["stopped", 4],
+  ]);
+
+  function activityTimestamp(session) {
+    const timestamp = Date.parse(session.lastActivity || "");
+    return Number.isNaN(timestamp) ? 0 : timestamp;
+  }
+
+  function compareSessions(left, right) {
+    if (state.sort === "status") {
+      const statusDelta = (statusOrder.get(left.status) ?? 99) - (statusOrder.get(right.status) ?? 99);
+      if (statusDelta) return statusDelta;
+    } else if (state.sort === "provider") {
+      const providerDelta = providerFor(left).localeCompare(providerFor(right));
+      if (providerDelta) return providerDelta;
+    } else if (state.sort === "title") {
+      const titleDelta = (left.title || left.id || "").localeCompare(right.title || right.id || "");
+      if (titleDelta) return titleDelta;
+    } else if (state.sort === "cwd") {
+      const cwdDelta = (left.cwd || "").localeCompare(right.cwd || "");
+      if (cwdDelta) return cwdDelta;
+    } else {
+      const activityDelta = activityTimestamp(right) - activityTimestamp(left);
+      if (activityDelta) return activityDelta;
+    }
+    return sessionKeyFor(left).localeCompare(sessionKeyFor(right));
+  }
+
+  function sortSessions(sessions) {
+    return [...sessions].sort(compareSessions);
+  }
+
+  function projectForFactory(sessions) {
+    const byKey = new Map(sessions.map((session) => [sessionKeyFor(session), session]));
+    return (session) => {
+      const visited = new Set();
+      let current = session;
+      while (current && current.meta?.parentSessionKey && !visited.has(current.meta.parentSessionKey)) {
+        visited.add(current.meta.parentSessionKey);
+        const parent = byKey.get(current.meta.parentSessionKey);
+        if (!parent) break;
+        current = parent;
+      }
+      return current?.cwd || session.cwd || "(unknown cwd)";
+    };
+  }
+
+  function groupSessions() {
+    const sessions = sortSessions(state.sessions);
+    if (state.grouping === "none") return [["All sessions", sessions]];
+
+    const keyFor = state.grouping === "status"
+      ? (session) => session.status || "unknown"
+      : projectForFactory(sessions);
+    const groups = new Map();
+    for (const session of sessions) {
+      const group = keyFor(session);
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group).push(session);
+    }
+
+    return [...groups.entries()].sort(([left, leftSessions], [right, rightSessions]) => {
+      if (state.grouping === "status") {
+        return (statusOrder.get(left) ?? 99) - (statusOrder.get(right) ?? 99) || left.localeCompare(right);
+      }
+      if (state.sort === "cwd") return left.localeCompare(right);
+      return compareSessions(leftSessions[0], rightSessions[0]) || left.localeCompare(right);
+    });
+  }
+
+  function sessionSummary(session) {
+    const parts = [
+      session.status || "unknown",
+      session.model || "model unknown",
+      session.lastActivity || "no activity",
+    ];
+    return parts.join(" · ");
+  }
+
+  function treeSessions(sessions) {
+    const byKey = new Map(sessions.map((session) => [sessionKeyFor(session), session]));
+    const children = new Map();
+    for (const session of sessions) {
+      const parentKey = session.meta?.parentSessionKey;
+      if (!parentKey || !byKey.has(parentKey)) continue;
+      if (!children.has(parentKey)) children.set(parentKey, []);
+      children.get(parentKey).push(session);
+    }
+    const ordered = [];
+    const visited = new Set();
+    const walk = (session, depth) => {
+      const key = sessionKeyFor(session);
+      if (visited.has(key)) return;
+      visited.add(key);
+      ordered.push({ session, depth });
+      for (const child of children.get(key) || []) walk(child, depth + 1);
+    };
+    for (const session of sessions) {
+      const parentKey = session.meta?.parentSessionKey;
+      if (!parentKey || !byKey.has(parentKey)) walk(session, 0);
+    }
+    for (const session of sessions) walk(session, 0);
+    return ordered;
+  }
+
+  function uniqueProviders(sessions) {
+    return [...new Set(sessions.map((session) => providerFor(session)).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  function captureProjectExpansion() {
+    for (const project of elements.sessionTree.querySelectorAll("details.project[data-project-key]")) {
+      const key = project.dataset.projectKey || "";
+      if (!key) continue;
+      if (project.open) {
+        state.expandedProjects.add(key);
+        state.collapsedProjects.delete(key);
+      } else {
+        state.collapsedProjects.add(key);
+        state.expandedProjects.delete(key);
+      }
+    }
+  }
+
+  function renderSessionRows(sessions) {
+    const activeKey = selectedKey();
+    return treeSessions(sessions).map(({ session, depth }) => {
+      const provider = providerFor(session);
+      const active = sessionKeyFor(session) === activeKey ? " active" : "";
+      const lineage = session.meta?.lineage || {};
+      const role = lineage.role || lineage.kind || "unknown";
+      return `
+        <button class="session-row${active}" style="margin-left:${depth * 20}px" type="button" data-provider="${esc(provider)}" data-session-id="${esc(session.id)}">
+          <div class="session-row-top">
+            <div style="min-width:0">
+              <h3 class="session-title">${esc(session.title || session.id)}</h3>
+              <div class="meta">${esc(session.id)}</div>
+            </div>
+            <span class="badge status-${esc(session.status || "unknown")}">${esc(session.status || "unknown")}</span>
+          </div>
+          <div class="badge-row">
+            <span class="badge">${esc(provider || "unknown provider")}</span>
+            <span class="badge">${esc(role)}</span>
+            <span class="badge">${esc(session.model || "model unknown")}</span>
+            ${session.needsPermission ? '<span class="badge">needs permission</span>' : ""}
+          </div>
+          <div class="session-preview">${esc(session.lastMessage || sessionSummary(session))}</div>
+        </button>
+      `;
+    }).join("");
+  }
+
+  function wireSessionRows() {
+    for (const button of elements.sessionTree.querySelectorAll("[data-provider][data-session-id]")) {
+      button.addEventListener("click", () => {
+        const provider = button.getAttribute("data-provider") || "";
+        const sessionId = button.getAttribute("data-session-id") || "";
+        selectSession(provider, sessionId);
+      });
+    }
+  }
+
+  function renderActionSection(session, permission, conversionTargets) {
+    const actionStatus = session.status || "unknown";
+    const capabilities = session.meta?.controlCapabilities || {};
+    const canResume = actionStatus !== "running";
+    const canSend = !["stopped", "error"].includes(actionStatus);
+    const canStop = capabilities.terminate === true && ["running", "needs_input"].includes(actionStatus);
+    const canCancel = capabilities.cancelTurn === true && actionStatus === "running";
+    const canRecover = capabilities.recover === true && ["error", "stopped", "idle", "needs_input"].includes(actionStatus);
+    const canFork = capabilities.fork === true;
+    const modelOptions = Array.isArray(session.meta?.modelOptions) ? session.meta.modelOptions : [];
+    const disabledTitle = "Session state does not support this action";
+    return `
+      <section class="detail-actions" id="actionStatus">
+        <div class="action-status">
+          <div class="action-status-title">
+            <strong>Actions</strong>
+            <span class="badge status-${esc(actionStatus)}">status: ${esc(actionStatus)}</span>
+            <span class="badge">${esc(session.harness || "unknown harness")}</span>
+          </div>
+          <span class="hint">Unavailable actions are disabled.</span>
+        </div>
+        <form id="sessionActions">
+          <div class="inline-form">
+            <label>
+              <span class="hint">Model for this session</span>
+              <div class="inline-fields">
+                <select id="modelSelect" class="small"${modelOptions.length ? "" : " disabled"}>
+                  ${modelOptions.length ? modelOptions.map((model) => `<option value="${esc(model)}"${model === session.model ? " selected" : ""}>${esc(model)}</option>`).join("") : `<option value="">No model list</option>`}
+                </select>
+                <button type="button" class="secondary" id="modelButton"${modelOptions.length ? "" : ` disabled title="${disabledTitle}"`}>Change model</button>
+              </div>
+            </label>
+          </div>
+
+          <div class="inline-form">
+            <label>
+              <span class="hint">Draft message for continue/send</span>
+              <textarea id="messageDraft" placeholder="Type a message or instruction for the agent."></textarea>
+            </label>
+            <div class="inline-fields">
+              <button type="button" id="resumeButton"${canResume ? "" : ` disabled title="${disabledTitle}"`}>Resume</button>
+              <button type="button" class="secondary" id="continueButton"${canSend ? "" : ` disabled title="${disabledTitle}"`}>Continue with draft</button>
+              <button type="button" class="secondary" id="sendButton"${canSend ? "" : ` disabled title="${disabledTitle}"`}>Send message</button>
+              <button type="button" class="secondary" id="cancelButton"${canCancel ? "" : ` disabled title="${disabledTitle}"`}>Pause turn</button>
+              <button type="button" class="danger" id="stopButton"${canStop ? "" : ` disabled title="${disabledTitle}"`}>Stop</button>
+              <button type="button" class="secondary" id="recoverButton"${canRecover ? "" : ` disabled title="${disabledTitle}"`}>Recover</button>
+              <button type="button" class="ghost" id="forkButton"${canFork ? "" : ` disabled title="${disabledTitle}"`}>Fork child</button>
+            </div>
+          </div>
+
+          ${permission ? `
+            <div class="inline-form">
+              <div class="permission-actions">
+                <button type="button" id="allowPermission">Allow permission</button>
+                <button type="button" class="danger" id="denyPermission">Deny permission</button>
+              </div>
+            </div>
+          ` : ""}
+
+          <div class="inline-form">
+            <label>
+              <span class="hint">Convert this session to another harness</span>
+              <div class="inline-fields">
+                <select id="convertTarget" class="small" aria-label="Conversion target">
+                  ${conversionTargets.map((target) => `<option value="${esc(target)}">${esc(target)}</option>`).join("")}
+                </select>
+                <button type="button" class="secondary" id="convertButton">Convert session</button>
+              </div>
+            </label>
+          </div>
+        </form>
+      </section>
+    `;
+  }
+
+  function renderSessionTree() {
+    captureProjectExpansion();
+    const groups = groupSessions();
+    if (!groups.length) {
+      elements.sessionTree.innerHTML = '<div class="detail-empty">No sessions match the current filters.</div>';
+      return;
+    }
+
+    if (state.grouping === "none") {
+      elements.sessionTree.innerHTML = `<div class="session-list standalone">${renderSessionRows(groups[0][1])}</div>`;
+      wireSessionRows();
+      return;
+    }
+
+    elements.sessionTree.innerHTML = groups.map(([group, sessions], index) => {
+      const groupKey = `${state.grouping}:${group}`;
+      const open = state.expandedProjects.has(groupKey)
+        || (!state.collapsedProjects.has(groupKey) && index === 0);
+      const providers = uniqueProviders(sessions);
+      const title = state.grouping === "status" ? `Status: ${group}` : group;
+      return `
+        <details class="project" data-project-key="${esc(groupKey)}"${open ? " open" : ""}>
+          <summary aria-label="Toggle ${esc(title)}">
+            <div class="project-title">
+              <span class="project-name"><span class="project-chevron" aria-hidden="true">▸</span>${esc(title)}</span>
+              <span class="project-count">${sessions.length}</span>
+            </div>
+            <div class="project-path">${sessions.length} sessions · ${providers.length} providers${providers.length ? ` · ${esc(providers.join(", "))}` : ""}</div>
+          </summary>
+          <div class="session-list">${renderSessionRows(sessions)}</div>
+        </details>
+      `;
+    }).join("");
+
+    for (const project of elements.sessionTree.querySelectorAll("details.project[data-project-key]")) {
+      project.addEventListener("toggle", () => {
+        const key = project.dataset.projectKey || "";
+        if (!key) return;
+        if (project.open) {
+          state.expandedProjects.add(key);
+          state.collapsedProjects.delete(key);
+        } else {
+          state.collapsedProjects.add(key);
+          state.expandedProjects.delete(key);
+        }
+      });
+    }
+
+    wireSessionRows();
+  }
+
+  function renderDetail() {
+    const selected = state.selected;
+    if (!selected) {
+      elements.detailShell.innerHTML = '<div class="detail-empty">Choose a session from the tree to load its status, lineage, recent messages, and actions.</div>';
+      setError(elements.detailError, "");
+      document.body.dataset.view = "tree";
+      return;
+    }
+
+    if (!selected.session) {
+      elements.detailShell.innerHTML = '<div class="detail-empty">Loading session details…</div>';
+      setError(elements.detailError, state.loadingDetails ? "Loading details..." : "");
+      document.body.dataset.view = "detail";
+      return;
+    }
+
+    const provider = selected.provider;
+    const session = selected.session;
+    const children = Array.isArray(selected.details?.children) ? selected.details.children : [];
+    const messages = Array.isArray(selected.details?.messages) ? selected.details.messages : [];
+    const lineage = selected.details?.lineage || {};
+    const history = selected.details?.history || {};
+    const permission = session?.permissionDetails;
+    const historyWarning = history.warning ? `<div class="notice warning"><strong>history.warning</strong><br>${esc(history.warning)}</div>` : "";
+    const historySource = `<div class="notice"><strong>history.source</strong><br>${esc(history.source || "unknown")}${history.complete === false ? '<br><span class="hint">History is incomplete.</span>' : ""}</div>`;
+    const nativeId = session.meta?.nativeSessionId || session.id;
+    const parent = lineage.parentId ? parseSessionKey(lineage.parentId) : null;
+    const conversionTargets = ["claude", "codex", "opencode", "qoder"].filter((harness) => harness !== session.harness);
+
+    elements.detailShell.innerHTML = `
+      <article class="detail-card">
+        <div class="detail-hero">
+          <div class="detail-hero-top">
+            <div style="min-width:0">
+              <div class="badge-row" style="margin-bottom:8px">
+                <span class="badge">${esc(provider)}</span>
+                <span class="badge status-${esc(session.status || "unknown")}">${esc(session.status || "unknown")}</span>
+                <span class="badge">${esc(session.harness || "unknown harness")}</span>
+                ${session.needsPermission ? '<span class="badge">permission required</span>' : ""}
+              </div>
+              <h2>${esc(session.title || session.id)}</h2>
+              <div class="subtitle">${esc(session.id)}</div>
+            </div>
+            <div class="navigation">
+              <button class="ghost mobile-back" id="mobileBack" type="button">Back</button>
+            </div>
+          </div>
+
+          <div class="kv-grid">
+            <div class="kv"><strong>Status</strong>${esc(session.status || "unknown")}</div>
+            <div class="kv"><strong>Provider</strong>${esc(provider)}</div>
+            <div class="kv"><strong>Model</strong>${esc(session.model || "model unknown")}</div>
+            <div class="kv"><strong>CWD</strong>${esc(session.cwd || "unknown")}</div>
+            <div class="kv"><strong>Native session ID</strong>${esc(nativeId)}${nativeId !== session.id ? `<br><span class="hint">Displayed ID: ${esc(session.id)}</span>` : ""}</div>
+          </div>
+        </div>
+
+        ${renderActionSection(session, permission, conversionTargets)}
+
+        <section class="detail-section">
+          <h3>Lineage</h3>
+          <div class="lineage-block">
+            <div class="tag-list">
+              <span class="tag">kind: ${esc(lineage.kind || "unknown")}</span>
+              ${lineage.parentId ? `<span class="tag">parent: ${esc(lineage.parentId)}</span>` : '<span class="tag">parent: none recorded</span>'}
+              ${lineage.role ? `<span class="tag">role: ${esc(lineage.role)}</span>` : ""}
+              ${lineage.task ? `<span class="tag">task: ${esc(lineage.task)}</span>` : ""}
+            </div>
+            <div class="people-block">
+              <div class="notice">
+                <strong>Parent session</strong><br>
+                ${parent ? `<button class="ghost" type="button" data-parent-provider="${esc(parent.provider)}" data-parent-id="${esc(parent.id)}">${esc(lineage.parentId)}</button>` : "No parent session recorded."}
+              </div>
+              <div class="child-list">
+                ${children.length ? children.map((child) => `
+                  <button class="child-card" type="button" data-child-provider="${esc(child.meta?.provider || child.harness)}" data-child-id="${esc(child.id)}">
+                    <strong>${esc(child.title || child.id)}</strong>
+                    <div class="meta">${esc(child.id)}</div>
+                    <div class="meta">${esc(child.status || "unknown")} · ${esc(child.model || "model unknown")}</div>
+                  </button>
+                `).join("") : '<div class="notice">No children recorded for this session.</div>'}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-section">
+          <h3>History</h3>
+          <div class="history-block">
+            ${historySource}
+            ${historyWarning}
+          </div>
+        </section>
+
+        <section class="detail-section">
+          <h3>Last three logical messages</h3>
+          <div class="messages-block">
+            ${messages.length ? renderMessages(messages) : '<div class="detail-empty">No structured messages returned for this session.</div>'}
+          </div>
+        </section>
+
+        ${permission ? `
+          <section class="detail-section">
+            <h3>Pending permission</h3>
+            <div class="notice">
+              <strong>${esc(permission.type || "unknown")}</strong><br>
+              ${esc(permission.description || "No description available.")}
+              ${permission.details ? `<br><br><strong>details</strong><br>${esc(permission.details)}` : ""}
+            </div>
+          </section>
+        ` : ""}
+
+      </article>
+    `;
+
+    const mobileBack = document.getElementById("mobileBack");
+    if (mobileBack) {
+      mobileBack.addEventListener("click", () => {
+        returnToTree();
+      });
+    }
+
+    document.getElementById("resumeButton").addEventListener("click", () => resumeSelected(""));
+    document.getElementById("continueButton").addEventListener("click", () => resumeSelected(document.getElementById("messageDraft").value.trim()));
+    document.getElementById("sendButton").addEventListener("click", () => sendSelected(document.getElementById("messageDraft").value.trim()));
+    document.getElementById("cancelButton").addEventListener("click", cancelSelected);
+    document.getElementById("stopButton").addEventListener("click", stopSelected);
+    document.getElementById("recoverButton").addEventListener("click", () => recoverSelected(document.getElementById("messageDraft").value.trim()));
+    document.getElementById("forkButton").addEventListener("click", () => forkSelected(document.getElementById("messageDraft").value.trim()));
+    document.getElementById("modelButton").addEventListener("click", changeModelSelected);
+    if (permission) {
+      document.getElementById("allowPermission").addEventListener("click", () => respondPermission("allow"));
+      document.getElementById("denyPermission").addEventListener("click", () => respondPermission("deny"));
+    }
+    document.getElementById("convertButton").addEventListener("click", convertSelected);
+    for (const child of document.querySelectorAll("[data-child-provider][data-child-id]")) {
+      child.addEventListener("click", () => selectSession(child.dataset.childProvider, child.dataset.childId));
+    }
+    for (const parentButton of document.querySelectorAll("[data-parent-provider][data-parent-id]")) {
+      parentButton.addEventListener("click", () => selectSession(parentButton.dataset.parentProvider, parentButton.dataset.parentId));
+    }
+
+    document.body.dataset.view = "detail";
+    setError(elements.detailError, state.loadingDetails ? "Loading details..." : "");
+  }
+
+  function renderMessages(messages) {
+    return messages.slice().reverse().map((message, index) => {
+      const heading = `${message.role || "unknown"} #${index + 1}`;
+      const timestamp = message.timestamp ? ` · ${message.timestamp}` : "";
+      const textBlock = message.text ? `<div class="message-text">${esc(message.text)}</div>` : "";
+      const parts = Array.isArray(message.parts) ? message.parts : [];
+      return `
+        <article class="message">
+          <div class="message-head">
+            <div>
+              <div class="role">${esc(heading)}</div>
+              <strong>${esc(message.id || `message-${index + 1}`)}</strong>
+            </div>
+            <div class="message-meta">${esc(timestamp.replace(/^ · /, ""))}</div>
+          </div>
+          <div class="message-body">
+            ${textBlock}
+            ${parts.map((part, partIndex) => renderPart(part, partIndex)).join("")}
+          </div>
+        </article>
+      `;
+    }).join("");
+  }
+
+  function renderPart(part, index) {
+    const label = part.type === "tool_call" ? `Tool call${part.name ? `: ${part.name}` : ""}`
+      : part.type === "tool_result" ? `Tool result${part.name ? `: ${part.name}` : ""}`
+      : part.type === "thinking" ? "Thinking"
+      : "Text";
+    const content = part.type === "tool_call"
+      ? `<pre>${esc(JSON.stringify(part.input ?? null, null, 2))}</pre>`
+      : part.type === "tool_result"
+      ? `<pre>${esc(part.output ?? part.text ?? "")}</pre>${part.error ? '<div class="notice error">This tool result was flagged as an error.</div>' : ""}`
+      : `<div class="part-body">${esc(part.text ?? part.output ?? "")}</div>`;
+
+    if (part.type === "thinking" || part.type === "tool_call" || part.type === "tool_result") {
+      return `
+        <details class="part" ${index === 0 && part.type === "tool_call" ? "" : ""}>
+          <summary>
+            <span>${esc(label)}</span>
+            <span class="hint">tap to expand</span>
+          </summary>
+          ${content}
+        </details>
+      `;
+    }
+
+    return `<div class="notice">${content}</div>`;
+  }
+
+  function parseSessionKey(value) {
+    const separator = value.indexOf(":");
+    if (separator < 1) return null;
+    return { provider: value.slice(0, separator), id: value.slice(separator + 1) };
+  }
+
+  async function maybeSelectFromHash() {
+    const parsed = currentHash();
+    if (!parsed) {
+      if (state.selected) returnToTree();
+      return;
+    }
+    if (state.selected && sessionKey(state.selected.provider, state.selected.id) === sessionKey(parsed.provider, parsed.id)) return;
+    await selectSession(parsed.provider, parsed.id, { fromHash: true });
+  }
+
+  async function selectSession(provider, id, options = {}) {
+    const nextProvider = provider || "";
+    const nextId = id || "";
+    if (!nextProvider || !nextId) return;
+    state.selected = { provider: nextProvider, id: nextId, session: null, details: null };
+    if (!options.fromHash) updateHash(nextProvider, nextId);
+    renderSessionTree();
+    renderDetail();
+    await loadDetails(nextProvider, nextId, options);
+  }
+
+  async function loadDetails(provider, id, options = {}) {
+    state.loadingDetails = true;
+    setError(elements.detailError, "");
+    renderDetail();
+    try {
+      const { response, data } = await fetchJson(`/api/sessions/${encodeURIComponent(provider)}/${encodeURIComponent(id)}/details?limit=3`);
+      if (!response.ok) throw new Error(apiErrorText(data, response));
+      const details = data?.session ? data : null;
+      if (!details) throw new Error("Unexpected details payload");
+      state.selected = { provider, id, session: details.session, details };
+      renderSessionTree();
+      renderDetail();
+      setError(elements.detailError, "");
+      if (options.fromHash) return;
+      document.body.dataset.view = "detail";
+    } catch (error) {
+      state.selected = { provider, id, session: state.selected?.session || null, details: state.selected?.details || null };
+      renderSessionTree();
+      renderDetail();
+      setError(elements.detailError, error.message || String(error));
+    } finally {
+      state.loadingDetails = false;
+    }
+  }
+
+  async function resumeSelected(message) {
+    const selected = state.selected;
+    if (!selected) return;
+    const body = message ? { message } : {};
+    const url = `/api/sessions/${encodeURIComponent(selected.provider)}/${encodeURIComponent(selected.id)}/resume`;
+    const { response, data } = await fetchJson(url, { method: "POST", body: JSON.stringify(body) });
+    if (!response.ok) {
+      setError(elements.detailError, apiErrorText(data, response));
+      return;
+    }
+    setError(elements.detailError, "");
+    await refreshAll();
+  }
+
+  async function sendSelected(message) {
+    if (!message) {
+      setError(elements.detailError, "Enter a non-empty message before sending.");
+      return;
+    }
+    const selected = state.selected;
+    if (!selected) return;
+    const url = `/api/sessions/${encodeURIComponent(selected.provider)}/${encodeURIComponent(selected.id)}/message`;
+    const { response, data } = await fetchJson(url, { method: "POST", body: JSON.stringify({ message }) });
+    if (!response.ok) {
+      setError(elements.detailError, apiErrorText(data, response));
+      return;
+    }
+    setError(elements.detailError, "");
+    await refreshAll();
+  }
+
+  async function stopSelected() {
+    const selected = state.selected;
+    if (!selected) return;
+    const url = `/api/sessions/${encodeURIComponent(selected.provider)}/${encodeURIComponent(selected.id)}/stop`;
+    const { response, data } = await fetchJson(url, { method: "POST" });
+    if (!response.ok) {
+      setError(elements.detailError, apiErrorText(data, response));
+      return;
+    }
+    setError(elements.detailError, "");
+    await refreshAll();
+  }
+
+  async function cancelSelected() {
+    await postSelectedAction("cancel");
+  }
+
+  async function recoverSelected(message) {
+    await postSelectedAction("recover", message ? { message } : {});
+  }
+
+  async function forkSelected(message) {
+    const result = await postSelectedAction("fork", message ? { message } : {});
+    if (result?.sessionId) await selectSession(selected.provider, result.sessionId);
+  }
+
+  async function changeModelSelected() {
+    const selected = state.selected;
+    const model = document.getElementById("modelSelect")?.value || "";
+    if (!selected || !model) return;
+    const url = `/api/sessions/${encodeURIComponent(selected.provider)}/${encodeURIComponent(selected.id)}/model`;
+    const { response, data } = await fetchJson(url, { method: "POST", body: JSON.stringify({ model }) });
+    if (!response.ok) {
+      setError(elements.detailError, apiErrorText(data, response));
+      return;
+    }
+    setError(elements.detailError, data?.error || `Model changed to ${model}.`);
+    await refreshAll();
+  }
+
+  async function postSelectedAction(action, body = {}) {
+    const selected = state.selected;
+    if (!selected) return null;
+    const url = `/api/sessions/${encodeURIComponent(selected.provider)}/${encodeURIComponent(selected.id)}/${action}`;
+    const { response, data } = await fetchJson(url, { method: "POST", body: JSON.stringify(body) });
+    if (!response.ok) {
+      setError(elements.detailError, apiErrorText(data, response));
+      return null;
+    }
+    setError(elements.detailError, data?.error || "");
+    await refreshAll();
+    return data;
+  }
+
+  async function respondPermission(responseChoice) {
+    const selected = state.selected;
+    const permission = selected?.session?.permissionDetails;
+    if (!selected || !permission) return;
+    const url = `/api/sessions/${encodeURIComponent(selected.provider)}/${encodeURIComponent(selected.id)}/permissions/${encodeURIComponent(permission.id)}`;
+    const { response, data } = await fetchJson(url, {
+      method: "POST",
+      body: JSON.stringify({ response: responseChoice }),
+    });
+    if (!response.ok) {
+      setError(elements.detailError, apiErrorText(data, response));
+      return;
+    }
+    setError(elements.detailError, "");
+    await refreshAll();
+  }
+
+  async function convertSelected() {
+    const selected = state.selected;
+    if (!selected?.session) return;
+    const target = document.getElementById("convertTarget").value;
+    const payload = {
+      sessionId: selected.session.meta?.nativeSessionId || selected.session.id,
+      from: selected.session.harness,
+      to: target,
+      projectPath: selected.session.cwd,
+    };
+    const { response, data } = await fetchJson("/api/conversions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok || data?.success === false) {
+      setError(elements.detailError, apiErrorText(data, response));
+      return;
+    }
+    const message = data?.targetSessionId || data?.targetPath ? `Conversion created: ${data.targetSessionId || data.targetPath}` : "Conversion completed.";
+    setError(elements.detailError, message);
+  }
+
+  async function refreshAll() {
+    await fetchSessions();
+    if (state.selected) {
+      const provider = state.selected.provider;
+      const id = state.selected.id;
+      await loadDetails(provider, id);
+    }
+  }
+
+  function startPolling() {
+    if (state.pollingTimer) clearInterval(state.pollingTimer);
+    state.pollingTimer = setInterval(() => {
+      if (!state.paused) {
+        fetchSessions();
+        if (state.selected) loadDetails(state.selected.provider, state.selected.id);
+      }
+    }, 2000);
+  }
+
+  function setPaused(paused) {
+    state.paused = paused;
+    elements.pollingToggle.textContent = paused ? "Resume polling" : "Pause polling";
+    elements.pollingState.textContent = paused ? "Polling paused" : "Polling every 2s";
+  }
+
+  function wireControls() {
+    elements.refreshButton.addEventListener("click", refreshAll);
+    elements.pollingToggle.addEventListener("click", () => setPaused(!state.paused));
+    elements.backButton.addEventListener("click", () => {
+      returnToTree();
+    });
+    elements.applyFilters.addEventListener("click", () => {
+      state.filters.harness = elements.harnessFilter.value;
+      state.filters.cwd = elements.cwdFilter.value.trim();
+      state.filters.status = elements.statusFilter.value;
+      refreshAll();
+    });
+    elements.harnessFilter.addEventListener("change", () => {
+      state.filters.harness = elements.harnessFilter.value;
+      refreshAll();
+    });
+    elements.statusFilter.addEventListener("change", () => {
+      state.filters.status = elements.statusFilter.value;
+      refreshAll();
+    });
+    elements.sortFilter.addEventListener("change", () => {
+      state.sort = elements.sortFilter.value;
+      renderSessionTree();
+    });
+    elements.groupFilter.addEventListener("change", () => {
+      state.grouping = elements.groupFilter.value;
+      renderSessionTree();
+    });
+    elements.cwdFilter.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        state.filters.cwd = elements.cwdFilter.value.trim();
+        refreshAll();
+      }
+    });
+    window.addEventListener("hashchange", () => {
+      void maybeSelectFromHash();
+    });
+    window.addEventListener("popstate", () => {
+      void maybeSelectFromHash();
+    });
+  }
+
+  wireControls();
+  setPaused(false);
+  startPolling();
+  refreshAll();
+</script>
+</body>
+</html>

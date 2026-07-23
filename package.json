@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp src/web/index.html dist/web/index.html",
+    "test": "vitest run",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
     "inspect": "npx @modelcontextprotocol/inspector node dist/index.js"
@@ -13,12 +14,15 @@
   "keywords": ["mcp", "claude-code", "opencode", "codex", "agent", "monitoring", "control"],
   "license": "MIT",
   "dependencies": {
+    "@agentclientprotocol/sdk": "^0.21.0",
     "@anthropic-ai/claude-agent-sdk": "^0.3.207",
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "session-convert": "file:../../session-convert",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.10"
   }
 }
