@@ -3,6 +3,9 @@ import { summarizeTranscript, quickSummary } from "../summarizer.js";
 import {
   ListAgentsSchema,
   AgentInfoSchema,
+  FindParentSchema,
+  ListChildrenSchema,
+  GetTranscriptSchema,
   SendMessageSchema,
   StopAgentSchema,
   RespondPermissionSchema,
@@ -45,6 +48,53 @@ function formatSession(s: AgentSession, verbose = false): string {
     lines.push(`  Meta: ${JSON.stringify(s.meta)}`);
   }
   return lines.join("\n");
+}
+
+type TranscriptSelection = {
+  mode: "latest" | "search";
+  query?: string;
+  latestMessages: number;
+  contextMessages: number;
+  maxChars: number;
+};
+
+function selectTranscript(transcript: string, options: TranscriptSelection): string {
+  const blocks = transcript.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  if (blocks.length === 0) return "(transcript is empty)";
+  if (options.mode === "search" && !options.query?.trim()) return "Transcript search requires a query.";
+
+  const selected = new Set<number>();
+  const addLatest = (): void => {
+    const start = Math.max(0, blocks.length - options.latestMessages);
+    for (let index = start; index < blocks.length; index += 1) selected.add(index);
+  };
+
+  if (options.mode === "latest") addLatest();
+
+  if (options.mode === "search") {
+    const terms = options.query!.toLowerCase().split(/\s+/).filter(Boolean);
+    const ranked = blocks
+      .map((block, index) => {
+        const lower = block.toLowerCase();
+        const score = terms.reduce((total, term) => total + (lower.split(term).length - 1), 0);
+        return { index, score };
+      })
+      .filter((entry) => entry.score > 0)
+      .sort((left, right) => right.score - left.score || right.index - left.index)
+      .slice(0, options.latestMessages);
+
+    for (const match of ranked) {
+      const start = Math.max(0, match.index - options.contextMessages);
+      const end = Math.min(blocks.length - 1, match.index + options.contextMessages);
+      for (let index = start; index <= end; index += 1) selected.add(index);
+    }
+    if (ranked.length === 0) return `(no transcript messages matched query: ${options.query})`;
+  }
+
+  const result = [...selected].sort((left, right) => left - right).map((index) => blocks[index]).join("\n\n");
+  if (result.length <= options.maxChars) return result;
+  const clipped = options.mode === "latest" ? result.slice(-options.maxChars) : result.slice(0, options.maxChars);
+  return `[truncated to ${options.maxChars} characters]\n${clipped}`;
 }
 
 /**
@@ -288,6 +338,54 @@ export async function handleAgentInfo(
   return formatSession(found.session, true);
 }
 
+export async function handleFindParent(
+  adapters: Map<string, HarnessAdapter>,
+  args: unknown
+): Promise<string> {
+  const parsed = FindParentSchema.parse(args);
+  const found = await findSession(adapters, parsed.sessionId, parsed.harness);
+  if (!found) return `Session '${parsed.sessionId}' not found.`;
+  if (!found.adapter.getParent) return `Finding a parent is not supported by the ${found.adapter.name} adapter.`;
+
+  const parent = await found.adapter.getParent(parsed.sessionId);
+  if (!parent) return `No parent found for [${found.session.harness}] ${parsed.sessionId}.`;
+  return [`Parent of [${found.session.harness}] ${parsed.sessionId}:`, "", formatSession(parent, true)].join("\n");
+}
+
+export async function handleListChildren(
+  adapters: Map<string, HarnessAdapter>,
+  args: unknown
+): Promise<string> {
+  const parsed = ListChildrenSchema.parse(args);
+  const found = await findSession(adapters, parsed.sessionId, parsed.harness);
+  if (!found) return `Session '${parsed.sessionId}' not found.`;
+  if (!found.adapter.listChildren) return `Listing children is not supported by the ${found.adapter.name} adapter.`;
+
+  const children = await found.adapter.listChildren(parsed.sessionId);
+  if (children.length === 0) return `No children found for [${found.session.harness}] ${parsed.sessionId}.`;
+  return [
+    `Children of [${found.session.harness}] ${parsed.sessionId} (${children.length}):`,
+    "",
+    ...children.map((child) => formatSession(child, true)),
+  ].join("\n");
+}
+
+export async function handleGetTranscript(
+  adapters: Map<string, HarnessAdapter>,
+  args: unknown
+): Promise<string> {
+  const parsed = GetTranscriptSchema.parse(args);
+  const found = await findSession(adapters, parsed.sessionId, parsed.harness);
+  if (!found) return `Session '${parsed.sessionId}' not found.`;
+  if (!found.adapter.getTranscript) return `Session transcript retrieval is not supported by the ${found.adapter.name} adapter.`;
+
+  const transcript = await found.adapter.getTranscript(parsed.sessionId);
+  if (!transcript) return `Transcript unavailable for [${found.session.harness}] ${parsed.sessionId}.`;
+  const mode = parsed.query?.trim() ? "search" : "latest";
+  const selected = selectTranscript(transcript, { ...parsed, mode });
+  return [`Transcript [${found.session.harness}] ${parsed.sessionId} (${mode}):`, "", selected].join("\n");
+}
+
 export async function handleSendMessage(
   adapters: Map<string, HarnessAdapter>,
   args: unknown
@@ -372,6 +470,11 @@ export async function handleResumeAgent(
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
 
+  if (found.adapter.resumeSession) {
+    const resumed = await found.adapter.resumeSession(parsed.sessionId);
+    if (!resumed.ok) return `Failed to resume: ${resumed.error}`;
+  }
+
   if (parsed.message) {
     const result = await found.adapter.sendMessage(parsed.sessionId, {
       message: parsed.message,
@@ -383,7 +486,9 @@ export async function handleResumeAgent(
     return `Failed to resume: ${result.error}`;
   }
 
-  return `Agent [${found.session.harness}] ${parsed.sessionId} is ${found.session.status}. To resume, provide a message to send.`;
+  return found.adapter.resumeSession
+    ? `Resumed agent [${found.session.harness}] ${parsed.sessionId}.`
+    : `Agent [${found.session.harness}] ${parsed.sessionId} is ${found.session.status}. To resume, provide a message to send.`;
 }
 
 /**

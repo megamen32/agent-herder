@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">Agent Herder session lineage</title>
+  <desc id="desc">An animated MCP hub connecting a parent agent to child agent sessions.</desc>
+  <style>
+    :root { color-scheme: dark; }
+    .bg { fill: #07111f; }
+    .grid { stroke: #16304b; stroke-width: 1; opacity: .42; }
+    .edge { fill: none; stroke: #38bdf8; stroke-width: 4; stroke-linecap: round; stroke-dasharray: 12 18; animation: flow 2.8s linear infinite; opacity: .9; }
+    .edge.secondary { stroke: #a78bfa; animation-delay: -.9s; }
+    .node { stroke-width: 2; }
+    .root { fill: #102c47; stroke: #38bdf8; }
+    .child { fill: #201b42; stroke: #a78bfa; }
+    .glow { fill: #38bdf8; opacity: .2; animation: pulse 2.3s ease-in-out infinite; }
+    .glow.child { fill: #a78bfa; animation-delay: -.8s; }
+    .label { fill: #e2e8f0; font: 700 24px system-ui, sans-serif; text-anchor: middle; }
+    .small { fill: #94a3b8; font: 500 16px system-ui, sans-serif; text-anchor: middle; letter-spacing: .08em; }
+    .brand { fill: #f8fafc; font: 800 36px system-ui, sans-serif; letter-spacing: .04em; }
+    @keyframes flow { to { stroke-dashoffset: -60; } }
+    @keyframes pulse { 0%, 100% { r: 32; opacity: .16; } 50% { r: 46; opacity: .42; } }
+    @media (prefers-reduced-motion: reduce) { .edge, .glow { animation: none; } }
+  </style>
+
+  <rect class="bg" width="1200" height="480" rx="28"/>
+  <g aria-hidden="true">
+    <path class="grid" d="M0 120h1200M0 240h1200M0 360h1200M120 0v480M300 0v480M480 0v480M660 0v480M840 0v480M1020 0v480"/>
+    <path class="edge" d="M600 198 C600 255 260 248 260 318"/>
+    <path class="edge secondary" d="M600 198 C600 255 600 248 600 318"/>
+    <path class="edge" d="M600 198 C600 255 940 248 940 318"/>
+    <circle class="glow" cx="600" cy="150" r="34"/>
+    <circle class="glow child" cx="260" cy="350" r="34"/>
+    <circle class="glow child" cx="600" cy="350" r="34"/>
+    <circle class="glow child" cx="940" cy="350" r="34"/>
+  </g>
+
+  <text class="brand" x="56" y="70">AGENT HERDER</text>
+  <text class="small" x="56" y="99" text-anchor="start">MCP SESSION LINEAGE</text>
+
+  <g transform="translate(440 110)">
+    <rect class="node root" width="320" height="88" rx="18"/>
+    <text class="label" x="160" y="39">Parent session</text>
+    <text class="small" x="160" y="67">find · inspect · coordinate</text>
+  </g>
+  <g transform="translate(110 318)">
+    <rect class="node child" width="300" height="72" rx="16"/>
+    <text class="label" x="150" y="32">OpenCode child</text>
+    <text class="small" x="150" y="56">transcript search</text>
+  </g>
+  <g transform="translate(450 318)">
+    <rect class="node child" width="300" height="72" rx="16"/>
+    <text class="label" x="150" y="32">Claude child</text>
+    <text class="small" x="150" y="56">latest messages</text>
+  </g>
+  <g transform="translate(790 318)">
+    <rect class="node child" width="300" height="72" rx="16"/>
+    <text class="label" x="150" y="32">Codex child</text>
+    <text class="small" x="150" y="56">bounded context</text>
+  </g>
+</svg>

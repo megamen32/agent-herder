@@ -5,10 +5,15 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { HarnessAdapter } from "./types/index.js";
-import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter } from "./adapters/index.js";
+import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter } from "./adapters/index.js";
+import { AgentHerderSessionConverter } from "./session-convert.js";
+import { createWebServer } from "./web/server.js";
 import {
   handleListAgents,
   handleAgentInfo,
+  handleFindParent,
+  handleListChildren,
+  handleGetTranscript,
   handleSendMessage,
   handleStopAgent,
   handleRespondPermission,
@@ -27,6 +32,9 @@ const ENABLE_OPENCODE = parseEnvBool(process.env.ENABLE_OPENCODE, true);
 const ENABLE_CLAUDE = parseEnvBool(process.env.ENABLE_CLAUDE, true);
 const ENABLE_CLAUDE_SDK = parseEnvBool(process.env.ENABLE_CLAUDE_SDK, true);
 const ENABLE_CODEX = parseEnvBool(process.env.ENABLE_CODEX, true);
+const CODEX_TRANSPORT = process.env.CODEX_TRANSPORT || "app-server";
+const ENABLE_QODER = parseEnvBool(process.env.ENABLE_QODER, false);
+const ACP_AGENT_COMMAND = process.env.ACP_AGENT_COMMAND;
 
 // Summarizer config (defaults to gemma4 at llm.bezrabotnyi.com)
 process.env.SUMMARIZER_API_BASE = process.env.SUMMARIZER_API_BASE || "https://llm.bezrabotnyi.com/v1";
@@ -97,15 +105,77 @@ async function initAdapters() {
   }
 
   if (ENABLE_CODEX) {
-    const adapter = new CodexAdapter({
-      codexBin: process.env.CODEX_BIN,
-      codexDir: process.env.CODEX_DATA_DIR,
+    if (CODEX_TRANSPORT === "cli") {
+      const adapter = new CodexAdapter({
+        codexBin: process.env.CODEX_BIN,
+        codexDir: process.env.CODEX_DATA_DIR,
+      });
+      adapters.set("codex", adapter);
+      inits.push(
+        adapter.init().catch((err) => {
+          console.error(`[agent-herder] Codex CLI adapter failed to init: ${(err as Error).message}`);
+          adapters.delete("codex");
+        })
+      );
+    } else {
+      const nativeAdapter = new CodexAppServerAdapter({
+        codexBin: process.env.CODEX_BIN,
+        cwd: process.env.CODEX_CWD,
+        modelIds: parseCsv(process.env.CODEX_MODELS, ["o4-mini", "o3", "gpt-4.1", "gpt-4o"]),
+      });
+      adapters.set("codex", nativeAdapter);
+      inits.push(
+        nativeAdapter.init().catch(async (err) => {
+          console.error(`[agent-herder] Codex app-server failed, trying CLI fallback: ${(err as Error).message}`);
+          const fallback = new CodexAdapter({
+            codexBin: process.env.CODEX_BIN,
+            codexDir: process.env.CODEX_DATA_DIR,
+          });
+          try {
+            await fallback.init();
+            adapters.set("codex", fallback);
+          } catch (fallbackError) {
+            console.error(`[agent-herder] Codex CLI fallback also failed: ${(fallbackError as Error).message}`);
+            adapters.delete("codex");
+          }
+        })
+      );
+    }
+  }
+
+  if (ENABLE_QODER) {
+    const qoderArgs = parseArgs(process.env.QODER_ARGS, "QODER_ARGS");
+    const model = process.env.QODER_MODEL;
+    const adapter = new AcpAdapter({
+      profile: "qoder",
+      harness: "qoder",
+      command: process.env.QODER_BIN || "qodercli",
+      args: [...qoderArgs, "--acp", ...(model ? ["--model", model] : [])],
+      cwd: process.env.QODER_CWD || process.cwd(),
+      modelIds: parseCsv(process.env.QODER_MODELS, ["Ultimate", "Lite"]),
     });
-    adapters.set("codex", adapter);
+    adapters.set("qoder", adapter);
     inits.push(
       adapter.init().catch((err) => {
-        console.error(`[agent-herder] Codex adapter failed to init: ${(err as Error).message}`);
-        adapters.delete("codex");
+        console.error(`[agent-herder] Qoder adapter failed to init: ${(err as Error).message}`);
+        adapters.delete("qoder");
+      })
+    );
+  }
+
+  if (ACP_AGENT_COMMAND) {
+    const profile = process.env.ACP_AGENT_PROFILE || "claude-acp";
+    const adapter = new AcpAdapter({
+      profile,
+      command: ACP_AGENT_COMMAND,
+      args: parseArgs(process.env.ACP_AGENT_ARGS),
+      cwd: process.env.ACP_AGENT_CWD || process.cwd(),
+    });
+    adapters.set(profile, adapter);
+    inits.push(
+      adapter.init().catch((err) => {
+        console.error(`[agent-herder] ACP adapter '${profile}' failed to init: ${(err as Error).message}`);
+        adapters.delete(profile);
       })
     );
   }
@@ -116,6 +186,21 @@ async function initAdapters() {
   console.error(`[agent-herder] Ready with harnesses: ${names || "none"}`);
 }
 
+function parseArgs(value: string | undefined, variableName = "ACP_AGENT_ARGS"): string[] {
+  if (!value) return [];
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed) || !parsed.every((arg) => typeof arg === "string")) {
+    throw new Error(`${variableName} must be a JSON array of strings`);
+  }
+  return parsed;
+}
+
+function parseCsv(value: string | undefined, fallback: string[]): string[] {
+  if (!value) return fallback;
+  const models = value.split(",").map((model) => model.trim()).filter(Boolean);
+  return models.length > 0 ? models : fallback;
+}
+
 // ===== Register MCP tools =====
 
 function registerTools(server: McpServer) {
@@ -123,7 +208,7 @@ function registerTools(server: McpServer) {
     "list_agents",
     "List all coding agent sessions. Filter by harness, status, age (maxAge seconds), or folder (CWD prefix like ~/apps). Can show last message preview.",
     {
-      harness: z.enum(["all", "opencode", "claude", "codex"]).optional().default("all").describe("Filter by harness"),
+      harness: z.enum(["all", "opencode", "claude", "codex", "qoder"]).optional().default("all").describe("Filter by harness"),
       status: z.enum(["all", "running", "idle", "needs_input", "stopped", "error"]).optional().default("all").describe("Filter by status"),
       limit: z.number().int().min(1).max(100).optional().default(50).describe("Max sessions"),
       maxAge: z.number().int().min(0).optional().describe("Max session age in seconds (e.g. 3600=1h, 86400=24h)"),
@@ -154,7 +239,7 @@ function registerTools(server: McpServer) {
     "Search all available Claude, Codex, and OpenCode session transcripts for text or a regular expression.",
     {
       query: z.string().min(1).describe("Text or regular expression to search for"),
-      harness: z.enum(["all", "opencode", "claude", "codex"]).optional().default("all").describe("Harness filter"),
+      harness: z.enum(["all", "opencode", "claude", "codex", "qoder"]).optional().default("all").describe("Harness filter"),
       folder: z.string().optional().describe("CWD prefix filter"),
       maxAge: z.number().int().min(0).optional().describe("Maximum session age in seconds"),
       regex: z.boolean().optional().default(false).describe("Treat query as a regular expression"),
@@ -173,10 +258,53 @@ function registerTools(server: McpServer) {
     "Get detailed info about a specific session. Always shows model and last message.",
     {
       sessionId: z.string().describe("Session ID to inspect"),
-      harness: z.enum(["opencode", "claude", "codex"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness type"),
     },
     async (args) => {
       const result = await handleAgentInfo(adapters, args);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "find_parent",
+    "Find the native parent session of an agent session.",
+    {
+      sessionId: z.string().describe("Child session ID"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness type"),
+    },
+    async (args) => {
+      const result = await handleFindParent(adapters, args);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "list_children",
+    "List the native child sessions of an agent session.",
+    {
+      sessionId: z.string().describe("Parent session ID"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness type"),
+    },
+    async (args) => {
+      const result = await handleListChildren(adapters, args);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "get_transcript",
+    "Return the newest transcript messages or search matching transcript messages.",
+    {
+      sessionId: z.string().describe("Session ID"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness type"),
+      query: z.string().optional().describe("Optional search prompt; omit to return newest messages"),
+      latestMessages: z.number().int().min(1).max(100).optional().default(10).describe("Newest messages to include"),
+      contextMessages: z.number().int().min(0).max(10).optional().default(1).describe("Neighbor messages around search matches"),
+      maxChars: z.number().int().min(100).max(100000).optional().default(12000).describe("Maximum returned characters"),
+    },
+    async (args) => {
+      const result = await handleGetTranscript(adapters, args);
       return { content: [{ type: "text" as const, text: result }] };
     }
   );
@@ -186,7 +314,7 @@ function registerTools(server: McpServer) {
     "Send a message to an agent. Modes: sync (wait), queue (fire-and-forget), steer (redirect).",
     {
       sessionId: z.string().describe("Target session ID"),
-      harness: z.enum(["opencode", "claude", "codex"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness type"),
       message: z.string().describe("Message to send"),
       mode: z.enum(["queue", "steer", "sync"]).optional().default("sync").describe("Delivery mode"),
     },
@@ -201,7 +329,7 @@ function registerTools(server: McpServer) {
     "Stop / abort a running agent session.",
     {
       sessionId: z.string().describe("Session ID to stop"),
-      harness: z.enum(["opencode", "claude", "codex"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness type"),
     },
     async (args) => {
       const result = await handleStopAgent(adapters, args);
@@ -214,7 +342,7 @@ function registerTools(server: McpServer) {
     "Respond to a pending permission request (allow/deny). OpenCode and Claude SDK support this.",
     {
       sessionId: z.string().describe("Session with pending permission"),
-      harness: z.enum(["opencode", "claude", "codex"]).optional(),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional(),
       permissionId: z.string().describe("Permission request ID"),
       response: z.enum(["allow", "deny"]).describe("Allow or deny"),
       remember: z.boolean().optional().describe("Remember this decision"),
@@ -230,7 +358,7 @@ function registerTools(server: McpServer) {
     "Set permissions for an agent. Claude/Codex set these at launch time.",
     {
       sessionId: z.string().describe("Target session ID"),
-      harness: z.enum(["opencode", "claude", "codex"]).optional(),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional(),
       allowedTools: z.string().optional().describe("Comma-separated allowed tools"),
       mode: z.string().optional().describe("Permission mode"),
     },
@@ -245,7 +373,7 @@ function registerTools(server: McpServer) {
     "Resume a stopped agent session. Optionally provide a message.",
     {
       sessionId: z.string().describe("Session ID to resume"),
-      harness: z.enum(["opencode", "claude", "codex"]).optional(),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional(),
       message: z.string().optional().describe("Message to send when resuming"),
     },
     async (args) => {
@@ -259,7 +387,7 @@ function registerTools(server: McpServer) {
     "Summarize a session transcript using built-in gemma4 LLM. Returns structured summary (Task, Progress, Current State, Issues). Use quick=true for 1-3 sentences.",
     {
       sessionId: z.string().describe("Session ID to summarize"),
-      harness: z.enum(["opencode", "claude", "codex"]).optional().describe("Harness (optional)"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness (optional)"),
       quick: z.boolean().optional().default(false).describe("Quick 1-3 sentence summary"),
     },
     async (args) => {
@@ -270,10 +398,10 @@ function registerTools(server: McpServer) {
 
   server.tool(
     "change_model",
-    "Change the AI model for a harness. For OpenCode: per-session or global. For Claude/Codex: updates default for future sessions.",
+    "Change the AI model for a harness. For OpenCode: per-session or global. For Claude/Codex/Qoder: per-session where supported by the harness.",
     {
       sessionId: z.string().optional().describe("Session ID (omit for global default)"),
-      harness: z.enum(["opencode", "claude", "codex"]).describe("Target harness"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).describe("Target harness"),
       model: z.string().describe("Model name (e.g. 'claude-sonnet-4-20250514', 'gpt-4o', 'o4-mini')"),
     },
     async (args) => {
@@ -286,7 +414,7 @@ function registerTools(server: McpServer) {
     "list_models",
     "List available AI models for each harness.",
     {
-      harness: z.enum(["opencode", "claude", "codex"]).optional().describe("Harness (omit for all)"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness (omit for all)"),
     },
     async (args) => {
       const result = await handleListModels(adapters, args);
@@ -301,11 +429,23 @@ async function main() {
   const server = new McpServer({
     name: "agent-herder",
     version: "0.2.0",
-    description: "Monitor and control coding agents (OpenCode, Claude Code SDK, Codex CLI) with summarization and model management",
+    description: "Monitor and control coding agents (OpenCode, Claude Code SDK, Codex CLI, Qoder) with summarization and model management",
   });
 
   await initAdapters();
   registerTools(server);
+
+  const webPort = process.env.AGENT_HERDER_WEB_PORT;
+  if (webPort) {
+    const webServer = createWebServer({
+      adapters,
+      converter: new AgentHerderSessionConverter(),
+    });
+    const host = process.env.AGENT_HERDER_WEB_HOST || "127.0.0.1";
+    webServer.listen(Number(webPort), host, () => {
+      console.error(`[agent-herder] Web UI listening on http://${host}:${webPort}`);
+    });
+  }
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

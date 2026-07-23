@@ -1,1 +1,20 @@
-export { type HarnessType, type AgentStatus, type AgentSession, type PermissionRequest, type SendMessageOptions, type SetPermissionsOptions, type HarnessAdapter } from "./common.js";
+export {
+  type HarnessType,
+  type AgentStatus,
+  type AgentSession,
+  type PermissionRequest,
+  type SendMessageOptions,
+  type SetPermissionsOptions,
+  type HarnessAdapter,
+  type SessionLineageKind,
+  type SessionLineage,
+  type SessionMessagePart,
+  type SessionMessageView,
+  type SessionHistorySource,
+  type SessionHistoryInfo,
+  type SessionDetails,
+  type AgentControlOperation,
+  type HarnessCapabilities,
+  type ControlResult,
+  getHarnessCapabilities,
+} from "./common.js";

@@ -1,6 +1,6 @@
 // ===== Shared types for all agent harness adapters =====
 
-export type HarnessType = "opencode" | "claude" | "codex";
+export type HarnessType = "opencode" | "claude" | "codex" | "qoder";
 
 export type AgentStatus =
   | "running"      // actively processing
@@ -8,6 +8,77 @@ export type AgentStatus =
   | "needs_input"  // blocked on permission prompt or question
   | "stopped"      // finished or aborted
   | "error";       // crashed
+
+export type SessionLineageKind = "root" | "subagent" | "external" | "unknown";
+
+export interface SessionLineage {
+  kind: SessionLineageKind;
+  parentId?: string;
+  role?: string;
+  task?: string;
+}
+
+export interface SessionMessagePart {
+  type: "text" | "thinking" | "tool_call" | "tool_result";
+  text?: string;
+  name?: string;
+  input?: unknown;
+  output?: string;
+  error?: boolean;
+}
+
+export interface SessionMessageView {
+  id: string;
+  role: "user" | "assistant" | "tool" | "system";
+  timestamp?: string;
+  text?: string;
+  parts: SessionMessagePart[];
+}
+
+export type SessionHistorySource = "acp-load" | "session-convert" | "live-cache" | "unavailable";
+
+export type AgentControlOperation =
+  | "cancelTurn"
+  | "detach"
+  | "resume"
+  | "terminate"
+  | "recover"
+  | "fork"
+  | "modelSwitch"
+  | "subagents"
+  | "events";
+
+export interface HarnessCapabilities {
+  cancelTurn: boolean;
+  detach: boolean;
+  resume: boolean;
+  terminate: boolean;
+  recover: boolean;
+  fork: boolean;
+  modelSwitch: boolean;
+  subagents: boolean;
+  events: boolean;
+}
+
+export interface ControlResult {
+  ok: boolean;
+  error?: string;
+  sessionId?: string;
+}
+
+export interface SessionHistoryInfo {
+  source: SessionHistorySource;
+  complete: boolean;
+  warning?: string;
+}
+
+export interface SessionDetails {
+  session: AgentSession;
+  lineage: SessionLineage;
+  children: AgentSession[];
+  messages: SessionMessageView[];
+  history: SessionHistoryInfo;
+}
 
 export interface AgentSession {
   /** Unique identifier within the harness */
@@ -69,6 +140,8 @@ export interface HarnessAdapter {
   readonly type: HarnessType;
   /** Human-readable name */
   readonly name: string;
+  /** Native controls exposed by this transport. */
+  readonly controlCapabilities?: Partial<HarnessCapabilities>;
 
   /** Initialize the adapter (check connectivity, etc.) */
   init(): Promise<void>;
@@ -79,11 +152,33 @@ export interface HarnessAdapter {
   /** Get detailed info about a specific session */
   getSession(id: string): Promise<AgentSession | null>;
 
+  /** Find the native parent session, when the transport exposes lineage. */
+  getParent?(id: string): Promise<AgentSession | null>;
+
+  /** List native child sessions, when the transport exposes lineage. */
+  listChildren?(id: string): Promise<AgentSession[]>;
+
   /** Send a message to an agent session */
   sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }>;
 
   /** Abort / stop a running session */
-  stopSession(id: string): Promise<{ ok: boolean; error?: string }>;
+  /** Legacy alias retained for callers that still mean terminate. */
+  stopSession(id: string): Promise<ControlResult>;
+
+  /** Cancel the active turn while keeping the native session resumable. */
+  cancelTurn?(id: string): Promise<ControlResult>;
+
+  /** Release this adapter's live transport without terminating the native session. */
+  detach?(id: string): Promise<ControlResult>;
+
+  /** Terminate the native session or its owning process. */
+  terminate?(id: string): Promise<ControlResult>;
+
+  /** Reconnect/resume a failed transport and optionally recover with a prompt. */
+  recover?(id: string, message?: string): Promise<ControlResult>;
+
+  /** Fork a native session, preserving a lineage edge for the caller. */
+  forkSession?(id: string, message?: string): Promise<ControlResult>;
 
   /** Respond to a pending permission request */
   respondPermission(
@@ -102,6 +197,40 @@ export interface HarnessAdapter {
   /** Get the full transcript of a session for summarization */
   getTranscript?(id: string): Promise<string | null>;
 
+  /** Get structured recent messages from the adapter-owned transport, when available. */
+  getSessionMessages?(id: string, limit?: number): Promise<SessionMessageView[] | null>;
+
+  /** Resume a session through its owning transport, when supported. */
+  resumeSession?(id: string): Promise<{ ok: boolean; error?: string }>;
+
   /** List available models for this harness */
   listModels?(): Promise<string[]>;
+}
+
+const CONTROL_KEYS: Array<keyof HarnessCapabilities> = [
+  "cancelTurn",
+  "detach",
+  "resume",
+  "terminate",
+  "recover",
+  "fork",
+  "modelSwitch",
+  "subagents",
+  "events",
+];
+
+/** Resolve the effective transport capabilities for API/UI feature gating. */
+export function getHarnessCapabilities(adapter: HarnessAdapter): HarnessCapabilities {
+  return Object.fromEntries(CONTROL_KEYS.map((key) => [
+    key,
+    adapter.controlCapabilities && key in adapter.controlCapabilities
+      ? adapter.controlCapabilities[key] === true
+      : (key === "resume" && typeof adapter.resumeSession === "function") ||
+        (key === "modelSwitch" && typeof adapter.changeModel === "function") ||
+        (key === "fork" && typeof adapter.forkSession === "function") ||
+        (key === "recover" && typeof adapter.recover === "function") ||
+        (key === "cancelTurn" && typeof adapter.cancelTurn === "function") ||
+        (key === "detach" && typeof adapter.detach === "function") ||
+        (key === "terminate" && (typeof adapter.terminate === "function" || typeof adapter.stopSession === "function")),
+  ])) as unknown as HarnessCapabilities;
 }
