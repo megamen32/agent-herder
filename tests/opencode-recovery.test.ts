@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { describe, expect, it, afterEach } from "vitest";
 import { OpenCodeAdapter, parseOpenCodeServerCommand } from "../src/adapters/opencode.js";
-import { handleFindParent, handleListChildren, handleSendMessage } from "../src/mcp-tools/handlers.js";
+import { handleFindParent, handleGetTranscript, handleListChildren, handleSendMessage } from "../src/mcp-tools/handlers.js";
 
 describe("OpenCode native recovery controls", () => {
   let server: Server | undefined;
@@ -95,6 +95,9 @@ describe("OpenCode native recovery controls", () => {
       if (request.url === "/session/parent" && request.method === "GET") {
         return response.end(JSON.stringify({ id: "parent", title: "Parent", path: "/tmp/project" }));
       }
+      if (request.url === "/session/child" && request.method === "GET") {
+        return response.end(JSON.stringify({ id: "child", title: "Child", path: "/tmp/project", parentID: "parent" }));
+      }
       if (request.url === "/session/parent/children" && request.method === "GET") {
         return response.end(JSON.stringify([
           { id: "child", title: "Child", path: "/tmp/project", parentID: "parent" },
@@ -118,5 +121,45 @@ describe("OpenCode native recovery controls", () => {
     expect(parent).toContain("parent");
     expect(children).toContain("Children of [opencode] parent (2):");
     expect(children).toContain("child-2");
+  });
+
+  it("returns latest and searched transcript views for one session", async () => {
+    server = createServer((request, response) => {
+      response.setHeader("content-type", "application/json");
+      if (request.url === "/global/health") return response.end(JSON.stringify({ healthy: true }));
+      if (request.url === "/session/child" && request.method === "GET") {
+        return response.end(JSON.stringify({ id: "child", title: "Child", path: "/tmp/project", parentID: "parent" }));
+      }
+      if (request.url === "/session/child/message?limit=200" && request.method === "GET") {
+        return response.end(JSON.stringify([
+          { role: "user", content: "first child prompt" },
+          { role: "assistant", content: [{ type: "text", text: "first child result" }] },
+        ]));
+      }
+      response.statusCode = 404;
+      response.end(JSON.stringify({ error: "not found" }));
+    }).listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
+    port = (server.address() as { port: number }).port;
+
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    await adapter.init();
+    const adapters = new Map([["opencode", adapter]]);
+    const latest = await handleGetTranscript(adapters, {
+      sessionId: "child",
+      harness: "opencode",
+      latestMessages: 1,
+    });
+    const searched = await handleGetTranscript(adapters, {
+      sessionId: "child",
+      harness: "opencode",
+      query: "result",
+      contextMessages: 0,
+    });
+
+    expect(latest).toContain("first child result");
+    expect(latest).not.toContain("first child prompt");
+    expect(searched).toContain("first child result");
+    expect(searched).not.toContain("first child prompt");
   });
 });

@@ -66,7 +66,7 @@ npm start
 
 ## Инструменты MCP
 
-`list_agents`, `agent_info`, `send_message`, `resume_agent`, `stop_agent`, `respond_permission`, `set_permissions`, `summarize_session`, `change_model` и `list_models`.
+`list_agents`, `agent_info`, `find_parent`, `list_children`, `get_transcript`, `send_message`, `resume_agent`, `stop_agent`, `respond_permission`, `set_permissions`, `summarize_session`, `change_model` и `list_models`.
 
 ## Разработка
 

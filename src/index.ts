@@ -13,6 +13,7 @@ import {
   handleAgentInfo,
   handleFindParent,
   handleListChildren,
+  handleGetTranscript,
   handleSendMessage,
   handleStopAgent,
   handleRespondPermission,
@@ -287,6 +288,23 @@ function registerTools(server: McpServer) {
     },
     async (args) => {
       const result = await handleListChildren(adapters, args);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "get_transcript",
+    "Return the newest transcript messages or search matching transcript messages.",
+    {
+      sessionId: z.string().describe("Session ID"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness type"),
+      query: z.string().optional().describe("Optional search prompt; omit to return newest messages"),
+      latestMessages: z.number().int().min(1).max(100).optional().default(10).describe("Newest messages to include"),
+      contextMessages: z.number().int().min(0).max(10).optional().default(1).describe("Neighbor messages around search matches"),
+      maxChars: z.number().int().min(100).max(100000).optional().default(12000).describe("Maximum returned characters"),
+    },
+    async (args) => {
+      const result = await handleGetTranscript(adapters, args);
       return { content: [{ type: "text" as const, text: result }] };
     }
   );

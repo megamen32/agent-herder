@@ -131,6 +131,9 @@ claude mcp add agent-herder -- node /path/to/agent-herder/dist/index.js
 |---|---|
 | `list_agents` | List all sessions, filter by harness or status |
 | `agent_info` | Get detailed info about a specific session |
+| `find_parent` | Find a session's native parent |
+| `list_children` | List a session's native children |
+| `get_transcript` | Read newest messages or search transcript messages by session ID |
 | `send_message` | Send a message (sync/queue/steer) |
 | `resume_agent` | Resume a stopped session |
 | `stop_agent` | Abort a running session |

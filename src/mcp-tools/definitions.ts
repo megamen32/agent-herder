@@ -75,6 +75,24 @@ export const ListChildrenSchema = z.object({
     .describe("Which harness owns the session. If omitted, searches all."),
 });
 
+const transcriptSelectionFields = {
+  query: z.string().optional().describe("Optional search prompt. When omitted, return newest messages."),
+  latestMessages: z.number().int().min(1).max(100).optional().default(10).describe("Number of newest messages to include."),
+  contextMessages: z.number().int().min(0).max(10).optional().default(1).describe("Neighbor messages to include around search matches."),
+};
+
+export const GetTranscriptSchema = z.object({
+  sessionId: z.string().describe("The session ID whose transcript should be returned."),
+  harness: z
+    .enum(["opencode", "claude", "codex", "qoder"])
+    .optional()
+    .describe("Which harness owns the session. If omitted, searches all."),
+  ...transcriptSelectionFields,
+  maxChars: z.number().int().min(100).max(100000).optional().default(12000).describe(
+    "Maximum returned characters. Search modes preserve matching sections; latest mode preserves the newest tail."
+  ),
+});
+
 export const SendMessageSchema = z.object({
   sessionId: z.string().describe("Target session ID."),
   harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness (optional if ID is unique)."),
@@ -222,6 +240,22 @@ export const toolDefinitions: Tool[] = [
       properties: {
         sessionId: { type: "string", description: "Parent session ID" },
         harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder"], description: "Harness (optional)" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "get_transcript",
+    description: "Return newest transcript messages or ranked search matches for one session.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        sessionId: { type: "string", description: "Session ID" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder"], description: "Harness (optional)" },
+        query: { type: "string", description: "Optional search prompt; omit to return newest messages" },
+        latestMessages: { type: "number", default: 10, description: "Newest messages to include" },
+        contextMessages: { type: "number", default: 1, description: "Neighbor messages around search matches" },
+        maxChars: { type: "number", default: 12000, description: "Maximum returned characters" },
       },
       required: ["sessionId"],
     },
