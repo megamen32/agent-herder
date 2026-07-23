@@ -6,6 +6,8 @@
 
 ![Agent Herder developer workspace](docs/assets/readme-hero.png)
 
+![Animated Agent Herder session lineage](docs/assets/agent-herder-animated.svg)
+
 > Checked in this workspace with Node.js 22.22.3, npm 10.9.8, and the TypeScript build.
 
 One unified MCP interface to monitor and manage sessions across four coding agent harnesses:
@@ -16,6 +18,14 @@ One unified MCP interface to monitor and manage sessions across four coding agen
 - Qoder CLI — via its native ACP transport (`qodercli --acp`)
 
 ## Quick start
+
+Run the published MCP server without cloning the repository:
+
+```bash
+npx -y agent-herder
+```
+
+For an MCP client configuration, use `npx` as the command and `-y agent-herder` as its arguments.
 
 From a local checkout, install the Node dependencies and build the MCP server with one command:
 
@@ -55,6 +65,14 @@ At least one of:
 - `codex` (OpenAI Codex CLI) installed and `OPENAI_API_KEY` set
 
 ## Install
+
+Published package:
+
+```bash
+npx -y agent-herder
+```
+
+From a local checkout:
 
 ```bash
 npm ci

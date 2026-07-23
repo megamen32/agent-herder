@@ -4,12 +4,28 @@
   "description": "MCP server for monitoring and controlling coding agents (OpenCode, Claude Code, Codex CLI)",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "agent-herder": "dist/index.js"
+  },
   "scripts": {
     "build": "tsc && cp src/web/index.html dist/web/index.html",
     "test": "vitest run",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
-    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js"
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist",
+    "docs/assets",
+    "README.md",
+    "README.ru.md",
+    "README.zh.md",
+    "LICENSE",
+    "package.json"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": ["mcp", "claude-code", "opencode", "codex", "agent", "monitoring", "control"],
   "license": "MIT",
