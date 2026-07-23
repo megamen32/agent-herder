@@ -1,7 +1,7 @@
 {
   "name": "agent-herder",
   "version": "0.1.0",
-  "description": "MCP server for monitoring and controlling coding agents (OpenCode, Claude Code, Codex CLI)",
+  "description": "MCP server to monitor, inspect, search, and coordinate OpenCode, Claude Code, Codex CLI, and Qoder parent/child sessions",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -17,7 +17,7 @@
   },
   "files": [
     "dist",
-    "docs/assets",
+    "docs/assets/agent-herder-animated.svg",
     "README.md",
     "README.ru.md",
     "README.zh.md",
@@ -27,7 +27,21 @@
   "publishConfig": {
     "access": "public"
   },
-  "keywords": ["mcp", "claude-code", "opencode", "codex", "agent", "monitoring", "control"],
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "ai-agents",
+    "coding-agents",
+    "agent-orchestration",
+    "session-manager",
+    "transcript-search",
+    "parent-child-sessions",
+    "opencode",
+    "claude-code",
+    "codex-cli",
+    "qoder",
+    "developer-tools"
+  ],
   "license": "MIT",
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.0",

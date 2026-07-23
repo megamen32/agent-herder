@@ -1,90 +1,125 @@
 # Agent Herder
 
-[English](README.md) | **Русский** | [中文](README.zh.md)
+**MCP-центр управления AI-агентами для разработки.**
 
-MCP-сервер для мониторинга и управления сессиями OpenCode, Claude Code, Codex CLI и Qoder через единый интерфейс.
+Agent Herder объединяет OpenCode, Claude Code, Codex CLI и Qoder в один
+интерфейс: показывает сессии, ищет контекст и помогает управлять агентами.
 
-![Рабочее место Agent Herder](docs/assets/readme-hero.png)
+[English](README.md) · **Русский** · [简体中文](README.zh.md)
 
 ![Анимированная схема связей сессий Agent Herder](docs/assets/agent-herder-animated.svg)
 
-## Быстрый старт
+## Запуск за 30 секунд
 
-Запустить опубликованный MCP-сервер одной строкой, без клонирования репозитория:
+Без клонирования репозитория:
 
 ```bash
 npx -y agent-herder
 ```
 
-В конфигурации MCP-клиента укажите команду `npx` и аргументы `-y agent-herder`.
+Для любого MCP-клиента используйте ту же команду:
 
-Из локального checkout установите зависимости и соберите сервер одной командой:
-
-```bash
-npm ci && npm run build
+```json
+{
+  "mcpServers": {
+    "agent-herder": {
+      "command": "npx",
+      "args": ["-y", "agent-herder"]
+    }
+  }
+}
 ```
 
-Готовая stdio-точка входа: `dist/index.js`. Для Claude Code зарегистрируйте локальную копию:
+Сначала запустите нужный harness. Для OpenCode:
 
 ```bash
-claude mcp add agent-herder -- node "$PWD/dist/index.js"
+opencode serve
 ```
 
-Для Cursor, OpenCode и других MCP-клиентов укажите тот же абсолютный путь к `dist/index.js` в конфигурации. Если включён OpenCode, сначала запустите `opencode serve`.
+## Что умеет Agent Herder
 
-## Что умеет сервер
+- показывает работающие, ожидающие и остановленные сессии;
+- находит родителя и детей сессии по настоящей lineage-связи;
+- читает последние сообщения или ищет нужный фрагмент транскрипта;
+- отправляет сообщения, возобновляет, останавливает и восстанавливает агентов;
+- управляет permissions, моделями, worktree и краткими резюме.
 
-- показывает все сессии, их состояние, модель, стоимость и последнюю активность;
-- отправляет сообщения, возобновляет и останавливает агентов;
-- отвечает на запросы разрешений и меняет настройки permissions;
-- меняет модель и создаёт краткое резюме сессии.
+Пример запроса агенту:
 
-## Требования и конфигурация
+> Найди родителя этой сессии, перечисли детей и покажи последние пять
+> сообщений ребёнка, который сейчас чинит ошибку.
 
-Нужен Node.js с npm и хотя бы один поддерживаемый CLI: `opencode`, `claude`, `codex` или `qodercli`. Для Codex задайте `OPENAI_API_KEY`.
+## Поддерживаемые harnesses
 
-Основные переменные окружения:
-
-| Переменная | Назначение |
-|---|---|
-| `ENABLE_OPENCODE`, `ENABLE_CLAUDE`, `ENABLE_CODEX` | включение адаптеров; по умолчанию `true` |
-| `ENABLE_QODER` | включение нативного Qoder ACP; по умолчанию `false` |
-| `OPENCODE_URL` | URL OpenCode, по умолчанию `http://127.0.0.1:4096` |
-| `CLAUDE_BIN`, `CODEX_BIN` | путь к CLI |
-| `CODEX_TRANSPORT` | `app-server` для native pause/resume/fork/recovery; `cli` — старый fallback |
-| `CODEX_CWD`, `CODEX_MODELS` | рабочий каталог и список моделей Codex app-server |
-| `CODEX_DATA_DIR` | каталог данных Codex, по умолчанию `~/.codex` |
-| `QODER_BIN`, `QODER_CWD`, `QODER_ARGS` | путь, рабочий каталог и JSON-массив аргументов `qodercli` |
-| `QODER_MODEL`, `QODER_MODELS` | начальная модель и список моделей для переключателя |
-| `SUMMARIZER_API_KEY` | ключ для инструмента `summarize_session` |
-
-Полная таблица переменных, конфигурации клиентов, архитектура и заметки по каждому harness находятся в [английском README](README.md).
-
-Для подключения Qoder к Agent Herder:
-
-```bash
-export ENABLE_QODER=true
-export QODER_BIN=/home/roomhacker/.npm-global/bin/qodercli
-export QODER_CWD=/home/roomhacker/PycharmProjects/video_watching
-npm start
-```
-
-Используется нативный `qodercli --acp`: Agent Herder видит существующие сессии,
-может отправлять сообщения, ставить turn на паузу, возобновлять, восстанавливать
-после ошибки и создавать дочернюю сессию. `change_model`
-использует ACP-переключение модели, если его поддерживает версия Qoder.
+| Harness | Как подключается | Включение |
+|---|---|---|
+| OpenCode | HTTP API | Включён по умолчанию, нужен `opencode serve` |
+| Claude Code | SDK/CLI и файлы сессий | Включён по умолчанию |
+| Codex CLI | Native app-server и CLI fallback | Включён по умолчанию |
+| Qoder CLI | Native ACP | `ENABLE_QODER=true` |
 
 ## Инструменты MCP
 
-`list_agents`, `agent_info`, `find_parent`, `list_children`, `get_transcript`, `send_message`, `resume_agent`, `stop_agent`, `respond_permission`, `set_permissions`, `summarize_session`, `change_model` и `list_models`.
+| Задача | Инструменты |
+|---|---|
+| Найти сессии | `list_agents`, `agent_info`, `audit_worktrees` |
+| Родители и контекст | `find_parent`, `list_children`, `get_transcript`, `search_transcripts` |
+| Управление | `send_message`, `resume_agent`, `stop_agent` |
+| Permissions и модели | `respond_permission`, `set_permissions`, `list_models`, `change_model` |
+| Резюме | `summarize_session` |
+
+`get_transcript` принимает ID сессии, необязательное число последних сообщений
+и необязательный поисковый запрос. В ответ возвращается только нужный кусок
+контекста, а не вся история.
+
+## Требования
+
+- Node.js 22+ и npm;
+- установлен хотя бы один поддерживаемый harness;
+- `OPENAI_API_KEY` для Codex, если его app-server этого требует.
+
+## Конфигурация
+
+| Переменная | По умолчанию | Назначение |
+|---|---:|---|
+| `ENABLE_OPENCODE` | `true` | включить OpenCode |
+| `ENABLE_CLAUDE` | `true` | включить Claude Code |
+| `ENABLE_CODEX` | `true` | включить Codex |
+| `ENABLE_QODER` | `false` | включить Qoder ACP |
+| `OPENCODE_URL` | `http://127.0.0.1:4096` | URL OpenCode |
+| `CODEX_TRANSPORT` | `app-server` | native transport или `cli` fallback |
+| `QODER_CWD` | текущий каталог | рабочая папка Qoder |
+| `SUMMARIZER_API_KEY` | — | включает `summarize_session` |
+
+Пример для Qoder:
+
+```bash
+export ENABLE_QODER=true
+export QODER_CWD=/path/to/project
+npx -y agent-herder
+```
 
 ## Разработка
 
 ```bash
-npm run dev      # TypeScript watch mode
-npm run build    # компиляция
-npm run inspect  # MCP Inspector
+npm ci
+npm test
+npm run build
+npm run inspect
 ```
+
+Локальная stdio-точка входа: `dist/index.js`.
+
+## Частые вопросы
+
+**Agent Herder заменяет моего coding-агента?** Нет. Он подключает MCP-клиент
+к уже существующим сессиям OpenCode, Claude Code, Codex или Qoder.
+
+**`get_transcript` читает всю историю?** Нет. Можно запросить последние N
+сообщений или найти нужный фрагмент — результат ограничен по размеру.
+
+**Можно оставить только один harness?** Да, отключите ненужные адаптеры через
+переменные `ENABLE_*`.
 
 ## Лицензия
 

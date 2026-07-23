@@ -1,253 +1,154 @@
 # Agent Herder
 
-**MCP server for monitoring and controlling coding agents.**
+**MCP control center for coding agents.**
+
+Monitor, inspect, search, and coordinate AI coding sessions from one MCP server:
+OpenCode, Claude Code, Codex CLI, and Qoder.
 
 [Русский](README.ru.md) · [简体中文](README.zh.md)
 
-![Agent Herder developer workspace](docs/assets/readme-hero.png)
-
 ![Animated Agent Herder session lineage](docs/assets/agent-herder-animated.svg)
 
-> Checked in this workspace with Node.js 22.22.3, npm 10.9.8, and the TypeScript build.
+## Start in 30 seconds
 
-One unified MCP interface to monitor and manage sessions across four coding agent harnesses:
-
-- [OpenCode](https://opencode.ai) — via HTTP server API (`opencode serve`)
-- [Claude Code](https://code.claude.com) — via CLI and session files
-- [Codex CLI](https://github.com/openai/codex) — via the native persistent `codex app-server` transport, with CLI fallback
-- Qoder CLI — via its native ACP transport (`qodercli --acp`)
-
-## Quick start
-
-Run the published MCP server without cloning the repository:
+Run it without cloning a repository:
 
 ```bash
 npx -y agent-herder
 ```
 
-For an MCP client configuration, use `npx` as the command and `-y agent-herder` as its arguments.
-
-From a local checkout, install the Node dependencies and build the MCP server with one command:
-
-```bash
-npm ci && npm run build
-```
-
-The built stdio entrypoint is `dist/index.js`. For Claude Code, register this checkout with:
-
-```bash
-claude mcp add agent-herder -- node "$PWD/dist/index.js"
-```
-
-For Cursor, OpenCode, or another MCP client, use the same absolute `dist/index.js` path in the client configuration shown below. Start `opencode serve` first if the OpenCode adapter is enabled.
-
-## What it does
-
-### Monitoring
-- **List all agents** — which are running, idle, stopped, or need input
-- **Inspect agent details** — model, cost, duration, message count, working directory
-- **See pending permissions** — agents waiting for tool approval
-
-### Management
-- **Send a message** — sync (wait for response), queue (fire-and-forget), or steer (redirect)
-- **Resume a stopped agent** — with an optional new message
-- **Pause a turn** — interrupt the active turn while keeping the native session resumable
-- **Recover or fork** — reconnect after an error, or create a child session with preserved lineage
-- **Stop an agent** — legacy terminate/abort action where the harness supports it
-- **Respond to permission requests** — allow or deny tool calls (OpenCode)
-- **Set permissions** — configure allowed tools and permission modes
-
-## Prerequisites
-
-At least one of:
-- `opencode` installed and `opencode serve` running
-- `claude` (Claude Code CLI) installed
-- `codex` (OpenAI Codex CLI) installed and `OPENAI_API_KEY` set
-
-## Install
-
-Published package:
-
-```bash
-npx -y agent-herder
-```
-
-From a local checkout:
-
-```bash
-npm ci
-npm run build
-```
-
-## Configure
-
-### Environment Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `ENABLE_OPENCODE` | `true` | Enable OpenCode adapter |
-| `ENABLE_CLAUDE` | `true` | Enable Claude Code adapter |
-| `ENABLE_CODEX` | `true` | Enable Codex adapter |
-| `ENABLE_QODER` | `false` | Enable Qoder's native ACP adapter |
-| `OPENCODE_URL` | `http://127.0.0.1:4096` | OpenCode server URL |
-| `OPENCODE_SERVER_PASSWORD` | | Password for OpenCode server auth |
-| `OPENCODE_SERVER_USERNAME` | `opencode` | Username for OpenCode server auth |
-| `CLAUDE_BIN` | `claude` | Path to Claude Code CLI binary |
-| `CODEX_BIN` | `codex` | Path to Codex CLI binary |
-| `CODEX_TRANSPORT` | `app-server` | `app-server` for native controls, or `cli` for the legacy filesystem/CLI adapter |
-| `CODEX_CWD` | current directory | Working directory for the Codex app-server |
-| `CODEX_DATA_DIR` | `~/.codex` | Codex data directory |
-| `CODEX_MODELS` | `o4-mini,o3,gpt-4.1,gpt-4o` | Models shown by `list_models` |
-| `QODER_BIN` | `qodercli` | Path to Qoder CLI |
-| `QODER_ARGS` | `[]` | Extra Qoder CLI arguments as a JSON string array |
-| `QODER_CWD` | current directory | Workspace passed to Qoder ACP |
-| `QODER_MODEL` | | Initial Qoder model |
-| `QODER_MODELS` | `Ultimate,Lite` | Models shown by `list_models` |
-
-### Add to your MCP client
-
-**Claude Code:**
-```bash
-claude mcp add agent-herder -- node /path/to/agent-herder/dist/index.js
-```
-
-**Cursor / other MCP clients** — add to your MCP config:
+Add the same command to any MCP client:
 
 ```json
 {
   "mcpServers": {
     "agent-herder": {
-      "command": "node",
-      "args": ["/path/to/agent-herder/dist/index.js"],
-      "env": {
-        "ENABLE_OPENCODE": "true",
-        "ENABLE_CLAUDE": "true",
-        "ENABLE_CODEX": "false",
-        "ENABLE_QODER": "true",
-        "QODER_CWD": "/home/roomhacker/PycharmProjects/video_watching"
-      }
+      "command": "npx",
+      "args": ["-y", "agent-herder"]
     }
   }
 }
 ```
 
-**OpenCode** — add to `opencode.json`:
-```json
-{
-  "mcp": {
-    "agent-herder": {
-      "command": "node",
-      "args": ["/path/to/agent-herder/dist/index.js"]
-    }
-  }
-}
+Start the harness you want to observe first. For OpenCode, that means:
+
+```bash
+opencode serve
 ```
 
-## Available Tools
+## What it does
 
-| Tool | Description |
+**Monitor, inspect, and coordinate.** Agent Herder gives your MCP client one
+control plane for coding-agent sessions that normally live in separate tools.
+
+- See running, idle, stopped, and waiting sessions in one list.
+- Find a session's parent and children without guessing IDs.
+- Read the latest messages or search one transcript with bounded context.
+- Send, resume, stop, steer, or recover sessions where the harness supports it.
+- Review permissions, switch models, inspect worktrees, and summarize sessions.
+
+Typical request:
+
+> Find the parent of this session, list its children, then show the last five
+> messages from the child that is currently working on the bug.
+
+## Why people use it
+
+Use Agent Herder when you need an **MCP server for OpenCode**, a **Claude Code
+session manager**, **Codex CLI transcript search**, or one dashboard for several
+AI coding agents. It is especially useful for parent/child agent workflows,
+parallel coding tasks, bounded context, and session recovery.
+
+## Supported harnesses
+
+| Harness | Connection | Enablement |
+|---|---|---|
+| OpenCode | HTTP API | Enabled by default; run `opencode serve` |
+| Claude Code | SDK/CLI and session files | Enabled by default |
+| Codex CLI | Native app-server with CLI fallback | Enabled by default |
+| Qoder CLI | Native ACP | Set `ENABLE_QODER=true` |
+
+## Core MCP tools
+
+| Group | Tools |
 |---|---|
-| `list_agents` | List all sessions, filter by harness or status |
-| `agent_info` | Get detailed info about a specific session |
-| `find_parent` | Find a session's native parent |
-| `list_children` | List a session's native children |
-| `get_transcript` | Read newest messages or search transcript messages by session ID |
-| `send_message` | Send a message (sync/queue/steer) |
-| `resume_agent` | Resume a stopped session |
-| `stop_agent` | Abort a running session |
-| `respond_permission` | Allow/deny a pending permission request |
-| `set_permissions` | Set allowed tools and permission mode |
+| Discover | `list_agents`, `agent_info`, `audit_worktrees` |
+| Lineage and context | `find_parent`, `list_children`, `get_transcript`, `search_transcripts` |
+| Control | `send_message`, `resume_agent`, `stop_agent` |
+| Permissions and models | `respond_permission`, `set_permissions`, `list_models`, `change_model` |
+| Summaries | `summarize_session` |
 
-## Architecture
+`get_transcript` accepts a session ID, an optional number of latest messages,
+and an optional search prompt. It returns only the useful slice instead of
+loading an entire conversation into context.
 
-```
-┌─────────────────┐
-│   MCP Client    │  (Claude Code, Cursor, OpenCode, etc.)
-└────────┬────────┘
-         │ stdio (MCP protocol)
-┌────────▼────────┐
-│  Agent Herder   │  (this server)
-│  ┌───────────┐  │
-│  │ MCP Tools │  │  7 unified tools
-│  └─────┬─────┘  │
-│        │        │
-│  ┌─────▼──────┐ │
-│  │  Adapters  │ │
-│  ├────────────┤ │
-│  │ OpenCode   │──┼── HTTP → localhost:4096
-│  │ Claude     │──┼── CLI + ~/.claude/sessions
-│  │ Codex      │──┼── CLI + ~/.codex/sessions
-│  └────────────┘ │
-└─────────────────┘
-```
+## Requirements
 
-## Harness-specific notes
+- Node.js 22+ and npm.
+- At least one supported harness installed and available in `PATH`.
+- `OPENAI_API_KEY` for Codex when the Codex app-server requires it.
 
-### OpenCode
-- Best supported — full HTTP API with session management, permissions, SSE events
-- Requires `opencode serve` running (auto-starts with TUI on port 4096)
-- Supports remote permission response and real-time status
+## Configuration
 
-### Claude Code
-- Sessions read from `~/.claude/projects/*/sessions/*.jsonl`
-- The official Claude Agent SDK is used first; CLI `claude -p --resume <id>` is the fallback
-- For ACP-owned sessions, prompts stay on the persistent ACP connection instead of spawning another resume process
-- Permissions must be set at launch via `--allowedTools` flag
-- Running process detection via `pgrep`
+The common switches are:
 
-### Codex CLI
-- Sessions read from `~/.codex/sessions/`
-- Sending messages spawns new `codex` invocations
-- Uses `--full-auto` mode for unattended operation
-- Permissions set at launch via `--full-auto`, `--approve-tools` flags
+| Variable | Default | Purpose |
+|---|---:|---|
+| `ENABLE_OPENCODE` | `true` | Enable the OpenCode adapter |
+| `ENABLE_CLAUDE` | `true` | Enable the Claude Code adapter |
+| `ENABLE_CODEX` | `true` | Enable the Codex adapter |
+| `ENABLE_QODER` | `false` | Enable the Qoder ACP adapter |
+| `OPENCODE_URL` | `http://127.0.0.1:4096` | OpenCode server URL |
+| `OPENCODE_SERVER_PASSWORD` | — | OpenCode server password, if configured |
+| `CODEX_TRANSPORT` | `app-server` | Codex native transport or `cli` fallback |
+| `QODER_CWD` | current directory | Workspace used by Qoder |
+| `SUMMARIZER_API_KEY` | — | Enables `summarize_session` |
 
-## Development
+Example for Qoder:
 
 ```bash
-npm run dev        # TypeScript watch mode
-npm run build      # Compile
-npm run inspect    # Open MCP Inspector for interactive testing
+export ENABLE_QODER=true
+export QODER_CWD=/path/to/project
+npx -y agent-herder
 ```
 
-## Persistent ACP and Web UI
-
-`agent-herder` can own an ACP-compatible Claude process instead of starting a
-new `claude --resume` process for every message. Configure the launcher as a
-JSON argument array:
+## Develop locally
 
 ```bash
-export ACP_AGENT_COMMAND=claude-agent-acp
-export ACP_AGENT_ARGS='["--stdio"]'
-export ACP_AGENT_PROFILE=claude-acp
+npm ci
+npm test
+npm run build
+npm run inspect
+```
+
+The local stdio entrypoint is `dist/index.js`.
+
+<details>
+<summary>Advanced: web UI and persistent ACP</summary>
+
+The optional web UI runs on loopback:
+
+```bash
 export AGENT_HERDER_WEB_PORT=8787
 npm start
 ```
 
-Qoder has a native ACP mode. Enable it alongside the other adapters:
+Open `http://127.0.0.1:8787/`. For a persistent ACP profile, set
+`ACP_AGENT_COMMAND`, `ACP_AGENT_ARGS` as a JSON array, and
+`ACP_AGENT_PROFILE` before starting the server.
 
-```bash
-export ENABLE_QODER=true
-export QODER_BIN=/home/roomhacker/.npm-global/bin/qodercli
-export QODER_CWD=/home/roomhacker/PycharmProjects/video_watching
-npm start
-```
+</details>
 
-This exposes existing Qoder sessions through `list_agents`, `send_message`,
-`resume_agent`, `stop_agent`, `list_models`, and `change_model`. Qoder model
-changes use ACP `session/set_config_option` when available.
+## FAQ
 
-Open `http://127.0.0.1:8787/` to list sessions, pause/resume or recover them
-through their owning adapter, fork child sessions, send a message, or convert
-a Claude/Codex/OpenCode transcript. The UI shows only controls advertised by
-the native transport.
-Set `AGENT_HERDER_WEB_HOST` explicitly if the UI must bind beyond loopback.
+**Does Agent Herder replace my coding agent?** No. It connects your MCP client
+to the sessions owned by OpenCode, Claude Code, Codex, or Qoder.
 
-The ACP adapter keeps one child process and one connection per profile. It can
-list and load any sessions advertised by that ACP agent, but it cannot attach to
-an unrelated stdio process already owned by Aion or another ACP client. Such a
-session can still be continued by converting its native transcript into the
-target harness with the built-in session-convert library; conversion creates a
-new native transcript and does not transfer an in-flight turn.
+**Does `get_transcript` load everything?** No. Ask for the latest N messages or
+search for a prompt; the result is bounded for practical agent context.
+
+**Can I use only one harness?** Yes. Disable adapters you do not run with the
+`ENABLE_*` variables.
 
 ## License
 

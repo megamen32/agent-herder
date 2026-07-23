@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 
 interface PackageMetadata {
   bin?: Record<string, string>;
+  description?: string;
   files?: string[];
+  keywords?: string[];
   publishConfig?: { access?: string };
   scripts?: Record<string, string>;
 }
@@ -14,6 +16,7 @@ const repositoryRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const packageMetadata = JSON.parse(
   readFileSync(resolve(repositoryRoot, "package.json"), "utf8"),
 ) as PackageMetadata;
+const englishReadme = readFileSync(resolve(repositoryRoot, "README.md"), "utf8");
 
 describe("npm package metadata", () => {
   it("exposes a one-line npx MCP entrypoint and publishes the animated asset", () => {
@@ -21,7 +24,13 @@ describe("npm package metadata", () => {
     expect(packageMetadata.scripts?.prepublishOnly).toContain("npm run build");
     expect(packageMetadata.publishConfig?.access).toBe("public");
     expect(packageMetadata.files).toEqual(
-      expect.arrayContaining(["dist", "docs/assets", "README.md", "README.ru.md", "README.zh.md"]),
+      expect.arrayContaining([
+        "dist",
+        "docs/assets/agent-herder-animated.svg",
+        "README.md",
+        "README.ru.md",
+        "README.zh.md",
+      ]),
     );
 
     const animatedSvg = readFileSync(
@@ -29,5 +38,29 @@ describe("npm package metadata", () => {
       "utf8",
     );
     expect(animatedSvg).toMatch(/@keyframes|<animate\b/);
+  });
+
+  it("keeps the landing page searchable and immediately actionable", () => {
+    for (const phrase of [
+      "Agent Herder",
+      "MCP control center for coding agents",
+      "Start in 30 seconds",
+      "MCP server",
+      "npx -y agent-herder",
+      "Monitor, inspect, and coordinate",
+      "OpenCode",
+      "Claude Code",
+      "Codex CLI",
+      "Qoder",
+      "find_parent",
+      "list_children",
+      "get_transcript",
+    ]) {
+      expect(englishReadme).toContain(phrase);
+    }
+    expect(packageMetadata.description).toContain("parent/child sessions");
+    expect(packageMetadata.keywords).toEqual(
+      expect.arrayContaining(["agent-orchestration", "transcript-search", "mcp-server"]),
+    );
   });
 });
