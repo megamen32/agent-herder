@@ -73,15 +73,15 @@ parallel coding tasks, bounded context, and session recovery.
 | Group | Tools |
 |---|---|
 | Discover | `list_agents`, `agent_info`, `audit_worktrees` |
-| Lineage and context | `find_parent`, `list_children`, `get_transcript`, `search_transcripts` |
+| Lineage and transcript | `find_parent`, `list_children`, `export_transcript` |
 | Control | `send_message`, `resume_agent`, `stop_agent` |
 | Permissions and models | `respond_permission`, `set_permissions`, `list_models`, `change_model` |
-| Summaries | `summarize_session` |
 
-`get_transcript` accepts a session ID, an optional number of latest messages,
-and an optional `query` (or lead-oriented `need`). It ranks matching messages,
-keeps nearby context, and returns only that bounded slice instead of loading an
-entire conversation into context.
+`export_transcript` copies the adapter-owned raw transcript for one session and
+its in-workspace parent/child lineage, then always returns a short navigation
+card. It deliberately does not rank or compress the conversation: use the
+normal filesystem tools available to the agent to inspect exactly the slice it
+needs.
 
 ## Requirements
 
@@ -103,11 +103,9 @@ The common switches are:
 | `OPENCODE_SERVER_PASSWORD` | — | OpenCode server password, if configured |
 | `CODEX_TRANSPORT` | `app-server` | Codex native transport or `cli` fallback |
 | `QODER_CWD` | current directory | Workspace used by Qoder |
-| `SUMMARIZER_API_KEY` | — | Enables `summarize_session` |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_DIR` | `.agent-herder/transcripts` | Relative archive path inside the MCP process CWD |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_MAX_BYTES` | `104857600` | Archive retention size budget (100 MiB) |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_RETENTION_DAYS` | `3` | Remove unmodified archive bundles by modification time |
-| `AGENT_HERDER_TRANSCRIPT_INLINE_TOKEN_BUDGET` | `8192` | Approximate inline budget before an archive navigation card |
 
 Example for Qoder:
 
@@ -149,24 +147,27 @@ Open `http://127.0.0.1:8787/`. For a persistent ACP profile, set
 **Does Agent Herder replace my coding agent?** No. It connects your MCP client
 to the sessions owned by OpenCode, Claude Code, Codex, or Qoder.
 
-**Does `get_transcript` load everything?** No. Ask for the latest N messages or
-search for a prompt; the result is bounded for practical agent context.
+**Does `export_transcript` load everything into the model?** No. It writes the
+raw source to a CWD-scoped archive and returns only the permanent navigation
+card. The card shows `sed` for the first lines, `tail` for the last lines, and
+`rg` examples for literal text, regex, or a timestamp.
 
 **Can I use only one harness?** Yes. Disable adapters you do not run with the
 `ENABLE_*` variables.
 
 ## Transcript archive
 
-Every successful `get_transcript` atomically copies its adapter-owned raw source
-under the MCP process CWD and writes a lineage manifest beside it. The archive
-never falls back to display-only text. Its manifest names the source, format,
-timestamp coverage, and whether the adapter can prove completeness. Parent or
-child sessions outside the MCP CWD are recorded as excluded, not copied.
+`export_transcript` atomically copies the adapter-owned raw source under the MCP
+process CWD and writes a lineage manifest beside it. The archive never falls
+back to display-only text. Its manifest names the source, format, timestamp
+coverage, and whether the adapter can prove completeness. Parent or child
+sessions outside the MCP CWD are recorded as excluded, not copied.
 
-If selected context exceeds the inline token budget, Agent Herder returns archive
-paths plus ready-to-use `latestMessages`, `query`, `regex`, and `after`/`before`
-examples. OpenCode and ACP archives are explicitly partial until their upstream
-APIs offer a verified complete-history source.
+The navigation card is returned for every export, regardless of transcript
+size. It shows how to view the first or last lines and how to use literal,
+regular-expression, or timestamp searches. OpenCode and ACP archives are
+explicitly partial until their upstream APIs offer a verified complete-history
+source.
 
 ## License
 

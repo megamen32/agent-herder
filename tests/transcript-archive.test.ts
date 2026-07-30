@@ -7,7 +7,8 @@ import {
   buildTranscriptArchiveCard,
   type ArchivedTranscript,
 } from "../src/transcript-archive.js";
-import { handleGetTranscript } from "../src/mcp-tools/handlers.js";
+import { toolDefinitions } from "../src/mcp-tools/definitions.js";
+import { handleExportTranscript } from "../src/mcp-tools/handlers.js";
 import type { HarnessAdapter } from "../src/types/index.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -40,6 +41,7 @@ describe("TranscriptArchive", () => {
   it("exports the target and in-workspace lineage, records CWD exclusions, and atomically overwrites a session", async () => {
     const root = await workspace();
     const foreign = await workspace();
+    await mkdir(join(root, "worker"));
     const archive = new TranscriptArchive({ workspaceRoot: root });
     const result = await archive.exportLineage({
       target: transcript("lead", root, "first canonical export"),
@@ -75,19 +77,18 @@ describe("TranscriptArchive", () => {
     await expect(readFile(old.manifestPath, "utf8")).rejects.toThrow();
   });
 
-  it("gives the agent a compact actionable card instead of an over-budget inline transcript", () => {
+  it("gives the agent a compact actionable card for every export", () => {
     const card = buildTranscriptArchiveCard({
       targetPath: "/workspace/.agent-herder/transcripts/opencode/lead.md",
       manifestPath: "/workspace/.agent-herder/transcripts/opencode/lead.manifest.json",
-      estimatedTokens: 8_193,
-      inlineTokenBudget: 8_192,
       sessionId: "lead",
+      complete: true,
     });
 
-    expect(card).toContain("Inline context omitted");
-    expect(card).toContain('query="keywords"');
-    expect(card).toContain('regex="ERR(or)?"');
-    expect(card).toContain('after="2026-07-30T10:00:00Z"');
+    expect(card).toContain("complete native source");
+    expect(card).toContain("rg -n --fixed-strings");
+    expect(card).toContain("ERR(or)?");
+    expect(card).toContain("2026-07-30T10:");
   });
 
   it("rejects an archive directory that could escape the MCP process CWD", async () => {
@@ -112,8 +113,15 @@ describe("TranscriptArchive", () => {
       .rejects.toThrow("Unsupported transcript archive harness");
   });
 
-  it("archives raw target and in-workspace child on every get_transcript request", async () => {
+  it("exposes export_transcript as the only transcript-facing static tool", () => {
+    const names = toolDefinitions.map((tool) => tool.name);
+    expect(names).toContain("export_transcript");
+    expect(names.filter((name) => /transcript|summarize/.test(name))).toEqual(["export_transcript"]);
+  });
+
+  it("exports raw target and in-workspace lineage with a permanent navigation card", async () => {
     const root = await workspace();
+    await mkdir(join(root, "worker", "nested"), { recursive: true });
     const lead = { id: "lead", harness: "opencode" as const, status: "idle" as const, title: "lead", cwd: root, lastActivity: new Date().toISOString() };
     const child = { ...lead, id: "child", cwd: join(root, "worker") };
     const grandchild = { ...lead, id: "grandchild", cwd: join(root, "worker", "nested") };
@@ -122,7 +130,6 @@ describe("TranscriptArchive", () => {
       name: "test",
       getSession: async (id: string) => id === "lead" ? lead : id === "child" ? child : id === "grandchild" ? grandchild : null,
       listSessions: async () => [lead, child, grandchild],
-      getTranscript: async () => "display transcript only",
       getRawTranscript: async (id: string) => ({
         bytes: Buffer.from(`{\"session\":\"${id}\"}\n`),
         complete: true,
@@ -134,11 +141,46 @@ describe("TranscriptArchive", () => {
     } as unknown as HarnessAdapter;
     const archive = new TranscriptArchive({ workspaceRoot: root });
 
-    const result = await handleGetTranscript(new Map([["opencode", adapter]]), { sessionId: "lead", harness: "opencode" }, archive);
+    const result = await handleExportTranscript(new Map([["opencode", adapter]]), { sessionId: "lead", harness: "opencode" }, archive);
 
-    expect(result).toContain("Archive:");
+    expect(result).toContain("Transcript exported:");
+    expect(result).toContain("sed -n '1,20p'");
+    expect(result).toContain("tail -n 20");
+    expect(result).toContain("rg -n --fixed-strings");
     expect(await readFile(join(root, ".agent-herder", "transcripts", "opencode", "lead.jsonl"), "utf8")).toBe('{"session":"lead"}\n');
     expect(await readFile(join(root, ".agent-herder", "transcripts", "opencode", "child.jsonl"), "utf8")).toBe('{"session":"child"}\n');
     expect(await readFile(join(root, ".agent-herder", "transcripts", "opencode", "grandchild.jsonl"), "utf8")).toBe('{"session":"grandchild"}\n');
+  });
+
+  it("excludes foreign-harness and symlinked-CWD relations before reading raw bytes", async () => {
+    const root = await workspace();
+    const outside = await workspace();
+    const linked = join(root, "linked-outside");
+    await symlink(outside, linked);
+    const lead = { id: "lead", harness: "opencode" as const, status: "idle" as const, title: "lead", cwd: root, lastActivity: new Date().toISOString() };
+    const wrongHarness = { ...lead, id: "wrong-harness", harness: "codex" as const };
+    const symlinked = { ...lead, id: "symlinked", cwd: linked };
+    const rawReads: string[] = [];
+    const adapter = {
+      type: "opencode",
+      name: "test",
+      getSession: async () => lead,
+      listSessions: async () => [lead],
+      getRawTranscript: async (id: string) => {
+        rawReads.push(id);
+        return { bytes: Buffer.from(`{"session":"${id}"}\n`), complete: true, source: { kind: "native-file" as const, location: `/source/${id}.jsonl`, format: "jsonl" as const }, timestampCoverage: "native" as const };
+      },
+      listChildren: async (id: string) => id === "lead" ? [wrongHarness, symlinked] : [],
+    } as unknown as HarnessAdapter;
+
+    const result = await handleExportTranscript(new Map([["opencode", adapter]]), { sessionId: "lead", harness: "opencode" }, new TranscriptArchive({ workspaceRoot: root }));
+    const manifestPath = result.split("\n").find((line) => line.startsWith("Lineage manifest: "))!.slice("Lineage manifest: ".length);
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+
+    expect(rawReads).toEqual(["lead"]);
+    expect(manifest.excluded).toEqual(expect.arrayContaining([
+      { harness: "codex", sessionId: "wrong-harness", reason: "foreign_harness" },
+      { harness: "opencode", sessionId: "symlinked", reason: "outside_workspace" },
+    ]));
   });
 });

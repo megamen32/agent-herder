@@ -34,7 +34,7 @@
     "coding-agents",
     "agent-orchestration",
     "session-manager",
-    "transcript-search",
+    "transcript-export",
     "parent-child-sessions",
     "opencode",
     "claude-code",

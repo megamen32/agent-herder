@@ -54,13 +54,13 @@ describe("npm package metadata", () => {
       "Qoder",
       "find_parent",
       "list_children",
-      "get_transcript",
+      "export_transcript",
     ]) {
       expect(englishReadme).toContain(phrase);
     }
     expect(packageMetadata.description).toContain("parent/child sessions");
     expect(packageMetadata.keywords).toEqual(
-      expect.arrayContaining(["agent-orchestration", "transcript-search", "mcp-server"]),
+      expect.arrayContaining(["agent-orchestration", "transcript-export", "mcp-server"]),
     );
   });
 });

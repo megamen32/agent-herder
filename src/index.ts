@@ -13,17 +13,15 @@ import {
   handleAgentInfo,
   handleFindParent,
   handleListChildren,
-  handleGetTranscript,
+  handleExportTranscript,
   handleSendMessage,
   handleStopAgent,
   handleRespondPermission,
   handleSetPermissions,
   handleResumeAgent,
-  handleSummarizeSession,
   handleChangeModel,
   handleListModels,
   handleAuditWorktrees,
-  handleSearchTranscripts,
 } from "./mcp-tools/handlers.js";
 
 // ===== Configuration from environment =====
@@ -35,13 +33,6 @@ const ENABLE_CODEX = parseEnvBool(process.env.ENABLE_CODEX, true);
 const CODEX_TRANSPORT = process.env.CODEX_TRANSPORT || "app-server";
 const ENABLE_QODER = parseEnvBool(process.env.ENABLE_QODER, false);
 const ACP_AGENT_COMMAND = process.env.ACP_AGENT_COMMAND;
-
-// Summarizer config (defaults to gemma4 at llm.bezrabotnyi.com)
-process.env.SUMMARIZER_API_BASE = process.env.SUMMARIZER_API_BASE || "https://llm.bezrabotnyi.com/v1";
-process.env.SUMMARIZER_MODEL = process.env.SUMMARIZER_MODEL || "gemma4";
-if (!process.env.SUMMARIZER_API_KEY) {
-  console.error("[agent-herder] WARNING: SUMMARIZER_API_KEY not set. summarize_session tool will not work.");
-}
 
 function parseEnvBool(val: string | undefined, fallback: boolean): boolean {
   if (!val) return fallback;
@@ -235,25 +226,6 @@ function registerTools(server: McpServer) {
   );
 
   server.tool(
-    "search_transcripts",
-    "Search all available Claude, Codex, and OpenCode session transcripts for text or a regular expression.",
-    {
-      query: z.string().min(1).describe("Text or regular expression to search for"),
-      harness: z.enum(["all", "opencode", "claude", "codex", "qoder"]).optional().default("all").describe("Harness filter"),
-      folder: z.string().optional().describe("CWD prefix filter"),
-      maxAge: z.number().int().min(0).optional().describe("Maximum session age in seconds"),
-      regex: z.boolean().optional().default(false).describe("Treat query as a regular expression"),
-      caseSensitive: z.boolean().optional().default(false).describe("Use case-sensitive matching"),
-      maxSessions: z.number().int().min(1).max(5000).optional().default(1000).describe("Maximum sessions to inspect"),
-      maxMatches: z.number().int().min(1).max(1000).optional().default(100).describe("Maximum matching lines"),
-    },
-    async (args) => {
-      const result = await handleSearchTranscripts(adapters, args);
-      return { content: [{ type: "text" as const, text: result }] };
-    }
-  );
-
-  server.tool(
     "agent_info",
     "Get detailed info about a specific session. Always shows model and last message.",
     {
@@ -293,22 +265,14 @@ function registerTools(server: McpServer) {
   );
 
   server.tool(
-    "get_transcript",
-    "Return the newest transcript messages or search matching transcript messages.",
+    "export_transcript",
+    "Export the raw adapter-owned transcript and return a filesystem navigation card.",
     {
       sessionId: z.string().describe("Session ID"),
       harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness type"),
-      query: z.string().optional().describe("Optional search prompt; omit to return newest messages"),
-      need: z.string().optional().describe("Optional lead context need; an alias for query"),
-      regex: z.string().optional().describe("Optional regular expression to search within this transcript"),
-      after: z.string().datetime({ offset: true }).optional().describe("Inclusive ISO-8601 lower timestamp bound"),
-      before: z.string().datetime({ offset: true }).optional().describe("Inclusive ISO-8601 upper timestamp bound"),
-      latestMessages: z.number().int().min(1).max(100).optional().default(10).describe("Newest messages to include"),
-      contextMessages: z.number().int().min(0).max(10).optional().default(1).describe("Neighbor messages around search matches"),
-      maxChars: z.number().int().min(100).max(100000).optional().default(100000).describe("Maximum returned characters"),
     },
     async (args) => {
-      const result = await handleGetTranscript(adapters, args);
+      const result = await handleExportTranscript(adapters, args);
       return { content: [{ type: "text" as const, text: result }] };
     }
   );
@@ -382,20 +346,6 @@ function registerTools(server: McpServer) {
     },
     async (args) => {
       const result = await handleResumeAgent(adapters, args);
-      return { content: [{ type: "text" as const, text: result }] };
-    }
-  );
-
-  server.tool(
-    "summarize_session",
-    "Summarize a session transcript using built-in gemma4 LLM. Returns structured summary (Task, Progress, Current State, Issues). Use quick=true for 1-3 sentences.",
-    {
-      sessionId: z.string().describe("Session ID to summarize"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness (optional)"),
-      quick: z.boolean().optional().default(false).describe("Quick 1-3 sentence summary"),
-    },
-    async (args) => {
-      const result = await handleSummarizeSession(adapters, args);
       return { content: [{ type: "text" as const, text: result }] };
     }
   );

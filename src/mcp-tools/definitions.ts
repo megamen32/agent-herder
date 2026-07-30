@@ -36,21 +36,6 @@ export const AuditWorktreesSchema = z.object({
   ),
 });
 
-export const SearchTranscriptsSchema = z.object({
-  query: z.string().min(1).describe("Text or regular expression to search for in session transcripts."),
-  harness: z
-    .enum(["all", "opencode", "claude", "codex", "qoder"])
-    .optional()
-    .default("all")
-    .describe("Restrict the search to one harness."),
-  folder: z.string().optional().describe("Restrict sessions to a CWD prefix, for example '~/apps'."),
-  maxAge: z.number().int().min(0).optional().describe("Only search sessions active within this many seconds."),
-  regex: z.boolean().optional().default(false).describe("Treat query as a regular expression, like rg."),
-  caseSensitive: z.boolean().optional().default(false).describe("Use case-sensitive matching."),
-  maxSessions: z.number().int().min(1).max(5000).optional().default(1000).describe("Maximum sessions to inspect."),
-  maxMatches: z.number().int().min(1).max(1000).optional().default(100).describe("Maximum matching lines to return."),
-});
-
 export const AgentInfoSchema = z.object({
   sessionId: z.string().describe("The session ID to inspect."),
   harness: z
@@ -75,26 +60,9 @@ export const ListChildrenSchema = z.object({
     .describe("Which harness owns the session. If omitted, searches all."),
 });
 
-const transcriptSelectionFields = {
-  query: z.string().optional().describe("Optional search prompt. When omitted, return newest messages."),
-  need: z.string().optional().describe("Optional lead context need; an alias for query."),
-  regex: z.string().optional().describe("Optional regular expression to search within this one transcript."),
-  after: z.string().datetime({ offset: true }).optional().describe("Inclusive ISO-8601 lower timestamp bound."),
-  before: z.string().datetime({ offset: true }).optional().describe("Inclusive ISO-8601 upper timestamp bound."),
-  latestMessages: z.number().int().min(1).max(100).optional().default(10).describe("Number of newest messages to include."),
-  contextMessages: z.number().int().min(0).max(10).optional().default(1).describe("Neighbor messages to include around search matches."),
-};
-
-export const GetTranscriptSchema = z.object({
-  sessionId: z.string().describe("The session ID whose transcript should be returned."),
-  harness: z
-    .enum(["opencode", "claude", "codex", "qoder"])
-    .optional()
-    .describe("Which harness owns the session. If omitted, searches all."),
-  ...transcriptSelectionFields,
-  maxChars: z.number().int().min(100).max(100000).optional().default(100000).describe(
-    "Maximum returned characters. Search modes preserve matching sections; latest mode preserves the newest tail."
-  ),
+export const ExportTranscriptSchema = z.object({
+  sessionId: z.string().describe("The session ID whose raw source should be exported."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Which harness owns the session. If omitted, searches all."),
 });
 
 export const SendMessageSchema = z.object({
@@ -130,14 +98,6 @@ export const ResumeAgentSchema = z.object({
   sessionId: z.string().describe("Session ID to resume."),
   harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional(),
   message: z.string().optional().describe("Optional message to send when resuming."),
-});
-
-export const SummarizeSessionSchema = z.object({
-  sessionId: z.string().describe("The session ID to summarize."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness (optional if ID is unique)."),
-  quick: z.boolean().optional().default(false).describe(
-    "If true, produce a 1-3 sentence quick summary (cheaper). If false, produce a detailed structured summary."
-  ),
 });
 
 export const ChangeModelSchema = z.object({
@@ -190,26 +150,6 @@ export const toolDefinitions: Tool[] = [
     },
   },
   {
-    name: "search_transcripts",
-    description:
-      "Search all available Claude, Codex, and OpenCode session transcripts for text or a regular expression. " +
-      "Returns matching lines with harness, session ID, CWD, and line number.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        query: { type: "string", description: "Text or regular expression" },
-        harness: { type: "string", enum: ["all", "opencode", "claude", "codex", "qoder"], default: "all" },
-        folder: { type: "string", description: "CWD prefix filter" },
-        maxAge: { type: "number", description: "Maximum session age in seconds" },
-        regex: { type: "boolean", default: false, description: "Treat query as a regular expression" },
-        caseSensitive: { type: "boolean", default: false, description: "Use case-sensitive matching" },
-        maxSessions: { type: "number", default: 1000, description: "Maximum sessions to inspect" },
-        maxMatches: { type: "number", default: 100, description: "Maximum matching lines to return" },
-      },
-      required: ["query"],
-    },
-  },
-  {
     name: "agent_info",
     description:
       "Get detailed information about a specific agent session including status, model, " +
@@ -249,17 +189,13 @@ export const toolDefinitions: Tool[] = [
     },
   },
   {
-    name: "get_transcript",
-    description: "Return newest transcript messages or ranked search matches for one session.",
+    name: "export_transcript",
+    description: "Export raw transcript material and return its filesystem navigation card.",
     inputSchema: {
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session ID" },
         harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder"], description: "Harness (optional)" },
-        query: { type: "string", description: "Optional search prompt; omit to return newest messages" },
-        latestMessages: { type: "number", default: 10, description: "Newest messages to include" },
-        contextMessages: { type: "number", default: 1, description: "Neighbor messages around search matches" },
-        maxChars: { type: "number", default: 100000, description: "Maximum returned characters" },
       },
       required: ["sessionId"],
     },
@@ -335,23 +271,6 @@ export const toolDefinitions: Tool[] = [
         sessionId: { type: "string", description: "Session ID to resume" },
         harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder"], description: "Harness (optional)" },
         message: { type: "string", description: "Optional message to send when resuming" },
-      },
-      required: ["sessionId"],
-    },
-  },
-  {
-    name: "summarize_session",
-    description:
-      "Summarize a session's transcript using a built-in LLM (gemma4). " +
-      "Produces a structured summary with Task, Progress, Current State, and Issues/Next Steps. " +
-      "Use this instead of reading the full transcript to save tokens and context. " +
-      "Supports 'quick' mode for a 1-3 sentence summary.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        sessionId: { type: "string", description: "Session ID to summarize" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder"], description: "Harness (optional)" },
-        quick: { type: "boolean", default: false, description: "Quick 1-3 sentence summary instead of detailed" },
       },
       required: ["sessionId"],
     },

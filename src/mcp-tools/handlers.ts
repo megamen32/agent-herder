@@ -1,31 +1,25 @@
 import { HarnessAdapter, AgentSession } from "../types/index.js";
-import { summarizeTranscript, quickSummary } from "../summarizer.js";
 import {
   ListAgentsSchema,
   AgentInfoSchema,
   FindParentSchema,
   ListChildrenSchema,
-  GetTranscriptSchema,
+  ExportTranscriptSchema,
   SendMessageSchema,
   StopAgentSchema,
   RespondPermissionSchema,
   SetPermissionsSchema,
   ResumeAgentSchema,
-  SummarizeSessionSchema,
   ChangeModelSchema,
   ListModelsSchema,
   AuditWorktreesSchema,
-  SearchTranscriptsSchema,
 } from "./definitions.js";
 import { homedir } from "node:os";
 import { relative, resolve, sep } from "node:path";
+import { realpath } from "node:fs/promises";
 import { auditWorktrees } from "../worktree-audit.js";
-import { searchLocalTranscripts, LocalTranscriptHarness } from "../transcript-search.js";
-import { selectRelevantTranscriptContext } from "../context-retrieval.js";
 import {
   buildTranscriptArchiveCard,
-  estimateTranscriptTokens,
-  inlineTranscriptTokenBudget,
   transcriptArchiveFromEnvironment,
   type ArchivedTranscript,
   type TranscriptArchive,
@@ -90,8 +84,15 @@ async function findSession(
   return null;
 }
 
-function isInsideWorkspace(workspaceRoot: string, sessionCwd: string): boolean {
-  const path = relative(resolve(workspaceRoot), resolve(sessionCwd));
+async function isInsideWorkspace(workspaceRoot: string, sessionCwd: string): Promise<boolean> {
+  let resolvedRoot: string;
+  let resolvedCwd: string;
+  try {
+    [resolvedRoot, resolvedCwd] = await Promise.all([realpath(workspaceRoot), realpath(sessionCwd)]);
+  } catch {
+    return false;
+  }
+  const path = relative(resolvedRoot, resolvedCwd);
   return path === "" || (!path.startsWith("..") && !path.includes(`..${sep}`));
 }
 
@@ -101,7 +102,7 @@ async function exportRawLineage(
   archive: TranscriptArchive,
   limit = 50,
 ): Promise<{ archive: TranscriptArchiveResult; targetRaw: ArchivedTranscript["raw"] } | null> {
-  if (!adapter.getRawTranscript || !isInsideWorkspace(archive.workspaceRoot, target.cwd)) return null;
+  if (!adapter.getRawTranscript || !await isInsideWorkspace(archive.workspaceRoot, target.cwd)) return null;
   const visited = new Set<string>();
   const related: ArchivedTranscript[] = [];
   const excluded: TranscriptArchiveResult["excluded"] = [];
@@ -110,7 +111,11 @@ async function exportRawLineage(
     const key = `${session.harness}:${session.id}`;
     if (visited.has(key)) return null;
     visited.add(key);
-    if (!isInsideWorkspace(archive.workspaceRoot, session.cwd)) {
+    if (session.harness !== target.harness) {
+      excluded.push({ harness: session.harness, sessionId: session.id, reason: "foreign_harness" });
+      return null;
+    }
+    if (!await isInsideWorkspace(archive.workspaceRoot, session.cwd)) {
       excluded.push({ harness: session.harness, sessionId: session.id, reason: "outside_workspace" });
       return null;
     }
@@ -253,97 +258,6 @@ export async function handleAuditWorktrees(args: unknown): Promise<string> {
   return lines.join("\n");
 }
 
-/**
- * Search available agent transcripts without invoking a shell or exposing raw
- * transcript contents beyond matching lines and short snippets.
- */
-export async function handleSearchTranscripts(
-  adapters: Map<string, HarnessAdapter>,
-  args: unknown
-): Promise<string> {
-  const parsed = SearchTranscriptsSchema.parse(args);
-  const targets = parsed.harness === "all"
-    ? [...adapters.values()]
-    : [adapters.get(parsed.harness)].filter(Boolean) as HarnessAdapter[];
-  const localHarnesses = targets
-    .map((adapter) => adapter.type)
-    .filter((harness): harness is LocalTranscriptHarness => harness === "claude" || harness === "codex");
-  const local = await searchLocalTranscripts({
-    harnesses: localHarnesses,
-    query: parsed.query,
-    regex: parsed.regex,
-    caseSensitive: parsed.caseSensitive,
-    folder: parsed.folder,
-    maxAge: parsed.maxAge,
-    maxSessions: parsed.maxSessions,
-    maxMatches: parsed.maxMatches,
-  });
-  const remote = await searchRemoteTranscripts(
-    targets.filter((adapter) => adapter.type === "opencode"),
-    parsed
-  );
-  const matches = [
-    ...local.matches.map((match) => `[${match.harness}] ${match.agentId ? `${match.agentId} ` : ""}${match.sessionId} ${match.cwd}\n  ${match.filePath}:${match.lineNumber}: ${match.snippet}`),
-    ...remote.matches,
-  ].slice(0, parsed.maxMatches);
-  const searched = local.scannedFiles + remote.searched;
-  const unavailable = remote.unavailable;
-  const header = `Searched ${searched} transcript source(s), found ${matches.length} matching line(s).`;
-  const notices = [
-    local.matchedFiles >= parsed.maxSessions ? `Session limit: ${parsed.maxSessions}.` : "",
-    unavailable > 0 ? `Unavailable transcripts: ${unavailable}.` : "",
-    matches.length >= parsed.maxMatches ? `Match limit: ${parsed.maxMatches}.` : "",
-  ].filter(Boolean);
-  return [header, ...notices, "", ...(matches.length > 0 ? matches : ["No matches."])].join("\n");
-}
-
-async function searchRemoteTranscripts(
-  adapters: HarnessAdapter[],
-  parsed: ReturnType<typeof SearchTranscriptsSchema.parse>
-): Promise<{ searched: number; unavailable: number; matches: string[] }> {
-  const sessions: Array<{ adapter: HarnessAdapter; session: AgentSession }> = [];
-  for (const adapter of adapters) {
-    if (!adapter.getTranscript) continue;
-    try {
-      for (const session of await adapter.listSessions()) {
-        if (parsed.folder && !expandPath(session.cwd).startsWith(expandPath(parsed.folder))) continue;
-        if (parsed.maxAge !== undefined && parsed.maxAge > 0 && new Date(session.lastActivity).getTime() < Date.now() - parsed.maxAge * 1000) continue;
-        sessions.push({ adapter, session });
-      }
-    } catch {
-      continue;
-    }
-  }
-  const source = parsed.regex ? parsed.query : parsed.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  let matcher: RegExp;
-  try {
-    matcher = new RegExp(source, parsed.caseSensitive ? "" : "i");
-  } catch (err) {
-    return { searched: 0, unavailable: 0, matches: [`Invalid regular expression: ${(err as Error).message}`] };
-  }
-  let searched = 0;
-  let unavailable = 0;
-  const matches: string[] = [];
-  for (const { adapter, session } of sessions.slice(0, parsed.maxSessions)) {
-    try {
-      const transcript = await adapter.getTranscript!(session.id);
-      if (!transcript) {
-        unavailable++;
-        continue;
-      }
-      searched++;
-      for (const [index, line] of transcript.split(/\r?\n/).entries()) {
-        if (matcher.test(line)) matches.push(`[${session.harness}] ${session.id} ${session.cwd}\n  line ${index + 1}: ${line.trim().slice(0, 300)}`);
-        if (matches.length >= parsed.maxMatches) break;
-      }
-    } catch {
-      unavailable++;
-    }
-    if (matches.length >= parsed.maxMatches) break;
-  }
-  return { searched, unavailable, matches };
-}
-
 export async function handleAgentInfo(
   adapters: Map<string, HarnessAdapter>,
   args: unknown
@@ -386,68 +300,31 @@ export async function handleListChildren(
   ].join("\n");
 }
 
-export async function handleGetTranscript(
+/** Export raw adapter-owned transcript material and return only its navigation card. */
+export async function handleExportTranscript(
   adapters: Map<string, HarnessAdapter>,
   args: unknown,
   archive: TranscriptArchive = transcriptArchiveFromEnvironment(),
 ): Promise<string> {
-  const parsed = GetTranscriptSchema.parse(args);
+  const parsed = ExportTranscriptSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
-  if (!found.adapter.getTranscript && !found.adapter.getRawTranscript) {
-    return `Session transcript retrieval is not supported by the ${found.adapter.name} adapter.`;
+  if (!found.adapter.getRawTranscript) {
+    return `Raw transcript export is not supported by the ${found.adapter.name} adapter.`;
   }
-  let archived: TranscriptArchiveResult | null = null;
-  let rawForExploration: ArchivedTranscript["raw"] | undefined;
   try {
     const outcome = await exportRawLineage(found.adapter, found.session, archive);
-    archived = outcome?.archive ?? null;
-    rawForExploration = outcome?.targetRaw;
-  } catch {
-    // Archive failures never turn a safe, read-only transcript request into a failed request.
-  }
-  const transcript = found.adapter.getTranscript ? await found.adapter.getTranscript(parsed.sessionId) : null;
-  if (!transcript) {
-    if (archived) {
-      return [
-        `Display transcript unavailable for [${found.session.harness}] ${parsed.sessionId}.`,
-        `Raw archive: ${archived.targetPath}`,
-        `Lineage manifest: ${archived.manifestPath}`,
-      ].join("\n").slice(0, parsed.maxChars);
-    }
-    return `Transcript unavailable for [${found.session.harness}] ${parsed.sessionId}.`;
-  }
-  const query = parsed.query?.trim() || parsed.need?.trim();
-  const mode = parsed.regex?.trim() ? "regex" : query ? "search" : parsed.after || parsed.before ? "date" : "latest";
-  const header = `Transcript [${found.session.harness}] ${parsed.sessionId} (${mode}):`;
-  const archiveLine = archived
-    ? `Archive: ${archived.targetPath} (complete=${archived.exported.find((entry) => entry.path === archived!.targetPath)?.complete ?? false}; manifest=${archived.manifestPath})`
-    : "Archive: unavailable outside the MCP process CWD or without a raw adapter source.";
-  const prefix = `${header}\n${archiveLine}\n\n`;
-  if (prefix.length >= parsed.maxChars) return prefix.slice(0, parsed.maxChars);
-  const explorationSource = (parsed.regex || parsed.after || parsed.before) && rawForExploration
-    ? Buffer.from(rawForExploration.bytes).toString("utf8")
-    : transcript;
-  const selected = selectRelevantTranscriptContext(explorationSource, {
-    query,
-    regex: parsed.regex,
-    after: parsed.after,
-    before: parsed.before,
-    matchLimit: parsed.latestMessages,
-    contextMessages: parsed.contextMessages,
-    maxChars: parsed.maxChars - prefix.length,
-  });
-  const inlineBudget = inlineTranscriptTokenBudget();
-  if (archived && estimateTranscriptTokens(selected) > inlineBudget) {
+    if (!outcome) return `Raw transcript unavailable for [${found.session.harness}] ${parsed.sessionId} within the MCP process CWD.`;
+    const target = outcome.archive.exported.find((entry) => entry.path === outcome.archive.targetPath);
     return buildTranscriptArchiveCard({
-      targetPath: archived.targetPath,
-      manifestPath: archived.manifestPath,
-      estimatedTokens: estimateTranscriptTokens(selected),
-      inlineTokenBudget: inlineBudget,
+      targetPath: outcome.archive.targetPath,
+      manifestPath: outcome.archive.manifestPath,
       sessionId: parsed.sessionId,
-    }).slice(0, parsed.maxChars);
+      complete: target?.complete ?? false,
+    });
+  } catch (error) {
+    return `Raw transcript export failed: ${(error as Error).message}`;
   }
-  return `${prefix}${selected}`;
 }
 
 export async function handleSendMessage(
@@ -553,65 +430,6 @@ export async function handleResumeAgent(
   return found.adapter.resumeSession
     ? `Resumed agent [${found.session.harness}] ${parsed.sessionId}.`
     : `Agent [${found.session.harness}] ${parsed.sessionId} is ${found.session.status}. To resume, provide a message to send.`;
-}
-
-/**
- * Summarize a session's transcript using the built-in LLM summarizer.
- */
-export async function handleSummarizeSession(
-  adapters: Map<string, HarnessAdapter>,
-  args: unknown
-): Promise<string> {
-  const parsed = SummarizeSessionSchema.parse(args);
-
-  // Find the session
-  const found = await findSession(adapters, parsed.sessionId, parsed.harness);
-  if (!found) return `Session '${parsed.sessionId}' not found.`;
-
-  // Try to get transcript from the adapter
-  const adapter = found.adapter;
-  if (!adapter.getTranscript) {
-    return `Session transcript retrieval is not supported by the ${adapter.name} adapter in this mode.`;
-  }
-
-  const transcript = await adapter.getTranscript(parsed.sessionId);
-  if (!transcript || transcript.trim().length === 0) {
-    // Return what we know from the session metadata as a fallback
-    return [
-      `## Session Summary (no transcript available)`,
-      ``,
-      `**Session**: [${found.session.harness}] ${parsed.sessionId}`,
-      `**Title**: ${found.session.title}`,
-      `**Model**: ${found.session.model || "unknown"}`,
-      `**Status**: ${found.session.status}`,
-      `**CWD**: ${found.session.cwd}`,
-      `**Last active**: ${found.session.lastActivity}`,
-      `**Messages**: ${found.session.messageCount ?? "unknown"}`,
-      found.session.lastMessage ? `**Last message**: ${found.session.lastMessage}` : "",
-    ].join("\n");
-  }
-
-  // Call the summarizer
-  if (parsed.quick) {
-    const result = await quickSummary(transcript);
-    if (result.error) return `Summarization failed: ${result.error}`;
-    return [
-      `## Quick Summary — [${found.session.harness}] ${parsed.sessionId}`,
-      ``,
-      result.summary,
-    ].join("\n");
-  }
-
-  const result = await summarizeTranscript(transcript);
-  if (result.error) return `Summarization failed: ${result.error}`;
-
-  return [
-    `## Session Summary — [${found.session.harness}] ${parsed.sessionId}`,
-    ``,
-    `*Model: ${found.session.model || "unknown"} | Messages: ${found.session.messageCount ?? "?"} | Status: ${found.session.status}*`,
-    ``,
-    result.summary,
-  ].join("\n");
 }
 
 /**

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { RawTranscriptExport } from "./types/index.js";
 
@@ -33,13 +33,22 @@ export type TranscriptArchiveResult = {
   targetPath: string;
   manifestPath: string;
   exported: ExportedEntry[];
-  excluded: Array<{ harness: string; sessionId: string; reason: "outside_workspace" | "raw_unavailable" | "lineage_limit" }>;
+  excluded: Array<{ harness: string; sessionId: string; reason: "outside_workspace" | "raw_unavailable" | "lineage_limit" | "foreign_harness" }>;
   cleanup: { removed: string[] };
 };
 
 function inside(root: string, candidate: string): boolean {
   const path = relative(root, candidate);
   return path === "" || (!path.startsWith("..") && !path.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) && !path.includes(`..${process.platform === "win32" ? "\\" : "/"}`));
+}
+
+async function isRealPathInside(root: string, candidate: string): Promise<boolean> {
+  try {
+    const [realRoot, realCandidate] = await Promise.all([realpath(root), realpath(candidate)]);
+    return inside(realRoot, realCandidate);
+  } catch {
+    return false;
+  }
 }
 
 function fileStem(sessionId: string): string {
@@ -122,7 +131,7 @@ export class TranscriptArchive {
 
     await ensureSafeDirectory(this.workspaceRoot, this.archiveRoot);
     for (const snapshot of snapshots) {
-      if (!inside(this.workspaceRoot, resolve(snapshot.cwd))) {
+      if (!await isRealPathInside(this.workspaceRoot, snapshot.cwd)) {
         excluded.push({ harness: snapshot.harness, sessionId: snapshot.sessionId, reason: "outside_workspace" });
         continue;
       }
@@ -232,29 +241,22 @@ export function transcriptArchiveFromEnvironment(
   });
 }
 
-/** Deterministic, conservative estimate. It is a budget, not a model-specific tokenizer. */
-export function estimateTranscriptTokens(value: string): number {
-  return Math.ceil(Buffer.byteLength(value, "utf8") / 4);
-}
-
-export function inlineTranscriptTokenBudget(environment: NodeJS.ProcessEnv = process.env): number {
-  return positiveInteger(environment.AGENT_HERDER_TRANSCRIPT_INLINE_TOKEN_BUDGET, 8_192);
-}
-
 export function buildTranscriptArchiveCard(input: {
   targetPath: string;
   manifestPath: string;
-  estimatedTokens: number;
-  inlineTokenBudget: number;
   sessionId: string;
+  complete: boolean;
 }): string {
   return [
     `Transcript exported: ${input.targetPath}`,
     `Lineage manifest: ${input.manifestPath}`,
-    `Inline context omitted: estimated ${input.estimatedTokens} tokens > ${input.inlineTokenBudget}.`,
-    `Newest: get_transcript(sessionId="${input.sessionId}", latestMessages=20)`,
-    `Keywords: get_transcript(sessionId="${input.sessionId}", query="keywords")`,
-    `Regex: get_transcript(sessionId="${input.sessionId}", regex="ERR(or)?")`,
-    `Date: get_transcript(sessionId="${input.sessionId}", after="2026-07-30T10:00:00Z")`,
+    `Completeness: ${input.complete ? "complete native source" : "partial source; inspect manifest limitations"}.`,
+    "Use ordinary workspace tools against the exported file:",
+    `  sed -n '1,20p' -- ${JSON.stringify(input.targetPath)}`,
+    `  tail -n 20 -- ${JSON.stringify(input.targetPath)}`,
+    `  rg -n --fixed-strings 'words to find' -- ${JSON.stringify(input.targetPath)}`,
+    `  rg -n -e 'ERR(or)?' -- ${JSON.stringify(input.targetPath)}`,
+    `  rg -n '2026-07-30T10:' -- ${JSON.stringify(input.targetPath)}`,
+    `Session ID: ${input.sessionId}`,
   ].join("\n");
 }
