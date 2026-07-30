@@ -29,3 +29,19 @@ PID: n/a
 Harness: codex
 session identifier: current Codex task
 Next action: Map transcript-search seams, then add a failing retrieval regression.
+
+## Result
+
+- Cloned upstream `mksglu/context-mode` into `/home/roomhacker/agents-projects/mcp/originals/context-mode` for source reference.
+- Added local, per-request Context Mode-style retrieval: token, stem, substring, and proximity ranking chooses matching transcript blocks and adjacent context. It has no dependency on Context Mode's private SQLite/FTS database, so no cross-session persistent transcript index is created.
+- `get_transcript` now accepts `query` or the lead-readable `need` alias. With neither it retains the bounded newest-message fallback. `maxChars` caps the complete returned MCP result, including headers and no-match diagnostics.
+- Added six focused regressions: relevant context, newest fallback, `need` schema, truncation, long no-match query, and end-to-end public response budget.
+- Verification: `npm run build`, `npm test` (11 files, 34 tests), `git diff --check`; independent reviewer approved the final bounds fix.
+
+## Completion checklist
+
+- [x] Upstream source preserved at the requested originals location.
+- [x] Query and lead need return only relevant bounded context.
+- [x] No-query behavior remains bounded.
+- [x] No Context Mode private storage dependency was introduced.
+- [x] Focused and full verification passed.

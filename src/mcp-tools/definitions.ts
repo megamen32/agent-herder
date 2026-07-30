@@ -77,6 +77,7 @@ export const ListChildrenSchema = z.object({
 
 const transcriptSelectionFields = {
   query: z.string().optional().describe("Optional search prompt. When omitted, return newest messages."),
+  need: z.string().optional().describe("Optional lead context need; an alias for query."),
   latestMessages: z.number().int().min(1).max(100).optional().default(10).describe("Number of newest messages to include."),
   contextMessages: z.number().int().min(0).max(10).optional().default(1).describe("Neighbor messages to include around search matches."),
 };

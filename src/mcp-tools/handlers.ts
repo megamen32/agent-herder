@@ -21,6 +21,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { auditWorktrees } from "../worktree-audit.js";
 import { searchLocalTranscripts, LocalTranscriptHarness } from "../transcript-search.js";
+import { selectRelevantTranscriptContext } from "../context-retrieval.js";
 
 /**
  * Format an agent session for display as MCP tool result text.
@@ -48,53 +49,6 @@ function formatSession(s: AgentSession, verbose = false): string {
     lines.push(`  Meta: ${JSON.stringify(s.meta)}`);
   }
   return lines.join("\n");
-}
-
-type TranscriptSelection = {
-  mode: "latest" | "search";
-  query?: string;
-  latestMessages: number;
-  contextMessages: number;
-  maxChars: number;
-};
-
-function selectTranscript(transcript: string, options: TranscriptSelection): string {
-  const blocks = transcript.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
-  if (blocks.length === 0) return "(transcript is empty)";
-  if (options.mode === "search" && !options.query?.trim()) return "Transcript search requires a query.";
-
-  const selected = new Set<number>();
-  const addLatest = (): void => {
-    const start = Math.max(0, blocks.length - options.latestMessages);
-    for (let index = start; index < blocks.length; index += 1) selected.add(index);
-  };
-
-  if (options.mode === "latest") addLatest();
-
-  if (options.mode === "search") {
-    const terms = options.query!.toLowerCase().split(/\s+/).filter(Boolean);
-    const ranked = blocks
-      .map((block, index) => {
-        const lower = block.toLowerCase();
-        const score = terms.reduce((total, term) => total + (lower.split(term).length - 1), 0);
-        return { index, score };
-      })
-      .filter((entry) => entry.score > 0)
-      .sort((left, right) => right.score - left.score || right.index - left.index)
-      .slice(0, options.latestMessages);
-
-    for (const match of ranked) {
-      const start = Math.max(0, match.index - options.contextMessages);
-      const end = Math.min(blocks.length - 1, match.index + options.contextMessages);
-      for (let index = start; index <= end; index += 1) selected.add(index);
-    }
-    if (ranked.length === 0) return `(no transcript messages matched query: ${options.query})`;
-  }
-
-  const result = [...selected].sort((left, right) => left - right).map((index) => blocks[index]).join("\n\n");
-  if (result.length <= options.maxChars) return result;
-  const clipped = options.mode === "latest" ? result.slice(-options.maxChars) : result.slice(0, options.maxChars);
-  return `[truncated to ${options.maxChars} characters]\n${clipped}`;
 }
 
 /**
@@ -381,9 +335,18 @@ export async function handleGetTranscript(
 
   const transcript = await found.adapter.getTranscript(parsed.sessionId);
   if (!transcript) return `Transcript unavailable for [${found.session.harness}] ${parsed.sessionId}.`;
-  const mode = parsed.query?.trim() ? "search" : "latest";
-  const selected = selectTranscript(transcript, { ...parsed, mode });
-  return [`Transcript [${found.session.harness}] ${parsed.sessionId} (${mode}):`, "", selected].join("\n");
+  const query = parsed.query?.trim() || parsed.need?.trim();
+  const mode = query ? "search" : "latest";
+  const header = `Transcript [${found.session.harness}] ${parsed.sessionId} (${mode}):`;
+  const separator = "\n\n";
+  if (header.length + separator.length >= parsed.maxChars) return header.slice(0, parsed.maxChars);
+  const selected = selectRelevantTranscriptContext(transcript, {
+    query,
+    matchLimit: parsed.latestMessages,
+    contextMessages: parsed.contextMessages,
+    maxChars: parsed.maxChars - header.length - separator.length,
+  });
+  return `${header}${separator}${selected}`;
 }
 
 export async function handleSendMessage(

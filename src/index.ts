@@ -299,6 +299,7 @@ function registerTools(server: McpServer) {
       sessionId: z.string().describe("Session ID"),
       harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness type"),
       query: z.string().optional().describe("Optional search prompt; omit to return newest messages"),
+      need: z.string().optional().describe("Optional lead context need; an alias for query"),
       latestMessages: z.number().int().min(1).max(100).optional().default(10).describe("Newest messages to include"),
       contextMessages: z.number().int().min(0).max(10).optional().default(1).describe("Neighbor messages around search matches"),
       maxChars: z.number().int().min(100).max(100000).optional().default(12000).describe("Maximum returned characters"),

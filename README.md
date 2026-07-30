@@ -79,8 +79,9 @@ parallel coding tasks, bounded context, and session recovery.
 | Summaries | `summarize_session` |
 
 `get_transcript` accepts a session ID, an optional number of latest messages,
-and an optional search prompt. It returns only the useful slice instead of
-loading an entire conversation into context.
+and an optional `query` (or lead-oriented `need`). It ranks matching messages,
+keeps nearby context, and returns only that bounded slice instead of loading an
+entire conversation into context.
 
 ## Requirements
 
