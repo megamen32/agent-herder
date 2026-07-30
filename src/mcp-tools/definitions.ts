@@ -78,6 +78,9 @@ export const ListChildrenSchema = z.object({
 const transcriptSelectionFields = {
   query: z.string().optional().describe("Optional search prompt. When omitted, return newest messages."),
   need: z.string().optional().describe("Optional lead context need; an alias for query."),
+  regex: z.string().optional().describe("Optional regular expression to search within this one transcript."),
+  after: z.string().datetime({ offset: true }).optional().describe("Inclusive ISO-8601 lower timestamp bound."),
+  before: z.string().datetime({ offset: true }).optional().describe("Inclusive ISO-8601 upper timestamp bound."),
   latestMessages: z.number().int().min(1).max(100).optional().default(10).describe("Number of newest messages to include."),
   contextMessages: z.number().int().min(0).max(10).optional().default(1).describe("Neighbor messages to include around search matches."),
 };
@@ -89,7 +92,7 @@ export const GetTranscriptSchema = z.object({
     .optional()
     .describe("Which harness owns the session. If omitted, searches all."),
   ...transcriptSelectionFields,
-  maxChars: z.number().int().min(100).max(100000).optional().default(12000).describe(
+  maxChars: z.number().int().min(100).max(100000).optional().default(100000).describe(
     "Maximum returned characters. Search modes preserve matching sections; latest mode preserves the newest tail."
   ),
 });
@@ -256,7 +259,7 @@ export const toolDefinitions: Tool[] = [
         query: { type: "string", description: "Optional search prompt; omit to return newest messages" },
         latestMessages: { type: "number", default: 10, description: "Newest messages to include" },
         contextMessages: { type: "number", default: 1, description: "Neighbor messages around search matches" },
-        maxChars: { type: "number", default: 12000, description: "Maximum returned characters" },
+        maxChars: { type: "number", default: 100000, description: "Maximum returned characters" },
       },
       required: ["sessionId"],
     },

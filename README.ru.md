@@ -91,6 +91,10 @@ opencode serve
 | `CODEX_TRANSPORT` | `app-server` | native transport или `cli` fallback |
 | `QODER_CWD` | текущий каталог | рабочая папка Qoder |
 | `SUMMARIZER_API_KEY` | — | включает `summarize_session` |
+| `AGENT_HERDER_TRANSCRIPT_ARCHIVE_DIR` | `.agent-herder/transcripts` | относительный путь архива внутри CWD MCP-процесса |
+| `AGENT_HERDER_TRANSCRIPT_ARCHIVE_MAX_BYTES` | `104857600` | лимит архива, 100 MiB |
+| `AGENT_HERDER_TRANSCRIPT_ARCHIVE_RETENTION_DAYS` | `3` | удалить не менявшиеся bundles по времени изменения |
+| `AGENT_HERDER_TRANSCRIPT_INLINE_TOKEN_BUDGET` | `8192` | приблизительный inline-бюджет до карточки навигации |
 
 Пример для Qoder:
 
@@ -121,6 +125,18 @@ npm run inspect
 
 **Можно оставить только один harness?** Да, отключите ненужные адаптеры через
 переменные `ENABLE_*`.
+
+## Архив транскриптов
+
+Каждый успешный `get_transcript` атомарно копирует raw-источник адаптера под
+CWD MCP-процесса и создаёт рядом manifest lineage. Display-текст никогда не
+служит fallback для архива. Manifest содержит источник, формат, покрытие
+timestamps и подтверждённую полноту; родители и дети за пределами CWD только
+отмечаются как исключённые.
+
+Если выбранный контекст больше inline-бюджета, Herder возвращает пути и готовые
+примеры с `latestMessages`, `query`, `regex`, `after`/`before`. Архивы OpenCode
+и ACP явно частичные, пока upstream не предоставляет проверенную полную историю.
 
 ## Лицензия
 

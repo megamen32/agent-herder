@@ -45,6 +45,21 @@ describe("selectRelevantTranscriptContext", () => {
     );
   });
 
+  it("supports a regex or real transcript timestamps without loading unrelated blocks", () => {
+    const dated = [
+      "2026-07-30T09:00:00Z user: ordinary startup",
+      "2026-07-30T10:00:00Z assistant: ERROR failed migration",
+      "2026-07-30T11:00:00Z assistant: recovery complete",
+    ].join("\n\n");
+    const regex = selectRelevantTranscriptContext(dated, { regex: "ERR(or)?", matchLimit: 1, contextMessages: 0, maxChars: 1_000 });
+    const date = selectRelevantTranscriptContext(dated, { after: "2026-07-30T10:30:00Z", matchLimit: 2, contextMessages: 0, maxChars: 1_000 });
+
+    expect(regex).toContain("failed migration");
+    expect(regex).not.toContain("ordinary startup");
+    expect(date).toContain("recovery complete");
+    expect(date).not.toContain("failed migration");
+  });
+
   it("honours maxChars even when it needs to mark the result as truncated", () => {
     const selected = selectRelevantTranscriptContext("authentication ".repeat(20), {
       query: "authentication",

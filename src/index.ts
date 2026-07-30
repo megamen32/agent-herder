@@ -300,9 +300,12 @@ function registerTools(server: McpServer) {
       harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness type"),
       query: z.string().optional().describe("Optional search prompt; omit to return newest messages"),
       need: z.string().optional().describe("Optional lead context need; an alias for query"),
+      regex: z.string().optional().describe("Optional regular expression to search within this transcript"),
+      after: z.string().datetime({ offset: true }).optional().describe("Inclusive ISO-8601 lower timestamp bound"),
+      before: z.string().datetime({ offset: true }).optional().describe("Inclusive ISO-8601 upper timestamp bound"),
       latestMessages: z.number().int().min(1).max(100).optional().default(10).describe("Newest messages to include"),
       contextMessages: z.number().int().min(0).max(10).optional().default(1).describe("Neighbor messages around search matches"),
-      maxChars: z.number().int().min(100).max(100000).optional().default(12000).describe("Maximum returned characters"),
+      maxChars: z.number().int().min(100).max(100000).optional().default(100000).describe("Maximum returned characters"),
     },
     async (args) => {
       const result = await handleGetTranscript(adapters, args);

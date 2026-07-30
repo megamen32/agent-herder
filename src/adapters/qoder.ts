@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import type {
   AgentSession,
   HarnessAdapter,
+  RawTranscriptExport,
   SendMessageOptions,
   SetPermissionsOptions,
 } from "../types/index.js";
@@ -202,6 +203,22 @@ export class QoderAdapter implements HarnessAdapter {
     if (typeof filePath !== "string") return null;
     try {
       return this.extractTranscript(await readFile(filePath, "utf8"));
+    } catch {
+      return null;
+    }
+  }
+
+  async getRawTranscript(id: string): Promise<RawTranscriptExport | null> {
+    const session = await this.getSession(id);
+    const filePath = session?.meta?.filePath;
+    if (typeof filePath !== "string") return null;
+    try {
+      return {
+        bytes: await readFile(filePath),
+        complete: true,
+        source: { kind: "native-file", location: filePath, format: "jsonl" },
+        timestampCoverage: "native",
+      };
     } catch {
       return null;
     }

@@ -1,6 +1,11 @@
 export type ContextRetrievalOptions = {
   /** A concrete question, keywords, or the lead's stated context need. */
   query?: string;
+  /** Optional regular expression for exact transcript exploration. */
+  regex?: string;
+  /** Inclusive ISO-8601 timestamp bounds when transcript blocks carry dates. */
+  after?: string;
+  before?: string;
   /** Maximum number of matching messages (or newest messages without a query). */
   matchLimit: number;
   /** Messages to retain on each side of a match. */
@@ -55,6 +60,13 @@ function scoreBlock(block: string, queryTerms: string[]): number {
   return score;
 }
 
+function timestampIn(block: string): number | undefined {
+  const match = block.match(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})\b/);
+  if (!match) return undefined;
+  const timestamp = Date.parse(match[0]);
+  return Number.isNaN(timestamp) ? undefined : timestamp;
+}
+
 function formatWithinBudget(blocks: string[], selected: Set<number>, ranked: RankedBlock[], maxChars: number): string {
   const truncationPrefix = `[truncated to ${maxChars} characters]\n`;
   const preferred = [...ranked.map(({ index }) => index), ...selected].filter(
@@ -89,18 +101,38 @@ export function selectRelevantTranscriptContext(transcript: string, options: Con
   if (blocks.length === 0) return "(transcript is empty)";
 
   const queryTerms = tokens(options.query ?? "");
-  if (queryTerms.length === 0) {
+  let matcher: RegExp | undefined;
+  if (options.regex?.trim()) {
+    try {
+      matcher = new RegExp(options.regex, "i");
+    } catch (error) {
+      return `(invalid transcript regex: ${(error as Error).message})`.slice(0, options.maxChars);
+    }
+  }
+  const after = options.after ? Date.parse(options.after) : undefined;
+  const before = options.before ? Date.parse(options.before) : undefined;
+  const hasDateFilter = Number.isFinite(after) || Number.isFinite(before);
+  if (queryTerms.length === 0 && !matcher && !hasDateFilter) {
     const latest = new Set<number>();
     for (let index = Math.max(0, blocks.length - options.matchLimit); index < blocks.length; index += 1) latest.add(index);
     return formatWithinBudget(blocks, latest, [], options.maxChars);
   }
 
   const ranked = blocks
-    .map((block, index) => ({ index, score: scoreBlock(block, queryTerms) }))
+    .map((block, index) => {
+      const timestamp = timestampIn(block);
+      const inDateRange = !hasDateFilter || (timestamp !== undefined &&
+        (!Number.isFinite(after) || timestamp >= after!) &&
+        (!Number.isFinite(before) || timestamp <= before!));
+      if (!inDateRange) return { index, score: 0 };
+      const score = matcher ? (matcher.test(block) ? 1 : 0) : queryTerms.length > 0 ? scoreBlock(block, queryTerms) : 1;
+      return { index, score };
+    })
     .filter((entry) => entry.score > 0)
     .sort((left, right) => right.score - left.score || right.index - left.index)
     .slice(0, options.matchLimit);
   if (ranked.length === 0) {
+    if (hasDateFilter) return "(no transcript messages matched the requested date range)".slice(0, options.maxChars);
     const prefix = "(no transcript messages matched query: ";
     const suffix = ")";
     const message = `${prefix}${(options.query ?? "").slice(0, Math.max(0, options.maxChars - prefix.length - suffix.length))}${suffix}`;

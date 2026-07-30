@@ -18,6 +18,7 @@ import type {
 import type {
   AgentSession,
   HarnessAdapter,
+  RawTranscriptExport,
   PermissionRequest,
   SendMessageOptions,
   SetPermissionsOptions,
@@ -257,6 +258,19 @@ export class AcpAdapter implements HarnessAdapter {
     await this.init();
     const cached = this.sessions.get(this.externalId(this.nativeId(id)));
     return cached ? cached.transcript.join("\n\n") : null;
+  }
+
+  async getRawTranscript(id: string): Promise<RawTranscriptExport | null> {
+    await this.init();
+    const cached = this.sessions.get(this.externalId(this.nativeId(id)));
+    if (!cached) return null;
+    return {
+      bytes: Buffer.from(cached.transcript.join("\n\n")),
+      complete: false,
+      source: { kind: "observed-acp-events", location: this.config.profile, format: "text" },
+      timestampCoverage: "none",
+      limitations: ["ACP archive contains only events observed by this connection."],
+    };
   }
 
   async getSessionMessages(id: string, limit = 3): Promise<SessionMessageView[] | null> {

@@ -135,6 +135,19 @@ export interface SetPermissionsOptions {
   mode?: string;
 }
 
+/** Raw adapter-owned transcript material for archival, never a display summary. */
+export type RawTranscriptExport = {
+  bytes: Uint8Array;
+  complete: boolean;
+  source: {
+    kind: "native-file" | "native-api" | "observed-acp-events";
+    location: string;
+    format: "jsonl" | "json" | "text" | "unknown";
+  };
+  timestampCoverage: "native" | "partial" | "none";
+  limitations?: string[];
+};
+
 export interface HarnessAdapter {
   /** Harness type identifier */
   readonly type: HarnessType;
@@ -196,6 +209,9 @@ export interface HarnessAdapter {
 
   /** Get the full transcript of a session for summarization */
   getTranscript?(id: string): Promise<string | null>;
+
+  /** Export adapter-owned source material for the canonical archive. */
+  getRawTranscript?(id: string): Promise<RawTranscriptExport | null>;
 
   /** Get structured recent messages from the adapter-owned transport, when available. */
   getSessionMessages?(id: string, limit?: number): Promise<SessionMessageView[] | null>;

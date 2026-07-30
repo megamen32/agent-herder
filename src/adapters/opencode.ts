@@ -1,4 +1,4 @@
-import { HarnessAdapter, AgentSession, ControlResult, HarnessCapabilities, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
+import { HarnessAdapter, AgentSession, ControlResult, HarnessCapabilities, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
 import { readFileSync } from "node:fs";
 
 interface OpenCodeSessionPayload {
@@ -350,6 +350,23 @@ export class OpenCodeAdapter implements HarnessAdapter {
         }
       }
       return parts.join("\n\n") || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async getRawTranscript(id: string): Promise<RawTranscriptExport | null> {
+    try {
+      const endpoint = `/session/${encodeURIComponent(id)}/message?limit=200`;
+      const messages = await this.fetchJson<unknown[]>(endpoint);
+      if (!Array.isArray(messages)) return null;
+      return {
+        bytes: Buffer.from(JSON.stringify(messages, null, 2)),
+        complete: false,
+        source: { kind: "native-api", location: `${this.baseUrl}${endpoint}`, format: "json" },
+        timestampCoverage: "partial",
+        limitations: ["OpenCode message API was fetched with limit=200; pagination has not been verified."],
+      };
     } catch {
       return null;
     }

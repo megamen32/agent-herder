@@ -1,4 +1,4 @@
-import { HarnessAdapter, AgentSession, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
+import { HarnessAdapter, AgentSession, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile, readdir, stat, access } from "node:fs/promises";
@@ -180,6 +180,28 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
         try {
           await access(filePath);
           return await this.extractTranscriptText(filePath);
+        } catch {
+          continue;
+        }
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  async getRawTranscript(id: string): Promise<RawTranscriptExport | null> {
+    const projectsDir = join(this.claudeDir, "projects");
+    try {
+      for (const hash of await readdir(projectsDir)) {
+        const filePath = join(projectsDir, hash, "sessions", `${id}.jsonl`);
+        try {
+          return {
+            bytes: await readFile(filePath),
+            complete: true,
+            source: { kind: "native-file", location: filePath, format: "jsonl" },
+            timestampCoverage: "native",
+          };
         } catch {
           continue;
         }

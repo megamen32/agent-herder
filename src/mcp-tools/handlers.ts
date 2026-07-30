@@ -18,10 +18,19 @@ import {
   SearchTranscriptsSchema,
 } from "./definitions.js";
 import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { auditWorktrees } from "../worktree-audit.js";
 import { searchLocalTranscripts, LocalTranscriptHarness } from "../transcript-search.js";
 import { selectRelevantTranscriptContext } from "../context-retrieval.js";
+import {
+  buildTranscriptArchiveCard,
+  estimateTranscriptTokens,
+  inlineTranscriptTokenBudget,
+  transcriptArchiveFromEnvironment,
+  type ArchivedTranscript,
+  type TranscriptArchive,
+  type TranscriptArchiveResult,
+} from "../transcript-archive.js";
 
 /**
  * Format an agent session for display as MCP tool result text.
@@ -79,6 +88,59 @@ async function findSession(
     }
   }
   return null;
+}
+
+function isInsideWorkspace(workspaceRoot: string, sessionCwd: string): boolean {
+  const path = relative(resolve(workspaceRoot), resolve(sessionCwd));
+  return path === "" || (!path.startsWith("..") && !path.includes(`..${sep}`));
+}
+
+async function exportRawLineage(
+  adapter: HarnessAdapter,
+  target: AgentSession,
+  archive: TranscriptArchive,
+  limit = 50,
+): Promise<{ archive: TranscriptArchiveResult; targetRaw: ArchivedTranscript["raw"] } | null> {
+  if (!adapter.getRawTranscript || !isInsideWorkspace(archive.workspaceRoot, target.cwd)) return null;
+  const visited = new Set<string>();
+  const related: ArchivedTranscript[] = [];
+  const excluded: TranscriptArchiveResult["excluded"] = [];
+
+  const capture = async (session: AgentSession, targetSession = false): Promise<ArchivedTranscript | null> => {
+    const key = `${session.harness}:${session.id}`;
+    if (visited.has(key)) return null;
+    visited.add(key);
+    if (!isInsideWorkspace(archive.workspaceRoot, session.cwd)) {
+      excluded.push({ harness: session.harness, sessionId: session.id, reason: "outside_workspace" });
+      return null;
+    }
+    if (visited.size > limit) {
+      excluded.push({ harness: session.harness, sessionId: session.id, reason: "lineage_limit" });
+      return null;
+    }
+    const raw = await adapter.getRawTranscript!(session.id);
+    if (!raw) {
+      excluded.push({ harness: session.harness, sessionId: session.id, reason: "raw_unavailable" });
+      return null;
+    }
+    const snapshot = { harness: session.harness, sessionId: session.id, cwd: session.cwd, raw };
+    if (!targetSession) related.push(snapshot);
+    if (adapter.getParent) {
+      try {
+        const parent = await adapter.getParent(session.id);
+        if (parent) await capture(parent);
+      } catch { /* archival of the target remains useful */ }
+    }
+    if (adapter.listChildren) {
+      try {
+        for (const child of await adapter.listChildren(session.id)) await capture(child);
+      } catch { /* archival of the target remains useful */ }
+    }
+    return snapshot;
+  };
+
+  const snapshot = await capture(target, true);
+  return snapshot ? { archive: await archive.exportLineage({ target: snapshot, related, excluded }), targetRaw: snapshot.raw } : null;
 }
 
 export async function handleListAgents(
@@ -326,27 +388,66 @@ export async function handleListChildren(
 
 export async function handleGetTranscript(
   adapters: Map<string, HarnessAdapter>,
-  args: unknown
+  args: unknown,
+  archive: TranscriptArchive = transcriptArchiveFromEnvironment(),
 ): Promise<string> {
   const parsed = GetTranscriptSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
-  if (!found.adapter.getTranscript) return `Session transcript retrieval is not supported by the ${found.adapter.name} adapter.`;
-
-  const transcript = await found.adapter.getTranscript(parsed.sessionId);
-  if (!transcript) return `Transcript unavailable for [${found.session.harness}] ${parsed.sessionId}.`;
+  if (!found.adapter.getTranscript && !found.adapter.getRawTranscript) {
+    return `Session transcript retrieval is not supported by the ${found.adapter.name} adapter.`;
+  }
+  let archived: TranscriptArchiveResult | null = null;
+  let rawForExploration: ArchivedTranscript["raw"] | undefined;
+  try {
+    const outcome = await exportRawLineage(found.adapter, found.session, archive);
+    archived = outcome?.archive ?? null;
+    rawForExploration = outcome?.targetRaw;
+  } catch {
+    // Archive failures never turn a safe, read-only transcript request into a failed request.
+  }
+  const transcript = found.adapter.getTranscript ? await found.adapter.getTranscript(parsed.sessionId) : null;
+  if (!transcript) {
+    if (archived) {
+      return [
+        `Display transcript unavailable for [${found.session.harness}] ${parsed.sessionId}.`,
+        `Raw archive: ${archived.targetPath}`,
+        `Lineage manifest: ${archived.manifestPath}`,
+      ].join("\n").slice(0, parsed.maxChars);
+    }
+    return `Transcript unavailable for [${found.session.harness}] ${parsed.sessionId}.`;
+  }
   const query = parsed.query?.trim() || parsed.need?.trim();
-  const mode = query ? "search" : "latest";
+  const mode = parsed.regex?.trim() ? "regex" : query ? "search" : parsed.after || parsed.before ? "date" : "latest";
   const header = `Transcript [${found.session.harness}] ${parsed.sessionId} (${mode}):`;
-  const separator = "\n\n";
-  if (header.length + separator.length >= parsed.maxChars) return header.slice(0, parsed.maxChars);
-  const selected = selectRelevantTranscriptContext(transcript, {
+  const archiveLine = archived
+    ? `Archive: ${archived.targetPath} (complete=${archived.exported.find((entry) => entry.path === archived!.targetPath)?.complete ?? false}; manifest=${archived.manifestPath})`
+    : "Archive: unavailable outside the MCP process CWD or without a raw adapter source.";
+  const prefix = `${header}\n${archiveLine}\n\n`;
+  if (prefix.length >= parsed.maxChars) return prefix.slice(0, parsed.maxChars);
+  const explorationSource = (parsed.regex || parsed.after || parsed.before) && rawForExploration
+    ? Buffer.from(rawForExploration.bytes).toString("utf8")
+    : transcript;
+  const selected = selectRelevantTranscriptContext(explorationSource, {
     query,
+    regex: parsed.regex,
+    after: parsed.after,
+    before: parsed.before,
     matchLimit: parsed.latestMessages,
     contextMessages: parsed.contextMessages,
-    maxChars: parsed.maxChars - header.length - separator.length,
+    maxChars: parsed.maxChars - prefix.length,
   });
-  return `${header}${separator}${selected}`;
+  const inlineBudget = inlineTranscriptTokenBudget();
+  if (archived && estimateTranscriptTokens(selected) > inlineBudget) {
+    return buildTranscriptArchiveCard({
+      targetPath: archived.targetPath,
+      manifestPath: archived.manifestPath,
+      estimatedTokens: estimateTranscriptTokens(selected),
+      inlineTokenBudget: inlineBudget,
+      sessionId: parsed.sessionId,
+    }).slice(0, parsed.maxChars);
+  }
+  return `${prefix}${selected}`;
 }
 
 export async function handleSendMessage(
