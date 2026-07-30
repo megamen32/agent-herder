@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { CodexAdapter } from "./codex.js";
 import type {
   AgentSession,
   ControlResult,
@@ -6,6 +7,7 @@ import type {
   HarnessCapabilities,
   SendMessageOptions,
   SetPermissionsOptions,
+  RawTranscriptExport,
 } from "../types/index.js";
 
 interface RpcResponse {
@@ -58,6 +60,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly processArgs: string[];
   private readonly cwd: string;
   private readonly modelIds: string[];
+  private readonly rawTranscriptAdapter: CodexAdapter;
   private child?: ChildProcessWithoutNullStreams;
   private initialized = false;
   private nextRequestId = 1;
@@ -73,11 +76,14 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     args?: string[];
     cwd?: string;
     modelIds?: string[];
+    /** Codex's local data root holding native rollout JSONL files. */
+    codexDir?: string;
   } = {}) {
     this.codexBin = config.codexBin || process.env.CODEX_BIN || "codex";
     this.processArgs = config.args || ["app-server"];
     this.cwd = config.cwd || process.cwd();
     this.modelIds = config.modelIds || ["o4-mini", "o3", "o3-mini", "gpt-4.1", "gpt-4o"];
+    this.rawTranscriptAdapter = new CodexAdapter({ codexBin: this.codexBin, codexDir: config.codexDir });
   }
 
   async init(): Promise<void> {
@@ -105,6 +111,15 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     const cached = this.threads.get(id);
     if (cached) return this.toSession(cached);
     return (await this.listSessions()).find((session) => session.id === id) || null;
+  }
+
+  /**
+   * App-server threads and CLI rollouts share Codex's native session ID. Use
+   * that persisted rollout as the raw archive source instead of synthesizing
+   * display text from RPC events.
+   */
+  async getRawTranscript(id: string): Promise<RawTranscriptExport | null> {
+    return this.rawTranscriptAdapter.getRawTranscript(id);
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<ControlResult> {

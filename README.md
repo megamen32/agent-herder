@@ -2,7 +2,7 @@
 
 **MCP control center for coding agents.**
 
-Monitor, inspect, search, and coordinate AI coding sessions from one MCP server:
+Monitor, inspect, and coordinate AI coding sessions from one MCP server:
 OpenCode, Claude Code, Codex CLI, and Qoder.
 
 [Русский](README.ru.md) · [简体中文](README.zh.md)
@@ -43,21 +43,20 @@ control plane for coding-agent sessions that normally live in separate tools.
 
 - See running, idle, stopped, and waiting sessions in one list.
 - Find a session's parent and children without guessing IDs.
-- Read the latest messages or search one transcript with bounded context.
 - Send, resume, stop, steer, or recover sessions where the harness supports it.
-- Review permissions, switch models, inspect worktrees, and summarize sessions.
+- Review permissions, switch models, and inspect worktrees.
 
 Typical request:
 
-> Find the parent of this session, list its children, then show the last five
-> messages from the child that is currently working on the bug.
+> Find the parent of this session, list its children, then export the raw
+> transcript of the child that is currently working on the bug.
 
 ## Why people use it
 
 Use Agent Herder when you need an **MCP server for OpenCode**, a **Claude Code
 session manager**, **Codex CLI transcript search**, or one dashboard for several
 AI coding agents. It is especially useful for parent/child agent workflows,
-parallel coding tasks, bounded context, and session recovery.
+parallel coding tasks and session recovery.
 
 ## Supported harnesses
 
