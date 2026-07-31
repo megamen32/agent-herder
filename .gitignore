@@ -2,3 +2,8 @@ node_modules/
 dist/
 *.js.map
 .env
+
+# Local agent and analysis artifacts
+.playwright-cli/
+.superpowers/
+graphify-out/
