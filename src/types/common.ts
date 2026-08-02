@@ -135,6 +135,11 @@ export interface CreateSessionOptions {
   cwd: string;
 }
 
+export interface ListSessionsOptions {
+  /** Restrict native discovery to this working directory when supported. */
+  cwd?: string;
+}
+
 export interface SetPermissionsOptions {
   /** Comma-separated list of allowed tools, e.g. "Read,Edit,Bash" */
   allowedTools?: string;
@@ -167,7 +172,7 @@ export interface HarnessAdapter {
   init(): Promise<void>;
 
   /** List all agent sessions */
-  listSessions(): Promise<AgentSession[]>;
+  listSessions(options?: ListSessionsOptions): Promise<AgentSession[]>;
 
   /** Get detailed info about a specific session */
   getSession(id: string): Promise<AgentSession | null>;

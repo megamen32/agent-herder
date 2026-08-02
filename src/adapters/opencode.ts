@@ -1,4 +1,4 @@
-import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
+import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
 import { readFileSync } from "node:fs";
 
 interface OpenCodeSessionPayload {
@@ -81,8 +81,9 @@ export class OpenCodeAdapter implements HarnessAdapter {
     }
   }
 
-  async listSessions(): Promise<AgentSession[]> {
-    const sessions = await this.fetchJson<OpenCodeSessionPayload[]>("/session");
+  async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
+    const query = options.cwd ? `?${new URLSearchParams({ directory: options.cwd }).toString()}` : "";
+    const sessions = await this.fetchJson<OpenCodeSessionPayload[]>(`/session${query}`);
 
     // Get statuses for all sessions
     let statuses: Record<string, { status?: string; type?: string; needsPermission?: boolean; permission?: { id: string; type: string; description: string; toolName?: string; details?: string } }> = {};

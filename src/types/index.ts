@@ -5,6 +5,7 @@ export {
   type PermissionRequest,
   type SendMessageOptions,
   type CreateSessionOptions,
+  type ListSessionsOptions,
   type SetPermissionsOptions,
   type RawTranscriptExport,
   type HarnessAdapter,

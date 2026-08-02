@@ -163,6 +163,30 @@ describe("named session creation and reuse", () => {
     expect(result).toEqual({ ok: true, created: true, sessionId: "opencode-1", harness: "opencode", name: "repair_100", cwd });
   });
 
+  it("scopes native session discovery to the requested CWD before creating", async () => {
+    const cwd = await workspace();
+    const existing = session("existing", "repair_100", cwd);
+    const fake = fakeAdapter("opencode", [existing]);
+    const listRequests: Array<string | undefined> = [];
+    const listAll = fake.adapter.listSessions.bind(fake.adapter);
+    fake.adapter.listSessions = async (options?: { cwd?: string }) => {
+      listRequests.push(options?.cwd);
+      return options?.cwd === cwd ? listAll() : [];
+    };
+
+    const result = await newOrResumeNamedSession(new Map([["opencode", fake.adapter]]), {
+      harness: "opencode",
+      name: "repair_100",
+      cwd,
+      message: "disk 95%",
+      mode: "queue",
+    });
+
+    expect(listRequests).toEqual([cwd]);
+    expect(fake.creates()).toBe(0);
+    expect(result).toMatchObject({ ok: true, created: false, sessionId: "existing", delivery: "accepted" });
+  });
+
   it("serializes concurrent calls, creates once, and delivers every message", async () => {
     const cwd = await workspace();
     const fake = fakeAdapter("opencode");

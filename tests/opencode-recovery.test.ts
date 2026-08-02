@@ -115,6 +115,31 @@ describe("OpenCode native recovery controls", () => {
     expect(JSON.parse(createBody)).toEqual({ title: "repair_100" });
   });
 
+  it("lists sessions within the requested directory", async () => {
+    server = createServer((request, response) => {
+      response.setHeader("content-type", "application/json");
+      if (request.url === "/session?directory=%2Ftmp%2Frepair" && request.method === "GET") {
+        return response.end(JSON.stringify([{
+          id: "existing-session",
+          title: "repair_100",
+          directory: "/tmp/repair",
+          time: { created: 1, updated: 1 },
+        }]));
+      }
+      if (request.url === "/session/status") return response.end(JSON.stringify({}));
+      if (request.url === "/session/existing-session/message?limit=1") return response.end(JSON.stringify([]));
+      response.statusCode = 404;
+      response.end(JSON.stringify({ error: "not found" }));
+    }).listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
+    port = (server.address() as { port: number }).port;
+
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    expect(await adapter.listSessions({ cwd: "/tmp/repair" })).toMatchObject([
+      { id: "existing-session", title: "repair_100", cwd: "/tmp/repair" },
+    ]);
+  });
+
   it("finds a session parent and lists its children through MCP handlers", async () => {
     server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");

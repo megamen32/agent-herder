@@ -119,7 +119,7 @@ export async function newOrResumeNamedSession(
 }
 
 async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string): Promise<AgentSession[]> {
-  const sessions = await adapter.listSessions();
+  const sessions = await adapter.listSessions({ cwd });
   const candidates = sessions.filter((session) => session.title === name);
   const matches: AgentSession[] = [];
   for (const session of candidates) {
