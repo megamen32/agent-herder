@@ -48,6 +48,31 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     sendJson(response, 200, { sessions });
     return;
   }
+  if (request.method === "POST" && url.pathname === "/api/sessions") {
+    const body = await readJson(request);
+    if (typeof body.harness !== "string" || typeof body.name !== "string" || typeof body.cwd !== "string") {
+      return sendJson(response, 400, { error: "harness, name, and cwd are required" });
+    }
+    const result = await supervisor.createNamedSession({ harness: body.harness, name: body.name, cwd: body.cwd });
+    return sendNamedSessionResult(response, result);
+  }
+  if (request.method === "POST" && url.pathname === "/api/sessions/new-or-resume") {
+    const body = await readJson(request);
+    if (typeof body.harness !== "string" || typeof body.name !== "string" || typeof body.cwd !== "string" || typeof body.message !== "string") {
+      return sendJson(response, 400, { error: "harness, name, cwd, and message are required" });
+    }
+    if (body.mode !== undefined && body.mode !== "queue" && body.mode !== "sync") {
+      return sendJson(response, 400, { error: "mode must be queue or sync" });
+    }
+    const result = await supervisor.newOrResumeNamedSession({
+      harness: body.harness,
+      name: body.name,
+      cwd: body.cwd,
+      message: body.message,
+      mode: body.mode as "queue" | "sync" | undefined,
+    });
+    return sendNamedSessionResult(response, result);
+  }
 
   const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
   if (sessionMatch && request.method === "GET") {
@@ -159,4 +184,12 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
 
 function sendOperationResult(response: ServerResponse, result: { ok: boolean; error?: string; sessionId?: string }): void {
   sendJson(response, result.ok ? 200 : 502, result);
+}
+
+function sendNamedSessionResult(
+  response: ServerResponse,
+  result: { ok: boolean; error?: string },
+): void {
+  const conflict = result.error?.startsWith("Ambiguous named session") || result.error?.includes("already exists");
+  sendJson(response, result.ok ? 200 : conflict ? 409 : 502, result);
 }

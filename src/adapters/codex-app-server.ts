@@ -3,6 +3,7 @@ import { CodexAdapter } from "./codex.js";
 import type {
   AgentSession,
   ControlResult,
+  CreateSessionOptions,
   HarnessAdapter,
   HarnessCapabilities,
   SendMessageOptions,
@@ -111,6 +112,18 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     const cached = this.threads.get(id);
     if (cached) return this.toSession(cached);
     return (await this.listSessions()).find((session) => session.id === id) || null;
+  }
+
+  async createSession(options: CreateSessionOptions): Promise<AgentSession> {
+    await this.ensureReady();
+    const result = await this.request("thread/start", { cwd: options.cwd }) as { thread?: CodexThread };
+    const thread = result.thread;
+    if (!thread?.id) throw new Error("Codex thread/start did not return a thread id");
+    await this.request("thread/name/set", { threadId: thread.id, name: options.name });
+    thread.name = options.name;
+    thread.cwd = thread.cwd || options.cwd;
+    this.threads.set(thread.id, thread);
+    return this.toSession(thread);
   }
 
   /**

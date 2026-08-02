@@ -74,6 +74,21 @@ export const SendMessageSchema = z.object({
   ),
 });
 
+const NamedSessionBaseSchema = z.object({
+  harness: z.enum(["opencode", "codex"]).describe("Harness that owns the named session."),
+  name: z.string().trim().min(1).max(128).describe("Stable session name, for example repair_100."),
+  cwd: z.string().min(1).describe("Absolute working directory. It is canonicalized before identity matching."),
+});
+
+export const CreateSessionSchema = NamedSessionBaseSchema;
+
+export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
+  message: z.string().trim().min(1).describe("Message delivered to the created or reused session."),
+  mode: z.enum(["queue", "sync"]).optional().default("sync").describe(
+    "queue returns after native acceptance; sync waits for the adapter's completed response."
+  ),
+});
+
 export const StopAgentSchema = z.object({
   sessionId: z.string().describe("Session ID to stop."),
   harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness (optional if ID is unique)."),
@@ -147,6 +162,34 @@ export const toolDefinitions: Tool[] = [
         includeClean: { type: "boolean", default: false, description: "Include clean and unlocked worktrees" },
       },
       required: ["repoPath"],
+    },
+  },
+  {
+    name: "create_session",
+    description: "Create one named OpenCode or Codex session in an absolute canonical working directory.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        harness: { type: "string", enum: ["opencode", "codex"], description: "Target harness" },
+        name: { type: "string", description: "Stable session name, for example repair_100" },
+        cwd: { type: "string", description: "Absolute working directory" },
+      },
+      required: ["harness", "name", "cwd"],
+    },
+  },
+  {
+    name: "new_or_resume",
+    description: "Reuse the exact named session for harness+CWD or create it, then deliver one message.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        harness: { type: "string", enum: ["opencode", "codex"], description: "Target harness" },
+        name: { type: "string", description: "Stable session name, for example repair_100" },
+        cwd: { type: "string", description: "Absolute working directory" },
+        message: { type: "string", description: "Message to deliver" },
+        mode: { type: "string", enum: ["queue", "sync"], default: "sync", description: "Delivery mode" },
+      },
+      required: ["harness", "name", "cwd", "message"],
     },
   },
   {

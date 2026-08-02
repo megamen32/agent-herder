@@ -1,4 +1,4 @@
-import { HarnessAdapter, AgentSession, ControlResult, HarnessCapabilities, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
+import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
 import { readFileSync } from "node:fs";
 
 interface OpenCodeSessionPayload {
@@ -154,6 +154,15 @@ export class OpenCodeAdapter implements HarnessAdapter {
       const all = await this.listSessions();
       return all.find((s) => s.id === id) || null;
     }
+  }
+
+  async createSession(options: CreateSessionOptions): Promise<AgentSession> {
+    const query = new URLSearchParams({ directory: options.cwd });
+    const session = await this.fetchJson<OpenCodeSessionPayload>(`/session?${query.toString()}`, {
+      method: "POST",
+      body: JSON.stringify({ title: options.name }),
+    });
+    return this.toSession(session);
   }
 
   async getParent(id: string): Promise<AgentSession | null> {

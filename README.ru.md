@@ -63,6 +63,7 @@ opencode serve
 |---|---|
 | Найти сессии | `list_agents`, `agent_info`, `audit_worktrees` |
 | Родители и транскрипт | `find_parent`, `list_children`, `export_transcript` |
+| Именованные сессии | `create_session`, `new_or_resume` (OpenCode и Codex) |
 | Управление | `send_message`, `resume_agent`, `stop_agent` |
 | Permissions и модели | `respond_permission`, `set_permissions`, `list_models`, `change_model` |
 
@@ -70,6 +71,12 @@ opencode serve
 родителей/детей внутри рабочего каталога, а затем всегда возвращает короткую
 навигационную карточку. Он намеренно не ранжирует и не сжимает диалог: агент
 сам берёт ровно нужный срез обычными файловыми инструментами.
+
+`new_or_resume` использует точный ключ `(harness, canonical CWD, name)`: одну
+найденную native-сессию продолжает, при отсутствии создаёт и затем доставляет
+одно сообщение. Несколько точных совпадений дают ошибку до отправки. Режим
+`queue` подтверждает native acceptance, `sync` ждёт ответ адаптера; дедупликация
+событий остаётся обязанностью вызывающего webhook/control plane.
 
 ## Требования
 

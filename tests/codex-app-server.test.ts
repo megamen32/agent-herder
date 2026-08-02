@@ -26,6 +26,14 @@ describe("Codex app-server adapter", () => {
       expect(sessions[0].id).toBe("thread-1");
       expect(sessions[0].harness).toBe("codex");
 
+      const created = await adapter.createSession({ name: "repair_100", cwd: "/tmp/codex-repair" });
+      expect(created).toMatchObject({
+        id: "thread-created-1",
+        harness: "codex",
+        title: "repair_100",
+        cwd: "/tmp/codex-repair",
+      });
+
       const raw = await adapter.getRawTranscript?.("thread-1");
       expect(raw).toMatchObject({ complete: true, source: { kind: "native-file", location: rawPath, format: "jsonl" } });
       expect(raw?.bytes.toString("utf8")).toContain('"session_id":"thread-1"');

@@ -47,7 +47,7 @@ claude mcp add agent-herder -- node "$PWD/dist/index.js"
 
 ## MCP 工具
 
-`list_agents`、`agent_info`、`send_message`、`resume_agent`、`stop_agent`、`respond_permission`、`set_permissions`、`summarize_session`、`change_model` 和 `list_models`。
+`list_agents`、`agent_info`、`create_session`、`new_or_resume`、`send_message`、`resume_agent`、`stop_agent`、`respond_permission`、`set_permissions`、`summarize_session`、`change_model` 和 `list_models`。
 
 ## 开发
 

@@ -73,6 +73,7 @@ parallel coding tasks and session recovery.
 |---|---|
 | Discover | `list_agents`, `agent_info`, `audit_worktrees` |
 | Lineage and transcript | `find_parent`, `list_children`, `export_transcript` |
+| Named sessions | `create_session`, `new_or_resume` (OpenCode and Codex) |
 | Control | `send_message`, `resume_agent`, `stop_agent` |
 | Permissions and models | `respond_permission`, `set_permissions`, `list_models`, `change_model` |
 
@@ -81,6 +82,12 @@ its in-workspace parent/child lineage, then always returns a short navigation
 card. It deliberately does not rank or compress the conversation: use the
 normal filesystem tools available to the agent to inspect exactly the slice it
 needs.
+
+`new_or_resume` identifies a session by the exact tuple `(harness, canonical
+CWD, name)`. It reuses one matching native session or creates it, then delivers
+one message. Multiple exact matches fail closed before delivery. `queue` reports
+native acceptance; `sync` waits for the adapter response. Event idempotency
+belongs to the webhook/control plane that calls Agent Herder.
 
 ## Requirements
 
@@ -138,6 +145,8 @@ npm start
 Open `http://127.0.0.1:8787/`. For a persistent ACP profile, set
 `ACP_AGENT_COMMAND`, `ACP_AGENT_ARGS` as a JSON array, and
 `ACP_AGENT_PROFILE` before starting the server.
+Set `AGENT_HERDER_WEB_PORT` to the loopback upstream expected by your reverse
+proxy (the managed `agent.bezrabotnyi.com` deployment uses `18787`).
 
 </details>
 

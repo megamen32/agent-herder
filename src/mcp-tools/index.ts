@@ -3,6 +3,8 @@ export {
   handleListAgents,
   handleAgentInfo,
   handleSendMessage,
+  handleCreateSession,
+  handleNewOrResume,
   handleStopAgent,
   handleRespondPermission,
   handleSetPermissions,

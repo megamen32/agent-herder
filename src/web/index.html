@@ -49,7 +49,7 @@
     .app {
       min-height: 100vh;
       display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr);
+      grid-template-rows: auto auto auto minmax(0, 1fr);
     }
 
     .topbar {
@@ -613,6 +613,24 @@
     <div class="hint" id="pollingState">Polling every 2s</div>
   </div>
 
+  <details class="toolbar named-session-panel">
+    <summary><strong>Create or resume a named session</strong></summary>
+    <select id="namedHarness" aria-label="Named session harness">
+      <option value="opencode">OpenCode</option>
+      <option value="codex">Codex</option>
+    </select>
+    <input id="namedSessionName" value="repair_100" maxlength="128" aria-label="Named session name">
+    <input id="namedSessionCwd" placeholder="/absolute/project/path" aria-label="Named session CWD">
+    <input id="namedSessionMessage" placeholder="Message to deliver after create/reuse" aria-label="Named session message">
+    <select id="namedSessionMode" aria-label="Named session delivery mode">
+      <option value="queue">Queue</option>
+      <option value="sync">Wait for completion</option>
+    </select>
+    <button class="secondary" id="createNamedSession" type="button">Create only</button>
+    <button id="newOrResumeSession" type="button">Create/resume &amp; send</button>
+    <span class="hint" id="namedSessionStatus" role="status" aria-live="polite"></span>
+  </details>
+
   <div class="layout">
     <aside class="sidebar">
       <div class="pane-head">
@@ -676,6 +694,14 @@
     sortFilter: document.getElementById("sortFilter"),
     groupFilter: document.getElementById("groupFilter"),
     applyFilters: document.getElementById("applyFilters"),
+    namedHarness: document.getElementById("namedHarness"),
+    namedSessionName: document.getElementById("namedSessionName"),
+    namedSessionCwd: document.getElementById("namedSessionCwd"),
+    namedSessionMessage: document.getElementById("namedSessionMessage"),
+    namedSessionMode: document.getElementById("namedSessionMode"),
+    createNamedSession: document.getElementById("createNamedSession"),
+    newOrResumeSession: document.getElementById("newOrResumeSession"),
+    namedSessionStatus: document.getElementById("namedSessionStatus"),
   };
 
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -1457,6 +1483,39 @@
     }
   }
 
+  async function submitNamedSession(sendMessage) {
+    const payload = {
+      harness: elements.namedHarness.value,
+      name: elements.namedSessionName.value.trim(),
+      cwd: elements.namedSessionCwd.value.trim(),
+    };
+    if (!payload.name || !payload.cwd) {
+      elements.namedSessionStatus.textContent = "Name and absolute CWD are required.";
+      return;
+    }
+    let url = "/api/sessions";
+    if (sendMessage) {
+      const message = elements.namedSessionMessage.value.trim();
+      if (!message) {
+        elements.namedSessionStatus.textContent = "Message is required for create/resume.";
+        return;
+      }
+      url = "/api/sessions/new-or-resume";
+      payload.message = message;
+      payload.mode = elements.namedSessionMode.value;
+    }
+    elements.namedSessionStatus.textContent = "Working…";
+    const { response, data } = await fetchJson(url, { method: "POST", body: JSON.stringify(payload) });
+    if (!response.ok) {
+      elements.namedSessionStatus.textContent = apiErrorText(data, response);
+      return;
+    }
+    const action = data.created ? "created" : "resumed";
+    const delivery = data.delivery ? `, delivery ${data.delivery}` : "";
+    elements.namedSessionStatus.textContent = `${action}: ${data.sessionId || "unknown session"}${delivery}`;
+    await refreshAll();
+  }
+
   function startPolling() {
     if (state.pollingTimer) clearInterval(state.pollingTimer);
     state.pollingTimer = setInterval(() => {
@@ -1476,6 +1535,8 @@
   function wireControls() {
     elements.refreshButton.addEventListener("click", refreshAll);
     elements.pollingToggle.addEventListener("click", () => setPaused(!state.paused));
+    elements.createNamedSession.addEventListener("click", () => submitNamedSession(false));
+    elements.newOrResumeSession.addEventListener("click", () => submitNamedSession(true));
     elements.backButton.addEventListener("click", () => {
       returnToTree();
     });

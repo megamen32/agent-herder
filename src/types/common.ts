@@ -128,6 +128,13 @@ export interface SendMessageOptions {
   steer?: boolean;
 }
 
+export interface CreateSessionOptions {
+  /** Stable human-readable identity within a harness and canonical CWD. */
+  name: string;
+  /** Absolute, canonical working directory. */
+  cwd: string;
+}
+
 export interface SetPermissionsOptions {
   /** Comma-separated list of allowed tools, e.g. "Read,Edit,Bash" */
   allowedTools?: string;
@@ -164,6 +171,9 @@ export interface HarnessAdapter {
 
   /** Get detailed info about a specific session */
   getSession(id: string): Promise<AgentSession | null>;
+
+  /** Create a new named native session when supported by the harness. */
+  createSession?(options: CreateSessionOptions): Promise<AgentSession>;
 
   /** Find the native parent session, when the transport exposes lineage. */
   getParent?(id: string): Promise<AgentSession | null>;

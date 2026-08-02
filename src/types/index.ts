@@ -4,6 +4,7 @@ export {
   type AgentSession,
   type PermissionRequest,
   type SendMessageOptions,
+  type CreateSessionOptions,
   type SetPermissionsOptions,
   type RawTranscriptExport,
   type HarnessAdapter,

@@ -6,6 +6,8 @@ import {
   ListChildrenSchema,
   ExportTranscriptSchema,
   SendMessageSchema,
+  CreateSessionSchema,
+  NewOrResumeSchema,
   StopAgentSchema,
   RespondPermissionSchema,
   SetPermissionsSchema,
@@ -14,6 +16,7 @@ import {
   ListModelsSchema,
   AuditWorktreesSchema,
 } from "./definitions.js";
+import { createNamedSession, newOrResumeNamedSession } from "../named-session.js";
 import { homedir } from "node:os";
 import { relative, resolve, sep } from "node:path";
 import { realpath } from "node:fs/promises";
@@ -346,6 +349,24 @@ export async function handleSendMessage(
     return `Message sent to [${found.session.harness}] ${parsed.sessionId}${modeLabel}.\nMessage: ${parsed.message}`;
   }
   return `Failed to send message: ${result.error}`;
+}
+
+export async function handleCreateSession(
+  adapters: Map<string, HarnessAdapter>,
+  args: unknown,
+): Promise<string> {
+  const parsed = CreateSessionSchema.parse(args);
+  const result = await createNamedSession(adapters, parsed);
+  return JSON.stringify(result);
+}
+
+export async function handleNewOrResume(
+  adapters: Map<string, HarnessAdapter>,
+  args: unknown,
+): Promise<string> {
+  const parsed = NewOrResumeSchema.parse(args);
+  const result = await newOrResumeNamedSession(adapters, parsed);
+  return JSON.stringify(result);
 }
 
 export async function handleStopAgent(

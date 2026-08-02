@@ -85,6 +85,36 @@ describe("OpenCode native recovery controls", () => {
     expect(JSON.parse(sentBody)).toEqual({ parts: [{ type: "text", text: "reply to parent" }] });
   });
 
+  it("creates a named session with the requested directory", async () => {
+    let createBody = "";
+    server = createServer((request, response) => {
+      response.setHeader("content-type", "application/json");
+      if (request.url === "/global/health") return response.end(JSON.stringify({ healthy: true }));
+      if (request.url === "/session?directory=%2Ftmp%2Frepair" && request.method === "POST") {
+        request.setEncoding("utf8");
+        request.on("data", (chunk) => { createBody += chunk; });
+        request.on("end", () => response.end(JSON.stringify({
+          id: "created-session",
+          title: "repair_100",
+          directory: "/tmp/repair",
+          time: { created: 1, updated: 1 },
+        })));
+        return;
+      }
+      response.statusCode = 404;
+      response.end(JSON.stringify({ error: "not found" }));
+    }).listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
+    port = (server.address() as { port: number }).port;
+
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    await adapter.init();
+    const created = await adapter.createSession({ name: "repair_100", cwd: "/tmp/repair" });
+
+    expect(created).toMatchObject({ id: "created-session", title: "repair_100", cwd: "/tmp/repair", harness: "opencode" });
+    expect(JSON.parse(createBody)).toEqual({ title: "repair_100" });
+  });
+
   it("finds a session parent and lists its children through MCP handlers", async () => {
     server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");

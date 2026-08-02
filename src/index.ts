@@ -15,6 +15,8 @@ import {
   handleListChildren,
   handleExportTranscript,
   handleSendMessage,
+  handleCreateSession,
+  handleNewOrResume,
   handleStopAgent,
   handleRespondPermission,
   handleSetPermissions,
@@ -288,6 +290,36 @@ function registerTools(server: McpServer) {
     },
     async (args) => {
       const result = await handleSendMessage(adapters, args);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "create_session",
+    "Create one named OpenCode or Codex session in an absolute canonical working directory.",
+    {
+      harness: z.enum(["opencode", "codex"]).describe("Target harness"),
+      name: z.string().min(1).max(128).describe("Stable session name"),
+      cwd: z.string().min(1).describe("Absolute working directory"),
+    },
+    async (args) => {
+      const result = await handleCreateSession(adapters, args);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "new_or_resume",
+    "Reuse the exact named session for harness+CWD or create it, then deliver one message.",
+    {
+      harness: z.enum(["opencode", "codex"]).describe("Target harness"),
+      name: z.string().min(1).max(128).describe("Stable session name"),
+      cwd: z.string().min(1).describe("Absolute working directory"),
+      message: z.string().min(1).describe("Message to deliver"),
+      mode: z.enum(["queue", "sync"]).optional().default("sync").describe("Delivery mode"),
+    },
+    async (args) => {
+      const result = await handleNewOrResume(adapters, args);
       return { content: [{ type: "text" as const, text: result }] };
     }
   );

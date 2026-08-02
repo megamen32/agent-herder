@@ -10,6 +10,7 @@ import type {
   SessionMessagePart,
   SessionMessageView,
 } from "./types/index.js";
+import { createNamedSession, newOrResumeNamedSession, type NamedSessionRequest, type NamedSessionResult, type NewOrResumeNamedSessionRequest } from "./named-session.js";
 import { getHarnessCapabilities } from "./types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "./session-convert.js";
 import { LineageStore, type LineageRecord } from "./lineage-store.js";
@@ -51,6 +52,14 @@ export class SessionSupervisor {
     private readonly converter: Pick<AgentHerderSessionConverter, "convert"> & Partial<Pick<AgentHerderSessionConverter, "read">>,
     private readonly lineage = new LineageStore(defaultLineagePath()),
   ) {}
+
+  async createNamedSession(request: NamedSessionRequest): Promise<NamedSessionResult> {
+    return createNamedSession(this.adapters, request);
+  }
+
+  async newOrResumeNamedSession(request: NewOrResumeNamedSessionRequest): Promise<NamedSessionResult> {
+    return newOrResumeNamedSession(this.adapters, request);
+  }
 
   async listSessions(filters: SessionFilters = {}): Promise<AgentSession[]> {
     const adapters = [...this.adapters.entries()].filter(([key, adapter]) =>

@@ -4,6 +4,13 @@ import { describe, expect, it } from "vitest";
 const html = readFileSync(new URL("../src/web/index.html", import.meta.url), "utf8");
 
 describe("session tree project groups", () => {
+  it("exposes create_session and new_or_resume through the web UI", () => {
+    expect(html).toContain('id="createNamedSession"');
+    expect(html).toContain('id="newOrResumeSession"');
+    expect(html).toContain('"/api/sessions/new-or-resume"');
+    expect(html).toContain("submitNamedSession");
+  });
+
   it("preserves a collapsed CWD group when polling rerenders the tree", () => {
     expect(html).toContain("collapsedProjects");
     expect(html).toContain('addEventListener("toggle"');
