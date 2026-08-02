@@ -147,6 +147,8 @@ Open `http://127.0.0.1:8787/`. For a persistent ACP profile, set
 `ACP_AGENT_PROFILE` before starting the server.
 Set `AGENT_HERDER_WEB_PORT` to the loopback upstream expected by your reverse
 proxy (the managed `agent.bezrabotnyi.com` deployment uses `18787`).
+The matching user-service template is
+[`deploy/systemd/agent-herder.service`](deploy/systemd/agent-herder.service).
 
 </details>
 

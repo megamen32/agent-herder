@@ -1,0 +1,27 @@
+[Unit]
+Description=Agent Herder MCP and web control plane
+After=network-online.target opencode.service
+Wants=network-online.target opencode.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/agents-projects/agent-herder
+EnvironmentFile=-%h/.config/openchamber/startup.env
+UnsetEnvironment=OPENCHAMBER_UI_PASSWORD OPENCODE_DISABLE_CHANNEL_DB
+Environment=OPENCODE_URL=http://127.0.0.1:4095
+Environment=CODEX_BIN=%h/.local/bin/codex
+Environment=CODEX_CWD=%h/ServersAdministartion
+Environment=CODEX_TRANSPORT=app-server
+Environment=ENABLE_OPENCODE=true
+Environment=ENABLE_CODEX=true
+Environment=ENABLE_CLAUDE=false
+Environment=ENABLE_CLAUDE_SDK=false
+Environment=ENABLE_QODER=false
+Environment=AGENT_HERDER_WEB_HOST=127.0.0.1
+Environment=AGENT_HERDER_WEB_PORT=18787
+ExecStart=/usr/local/bin/node %h/agents-projects/agent-herder/dist/index.js
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
