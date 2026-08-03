@@ -1,6 +1,6 @@
 // ===== Shared types for all agent harness adapters =====
 
-export type HarnessType = "opencode" | "claude" | "codex" | "qoder";
+export type HarnessType = "opencode" | "claude" | "codex" | "qoder" | "hermes";
 
 export type AgentStatus =
   | "running"      // actively processing
@@ -152,7 +152,7 @@ export type RawTranscriptExport = {
   bytes: Uint8Array;
   complete: boolean;
   source: {
-    kind: "native-file" | "native-api" | "observed-acp-events";
+    kind: "native-file" | "native-api" | "observed-acp-events" | "observed-gateway-messages";
     location: string;
     format: "jsonl" | "json" | "text" | "unknown";
   };

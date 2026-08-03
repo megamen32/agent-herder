@@ -5,3 +5,4 @@ export { AcpAdapter } from "./acp.js";
 export { CodexAdapter } from "./codex.js";
 export { CodexAppServerAdapter } from "./codex-app-server.js";
 export { QoderAdapter } from "./qoder.js";
+export { HermesAdapter } from "./hermes/index.js";

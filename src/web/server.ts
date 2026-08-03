@@ -7,11 +7,14 @@ import { LineageStore } from "../lineage-store.js";
 import { SessionNotFoundError, SessionSupervisor } from "../session-supervisor.js";
 import type { AgentSession, HarnessAdapter } from "../types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "../session-convert.js";
+import { HumanRequestRegistry } from "../human-request/index.js";
+import { convertHermesExport } from "../hermes-conversion.js";
 
 export interface WebDependencies {
   adapters: Map<string, HarnessAdapter>;
   converter: Pick<AgentHerderSessionConverter, "convert"> & Partial<Pick<AgentHerderSessionConverter, "read">>;
   lineageStore?: LineageStore;
+  humanRequests?: HumanRequestRegistry;
 }
 
 const htmlPath = join(dirname(fileURLToPath(import.meta.url)), "index.html");
@@ -20,7 +23,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const supervisor = new SessionSupervisor(dependencies.adapters, dependencies.converter, dependencies.lineageStore);
   return createServer(async (request, response) => {
     try {
-      await route(request, response, supervisor);
+      await route(request, response, supervisor, dependencies.humanRequests);
     } catch (err) {
       if (err instanceof SessionNotFoundError) {
         sendJson(response, 404, { error: "Session not found" });
@@ -31,8 +34,22 @@ export function createWebServer(dependencies: WebDependencies): Server {
   });
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
+  if (request.method === "POST" && url.pathname === "/internal/human-requests/sss-completion") {
+    if (!humanRequests) return sendJson(response, 503, { error: "Human Request registry is disabled" });
+    const body = await readJson(request);
+    if (body.event !== "sss.secret_input.completed" || body.event_version !== 1 || body.status !== "completed" ||
+      !isUuid(body.request_id) || !isUuid(body.result_ref)) {
+      return sendJson(response, 400, { error: "invalid opaque SSS completion event" });
+    }
+    const pending = await humanRequests.get(body.request_id);
+    if (!pending || pending.kind !== "secret" || pending.status !== "pending") {
+      return sendJson(response, 409, { error: "SSS completion is valid only for a pending Ask Secret request" });
+    }
+    const record = await humanRequests.resolve(body.request_id, { continuation: "resume", resolutionRef: body.result_ref });
+    return sendJson(response, 202, { request_id: record.requestId, status: record.status, continuation: record.continuation });
+  }
   if (request.method === "GET" && url.pathname === "/") {
     const html = await readFile(htmlPath, "utf8");
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -154,6 +171,14 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const result = await supervisor.convertSession(input);
     return sendJson(response, result.success ? 200 : 502, result);
   }
+  if (request.method === "POST" && url.pathname === "/api/conversions/hermes-export") {
+    const body = await readJson(request);
+    if ((body.target !== "codex" && body.target !== "opencode" && body.target !== "claude") || body.export === undefined) {
+      return sendJson(response, 400, { error: "target (codex, opencode, or claude) and export are required" });
+    }
+    const result = convertHermesExport({ target: body.target, export: body.export });
+    return sendJson(response, result.conversation ? 200 : 422, result);
+  }
 
   sendJson(response, 404, { error: "Not found" });
 }
@@ -175,6 +200,10 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
