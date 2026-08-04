@@ -9,7 +9,7 @@ export interface HermesResumeLocator {
   readonly session_key: string;
   readonly platform: string;
   readonly chat_id: string;
-  readonly chat_type: "dm" | "group" | "channel" | "thread";
+  readonly chat_type: "dm" | "group" | "channel" | "thread" | "webhook";
   readonly thread_id?: string;
   readonly user_id?: string;
   readonly user_id_alt?: string;
@@ -193,7 +193,7 @@ function validateHermesLocator(value: unknown): asserts value is HermesResumeLoc
   for (const field of ["session_key", "platform", "chat_id", "chat_type"] as const) {
     if (typeof locator[field] !== "string" || locator[field].trim() === "") throw new TypeError(`target.locator.${field} is required`);
   }
-  if (!["dm", "group", "channel", "thread"].includes(locator.chat_type as string)) throw new TypeError("target.locator.chat_type is unsupported");
+  if (!["dm", "group", "channel", "thread", "webhook"].includes(locator.chat_type as string)) throw new TypeError("target.locator.chat_type is unsupported");
   for (const field of ["thread_id", "user_id", "user_id_alt", "scope_id", "prospective_thread_id", "profile"] as const) {
     if (locator[field] !== undefined && (typeof locator[field] !== "string" || locator[field].trim() === "")) {
       throw new TypeError(`target.locator.${field} must be a non-empty string when provided`);
