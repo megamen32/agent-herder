@@ -3,11 +3,14 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export type HumanRequestKind = "user" | "secret";
-export type HumanRequestStatus = "pending" | "resolved";
+export type HumanRequestStatus = "pending" | "resuming" | "resumed" | "resume_failed";
 
 export interface HumanRequestTarget {
-  harness: string;
+  readonly agent?: string;
+  readonly harness?: string;
   sessionId: string;
+  readonly cwd?: string;
+  readonly marker?: string;
 }
 
 export interface CreateHumanRequestInput {
@@ -39,6 +42,21 @@ export interface HumanRequestResolution {
   resolutionRef?: string;
 }
 
+export interface ResumeAttemptResult {
+  /** Provider-owned opaque result or failure receipt; never a payload. */
+  receipt?: string;
+}
+
+export interface ResumeClaimInput {
+  attemptId?: string;
+  resultRef?: string;
+}
+
+export interface ResumeCompletionInput {
+  attemptId: string;
+  receipt?: string;
+}
+
 export interface HumanRequestRecord {
   requestId: string;
   kind: HumanRequestKind;
@@ -47,6 +65,9 @@ export interface HumanRequestRecord {
   status: HumanRequestStatus;
   continuation: "resume";
   resolutionRef?: string;
+  resultRef?: string;
+  attemptId?: string;
+  receipt?: string;
   createdAt: string;
   resolvedAt?: string;
   notify?: NotifyRoutingTuple;
@@ -85,13 +106,18 @@ function opaqueRef(value: string | undefined, field: string): string | undefined
 
 function targetOf(target: HumanRequestTarget): HumanRequestTarget {
   if (!target || typeof target !== "object") throw new Error("target is required");
-  if (typeof target.harness !== "string" || target.harness.trim().length === 0 || target.harness.length > 128) {
-    throw new Error("target.harness must be a non-empty identifier");
+  const agent = target.agent || target.harness;
+  if (typeof agent !== "string" || agent.trim().length === 0 || agent.length > 128) {
+    throw new Error("target.agent must be a non-empty identifier");
   }
   if (typeof target.sessionId !== "string" || target.sessionId.trim().length === 0 || target.sessionId.length > 512) {
     throw new Error("target.sessionId must be a non-empty identifier");
   }
-  return { harness: target.harness, sessionId: target.sessionId };
+  if (target.cwd !== undefined && (typeof target.cwd !== "string" || target.cwd.trim().length === 0 || target.cwd.length > 4096)) {
+    throw new Error("target.cwd must be a non-empty path");
+  }
+  if (target.marker !== undefined) opaqueRef(target.marker, "target.marker");
+  return Object.freeze({ agent, ...(target.harness ? { harness: target.harness } : {}), sessionId: target.sessionId, ...(target.cwd ? { cwd: target.cwd } : {}), ...(target.marker ? { marker: target.marker } : {}) });
 }
 
 function notifyOf(input: NotifyRoutingTupleInput | undefined, requestId: string): NotifyRoutingTuple | undefined {
@@ -109,16 +135,22 @@ function validateRecord(record: HumanRequestRecord): HumanRequestRecord {
   rejectPayloadFields(record);
   if (!record || typeof record.requestId !== "string" || record.requestId.length < 1) throw new Error("invalid request record");
   if (record.kind !== "user" && record.kind !== "secret") throw new Error("invalid request kind");
-  if (record.status !== "pending" && record.status !== "resolved") throw new Error("invalid request status");
+  if (record.status !== "pending" && record.status !== "resuming" && record.status !== "resumed" && record.status !== "resume_failed") throw new Error("invalid request status");
   targetOf(record.target);
   opaqueRef(record.contextRef, "contextRef");
   opaqueRef(record.resolutionRef, "resolutionRef");
+  opaqueRef(record.resultRef, "resultRef");
+  opaqueRef(record.attemptId, "attemptId");
+  opaqueRef(record.receipt, "receipt");
   if (record.notify) {
     notifyOf(record.notify, record.requestId);
     if (record.notify.dedupKey !== `human-request:${record.requestId}`) throw new Error("invalid Notify dedupKey");
     if (record.notify.incidentId !== undefined) opaqueRef(record.notify.incidentId, "notify.incidentId");
   }
-  if (record.status === "resolved" && !record.resolvedAt) throw new Error("resolved request is missing resolvedAt");
+  if (record.status === "resumed" || record.status === "resume_failed") {
+    if (!record.resolvedAt) throw new Error("terminal request is missing resolvedAt");
+    if (!record.attemptId) throw new Error("terminal request is missing attemptId");
+  }
   return record;
 }
 
@@ -155,7 +187,7 @@ export class HumanRequestRegistry {
   async get(requestId: string): Promise<HumanRequestRecord | null> {
     if (typeof requestId !== "string" || requestId.trim().length === 0) throw new Error("requestId is required");
     const record = (await this.read()).requests.find((item) => item.requestId === requestId);
-    return record ? { ...record, target: { ...record.target } } : null;
+    return record ? cloneRecord(record) : null;
   }
 
   async resolve(requestId: string, resolution: HumanRequestResolution): Promise<HumanRequestRecord> {
@@ -166,12 +198,69 @@ export class HumanRequestRegistry {
       const file = await this.read();
       const record = file.requests.find((item) => item.requestId === requestId);
       if (!record) throw new Error(`Human request '${requestId}' not found`);
-      if (record.status !== "pending") throw new Error(`Human request '${requestId}' is already resolved`);
-      record.status = "resolved";
-      record.resolvedAt = new Date().toISOString();
+      if (record.status !== "pending") return cloneRecord(record);
       if (resolutionRef) record.resolutionRef = resolutionRef;
+      record.status = "resuming";
+      record.attemptId = randomUUID();
+      if (resolutionRef) record.resultRef = resolutionRef;
       await this.write(file);
-      return { ...record, target: { ...record.target } };
+      return cloneRecord(record);
+    });
+  }
+
+  /** Atomically claim the one automatic resume attempt for a request. */
+  async claimResume(requestId: string, input: string | ResumeClaimInput = {}): Promise<HumanRequestRecord> {
+    const claim = typeof input === "string" ? { attemptId: input } : input;
+    const checkedAttemptId = opaqueRef(claim.attemptId, "attemptId") || randomUUID();
+    const resultRef = opaqueRef(claim.resultRef, "resultRef");
+    return this.serial(async () => {
+      const file = await this.read();
+      const record = file.requests.find((item) => item.requestId === requestId);
+      if (!record) throw new Error(`Human request '${requestId}' not found`);
+      if (record.status !== "pending") return cloneRecord(record);
+      record.status = "resuming";
+      record.attemptId = checkedAttemptId;
+      if (resultRef) record.resultRef = resultRef;
+      await this.write(file);
+      return cloneRecord(record);
+    });
+  }
+
+  /** Complete the claimed resume. Replays return the existing terminal record. */
+  async markResumed(requestId: string, attemptId: string, result?: ResumeAttemptResult): Promise<HumanRequestRecord> {
+    return this.finishResume(requestId, attemptId, "resumed", result);
+  }
+
+  /** Record a failed resume. Replays return the existing terminal record. */
+  async markResumeFailed(requestId: string, attemptId: string, result?: ResumeAttemptResult): Promise<HumanRequestRecord> {
+    return this.finishResume(requestId, attemptId, "resume_failed", result);
+  }
+
+  async completeResume(requestId: string, input: ResumeCompletionInput): Promise<HumanRequestRecord> {
+    return this.finishResume(requestId, input.attemptId, "resumed", input);
+  }
+
+  async failResume(requestId: string, input: ResumeCompletionInput): Promise<HumanRequestRecord> {
+    return this.finishResume(requestId, input.attemptId, "resume_failed", input);
+  }
+
+  private async finishResume(requestId: string, attemptId: string, status: "resumed" | "resume_failed", result?: ResumeAttemptResult): Promise<HumanRequestRecord> {
+    rejectPayloadFields(result);
+    const checkedAttemptId = opaqueRef(attemptId, "attemptId");
+    const receipt = opaqueRef(result?.receipt, "receipt");
+    return this.serial(async () => {
+      const file = await this.read();
+      const record = file.requests.find((item) => item.requestId === requestId);
+      if (!record) throw new Error(`Human request '${requestId}' not found`);
+      if (record.status === "resumed" || record.status === "resume_failed") return cloneRecord(record);
+      if (record.status !== "resuming" || record.attemptId !== checkedAttemptId) {
+        throw new Error(`Human request '${requestId}' is not owned by attemptId '${attemptId}'`);
+      }
+      record.status = status;
+      if (receipt) record.receipt = receipt;
+      record.resolvedAt = new Date().toISOString();
+      await this.write(file);
+      return cloneRecord(record);
     });
   }
 
@@ -185,7 +274,7 @@ export class HumanRequestRegistry {
       if (!record.notify) throw new Error(`Human request '${requestId}' has no explicit Notify tuple`);
       record.notify.incidentId = checkedIncidentId;
       await this.write(file);
-      return { ...record, target: { ...record.target }, notify: { ...record.notify } };
+      return cloneRecord(record);
     });
   }
 
@@ -215,6 +304,14 @@ export class HumanRequestRegistry {
     await previous;
     try { return await operation(); } finally { release(); }
   }
+}
+
+function cloneRecord(record: HumanRequestRecord): HumanRequestRecord {
+  return {
+    ...record,
+    target: targetOf(record.target),
+    ...(record.notify ? { notify: { ...record.notify } } : {}),
+  };
 }
 
 function filePathName(filePath: string): string {

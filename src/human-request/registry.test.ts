@@ -35,20 +35,47 @@ describe("HumanRequestRegistry", () => {
     await expect(store.create({ kind: "user", target: { harness: "codex", sessionId: "s" }, [field]: "do-not-store" } as never)).rejects.toThrow();
   });
 
-  it("resolves only to a continuation and opaque reference", async () => {
+  it("claims exactly once and persists the resume lifecycle", async () => {
     const { store, filePath } = await registry();
-    const created = await store.create({ kind: "user", target: { harness: "opencode", sessionId: "s" }, notify: {
+    const created = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "s", cwd: "/workspace", marker: "marker-1" }, notify: {
       project: "project-a", recipient: "recipient-a", kind: "human_request", severity: "explicit-severity", title: "explicit-title",
     } });
     expect(created.notify).toMatchObject({ project: "project-a", recipient: "recipient-a", kind: "human_request", severity: "explicit-severity", title: "explicit-title", dedupKey: `human-request:${created.requestId}` });
     const bound = await store.bindNotifyIncident(created.requestId, "incident-123");
     expect(bound.notify?.incidentId).toBe("incident-123");
-    const resolved = await store.resolve(created.requestId, { continuation: "resume", resolutionRef: "notify://opaque/9" });
+    const claimed = await store.claimResume(created.requestId, { resultRef: "notify://opaque/9" });
 
-    expect(resolved).toMatchObject({ requestId: created.requestId, status: "resolved", continuation: "resume", resolutionRef: "notify://opaque/9" });
-    expect(await store.get(created.requestId)).toEqual(resolved);
+    expect(claimed).toMatchObject({ requestId: created.requestId, status: "resuming", continuation: "resume", resultRef: "notify://opaque/9" });
+    expect(claimed.attemptId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(await store.claimResume(created.requestId, { resultRef: "notify://opaque/other" })).toEqual(claimed);
+    const resumed = await store.completeResume(created.requestId, { attemptId: claimed.attemptId!, receipt: "receipt://opaque/9" });
+    expect(resumed).toMatchObject({ status: "resumed", attemptId: claimed.attemptId, receipt: "receipt://opaque/9" });
+    expect(await store.claimResume(created.requestId)).toEqual(resumed);
+    expect(await store.get(created.requestId)).toEqual(resumed);
     const persisted = await readFile(filePath, "utf8");
     expect(persisted).not.toContain("do-not-store");
-    await expect(store.resolve(created.requestId, { continuation: "resume" })).rejects.toThrow("already resolved");
+    expect(persisted).toContain("receipt://opaque/9");
+    expect(persisted).not.toContain("notify://opaque/other");
+  });
+
+  it("returns an in-progress claim for duplicate resolve triggers", async () => {
+    const { store } = await registry();
+    const created = await store.create({ kind: "user", target: { harness: "codex", sessionId: "s" } });
+    const first = await store.resolve(created.requestId, { continuation: "resume", resolutionRef: "result://opaque/1" });
+    const duplicate = await store.resolve(created.requestId, { continuation: "resume", resolutionRef: "result://opaque/2" });
+
+    expect(first).toEqual(duplicate);
+    expect(first).toMatchObject({ status: "resuming", resultRef: "result://opaque/1" });
+  });
+
+  it("allows only the owning attempt to complete or fail", async () => {
+    const { store } = await registry();
+    const created = await store.create({ kind: "secret", target: { agent: "claude", sessionId: "s", cwd: "/tmp" } });
+    const claimed = await store.claimResume(created.requestId, { attemptId: "attempt-1" });
+
+    await expect(store.completeResume(created.requestId, { attemptId: "attempt-2", receipt: "receipt://wrong" })).rejects.toThrow("attemptId");
+    const failed = await store.failResume(created.requestId, { attemptId: claimed.attemptId!, receipt: "receipt://failure" });
+    expect(failed).toMatchObject({ status: "resume_failed", attemptId: "attempt-1", receipt: "receipt://failure" });
+    expect(await store.failResume(created.requestId, { attemptId: "attempt-1", receipt: "receipt://other" })).toEqual(failed);
   });
 });

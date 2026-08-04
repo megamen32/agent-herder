@@ -9,6 +9,7 @@ import type { AgentSession, HarnessAdapter } from "../types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "../session-convert.js";
 import { HumanRequestRegistry } from "../human-request/index.js";
 import { convertHermesExport } from "../hermes-conversion.js";
+import { resumeBoundTarget } from "../resume-transport.js";
 
 export interface WebDependencies {
   adapters: Map<string, HarnessAdapter>;
@@ -44,11 +45,23 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 400, { error: "invalid opaque SSS completion event" });
     }
     const pending = await humanRequests.get(body.request_id);
-    if (!pending || pending.kind !== "secret" || pending.status !== "pending") {
+    if (!pending || pending.kind !== "secret") {
       return sendJson(response, 409, { error: "SSS completion is valid only for a pending Ask Secret request" });
     }
-    const record = await humanRequests.resolve(body.request_id, { continuation: "resume", resolutionRef: body.result_ref });
-    return sendJson(response, 202, { request_id: record.requestId, status: record.status, continuation: record.continuation });
+    const claimed = await humanRequests.claimResume(body.request_id, { resultRef: body.result_ref });
+    if (claimed.status !== "resuming" || !claimed.attemptId) {
+      return sendJson(response, 202, { request_id: claimed.requestId, status: claimed.status });
+    }
+    const target = claimed.target;
+    if (!target.agent || !target.cwd || !["codex", "opencode", "claude"].includes(target.agent)) {
+      const failed = await humanRequests.failResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: "resume-target-unsupported" });
+      return sendJson(response, 422, { request_id: failed.requestId, status: failed.status });
+    }
+    const receipt = await resumeBoundTarget({ target: { agent: target.agent as "codex" | "opencode" | "claude", session_id: target.sessionId, cwd: target.cwd, ...(target.marker ? { marker: target.marker } : {}) }, result_ref: body.result_ref });
+    const record = receipt.status === "accepted"
+      ? await humanRequests.completeResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: receipt.receipt_ref })
+      : await humanRequests.failResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: `agent-resume:${receipt.reason}` });
+    return sendJson(response, receipt.status === "accepted" ? 202 : 502, { request_id: record.requestId, status: record.status, continuation: record.continuation });
   }
   if (request.method === "GET" && url.pathname === "/") {
     const html = await readFile(htmlPath, "utf8");
