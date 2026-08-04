@@ -34,8 +34,8 @@ const ENABLE_CLAUDE = parseEnvBool(process.env.ENABLE_CLAUDE, true);
 const ENABLE_CLAUDE_SDK = parseEnvBool(process.env.ENABLE_CLAUDE_SDK, true);
 const ENABLE_CODEX = parseEnvBool(process.env.ENABLE_CODEX, true);
 const CODEX_TRANSPORT = process.env.CODEX_TRANSPORT || "app-server";
-const ENABLE_QODER = parseEnvBool(process.env.ENABLE_QODER, false);
-const ENABLE_HERMES = parseEnvBool(process.env.ENABLE_HERMES, false);
+const ENABLE_QODER = parseEnvBool(process.env.ENABLE_QODER, true);
+const ENABLE_HERMES = parseEnvBool(process.env.ENABLE_HERMES, true);
 const ACP_AGENT_COMMAND = process.env.ACP_AGENT_COMMAND;
 
 function parseEnvBool(val: string | undefined, fallback: boolean): boolean {
