@@ -661,21 +661,24 @@
 </div>
 
 <script>
+  const initialFilters = new URLSearchParams(location.search);
+
   const state = {
     sessions: [],
     selected: null,
     paused: false,
     pollingTimer: null,
     loadingSessions: false,
+    sessionRequest: 0,
     loadingDetails: false,
     sort: "activity",
     grouping: "project",
     collapsedProjects: new Set(),
     expandedProjects: new Set(),
     filters: {
-      harness: "",
-      cwd: "",
-      status: "",
+      harness: initialFilters.get("harness") || "",
+      cwd: initialFilters.get("cwd") || "",
+      status: initialFilters.get("status") || "",
     },
   };
 
@@ -751,6 +754,16 @@
     renderDetail();
   }
 
+  function syncFiltersToQuery() {
+    const filters = new URLSearchParams(location.search);
+    for (const [key, value] of Object.entries(state.filters)) {
+      if (value) filters.set(key, value);
+      else filters.delete(key);
+    }
+    const query = filters.toString();
+    history.replaceState(null, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
+  }
+
   function apiErrorText(data, response) {
     if (data && typeof data.error === "string" && data.error) return data.error;
     return `${response.status} ${response.statusText || "Request failed"}`;
@@ -775,11 +788,13 @@
     if (state.filters.cwd) params.set("cwd", state.filters.cwd);
     if (state.filters.status) params.set("status", state.filters.status);
 
+    const request = ++state.sessionRequest;
     state.loadingSessions = true;
     setError(elements.sessionError, "");
     try {
       const { response, data } = await fetchJson(`/api/sessions?${params.toString()}`);
       if (!response.ok) throw new Error(apiErrorText(data, response));
+      if (request !== state.sessionRequest) return;
       state.sessions = Array.isArray(data?.sessions) ? data.sessions : [];
       renderHarnessFilter();
       renderSessionTree();
@@ -796,15 +811,16 @@
     } catch (error) {
       setError(elements.sessionError, error.message || String(error));
     } finally {
-      state.loadingSessions = false;
+      if (request === state.sessionRequest) state.loadingSessions = false;
     }
   }
 
   function renderHarnessFilter() {
     const providers = [...new Set(state.sessions.map((session) => providerFor(session)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-    const current = elements.harnessFilter.value;
-    elements.harnessFilter.innerHTML = ['<option value="">All harnesses</option>', ...providers.map((provider) => `<option value="${esc(provider)}">${esc(provider)}</option>`)].join("");
-    if (providers.includes(current)) {
+    const current = state.filters.harness;
+    const options = [...new Set([...providers, current].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    elements.harnessFilter.innerHTML = ['<option value="">All harnesses</option>', ...options.map((provider) => `<option value="${esc(provider)}">${esc(provider)}</option>`)].join("");
+    if (current) {
       elements.harnessFilter.value = current;
     }
   }
@@ -1544,14 +1560,17 @@
       state.filters.harness = elements.harnessFilter.value;
       state.filters.cwd = elements.cwdFilter.value.trim();
       state.filters.status = elements.statusFilter.value;
+      syncFiltersToQuery();
       refreshAll();
     });
     elements.harnessFilter.addEventListener("change", () => {
       state.filters.harness = elements.harnessFilter.value;
+      syncFiltersToQuery();
       refreshAll();
     });
     elements.statusFilter.addEventListener("change", () => {
       state.filters.status = elements.statusFilter.value;
+      syncFiltersToQuery();
       refreshAll();
     });
     elements.sortFilter.addEventListener("change", () => {
@@ -1565,6 +1584,7 @@
     elements.cwdFilter.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         state.filters.cwd = elements.cwdFilter.value.trim();
+        syncFiltersToQuery();
         refreshAll();
       }
     });

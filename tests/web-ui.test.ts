@@ -37,6 +37,21 @@ describe("session tree project groups", () => {
     expect(html).toContain("state.grouping");
   });
 
+  it("keeps the selected harness in state when rebuilding the harness options", () => {
+    expect(html).toContain("const current = state.filters.harness");
+    expect(html).toContain("new Set([...providers, current].filter(Boolean))");
+    expect(html).toContain("elements.harnessFilter.value = current");
+    expect(html).toContain('new URLSearchParams(location.search)');
+    expect(html).toContain("function syncFiltersToQuery");
+    expect(html).toContain("syncFiltersToQuery();");
+  });
+
+  it("ignores an older polling response after a newer filtered request starts", () => {
+    expect(html).toContain("sessionRequest: 0");
+    expect(html).toContain("const request = ++state.sessionRequest");
+    expect(html).toContain("if (request !== state.sessionRequest) return");
+  });
+
   it("shows action state, disables state-incompatible controls, and keeps actions at the top", () => {
     expect(html).toContain("actionStatus");
     expect(html).toContain("canStop");
