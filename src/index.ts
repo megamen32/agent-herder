@@ -211,13 +211,17 @@ function parseCsv(value: string | undefined, fallback: string[]): string[] {
 function registerTools(server: McpServer) {
   server.tool(
     "human_request_create",
-    "Create an opaque Ask User or Ask Secret request bound to an existing harness session. Notification routing is explicit; Agent Herder chooses no delivery policy.",
+    "Create an opaque Ask User or Ask Secret request bound to an existing harness session. Hermes requires its immutable hermes.locator.v2 locator; Agent Herder never discovers a replacement session. Notification routing is explicit.",
     {
       kind: z.enum(["user", "secret"]),
-      harness: z.string().min(1), sessionId: z.string().min(1), contextRef: z.string().optional(),
+      harness: z.string().min(1), sessionId: z.string().min(1), cwd: z.string().min(1).optional(), marker: z.string().min(1).optional(),
+      locator: z.record(z.string(), z.unknown()).optional(), contextRef: z.string().optional(),
       notify: z.object({ project: z.string().min(1), recipient: z.string().min(1), kind: z.string().min(1), severity: z.string().min(1), title: z.string().min(1) }).optional(),
     },
-    async (args) => ({ content: [{ type: "text" as const, text: JSON.stringify(await humanRequests.create({ kind: args.kind, target: { harness: args.harness, sessionId: args.sessionId }, contextRef: args.contextRef, notify: args.notify })) }] })
+    async (args) => {
+      if (args.harness === "hermes" && !args.locator) throw new Error("Hermes human request requires an immutable hermes.locator.v2 locator");
+      return { content: [{ type: "text" as const, text: JSON.stringify(await humanRequests.create({ kind: args.kind, target: { harness: args.harness, sessionId: args.sessionId, ...(args.cwd ? { cwd: args.cwd } : {}), ...(args.marker ? { marker: args.marker } : {}), ...(args.locator ? { locator: args.locator } : {}) }, contextRef: args.contextRef, notify: args.notify })) }] };
+    }
   );
   server.tool(
     "human_request_resolve",

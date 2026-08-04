@@ -11,6 +11,8 @@ export interface HumanRequestTarget {
   sessionId: string;
   readonly cwd?: string;
   readonly marker?: string;
+  /** Immutable harness-owned locator; required for Hermes exact-session wake. */
+  readonly locator?: Readonly<Record<string, unknown>>;
 }
 
 export interface CreateHumanRequestInput {
@@ -117,7 +119,11 @@ function targetOf(target: HumanRequestTarget): HumanRequestTarget {
     throw new Error("target.cwd must be a non-empty path");
   }
   if (target.marker !== undefined) opaqueRef(target.marker, "target.marker");
-  return Object.freeze({ agent, ...(target.harness ? { harness: target.harness } : {}), sessionId: target.sessionId, ...(target.cwd ? { cwd: target.cwd } : {}), ...(target.marker ? { marker: target.marker } : {}) });
+  if (target.locator !== undefined && (!target.locator || typeof target.locator !== "object" || Array.isArray(target.locator))) {
+    throw new Error("target.locator must be an object");
+  }
+  const locator = target.locator ? Object.freeze({ ...target.locator }) : undefined;
+  return Object.freeze({ agent, ...(target.harness ? { harness: target.harness } : {}), sessionId: target.sessionId, ...(target.cwd ? { cwd: target.cwd } : {}), ...(target.marker ? { marker: target.marker } : {}), ...(locator ? { locator } : {}) });
 }
 
 function notifyOf(input: NotifyRoutingTupleInput | undefined, requestId: string): NotifyRoutingTuple | undefined {

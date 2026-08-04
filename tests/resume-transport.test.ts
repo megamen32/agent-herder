@@ -46,4 +46,43 @@ describe("AgentResumeClient", () => {
     await expect(client.resume(request)).resolves.toMatchObject({ status: "failed", reason: "unsupported" });
     expect(calls).toEqual(["agent-resume"]);
   });
+
+  it("forwards the canonical Hermes locator through the sole agent-resume entrypoint", async () => {
+    const hermesRequest: ResumeTransportRequest = {
+      target: {
+        agent: "hermes",
+        locator: { schema: "hermes.locator.v2", session_key: "agent:main:telegram:thread:chat-42:topic-7", platform: "telegram", chat_id: "chat-42", thread_id: "topic-7", chat_type: "thread" },
+      },
+      result_ref: "result://hermes-42",
+    };
+    const calls: ResumeTransportRequest[] = [];
+    const client = new AgentResumeClient({ invoke: async (value) => {
+      calls.push(value);
+      return { status: "accepted", target: value.target, result_ref: value.result_ref, receipt_ref: "agent-resume://hermes-receipt" };
+    } });
+
+    await expect(client.resume(hermesRequest)).resolves.toEqual({
+      status: "accepted", target: hermesRequest.target, result_ref: hermesRequest.result_ref, receipt_ref: "agent-resume://hermes-receipt",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual(hermesRequest);
+    expect(Object.isFrozen(calls[0].target.locator)).toBe(true);
+  });
+
+  it("rejects Hermes targets without a complete canonical locator", async () => {
+    const client = new AgentResumeClient({ invoke: async () => ({}) });
+    await expect(client.resume({ target: { agent: "hermes" } as ResumeTransportRequest["target"], result_ref: "result://missing" })).rejects.toThrow("target.locator is required");
+    await expect(client.resume({ target: { agent: "hermes", locator: { schema: "hermes.locator.v2", session_key: "key", platform: "telegram", chat_id: "", chat_type: "dm" } }, result_ref: "result://missing" })).rejects.toThrow("target.locator.chat_id is required");
+  });
+
+  it("does not accept a Hermes receipt for a different locator", async () => {
+    const hermesTarget: ResumeTransportRequest["target"] = {
+      agent: "hermes", locator: { schema: "hermes.locator.v2", session_key: "agent:main:telegram:dm:chat-42", platform: "telegram", chat_id: "chat-42", chat_type: "dm" },
+    };
+    const client = new AgentResumeClient({ invoke: async (value) => ({
+      status: "accepted", target: { ...value.target, locator: { ...hermesTarget.locator, chat_id: "other" } },
+      result_ref: value.result_ref, receipt_ref: "receipt:wrong-locator",
+    }) });
+    await expect(client.resume({ target: hermesTarget, result_ref: "result://hermes" })).resolves.toMatchObject({ status: "failed", reason: "unsupported" });
+  });
 });

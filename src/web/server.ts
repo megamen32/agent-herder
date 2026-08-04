@@ -37,27 +37,32 @@ export function createWebServer(dependencies: WebDependencies): Server {
 
 async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
-  if (request.method === "POST" && url.pathname === "/internal/human-requests/sss-completion") {
+  if (request.method === "POST" && (url.pathname === "/internal/human-requests/sss-completion" || url.pathname === "/internal/human-requests/ask-user-completion")) {
     if (!humanRequests) return sendJson(response, 503, { error: "Human Request registry is disabled" });
     const body = await readJson(request);
-    if (body.event !== "sss.secret_input.completed" || body.event_version !== 1 || body.status !== "completed" ||
+    const expectedKind = url.pathname.endsWith("sss-completion") ? "secret" : "user";
+    const expectedEvent = expectedKind === "secret" ? "sss.secret_input.completed" : "ask.user.completed";
+    if (body.event !== expectedEvent || body.event_version !== 1 || body.status !== "completed" ||
       !isUuid(body.request_id) || !isUuid(body.result_ref)) {
-      return sendJson(response, 400, { error: "invalid opaque SSS completion event" });
+      return sendJson(response, 400, { error: "invalid opaque human-request completion event" });
     }
     const pending = await humanRequests.get(body.request_id);
-    if (!pending || pending.kind !== "secret") {
-      return sendJson(response, 409, { error: "SSS completion is valid only for a pending Ask Secret request" });
+    if (!pending || pending.kind !== expectedKind) {
+      return sendJson(response, 409, { error: "completion does not match the pending human request kind" });
     }
     const claimed = await humanRequests.claimResume(body.request_id, { resultRef: body.result_ref });
     if (claimed.status !== "resuming" || !claimed.attemptId) {
       return sendJson(response, 202, { request_id: claimed.requestId, status: claimed.status });
     }
     const target = claimed.target;
-    if (!target.agent || !target.cwd || !["codex", "opencode", "claude"].includes(target.agent)) {
+    if (!target.agent || !(["codex", "opencode", "claude"].includes(target.agent) && target.cwd || target.agent === "hermes" && target.locator)) {
       const failed = await humanRequests.failResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: "resume-target-unsupported" });
       return sendJson(response, 422, { request_id: failed.requestId, status: failed.status });
     }
-    const receipt = await resumeBoundTarget({ target: { agent: target.agent as "codex" | "opencode" | "claude", session_id: target.sessionId, cwd: target.cwd, ...(target.marker ? { marker: target.marker } : {}) }, result_ref: body.result_ref });
+    const resumeTarget = target.agent === "hermes"
+      ? { agent: "hermes" as const, locator: target.locator as unknown as import("../resume-transport.js").HermesResumeLocator }
+      : { agent: target.agent as "codex" | "opencode" | "claude", session_id: target.sessionId, cwd: target.cwd!, ...(target.marker ? { marker: target.marker } : {}) };
+    const receipt = await resumeBoundTarget({ target: resumeTarget, result_ref: body.result_ref });
     const record = receipt.status === "accepted"
       ? await humanRequests.completeResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: receipt.receipt_ref })
       : await humanRequests.failResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: `agent-resume:${receipt.reason}` });

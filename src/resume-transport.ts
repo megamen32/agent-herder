@@ -1,15 +1,39 @@
 import { spawn } from "node:child_process";
 
-export type ResumeAgent = "codex" | "opencode" | "claude";
+export type ResumeAgent = "codex" | "opencode" | "claude" | "hermes";
+
+/** Immutable Gateway address selected by the upstream Hermes/session converter. */
+export interface HermesResumeLocator {
+  readonly schema: "hermes.locator.v2";
+  /** Exact existing Gateway session key; never a discovery hint. */
+  readonly session_key: string;
+  readonly platform: string;
+  readonly chat_id: string;
+  readonly chat_type: "dm" | "group" | "channel" | "thread";
+  readonly thread_id?: string;
+  readonly user_id?: string;
+  readonly user_id_alt?: string;
+  readonly scope_id?: string;
+  readonly prospective_thread_id?: string;
+  readonly profile?: string;
+}
 
 /** The target has already been selected by Agent Herder; this port never discovers one. */
-export interface SelectedResumeTarget {
-  readonly agent: ResumeAgent;
+export interface SelectedLocalResumeTarget {
+  readonly agent: Exclude<ResumeAgent, "hermes">;
   readonly session_id: string;
   readonly cwd: string;
   readonly model?: string;
   readonly marker?: string;
 }
+
+export interface SelectedHermesResumeTarget {
+  readonly agent: "hermes";
+  /** Required and forwarded as-is to agent-resume's Hermes adapter. */
+  readonly locator: HermesResumeLocator;
+}
+
+export type SelectedResumeTarget = SelectedLocalResumeTarget | SelectedHermesResumeTarget;
 
 export interface ResumeTransportRequest {
   readonly target: SelectedResumeTarget;
@@ -96,21 +120,25 @@ function freezeRequest(input: ResumeTransportRequest): ResumeTransportRequest {
   if (!input || typeof input !== "object") throw new TypeError("resume request is required");
   const target = input.target;
   if (!target || typeof target !== "object") throw new TypeError("resume target is required");
-  if (!["codex", "opencode", "claude"].includes(target.agent)) throw new TypeError("unsupported resume agent");
-  for (const field of ["session_id", "cwd"] as const) {
-    if (typeof target[field] !== "string" || target[field].trim() === "") throw new TypeError(`target.${field} is required`);
+  if (!["codex", "opencode", "claude", "hermes"].includes(target.agent)) throw new TypeError("unsupported resume agent");
+  if (target.agent === "hermes") {
+    validateHermesLocator(target.locator);
+  } else {
+    for (const field of ["session_id", "cwd"] as const) {
+      if (typeof target[field] !== "string" || target[field].trim() === "") throw new TypeError(`target.${field} is required`);
+    }
   }
   if (typeof input.result_ref !== "string" || input.result_ref.trim() === "") throw new TypeError("result_ref is required");
-  const copy: ResumeTransportRequest = {
-    target: {
-      agent: target.agent,
-      session_id: target.session_id,
-      cwd: target.cwd,
-      ...(target.model === undefined ? {} : { model: target.model }),
-      ...(target.marker === undefined ? {} : { marker: target.marker }),
-    },
-    result_ref: input.result_ref,
-  };
+  const frozenTarget: SelectedResumeTarget = target.agent === "hermes"
+    ? { agent: "hermes", locator: freezeHermesLocator(target.locator) }
+    : {
+        agent: target.agent,
+        session_id: target.session_id,
+        cwd: target.cwd,
+        ...(target.model === undefined ? {} : { model: target.model }),
+        ...(target.marker === undefined ? {} : { marker: target.marker }),
+      };
+  const copy: ResumeTransportRequest = { target: frozenTarget, result_ref: input.result_ref };
   Object.freeze(copy.target);
   return Object.freeze(copy);
 }
@@ -150,8 +178,57 @@ function parseJson(value: string): unknown {
 function sameTarget(value: unknown, target: SelectedResumeTarget): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const candidate = value as Record<string, unknown>;
-  return candidate.agent === target.agent && candidate.session_id === target.session_id && candidate.cwd === target.cwd
+  if (candidate.agent !== target.agent) return false;
+  if (target.agent === "hermes") {
+    return sameLocator(candidate.locator, target.locator);
+  }
+  return candidate.session_id === target.session_id && candidate.cwd === target.cwd
     && (candidate.model ?? undefined) === target.model && (candidate.marker ?? undefined) === target.marker;
+}
+
+function validateHermesLocator(value: unknown): asserts value is HermesResumeLocator {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("target.locator is required for Hermes");
+  const locator = value as Record<string, unknown>;
+  if (locator.schema !== "hermes.locator.v2") throw new TypeError("target.locator.schema must be hermes.locator.v2");
+  for (const field of ["session_key", "platform", "chat_id", "chat_type"] as const) {
+    if (typeof locator[field] !== "string" || locator[field].trim() === "") throw new TypeError(`target.locator.${field} is required`);
+  }
+  if (!["dm", "group", "channel", "thread"].includes(locator.chat_type as string)) throw new TypeError("target.locator.chat_type is unsupported");
+  for (const field of ["thread_id", "user_id", "user_id_alt", "scope_id", "prospective_thread_id", "profile"] as const) {
+    if (locator[field] !== undefined && (typeof locator[field] !== "string" || locator[field].trim() === "")) {
+      throw new TypeError(`target.locator.${field} must be a non-empty string when provided`);
+    }
+  }
+}
+
+function freezeHermesLocator(locator: HermesResumeLocator): HermesResumeLocator {
+  return Object.freeze({
+    schema: "hermes.locator.v2",
+    session_key: locator.session_key,
+    platform: locator.platform,
+    chat_id: locator.chat_id,
+    chat_type: locator.chat_type,
+    ...(locator.thread_id === undefined ? {} : { thread_id: locator.thread_id }),
+    ...(locator.user_id === undefined ? {} : { user_id: locator.user_id }),
+    ...(locator.user_id_alt === undefined ? {} : { user_id_alt: locator.user_id_alt }),
+    ...(locator.scope_id === undefined ? {} : { scope_id: locator.scope_id }),
+    ...(locator.prospective_thread_id === undefined ? {} : { prospective_thread_id: locator.prospective_thread_id }),
+    ...(locator.profile === undefined ? {} : { profile: locator.profile }),
+  });
+}
+
+function sameLocator(value: unknown, target: HermesResumeLocator | undefined): boolean {
+  if (target === undefined) return value === undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return candidate.schema === target.schema && candidate.session_key === target.session_key
+    && candidate.platform === target.platform && candidate.chat_id === target.chat_id && candidate.chat_type === target.chat_type
+    && (candidate.thread_id ?? undefined) === target.thread_id
+    && (candidate.user_id ?? undefined) === target.user_id
+    && (candidate.user_id_alt ?? undefined) === target.user_id_alt
+    && (candidate.scope_id ?? undefined) === target.scope_id
+    && (candidate.prospective_thread_id ?? undefined) === target.prospective_thread_id
+    && (candidate.profile ?? undefined) === target.profile;
 }
 
 function failed(request: ResumeTransportRequest, reason: ResumeFailureReason, _detail?: string): ResumeReceipt {
