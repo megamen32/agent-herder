@@ -9,6 +9,7 @@ WorkingDirectory=%h/agents-projects/agent-herder
 EnvironmentFile=-%h/.config/openchamber/startup.env
 UnsetEnvironment=OPENCHAMBER_UI_PASSWORD OPENCODE_DISABLE_CHANNEL_DB
 Environment=OPENCODE_URL=http://127.0.0.1:4095
+EnvironmentFile=-%h/.config/agent-herder/opencode.env
 Environment=CODEX_BIN=%h/.local/bin/codex
 Environment=CODEX_CWD=%h/ServersAdministartion
 Environment=CODEX_TRANSPORT=app-server
