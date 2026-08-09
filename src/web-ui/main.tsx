@@ -9,6 +9,9 @@ type HerderSession = SessionListSession & {
   lastMessage?: string;
   model?: string;
   needsPermission?: boolean;
+  messageCount?: number;
+  durationSec?: number;
+  costUsd?: number;
 };
 type SessionPart = { type: "text" | "thinking" | "tool_call" | "tool_result"; text?: string; name?: string; input?: unknown; output?: string; error?: boolean };
 type SessionMessage = { id: string; role: "user" | "assistant" | "tool" | "system"; timestamp?: string; text?: string; parts: SessionPart[] };
@@ -29,6 +32,20 @@ const formatTime = (value: string) => {
   return Number.isFinite(timestamp) ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(timestamp) : "";
 };
 const displayStatus = (status: string) => status.replace("needs_input", "needs input");
+const formatDuration = (seconds?: number) => {
+  if (!Number.isFinite(seconds)) return "—";
+  const total = Math.max(0, Math.round(seconds as number));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return hours ? `${hours}h ${minutes}m` : `${minutes}m ${total % 60}s`;
+};
+const metaNumber = (session: HerderSession, keys: string[]) => {
+  for (const key of keys) {
+    const value = session.meta?.[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return undefined;
+};
 
 function Markdown({ children }: { children: string }) {
   return <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>;
@@ -139,12 +156,16 @@ function App() {
   React.useLayoutEffect(() => {
     const element = chatScrollRef.current;
     if (!element || !shouldFollowRef.current) return;
+    let secondFrame = 0;
     const frame = requestAnimationFrame(() => {
       element.scrollTop = element.scrollHeight;
-      setShowScrollToLatest(false);
+      secondFrame = requestAnimationFrame(() => {
+        if (shouldFollowRef.current) element.scrollTop = element.scrollHeight;
+        setShowScrollToLatest(false);
+      });
     });
-    return () => cancelAnimationFrame(frame);
-  }, [activeKey, details?.messages.length]);
+    return () => { cancelAnimationFrame(frame); if (secondFrame) cancelAnimationFrame(secondFrame); };
+  }, [activeKey, details?.messages.length, details?.children?.length, showReasoning, showTools]);
 
   const activeSession = sessions.find((session) => keyOf(session) === activeKey) || details?.session;
   const sessionMap = React.useMemo(() => new Map(sessions.map((session) => [keyOf(session), session])), [sessions]);
@@ -162,6 +183,7 @@ function App() {
     await loadSessions();
     await loadDetails(activeKey);
   };
+  const isResumeMode = activeSession?.status === "stopped" || activeSession?.status === "error";
   const sendMessage = async () => {
     if (!activeKey || !composer.trim() || sending) return;
     const { harness, id } = splitKey(activeKey);
@@ -186,7 +208,7 @@ function App() {
 
   if (loading) return <main className="oc-app"><div className="oc-loading">Loading sessions…</div></main>;
   return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"}`}>
-    <SessionList entries={visibleSessionEntries} activeKey={activeKey} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onSelect={(key) => { setActiveKey(key); setMobileView("chat"); }} />
+    <SessionList entries={visibleSessionEntries} activeKey={activeKey} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onSelect={(key) => { shouldFollowRef.current = true; setShowScrollToLatest(false); setActiveKey(key); setMobileView("chat"); }} />
     <section className="chat-pane">
       <header className="chat-header">
         <button className="mobile-back" onClick={() => setMobileView("sessions")} aria-label="Back to sessions">← <span>Sessions</span></button>
@@ -201,10 +223,10 @@ function App() {
           {details?.messages.map((message) => hasVisibleMessage(message, showReasoning, showTools) && <article className={`message ${message.role}`} key={message.id}><div className="message-meta"><span>{message.role === "user" ? "You" : message.role === "tool" ? "Tool" : "Agent"}</span><time>{formatTime(message.timestamp || "")}</time></div><MessageParts message={message} showReasoning={showReasoning} showTools={showTools} /></article>)}
         </div>
       </div>
-      {showScrollToLatest && <button className="scroll-latest" aria-label="Scroll to latest" onClick={scrollToBottom}>↓ <span>Latest</span></button>}
-      <form className="composer" onSubmit={(event) => { event.preventDefault(); void sendMessage(); }}><button type="button" className="composer-plus" aria-label="Add context">+</button><textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={activeKey ? "Message the agent…" : "Choose a session first"} disabled={!activeKey || sending} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} /><span className="composer-hint">{sending ? "Waiting for agent…" : "Enter to send · Shift+Enter for a new line"}</span><button className="send-button" type="submit" disabled={!composer.trim() || sending} aria-label="Send message">↑</button></form>
+      {showScrollToLatest && <button className="scroll-latest" aria-label="Scroll to latest" onClick={scrollToBottom}>↓</button>}
+      <form className="composer" onSubmit={(event) => { event.preventDefault(); if (isResumeMode) void runAction("resume"); else void sendMessage(); }}><button type="button" className="composer-plus" aria-label="Add context">+</button><textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Resume the agent…" : activeKey ? "Message the agent…" : "Choose a session first"} disabled={!activeKey || sending || isResumeMode} onKeyDown={(event) => { if (!isResumeMode && event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} /><span className="composer-hint">{sending ? "Waiting for agent…" : isResumeMode ? "Resume this session" : "Enter to send · Shift+Enter for a new line"}</span><button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || sending || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Resume session" : "Send message"}>{isResumeMode ? "▶" : "↑"}</button></form>
     </section>
-    {showInspector && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">SESSION</span><button className="icon-button" onClick={() => setShowInspector(false)} aria-label="Close inspector">×</button></div>{activeSession ? <><div className="inspector-title">{activeSession.title}</div><div className="inspector-status"><span className={`status-dot status-${activeSession.status}`} />{displayStatus(activeSession.status)}</div><dl><dt>Harness</dt><dd>{activeSession.harness}</dd><dt>Working directory</dt><dd>{activeSession.cwd}</dd><dt>Model</dt><dd>{activeSession.model || "—"}</dd><dt>Subagents</dt><dd>{details?.children?.length || 0}</dd></dl><div className="inspector-actions">{activeSession.status === "running" && <button className="danger-button" onClick={() => void runAction("stop")}>Stop</button>}{(activeSession.status === "stopped" || activeSession.status === "error") && <button className="primary-button" onClick={() => void runAction("resume")}>Resume</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Recover</button>}</div><div className="settings-block"><span className="eyebrow">VIEW</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label></div></> : <div className="empty-inspector">No session selected.</div>}</aside>}
+    {showInspector && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">SESSION</span><button className="icon-button" onClick={() => setShowInspector(false)} aria-label="Close inspector">×</button></div>{activeSession ? <><div className="inspector-title">{activeSession.title}</div><div className="inspector-status"><span className={`status-dot status-${activeSession.status}`} />{displayStatus(activeSession.status)}</div><dl><dt>Harness</dt><dd>{activeSession.harness}</dd><dt>Working directory</dt><dd>{activeSession.cwd}</dd><dt>Model</dt><dd>{activeSession.model || "—"}</dd><dt>Messages</dt><dd>{activeSession.messageCount ?? "—"}</dd><dt>Duration</dt><dd>{formatDuration(activeSession.durationSec)}</dd><dt>Cost</dt><dd>{activeSession.costUsd === undefined ? "—" : `$${activeSession.costUsd.toFixed(4)}`}</dd><dt>Tokens</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) ?? "—"}</dd><dt>Subagents</dt><dd>{details?.children?.length || 0}</dd></dl><div className="inspector-actions">{activeSession.status === "running" && <button className="danger-button" onClick={() => void runAction("stop")}>Stop</button>}{(activeSession.status === "stopped" || activeSession.status === "error") && <button className="primary-button" onClick={() => void runAction("resume")}>Resume</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Recover</button>}</div><div className="settings-block"><span className="eyebrow">VIEW</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label></div></> : <div className="empty-inspector">No session selected.</div>}</aside>}
   </main>;
 }
 

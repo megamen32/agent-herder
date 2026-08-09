@@ -21,5 +21,9 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain("subagents-panel");
     expect(main).toContain("details.children.length");
     expect(main).toContain("setSessions(result.sessions);");
+    expect(main).toContain('aria-label="Scroll to latest"');
+    expect(main).toContain('aria-label={isResumeMode ? "Resume session" : "Send message"}');
+    expect(main).toContain('{isResumeMode ? "▶" : "↑"}');
+    expect(main).toContain("details?.children?.length");
   });
 });
