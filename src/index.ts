@@ -8,6 +8,7 @@ import { HarnessAdapter } from "./types/index.js";
 import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter } from "./adapters/index.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
+import { acquireAgentHerderSingleton } from "./singleton.js";
 import { createWebServer } from "./web/server.js";
 import {
   handleListAgents,
@@ -456,14 +457,20 @@ function registerTools(server: McpServer) {
 // ===== Main =====
 
 async function main() {
-  const server = new McpServer({
-    name: "agent-herder",
-    version: "0.2.0",
-    description: "Monitor and control coding agents (OpenCode, Claude Code SDK, Codex CLI, Qoder) with summarization and model management",
-  });
+  const releaseSingleton = acquireAgentHerderSingleton();
+  process.once("exit", releaseSingleton);
 
   await initAdapters();
-  registerTools(server);
+  const createMcpServer = () => {
+    const server = new McpServer({
+      name: "agent-herder",
+      version: "0.2.0",
+      description: "Monitor and control coding agents (OpenCode, Claude Code SDK, Codex CLI, Qoder) with summarization and model management",
+    });
+    registerTools(server);
+    return server;
+  };
+  const server = createMcpServer();
 
   const webPort = process.env.AGENT_HERDER_WEB_PORT;
   if (webPort) {
@@ -471,6 +478,7 @@ async function main() {
       adapters,
       converter: new AgentHerderSessionConverter(),
       humanRequests,
+      mcpServerFactory: createMcpServer,
     });
     const host = process.env.AGENT_HERDER_WEB_HOST || "127.0.0.1";
     webServer.listen(Number(webPort), host, () => {

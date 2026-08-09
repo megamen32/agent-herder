@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -10,21 +11,26 @@ import type { AgentHerderSessionConverter, ConvertSessionInput } from "../sessio
 import { HumanRequestRegistry } from "../human-request/index.js";
 import { convertHermesExport } from "../hermes-conversion.js";
 import { resumeBoundTarget } from "../resume-transport.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 export interface WebDependencies {
   adapters: Map<string, HarnessAdapter>;
   converter: Pick<AgentHerderSessionConverter, "convert"> & Partial<Pick<AgentHerderSessionConverter, "read">>;
   lineageStore?: LineageStore;
   humanRequests?: HumanRequestRegistry;
+  mcpServerFactory?: () => McpServer;
 }
 
 const htmlPath = join(dirname(fileURLToPath(import.meta.url)), "index.html");
 
 export function createWebServer(dependencies: WebDependencies): Server {
   const supervisor = new SessionSupervisor(dependencies.adapters, dependencies.converter, dependencies.lineageStore);
+  const mcpTransports = new Map<string, StreamableHTTPServerTransport>();
   return createServer(async (request, response) => {
     try {
-      await route(request, response, supervisor, dependencies.humanRequests);
+      await route(request, response, supervisor, dependencies.humanRequests, dependencies.mcpServerFactory, mcpTransports);
     } catch (err) {
       if (err instanceof SessionNotFoundError) {
         sendJson(response, 404, { error: "Session not found" });
@@ -35,8 +41,29 @@ export function createWebServer(dependencies: WebDependencies): Server {
   });
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
+  if (url.pathname === "/mcp" && request.method === "POST") {
+    if (!mcpServerFactory || !mcpTransports) return sendJson(response, 503, { error: "MCP HTTP transport is disabled" });
+    const body = await readJson(request);
+    const sessionId = headerValue(request.headers["mcp-session-id"]);
+    let transport = sessionId ? mcpTransports.get(sessionId) : undefined;
+    if (!transport && !sessionId && isInitializeRequest(body)) {
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (id) => {
+          mcpTransports.set(id, transport!);
+        },
+      });
+      transport.onclose = () => {
+        if (transport?.sessionId) mcpTransports.delete(transport.sessionId);
+      };
+      await mcpServerFactory().connect(transport);
+    }
+    if (!transport) return sendJson(response, 400, { jsonrpc: "2.0", error: { code: -32000, message: "MCP session is required" }, id: null });
+    await transport.handleRequest(request, response, body);
+    return;
+  }
   if (request.method === "POST" && (url.pathname === "/internal/human-requests/sss-completion" || url.pathname === "/internal/human-requests/ask-user-completion")) {
     if (!humanRequests) return sendJson(response, 503, { error: "Human Request registry is disabled" });
     const body = await readJson(request);
@@ -199,6 +226,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
 
   sendJson(response, 404, { error: "Not found" });
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
