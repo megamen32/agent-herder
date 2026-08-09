@@ -1,0 +1,4 @@
+[submodule "vendor/openchamber"]
+	path = vendor/openchamber
+	url = git@github.com:megamen32/openchamber.git
+	branch = main

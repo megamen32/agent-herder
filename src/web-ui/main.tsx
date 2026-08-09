@@ -1,8 +1,7 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
-import { Box, Button, Chip, Switch, Tooltip, Typography } from "@mui/material";
-import { ChatBox } from "@mui/x-chat";
-import type { ChatAdapter, ChatConversation, ChatMessage, ChatMessageChunk } from "@mui/x-chat/headless";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import "./styles.css";
 
 type HerderSession = {
@@ -12,11 +11,12 @@ type HerderSession = {
   cwd: string;
   status: string;
   lastActivity: string;
+  lastMessage?: string;
   model?: string;
   needsPermission?: boolean;
 };
 type SessionPart = { type: "text" | "thinking" | "tool_call" | "tool_result"; text?: string; name?: string; input?: unknown; output?: string; error?: boolean };
-type SessionMessage = { id: string; role: "user" | "assistant" | "tool" | "system"; timestamp?: string; parts: SessionPart[] };
+type SessionMessage = { id: string; role: "user" | "assistant" | "tool" | "system"; timestamp?: string; text?: string; parts: SessionPart[] };
 type SessionDetails = { session: HerderSession; messages: SessionMessage[] };
 
 const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
@@ -24,153 +24,120 @@ const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   return response.json() as Promise<T>;
 };
-const keyOf = (harness: string, id: string) => `${harness}:${id}`;
-const splitKey = (conversationId: string) => {
-  const separator = conversationId.indexOf(":");
-  return { harness: conversationId.slice(0, separator), id: conversationId.slice(separator + 1) };
+const keyOf = (session: HerderSession) => `${session.harness}:${session.id}`;
+const splitKey = (key: string) => {
+  const separator = key.indexOf(":");
+  return { harness: key.slice(0, separator), id: key.slice(separator + 1) };
 };
-const toConversation = (session: HerderSession): ChatConversation => ({
-  id: keyOf(session.harness, session.id), title: session.title || session.id,
-  subtitle: `${session.harness} · ${session.status} · ${session.cwd}`, lastMessageAt: session.lastActivity,
-  metadata: { harness: session.harness, cwd: session.cwd, status: session.status },
-});
+const formatTime = (value: string) => {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(timestamp) : "";
+};
+const displayStatus = (status: string) => status.replace("needs_input", "needs input");
 
-function toMessages(details: SessionDetails, conversationId: string): ChatMessage[] {
-  return details.messages.map((message) => ({
-    id: message.id, conversationId, role: message.role === "user" ? "user" : "assistant", status: "sent", createdAt: message.timestamp,
-    parts: message.parts.flatMap((part): any[] => {
-      if (part.type === "text") return [{ type: "text" as const, text: part.text || "" }];
-      if (part.type === "thinking") return [{ type: "reasoning" as const, text: part.text || "" }];
-      return [{ type: "dynamic-tool" as const, toolInvocation: {
-        toolCallId: `${message.id}:${part.name || part.type}`, toolName: part.name || part.type,
-        state: part.error ? "output-error" as const : "output-available" as const, input: part.input, output: part.output,
-        errorText: part.error ? part.output : undefined,
-      } }];
-    }),
-  }));
+function Markdown({ children }: { children: string }) {
+  return <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>;
 }
 
-function streamForMessage(messageId: string, text: string): ReadableStream<ChatMessageChunk> {
-  return new ReadableStream({
-    start(controller) {
-      const textId = `${messageId}:text`;
-      controller.enqueue({ type: "start", messageId });
-      controller.enqueue({ type: "text-start", id: textId });
-      if (text) controller.enqueue({ type: "text-delta", id: textId, delta: text });
-      controller.enqueue({ type: "text-end", id: textId });
-      controller.enqueue({ type: "finish", messageId, finishReason: "stop" });
-      controller.close();
-    },
-  });
+function MessageParts({ message, showReasoning, showTools }: { message: SessionMessage; showReasoning: boolean; showTools: boolean }) {
+  const parts = message.parts.length > 0 ? message.parts : message.text ? [{ type: "text" as const, text: message.text }] : [];
+  return <>
+    {parts.map((part, index) => {
+      const partKey = `${message.id}:${index}`;
+      if (part.type === "text") return <div className="markdown-content" key={partKey}><Markdown>{part.text || ""}</Markdown></div>;
+      if (part.type === "thinking") return showReasoning ? <details className="oc-disclosure" key={partKey}><summary>Reasoning</summary><pre>{part.text}</pre></details> : null;
+      if (!showTools) return null;
+      return <details className="oc-disclosure tool" key={partKey}><summary>{part.name || (part.type === "tool_call" ? "Tool call" : "Tool result")}</summary><pre>{part.output || (part.input ? JSON.stringify(part.input, null, 2) : "")}</pre></details>;
+    })}
+  </>;
 }
 
-const pause = (milliseconds: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
-  const timer = window.setTimeout(resolve, milliseconds);
-  signal.addEventListener("abort", () => { window.clearTimeout(timer); reject(new DOMException("Aborted", "AbortError")); }, { once: true });
-});
-
-async function waitForAssistantReply(harness: string, id: string, knownIds: Set<string>, signal: AbortSignal): Promise<string> {
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    const details = await api<SessionDetails>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/details?limit=20`, { signal });
-    const reply = [...details.messages].reverse().find((candidate) => candidate.role === "assistant" && !knownIds.has(candidate.id));
-    if (reply) {
-      const text = reply.parts.filter((part) => part.type === "text").map((part) => part.text || "").join("\n").trim();
-      if (text) return text;
-      return "Agent produced a non-text update. Refresh the session to inspect its tools or reasoning.";
-    }
-    await pause(500, signal);
-  }
-  return "Message queued in Herder; the agent response will appear when the session updates.";
-}
-
-function createAdapter(): ChatAdapter {
-  return {
-    async listConversations() {
-      const result = await api<{ sessions: HerderSession[] }>("/api/sessions");
-      return { conversations: result.sessions.slice(0, 200).map(toConversation) };
-    },
-    async listMessages({ conversationId }) {
-      const { harness, id } = splitKey(conversationId);
-      const details = await api<SessionDetails>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/details?limit=100`);
-      return { messages: toMessages(details, conversationId) };
-    },
-    async sendMessage({ conversationId, message, messages, signal }) {
-      if (!conversationId) throw new Error("A session must be selected first");
-      const { harness, id } = splitKey(conversationId);
-      const text = message.parts.filter((part): part is { type: "text"; text: string } => part.type === "text").map((part) => part.text).join("\n").trim();
-      if (!text) throw new Error("Message is empty");
-      await api(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message`, { method: "POST", body: JSON.stringify({ message: text, mode: "queue" }) });
-      const knownIds = new Set(messages.map((item) => item.id));
-      const reply = await waitForAssistantReply(harness, id, knownIds, signal);
-      return streamForMessage(`local-${Date.now()}`, reply);
-    },
-    subscribe({ onEvent }) {
-      let active = true;
-      let inFlight = false;
-      const refresh = async () => {
-        if (!active || inFlight) return;
-        inFlight = true;
-        try {
-          const result = await api<{ sessions: HerderSession[] }>("/api/sessions");
-          for (const session of result.sessions.slice(0, 200)) {
-            if (active) onEvent({ type: "conversation-updated", conversation: toConversation(session) });
-          }
-        } finally {
-          inFlight = false;
-        }
-      };
-      void refresh();
-      const timer = window.setInterval(() => void refresh(), 3000);
-      return () => { active = false; window.clearInterval(timer); };
-    },
-  };
-}
-
-function HeaderActions({ showReasoning, showTools, setShowReasoning, setShowTools }: { showReasoning: boolean; showTools: boolean; setShowReasoning: (value: boolean) => void; setShowTools: (value: boolean) => void }) {
-  return <Box className="view-settings" sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-    <Tooltip title="Показывать reasoning"><label><Switch size="small" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /><span>Reasoning</span></label></Tooltip>
-    <Tooltip title="Показывать tool calls"><label><Switch size="small" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /><span>Tools</span></label></Tooltip>
-  </Box>;
-}
-
-function SessionActions({ session, onAction }: { session?: HerderSession; onAction: (action: "resume" | "stop" | "recover") => void }) {
-  if (!session) return null;
-  return <Box className="session-actions" sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-    {(session.status === "stopped" || session.status === "error") && <Button size="small" variant="contained" onClick={() => onAction("resume")}>Resume</Button>}
-    {session.status === "running" && <Button size="small" variant="outlined" color="error" onClick={() => onAction("stop")}>Stop</Button>}
-    {session.status === "error" && <Button size="small" variant="outlined" onClick={() => onAction("recover")}>Recover</Button>}
-  </Box>;
+function SessionList({ sessions, activeKey, onSelect }: { sessions: HerderSession[]; activeKey?: string; onSelect: (key: string) => void }) {
+  return <aside className="sessions-pane">
+    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Sessions</h1></div><button className="icon-button" aria-label="Search sessions">⌕</button></div>
+    <div className="session-list" aria-label="Sessions">
+      {sessions.map((session) => {
+        const key = keyOf(session);
+        return <button className={`session-row ${key === activeKey ? "selected" : ""}`} key={key} onClick={() => onSelect(key)}>
+          <span className={`status-dot status-${session.status}`} aria-hidden="true" />
+          <span className="session-copy"><strong>{session.title || session.id}</strong><small>{session.harness} · {displayStatus(session.status)}</small><small className="session-preview">{session.lastMessage || session.cwd}</small></span>
+          <time>{formatTime(session.lastActivity)}</time>
+        </button>;
+      })}
+      {sessions.length === 0 && <div className="empty-list">No sessions found.</div>}
+    </div>
+  </aside>;
 }
 
 function App() {
-  const adapter = React.useMemo(createAdapter, []);
+  const [sessions, setSessions] = React.useState<HerderSession[]>([]);
+  const [activeKey, setActiveKey] = React.useState<string>();
+  const [details, setDetails] = React.useState<SessionDetails | null>(null);
+  const [mobileView, setMobileView] = React.useState<"sessions" | "chat">("sessions");
   const [showReasoning, setShowReasoning] = React.useState(false);
   const [showTools, setShowTools] = React.useState(false);
-  const [conversations, setConversations] = React.useState<ChatConversation[] | null>(null);
-  const [activeConversationId, setActiveConversationId] = React.useState<string | undefined>();
-  const initialConversationSet = React.useRef(false);
-  React.useEffect(() => { adapter.listConversations?.().then(({ conversations: loaded }) => setConversations(loaded)).catch(() => setConversations([])); }, [adapter]);
-  const partRenderers = React.useMemo(() => ({
-    reasoning: ({ part }: { part: { text: string } }) => showReasoning ? <details className="reasoning"><summary>Reasoning</summary><Box component="pre">{part.text}</Box></details> : null,
-    "dynamic-tool": ({ part }: { part: { toolInvocation: { toolName?: string; input?: unknown; output?: unknown } } }) => showTools ? <details className="tool-part"><summary>{part.toolInvocation.toolName || "Tool"}</summary><Box component="pre">{JSON.stringify(part.toolInvocation.output ?? part.toolInvocation.input ?? {}, null, 2)}</Box></details> : null,
-  }), [showReasoning, showTools]);
-  React.useEffect(() => {
-    if (conversations?.length && !initialConversationSet.current) {
-      initialConversationSet.current = true;
-      setActiveConversationId(conversations[0].id);
-    }
-  }, [conversations]);
-  const activeSession = conversations?.find((conversation) => conversation.id === activeConversationId);
-  const activeKey = activeConversationId ? splitKey(activeConversationId) : undefined;
+  const [showInspector, setShowInspector] = React.useState(true);
+  const [composer, setComposer] = React.useState("");
+  const [loading, setLoading] = React.useState(true);
+  const [sending, setSending] = React.useState(false);
+  const chatScrollRef = React.useRef<HTMLDivElement>(null);
+  const shouldFollowRef = React.useRef(true);
+
+  const loadSessions = React.useCallback(async () => {
+    const result = await api<{ sessions: HerderSession[] }>("/api/sessions");
+    setSessions(result.sessions.slice(0, 300));
+    setActiveKey((current) => current && result.sessions.some((session) => keyOf(session) === current) ? current : result.sessions[0] ? keyOf(result.sessions[0]) : undefined);
+  }, []);
+  React.useEffect(() => { void loadSessions().finally(() => setLoading(false)); const timer = window.setInterval(() => void loadSessions(), 3000); return () => window.clearInterval(timer); }, [loadSessions]);
+
+  const loadDetails = React.useCallback(async (key: string) => {
+    const { harness, id } = splitKey(key);
+    const next = await api<SessionDetails>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/details?limit=100`);
+    setDetails(next);
+    requestAnimationFrame(() => { const element = chatScrollRef.current; if (element && shouldFollowRef.current) element.scrollTop = element.scrollHeight; });
+  }, []);
+  React.useEffect(() => { if (!activeKey) { setDetails(null); return; } void loadDetails(activeKey); }, [activeKey, loadDetails]);
+
+  const activeSession = sessions.find((session) => keyOf(session) === activeKey) || details?.session;
   const runAction = async (action: "resume" | "stop" | "recover") => {
-    if (!activeConversationId) return;
-    const { harness, id } = splitKey(activeConversationId);
+    if (!activeKey) return;
+    const { harness, id } = splitKey(activeKey);
     await api(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({}) });
+    await loadSessions();
+    await loadDetails(activeKey);
   };
-  const header = <Box className="herder-header"><Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0 }}><Typography component="strong" variant="subtitle1">Agent Herder</Typography><Chip size="small" label="live sessions" /></Box><Box sx={{ display: "flex", alignItems: "center", gap: 1 }}><SessionActions session={activeSession ? { id: activeKey?.id || "", harness: activeKey?.harness || "", title: activeSession.title || "", cwd: "", status: String((activeSession.metadata as Record<string, unknown> | undefined)?.status || ""), lastActivity: activeSession.lastMessageAt || "" } : undefined} onAction={(action) => void runAction(action)} /><HeaderActions {...{ showReasoning, showTools, setShowReasoning, setShowTools }} /></Box></Box>;
-  if (conversations === null) return <main className="herder-shell">{header}<Box className="loading">Loading sessions…</Box></main>;
-  return <main className="herder-shell">{header}<ChatBox adapter={adapter} initialConversations={conversations} initialActiveConversationId={conversations[0]?.id} activeConversationId={activeConversationId} onActiveConversationChange={setActiveConversationId} variant="compact" density="compact" layoutModeBreakpoints={{ overlay: 760, split: 460 }} features={{ conversationList: true, attachments: false, helperText: false, suggestions: false, autoScroll: { buffer: 180 }, scrollToBottom: true, conversationHeader: true }} partRenderers={partRenderers} sx={{ height: "calc(100dvh - 58px)" }} slotProps={{ root: { sx: { height: "100%" } }, messageList: { sx: { minHeight: 0 } }, messageMeta: { sx: { display: "none" } }, conversationList: { sx: { minWidth: 0 } } }} /></main>;
+  const sendMessage = async () => {
+    if (!activeKey || !composer.trim() || sending) return;
+    const { harness, id } = splitKey(activeKey);
+    const text = composer.trim();
+    setComposer(""); setSending(true); shouldFollowRef.current = true;
+    try { await api(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message`, { method: "POST", body: JSON.stringify({ message: text, mode: "queue" }) }); await loadDetails(activeKey); } finally { setSending(false); }
+  };
+  const handleChatScroll = () => {
+    const element = chatScrollRef.current;
+    if (!element) return;
+    shouldFollowRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+  };
+
+  if (loading) return <main className="oc-app"><div className="oc-loading">Loading sessions…</div></main>;
+  return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"}`}>
+    <SessionList sessions={sessions} activeKey={activeKey} onSelect={(key) => { setActiveKey(key); setMobileView("chat"); }} />
+    <section className="chat-pane">
+      <header className="chat-header">
+        <button className="mobile-back" onClick={() => setMobileView("sessions")} aria-label="Back to sessions">← <span>Sessions</span></button>
+        <div className="chat-heading"><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2>{activeSession?.title || "Select a session"}</h2><small>{activeSession?.cwd || ""}</small></div>
+        <div className="header-actions"><button className="quiet-button" onClick={() => setShowInspector((value) => !value)}>{showInspector ? "Hide" : "Info"}</button><button className="icon-button" aria-label="Chat menu">···</button></div>
+      </header>
+      <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}>
+        <div className="message-column">
+          {!details && <div className="empty-chat">Choose a session to open its conversation.</div>}
+          {details?.messages.map((message) => <article className={`message ${message.role}`} key={message.id}><div className="message-meta"><span>{message.role === "user" ? "You" : message.role === "tool" ? "Tool" : "Agent"}</span><time>{formatTime(message.timestamp || "")}</time></div><MessageParts message={message} showReasoning={showReasoning} showTools={showTools} /></article>)}
+        </div>
+      </div>
+      <form className="composer" onSubmit={(event) => { event.preventDefault(); void sendMessage(); }}><button type="button" className="composer-plus" aria-label="Add context">+</button><textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={activeKey ? "Message the agent…" : "Choose a session first"} disabled={!activeKey || sending} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} /><span className="composer-hint">{sending ? "Waiting for agent…" : "Enter to send · Shift+Enter for a new line"}</span><button className="send-button" type="submit" disabled={!composer.trim() || sending} aria-label="Send message">↑</button></form>
+    </section>
+    {showInspector && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">SESSION</span><button className="icon-button" onClick={() => setShowInspector(false)} aria-label="Close inspector">×</button></div>{activeSession ? <><div className="inspector-title">{activeSession.title}</div><div className="inspector-status"><span className={`status-dot status-${activeSession.status}`} />{displayStatus(activeSession.status)}</div><dl><dt>Harness</dt><dd>{activeSession.harness}</dd><dt>Working directory</dt><dd>{activeSession.cwd}</dd><dt>Model</dt><dd>{activeSession.model || "—"}</dd></dl><div className="inspector-actions">{activeSession.status === "running" && <button className="danger-button" onClick={() => void runAction("stop")}>Stop</button>}{(activeSession.status === "stopped" || activeSession.status === "error") && <button className="primary-button" onClick={() => void runAction("resume")}>Resume</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Recover</button>}</div><div className="settings-block"><span className="eyebrow">VIEW</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label></div></> : <div className="empty-inspector">No session selected.</div>}</aside>}
+  </main>;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
