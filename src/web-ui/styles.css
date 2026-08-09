@@ -1,0 +1,15 @@
+:root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0b1020; }
+html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body { background: #0b1020; color: #e7eaf2; }
+.herder-shell { height: 100dvh; display: flex; flex-direction: column; min-width: 0; background: #0b1020; }
+.herder-header { height: 58px; flex: 0 0 58px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; box-sizing: border-box; background: #11182b; border-bottom: 1px solid #28334d; }
+.herder-header .MuiChip-root { color: #a9b6d5; border-color: #35415e; background: transparent; font-size: 10px; }
+.view-settings { color: #aeb8ce; font-size: 11px; }
+.view-settings label { display: inline-flex; align-items: center; gap: 2px; cursor: pointer; white-space: nowrap; }
+.view-settings .MuiSwitch-root { margin: 0 -4px; }
+.session-actions .MuiButton-root { min-width: 0; padding: 3px 7px; font-size: 10px; text-transform: none; }
+.loading { display: grid; place-items: center; flex: 1; color: #9da8be; }
+.reasoning, .tool-part { margin: 4px 0; border: 1px solid #35415e; border-radius: 8px; padding: 5px 8px; color: #aeb8ce; background: rgba(20, 30, 53, .65); }
+.reasoning summary, .tool-part summary { cursor: pointer; font-size: 12px; }
+.reasoning pre, .tool-part pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; max-height: 280px; overflow: auto; margin: 7px 0 2px; }
+@media (max-width: 760px) { .herder-header { padding-inline: 10px; } .view-settings span { display: none; } }

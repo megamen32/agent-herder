@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, extname, join, normalize } from "node:path";
 import type { HarnessType } from "session-convert";
 import { LineageStore } from "../lineage-store.js";
 import { SessionNotFoundError, SessionSupervisor } from "../session-supervisor.js";
@@ -26,6 +26,7 @@ export interface WebDependencies {
 }
 
 const htmlPath = join(dirname(fileURLToPath(import.meta.url)), "index.html");
+const webRoot = dirname(htmlPath);
 
 export function createWebServer(dependencies: WebDependencies): Server {
   const supervisor = new SessionSupervisor(dependencies.adapters, dependencies.converter, dependencies.lineageStore);
@@ -117,6 +118,21 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const html = await readFile(htmlPath, "utf8");
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     response.end(html);
+    return;
+  }
+  if (request.method === "GET" && url.pathname.startsWith("/assets/")) {
+    const assetPath = normalize(join(webRoot, url.pathname));
+    if (!assetPath.startsWith(`${webRoot}/`)) {
+      sendJson(response, 400, { error: "invalid asset path" });
+      return;
+    }
+    try {
+      const asset = await readFile(assetPath);
+      response.writeHead(200, { "content-type": contentTypeFor(assetPath), "cache-control": "public, max-age=31536000, immutable" });
+      response.end(asset);
+    } catch {
+      sendJson(response, 404, { error: "asset not found" });
+    }
     return;
   }
   if (request.method === "GET" && url.pathname === "/api/sessions") {
@@ -267,6 +283,16 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function contentTypeFor(path: string): string {
+  switch (extname(path)) {
+    case ".js": return "text/javascript; charset=utf-8";
+    case ".css": return "text/css; charset=utf-8";
+    case ".map": return "application/json; charset=utf-8";
+    case ".svg": return "image/svg+xml";
+    default: return "application/octet-stream";
+  }
 }
 
 function isUuid(value: unknown): value is string {
