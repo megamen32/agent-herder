@@ -64,6 +64,26 @@ function streamForMessage(messageId: string, text: string): ReadableStream<ChatM
   });
 }
 
+const pause = (milliseconds: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
+  const timer = window.setTimeout(resolve, milliseconds);
+  signal.addEventListener("abort", () => { window.clearTimeout(timer); reject(new DOMException("Aborted", "AbortError")); }, { once: true });
+});
+
+async function waitForAssistantReply(harness: string, id: string, knownIds: Set<string>, signal: AbortSignal): Promise<string> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const details = await api<SessionDetails>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/details?limit=20`, { signal });
+    const reply = [...details.messages].reverse().find((candidate) => candidate.role === "assistant" && !knownIds.has(candidate.id));
+    if (reply) {
+      const text = reply.parts.filter((part) => part.type === "text").map((part) => part.text || "").join("\n").trim();
+      if (text) return text;
+      return "Agent produced a non-text update. Refresh the session to inspect its tools or reasoning.";
+    }
+    await pause(500, signal);
+  }
+  return "Message queued in Herder; the agent response will appear when the session updates.";
+}
+
 function createAdapter(): ChatAdapter {
   return {
     async listConversations() {
@@ -75,13 +95,15 @@ function createAdapter(): ChatAdapter {
       const details = await api<SessionDetails>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/details?limit=100`);
       return { messages: toMessages(details, conversationId) };
     },
-    async sendMessage({ conversationId, message }) {
+    async sendMessage({ conversationId, message, messages, signal }) {
       if (!conversationId) throw new Error("A session must be selected first");
       const { harness, id } = splitKey(conversationId);
       const text = message.parts.filter((part): part is { type: "text"; text: string } => part.type === "text").map((part) => part.text).join("\n").trim();
       if (!text) throw new Error("Message is empty");
       await api(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message`, { method: "POST", body: JSON.stringify({ message: text, mode: "queue" }) });
-      return streamForMessage(`local-${Date.now()}`, "Message queued");
+      const knownIds = new Set(messages.map((item) => item.id));
+      const reply = await waitForAssistantReply(harness, id, knownIds, signal);
+      return streamForMessage(`local-${Date.now()}`, reply);
     },
     subscribe({ onEvent }) {
       let active = true;

@@ -135,7 +135,6 @@ the existing queue/resume/stop/recover operations available.
   and a build-output collision; the running `agent-herder.service` is active
   after the corrected build.
 
-Remaining bounded follow-up: the current Herder POST API is queue-based, so
-the adapter displays an explicit queued acknowledgement rather than faking a
-completed model response. A future transport can replace that stream bridge
-without changing the UI contract.
+The adapter now waits up to 30 seconds for a new assistant message and streams
+its text into the chat. If the queue does not produce a reply in that window,
+it reports a truthful queued state; AbortSignal cancels the poll.
