@@ -192,4 +192,31 @@ describe("SessionSupervisor details", () => {
       parentSessionKey: "claude-acp:native-root",
     });
   });
+
+  it("projects native Codex parent_thread_id records into the session tree", async () => {
+    const rootSession: AgentSession = { ...session, harness: "codex", id: "codex-root", meta: { nativeSessionId: "codex-root" } };
+    const childSession: AgentSession = { ...rootSession, id: "codex-child", title: "Worker", meta: { nativeSessionId: "codex-child", parentThreadId: "codex-root", threadSource: "subagent", agentRole: "worker" } };
+    const codexAdapter: HarnessAdapter = {
+      ...adapter(),
+      type: "codex",
+      async listSessions() { return [rootSession, childSession]; },
+      async getSession(id) { return [rootSession, childSession].find((item) => item.id === id) || null; },
+    };
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-native-lineage-"));
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    const supervisor = new SessionSupervisor(
+      new Map([["codex", codexAdapter]]),
+      { async convert() { return { success: true }; }, async read() { return null; } },
+      new LineageStore(join(root, "lineage.json")),
+    );
+
+    const listed = await supervisor.listSessions();
+    expect(listed.find((item) => item.id === childSession.id)?.meta).toMatchObject({
+      lineage: { kind: "subagent", role: "worker" },
+      parentSessionKey: "codex:codex-root",
+    });
+    const details = await supervisor.getSessionDetails("codex", rootSession.id);
+    expect(details.children).toHaveLength(1);
+    expect(details.children[0]).toMatchObject({ id: childSession.id });
+  });
 });

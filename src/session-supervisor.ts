@@ -70,16 +70,19 @@ export class SessionSupervisor {
       const sessions = await adapter.listSessions();
       return Promise.all(sessions.map(async (session) => {
         const record = await this.lineage.get(sessionKey(provider, nativeSessionId(session)));
+        const nativeParentId = typeof session.meta?.parentThreadId === "string" && session.meta.parentThreadId !== nativeSessionId(session) ? session.meta.parentThreadId : undefined;
+        const nativeRole = typeof session.meta?.agentRole === "string" ? session.meta.agentRole : undefined;
+        const parentKey = record?.parentKey || (provider === "codex" && nativeParentId ? sessionKey(provider, nativeParentId) : undefined);
         return {
           ...session,
           meta: {
             ...session.meta,
             provider,
             controlCapabilities: getHarnessCapabilities(adapter),
-            lineage: record
-              ? { kind: record.parentKey ? "subagent" : "root", role: record.role, task: record.task }
-              : { kind: "external" },
-            parentSessionKey: record?.parentKey,
+            lineage: parentKey
+              ? { kind: "subagent", role: record?.role || nativeRole, task: record?.task }
+              : record ? { kind: "root", role: record.role, task: record.task } : { kind: "external" },
+            parentSessionKey: parentKey,
           },
         };
       }));
@@ -228,14 +231,23 @@ export class SessionSupervisor {
     if (!session) throw new SessionNotFoundError(provider, id);
     const limit = Math.max(1, Math.min(options.limit || 3, 50));
     const record = await this.lineage.get(sessionKey(provider, nativeSessionId(session)));
+    const nativeParentId = typeof session.meta?.parentThreadId === "string" && session.meta.parentThreadId !== nativeSessionId(session) ? session.meta.parentThreadId : undefined;
+    const nativeRole = typeof session.meta?.agentRole === "string" ? session.meta.agentRole : undefined;
+    const parentKey = record?.parentKey || (provider === "codex" && nativeParentId ? sessionKey(provider, nativeParentId) : undefined);
     const lineage: SessionLineage = record
-      ? { kind: record.parentKey ? "subagent" : "root", parentId: record.parentKey, role: record.role, task: record.task }
-      : { kind: "external" };
+      ? { kind: parentKey ? "subagent" : "root", parentId: parentKey, role: record.role, task: record.task }
+      : parentKey ? { kind: "subagent", parentId: parentKey, role: nativeRole } : { kind: "external" };
     const childRecords = await this.lineage.children(sessionKey(provider, id));
-    const resolvedChildren = await Promise.all(childRecords.map(async (child) => {
+    const nativeChildren = provider === "codex"
+      ? (await this.requireAdapter(provider).listSessions()).filter((candidate) => nativeSessionId(candidate) !== nativeSessionId(session) && candidate.meta?.parentThreadId === nativeSessionId(session))
+      : [];
+    const childKeys = new Map(childRecords.map((child) => [child.sessionKey, child]));
+    for (const child of nativeChildren) childKeys.set(sessionKey(provider, nativeSessionId(child)), {
+      sessionKey: sessionKey(provider, nativeSessionId(child)), provider, nativeSessionId: nativeSessionId(child), createdAt: new Date().toISOString(), source: "acp-meta",
+    });
+    const resolvedChildren = await Promise.all([...childKeys.values()].map(async (child) => {
       const childId = child.sessionKey.startsWith(`${child.provider}:`)
-        ? child.sessionKey.slice(child.provider.length + 1)
-        : undefined;
+        ? child.sessionKey.slice(child.provider.length + 1) : undefined;
       if (!childId) return null;
       const childSession = await this.getSession(child.provider, childId);
       return childSession

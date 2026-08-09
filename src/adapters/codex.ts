@@ -18,6 +18,9 @@ interface CodexSessionState {
   filePath: string;
   lastMessage?: string;
   model?: string;
+  parentThreadId?: string;
+  threadSource?: string;
+  agentRole?: string;
   updatedAtMs: number;
 }
 
@@ -81,6 +84,9 @@ export class CodexAdapter implements HarnessAdapter {
         meta: {
           sessionIndexPath: join(this.codexDir, "session_index.jsonl"),
           sessionFilePath: state?.filePath,
+          ...(state?.parentThreadId ? { parentThreadId: state.parentThreadId } : {}),
+          ...(state?.threadSource ? { threadSource: state.threadSource } : {}),
+          ...(state?.agentRole ? { agentRole: state.agentRole } : {}),
         },
       };
     });
@@ -92,6 +98,16 @@ export class CodexAdapter implements HarnessAdapter {
   async getSession(id: string): Promise<AgentSession | null> {
     const all = await this.listSessions();
     return all.find((session) => session.id === id) || null;
+  }
+
+  async getNativeSessionMetadata(): Promise<Map<string, Pick<CodexSessionState, "parentThreadId" | "threadSource" | "agentRole">>> {
+    const states = this.sessionStatesCache || await this.readSessionStates();
+    this.sessionStatesCache = states;
+    return new Map([...states.entries()].map(([id, state]) => [id, {
+      parentThreadId: state.parentThreadId,
+      threadSource: state.threadSource,
+      agentRole: state.agentRole,
+    }]));
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
@@ -255,10 +271,20 @@ export class CodexAdapter implements HarnessAdapter {
             // The initial turn context persists the model for the thread. A
             // tail context wins when a later turn explicitly changed it.
             model: tail.model || this.extractLatestTurnModel(header),
+            ...this.extractLineage(header),
             updatedAtMs: tail.updatedAtMs,
           };
           const current = result.get(sessionId);
-          if (!current || state.updatedAtMs >= current.updatedAtMs) result.set(sessionId, state);
+          const merged = {
+            ...state,
+            parentThreadId: (state.parentThreadId && state.parentThreadId !== sessionId)
+              ? state.parentThreadId
+              : current?.parentThreadId !== sessionId ? current?.parentThreadId : undefined,
+            threadSource: state.threadSource || current?.threadSource,
+            agentRole: state.agentRole || current?.agentRole,
+          };
+          if (!current || state.updatedAtMs >= current.updatedAtMs) result.set(sessionId, merged);
+          else if (merged.parentThreadId && !current.parentThreadId) result.set(sessionId, { ...current, ...merged, updatedAtMs: current.updatedAtMs });
         }
       } catch {
         // Ignore incomplete or corrupt rollout files while Codex is writing them.
@@ -333,6 +359,33 @@ export class CodexAdapter implements HarnessAdapter {
       return JSON.parse(`"${match[1]}"`) as string;
     } catch {
       return undefined;
+    }
+  }
+
+  private extractLineage(header: string): Pick<CodexSessionState, "parentThreadId" | "threadSource" | "agentRole"> {
+    const firstLine = header.split("\n").find((line) => line.includes('"type":"session_meta"'));
+    if (!firstLine) return {};
+    try {
+      const payload = (JSON.parse(firstLine) as { payload?: Record<string, unknown> }).payload;
+      if (!payload) return {};
+      const source = typeof payload.source === "object" && payload.source
+        ? (payload.source as Record<string, unknown>)
+        : undefined;
+      const subagent = source?.subagent && typeof source.subagent === "object"
+        ? source.subagent as Record<string, unknown>
+        : undefined;
+      const spawn = subagent?.thread_spawn && typeof subagent.thread_spawn === "object"
+        ? subagent.thread_spawn as Record<string, unknown>
+        : undefined;
+      const parentThreadId = typeof payload.parent_thread_id === "string"
+        ? payload.parent_thread_id
+        : typeof spawn?.parent_thread_id === "string" ? spawn.parent_thread_id : undefined;
+      const threadSource = typeof payload.thread_source === "string" ? payload.thread_source : undefined;
+      const agentRole = typeof payload.agent_role === "string" ? payload.agent_role
+        : typeof payload.agent_nickname === "string" ? payload.agent_nickname : undefined;
+      return { parentThreadId, threadSource, agentRole };
+    } catch {
+      return {};
     }
   }
 

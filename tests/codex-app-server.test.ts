@@ -15,11 +15,13 @@ describe("Codex app-server adapter", () => {
       JSON.stringify({ id: "thread-lazy", thread_name: "Older", updated_at: "2026-01-01T00:00:00Z" }),
       JSON.stringify({ id: "thread-lazy", thread_name: "Existing", updated_at: new Date().toISOString() }),
     ].join("\n") + "\n");
-    await writeFile(join(sessionDir, "rollout-thread-lazy.jsonl"), '{"session_id":"thread-lazy","cwd":"/workspace"}\n');
+    await writeFile(join(sessionDir, "rollout-thread-lazy.jsonl"), [
+      JSON.stringify({ type: "session_meta", payload: { session_id: "thread-lazy", id: "thread-lazy", parent_thread_id: "thread-parent", thread_source: "subagent", agent_role: "worker", cwd: "/workspace" } }),
+    ].join("\n") + "\n");
     const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
     try {
       const sessions = await adapter.listSessions();
-      expect(sessions).toMatchObject([{ id: "thread-lazy", title: "Existing", cwd: "/workspace" }]);
+      expect(sessions).toMatchObject([{ id: "thread-lazy", title: "Existing", cwd: "/workspace", meta: { parentThreadId: "thread-parent", threadSource: "subagent", agentRole: "worker" } }]);
       expect(sessions).toHaveLength(1);
       expect(adapter.isReady()).toBe(false);
     } finally {
@@ -33,7 +35,10 @@ describe("Codex app-server adapter", () => {
     const sessionDir = join(codexDir, "sessions", "2026", "07", "30");
     const rawPath = join(sessionDir, "rollout-thread-1.jsonl");
     await mkdir(sessionDir, { recursive: true });
-    await writeFile(rawPath, '{"session_id":"thread-1","cwd":"/workspace"}\n{"type":"response_item"}\n');
+    await writeFile(rawPath, [
+      JSON.stringify({ type: "session_meta", payload: { session_id: "thread-1", id: "thread-1", parent_thread_id: "thread-parent", thread_source: "subagent", agent_role: "worker", cwd: "/workspace" } }),
+      '{"type":"response_item"}',
+    ].join("\n") + "\n");
     const adapter = new CodexAppServerAdapter({
       codexBin: process.execPath,
       args: [fixture],
@@ -46,6 +51,7 @@ describe("Codex app-server adapter", () => {
       expect(sessions).toHaveLength(1);
       expect(sessions[0].id).toBe("thread-1");
       expect(sessions[0].harness).toBe("codex");
+      expect(sessions[0].meta).toMatchObject({ parentThreadId: "thread-parent", threadSource: "subagent", agentRole: "worker" });
 
       const created = await adapter.createSession({ name: "repair_100", cwd: "/tmp/codex-repair" });
       expect(created).toMatchObject({

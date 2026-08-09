@@ -47,6 +47,13 @@ function MessageParts({ message, showReasoning, showTools }: { message: SessionM
   </>;
 }
 
+function hasVisibleMessage(message: SessionMessage, showReasoning: boolean, showTools: boolean): boolean {
+  const parts = message.parts.length > 0 ? message.parts : message.text ? [{ type: "text" as const, text: message.text }] : [];
+  return parts.some((part) => part.type === "text" && Boolean(part.text?.trim())
+    || part.type === "thinking" && showReasoning && Boolean(part.text?.trim())
+    || (part.type === "tool_call" || part.type === "tool_result") && showTools);
+}
+
 function SessionList({ entries, activeKey, settings, settingsOpen, searchOpen, searchQuery, options, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect }: {
   entries: SessionListEntry[];
   activeKey?: string;
@@ -190,7 +197,7 @@ function App() {
       <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}>
         <div className="message-column">
           {!details && <div className="empty-chat">Choose a session to open its conversation.</div>}
-          {details?.messages.map((message) => <article className={`message ${message.role}`} key={message.id}><div className="message-meta"><span>{message.role === "user" ? "You" : message.role === "tool" ? "Tool" : "Agent"}</span><time>{formatTime(message.timestamp || "")}</time></div><MessageParts message={message} showReasoning={showReasoning} showTools={showTools} /></article>)}
+          {details?.messages.map((message) => hasVisibleMessage(message, showReasoning, showTools) && <article className={`message ${message.role}`} key={message.id}><div className="message-meta"><span>{message.role === "user" ? "You" : message.role === "tool" ? "Tool" : "Agent"}</span><time>{formatTime(message.timestamp || "")}</time></div><MessageParts message={message} showReasoning={showReasoning} showTools={showTools} /></article>)}
         </div>
       </div>
       {showScrollToLatest && <button className="scroll-latest" aria-label="Scroll to latest" onClick={scrollToBottom}>↓ <span>Latest</span></button>}

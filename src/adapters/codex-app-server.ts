@@ -110,7 +110,12 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     };
     const sessions = (result.data || []).filter((thread) => typeof thread.id === "string");
     for (const thread of sessions) this.threads.set(thread.id, thread);
-    return sessions.map((thread) => this.toSession(thread));
+    const nativeMetadata = await this.rawTranscriptAdapter.getNativeSessionMetadata();
+    return sessions.map((thread) => {
+      const session = this.toSession(thread);
+      const nativeMeta = nativeMetadata.get(thread.id);
+      return nativeMeta ? { ...session, meta: { ...session.meta, ...nativeMeta } } : session;
+    });
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
