@@ -28,6 +28,13 @@ export type SessionListEntry = {
 
 export const sessionKey = (session: Pick<SessionListSession, "harness" | "id">) => `${session.harness}:${session.id}`;
 
+export function matchesSessionQuery(session: Pick<SessionListSession, "id" | "harness" | "title" | "cwd" | "lastMessage">, query: string): boolean {
+  const normalized = query.trim().toLocaleLowerCase();
+  if (!normalized) return true;
+  return [session.id, session.harness, session.title, session.cwd, session.lastMessage || ""]
+    .some((value) => value.toLocaleLowerCase().includes(normalized));
+}
+
 export function projectFor(session: SessionListSession, byKey: Map<string, SessionListSession>): string {
   const visited = new Set<string>();
   let current = session;
