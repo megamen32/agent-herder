@@ -554,12 +554,49 @@
       margin-right: auto;
     }
 
+    .advanced-actions { margin-top: 6px; }
+    .advanced-actions > summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
+    .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+    .composer textarea { min-height: 46px; max-height: 140px; resize: vertical; }
+    .composer-send { min-width: 76px; }
+    .chat-section { padding-bottom: 18px; }
+    .message-user { margin-left: auto; max-width: 92%; }
+    .message-assistant, .message-system, .message-tool { margin-right: auto; max-width: 92%; }
+
     @media (max-width: 960px) {
+      body { background: var(--bg); }
+      .topbar { padding: 10px 12px 8px; }
+      .topbar-actions .secondary:not(#backButton), .polling-state { display: none; }
+      .toolbar { padding: 8px 10px; gap: 6px; }
+      .toolbar input, .toolbar select { min-width: 0; flex: 1 1 44%; min-height: 40px; padding: 8px 10px; border-radius: 12px; }
+      .toolbar > .spacer, .toolbar #applyFilters { display: none; }
+      .named-session-panel { display: none; }
+      .adapter-registry-panel { display: none; }
       .layout { grid-template-columns: 1fr; }
       .sidebar { border-right: 0; border-bottom: 1px solid rgba(51,65,85,.55); }
       body[data-view="detail"] .sidebar { display: none; }
       body[data-view="detail"] .detail { display: block; }
       body[data-view="tree"] .detail { display: none; }
+      body[data-view="detail"] .detail { height: calc(100dvh - 56px); overflow: auto; }
+      body[data-view="detail"] .detail-card { border: 0; border-radius: 0; box-shadow: none; padding-bottom: 148px; background: transparent; }
+      body[data-view="detail"] .detail-hero { position: sticky; top: 0; z-index: 15; padding: 10px 12px; background: rgba(11,16,32,.94); backdrop-filter: blur(12px); }
+      body[data-view="detail"] .detail-hero h2 { font-size: 1rem; }
+      body[data-view="detail"] .detail-hero .kv-grid, body[data-view="detail"] .aux-section { display: none; }
+      body[data-view="detail"] .detail-actions { position: fixed; left: 0; right: 0; bottom: 0; top: auto; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid rgba(51,65,85,.75); border-bottom: 0; box-shadow: 0 -8px 22px rgba(0,0,0,.3); }
+      body[data-view="detail"] .detail-actions .action-status { margin: 0 0 4px; }
+      body[data-view="detail"] .detail-actions .action-status > .hint { display: none; }
+      body[data-view="detail"] .detail-actions form { gap: 4px; }
+      body[data-view="detail"] .detail-actions label > .hint { display: none; }
+      body[data-view="detail"] .detail-actions textarea { min-height: 44px; height: 44px; border-radius: 22px; padding: 10px 14px; }
+      body[data-view="detail"] .detail-actions .inline-fields { gap: 5px; flex-wrap: nowrap; }
+      body[data-view="detail"] .detail-actions .inline-fields button { min-height: 36px; padding: 6px 9px; border-radius: 10px; font-size: .82rem; }
+      body[data-view="detail"] .detail-actions .inline-fields button:not(#sendButton):not(#resumeButton) { display: none; }
+      body[data-view="detail"] .detail-actions .permission-actions { display: none; }
+      body[data-view="detail"] .message { border-radius: 16px; }
+      body[data-view="detail"] .message-head { padding: 8px 11px; }
+      body[data-view="detail"] .message-head strong { display: none; }
+      body[data-view="detail"] .message-body { padding: 9px 11px 11px; }
+      body[data-view="detail"] details.part > summary { min-height: 38px; }
       .mobile-back { display: inline-flex; }
     }
 
@@ -613,7 +650,7 @@
     <div class="hint" id="pollingState">Polling every 2s</div>
   </div>
 
-  <details class="toolbar" open>
+  <details class="toolbar adapter-registry-panel">
     <summary><strong>Harness adapters</strong> <span class="hint">Choose which integrations are active</span></summary>
     <div id="adapterRegistry" class="session-tree" aria-live="polite">Loading adapters…</div>
   </details>
@@ -670,6 +707,7 @@
 
   const state = {
     sessions: [],
+    adapters: [],
     selected: null,
     paused: false,
     pollingTimer: null,
@@ -740,6 +778,7 @@
       elements.adapterRegistry.textContent = data?.error || "Adapter registry unavailable";
       return;
     }
+    state.adapters = Array.isArray(data.adapters) ? data.adapters : [];
     elements.adapterRegistry.innerHTML = (data.adapters || []).map((adapter) => {
       const capabilities = adapter.capabilities
         ? Object.entries(adapter.capabilities).filter(([, enabled]) => enabled).map(([key]) => key).join(", ") || "base session controls"
@@ -848,7 +887,10 @@
   }
 
   function renderHarnessFilter() {
-    const providers = [...new Set(state.sessions.map((session) => providerFor(session)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const providers = [...new Set([
+      ...state.sessions.map((session) => providerFor(session)).filter(Boolean),
+      ...state.adapters.map((adapter) => adapter.id).filter(Boolean),
+    ])].sort((a, b) => a.localeCompare(b));
     const current = state.filters.harness;
     const options = [...new Set([...providers, current].filter(Boolean))].sort((a, b) => a.localeCompare(b));
     elements.harnessFilter.innerHTML = ['<option value="">All harnesses</option>', ...options.map((provider) => `<option value="${esc(provider)}">${esc(provider)}</option>`)].join("");
@@ -1047,53 +1089,55 @@
         </div>
         <form id="sessionActions">
           <div class="inline-form">
-            <label>
-              <span class="hint">Model for this session</span>
-              <div class="inline-fields">
-                <select id="modelSelect" class="small"${modelOptions.length ? "" : " disabled"}>
-                  ${modelOptions.length ? modelOptions.map((model) => `<option value="${esc(model)}"${model === session.model ? " selected" : ""}>${esc(model)}</option>`).join("") : `<option value="">No model list</option>`}
-                </select>
-                <button type="button" class="secondary" id="modelButton"${modelOptions.length ? "" : ` disabled title="${disabledTitle}"`}>Change model</button>
-              </div>
-            </label>
-          </div>
-
-          <div class="inline-form">
-            <label>
-              <span class="hint">Draft message for continue/send</span>
-              <textarea id="messageDraft" placeholder="Type a message or instruction for the agent."></textarea>
-            </label>
-            <div class="inline-fields">
+            <div class="composer">
+              <textarea id="messageDraft" rows="1" placeholder="Message…"></textarea>
+              <button type="button" class="composer-send" id="sendButton"${canSend ? "" : ` disabled title="${disabledTitle}"`}>Send</button>
+            </div>
+            <div class="inline-fields session-actions">
               <button type="button" id="resumeButton"${canResume ? "" : ` disabled title="${disabledTitle}"`}>Resume</button>
-              <button type="button" class="secondary" id="continueButton"${canSend ? "" : ` disabled title="${disabledTitle}"`}>Continue with draft</button>
-              <button type="button" class="secondary" id="sendButton"${canSend ? "" : ` disabled title="${disabledTitle}"`}>Send message</button>
-              <button type="button" class="secondary" id="cancelButton"${canCancel ? "" : ` disabled title="${disabledTitle}"`}>Pause turn</button>
+              <button type="button" class="secondary" id="continueButton"${canSend ? "" : ` disabled title="${disabledTitle}"`}>Continue</button>
+              <button type="button" class="secondary" id="cancelButton"${canCancel ? "" : ` disabled title="${disabledTitle}"`}>Pause</button>
               <button type="button" class="danger" id="stopButton"${canStop ? "" : ` disabled title="${disabledTitle}"`}>Stop</button>
               <button type="button" class="secondary" id="recoverButton"${canRecover ? "" : ` disabled title="${disabledTitle}"`}>Recover</button>
-              <button type="button" class="ghost" id="forkButton"${canFork ? "" : ` disabled title="${disabledTitle}"`}>Fork child</button>
+              <button type="button" class="ghost" id="forkButton"${canFork ? "" : ` disabled title="${disabledTitle}"`}>Fork</button>
             </div>
           </div>
 
-          ${permission ? `
+          <details class="advanced-actions">
+            <summary>More actions</summary>
             <div class="inline-form">
-              <div class="permission-actions">
-                <button type="button" id="allowPermission">Allow permission</button>
-                <button type="button" class="danger" id="denyPermission">Deny permission</button>
-              </div>
+              <label>
+                <span class="hint">Model for this session</span>
+                <div class="inline-fields">
+                  <select id="modelSelect" class="small"${modelOptions.length ? "" : " disabled"}>
+                    ${modelOptions.length ? modelOptions.map((model) => `<option value="${esc(model)}"${model === session.model ? " selected" : ""}>${esc(model)}</option>`).join("") : `<option value="">No model list</option>`}
+                  </select>
+                  <button type="button" class="secondary" id="modelButton"${modelOptions.length ? "" : ` disabled title="${disabledTitle}"`}>Change model</button>
+                </div>
+              </label>
             </div>
-          ` : ""}
 
-          <div class="inline-form">
-            <label>
-              <span class="hint">Convert this session to another harness</span>
-              <div class="inline-fields">
-                <select id="convertTarget" class="small" aria-label="Conversion target">
-                  ${conversionTargets.map((target) => `<option value="${esc(target)}">${esc(target)}</option>`).join("")}
-                </select>
-                <button type="button" class="secondary" id="convertButton">Convert session</button>
+            ${permission ? `
+              <div class="inline-form">
+                <div class="permission-actions">
+                  <button type="button" id="allowPermission">Allow permission</button>
+                  <button type="button" class="danger" id="denyPermission">Deny permission</button>
+                </div>
               </div>
-            </label>
-          </div>
+            ` : ""}
+
+            <div class="inline-form">
+              <label>
+                <span class="hint">Convert this session to another harness</span>
+                <div class="inline-fields">
+                  <select id="convertTarget" class="small" aria-label="Conversion target">
+                    ${conversionTargets.map((target) => `<option value="${esc(target)}">${esc(target)}</option>`).join("")}
+                  </select>
+                  <button type="button" class="secondary" id="convertButton">Convert session</button>
+                </div>
+              </label>
+            </div>
+          </details>
         </form>
       </section>
     `;
@@ -1209,7 +1253,7 @@
 
         ${renderActionSection(session, permission, conversionTargets)}
 
-        <section class="detail-section">
+        <section class="detail-section aux-section">
           <h3>Lineage</h3>
           <div class="lineage-block">
             <div class="tag-list">
@@ -1236,7 +1280,7 @@
           </div>
         </section>
 
-        <section class="detail-section">
+        <section class="detail-section aux-section">
           <h3>History</h3>
           <div class="history-block">
             ${historySource}
@@ -1244,7 +1288,7 @@
           </div>
         </section>
 
-        <section class="detail-section">
+        <section class="detail-section chat-section">
           <h3>Last three logical messages</h3>
           <div class="messages-block">
             ${messages.length ? renderMessages(messages) : '<div class="detail-empty">No structured messages returned for this session.</div>'}
@@ -1303,7 +1347,7 @@
       const textBlock = message.text ? `<div class="message-text">${esc(message.text)}</div>` : "";
       const parts = Array.isArray(message.parts) ? message.parts : [];
       return `
-        <article class="message">
+        <article class="message message-${esc(message.role || "unknown")}">
           <div class="message-head">
             <div>
               <div class="role">${esc(heading)}</div>

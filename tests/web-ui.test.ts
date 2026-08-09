@@ -44,6 +44,7 @@ describe("session tree project groups", () => {
     expect(html).toContain('new URLSearchParams(location.search)');
     expect(html).toContain("function syncFiltersToQuery");
     expect(html).toContain("syncFiltersToQuery();");
+    expect(html).toContain("state.adapters.map((adapter) => adapter.id)");
   });
 
   it("ignores an older polling response after a newer filtered request starts", () => {
@@ -57,6 +58,15 @@ describe("session tree project groups", () => {
     expect(html).toContain("canStop");
     expect(html).toContain('position: sticky;\n      top: 0');
     expect(html).toContain("renderActionSection");
+  });
+
+  it("provides the unified mobile chat shell", () => {
+    expect(html).toContain('class="composer"');
+    expect(html).toContain('placeholder="Message…"');
+    expect(html).toContain('class="advanced-actions"');
+    expect(html).toContain('class="detail-section chat-section"');
+    expect(html).toContain("message-${esc(message.role");
+    expect(html).toContain("sleeping (lazy)");
   });
 
   it("renders the newest logical message first", () => {
