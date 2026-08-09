@@ -57,6 +57,53 @@ function formatSession(s: AgentSession, verbose = false): string {
   return lines.join("\n");
 }
 
+type TranscriptSelection = {
+  mode: "latest" | "search";
+  query?: string;
+  latestMessages: number;
+  contextMessages: number;
+  maxChars: number;
+};
+
+function selectTranscript(transcript: string, options: TranscriptSelection): string {
+  const blocks = transcript.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  if (blocks.length === 0) return "(transcript is empty)";
+  if (options.mode === "search" && !options.query?.trim()) return "Transcript search requires a query.";
+
+  const selected = new Set<number>();
+  const addLatest = (): void => {
+    const start = Math.max(0, blocks.length - options.latestMessages);
+    for (let index = start; index < blocks.length; index += 1) selected.add(index);
+  };
+
+  if (options.mode === "latest") addLatest();
+
+  if (options.mode === "search") {
+    const terms = options.query!.toLowerCase().split(/\s+/).filter(Boolean);
+    const ranked = blocks
+      .map((block, index) => {
+        const lower = block.toLowerCase();
+        const score = terms.reduce((total, term) => total + (lower.split(term).length - 1), 0);
+        return { index, score };
+      })
+      .filter((entry) => entry.score > 0)
+      .sort((left, right) => right.score - left.score || right.index - left.index)
+      .slice(0, options.latestMessages);
+
+    for (const match of ranked) {
+      const start = Math.max(0, match.index - options.contextMessages);
+      const end = Math.min(blocks.length - 1, match.index + options.contextMessages);
+      for (let index = start; index <= end; index += 1) selected.add(index);
+    }
+    if (ranked.length === 0) return `(no transcript messages matched query: ${options.query})`;
+  }
+
+  const result = [...selected].sort((left, right) => left - right).map((index) => blocks[index]).join("\n\n");
+  if (result.length <= options.maxChars) return result;
+  const clipped = options.mode === "latest" ? result.slice(-options.maxChars) : result.slice(0, options.maxChars);
+  return `[truncated to ${options.maxChars} characters]\n${clipped}`;
+}
+
 /**
  * Expand a path that may contain ~ or environment variables.
  */
