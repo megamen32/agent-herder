@@ -64,6 +64,16 @@ describe("TranscriptArchive", () => {
     expect(overwritten).not.toContain("first canonical export");
   });
 
+  it("archives ZCode native API transcripts under the ZCode namespace", async () => {
+    const root = await workspace();
+    const zcodeTranscript = transcript("zcode-session", root, "zcode raw");
+    zcodeTranscript.harness = "zcode";
+    const result = await new TranscriptArchive({ workspaceRoot: root }).exportLineage({ target: zcodeTranscript, related: [] });
+
+    expect(result.targetPath).toMatch(/\.agent-herder\/transcripts\/zcode\/zcode-session\.jsonl$/);
+    expect(await readFile(result.targetPath, "utf8")).toBe("zcode raw");
+  });
+
   it("removes archives older than retention by modification time before evicting newer files for size", async () => {
     const root = await workspace();
     const archive = new TranscriptArchive({ workspaceRoot: root, retentionMs: 1_000, maxBytes: 1_000_000 });

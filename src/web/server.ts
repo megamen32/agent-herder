@@ -14,12 +14,14 @@ import { resumeBoundTarget } from "../resume-transport.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { AdapterRegistry } from "../adapter-registry.js";
 
 export interface WebDependencies {
   adapters: Map<string, HarnessAdapter>;
   converter: Pick<AgentHerderSessionConverter, "convert"> & Partial<Pick<AgentHerderSessionConverter, "read">>;
   lineageStore?: LineageStore;
   humanRequests?: HumanRequestRegistry;
+  adapterRegistry?: AdapterRegistry;
   mcpServerFactory?: () => McpServer;
 }
 
@@ -30,7 +32,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const mcpTransports = new Map<string, StreamableHTTPServerTransport>();
   return createServer(async (request, response) => {
     try {
-      await route(request, response, supervisor, dependencies.humanRequests, dependencies.mcpServerFactory, mcpTransports);
+      await route(request, response, supervisor, dependencies.humanRequests, dependencies.mcpServerFactory, mcpTransports, dependencies.adapterRegistry);
     } catch (err) {
       if (err instanceof SessionNotFoundError) {
         sendJson(response, 404, { error: "Session not found" });
@@ -41,8 +43,24 @@ export function createWebServer(dependencies: WebDependencies): Server {
   });
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
+  if (url.pathname === "/api/adapters" && request.method === "GET") {
+    if (!adapterRegistry) return sendJson(response, 503, { error: "Adapter registry is disabled" });
+    return sendJson(response, 200, { adapters: adapterRegistry.list() });
+  }
+  const adapterMatch = url.pathname.match(/^\/api\/adapters\/([^/]+)$/);
+  if (adapterMatch && request.method === "POST") {
+    if (!adapterRegistry) return sendJson(response, 503, { error: "Adapter registry is disabled" });
+    const body = await readJson(request);
+    if (typeof body.enabled !== "boolean") return sendJson(response, 400, { error: "enabled must be boolean" });
+    try {
+      const adapter = await adapterRegistry.setEnabled(decodeURIComponent(adapterMatch[1]), body.enabled);
+      return sendJson(response, 200, { adapter });
+    } catch (error) {
+      return sendJson(response, 404, { error: (error as Error).message });
+    }
+  }
   if (url.pathname === "/mcp" && request.method === "POST") {
     if (!mcpServerFactory || !mcpTransports) return sendJson(response, 503, { error: "MCP HTTP transport is disabled" });
     const body = await readJson(request);

@@ -5,7 +5,7 @@ import { z } from "zod";
 
 export const ListAgentsSchema = z.object({
   harness: z
-    .enum(["all", "opencode", "claude", "codex", "qoder", "hermes"])
+    .enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode"])
     .optional()
     .default("all")
     .describe("Filter by harness. 'all' lists from every connected harness."),
@@ -39,7 +39,7 @@ export const AuditWorktreesSchema = z.object({
 export const AgentInfoSchema = z.object({
   sessionId: z.string().describe("The session ID to inspect."),
   harness: z
-    .enum(["opencode", "claude", "codex", "qoder", "hermes"])
+    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"])
     .optional()
     .describe("Which harness the session belongs to. If omitted, searches all."),
 });
@@ -47,7 +47,7 @@ export const AgentInfoSchema = z.object({
 export const FindParentSchema = z.object({
   sessionId: z.string().describe("The child session ID whose parent should be found."),
   harness: z
-    .enum(["opencode", "claude", "codex", "qoder", "hermes"])
+    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"])
     .optional()
     .describe("Which harness owns the session. If omitted, searches all."),
 });
@@ -55,19 +55,19 @@ export const FindParentSchema = z.object({
 export const ListChildrenSchema = z.object({
   sessionId: z.string().describe("The parent session ID whose children should be listed."),
   harness: z
-    .enum(["opencode", "claude", "codex", "qoder", "hermes"])
+    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"])
     .optional()
     .describe("Which harness owns the session. If omitted, searches all."),
 });
 
 export const ExportTranscriptSchema = z.object({
   sessionId: z.string().describe("The session ID whose raw source should be exported."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional().describe("Which harness owns the session. If omitted, searches all."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Which harness owns the session. If omitted, searches all."),
 });
 
 export const SendMessageSchema = z.object({
   sessionId: z.string().describe("Target session ID."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional().describe("Harness (optional if ID is unique)."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness (optional if ID is unique)."),
   message: z.string().describe("Message to send to the agent."),
   mode: z.enum(["queue", "steer", "sync"]).optional().default("sync").describe(
     "queue = fire-and-forget, steer = redirect agent, sync = wait for response"
@@ -75,7 +75,7 @@ export const SendMessageSchema = z.object({
 });
 
 const NamedSessionBaseSchema = z.object({
-  harness: z.enum(["opencode", "codex"]).describe("Harness that owns the named session."),
+  harness: z.enum(["opencode", "codex", "zcode"]).describe("Harness that owns the named session."),
   name: z.string().trim().min(1).max(128).describe("Stable session name, for example repair_100."),
   cwd: z.string().min(1).describe("Absolute working directory. It is canonicalized before identity matching."),
 });
@@ -91,12 +91,12 @@ export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
 
 export const StopAgentSchema = z.object({
   sessionId: z.string().describe("Session ID to stop."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional().describe("Harness (optional if ID is unique)."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness (optional if ID is unique)."),
 });
 
 export const RespondPermissionSchema = z.object({
   sessionId: z.string().describe("Session with pending permission."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional(),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional(),
   permissionId: z.string().describe("The permission request ID."),
   response: z.enum(["allow", "deny"]).describe("Whether to allow or deny."),
   remember: z.boolean().optional().describe("Remember this decision for future requests."),
@@ -104,14 +104,14 @@ export const RespondPermissionSchema = z.object({
 
 export const SetPermissionsSchema = z.object({
   sessionId: z.string().describe("Target session ID."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional(),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional(),
   allowedTools: z.string().optional().describe("Comma-separated list of allowed tools (e.g. 'Read,Edit,Bash')."),
   mode: z.string().optional().describe("Permission mode (e.g. 'fullAuto', 'plan', 'default')."),
 });
 
 export const ResumeAgentSchema = z.object({
   sessionId: z.string().describe("Session ID to resume."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional(),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional(),
   message: z.string().optional().describe("Optional message to send when resuming."),
 });
 
@@ -119,12 +119,12 @@ export const ChangeModelSchema = z.object({
   sessionId: z.string().optional().describe(
     "Session ID to change model for. If omitted, changes the global default for the harness."
   ),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).describe("Which harness to change model for."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).describe("Which harness to change model for."),
   model: z.string().describe("The model name to use (e.g. 'claude-sonnet-4-20250514', 'gpt-4o', 'o4-mini')."),
 });
 
 export const ListModelsSchema = z.object({
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional().describe(
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe(
     "Which harness to list models for. If omitted, lists models from all harnesses."
   ),
 });
@@ -135,13 +135,13 @@ export const toolDefinitions: Tool[] = [
   {
     name: "list_agents",
     description:
-      "List all coding agent sessions across connected harnesses (OpenCode, Claude Code, Codex CLI, Qoder). " +
+      "List all coding agent sessions across connected harnesses (OpenCode, Claude Code, Codex CLI, Qoder, ZCode). " +
       "Shows which agents are running, idle, need input, or stopped. Filter by harness, status, age, or folder. " +
       "Can include last message previews for quick context.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        harness: { type: "string", enum: ["all", "opencode", "claude", "codex", "qoder", "hermes"], default: "all", description: "Filter by harness" },
+        harness: { type: "string", enum: ["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode"], default: "all", description: "Filter by harness" },
         status: { type: "string", enum: ["all", "running", "idle", "needs_input", "stopped", "error"], default: "all", description: "Filter by status" },
         limit: { type: "number", default: 50, description: "Max sessions to return" },
         maxAge: { type: "number", description: "Max session age in seconds (e.g. 3600 for 1h, 86400 for 24h)" },
@@ -154,7 +154,7 @@ export const toolDefinitions: Tool[] = [
     name: "audit_worktrees",
     description:
       "Read-only audit of Git worktrees. Reports dirty files, lock reasons and PIDs, whether lock PIDs are still running, " +
-      "and Claude/Codex/OpenCode processes whose cwd is inside each worktree.",
+      "and Claude/Codex/OpenCode/ZCode processes whose cwd is inside each worktree.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -170,7 +170,7 @@ export const toolDefinitions: Tool[] = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        harness: { type: "string", enum: ["opencode", "codex"], description: "Target harness" },
+        harness: { type: "string", enum: ["opencode", "codex", "zcode"], description: "Target harness" },
         name: { type: "string", description: "Stable session name, for example repair_100" },
         cwd: { type: "string", description: "Absolute working directory" },
       },
@@ -183,7 +183,7 @@ export const toolDefinitions: Tool[] = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        harness: { type: "string", enum: ["opencode", "codex"], description: "Target harness" },
+        harness: { type: "string", enum: ["opencode", "codex", "zcode"], description: "Target harness" },
         name: { type: "string", description: "Stable session name, for example repair_100" },
         cwd: { type: "string", description: "Absolute working directory" },
         message: { type: "string", description: "Message to deliver" },
@@ -202,7 +202,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session ID to inspect" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode"], description: "Harness (optional)" },
       },
       required: ["sessionId"],
     },
@@ -214,7 +214,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Child session ID" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode"], description: "Harness (optional)" },
       },
       required: ["sessionId"],
     },
@@ -226,7 +226,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Parent session ID" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode"], description: "Harness (optional)" },
       },
       required: ["sessionId"],
     },
@@ -238,7 +238,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session ID" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode"], description: "Harness (optional)" },
       },
       required: ["sessionId"],
     },
@@ -252,7 +252,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Target session ID" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode"], description: "Harness (optional)" },
         message: { type: "string", description: "Message to send" },
         mode: { type: "string", enum: ["queue", "steer", "sync"], default: "sync", description: "Delivery mode" },
       },
@@ -266,7 +266,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session ID to stop" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode"], description: "Harness (optional)" },
       },
       required: ["sessionId"],
     },
@@ -275,12 +275,12 @@ export const toolDefinitions: Tool[] = [
     name: "respond_permission",
     description:
       "Respond to a pending permission request from an agent (e.g. allow or deny a tool call). " +
-      "Note: only OpenCode and Claude SDK support remote permission response.",
+      "OpenCode, Claude SDK, and ZCode support remote permission response.",
     inputSchema: {
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session with pending permission" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode"], description: "Harness (optional)" },
         permissionId: { type: "string", description: "Permission request ID" },
         response: { type: "string", enum: ["allow", "deny"], description: "Allow or deny" },
         remember: { type: "boolean", description: "Remember this decision" },
@@ -297,7 +297,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Target session ID" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode"], description: "Harness (optional)" },
         allowedTools: { type: "string", description: "Comma-separated allowed tools, e.g. 'Read,Edit,Bash'" },
         mode: { type: "string", description: "Permission mode, e.g. 'fullAuto', 'plan', 'default'" },
       },
@@ -312,7 +312,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session ID to resume" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode"], description: "Harness (optional)" },
         message: { type: "string", description: "Optional message to send when resuming" },
       },
       required: ["sessionId"],
@@ -328,7 +328,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session ID (optional, changes global default if omitted)" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes"], description: "Target harness" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode"], description: "Target harness" },
         model: { type: "string", description: "Model name (e.g. 'claude-sonnet-4-20250514', 'gpt-4o', 'o4-mini')" },
       },
       required: ["harness", "model"],
@@ -341,7 +341,7 @@ export const toolDefinitions: Tool[] = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes"], description: "Harness to list models for (omit = all)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode"], description: "Harness to list models for (omit = all)" },
       },
     },
   },

@@ -1,7 +1,7 @@
 {
   "name": "agent-herder",
   "version": "0.1.0",
-  "description": "MCP server to monitor, inspect, search, and coordinate OpenCode, Claude Code, Codex CLI, and Qoder parent/child sessions",
+  "description": "MCP server to monitor, inspect, search, and coordinate OpenCode, Claude Code, Codex CLI, Qoder, and ZCode parent/child sessions",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -40,6 +40,7 @@
     "claude-code",
     "codex-cli",
     "qoder",
+    "zcode",
     "developer-tools"
   ],
   "license": "MIT",

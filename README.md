@@ -3,7 +3,7 @@
 **MCP control center for coding agents.**
 
 Monitor, inspect, and coordinate AI coding sessions from one MCP server:
-OpenCode, Claude Code, Codex CLI, and Qoder.
+OpenCode, Claude Code, Codex CLI, Qoder, and ZCode.
 
 [Русский](README.ru.md) · [简体中文](README.zh.md)
 
@@ -54,7 +54,7 @@ Typical request:
 ## Why people use it
 
 Use Agent Herder when you need an **MCP server for OpenCode**, a **Claude Code
-session manager**, **Codex CLI transcript search**, or one dashboard for several
+session manager**, **Codex CLI transcript search**, **ZCode app-server control**, or one dashboard for several
 AI coding agents. It is especially useful for parent/child agent workflows,
 parallel coding tasks and session recovery.
 
@@ -66,6 +66,7 @@ parallel coding tasks and session recovery.
 | Claude Code | SDK/CLI and session files | Enabled by default |
 | Codex CLI | Native app-server with CLI fallback | Enabled by default |
 | Qoder CLI | Native ACP | Set `ENABLE_QODER=true` |
+| ZCode | Local stdio ZCode Protocol app-server | Enabled by default; set `ZCODE_CWD` for the workspace |
 
 ## Core MCP tools
 
@@ -73,7 +74,7 @@ parallel coding tasks and session recovery.
 |---|---|
 | Discover | `list_agents`, `agent_info`, `audit_worktrees` |
 | Lineage and transcript | `find_parent`, `list_children`, `export_transcript` |
-| Named sessions | `create_session`, `new_or_resume` (OpenCode and Codex) |
+| Named sessions | `create_session`, `new_or_resume` (OpenCode, Codex, and ZCode) |
 | Control | `send_message`, `resume_agent`, `stop_agent` |
 | Permissions and models | `respond_permission`, `set_permissions`, `list_models`, `change_model` |
 
@@ -105,10 +106,15 @@ The common switches are:
 | `ENABLE_CLAUDE` | `true` | Enable the Claude Code adapter |
 | `ENABLE_CODEX` | `true` | Enable the Codex adapter |
 | `ENABLE_QODER` | `false` | Enable the Qoder ACP adapter |
+| `ENABLE_ZCODE` | `true` | Enable the local ZCode app-server adapter |
 | `OPENCODE_URL` | `http://127.0.0.1:4096` | OpenCode server URL |
 | `OPENCODE_SERVER_PASSWORD` | — | OpenCode server password, if configured |
 | `CODEX_TRANSPORT` | `app-server` | Codex native transport or `cli` fallback |
 | `QODER_CWD` | current directory | Workspace used by Qoder |
+| `ZCODE_CWD` | current directory | Workspace used by ZCode |
+| `ZCODE_SERVER_NODE` | `~/.zcode/server/node` when present | ZCode server runtime executable |
+| `ZCODE_SERVER_ENTRY` | `~/.zcode/server/zcode-server.cjs` when present | ZCode stdio app-server entrypoint |
+| `ZCODE_BIN` / `ZCODE_ARGS` | `zcode` / `["app-server"]` | Fallback command when the bundled server entrypoint is unavailable |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_DIR` | `.agent-herder/transcripts` | Relative archive path inside the MCP process CWD |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_MAX_BYTES` | `104857600` | Archive retention size budget (100 MiB) |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_RETENTION_DAYS` | `3` | Remove unmodified archive bundles by modification time |
@@ -155,7 +161,7 @@ The matching user-service template is
 ## FAQ
 
 **Does Agent Herder replace my coding agent?** No. It connects your MCP client
-to the sessions owned by OpenCode, Claude Code, Codex, or Qoder.
+to the sessions owned by OpenCode, Claude Code, Codex, Qoder, or ZCode.
 
 **Does `export_transcript` load everything into the model?** No. It writes the
 raw source to a CWD-scoped archive and returns only the permanent navigation

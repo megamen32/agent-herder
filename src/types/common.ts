@@ -1,6 +1,6 @@
 // ===== Shared types for all agent harness adapters =====
 
-export type HarnessType = "opencode" | "claude" | "codex" | "qoder" | "hermes";
+export type HarnessType = "opencode" | "claude" | "codex" | "qoder" | "hermes" | "zcode";
 
 export type AgentStatus =
   | "running"      // actively processing

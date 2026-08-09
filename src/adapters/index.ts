@@ -6,3 +6,5 @@ export { CodexAdapter } from "./codex.js";
 export { CodexAppServerAdapter } from "./codex-app-server.js";
 export { QoderAdapter } from "./qoder.js";
 export { HermesAdapter } from "./hermes/index.js";
+export { ZcodeAdapter } from "./zcode.js";
+export { ZcodeAppServerClient } from "./zcode-protocol.js";

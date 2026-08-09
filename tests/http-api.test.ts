@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { createWebServer } from "../src/web/server.js";
+import { AdapterRegistry } from "../src/adapter-registry.js";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AgentSession, HarnessAdapter } from "../src/types/index.js";
 
 const servers: Server[] = [];
@@ -66,6 +70,23 @@ function fakeNamedAdapter(): HarnessAdapter {
 }
 
 describe("agent-herder web API", () => {
+  it("lists adapters and enables one through the explicit registry endpoint", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-web-"));
+    const adapters = new Map<string, HarnessAdapter>();
+    const registry = new AdapterRegistry(adapters, join(root, "adapters.json"));
+    registry.register({ id: "opencode", name: "OpenCode", description: "test", defaultEnabled: false, factory: fakeNamedAdapter });
+    const server = createWebServer({ adapters, converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } }, adapterRegistry: registry });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const base = `http://127.0.0.1:${address.port}`;
+    expect((await fetch(`${base}/api/adapters`)).status).toBe(200);
+    const enabled = await fetch(`${base}/api/adapters/opencode`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: true }) });
+    expect(enabled.status).toBe(200);
+    expect((await enabled.json()).adapter).toMatchObject({ id: "opencode", active: true, status: "active" });
+  });
+
   it("serves sessions, resume, conversion, and the PWA shell", async () => {
     const server = createWebServer({
       adapters: new Map([["claude", fakeAdapter()], ["opencode", fakeNamedAdapter()]]),

@@ -10,6 +10,7 @@ const expectedGates = [
   "ENABLE_CODEX",
   "ENABLE_QODER",
   "ENABLE_HERMES",
+  "ENABLE_ZCODE",
 ];
 
 function parseGateValue(source: string): (value: string | undefined, fallback: boolean) => boolean {
@@ -34,6 +35,7 @@ describe("adapter enable gates", () => {
       ENABLE_CODEX: "true",
       ENABLE_QODER: "true",
       ENABLE_HERMES: "true",
+      ENABLE_ZCODE: "true",
     });
     const parseEnvBool = parseGateValue(source);
     for (const gate of expectedGates) {

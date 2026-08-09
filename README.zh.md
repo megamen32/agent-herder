@@ -2,7 +2,7 @@
 
 [English](README.md) | [Русский](README.ru.md) | **中文**
 
-Agent Herder 是一个 MCP 服务器，通过统一接口监控和管理 OpenCode、Claude Code 与 Codex CLI 会话。
+Agent Herder 是一个 MCP 服务器，通过统一接口监控和管理 OpenCode、Claude Code、Codex CLI 与 ZCode 会话。
 
 ![Agent Herder 开发工作台](docs/assets/readme-hero.png)
 
@@ -31,16 +31,18 @@ claude mcp add agent-herder -- node "$PWD/dist/index.js"
 
 ## 要求与配置
 
-需要 Node.js、npm，以及至少一个受支持的 CLI：`opencode`、`claude` 或 `codex`。使用 Codex 时请设置 `OPENAI_API_KEY`。
+需要 Node.js、npm，以及至少一个受支持的 CLI：`opencode`、`claude`、`codex` 或 ZCode。使用 Codex 时请设置 `OPENAI_API_KEY`。
 
 常用环境变量：
 
 | 变量 | 作用 |
 |---|---|
-| `ENABLE_OPENCODE`、`ENABLE_CLAUDE`、`ENABLE_CODEX` | 启用适配器，默认均为 `true` |
+| `ENABLE_OPENCODE`、`ENABLE_CLAUDE`、`ENABLE_CODEX`、`ENABLE_ZCODE` | 启用适配器，默认均为 `true` |
 | `OPENCODE_URL` | OpenCode 地址，默认 `http://127.0.0.1:4096` |
 | `CLAUDE_BIN`、`CODEX_BIN` | CLI 可执行文件路径 |
 | `CODEX_DATA_DIR` | Codex 数据目录，默认 `~/.codex` |
+| `ZCODE_CWD` | ZCode 工作区，默认当前目录 |
+| `ZCODE_SERVER_NODE`、`ZCODE_SERVER_ENTRY` | ZCode 本地 stdio app-server 的 runtime 与入口 |
 | `SUMMARIZER_API_KEY` | `summarize_session` 工具使用的密钥 |
 
 完整的环境变量表、客户端配置、架构和各 harness 的说明请参阅[英文 README](README.md)。

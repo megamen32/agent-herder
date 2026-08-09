@@ -2,7 +2,7 @@
 
 **MCP-центр управления AI-агентами для разработки.**
 
-Agent Herder объединяет OpenCode, Claude Code, Codex CLI и Qoder в один
+Agent Herder объединяет OpenCode, Claude Code, Codex CLI, Qoder и ZCode в один
 интерфейс: показывает сессии и помогает управлять агентами.
 
 [English](README.md) · **Русский** · [简体中文](README.zh.md)
@@ -56,6 +56,7 @@ opencode serve
 | Claude Code | SDK/CLI и файлы сессий | Включён по умолчанию |
 | Codex CLI | Native app-server и CLI fallback | Включён по умолчанию |
 | Qoder CLI | Native ACP | `ENABLE_QODER=true` |
+| ZCode | локальный stdio ZCode Protocol app-server | Включён по умолчанию; `ZCODE_CWD` задаёт workspace |
 
 ## Инструменты MCP
 
@@ -63,7 +64,7 @@ opencode serve
 |---|---|
 | Найти сессии | `list_agents`, `agent_info`, `audit_worktrees` |
 | Родители и транскрипт | `find_parent`, `list_children`, `export_transcript` |
-| Именованные сессии | `create_session`, `new_or_resume` (OpenCode и Codex) |
+| Именованные сессии | `create_session`, `new_or_resume` (OpenCode, Codex и ZCode) |
 | Управление | `send_message`, `resume_agent`, `stop_agent` |
 | Permissions и модели | `respond_permission`, `set_permissions`, `list_models`, `change_model` |
 
@@ -92,9 +93,13 @@ opencode serve
 | `ENABLE_CLAUDE` | `true` | включить Claude Code |
 | `ENABLE_CODEX` | `true` | включить Codex |
 | `ENABLE_QODER` | `false` | включить Qoder ACP |
+| `ENABLE_ZCODE` | `true` | включить локальный ZCode app-server |
 | `OPENCODE_URL` | `http://127.0.0.1:4096` | URL OpenCode |
 | `CODEX_TRANSPORT` | `app-server` | native transport или `cli` fallback |
 | `QODER_CWD` | текущий каталог | рабочая папка Qoder |
+| `ZCODE_CWD` | текущий каталог | рабочая папка ZCode |
+| `ZCODE_SERVER_NODE` | `~/.zcode/server/node`, если найден | runtime ZCode server |
+| `ZCODE_SERVER_ENTRY` | `~/.zcode/server/zcode-server.cjs`, если найден | stdio app-server ZCode |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_DIR` | `.agent-herder/transcripts` | относительный путь архива внутри CWD MCP-процесса |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_MAX_BYTES` | `104857600` | лимит архива, 100 MiB |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_RETENTION_DAYS` | `3` | удалить не менявшиеся bundles по времени изменения |
@@ -121,7 +126,7 @@ npm run inspect
 ## Частые вопросы
 
 **Agent Herder заменяет моего coding-агента?** Нет. Он подключает MCP-клиент
-к уже существующим сессиям OpenCode, Claude Code, Codex или Qoder.
+к уже существующим сессиям OpenCode, Claude Code, Codex, Qoder или ZCode.
 
 **`export_transcript` загружает всю историю в модель?** Нет. Он сохраняет raw
 источник в CWD-ограниченный архив и возвращает только постоянную карточку

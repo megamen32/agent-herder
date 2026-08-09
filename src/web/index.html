@@ -613,6 +613,11 @@
     <div class="hint" id="pollingState">Polling every 2s</div>
   </div>
 
+  <details class="toolbar" open>
+    <summary><strong>Harness adapters</strong> <span class="hint">Choose which integrations are active</span></summary>
+    <div id="adapterRegistry" class="session-tree" aria-live="polite">Loading adapters…</div>
+  </details>
+
   <details class="toolbar named-session-panel">
     <summary><strong>Create or resume a named session</strong></summary>
     <select id="namedHarness" aria-label="Named session harness">
@@ -705,6 +710,7 @@
     createNamedSession: document.getElementById("createNamedSession"),
     newOrResumeSession: document.getElementById("newOrResumeSession"),
     namedSessionStatus: document.getElementById("namedSessionStatus"),
+    adapterRegistry: document.getElementById("adapterRegistry"),
   };
 
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -726,6 +732,31 @@
 
   function setError(target, message) {
     target.textContent = message || "";
+  }
+
+  async function refreshAdapters() {
+    const { response, data } = await fetchJson("/api/adapters");
+    if (!response.ok) {
+      elements.adapterRegistry.textContent = data?.error || "Adapter registry unavailable";
+      return;
+    }
+    elements.adapterRegistry.innerHTML = (data.adapters || []).map((adapter) => {
+      const capabilities = adapter.capabilities
+        ? Object.entries(adapter.capabilities).filter(([, enabled]) => enabled).map(([key]) => key).join(", ") || "base session controls"
+        : "not initialized";
+      const action = adapter.enabled ? "Disable" : "Add";
+      return `<div class="session-row"><div><strong>${esc(adapter.name)}</strong><div class="hint">${esc(adapter.description)} · ${esc(adapter.status)} · ${esc(capabilities)}</div>${adapter.error ? `<div class="error">${esc(adapter.error)}</div>` : ""}</div><button class="small adapter-toggle" data-adapter="${esc(adapter.id)}" data-enabled="${adapter.enabled ? "false" : "true"}">${action}</button></div>`;
+    }).join("") || "No adapters registered";
+    elements.adapterRegistry.querySelectorAll(".adapter-toggle").forEach((button) => {
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        const enabled = button.dataset.enabled === "true";
+        const { response, data } = await fetchJson(`/api/adapters/${encodeURIComponent(button.dataset.adapter)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled }) });
+        if (!response.ok) setError(elements.sessionError, data?.error || "Adapter change failed");
+        await refreshAdapters();
+        await refreshAll();
+      });
+    });
   }
 
   function currentHash() {
@@ -1491,6 +1522,7 @@
   }
 
   async function refreshAll() {
+    await refreshAdapters();
     await fetchSessions();
     if (state.selected) {
       const provider = state.selected.provider;

@@ -5,10 +5,11 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { HarnessAdapter } from "./types/index.js";
-import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter } from "./adapters/index.js";
+import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter } from "./adapters/index.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
 import { acquireAgentHerderSingleton } from "./singleton.js";
+import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
 import { createWebServer } from "./web/server.js";
 import {
   handleListAgents,
@@ -37,6 +38,7 @@ const ENABLE_CODEX = parseEnvBool(process.env.ENABLE_CODEX, true);
 const CODEX_TRANSPORT = process.env.CODEX_TRANSPORT || "app-server";
 const ENABLE_QODER = parseEnvBool(process.env.ENABLE_QODER, true);
 const ENABLE_HERMES = parseEnvBool(process.env.ENABLE_HERMES, true);
+const ENABLE_ZCODE = parseEnvBool(process.env.ENABLE_ZCODE, true);
 const ACP_AGENT_COMMAND = process.env.ACP_AGENT_COMMAND;
 
 function parseEnvBool(val: string | undefined, fallback: boolean): boolean {
@@ -48,16 +50,55 @@ function parseEnvBool(val: string | undefined, fallback: boolean): boolean {
 
 const adapters = new Map<string, HarnessAdapter>();
 const humanRequests = new HumanRequestRegistry(process.env.AGENT_HERDER_HUMAN_REQUEST_STORE || ".agent-herder/human-requests.json");
+const adapterFactories = new Map<string, AdapterFactory>();
+const adapterRegistry = new AdapterRegistry(
+  adapters,
+  process.env.AGENT_HERDER_ADAPTER_REGISTRY || ".agent-herder/adapters.json",
+);
+
+function configureAdapterRegistry(): void {
+  adapterFactories.set("opencode", () => new OpenCodeAdapter({
+    baseUrl: process.env.OPENCODE_URL,
+    password: process.env.OPENCODE_SERVER_PASSWORD,
+  }));
+  adapterFactories.set("claude", () => ENABLE_CLAUDE_SDK ? new ClaudeSDKAdapter() : new ClaudeCodeAdapter({ claudeBin: process.env.CLAUDE_BIN }));
+  adapterFactories.set("codex", () => CODEX_TRANSPORT === "cli"
+    ? new CodexAdapter({ codexBin: process.env.CODEX_BIN, codexDir: process.env.CODEX_DATA_DIR })
+    : new CodexAppServerAdapter({ codexBin: process.env.CODEX_BIN, cwd: process.env.CODEX_CWD, modelIds: parseCsv(process.env.CODEX_MODELS, ["o4-mini", "o3", "gpt-4.1", "gpt-4o"]) }));
+  adapterFactories.set("qoder", () => new AcpAdapter({
+    profile: "qoder", harness: "qoder", command: process.env.QODER_BIN || "qodercli",
+    args: [...parseArgs(process.env.QODER_ARGS, "QODER_ARGS"), "--acp", ...(process.env.QODER_MODEL ? ["--model", process.env.QODER_MODEL] : [])],
+    cwd: process.env.QODER_CWD || process.cwd(), modelIds: parseCsv(process.env.QODER_MODELS, ["Ultimate", "Lite"]),
+  }));
+  adapterFactories.set("hermes", () => new HermesAdapter({ hermesBin: process.env.HERMES_BIN, cwd: process.env.HERMES_CWD }));
+  adapterFactories.set("zcode", () => new ZcodeAdapter({
+    command: process.env.ZCODE_SERVER_NODE,
+    args: process.env.ZCODE_SERVER_ENTRY ? [process.env.ZCODE_SERVER_ENTRY] : undefined,
+    cwd: process.env.ZCODE_CWD, modelIds: parseCsv(process.env.ZCODE_MODELS, []),
+  }));
+  for (const definition of [
+    ["opencode", "OpenCode", "OpenCode HTTP control adapter", ENABLE_OPENCODE],
+    ["claude", "Claude", "Claude SDK or CLI adapter", ENABLE_CLAUDE],
+    ["codex", "Codex", "Codex app-server or CLI adapter", ENABLE_CODEX],
+    ["qoder", "Qoder", "Qoder ACP adapter", ENABLE_QODER],
+    ["hermes", "Hermes", "Hermes MCP adapter", ENABLE_HERMES],
+    ["zcode", "ZCode", "ZCode app-server adapter", ENABLE_ZCODE],
+  ] as const) {
+    const [id, name, description, defaultEnabled] = definition;
+    adapterRegistry.register({ id, name, description, defaultEnabled, factory: adapterFactories.get(id) });
+  }
+}
 
 async function initAdapters() {
   const inits: Promise<void>[] = [];
 
-  if (ENABLE_OPENCODE) {
+  if (adapterRegistry.shouldEnable("opencode", ENABLE_OPENCODE)) {
     const adapter = new OpenCodeAdapter({
       baseUrl: process.env.OPENCODE_URL,
       password: process.env.OPENCODE_SERVER_PASSWORD,
     });
     adapters.set("opencode", adapter);
+    adapterRegistry.registerActive(adapter);
     inits.push(
       adapter.init().catch((err) => {
         console.error(`[agent-herder] OpenCode adapter failed to init: ${(err as Error).message}`);
@@ -66,13 +107,14 @@ async function initAdapters() {
     );
   }
 
-  if (ENABLE_CLAUDE) {
+  if (adapterRegistry.shouldEnable("claude", ENABLE_CLAUDE)) {
     if (ENABLE_CLAUDE_SDK) {
       const sdkAdapter = new ClaudeSDKAdapter();
       inits.push(
         sdkAdapter.init()
           .then(() => {
             adapters.set("claude", sdkAdapter);
+            adapterRegistry.registerActive(sdkAdapter);
             console.error("[agent-herder] Claude Agent SDK adapter initialized");
           })
           .catch((err) => {
@@ -81,7 +123,7 @@ async function initAdapters() {
               claudeBin: process.env.CLAUDE_BIN,
             });
             cliAdapter.init()
-              .then(() => adapters.set("claude", cliAdapter))
+              .then(() => { adapters.set("claude", cliAdapter); adapterRegistry.registerActive(cliAdapter); })
               .catch((err2) => {
                 console.error(`[agent-herder] Claude CLI adapter also failed: ${(err2 as Error).message}`);
               });
@@ -92,6 +134,7 @@ async function initAdapters() {
         claudeBin: process.env.CLAUDE_BIN,
       });
       adapters.set("claude", adapter);
+      adapterRegistry.registerActive(adapter);
       inits.push(
         adapter.init().catch((err) => {
           console.error(`[agent-herder] Claude Code adapter failed to init: ${(err as Error).message}`);
@@ -101,13 +144,14 @@ async function initAdapters() {
     }
   }
 
-  if (ENABLE_CODEX) {
+  if (adapterRegistry.shouldEnable("codex", ENABLE_CODEX)) {
     if (CODEX_TRANSPORT === "cli") {
       const adapter = new CodexAdapter({
         codexBin: process.env.CODEX_BIN,
         codexDir: process.env.CODEX_DATA_DIR,
       });
       adapters.set("codex", adapter);
+      adapterRegistry.registerActive(adapter);
       inits.push(
         adapter.init().catch((err) => {
           console.error(`[agent-herder] Codex CLI adapter failed to init: ${(err as Error).message}`);
@@ -121,6 +165,7 @@ async function initAdapters() {
         modelIds: parseCsv(process.env.CODEX_MODELS, ["o4-mini", "o3", "gpt-4.1", "gpt-4o"]),
       });
       adapters.set("codex", nativeAdapter);
+      adapterRegistry.registerActive(nativeAdapter);
       inits.push(
         nativeAdapter.init().catch(async (err) => {
           console.error(`[agent-herder] Codex app-server failed, trying CLI fallback: ${(err as Error).message}`);
@@ -131,6 +176,7 @@ async function initAdapters() {
           try {
             await fallback.init();
             adapters.set("codex", fallback);
+            adapterRegistry.registerActive(fallback);
           } catch (fallbackError) {
             console.error(`[agent-herder] Codex CLI fallback also failed: ${(fallbackError as Error).message}`);
             adapters.delete("codex");
@@ -140,7 +186,7 @@ async function initAdapters() {
     }
   }
 
-  if (ENABLE_QODER) {
+  if (adapterRegistry.shouldEnable("qoder", ENABLE_QODER)) {
     const qoderArgs = parseArgs(process.env.QODER_ARGS, "QODER_ARGS");
     const model = process.env.QODER_MODEL;
     const adapter = new AcpAdapter({
@@ -152,6 +198,7 @@ async function initAdapters() {
       modelIds: parseCsv(process.env.QODER_MODELS, ["Ultimate", "Lite"]),
     });
     adapters.set("qoder", adapter);
+    adapterRegistry.registerActive(adapter);
     inits.push(
       adapter.init().catch((err) => {
         console.error(`[agent-herder] Qoder adapter failed to init: ${(err as Error).message}`);
@@ -160,12 +207,28 @@ async function initAdapters() {
     );
   }
 
-  if (ENABLE_HERMES) {
+  if (adapterRegistry.shouldEnable("hermes", ENABLE_HERMES)) {
     const adapter = new HermesAdapter({ hermesBin: process.env.HERMES_BIN, cwd: process.env.HERMES_CWD });
     adapters.set("hermes", adapter);
+    adapterRegistry.registerActive(adapter);
     inits.push(adapter.init().catch((err) => {
       console.error(`[agent-herder] Hermes adapter failed to init: ${(err as Error).message}`);
       adapters.delete("hermes");
+    }));
+  }
+
+  if (adapterRegistry.shouldEnable("zcode", ENABLE_ZCODE)) {
+    const adapter = new ZcodeAdapter({
+      command: process.env.ZCODE_SERVER_NODE,
+      args: process.env.ZCODE_SERVER_ENTRY ? [process.env.ZCODE_SERVER_ENTRY] : undefined,
+      cwd: process.env.ZCODE_CWD,
+      modelIds: parseCsv(process.env.ZCODE_MODELS, []),
+    });
+    adapters.set("zcode", adapter);
+    adapterRegistry.registerActive(adapter);
+    inits.push(adapter.init().catch((err) => {
+      console.error(`[agent-herder] ZCode adapter failed to init: ${(err as Error).message}`);
+      adapters.delete("zcode");
     }));
   }
 
@@ -244,9 +307,9 @@ function registerTools(server: McpServer) {
   );
   server.tool(
     "list_agents",
-    "List all coding agent sessions. Filter by harness, status, age (maxAge seconds), or folder (CWD prefix like ~/apps). Can show last message preview.",
+    "List all coding agent sessions, including ZCode. Filter by harness, status, age (maxAge seconds), or folder (CWD prefix like ~/apps). Can show last message preview.",
     {
-      harness: z.enum(["all", "opencode", "claude", "codex", "qoder", "hermes"]).optional().default("all").describe("Filter by harness"),
+      harness: z.enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().default("all").describe("Filter by harness"),
       status: z.enum(["all", "running", "idle", "needs_input", "stopped", "error"]).optional().default("all").describe("Filter by status"),
       limit: z.number().int().min(1).max(100).optional().default(50).describe("Max sessions"),
       maxAge: z.number().int().min(0).optional().describe("Max session age in seconds (e.g. 3600=1h, 86400=24h)"),
@@ -261,7 +324,7 @@ function registerTools(server: McpServer) {
 
   server.tool(
     "audit_worktrees",
-    "Read-only Git worktree audit: dirty files, lock/PID state, and Claude/Codex/OpenCode processes whose cwd is inside each worktree.",
+    "Read-only Git worktree audit: dirty files, lock/PID state, and Claude/Codex/OpenCode/ZCode processes whose cwd is inside each worktree.",
     {
       repoPath: z.string().describe("Absolute or home-relative path to a Git repository"),
       includeClean: z.boolean().optional().default(false).describe("Include clean and unlocked worktrees"),
@@ -277,7 +340,7 @@ function registerTools(server: McpServer) {
     "Get detailed info about a specific session. Always shows model and last message.",
     {
       sessionId: z.string().describe("Session ID to inspect"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness type"),
     },
     async (args) => {
       const result = await handleAgentInfo(adapters, args);
@@ -290,7 +353,7 @@ function registerTools(server: McpServer) {
     "Find the native parent session of an agent session.",
     {
       sessionId: z.string().describe("Child session ID"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness type"),
     },
     async (args) => {
       const result = await handleFindParent(adapters, args);
@@ -303,7 +366,7 @@ function registerTools(server: McpServer) {
     "List the native child sessions of an agent session.",
     {
       sessionId: z.string().describe("Parent session ID"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness type"),
     },
     async (args) => {
       const result = await handleListChildren(adapters, args);
@@ -316,7 +379,7 @@ function registerTools(server: McpServer) {
     "Export the raw adapter-owned transcript and return a filesystem navigation card.",
     {
       sessionId: z.string().describe("Session ID"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness type"),
     },
     async (args) => {
       const result = await handleExportTranscript(adapters, args);
@@ -329,7 +392,7 @@ function registerTools(server: McpServer) {
     "Send a message to an agent. Modes: sync (wait), queue (fire-and-forget), steer (redirect).",
     {
       sessionId: z.string().describe("Target session ID"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness type"),
       message: z.string().describe("Message to send"),
       mode: z.enum(["queue", "steer", "sync"]).optional().default("sync").describe("Delivery mode"),
     },
@@ -341,9 +404,9 @@ function registerTools(server: McpServer) {
 
   server.tool(
     "create_session",
-    "Create one named OpenCode or Codex session in an absolute canonical working directory.",
+    "Create one named OpenCode, Codex, or ZCode session in an absolute canonical working directory.",
     {
-      harness: z.enum(["opencode", "codex"]).describe("Target harness"),
+      harness: z.enum(["opencode", "codex", "zcode"]).describe("Target harness"),
       name: z.string().min(1).max(128).describe("Stable session name"),
       cwd: z.string().min(1).describe("Absolute working directory"),
     },
@@ -357,7 +420,7 @@ function registerTools(server: McpServer) {
     "new_or_resume",
     "Reuse the exact named session for harness+CWD or create it, then deliver one message.",
     {
-      harness: z.enum(["opencode", "codex"]).describe("Target harness"),
+      harness: z.enum(["opencode", "codex", "zcode"]).describe("Target harness"),
       name: z.string().min(1).max(128).describe("Stable session name"),
       cwd: z.string().min(1).describe("Absolute working directory"),
       message: z.string().min(1).describe("Message to deliver"),
@@ -374,7 +437,7 @@ function registerTools(server: McpServer) {
     "Stop / abort a running agent session.",
     {
       sessionId: z.string().describe("Session ID to stop"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness type"),
     },
     async (args) => {
       const result = await handleStopAgent(adapters, args);
@@ -384,10 +447,10 @@ function registerTools(server: McpServer) {
 
   server.tool(
     "respond_permission",
-    "Respond to a pending permission request (allow/deny). OpenCode and Claude SDK support this.",
+    "Respond to a pending permission request (allow/deny). OpenCode, Claude SDK, and ZCode support this.",
     {
       sessionId: z.string().describe("Session with pending permission"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional(),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional(),
       permissionId: z.string().describe("Permission request ID"),
       response: z.enum(["allow", "deny"]).describe("Allow or deny"),
       remember: z.boolean().optional().describe("Remember this decision"),
@@ -403,7 +466,7 @@ function registerTools(server: McpServer) {
     "Set permissions for an agent. Claude/Codex set these at launch time.",
     {
       sessionId: z.string().describe("Target session ID"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional(),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional(),
       allowedTools: z.string().optional().describe("Comma-separated allowed tools"),
       mode: z.string().optional().describe("Permission mode"),
     },
@@ -418,7 +481,7 @@ function registerTools(server: McpServer) {
     "Resume a stopped agent session. Optionally provide a message.",
     {
       sessionId: z.string().describe("Session ID to resume"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional(),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional(),
       message: z.string().optional().describe("Message to send when resuming"),
     },
     async (args) => {
@@ -429,10 +492,10 @@ function registerTools(server: McpServer) {
 
   server.tool(
     "change_model",
-    "Change the AI model for a harness. For OpenCode: per-session or global. For Claude/Codex/Qoder: per-session where supported by the harness.",
+    "Change the AI model for a harness. For OpenCode: per-session or global. For Claude/Codex/Qoder/ZCode: per-session where supported by the harness.",
     {
       sessionId: z.string().optional().describe("Session ID (omit for global default)"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).describe("Target harness"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).describe("Target harness"),
       model: z.string().describe("Model name (e.g. 'claude-sonnet-4-20250514', 'gpt-4o', 'o4-mini')"),
     },
     async (args) => {
@@ -445,7 +508,7 @@ function registerTools(server: McpServer) {
     "list_models",
     "List available AI models for each harness.",
     {
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes"]).optional().describe("Harness (omit for all)"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness (omit for all)"),
     },
     async (args) => {
       const result = await handleListModels(adapters, args);
@@ -460,6 +523,8 @@ async function main() {
   const releaseSingleton = acquireAgentHerderSingleton();
   process.once("exit", releaseSingleton);
 
+  configureAdapterRegistry();
+  await adapterRegistry.load();
   await initAdapters();
   const createMcpServer = () => {
     const server = new McpServer({
@@ -478,6 +543,7 @@ async function main() {
       adapters,
       converter: new AgentHerderSessionConverter(),
       humanRequests,
+      adapterRegistry,
       mcpServerFactory: createMcpServer,
     });
     const host = process.env.AGENT_HERDER_WEB_HOST || "127.0.0.1";

@@ -8,7 +8,7 @@ const execFileAsync = promisify(execFile);
 export interface WorktreeProcess {
   pid: number;
   parentPid?: number;
-  harness: "opencode" | "claude" | "codex" | "unknown";
+  harness: "opencode" | "claude" | "codex" | "zcode" | "unknown";
   cwd: string;
   command: string;
 }
@@ -39,7 +39,7 @@ interface ParsedWorktree {
 
 /**
  * Inspect Git worktrees and correlate their locks and working directories with
- * live Claude, Codex, and OpenCode processes. This is intentionally read-only.
+ * live Claude, Codex, OpenCode, and ZCode processes. This is intentionally read-only.
  */
 export async function auditWorktrees(repoPath: string, includeClean = false): Promise<WorktreeAuditEntry[]> {
   const resolvedRepo = resolve(repoPath);
@@ -161,6 +161,7 @@ function classifyHarness(command: string): Exclude<WorktreeProcess["harness"], "
   if (/(?:^|[\/\s])opencode(?:\s|$)/i.test(command)) return "opencode";
   if (/(?:^|[\/\s])claude(?:\s|$)/i.test(command)) return "claude";
   if (/(?:^|[\/\s])codex(?:\s|$)/i.test(command)) return "codex";
+  if (/(?:^|[\/\s])zcode(?:-agent)?(?:\s|$)/i.test(command)) return "zcode";
   return undefined;
 }
 
