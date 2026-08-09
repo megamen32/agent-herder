@@ -200,7 +200,7 @@ describe("SessionSupervisor details", () => {
       ...adapter(),
       type: "codex",
       async listSessions() { return [rootSession, childSession]; },
-      async getSession(id) { return [rootSession, childSession].find((item) => item.id === id) || null; },
+      async getSession(id) { return id === rootSession.id ? rootSession : null; },
     };
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-native-lineage-"));
     cleanups.push(() => rm(root, { recursive: true, force: true }));

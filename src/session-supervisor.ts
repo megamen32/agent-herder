@@ -275,7 +275,9 @@ export class SessionSupervisor {
   }
 
   async getSessionDetails(provider: string, id: string, options: SessionDetailOptions = {}): Promise<SessionDetails> {
-    const session = await this.getSession(provider, id);
+    const cachedSessions = provider === "codex" ? await this.listSessions({ harness: provider }) : undefined;
+    const session = cachedSessions?.find((candidate) => candidate.id === id || nativeSessionId(candidate) === id)
+      || await this.getSession(provider, id);
     if (!session) throw new SessionNotFoundError(provider, id);
     const limit = Math.max(1, Math.min(options.limit || 3, 50));
     const record = await this.lineage.get(sessionKey(provider, nativeSessionId(session)));
@@ -287,9 +289,10 @@ export class SessionSupervisor {
       : parentKey ? { kind: "subagent", parentId: parentKey, role: nativeRole } : { kind: "external" };
     const childRecords = await this.lineage.children(sessionKey(provider, id));
     const nativeChildren = provider === "codex"
-      ? (await this.requireAdapter(provider).listSessions()).filter((candidate) => nativeSessionId(candidate) !== nativeSessionId(session) && candidate.meta?.parentThreadId === nativeSessionId(session))
+      ? (cachedSessions || []).filter((candidate) => nativeSessionId(candidate) !== nativeSessionId(session) && candidate.meta?.parentSessionKey === sessionKey(provider, nativeSessionId(session)))
       : [];
     const childKeys = new Map(childRecords.map((child) => [child.sessionKey, child]));
+    const nativeChildSessions = new Map(nativeChildren.map((child) => [sessionKey(provider, nativeSessionId(child)), child]));
     for (const child of nativeChildren) childKeys.set(sessionKey(provider, nativeSessionId(child)), {
       sessionKey: sessionKey(provider, nativeSessionId(child)), provider, nativeSessionId: nativeSessionId(child), createdAt: new Date().toISOString(), source: "acp-meta",
     });
@@ -297,7 +300,7 @@ export class SessionSupervisor {
       const childId = child.sessionKey.startsWith(`${child.provider}:`)
         ? child.sessionKey.slice(child.provider.length + 1) : undefined;
       if (!childId) return null;
-      const childSession = await this.getSession(child.provider, childId);
+      const childSession = nativeChildSessions.get(child.sessionKey) || await this.getSession(child.provider, childId);
       return childSession
         ? { ...childSession, meta: { ...childSession.meta, provider: child.provider } }
         : null;

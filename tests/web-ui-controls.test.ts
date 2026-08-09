@@ -18,5 +18,8 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('aria-label="Scroll to latest"');
     expect(main).toContain("scrollToBottom");
     expect(main).toContain("chatMenuOpen");
+    expect(main).toContain("subagents-panel");
+    expect(main).toContain("details.children.length");
+    expect(main).toContain("setSessions(result.sessions);");
   });
 });

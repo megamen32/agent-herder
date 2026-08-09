@@ -44,6 +44,16 @@ h1 { font-size: 19px; } h2 { font-size: 16px; }
 .chat-menu label { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 12px; }
 .chat-menu input { accent-color: var(--accent); }
 .chat-menu .quiet-button { padding: 5px 0; text-align: left; }
+.subagents-panel { flex: 0 0 auto; margin: 0 20px; border-bottom: 1px solid var(--border); color: var(--muted); }
+.subagents-panel summary { padding: 10px 0; cursor: pointer; font-size: 12px; }
+.subagents-panel summary span { display: inline-grid; min-width: 20px; height: 20px; margin-left: 5px; place-items: center; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 10px; }
+.subagents-list { display: grid; max-height: 220px; overflow-y: auto; padding-bottom: 8px; }
+.subagent-row { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 4px; border-radius: 6px; background: transparent; text-align: left; }
+.subagent-row:hover { background: var(--surface-hover); }
+.subagent-row > span:last-child { min-width: 0; }
+.subagent-row strong, .subagent-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subagent-row strong { color: var(--text); font-size: 12px; font-weight: 500; }
+.subagent-row small { margin-top: 2px; color: var(--muted); font-size: 10px; }
 .scroll-latest { position: absolute; right: 22px; bottom: 92px; z-index: 3; padding: 8px 11px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-raised); color: var(--text); font-size: 12px; box-shadow: 0 8px 20px #0008; }
 .scroll-latest:hover { background: var(--surface-hover); }
 .message-column { width: min(860px, 100%); margin: 0 auto; padding: 34px 32px 140px; }
