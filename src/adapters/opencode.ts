@@ -1,4 +1,4 @@
-import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
+import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessagePart, SessionMessageView } from "../types/index.js";
 import { readFileSync } from "node:fs";
 
 interface OpenCodeSessionPayload {
@@ -13,6 +13,67 @@ interface OpenCodeSessionPayload {
   costUsd?: number;
   cost?: number;
   parentID?: string;
+}
+
+interface OpenCodeMessagePayload {
+  id?: string;
+  role?: string;
+  info?: { id?: string; role?: string; time?: { created?: number } };
+  content?: string | Array<Record<string, unknown>>;
+  parts?: Array<Record<string, unknown>>;
+}
+
+const opencodeMessageTextLimit = 16_384;
+const opencodeThinkingLimit = 2_048;
+const opencodeToolOutputLimit = 4_096;
+const opencodeToolInputLimit = 4_096;
+
+function boundedOpenCodeText(value: unknown, limit: number): string | undefined {
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  return value.slice(0, limit);
+}
+
+function openCodeMessageParts(message: OpenCodeMessagePayload): SessionMessagePart[] {
+  const rawParts = Array.isArray(message.parts)
+    ? message.parts
+    : Array.isArray(message.content)
+      ? message.content
+      : typeof message.content === "string"
+        ? [{ type: "text", text: message.content }]
+        : [];
+  const parts: SessionMessagePart[] = [];
+  for (const part of rawParts) {
+    const type = typeof part.type === "string" ? part.type : "";
+    if (type === "text") {
+      const text = boundedOpenCodeText(part.text, opencodeMessageTextLimit);
+      if (text) parts.push({ type: "text", text });
+      continue;
+    }
+    if (type === "reasoning" || type === "thinking") {
+      const text = boundedOpenCodeText(part.text, opencodeThinkingLimit);
+      if (text) parts.push({ type: "thinking", text });
+      continue;
+    }
+    if (type !== "tool") continue;
+    const state = part.state && typeof part.state === "object" ? part.state as Record<string, unknown> : {};
+    const name = typeof part.tool === "string" ? part.tool : typeof part.name === "string" ? part.name : undefined;
+    const input = state.input;
+    parts.push({
+      type: "tool_call",
+      name,
+      input: typeof input === "string" ? input.slice(0, opencodeToolInputLimit) : input,
+    });
+    const output = boundedOpenCodeText(state.output, opencodeToolOutputLimit) || boundedOpenCodeText(state.error, opencodeToolOutputLimit);
+    if (output) {
+      parts.push({
+        type: "tool_result",
+        name,
+        output,
+        error: typeof state.error === "string" && state.error.length > 0,
+      });
+    }
+  }
+  return parts;
 }
 
 /** Resolve a local OpenCode server URL from its `serve` command line. */
@@ -284,30 +345,24 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 
   async changeModel(sessionId: string, model: string): Promise<{ ok: boolean; error?: string }> {
-    // OpenCode supports changing model via PATCH /config or per-session
-    // Try per-session first, then fall back to global config
+    // The legacy PATCH /session endpoint silently ignores `model`.  The
+    // current OpenCode API requires the v2 per-session model switch before
+    // the first prompt, otherwise the prompt runs on the configured default.
+    const separator = model.indexOf("/");
+    const providerID = separator > 0 ? model.slice(0, separator) : "";
+    const modelID = separator > 0 ? model.slice(separator + 1) : "";
+    if (!providerID || !modelID) {
+      return { ok: false, error: "Model must use the provider/model format" };
+    }
     try {
-      const res = await this.fetch(`/session/${sessionId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ model }),
+      const res = await this.fetch(`/api/session/${encodeURIComponent(sessionId)}/model`, {
+        method: "POST",
+        body: JSON.stringify({ model: { providerID, id: modelID } }),
       });
       if (res.ok) return { ok: true };
+      return { ok: false, error: `Failed to select model: HTTP ${res.status}` };
     } catch {
-      // Per-session change not supported, try global
-    }
-
-    // Fall back to global config change
-    try {
-      const res = await this.fetch("/config", {
-        method: "PATCH",
-        body: JSON.stringify({ model }),
-      });
-      if (res.ok) {
-        return { ok: true, error: `Model changed to '${model}' globally (applies to new messages in all sessions).` };
-      }
-      return { ok: false, error: `Failed to change model: HTTP ${res ? res.status : "no response"}` };
-    } catch (err) {
-      return { ok: false, error: (err as Error).message };
+      return { ok: false, error: "Failed to select model: request failed" };
     }
   }
 
@@ -332,6 +387,32 @@ export class OpenCodeAdapter implements HarnessAdapter {
       "ollama/llama3",
       "ollama/codellama",
     ];
+  }
+
+  /** Read recent native messages without falling back to an unbounded converter. */
+  async getSessionMessages(id: string, limit = 3): Promise<SessionMessageView[] | null> {
+    try {
+      const boundedLimit = Math.max(1, Math.min(limit, 50));
+      const messages = await this.fetchJson<OpenCodeMessagePayload[]>(
+        `/session/${encodeURIComponent(id)}/message?limit=${boundedLimit}`,
+      );
+      if (!Array.isArray(messages)) return null;
+      return messages.slice(-boundedLimit).map((message, index) => {
+        const parts = openCodeMessageParts(message);
+        const info = message.info || {};
+        const role = message.role || info.role || (parts.length > 0 && parts.every((part) => part.type === "tool_result") ? "tool" : "assistant");
+        const text = parts.filter((part) => part.type === "text" || part.type === "thinking").map((part) => part.text || "").join("\n").trim() || undefined;
+        return {
+          id: message.id || info.id || `${id}:message-${index + 1}`,
+          role: role === "user" || role === "assistant" || role === "system" || role === "tool" ? role : "assistant",
+          timestamp: typeof info.time?.created === "number" ? new Date(info.time.created * 1000).toISOString() : undefined,
+          text,
+          parts,
+        };
+      });
+    } catch {
+      return null;
+    }
   }
 
   async getTranscript(id: string): Promise<string | null> {

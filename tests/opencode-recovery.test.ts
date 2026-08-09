@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import { describe, expect, it, afterEach } from "vitest";
 import { OpenCodeAdapter, parseOpenCodeServerCommand } from "../src/adapters/opencode.js";
 import { handleFindParent, handleListChildren, handleSendMessage } from "../src/mcp-tools/handlers.js";
+import { newOrResumeNamedSession } from "../src/named-session.js";
 
 describe("OpenCode native recovery controls", () => {
   let server: Server | undefined;
@@ -115,6 +116,113 @@ describe("OpenCode native recovery controls", () => {
     expect(JSON.parse(createBody)).toEqual({ title: "repair_100" });
   });
 
+  it("selects a provider model through the v2 per-session endpoint", async () => {
+    let selectedBody = "";
+    server = createServer((request, response) => {
+      response.setHeader("content-type", "application/json");
+      if (request.url === "/api/session/selected-session/model" && request.method === "POST") {
+        request.setEncoding("utf8");
+        request.on("data", (chunk) => { selectedBody += chunk; });
+        request.on("end", () => {
+          response.statusCode = 204;
+          response.end();
+        });
+        return;
+      }
+      response.statusCode = 404;
+      response.end(JSON.stringify({ error: "not found" }));
+    }).listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
+    port = (server.address() as { port: number }).port;
+
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const result = await adapter.changeModel("selected-session", "openrouter/openai/gpt-4.1");
+
+    expect(result).toEqual({ ok: true });
+    expect(JSON.parse(selectedBody)).toEqual({ model: { providerID: "openrouter", id: "openai/gpt-4.1" } });
+  });
+
+  it("selects the model before the first queued prompt", async () => {
+    const order: string[] = [];
+    server = createServer((request, response) => {
+      response.setHeader("content-type", "application/json");
+      if (request.url === "/session?directory=%2Ftmp" && request.method === "GET") {
+        return response.end(JSON.stringify([]));
+      }
+      if (request.url === "/session/status" && request.method === "GET") return response.end(JSON.stringify({}));
+      if (request.url === "/session?directory=%2Ftmp" && request.method === "POST") {
+        return response.end(JSON.stringify({ id: "health-session", title: "health", directory: "/tmp" }));
+      }
+      if (request.url === "/api/session/health-session/model" && request.method === "POST") {
+        order.push("model");
+        response.statusCode = 204;
+        response.end();
+        return;
+      }
+      if (request.url === "/session/health-session/prompt_async" && request.method === "POST") {
+        order.push("prompt");
+        return response.end(JSON.stringify({ accepted: true }));
+      }
+      response.statusCode = 404;
+      response.end(JSON.stringify({ error: "not found" }));
+    }).listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
+    port = (server.address() as { port: number }).port;
+
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const result = await newOrResumeNamedSession(new Map([["opencode", adapter]]), {
+      harness: "opencode",
+      name: "health",
+      cwd: "/tmp",
+      message: "diagnose bounded telemetry",
+      mode: "queue",
+      model: "omniroute/subagent",
+    });
+
+    expect(result).toMatchObject({ ok: true, delivery: "accepted", sessionId: "health-session" });
+    expect(order).toEqual(["model", "prompt"]);
+  });
+
+  it("does not send the first prompt when model selection fails", async () => {
+    let promptCount = 0;
+    server = createServer((request, response) => {
+      response.setHeader("content-type", "application/json");
+      if (request.url === "/session?directory=%2Ftmp" && request.method === "GET") {
+        return response.end(JSON.stringify([]));
+      }
+      if (request.url === "/session/status" && request.method === "GET") return response.end(JSON.stringify({}));
+      if (request.url === "/session?directory=%2Ftmp" && request.method === "POST") {
+        return response.end(JSON.stringify({ id: "health-session", title: "health", directory: "/tmp" }));
+      }
+      if (request.url === "/api/session/health-session/model" && request.method === "POST") {
+        response.statusCode = 503;
+        return response.end(JSON.stringify({ error: "model unavailable" }));
+      }
+      if (request.url === "/session/health-session/prompt_async" && request.method === "POST") {
+        promptCount += 1;
+        return response.end(JSON.stringify({ accepted: true }));
+      }
+      response.statusCode = 404;
+      response.end(JSON.stringify({ error: "not found" }));
+    }).listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
+    port = (server.address() as { port: number }).port;
+
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const result = await newOrResumeNamedSession(new Map([["opencode", adapter]]), {
+      harness: "opencode",
+      name: "health",
+      cwd: "/tmp",
+      message: "diagnose bounded telemetry",
+      mode: "queue",
+      model: "omniroute/subagent",
+    });
+
+    expect(result).toMatchObject({ ok: false, delivery: "not_attempted", sessionId: "health-session" });
+    expect(result.error).toContain("HTTP 503");
+    expect(promptCount).toBe(0);
+  });
+
   it("lists sessions within the requested directory", async () => {
     server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");
@@ -138,6 +246,33 @@ describe("OpenCode native recovery controls", () => {
     expect(await adapter.listSessions({ cwd: "/tmp/repair" })).toMatchObject([
       { id: "existing-session", title: "repair_100", cwd: "/tmp/repair" },
     ]);
+  });
+
+  it("reads bounded native messages and preserves assistant JSON while truncating tool output", async () => {
+    const plans = JSON.stringify({ plans: [{ plan_id: "observe" }, { plan_id: "repair" }, { plan_id: "verify" }] });
+    server = createServer((request, response) => {
+      response.setHeader("content-type", "application/json");
+      if (request.url === "/session/health/message?limit=3" && request.method === "GET") {
+        return response.end(JSON.stringify([
+          { info: { id: "user-1", role: "user", time: { created: 1 } }, parts: [{ type: "text", text: "bounded telemetry" }] },
+          { info: { id: "assistant-1", role: "assistant", time: { created: 2 } }, parts: [
+            { type: "tool", tool: "shell", state: { input: { command: "inspect" }, output: "x".repeat(10000) } },
+            { type: "text", text: plans },
+          ] },
+        ]));
+      }
+      response.statusCode = 404;
+      response.end(JSON.stringify({ error: "not found" }));
+    }).listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
+    port = (server.address() as { port: number }).port;
+
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const messages = await adapter.getSessionMessages("health", 3);
+
+    expect(messages).toHaveLength(2);
+    expect(messages?.[1]).toMatchObject({ id: "assistant-1", role: "assistant", text: plans });
+    expect(messages?.[1].parts.find((part) => part.type === "tool_result")?.output).toHaveLength(4096);
   });
 
   it("finds a session parent and lists its children through MCP handlers", async () => {
