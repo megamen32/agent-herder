@@ -19,6 +19,7 @@ export interface AdapterStatus {
   description: string;
   enabled: boolean;
   active: boolean;
+  ready: boolean;
   status: "active" | "disabled" | "not_configured" | "error";
   capabilities: HarnessCapabilities | null;
   error?: string;
@@ -75,6 +76,7 @@ export class AdapterRegistry {
         description: definition.description,
         enabled,
         active: Boolean(adapter),
+        ready: Boolean(adapter && (!adapter.isReady || adapter.isReady())),
         status: this.errors.has(definition.id)
           ? "error"
           : adapter ? "active" : enabled && !definition.factory ? "not_configured" : "disabled",

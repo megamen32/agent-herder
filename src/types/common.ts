@@ -167,6 +167,10 @@ export interface HarnessAdapter {
   readonly name: string;
   /** Native controls exposed by this transport. */
   readonly controlCapabilities?: Partial<HarnessCapabilities>;
+  /** If true, background discovery must not start a new child transport. */
+  readonly lazyStart?: boolean;
+  /** Whether this adapter currently owns or is attached to a live transport. */
+  isReady?(): boolean;
 
   /** Initialize the adapter (check connectivity, etc.) */
   init(): Promise<void>;

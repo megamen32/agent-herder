@@ -40,6 +40,7 @@ const ENABLE_QODER = parseEnvBool(process.env.ENABLE_QODER, true);
 const ENABLE_HERMES = parseEnvBool(process.env.ENABLE_HERMES, true);
 const ENABLE_ZCODE = parseEnvBool(process.env.ENABLE_ZCODE, true);
 const ACP_AGENT_COMMAND = process.env.ACP_AGENT_COMMAND;
+const LAZY_ADAPTERS = new Set(["codex", "hermes", "zcode"]);
 
 function parseEnvBool(val: string | undefined, fallback: boolean): boolean {
   if (!val) return fallback;
@@ -89,6 +90,11 @@ function configureAdapterRegistry(): void {
   }
 }
 
+function queueAdapterInit(inits: Promise<void>[], id: string, adapter: HarnessAdapter, onError: (error: unknown) => void): void {
+  if (LAZY_ADAPTERS.has(id)) return;
+  inits.push(adapter.init().catch(onError));
+}
+
 async function initAdapters() {
   const inits: Promise<void>[] = [];
 
@@ -99,12 +105,10 @@ async function initAdapters() {
     });
     adapters.set("opencode", adapter);
     adapterRegistry.registerActive(adapter);
-    inits.push(
-      adapter.init().catch((err) => {
-        console.error(`[agent-herder] OpenCode adapter failed to init: ${(err as Error).message}`);
-        adapters.delete("opencode");
-      })
-    );
+    queueAdapterInit(inits, "opencode", adapter, (err) => {
+      console.error(`[agent-herder] OpenCode adapter failed to init: ${(err as Error).message}`);
+      adapters.delete("opencode");
+    });
   }
 
   if (adapterRegistry.shouldEnable("claude", ENABLE_CLAUDE)) {
@@ -152,12 +156,10 @@ async function initAdapters() {
       });
       adapters.set("codex", adapter);
       adapterRegistry.registerActive(adapter);
-      inits.push(
-        adapter.init().catch((err) => {
-          console.error(`[agent-herder] Codex CLI adapter failed to init: ${(err as Error).message}`);
-          adapters.delete("codex");
-        })
-      );
+      queueAdapterInit(inits, "codex", adapter, (err) => {
+        console.error(`[agent-herder] Codex CLI adapter failed to init: ${(err as Error).message}`);
+        adapters.delete("codex");
+      });
     } else {
       const nativeAdapter = new CodexAppServerAdapter({
         codexBin: process.env.CODEX_BIN,
@@ -166,8 +168,7 @@ async function initAdapters() {
       });
       adapters.set("codex", nativeAdapter);
       adapterRegistry.registerActive(nativeAdapter);
-      inits.push(
-        nativeAdapter.init().catch(async (err) => {
+      if (!LAZY_ADAPTERS.has("codex")) inits.push(nativeAdapter.init().catch(async (err) => {
           console.error(`[agent-herder] Codex app-server failed, trying CLI fallback: ${(err as Error).message}`);
           const fallback = new CodexAdapter({
             codexBin: process.env.CODEX_BIN,
@@ -181,8 +182,7 @@ async function initAdapters() {
             console.error(`[agent-herder] Codex CLI fallback also failed: ${(fallbackError as Error).message}`);
             adapters.delete("codex");
           }
-        })
-      );
+        }));
     }
   }
 
@@ -211,10 +211,10 @@ async function initAdapters() {
     const adapter = new HermesAdapter({ hermesBin: process.env.HERMES_BIN, cwd: process.env.HERMES_CWD });
     adapters.set("hermes", adapter);
     adapterRegistry.registerActive(adapter);
-    inits.push(adapter.init().catch((err) => {
+    queueAdapterInit(inits, "hermes", adapter, (err) => {
       console.error(`[agent-herder] Hermes adapter failed to init: ${(err as Error).message}`);
       adapters.delete("hermes");
-    }));
+    });
   }
 
   if (adapterRegistry.shouldEnable("zcode", ENABLE_ZCODE)) {
@@ -226,10 +226,10 @@ async function initAdapters() {
     });
     adapters.set("zcode", adapter);
     adapterRegistry.registerActive(adapter);
-    inits.push(adapter.init().catch((err) => {
+    queueAdapterInit(inits, "zcode", adapter, (err) => {
       console.error(`[agent-herder] ZCode adapter failed to init: ${(err as Error).message}`);
       adapters.delete("zcode");
-    }));
+    });
   }
 
   if (ACP_AGENT_COMMAND) {

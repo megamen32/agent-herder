@@ -79,6 +79,7 @@ export class HermesAdapter implements HarnessAdapter {
   // HarnessType union; the central converter does not support Hermes.
   readonly type = "hermes";
   readonly name = "Hermes gateway";
+  readonly lazyStart = true;
   readonly controlCapabilities: HarnessCapabilities = {
     cancelTurn: false,
     detach: true,
@@ -96,6 +97,8 @@ export class HermesAdapter implements HarnessAdapter {
   private ownedClient = false;
 
   constructor(config: HermesAdapterConfig = {}) { this.config = config; this.client = config.client; }
+
+  isReady(): boolean { return Boolean(this.client); }
 
   async init(): Promise<void> {
     if (this.client) return;

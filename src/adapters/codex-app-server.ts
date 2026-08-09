@@ -45,6 +45,7 @@ interface TurnCompletion {
 export class CodexAppServerAdapter implements HarnessAdapter {
   readonly type = "codex" as const;
   readonly name = "Codex app-server";
+  readonly lazyStart = true;
   readonly controlCapabilities: HarnessCapabilities = {
     cancelTurn: true,
     detach: true,
@@ -90,6 +91,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   async init(): Promise<void> {
     await this.ensureReady();
   }
+
+  isReady(): boolean { return this.initialized && !!this.child && !this.child.killed; }
 
   async dispose(): Promise<void> {
     this.rejectPending(new Error("Codex app-server disposed"));

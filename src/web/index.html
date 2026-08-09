@@ -745,7 +745,8 @@
         ? Object.entries(adapter.capabilities).filter(([, enabled]) => enabled).map(([key]) => key).join(", ") || "base session controls"
         : "not initialized";
       const action = adapter.enabled ? "Disable" : "Add";
-      return `<div class="session-row"><div><strong>${esc(adapter.name)}</strong><div class="hint">${esc(adapter.description)} · ${esc(adapter.status)} · ${esc(capabilities)}</div>${adapter.error ? `<div class="error">${esc(adapter.error)}</div>` : ""}</div><button class="small adapter-toggle" data-adapter="${esc(adapter.id)}" data-enabled="${adapter.enabled ? "false" : "true"}">${action}</button></div>`;
+      const readiness = adapter.ready ? "ready" : "sleeping (lazy)";
+      return `<div class="session-row"><div><strong>${esc(adapter.name)}</strong><div class="hint">${esc(adapter.description)} · ${esc(adapter.status)} · ${readiness} · ${esc(capabilities)}</div>${adapter.error ? `<div class="error">${esc(adapter.error)}</div>` : ""}</div><button class="small adapter-toggle" data-adapter="${esc(adapter.id)}" data-enabled="${adapter.enabled ? "false" : "true"}">${action}</button></div>`;
     }).join("") || "No adapters registered";
     elements.adapterRegistry.querySelectorAll(".adapter-toggle").forEach((button) => {
       button.addEventListener("click", async () => {

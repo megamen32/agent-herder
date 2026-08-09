@@ -279,6 +279,7 @@ function defaultCommand(): ZcodeCommand {
 export class ZcodeAdapter implements HarnessAdapter {
   readonly type = "zcode" as const;
   readonly name = "ZCode";
+  readonly lazyStart = true;
   readonly controlCapabilities: HarnessCapabilities = {
     cancelTurn: true,
     detach: true,
@@ -325,6 +326,8 @@ export class ZcodeAdapter implements HarnessAdapter {
       throw new Error(`Cannot initialize ZCode app-server: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+
+  isReady(): boolean { return this.initialized; }
 
   async dispose(): Promise<void> {
     this.initialized = false;
