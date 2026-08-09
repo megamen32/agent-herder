@@ -71,7 +71,13 @@ function configureAdapterRegistry(): void {
     args: [...parseArgs(process.env.QODER_ARGS, "QODER_ARGS"), "--acp", ...(process.env.QODER_MODEL ? ["--model", process.env.QODER_MODEL] : [])],
     cwd: process.env.QODER_CWD || process.cwd(), modelIds: parseCsv(process.env.QODER_MODELS, ["Ultimate", "Lite"]),
   }));
-  adapterFactories.set("hermes", () => new HermesAdapter({ hermesBin: process.env.HERMES_BIN, cwd: process.env.HERMES_CWD }));
+  adapterFactories.set("hermes", () => new HermesAdapter({
+    hermesBin: process.env.HERMES_BIN,
+    cwd: process.env.HERMES_CWD,
+    jobProvider: process.env.HERMES_HEALTH_PROVIDER || "openai-codex",
+    jobReasoning: process.env.HERMES_HEALTH_REASONING || "high",
+    jobToolsets: process.env.HERMES_HEALTH_TOOLSETS || "terminal",
+  }));
   adapterFactories.set("zcode", () => new ZcodeAdapter({
     command: process.env.ZCODE_SERVER_NODE,
     args: process.env.ZCODE_SERVER_ENTRY ? [process.env.ZCODE_SERVER_ENTRY] : undefined,
@@ -208,7 +214,13 @@ async function initAdapters() {
   }
 
   if (adapterRegistry.shouldEnable("hermes", ENABLE_HERMES)) {
-    const adapter = new HermesAdapter({ hermesBin: process.env.HERMES_BIN, cwd: process.env.HERMES_CWD });
+    const adapter = new HermesAdapter({
+      hermesBin: process.env.HERMES_BIN,
+      cwd: process.env.HERMES_CWD,
+      jobProvider: process.env.HERMES_HEALTH_PROVIDER || "openai-codex",
+      jobReasoning: process.env.HERMES_HEALTH_REASONING || "high",
+      jobToolsets: process.env.HERMES_HEALTH_TOOLSETS || "terminal",
+    });
     adapters.set("hermes", adapter);
     adapterRegistry.registerActive(adapter);
     queueAdapterInit(inits, "hermes", adapter, (err) => {
@@ -425,6 +437,7 @@ function registerTools(server: McpServer) {
       cwd: z.string().min(1).describe("Absolute working directory"),
       message: z.string().min(1).describe("Message to deliver"),
       mode: z.enum(["queue", "sync"]).optional().default("sync").describe("Delivery mode"),
+      model: z.string().min(1).max(128).optional().describe("Optional model selected before the first message"),
     },
     async (args) => {
       const result = await handleNewOrResume(adapters, args);

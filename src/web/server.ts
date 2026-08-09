@@ -9,6 +9,8 @@ import { SessionNotFoundError, SessionSupervisor } from "../session-supervisor.j
 import type { AgentSession, HarnessAdapter } from "../types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "../session-convert.js";
 import { HumanRequestRegistry } from "../human-request/index.js";
+import { buildSessionProgress } from "../health-progress.js";
+import { healthModelForHarness, normalizeHealthExecution } from "../health-remediation.js";
 import { convertHermesExport } from "../hermes-conversion.js";
 import { resumeBoundTarget } from "../resume-transport.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -144,6 +146,56 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     sendJson(response, 200, { sessions });
     return;
   }
+  if (request.method === "GET" && url.pathname === "/api/health/remediation") {
+    return sendJson(response, 405, { error: "method_not_allowed", route: "/api/health/remediation" });
+  }
+  if (request.method === "POST" && url.pathname === "/api/health/remediation") {
+    const body = await readJson(request);
+    let incidentId: string;
+    let planId: string;
+    try {
+      incidentId = boundedHealthIdentifier(body.incident_id, "incident_id");
+      planId = boundedHealthIdentifier(body.plan_id, "plan_id");
+    } catch (error) {
+      return sendJson(response, 400, { error: (error as Error).message });
+    }
+    const harness = body.harness === undefined ? "opencode" : body.harness;
+    if (harness !== "opencode" && harness !== "codex" && harness !== "hermes") {
+      return sendJson(response, 400, { error: "health remediation harness must be opencode, codex, or hermes" });
+    }
+    if (typeof body.name !== "string" || body.name.trim().length === 0 || body.name.length > 128 ||
+      typeof body.cwd !== "string" || !body.cwd.startsWith("/") ||
+      typeof body.message !== "string" || body.message.trim().length === 0 || body.message.length > 32_000) {
+      return sendJson(response, 400, { error: "health remediation requires bounded name, absolute cwd, and message" });
+    }
+    let execution;
+    try {
+      execution = normalizeHealthExecution(body.execution);
+    } catch (error) {
+      return sendJson(response, 400, { error: (error as Error).message });
+    }
+    if (harness === "hermes") {
+      const configured = supervisor.getExecutionProfile("hermes");
+      if (!configured || configured.provider !== execution.provider || configured.reasoning !== execution.reasoning || configured.toolsets !== "terminal") {
+        return sendJson(response, 409, { error: "Hermes health execution profile is not the approved provider/reasoning/toolset" });
+      }
+    }
+    const model = healthModelForHarness(harness, execution);
+    const message = [
+      `Health remediation incident=${incidentId} plan=${planId}`,
+      `Execution profile: runtime=${execution.runtime} provider=${execution.provider} model=${execution.model} reasoning=${execution.reasoning} topic=${execution.topic}`,
+      body.message.trim(),
+    ].join("\n\n");
+    const result = await supervisor.newOrResumeNamedSession({
+      harness,
+      name: body.name,
+      cwd: body.cwd,
+      message,
+      mode: "queue",
+      model,
+    });
+    return sendJson(response, result.ok ? 200 : 502, { ...result, incident_id: incidentId, plan_id: planId, execution, model });
+  }
   if (request.method === "POST" && url.pathname === "/api/sessions") {
     const body = await readJson(request);
     if (typeof body.harness !== "string" || typeof body.name !== "string" || typeof body.cwd !== "string") {
@@ -160,12 +212,16 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (body.mode !== undefined && body.mode !== "queue" && body.mode !== "sync") {
       return sendJson(response, 400, { error: "mode must be queue or sync" });
     }
+    if (body.model !== undefined && (typeof body.model !== "string" || body.model.trim().length === 0 || body.model.length > 128)) {
+      return sendJson(response, 400, { error: "model must be a bounded non-empty string" });
+    }
     const result = await supervisor.newOrResumeNamedSession({
       harness: body.harness,
       name: body.name,
       cwd: body.cwd,
       message: body.message,
       mode: body.mode as "queue" | "sync" | undefined,
+      model: body.model as string | undefined,
     });
     return sendNamedSessionResult(response, result);
   }
@@ -186,6 +242,17 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto" },
     );
     return sendJson(response, 200, details);
+  }
+  const progressMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/progress$/);
+  if (progressMatch && request.method === "GET") {
+    const limitValue = Number(url.searchParams.get("limit") || "5");
+    const history = url.searchParams.get("history") as "auto" | "acp" | "files" | null;
+    const details = await supervisor.getSessionDetails(
+      decodeURIComponent(progressMatch[1]),
+      decodeURIComponent(progressMatch[2]),
+      { limit: Number.isFinite(limitValue) ? limitValue : 5, history: history || "auto" },
+    );
+    return sendJson(response, 200, buildSessionProgress(details, Number.isFinite(limitValue) ? limitValue : 5));
   }
   const actionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/(resume|message|stop|cancel|recover|fork|model|permissions\/([^/]+))$/);
   if (actionMatch && request.method === "POST") {
@@ -283,6 +350,13 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function boundedHealthIdentifier(value: unknown, field: string): string {
+  if (typeof value !== "string" || !/^[A-Za-z0-9._:-]{1,128}$/.test(value)) {
+    throw new Error(`health remediation ${field} must be a bounded identifier`);
+  }
+  return value;
 }
 
 function contentTypeFor(path: string): string {

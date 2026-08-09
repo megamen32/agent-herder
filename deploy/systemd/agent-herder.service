@@ -13,6 +13,11 @@ EnvironmentFile=-%h/.config/agent-herder/opencode.env
 Environment=CODEX_BIN=%h/.local/bin/codex
 Environment=CODEX_CWD=%h/ServersAdministartion
 Environment=CODEX_TRANSPORT=app-server
+Environment=HERMES_BIN=%h/.hermes/hermes-agent/venv/bin/hermes
+Environment=HERMES_HEALTH_PROVIDER=openai-codex
+Environment=HERMES_HEALTH_REASONING=high
+Environment=HERMES_HEALTH_TOOLSETS=terminal
+Environment=HERMES_HEALTH_TIMEOUT_MS=1200000
 Environment=ENABLE_OPENCODE=true
 Environment=ENABLE_CODEX=true
 Environment=ENABLE_CLAUDE=false

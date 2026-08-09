@@ -16,6 +16,7 @@ export interface NamedSessionRequest {
 export interface NewOrResumeNamedSessionRequest extends NamedSessionRequest {
   message: string;
   mode?: NamedSessionMode;
+  model?: string;
 }
 
 export interface NamedSessionResult {
@@ -26,6 +27,7 @@ export interface NamedSessionResult {
   cwd: string;
   sessionId?: string;
   delivery?: "accepted" | "completed" | "failed" | "not_attempted";
+  model?: string;
   error?: string;
 }
 
@@ -95,6 +97,29 @@ export async function newOrResumeNamedSession(
   if (resolved.kind === "error") return resolved.result;
 
   const mode = request.mode || "sync";
+  if (request.model !== undefined) {
+    if (!resolved.adapter.changeModel) {
+      return {
+        ok: false,
+        created: resolved.created,
+        sessionId: resolved.target.id,
+        delivery: "not_attempted",
+        error: `${resolved.adapter.name} does not support model selection before delivery`,
+        ...resolved.normalized,
+      };
+    }
+    const modelResult = await resolved.adapter.changeModel(resolved.target.id, request.model);
+    if (!modelResult.ok) {
+      return {
+        ok: false,
+        created: resolved.created,
+        sessionId: resolved.target.id,
+        delivery: "not_attempted",
+        error: modelResult.error || "Model selection failed",
+        ...resolved.normalized,
+      };
+    }
+  }
   const delivery = await resolved.adapter.sendMessage(resolved.target.id, {
       message: request.message,
       queue: mode === "queue",
@@ -106,6 +131,7 @@ export async function newOrResumeNamedSession(
       sessionId: resolved.target.id,
       delivery: "failed",
       error: delivery.error || "Message delivery failed",
+      ...(request.model ? { model: request.model } : {}),
       ...resolved.normalized,
     };
   }
@@ -114,6 +140,7 @@ export async function newOrResumeNamedSession(
     created: resolved.created,
     sessionId: resolved.target.id,
     delivery: mode === "queue" ? "accepted" : "completed",
+    ...(request.model ? { model: request.model } : {}),
     ...resolved.normalized,
   };
 }

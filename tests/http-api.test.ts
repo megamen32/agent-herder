@@ -63,13 +63,106 @@ function fakeNamedAdapter(): HarnessAdapter {
       return session;
     },
     async sendMessage() { return { ok: true }; },
+    async changeModel(id, model) {
+      const target = sessions.find((item) => item.id === id);
+      if (target) target.model = model;
+      return { ok: true };
+    },
     async stopSession() { return { ok: true }; },
     async respondPermission() { return { ok: true }; },
     async setPermissions() { return { ok: true }; },
   };
 }
 
+function fakeHermesAdapter(): HarnessAdapter {
+  const adapter = fakeNamedAdapter();
+  return {
+    ...adapter,
+    type: "hermes",
+    name: "Fake Hermes",
+    getExecutionProfile() {
+      return { provider: "openai-codex", reasoning: "high", toolsets: "terminal" };
+    },
+  };
+}
+
 describe("agent-herder web API", () => {
+  it("exposes a read-only health remediation route probe without creating a session", async () => {
+    const server = createWebServer({
+      adapters: new Map([["opencode", fakeNamedAdapter()]]),
+      converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/health/remediation`);
+    expect(response.status).toBe(405);
+    expect(await response.json()).toEqual({ error: "method_not_allowed", route: "/api/health/remediation" });
+  });
+
+  it("accepts one canonical health remediation request and returns the selected execution profile", async () => {
+    const server = createWebServer({
+      adapters: new Map([["opencode", fakeNamedAdapter()]]),
+      converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const base = `http://127.0.0.1:${address.port}`;
+    const response = await fetch(`${base}/api/health/remediation`, {
+      method: "POST",
+      body: JSON.stringify({
+        incident_id: "inc-health-1",
+        plan_id: "repair",
+        harness: "opencode",
+        name: "health_repair_inc-health-1",
+        cwd: "/tmp",
+        message: "Repair the selected health incident and report useful progress.",
+        execution: { runtime: "hermes", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      incident_id: "inc-health-1",
+      plan_id: "repair",
+      model: "openai-codex/gpt-5.6-luna",
+      execution: { runtime: "hermes", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
+    });
+  });
+
+  it("routes the canonical health profile to the real Hermes harness", async () => {
+    const server = createWebServer({
+      adapters: new Map([["hermes", fakeHermesAdapter()]]),
+      converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/health/remediation`, {
+      method: "POST",
+      body: JSON.stringify({
+        incident_id: "inc-health-hermes-1",
+        plan_id: "repair",
+        harness: "hermes",
+        name: "health_repair_hermes_inc-health-1",
+        cwd: "/tmp",
+        message: "Run the selected health remediation job.",
+        execution: { runtime: "hermes", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      harness: "hermes",
+      model: "gpt-5.6-luna",
+      execution: { runtime: "hermes", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
+    });
+  });
+
   it("lists adapters and enables one through the explicit registry endpoint", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-web-"));
     const adapters = new Map<string, HarnessAdapter>();
@@ -120,6 +213,13 @@ describe("agent-herder web API", () => {
     expect(firstNamed.status).toBe(200);
     expect(await firstNamed.json()).toMatchObject({ ok: true, created: true, sessionId: "named-2", delivery: "accepted" });
 
+    const profiledNamed = await fetch(`${base}/api/sessions/new-or-resume`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "opencode", name: "health_remediation_100", cwd: "/tmp", message: "repair selected health incident", mode: "queue", model: "openai-codex/gpt-5.6-luna" }),
+    });
+    expect(profiledNamed.status).toBe(200);
+    expect(await profiledNamed.json()).toMatchObject({ ok: true, created: true, sessionId: "named-3", model: "openai-codex/gpt-5.6-luna" });
+
     const resumedNamed = await fetch(`${base}/api/sessions/new-or-resume`, {
       method: "POST",
       body: JSON.stringify({ harness: "opencode", name: "repair_100", cwd: "/tmp", message: "disk 96%", mode: "queue" }),
@@ -161,5 +261,70 @@ describe("agent-herder web API", () => {
     const html = await (await fetch(`${base}/`)).text();
     expect(html).toContain("Agent Herder");
     expect(html).toContain("Convert");
+  });
+
+  it("serves bounded useful progress that is stable across timestamp-only heartbeat changes", async () => {
+    let heartbeat = 0;
+    const session: AgentSession = {
+      id: "session-1",
+      harness: "claude",
+      status: "running",
+      title: "Test session",
+      cwd: "/tmp/project",
+      lastActivity: new Date().toISOString(),
+      needsPermission: false,
+      messageCount: 3,
+      lastMessage: "Investigating current state",
+    };
+    const progressAdapter: HarnessAdapter = {
+      type: "claude",
+      name: "Progress Claude",
+      async init() {},
+      async listSessions() { return [{ ...session, lastActivity: new Date(Date.now() + heartbeat++).toISOString() }]; },
+      async getSession(id) { return id === session.id ? { ...session, lastActivity: new Date(Date.now() + heartbeat++).toISOString() } : null; },
+      async getSessionMessages() {
+        return [
+          { id: "u1", role: "user", text: "Inspect", parts: [{ type: "text", text: "Inspect" }] },
+          { id: "a1", role: "assistant", parts: [{ type: "text", text: "I found the issue." }, { type: "tool_call", name: "Bash", input: { command: "rg progress" } }] },
+          { id: "t1", role: "tool", parts: [{ type: "tool_result", name: "Bash", output: "progress.ts token=super-secret" }] },
+        ];
+      },
+      async sendMessage() { return { ok: true }; },
+      async stopSession() { return { ok: true }; },
+      async respondPermission() { return { ok: true }; },
+      async setPermissions() { return { ok: true }; },
+    };
+    const server = createWebServer({
+      adapters: new Map([["claude", progressAdapter]]),
+      converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const base = `http://127.0.0.1:${address.port}`;
+
+    const first = await fetch(`${base}/api/sessions/claude/session-1/progress`);
+    expect(first.status).toBe(200);
+    const firstJson = await first.json();
+    expect(firstJson).toMatchObject({
+      session: { id: "session-1", status: "running" },
+      activity: { hasMessageActivity: true, hasToolActivity: true },
+    });
+    expect(firstJson.fingerprint).toMatch(/^progress:/);
+    expect(firstJson.evidence.length).toBeLessThanOrEqual(5);
+    expect(firstJson.evidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "message", id: "a1" }),
+      expect.objectContaining({ kind: "tool", id: "t1" }),
+    ]));
+
+    expect(firstJson.evidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ preview: expect.stringContaining("super-secret") }),
+    ]));
+
+    const second = await fetch(`${base}/api/sessions/claude/session-1/progress`);
+    const secondJson = await second.json();
+    expect(secondJson.fingerprint).toBe(firstJson.fingerprint);
+    expect(secondJson.session.lastActivity).not.toBe(firstJson.session.lastActivity);
   });
 });

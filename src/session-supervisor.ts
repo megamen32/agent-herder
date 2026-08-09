@@ -78,6 +78,10 @@ export class SessionSupervisor {
     return newOrResumeNamedSession(this.adapters, request);
   }
 
+  getExecutionProfile(harness: string): Record<string, string> | undefined {
+    return this.adapters.get(harness)?.getExecutionProfile?.();
+  }
+
   async listSessions(filters: SessionFilters = {}): Promise<AgentSession[]> {
     if (this.sessionSnapshot) {
       if (Date.now() - this.sessionSnapshot.refreshedAt >= this.sessionCacheTtlMs) {
@@ -326,7 +330,10 @@ export class SessionSupervisor {
       try {
         const liveMessages = await adapter.getSessionMessages(id, limit);
         if (liveMessages && liveMessages.length > 0) {
-          return { messages: tailLogicalTurns(liveMessages, limit), info: { source: "acp-load", complete: false } };
+          return {
+            messages: tailLogicalTurns(liveMessages, limit),
+            info: { source: provider === "hermes" ? "observed-cli-output" : "acp-load", complete: false },
+          };
         }
       } catch (error) {
         warnings.push(`ACP history unavailable: ${(error as Error).message}`);

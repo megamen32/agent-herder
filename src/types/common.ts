@@ -35,7 +35,7 @@ export interface SessionMessageView {
   parts: SessionMessagePart[];
 }
 
-export type SessionHistorySource = "acp-load" | "session-convert" | "live-cache" | "unavailable";
+export type SessionHistorySource = "acp-load" | "observed-cli-output" | "session-convert" | "live-cache" | "unavailable";
 
 export type AgentControlOperation =
   | "cancelTurn"
@@ -152,7 +152,7 @@ export type RawTranscriptExport = {
   bytes: Uint8Array;
   complete: boolean;
   source: {
-    kind: "native-file" | "native-api" | "observed-acp-events" | "observed-gateway-messages";
+    kind: "native-file" | "native-api" | "observed-acp-events" | "observed-cli-output" | "observed-gateway-messages";
     location: string;
     format: "jsonl" | "json" | "text" | "unknown";
   };
@@ -173,6 +173,9 @@ export interface HarnessAdapter {
   readonly lazyDiscovery?: boolean;
   /** Whether this adapter currently owns or is attached to a live transport. */
   isReady?(): boolean;
+
+  /** Effective execution profile for request-bound health jobs, when exposed. */
+  getExecutionProfile?(): Record<string, string>;
 
   /** Initialize the adapter (check connectivity, etc.) */
   init(): Promise<void>;
