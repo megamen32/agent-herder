@@ -37,4 +37,13 @@ by the singleton lock; the service restart leaves one full Herder process.
 
 ## Status
 
-Implementation in progress.
+Status: complete.
+
+## Evidence
+
+- `npm run build` passed.
+- `npx vitest run src/singleton.test.ts` passed.
+- Live HTTP MCP initialize and `tools/list` returned 200.
+- Live stdio bridge initialize returned the Herder MCP response.
+- A second full process was rejected by the singleton lock.
+- Exactly one full `dist/index.js` process remains after restart.
