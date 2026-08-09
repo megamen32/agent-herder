@@ -426,7 +426,7 @@ export class HermesAdapter implements HarnessAdapter {
     if (job.messages.filter((message) => message.id.includes(":progress:")).length >= MAX_PROGRESS_MESSAGES) return;
     const lines = stripAnsi(chunk).split(/[\r\n]+/).map((line) => redactSensitive(line).trim()).filter(Boolean);
     for (const line of lines) {
-      if (/^session_id:\s*/i.test(line)) continue;
+      if (/^\s*(?:session_id|session(?:\s+id)?)\s*[:=]\s*/i.test(line)) continue;
       const text = `${stream}: ${line}`.slice(0, MAX_PROGRESS_TEXT);
       if (!text || text === job.lastProgress) continue;
       job.lastProgress = text;
@@ -465,9 +465,9 @@ export class HermesAdapter implements HarnessAdapter {
     job.child = undefined;
     job.status = code === 0 && !reason ? "stopped" : "error";
     job.lastActivity = new Date().toISOString();
-    const native = `${job.stdout}\n${job.stderr}`.match(/(?:^|\n)session_id:\s*([^\s\n]+)/)?.[1];
+    const native = extractNativeSessionId(`${job.stdout}\n${job.stderr}`);
     if (native) job.nativeSessionId = native.slice(0, 128);
-    const output = redactSensitive(job.stdout.replace(/^session_id:\s*[^\n]+\n?/m, "")).trim();
+    const output = redactSensitive(stripSessionReceipt(job.stdout)).trim();
     if (output || code !== 0) {
       const text = output || (reason === "timeout"
         ? "Hermes CLI job exceeded its bounded timeout and was terminated."
@@ -579,6 +579,24 @@ function redactSensitive(value: string): string {
     .replace(/(bearer\s+)[^\s,;]+/gi, "$1[redacted]")
     .replace(/\b(api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|credential)\s*[:=]\s*([^\s,;]+)/gi, "$1=[redacted]")
     .replace(/([?&](?:token|key|secret|password|signature)=)[^&\s]+/gi, "$1[redacted]");
+}
+
+function extractNativeSessionId(value: string): string | undefined {
+  const patterns = [
+    /(?:^|\n)\s*session_id\s*[:=]\s*([^\s\n]+)/i,
+    /(?:^|\n)\s*session(?:\s+id)?\s*:\s*([^\s\n]+)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = value.match(pattern)?.[1];
+    if (match) return match;
+  }
+  return undefined;
+}
+
+function stripSessionReceipt(value: string): string {
+  return value
+    .replace(/^\s*session_id\s*[:=]\s*[^\n]+\n?/gim, "")
+    .replace(/^\s*session(?:\s+id)?\s*:\s*[^\n]+\n?/gim, "");
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

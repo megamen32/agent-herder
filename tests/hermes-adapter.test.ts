@@ -45,7 +45,7 @@ describe("Hermes CLI job adapter", () => {
       "--source", "agent-herder-health",
     ]);
 
-    child.stdout.write("session_id: 20260809_000000_canary\nHERMES_JOB_OK\n");
+    child.stdout.write("Session: 20260809_000000_canary\nHERMES_JOB_OK\n");
     child.emit("exit", 0, null);
     const finished = await adapter.getSession(session.id);
     expect(finished).toMatchObject({ status: "stopped", model: "gpt-5.6-luna", messageCount: 3 });
