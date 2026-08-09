@@ -26,12 +26,15 @@ behavior.
 - UI, HTTP API, and lazy polling focused tests passed.
 - Live OpenCode+CWD filter returned 23 matching sessions.
 - Live Codex filter returned 200 with zero sessions without waking Codex.
+- Live Codex filter now returns 2031 unique persisted sessions without waking
+  the app-server.
+- Live OpenCode+CWD filter returns 23 matching sessions.
 - Live UI contains the composer and registry-backed filter logic.
 
 ## Remaining gate
 
-Independent 390x844 BrowserOS/Touchpoint QA is still pending; the first run
-was blocked by `Transport closed`.
+Independent 390x844 BrowserOS/Touchpoint QA is still pending; repeated
+`windows` and `diagnostics` calls remain blocked by `Transport closed`.
 
 ## Status
 

@@ -46,6 +46,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   readonly type = "codex" as const;
   readonly name = "Codex app-server";
   readonly lazyStart = true;
+  readonly lazyDiscovery = true;
   readonly controlCapabilities: HarnessCapabilities = {
     cancelTurn: true,
     detach: true,
@@ -102,6 +103,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async listSessions(): Promise<AgentSession[]> {
+    if (!this.isReady()) return this.rawTranscriptAdapter.listSessions();
     await this.ensureReady();
     const result = await this.request("thread/list", { limit: 200, archived: false }) as {
       data?: CodexThread[];
@@ -114,6 +116,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   async getSession(id: string): Promise<AgentSession | null> {
     const cached = this.threads.get(id);
     if (cached) return this.toSession(cached);
+    if (!this.isReady()) return this.rawTranscriptAdapter.getSession(id);
     return (await this.listSessions()).find((session) => session.id === id) || null;
   }
 
@@ -139,6 +142,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<ControlResult> {
+    if (!this.isReady()) return this.rawTranscriptAdapter.sendMessage(id, options);
     const session = await this.getSession(id);
     if (!session) return { ok: false, error: `Session ${id} not found` };
     const resumed = await this.resumeSession(id);

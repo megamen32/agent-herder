@@ -222,14 +222,18 @@ export class CodexAdapter implements HarnessAdapter {
   private async readSessionIndex(): Promise<CodexSessionIndexEntry[]> {
     try {
       const content = await readFile(join(this.codexDir, "session_index.jsonl"), "utf-8");
-      return content.split("\n").flatMap((line) => {
+      const byId = new Map<string, CodexSessionIndexEntry>();
+      for (const line of content.split("\n")) {
         try {
           const entry = JSON.parse(line) as CodexSessionIndexEntry;
-          return typeof entry.id === "string" ? [entry] : [];
+          if (typeof entry.id !== "string") continue;
+          const previous = byId.get(entry.id);
+          if (!previous || String(entry.updated_at || "") >= String(previous.updated_at || "")) byId.set(entry.id, entry);
         } catch {
-          return [];
+          // Ignore incomplete or corrupt index lines while Codex is writing.
         }
-      });
+      }
+      return [...byId.values()];
     } catch {
       return [];
     }

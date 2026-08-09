@@ -7,6 +7,27 @@ import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
 
 describe("Codex app-server adapter", () => {
+  it("discovers persisted sessions without spawning the app-server", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-lazy-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "07", "30");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(codexDir, "session_index.jsonl"), [
+      JSON.stringify({ id: "thread-lazy", thread_name: "Older", updated_at: "2026-01-01T00:00:00Z" }),
+      JSON.stringify({ id: "thread-lazy", thread_name: "Existing", updated_at: new Date().toISOString() }),
+    ].join("\n") + "\n");
+    await writeFile(join(sessionDir, "rollout-thread-lazy.jsonl"), '{"session_id":"thread-lazy","cwd":"/workspace"}\n');
+    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    try {
+      const sessions = await adapter.listSessions();
+      expect(sessions).toMatchObject([{ id: "thread-lazy", title: "Existing", cwd: "/workspace" }]);
+      expect(sessions).toHaveLength(1);
+      expect(adapter.isReady()).toBe(false);
+    } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
   it("keeps a native thread, interrupts turns, resumes, and forks", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-app-"));
     const sessionDir = join(codexDir, "sessions", "2026", "07", "30");
