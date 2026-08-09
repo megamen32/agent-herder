@@ -38,6 +38,16 @@ export interface SpawnRecordInput {
   source?: LineageRecord["source"];
 }
 
+export interface SessionSupervisorOptions {
+  /** How long a snapshot may be served before a background refresh starts. */
+  sessionCacheTtlMs?: number;
+}
+
+interface SessionSnapshot {
+  sessions: AgentSession[];
+  refreshedAt: number;
+}
+
 export class SessionNotFoundError extends Error {
   constructor(provider: string, id: string) {
     super(`Session '${provider}:${id}' not found`);
@@ -47,11 +57,18 @@ export class SessionNotFoundError extends Error {
 
 /** Coordinates adapters without taking ownership away from the adapter that created a session. */
 export class SessionSupervisor {
+  private readonly sessionCacheTtlMs: number;
+  private sessionSnapshot: SessionSnapshot | null = null;
+  private sessionRefresh: Promise<void> | null = null;
+
   constructor(
     private readonly adapters: Map<string, HarnessAdapter>,
     private readonly converter: Pick<AgentHerderSessionConverter, "convert"> & Partial<Pick<AgentHerderSessionConverter, "read">>,
     private readonly lineage = new LineageStore(defaultLineagePath()),
-  ) {}
+    options: SessionSupervisorOptions = {},
+  ) {
+    this.sessionCacheTtlMs = Math.max(0, options.sessionCacheTtlMs ?? 1_500);
+  }
 
   async createNamedSession(request: NamedSessionRequest): Promise<NamedSessionResult> {
     return createNamedSession(this.adapters, request);
@@ -62,9 +79,43 @@ export class SessionSupervisor {
   }
 
   async listSessions(filters: SessionFilters = {}): Promise<AgentSession[]> {
-    const adapters = [...this.adapters.entries()].filter(([key, adapter]) =>
-      (!adapter.lazyStart || adapter.lazyDiscovery || !adapter.isReady || adapter.isReady()) &&
-      (!filters.harness || key === filters.harness || adapter.type === filters.harness)
+    if (this.sessionSnapshot) {
+      if (Date.now() - this.sessionSnapshot.refreshedAt >= this.sessionCacheTtlMs) {
+        // Keep serving the last known snapshot while one shared refresh runs.
+        // A failed background refresh leaves the last good snapshot intact.
+        void this.refreshSessionSnapshot().catch(() => undefined);
+      }
+      return this.filterSessions(this.sessionSnapshot.sessions, filters);
+    }
+
+    // The first request is cold and must establish a usable snapshot. All
+    // subsequent requests are cache-first and never wait for adapter discovery.
+    await this.refreshSessionSnapshot();
+    return this.filterSessions(this.sessionSnapshot!.sessions, filters);
+  }
+
+  private filterSessions(sessions: AgentSession[], filters: SessionFilters): AgentSession[] {
+    return sessions
+      .filter((session) => !filters.harness || session.harness === filters.harness)
+      .filter((session) => !filters.status || session.status === filters.status)
+      .filter((session) => !filters.cwd || session.cwd.startsWith(filters.cwd));
+  }
+
+  private refreshSessionSnapshot(): Promise<void> {
+    if (this.sessionRefresh) return this.sessionRefresh;
+    this.sessionRefresh = this.readSessionSnapshot()
+      .then((sessions) => {
+        this.sessionSnapshot = { sessions, refreshedAt: Date.now() };
+      })
+      .finally(() => {
+        this.sessionRefresh = null;
+      });
+    return this.sessionRefresh;
+  }
+
+  private async readSessionSnapshot(): Promise<AgentSession[]> {
+    const adapters = [...this.adapters.entries()].filter(([, adapter]) =>
+      !adapter.lazyStart || adapter.lazyDiscovery || !adapter.isReady || adapter.isReady()
     );
     const sessionGroups = await Promise.all(adapters.map(async ([provider, adapter]) => {
       const sessions = await adapter.listSessions();
@@ -87,10 +138,7 @@ export class SessionSupervisor {
         };
       }));
     }));
-    const sessions = sessionGroups.flat();
-    return sessions
-      .filter((session) => !filters.status || session.status === filters.status)
-      .filter((session) => !filters.cwd || session.cwd.startsWith(filters.cwd));
+    return sessionGroups.flat();
   }
 
   async getSession(harness: string, id: string): Promise<AgentSession | null> {
