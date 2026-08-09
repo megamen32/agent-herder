@@ -2,15 +2,10 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { filterAndArrangeSessions, projectFor, sessionKey, type SessionListEntry, type SessionListSession, type SessionListSettings, type SessionListSort } from "./session-list.js";
 import "./styles.css";
 
-type HerderSession = {
-  id: string;
-  harness: string;
-  title: string;
-  cwd: string;
-  status: string;
-  lastActivity: string;
+type HerderSession = SessionListSession & {
   lastMessage?: string;
   model?: string;
   needsPermission?: boolean;
@@ -24,7 +19,7 @@ const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   return response.json() as Promise<T>;
 };
-const keyOf = (session: HerderSession) => `${session.harness}:${session.id}`;
+const keyOf = sessionKey;
 const splitKey = (key: string) => {
   const separator = key.indexOf(":");
   return { harness: key.slice(0, separator), id: key.slice(separator + 1) };
@@ -52,19 +47,39 @@ function MessageParts({ message, showReasoning, showTools }: { message: SessionM
   </>;
 }
 
-function SessionList({ sessions, activeKey, onSelect }: { sessions: HerderSession[]; activeKey?: string; onSelect: (key: string) => void }) {
+function SessionList({ entries, activeKey, settings, settingsOpen, options, collapsedChildren, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect }: {
+  entries: SessionListEntry[];
+  activeKey?: string;
+  settings: SessionListSettings;
+  settingsOpen: boolean;
+  options: { cwds: string[]; projects: string[]; harnesses: string[] };
+  collapsedChildren: ReadonlySet<string>;
+  onSettingsChange: (patch: Partial<SessionListSettings>) => void;
+  onSettingsToggle: () => void;
+  onToggleChildren: (key: string) => void;
+  onSelect: (key: string) => void;
+}) {
   return <aside className="sessions-pane">
-    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Sessions</h1></div><button className="icon-button" aria-label="Search sessions">⌕</button></div>
+    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Sessions</h1></div><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Session settings" aria-expanded={settingsOpen} onClick={onSettingsToggle}>⚙</button></div>
+    {settingsOpen && <div className="session-settings" aria-label="Session list settings">
+      <label>CWD<select value={settings.cwd} onChange={(event) => onSettingsChange({ cwd: event.target.value })}><option value="">All CWDs</option>{options.cwds.map((cwd) => <option value={cwd} key={cwd}>{cwd}</option>)}</select></label>
+      <label>Project<select value={settings.project} onChange={(event) => onSettingsChange({ project: event.target.value })}><option value="">All projects</option>{options.projects.map((project) => <option value={project} key={project}>{project}</option>)}</select></label>
+      <label>Harness<select value={settings.harness} onChange={(event) => onSettingsChange({ harness: event.target.value })}><option value="">All harnesses</option>{options.harnesses.map((harness) => <option value={harness} key={harness}>{harness}</option>)}</select></label>
+      <label>Sort by<select value={settings.sort} onChange={(event) => onSettingsChange({ sort: event.target.value as SessionListSort })}><option value="activity">Recent activity</option><option value="status">Status</option><option value="harness">Harness</option><option value="title">Title</option><option value="cwd">CWD</option></select></label>
+    </div>}
     <div className="session-list" aria-label="Sessions">
-      {sessions.map((session) => {
+      {entries.map(({ session, depth, hasChildren }) => {
         const key = keyOf(session);
-        return <button className={`session-row ${key === activeKey ? "selected" : ""}`} key={key} onClick={() => onSelect(key)}>
-          <span className={`status-dot status-${session.status}`} aria-hidden="true" />
-          <span className="session-copy"><strong>{session.title || session.id}</strong><small>{session.harness} · {displayStatus(session.status)}</small><small className="session-preview">{session.lastMessage || session.cwd}</small></span>
-          <time>{formatTime(session.lastActivity)}</time>
-        </button>;
+        return <div className="session-row-wrap" style={{ marginLeft: `${depth * 14}px` }} key={key}>
+          {hasChildren ? <button className="session-fold" aria-label={`Toggle child sessions for ${session.title || session.id}`} onClick={() => onToggleChildren(key)}>{collapsedChildren.has(key) ? "›" : "⌄"}</button> : <span className="session-fold-placeholder" />}
+          <button className={`session-row ${key === activeKey ? "selected" : ""}`} onClick={() => onSelect(key)}>
+            <span className={`status-dot status-${session.status}`} aria-hidden="true" />
+            <span className="session-copy"><strong>{session.title || session.id}</strong><small>{session.harness} · {displayStatus(session.status)}</small><small className="session-preview">{session.lastMessage || session.cwd}</small></span>
+            <time>{formatTime(session.lastActivity)}</time>
+          </button>
+        </div>;
       })}
-      {sessions.length === 0 && <div className="empty-list">No sessions found.</div>}
+      {entries.length === 0 && <div className="empty-list">No sessions match these settings.</div>}
     </div>
   </aside>;
 }
@@ -77,6 +92,10 @@ function App() {
   const [showReasoning, setShowReasoning] = React.useState(false);
   const [showTools, setShowTools] = React.useState(false);
   const [showInspector, setShowInspector] = React.useState(true);
+  const [showSessionSettings, setShowSessionSettings] = React.useState(false);
+  const [listSettings, setListSettings] = React.useState<SessionListSettings>({ cwd: "", project: "", harness: "", sort: "activity" });
+  const [collapsedChildren, setCollapsedChildren] = React.useState<Set<string>>(new Set());
+  const foldedInitialized = React.useRef(false);
   const [composer, setComposer] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [sending, setSending] = React.useState(false);
@@ -86,6 +105,11 @@ function App() {
   const loadSessions = React.useCallback(async () => {
     const result = await api<{ sessions: HerderSession[] }>("/api/sessions");
     setSessions(result.sessions.slice(0, 300));
+    if (!foldedInitialized.current && result.sessions.length > 0) {
+      const keys = new Set(result.sessions.flatMap((session) => session.meta?.parentSessionKey ? [session.meta.parentSessionKey] : []));
+      setCollapsedChildren(keys);
+      foldedInitialized.current = true;
+    }
     setActiveKey((current) => current && result.sessions.some((session) => keyOf(session) === current) ? current : result.sessions[0] ? keyOf(result.sessions[0]) : undefined);
   }, []);
   React.useEffect(() => { void loadSessions().finally(() => setLoading(false)); const timer = window.setInterval(() => void loadSessions(), 3000); return () => window.clearInterval(timer); }, [loadSessions]);
@@ -99,6 +123,13 @@ function App() {
   React.useEffect(() => { if (!activeKey) { setDetails(null); return; } void loadDetails(activeKey); }, [activeKey, loadDetails]);
 
   const activeSession = sessions.find((session) => keyOf(session) === activeKey) || details?.session;
+  const sessionMap = React.useMemo(() => new Map(sessions.map((session) => [keyOf(session), session])), [sessions]);
+  const listOptions = React.useMemo(() => ({
+    cwds: [...new Set(sessions.map((session) => session.cwd).filter(Boolean))].sort(),
+    projects: [...new Set(sessions.map((session) => projectFor(session, sessionMap)).filter(Boolean))].sort(),
+    harnesses: [...new Set(sessions.map((session) => session.harness).filter(Boolean))].sort(),
+  }), [sessions, sessionMap]);
+  const sessionEntries = React.useMemo(() => filterAndArrangeSessions(sessions, listSettings, collapsedChildren), [sessions, listSettings, collapsedChildren]);
   const runAction = async (action: "resume" | "stop" | "recover") => {
     if (!activeKey) return;
     const { harness, id } = splitKey(activeKey);
@@ -121,7 +152,7 @@ function App() {
 
   if (loading) return <main className="oc-app"><div className="oc-loading">Loading sessions…</div></main>;
   return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"}`}>
-    <SessionList sessions={sessions} activeKey={activeKey} onSelect={(key) => { setActiveKey(key); setMobileView("chat"); }} />
+    <SessionList entries={sessionEntries} activeKey={activeKey} settings={listSettings} settingsOpen={showSessionSettings} options={listOptions} collapsedChildren={collapsedChildren} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onSelect={(key) => { setActiveKey(key); setMobileView("chat"); }} />
     <section className="chat-pane">
       <header className="chat-header">
         <button className="mobile-back" onClick={() => setMobileView("sessions")} aria-label="Back to sessions">← <span>Sessions</span></button>

@@ -9,11 +9,18 @@ button { color: inherit; border: 0; cursor: pointer; }
 .sessions-pane { display: flex; flex-direction: column; border-right: 1px solid var(--border); }
 .sessions-heading, .chat-header, .inspector-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .sessions-heading { padding: 22px 18px 18px; border-bottom: 1px solid var(--border); }
+.selected-icon { color: var(--accent); background: var(--accent-soft); }
+.session-settings { display: grid; gap: 8px; padding: 12px 12px 13px; border-bottom: 1px solid var(--border); background: #1b1918; }
+.session-settings label { display: grid; gap: 4px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.session-settings select { width: 100%; min-width: 0; padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px; outline: 0; background: var(--surface-raised); color: var(--text); font-size: 12px; text-transform: none; letter-spacing: normal; }
 .eyebrow { display: block; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
 h1, h2 { margin: 4px 0 0; font-weight: 600; letter-spacing: -.02em; }
 h1 { font-size: 19px; } h2 { font-size: 16px; }
 .session-list { min-height: 0; flex: 1; overflow-y: auto; padding: 10px; overscroll-behavior: contain; }
-.session-row { width: 100%; display: flex; align-items: flex-start; gap: 10px; padding: 11px 9px; border-radius: 9px; background: transparent; text-align: left; }
+.session-row-wrap { display: flex; align-items: stretch; min-width: 0; }
+.session-fold, .session-fold-placeholder { width: 20px; flex: 0 0 20px; border-radius: 5px; background: transparent; color: var(--muted); font-size: 17px; line-height: 1; }
+.session-fold:hover { background: var(--surface-hover); color: var(--text); }
+.session-row { width: 100%; min-width: 0; display: flex; align-items: flex-start; gap: 10px; padding: 11px 9px; border-radius: 9px; background: transparent; text-align: left; }
 .session-row:hover { background: var(--surface-hover); }
 .session-row.selected { background: var(--accent-soft); outline: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
 .status-dot { display: inline-block; width: 8px; height: 8px; margin-top: 5px; flex: 0 0 8px; border-radius: 50%; background: #777; }
