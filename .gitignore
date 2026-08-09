@@ -7,3 +7,11 @@ dist/
 .playwright-cli/
 .superpowers/
 graphify-out/
+
+# Local runtime, IDE, worktree, and generated backup artifacts
+.agent-herder/
+.serena/
+.tmpbin/
+.worktrees/
+.agents/last-human-commit/
+dist.backup-*/
