@@ -63,7 +63,7 @@ export class SessionSupervisor {
 
   async listSessions(filters: SessionFilters = {}): Promise<AgentSession[]> {
     const adapters = [...this.adapters.entries()].filter(([key, adapter]) =>
-      (!adapter.lazyStart || !adapter.isReady || adapter.isReady()) &&
+      (!adapter.lazyStart || adapter.lazyDiscovery || !adapter.isReady || adapter.isReady()) &&
       (!filters.harness || key === filters.harness || adapter.type === filters.harness)
     );
     const sessionGroups = await Promise.all(adapters.map(async ([provider, adapter]) => {

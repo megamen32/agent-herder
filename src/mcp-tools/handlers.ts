@@ -164,7 +164,7 @@ export async function handleListAgents(
       : [adapters.get(parsed.harness)].filter(Boolean) as HarnessAdapter[];
 
   for (const adapter of targets) {
-    if (adapter.lazyStart && adapter.isReady && !adapter.isReady()) continue;
+    if (adapter.lazyStart && !adapter.lazyDiscovery && adapter.isReady && !adapter.isReady()) continue;
     try {
       const sessions = await adapter.listSessions();
       allSessions.push(...sessions);

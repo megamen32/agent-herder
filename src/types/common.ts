@@ -169,6 +169,8 @@ export interface HarnessAdapter {
   readonly controlCapabilities?: Partial<HarnessCapabilities>;
   /** If true, background discovery must not start a new child transport. */
   readonly lazyStart?: boolean;
+  /** If true, listSessions() is read-only and safe while the transport sleeps. */
+  readonly lazyDiscovery?: boolean;
   /** Whether this adapter currently owns or is attached to a live transport. */
   isReady?(): boolean;
 
