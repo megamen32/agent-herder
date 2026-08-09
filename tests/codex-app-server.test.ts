@@ -80,4 +80,23 @@ describe("Codex app-server adapter", () => {
       await rm(codexDir, { recursive: true, force: true });
     }
   });
+
+  it("uses session_meta.id as the child identity when session_id names the parent", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-subagent-meta-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "07", "30");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-child", thread_name: "Child", updated_at: new Date().toISOString() }) + "\n");
+    await writeFile(join(sessionDir, "rollout-thread-child.jsonl"), JSON.stringify({
+      type: "session_meta",
+      payload: { session_id: "thread-parent", id: "thread-child", parent_thread_id: "thread-parent", thread_source: "subagent", agent_nickname: "worker", cwd: "/workspace" },
+    }) + "\n");
+    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    try {
+      const sessions = await adapter.listSessions();
+      expect(sessions).toMatchObject([{ id: "thread-child", meta: { parentThreadId: "thread-parent", threadSource: "subagent", agentRole: "worker" } }]);
+    } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
 });

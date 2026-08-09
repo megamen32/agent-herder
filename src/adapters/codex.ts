@@ -261,7 +261,7 @@ export class CodexAdapter implements HarnessAdapter {
     await Promise.all(sessionFiles.map(async (filePath) => {
       try {
         const header = await this.readSessionHeader(filePath);
-        const sessionId = this.getHeaderString(header, "session_id");
+        const sessionId = this.getHeaderSessionId(header);
         if (sessionId) {
           const tail = await this.readSessionTail(filePath);
           const state: CodexSessionState = {
@@ -360,6 +360,20 @@ export class CodexAdapter implements HarnessAdapter {
     } catch {
       return undefined;
     }
+  }
+
+  private getHeaderSessionId(header: string): string | undefined {
+    const firstLine = header.split("\n").find((line) => line.includes('"type":"session_meta"'));
+    if (firstLine) {
+      try {
+        const payload = (JSON.parse(firstLine) as { payload?: Record<string, unknown> }).payload;
+        if (typeof payload?.id === "string") return payload.id;
+        if (typeof payload?.session_id === "string") return payload.session_id;
+      } catch {
+        // Fall through to the legacy header parser.
+      }
+    }
+    return this.getHeaderString(header, "session_id");
   }
 
   private extractLineage(header: string): Pick<CodexSessionState, "parentThreadId" | "threadSource" | "agentRole"> {

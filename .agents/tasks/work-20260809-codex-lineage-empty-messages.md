@@ -49,3 +49,17 @@ empty role-only rows.
 - Full suite: 26 files, 94 tests passed. Live service active after restart.
 - Live API: 2,129 Codex sessions, 3 real children, 0 self-references. Mobile
   chat canary: 1 rendered message, 0 empty articles.
+
+## Correction — 2026-08-09
+
+The first live count was wrong because Codex subagent `session_meta` uses
+`session_id` for the parent and `id` for the child. The adapter was indexing by
+`session_id`, then filtering the resulting parent=self records. It now indexes
+by `payload.id`, retaining `parent_thread_id` as the parent.
+
+Corrected live evidence after rebuild/restart:
+
+- 1,312 native child metadata IDs.
+- 711 of those are present in the current Codex API list.
+- Herder exposes 711 `parentSessionKey` children.
+- 0 self-references remain.
