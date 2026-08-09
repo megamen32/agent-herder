@@ -714,6 +714,7 @@
     loadingSessions: false,
     sessionRequest: 0,
     loadingDetails: false,
+    detailRequest: 0,
     sort: "activity",
     grouping: "project",
     collapsedProjects: new Set(),
@@ -816,6 +817,7 @@
   }
 
   function returnToTree() {
+    state.detailRequest += 1;
     state.selected = null;
     if (location.hash) {
       history.replaceState(null, "", location.pathname + location.search);
@@ -1410,20 +1412,24 @@
     const nextProvider = provider || "";
     const nextId = id || "";
     if (!nextProvider || !nextId) return;
+    const request = ++state.detailRequest;
     state.selected = { provider: nextProvider, id: nextId, session: null, details: null };
     if (!options.fromHash) updateHash(nextProvider, nextId);
     renderSessionTree();
     renderDetail();
-    await loadDetails(nextProvider, nextId, options);
+    await loadDetails(nextProvider, nextId, { ...options, request });
   }
 
   async function loadDetails(provider, id, options = {}) {
+    const request = options.request ?? state.detailRequest;
+    if (request !== state.detailRequest) return;
     state.loadingDetails = true;
     setError(elements.detailError, "");
     renderDetail();
     try {
       const { response, data } = await fetchJson(`/api/sessions/${encodeURIComponent(provider)}/${encodeURIComponent(id)}/details?limit=3`);
       if (!response.ok) throw new Error(apiErrorText(data, response));
+      if (request !== state.detailRequest) return;
       const details = data?.session ? data : null;
       if (!details) throw new Error("Unexpected details payload");
       state.selected = { provider, id, session: details.session, details };
@@ -1433,6 +1439,7 @@
       if (options.fromHash) return;
       document.body.dataset.view = "detail";
     } catch (error) {
+      if (request !== state.detailRequest) return;
       state.selected = { provider, id, session: state.selected?.session || null, details: state.selected?.details || null };
       renderSessionTree();
       renderDetail();
@@ -1612,9 +1619,13 @@
   function startPolling() {
     if (state.pollingTimer) clearInterval(state.pollingTimer);
     state.pollingTimer = setInterval(() => {
-      if (!state.paused) {
+      // Session discovery can take longer than the polling interval (for
+      // example while a lazy adapter wakes). Do not start overlapping reads:
+      // fetchSessions intentionally drops responses superseded by a newer
+      // request, so overlapping polls could otherwise starve the UI forever.
+      if (!state.paused && !state.loadingSessions) {
         fetchSessions();
-        if (state.selected) loadDetails(state.selected.provider, state.selected.id);
+        if (state.selected && !state.loadingDetails) loadDetails(state.selected.provider, state.selected.id);
       }
     }, 2000);
   }
