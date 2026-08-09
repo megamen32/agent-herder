@@ -87,6 +87,7 @@ export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
   mode: z.enum(["queue", "sync"]).optional().default("sync").describe(
     "queue returns after native acceptance; sync waits for the adapter's completed response."
   ),
+  model: z.string().trim().min(1).max(128).optional().describe("Optional model selected before the first message is delivered."),
 });
 
 export const StopAgentSchema = z.object({
