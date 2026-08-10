@@ -1,0 +1,17 @@
+{
+  "description": "Additive Agent Herder autopilot hook. Merge this Stop entry into the existing Codex hook sources; do not replace existing hooks.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent-herder-autopilot-hook",
+            "timeout": 45,
+            "statusMessage": "Checking Agent Herder autopilot decision"
+          }
+        ]
+      }
+    ]
+  }
+}

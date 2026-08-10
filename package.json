@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "agent-herder": "dist/index.js"
+    "agent-herder": "dist/index.js",
+    "agent-herder-autopilot-hook": "dist/autopilot-hook.js"
   },
   "scripts": {
     "build": "tsc && vite build --config vite.config.ts && cp -R dist/web-static/. dist/web/",
@@ -18,6 +19,8 @@
   "files": [
     "dist",
     "docs/assets/agent-herder-animated.svg",
+    "docs/autopilot.md",
+    "docs/codex-hooks.json",
     "README.md",
     "README.ru.md",
     "README.zh.md",
