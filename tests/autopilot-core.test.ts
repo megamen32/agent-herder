@@ -286,6 +286,7 @@ describe("autopilot core", () => {
       const request = JSON.parse(String(init?.body));
       expect(request.messages[1].content).toContain("session-1");
       expect(request.messages[1].content).toContain("bounded evidence");
+      expect(request.stream).toBe(false);
       return new Response(
         JSON.stringify({
           choices: [{ message: { content: JSON.stringify({ kind: "done", summary: "finished", notify: false }) } }],
