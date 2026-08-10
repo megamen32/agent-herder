@@ -173,6 +173,10 @@ export function createOpenAICompatibleJudge(config: {
         body: JSON.stringify({
           model: config.model,
           temperature: 0,
+          // The judge parser consumes one JSON response. Explicitly disable
+          // gateway SSE defaults so OpenAI-compatible providers do not return
+          // `data:` frames that cannot be parsed as a single document.
+          stream: false,
           response_format: { type: "json_object" },
           messages: [
             {
