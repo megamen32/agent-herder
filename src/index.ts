@@ -3,10 +3,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import { HarnessAdapter } from "./types/index.js";
 import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter } from "./adapters/index.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
+import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
 import { acquireAgentHerderSingleton } from "./singleton.js";
 import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
@@ -51,6 +54,8 @@ function parseEnvBool(val: string | undefined, fallback: boolean): boolean {
 
 const adapters = new Map<string, HarnessAdapter>();
 const humanRequests = new HumanRequestRegistry(process.env.AGENT_HERDER_HUMAN_REQUEST_STORE || ".agent-herder/human-requests.json");
+const autopilotStateDir = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR || join(homedir(), ".local", "state", "agent-herder", "autopilot");
+const choiceRegistry = new ChoiceRegistry(process.env.AGENT_HERDER_AUTOPILOT_CHOICE_STORE || join(autopilotStateDir, "choices.json"));
 const adapterFactories = new Map<string, AdapterFactory>();
 const adapterRegistry = new AdapterRegistry(
   adapters,
@@ -556,6 +561,7 @@ async function main() {
       adapters,
       converter: new AgentHerderSessionConverter(),
       humanRequests,
+      choiceRegistry,
       adapterRegistry,
       mcpServerFactory: createMcpServer,
     });

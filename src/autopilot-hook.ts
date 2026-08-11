@@ -13,6 +13,7 @@ import {
   type ReceiptStore,
   type StopHookInput,
 } from "./autopilot/index.js";
+import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 
 const DEFAULT_LOCK_WAIT_MS = 2_000;
 const DEFAULT_LOCK_RETRY_INTERVAL_MS = 25;
@@ -31,6 +32,7 @@ export type AutopilotHookDeps = {
   receiptStore: ReceiptStore;
   maxContinuationsPerSession: number;
   notification?: Parameters<typeof createAutopilotCore>[0]["notification"];
+  choiceRegistry?: ChoiceRegistry;
 };
 
 export async function runAutopilotStopHook(
@@ -97,13 +99,14 @@ async function main(): Promise<void> {
         process.env.AGENT_HERDER_AUTOPILOT_MAX_CONTINUATIONS,
         3,
       ),
-      notification: {
+    notification: {
         project: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_PROJECT ?? "agent-herder",
         // The sink validates this only if a terminal decision actually emits
         // a notice. `continue` should not require a delivery configuration.
         recipient: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT ?? "",
         kind: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_KIND ?? "notification",
       },
+      choiceRegistry: new ChoiceRegistry(join(stateDir, "choices.json")),
     });
     await persistReceiptStore(receiptPath, receiptStore);
     writeResult(result);

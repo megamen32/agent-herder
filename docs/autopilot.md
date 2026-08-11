@@ -69,6 +69,17 @@ JSON decisions described in the prompt:
 - `continue` with `nextGoal`: returned as Codex `{decision:"block",reason}`;
 - `done` with `summary`: terminal, optionally emits a completion notice;
 - `human` with `title`, `body`, and `severity`: terminal, emits a notice.
+- `choice` with 2–4 `{choiceId,label,nextGoal}` options when several safe next
+  steps are possible. `nextGoal` stays in the durable registry; only the
+  opaque choice identity and user-facing label cross the Notify boundary.
+
+For a `choice` notification, the Telegram body is a bounded Russian context
+card. It includes the project, the short session ID, the latest real Codex
+`event_msg.user_message`, the latest assistant message, the reason a choice is
+needed, and the numbered options. Secret-like values are redacted. The
+callback resumes the exact Codex session and then removes the inline keyboard,
+leaving a `✓ Выбрано: ...` marker. If the user taps an already-resolved card,
+the callback is idempotent and does not send a second turn.
 
 Human and completion notices use the existing `notify.event.v1` producer seam:
 
@@ -87,8 +98,15 @@ that a person has seen it.
 
 Receipts and per-session continuation state are stored under
 `~/.local/state/agent-herder/autopilot` by default. Override with
-`AGENT_HERDER_AUTOPILOT_STATE_DIR`. The default continuation budget is three;
-override with `AGENT_HERDER_AUTOPILOT_MAX_CONTINUATIONS`.
+`AGENT_HERDER_AUTOPILOT_STATE_DIR`. The Stop-hook process and the HTTP callback
+service must use the same explicit directory; the production user unit uses:
+
+```ini
+Environment=AGENT_HERDER_AUTOPILOT_STATE_DIR=%h/.local/state/agent-herder/autopilot-live
+```
+
+The default continuation budget is three; override with
+`AGENT_HERDER_AUTOPILOT_MAX_CONTINUATIONS`.
 
 The hook uses a short-lived filesystem lock and stable receipt keys, so a
 duplicate Codex stop event does not cause a second judge continuation or a

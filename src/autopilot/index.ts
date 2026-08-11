@@ -1,5 +1,6 @@
 import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { ChoiceRegistry, type AutopilotChoice } from "./choice-registry.js";
 
 export type StopHookInput = {
   hook_event_name: "Stop";
@@ -20,7 +21,8 @@ export type AutopilotDecision =
       title: string;
       body: string;
       severity: "low" | "medium" | "high";
-    };
+    }
+  | { kind: "choice"; choices: AutopilotChoice[] };
 
 export type AutopilotHookResult =
   | { decision: "block"; reason: string }
@@ -52,6 +54,8 @@ export type NotificationPayload = {
   body: string;
   dedup_key: string;
   correlation_id: string;
+  choices?: Array<{ choice_id: string; label: string }>;
+  choice_request_id?: string;
 };
 
 export type NotificationSink = {
@@ -69,6 +73,9 @@ export type NotificationConfig = {
 
 const MAX_EVIDENCE_BYTES = 16 * 1024;
 const MAX_LAST_ASSISTANT_BYTES = 8 * 1024;
+const MAX_CHOICE_CONTEXT_BYTES = 2 * 1024;
+const MAX_CHOICE_LAST_MESSAGE_BYTES = 1_200;
+const MAX_CHOICE_TRANSCRIPT_SCAN_BYTES = 4 * 1024 * 1024;
 const MAX_REASON_LENGTH = 4 * 1024;
 const LAST_ASSISTANT_PREFIX = "\nLast assistant message:\n";
 const DEFAULT_NOTIFICATION: NotificationConfig = {
@@ -88,6 +95,7 @@ const SECRET_ASSIGNMENT_PATTERN =
   /(\b(?:token|secret|client[_-]?secret|access[_-]?key|private[_-]?key|authorization)\b["']?\s*[:=]\s*)(["']?)[^\s"'`,;}\]]+/gi;
 const STANDALONE_API_KEY_PATTERN =
   /\b(?:sk|pk|rk|ak|ghp|github_pat)[_-][A-Za-z0-9_-]{8,}\b/gi;
+const CHOICE_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 
 /**
  * Build the exact event envelope consumed by the existing NoticePlace/Notify
@@ -103,6 +111,8 @@ export function createNoticePlacePayload(input: {
   project?: string;
   recipient?: string;
   kind?: string;
+  choices?: Array<{ choice_id: string; label: string }>;
+  choice_request_id?: string;
 }): NotificationPayload {
   return {
     schema: "notify.event.v1",
@@ -114,6 +124,8 @@ export function createNoticePlacePayload(input: {
     body: bounded(input.body, 8 * 1024),
     dedup_key: input.dedupKey,
     correlation_id: input.correlationId,
+    ...(input.choices ? { choices: input.choices } : {}),
+    ...(input.choice_request_id ? { choice_request_id: input.choice_request_id } : {}),
   };
 }
 
@@ -183,7 +195,10 @@ export function createOpenAICompatibleJudge(config: {
               role: "system",
               content:
                 "You are the Agent Herder stop-hook judge. Return only JSON. " +
-                "Choose exactly one kind: continue, done, or human. " +
+                "Choose exactly one kind: continue, done, human, or choice. " +
+                "If uncertain between 2-4 safe next steps, use choice with " +
+                "{kind:choice,choices:[{choiceId,label,nextGoal}]}; choiceId is opaque, " +
+                "label is a concise, self-contained Russian user-facing action, and nextGoal is bounded text for this exact Codex session. " +
                 "Use continue only when a concrete next goal can be executed " +
                 "in the same Codex session. Use done only when the user's " +
                 "objective is actually complete. Use human when permission, " +
@@ -228,6 +243,7 @@ export function createAutopilotCore(options: {
   receiptStore: ReceiptStore;
   maxContinuationsPerSession: number;
   notification?: NotificationConfig;
+  choiceRegistry?: ChoiceRegistry;
 }): { handleStop(input: StopHookInput): Promise<AutopilotHookResult> } {
   const continuationCounts = new Map<string, number>();
   const activeReceiptKeys = new Set<string>();
@@ -283,7 +299,28 @@ export function createAutopilotCore(options: {
           };
         }
 
-        if (decision.kind === "human") {
+        if (decision.kind === "choice") {
+          if (!options.choiceRegistry) throw new Error("Choice registry is required for choice decisions");
+          const lastUserMessage = await readLastUserMessage(input.transcript_path);
+          const pending = await options.choiceRegistry.create({
+            sessionId: input.session_id,
+            turnId: input.turn_id,
+            cwd: input.cwd,
+            choices: decision.choices,
+          });
+          await options.notify.send(
+            createNoticePlacePayload({
+              title: `Agent Herder: выбор следующего шага по ${projectLabel(input.cwd)}`,
+              body: buildChoiceNotificationBody(input, decision.choices, lastUserMessage),
+              severity: "medium",
+              dedupKey: `agent-herder:choice:${pending.requestId}`,
+              correlationId: `${input.session_id}/${input.turn_id}`,
+              choices: decision.choices.map((choice) => ({ choice_id: choice.choiceId, label: choice.label })),
+              choice_request_id: pending.requestId,
+              ...notification,
+            }),
+          );
+        } else if (decision.kind === "human") {
           await options.notify.send(
             createNoticePlacePayload({
               title: decision.title,
@@ -316,6 +353,101 @@ export function createAutopilotCore(options: {
       }
     },
   };
+}
+
+function buildChoiceNotificationBody(
+  input: StopHookInput,
+  choices: AutopilotChoice[],
+  lastUserMessage: string | null,
+): string {
+  const userMessage = lastUserMessage === null
+    ? "(последний запрос пользователя недоступен)"
+    : lastUserMessage;
+  const lastMessage = input.last_assistant_message === null
+    ? "(последнее сообщение агента недоступно)"
+    : boundedUtf8(
+        redactSecrets(input.last_assistant_message).trim(),
+        MAX_CHOICE_LAST_MESSAGE_BYTES,
+      ) || "(последнее сообщение агента пустое)";
+  const options = choices
+    .map((choice, index) => `${index + 1}. ${choice.label}`)
+    .join("\n");
+
+  return boundedUtf8(
+    [
+      `Проект: ${projectLabel(input.cwd)}`,
+      `Сессия: ${shortSessionId(input.session_id)}`,
+      "",
+      "Последний запрос пользователя:",
+      userMessage,
+      "",
+      "Последний ответ агента:",
+      lastMessage,
+      "",
+      "MiniMax не выбрал автоматически: безопасных вариантов несколько.",
+      "Следующий шаг относится именно к этой Codex-сессии:",
+      options,
+      "",
+      "После выбора продолжится эта же Codex-сессия.",
+    ].join("\n"),
+    MAX_CHOICE_CONTEXT_BYTES,
+  );
+}
+
+async function readLastUserMessage(transcriptPath: string | null): Promise<string | null> {
+  if (!transcriptPath) return null;
+  const transcript = await readTail(transcriptPath, MAX_CHOICE_TRANSCRIPT_SCAN_BYTES).catch(() => "");
+  let lastEventUserMessage: string | null = null;
+  let lastResponseUserMessage: string | null = null;
+
+  for (const line of transcript.split(/\r?\n/)) {
+    let entry: unknown;
+    try {
+      entry = JSON.parse(line) as unknown;
+    } catch {
+      continue;
+    }
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const payload = record.payload;
+    if (!payload || typeof payload !== "object") continue;
+    const payloadRecord = payload as Record<string, unknown>;
+    const payloadType = payloadRecord.type;
+    const message = payloadType === "user_message"
+      ? textFromTranscriptValue(payloadRecord.message)
+      : payloadType === "message" && payloadRecord.role === "user"
+        ? textFromTranscriptValue(payloadRecord.content)
+        : "";
+    if (!message.trim()) continue;
+    if (payloadType === "user_message") lastEventUserMessage = message;
+    else lastResponseUserMessage = message;
+  }
+
+  const lastUserMessage = lastEventUserMessage ?? lastResponseUserMessage;
+  return lastUserMessage
+    ? boundedUtf8(redactSecrets(lastUserMessage).trim(), MAX_CHOICE_LAST_MESSAGE_BYTES)
+    : null;
+}
+
+function textFromTranscriptValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(textFromTranscriptValue).filter(Boolean).join("\n");
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  if (typeof record.text === "string") return record.text;
+  if (record.content !== undefined) return textFromTranscriptValue(record.content);
+  return "";
+}
+
+function projectLabel(cwd: string): string {
+  const normalized = cwd.replace(/[\\/]+$/, "");
+  const name = normalized.split(/[\\/]/).pop()?.trim();
+  return bounded(name || "проект", 80);
+}
+
+function shortSessionId(sessionId: string): string {
+  if (sessionId.length <= 16) return sessionId;
+  return `${sessionId.slice(0, 8)}…${sessionId.slice(-4)}`;
 }
 
 export async function readBoundedEvidence(
@@ -436,6 +568,17 @@ function normalizeDecision(value: unknown): AutopilotDecision {
       title: bounded(decision.title, 512),
       body: bounded(decision.body, 8 * 1024),
       severity: decision.severity,
+    };
+  }
+  if (decision.kind === "choice" && Array.isArray(decision.choices) && decision.choices.length >= 2 && decision.choices.length <= 4) {
+    return {
+      kind: "choice",
+      choices: decision.choices.map((choice) => {
+        if (!choice || typeof choice !== "object") throw new Error("Malformed choice decision");
+        const item = choice as Record<string, unknown>;
+        if (typeof item.choiceId !== "string" || !CHOICE_ID_PATTERN.test(item.choiceId) || typeof item.label !== "string" || typeof item.nextGoal !== "string") throw new Error("Malformed choice decision: choiceId must match callback identifier format");
+        return { choiceId: bounded(item.choiceId, 128), label: bounded(item.label, 512), nextGoal: bounded(item.nextGoal, MAX_REASON_LENGTH) };
+      }),
     };
   }
 

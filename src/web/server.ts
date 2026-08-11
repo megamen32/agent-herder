@@ -13,6 +13,7 @@ import { buildSessionProgress } from "../health-progress.js";
 import { healthModelForHarness, normalizeHealthExecution } from "../health-remediation.js";
 import { convertHermesExport } from "../hermes-conversion.js";
 import { resumeBoundTarget } from "../resume-transport.js";
+import { ChoiceRegistry } from "../autopilot/choice-registry.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -25,6 +26,8 @@ export interface WebDependencies {
   humanRequests?: HumanRequestRegistry;
   adapterRegistry?: AdapterRegistry;
   mcpServerFactory?: () => McpServer;
+  mcpAuthToken?: string;
+  choiceRegistry?: ChoiceRegistry;
 }
 
 const htmlPath = join(dirname(fileURLToPath(import.meta.url)), "index.html");
@@ -33,9 +36,10 @@ const webRoot = dirname(htmlPath);
 export function createWebServer(dependencies: WebDependencies): Server {
   const supervisor = new SessionSupervisor(dependencies.adapters, dependencies.converter, dependencies.lineageStore);
   const mcpTransports = new Map<string, StreamableHTTPServerTransport>();
+  const mcpAuthToken = dependencies.mcpAuthToken?.trim() || undefined;
   return createServer(async (request, response) => {
     try {
-      await route(request, response, supervisor, dependencies.humanRequests, dependencies.mcpServerFactory, mcpTransports, dependencies.adapterRegistry);
+      await route(request, response, supervisor, dependencies.humanRequests, dependencies.mcpServerFactory, mcpTransports, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry);
     } catch (err) {
       if (err instanceof SessionNotFoundError) {
         sendJson(response, 404, { error: "Session not found" });
@@ -46,8 +50,34 @@ export function createWebServer(dependencies: WebDependencies): Server {
   });
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
+  if (request.method === "POST" && url.pathname === "/internal/autopilot/choices/select") {
+    if (!choiceRegistry) return sendJson(response, 503, { error: "Choice registry is disabled" });
+    if (mcpAuthToken && request.headers.authorization !== `Bearer ${mcpAuthToken}`) return sendJson(response, 401, { error: "unauthorized" });
+    const body = await readJson(request);
+    if (!isUuid(body.request_id) || typeof body.choice_id !== "string" || body.choice_id.trim() === "") return sendJson(response, 400, { error: "request_id and choice_id are required" });
+    const claimed = await choiceRegistry.claimForResume(body.request_id, body.choice_id);
+    const pending = claimed.record;
+    if (!claimed.claimed) {
+      return sendJson(response, 202, {
+        request_id: pending.requestId,
+        status: pending.status,
+        choice_id: pending.choiceId,
+        session_id: pending.sessionId,
+        resumed: false,
+        duplicate: true,
+      });
+    }
+    if (pending.sessionId.length === 0 || !pending.nextGoal) return sendJson(response, 409, { error: "choice has no resumable goal" });
+    const result = await supervisor.sendMessage("codex", pending.sessionId, { message: pending.nextGoal, queue: true });
+    if (result.ok) {
+      const resumed = await choiceRegistry.markResumed(pending.requestId, pending.choiceId!);
+      return sendJson(response, 202, { request_id: resumed.requestId, status: resumed.status, choice_id: resumed.choiceId, session_id: resumed.sessionId, resumed: true });
+    }
+    await choiceRegistry.releaseFailed(pending.requestId, pending.choiceId!);
+    return sendJson(response, 502, { request_id: pending.requestId, status: "pending", choice_id: pending.choiceId, session_id: pending.sessionId, resumed: false, error: result.error });
+  }
   if (url.pathname === "/api/adapters" && request.method === "GET") {
     if (!adapterRegistry) return sendJson(response, 503, { error: "Adapter registry is disabled" });
     return sendJson(response, 200, { adapters: adapterRegistry.list() });
@@ -65,6 +95,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
   }
   if (url.pathname === "/mcp" && request.method === "POST") {
+    if (mcpAuthToken && request.headers.authorization !== `Bearer ${mcpAuthToken}`) {
+      return sendJson(response, 401, { error: "unauthorized" });
+    }
     if (!mcpServerFactory || !mcpTransports) return sendJson(response, 503, { error: "MCP HTTP transport is disabled" });
     const body = await readJson(request);
     const sessionId = headerValue(request.headers["mcp-session-id"]);
