@@ -37,6 +37,8 @@ export interface HermesAdapterConfig {
   spawnJob?: HermesJobSpawner;
   /** Supply a public-surface client without starting a Hermes child process. */
   client?: HermesToolClient;
+  /** Upper bound for observation-only MCP bridge calls. */
+  observationTimeoutMs?: number;
 }
 
 export type HermesJobSpawner = (
@@ -149,6 +151,7 @@ export class HermesAdapter implements HarnessAdapter {
   private readonly jobs = new Map<string, HermesJob>();
   private readonly spawnJob: HermesJobSpawner;
   private readonly jobTimeoutMs: number;
+  private readonly observationTimeoutMs: number;
 
   constructor(config: HermesAdapterConfig = {}) {
     this.config = config;
@@ -157,6 +160,7 @@ export class HermesAdapter implements HarnessAdapter {
       spawn(command, args, options) as ChildProcessWithoutNullStreams
     ));
     this.jobTimeoutMs = normalizeJobTimeout(config.jobTimeoutMs ?? envNumber("HERMES_HEALTH_TIMEOUT_MS") ?? DEFAULT_JOB_TIMEOUT_MS);
+    this.observationTimeoutMs = normalizeObservationTimeout(config.observationTimeoutMs ?? MCP_OBSERVATION_TIMEOUT_MS);
   }
 
   isReady(): boolean { return Boolean(this.client) || this.jobs.size > 0; }
@@ -191,10 +195,7 @@ export class HermesAdapter implements HarnessAdapter {
       .filter((job) => !options.cwd || job.cwd === options.cwd)
       .map((job) => this.jobToSession(job));
     try {
-      const data = await withTimeout(
-        this.init().then(() => this.client!.callTool("conversations_list", { limit: 200 })).then(resultJson),
-        MCP_OBSERVATION_TIMEOUT_MS,
-      );
+      const data = await this.observe(() => this.init().then(() => this.client!.callTool("conversations_list", { limit: 200 })).then(resultJson));
       const rows = Array.isArray(data.conversations) ? data.conversations as Conversation[] : [];
       return [...local, ...rows.filter((row) => row.session_key).map((row) => this.toSession(row))];
     } catch {
@@ -213,25 +214,37 @@ export class HermesAdapter implements HarnessAdapter {
   async getSession(id: string): Promise<AgentSession | null> {
     const job = this.jobs.get(id);
     if (job) return this.jobToSession(job);
-    await this.init();
-    const data = resultJson(await this.client!.callTool("conversation_get", { session_key: id }));
-    return data.error ? null : this.toSession(data as Conversation, id);
+    try {
+      const data = await this.observe(() => this.init().then(() => this.client!.callTool("conversation_get", { session_key: id })).then(resultJson));
+      return data.error ? null : this.toSession(data as Conversation, id);
+    } catch {
+      await this.disposeObservationClient();
+      return null;
+    }
   }
 
   async getSessionMessages(id: string, limit = 200): Promise<SessionMessageView[] | null> {
     const job = this.jobs.get(id);
     if (job) return job.messages.slice(Math.max(0, job.messages.length - Math.max(1, limit)));
-    await this.init();
-    const data = resultJson(await this.client!.callTool("messages_read", { session_key: id, limit }));
-    if (data.error) return null;
-    const messages = Array.isArray(data.messages) ? data.messages as HermesMessage[] : [];
-    return messages.map((message, index) => ({
-      id: String(message.id || `${id}:${index}`),
-      role: message.role || "system",
-      timestamp: message.timestamp == null ? undefined : iso(message.timestamp),
-      text: message.content || "",
-      parts: [{ type: "text", text: message.content || "" }],
-    }));
+    try {
+      const data = await this.observe(() => this.init().then(() => this.client!.callTool("messages_read", { session_key: id, limit })).then(resultJson));
+      if (data.error) return null;
+      const messages = Array.isArray(data.messages) ? data.messages as HermesMessage[] : [];
+      return messages.map((message, index) => ({
+        id: String(message.id || `${id}:${index}`),
+        role: message.role || "system",
+        timestamp: message.timestamp == null ? undefined : iso(message.timestamp),
+        text: message.content || "",
+        parts: [{ type: "text", text: message.content || "" }],
+      }));
+    } catch {
+      await this.disposeObservationClient();
+      return null;
+    }
+  }
+
+  private async observe<T>(request: () => Promise<T>): Promise<T> {
+    return withTimeout(request(), this.observationTimeoutMs);
   }
 
   async getTranscript(id: string): Promise<string | null> {
@@ -565,6 +578,13 @@ function envNumber(name: string): number | undefined {
 function normalizeJobTimeout(value: number): number {
   if (!Number.isFinite(value) || value < 1_000 || value > MAX_JOB_TIMEOUT_MS) {
     throw new Error(`Hermes health job timeout must be between 1000 and ${MAX_JOB_TIMEOUT_MS} ms`);
+  }
+  return Math.floor(value);
+}
+
+function normalizeObservationTimeout(value: number): number {
+  if (!Number.isFinite(value) || value < 10 || value > 60_000) {
+    throw new Error("Hermes observation timeout must be between 10 and 60000 ms");
   }
   return Math.floor(value);
 }

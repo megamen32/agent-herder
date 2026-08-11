@@ -14,6 +14,22 @@ class FakeChild extends EventEmitter {
 }
 
 describe("Hermes CLI job adapter", () => {
+  it("fails closed when an unknown session observation bridge never responds", async () => {
+    const adapter = new HermesAdapter({
+      // Deliberately use a bridge that accepted the connection but never
+      // returns a lookup result, matching the historical post-restart route.
+      client: { async callTool() { return await new Promise<never>(() => undefined); } },
+      observationTimeoutMs: 10,
+    } as ConstructorParameters<typeof HermesAdapter>[0]);
+
+    const outcome = await Promise.race([
+      adapter.getSession("lost-hermes-session"),
+      new Promise<"test-timeout">((resolve) => setTimeout(() => resolve("test-timeout"), 100)),
+    ]);
+
+    expect(outcome).toBeNull();
+  });
+
   it("starts a bounded health job with the canonical model, provider, and reasoning", async () => {
     const child = new FakeChild();
     let command = "";
