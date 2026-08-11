@@ -33,6 +33,8 @@ export interface HermesAdapterConfig {
   jobToolsets?: string;
   /** Hard wall-clock limit for one non-interactive health job. */
   jobTimeoutMs?: number;
+  /** Maximum silence after meaningful CLI progress before a health job stalls. */
+  jobUsefulProgressTimeoutMs?: number;
   /** Injectable child spawner for adapter-level tests. */
   spawnJob?: HermesJobSpawner;
   /** Supply a public-surface client without starting a Hermes child process. */
@@ -87,8 +89,10 @@ interface HermesJob {
   nativeSessionId?: string;
   child?: ChildProcessWithoutNullStreams;
   timeoutTimer?: ReturnType<typeof setTimeout>;
+  usefulProgressTimer?: ReturnType<typeof setTimeout>;
   timedOut?: boolean;
-  terminationReason?: "timeout" | "cancelled" | "spawn-error";
+  terminationReason?: "timeout" | "stalled" | "cancelled" | "spawn-error";
+  lastUsefulActivity?: string;
   lastProgress?: string;
   finished: boolean;
 }
@@ -151,6 +155,7 @@ export class HermesAdapter implements HarnessAdapter {
   private readonly jobs = new Map<string, HermesJob>();
   private readonly spawnJob: HermesJobSpawner;
   private readonly jobTimeoutMs: number;
+  private readonly jobUsefulProgressTimeoutMs: number;
   private readonly observationTimeoutMs: number;
 
   constructor(config: HermesAdapterConfig = {}) {
@@ -160,6 +165,10 @@ export class HermesAdapter implements HarnessAdapter {
       spawn(command, args, options) as ChildProcessWithoutNullStreams
     ));
     this.jobTimeoutMs = normalizeJobTimeout(config.jobTimeoutMs ?? envNumber("HERMES_HEALTH_TIMEOUT_MS") ?? DEFAULT_JOB_TIMEOUT_MS);
+    this.jobUsefulProgressTimeoutMs = normalizeUsefulProgressTimeout(
+      config.jobUsefulProgressTimeoutMs ?? Math.min(this.jobTimeoutMs, 120_000),
+      this.jobTimeoutMs,
+    );
     this.observationTimeoutMs = normalizeObservationTimeout(config.observationTimeoutMs ?? MCP_OBSERVATION_TIMEOUT_MS);
   }
 
@@ -379,6 +388,7 @@ export class HermesAdapter implements HarnessAdapter {
     job.terminationReason = undefined;
     job.lastProgress = undefined;
     job.lastActivity = now;
+    job.lastUsefulActivity = now;
     job.messages.push({
       id: `${job.id}:user:${job.messages.length + 1}`,
       role: "user",
@@ -425,6 +435,7 @@ export class HermesAdapter implements HarnessAdapter {
       child.once("exit", (code) => this.finishJob(job, code));
       job.timeoutTimer = setTimeout(() => this.timeoutJob(job), job.timeoutMs);
       job.timeoutTimer.unref?.();
+      this.armUsefulProgressWatchdog(job);
       return { ok: true };
     } catch {
       this.finishJob(job, null, "spawn-error");
@@ -443,6 +454,10 @@ export class HermesAdapter implements HarnessAdapter {
       const text = `${stream}: ${line}`.slice(0, MAX_PROGRESS_TEXT);
       if (!text || text === job.lastProgress) continue;
       job.lastProgress = text;
+      if (isUsefulProgressLine(line)) {
+        job.lastUsefulActivity = job.lastActivity;
+        this.armUsefulProgressWatchdog(job);
+      }
       job.messages.push({
         id: `${job.id}:progress:${job.messages.length + 1}`,
         role: "assistant",
@@ -469,11 +484,33 @@ export class HermesAdapter implements HarnessAdapter {
     forceKillTimer.unref?.();
   }
 
-  private finishJob(job: HermesJob, code: number | null, reason?: "timeout" | "cancelled" | "spawn-error"): void {
+  private armUsefulProgressWatchdog(job: HermesJob): void {
+    if (job.usefulProgressTimer) clearTimeout(job.usefulProgressTimer);
+    job.usefulProgressTimer = setTimeout(() => this.stallJob(job), this.jobUsefulProgressTimeoutMs);
+    job.usefulProgressTimer.unref?.();
+  }
+
+  private stallJob(job: HermesJob): void {
+    if (job.finished || job.status !== "running" || !job.child) return;
+    const child = job.child;
+    job.terminationReason = "stalled";
+    try { child.kill("SIGTERM"); } catch { /* already exited */ }
+    this.finishJob(job, null, "stalled");
+    const forceKillTimer = setTimeout(() => {
+      if (child.exitCode === null) {
+        try { child.kill("SIGKILL"); } catch { /* already exited */ }
+      }
+    }, 5_000);
+    forceKillTimer.unref?.();
+  }
+
+  private finishJob(job: HermesJob, code: number | null, reason?: "timeout" | "stalled" | "cancelled" | "spawn-error"): void {
     if (job.finished) return;
     job.finished = true;
     if (job.timeoutTimer) clearTimeout(job.timeoutTimer);
     job.timeoutTimer = undefined;
+    if (job.usefulProgressTimer) clearTimeout(job.usefulProgressTimer);
+    job.usefulProgressTimer = undefined;
     if (reason) job.terminationReason = reason;
     job.child = undefined;
     job.status = code === 0 && !reason ? "stopped" : "error";
@@ -501,6 +538,8 @@ export class HermesAdapter implements HarnessAdapter {
       try { job.child.kill("SIGTERM"); } catch { /* already exited */ }
       if (job.timeoutTimer) clearTimeout(job.timeoutTimer);
       job.timeoutTimer = undefined;
+      if (job.usefulProgressTimer) clearTimeout(job.usefulProgressTimer);
+      job.usefulProgressTimer = undefined;
       job.terminationReason = "cancelled";
       job.finished = true;
       job.child = undefined;
@@ -532,6 +571,8 @@ export class HermesAdapter implements HarnessAdapter {
         timeoutMs: job.timeoutMs,
         timedOut: job.timedOut === true,
         terminationReason: job.terminationReason,
+        lastUsefulActivity: job.lastUsefulActivity,
+        usefulProgressTimeoutMs: this.jobUsefulProgressTimeoutMs,
         progressSource: "hermes-cli-output",
       },
     };
@@ -582,6 +623,13 @@ function normalizeJobTimeout(value: number): number {
   return Math.floor(value);
 }
 
+function normalizeUsefulProgressTimeout(value: number, jobTimeoutMs: number): number {
+  if (!Number.isFinite(value) || value < 1_000 || value > jobTimeoutMs) {
+    throw new Error("Hermes useful progress timeout must be between 1000 ms and the job timeout");
+  }
+  return Math.floor(value);
+}
+
 function normalizeObservationTimeout(value: number): number {
   if (!Number.isFinite(value) || value < 10 || value > 60_000) {
     throw new Error("Hermes observation timeout must be between 10 and 60000 ms");
@@ -591,6 +639,14 @@ function normalizeObservationTimeout(value: number): number {
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-?]*[ -\/]*[@-~]/g, "");
+}
+
+function isUsefulProgressLine(line: string): boolean {
+  const normalized = line.trim();
+  if (!normalized) return false;
+  if (/^initializing agent(?:\.{3})?$/i.test(normalized)) return false;
+  if (/^[─━\-_=]{8,}$/.test(normalized)) return false;
+  return true;
 }
 
 function redactSensitive(value: string): string {

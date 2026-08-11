@@ -98,6 +98,32 @@ describe("Hermes CLI job adapter", () => {
     }
   });
 
+  it("stops an initialization-only health job when useful progress never appears", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = new FakeChild();
+      const adapter = new HermesAdapter({
+        jobTimeoutMs: 20_000,
+        jobUsefulProgressTimeoutMs: 1_000,
+        spawnJob: () => child as unknown as ChildProcessWithoutNullStreams,
+      } as ConstructorParameters<typeof HermesAdapter>[0]);
+      const session = await adapter.createSession({ name: "health-stalled", cwd: "/tmp" });
+      await adapter.changeModel(session.id, "gpt-5.6-luna");
+      await adapter.sendMessage(session.id, { message: "repair", queue: true });
+      child.stdout.write("Initializing agent...\n");
+
+      await vi.advanceTimersByTimeAsync(1_001);
+
+      expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+      expect((await adapter.getSession(session.id))?.meta).toMatchObject({
+        terminationReason: "stalled",
+        timedOut: false,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not expose public MCP model control as a fake CLI capability", async () => {
     const adapter = new HermesAdapter({ client: { async callTool() { return { conversations: [] }; } } });
     expect(await adapter.changeModel("telegram:missing", "gpt-5.6-luna")).toEqual({
