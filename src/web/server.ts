@@ -13,7 +13,9 @@ import { buildSessionProgress } from "../health-progress.js";
 import { healthModelForHarness, normalizeHealthExecution } from "../health-remediation.js";
 import { convertHermesExport } from "../hermes-conversion.js";
 import { resumeBoundTarget } from "../resume-transport.js";
-import { ChoiceRegistry } from "../autopilot/choice-registry.js";
+import { ChoiceRegistry, ChoiceRegistryLockUnavailableError, type PendingChoice } from "../autopilot/choice-registry.js";
+import { AutopilotPolicyStore } from "../autopilot/policy-store.js";
+import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsSelector } from "../autopilot/policy.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -28,6 +30,161 @@ export interface WebDependencies {
   mcpServerFactory?: () => McpServer;
   mcpAuthToken?: string;
   choiceRegistry?: ChoiceRegistry;
+  autopilotPolicyStore?: AutopilotPolicyStore;
+  autopilotSweepIntervalMs?: number;
+}
+
+export type AutopilotSweepOutcome = {
+  requestId?: string;
+  status: "resumed" | "failed" | "human-required";
+  reason?: string;
+};
+
+/** Sweep durable timeout choices and resume only a still-authorized Codex target once. */
+export async function sweepAutopilotChoices(input: {
+  choiceRegistry: ChoiceRegistry;
+  policyStore: AutopilotPolicyStore;
+  now?: Date;
+  targetAvailable?: (choice: PendingChoice) => Promise<boolean>;
+  validateSavedTarget?: (choice: PendingChoice) => Promise<boolean>;
+  resume: (choice: PendingChoice) => Promise<{ ok: boolean; error?: string }>;
+}): Promise<AutopilotSweepOutcome[]> {
+  const now = input.now ?? new Date();
+  let claimed: PendingChoice[];
+  try {
+    claimed = await input.choiceRegistry.claimExpired(now);
+  } catch (error) {
+    if (error instanceof ChoiceRegistryLockUnavailableError) {
+      return [{ status: "human-required", reason: error.message }];
+    }
+    throw error;
+  }
+
+  const outcomes: AutopilotSweepOutcome[] = [];
+  for (const choice of claimed) {
+    if (choice.status !== "claimed" || !choice.claimToken) {
+      outcomes.push({
+        requestId: choice.requestId,
+        status: "human-required",
+        reason: choice.failureReason ?? "Timeout claim cannot be dispatched safely",
+      });
+      continue;
+    }
+    const humanRequired = async (reason: string): Promise<void> => {
+      try {
+        await input.choiceRegistry.markHumanRequired(choice.requestId, choice.claimToken!, reason);
+      } catch (error) {
+        if (!(error instanceof ChoiceRegistryLockUnavailableError)) throw error;
+      }
+      outcomes.push({ requestId: choice.requestId, status: "human-required", reason });
+    };
+
+    try {
+      if (input.targetAvailable && !(await input.targetAvailable(choice))) {
+        await humanRequired("Codex session is no longer available for timeout continuation");
+        continue;
+      }
+    } catch (error) {
+      await humanRequired(`Timeout target revalidation failed: ${(error as Error).message}`);
+      continue;
+    }
+
+    let preparation: { kind: "dispatching"; choice: PendingChoice } | { kind: "human-required"; reason: string };
+    try {
+      preparation = await input.policyStore.withMutationFence(async () => {
+        const effective = await input.policyStore.readEffective();
+        const selector = createCodexSelectorFromStopSession({ sessionId: choice.sessionId, cwd: choice.cwd });
+        if (effective.source !== "persisted" || effective.revision !== choice.policyRevision ||
+          effective.policy.timeout.mode !== "auto_continue" || !effectivePolicyAllowsSelector(effective, selector)) {
+          return { kind: "human-required", reason: "Autopilot policy or selector changed before timeout dispatch" };
+        }
+        if (!hasSavedTimeoutTarget(choice) || input.validateSavedTarget && !(await input.validateSavedTarget(choice))) {
+          return { kind: "human-required", reason: "Saved timeout target is no longer valid" };
+        }
+        const dispatching = await input.choiceRegistry.markDispatching(
+          choice.requestId,
+          choice.claimToken!,
+          now,
+          effective.policy.maxContinuationsPerSession,
+        );
+        if (dispatching && !hasSavedTimeoutTarget(dispatching)) {
+          return { kind: "human-required", reason: "Saved timeout target is no longer valid" };
+        }
+        return dispatching
+          ? { kind: "dispatching", choice: dispatching }
+          : { kind: "human-required", reason: "Timeout claim could not be dispatched safely" };
+      });
+    } catch (error) {
+      if (error instanceof ChoiceRegistryLockUnavailableError) {
+        await humanRequired(error.message);
+        continue;
+      }
+      await humanRequired(`Timeout dispatch revalidation failed: ${(error as Error).message}`);
+      continue;
+    }
+    if (preparation.kind === "human-required") {
+      await humanRequired(preparation.reason);
+      continue;
+    }
+    const dispatching = preparation.choice;
+
+    let result: { ok: boolean; error?: string };
+    try {
+      result = await input.resume(dispatching);
+    } catch (error) {
+      result = { ok: false, error: (error as Error).message };
+    }
+    if (!result.ok) {
+      try {
+        await input.choiceRegistry.markFailed(dispatching.requestId, dispatching.claimToken!, result.error ?? "Resume consumer rejected timeout continuation");
+        outcomes.push({ requestId: choice.requestId, status: "failed", reason: result.error });
+      } catch (error) {
+        if (error instanceof ChoiceRegistryLockUnavailableError) {
+          outcomes.push({ requestId: choice.requestId, status: "human-required", reason: error.message });
+          continue;
+        }
+        throw error;
+      }
+      continue;
+    }
+    try {
+      await input.choiceRegistry.markResumed(dispatching.requestId, dispatching.claimToken!);
+      outcomes.push({ requestId: choice.requestId, status: "resumed" });
+    } catch (error) {
+      if (error instanceof ChoiceRegistryLockUnavailableError) {
+        outcomes.push({ requestId: choice.requestId, status: "human-required", reason: error.message });
+        continue;
+      }
+      throw error;
+    }
+  }
+  return outcomes;
+}
+
+/** Verify that dispatch still uses exactly the immutable timeout candidate saved with the choice. */
+function hasSavedTimeoutTarget(choice: PendingChoice): boolean {
+  if (!choice.timeoutChoiceId || choice.choiceId !== choice.timeoutChoiceId || !choice.nextGoal) return false;
+  const saved = choice.choices.find((candidate) => candidate.choiceId === choice.timeoutChoiceId);
+  return Boolean(saved && saved.nextGoal === choice.nextGoal);
+}
+
+/** Require the live Codex identity to remain in the same canonical project scope as its timeout choice. */
+export function liveCodexTargetMatchesChoice(
+  choice: Pick<PendingChoice, "sessionId" | "cwd">,
+  session: AgentSession | null,
+): boolean {
+  if (!session || session.harness !== "codex" || session.id !== choice.sessionId) return false;
+  try {
+    return codexSelectorKey(createCodexSelectorFromStopSession({
+      sessionId: choice.sessionId,
+      cwd: choice.cwd,
+    })) === codexSelectorKey(createCodexSelectorFromStopSession({
+      sessionId: session.id,
+      cwd: session.cwd,
+    }));
+  } catch {
+    return false;
+  }
 }
 
 const htmlPath = join(dirname(fileURLToPath(import.meta.url)), "index.html");
@@ -37,7 +194,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const supervisor = new SessionSupervisor(dependencies.adapters, dependencies.converter, dependencies.lineageStore);
   const mcpTransports = new Map<string, StreamableHTTPServerTransport>();
   const mcpAuthToken = dependencies.mcpAuthToken?.trim() || undefined;
-  return createServer(async (request, response) => {
+  const server = createServer(async (request, response) => {
     try {
       await route(request, response, supervisor, dependencies.humanRequests, dependencies.mcpServerFactory, mcpTransports, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry);
     } catch (err) {
@@ -48,6 +205,22 @@ export function createWebServer(dependencies: WebDependencies): Server {
       sendJson(response, 502, { error: (err as Error).message });
     }
   });
+  if (dependencies.choiceRegistry && dependencies.autopilotPolicyStore) {
+    const sweep = () => sweepAutopilotChoices({
+      choiceRegistry: dependencies.choiceRegistry!,
+      policyStore: dependencies.autopilotPolicyStore!,
+      targetAvailable: async (choice) => liveCodexTargetMatchesChoice(
+        choice,
+        await supervisor.getSession("codex", choice.sessionId),
+      ),
+      resume: (choice) => supervisor.sendMessage("codex", choice.sessionId, { message: choice.nextGoal!, queue: true }),
+    }).catch((error) => console.error(`[agent-herder] autopilot sweep failed: ${(error as Error).message}`));
+    const intervalMs = Math.max(100, dependencies.autopilotSweepIntervalMs ?? 30_000);
+    const timer = setInterval(sweep, intervalMs);
+    timer.unref?.();
+    server.once("close", () => clearInterval(timer));
+  }
+  return server;
 }
 
 async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry): Promise<void> {
@@ -206,6 +379,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       execution = normalizeHealthExecution(body.execution);
     } catch (error) {
       return sendJson(response, 400, { error: (error as Error).message });
+    }
+    if (harness !== execution.runtime) {
+      return sendJson(response, 409, { error: `health remediation harness must match execution runtime (${execution.runtime})` });
     }
     if (harness === "hermes") {
       const configured = supervisor.getExecutionProfile("hermes");

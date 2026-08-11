@@ -37,3 +37,19 @@ Mode: research
 Worker reads only the task-relevant source in Agent-Herder and NoticePlace,
 without editing. Return the exact call chain, current fixed Hermes point, least
 cost OpenCode switch, tests to change, and any compatibility blocker.
+
+## Research findings
+
+- Exact call chain: `POST /api/health/remediation` in `src/web/server.ts:355-403`
+  validates the request, normalizes the execution profile, and forwards the
+  job to `supervisor.newOrResumeNamedSession(...)`.
+- Current fixed Hermes point: `src/health-remediation.ts:1-48` hard-codes the
+  canonical profile to `runtime: "hermes"` even though the selected harness path
+  already uses OpenCode semantics via `healthModelForHarness()`.
+- Least-cost OpenCode switch: change the canonical health execution runtime to
+  OpenCode in `src/health-remediation.ts`, then update the health-route tests to
+  expect the new runtime while keeping the provider/model mapping.
+- Tests to change: `tests/health-remediation.test.ts` and
+  `tests/http-api.test.ts`.
+- Compatibility blocker: any OpenCode-flavored profile is currently rejected by
+  `normalizeHealthExecution()` because it only accepts the Hermes runtime.

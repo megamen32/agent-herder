@@ -1,5 +1,5 @@
 export interface HealthExecutionProfile {
-  runtime: "hermes";
+  runtime: "opencode";
   provider: "openai-codex";
   model: "gpt-5.6-luna";
   reasoning: "high";
@@ -7,7 +7,7 @@ export interface HealthExecutionProfile {
 }
 
 const CANONICAL_PROFILE: HealthExecutionProfile = {
-  runtime: "hermes",
+  runtime: "opencode",
   provider: "openai-codex",
   model: "gpt-5.6-luna",
   reasoning: "high",
