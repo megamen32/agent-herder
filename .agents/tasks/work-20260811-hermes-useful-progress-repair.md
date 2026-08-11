@@ -14,6 +14,12 @@ Owner: `src/adapters/hermes/adapter.ts` and
 `tests/hermes-adapter.test.ts` only. You are not alone in the codebase; do not
 revert unrelated dirty work. Work in a bounded <=20 active-minute slice.
 
+- mode: implement
+- procedure: bugfix/TDD
+- primary acceptance check: a focused regression proves that repeated
+  non-semantic Hermes CLI decoration after one useful command cannot postpone
+  the useful-progress termination timer, while a second semantic command can.
+
 Implement the smallest regression-tested repair that:
 
 1. makes decorative/echoed input and cosmetic CLI output non-useful;
@@ -37,3 +43,5 @@ result to this file.
 - Lifecycle provenance: copied from todo by Lead before implementation
 - Last task-file mtime observed: 2026-08-11T14:38:00Z
 - Initial estimate: 10 / 20 active minutes
+- Revision: 2026-08-11T14:42:00Z — added required implementation mode after
+  Worker preflight; scope and estimate unchanged.
