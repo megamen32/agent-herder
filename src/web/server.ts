@@ -380,14 +380,14 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     } catch (error) {
       return sendJson(response, 400, { error: (error as Error).message });
     }
-    if (harness !== execution.runtime) {
-      return sendJson(response, 409, { error: `health remediation harness must match execution runtime (${execution.runtime})` });
-    }
     if (harness === "hermes") {
       const configured = supervisor.getExecutionProfile("hermes");
       if (!configured || configured.provider !== execution.provider || configured.reasoning !== execution.reasoning || configured.toolsets !== "terminal") {
         return sendJson(response, 409, { error: "Hermes health execution profile is not the approved provider/reasoning/toolset" });
       }
+    }
+    if (harness !== execution.runtime) {
+      return sendJson(response, 409, { error: `health remediation harness must match execution runtime (${execution.runtime})` });
     }
     const model = healthModelForHarness(harness, execution);
     const message = [

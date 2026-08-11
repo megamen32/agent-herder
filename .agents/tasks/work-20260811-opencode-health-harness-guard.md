@@ -51,6 +51,15 @@ Telegram delivery, Hermes execution, destructive action.
 - Estimate revision: 6/18 -> 5/15 active minutes. Trigger: recovery of one
   interrupted local slice, no scope expansion.
 
+## Build correction
+
+- 2026-08-11: `npm run build` fails at `src/web/server.ts:386` because the new
+  canonical OpenCode type makes the Hermes comparison statically impossible.
+  One Worker may make the smallest task-owned type-safe correction in
+  `src/web/server.ts` and the isolated health-route test only.
+- Acceptance replaces the prior local-only check: focused route regression plus
+  `npm run build` pass. No deploy/restart/retry.
+
 ## Worker verification
 
 - 2026-08-11 22:59 UTC+3: inspected the current task-owned diff in
@@ -64,6 +73,13 @@ Telegram delivery, Hermes execution, destructive action.
 - Acceptance observed: a Hermes harness with canonical OpenCode execution is
   rejected with 409 before session creation, while canonical OpenCode health
   remediation remains accepted.
+- 2026-08-11 23:07 UTC+3: fixed the TS2367 build regression by moving the
+  Hermes-approved-profile check before the narrowing compare in
+  `src/web/server.ts`.
+- Rechecked after the patch:
+  - `npm run build` → passed.
+  - `npx vitest run tests/health-remediation-route.test.ts` → 1 file, 2 tests
+    passed.
 
 ## Reviewer evidence
 
