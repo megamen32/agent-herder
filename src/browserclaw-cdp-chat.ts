@@ -595,19 +595,28 @@ function normalizedHistoryTitle(value: string): string {
 }
 
 function parseConversationSidebarTitles(value: string): ReadonlySet<string> {
-  const parsed = (() => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value) as unknown;
+  } catch {
+    // BrowserClaw normally returns the value as text. Some MCP transports add
+    // a short prose prefix, so recover only one complete JSON array from it.
+    const start = value.indexOf("[");
+    const end = value.lastIndexOf("]");
+    if (start < 0 || end < start) throw new Error("BrowserClaw did not return a conversation sidebar list");
     try {
-      return JSON.parse(value) as unknown;
+      parsed = JSON.parse(value.slice(start, end + 1)) as unknown;
     } catch {
-      const quoted = value.match(/(?:^|\n)\s*"(\[.*\])"\s*$/s)?.[1];
-      if (!quoted) return undefined;
-      try {
-        return JSON.parse(quoted) as unknown;
-      } catch {
-        return undefined;
-      }
+      throw new Error("BrowserClaw did not return a conversation sidebar list");
     }
-  })();
+  }
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed) as unknown;
+    } catch {
+      throw new Error("BrowserClaw did not return a conversation sidebar list");
+    }
+  }
   if (!Array.isArray(parsed)) throw new Error("BrowserClaw did not return a conversation sidebar list");
   const titles = parsed.filter((item): item is string => typeof item === "string").map(normalizedHistoryTitle).filter(Boolean);
   if (titles.length !== parsed.length) throw new Error("BrowserClaw returned an invalid conversation sidebar list");

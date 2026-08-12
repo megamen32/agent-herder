@@ -292,7 +292,7 @@ describe("BrowserClawAccountExportDriver", () => {
       sessionRef: "session-conversation-labels",
       async callToolRaw(name: string, args: Record<string, unknown>) {
         calls.push({ name, args });
-        return { result: { content: [{ type: "text", text: '["Research article", "Deep research"]' }] } };
+        return { result: { content: [{ type: "text", text: 'Evaluation result:\n["Research article", "Deep research"]' }] } };
       },
     };
 
