@@ -14,6 +14,41 @@ fixture binding, opaque references, page lease, and write gates therefore do
 not cross between separate stdio or HTTP MCP sessions. The HTTP route creates
 the server when a new MCP initialize request creates a session.
 
+## Account archive: articles, Deep Research, and files
+
+Do not attempt to infer an HTML/Markdown format or scrape every historical chat
+first. ChatGPT's native account export is the canonical first archive: it
+returns a ZIP by email or SMS containing chat history and related account data.
+Completed Deep Research reports are part of chat history and may also have
+their own downloadable Markdown, Word, or PDF representation. ChatGPT Library
+is the separate authoritative surface for saved uploaded/generated files.
+
+The first 80/20 capability therefore uses the native ZIP as an immutable source
+and records what it actually contains before any conversion or publishing:
+
+- `request_account_export({ confirmation: "REQUEST_ACCOUNT_EXPORT" })` requests
+  the official asynchronous export on the one owned ChatGPT page. It sends no
+  chat message. The result says to download the ZIP from the account's email or
+  SMS link.
+- `import_account_export({ sourcePath })` copies that downloaded `.zip` into
+  `CHATGPT_ACCOUNT_ARCHIVE_ROOT` (or `chatgpt-account-archive`), computes a
+  SHA-256, and writes an immutable manifest that counts conversation sources,
+  research candidates, and file candidates without exposing chat text.
+- `list_account_exports({ limit? })` lists imported ZIP bundles and their
+  aggregate manifest counts.
+
+In Agent Herder these names are namespaced as:
+
+- `cdp_request_account_export`, `cdp_import_account_export`,
+  `cdp_list_account_exports`.
+
+The manifest is the decision point for the next vertical slice. If the native
+ZIP includes the files, preserve it as the complete raw source. If it does not,
+add a focused `Library → select → download` batch runner using BrowserClaw's
+fresh `download(page, ref)` primitive. That follow-up must retain the same
+long-lived BrowserClaw MCP process and single owned page; it must not open a
+tab per file.
+
 ## Safety contract
 
 1. The driver returns an opaque page identity: `origin`, `accountRef`,

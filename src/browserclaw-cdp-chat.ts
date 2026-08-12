@@ -11,6 +11,7 @@ import {
   type BrowserClawA11ySnapshot,
   type BrowserClawSemanticAction,
 } from "./browserclaw-a11y.js";
+import type { ChatGptAccountExportDriver } from "./chatgpt-account-archive.js";
 import type { ChatRecord, CdpChatDriver, CdpChatPage, DownloadedMedia, MessageRecord, PageIdentity } from "./cdp-chat.js";
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:9010/mcp";
@@ -52,7 +53,7 @@ function parseJsonRpcBody(body: string): Record<string, unknown> | null {
 }
 
 /** Small persistent Streamable-HTTP MCP client owned by this CDP adapter. */
-class BrowserClawCdpMcpClient {
+export class BrowserClawCdpMcpClient {
   private sessionId: string | undefined;
   private requestId = 1;
 
@@ -179,6 +180,53 @@ class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
   }
 }
 
+/**
+ * One BrowserClaw-owned Settings flow for the official asynchronous account
+ * export. It has no chat composer action and never opens a second tab.
+ */
+export class BrowserClawAccountExportDriver implements ChatGptAccountExportDriver {
+  private readonly page: BrowserClawA11yPage;
+
+  private constructor(page: BrowserClawA11yPage) {
+    this.page = page;
+  }
+
+  static fromOwnedPage(page: BrowserClawA11yPage): BrowserClawAccountExportDriver {
+    return new BrowserClawAccountExportDriver(page);
+  }
+
+  async requestAccountExport(): Promise<{
+    requestedAt: string;
+    delivery: "email_or_sms";
+    status: "requested" | "already_requested";
+  }> {
+    let snapshot = await this.page.snapshot(deadline());
+    snapshot = await this.click(snapshot, (node) => node.role === "button" && /(?:открыть )?(?:меню )?профил|profile/i.test(node.name ?? ""), "profile menu");
+    snapshot = await this.click(snapshot, (node) => ["menuitem", "button", "link"].includes(node.role) && /(?:^|\s)(?:настройки|settings)(?:$|\s)/i.test(node.name ?? ""), "settings");
+    snapshot = await this.click(snapshot, (node) => (node.role === "tab" || node.role === "button") && /^(управление данными|data controls|data management)$/i.test(node.name ?? ""), "data management");
+
+    const alreadyRequested = findNode(snapshot.root, (node) => /(?:уже )?(?:запрош|request(?:ed)? already|export already)/i.test(`${node.name ?? ""} ${node.description ?? ""}`));
+    if (alreadyRequested) {
+      return { requestedAt: new Date().toISOString(), delivery: "email_or_sms", status: "already_requested" };
+    }
+
+    snapshot = await this.click(snapshot, (node) => node.role === "button" && /^(?:экспорт(?:ировать)?(?: данн(?:ые|ых))?|export(?: data)?|export your data)$/i.test((node.name ?? "").trim()), "account export");
+    snapshot = await this.click(snapshot, (node) => node.role === "button" && /^(?:подтвердить(?: экспорт)?|confirm(?: export)?|confirm your export)$/i.test(node.name ?? ""), "confirm account export");
+    return { requestedAt: new Date().toISOString(), delivery: "email_or_sms", status: "requested" };
+  }
+
+  private async click(
+    snapshot: BrowserClawA11ySnapshot,
+    predicate: (node: BrowserClawA11yNode) => boolean,
+    label: string,
+  ): Promise<BrowserClawA11ySnapshot> {
+    const node = findNode(snapshot.root, predicate);
+    if (!node || node.disabled) throw new Error(`ChatGPT ${label} control was not found on the owned page`);
+    await this.page.act({ snapshotRef: snapshot.snapshotRef, action: { kind: "click", ref: node.ref } }, deadline());
+    return this.page.snapshot(deadline());
+  }
+}
+
 /** Concrete driver factory loaded by CDP_CHAT_DRIVER_MODULE. */
 export async function createCdpChatDriver(options: BrowserClawCdpChatDriverOptions = {}): Promise<CdpChatDriver> {
   const client = await BrowserClawCdpMcpClient.connect(
@@ -196,11 +244,13 @@ export async function createCdpChatDriver(options: BrowserClawCdpChatDriverOptio
     allowPathPrefix: "/",
     page: ownedPage,
   });
-  const page = new BrowserClawCdpChatPage(await a11y.acquirePage(), a11yClient.sessionRef);
+  const ownedA11yPage = await a11y.acquirePage();
+  const page = new BrowserClawCdpChatPage(ownedA11yPage, a11yClient.sessionRef);
   return {
     async acquirePage(): Promise<CdpChatPage> {
       return page;
     },
+    accountExportDriver: BrowserClawAccountExportDriver.fromOwnedPage(ownedA11yPage),
   };
 }
 

@@ -29,6 +29,7 @@ import type {
   SendMessageInput,
 } from "./cdp-chat.js";
 import { CdpChatClient } from "./cdp-chat.js";
+import { ChatGptAccountArchive, type ImportAccountExportInput, type RequestAccountExportInput } from "./chatgpt-account-archive.js";
 import {
   handleListAgents,
   handleAgentInfo,
@@ -393,10 +394,33 @@ function registerCdpChatTools(server: McpServer, client: CdpChatClient): void {
   );
 }
 
+/** Register account-wide ChatGPT archive tools under a distinct namespace. */
+function registerChatGptAccountArchiveTools(server: McpServer, archive: ChatGptAccountArchive): void {
+  server.tool(
+    "cdp_request_account_export",
+    "Request ChatGPT's official account-data ZIP. The link arrives by email or SMS; no chat prompt is sent.",
+    { confirmation: z.literal("REQUEST_ACCOUNT_EXPORT") },
+    async (args) => cdpTextResult(await archive.requestAccountExport(args as RequestAccountExportInput)),
+  );
+  server.tool(
+    "cdp_import_account_export",
+    "Copy a downloaded ChatGPT account-export ZIP into the local archive and create a source-format manifest without converting chat content.",
+    { sourcePath: z.string().min(1).max(4096) },
+    async (args) => cdpTextResult(await archive.importAccountExport(args as ImportAccountExportInput)),
+  );
+  server.tool(
+    "cdp_list_account_exports",
+    "List imported ChatGPT account-export ZIP archives and aggregate entry categories without exposing chat text.",
+    { limit: z.number().int().min(1).max(100).optional() },
+    async (args) => cdpTextResult(await archive.listAccountExports(args.limit)),
+  );
+}
+
 // ===== Register MCP tools =====
 
-function registerTools(server: McpServer, cdpChatClient?: CdpChatClient) {
+function registerTools(server: McpServer, cdpChatClient?: CdpChatClient, cdpAccountArchive?: ChatGptAccountArchive) {
   if (cdpChatClient) registerCdpChatTools(server, cdpChatClient);
+  if (cdpAccountArchive) registerChatGptAccountArchiveTools(server, cdpAccountArchive);
 
   server.tool(
     "browser_wake",
@@ -671,7 +695,11 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver): McpSe
     version: "0.2.0",
     description: "Monitor and control coding agents (OpenCode, Claude Code SDK, Codex CLI, Qoder) with summarization and model management",
   });
-  registerTools(server, cdpChatDriver ? new CdpChatClient(cdpChatDriver, { mediaRoot: process.env.CDP_CHAT_MEDIA_ROOT }) : undefined);
+  registerTools(
+    server,
+    cdpChatDriver ? new CdpChatClient(cdpChatDriver, { mediaRoot: process.env.CDP_CHAT_MEDIA_ROOT }) : undefined,
+    cdpChatDriver ? new ChatGptAccountArchive(cdpChatDriver.accountExportDriver, { archiveRoot: process.env.CHATGPT_ACCOUNT_ARCHIVE_ROOT }) : undefined,
+  );
   return server;
 }
 

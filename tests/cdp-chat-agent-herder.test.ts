@@ -3,6 +3,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAgentHerderMcpServer } from "../src/index.js";
 import type { ChatRecord, CdpChatDriver, CdpChatPage, MessageRecord, PageIdentity } from "../src/cdp-chat.js";
+import type { ChatGptAccountExportDriver } from "../src/chatgpt-account-archive.js";
 
 const connected: Array<{ client: Client; server: { close(): Promise<void> } }> = [];
 
@@ -78,7 +79,12 @@ class FakeCdpPage implements CdpChatPage {
 
 function fakeDriver(): CdpChatDriver {
   const page = new FakeCdpPage();
-  return { async acquirePage() { return page; } };
+  const accountExportDriver: ChatGptAccountExportDriver = {
+    async requestAccountExport() {
+      return { requestedAt: "2026-08-12T00:00:00.000Z", delivery: "email_or_sms", status: "requested" };
+    },
+  };
+  return { async acquirePage() { return page; }, accountExportDriver };
 }
 
 async function connect(driver: CdpChatDriver): Promise<Client> {
@@ -105,6 +111,9 @@ describe("Agent Herder CDP chat capability", () => {
       "cdp_send_message",
       "cdp_edit_message",
       "cdp_download_media",
+      "cdp_request_account_export",
+      "cdp_import_account_export",
+      "cdp_list_account_exports",
     ]));
     expect(names.filter((name) => name === "send_message")).toHaveLength(1);
   });

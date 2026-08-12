@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, lstat, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import type { ChatGptAccountExportDriver } from "./chatgpt-account-archive.js";
 
 export type ChatView = "unread" | "working" | "recent";
 
@@ -65,6 +66,8 @@ export interface CdpChatPage {
 /** Acquires the one authenticated page owned by this MCP process. */
 export interface CdpChatDriver {
   acquirePage(): Promise<CdpChatPage>;
+  /** Optional account-wide export action sharing this driver's one BrowserClaw page lease. */
+  accountExportDriver?: ChatGptAccountExportDriver;
 }
 
 export interface CdpChatOptions {

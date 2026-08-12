@@ -16,6 +16,11 @@ import {
   type SendMessageInput,
   type DownloadMediaInput,
 } from "./cdp-chat.js";
+import {
+  ChatGptAccountArchive,
+  type ImportAccountExportInput,
+  type RequestAccountExportInput,
+} from "./chatgpt-account-archive.js";
 
 /** Return an MCP text result containing only bounded JSON data. */
 function textResult(value: unknown): { content: [{ type: "text"; text: string }] } {
@@ -101,6 +106,28 @@ export function registerCdpChatTools(server: McpServer, client: CdpChatClient): 
   );
 }
 
+/** Register the account-wide native-export archive operations. */
+export function registerChatGptAccountArchiveTools(server: McpServer, archive: ChatGptAccountArchive): void {
+  server.tool(
+    "request_account_export",
+    "Request ChatGPT's official account-data ZIP. It includes chat history and related account data; the link arrives by email or SMS.",
+    { confirmation: z.literal("REQUEST_ACCOUNT_EXPORT") },
+    async (args) => textResult(await archive.requestAccountExport(args as RequestAccountExportInput)),
+  );
+  server.tool(
+    "import_account_export",
+    "Copy a downloaded ChatGPT account-export ZIP into the local archive and create a source-format manifest without converting chat content.",
+    { sourcePath: z.string().min(1).max(4096) },
+    async (args) => textResult(await archive.importAccountExport(args as ImportAccountExportInput)),
+  );
+  server.tool(
+    "list_account_exports",
+    "List imported ChatGPT account-export ZIP archives and aggregate entry categories without exposing chat text.",
+    { limit: z.number().int().min(1).max(100).optional() },
+    async (args) => textResult(await archive.listAccountExports(args.limit)),
+  );
+}
+
 /** Create the standalone MCP server around an already configured page driver. */
 export function createCdpChatServer(driver: CdpChatDriver, options: ConstructorParameters<typeof CdpChatClient>[1] = {}): McpServer {
   const server = new McpServer({
@@ -109,6 +136,9 @@ export function createCdpChatServer(driver: CdpChatDriver, options: ConstructorP
     description: "Bounded ChatGPT/E-Frontier chat operations over one owned CDP page",
   });
   registerCdpChatTools(server, new CdpChatClient(driver, options));
+  registerChatGptAccountArchiveTools(server, new ChatGptAccountArchive(driver.accountExportDriver, {
+    archiveRoot: process.env.CHATGPT_ACCOUNT_ARCHIVE_ROOT,
+  }));
   return server;
 }
 
