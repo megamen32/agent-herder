@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -94,5 +94,7 @@ describe("ChatGptAccountArchive", () => {
       unzipBin: process.execPath,
     });
     await expect(unsafeListingArchive.importAccountExport({ sourcePath: source })).rejects.toMatchObject<Partial<ChatGptAccountArchiveError>>({ code: "invalid_export_zip" });
+    const rawDirectory = join(workspace, "unsafe-archive", "raw");
+    await expect(readdir(rawDirectory)).resolves.toEqual([]);
   });
 });

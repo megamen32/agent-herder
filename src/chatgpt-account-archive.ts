@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, copyFile, lstat, mkdir, readFile, readdir, realpath, rename, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, readFile, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { basename, join, relative, resolve, sep } from "node:path";
 
@@ -290,14 +290,20 @@ export class ChatGptAccountArchive {
     const archiveId = `${importedAt.replace(/[:.]/gu, "-")}-${randomUUID().slice(0, 8)}`;
     const archivePath = join(rawDirectory, `chatgpt-account-${archiveId}-${digest.slice(0, 12)}.zip`);
     const temporary = `${archivePath}.${process.pid}.${randomUUID()}.tmp`;
-    await copyFile(sourcePath, temporary);
-    await chmod(temporary, 0o600);
-    const copied = await stat(temporary);
-    if (copied.size !== source.size) {
-      throw new ChatGptAccountArchiveError("copy_failed", "copied account export ZIP has an unexpected size");
+    let entryNames: string[];
+    try {
+      await copyFile(sourcePath, temporary);
+      await chmod(temporary, 0o600);
+      const copied = await stat(temporary);
+      if (copied.size !== source.size || await sha256(temporary) !== digest) {
+        throw new ChatGptAccountArchiveError("copy_failed", "copied account export ZIP does not match the source");
+      }
+      entryNames = await listZipEntries(this.unzipBin, temporary, this.maxEntries);
+      await rename(temporary, archivePath);
+    } catch (error) {
+      await unlink(temporary).catch(() => {});
+      throw error;
     }
-    await rename(temporary, archivePath);
-    const entryNames = await listZipEntries(this.unzipBin, archivePath, this.maxEntries);
     const manifestPath = join(manifestDirectory, `${archiveId}.manifest.json`);
     const result: ImportedAccountExport = {
       archiveId,
