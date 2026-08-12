@@ -47,6 +47,28 @@ class FailingOpenHistoryDriver extends FakeHistoryDriver {
   }
 }
 
+class RouteHistoryDriver extends FakeHistoryDriver {
+  constructor(private readonly routeId: string) {
+    super();
+  }
+
+  override async listChats() {
+    return [{
+      id: this.routeId,
+      title: "Article archive canary",
+      sourceRoute: "/c/archive-canary",
+      unread: false,
+      working: false,
+      updatedAt: "2026-08-12T12:00:00.000Z",
+    }];
+  }
+
+  override async openChat(input: { chatId: string }): Promise<ChatGptHistorySegment> {
+    expect(input.chatId).toBe(this.routeId);
+    return super.openChat({ chatId: "article" });
+  }
+}
+
 describe("ChatGptHistoryArchive", () => {
   it("writes private raw history segments, checkpoints, and resumes without returning chat text", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-history-archive-"));
@@ -153,6 +175,26 @@ describe("ChatGptHistoryArchive", () => {
 
       expect(result).toMatchObject({ status: "checkpoint", article: { markdownPath: expect.any(String), htmlPath: expect.any(String) } });
       await expect(readFile(result.article!.markdownPath, "utf8")).resolves.toContain("partial checkpoint");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reconciles an already captured route into the current archive without another browser action", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-history-route-reconcile-"));
+    try {
+      const legacy = new ChatGptHistoryArchive(new RouteHistoryDriver("legacy-session-id"), { archiveRoot: root });
+      const legacyListed = await legacy.listChats({ view: "recent" });
+      await legacy.exportChat({ chatRef: legacyListed.chats[0]!.chatRef, maxSegments: 1 });
+
+      const currentDriver = new RouteHistoryDriver("route-stable-id");
+      const current = new ChatGptHistoryArchive(currentDriver, { archiveRoot: root });
+      const reconciled = await current.reconcileVisibleChats({ maxChats: 10 });
+
+      expect(currentDriver.openCalls).toBe(0);
+      expect(reconciled).toMatchObject({ requestedChats: 1, reconciledChats: 1, unavailableChats: 0 });
+      expect(reconciled.results[0]).toMatchObject({ status: "reconciled", newSegments: 1, article: { markdownPath: expect.any(String), htmlPath: expect.any(String) } });
+      await expect(readFile(reconciled.results[0]!.article!.markdownPath, "utf8")).resolves.toContain("private bottom text");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

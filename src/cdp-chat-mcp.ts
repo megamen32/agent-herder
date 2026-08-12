@@ -28,6 +28,7 @@ import {
   type ExportChatHistoryInput,
   type ExportVisibleChatHistoryInput,
   type ListChatHistoryInput,
+  type ReconcileVisibleChatHistoryInput,
 } from "./chatgpt-history-archive.js";
 
 /** Return an MCP text result containing only bounded JSON data. */
@@ -160,6 +161,12 @@ export function registerChatGptHistoryArchiveTools(server: McpServer, archive?: 
     "Best-effort export of all currently visible non-protected ChatGPT conversations. Each completed archive includes local Markdown and HTML renderings beside raw snapshots.",
     { maxChats: z.number().int().min(1).max(100).optional(), maxSegmentsPerChat: z.number().int().min(1).max(100).optional() },
     async (args) => textResult(await archive.exportVisibleChats(args as ExportVisibleChatHistoryInput)),
+  );
+  server.tool(
+    "reconcile_visible_chats",
+    "Materialize local Markdown and HTML from already captured ChatGPT history snapshots for the currently visible chats. This does not open, scroll, or alter ChatGPT.",
+    { maxChats: z.number().int().min(1).max(100).optional() },
+    async (args) => textResult(await archive.reconcileVisibleChats(args as ReconcileVisibleChatHistoryInput)),
   );
 }
 

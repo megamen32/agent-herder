@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmod, lstat, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
@@ -14,6 +14,8 @@ export interface ChatGptHistoryChat {
   working: boolean;
   /** The visible-sidebar order is represented as an ISO timestamp when no real timestamp is exposed. */
   updatedAt: string;
+  /** Stable ChatGPT conversation route when the browser adapter can observe it. */
+  sourceRoute?: string;
 }
 
 /** One raw, local-only history capture from the owned ChatGPT page. */
@@ -83,6 +85,7 @@ export interface ExportChatHistoryResult {
 interface ChatBinding {
   id: string;
   title: string;
+  sourceRoute?: string;
 }
 
 interface HistorySegmentManifest {
@@ -113,6 +116,7 @@ const DEFAULT_ARCHIVE_ROOT = join(homedir(), "archives", "chatgpt-history");
 const DEFAULT_MAX_SEGMENT_BYTES = 2 * 1024 * 1024;
 const DEFAULT_PROTECTED_TITLES = ["E-Frontier"];
 const MANIFEST_FORMAT = "agent-herder-chatgpt-history.v1" as const;
+const CHATGPT_ORIGIN = "https://chatgpt.com";
 
 /** A compact, non-transcript error for the history-export MCP surface. */
 export class ChatGptHistoryArchiveError extends Error {
@@ -132,7 +136,21 @@ function inside(root: string, candidate: string): boolean {
 }
 
 function normalTitle(value: string): string {
-  return value.trim().replace(/\s+/gu, " ").toLocaleLowerCase();
+  return value.trim().replace(/[‐‑‒–—−]/gu, "-").replace(/\s+/gu, " ").toLocaleLowerCase();
+}
+
+function conversationRoute(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value, CHATGPT_ORIGIN);
+    return url.origin === CHATGPT_ORIGIN && /^\/c\/[^/]+/u.test(url.pathname) ? url.pathname : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function routeFromSegment(segment: ChatGptHistorySegment): string | undefined {
+  return conversationRoute(segment.page?.url);
 }
 
 function opaqueRef(chatId: string): string {
@@ -228,7 +246,7 @@ export class ChatGptHistoryArchive {
         : chats;
     const publicChats = selected.slice(0, limit).map((chat) => {
       const chatRef = opaqueRef(chat.id);
-      this.bindings.set(chatRef, { id: chat.id, title: chat.title });
+      this.bindings.set(chatRef, { id: chat.id, title: chat.title, ...(chat.sourceRoute ? { sourceRoute: chat.sourceRoute } : {}) });
       return { chatRef, title: chat.title, unread: chat.unread, working: chat.working, updatedAt: chat.updatedAt };
     });
     return {
@@ -284,6 +302,59 @@ export class ChatGptHistoryArchive {
       }
     }
     return { requestedChats: listed.chats.length, results };
+  }
+
+  /**
+   * Materialize the current route-stable archive from snapshots already saved
+   * locally. This intentionally does not open, scroll, or alter a ChatGPT page.
+   */
+  async reconcileVisibleChats(input: ReconcileVisibleChatHistoryInput = {}): Promise<ReconcileVisibleChatHistoryResult> {
+    const maxChats = boundedLimit(input.maxChats, 100, 100);
+    const listed = await this.listChats({ view: "recent", limit: maxChats });
+    const root = await ensureRoot(this.root);
+    const sourceSegments = await this.indexRouteSegments(root);
+    const results: ReconcileVisibleChatHistoryResult["results"] = [];
+    const seen = new Set<string>();
+    let reconciledChats = 0;
+    let unavailableChats = 0;
+
+    for (const chat of listed.chats) {
+      if (seen.has(chat.chatRef)) {
+        results.push({ chatRef: chat.chatRef, status: "skipped" });
+        continue;
+      }
+      seen.add(chat.chatRef);
+      const binding = this.bindings.get(chat.chatRef);
+      if (!binding || this.protectedTitles.has(normalTitle(binding.title))) {
+        results.push({ chatRef: chat.chatRef, status: "skipped" });
+        continue;
+      }
+      const route = conversationRoute(binding.sourceRoute);
+      const segments = route ? sourceSegments.get(route) : undefined;
+      if (!segments || segments.length === 0) {
+        unavailableChats += 1;
+        results.push({ chatRef: chat.chatRef, status: "unavailable" });
+        continue;
+      }
+
+      const id = archiveId(binding.id);
+      const archivePath = join(root, id);
+      if (!inside(root, archivePath)) throw new ChatGptHistoryArchiveError("unsafe_archive_path", "history archive path escaped its root");
+      const manifestPath = join(archivePath, "manifest.json");
+      const manifest = await this.readManifest(manifestPath, id, chat.chatRef, binding.title);
+      await mkdir(join(archivePath, "segments"), { recursive: true, mode: 0o700 });
+      let newSegments = 0;
+      for (const segment of segments) {
+        if (await this.appendSegment(archivePath, manifest, segment)) newSegments += 1;
+      }
+      manifest.resume = "reopen_from_bottom";
+      manifest.updatedAt = this.now().toISOString();
+      await writePrivate(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+      const article = await this.writeArticleViews(archivePath, binding.title, manifest);
+      reconciledChats += 1;
+      results.push({ chatRef: chat.chatRef, status: "reconciled", newSegments, archivePath, article });
+    }
+    return { requestedChats: listed.chats.length, reconciledChats, unavailableChats, results };
   }
 
   private async exportBoundChat(chatRef: string, binding: ChatBinding, maxSegments: number): Promise<ExportChatHistoryResult> {
@@ -384,6 +455,36 @@ export class ChatGptHistoryArchive {
     return true;
   }
 
+  private async indexRouteSegments(root: string): Promise<Map<string, ChatGptHistorySegment[]>> {
+    const byRoute = new Map<string, ChatGptHistorySegment[]>();
+    const entries = await readdir(root, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const segmentDir = join(root, entry.name, "segments");
+      let files: string[];
+      try {
+        files = await readdir(segmentDir);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
+      for (const file of files) {
+        if (!file.endsWith(".json")) continue;
+        try {
+          const segment = JSON.parse(await readFile(join(segmentDir, file), "utf8")) as ChatGptHistorySegment;
+          const route = routeFromSegment(segment);
+          if (!route) continue;
+          const matching = byRoute.get(route) ?? [];
+          matching.push(segment);
+          byRoute.set(route, matching);
+        } catch {
+          // Preserve other raw source snapshots if a legacy segment is unreadable.
+        }
+      }
+    }
+    return byRoute;
+  }
+
   private async writeArticleViews(
     archivePath: string,
     title: string,
@@ -448,6 +549,24 @@ export interface ExportVisibleChatHistoryResult {
     archivePath?: string;
     article?: { markdownPath: string; htmlPath: string };
     error?: string;
+  }>;
+}
+
+export interface ReconcileVisibleChatHistoryInput {
+  /** Upper bound for visible chats whose existing raw snapshots are materialized. */
+  maxChats?: number;
+}
+
+export interface ReconcileVisibleChatHistoryResult {
+  requestedChats: number;
+  reconciledChats: number;
+  unavailableChats: number;
+  results: Array<{
+    chatRef: string;
+    status: "reconciled" | "unavailable" | "skipped";
+    newSegments?: number;
+    archivePath?: string;
+    article?: { markdownPath: string; htmlPath: string };
   }>;
 }
 

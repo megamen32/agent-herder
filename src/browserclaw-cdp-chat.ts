@@ -629,6 +629,7 @@ export function visibleSidebarChats(
       id: historyChatId(idPrefix, title, node.description, route),
       nodeRef: node.ref,
       title,
+      ...(route ? { sourceRoute: route } : {}),
       unread: /(?:\bunread\b|непрочитан)/iu.test(`${node.description ?? ""} ${node.name ?? ""}`),
       working: /(?:\bworking\b|thinking|думает|генерир)/iu.test(`${node.description ?? ""} ${node.name ?? ""}`),
       // BrowserClaw does not expose ChatGPT row timestamps. Stable current order

@@ -191,7 +191,7 @@ describe("Agent Herder CDP chat capability", () => {
   it("registers the read-only checkpoint archive instead of fixture chat tools", async () => {
     const client = await connect(historyOnlyDriver());
     const names = (await client.listTools()).tools.map((tool) => tool.name);
-    expect(names).toEqual(expect.arrayContaining(["cdp_list_chats", "cdp_export_chat", "cdp_export_visible_chats"]));
+    expect(names).toEqual(expect.arrayContaining(["cdp_list_chats", "cdp_export_chat", "cdp_export_visible_chats", "cdp_reconcile_visible_chats"]));
     expect(names).not.toEqual(expect.arrayContaining(["cdp_new_chat", "cdp_send_message", "cdp_edit_message", "cdp_download_media"]));
 
     const listed = await client.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });

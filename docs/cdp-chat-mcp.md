@@ -32,6 +32,9 @@ same page, scroll upward, and save each raw accessibility snapshot locally.
   archive also gets `article/article.md` and `article/article.html` rendered
   locally from its raw snapshots. These are convenience copies; raw segments
   remain the authoritative source.
+- `reconcile_visible_chats({ maxChats? })` is browser-free: it builds the
+  route-stable archive's Markdown and HTML from raw snapshots already captured
+  on disk. It never opens, scrolls, or changes the ChatGPT page.
 - Before a click, the BrowserClaw driver intersects fresh a11y sidebar rows
   with `read(format: "links")` links on that same owned page whose route begins
   `/c/`. It does not open or navigate a second tab to do this filtering.

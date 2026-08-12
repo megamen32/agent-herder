@@ -31,7 +31,7 @@ import type {
 } from "./cdp-chat.js";
 import { ALL_CDP_CHAT_CAPABILITIES, CdpChatClient } from "./cdp-chat.js";
 import { ChatGptAccountArchive, type ImportAccountExportInput, type RequestAccountExportInput } from "./chatgpt-account-archive.js";
-import { ChatGptHistoryArchive, type ExportChatHistoryInput, type ExportVisibleChatHistoryInput, type ListChatHistoryInput } from "./chatgpt-history-archive.js";
+import { ChatGptHistoryArchive, type ExportChatHistoryInput, type ExportVisibleChatHistoryInput, type ListChatHistoryInput, type ReconcileVisibleChatHistoryInput } from "./chatgpt-history-archive.js";
 import {
   handleListAgents,
   handleAgentInfo,
@@ -438,6 +438,12 @@ function registerChatGptHistoryArchiveTools(server: McpServer, archive?: ChatGpt
     "Best-effort export of all currently visible non-protected ChatGPT conversations. Completed archives include local Markdown and HTML renderings beside raw snapshots.",
     { maxChats: z.number().int().min(1).max(100).optional(), maxSegmentsPerChat: z.number().int().min(1).max(100).optional() },
     async (args) => cdpTextResult(await archive.exportVisibleChats(args as ExportVisibleChatHistoryInput)),
+  );
+  server.tool(
+    "cdp_reconcile_visible_chats",
+    "Materialize local Markdown and HTML from already captured ChatGPT history snapshots for the currently visible chats. This does not open, scroll, or alter ChatGPT.",
+    { maxChats: z.number().int().min(1).max(100).optional() },
+    async (args) => cdpTextResult(await archive.reconcileVisibleChats(args as ReconcileVisibleChatHistoryInput)),
   );
 }
 
