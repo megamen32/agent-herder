@@ -41,6 +41,12 @@ class FakeHistoryDriver implements ChatGptHistoryArchiveDriver {
   }
 }
 
+class FailingOpenHistoryDriver extends FakeHistoryDriver {
+  override async openChat(): Promise<ChatGptHistorySegment> {
+    throw new Error("not a conversation route");
+  }
+}
+
 describe("ChatGptHistoryArchive", () => {
   it("writes private raw history segments, checkpoints, and resumes without returning chat text", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-history-archive-"));
@@ -132,6 +138,35 @@ describe("ChatGptHistoryArchive", () => {
       expect(result.results).toHaveLength(2);
       expect(result.results.find((entry) => entry.status === "complete")).toMatchObject({ article: { markdownPath: expect.any(String), htmlPath: expect.any(String) } });
       expect(result.results.find((entry) => entry.status === "skipped")).toMatchObject({ error: "protected_chat" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("renders a downloadable partial article at a checkpoint", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-history-checkpoint-article-"));
+    try {
+      const archive = new ChatGptHistoryArchive(new FakeHistoryDriver(), { archiveRoot: root });
+      const listed = await archive.listChats({ view: "recent" });
+      const chatRef = listed.chats.find((entry) => entry.title === "Article archive canary")?.chatRef;
+      const result = await archive.exportChat({ chatRef: chatRef!, maxSegments: 1 });
+
+      expect(result).toMatchObject({ status: "checkpoint", article: { markdownPath: expect.any(String), htmlPath: expect.any(String) } });
+      await expect(readFile(result.article!.markdownPath, "utf8")).resolves.toContain("partial checkpoint");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not create an empty archive directory when opening a sidebar row fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-history-open-failure-"));
+    try {
+      const archive = new ChatGptHistoryArchive(new FailingOpenHistoryDriver(), { archiveRoot: root });
+      const listed = await archive.listChats({ view: "recent" });
+      const chatRef = listed.chats.find((entry) => entry.title === "Article archive canary")?.chatRef;
+
+      await expect(archive.exportChat({ chatRef: chatRef!, maxSegments: 1 })).rejects.toThrow("not a conversation route");
+      expect(await readdir(root)).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -265,7 +265,13 @@ export class ChatGptHistoryArchive {
     const maxSegmentsPerChat = boundedLimit(input.maxSegmentsPerChat, 24, 100);
     const listed = await this.listChats({ view: "recent", limit: maxChats });
     const results: Array<{ chatRef: string; status: "checkpoint" | "complete" | "skipped"; archivePath?: string; article?: { markdownPath: string; htmlPath: string }; error?: string }> = [];
+    const seen = new Set<string>();
     for (const chat of listed.chats) {
+      if (seen.has(chat.chatRef)) {
+        results.push({ chatRef: chat.chatRef, status: "skipped", error: "duplicate_sidebar_row" });
+        continue;
+      }
+      seen.add(chat.chatRef);
       if (this.protectedTitles.has(normalTitle(chat.title))) {
         results.push({ chatRef: chat.chatRef, status: "skipped", error: "protected_chat" });
         continue;
@@ -285,11 +291,11 @@ export class ChatGptHistoryArchive {
     const id = archiveId(binding.id);
     const archivePath = join(root, id);
     if (!inside(root, archivePath)) throw new ChatGptHistoryArchiveError("unsafe_archive_path", "history archive path escaped its root");
-    await mkdir(join(archivePath, "segments"), { recursive: true, mode: 0o700 });
     const manifestPath = join(archivePath, "manifest.json");
     let manifest = await this.readManifest(manifestPath, id, chatRef, binding.title);
     if (manifest.complete) {
-      return this.receipt(chatRef, manifest, archivePath, manifestPath, "complete", 0);
+      const article = await this.writeArticleViews(archivePath, binding.title, manifest);
+      return this.receipt(chatRef, manifest, archivePath, manifestPath, "complete", 0, article);
     }
 
     const cursor = this.cursor;
@@ -300,15 +306,18 @@ export class ChatGptHistoryArchive {
     } else {
       manifest.resume = "same_owned_page";
     }
+    // Do not leave an empty per-chat archive behind if the fresh semantic click
+    // proves this sidebar row is not a conversation.
+    await mkdir(join(archivePath, "segments"), { recursive: true, mode: 0o700 });
 
     let newSegments = 0;
-    let observedSegments = 0;
+    let scannedSegments = 0;
     let atStart = false;
     while (true) {
       if (segment) {
         const appended = await this.appendSegment(archivePath, manifest, segment);
         if (appended) newSegments += 1;
-        observedSegments += 1;
+        scannedSegments += 1;
         manifest.updatedAt = this.now().toISOString();
         await writePrivate(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
       if (atStart) {
@@ -320,9 +329,13 @@ export class ChatGptHistoryArchive {
           const article = await this.writeArticleViews(archivePath, binding.title, manifest);
           return this.receipt(chatRef, manifest, archivePath, manifestPath, "complete", newSegments, article);
         }
-        if (observedSegments >= maxSegments) {
+        // `maxSegments` is a bound on newly persisted source views. After a
+        // restart the driver reopens at the bottom, so it must scan already
+        // stored snapshots to reach older unseen history.
+        if (newSegments >= maxSegments || scannedSegments >= 500) {
           this.cursor = { chatRef, chatId: binding.id, archiveId: id };
-          return this.receipt(chatRef, manifest, archivePath, manifestPath, "checkpoint", newSegments);
+          const article = await this.writeArticleViews(archivePath, binding.title, manifest);
+          return this.receipt(chatRef, manifest, archivePath, manifestPath, "checkpoint", newSegments, article);
         }
       }
 
@@ -389,8 +402,9 @@ export class ChatGptHistoryArchive {
     const articleDir = join(archivePath, "article");
     const markdownPath = join(articleDir, "article.md");
     const htmlPath = join(articleDir, "article.html");
-    const markdown = `# ${title}\n\n_Source: best-effort rendering of ${manifest.segments.length} raw ChatGPT history snapshots._\n\n${rendered.map(renderMarkdownValue).join("\n\n---\n\n")}\n`;
-    const html = `<!doctype html>\n<html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:system-ui,sans-serif;max-width:72rem;margin:2rem auto;padding:0 1rem;line-height:1.5}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f6f6;padding:1rem;border-radius:.5rem}</style></head><body><h1>${escapeHtml(title)}</h1><p>Source: best-effort rendering of ${manifest.segments.length} raw ChatGPT history snapshots.</p>${rendered.map((value) => `<pre>${escapeHtml(renderMarkdownValue(value))}</pre>`).join("\n")}</body></html>\n`;
+    const state = manifest.complete ? "complete" : "partial checkpoint";
+    const markdown = `# ${title}\n\n_Source: best-effort ${state} rendering of ${manifest.segments.length} raw ChatGPT history snapshots._\n\n${rendered.map(renderMarkdownValue).join("\n\n---\n\n")}\n`;
+    const html = `<!doctype html>\n<html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:system-ui,sans-serif;max-width:72rem;margin:2rem auto;padding:0 1rem;line-height:1.5}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f6f6;padding:1rem;border-radius:.5rem}</style></head><body><h1>${escapeHtml(title)}</h1><p>Source: best-effort ${state} rendering of ${manifest.segments.length} raw ChatGPT history snapshots.</p>${rendered.map((value) => `<pre>${escapeHtml(renderMarkdownValue(value))}</pre>`).join("\n")}</body></html>\n`;
     await writePrivate(markdownPath, markdown);
     await writePrivate(htmlPath, html);
     return { markdownPath, htmlPath };
