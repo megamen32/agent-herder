@@ -18,7 +18,7 @@ export type StopHookInput = {
   transcript_path: string | null;
   stop_hook_active: boolean;
   model?: string;
-  harness?: "codex" | "opencode" | "hermes";
+  harness?: "codex" | "opencode" | "claude" | "hermes";
 };
 
 export type AutopilotDecision =
@@ -258,7 +258,7 @@ export function createAutopilotCore(options: {
   notification?: NotificationConfig;
   choiceRegistry?: ChoiceRegistry;
   effectivePolicy?: EffectivePolicy;
-  harness?: "codex" | "opencode" | "hermes";
+  harness?: "codex" | "opencode" | "claude" | "hermes";
   onDecision?: (decision: AutopilotDecision, metadata?: { choiceRequestId?: string }) => void;
 }): { handleStop(input: StopHookInput): Promise<AutopilotHookResult> } {
   const continuationCounts = new Map<string, number>();
@@ -433,7 +433,7 @@ function buildChoiceNotificationBody(
   choices: AutopilotChoice[],
   lastUserMessage: string | null,
   card?: { includeUserMessage: boolean; includeAssistantMessage: boolean; includeReason: boolean },
-  harness: "codex" | "opencode" | "hermes" = "codex",
+  harness: "codex" | "opencode" | "claude" | "hermes" = "codex",
 ): string {
   const options = choices
     .map((choice, index) => `${index + 1}. ${choice.label}`)

@@ -1,0 +1,17 @@
+{
+  "description": "Agent Herder Claude Code autopilot Stop hook.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/claude-autopilot-hook-launcher.sh\"",
+            "timeout": 45,
+            "statusMessage": "Checking Agent Herder autopilot decision"
+          }
+        ]
+      }
+    ]
+  }
+}

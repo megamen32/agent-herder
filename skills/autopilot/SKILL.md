@@ -1,6 +1,8 @@
 ---
 name: autopilot
-description: Enable, inspect, or disable Agent Herder autopilot for the current Codex session when the user invokes /autopilot or explicitly asks for autopilot.
+description: Enable, inspect, or disable Agent Herder autopilot for the current Codex or Claude Code session when the user invokes /autopilot or explicitly asks for autopilot.
+disable-model-invocation: true
+allowed-tools: Bash(bash:*)
 ---
 
 # /autopilot
@@ -8,13 +10,15 @@ description: Enable, inspect, or disable Agent Herder autopilot for the current 
 Use the bundled script immediately. Do not merely explain the command.
 
 Interpret the first argument as `on`, `status`, or `off`; default to `on`.
-Run:
+Claude Code executes this command directly and returns its output:
 
-```bash
-bash "${SKILL_ROOT}/scripts/run.sh" <on|status|off>
-```
+!`bash "${CLAUDE_PLUGIN_ROOT}/skills/autopilot/scripts/run.sh" "$ARGUMENTS"`
 
-The script uses Codex's `CODEX_THREAD_ID` for the exact current task. Return its
-Russian status line to the user. When enabled, the existing Stop hook invokes
-the judge after this task stops; `continue` stays in this Codex task, while an
-uncertain decision goes to NoticePlace as contextual buttons.
+In Codex, run `bash "${SKILL_ROOT}/scripts/run.sh" "$ARGUMENTS"` with the
+available shell tool and return its output.
+
+The script uses Claude Code's `CLAUDE_CODE_SESSION_ID` or Codex's
+`CODEX_THREAD_ID` for the exact current task. Return its Russian status line to
+the user. When enabled, the native Stop hook invokes the judge after this task
+stops; `continue` stays in the same task, while an uncertain decision goes to
+NoticePlace as contextual buttons.

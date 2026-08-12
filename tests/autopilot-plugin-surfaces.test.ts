@@ -5,13 +5,29 @@ import { describe, expect, it } from "vitest";
 const root = resolve(import.meta.dirname, "..");
 
 describe("/autopilot plugin surfaces", () => {
-  it("packages a Codex skill and native OpenCode and Hermes adapters", () => {
+  it("packages Codex, Claude Code, OpenCode, and Hermes adapters", () => {
     const codexSkill = readFileSync(resolve(root, "skills/autopilot/SKILL.md"), "utf8");
+    const claudeManifest = readFileSync(resolve(root, ".claude-plugin/plugin.json"), "utf8");
+    const claudeHooks = readFileSync(resolve(root, "hooks/hooks.json"), "utf8");
+    const commandLauncher = readFileSync(resolve(root, "skills/autopilot/scripts/run.sh"), "utf8");
     const opencode = readFileSync(resolve(root, "integrations/opencode/agent-herder-autopilot.js"), "utf8");
     const hermes = readFileSync(resolve(root, "integrations/hermes/agent-herder-autopilot/__init__.py"), "utf8");
+    const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as { files: string[] };
+    const webUi = readFileSync(resolve(root, "src/web-ui/main.tsx"), "utf8");
 
     expect(codexSkill).toContain("/autopilot");
     expect(codexSkill).toContain("scripts/run.sh");
+    expect(claudeManifest).toContain('"name": "agent-herder"');
+    expect(claudeHooks).toContain('"Stop"');
+    expect(claudeHooks).toContain("${CLAUDE_PLUGIN_ROOT}/scripts/claude-autopilot-hook-launcher.sh");
+    expect(commandLauncher).toContain("CLAUDE_CODE_SESSION_ID");
+    expect(commandLauncher).toContain("harness=claude");
+    expect(packageJson.files).toEqual(expect.arrayContaining([
+      ".claude-plugin/plugin.json",
+      "hooks/hooks.json",
+      "scripts/claude-autopilot-hook-launcher.sh",
+    ]));
+    expect(webUi).toContain('["codex", "opencode", "claude", "hermes"]');
     expect(opencode).toContain('command !== "autopilot"');
     expect(opencode).toContain("config.command.autopilot");
     expect(opencode).toContain('event.type !== "session.idle"');

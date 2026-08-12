@@ -53,7 +53,7 @@ opencode serve
 | Harness | Как подключается | Включение |
 |---|---|---|
 | OpenCode | HTTP API | Включён по умолчанию, нужен `opencode serve` |
-| Claude Code | SDK/CLI и файлы сессий | Включён по умолчанию |
+| Claude Code | SDK/CLI, текущие и legacy-файлы сессий, native `/autopilot` + `Stop` plugin | Включён по умолчанию |
 | Codex CLI | Native app-server и CLI fallback | Включён по умолчанию |
 | Qoder CLI | Native ACP | `ENABLE_QODER=true` |
 | ZCode | локальный stdio ZCode Protocol app-server | Включён по умолчанию; `ZCODE_CWD` задаёт workspace |
@@ -72,6 +72,11 @@ opencode serve
 родителей/детей внутри рабочего каталога, а затем всегда возвращает короткую
 навигационную карточку. Он намеренно не ранжирует и не сжимает диалог: агент
 сам берёт ровно нужный срез обычными файловыми инструментами.
+
+Claude Code autopilot упакован в `.claude-plugin/`: `/autopilot` переключает
+точную текущую сессию, native `Stop` hook отдаёт завершение общему AI judge, а
+неоднозначные решения появляются кнопками в NoticePlace и на сайте. Подробнее —
+в [документации autopilot](docs/autopilot.md).
 
 `new_or_resume` использует точный ключ `(harness, canonical CWD, name)`: одну
 найденную native-сессию продолжает, при отсутствии создаёт и затем доставляет

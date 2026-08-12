@@ -770,7 +770,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
 }
 
 function isAutopilotHarness(value: string): value is AutopilotHarness {
-  return value === "codex" || value === "opencode" || value === "hermes";
+  return value === "codex" || value === "opencode" || value === "claude" || value === "hermes";
 }
 
 function headerValue(value: string | string[] | undefined): string | undefined {

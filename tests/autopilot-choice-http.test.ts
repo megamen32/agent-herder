@@ -123,6 +123,47 @@ describe("autopilot choice callback HTTP seam", () => {
     }
   });
 
+  it("resumes a Claude Code-bound choice through agent-resume", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-http-claude-"));
+    const registry = new ChoiceRegistry(join(root, "choices.json"));
+    const pending = await registry.create({
+      harness: "claude",
+      sessionId: "claude-session-42",
+      turnId: "turn-claude-1",
+      cwd: "/workspace/claude",
+      choices: [
+        { choiceId: "inspect", label: "Проверить", nextGoal: "Проверь состояние." },
+        { choiceId: "retry", label: "Повторить", nextGoal: "Повтори проверку." },
+      ],
+    });
+    const resume = vi.fn(async (request: ResumeTransportRequest) => ({
+      status: "accepted" as const,
+      target: request.target,
+      result_ref: request.result_ref,
+      idempotency_key: request.idempotency_key,
+      receipt_ref: "receipt-claude",
+    }));
+    const server = createWebServer({
+      adapters: new Map(),
+      converter: { async convert() { throw new Error("unused"); } },
+      choiceRegistry: registry,
+      choiceResume: resume,
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/autopilot/choices/select`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ request_id: pending.requestId, choice_id: "inspect" }),
+    });
+    expect(response.status).toBe(202);
+    expect(resume).toHaveBeenCalledWith(expect.objectContaining({
+      target: { agent: "claude", session_id: "claude-session-42", cwd: "/workspace/claude" },
+    }));
+  });
+
   it("keeps bearer auth on the internal callback while allowing the same-origin web action", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-http-auth-"));
     const registry = new ChoiceRegistry(join(root, "choices.json"));

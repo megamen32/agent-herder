@@ -210,7 +210,7 @@ function App() {
 
   const activeSession = sessions.find((session) => keyOf(session) === activeKey) || details?.session;
   React.useEffect(() => {
-    if (!activeSession || !["codex", "opencode", "hermes"].includes(activeSession.harness)) {
+    if (!activeSession || !["codex", "opencode", "claude", "hermes"].includes(activeSession.harness)) {
       setAutopilotSession(undefined);
       return;
     }

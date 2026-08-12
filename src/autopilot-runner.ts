@@ -30,6 +30,7 @@ export type AutopilotRunnerInput = {
   lastUserMessage?: string | null;
   lastAssistantMessage?: string | null;
   transcriptPath?: string | null;
+  stopHookActive?: boolean;
 };
 
 const stateDir = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR || join(homedir(), ".local", "state", "agent-herder", "autopilot-live");
@@ -86,7 +87,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
     await persistReceiptStore(receiptPath, receipts);
     if ("decision" in result && result.decision === "block") {
       const nextGoal = result.reason;
-      if (input.harness === "codex") {
+      if (input.harness === "codex" || input.harness === "claude") {
         return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "continue", next_goal: nextGoal };
       }
       if (input.harness === "hermes") {
@@ -131,7 +132,7 @@ function stopInput(input: AutopilotRunnerInput, lastAssistantMessage: string | n
     ...(lastUserMessage !== undefined ? { last_user_message: lastUserMessage } : {}),
     last_assistant_message: lastAssistantMessage,
     transcript_path: input.transcriptPath ?? null,
-    stop_hook_active: false,
+    stop_hook_active: input.stopHookActive ?? false,
     harness: input.harness,
   };
 }

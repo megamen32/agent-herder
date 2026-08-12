@@ -36,9 +36,11 @@ describe("autopilot session overrides", () => {
     const store = new AutopilotSessionStore(join(root, "sessions.json"));
 
     await store.set({ harness: "codex", sessionId: "same-id", cwd: "/codex" }, true);
+    await store.set({ harness: "claude", sessionId: "same-id", cwd: "/claude" }, true);
     await store.set({ harness: "hermes", sessionId: "same-id", cwd: "/hermes" }, false);
 
     expect(await store.get("codex", "same-id")).toMatchObject({ enabled: true, cwd: "/codex" });
+    expect(await store.get("claude", "same-id")).toMatchObject({ enabled: true, cwd: "/claude" });
     expect(await store.get("hermes", "same-id")).toMatchObject({ enabled: false, cwd: "/hermes" });
   });
 });

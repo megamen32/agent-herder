@@ -63,7 +63,7 @@ parallel coding tasks and session recovery.
 | Harness | Connection | Enablement |
 |---|---|---|
 | OpenCode | HTTP API | Enabled by default; run `opencode serve` |
-| Claude Code | SDK/CLI and session files | Enabled by default |
+| Claude Code | SDK/CLI, current and legacy session files, native `/autopilot` + `Stop` plugin | Enabled by default |
 | Codex CLI | Native app-server with CLI fallback | Enabled by default |
 | Qoder CLI | Native ACP | Set `ENABLE_QODER=true` |
 | ZCode | Local stdio ZCode Protocol app-server | Enabled by default; set `ZCODE_CWD` for the workspace |
@@ -83,6 +83,11 @@ its in-workspace parent/child lineage, then always returns a short navigation
 card. It deliberately does not rank or compress the conversation: use the
 normal filesystem tools available to the agent to inspect exactly the slice it
 needs.
+
+Claude Code autopilot is packaged under `.claude-plugin/`: `/autopilot` toggles
+the exact current session, the native `Stop` hook asks the shared AI judge to
+continue or finish, and ambiguous decisions appear as NoticePlace/web buttons.
+See [the autopilot guide](docs/autopilot.md).
 
 `new_or_resume` identifies a session by the exact tuple `(harness, canonical
 CWD, name)`. It reuses one matching native session or creates it, then delivers

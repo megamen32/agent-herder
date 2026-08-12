@@ -41,6 +41,15 @@ describe("web autopilot session switch", () => {
     const openCodeDefault = await fetch(`${base}/opencode/ses-web-toggle`);
     await expect(openCodeDefault.json()).resolves.toMatchObject({ enabled: false, source: "default" });
 
+    const claudeDefault = await fetch(`${base}/claude/claude-web-toggle`);
+    expect(claudeDefault.status).toBe(200);
+    await expect(claudeDefault.json()).resolves.toMatchObject({
+      harness: "claude",
+      sessionId: "claude-web-toggle",
+      enabled: false,
+      source: "default",
+    });
+
     const disabled = await fetch(`${base}/codex/codex-web-toggle`, {
       method: "PUT",
       headers: { "content-type": "application/json" },

@@ -1,8 +1,8 @@
-# Agent Herder Codex autopilot MVP
+# Agent Herder autopilot
 
 ## `/autopilot`
 
-The plugin now exposes the same user command in Codex, OpenCode, and Hermes:
+The plugin exposes the same user command in Codex, Claude Code, OpenCode, and Hermes:
 
 ```text
 /autopilot          # enable for the current session
@@ -11,22 +11,38 @@ The plugin now exposes the same user command in Codex, OpenCode, and Hermes:
 ```
 
 Codex loads the bundled `autopilot` skill and keeps using its native `Stop`
-hook. OpenCode loads `integrations/opencode/agent-herder-autopilot.js`, which
+hook. Claude Code loads the native `.claude-plugin` package, captures the exact
+`CLAUDE_CODE_SESSION_ID`, and invokes the shared judge from its `Stop` hook.
+OpenCode loads `integrations/opencode/agent-herder-autopilot.js`, which
 captures the exact `sessionID` in `command.execute.before` and invokes the
 judge on `session.idle` (the slash-control turn itself is skipped). Hermes loads the extension under
 `integrations/hermes/agent-herder-autopilot/`, registers the real slash command
 with `register_command`, and invokes the same judge at `on_session_end`.
 
-All three write one durable current-session switch to
+All four write one durable current-session switch to
 `$AGENT_HERDER_AUTOPILOT_STATE_DIR/sessions.json`. OpenCode resumes through the
 existing durable `agent-resume` client. Hermes injects an automatic next goal
-or a selected NoticePlace choice into its bound session. Codex returns the next
-goal through the existing native Stop-hook continuation.
+or a selected NoticePlace choice into its bound session. Codex and Claude Code
+return the next goal through native Stop-hook continuation. A selected Claude
+Code choice resumes the exact session through Agent Resume.
 
 The web session inspector exposes the same durable switch as an **Autopilot**
 toggle. It does not create a second policy: changes made on the website are
 immediately visible to `/autopilot status` and to the next Codex Stop hook,
-OpenCode idle event, or Hermes completion hook for that exact session.
+Claude Code Stop hook, OpenCode idle event, or Hermes completion hook for that
+exact session.
+
+Install the Claude Code surface through its supported plugin control plane:
+
+```bash
+claude plugin marketplace add /path/to/agent-herder --scope user
+claude plugin install agent-herder@agent-herder-local --scope user
+```
+
+The same `.claude-plugin` package is structurally readable by current ZCode,
+including its `Stop` hook. Full ZCode autopilot is not claimed yet: its exact
+slash-command session binding and durable Agent Resume target still need a
+separate compatibility canary.
 
 ## Agent Plugin package
 
@@ -157,7 +173,7 @@ The web dashboard uses the same durable choice registry. Its default inbox
 shows only running sessions, sessions waiting for input, and sessions with a
 pending autopilot decision; enable **Show completed sessions** in settings to
 restore the full list. Pending decisions render as buttons on the bound session
-card. Selecting one resumes that exact Codex/OpenCode session through Agent
+card. Selecting one resumes that exact Codex/Claude Code/OpenCode session through Agent
 Resume (or hands it to the Hermes polling plugin), then removes the buttons.
 The browser receives only `choiceId` and the user-facing label; `nextGoal`
 remains server-side. Clicking the session row opens its available conversation
