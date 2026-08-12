@@ -286,6 +286,26 @@ describe("BrowserClawAccountExportDriver", () => {
     expect(snapshot.url).toBe("https://chatgpt.com/c/real-chat");
   });
 
+  it("reads conversation sidebar labels with a same-page DOM query only", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const client = {
+      sessionRef: "session-conversation-labels",
+      async callToolRaw(name: string, args: Record<string, unknown>) {
+        calls.push({ name, args });
+        return { result: { content: [{ type: "text", text: '["Research article", "Deep research"]' }] } };
+      },
+    };
+
+    const titles = await new BrowserClawMcpA11yClient(client as never).conversationSidebarTitles(7);
+    expect([...titles]).toEqual(["research article", "deep research"]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      name: "evaluate",
+      args: { page: 7, timeout: 5_000 },
+    });
+    expect(String(calls[0]!.args.code)).toContain('a[href^="/c/"]');
+  });
+
   it("keeps only compact non-navigation sidebar links as chat candidates", () => {
     const rows = visibleSidebarChats({
       schema: "agent-herder.browserclaw-a11y.v1",
@@ -311,5 +331,46 @@ describe("BrowserClawAccountExportDriver", () => {
     expect(rows.map((row) => row.nodeRef)).toEqual(["chat-1", "chat-2"]);
     expect(isChatHistoryConversationUrl("https://chatgpt.com/c/real-chat")).toBe(true);
     expect(isChatHistoryConversationUrl("https://chatgpt.com/")).toBe(false);
+  });
+
+  it("binds repeated a11y labels to their exact sidebar row", () => {
+    const rows = visibleSidebarChats({
+      schema: "agent-herder.browserclaw-a11y.v1",
+      page: 7,
+      url: "https://chatgpt.com/",
+      snapshotRef: "duplicate-sidebar-rows",
+      root: {
+        ref: "root",
+        role: "document",
+        children: [
+          { ref: "chat-row-a", role: "link", name: "Same title", children: [] },
+          { ref: "chat-row-b", role: "link", name: "Same title", children: [] },
+        ],
+      },
+    }, "test");
+
+    expect(rows.map((row) => row.nodeRef)).toEqual(["chat-row-a", "chat-row-b"]);
+    expect(rows[0]!.id).not.toBe(rows[1]!.id);
+  });
+
+  it("keeps only unique a11y rows backed by a ChatGPT conversation route", () => {
+    const rows = visibleSidebarChats({
+      schema: "agent-herder.browserclaw-a11y.v1",
+      page: 7,
+      url: "https://chatgpt.com/",
+      snapshotRef: "conversation-route-sidebar",
+      root: {
+        ref: "root",
+        role: "document",
+        children: [
+          { ref: "project", role: "link", name: "Project folder", children: [] },
+          { ref: "chat", role: "link", name: "Research article", children: [] },
+          { ref: "ambiguous-project", role: "link", name: "Repeated label", children: [] },
+          { ref: "ambiguous-chat", role: "link", name: "Repeated label", children: [] },
+        ],
+      },
+    }, "test", ["Research article", "Repeated label"]);
+
+    expect(rows.map((row) => row.nodeRef)).toEqual(["chat"]);
   });
 });

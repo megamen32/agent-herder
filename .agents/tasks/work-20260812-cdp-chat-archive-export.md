@@ -89,3 +89,11 @@ The native ChatGPT export surface is not available in the owned page. The user s
 - The first live action did not reach a `/c/...` route: the a11y selector accepted a sidebar shell link and stored a landing-page snapshot. It is not accepted as a chat archive.
 - The source fix excludes large shell links and non-chat navigation, refreshes the owned page URL after a semantic action, and fails closed unless the click reaches a conversation route. A focused regression test covers both conditions.
 - The corrected build needs one separately authorized service restart before the next live canary. The false local archive is removed below; its screenshot remains as private failure evidence.
+
+### Second live canary and selector correction — 2026-08-12 17:55–18:25 MSK
+
+- The user approved one additional restart. The restarted Agent Herder exposed `cdp_list_chats` and `cdp_export_chat`; it opened one BrowserClaw-owned ChatGPT page and did not create a tab per tool call.
+- The first selected non-protected sidebar row did not reach `/c/...`; the same owned page remained on the landing route. The driver stopped before saving chat content, captured and inspected the required private same-page screenshot, and wrote a redacted failure receipt under `trash/logs/`. No retry or extra browser action followed.
+- Root cause: a Project/sidebar link may share the compact `link` a11y shape of a conversation. The selector now reads only same-page DOM anchors whose `href` begins `/c/`, then performs the actual selection click with the fresh a11y ref. Duplicate a11y labels are bound to their exact row; ambiguous labels are skipped rather than guessed.
+- Focused regression suite: 5 files / 34 tests passed. Production build passed. The empty failed archive directory was removed; private failure screenshot/receipt are retained for tester/debug evidence.
+- The new source is committed and pushed, but intentionally not loaded into the running service: a further restart and a new bounded live canary need separate approval.

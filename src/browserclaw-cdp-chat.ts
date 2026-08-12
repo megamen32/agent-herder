@@ -314,6 +314,20 @@ export class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
     });
   }
 
+  /**
+   * Read only the sidebar labels whose anchors already point at a conversation.
+   * The following click still uses the fresh a11y ref; this DOM read merely
+   * avoids treating a Project, Library, or shell link as a chat.
+   */
+  async conversationSidebarTitles(page: number): Promise<ReadonlySet<string>> {
+    const response = await this.client.callToolRaw("evaluate", {
+      page,
+      code: `return JSON.stringify(Array.from(document.querySelectorAll('a[href^="/c/"]')).map((anchor) => (anchor.textContent || '').trim()).filter(Boolean));`,
+      timeout: 5_000,
+    }, deadline());
+    return parseConversationSidebarTitles(textContent(response));
+  }
+
   async actPage(page: number, action: BrowserClawSemanticAction): Promise<BrowserClawA11ySnapshot> {
     const args: Record<string, unknown> = { page, kind: action.kind };
     if (action.kind === "press") args.key = action.key;
@@ -432,7 +446,7 @@ export async function createCdpChatDriver(options: BrowserClawCdpChatDriverOptio
     async capture(input) {
       await a11yClient.captureHistoryArchiveDiagnostic(input);
     },
-  });
+  }, a11yClient.conversationSidebarTitles.bind(a11yClient));
   const accountExportDriver = BrowserClawAccountExportDriver.fromOwnedPage(ownedA11yPage, {
     async capture(input) {
       await a11yClient.captureAccountExportDiagnostic(input);
@@ -458,6 +472,7 @@ class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
     private readonly page: BrowserClawA11yPage,
     sessionRef: string,
     private readonly diagnostics?: BrowserClawHistoryArchiveDiagnosticReporter,
+    private readonly conversationTitles?: (page: number) => Promise<ReadonlySet<string>>,
   ) {
     this.idPrefix = createHash("sha256").update(sessionRef).digest("hex").slice(0, 24);
   }
@@ -465,14 +480,16 @@ class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
   async listChats(): Promise<readonly ChatGptHistoryChat[]> {
     const snapshot = await this.page.snapshot(deadline());
     this.lastSnapshot = snapshot;
-    return visibleSidebarChats(snapshot, this.idPrefix);
+    const titles = this.conversationTitles ? await this.conversationTitles(snapshot.page) : undefined;
+    return visibleSidebarChats(snapshot, this.idPrefix, titles);
   }
 
   async openChat(input: { chatId: string }): Promise<ChatGptHistorySegment> {
     let snapshot: BrowserClawA11ySnapshot | undefined;
     try {
       snapshot = await this.page.snapshot(deadline());
-      const chat = visibleSidebarChats(snapshot, this.idPrefix).find((entry) => entry.id === input.chatId);
+      const titles = this.conversationTitles ? await this.conversationTitles(snapshot.page) : undefined;
+      const chat = visibleSidebarChats(snapshot, this.idPrefix, titles).find((entry) => entry.id === input.chatId);
       if (!chat) throw new Error("ChatGPT chat is not visible in the owned sidebar; call cdp_list_chats again");
       const node = findNode(snapshot.root, (entry) => entry.ref === chat.nodeRef);
       if (!node || node.disabled) throw new Error("ChatGPT sidebar chat control was not found on the owned page");
@@ -531,33 +548,74 @@ export type BrowserClawVisibleHistoryChat = ChatGptHistoryChat & { nodeRef: stri
 export function visibleSidebarChats(
   snapshot: BrowserClawA11ySnapshot,
   idPrefix: string,
+  conversationTitles?: ReadonlySet<string> | readonly string[],
 ): BrowserClawVisibleHistoryChat[] {
-  const rows: BrowserClawVisibleHistoryChat[] = [];
   const seen = new Set<string>();
+  const allowedTitles = conversationTitles === undefined
+    ? undefined
+    : new Set([...conversationTitles].map(normalizedHistoryTitle));
+  const candidates: Array<{ node: BrowserClawA11yNode; title: string; normalizedTitle: string }> = [];
   const visit = (node: BrowserClawA11yNode): void => {
     const title = node.name?.trim();
-    if (node.role === "link" && title && isHistorySidebarTitle(title) && node.children.length <= 2 && !seen.has(node.ref)) {
+    const normalizedTitle = title ? normalizedHistoryTitle(title) : undefined;
+    if (node.role === "link" && title && normalizedTitle && isHistorySidebarTitle(title) && node.children.length <= 2 && !seen.has(node.ref)
+      && (allowedTitles === undefined || allowedTitles.has(normalizedTitle))) {
       seen.add(node.ref);
-      const id = historyChatId(idPrefix, title, node.description);
-      rows.push({
-        id,
-        nodeRef: node.ref,
-        title,
-        unread: /(?:\bunread\b|непрочитан)/iu.test(`${node.description ?? ""} ${node.name ?? ""}`),
-        working: /(?:\bworking\b|thinking|думает|генерир)/iu.test(`${node.description ?? ""} ${node.name ?? ""}`),
-        // BrowserClaw does not expose ChatGPT row timestamps. Stable current order
-        // becomes a deterministic recent-order marker for the MCP list contract.
-        updatedAt: new Date(0).toISOString(),
-      });
+      candidates.push({ node, title, normalizedTitle });
     }
     for (const child of node.children) visit(child);
   };
   visit(snapshot.root);
-  return rows;
+  const titleCounts = new Map<string, number>();
+  for (const candidate of candidates) {
+    titleCounts.set(candidate.normalizedTitle, (titleCounts.get(candidate.normalizedTitle) ?? 0) + 1);
+  }
+  return candidates
+    // A DOM conversation label can still have two a11y rows (for example, a
+    // Project and a chat with the same title). Skip the ambiguous title rather
+    // than risk clicking the wrong one.
+    .filter((candidate) => !allowedTitles || titleCounts.get(candidate.normalizedTitle) === 1)
+    .map(({ node, title }) => ({
+      // The title alone is not a selection key: ChatGPT can render several
+      // sidebar links with the same accessible name. Keep the opaque binding
+      // tied to the exact fresh a11y row that will receive the click.
+      id: historyChatId(idPrefix, title, node.description, node.ref),
+      nodeRef: node.ref,
+      title,
+      unread: /(?:\bunread\b|непрочитан)/iu.test(`${node.description ?? ""} ${node.name ?? ""}`),
+      working: /(?:\bworking\b|thinking|думает|генерир)/iu.test(`${node.description ?? ""} ${node.name ?? ""}`),
+      // BrowserClaw does not expose ChatGPT row timestamps. Stable current order
+      // becomes a deterministic recent-order marker for the MCP list contract.
+      updatedAt: new Date(0).toISOString(),
+    }));
 }
 
-function historyChatId(idPrefix: string, title: string, description: string | undefined): string {
-  const normalized = `${title.trim().toLocaleLowerCase()}\u0000${(description ?? "").trim().toLocaleLowerCase()}`;
+function normalizedHistoryTitle(value: string): string {
+  return value.trim().replace(/\s+/gu, " ").toLocaleLowerCase();
+}
+
+function parseConversationSidebarTitles(value: string): ReadonlySet<string> {
+  const parsed = (() => {
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      const quoted = value.match(/(?:^|\n)\s*"(\[.*\])"\s*$/s)?.[1];
+      if (!quoted) return undefined;
+      try {
+        return JSON.parse(quoted) as unknown;
+      } catch {
+        return undefined;
+      }
+    }
+  })();
+  if (!Array.isArray(parsed)) throw new Error("BrowserClaw did not return a conversation sidebar list");
+  const titles = parsed.filter((item): item is string => typeof item === "string").map(normalizedHistoryTitle).filter(Boolean);
+  if (titles.length !== parsed.length) throw new Error("BrowserClaw returned an invalid conversation sidebar list");
+  return new Set(titles);
+}
+
+function historyChatId(idPrefix: string, title: string, description: string | undefined, nodeRef: string): string {
+  const normalized = `${title.trim().toLocaleLowerCase()}\u0000${(description ?? "").trim().toLocaleLowerCase()}\u0000${nodeRef}`;
   return `${idPrefix}:${createHash("sha256").update(normalized).digest("hex").slice(0, 24)}`;
 }
 
