@@ -158,14 +158,29 @@ function App() {
       api<{ sessions: HerderSession[] }>("/api/sessions"),
       api<{ choices: WebAutopilotChoiceCard[] }>("/api/autopilot/choices?status=pending").catch(() => ({ choices: [] })),
     ]);
-    setSessions(result.sessions);
+    const sessionKeys = new Set(result.sessions.map(keyOf));
+    const decisionSessions: HerderSession[] = choiceResult.choices
+      .filter((choice) => !sessionKeys.has(`${choice.harness}:${choice.sessionId}`))
+      .map((choice) => ({
+        id: choice.sessionId,
+        harness: choice.harness,
+        title: `Autopilot · ${choice.sessionId.slice(0, 12)}`,
+        cwd: choice.cwd,
+        status: "needs_input",
+        lastActivity: choice.createdAt,
+        lastMessage: "Нужен выбор следующего шага",
+        needsPermission: true,
+        meta: { decisionOnly: true },
+      }));
+    const nextSessions = [...result.sessions, ...decisionSessions];
+    setSessions(nextSessions);
     setAutopilotChoices(choiceResult.choices);
     if (!foldedInitialized.current && result.sessions.length > 0) {
       const keys = new Set(result.sessions.flatMap((session) => session.meta?.parentSessionKey ? [session.meta.parentSessionKey] : []));
       setCollapsedChildren(keys);
       foldedInitialized.current = true;
     }
-    setActiveKey((current) => current && result.sessions.some((session) => keyOf(session) === current) ? current : undefined);
+    setActiveKey((current) => current && nextSessions.some((session) => keyOf(session) === current) ? current : undefined);
   }, []);
   React.useEffect(() => { void loadSessions().finally(() => setLoading(false)); const timer = window.setInterval(() => void loadSessions(), 3000); return () => window.clearInterval(timer); }, [loadSessions]);
 
