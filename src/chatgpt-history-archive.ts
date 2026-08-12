@@ -106,6 +106,14 @@ interface HistoryManifest {
   segments: HistorySegmentManifest[];
 }
 
+interface ArchiveCatalogEntry {
+  archiveId: string;
+  title: string;
+  complete: boolean;
+  capturedSegments: number;
+  updatedAt: string;
+}
+
 interface InMemoryCursor {
   chatRef: string;
   chatId: string;
@@ -208,6 +216,94 @@ function isHistoryManifest(value: unknown): value is HistoryManifest {
     && typeof item.complete === "boolean"
     && (item.resume === "same_owned_page" || item.resume === "reopen_from_bottom")
     && Array.isArray(item.segments);
+}
+
+/**
+ * A local-only front door for the rendered articles. It deliberately includes
+ * manifest metadata only: titles, availability, and links — never transcript
+ * content from the raw snapshots.
+ */
+function renderArchiveCatalog(entries: readonly ArchiveCatalogEntry[]): string {
+  const ordered = [...entries].sort((left, right) => left.title.localeCompare(right.title, "ru"));
+  const completed = ordered.filter((entry) => entry.complete).length;
+  const checkpoints = ordered.length - completed;
+  const segments = ordered.reduce((total, entry) => total + entry.capturedSegments, 0);
+  const latest = ordered.reduce<string | undefined>((current, entry) => !current || entry.updatedAt > current ? entry.updatedAt : current, undefined);
+  const latestLabel = latest
+    ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(latest))
+    : "пока нет материалов";
+  const cards = ordered.map((entry, index) => {
+    const state = entry.complete ? "Полный материал" : "Продолжим с этого места";
+    const stateClass = entry.complete ? "is-complete" : "is-checkpoint";
+    const tone = `tone-${index % 4}`;
+    const archivePath = `./${entry.archiveId}/article`;
+    return `<article class="archive-card ${tone}" data-search="${escapeHtml(entry.title.toLocaleLowerCase())}">
+      <div class="card-meta"><span class="state ${stateClass}">${state}</span><span>${entry.capturedSegments} ${russianPlural(entry.capturedSegments, "снимок", "снимка", "снимков")}</span></div>
+      <h2>${escapeHtml(entry.title)}</h2>
+      <p>${entry.complete ? "Готово к чтению, публикации или дальнейшему разбору." : "Материал сохранён честно: можно читать сейчас и позже дополнить историю."}</p>
+      <div class="card-actions">
+        <a class="primary-link" href="${archivePath}/article.html">Открыть HTML <span aria-hidden="true">↗</span></a>
+        <a class="secondary-link" href="${archivePath}/article.md" download>Markdown ↓</a>
+      </div>
+    </article>`;
+  }).join("\n");
+  const body = cards || `<div class="empty-state"><h2>Архив пока пуст</h2><p>Когда появятся снимки разговоров, они сразу появятся здесь.</p></div>`;
+
+  return `<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Архив ChatGPT — ваши материалы</title>
+<style>
+  :root{--ink:#f5f7ff;--muted:#aeb7cd;--canvas:#0b1020;--panel:rgba(20,29,53,.78);--line:rgba(180,197,255,.16);--lime:#c8ff71;--violet:#a78bfa;--cyan:#65e7ff;--pink:#ff8bbd}
+  *{box-sizing:border-box} body{margin:0;min-width:320px;background:radial-gradient(circle at 12% 0%,#213a72 0,transparent 30%),radial-gradient(circle at 94% 6%,#55275f 0,transparent 26%),var(--canvas);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  .shell{max-width:1220px;margin:auto;padding:28px 24px 72px}.hero{padding:54px 0 34px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:30px;align-items:end}.eyebrow{margin:0 0 14px;color:var(--lime);font-size:.76rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase}.hero h1{max-width:740px;margin:0;font-size:clamp(2.5rem,6vw,5.6rem);line-height:.96;letter-spacing:-.065em}.hero p{max-width:620px;margin:22px 0 0;color:var(--muted);font-size:1.08rem;line-height:1.6}.local-pill{align-self:start;border:1px solid rgba(200,255,113,.35);border-radius:999px;padding:10px 14px;color:#efffd5;background:rgba(200,255,113,.08);font-size:.86rem;white-space:nowrap}.local-pill::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 8px 1px 0;background:var(--lime);box-shadow:0 0 18px var(--lime)}
+  .overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:8px 0 30px}.metric{min-height:122px;padding:20px;border:1px solid var(--line);border-radius:20px;background:linear-gradient(145deg,rgba(31,44,79,.84),rgba(14,20,38,.75));box-shadow:0 20px 56px rgba(0,0,0,.18)}.metric strong{display:block;font-size:2.15rem;line-height:1;letter-spacing:-.06em}.metric span{display:block;margin-top:10px;color:var(--muted);font-size:.91rem}
+  .catalog{border:1px solid var(--line);border-radius:28px;padding:20px;background:rgba(9,14,29,.57);backdrop-filter:blur(22px)}.catalog-head{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:2px 2px 20px}.catalog-head h2{margin:0;font-size:1.2rem;letter-spacing:-.025em}.catalog-head p{margin:0;color:var(--muted);font-size:.9rem}.search-wrap{position:relative;margin-bottom:18px}.search-wrap label{position:absolute;left:-10000px}.search-wrap input{width:100%;padding:16px 18px;border:1px solid var(--line);border-radius:15px;outline:none;background:rgba(7,11,23,.72);color:var(--ink);font:inherit}.search-wrap input:focus{border-color:var(--cyan);box-shadow:0 0 0 4px rgba(101,231,255,.13)}.search-wrap input::placeholder{color:#8490ad}
+  .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.archive-card{min-height:256px;padding:20px;border:1px solid var(--line);border-radius:20px;background:linear-gradient(150deg,rgba(33,47,81,.9),rgba(14,19,36,.9));display:flex;flex-direction:column;transition:transform .18s ease,border-color .18s ease}.archive-card:hover{transform:translateY(-3px);border-color:rgba(245,247,255,.36)}.archive-card.tone-1{background:linear-gradient(150deg,rgba(53,34,85,.9),rgba(17,18,38,.9))}.archive-card.tone-2{background:linear-gradient(150deg,rgba(20,63,72,.9),rgba(11,25,37,.9))}.archive-card.tone-3{background:linear-gradient(150deg,rgba(75,37,63,.9),rgba(27,18,34,.9))}.card-meta{display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:.77rem}.state{padding:4px 8px;border-radius:999px;font-weight:750}.is-complete{background:rgba(200,255,113,.12);color:var(--lime)}.is-checkpoint{background:rgba(255,139,189,.13);color:#ffb5d1}.archive-card h2{margin:25px 0 10px;font-size:1.27rem;line-height:1.17;letter-spacing:-.035em;overflow-wrap:anywhere}.archive-card p{margin:0;color:var(--muted);font-size:.9rem;line-height:1.52}.card-actions{display:flex;align-items:center;gap:15px;margin-top:auto;padding-top:25px}.card-actions a{text-decoration:none;font-size:.88rem;font-weight:760}.primary-link{color:var(--ink)}.primary-link span{color:var(--lime);font-size:1.1em}.secondary-link{color:var(--cyan)}.empty-state{padding:72px 28px;text-align:center;border:1px dashed var(--line);border-radius:20px;color:var(--muted)}.empty-state h2{color:var(--ink)}.archive-card[hidden]{display:none}.no-results{display:none;margin:22px 0 4px;text-align:center;color:var(--muted)}
+  footer{padding:28px 4px 0;color:#8290af;font-size:.78rem}@media (max-width:820px){.hero{display:block;padding-top:34px}.local-pill{display:inline-block;margin-top:22px}.overview,.grid{grid-template-columns:1fr}.catalog-head{align-items:flex-start;flex-direction:column;gap:6px}}@media (prefers-reduced-motion:reduce){.archive-card{transition:none}}
+</style>
+</head>
+<body>
+<main class="shell">
+  <section class="hero" aria-labelledby="archive-title">
+    <div><p class="eyebrow">Личная библиотека исследований</p><h1 id="archive-title">Ваш архив ChatGPT — готов к следующему шагу.</h1><p>Все собранные материалы в одном аккуратном месте: открывайте, скачивайте в Markdown и превращайте исследования в публикации без поиска по папкам.</p></div>
+    <div class="local-pill">Хранится только на этом Mac</div>
+  </section>
+  <section class="overview" aria-label="Сводка архива">
+    <div class="metric"><strong>${ordered.length}</strong><span>${russianPlural(ordered.length, "материал", "материала", "материалов")}</span></div>
+    <div class="metric"><strong>${segments}</strong><span>сохранённых снимков</span></div>
+    <div class="metric"><strong>${completed}/${ordered.length}</strong><span>полностью собраны</span></div>
+  </section>
+  <section class="catalog" aria-labelledby="catalog-title">
+    <div class="catalog-head"><div><h2 id="catalog-title">Материалы</h2><p>Обновлено: ${escapeHtml(latestLabel)} · ${checkpoints ? `${checkpoints} на контрольной точке` : "все готовы"}</p></div><p id="visible-count">Показано: ${ordered.length}</p></div>
+    <div class="search-wrap"><label for="archive-search">Найти материал</label><input id="archive-search" type="search" autocomplete="off" placeholder="Найти по названию…"></div>
+    <div class="grid" id="archive-grid">${body}</div>
+    <p class="no-results" id="no-results">Ничего не найдено. Попробуйте другое слово.</p>
+  </section>
+  <footer>Локальная витрина Agent Herder · исходные JSON-снимки остаются первоисточником.</footer>
+</main>
+<script>
+  const search = document.getElementById("archive-search");
+  const cards = Array.from(document.querySelectorAll(".archive-card"));
+  const visible = document.getElementById("visible-count");
+  const empty = document.getElementById("no-results");
+  search?.addEventListener("input", () => { const needle = search.value.trim().toLocaleLowerCase(); let count = 0; cards.forEach((card) => { const matched = !needle || card.dataset.search.includes(needle); card.hidden = !matched; if (matched) count += 1; }); visible.textContent = "Показано: " + count; empty.style.display = count ? "none" : "block"; });
+</script>
+</body>
+</html>
+`;
+}
+
+function russianPlural(value: number, one: string, few: string, many: string): string {
+  const remainder = Math.abs(value) % 100;
+  const last = remainder % 10;
+  if (remainder > 10 && remainder < 20) return many;
+  if (last === 1) return one;
+  if (last > 1 && last < 5) return few;
+  return many;
 }
 
 /**
@@ -332,8 +428,8 @@ export class ChatGptHistoryArchive {
         continue;
       }
       const route = conversationRoute(binding.sourceRoute);
-      const segments = route ? sourceSegments.get(route) : undefined;
-      if (!segments || segments.length === 0) {
+      const source = route ? sourceSegments.get(route) : undefined;
+      if (!source || source.segments.length === 0) {
         unavailableChats += 1;
         results.push({ chatRef: chat.chatRef, status: "unavailable" });
         continue;
@@ -346,7 +442,7 @@ export class ChatGptHistoryArchive {
       const manifest = await this.readManifest(manifestPath, id, chat.chatRef, binding.title);
       await mkdir(join(archivePath, "segments"), { recursive: true, mode: 0o700 });
       let newSegments = 0;
-      for (const segment of segments) {
+      for (const segment of source.segments) {
         if (await this.appendSegment(archivePath, manifest, segment)) newSegments += 1;
       }
       manifest.resume = "reopen_from_bottom";
@@ -368,16 +464,18 @@ export class ChatGptHistoryArchive {
     const sourceSegments = await this.indexRouteSegments(root);
     let reconciledRoutes = 0;
     const articles: Array<{ archivePath: string; article: { markdownPath: string; htmlPath: string }; newSegments: number }> = [];
-    for (const [route, segments] of sourceSegments) {
+    const catalogEntries: ArchiveCatalogEntry[] = [];
+    for (const [route, source] of sourceSegments) {
       const id = `route:${sha256(route).slice(0, 24)}`;
       const chatRef = opaqueRef(id);
       const archivePath = join(root, archiveId(id));
       if (!inside(root, archivePath)) throw new ChatGptHistoryArchiveError("unsafe_archive_path", "history archive path escaped its root");
       const manifestPath = join(archivePath, "manifest.json");
-      const manifest = await this.readManifest(manifestPath, archiveId(id), chatRef, "ChatGPT conversation");
+      const manifest = await this.readManifest(manifestPath, archiveId(id), chatRef, source.title);
+      if (manifest.title === "ChatGPT conversation" && source.title !== manifest.title) manifest.title = source.title;
       await mkdir(join(archivePath, "segments"), { recursive: true, mode: 0o700 });
       let newSegments = 0;
-      for (const segment of segments) {
+      for (const segment of source.segments) {
         if (await this.appendSegment(archivePath, manifest, segment)) newSegments += 1;
       }
       manifest.resume = "reopen_from_bottom";
@@ -386,8 +484,17 @@ export class ChatGptHistoryArchive {
       const article = await this.writeArticleViews(archivePath, manifest.title, manifest);
       reconciledRoutes += 1;
       articles.push({ archivePath, article, newSegments });
+      catalogEntries.push({
+        archiveId: manifest.archiveId,
+        title: manifest.title,
+        complete: manifest.complete,
+        capturedSegments: manifest.segments.length,
+        updatedAt: manifest.updatedAt,
+      });
     }
-    return { reconciledRoutes, articles };
+    const catalogPath = join(root, "index.html");
+    await writePrivate(catalogPath, renderArchiveCatalog(catalogEntries));
+    return { reconciledRoutes, articles, catalogPath };
   }
 
   private async exportBoundChat(chatRef: string, binding: ChatBinding, maxSegments: number): Promise<ExportChatHistoryResult> {
@@ -488,11 +595,12 @@ export class ChatGptHistoryArchive {
     return true;
   }
 
-  private async indexRouteSegments(root: string): Promise<Map<string, ChatGptHistorySegment[]>> {
-    const byRoute = new Map<string, ChatGptHistorySegment[]>();
+  private async indexRouteSegments(root: string): Promise<Map<string, { title: string; segments: ChatGptHistorySegment[] }>> {
+    const byRoute = new Map<string, { title: string; segments: ChatGptHistorySegment[] }>();
     const entries = await readdir(root, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
+      const manifest = await this.readStoredManifest(join(root, entry.name, "manifest.json"));
       const segmentDir = join(root, entry.name, "segments");
       let files: string[];
       try {
@@ -507,8 +615,9 @@ export class ChatGptHistoryArchive {
           const segment = JSON.parse(await readFile(join(segmentDir, file), "utf8")) as ChatGptHistorySegment;
           const route = routeFromSegment(segment);
           if (!route) continue;
-          const matching = byRoute.get(route) ?? [];
-          matching.push(segment);
+          const matching = byRoute.get(route) ?? { title: manifest?.title ?? "ChatGPT conversation", segments: [] };
+          if (matching.title === "ChatGPT conversation" && manifest?.title) matching.title = manifest.title;
+          matching.segments.push(segment);
           byRoute.set(route, matching);
         } catch {
           // Preserve other raw source snapshots if a legacy segment is unreadable.
@@ -516,6 +625,15 @@ export class ChatGptHistoryArchive {
       }
     }
     return byRoute;
+  }
+
+  private async readStoredManifest(path: string): Promise<HistoryManifest | undefined> {
+    try {
+      const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
+      return isHistoryManifest(parsed) ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private async writeArticleViews(
@@ -605,6 +723,8 @@ export interface ReconcileVisibleChatHistoryResult {
 
 export interface ReconcileKnownRouteHistoryResult {
   reconciledRoutes: number;
+  /** Private local landing page for the reconciled articles. */
+  catalogPath: string;
   articles: Array<{
     archivePath: string;
     article: { markdownPath: string; htmlPath: string };

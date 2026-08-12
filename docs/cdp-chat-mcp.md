@@ -35,6 +35,10 @@ same page, scroll upward, and save each raw accessibility snapshot locally.
 - `reconcile_visible_chats({ maxChats? })` is browser-free: it builds the
   route-stable archive's Markdown and HTML from raw snapshots already captured
   on disk. It never opens, scrolls, or changes the ChatGPT page.
+- `reconcile_known_routes()` is the offline recovery route for every captured
+  `/c/...` snapshot, including after BrowserClaw becomes unavailable. It also
+  refreshes `CHATGPT_HISTORY_ARCHIVE_ROOT/index.html`: a private local catalog
+  with search plus direct HTML and Markdown links for the reconciled articles.
 - Before a click, the BrowserClaw driver intersects fresh a11y sidebar rows
   with `read(format: "links")` links on that same owned page whose route begins
   `/c/`. It does not open or navigate a second tab to do this filtering.

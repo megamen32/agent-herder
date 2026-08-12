@@ -211,8 +211,16 @@ describe("ChatGptHistoryArchive", () => {
       const reconciled = await offline.reconcileKnownRoutes();
 
       expect(reconciled.reconciledRoutes).toBe(1);
+      expect(reconciled.catalogPath).toBe(join(root, "index.html"));
       expect(reconciled.articles[0]).toMatchObject({ article: { markdownPath: expect.any(String), htmlPath: expect.any(String) } });
       await expect(readFile(reconciled.articles[0]!.article.markdownPath, "utf8")).resolves.toContain("private bottom text");
+      const catalog = await readFile(reconciled.catalogPath, "utf8");
+      expect(catalog).toContain("Ваш архив ChatGPT");
+      expect(catalog).toContain("Article archive canary");
+      expect(catalog).toContain('article/article.html');
+      expect(catalog).toContain('article/article.md');
+      expect(catalog).not.toContain("private bottom text");
+      expect((await stat(reconciled.catalogPath)).mode & 0o777).toBe(0o600);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
