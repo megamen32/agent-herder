@@ -87,6 +87,21 @@ function fakeDriver(): CdpChatDriver {
   return { async acquirePage() { return page; }, accountExportDriver };
 }
 
+function archiveOnlyDriver(): CdpChatDriver {
+  return {
+    ...fakeDriver(),
+    capabilities: {
+      new_chat: false,
+      list_chats: false,
+      search_chat: false,
+      export_chat: false,
+      send_message: false,
+      edit_message: false,
+      download_media: false,
+    },
+  };
+}
+
 async function connect(driver: CdpChatDriver): Promise<Client> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const server = createAgentHerderMcpServer(driver);
@@ -116,6 +131,27 @@ describe("Agent Herder CDP chat capability", () => {
       "cdp_list_account_exports",
     ]));
     expect(names.filter((name) => name === "send_message")).toHaveLength(1);
+  });
+
+  it("does not advertise chat operations that a partial driver cannot verify", async () => {
+    const client = await connect(archiveOnlyDriver());
+    const names = (await client.listTools()).tools.map((tool) => tool.name);
+
+    expect(names).toContain("send_message");
+    expect(names).toEqual(expect.arrayContaining([
+      "cdp_request_account_export",
+      "cdp_import_account_export",
+      "cdp_list_account_exports",
+    ]));
+    expect(names).not.toEqual(expect.arrayContaining([
+      "cdp_new_chat",
+      "cdp_list_chats",
+      "cdp_search_chat",
+      "cdp_export_chat",
+      "cdp_send_message",
+      "cdp_edit_message",
+      "cdp_download_media",
+    ]));
   });
 
   it("keeps fixture references isolated between MCP sessions", async () => {

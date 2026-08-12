@@ -46,8 +46,16 @@ The manifest is the decision point for the next vertical slice. If the native
 ZIP includes the files, preserve it as the complete raw source. If it does not,
 add a focused `Library → select → download` batch runner using BrowserClaw's
 fresh `download(page, ref)` primitive. That follow-up must retain the same
-long-lived BrowserClaw MCP process and single owned page; it must not open a
-tab per file.
+  long-lived BrowserClaw MCP process and single owned page; it must not open a
+  tab per file.
+
+The concrete BrowserClaw driver currently advertises only this verified native
+account-export/archive surface. It deliberately does not register
+`new_chat`, `list_chats`, `search_chat`, `export_chat`, `send_message`,
+`edit_message`, or `download_media`: BrowserClaw's current accessibility seam
+does not provide stable chat/message/media identities or an observable
+post-send receipt. Other drivers may expose the complete tool set only when
+their `capabilities` contract attests those operations.
 
 ## Safety contract
 

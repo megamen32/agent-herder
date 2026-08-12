@@ -19,6 +19,7 @@ import { createWebServer } from "./web/server.js";
 import { createConfiguredBrowserWakeService } from "./browser-wake.js";
 import { loadCdpChatDriver } from "./cdp-chat-mcp.js";
 import type {
+  CdpChatCapabilities,
   CdpChatDriver,
   DownloadMediaInput,
   EditMessageInput,
@@ -28,7 +29,7 @@ import type {
   SearchChatInput,
   SendMessageInput,
 } from "./cdp-chat.js";
-import { CdpChatClient } from "./cdp-chat.js";
+import { ALL_CDP_CHAT_CAPABILITIES, CdpChatClient } from "./cdp-chat.js";
 import { ChatGptAccountArchive, type ImportAccountExportInput, type RequestAccountExportInput } from "./chatgpt-account-archive.js";
 import {
   handleListAgents,
@@ -316,8 +317,8 @@ function cdpTextResult(value: unknown): { content: [{ type: "text"; text: string
 }
 
 /** Register the standalone CDP chat capability without colliding with send_message. */
-function registerCdpChatTools(server: McpServer, client: CdpChatClient): void {
-  server.tool(
+function registerCdpChatTools(server: McpServer, client: CdpChatClient, capabilities: CdpChatCapabilities): void {
+  if (capabilities.new_chat) server.tool(
     "cdp_new_chat",
     "Create exactly one disposable chat on the owned authenticated page without submitting a prompt.",
     {
@@ -327,7 +328,7 @@ function registerCdpChatTools(server: McpServer, client: CdpChatClient): void {
     },
     async (args) => cdpTextResult(await client.newChat(args as NewChatInput)),
   );
-  server.tool(
+  if (capabilities.list_chats) server.tool(
     "cdp_list_chats",
     "List page-visible chats by explicit unread, observable working, or UTC-recent semantics with bounded pagination.",
     {
@@ -337,7 +338,7 @@ function registerCdpChatTools(server: McpServer, client: CdpChatClient): void {
     },
     async (args) => cdpTextResult(await client.listChats(args as ListChatsInput)),
   );
-  server.tool(
+  if (capabilities.search_chat) server.tool(
     "cdp_search_chat",
     "Search page-visible chat titles and message text using one fresh owned-page snapshot.",
     {
@@ -346,7 +347,7 @@ function registerCdpChatTools(server: McpServer, client: CdpChatClient): void {
     },
     async (args) => cdpTextResult(await client.searchChat(args as SearchChatInput)),
   );
-  server.tool(
+  if (capabilities.export_chat) server.tool(
     "cdp_export_chat",
     "Export only a fixture-bound chat with bounded message count and UTF-8 byte output.",
     {
@@ -356,7 +357,7 @@ function registerCdpChatTools(server: McpServer, client: CdpChatClient): void {
     },
     async (args) => cdpTextResult(await client.exportChat(args as ExportChatInput)),
   );
-  server.tool(
+  if (capabilities.send_message) server.tool(
     "cdp_send_message",
     "Send one fixture message only with exact confirmation SEND_MESSAGE and a one-shot idempotency gate.",
     {
@@ -367,7 +368,7 @@ function registerCdpChatTools(server: McpServer, client: CdpChatClient): void {
     },
     async (args) => cdpTextResult(await client.sendMessage(args as SendMessageInput)),
   );
-  server.tool(
+  if (capabilities.edit_message) server.tool(
     "cdp_edit_message",
     "Edit one fixture message only with exact confirmation EDIT_MESSAGE, one-shot idempotency, and an expected version or old-text guard.",
     {
@@ -381,7 +382,7 @@ function registerCdpChatTools(server: McpServer, client: CdpChatClient): void {
     },
     async (args) => cdpTextResult(await client.editMessage(args as EditMessageInput)),
   );
-  server.tool(
+  if (capabilities.download_media) server.tool(
     "cdp_download_media",
     "Download one fixture attachment of an allowlisted MIME and size into the confined media root.",
     {
@@ -418,8 +419,8 @@ function registerChatGptAccountArchiveTools(server: McpServer, archive: ChatGptA
 
 // ===== Register MCP tools =====
 
-function registerTools(server: McpServer, cdpChatClient?: CdpChatClient, cdpAccountArchive?: ChatGptAccountArchive) {
-  if (cdpChatClient) registerCdpChatTools(server, cdpChatClient);
+function registerTools(server: McpServer, cdpChatClient?: CdpChatClient, cdpCapabilities?: CdpChatCapabilities, cdpAccountArchive?: ChatGptAccountArchive) {
+  if (cdpChatClient && cdpCapabilities) registerCdpChatTools(server, cdpChatClient, cdpCapabilities);
   if (cdpAccountArchive) registerChatGptAccountArchiveTools(server, cdpAccountArchive);
 
   server.tool(
@@ -698,6 +699,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver): McpSe
   registerTools(
     server,
     cdpChatDriver ? new CdpChatClient(cdpChatDriver, { mediaRoot: process.env.CDP_CHAT_MEDIA_ROOT }) : undefined,
+    cdpChatDriver?.capabilities ?? (cdpChatDriver ? ALL_CDP_CHAT_CAPABILITIES : undefined),
     cdpChatDriver ? new ChatGptAccountArchive(cdpChatDriver.accountExportDriver, { archiveRoot: process.env.CHATGPT_ACCOUNT_ARCHIVE_ROOT }) : undefined,
   );
   return server;

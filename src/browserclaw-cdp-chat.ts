@@ -12,10 +12,25 @@ import {
   type BrowserClawSemanticAction,
 } from "./browserclaw-a11y.js";
 import type { ChatGptAccountExportDriver } from "./chatgpt-account-archive.js";
-import type { ChatRecord, CdpChatDriver, CdpChatPage, DownloadedMedia, MessageRecord, PageIdentity } from "./cdp-chat.js";
+import type { ChatRecord, CdpChatCapabilities, CdpChatDriver, CdpChatPage, DownloadedMedia, MessageRecord, PageIdentity } from "./cdp-chat.js";
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:9010/mcp";
 const CHATGPT_ORIGIN = "https://chatgpt.com";
+
+/**
+ * BrowserClaw currently attests the owned-page account-export flow, but it does
+ * not expose stable chat/message/media identities. Do not advertise chat tools
+ * until their real post-action state can be observed and verified.
+ */
+export const BROWSERCLAW_CDP_CHAT_CAPABILITIES: CdpChatCapabilities = {
+  new_chat: false,
+  list_chats: false,
+  search_chat: false,
+  export_chat: false,
+  send_message: false,
+  edit_message: false,
+  download_media: false,
+};
 
 export interface BrowserClawCdpChatDriverOptions {
   endpoint?: string;
@@ -250,6 +265,7 @@ export async function createCdpChatDriver(options: BrowserClawCdpChatDriverOptio
     async acquirePage(): Promise<CdpChatPage> {
       return page;
     },
+    capabilities: BROWSERCLAW_CDP_CHAT_CAPABILITIES,
     accountExportDriver: BrowserClawAccountExportDriver.fromOwnedPage(ownedA11yPage),
   };
 }

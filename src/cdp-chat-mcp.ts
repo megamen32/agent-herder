@@ -7,6 +7,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isAbsolute, resolve } from "node:path";
 import {
   CdpChatClient,
+  ALL_CDP_CHAT_CAPABILITIES,
+  type CdpChatCapabilities,
   type CdpChatDriver,
   type EditMessageInput,
   type ExportChatInput,
@@ -28,8 +30,12 @@ function textResult(value: unknown): { content: [{ type: "text"; text: string }]
 }
 
 /** Register all standalone CDP website chat tools on one MCP server. */
-export function registerCdpChatTools(server: McpServer, client: CdpChatClient): void {
-  server.tool(
+export function registerCdpChatTools(
+  server: McpServer,
+  client: CdpChatClient,
+  capabilities: CdpChatCapabilities = ALL_CDP_CHAT_CAPABILITIES,
+): void {
+  if (capabilities.new_chat) server.tool(
     "new_chat",
     "Create exactly one disposable chat on the owned authenticated page without submitting a prompt.",
     {
@@ -39,7 +45,7 @@ export function registerCdpChatTools(server: McpServer, client: CdpChatClient): 
     },
     async (args) => textResult(await client.newChat(args as NewChatInput)),
   );
-  server.tool(
+  if (capabilities.list_chats) server.tool(
     "list_chats",
     "List page-visible chats by explicit unread, observable working, or UTC-recent semantics with bounded pagination.",
     {
@@ -49,7 +55,7 @@ export function registerCdpChatTools(server: McpServer, client: CdpChatClient): 
     },
     async (args) => textResult(await client.listChats(args as ListChatsInput)),
   );
-  server.tool(
+  if (capabilities.search_chat) server.tool(
     "search_chat",
     "Search page-visible chat titles and message text using one fresh owned-page snapshot.",
     {
@@ -58,7 +64,7 @@ export function registerCdpChatTools(server: McpServer, client: CdpChatClient): 
     },
     async (args) => textResult(await client.searchChat(args as SearchChatInput)),
   );
-  server.tool(
+  if (capabilities.export_chat) server.tool(
     "export_chat",
     "Export only a fixture-bound chat with bounded message count and UTF-8 byte output.",
     {
@@ -68,7 +74,7 @@ export function registerCdpChatTools(server: McpServer, client: CdpChatClient): 
     },
     async (args) => textResult(await client.exportChat(args as ExportChatInput)),
   );
-  server.tool(
+  if (capabilities.send_message) server.tool(
     "send_message",
     "Send one fixture message only with exact confirmation SEND_MESSAGE and a one-shot idempotency gate.",
     {
@@ -79,7 +85,7 @@ export function registerCdpChatTools(server: McpServer, client: CdpChatClient): 
     },
     async (args) => textResult(await client.sendMessage(args as SendMessageInput)),
   );
-  server.tool(
+  if (capabilities.edit_message) server.tool(
     "edit_message",
     "Edit one fixture message only with exact confirmation EDIT_MESSAGE, one-shot idempotency, and an expected version or old-text guard.",
     {
@@ -93,7 +99,7 @@ export function registerCdpChatTools(server: McpServer, client: CdpChatClient): 
     },
     async (args) => textResult(await client.editMessage(args as EditMessageInput)),
   );
-  server.tool(
+  if (capabilities.download_media) server.tool(
     "download_media",
     "Download one fixture attachment of an allowlisted MIME and size into the confined media root.",
     {
@@ -135,7 +141,7 @@ export function createCdpChatServer(driver: CdpChatDriver, options: ConstructorP
     version: "0.1.0",
     description: "Bounded ChatGPT/E-Frontier chat operations over one owned CDP page",
   });
-  registerCdpChatTools(server, new CdpChatClient(driver, options));
+  registerCdpChatTools(server, new CdpChatClient(driver, options), driver.capabilities);
   registerChatGptAccountArchiveTools(server, new ChatGptAccountArchive(driver.accountExportDriver, {
     archiveRoot: process.env.CHATGPT_ACCOUNT_ARCHIVE_ROOT,
   }));

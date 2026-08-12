@@ -63,9 +63,32 @@ export interface CdpChatPage {
   downloadMedia(input: { chatId: string; messageId: string; mediaId: string }): Promise<DownloadedMedia>;
 }
 
+export type CdpChatOperation =
+  | "new_chat"
+  | "list_chats"
+  | "search_chat"
+  | "export_chat"
+  | "send_message"
+  | "edit_message"
+  | "download_media";
+
+export type CdpChatCapabilities = Readonly<Record<CdpChatOperation, boolean>>;
+
+export const ALL_CDP_CHAT_CAPABILITIES: CdpChatCapabilities = {
+  new_chat: true,
+  list_chats: true,
+  search_chat: true,
+  export_chat: true,
+  send_message: true,
+  edit_message: true,
+  download_media: true,
+};
+
 /** Acquires the one authenticated page owned by this MCP process. */
 export interface CdpChatDriver {
   acquirePage(): Promise<CdpChatPage>;
+  /** Undefined keeps the original full-driver contract; concrete partial drivers must opt out explicitly. */
+  capabilities?: CdpChatCapabilities;
   /** Optional account-wide export action sharing this driver's one BrowserClaw page lease. */
   accountExportDriver?: ChatGptAccountExportDriver;
 }
