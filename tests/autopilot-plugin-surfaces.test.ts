@@ -15,6 +15,7 @@ describe("/autopilot plugin surfaces", () => {
     expect(opencode).toContain('command !== "autopilot"');
     expect(opencode).toContain("config.command.autopilot");
     expect(opencode).toContain('event.type !== "session.idle"');
+    expect(opencode).toContain("controlTurns.delete(sessionID)");
     expect(hermes).toContain('ctx.register_command("autopilot"');
     expect(hermes).toContain('ctx.register_hook("post_llm_call"');
     expect(hermes).toContain("get_messages_as_conversation");

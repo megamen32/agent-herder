@@ -13,7 +13,7 @@ The plugin now exposes the same user command in Codex, OpenCode, and Hermes:
 Codex loads the bundled `autopilot` skill and keeps using its native `Stop`
 hook. OpenCode loads `integrations/opencode/agent-herder-autopilot.js`, which
 captures the exact `sessionID` in `command.execute.before` and invokes the
-judge on `session.idle`. Hermes loads the extension under
+judge on `session.idle` (the slash-control turn itself is skipped). Hermes loads the extension under
 `integrations/hermes/agent-herder-autopilot/`, registers the real slash command
 with `register_command`, and invokes the same judge at `on_session_end`.
 
