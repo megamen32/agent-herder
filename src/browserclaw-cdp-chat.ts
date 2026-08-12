@@ -333,10 +333,10 @@ export class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
     });
   }
 
-  /** Read page links on the already owned page; this never opens or navigates a tab. */
-  async conversationSidebarTitles(page: number): Promise<ReadonlySet<string>> {
+  /** Read conversation routes on the already owned page; this never opens or navigates a tab. */
+  async conversationSidebarRoutes(page: number): Promise<ReadonlyMap<string, readonly string[]>> {
     const response = await this.client.callToolRaw("read", { page, format: "links" }, deadline());
-    return conversationTitlesFromLinks(textContent(response));
+    return conversationRoutesFromLinks(textContent(response));
   }
 
   async actPage(page: number, action: BrowserClawSemanticAction): Promise<BrowserClawA11ySnapshot> {
@@ -489,7 +489,7 @@ export async function createCdpChatDriver(options: BrowserClawCdpChatDriverOptio
     async capture(input) {
       await a11yClient.captureHistoryArchiveDiagnostic(input);
     },
-  }, a11yClient.conversationSidebarTitles.bind(a11yClient));
+  }, a11yClient.conversationSidebarRoutes.bind(a11yClient));
   const accountExportDriver = BrowserClawAccountExportDriver.fromOwnedPage(ownedA11yPage, {
     async capture(input) {
       await a11yClient.captureAccountExportDiagnostic(input);
@@ -515,7 +515,7 @@ class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
     private readonly page: BrowserClawA11yPage,
     sessionRef: string,
     private readonly diagnostics?: BrowserClawHistoryArchiveDiagnosticReporter,
-    private readonly conversationTitles?: (page: number) => Promise<ReadonlySet<string>>,
+    private readonly conversationRoutes?: (page: number) => Promise<ReadonlyMap<string, readonly string[]>>,
   ) {
     this.idPrefix = createHash("sha256").update(sessionRef).digest("hex").slice(0, 24);
   }
@@ -525,8 +525,8 @@ class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
     try {
       snapshot = await this.page.snapshot(deadline());
       this.lastSnapshot = snapshot;
-      const titles = this.conversationTitles ? await this.conversationTitles(snapshot.page) : undefined;
-      return visibleSidebarChats(snapshot, this.idPrefix, titles);
+      const routes = this.conversationRoutes ? await this.conversationRoutes(snapshot.page) : undefined;
+      return visibleSidebarChats(snapshot, this.idPrefix, routes);
     } catch (error) {
       await this.captureDiagnostic({
         outcome: "failed",
@@ -542,8 +542,8 @@ class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
     let snapshot: BrowserClawA11ySnapshot | undefined;
     try {
       snapshot = await this.page.snapshot(deadline());
-      const titles = this.conversationTitles ? await this.conversationTitles(snapshot.page) : undefined;
-      const chat = visibleSidebarChats(snapshot, this.idPrefix, titles).find((entry) => entry.id === input.chatId);
+      const routes = this.conversationRoutes ? await this.conversationRoutes(snapshot.page) : undefined;
+      const chat = visibleSidebarChats(snapshot, this.idPrefix, routes).find((entry) => entry.id === input.chatId);
       if (!chat) throw new Error("ChatGPT chat is not visible in the owned sidebar; call cdp_list_chats again");
       const node = findNode(snapshot.root, (entry) => entry.ref === chat.nodeRef);
       if (!node || node.disabled) throw new Error("ChatGPT sidebar chat control was not found on the owned page");
@@ -602,26 +602,31 @@ export type BrowserClawVisibleHistoryChat = ChatGptHistoryChat & { nodeRef: stri
 export function visibleSidebarChats(
   snapshot: BrowserClawA11ySnapshot,
   idPrefix: string,
-  conversationTitles?: ReadonlySet<string>,
+  conversationRoutes?: ReadonlyMap<string, readonly string[]>,
 ): BrowserClawVisibleHistoryChat[] {
   const seen = new Set<string>();
-  const candidates: Array<{ node: BrowserClawA11yNode; title: string; path: readonly BrowserClawA11yNode[] }> = [];
+  const routeOffsets = new Map<string, number>();
+  const candidates: Array<{ node: BrowserClawA11yNode; title: string; route?: string }> = [];
   const visit = (node: BrowserClawA11yNode, path: readonly BrowserClawA11yNode[]): void => {
     const title = node.name?.trim();
-    if (node.role === "link" && title && isHistorySidebarTitle(title) && node.children.length <= 2 && !seen.has(node.ref) && isLikelyHistoryRow(path)
-      && (conversationTitles === undefined || conversationTitles.has(normalizedHistoryTitle(title)))) {
+    const normalizedTitle = title ? normalizedHistoryTitle(title) : undefined;
+    const routes = normalizedTitle ? conversationRoutes?.get(normalizedTitle) : undefined;
+    const routeOffset = normalizedTitle ? routeOffsets.get(normalizedTitle) ?? 0 : 0;
+    const route = routes?.[routeOffset];
+    if (node.role === "link" && title && normalizedTitle && isHistorySidebarTitle(title) && node.children.length <= 2 && !seen.has(node.ref) && isLikelyHistoryRow(path)
+      && (conversationRoutes === undefined || route !== undefined)) {
       seen.add(node.ref);
-      candidates.push({ node, title, path });
+      if (routes) routeOffsets.set(normalizedTitle, routeOffset + 1);
+      candidates.push({ node, title, ...(route ? { route } : {}) });
     }
     for (const child of node.children) visit(child, [...path, node]);
   };
   visit(snapshot.root, []);
   return candidates
-    .map(({ node, title }) => ({
-      // Keep the public binding stable across fresh a11y refs; `nodeRef` below
-      // remains the current semantic click target. The post-click /c/ check is
-      // the authoritative conversation verification.
-      id: historyChatId(idPrefix, title, node.description),
+    .map(({ node, title, route }) => ({
+      // A route-derived id survives both fresh a11y refs and BrowserClaw MCP
+      // session renewal. The a11y ref remains only the current click target.
+      id: historyChatId(idPrefix, title, node.description, route),
       nodeRef: node.ref,
       title,
       unread: /(?:\bunread\b|непрочитан)/iu.test(`${node.description ?? ""} ${node.name ?? ""}`),
@@ -632,18 +637,24 @@ export function visibleSidebarChats(
     }));
 }
 
-function conversationTitlesFromLinks(value: string): ReadonlySet<string> {
-  const titles = new Set<string>();
+function conversationRoutesFromLinks(value: string): ReadonlyMap<string, readonly string[]> {
+  const routes = new Map<string, string[]>();
   for (const match of value.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)]+|\/[^)]+)\)/gu)) {
     const href = match[2]!;
     try {
       const url = new URL(href, CHATGPT_ORIGIN);
-      if (url.origin === CHATGPT_ORIGIN && /^\/c\/[^/]+/u.test(url.pathname)) titles.add(normalizedHistoryTitle(match[1]!));
+      if (url.origin === CHATGPT_ORIGIN && /^\/c\/[^/]+/u.test(url.pathname)) {
+        const title = normalizedHistoryTitle(match[1]!);
+        const route = url.pathname;
+        const entries = routes.get(title) ?? [];
+        if (!entries.includes(route)) entries.push(route);
+        routes.set(title, entries);
+      }
     } catch {
       // A malformed link cannot identify a ChatGPT conversation row.
     }
   }
-  return titles;
+  return routes;
 }
 
 function normalizedHistoryTitle(value: string): string {
@@ -657,7 +668,8 @@ function isLikelyHistoryRow(path: readonly BrowserClawA11yNode[]): boolean {
   return path.length >= 2;
 }
 
-function historyChatId(idPrefix: string, title: string, description: string | undefined): string {
+function historyChatId(idPrefix: string, title: string, description: string | undefined, route?: string): string {
+  if (route) return `route:${createHash("sha256").update(route).digest("hex").slice(0, 24)}`;
   const normalized = `${title.trim().toLocaleLowerCase()}\u0000${(description ?? "").trim().toLocaleLowerCase()}`;
   return `${idPrefix}:${createHash("sha256").update(normalized).digest("hex").slice(0, 24)}`;
 }

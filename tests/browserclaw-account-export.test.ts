@@ -329,9 +329,12 @@ describe("BrowserClawAccountExportDriver", () => {
       },
     };
 
-    const titles = await new BrowserClawMcpA11yClient(client as never).conversationSidebarTitles(7);
+    const routes = await new BrowserClawMcpA11yClient(client as never).conversationSidebarRoutes(7);
 
-    expect([...titles]).toEqual(["research article", "another article"]);
+    expect(routes).toEqual(new Map([
+      ["research article", ["/c/real-chat"]],
+      ["another article", ["/c/another-chat"]],
+    ]));
     expect(calls).toEqual([{ name: "read", args: { page: 7, format: "links" } }]);
   });
 
@@ -382,6 +385,26 @@ describe("BrowserClawAccountExportDriver", () => {
 
     expect(rows.map((row) => row.nodeRef)).toEqual(["chat-row-a", "chat-row-b"]);
     expect(rows[0]!.id).toBe(rows[1]!.id);
+  });
+
+  it("keeps a history binding stable across BrowserClaw sessions when its /c route is known", () => {
+    const routes = new Map([["research article", ["/c/stable-conversation"]]]) as never;
+    const first = visibleSidebarChats({
+      schema: "agent-herder.browserclaw-a11y.v1",
+      page: 7,
+      url: "https://chatgpt.com/",
+      snapshotRef: "first-session",
+      root: { ref: "root", role: "document", children: [{ ref: "history", role: "group", children: [{ ref: "chat-a", role: "link", name: "Research article", children: [] }] }] },
+    }, "first-browserclaw-session", routes);
+    const second = visibleSidebarChats({
+      schema: "agent-herder.browserclaw-a11y.v1",
+      page: 8,
+      url: "https://chatgpt.com/",
+      snapshotRef: "second-session",
+      root: { ref: "root", role: "document", children: [{ ref: "history", role: "group", children: [{ ref: "chat-b", role: "link", name: "Research article", children: [] }] }] },
+    }, "second-browserclaw-session", routes);
+
+    expect(first[0]!.id).toBe(second[0]!.id);
   });
 
   it("keeps a chat binding stable across fresh a11y refs", () => {
