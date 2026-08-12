@@ -576,10 +576,10 @@ export function visibleSidebarChats(
     // than risk clicking the wrong one.
     .filter((candidate) => !allowedTitles || titleCounts.get(candidate.normalizedTitle) === 1)
     .map(({ node, title }) => ({
-      // The title alone is not a selection key: ChatGPT can render several
-      // sidebar links with the same accessible name. Keep the opaque binding
-      // tied to the exact fresh a11y row that will receive the click.
-      id: historyChatId(idPrefix, title, node.description, node.ref),
+      // The DOM route filter established that this title identifies exactly one
+      // conversation. Keep the public binding stable across fresh a11y refs;
+      // `nodeRef` below remains the current semantic click target.
+      id: historyChatId(idPrefix, title, node.description),
       nodeRef: node.ref,
       title,
       unread: /(?:\bunread\b|непрочитан)/iu.test(`${node.description ?? ""} ${node.name ?? ""}`),
@@ -623,8 +623,8 @@ function parseConversationSidebarTitles(value: string): ReadonlySet<string> {
   return new Set(titles);
 }
 
-function historyChatId(idPrefix: string, title: string, description: string | undefined, nodeRef: string): string {
-  const normalized = `${title.trim().toLocaleLowerCase()}\u0000${(description ?? "").trim().toLocaleLowerCase()}\u0000${nodeRef}`;
+function historyChatId(idPrefix: string, title: string, description: string | undefined): string {
+  const normalized = `${title.trim().toLocaleLowerCase()}\u0000${(description ?? "").trim().toLocaleLowerCase()}`;
   return `${idPrefix}:${createHash("sha256").update(normalized).digest("hex").slice(0, 24)}`;
 }
 
