@@ -14,6 +14,8 @@ import {
   type StopHookInput,
 } from "./autopilot/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
+import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
+import { resolveEffectivePolicy } from "./autopilot/policy.js";
 
 const DEFAULT_LOCK_WAIT_MS = 2_000;
 const DEFAULT_LOCK_RETRY_INTERVAL_MS = 25;
@@ -29,10 +31,12 @@ export type AutopilotHookDeps = {
   judge: Parameters<typeof createAutopilotCore>[0]["judge"];
   notify: Parameters<typeof createAutopilotCore>[0]["notify"];
   allowSessions: ReadonlySet<string>;
+  allowAllSessions?: boolean;
   receiptStore: ReceiptStore;
   maxContinuationsPerSession: number;
   notification?: Parameters<typeof createAutopilotCore>[0]["notification"];
   choiceRegistry?: ChoiceRegistry;
+  effectivePolicy?: Parameters<typeof createAutopilotCore>[0]["effectivePolicy"];
 };
 
 export async function runAutopilotStopHook(
@@ -41,6 +45,23 @@ export async function runAutopilotStopHook(
 ) {
   const core = createAutopilotCore(deps);
   return core.handleStop(input);
+}
+
+/** Load the effective policy from the same configured store path used by the web service. */
+export async function loadEffectivePolicyForStopHook(
+  stateDir: string,
+  legacySessionIds: Iterable<string>,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const loadedPolicy = await new AutopilotPolicyStore(
+    resolveAutopilotPolicyStorePath(stateDir, env),
+  ).load();
+  return resolveEffectivePolicy({
+    env,
+    legacySessionIds,
+    ...(loadedPolicy.kind === "valid" ? { state: loadedPolicy.state } : {}),
+    ...(loadedPolicy.kind === "invalid" ? { stateError: loadedPolicy.error } : {}),
+  });
 }
 
 async function main(): Promise<void> {
@@ -71,10 +92,7 @@ async function main(): Promise<void> {
   }
 
   const allowSessions = await loadArmedSessions(stateDir);
-  if (!allowSessions.has(input.session_id)) {
-    writeResult({});
-    return;
-  }
+  const effectivePolicy = await loadEffectivePolicyForStopHook(stateDir, allowSessions);
 
   const receiptPath = join(stateDir, "receipts.json");
   // One lock protects the shared receipt file. A per-turn lock would allow
@@ -94,6 +112,8 @@ async function main(): Promise<void> {
       judge,
       notify,
       allowSessions,
+      allowAllSessions: isAllSessionsOptIn(),
+      effectivePolicy,
       receiptStore,
       maxContinuationsPerSession: readPositiveInteger(
         process.env.AGENT_HERDER_AUTOPILOT_MAX_CONTINUATIONS,
@@ -156,6 +176,10 @@ function defaultStateDir(): string {
     process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR ??
     join(homedir(), ".local", "state", "agent-herder", "autopilot")
   );
+}
+
+export function isAllSessionsOptIn(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.AGENT_HERDER_AUTOPILOT_ALL_SESSIONS === "1";
 }
 
 async function loadArmedSessions(stateDir: string): Promise<Set<string>> {
@@ -222,6 +246,7 @@ function writeHelp(): void {
       "  AGENT_HERDER_AUTOPILOT_STATE_DIR       receipt/arm state directory",
       "  AGENT_HERDER_AUTOPILOT_SESSION_ID       inline session arm",
       "  AGENT_HERDER_AUTOPILOT_ARM_FILE         newline/JSON-array arm file",
+      "  AGENT_HERDER_AUTOPILOT_ALL_SESSIONS     process every session only when set to 1",
       "  AGENT_HERDER_AUTOPILOT_JUDGE_BASE_URL   OpenAI-compatible /chat/completions base",
       "  AGENT_HERDER_AUTOPILOT_JUDGE_MODEL      structured judge model",
       "  NOTIFY_CENTER_EVENT_URL / TOKEN         NoticePlace producer credentials",

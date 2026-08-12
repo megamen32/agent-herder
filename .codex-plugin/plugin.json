@@ -1,0 +1,29 @@
+{
+  "name": "agent-herder",
+  "version": "0.1.0+codex.20260812124000",
+  "description": "Monitor agent sessions and let an AI judge continue, finish, or ask the user for a bounded decision.",
+  "author": {
+    "name": "Agent Herder contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "agent-orchestration",
+    "mcp",
+    "codex",
+    "autopilot"
+  ],
+  "mcpServers": "./.mcp.json",
+  "hooks": "./.codex-plugin/hooks.json",
+  "interface": {
+    "displayName": "Agent Herder",
+    "shortDescription": "AI supervisor for long-running agent sessions",
+    "longDescription": "Agent Herder watches coding-agent sessions, asks an AI judge what should happen next, and continues or escalates through NoticePlace.",
+    "developerName": "Agent Herder contributors",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Agent orchestration",
+      "Interactive choices"
+    ],
+    "defaultPrompt": "Show my agent sessions and supervise the selected one."
+  }
+}

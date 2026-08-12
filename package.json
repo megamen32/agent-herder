@@ -20,6 +20,13 @@
   },
   "files": [
     "dist",
+    ".codex-plugin/plugin.json",
+    ".codex-plugin/hooks.json",
+    ".mcp.json",
+    "plugin.json",
+    "mcp.json",
+    "com.openai/hooks/hooks.json",
+    "scripts/autopilot-hook-launcher.sh",
     "docs/assets/agent-herder-animated.svg",
     "docs/autopilot.md",
     "docs/codex-hooks.json",

@@ -11,7 +11,7 @@ import {
   type AutopilotDecision,
   type StopHookInput,
 } from "../src/autopilot/index.js";
-import { acquireLock } from "../src/autopilot-hook.js";
+import { acquireLock, isAllSessionsOptIn } from "../src/autopilot-hook.js";
 
 const baseInput: StopHookInput = {
   hook_event_name: "Stop",
@@ -28,21 +28,30 @@ afterEach(() => {
 });
 
 describe("autopilot core", () => {
-  it("continues exactly once per session-turn and returns a block decision", async () => {
-    const judge = { decide: vi.fn(async () => ({ kind: "continue", nextGoal: "Find the failing endpoint" } satisfies AutopilotDecision)) };
+  it("re-judges each new Stop iteration in one Codex turn and deduplicates an exact replay", async () => {
+    const decisions: AutopilotDecision[] = [
+      { kind: "continue", nextGoal: "Find the failing endpoint" },
+      { kind: "continue", nextGoal: "Verify the repaired endpoint" },
+      { kind: "done", summary: "The endpoint is repaired", notify: false },
+    ];
+    const judge = { decide: vi.fn(async () => decisions.shift()!) };
     const sink = { send: vi.fn(async () => undefined) };
     const core = createAutopilotCore({
       judge,
       notify: sink,
       allowSessions: new Set(["session-1"]),
       receiptStore: new Map(),
-      maxContinuationsPerSession: 2,
+      maxContinuationsPerSession: 3,
     });
 
     await expect(core.handleStop(baseInput)).resolves.toEqual({ decision: "block", reason: "Find the failing endpoint" });
     await expect(core.handleStop(baseInput)).resolves.toEqual({});
+    const secondStop = { ...baseInput, stop_hook_active: true, last_assistant_message: "The endpoint was found but is not repaired." };
+    await expect(core.handleStop(secondStop)).resolves.toEqual({ decision: "block", reason: "Verify the repaired endpoint" });
+    await expect(core.handleStop(secondStop)).resolves.toEqual({});
+    await expect(core.handleStop({ ...secondStop, last_assistant_message: "The repair and focused verification are complete." })).resolves.toEqual({});
 
-    expect(judge.decide).toHaveBeenCalledTimes(1);
+    expect(judge.decide).toHaveBeenCalledTimes(3);
     expect(sink.send).not.toHaveBeenCalled();
   });
 
@@ -78,15 +87,20 @@ describe("autopilot core", () => {
   });
 
   it("fails closed when the session continuation budget is exhausted", async () => {
+    const sink = { send: vi.fn(async () => undefined) };
     const core = createAutopilotCore({
       judge: { decide: vi.fn(async () => ({ kind: "continue", nextGoal: "more" } satisfies AutopilotDecision)) },
-      notify: { send: vi.fn(async () => undefined) },
+      notify: sink,
       allowSessions: new Set(["session-1"]),
       receiptStore: new Map(),
       maxContinuationsPerSession: 0,
     });
 
     await expect(core.handleStop(baseInput)).resolves.toEqual({});
+    expect(sink.send).toHaveBeenCalledWith(expect.objectContaining({
+      title: expect.stringContaining("лимит автопродолжений"),
+      body: expect.stringContaining("more"),
+    }));
   });
 
   it("rejects disallowed sessions before touching the judge", async () => {
@@ -101,6 +115,39 @@ describe("autopilot core", () => {
 
     await expect(core.handleStop(baseInput)).resolves.toEqual({});
     expect(judge.decide).not.toHaveBeenCalled();
+  });
+
+  it("ignores an unarmed session by default and accepts it only with the all-session opt-in", async () => {
+    const judge = {
+      decide: vi.fn(async () => ({
+        kind: "continue",
+        nextGoal: "Continue this exact Codex session",
+      } satisfies AutopilotDecision)),
+    };
+    const defaultCore = createAutopilotCore({
+      judge,
+      notify: { send: vi.fn(async () => undefined) },
+      allowSessions: new Set(),
+      receiptStore: new Map(),
+      maxContinuationsPerSession: 1,
+    });
+    const allSessionCore = createAutopilotCore({
+      judge,
+      notify: { send: vi.fn(async () => undefined) },
+      allowSessions: new Set(),
+      allowAllSessions: isAllSessionsOptIn({ AGENT_HERDER_AUTOPILOT_ALL_SESSIONS: "1" }),
+      receiptStore: new Map(),
+      maxContinuationsPerSession: 1,
+    });
+
+    await expect(defaultCore.handleStop(baseInput)).resolves.toEqual({});
+    await expect(allSessionCore.handleStop({ ...baseInput, turn_id: "turn-all-session" })).resolves.toEqual({
+      decision: "block",
+      reason: "Continue this exact Codex session",
+    });
+    expect(isAllSessionsOptIn({})).toBe(false);
+    expect(isAllSessionsOptIn({ AGENT_HERDER_AUTOPILOT_ALL_SESSIONS: "true" })).toBe(false);
+    expect(judge.decide).toHaveBeenCalledTimes(1);
   });
 
   it("creates a NoticePlace payload without credentials", () => {
@@ -267,23 +314,64 @@ describe("autopilot core", () => {
     await expect(core.handleStop(baseInput)).resolves.toEqual({});
   });
 
-  it("counts persisted continue receipts toward the session budget", async () => {
+  it("counts persisted continue receipts only toward the current Codex turn budget", async () => {
     const judge = { decide: vi.fn(async () => ({ kind: "continue", nextGoal: "should not run" } satisfies AutopilotDecision)) };
+    const sink = { send: vi.fn(async () => undefined) };
     const core = createAutopilotCore({
       judge,
-      notify: { send: vi.fn(async () => undefined) },
+      notify: sink,
       allowSessions: new Set(["session-1"]),
-      receiptStore: new Map([["session-1:previous-turn", { kind: "continue" }]]),
+      receiptStore: new Map([
+        ["session-1:previous-turn", { kind: "continue" }],
+        ["session-1:turn-after-budget:iteration-1", { kind: "continue" }],
+      ]),
       maxContinuationsPerSession: 1,
     });
 
     await expect(core.handleStop({ ...baseInput, turn_id: "turn-after-budget" })).resolves.toEqual({});
-    expect(judge.decide).not.toHaveBeenCalled();
+    expect(judge.decide).toHaveBeenCalledTimes(1);
+    expect(sink.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("still lets the judge declare done after the continuation budget is spent", async () => {
+    const decisions: AutopilotDecision[] = [
+      { kind: "continue", nextGoal: "Run the focused verification" },
+      { kind: "done", summary: "Verification passed", notify: false },
+    ];
+    const judge = { decide: vi.fn(async () => decisions.shift()!) };
+    const core = createAutopilotCore({
+      judge,
+      notify: { send: vi.fn(async () => undefined) },
+      allowSessions: new Set(["session-1"]),
+      receiptStore: new Map(),
+      maxContinuationsPerSession: 1,
+    });
+
+    await expect(core.handleStop(baseInput)).resolves.toEqual({ decision: "block", reason: "Run the focused verification" });
+    await expect(core.handleStop({ ...baseInput, stop_hook_active: true, last_assistant_message: "Verification passed." })).resolves.toEqual({});
+    expect(judge.decide).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts a fresh continuation budget for the next user turn", async () => {
+    const judge = { decide: vi.fn(async () => ({ kind: "continue", nextGoal: "Continue the current user turn" } satisfies AutopilotDecision)) };
+    const core = createAutopilotCore({
+      judge,
+      notify: { send: vi.fn(async () => undefined) },
+      allowSessions: new Set(["session-1"]),
+      receiptStore: new Map(),
+      maxContinuationsPerSession: 1,
+    });
+
+    await expect(core.handleStop(baseInput)).resolves.toEqual({ decision: "block", reason: "Continue the current user turn" });
+    await expect(core.handleStop({ ...baseInput, turn_id: "turn-8", last_assistant_message: "A new user turn is incomplete." })).resolves.toEqual({ decision: "block", reason: "Continue the current user turn" });
+    expect(judge.decide).toHaveBeenCalledTimes(2);
   });
 
   it("parses an OpenAI-compatible judge response without exposing credentials", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async (_url, init) => {
       const request = JSON.parse(String(init?.body));
+      expect(request.messages[0].content).toContain("proceed, modify, or abort");
+      expect(request.messages[0].content).toContain("remaining_continuations is 0");
       expect(request.messages[1].content).toContain("session-1");
       expect(request.messages[1].content).toContain("bounded evidence");
       expect(request.stream).toBe(false);
@@ -313,6 +401,27 @@ describe("autopilot core", () => {
         headers: expect.objectContaining({ authorization: "Bearer judge-secret" }),
       }),
     );
+  });
+
+  it("accepts a fenced JSON decision from an OpenAI-compatible judge", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '```json\n{"kind":"continue","nextGoal":"Продолжить проверку"}\n```' } }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const judge = createOpenAICompatibleJudge({
+      baseUrl: "https://judge.example/v1",
+      model: "test-model",
+      fetchImpl,
+    });
+
+    await expect(judge.decide({ hook: baseInput, evidence: "", remainingContinuations: 1 })).resolves.toEqual({
+      kind: "continue",
+      nextGoal: "Продолжить проверку",
+    });
   });
 
   it("sends only the NoticePlace event contract through the notification sink", async () => {

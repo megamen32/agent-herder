@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createWebServer } from "../src/web/server.js";
 import { AdapterRegistry } from "../src/adapter-registry.js";
 import { mkdtemp } from "node:fs/promises";
@@ -87,6 +88,30 @@ function fakeHermesAdapter(): HarnessAdapter {
 }
 
 describe("agent-herder web API", () => {
+  it("enforces the configured bearer token on the MCP HTTP surface", async () => {
+    const server = createWebServer({
+      adapters: new Map(),
+      converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+      mcpAuthToken: "mcp-secret",
+      mcpServerFactory: () => new McpServer({ name: "test", version: "1.0.0" }),
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const body = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1.0.0" } },
+    });
+    const base = `http://127.0.0.1:${address.port}/mcp`;
+    const acceptHeaders = { "content-type": "application/json", accept: "application/json, text/event-stream" };
+    expect((await fetch(base, { method: "POST", headers: acceptHeaders, body })).status).toBe(401);
+    expect((await fetch(base, { method: "POST", headers: { ...acceptHeaders, authorization: "Bearer wrong" }, body })).status).toBe(401);
+    expect((await fetch(base, { method: "POST", headers: { ...acceptHeaders, authorization: "Bearer mcp-secret" }, body })).status).toBe(200);
+  });
+
   it("exposes a read-only health remediation route probe without creating a session", async () => {
     const server = createWebServer({
       adapters: new Map([["opencode", fakeNamedAdapter()]]),
@@ -120,7 +145,7 @@ describe("agent-herder web API", () => {
         name: "health_repair_inc-health-1",
         cwd: "/tmp",
         message: "Repair the selected health incident and report useful progress.",
-        execution: { runtime: "hermes", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
+        execution: { runtime: "opencode", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
       }),
     });
     expect(response.status).toBe(200);
@@ -129,13 +154,13 @@ describe("agent-herder web API", () => {
       incident_id: "inc-health-1",
       plan_id: "repair",
       model: "openai-codex/gpt-5.6-luna",
-      execution: { runtime: "hermes", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
+      execution: { runtime: "opencode", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
     });
   });
 
-  it("routes the canonical health profile to the real Hermes harness", async () => {
+  it("routes the canonical health profile to the real OpenCode harness", async () => {
     const server = createWebServer({
-      adapters: new Map([["hermes", fakeHermesAdapter()]]),
+      adapters: new Map([["opencode", fakeNamedAdapter()]]),
       converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
     });
     servers.push(server);
@@ -147,19 +172,19 @@ describe("agent-herder web API", () => {
       body: JSON.stringify({
         incident_id: "inc-health-hermes-1",
         plan_id: "repair",
-        harness: "hermes",
-        name: "health_repair_hermes_inc-health-1",
+        harness: "opencode",
+        name: "health_repair_opencode_inc-health-1",
         cwd: "/tmp",
         message: "Run the selected health remediation job.",
-        execution: { runtime: "hermes", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
+        execution: { runtime: "opencode", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
       }),
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       ok: true,
-      harness: "hermes",
-      model: "gpt-5.6-luna",
-      execution: { runtime: "hermes", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
+      harness: "opencode",
+      model: "openai-codex/gpt-5.6-luna",
+      execution: { runtime: "opencode", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
     });
   });
 

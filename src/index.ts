@@ -4,16 +4,19 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { HarnessAdapter } from "./types/index.js";
 import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter } from "./adapters/index.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
+import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
 import { acquireAgentHerderSingleton } from "./singleton.js";
 import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
 import { createWebServer } from "./web/server.js";
+import { createConfiguredBrowserWakeService } from "./browser-wake.js";
 import { loadCdpChatDriver } from "./cdp-chat-mcp.js";
 import type {
   CdpChatDriver,
@@ -42,6 +45,7 @@ import {
   handleChangeModel,
   handleListModels,
   handleAuditWorktrees,
+  handleBrowserWake,
 } from "./mcp-tools/handlers.js";
 
 // ===== Configuration from environment =====
@@ -68,6 +72,8 @@ const adapters = new Map<string, HarnessAdapter>();
 const humanRequests = new HumanRequestRegistry(process.env.AGENT_HERDER_HUMAN_REQUEST_STORE || ".agent-herder/human-requests.json");
 const autopilotStateDir = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR || join(homedir(), ".local", "state", "agent-herder", "autopilot");
 const choiceRegistry = new ChoiceRegistry(process.env.AGENT_HERDER_AUTOPILOT_CHOICE_STORE || join(autopilotStateDir, "choices.json"));
+const autopilotPolicyStore = new AutopilotPolicyStore(resolveAutopilotPolicyStorePath(autopilotStateDir));
+const browserWakeService = createConfiguredBrowserWakeService(process.env);
 const adapterFactories = new Map<string, AdapterFactory>();
 const adapterRegistry = new AdapterRegistry(
   adapters,
@@ -299,6 +305,10 @@ function parseCsv(value: string | undefined, fallback: string[]): string[] {
   return models.length > 0 ? models : fallback;
 }
 
+function isLoopbackHost(host: string): boolean {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
+}
+
 /** Return one bounded JSON text result for a namespaced CDP chat tool. */
 function cdpTextResult(value: unknown): { content: [{ type: "text"; text: string }] } {
   return { content: [{ type: "text", text: JSON.stringify(value) }] };
@@ -387,6 +397,25 @@ function registerCdpChatTools(server: McpServer, client: CdpChatClient): void {
 
 function registerTools(server: McpServer, cdpChatClient?: CdpChatClient) {
   if (cdpChatClient) registerCdpChatTools(server, cdpChatClient);
+
+  server.tool(
+    "browser_wake",
+    "Wake the allowlisted BrowserWorker for the fixed E-Frontier target using a fixed secretary template, opaque refs, run/idempotency IDs, and a bounded deadline. secretary.browser-canary.v1 is a safe no-external-tools liveness check; secretary.inbox.v1 remains the future Telegram-backed business action.",
+    {
+      schema: z.literal("agent-herder.browser-worker.v1"),
+      worker: z.literal("mac-mini-browserclaw"),
+      target: z.literal("E-Frontier"),
+      templateId: z.enum(["secretary.inbox.v1", "secretary.browser-canary.v1"]),
+      sourceRefs: z.array(z.string().min(1)).min(1).max(8),
+      runId: z.string().min(1).max(128),
+      idempotencyId: z.string().min(1).max(128),
+      deadlineMs: z.number().int().min(1).max(10 * 60 * 1000),
+    },
+    async (args) => {
+      const result = await handleBrowserWake(browserWakeService, args);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
 
   server.tool(
     "human_request_create",
@@ -659,6 +688,11 @@ async function main() {
 
   const webPort = process.env.AGENT_HERDER_WEB_PORT;
   if (webPort) {
+    const host = process.env.AGENT_HERDER_WEB_HOST || "127.0.0.1";
+    const httpToken = process.env.AGENT_HERDER_HTTP_TOKEN?.trim();
+    if (!isLoopbackHost(host) && !httpToken) {
+      throw new Error("AGENT_HERDER_HTTP_TOKEN is required when AGENT_HERDER_WEB_HOST is non-local");
+    }
     const webServer = createWebServer({
       adapters,
       converter: new AgentHerderSessionConverter(),
@@ -666,8 +700,10 @@ async function main() {
       choiceRegistry,
       adapterRegistry,
       mcpServerFactory: createMcpServer,
+      mcpAuthToken: httpToken,
+      autopilotPolicyStore,
+      autopilotSweepIntervalMs: Number(process.env.AGENT_HERDER_AUTOPILOT_SWEEP_INTERVAL_MS || 30_000),
     });
-    const host = process.env.AGENT_HERDER_WEB_HOST || "127.0.0.1";
     webServer.listen(Number(webPort), host, () => {
       console.error(`[agent-herder] Web UI listening on http://${host}:${webPort}`);
     });
@@ -678,7 +714,9 @@ async function main() {
   console.error("[agent-herder] MCP server running on stdio");
 }
 
-main().catch((err) => {
-  console.error("[agent-herder] Fatal:", err);
-  process.exit(1);
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error("[agent-herder] Fatal:", err);
+    process.exit(1);
+  });
+}

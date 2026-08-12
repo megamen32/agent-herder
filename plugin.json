@@ -1,0 +1,16 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "agent-herder",
+  "version": "0.1.0",
+  "description": "Monitor agent sessions and let an AI judge continue, finish, or ask the user for a bounded decision.",
+  "author": {
+    "name": "Agent Herder contributors"
+  },
+  "license": "MIT",
+  "keywords": ["agent-orchestration", "mcp", "codex", "autopilot"],
+  "extensions": {
+    "com.openai": {
+      "hooks": "./com.openai/hooks/hooks.json"
+    }
+  }
+}

@@ -21,6 +21,7 @@ import { homedir } from "node:os";
 import { relative, resolve, sep } from "node:path";
 import { realpath } from "node:fs/promises";
 import { auditWorktrees } from "../worktree-audit.js";
+import { BrowserWakeService } from "../browser-wake.js";
 import {
   buildTranscriptArchiveCard,
   transcriptArchiveFromEnvironment,
@@ -517,6 +518,14 @@ export async function handleListModels(
   }
 
   return sections.join("\n");
+}
+
+export async function handleBrowserWake(
+  service: BrowserWakeService,
+  args: unknown,
+): Promise<string> {
+  const record = await service.wake(args);
+  return JSON.stringify(record);
 }
 
 // ===== Helpers =====

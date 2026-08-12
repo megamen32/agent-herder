@@ -1,4 +1,5 @@
 import readline from "node:readline";
+import { appendFileSync } from "node:fs";
 
 const thread = (id = "thread-1", overrides = {}) => ({
   id,
@@ -17,18 +18,33 @@ const thread = (id = "thread-1", overrides = {}) => ({
 let activeTurnId = null;
 let nextId = 0;
 const threads = [thread()];
+const serverRequest = {
+  id: 77,
+  method: "tools/list",
+  params: {},
+};
+const logPath = process.env.CODEX_APP_SERVER_LOG;
+const forcedStartedTurnId = process.env.CODEX_APP_SERVER_TURN_STARTED_ID;
+const forcedCompletedTurnId = process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID;
+
+function log(event) {
+  if (!logPath) return;
+  appendFileSync(logPath, `${JSON.stringify(event)}\n`);
+}
 
 function reply(id, result) {
   process.stdout.write(`${JSON.stringify({ id, result })}\n`);
 }
 
 function notify(method, params) {
+  log({ kind: "notify", method, params });
   process.stdout.write(`${JSON.stringify({ method, params })}\n`);
 }
 
 const rl = readline.createInterface({ input: process.stdin });
 rl.on("line", (line) => {
   const request = JSON.parse(line);
+  log({ kind: "request", method: request.method, id: request.id, params: request.params });
   if (request.method === "initialize") return reply(request.id, { userAgent: "fake-codex/1" });
   if (request.method === "initialized") return;
   if (request.method === "thread/list") return reply(request.id, { data: threads });
@@ -61,6 +77,17 @@ rl.on("line", (line) => {
     sandbox: "workspace-write",
     thread: thread(request.params.threadId),
   });
+  if (request.method === "thread/resume-with-request") {
+    notify(serverRequest.method, serverRequest.params);
+    return reply(request.id, {
+      approvalPolicy: "never",
+      cwd: "/tmp/codex-fixture",
+      model: request.params.model || "gpt-test",
+      modelProvider: "openai",
+      sandbox: "workspace-write",
+      thread: thread(request.params.threadId),
+    });
+  }
   if (request.method === "thread/fork") return reply(request.id, {
     approvalPolicy: "never",
     cwd: "/tmp/codex-fixture",
@@ -76,10 +103,12 @@ rl.on("line", (line) => {
   }
   if (request.method === "turn/start") {
     activeTurnId = `turn-${++nextId}`;
-    notify("turn/started", { threadId: request.params.threadId, turn: { id: activeTurnId, status: "inProgress" } });
+    const startedTurnId = forcedStartedTurnId || activeTurnId;
+    const completedTurnId = forcedCompletedTurnId || activeTurnId;
+    notify("turn/started", { threadId: request.params.threadId, turn: { id: startedTurnId, status: "inProgress" } });
     if (request.params.input?.[0]?.text === "hold") return reply(request.id, { turn: { id: activeTurnId, status: "inProgress" } });
     notify("item/agentMessage/delta", { threadId: request.params.threadId, turnId: activeTurnId, itemId: "item-1", delta: "done" });
-    notify("turn/completed", { threadId: request.params.threadId, turn: { id: activeTurnId, status: "completed" } });
+    notify("turn/completed", { threadId: request.params.threadId, turn: { id: completedTurnId, status: "completed" } });
     activeTurnId = null;
     return reply(request.id, { turn: { id: `turn-${nextId}`, status: "completed" } });
   }

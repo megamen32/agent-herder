@@ -1,11 +1,33 @@
 # Agent Herder Codex autopilot MVP
 
+## Agent Plugin package
+
+Agent Herder ships an [Agent Plugins 1.0](https://agent-plugins.org/) package.
+The portable root is `plugin.json`; the existing Agent Herder MCP server is
+declared in `mcp.json` and uses the same built `dist/` runtime.
+
+Agent Plugins 1.0 does not standardize lifecycle hooks. Codex loads the thin
+adapter declared under `extensions.com.openai` from
+`com.openai/hooks/hooks.json`; the judge, receipts, NoticePlace choices, and
+continuation logic stay in the shared Agent Herder runtime. The
+`.codex-plugin/plugin.json` file is a thin compatibility manifest for Codex
+marketplaces that still discover that location directly.
+
+The launcher contains no credentials. It reuses the existing local OmniRoute
+and NoticePlace environment files when present, defaults to the
+`autopilot-live` state directory shared with the callback service, and enables
+all-session supervision for the installed plugin. Set
+`AGENT_HERDER_AUTOPILOT_ALL_SESSIONS=0` in the hook environment to roll back to
+the armed-session allowlist.
+
 This is an additive Codex `Stop` hook. Codex still owns the session and its
 native continuation mechanism; Agent Herder only judges the stop event and
 returns a continuation reason when the judge says `continue`.
 
-The hook is intentionally opt-in per session. A global installation is safe:
-without an armed session it returns `{}` and does not call a judge or Notify.
+The standalone hook command remains opt-in per session unless its environment
+sets `AGENT_HERDER_AUTOPILOT_ALL_SESSIONS=1`. The installed Agent Plugin launcher
+sets that value by default because its intended mode is zero-click supervision
+of every Codex session.
 
 After the hook command is available, arm exactly one session with the explicit
 local command:
@@ -62,6 +84,28 @@ AGENT_HERDER_AUTOPILOT_JUDGE_MODEL=model-name
 AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN=...
 ```
 
+## All-session mode
+
+The installed Agent Plugin launcher evaluates every Codex session without an
+`armed-sessions.json` entry. For a standalone or legacy global Stop hook, enable
+the same behavior explicitly in the environment inherited by the hook process:
+
+```text
+AGENT_HERDER_AUTOPILOT_ALL_SESSIONS=1
+```
+
+Only the exact value `1` enables this mode in the hook runtime. The packaged
+launcher supplies `1` when the variable is unset; an explicit value such as `0`
+keeps the armed-session allowlist behavior.
+
+The all-session mode keeps the existing safety limits: the per-session
+continuation budget (three by default), filesystem locking, and
+`session_id`/`turn_id` receipt deduplication remain active; transcript and
+choice context stay bounded and secret-redacted; and outbound notifications
+still require the explicit Notify recipient and producer credentials. Because
+every Codex stop can reach the judge, enable it only in a controlled
+environment and unset the variable to return to allowlist-only operation.
+
 The judge receives the official Codex `Stop` payload plus a bounded tail of the
 transcript and the last assistant message. It must return one of the strict
 JSON decisions described in the prompt:
@@ -108,6 +152,10 @@ Environment=AGENT_HERDER_AUTOPILOT_STATE_DIR=%h/.local/state/agent-herder/autopi
 The default continuation budget is three; override with
 `AGENT_HERDER_AUTOPILOT_MAX_CONTINUATIONS`.
 
-The hook uses a short-lived filesystem lock and stable receipt keys, so a
-duplicate Codex stop event does not cause a second judge continuation or a
-second notification.
+The hook uses a short-lived filesystem lock and a stable fingerprint for each
+Stop iteration. An exact replay does not cause a second judge call or
+notification, while a later Stop after a native Codex continuation is judged
+again even though Codex intentionally retains the same `turn_id`. The
+continuation budget applies to that user turn; after the budget is exhausted,
+the judge may still declare `done` or ask the user, but another silent
+continuation is not admitted.

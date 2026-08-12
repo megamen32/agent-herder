@@ -134,6 +134,27 @@ export const ListModelsSchema = z.object({
 
 export const toolDefinitions: Tool[] = [
   {
+    name: "browser_wake",
+    description:
+      "Wake the allowlisted mac-mini-browserclaw BrowserWorker for the fixed E-Frontier target using the " +
+      "fixed secretary.inbox.v1 or secretary.browser-canary.v1 template. Only opaque source refs, run/idempotency IDs, and a bounded deadline are accepted; the canary never calls external tools.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        schema: { type: "string", const: "agent-herder.browser-worker.v1" },
+        worker: { type: "string", const: "mac-mini-browserclaw" },
+        target: { type: "string", const: "E-Frontier" },
+        templateId: { type: "string", enum: ["secretary.inbox.v1", "secretary.browser-canary.v1"] },
+        sourceRefs: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 8 },
+        runId: { type: "string" },
+        idempotencyId: { type: "string" },
+        deadlineMs: { type: "number", minimum: 1, maximum: 600000 },
+      },
+      required: ["schema", "worker", "target", "templateId", "sourceRefs", "runId", "idempotencyId", "deadlineMs"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "list_agents",
     description:
       "List all coding agent sessions across connected harnesses (OpenCode, Claude Code, Codex CLI, Qoder, ZCode). " +

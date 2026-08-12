@@ -1,0 +1,20 @@
+{
+  "name": "agent-herder-local",
+  "interface": {
+    "displayName": "Agent Herder Local"
+  },
+  "plugins": [
+    {
+      "name": "agent-herder",
+      "source": {
+        "source": "local",
+        "path": "."
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

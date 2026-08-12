@@ -1,6 +1,12 @@
+import { createHash } from "node:crypto";
 import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { ChoiceRegistry, type AutopilotChoice } from "./choice-registry.js";
+import {
+  createCodexSelectorFromStopSession,
+  effectivePolicyAllowsSelector,
+  type EffectivePolicy,
+} from "./policy.js";
 
 export type StopHookInput = {
   hook_event_name: "Stop";
@@ -201,9 +207,13 @@ export function createOpenAICompatibleJudge(config: {
                 "label is a concise, self-contained Russian user-facing action, and nextGoal is bounded text for this exact Codex session. " +
                 "Use continue only when a concrete next goal can be executed " +
                 "in the same Codex session. Use done only when the user's " +
-                "objective is actually complete. Use human when permission, " +
-                "credentials, an irreversible decision, or missing user input " +
-                "is required. Shape: {kind:continue,nextGoal:string} or " +
+                "objective is actually complete. For a bounded user decision, including " +
+                "proceed, modify, or abort before an irreversible action, use choice so " +
+                "the user receives actionable Russian buttons. Use human only when " +
+                "free-form input, credentials, or a secret is required and 2-4 safe " +
+                "enumerated choices cannot represent the answer. When " +
+                "remaining_continuations is 0, never return continue; return done, choice, or human. " +
+                "Shape: {kind:continue,nextGoal:string} or " +
                 "{kind:done,summary:string,notify:boolean} or " +
                 "{kind:human,title:string,body:string,severity:low|medium|high}. " +
                 "Do not put credentials, tokens, private keys, or raw secrets " +
@@ -228,7 +238,7 @@ export function createOpenAICompatibleJudge(config: {
       const body = (await response.json()) as Record<string, unknown>;
       const content = extractJudgeContent(body);
       try {
-        return JSON.parse(content) as unknown;
+        return parseJudgeJson(content);
       } catch {
         throw new Error("Judge returned non-JSON content");
       }
@@ -240,48 +250,53 @@ export function createAutopilotCore(options: {
   judge: JudgeClient;
   notify: NotificationSink;
   allowSessions: ReadonlySet<string>;
+  allowAllSessions?: boolean;
   receiptStore: ReceiptStore;
   maxContinuationsPerSession: number;
   notification?: NotificationConfig;
   choiceRegistry?: ChoiceRegistry;
+  effectivePolicy?: EffectivePolicy;
 }): { handleStop(input: StopHookInput): Promise<AutopilotHookResult> } {
   const continuationCounts = new Map<string, number>();
   const activeReceiptKeys = new Set<string>();
   const notification = options.notification ?? DEFAULT_NOTIFICATION;
   const maxContinuations = Math.max(
     0,
-    Math.floor(options.maxContinuationsPerSession),
+    Math.floor(options.effectivePolicy?.source === "persisted"
+      ? options.effectivePolicy.policy.maxContinuationsPerSession
+      : options.maxContinuationsPerSession),
   );
 
   return {
     async handleStop(input) {
       validateInput(input);
 
-      // A global Stop hook must be harmless for sessions that were not
-      // explicitly armed for autopilot.
-      if (!options.allowSessions.has(input.session_id)) {
+      if (options.effectivePolicy) {
+        const selector = createCodexSelectorFromStopSession({ sessionId: input.session_id, cwd: input.cwd });
+        if (!effectivePolicyAllowsSelector(options.effectivePolicy, selector)) return {};
+      } else if (!options.allowAllSessions && !options.allowSessions.has(input.session_id)) {
+        // Compatibility path for callers that have not loaded the durable
+        // policy yet. The real Stop hook always supplies effectivePolicy.
         return {};
       }
 
-      const receiptKey = receiptKeyFor(input.session_id, input.turn_id);
+      const evidence = await readBoundedEvidence(
+        input.transcript_path,
+        input.last_assistant_message,
+      );
+      const receiptKey = receiptKeyFor(input, evidence);
       if (options.receiptStore.has(receiptKey) || activeReceiptKeys.has(receiptKey)) {
         return {};
       }
 
+      const budgetKey = `${input.session_id}:${input.turn_id}`;
       const currentCount =
-        continuationCounts.get(input.session_id) ??
-        countPersistedContinuations(options.receiptStore, input.session_id);
-      const remainingContinuations = maxContinuations - currentCount;
-      if (remainingContinuations <= 0) {
-        return {};
-      }
+        continuationCounts.get(budgetKey) ??
+        countPersistedContinuations(options.receiptStore, input.session_id, input.turn_id);
+      const remainingContinuations = Math.max(0, maxContinuations - currentCount);
 
       activeReceiptKeys.add(receiptKey);
       try {
-        const evidence = await readBoundedEvidence(
-          input.transcript_path,
-          input.last_assistant_message,
-        );
         const decision = normalizeDecision(
           await options.judge.decide({
             hook: sanitizeHookForJudge(input),
@@ -291,7 +306,31 @@ export function createAutopilotCore(options: {
         );
 
         if (decision.kind === "continue") {
-          continuationCounts.set(input.session_id, currentCount + 1);
+          if (remainingContinuations <= 0) {
+            await options.notify.send(
+              createNoticePlacePayload({
+                title: `Agent Herder: достигнут лимит автопродолжений по ${projectLabel(input.cwd)}`,
+                body: boundedUtf8(
+                  [
+                    `Сессия: ${shortSessionId(input.session_id)}`,
+                    "",
+                    "MiniMax предложил ещё один шаг, но лимит автоматических продолжений для текущей задачи исчерпан.",
+                    "",
+                    "Предложенный следующий шаг:",
+                    decision.nextGoal,
+                  ].join("\n"),
+                  MAX_CHOICE_CONTEXT_BYTES,
+                ),
+                severity: "medium",
+                dedupKey: `agent-herder:continuation-limit:${input.session_id}:${input.turn_id}`,
+                correlationId: `${input.session_id}/${input.turn_id}`,
+                ...notification,
+              }),
+            );
+            options.receiptStore.set(receiptKey, { kind: "human" });
+            return {};
+          }
+          continuationCounts.set(budgetKey, currentCount + 1);
           options.receiptStore.set(receiptKey, { kind: decision.kind });
           return {
             decision: "block",
@@ -301,17 +340,36 @@ export function createAutopilotCore(options: {
 
         if (decision.kind === "choice") {
           if (!options.choiceRegistry) throw new Error("Choice registry is required for choice decisions");
-          const lastUserMessage = await readLastUserMessage(input.transcript_path);
+          const persistedPolicy = options.effectivePolicy?.source === "persisted"
+            ? options.effectivePolicy.policy
+            : undefined;
+          const includeContext = persistedPolicy?.card;
+          const lastUserMessage = !includeContext || includeContext.includeUserMessage
+            ? await readLastUserMessage(input.transcript_path)
+            : null;
+          const timeoutEnabled = persistedPolicy?.timeout.mode === "auto_continue";
+          const timeoutChoiceId = timeoutEnabled ? decision.choices[0]?.choiceId : undefined;
+          const expiresAt = timeoutEnabled && timeoutChoiceId
+            ? new Date(Date.now() + persistedPolicy.timeout.delayMs).toISOString()
+            : undefined;
           const pending = await options.choiceRegistry.create({
             sessionId: input.session_id,
             turnId: input.turn_id,
             cwd: input.cwd,
             choices: decision.choices,
+            ...(expiresAt ? { expiresAt } : {}),
+            ...(timeoutChoiceId ? { timeoutChoiceId } : {}),
+            ...(options.effectivePolicy?.source === "persisted"
+              ? {
+                  policyRevision: options.effectivePolicy.revision,
+                  maxContinuationsPerSession: options.effectivePolicy.policy.maxContinuationsPerSession,
+                }
+              : {}),
           });
           await options.notify.send(
             createNoticePlacePayload({
               title: `Agent Herder: выбор следующего шага по ${projectLabel(input.cwd)}`,
-              body: buildChoiceNotificationBody(input, decision.choices, lastUserMessage),
+              body: buildChoiceNotificationBody(input, decision.choices, lastUserMessage, includeContext),
               severity: "medium",
               dedupKey: `agent-herder:choice:${pending.requestId}`,
               correlationId: `${input.session_id}/${input.turn_id}`,
@@ -359,37 +417,47 @@ function buildChoiceNotificationBody(
   input: StopHookInput,
   choices: AutopilotChoice[],
   lastUserMessage: string | null,
+  card?: { includeUserMessage: boolean; includeAssistantMessage: boolean; includeReason: boolean },
 ): string {
-  const userMessage = lastUserMessage === null
-    ? "(последний запрос пользователя недоступен)"
-    : lastUserMessage;
-  const lastMessage = input.last_assistant_message === null
-    ? "(последнее сообщение агента недоступно)"
-    : boundedUtf8(
-        redactSecrets(input.last_assistant_message).trim(),
-        MAX_CHOICE_LAST_MESSAGE_BYTES,
-      ) || "(последнее сообщение агента пустое)";
   const options = choices
     .map((choice, index) => `${index + 1}. ${choice.label}`)
     .join("\n");
-
-  return boundedUtf8(
-    [
-      `Проект: ${projectLabel(input.cwd)}`,
-      `Сессия: ${shortSessionId(input.session_id)}`,
+  const includeUserMessage = card?.includeUserMessage ?? true;
+  const includeAssistantMessage = card?.includeAssistantMessage ?? true;
+  const includeReason = card?.includeReason ?? true;
+  const sections = [
+    `Проект: ${projectLabel(input.cwd)}`,
+    `Сессия: ${shortSessionId(input.session_id)}`,
+  ];
+  if (includeUserMessage) {
+    sections.push(
       "",
       "Последний запрос пользователя:",
-      userMessage,
-      "",
-      "Последний ответ агента:",
-      lastMessage,
-      "",
-      "MiniMax не выбрал автоматически: безопасных вариантов несколько.",
-      "Следующий шаг относится именно к этой Codex-сессии:",
-      options,
-      "",
-      "После выбора продолжится эта же Codex-сессия.",
-    ].join("\n"),
+      lastUserMessage === null ? "(последний запрос пользователя недоступен)" : lastUserMessage,
+    );
+  }
+  if (includeAssistantMessage) {
+    const lastMessage = input.last_assistant_message === null
+      ? "(последнее сообщение агента недоступно)"
+      : boundedUtf8(
+          redactSecrets(input.last_assistant_message).trim(),
+          MAX_CHOICE_LAST_MESSAGE_BYTES,
+        ) || "(последнее сообщение агента пустое)";
+    sections.push("", "Последний ответ агента:", lastMessage);
+  }
+  if (includeReason) {
+    sections.push("", "MiniMax не выбрал автоматически: безопасных вариантов несколько.");
+  }
+  sections.push(
+    "",
+    "Следующий шаг относится именно к этой Codex-сессии:",
+    options,
+    "",
+    "После выбора продолжится эта же Codex-сессия.",
+  );
+
+  return boundedUtf8(
+    sections.join("\n"),
     MAX_CHOICE_CONTEXT_BYTES,
   );
 }
@@ -585,8 +653,8 @@ function normalizeDecision(value: unknown): AutopilotDecision {
   throw new Error("Malformed judge decision");
 }
 
-function countPersistedContinuations(store: ReceiptStore, sessionId: string): number {
-  const prefix = `${encodeURIComponent(sessionId)}:`;
+function countPersistedContinuations(store: ReceiptStore, sessionId: string, turnId: string): number {
+  const prefix = `${encodeURIComponent(sessionId)}:${encodeURIComponent(turnId)}:`;
   let count = 0;
   for (const [key, receipt] of store) {
     if (key.startsWith(prefix) && receipt.kind === "continue") count += 1;
@@ -594,8 +662,16 @@ function countPersistedContinuations(store: ReceiptStore, sessionId: string): nu
   return count;
 }
 
-function receiptKeyFor(sessionId: string, turnId: string): string {
-  return `${encodeURIComponent(sessionId)}:${encodeURIComponent(turnId)}`;
+function receiptKeyFor(input: StopHookInput, evidence: string): string {
+  const iteration = createHash("sha256")
+    .update(JSON.stringify({
+      stopHookActive: input.stop_hook_active,
+      lastAssistantMessage: input.last_assistant_message,
+      evidence,
+    }))
+    .digest("hex")
+    .slice(0, 24);
+  return `${encodeURIComponent(input.session_id)}:${encodeURIComponent(input.turn_id)}:${iteration}`;
 }
 
 function toNoticeSeverity(value: "low" | "medium" | "high" | NoticeSeverity): NoticeSeverity {
@@ -666,6 +742,23 @@ function extractJudgeContent(body: Record<string, unknown>): string {
 
   if (typeof body.output_text === "string") return body.output_text;
   throw new Error("Judge response did not contain message content");
+}
+
+function parseJudgeJson(content: string): unknown {
+  const trimmed = content.trim();
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1];
+    if (fenced) return JSON.parse(fenced) as unknown;
+
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      return JSON.parse(trimmed.slice(start, end + 1)) as unknown;
+    }
+    throw new SyntaxError("No JSON object found");
+  }
 }
 
 /** Read a JSON receipt file without treating a missing/corrupt file as proof of a completed turn. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
@@ -77,6 +77,56 @@ describe("Codex app-server adapter", () => {
       expect(await adapter.listModels()).toEqual(["gpt-test", "gpt-test-2"]);
     } finally {
       await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("admits a cold same-thread continue only through initialize, resume, and turn/start", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-same-thread-"));
+    const logPath = join(codexDir, "app-server.log");
+    const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
+    process.env.CODEX_APP_SERVER_LOG = logPath;
+    const adapter = new CodexAppServerAdapter({
+      codexBin: process.execPath,
+      args: [fixture],
+      codexDir,
+    });
+    try {
+      const result = await adapter.sendMessage("thread-1", { message: "continue" });
+      expect(result).toEqual({ ok: true });
+      const log = await readFile(logPath, "utf8").catch(() => "");
+      expect(log).toContain('"method":"initialize"');
+      expect(log).toContain('"method":"thread/resume"');
+      expect(log).toContain('"method":"turn/start"');
+      expect(log).not.toContain('"method":"thread/start"');
+    } finally {
+      await adapter.dispose();
+      if (previousLogPath === undefined) delete process.env.CODEX_APP_SERVER_LOG;
+      else process.env.CODEX_APP_SERVER_LOG = previousLogPath;
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when turn/started is for the wrong turn id", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-same-thread-mismatch-"));
+    const previousStarted = process.env.CODEX_APP_SERVER_TURN_STARTED_ID;
+    const previousCompleted = process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID;
+    process.env.CODEX_APP_SERVER_TURN_STARTED_ID = "turn-other";
+    process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID = "turn-1";
+    const adapter = new CodexAppServerAdapter({
+      codexBin: process.execPath,
+      args: [fixture],
+      codexDir,
+    });
+    try {
+      const result = await adapter.sendMessage("thread-1", { message: "continue" });
+      expect(result).toMatchObject({ ok: false, error: expect.stringMatching(/admission mismatch/i) });
+    } finally {
+      await adapter.dispose();
+      if (previousStarted === undefined) delete process.env.CODEX_APP_SERVER_TURN_STARTED_ID;
+      else process.env.CODEX_APP_SERVER_TURN_STARTED_ID = previousStarted;
+      if (previousCompleted === undefined) delete process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID;
+      else process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID = previousCompleted;
       await rm(codexDir, { recursive: true, force: true });
     }
   });

@@ -12,7 +12,7 @@ import { HumanRequestRegistry } from "../human-request/index.js";
 import { buildSessionProgress } from "../health-progress.js";
 import { healthModelForHarness, normalizeHealthExecution } from "../health-remediation.js";
 import { convertHermesExport } from "../hermes-conversion.js";
-import { resumeBoundTarget } from "../resume-transport.js";
+import { AgentResumeClient, resumeBoundTarget, type ResumeReceipt, type ResumeTransportRequest } from "../resume-transport.js";
 import { ChoiceRegistry, ChoiceRegistryLockUnavailableError, type PendingChoice } from "../autopilot/choice-registry.js";
 import { AutopilotPolicyStore } from "../autopilot/policy-store.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsSelector } from "../autopilot/policy.js";
@@ -40,6 +40,21 @@ export type AutopilotSweepOutcome = {
   reason?: string;
 };
 
+/** Build the immutable Agent Resume request from the saved timeout choice. */
+export function buildTimeoutResumeRequest(choice: Pick<PendingChoice, "sessionId" | "cwd" | "nextGoal" | "requestId" | "idempotencyKey" | "resultRef">): ResumeTransportRequest {
+  if (!choice.nextGoal || !choice.idempotencyKey) throw new Error("timeout choice has no saved resume goal or idempotency key");
+  const selector = createCodexSelectorFromStopSession({ sessionId: choice.sessionId, cwd: choice.cwd });
+  return {
+    target: { agent: "codex", session_id: selector.sessionId, cwd: selector.cwd },
+    goal: choice.nextGoal,
+    prompt: choice.nextGoal,
+    result_ref: choice.resultRef || `agent-herder://autopilot/choice/${choice.requestId}`,
+    idempotency_key: choice.idempotencyKey,
+  };
+}
+
+const autopilotSweepLocks = new Map<string, Promise<void>>();
+
 /** Sweep durable timeout choices and resume only a still-authorized Codex target once. */
 export async function sweepAutopilotChoices(input: {
   choiceRegistry: ChoiceRegistry;
@@ -47,7 +62,32 @@ export async function sweepAutopilotChoices(input: {
   now?: Date;
   targetAvailable?: (choice: PendingChoice) => Promise<boolean>;
   validateSavedTarget?: (choice: PendingChoice) => Promise<boolean>;
-  resume: (choice: PendingChoice) => Promise<{ ok: boolean; error?: string }>;
+  resume: (choice: PendingChoice) => Promise<ResumeReceipt>;
+  query?: (choice: PendingChoice) => Promise<ResumeReceipt>;
+}): Promise<AutopilotSweepOutcome[]> {
+  const key = input.choiceRegistry.coordinationKey;
+  const previous = autopilotSweepLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  autopilotSweepLocks.set(key, current);
+  await previous;
+  try {
+    return await sweepAutopilotChoicesUnlocked(input);
+  } finally {
+    release();
+    if (autopilotSweepLocks.get(key) === current) autopilotSweepLocks.delete(key);
+  }
+}
+
+/** Execute one timeout sweep after the per-registry overlap fence has been acquired. */
+async function sweepAutopilotChoicesUnlocked(input: {
+  choiceRegistry: ChoiceRegistry;
+  policyStore: AutopilotPolicyStore;
+  now?: Date;
+  targetAvailable?: (choice: PendingChoice) => Promise<boolean>;
+  validateSavedTarget?: (choice: PendingChoice) => Promise<boolean>;
+  resume: (choice: PendingChoice) => Promise<ResumeReceipt>;
+  query?: (choice: PendingChoice) => Promise<ResumeReceipt>;
 }): Promise<AutopilotSweepOutcome[]> {
   const now = input.now ?? new Date();
   let claimed: PendingChoice[];
@@ -61,8 +101,26 @@ export async function sweepAutopilotChoices(input: {
   }
 
   const outcomes: AutopilotSweepOutcome[] = [];
-  for (const choice of claimed) {
-    if (choice.status !== "claimed" || !choice.claimToken) {
+  const freshClaims = new Set(claimed.filter((choice) => choice.status === "claimed" && choice.claimToken).map((choice) => choice.requestId));
+  let inFlight: PendingChoice[];
+  try {
+    inFlight = await input.choiceRegistry.listInFlightTimeoutClaims();
+  } catch (error) {
+    if (error instanceof ChoiceRegistryLockUnavailableError) {
+      return claimed.length > 0
+        ? claimed.map((choice) => ({
+            requestId: choice.requestId,
+            status: "human-required" as const,
+            reason: choice.status === "claimed" && choice.claimToken ? error.message : choice.failureReason ?? error.message,
+          }))
+        : [{ status: "human-required", reason: error.message }];
+    }
+    throw error;
+  }
+  const recoveryClaims = inFlight.filter((choice) => !freshClaims.has(choice.requestId));
+  for (const choice of [...claimed, ...recoveryClaims]) {
+    const isRecovery = !freshClaims.has(choice.requestId);
+    if ((!isRecovery && choice.status !== "claimed") || !choice.claimToken) {
       outcomes.push({
         requestId: choice.requestId,
         status: "human-required",
@@ -78,6 +136,64 @@ export async function sweepAutopilotChoices(input: {
       }
       outcomes.push({ requestId: choice.requestId, status: "human-required", reason });
     };
+
+    const completeReceipt = async (receipt: ResumeReceipt): Promise<boolean> => {
+      const expectedKey = choice.idempotencyKey;
+      const expectedRef = choice.resultRef || `agent-herder://autopilot/choice/${choice.requestId}`;
+      if (!expectedKey || receipt.idempotency_key !== expectedKey || receipt.result_ref !== expectedRef) {
+        await humanRequired("Agent Resume receipt does not match the saved timeout request");
+        return false;
+      }
+      const stored = {
+        status: receipt.status,
+        resultRef: receipt.result_ref,
+        idempotencyKey: receipt.idempotency_key,
+        ...(("receipt_ref" in receipt && receipt.receipt_ref) ? { receiptRef: receipt.receipt_ref } : {}),
+        ...(("reason" in receipt && receipt.reason) ? { reason: receipt.reason } : {}),
+      } as PendingChoice["resumeReceipt"];
+      try {
+        await input.choiceRegistry.persistResumeReceipt(choice.requestId, choice.claimToken!, stored);
+        if (receipt.status === "accepted") {
+          await input.choiceRegistry.markResumed(choice.requestId, choice.claimToken!);
+          outcomes.push({ requestId: choice.requestId, status: "resumed" });
+          return true;
+        }
+        if (receipt.status === "failed" || receipt.status === "rejected") {
+          await input.choiceRegistry.markFailed(choice.requestId, choice.claimToken!, receipt.reason);
+          outcomes.push({ requestId: choice.requestId, status: "failed", reason: receipt.reason });
+          return false;
+        }
+        await humanRequired(`Agent Resume returned ${receipt.status}: ${receipt.reason}`);
+        return false;
+      } catch (error) {
+        if (error instanceof ChoiceRegistryLockUnavailableError) {
+          await humanRequired(error.message);
+          return false;
+        }
+        throw error;
+      }
+    };
+
+    if (isRecovery) {
+      if (!input.query) {
+        await humanRequired("Timeout recovery requires a durable Agent Resume receipt query");
+        continue;
+      }
+      try {
+        const receipt = await input.query(choice);
+        if (choice.status === "claimed") {
+          const dispatching = await input.choiceRegistry.markDispatching(choice.requestId, choice.claimToken!, now);
+          if (!dispatching) {
+            await humanRequired("Timeout recovery claim is no longer dispatchable");
+            continue;
+          }
+        }
+        await completeReceipt(receipt);
+      } catch (error) {
+        await humanRequired(`Timeout receipt query failed: ${(error as Error).message}`);
+      }
+      continue;
+    }
 
     try {
       if (input.targetAvailable && !(await input.targetAvailable(choice))) {
@@ -128,35 +244,14 @@ export async function sweepAutopilotChoices(input: {
     }
     const dispatching = preparation.choice;
 
-    let result: { ok: boolean; error?: string };
+    let result: ResumeReceipt;
     try {
       result = await input.resume(dispatching);
     } catch (error) {
-      result = { ok: false, error: (error as Error).message };
-    }
-    if (!result.ok) {
-      try {
-        await input.choiceRegistry.markFailed(dispatching.requestId, dispatching.claimToken!, result.error ?? "Resume consumer rejected timeout continuation");
-        outcomes.push({ requestId: choice.requestId, status: "failed", reason: result.error });
-      } catch (error) {
-        if (error instanceof ChoiceRegistryLockUnavailableError) {
-          outcomes.push({ requestId: choice.requestId, status: "human-required", reason: error.message });
-          continue;
-        }
-        throw error;
-      }
+      await humanRequired(`Agent Resume invocation failed: ${(error as Error).message}`);
       continue;
     }
-    try {
-      await input.choiceRegistry.markResumed(dispatching.requestId, dispatching.claimToken!);
-      outcomes.push({ requestId: choice.requestId, status: "resumed" });
-    } catch (error) {
-      if (error instanceof ChoiceRegistryLockUnavailableError) {
-        outcomes.push({ requestId: choice.requestId, status: "human-required", reason: error.message });
-        continue;
-      }
-      throw error;
-    }
+    await completeReceipt(result);
   }
   return outcomes;
 }
@@ -213,7 +308,8 @@ export function createWebServer(dependencies: WebDependencies): Server {
         choice,
         await supervisor.getSession("codex", choice.sessionId),
       ),
-      resume: (choice) => supervisor.sendMessage("codex", choice.sessionId, { message: choice.nextGoal!, queue: true }),
+      resume: (choice) => new AgentResumeClient().resume(buildTimeoutResumeRequest(choice)),
+      query: (choice) => new AgentResumeClient().queryReceipt(buildTimeoutResumeRequest(choice)),
     }).catch((error) => console.error(`[agent-herder] autopilot sweep failed: ${(error as Error).message}`));
     const intervalMs = Math.max(100, dependencies.autopilotSweepIntervalMs ?? 30_000);
     const timer = setInterval(sweep, intervalMs);

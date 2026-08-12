@@ -33,6 +33,16 @@ interface CodexThread {
 interface TurnCompletion {
   resolve: (result: ControlResult) => void;
   timer: NodeJS.Timeout;
+  requestedTurnId?: string;
+  startedTurnId?: string;
+  completedTurnId?: string;
+  completedStatus?: string;
+}
+
+interface PendingRequest {
+  resolve: (result: unknown) => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
 }
 
 /**
@@ -64,14 +74,16 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly cwd: string;
   private readonly modelIds: string[];
   private readonly rawTranscriptAdapter: CodexAdapter;
+  private readonly requestTimeoutMs: number;
   private child?: ChildProcessWithoutNullStreams;
   private initialized = false;
   private nextRequestId = 1;
   private inputBuffer = "";
-  private readonly pending = new Map<number, { resolve: (result: unknown) => void; reject: (error: Error) => void }>();
+  private readonly pending = new Map<number, PendingRequest>();
   private readonly threads = new Map<string, CodexThread>();
   private readonly activeTurns = new Map<string, string>();
   private readonly completions = new Map<string, TurnCompletion>();
+  private stderrTail = "";
 
   constructor(config: {
     codexBin?: string;
@@ -79,6 +91,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     args?: string[];
     cwd?: string;
     modelIds?: string[];
+    requestTimeoutMs?: number;
     /** Codex's local data root holding native rollout JSONL files. */
     codexDir?: string;
   } = {}) {
@@ -86,6 +99,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     this.processArgs = config.args || ["app-server"];
     this.cwd = config.cwd || process.cwd();
     this.modelIds = config.modelIds || ["o4-mini", "o3", "o3-mini", "gpt-4.1", "gpt-4o"];
+    this.requestTimeoutMs = config.requestTimeoutMs || 30_000;
     this.rawTranscriptAdapter = new CodexAdapter({ codexBin: this.codexBin, codexDir: config.codexDir });
   }
 
@@ -147,7 +161,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<ControlResult> {
-    if (!this.isReady()) return this.rawTranscriptAdapter.sendMessage(id, options);
+    await this.ensureReady();
     const session = await this.getSession(id);
     if (!session) return { ok: false, error: `Session ${id} not found` };
     const resumed = await this.resumeSession(id);
@@ -161,6 +175,13 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         model: session.model || null,
       }) as { turn?: { id?: string; status?: string } };
       const turnId = result.turn?.id;
+      if (completion) {
+        const pending = this.completions.get(id);
+        if (pending) {
+          pending.requestedTurnId = turnId;
+          this.settleCompletion(id);
+        }
+      }
       if (turnId && result.turn?.status === "inProgress") this.activeTurns.set(id, turnId);
       if (!completion) return { ok: true };
       return await completion;
@@ -281,7 +302,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     this.child = spawn(this.codexBin, this.processArgs, { cwd: this.cwd, stdio: ["pipe", "pipe", "pipe"] });
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk: string) => this.consumeOutput(chunk));
-    this.child.stderr.resume();
+    this.child.stderr.setEncoding("utf8");
+    this.child.stderr.on("data", (chunk: string) => this.consumeStderr(chunk));
     this.child.on("error", (error) => {
       this.initialized = false;
       this.child = undefined;
@@ -299,11 +321,16 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     this.child.stdin.write(`${JSON.stringify({ method, params })}\n`);
   }
 
-  private request(method: string, params: unknown): Promise<unknown> {
+  private request(method: string, params: unknown, stage = method): Promise<unknown> {
     if (!this.child?.stdin.writable) return Promise.reject(new Error("Codex app-server is not connected"));
     const id = this.nextRequestId++;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`Codex app-server timed out during ${stage}${this.stderrTail ? `; stderr: ${this.stderrTail}` : ""}`));
+      }, this.requestTimeoutMs);
+      timer.unref?.();
+      this.pending.set(id, { resolve, reject, timer });
       this.child!.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
     });
   }
@@ -323,10 +350,15 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private consumeMessage(message: RpcResponse & { method?: string; params?: Record<string, unknown> }): void {
+    if (message.id !== undefined && message.method) {
+      this.handleServerRequest(message as RpcResponse & { method: string; params?: Record<string, unknown> });
+      return;
+    }
     if (message.id !== undefined) {
       const pending = this.pending.get(message.id);
       if (!pending) return;
       this.pending.delete(message.id);
+      clearTimeout(pending.timer);
       if (message.error) pending.reject(new Error(message.error.message || `Codex RPC error ${message.error.code || "unknown"}`));
       else pending.resolve(message.result);
       return;
@@ -339,7 +371,14 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     if (message.method === "turn/started" && threadId) {
       const turn = params.turn as { id?: string } | undefined;
-      if (turn?.id) this.activeTurns.set(threadId, turn.id);
+      if (turn?.id) {
+        this.activeTurns.set(threadId, turn.id);
+        const completion = this.completions.get(threadId);
+        if (completion) {
+          completion.startedTurnId = turn.id;
+          this.settleCompletion(threadId);
+        }
+      }
     }
     if (message.method === "item/agentMessage/delta" && threadId && typeof params.delta === "string") {
       const thread = this.threads.get(threadId);
@@ -349,12 +388,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       this.activeTurns.delete(threadId);
       const completion = this.completions.get(threadId);
       if (completion) {
-        clearTimeout(completion.timer);
-        this.completions.delete(threadId);
-        const turn = params.turn as { status?: string } | undefined;
-        completion.resolve(turn?.status === "failed"
-          ? { ok: false, error: "Codex turn failed" }
-          : { ok: true });
+        const turn = params.turn as { id?: string; status?: string } | undefined;
+        completion.completedTurnId = turn?.id;
+        completion.completedStatus = turn?.status;
+        this.settleCompletion(threadId);
       }
     }
     if (message.method === "error" && threadId) {
@@ -367,6 +404,18 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
   }
 
+  private handleServerRequest(message: RpcResponse & { method: string; params?: Record<string, unknown> }): void {
+    if (!message.params) return;
+    const threadId = typeof message.params.threadId === "string" ? message.params.threadId : undefined;
+    if (threadId && typeof message.params.thread === "object" && message.params.thread) {
+      this.threads.set(threadId, message.params.thread as CodexThread);
+    }
+  }
+
+  private consumeStderr(chunk: string): void {
+    this.stderrTail = boundedAppend(this.stderrTail, redactSensitive(chunk), 8_000);
+  }
+
   private waitForCompletion(threadId: string): Promise<ControlResult> {
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
@@ -377,6 +426,29 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     });
   }
 
+  private settleCompletion(threadId: string): void {
+    const completion = this.completions.get(threadId);
+    if (!completion) return;
+    if (completion.completedStatus === "failed") {
+      clearTimeout(completion.timer);
+      this.completions.delete(threadId);
+      completion.resolve({ ok: false, error: "Codex turn failed" });
+      return;
+    }
+    if (!completion.requestedTurnId || !completion.startedTurnId || !completion.completedTurnId || !completion.completedStatus) return;
+    if (completion.requestedTurnId !== completion.startedTurnId || completion.requestedTurnId !== completion.completedTurnId) {
+      clearTimeout(completion.timer);
+      this.completions.delete(threadId);
+      completion.resolve({ ok: false, error: `Codex turn admission mismatch for ${threadId}` });
+      return;
+    }
+    clearTimeout(completion.timer);
+    this.completions.delete(threadId);
+    completion.resolve(completion.completedStatus === "failed"
+      ? { ok: false, error: "Codex turn failed" }
+      : { ok: true });
+  }
+
   private clearCompletion(threadId: string): void {
     const completion = this.completions.get(threadId);
     if (!completion) return;
@@ -385,7 +457,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private rejectPending(error: Error): void {
-    for (const pending of this.pending.values()) pending.reject(error);
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
     this.pending.clear();
   }
 
@@ -415,4 +490,18 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (raw === "interrupted" || raw === "completed" || raw === "idle") return "idle";
     return "idle";
   }
+}
+
+function boundedAppend(current: string, chunk: string, maxChars: number): string {
+  const next = `${current}${chunk}`;
+  if (next.length <= maxChars) return next;
+  return next.slice(next.length - maxChars);
+}
+
+function redactSensitive(value: string): string {
+  return value
+    .replace(/(authorization\s*:\s*bearer\s+)[^\s,;]+/gi, "$1[redacted]")
+    .replace(/(bearer\s+)[^\s,;]+/gi, "$1[redacted]")
+    .replace(/\b(api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|credential)\s*[:=]\s*([^\s,;]+)/gi, "$1=[redacted]")
+    .replace(/([?&](?:token|key|secret|password|signature)=)[^&\s]+/gi, "$1[redacted]");
 }

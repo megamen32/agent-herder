@@ -39,6 +39,12 @@ export interface ResumeTransportRequest {
   readonly target: SelectedResumeTarget;
   /** Provider-owned opaque reference. It is forwarded, never interpreted. */
   readonly result_ref: string;
+  /** The saved timeout goal, bound into the provider receipt fingerprint. */
+  readonly goal?: string;
+  /** The exact prompt sent to the resumed target. */
+  readonly prompt?: string;
+  /** Stable choice-bound retry key. */
+  readonly idempotency_key?: string;
 }
 
 export type ResumeReceipt =
@@ -47,12 +53,14 @@ export type ResumeReceipt =
       readonly target: SelectedResumeTarget;
       readonly result_ref: string;
       readonly receipt_ref?: string;
+      readonly idempotency_key?: string;
     }
   | {
-      readonly status: "failed";
+      readonly status: "failed" | "rejected" | "ambiguous";
       readonly target: SelectedResumeTarget;
       readonly result_ref: string;
-      readonly reason: "unavailable" | "unsupported" | "invalid" | "failed";
+      readonly reason: string;
+      readonly idempotency_key?: string;
     };
 
 type ResumeFailureReason = "unavailable" | "unsupported" | "invalid" | "failed";
@@ -67,6 +75,7 @@ export interface AgentResumeClientOptions {
   readonly args?: readonly string[];
   readonly timeoutMs?: number;
   readonly invoke?: (request: ResumeTransportRequest) => Promise<unknown>;
+  readonly query?: (request: ResumeTransportRequest) => Promise<unknown>;
 }
 
 type ProcessResult = { stdout: string; code: number | null };
@@ -83,12 +92,16 @@ export class AgentResumeClient implements ResumeTransport {
   private readonly args: readonly string[];
   private readonly timeoutMs: number;
   private readonly invokeOverride?: (request: ResumeTransportRequest) => Promise<unknown>;
+  private readonly queryOverride?: (request: ResumeTransportRequest) => Promise<unknown>;
+  private readonly script: string;
 
   constructor(options: AgentResumeClientOptions = {}) {
     this.command = options.command ?? process.env.AGENT_RESUME_PYTHON ?? "python3";
-    this.args = options.args ?? [process.env.AGENT_RESUME_SCRIPT ?? "agent_resume.py", "resume_bound_target"];
+    this.script = process.env.AGENT_RESUME_SCRIPT ?? "agent_resume.py";
+    this.args = options.args ?? [this.script, "resume_bound_target"];
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.invokeOverride = options.invoke;
+    this.queryOverride = options.query;
   }
 
   async resume(input: ResumeTransportRequest): Promise<ResumeReceipt> {
@@ -105,6 +118,20 @@ export class AgentResumeClient implements ResumeTransport {
     } catch (error) {
       return failed(request, "unavailable", error instanceof Error ? error.message : "agent-resume unavailable");
     }
+  }
+
+  /** Read the durable receipt for a choice key without launching the target. */
+  async queryReceipt(input: ResumeTransportRequest): Promise<ResumeReceipt> {
+    const request = freezeRequest(input);
+    if (!request.idempotency_key) throw new TypeError("idempotency_key is required for receipt queries");
+    const raw = this.queryOverride
+      ? await this.queryOverride(request)
+      : await runEntrypoint(this.command, [this.script, "query_resume_receipt", "--idempotency-key", request.idempotency_key], request, this.timeoutMs, false);
+    if (typeof raw === "object" && raw !== null && "code" in raw && (raw as ProcessResult).code !== 0) {
+      throw new Error(`agent-resume receipt query exited with code ${(raw as ProcessResult).code}`);
+    }
+    const receiptInput = typeof raw === "object" && raw !== null && "stdout" in raw ? (raw as ProcessResult).stdout : raw;
+    return parseReceipt(receiptInput, request);
   }
 }
 
@@ -129,6 +156,9 @@ function freezeRequest(input: ResumeTransportRequest): ResumeTransportRequest {
     }
   }
   if (typeof input.result_ref !== "string" || input.result_ref.trim() === "") throw new TypeError("result_ref is required");
+  for (const field of ["goal", "prompt", "idempotency_key"] as const) {
+    if (input[field] !== undefined && (typeof input[field] !== "string" || input[field].trim() === "")) throw new TypeError(`${field} must be non-empty when provided`);
+  }
   const frozenTarget: SelectedResumeTarget = target.agent === "hermes"
     ? { agent: "hermes", locator: freezeHermesLocator(target.locator) }
     : {
@@ -138,37 +168,54 @@ function freezeRequest(input: ResumeTransportRequest): ResumeTransportRequest {
         ...(target.model === undefined ? {} : { model: target.model }),
         ...(target.marker === undefined ? {} : { marker: target.marker }),
       };
-  const copy: ResumeTransportRequest = { target: frozenTarget, result_ref: input.result_ref };
+  const copy: ResumeTransportRequest = {
+    target: frozenTarget,
+    result_ref: input.result_ref,
+    ...(input.goal === undefined ? {} : { goal: input.goal }),
+    ...(input.prompt === undefined ? {} : { prompt: input.prompt }),
+    ...(input.idempotency_key === undefined ? {} : { idempotency_key: input.idempotency_key }),
+  };
   Object.freeze(copy.target);
   return Object.freeze(copy);
 }
 
 function parseReceipt(raw: unknown, request: ResumeTransportRequest): ResumeReceipt {
   const value = typeof raw === "string" ? parseJson(raw) : raw;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return failed(request, "unsupported");
+  if (!value || typeof value !== "object" || Array.isArray(value)) return ambiguousReceipt(request, "receipt_malformed");
   const receipt = value as Record<string, unknown>;
   if (receipt.status === "accepted") {
-    if (!sameTarget(receipt.target, request.target) || receipt.result_ref !== request.result_ref) return failed(request, "unsupported");
+    const mismatch = receiptBindingMismatch(receipt, request);
+    if (mismatch) return ambiguousReceipt(request, mismatch);
     const receiptRef = typeof receipt.receipt_ref === "string" ? receipt.receipt_ref : typeof receipt.receipt_id === "string" ? receipt.receipt_id : undefined;
-    if (!receiptRef) return failed(request, "unsupported");
+    if (!receiptRef) return ambiguousReceipt(request, "receipt_reference_missing");
     return {
       status: "accepted",
       target: request.target,
       result_ref: request.result_ref,
       receipt_ref: receiptRef,
+      ...(request.idempotency_key === undefined ? {} : { idempotency_key: request.idempotency_key }),
     };
   }
-  if (receipt.status === "failed") {
-    if (!sameTarget(receipt.target, request.target) || receipt.result_ref !== request.result_ref) return failed(request, "unsupported");
-    const reason = receipt.reason;
+  if (receipt.status === "failed" || receipt.status === "rejected" || receipt.status === "ambiguous") {
+    const mismatch = receiptBindingMismatch(receipt, request);
+    if (mismatch) return ambiguousReceipt(request, mismatch);
     return {
-      status: "failed",
+      status: receipt.status,
       target: request.target,
       result_ref: request.result_ref,
-      reason: reason === "unavailable" || reason === "unsupported" || reason === "invalid" || reason === "failed" ? reason : "failed",
+      reason: typeof receipt.reason === "string" ? receipt.reason : "failed",
+      ...(request.idempotency_key === undefined ? {} : { idempotency_key: request.idempotency_key }),
     };
   }
-  return failed(request, "unsupported");
+  return ambiguousReceipt(request, "receipt_status_unsupported");
+}
+
+/** Return the exact immutable binding mismatch without downgrading it to a provider rejection. */
+function receiptBindingMismatch(receipt: Record<string, unknown>, request: ResumeTransportRequest): string | undefined {
+  if (!sameTarget(receipt.target, request.target)) return "receipt_target_mismatch";
+  if (receipt.result_ref !== request.result_ref) return "receipt_result_ref_mismatch";
+  if (request.idempotency_key !== undefined && receipt.idempotency_key !== request.idempotency_key) return "receipt_idempotency_key_mismatch";
+  return undefined;
 }
 
 function parseJson(value: string): unknown {
@@ -183,7 +230,14 @@ function sameTarget(value: unknown, target: SelectedResumeTarget): boolean {
     return sameLocator(candidate.locator, target.locator);
   }
   return candidate.session_id === target.session_id && candidate.cwd === target.cwd
-    && (candidate.model ?? undefined) === target.model && (candidate.marker ?? undefined) === target.marker;
+    && optionalProviderMetadataMatches(candidate.model, target.model)
+    && optionalProviderMetadataMatches(candidate.marker, target.marker);
+}
+
+/** Permit provider-added normalized metadata only when the caller did not bind that field. */
+function optionalProviderMetadataMatches(value: unknown, requested: string | undefined): boolean {
+  if (value !== undefined && value !== null && typeof value !== "string") return false;
+  return requested === undefined || (value ?? undefined) === requested;
 }
 
 function validateHermesLocator(value: unknown): asserts value is HermesResumeLocator {
@@ -232,13 +286,21 @@ function sameLocator(value: unknown, target: HermesResumeLocator | undefined): b
 }
 
 function failed(request: ResumeTransportRequest, reason: ResumeFailureReason, _detail?: string): ResumeReceipt {
-  return { status: "failed", target: request.target, result_ref: request.result_ref, reason };
+  return { status: "failed", target: request.target, result_ref: request.result_ref, reason, ...(request.idempotency_key === undefined ? {} : { idempotency_key: request.idempotency_key }) };
 }
 
-async function runEntrypoint(command: string, args: readonly string[], request: ResumeTransportRequest, timeoutMs: number): Promise<ProcessResult> {
+/** Preserve a malformed or mismatched provider receipt for human recovery rather than treating it as a rejection. */
+function ambiguousReceipt(request: ResumeTransportRequest, reason: string): ResumeReceipt {
+  return { status: "ambiguous", target: request.target, result_ref: request.result_ref, reason, ...(request.idempotency_key === undefined ? {} : { idempotency_key: request.idempotency_key }) };
+}
+
+async function runEntrypoint(command: string, args: readonly string[], request: ResumeTransportRequest, timeoutMs: number, includeRequestArgs = true): Promise<ProcessResult> {
   return await new Promise((resolve, reject) => {
-    const prompt = `Human Request resolved: ${request.result_ref}`;
-    const child = spawn(command, [...args, "--target", JSON.stringify(request.target), "--prompt", prompt, "--result-ref", request.result_ref, "--execute"], { stdio: ["ignore", "pipe", "ignore"] });
+    const prompt = request.prompt ?? request.goal ?? `Human Request resolved: ${request.result_ref}`;
+    const childArgs = includeRequestArgs
+      ? [...args, "--target", JSON.stringify(request.target), "--prompt", prompt, ...(request.goal ? ["--goal", request.goal] : []), "--result-ref", request.result_ref, ...(request.idempotency_key ? ["--idempotency-key", request.idempotency_key] : []), "--execute"]
+      : [...args];
+    const child = spawn(command, childArgs, { stdio: ["ignore", "pipe", "ignore"] });
     let stdout = "";
     let settled = false;
     const timer = setTimeout(() => {

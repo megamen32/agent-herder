@@ -1,0 +1,17 @@
+{
+  "description": "Agent Herder Codex autopilot: judge each Stop and either continue the same turn or notify the user.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${PLUGIN_ROOT}/scripts/autopilot-hook-launcher.sh\"",
+            "timeout": 45,
+            "statusMessage": "Checking Agent Herder autopilot decision"
+          }
+        ]
+      }
+    ]
+  }
+}
