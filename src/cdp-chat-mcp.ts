@@ -26,6 +26,7 @@ import {
 import {
   ChatGptHistoryArchive,
   type ExportChatHistoryInput,
+  type ExportVisibleChatHistoryInput,
   type ListChatHistoryInput,
 } from "./chatgpt-history-archive.js";
 
@@ -153,6 +154,12 @@ export function registerChatGptHistoryArchiveTools(server: McpServer, archive?: 
     "Read one listed ChatGPT chat in the same owned page, scroll backward, and save raw snapshots locally. Returns only a checkpoint receipt.",
     { chatRef: z.string().min(1).max(256), maxSegments: z.number().int().min(1).max(100).optional() },
     async (args) => textResult(await archive.exportChat(args as ExportChatHistoryInput)),
+  );
+  server.tool(
+    "export_visible_chats",
+    "Best-effort export of all currently visible non-protected ChatGPT conversations. Each completed archive includes local Markdown and HTML renderings beside raw snapshots.",
+    { maxChats: z.number().int().min(1).max(100).optional(), maxSegmentsPerChat: z.number().int().min(1).max(100).optional() },
+    async (args) => textResult(await archive.exportVisibleChats(args as ExportVisibleChatHistoryInput)),
   );
 }
 

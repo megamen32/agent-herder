@@ -292,7 +292,15 @@ describe("BrowserClawAccountExportDriver", () => {
       sessionRef: "session-conversation-labels",
       async callToolRaw(name: string, args: Record<string, unknown>) {
         calls.push({ name, args });
-        return { result: { content: [{ type: "text", text: 'Evaluation result:\n["Research article", "Deep research"]' }] } };
+        return {
+          result: {
+            content: [{
+              type: "text",
+              text: "Evaluation result",
+              _meta: { result: ["Research article", "Deep research"] },
+            }],
+          },
+        };
       },
     };
 
@@ -303,7 +311,7 @@ describe("BrowserClawAccountExportDriver", () => {
       name: "evaluate",
       args: { page: 7, timeout: 5_000 },
     });
-    expect(String(calls[0]!.args.code)).toContain('a[href^="/c/"]');
+    expect(String(calls[0]!.args.code)).toContain("pathname.startsWith('/c/')");
   });
 
   it("keeps only compact non-navigation sidebar links as chat candidates", () => {

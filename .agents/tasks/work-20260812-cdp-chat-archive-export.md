@@ -97,3 +97,10 @@ The native ChatGPT export surface is not available in the owned page. The user s
 - Root cause: a Project/sidebar link may share the compact `link` a11y shape of a conversation. The selector now reads only same-page DOM anchors whose `href` begins `/c/`, then performs the actual selection click with the fresh a11y ref. Duplicate a11y labels are bound to their exact row; ambiguous labels are skipped rather than guessed.
 - Focused regression suite: 5 files / 34 tests passed. Production build passed. The empty failed archive directory was removed; private failure screenshot/receipt are retained for tester/debug evidence.
 - The new source is committed and pushed, but intentionally not loaded into the running service: a further restart and a new bounded live canary need separate approval.
+
+### Downloadable article renderings — 2026-08-12 19:15 MSK
+
+- User explicitly authorized a restart and asked for best-effort Markdown/HTML downloads of articles.
+- The first restart loaded the route-selector revision. Its `cdp_list_chats` attempt failed before any click because BrowserClaw returned the evaluate result in an unhandled structured form. No transcript was archived and no second tab was created.
+- The current source accepts structured BrowserClaw evaluate values, writes a same-page screenshot receipt on list failures, and adds a bounded `cdp_export_visible_chats` tool. Each completed archive gains local `article/article.md` and `article/article.html` alongside authoritative raw segments.
+- This source change is verified by focused tests/build; it needs the current user-authorized restart before the single live batch canary.

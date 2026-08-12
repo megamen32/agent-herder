@@ -73,6 +73,11 @@ export interface ExportChatHistoryResult {
   capturedSegments: number;
   newSegments: number;
   nextStep: "call_cdp_export_chat_again" | "archive_ready";
+  /** Best-effort local article renderings generated from the raw snapshots. */
+  article?: {
+    markdownPath: string;
+    htmlPath: string;
+  };
 }
 
 interface ChatBinding {
@@ -254,6 +259,27 @@ export class ChatGptHistoryArchive {
     }
   }
 
+  /** Export every currently visible non-protected chat, one bounded page at a time. */
+  async exportVisibleChats(input: ExportVisibleChatHistoryInput = {}): Promise<ExportVisibleChatHistoryResult> {
+    const maxChats = boundedLimit(input.maxChats, 20, 100);
+    const maxSegmentsPerChat = boundedLimit(input.maxSegmentsPerChat, 24, 100);
+    const listed = await this.listChats({ view: "recent", limit: maxChats });
+    const results: Array<{ chatRef: string; status: "checkpoint" | "complete" | "skipped"; archivePath?: string; article?: { markdownPath: string; htmlPath: string }; error?: string }> = [];
+    for (const chat of listed.chats) {
+      if (this.protectedTitles.has(normalTitle(chat.title))) {
+        results.push({ chatRef: chat.chatRef, status: "skipped", error: "protected_chat" });
+        continue;
+      }
+      try {
+        const exported = await this.exportChat({ chatRef: chat.chatRef, maxSegments: maxSegmentsPerChat });
+        results.push({ chatRef: chat.chatRef, status: exported.status, archivePath: exported.archivePath, ...(exported.article ? { article: exported.article } : {}) });
+      } catch (error) {
+        results.push({ chatRef: chat.chatRef, status: "skipped", error: error instanceof Error ? error.message.slice(0, 240) : "export_failed" });
+      }
+    }
+    return { requestedChats: listed.chats.length, results };
+  }
+
   private async exportBoundChat(chatRef: string, binding: ChatBinding, maxSegments: number): Promise<ExportChatHistoryResult> {
     const root = await ensureRoot(this.root);
     const id = archiveId(binding.id);
@@ -285,13 +311,14 @@ export class ChatGptHistoryArchive {
         observedSegments += 1;
         manifest.updatedAt = this.now().toISOString();
         await writePrivate(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
-        if (atStart) {
+      if (atStart) {
           manifest.complete = true;
           manifest.resume = "same_owned_page";
           manifest.updatedAt = this.now().toISOString();
           await writePrivate(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
           if (this.cursor?.chatRef === chatRef) this.cursor = undefined;
-          return this.receipt(chatRef, manifest, archivePath, manifestPath, "complete", newSegments);
+          const article = await this.writeArticleViews(archivePath, binding.title, manifest);
+          return this.receipt(chatRef, manifest, archivePath, manifestPath, "complete", newSegments, article);
         }
         if (observedSegments >= maxSegments) {
           this.cursor = { chatRef, chatId: binding.id, archiveId: id };
@@ -344,6 +371,31 @@ export class ChatGptHistoryArchive {
     return true;
   }
 
+  private async writeArticleViews(
+    archivePath: string,
+    title: string,
+    manifest: HistoryManifest,
+  ): Promise<{ markdownPath: string; htmlPath: string }> {
+    const rendered: unknown[] = [];
+    for (const entry of manifest.segments) {
+      try {
+        const segment = JSON.parse(await readFile(join(archivePath, "segments", entry.file), "utf8")) as ChatGptHistorySegment;
+        rendered.push(segment.content);
+      } catch {
+        // Preserve the raw archive even if one optional rendering input cannot
+        // be read. The remaining source snapshots still form a useful article.
+      }
+    }
+    const articleDir = join(archivePath, "article");
+    const markdownPath = join(articleDir, "article.md");
+    const htmlPath = join(articleDir, "article.html");
+    const markdown = `# ${title}\n\n_Source: best-effort rendering of ${manifest.segments.length} raw ChatGPT history snapshots._\n\n${rendered.map(renderMarkdownValue).join("\n\n---\n\n")}\n`;
+    const html = `<!doctype html>\n<html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:system-ui,sans-serif;max-width:72rem;margin:2rem auto;padding:0 1rem;line-height:1.5}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f6f6;padding:1rem;border-radius:.5rem}</style></head><body><h1>${escapeHtml(title)}</h1><p>Source: best-effort rendering of ${manifest.segments.length} raw ChatGPT history snapshots.</p>${rendered.map((value) => `<pre>${escapeHtml(renderMarkdownValue(value))}</pre>`).join("\n")}</body></html>\n`;
+    await writePrivate(markdownPath, markdown);
+    await writePrivate(htmlPath, html);
+    return { markdownPath, htmlPath };
+  }
+
   private receipt(
     chatRef: string,
     manifest: HistoryManifest,
@@ -351,6 +403,7 @@ export class ChatGptHistoryArchive {
     manifestPath: string,
     status: "checkpoint" | "complete",
     newSegments: number,
+    article?: { markdownPath: string; htmlPath: string },
   ): ExportChatHistoryResult {
     return {
       chatRef,
@@ -361,6 +414,38 @@ export class ChatGptHistoryArchive {
       capturedSegments: manifest.segments.length,
       newSegments,
       nextStep: status === "complete" ? "archive_ready" : "call_cdp_export_chat_again",
+      ...(article ? { article } : {}),
     };
   }
+}
+
+export interface ExportVisibleChatHistoryInput {
+  /** Upper bound for currently visible sidebar chats in this one call. */
+  maxChats?: number;
+  /** Upper bound for raw history snapshots per chat in this one call. */
+  maxSegmentsPerChat?: number;
+}
+
+export interface ExportVisibleChatHistoryResult {
+  requestedChats: number;
+  results: Array<{
+    chatRef: string;
+    status: "checkpoint" | "complete" | "skipped";
+    archivePath?: string;
+    article?: { markdownPath: string; htmlPath: string };
+    error?: string;
+  }>;
+}
+
+function renderMarkdownValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return "[unrenderable source snapshot]";
+  }
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/gu, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
 }

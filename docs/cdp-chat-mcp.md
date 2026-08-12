@@ -27,6 +27,11 @@ same page, scroll upward, and save each raw accessibility snapshot locally.
   segments plus `manifest.json` under `CHATGPT_HISTORY_ARCHIVE_ROOT` (default:
   `~/archives/chatgpt-history`). The MCP result is a receipt/path/checkpoint,
   never the chat text itself.
+- `export_visible_chats({ maxChats?, maxSegmentsPerChat? })` is the bounded
+  best-effort batch: it skips protected/ambiguous chats, and each completed
+  archive also gets `article/article.md` and `article/article.html` rendered
+  locally from its raw snapshots. These are convenience copies; raw segments
+  remain the authoritative source.
 - A click must settle on a same-page ChatGPT conversation route (`/c/...`). A
   sidebar shell, Library, project, or landing-page control fails with a local
   diagnostic instead of being mis-recorded as a chat archive.
@@ -39,7 +44,8 @@ The concrete BrowserClaw route exposes these two read-only operations only.
 edited, or used as a test target. Attachment byte downloads remain the next
 vertical after the first real archive proves the actual accessible controls.
 
-In Agent Herder these tools are `cdp_list_chats` and `cdp_export_chat`.
+In Agent Herder these tools are `cdp_list_chats`, `cdp_export_chat`, and
+`cdp_export_visible_chats`.
 The standalone server uses their short names.
 
 ## Native account archive: fallback

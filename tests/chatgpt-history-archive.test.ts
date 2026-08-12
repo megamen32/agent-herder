@@ -99,4 +99,41 @@ describe("ChatGptHistoryArchive", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("writes best-effort Markdown and HTML article views beside raw history", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-history-articles-"));
+    try {
+      const archive = new ChatGptHistoryArchive(new FakeHistoryDriver(), { archiveRoot: root });
+      const listed = await archive.listChats({ view: "recent" });
+      const chatRef = listed.chats.find((entry) => entry.title === "Article archive canary")?.chatRef;
+      const result = await archive.exportChat({ chatRef: chatRef!, maxSegments: 3 });
+
+      expect(result).toMatchObject({ status: "complete", article: { markdownPath: expect.any(String), htmlPath: expect.any(String) } });
+      const markdown = await readFile(result.article!.markdownPath, "utf8");
+      const html = await readFile(result.article!.htmlPath, "utf8");
+      expect(markdown).toContain("# Article archive canary");
+      expect(markdown).toContain("private bottom text");
+      expect(html).toContain("<!doctype html>");
+      expect(html).toContain("private top text");
+      expect((await stat(result.article!.markdownPath)).mode & 0o777).toBe(0o600);
+      expect((await stat(result.article!.htmlPath)).mode & 0o777).toBe(0o600);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("exports visible non-protected chats best-effort and skips E-Frontier", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-visible-history-articles-"));
+    try {
+      const archive = new ChatGptHistoryArchive(new FakeHistoryDriver(), { archiveRoot: root });
+      const result = await archive.exportVisibleChats({ maxChats: 10, maxSegmentsPerChat: 3 });
+
+      expect(result.requestedChats).toBe(2);
+      expect(result.results).toHaveLength(2);
+      expect(result.results.find((entry) => entry.status === "complete")).toMatchObject({ article: { markdownPath: expect.any(String), htmlPath: expect.any(String) } });
+      expect(result.results.find((entry) => entry.status === "skipped")).toMatchObject({ error: "protected_chat" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

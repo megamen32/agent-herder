@@ -31,7 +31,7 @@ import type {
 } from "./cdp-chat.js";
 import { ALL_CDP_CHAT_CAPABILITIES, CdpChatClient } from "./cdp-chat.js";
 import { ChatGptAccountArchive, type ImportAccountExportInput, type RequestAccountExportInput } from "./chatgpt-account-archive.js";
-import { ChatGptHistoryArchive, type ExportChatHistoryInput, type ListChatHistoryInput } from "./chatgpt-history-archive.js";
+import { ChatGptHistoryArchive, type ExportChatHistoryInput, type ExportVisibleChatHistoryInput, type ListChatHistoryInput } from "./chatgpt-history-archive.js";
 import {
   handleListAgents,
   handleAgentInfo,
@@ -432,6 +432,12 @@ function registerChatGptHistoryArchiveTools(server: McpServer, archive?: ChatGpt
     "Read one listed ChatGPT chat in the same owned page, scroll backward, and save raw snapshots locally. Returns only a checkpoint receipt.",
     { chatRef: z.string().min(1).max(256), maxSegments: z.number().int().min(1).max(100).optional() },
     async (args) => cdpTextResult(await archive.exportChat(args as ExportChatHistoryInput)),
+  );
+  server.tool(
+    "cdp_export_visible_chats",
+    "Best-effort export of all currently visible non-protected ChatGPT conversations. Completed archives include local Markdown and HTML renderings beside raw snapshots.",
+    { maxChats: z.number().int().min(1).max(100).optional(), maxSegmentsPerChat: z.number().int().min(1).max(100).optional() },
+    async (args) => cdpTextResult(await archive.exportVisibleChats(args as ExportVisibleChatHistoryInput)),
   );
 }
 

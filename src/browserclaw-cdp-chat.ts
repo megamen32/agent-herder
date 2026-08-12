@@ -50,7 +50,7 @@ export interface BrowserClawAccountExportDiagnosticArtifact {
 
 export interface BrowserClawHistoryArchiveDiagnosticInput {
   outcome: "captured" | "failed";
-  stage: "open_chat" | "scroll_back";
+  stage: "list_chats" | "open_chat" | "scroll_back";
   failure?: string;
   snapshot: BrowserClawA11ySnapshot;
 }
@@ -322,10 +322,10 @@ export class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
   async conversationSidebarTitles(page: number): Promise<ReadonlySet<string>> {
     const response = await this.client.callToolRaw("evaluate", {
       page,
-      code: `return JSON.stringify(Array.from(document.querySelectorAll('a[href^="/c/"]')).map((anchor) => (anchor.textContent || '').trim()).filter(Boolean));`,
+      code: `return Array.from(document.querySelectorAll('a[href]')).filter((anchor) => new URL(anchor.href, location.href).pathname.startsWith('/c/')).map((anchor) => (anchor.textContent || '').trim()).filter(Boolean);`,
       timeout: 5_000,
     }, deadline());
-    return parseConversationSidebarTitles(textContent(response));
+    return parseConversationSidebarTitles(response);
   }
 
   async actPage(page: number, action: BrowserClawSemanticAction): Promise<BrowserClawA11ySnapshot> {
@@ -478,10 +478,21 @@ class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
   }
 
   async listChats(): Promise<readonly ChatGptHistoryChat[]> {
-    const snapshot = await this.page.snapshot(deadline());
-    this.lastSnapshot = snapshot;
-    const titles = this.conversationTitles ? await this.conversationTitles(snapshot.page) : undefined;
-    return visibleSidebarChats(snapshot, this.idPrefix, titles);
+    let snapshot: BrowserClawA11ySnapshot | undefined;
+    try {
+      snapshot = await this.page.snapshot(deadline());
+      this.lastSnapshot = snapshot;
+      const titles = this.conversationTitles ? await this.conversationTitles(snapshot.page) : undefined;
+      return visibleSidebarChats(snapshot, this.idPrefix, titles);
+    } catch (error) {
+      await this.captureDiagnostic({
+        outcome: "failed",
+        stage: "list_chats",
+        failure: diagnosticError(error),
+        snapshot: this.lastSnapshot ?? snapshot,
+      });
+      throw error;
+    }
   }
 
   async openChat(input: { chatId: string }): Promise<ChatGptHistorySegment> {
@@ -594,33 +605,40 @@ function normalizedHistoryTitle(value: string): string {
   return value.trim().replace(/\s+/gu, " ").toLocaleLowerCase();
 }
 
-function parseConversationSidebarTitles(value: string): ReadonlySet<string> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value) as unknown;
-  } catch {
-    // BrowserClaw normally returns the value as text. Some MCP transports add
-    // a short prose prefix, so recover only one complete JSON array from it.
+function parseConversationSidebarTitles(value: Record<string, unknown>): ReadonlySet<string> {
+  const titleArrays = stringArrays(value, 0);
+  const titles = titleArrays.find((items) => items.every((item) => item.trim().length > 0));
+  if (!titles) throw new Error("BrowserClaw did not return a conversation sidebar list");
+  return new Set(titles.map(normalizedHistoryTitle));
+}
+
+function stringArrays(value: unknown, depth: number): string[][] {
+  if (depth > 5) return [];
+  if (Array.isArray(value)) {
+    if (value.every((item) => typeof item === "string")) return [value as string[]];
+    return value.flatMap((item) => stringArrays(item, depth + 1));
+  }
+  if (typeof value === "string") {
+    const direct = parseJsonValue(value);
+    if (direct !== undefined) return stringArrays(direct, depth + 1);
     const start = value.indexOf("[");
     const end = value.lastIndexOf("]");
-    if (start < 0 || end < start) throw new Error("BrowserClaw did not return a conversation sidebar list");
-    try {
-      parsed = JSON.parse(value.slice(start, end + 1)) as unknown;
-    } catch {
-      throw new Error("BrowserClaw did not return a conversation sidebar list");
+    if (start >= 0 && end >= start) {
+      const embedded = parseJsonValue(value.slice(start, end + 1));
+      if (embedded !== undefined) return stringArrays(embedded, depth + 1);
     }
+    return [];
   }
-  if (typeof parsed === "string") {
-    try {
-      parsed = JSON.parse(parsed) as unknown;
-    } catch {
-      throw new Error("BrowserClaw did not return a conversation sidebar list");
-    }
+  if (!value || typeof value !== "object") return [];
+  return Object.values(value as Record<string, unknown>).flatMap((item) => stringArrays(item, depth + 1));
+}
+
+function parseJsonValue(value: string): unknown | undefined {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
   }
-  if (!Array.isArray(parsed)) throw new Error("BrowserClaw did not return a conversation sidebar list");
-  const titles = parsed.filter((item): item is string => typeof item === "string").map(normalizedHistoryTitle).filter(Boolean);
-  if (titles.length !== parsed.length) throw new Error("BrowserClaw returned an invalid conversation sidebar list");
-  return new Set(titles);
 }
 
 function historyChatId(idPrefix: string, title: string, description: string | undefined): string {
