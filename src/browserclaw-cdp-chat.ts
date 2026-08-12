@@ -218,7 +218,7 @@ export class BrowserClawAccountExportDriver implements ChatGptAccountExportDrive
     let snapshot = await this.page.snapshot(deadline());
     snapshot = await this.click(snapshot, (node) => node.role === "button" && /(?:открыть )?(?:меню )?профил|profile/i.test(node.name ?? ""), "profile menu");
     snapshot = await this.click(snapshot, (node) => ["menuitem", "button", "link"].includes(node.role) && /(?:^|\s)(?:настройки|settings)(?:$|\s)/i.test(node.name ?? ""), "settings");
-    snapshot = await this.click(snapshot, (node) => (node.role === "tab" || node.role === "button") && /^(управление данными|data controls|data management)$/i.test(node.name ?? ""), "data management");
+    snapshot = await this.click(snapshot, (node) => ["tab", "button", "link", "menuitem"].includes(node.role) && /^(управление данными|data controls|data management)$/i.test(node.name ?? ""), "data management");
 
     const alreadyRequested = findNode(snapshot.root, (node) => /(?:уже )?(?:запрош|request(?:ed)? already|export already)/i.test(`${node.name ?? ""} ${node.description ?? ""}`));
     if (alreadyRequested) {

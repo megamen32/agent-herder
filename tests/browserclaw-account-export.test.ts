@@ -77,13 +77,13 @@ describe("BrowserClawAccountExportDriver", () => {
     expect(actions).toEqual(["profile", "settings", "data"]);
   });
 
-  it("accepts a semantically named settings link when BrowserClaw reports a menu role differently", async () => {
+  it("accepts semantically named settings and data-controls links when BrowserClaw reports roles differently", async () => {
     const snapshots = [
       snapshot("home", [{ ref: "profile", role: "button", name: "Profile", children: [] }]),
       snapshot("menu", [{ ref: "settings", role: "link", name: "Open Settings", children: [] }]),
       snapshot("menu", [{ ref: "settings", role: "link", name: "Open Settings", children: [] }]),
-      snapshot("settings", [{ ref: "data", role: "button", name: "Data Controls", children: [] }]),
-      snapshot("settings", [{ ref: "data", role: "button", name: "Data Controls", children: [] }]),
+      snapshot("settings", [{ ref: "data", role: "link", name: "Data Controls", children: [] }]),
+      snapshot("settings", [{ ref: "data", role: "link", name: "Data Controls", children: [] }]),
       snapshot("data", [{ ref: "existing", role: "alert", name: "Export already requested", children: [] }]),
       snapshot("data", [{ ref: "existing", role: "alert", name: "Export already requested", children: [] }]),
     ];
