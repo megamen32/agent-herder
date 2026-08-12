@@ -14,6 +14,18 @@ import { AgentHerderSessionConverter } from "./session-convert.js";
 import { acquireAgentHerderSingleton } from "./singleton.js";
 import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
 import { createWebServer } from "./web/server.js";
+import { loadCdpChatDriver } from "./cdp-chat-mcp.js";
+import type {
+  CdpChatDriver,
+  DownloadMediaInput,
+  EditMessageInput,
+  ExportChatInput,
+  ListChatsInput,
+  NewChatInput,
+  SearchChatInput,
+  SendMessageInput,
+} from "./cdp-chat.js";
+import { CdpChatClient } from "./cdp-chat.js";
 import {
   handleListAgents,
   handleAgentInfo,
@@ -287,9 +299,95 @@ function parseCsv(value: string | undefined, fallback: string[]): string[] {
   return models.length > 0 ? models : fallback;
 }
 
+/** Return one bounded JSON text result for a namespaced CDP chat tool. */
+function cdpTextResult(value: unknown): { content: [{ type: "text"; text: string }] } {
+  return { content: [{ type: "text", text: JSON.stringify(value) }] };
+}
+
+/** Register the standalone CDP chat capability without colliding with send_message. */
+function registerCdpChatTools(server: McpServer, client: CdpChatClient): void {
+  server.tool(
+    "cdp_new_chat",
+    "Create exactly one disposable chat on the owned authenticated page without submitting a prompt.",
+    {
+      confirmation: z.literal("NEW_CHAT"),
+      idempotencyKey: z.string().min(1).max(128),
+      title: z.string().min(1).max(256).optional(),
+    },
+    async (args) => cdpTextResult(await client.newChat(args as NewChatInput)),
+  );
+  server.tool(
+    "cdp_list_chats",
+    "List page-visible chats by explicit unread, observable working, or UTC-recent semantics with bounded pagination.",
+    {
+      view: z.enum(["unread", "working", "recent"]),
+      limit: z.number().int().min(1).max(100).optional(),
+      cursor: z.string().max(128).optional(),
+    },
+    async (args) => cdpTextResult(await client.listChats(args as ListChatsInput)),
+  );
+  server.tool(
+    "cdp_search_chat",
+    "Search page-visible chat titles and message text using one fresh owned-page snapshot.",
+    {
+      query: z.string().trim().min(1).max(256),
+      limit: z.number().int().min(1).max(100).optional(),
+    },
+    async (args) => cdpTextResult(await client.searchChat(args as SearchChatInput)),
+  );
+  server.tool(
+    "cdp_export_chat",
+    "Export only a fixture-bound chat with bounded message count and UTF-8 byte output.",
+    {
+      chatRef: z.string().min(1).max(256),
+      format: z.enum(["json", "markdown"]),
+      maxMessages: z.number().int().min(1).max(100).optional(),
+    },
+    async (args) => cdpTextResult(await client.exportChat(args as ExportChatInput)),
+  );
+  server.tool(
+    "cdp_send_message",
+    "Send one fixture message only with exact confirmation SEND_MESSAGE and a one-shot idempotency gate.",
+    {
+      chatRef: z.string().min(1).max(256),
+      text: z.string().min(1).max(100_000),
+      confirmation: z.literal("SEND_MESSAGE"),
+      idempotencyKey: z.string().min(1).max(128),
+    },
+    async (args) => cdpTextResult(await client.sendMessage(args as SendMessageInput)),
+  );
+  server.tool(
+    "cdp_edit_message",
+    "Edit one fixture message only with exact confirmation EDIT_MESSAGE, one-shot idempotency, and an expected version or old-text guard.",
+    {
+      chatRef: z.string().min(1).max(256),
+      messageRef: z.string().min(1).max(256),
+      text: z.string().min(1).max(100_000),
+      confirmation: z.literal("EDIT_MESSAGE"),
+      idempotencyKey: z.string().min(1).max(128),
+      expectedVersion: z.number().int().min(1).optional(),
+      expectedText: z.string().max(100_000).optional(),
+    },
+    async (args) => cdpTextResult(await client.editMessage(args as EditMessageInput)),
+  );
+  server.tool(
+    "cdp_download_media",
+    "Download one fixture attachment of an allowlisted MIME and size into the confined media root.",
+    {
+      chatRef: z.string().min(1).max(256),
+      messageRef: z.string().min(1).max(256),
+      mediaRef: z.string().min(1).max(256),
+      outputDir: z.string().max(4096).optional(),
+    },
+    async (args) => cdpTextResult(await client.downloadMedia(args as DownloadMediaInput)),
+  );
+}
+
 // ===== Register MCP tools =====
 
-function registerTools(server: McpServer) {
+function registerTools(server: McpServer, cdpChatClient?: CdpChatClient) {
+  if (cdpChatClient) registerCdpChatTools(server, cdpChatClient);
+
   server.tool(
     "human_request_create",
     "Create an opaque Ask User or Ask Secret request bound to an existing harness session. Hermes requires its immutable hermes.locator.v2 locator; Agent Herder never discovers a replacement session. Notification routing is explicit.",
@@ -537,6 +635,17 @@ function registerTools(server: McpServer) {
 
 // ===== Main =====
 
+/** Build one Agent Herder MCP server and one isolated CDP client for it. */
+export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver): McpServer {
+  const server = new McpServer({
+    name: "agent-herder",
+    version: "0.2.0",
+    description: "Monitor and control coding agents (OpenCode, Claude Code SDK, Codex CLI, Qoder) with summarization and model management",
+  });
+  registerTools(server, cdpChatDriver ? new CdpChatClient(cdpChatDriver, { mediaRoot: process.env.CDP_CHAT_MEDIA_ROOT }) : undefined);
+  return server;
+}
+
 async function main() {
   const releaseSingleton = acquireAgentHerderSingleton();
   process.once("exit", releaseSingleton);
@@ -544,15 +653,8 @@ async function main() {
   configureAdapterRegistry();
   await adapterRegistry.load();
   await initAdapters();
-  const createMcpServer = () => {
-    const server = new McpServer({
-      name: "agent-herder",
-      version: "0.2.0",
-      description: "Monitor and control coding agents (OpenCode, Claude Code SDK, Codex CLI, Qoder) with summarization and model management",
-    });
-    registerTools(server);
-    return server;
-  };
+  const cdpChatDriver = process.env.CDP_CHAT_DRIVER_MODULE ? await loadCdpChatDriver() : undefined;
+  const createMcpServer = () => createAgentHerderMcpServer(cdpChatDriver);
   const server = createMcpServer();
 
   const webPort = process.env.AGENT_HERDER_WEB_PORT;

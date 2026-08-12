@@ -667,3 +667,158 @@ creation at `src/cdp-chat.ts:570-591`.
 - Smallest next slice: implement the structured transport/parser, then the
   owned A11y page, each with fake-contract tests and a maximum of 20 active
   minutes.
+
+## Authorized implementation slice 4 — structured A11y parser
+
+Worker may create only `src/browserclaw-a11y.ts` and
+`tests/browserclaw-a11y.test.ts`; do not edit `src/browserclaw-worker.ts` yet,
+registry wiring, standalone chat contract, docs, or any foreign dirty path.
+Implement typed v1 A11y tree normalization from structured content and bounded
+role/name/ref text, with max bytes/depth/nodes/refs, duplicate-ref rejection,
+malformed-node rejection, and semantic action payload validation. Acceptance:
+fake parser tests green for valid tree, valid text, malformed/ambiguous,
+oversized, and stale/invalid action refs. No browser/CDP/Telegram/deployment.
+Maximum 20 active minutes.
+
+## Worker implementation receipt — structured A11y parser — 2026-08-12 08:46 MSK
+
+- Status: `DONE`; business-canary delta `0` beyond local structured-capability
+  contract. No BrowserClaw/CDP page, `browser_wake`, existing E-Frontier
+  conversation, Telegram/Overport path, credentials, restart, deployment, or
+  production action was used.
+- Changed only the authorized paths: added `src/browserclaw-a11y.ts` with the
+  versioned `agent-herder.browserclaw-a11y.v1` tree types, structuredContent
+  and JSON/SSE/text normalization, HTTPS/page metadata validation, bounded
+  bytes/depth/nodes/refs, duplicate/malformed/mixed-payload rejection, and
+  latest `snapshotRef`/semantic action validation; added
+  `tests/browserclaw-a11y.test.ts`.
+- Verification: `npm exec -- vitest run tests/browserclaw-a11y.test.ts
+  --config vitest.config.ts` passed `7/7`; `npm exec -- tsc --noEmit` passed;
+  `npm run build` passed; `git diff --check --
+  src/browserclaw-a11y.ts tests/browserclaw-a11y.test.ts` passed.
+- Remaining risk: the typed parser is not yet connected to
+  `BrowserClawMcpClient`, and no owned A11y page/lease adapter or concrete
+  `CdpChatDriver` exists yet. This receipt is fake-contract/local proof only,
+  not live BrowserClaw or ChatGPT acceptance.
+- Smallest next slice: add the typed structured-result method to
+  `src/browserclaw-worker.ts` and a separate owned A11y page adapter with fake
+  tests; preserve existing string `callTool()` and `browser_wake` behavior.
+
+## Structured-parser join receipt — 2026-08-12 08:40 MSK
+
+- Worker session `019ff45d-535f-74a0-bb1e-cf0c7e69a6aa` remains preserved after
+  the fixed 30-minute join deadline expired without an authoritative terminal
+  receipt. It was not closed and no replacement was created.
+- Evidence observed before the join deadline: `tests/browserclaw-a11y.test.ts`
+  exists; `src/browserclaw-a11y.ts` was not yet present, so implementation is
+  incomplete and no green result is inferred.
+- No browser/CDP, Telegram, deployment, restart, or production action was
+  performed by Lead; no source changes were made by Lead.
+- Join status: `join-deadline-expired`; mandatory next action is Overseer audit
+  of the overrun and child state.
+
+## Overseer receipt — parser overrun (2026-08-12 08:47 MSK)
+
+- Verdict: `RETHINK`.
+- Business delta: unchanged; no authoritative parser completion receipt and no
+  live browser/business canary.
+- Estimate: the <=20-minute parser slice passed its fixed 30-minute join
+  deadline without terminal evidence.
+- Required next action: reconcile the preserved parser Worker and obtain an
+  authoritative terminal receipt before any new implementation slice. No new
+  Worker or browser action is authorized by this receipt.
+
+## Worker terminal confirmation — structured A11y parser — 2026-08-12 08:47 MSK
+
+- Authoritative result: `DONE`; the structured-parser implementation receipt
+  above is confirmed after the previously stale join receipt.
+- Task-owned files are exactly `src/browserclaw-a11y.ts` and
+  `tests/browserclaw-a11y.test.ts`; focused tests pass `7/7`, TypeScript and
+  production build pass, and whitespace validation passes.
+- No live browser/CDP, E-Frontier, Telegram, deployment, restart, credential,
+  or foreign-path action occurred. Next bounded slice is transport integration
+  plus the owned A11y page/lease adapter.
+
+## Authoritative Worker terminal receipt — structured A11y parser — 2026-08-12 08:48 MSK
+
+- Status: `DONE` for the authorized structured-parser slice. Both task-owned
+  files are complete: `src/browserclaw-a11y.ts` (387 lines) and
+  `tests/browserclaw-a11y.test.ts` (138 lines). No replacement worker or
+  broad-work continuation was created.
+- Current verification: focused Vitest `7/7` passed; `npm exec -- tsc
+  --noEmit` passed; `git diff --check` passed for both parser files and this
+  task card. The production `npm run build` passed at 08:46 MSK immediately
+  before this reconciliation.
+- Contract covered: structuredContent plus JSON/SSE and bounded role/name/ref
+  text normalization; HTTPS/page metadata; byte/depth/node/ref limits;
+  duplicate, malformed, mixed, oversized rejection; latest snapshot and
+  semantic action ref validation.
+- Business-canary delta: `0`. No browser/CDP, Telegram, deployment, restart,
+  credentials, MFA, E-Frontier, or production action occurred.
+- Remaining boundary, not a parser blocker: the parser is not yet connected
+  to `BrowserClawMcpClient`; the owned A11y page/lease adapter and concrete
+  `CdpChatDriver` remain separate slices. This receipt is local fake-contract
+  proof only and does not claim live BrowserClaw/ChatGPT acceptance.
+
+## Parser recovery receipt — 2026-08-12
+
+- The preserved parser Worker was reconciled after the join deadline and
+  returned authoritative `DONE`; it was closed only after terminal status.
+- Task-owned parser files are complete: `src/browserclaw-a11y.ts` and
+  `tests/browserclaw-a11y.test.ts`; focused suite `7/7`, `tsc`, build, and
+  diff-check pass.
+- The previous Overseer `RETHINK` is resolved for this slice. Parser remains
+  unconnected to `BrowserClawMcpClient`; no live or production proof claimed.
+
+## Overseer assignment before owned-A11y-page slice
+
+Audit the reconciled parser completion and authorize the next bounded slice:
+owned A11y page/session lease (`src/browserclaw-a11y-page.ts` plus tests), with
+no transport integration or live browser yet. Read-only card audit; return
+CONTINUE or a blocker, maximum 10 active minutes.
+
+## Overseer receipt before owned-A11y-page slice — 2026-08-12
+
+- Verdict: `CONTINUE`.
+- Business delta: local structured parser is complete; live BrowserClaw/
+  ChatGPT canary remains absent.
+- Estimate: revised 45/120-minute envelope remains the active control limit;
+  no new live action is authorized.
+- Next bounded slice: implement the owned A11y page/session lease with fake
+  tests, maximum 20 active minutes, without transport integration, new tabs,
+  browser, Telegram, deployment, or production-chat actions.
+
+## Lead delivery receipt — BrowserClaw A11y vertical slice — 2026-08-12 11:26 MSK
+
+- Status: `DONE` for the selected YAGNI business slice: one persistent
+  BrowserClaw MCP session creates one ChatGPT page, creates one empty disposable
+  fixture chat, and exposes `new_chat`, `list_chats`, `search_chat`, and
+  `export_chat` without touching E-Frontier or sending a message.
+- Task-owned implementation: `src/browserclaw-a11y.ts`,
+  `src/browserclaw-a11y-page.ts`, `src/browserclaw-cdp-chat.ts`,
+  `src/cdp-chat-browserclaw-main.ts`, `tests/browserclaw-a11y.test.ts`,
+  `tests/browserclaw-a11y-page.test.ts`, `docs/cdp-chat-mcp.md`, and the
+  `package.json` bin entry.
+- Live business canary on the final code: BrowserClaw handshake over one
+  temporary Mac Mini tunnel; MCP tools listed exactly `new_chat`,
+  `list_chats`, `search_chat`, `export_chat`; `new_chat` returned a fixture
+  ref; `list_chats` and `search_chat` both returned that fixture; `export_chat`
+  returned JSON bound to the same ref. No prompt/message, Telegram operation,
+  E-Frontier action, deployment, restart, credential, or MFA action occurred.
+- Local verification: `npm exec -- tsc --noEmit` passed; focused Vitest
+  `tests/cdp-chat.test.ts`, `tests/cdp-chat-agent-herder.test.ts`,
+  `tests/browserclaw-a11y.test.ts`, and `tests/browserclaw-a11y-page.test.ts`
+  passed `25/25`; `git diff --check` passed for task-owned files.
+- Tester/debug instruction is recorded in `docs/cdp-chat-mcp.md`: after any
+  BrowserClaw error, timeout, or ambiguous page result, capture and inspect a
+  secret-safe screenshot from the same owning session/page before retry,
+  reload, navigation, or a new tab.
+- Explicitly not delivered in this YAGNI slice: real sidebar unread/working
+  inventory, existing-chat transcript extraction, `edit_message`, and media
+  download. They require a separate stable DOM/attachment contract and must
+  not be represented as available business operations.
+- Runtime integration status: `src/index.ts` already supports the namespaced
+  `cdp_*` tools when `CDP_CHAT_DRIVER_MODULE` is configured. The currently
+  running Agent Herder process was not restarted or altered; activating this
+  new module in that process remains a separately authorized restart/config
+  action.
