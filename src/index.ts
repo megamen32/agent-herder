@@ -557,6 +557,32 @@ function registerTools(server: McpServer, cdpChatClient?: CdpChatClient, cdpCapa
   );
 
   server.tool(
+    "find_parent",
+    "Find the native parent session of an agent session.",
+    {
+      sessionId: z.string().describe("Child session ID"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness type"),
+    },
+    async (args) => {
+      const result = await handleFindParent(adapters, args);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
+    "list_children",
+    "List the native child sessions of an agent session.",
+    {
+      sessionId: z.string().describe("Parent session ID"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder"]).optional().describe("Harness type"),
+    },
+    async (args) => {
+      const result = await handleListChildren(adapters, args);
+      return { content: [{ type: "text" as const, text: result }] };
+    }
+  );
+
+  server.tool(
     "send_message",
     "Send a message to an agent. Modes: sync (wait), queue (fire-and-forget), steer (redirect).",
     {

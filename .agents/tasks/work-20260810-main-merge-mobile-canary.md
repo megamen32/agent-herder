@@ -33,3 +33,16 @@ shows the `▶` Resume control.
 - Optimistic: 15 minutes.
 - Likely: 25 minutes.
 - Pessimistic: 45 minutes.
+
+## Verification result
+
+- `origin/main` was merged with the current UI history as `e88b91f`; the
+  merged worktree passed `npm test` with 27 files and 101 tests.
+- Fresh browser canary at 390x844 opened the long Codex session at the bottom
+  (`atBottom: true`) and showed the stopped-session composer as `▶`.
+- Scrolling to the top exposed the compact `Scroll to latest` down-arrow;
+  screenshot: `/tmp/agent-herder-mobile-scroll-latest.png`.
+- Bottom-anchored stopped-session screenshot: `/tmp/agent-herder-mobile-bottom-resume.png`.
+- Remote `dev` and `agent/session-lineage-tools` branches were deleted after
+  ancestry checks. The local Flint branch remains attached to a worktree with
+  an untracked task file, so it was not destructively removed.
