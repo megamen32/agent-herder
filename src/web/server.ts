@@ -15,6 +15,7 @@ import { convertHermesExport } from "../hermes-conversion.js";
 import { AgentResumeClient, resumeBoundTarget, type ResumeReceipt, type ResumeTransportRequest } from "../resume-transport.js";
 import { ChoiceRegistry, ChoiceRegistryLockUnavailableError, type PendingChoice } from "../autopilot/choice-registry.js";
 import { AutopilotPolicyStore } from "../autopilot/policy-store.js";
+import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsSelector } from "../autopilot/policy.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
@@ -33,6 +34,7 @@ export interface WebDependencies {
   choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   autopilotPolicyStore?: AutopilotPolicyStore;
+  autopilotSessionStore?: AutopilotSessionStore;
   autopilotSweepIntervalMs?: number;
 }
 
@@ -351,7 +353,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const mcpAuthToken = dependencies.mcpAuthToken?.trim() || undefined;
   const server = createServer(async (request, response) => {
     try {
-      await route(request, response, supervisor, dependencies.humanRequests, dependencies.mcpServerFactory, mcpTransports, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, dependencies.choiceResume, dependencies.choiceQuery);
+      await route(request, response, supervisor, dependencies.humanRequests, dependencies.mcpServerFactory, mcpTransports, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, dependencies.choiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore);
     } catch (err) {
       if (err instanceof SessionNotFoundError) {
         sendJson(response, 404, { error: "Session not found" });
@@ -379,8 +381,35 @@ export function createWebServer(dependencies: WebDependencies): Server {
   return server;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
+  const autopilotSessionMatch = url.pathname.match(/^\/api\/autopilot\/sessions\/([^/]+)\/([^/]+)$/);
+  if (autopilotSessionMatch && (request.method === "GET" || request.method === "PUT")) {
+    if (!autopilotSessionStore) return sendJson(response, 503, { error: "Autopilot session store is disabled" });
+    const harness = decodeURIComponent(autopilotSessionMatch[1]);
+    const sessionId = decodeURIComponent(autopilotSessionMatch[2]);
+    if (!isAutopilotHarness(harness) || sessionId.trim().length === 0) return sendJson(response, 400, { error: "unsupported harness or empty session id" });
+    if (request.method === "GET") {
+      const record = await autopilotSessionStore.get(harness, sessionId);
+      return sendJson(response, 200, {
+        harness,
+        sessionId,
+        enabled: record?.enabled ?? harness === "codex",
+        source: record ? "session" : harness === "codex" ? "plugin-default" : "default",
+        ...(record ? { cwd: record.cwd, updatedAt: record.updatedAt } : {}),
+      });
+    }
+    const body = await readJson(request);
+    if (typeof body.enabled !== "boolean" || typeof body.cwd !== "string" || body.cwd.trim().length === 0) {
+      return sendJson(response, 400, { error: "enabled and cwd are required" });
+    }
+    try {
+      const record = await autopilotSessionStore.set({ harness, sessionId, cwd: body.cwd }, body.enabled);
+      return sendJson(response, 200, { ...record, source: "session" });
+    } catch (error) {
+      return sendJson(response, 400, { error: (error as Error).message });
+    }
+  }
   if (request.method === "GET" && url.pathname === "/api/autopilot/choices") {
     if (!choiceRegistry) return sendJson(response, 503, { error: "Choice registry is disabled" });
     const status = url.searchParams.get("status") || "pending";
@@ -738,6 +767,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
 
   sendJson(response, 404, { error: "Not found" });
+}
+
+function isAutopilotHarness(value: string): value is AutopilotHarness {
+  return value === "codex" || value === "opencode" || value === "hermes";
 }
 
 function headerValue(value: string | string[] | undefined): string | undefined {

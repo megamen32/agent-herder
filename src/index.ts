@@ -12,6 +12,7 @@ import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, Cod
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
+import { AutopilotSessionStore } from "./autopilot/session-store.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
 import { acquireAgentHerderSingleton } from "./singleton.js";
 import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
@@ -76,6 +77,7 @@ const humanRequests = new HumanRequestRegistry(process.env.AGENT_HERDER_HUMAN_RE
 const autopilotStateDir = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR || join(homedir(), ".local", "state", "agent-herder", "autopilot");
 const choiceRegistry = new ChoiceRegistry(process.env.AGENT_HERDER_AUTOPILOT_CHOICE_STORE || join(autopilotStateDir, "choices.json"));
 const autopilotPolicyStore = new AutopilotPolicyStore(resolveAutopilotPolicyStorePath(autopilotStateDir));
+const autopilotSessionStore = new AutopilotSessionStore(join(autopilotStateDir, "sessions.json"));
 const browserWakeService = createConfiguredBrowserWakeService(process.env);
 const adapterFactories = new Map<string, AdapterFactory>();
 const adapterRegistry = new AdapterRegistry(
@@ -800,6 +802,7 @@ async function main() {
       mcpServerFactory: createMcpServer,
       mcpAuthToken: httpToken,
       autopilotPolicyStore,
+      autopilotSessionStore,
       autopilotSweepIntervalMs: Number(process.env.AGENT_HERDER_AUTOPILOT_SWEEP_INTERVAL_MS || 30_000),
     });
     webServer.listen(Number(webPort), host, () => {

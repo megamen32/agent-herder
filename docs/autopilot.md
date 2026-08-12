@@ -23,6 +23,11 @@ existing durable `agent-resume` client. Hermes injects an automatic next goal
 or a selected NoticePlace choice into its bound session. Codex returns the next
 goal through the existing native Stop-hook continuation.
 
+The web session inspector exposes the same durable switch as an **Autopilot**
+toggle. It does not create a second policy: changes made on the website are
+immediately visible to `/autopilot status` and to the next Codex Stop hook,
+OpenCode idle event, or Hermes completion hook for that exact session.
+
 ## Agent Plugin package
 
 Agent Herder ships an [Agent Plugins 1.0](https://agent-plugins.org/) package.

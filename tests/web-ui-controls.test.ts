@@ -30,5 +30,8 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('/api/autopilot/choices?status=pending');
     expect(main).toContain('/api/autopilot/choices/select');
     expect(main).toContain('meta: { decisionOnly: true }');
+    expect(main).toContain('role="switch"');
+    expect(main).toContain('/api/autopilot/sessions/');
+    expect(main).toContain('aria-label={`Autopilot for ${activeSession.id}`}');
   });
 });

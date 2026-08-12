@@ -18,6 +18,7 @@ type SessionMessage = { id: string; role: "user" | "assistant" | "tool" | "syste
 type SessionDetails = { session: HerderSession; lineage?: { kind?: string; parentId?: string; role?: string; task?: string }; children?: HerderSession[]; messages: SessionMessage[] };
 type WebAutopilotChoice = { choiceId: string; label: string };
 type WebAutopilotChoiceCard = { requestId: string; sessionId: string; harness: string; cwd: string; status: "pending"; createdAt: string; choices: WebAutopilotChoice[] };
+type WebAutopilotSession = { harness: string; sessionId: string; enabled: boolean; source: "session" | "plugin-default" | "default"; cwd?: string; updatedAt?: string };
 
 const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, { ...init, headers: { "content-type": "application/json", ...(init?.headers || {}) } });
@@ -143,6 +144,9 @@ function App() {
   const [autopilotChoices, setAutopilotChoices] = React.useState<WebAutopilotChoiceCard[]>([]);
   const [choosingRequestId, setChoosingRequestId] = React.useState<string>();
   const [choiceError, setChoiceError] = React.useState<{ requestId: string; message: string }>();
+  const [autopilotSession, setAutopilotSession] = React.useState<WebAutopilotSession>();
+  const [autopilotSessionSaving, setAutopilotSessionSaving] = React.useState(false);
+  const [autopilotSessionError, setAutopilotSessionError] = React.useState<string>();
   const [collapsedChildren, setCollapsedChildren] = React.useState<Set<string>>(new Set());
   const foldedInitialized = React.useRef(false);
   const [composer, setComposer] = React.useState("");
@@ -205,6 +209,25 @@ function App() {
   }, [activeKey, details?.messages.length, details?.children?.length, showReasoning, showTools]);
 
   const activeSession = sessions.find((session) => keyOf(session) === activeKey) || details?.session;
+  React.useEffect(() => {
+    if (!activeSession || !["codex", "opencode", "hermes"].includes(activeSession.harness)) {
+      setAutopilotSession(undefined);
+      return;
+    }
+    let cancelled = false;
+    setAutopilotSession(undefined);
+    const path = `/api/autopilot/sessions/${encodeURIComponent(activeSession.harness)}/${encodeURIComponent(activeSession.id)}`;
+    void api<WebAutopilotSession>(path).then((state) => {
+      if (cancelled) return;
+      setAutopilotSession(state);
+      setAutopilotSessionError(undefined);
+    }).catch((error) => {
+      if (cancelled) return;
+      setAutopilotSession(undefined);
+      setAutopilotSessionError((error as Error).message);
+    });
+    return () => { cancelled = true; };
+  }, [activeSession?.harness, activeSession?.id]);
   const sessionMap = React.useMemo(() => new Map(sessions.map((session) => [keyOf(session), session])), [sessions]);
   const listOptions = React.useMemo(() => ({
     cwds: [...new Set(sessions.map((session) => session.cwd).filter(Boolean))].sort(),
@@ -238,6 +261,22 @@ function App() {
       setChoiceError({ requestId, message: (error as Error).message });
     } finally {
       setChoosingRequestId(undefined);
+    }
+  };
+  const toggleAutopilotSession = async () => {
+    if (!activeSession || !autopilotSession || autopilotSessionSaving) return;
+    setAutopilotSessionSaving(true);
+    setAutopilotSessionError(undefined);
+    try {
+      const state = await api<WebAutopilotSession>(`/api/autopilot/sessions/${encodeURIComponent(activeSession.harness)}/${encodeURIComponent(activeSession.id)}`, {
+        method: "PUT",
+        body: JSON.stringify({ enabled: !autopilotSession.enabled, cwd: activeSession.cwd }),
+      });
+      setAutopilotSession(state);
+    } catch (error) {
+      setAutopilotSessionError((error as Error).message);
+    } finally {
+      setAutopilotSessionSaving(false);
     }
   };
   const runAction = async (action: "resume" | "stop" | "recover") => {
@@ -290,7 +329,7 @@ function App() {
       {showScrollToLatest && <button className="scroll-latest" aria-label="Scroll to latest" onClick={scrollToBottom}>↓</button>}
       <form className="composer" onSubmit={(event) => { event.preventDefault(); if (isResumeMode) void runAction("resume"); else void sendMessage(); }}><button type="button" className="composer-plus" aria-label="Add context">+</button><textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Resume the agent…" : activeKey ? "Message the agent…" : "Choose a session first"} disabled={!activeKey || sending || isResumeMode} onKeyDown={(event) => { if (!isResumeMode && event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} /><span className="composer-hint">{sending ? "Waiting for agent…" : isResumeMode ? "Resume this session" : "Enter to send · Shift+Enter for a new line"}</span><button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || sending || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Resume session" : "Send message"}>{isResumeMode ? "▶" : "↑"}</button></form>
     </section>
-    {showInspector && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">SESSION</span><button className="icon-button" onClick={() => setShowInspector(false)} aria-label="Close inspector">×</button></div>{activeSession ? <><div className="inspector-title">{activeSession.title}</div><div className="inspector-status"><span className={`status-dot status-${activeSession.status}`} />{displayStatus(activeSession.status)}</div><dl><dt>Harness</dt><dd>{activeSession.harness}</dd><dt>Working directory</dt><dd>{activeSession.cwd}</dd><dt>Model</dt><dd>{activeSession.model || "—"}</dd><dt>Messages</dt><dd>{activeSession.messageCount ?? "—"}</dd><dt>Duration</dt><dd>{formatDuration(activeSession.durationSec)}</dd><dt>Cost</dt><dd>{activeSession.costUsd === undefined ? "—" : `$${activeSession.costUsd.toFixed(4)}`}</dd><dt>Tokens</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) ?? "—"}</dd><dt>Subagents</dt><dd>{details?.children?.length || 0}</dd></dl><div className="inspector-actions">{activeSession.status === "running" && <button className="danger-button" onClick={() => void runAction("stop")}>Stop</button>}{(activeSession.status === "stopped" || activeSession.status === "error") && <button className="primary-button" onClick={() => void runAction("resume")}>Resume</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Recover</button>}</div><div className="settings-block"><span className="eyebrow">VIEW</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label></div></> : <div className="empty-inspector">No session selected.</div>}</aside>}
+    {showInspector && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">SESSION</span><button className="icon-button" onClick={() => setShowInspector(false)} aria-label="Close inspector">×</button></div>{activeSession ? <><div className="inspector-title">{activeSession.title}</div><div className="inspector-status"><span className={`status-dot status-${activeSession.status}`} />{displayStatus(activeSession.status)}</div>{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">AUTOPILOT</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Для этой сессии" : autopilotSession.source === "plugin-default" ? "По умолчанию плагина" : "По умолчанию выключен"}</small></div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label={`Autopilot for ${activeSession.id}`} disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}<dl><dt>Harness</dt><dd>{activeSession.harness}</dd><dt>Working directory</dt><dd>{activeSession.cwd}</dd><dt>Model</dt><dd>{activeSession.model || "—"}</dd><dt>Messages</dt><dd>{activeSession.messageCount ?? "—"}</dd><dt>Duration</dt><dd>{formatDuration(activeSession.durationSec)}</dd><dt>Cost</dt><dd>{activeSession.costUsd === undefined ? "—" : `$${activeSession.costUsd.toFixed(4)}`}</dd><dt>Tokens</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) ?? "—"}</dd><dt>Subagents</dt><dd>{details?.children?.length || 0}</dd></dl><div className="inspector-actions">{activeSession.status === "running" && <button className="danger-button" onClick={() => void runAction("stop")}>Stop</button>}{(activeSession.status === "stopped" || activeSession.status === "error") && <button className="primary-button" onClick={() => void runAction("resume")}>Resume</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Recover</button>}</div><div className="settings-block"><span className="eyebrow">VIEW</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label></div></> : <div className="empty-inspector">No session selected.</div>}</aside>}
   </main>;
 }
 
