@@ -1,65 +1,149 @@
-# Result: CDP chat Agent Herder adapter seam
+# Result: CDP chat Agent Herder structured A11y seam
 
 Status: READY_TO_IMPLEMENT
 
-## Decisive finding
+## Decisive findings
 
-The standalone CDP chat route cannot safely be registered as a normal
-`HarnessAdapter`: `src/adapter-registry.ts:6-14,30-120` requires coding-agent
-session methods and `src/types/common.ts:163-258` has no generic capability
-variant. `CdpChatDriver` (`src/cdp-chat.ts:66-68`) is the right independent
-provider seam.
+The standalone CDP chat route remains an independent MCP capability, not a
+`HarnessAdapter`: `src/adapter-registry.ts:6-14,30-120` only accepts coding-agent
+session lifecycle adapters, while `CdpChatDriver` at `src/cdp-chat.ts:66-68`
+is the correct provider seam. The reviewed namespaced wiring already creates a
+fresh `CdpChatClient` per MCP server/session; the existing `browser_wake` path
+must remain unchanged.
 
-The correct integration lifetime is per MCP server/session. `src/index.ts:575-583`
-creates one MCP server per transport; `src/web/server.ts:374-384` creates one
-HTTP transport/server per MCP session. A `CdpChatClient` must be constructed in
-that server factory so its fixture, opaque refs, page lease, and write gates
-remain scoped to one MCP client session.
+The current BrowserClaw seam is insufficient for a concrete driver:
+`src/browserclaw-worker.ts:77-80` exposes only text `callTool()` plus optional
+screenshot bytes, and `:144-228` currently projects MCP results to text. The
+prompt-oriented `BrowserClawBrowserDriver` at `:281-494` owns the fixed
+E-Frontier `browser_wake` lifecycle and cannot be reused for list/search/export,
+fixture binding, message identity, or media operations.
 
-## Existing mechanism and blocker
+## Supported capability proposal
 
-The current BrowserClaw code is prompt-oriented: `src/browserclaw-worker.ts:281-494`
-implements `BrowserClawBrowserDriver.execute(BrowserWorkerRequest, deadlineAt)`
-for the fixed `browser_wake` templates. It does not implement
-`CdpChatPage.snapshot/createChat/sendMessage/editMessage/downloadMedia`, and the
-opaque worker schema intentionally excludes arbitrary chat payloads.
+Add a provider-neutral structured A11y capability beside the prompt worker. Its
+minimal public model is:
 
-The standalone docs (`docs/cdp-chat-mcp.md:43-59`) therefore correctly defer a
-concrete `CDP_CHAT_DRIVER_MODULE`. No such module was found in the repository.
-The concrete driver is a separate implementation slice, not a reason to fake a
-`HarnessAdapter`.
+```ts
+interface BrowserClawA11yNode {
+  ref: string;
+  role: string;
+  name?: string;
+  value?: string;
+  description?: string;
+  checked?: boolean;
+  disabled?: boolean;
+  expanded?: boolean;
+  children: readonly BrowserClawA11yNode[];
+}
 
-## Checked hypotheses
+interface BrowserClawA11ySnapshot {
+  schema: "agent-herder.browserclaw-a11y.v1";
+  page: number;
+  url: string;
+  snapshotRef: string;
+  root: BrowserClawA11yNode;
+}
 
-- Rejected: add `cdp-chat` to `HarnessType` and fake coding session methods.
-  This would pollute session discovery/control and make registry status lie.
-- Rejected: reuse `BrowserClawBrowserDriver.execute`/`browser_wake`.
-  That path sends a fixed prompt and cannot support chat list/search/export or
-  fixture-bound media/edit operations.
-- Supported: add an independent MCP capability registration helper, optionally
-  enabled by an explicit driver factory, while preserving the existing coding
-  adapter registry and `browser_wake` path.
+type BrowserClawSemanticAction =
+  | { kind: "click"; ref: string }
+  | { kind: "fill"; ref: string; value: string }
+  | { kind: "type"; ref: string; text: string }
+  | { kind: "press"; key: string };
 
-## Bounded next slices
+interface BrowserClawA11yPage {
+  snapshot(deadlineAt: number): Promise<BrowserClawA11ySnapshot>;
+  act(input: {
+    snapshotRef: string;
+    action: BrowserClawSemanticAction;
+  }, deadlineAt: number): Promise<BrowserClawA11ySnapshot>;
+}
 
-1. Capability wiring, max 20 active minutes: register the seven standalone chat
-   tools through a reusable helper and create one `CdpChatClient` per MCP
-   server/session. Acceptance: existing no-driver behavior is unchanged; an
-   injected fake driver exposes all seven tools and preserves fixture state.
-2. Concrete BrowserClaw adapter, max 20 active minutes: implement the
-   `CdpChatPage`/`CdpChatDriver` seam over the existing BrowserClaw MCP page
-   primitives. Acceptance: fake BrowserClaw tool calls prove same-page
-   snapshot/new-chat/read/export/send/edit/media behavior and no production chat
-   mutation.
-3. Separate review/live gate: fresh reviewer plus explicit live-step approval
-   for one disposable new chat and read-only proof; guarded writes separately.
+interface BrowserClawA11yDriver {
+  acquirePage(): Promise<BrowserClawA11yPage>;
+}
+```
 
-## Evidence checks
+`BrowserClawMcpClient` should expose one typed structured-result method while
+preserving string `callTool()` for `browser_wake`. Normalize only an attested
+`structuredContent` tree or the existing bounded role/name/ref text form;
+ambiguous, malformed, oversized, duplicate-ref, or mixed-page payloads fail
+closed. `act` accepts only semantic role/name/ref actions, requires the latest
+`snapshotRef` and node ref, and returns a fresh post-action snapshot.
 
-- `graphify query "How should the standalone CdpChatDriver and CDP chat MCP integrate with Agent Herder's HarnessAdapter and adapter registry? Trace concrete interfaces, initialization, disposal, and safety boundaries." --budget 1800`
-  confirmed the registry/adapter cluster but was too broad; direct line-level
-  probes above are authoritative.
-- `git show --stat 030a12d` confirms standalone implementation commit `030a12d`
-  contains only standalone chat source/tests/docs and task snapshots.
-- Worktree status was read-only; existing foreign dirty paths were preserved.
-- No live/browser/CDP action was performed.
+## Evidence and safety boundaries
+
+- A11y precedent is local and concrete: Chrome DevTools MCP's
+  `TextSnapshotNode` contains a tree, `role`, `name`, snapshot id, and children
+  (`/home/roomhacker/.local/share/chrome-devtools-mcp/src/types.ts:15-20`,
+  `TextSnapshot.ts:54-109`); `take_snapshot`, `click`, and `fill` consume the
+  latest semantic uid (`tools/snapshot.ts:12-43`, `tools/input.ts:89-140,301-337`).
+- Hermes BrowserOS provides the validation pattern: fixed allowlisted calls
+  (`hermes-unified-inbox/src/unified_inbox/browseros.py:668-683`), exact page
+  origin revalidation (`:997-1036`), bounded JSON/SSE and structured/text
+  extraction (`:1126-1273`), and fail-closed snapshot parsing (`:1632-1671`).
+- One BrowserClaw MCP client owns one session id; one A11y driver owns one page
+  id. Every operation re-lists tabs and requires exactly one matching page and
+  exact configured HTTPS origin/route. Missing, reused, duplicate, or changed
+  identity invalidates the lease; it must not fall back to another tab.
+- Acquisition may establish one explicitly configured page, but must never call
+  `tabs new` a second time. A reconnect invalidates ownership instead of
+  silently reacquiring a replacement. The adapter never calls
+  `BrowserClawBrowserDriver.execute()` and never targets existing E-Frontier.
+- `CdpChatClient` already rechecks page identity at `src/cdp-chat.ts:594-603`
+  and binds opaque refs at `:622-700`. The concrete mapper must provide stable
+  provider chat/message/media ids; transient A11y refs cannot be silently
+  converted into fingerprints. Without stable ids, read-only snapshot/search
+  may remain available but export/write/edit must fail closed as stale-ref.
+- A11y exposes attachment metadata only. Raw bytes require a separately
+  attested BrowserClaw attachment primitive; no URL fetch, page script, or
+  screenshot-as-media fallback is allowed. If absent, return `media_unavailable`.
+  Existing `CdpChatClient` retains MIME/size/path bounds and confined `0600`
+  file creation at `src/cdp-chat.ts:570-591`.
+
+## Checked and rejected hypotheses
+
+- Do not add CDP chat to `HarnessType` or fake coding-session methods: this
+  would pollute discovery/control semantics.
+- Do not reuse `browser_wake`, arbitrary `evaluate`, CSS/XPath selectors,
+  DOMSnapshot scripts, raw URL navigation, or generic tool calls.
+- Do not claim a live BrowserClaw/CDP canary: no concrete driver, attested
+  structured upstream schema, or attachment-download tool exists in this
+  checkout, and no browser action was performed.
+
+## Bounded implementation graph
+
+1. **Structured transport/parser, <=20 min:** modify
+   `src/browserclaw-worker.ts` only to add a typed response method that leaves
+   `callTool()`/`browser_wake` intact; add `src/browserclaw-a11y.ts` and
+   `tests/browserclaw-a11y.test.ts`. Acceptance: fake MCP structured/text and
+   JSON/SSE responses normalize to one bounded tree; malformed cases reject.
+2. **Owned A11y page, <=20 min:** add
+   `src/browserclaw-a11y-page.ts` and fake tests. Acceptance: one session/page,
+   exact tab/origin checks, no second `tabs new`, stale refs rejected, and every
+   action returns a fresh snapshot.
+3. **Read-only CdpChat mapper, <=20 min:** add
+   `src/browserclaw-cdp-chat.ts` for `CdpChatDriver`/`CdpChatPage` snapshot,
+   list/search/export and no-prompt fixture creation. Acceptance: opaque
+   identity, production rows never bind as fixture, lease/ref changes fail
+   closed.
+4. **Guarded writes/media, <=20 min:** only after stable refs and an attested
+   download schema; preserve existing confirmation/version/idempotency gates and
+   prove MIME/byte/path bounds. If missing, stop with `NEEDS_REDECOMPOSITION`.
+5. **Separate review/live gate:** fresh review then explicit approval for one
+   same-page disposable-chat read-only canary. Browser failure/timeout/ambiguous
+   state requires a same-session secret-safe screenshot before retry; no live
+   E-Frontier prompt or guarded write is authorized here.
+
+## Evidence
+
+- `graphify query` used the existing persistent graph for initial repository
+  orientation; direct `nl`/`rg` probes above are authoritative for this seam.
+- `git status --short` showed no task-owned source edits. No browser, CDP page,
+  `browser_wake`, Telegram, deployment, restart, or credential action occurred.
+- Detailed append-only receipt is in
+  `.agents/tasks/work-20260812-cdp-chat-agent-herder-adapter.md`; search journal
+  is in `.agents/shared-session/search/work-20260812-cdp-chat-agent-herder-adapter/search-cdp-chat-agent-herder-adapter.md`.
+
+Smallest next slice: implement items 1 and 2 as separate fake-contract workers;
+stop before item 3 if the structured upstream payload or stable ref contract is
+not attested.
