@@ -200,6 +200,24 @@ describe("ChatGptHistoryArchive", () => {
     }
   });
 
+  it("materializes known raw routes without a browser driver", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-history-known-route-reconcile-"));
+    try {
+      const source = new ChatGptHistoryArchive(new RouteHistoryDriver("legacy-session-id"), { archiveRoot: root });
+      const listed = await source.listChats({ view: "recent" });
+      await source.exportChat({ chatRef: listed.chats[0]!.chatRef, maxSegments: 1 });
+
+      const offline = new ChatGptHistoryArchive(undefined, { archiveRoot: root });
+      const reconciled = await offline.reconcileKnownRoutes();
+
+      expect(reconciled.reconciledRoutes).toBe(1);
+      expect(reconciled.articles[0]).toMatchObject({ article: { markdownPath: expect.any(String), htmlPath: expect.any(String) } });
+      await expect(readFile(reconciled.articles[0]!.article.markdownPath, "utf8")).resolves.toContain("private bottom text");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not create an empty archive directory when opening a sidebar row fails", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-history-open-failure-"));
     try {

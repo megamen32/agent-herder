@@ -240,4 +240,18 @@ describe("Agent Herder CDP chat capability", () => {
     expect(rejected.isError).toBe(true);
     expect(JSON.stringify(rejected)).toMatch(/invalid_chat_ref|unknown|page lease/i);
   });
+
+  it("starts the Agent Herder MCP server without the live BrowserClaw tools when the adapter is unavailable", async () => {
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const server = createAgentHerderMcpServer();
+    const client = new Client({ name: "agent-herder-no-cdp-test", version: "1.0.0" });
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    connected.push({ client, server });
+
+    const names = (await client.listTools()).tools.map((tool) => tool.name);
+    expect(names).toContain("list_agents");
+    expect(names).toContain("list_agents");
+    expect(names).not.toContain("cdp_reconcile_visible_chats");
+  });
 });

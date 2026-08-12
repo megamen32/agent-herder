@@ -225,7 +225,7 @@ export class ChatGptHistoryArchive {
   private cursor: InMemoryCursor | undefined;
   private readonly inFlight = new Set<string>();
 
-  constructor(private readonly driver: ChatGptHistoryArchiveDriver, options: ChatGptHistoryArchiveOptions = {}) {
+  constructor(private readonly driver: ChatGptHistoryArchiveDriver | undefined, options: ChatGptHistoryArchiveOptions = {}) {
     this.root = resolve(options.archiveRoot ?? DEFAULT_ARCHIVE_ROOT);
     this.maxSegmentBytes = options.maxSegmentBytes ?? DEFAULT_MAX_SEGMENT_BYTES;
     this.protectedTitles = new Set((options.protectedTitles ?? DEFAULT_PROTECTED_TITLES).map(normalTitle));
@@ -237,6 +237,7 @@ export class ChatGptHistoryArchive {
 
   /** Return only currently visible sidebar metadata; no chat transcript is returned. */
   async listChats(input: ListChatHistoryInput): Promise<ListChatHistoryResult> {
+    if (!this.driver) throw new ChatGptHistoryArchiveError("browser_unavailable", "ChatGPT history browser driver is unavailable");
     const limit = boundedLimit(input.limit, 50, 100);
     const chats = [...await this.driver.listChats()];
     const selected = input.view === "unread"
@@ -309,6 +310,7 @@ export class ChatGptHistoryArchive {
    * locally. This intentionally does not open, scroll, or alter a ChatGPT page.
    */
   async reconcileVisibleChats(input: ReconcileVisibleChatHistoryInput = {}): Promise<ReconcileVisibleChatHistoryResult> {
+    if (!this.driver) throw new ChatGptHistoryArchiveError("browser_unavailable", "use reconcileKnownRoutes when the ChatGPT browser driver is unavailable");
     const maxChats = boundedLimit(input.maxChats, 100, 100);
     const listed = await this.listChats({ view: "recent", limit: maxChats });
     const root = await ensureRoot(this.root);
@@ -357,6 +359,37 @@ export class ChatGptHistoryArchive {
     return { requestedChats: listed.chats.length, reconciledChats, unavailableChats, results };
   }
 
+  /**
+   * Browser-free reconciliation for all raw ChatGPT conversation snapshots
+   * already on disk. This is safe to call while BrowserClaw is unavailable.
+   */
+  async reconcileKnownRoutes(): Promise<ReconcileKnownRouteHistoryResult> {
+    const root = await ensureRoot(this.root);
+    const sourceSegments = await this.indexRouteSegments(root);
+    let reconciledRoutes = 0;
+    const articles: Array<{ archivePath: string; article: { markdownPath: string; htmlPath: string }; newSegments: number }> = [];
+    for (const [route, segments] of sourceSegments) {
+      const id = `route:${sha256(route).slice(0, 24)}`;
+      const chatRef = opaqueRef(id);
+      const archivePath = join(root, archiveId(id));
+      if (!inside(root, archivePath)) throw new ChatGptHistoryArchiveError("unsafe_archive_path", "history archive path escaped its root");
+      const manifestPath = join(archivePath, "manifest.json");
+      const manifest = await this.readManifest(manifestPath, archiveId(id), chatRef, "ChatGPT conversation");
+      await mkdir(join(archivePath, "segments"), { recursive: true, mode: 0o700 });
+      let newSegments = 0;
+      for (const segment of segments) {
+        if (await this.appendSegment(archivePath, manifest, segment)) newSegments += 1;
+      }
+      manifest.resume = "reopen_from_bottom";
+      manifest.updatedAt = this.now().toISOString();
+      await writePrivate(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+      const article = await this.writeArticleViews(archivePath, manifest.title, manifest);
+      reconciledRoutes += 1;
+      articles.push({ archivePath, article, newSegments });
+    }
+    return { reconciledRoutes, articles };
+  }
+
   private async exportBoundChat(chatRef: string, binding: ChatBinding, maxSegments: number): Promise<ExportChatHistoryResult> {
     const root = await ensureRoot(this.root);
     const id = archiveId(binding.id);
@@ -372,7 +405,7 @@ export class ChatGptHistoryArchive {
     const cursor = this.cursor;
     let segment: ChatGptHistorySegment | undefined;
     if (!cursor || cursor.chatRef !== chatRef || cursor.chatId !== binding.id || cursor.archiveId !== id) {
-      segment = await this.driver.openChat({ chatId: binding.id });
+      segment = await this.driver!.openChat({ chatId: binding.id });
       manifest.resume = "reopen_from_bottom";
     } else {
       manifest.resume = "same_owned_page";
@@ -410,7 +443,7 @@ export class ChatGptHistoryArchive {
         }
       }
 
-      const next = await this.driver.scrollBack();
+      const next = await this.driver!.scrollBack();
       segment = next.segment;
       atStart = next.atStart;
     }
@@ -567,6 +600,15 @@ export interface ReconcileVisibleChatHistoryResult {
     newSegments?: number;
     archivePath?: string;
     article?: { markdownPath: string; htmlPath: string };
+  }>;
+}
+
+export interface ReconcileKnownRouteHistoryResult {
+  reconciledRoutes: number;
+  articles: Array<{
+    archivePath: string;
+    article: { markdownPath: string; htmlPath: string };
+    newSegments: number;
   }>;
 }
 

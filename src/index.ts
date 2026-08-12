@@ -422,6 +422,12 @@ function registerChatGptAccountArchiveTools(server: McpServer, archive: ChatGptA
 function registerChatGptHistoryArchiveTools(server: McpServer, archive?: ChatGptHistoryArchive): void {
   if (!archive) return;
   server.tool(
+    "cdp_reconcile_known_routes",
+    "Materialize local Markdown and HTML from all already captured ChatGPT /c/... snapshots. This never opens, scrolls, or alters ChatGPT and works while BrowserClaw is unavailable.",
+    {},
+    async () => cdpTextResult(await archive.reconcileKnownRoutes()),
+  );
+  server.tool(
     "cdp_list_chats",
     "List the currently visible ChatGPT sidebar chats from the one owned page. No chat content is returned.",
     { view: z.enum(["unread", "working", "recent"]), limit: z.number().int().min(1).max(100).optional() },
@@ -759,13 +765,22 @@ async function main() {
   configureAdapterRegistry();
   await adapterRegistry.load();
   await initAdapters();
-  const cdpChatDriver = process.env.CDP_CHAT_DRIVER_MODULE ? await loadCdpChatDriver() : undefined;
+  let cdpChatDriver: CdpChatDriver | undefined;
+  if (process.env.CDP_CHAT_DRIVER_MODULE) {
+    try {
+      cdpChatDriver = await loadCdpChatDriver();
+    } catch (error) {
+      // An expired BrowserClaw lease must not take down the monitoring/control
+      // plane or silently acquire a new ChatGPT tab during service restart.
+      console.error(`[agent-herder] CDP chat adapter unavailable: ${error instanceof Error ? error.message : "unknown error"}`);
+    }
+  }
   const cdpAccountArchive = cdpChatDriver
     ? new ChatGptAccountArchive(cdpChatDriver.accountExportDriver, { archiveRoot: process.env.CHATGPT_ACCOUNT_ARCHIVE_ROOT })
     : undefined;
-  const cdpHistoryArchive = cdpChatDriver?.historyArchiveDriver
-    ? new ChatGptHistoryArchive(cdpChatDriver.historyArchiveDriver, { archiveRoot: process.env.CHATGPT_HISTORY_ARCHIVE_ROOT })
-    : undefined;
+  const cdpHistoryArchive = new ChatGptHistoryArchive(cdpChatDriver?.historyArchiveDriver, {
+    archiveRoot: process.env.CHATGPT_HISTORY_ARCHIVE_ROOT,
+  });
   const createMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive });
   const server = createMcpServer();
 

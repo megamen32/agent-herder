@@ -145,6 +145,12 @@ export function registerChatGptAccountArchiveTools(server: McpServer, archive: C
 export function registerChatGptHistoryArchiveTools(server: McpServer, archive?: ChatGptHistoryArchive): void {
   if (!archive) return;
   server.tool(
+    "reconcile_known_routes",
+    "Materialize local Markdown and HTML from all already captured ChatGPT /c/... snapshots. This never opens, scrolls, or alters ChatGPT and works while BrowserClaw is unavailable.",
+    {},
+    async () => textResult(await archive.reconcileKnownRoutes()),
+  );
+  server.tool(
     "list_chats",
     "List the currently visible ChatGPT sidebar chats from the one owned page. No chat content is returned.",
     { view: z.enum(["unread", "working", "recent"]), limit: z.number().int().min(1).max(100).optional() },
