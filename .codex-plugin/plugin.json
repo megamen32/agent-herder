@@ -1,6 +1,6 @@
 {
   "name": "agent-herder",
-  "version": "0.1.0+codex.20260812124000",
+  "version": "0.1.0+codex.20260812125312",
   "description": "Monitor agent sessions and let an AI judge continue, finish, or ask the user for a bounded decision.",
   "author": {
     "name": "Agent Herder contributors"
@@ -13,7 +13,7 @@
     "autopilot"
   ],
   "mcpServers": "./.mcp.json",
-  "hooks": "./.codex-plugin/hooks.json",
+  "skills": "./skills/",
   "interface": {
     "displayName": "Agent Herder",
     "shortDescription": "AI supervisor for long-running agent sessions",

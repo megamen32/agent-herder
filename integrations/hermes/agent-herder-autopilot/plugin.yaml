@@ -1,0 +1,7 @@
+name: agent-herder-autopilot
+version: 0.1.0
+description: Native /autopilot command and per-turn Agent Herder judge for Hermes.
+hooks:
+  - on_session_start
+  - pre_gateway_dispatch
+  - post_llm_call

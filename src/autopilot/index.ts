@@ -13,10 +13,12 @@ export type StopHookInput = {
   session_id: string;
   cwd: string;
   turn_id: string;
+  last_user_message?: string | null;
   last_assistant_message: string | null;
   transcript_path: string | null;
   stop_hook_active: boolean;
   model?: string;
+  harness?: "codex" | "opencode" | "hermes";
 };
 
 export type AutopilotDecision =
@@ -204,9 +206,9 @@ export function createOpenAICompatibleJudge(config: {
                 "Choose exactly one kind: continue, done, human, or choice. " +
                 "If uncertain between 2-4 safe next steps, use choice with " +
                 "{kind:choice,choices:[{choiceId,label,nextGoal}]}; choiceId is opaque, " +
-                "label is a concise, self-contained Russian user-facing action, and nextGoal is bounded text for this exact Codex session. " +
+                "label is a concise, self-contained Russian user-facing action, and nextGoal is bounded text for this exact agent session. " +
                 "Use continue only when a concrete next goal can be executed " +
-                "in the same Codex session. Use done only when the user's " +
+                "in the same agent session. Use done only when the user's " +
                 "objective is actually complete. For a bounded user decision, including " +
                 "proceed, modify, or abort before an irreversible action, use choice so " +
                 "the user receives actionable Russian buttons. Use human only when " +
@@ -256,6 +258,8 @@ export function createAutopilotCore(options: {
   notification?: NotificationConfig;
   choiceRegistry?: ChoiceRegistry;
   effectivePolicy?: EffectivePolicy;
+  harness?: "codex" | "opencode" | "hermes";
+  onDecision?: (decision: AutopilotDecision, metadata?: { choiceRequestId?: string }) => void;
 }): { handleStop(input: StopHookInput): Promise<AutopilotHookResult> } {
   const continuationCounts = new Map<string, number>();
   const activeReceiptKeys = new Set<string>();
@@ -306,6 +310,7 @@ export function createAutopilotCore(options: {
         );
 
         if (decision.kind === "continue") {
+          options.onDecision?.(decision);
           if (remainingContinuations <= 0) {
             await options.notify.send(
               createNoticePlacePayload({
@@ -345,7 +350,9 @@ export function createAutopilotCore(options: {
             : undefined;
           const includeContext = persistedPolicy?.card;
           const lastUserMessage = !includeContext || includeContext.includeUserMessage
-            ? await readLastUserMessage(input.transcript_path)
+            ? input.last_user_message === undefined
+              ? await readLastUserMessage(input.transcript_path)
+              : sanitizeChoiceContext(input.last_user_message) ?? null
             : null;
           const timeoutEnabled = persistedPolicy?.timeout.mode === "auto_continue";
           const timeoutChoiceId = timeoutEnabled ? decision.choices[0]?.choiceId : undefined;
@@ -353,6 +360,7 @@ export function createAutopilotCore(options: {
             ? new Date(Date.now() + persistedPolicy.timeout.delayMs).toISOString()
             : undefined;
           const pending = await options.choiceRegistry.create({
+            harness: options.harness ?? "codex",
             sessionId: input.session_id,
             turnId: input.turn_id,
             cwd: input.cwd,
@@ -369,7 +377,7 @@ export function createAutopilotCore(options: {
           await options.notify.send(
             createNoticePlacePayload({
               title: `Agent Herder: выбор следующего шага по ${projectLabel(input.cwd)}`,
-              body: buildChoiceNotificationBody(input, decision.choices, lastUserMessage, includeContext),
+              body: buildChoiceNotificationBody(input, decision.choices, lastUserMessage, includeContext, options.harness ?? "codex"),
               severity: "medium",
               dedupKey: `agent-herder:choice:${pending.requestId}`,
               correlationId: `${input.session_id}/${input.turn_id}`,
@@ -378,7 +386,11 @@ export function createAutopilotCore(options: {
               ...notification,
             }),
           );
+          options.receiptStore.set(receiptKey, { kind: decision.kind });
+          options.onDecision?.(decision, { choiceRequestId: pending.requestId });
+          return {};
         } else if (decision.kind === "human") {
+          options.onDecision?.(decision);
           await options.notify.send(
             createNoticePlacePayload({
               title: decision.title,
@@ -390,6 +402,7 @@ export function createAutopilotCore(options: {
             }),
           );
         } else if (decision.notify) {
+          options.onDecision?.(decision);
           await options.notify.send(
             createNoticePlacePayload({
               title: "Agent Herder завершил работу",
@@ -401,6 +414,8 @@ export function createAutopilotCore(options: {
             }),
           );
         }
+
+        if (decision.kind === "done" && !decision.notify) options.onDecision?.(decision);
 
         // done/human are terminal for this hook invocation. Returning block
         // here would cause Codex to continue after the judge said to stop.
@@ -418,6 +433,7 @@ function buildChoiceNotificationBody(
   choices: AutopilotChoice[],
   lastUserMessage: string | null,
   card?: { includeUserMessage: boolean; includeAssistantMessage: boolean; includeReason: boolean },
+  harness: "codex" | "opencode" | "hermes" = "codex",
 ): string {
   const options = choices
     .map((choice, index) => `${index + 1}. ${choice.label}`)
@@ -448,12 +464,13 @@ function buildChoiceNotificationBody(
   if (includeReason) {
     sections.push("", "MiniMax не выбрал автоматически: безопасных вариантов несколько.");
   }
+  const harnessLabel = harness === "opencode" ? "OpenCode" : harness === "hermes" ? "Hermes" : "Codex";
   sections.push(
     "",
-    "Следующий шаг относится именно к этой Codex-сессии:",
+    `Следующий шаг относится именно к этой ${harnessLabel}-сессии:`,
     options,
     "",
-    "После выбора продолжится эта же Codex-сессия.",
+    `После выбора продолжится эта же ${harnessLabel}-сессия.`,
   );
 
   return boundedUtf8(
@@ -549,11 +566,17 @@ export async function readBoundedEvidence(
 function sanitizeHookForJudge(input: StopHookInput): StopHookInput {
   return {
     ...input,
+    last_user_message: sanitizeChoiceContext(input.last_user_message),
     last_assistant_message:
       input.last_assistant_message === null
         ? null
         : redactSecrets(input.last_assistant_message),
   };
+}
+
+function sanitizeChoiceContext(value: string | null | undefined): string | null | undefined {
+  if (value === null || value === undefined) return value;
+  return boundedUtf8(redactSecrets(value).trim(), MAX_CHOICE_LAST_MESSAGE_BYTES) || null;
 }
 
 function redactSecrets(value: string): string {
@@ -593,6 +616,13 @@ function validateInput(input: StopHookInput): void {
     }
   }
 
+  if (
+    input.last_user_message !== undefined &&
+    input.last_user_message !== null &&
+    typeof input.last_user_message !== "string"
+  ) {
+    throw new Error("last_user_message must be a string, null, or undefined");
+  }
   if (
     input.last_assistant_message !== null &&
     typeof input.last_assistant_message !== "string"

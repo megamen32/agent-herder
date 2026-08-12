@@ -7,6 +7,7 @@
   "bin": {
     "agent-herder": "dist/index.js",
     "agent-herder-autopilot-hook": "dist/autopilot-hook.js",
+    "agent-herder-autopilot": "dist/autopilot-runner.js",
     "agent-herder-browserclaw-worker": "dist/browserclaw-worker-main.js",
     "agent-herder-cdp-chat-browserclaw": "dist/cdp-chat-browserclaw-main.js"
   },
@@ -27,6 +28,12 @@
     "mcp.json",
     "com.openai/hooks/hooks.json",
     "scripts/autopilot-hook-launcher.sh",
+    "scripts/autopilot-command-launcher.sh",
+    "skills/autopilot/SKILL.md",
+    "skills/autopilot/scripts/run.sh",
+    "integrations/opencode/agent-herder-autopilot.js",
+    "integrations/hermes/agent-herder-autopilot/__init__.py",
+    "integrations/hermes/agent-herder-autopilot/plugin.yaml",
     "docs/assets/agent-herder-animated.svg",
     "docs/autopilot.md",
     "docs/codex-hooks.json",

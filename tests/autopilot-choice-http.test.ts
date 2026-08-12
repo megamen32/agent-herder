@@ -15,6 +15,84 @@ afterEach(async () => {
 });
 
 describe("autopilot choice callback HTTP seam", () => {
+  it("hands a Hermes selection to the polling plugin without invoking Agent Resume", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-http-hermes-"));
+    const registry = new ChoiceRegistry(join(root, "choices.json"));
+    const pending = await registry.create({
+      harness: "hermes",
+      sessionId: "telegram:dm:42",
+      turnId: "turn-hermes",
+      cwd: "/workspace/hermes",
+      choices: [
+        { choiceId: "inspect", label: "Проверить", nextGoal: "Проверь состояние." },
+        { choiceId: "retry", label: "Повторить", nextGoal: "Повтори проверку." },
+      ],
+    });
+    const resume = vi.fn();
+    const server = createWebServer({
+      adapters: new Map(),
+      converter: { async convert() { throw new Error("unused"); } },
+      choiceRegistry: registry,
+      choiceResume: resume,
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const response = await fetch(`http://127.0.0.1:${address.port}/internal/autopilot/choices/select`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ request_id: pending.requestId, choice_id: "inspect" }),
+    });
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({ status: "resumed", resumed: true, transport: "hermes-plugin" });
+    expect(resume).not.toHaveBeenCalled();
+    await expect(registry.get(pending.requestId)).resolves.toMatchObject({ status: "resumed", nextGoal: "Проверь состояние." });
+  });
+
+  it("resumes an OpenCode-bound choice through agent-resume", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-http-opencode-"));
+    const registry = new ChoiceRegistry(join(root, "choices.json"));
+    const pending = await registry.create({
+      harness: "opencode",
+      sessionId: "opencode-session-42",
+      turnId: "turn-1",
+      cwd: "/workspace/opencode",
+      choices: [
+        { choiceId: "inspect", label: "Inspect", nextGoal: "Inspect now." },
+        { choiceId: "retry", label: "Retry", nextGoal: "Retry now." },
+      ],
+    });
+    const resume = vi.fn(async (request: ResumeTransportRequest) => ({
+      status: "accepted" as const,
+      target: request.target,
+      result_ref: request.result_ref,
+      idempotency_key: request.idempotency_key,
+      receipt_ref: "receipt-opencode",
+    }));
+    const server = createWebServer({
+      adapters: new Map(),
+      converter: { async convert() { throw new Error("unused"); } },
+      choiceRegistry: registry,
+      choiceResume: resume,
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("server did not bind");
+      const response = await fetch(`http://127.0.0.1:${address.port}/internal/autopilot/choices/select`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ request_id: pending.requestId, choice_id: "inspect" }),
+      });
+      expect(response.status).toBe(202);
+      expect(resume).toHaveBeenCalledWith(expect.objectContaining({
+        target: { agent: "opencode", session_id: "opencode-session-42", cwd: "/workspace/opencode" },
+      }));
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
   it("resumes the bound Codex session once through Agent Resume and rejects a duplicate selection", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-http-"));
     const requests: ResumeTransportRequest[] = [];

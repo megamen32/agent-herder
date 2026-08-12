@@ -1,5 +1,28 @@
 # Agent Herder Codex autopilot MVP
 
+## `/autopilot`
+
+The plugin now exposes the same user command in Codex, OpenCode, and Hermes:
+
+```text
+/autopilot          # enable for the current session
+/autopilot status   # show the current-session switch
+/autopilot off      # disable for the current session
+```
+
+Codex loads the bundled `autopilot` skill and keeps using its native `Stop`
+hook. OpenCode loads `integrations/opencode/agent-herder-autopilot.js`, which
+captures the exact `sessionID` in `command.execute.before` and invokes the
+judge on `session.idle`. Hermes loads the extension under
+`integrations/hermes/agent-herder-autopilot/`, registers the real slash command
+with `register_command`, and invokes the same judge at `on_session_end`.
+
+All three write one durable current-session switch to
+`$AGENT_HERDER_AUTOPILOT_STATE_DIR/sessions.json`. OpenCode resumes through the
+existing durable `agent-resume` client. Hermes injects an automatic next goal
+or a selected NoticePlace choice into its bound session. Codex returns the next
+goal through the existing native Stop-hook continuation.
+
 ## Agent Plugin package
 
 Agent Herder ships an [Agent Plugins 1.0](https://agent-plugins.org/) package.

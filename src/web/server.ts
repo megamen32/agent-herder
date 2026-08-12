@@ -43,11 +43,13 @@ export type AutopilotSweepOutcome = {
 };
 
 /** Build the immutable Agent Resume request from the saved timeout choice. */
-export function buildChoiceResumeRequest(choice: Pick<PendingChoice, "sessionId" | "cwd" | "nextGoal" | "requestId" | "idempotencyKey" | "resultRef">): ResumeTransportRequest {
+export function buildChoiceResumeRequest(choice: Pick<PendingChoice, "harness" | "sessionId" | "cwd" | "nextGoal" | "requestId" | "idempotencyKey" | "resultRef">): ResumeTransportRequest {
   if (!choice.nextGoal || !choice.idempotencyKey) throw new Error("choice has no saved resume goal or idempotency key");
+  const harness = choice.harness ?? "codex";
+  if (harness === "hermes") throw new Error("Hermes choices are delivered by the Hermes plugin");
   const selector = createCodexSelectorFromStopSession({ sessionId: choice.sessionId, cwd: choice.cwd });
   return {
-    target: { agent: "codex", session_id: selector.sessionId, cwd: selector.cwd },
+    target: { agent: harness, session_id: selector.sessionId, cwd: selector.cwd },
     goal: choice.nextGoal,
     prompt: choice.nextGoal,
     result_ref: choice.resultRef || `agent-herder://autopilot/choice/${choice.requestId}`,
@@ -386,6 +388,13 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!isUuid(body.request_id) || typeof body.choice_id !== "string" || body.choice_id.trim() === "") return sendJson(response, 400, { error: "request_id and choice_id are required" });
     const claimed = await choiceRegistry.claimForResume(body.request_id, body.choice_id);
     const pending = claimed.record;
+    if (pending.harness === "hermes" && pending.choiceId === body.choice_id) {
+      if (pending.status === "claimed") {
+        const resumed = await choiceRegistry.markResumed(pending.requestId, pending.choiceId);
+        return sendJson(response, 202, { request_id: resumed.requestId, status: resumed.status, choice_id: resumed.choiceId, session_id: resumed.sessionId, resumed: true, transport: "hermes-plugin" });
+      }
+      return sendJson(response, 202, { request_id: pending.requestId, status: pending.status, choice_id: pending.choiceId, session_id: pending.sessionId, resumed: pending.status === "resumed", duplicate: !claimed.claimed, transport: "hermes-plugin" });
+    }
     if (!claimed.claimed) {
       if (
         pending.status === "claimed" &&

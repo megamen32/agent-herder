@@ -120,6 +120,33 @@ describe("autopilot choice flow", () => {
     expect(body).not.toContain("служебный user-контекст");
   });
 
+  it("uses explicit harness user context when no transcript exists", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-explicit-context-"));
+    const registry = new ChoiceRegistry(join(root, "choices.json"));
+    const sink = { send: vi.fn(async () => undefined) };
+    const core = createAutopilotCore({
+      harness: "hermes",
+      judge: { decide: vi.fn(async () => ({
+        kind: "choice",
+        choices: [
+          { choiceId: "inspect", label: "Проверить", nextGoal: "Проверь." },
+          { choiceId: "retry", label: "Повторить", nextGoal: "Повтори." },
+        ],
+      } satisfies AutopilotDecision)) },
+      notify: sink,
+      allowSessions: new Set([input.session_id]),
+      receiptStore: new Map(),
+      maxContinuationsPerSession: 1,
+      choiceRegistry: registry,
+    });
+
+    await core.handleStop({ ...input, harness: "hermes", last_user_message: "Сделай живой canary token=secret-value." });
+    const payload = sink.send.mock.calls[0]?.[0];
+    expect(payload?.body).toContain("Последний запрос пользователя:\nСделай живой canary token=[REDACTED_SECRET]");
+    expect(payload?.body).toContain("После выбора продолжится эта же Hermes-сессия.");
+    await expect(registry.get(String(payload?.choice_request_id))).resolves.toMatchObject({ harness: "hermes" });
+  });
+
   it("redacts secrets from the user-facing choice context", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-context-"));
     const registry = new ChoiceRegistry(join(root, "choices.json"));
@@ -148,5 +175,32 @@ describe("autopilot choice flow", () => {
     const body = String(sink.send.mock.calls[0]?.[0]?.body);
     expect(body).toContain("[REDACTED_SECRET]");
     expect(body).not.toContain("super-secret");
+  });
+
+  it("binds an OpenCode choice to the OpenCode resume transport", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-opencode-"));
+    const registry = new ChoiceRegistry(join(root, "choices.json"));
+    const sink = { send: vi.fn(async () => undefined) };
+    const core = createAutopilotCore({
+      harness: "opencode",
+      judge: { decide: vi.fn(async () => ({
+        kind: "choice",
+        choices: [
+          { choiceId: "inspect", label: "Проверить логи", nextGoal: "Проверь логи." },
+          { choiceId: "retry", label: "Повторить проверку", nextGoal: "Повтори проверку." },
+        ],
+      } satisfies AutopilotDecision)) },
+      notify: sink,
+      allowSessions: new Set([input.session_id]),
+      receiptStore: new Map(),
+      maxContinuationsPerSession: 1,
+      choiceRegistry: registry,
+    });
+
+    const result = await core.handleStop({ ...input, harness: "opencode" });
+    expect(result).toEqual({});
+    const requestId = String(sink.send.mock.calls[0]?.[0]?.choice_request_id);
+    const pending = await registry.get(requestId);
+    expect(pending).toMatchObject({ harness: "opencode", sessionId: input.session_id });
   });
 });

@@ -17,6 +17,7 @@ export type AutopilotChoiceDecision = {
 export type TimeoutChoiceState = "pending" | "claimed" | "dispatching" | "resumed" | "failed" | "expired-needs-human";
 
 export type ChoiceInput = {
+  harness?: "codex" | "opencode" | "hermes";
   sessionId: string;
   turnId: string;
   cwd: string;
@@ -28,6 +29,7 @@ export type ChoiceInput = {
 };
 
 export type PendingChoice = {
+  harness?: "codex" | "opencode" | "hermes";
   requestId: string;
   sessionId: string;
   turnId: string;

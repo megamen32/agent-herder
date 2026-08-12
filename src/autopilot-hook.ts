@@ -17,6 +17,7 @@ import {
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { resolveEffectivePolicy } from "./autopilot/policy.js";
+import { AutopilotSessionStore } from "./autopilot/session-store.js";
 
 const DEFAULT_LOCK_WAIT_MS = 2_000;
 const DEFAULT_LOCK_RETRY_INTERVAL_MS = 25;
@@ -94,6 +95,12 @@ async function main(): Promise<void> {
 
   const allowSessions = await loadArmedSessions(stateDir);
   const effectivePolicy = await loadEffectivePolicyForStopHook(stateDir, allowSessions);
+  const sessionOverride = await new AutopilotSessionStore(join(stateDir, "sessions.json"))
+    .get("codex", input.session_id);
+  if (sessionOverride?.enabled === false) {
+    writeResult({});
+    return;
+  }
 
   const receiptPath = join(stateDir, "receipts.json");
   // Keep duplicate Stop events for one Codex session serialized without
@@ -118,7 +125,7 @@ async function main(): Promise<void> {
       notify,
       allowSessions,
       allowAllSessions: isAllSessionsOptIn(),
-      effectivePolicy,
+      ...(sessionOverride?.enabled === true ? {} : { effectivePolicy }),
       receiptStore,
       maxContinuationsPerSession: readPositiveInteger(
         process.env.AGENT_HERDER_AUTOPILOT_MAX_CONTINUATIONS,
