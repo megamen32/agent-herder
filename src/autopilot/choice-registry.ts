@@ -129,6 +129,9 @@ export class ChoiceRegistry {
       record.choiceId = choice.choiceId;
       record.nextGoal = choice.nextGoal;
       record.claimedAt = new Date().toISOString();
+      record.idempotencyKey = `${record.requestId}:${choice.choiceId}`;
+      delete record.failureReason;
+      delete record.resumeReceipt;
       await this.write(file);
       return { record: clone(record), claimed: true };
     });
@@ -279,6 +282,37 @@ export class ChoiceRegistry {
       record.resumeReceipt = { ...receipt };
       await this.write(file);
       return this.acknowledgeTimeoutState(requestId, token, "dispatching");
+    });
+  }
+
+  /** Persist a manual button resume receipt before acknowledging the selection. */
+  async persistManualResumeReceipt(
+    requestId: string,
+    choiceId: string,
+    receipt: PendingChoice["resumeReceipt"],
+  ): Promise<PendingChoice> {
+    if (!receipt || !isText(receipt.idempotencyKey) || !isText(receipt.resultRef)) {
+      throw new Error("a bound resume receipt is required");
+    }
+    return this.mutate(async () => {
+      const file = await this.read();
+      const record = file.requests.find((item) => item.requestId === requestId);
+      if (
+        !record ||
+        record.status !== "claimed" ||
+        record.choiceId !== choiceId ||
+        record.idempotencyKey !== receipt.idempotencyKey ||
+        record.resultRef !== receipt.resultRef
+      ) {
+        throw new Error("choice request does not match the manual resume receipt");
+      }
+      record.resumeReceipt = { ...receipt };
+      await this.write(file);
+      const persisted = (await this.read()).requests.find((item) => item.requestId === requestId);
+      if (!persisted?.resumeReceipt || persisted.resumeReceipt.idempotencyKey !== receipt.idempotencyKey) {
+        throw new Error("manual resume receipt was not acknowledged by durable read-back");
+      }
+      return clone(persisted);
     });
   }
 
@@ -453,5 +487,6 @@ function clearClaim(record: PendingChoice): void {
   delete record.leaseExpiresAt;
   delete record.idempotencyKey;
   delete record.failureReason;
+  delete record.resumeReceipt;
 }
 function clone(record: PendingChoice): PendingChoice { return { ...record, choices: record.choices.map((choice) => ({ ...choice })) }; }

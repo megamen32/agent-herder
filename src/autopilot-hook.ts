@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -95,10 +96,14 @@ async function main(): Promise<void> {
   const effectivePolicy = await loadEffectivePolicyForStopHook(stateDir, allowSessions);
 
   const receiptPath = join(stateDir, "receipts.json");
-  // One lock protects the shared receipt file. A per-turn lock would allow
-  // concurrent turns to overwrite each other's state during read/modify/write.
-  const lockPath = join(stateDir, "state.lock");
-  const release = await acquireLock(lockPath);
+  // Keep duplicate Stop events for one Codex session serialized without
+  // making an unrelated session wait for the (potentially 35-second) judge.
+  const sessionLockPath = join(
+    stateDir,
+    "session-locks",
+    `${createHash("sha256").update(input.session_id).digest("hex")}.lock`,
+  );
+  const release = await acquireLock(sessionLockPath);
   if (!release) {
     writeResult({});
     return;
@@ -128,7 +133,25 @@ async function main(): Promise<void> {
       },
       choiceRegistry: new ChoiceRegistry(join(stateDir, "choices.json")),
     });
-    await persistReceiptStore(receiptPath, receiptStore);
+    const receiptRelease = await acquireLock(join(stateDir, "state.lock"), {
+      waitMs: 5_000,
+    });
+    if (!receiptRelease) {
+      writeResult({});
+      return;
+    }
+    try {
+      // Another session may have completed while this session was waiting on
+      // its judge. Merge into the latest atomic snapshot instead of replacing
+      // that session's receipt with our older pre-judge view.
+      const latestReceipts = await loadReceiptStore(receiptPath);
+      for (const [key, receipt] of receiptStore) {
+        latestReceipts.set(key, receipt);
+      }
+      await persistReceiptStore(receiptPath, latestReceipts);
+    } finally {
+      await receiptRelease();
+    }
     writeResult(result);
   } finally {
     await release();

@@ -30,6 +30,8 @@ export interface WebDependencies {
   mcpServerFactory?: () => McpServer;
   mcpAuthToken?: string;
   choiceRegistry?: ChoiceRegistry;
+  choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
+  choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   autopilotPolicyStore?: AutopilotPolicyStore;
   autopilotSweepIntervalMs?: number;
 }
@@ -41,8 +43,8 @@ export type AutopilotSweepOutcome = {
 };
 
 /** Build the immutable Agent Resume request from the saved timeout choice. */
-export function buildTimeoutResumeRequest(choice: Pick<PendingChoice, "sessionId" | "cwd" | "nextGoal" | "requestId" | "idempotencyKey" | "resultRef">): ResumeTransportRequest {
-  if (!choice.nextGoal || !choice.idempotencyKey) throw new Error("timeout choice has no saved resume goal or idempotency key");
+export function buildChoiceResumeRequest(choice: Pick<PendingChoice, "sessionId" | "cwd" | "nextGoal" | "requestId" | "idempotencyKey" | "resultRef">): ResumeTransportRequest {
+  if (!choice.nextGoal || !choice.idempotencyKey) throw new Error("choice has no saved resume goal or idempotency key");
   const selector = createCodexSelectorFromStopSession({ sessionId: choice.sessionId, cwd: choice.cwd });
   return {
     target: { agent: "codex", session_id: selector.sessionId, cwd: selector.cwd },
@@ -51,6 +53,62 @@ export function buildTimeoutResumeRequest(choice: Pick<PendingChoice, "sessionId
     result_ref: choice.resultRef || `agent-herder://autopilot/choice/${choice.requestId}`,
     idempotency_key: choice.idempotencyKey,
   };
+}
+
+/** Backwards-compatible name retained for timeout callers and tests. */
+export const buildTimeoutResumeRequest = buildChoiceResumeRequest;
+
+async function completeManualChoiceResume(
+  response: ServerResponse,
+  choiceRegistry: ChoiceRegistry,
+  pending: PendingChoice,
+  receipt: ResumeReceipt,
+  recovered: boolean,
+): Promise<void> {
+  const expectedKey = pending.idempotencyKey;
+  if (
+    !pending.choiceId ||
+    !expectedKey ||
+    receipt.idempotency_key !== expectedKey ||
+    receipt.result_ref !== pending.resultRef
+  ) {
+    return sendJson(response, 502, {
+      request_id: pending.requestId,
+      status: pending.status,
+      choice_id: pending.choiceId,
+      session_id: pending.sessionId,
+      resumed: false,
+      error: "Agent Resume receipt does not match the saved choice",
+    });
+  }
+  const stored = {
+    status: receipt.status,
+    resultRef: receipt.result_ref,
+    idempotencyKey: receipt.idempotency_key,
+    ...(("receipt_ref" in receipt && receipt.receipt_ref) ? { receiptRef: receipt.receipt_ref } : {}),
+    ...(("reason" in receipt && receipt.reason) ? { reason: receipt.reason } : {}),
+  } as PendingChoice["resumeReceipt"];
+  await choiceRegistry.persistManualResumeReceipt(pending.requestId, pending.choiceId, stored);
+  if (receipt.status !== "accepted") {
+    return sendJson(response, 502, {
+      request_id: pending.requestId,
+      status: pending.status,
+      choice_id: pending.choiceId,
+      session_id: pending.sessionId,
+      resumed: false,
+      error: receipt.reason,
+    });
+  }
+  const resumed = await choiceRegistry.markResumed(pending.requestId, pending.choiceId);
+  return sendJson(response, 202, {
+    request_id: resumed.requestId,
+    status: resumed.status,
+    choice_id: resumed.choiceId,
+    session_id: resumed.sessionId,
+    resumed: true,
+    ...(recovered ? { recovered: true } : {}),
+    transport: "agent-resume",
+  });
 }
 
 const autopilotSweepLocks = new Map<string, Promise<void>>();
@@ -291,7 +349,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const mcpAuthToken = dependencies.mcpAuthToken?.trim() || undefined;
   const server = createServer(async (request, response) => {
     try {
-      await route(request, response, supervisor, dependencies.humanRequests, dependencies.mcpServerFactory, mcpTransports, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry);
+      await route(request, response, supervisor, dependencies.humanRequests, dependencies.mcpServerFactory, mcpTransports, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, dependencies.choiceResume, dependencies.choiceQuery);
     } catch (err) {
       if (err instanceof SessionNotFoundError) {
         sendJson(response, 404, { error: "Session not found" });
@@ -319,7 +377,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   return server;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (request.method === "POST" && url.pathname === "/internal/autopilot/choices/select") {
     if (!choiceRegistry) return sendJson(response, 503, { error: "Choice registry is disabled" });
@@ -329,6 +387,25 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const claimed = await choiceRegistry.claimForResume(body.request_id, body.choice_id);
     const pending = claimed.record;
     if (!claimed.claimed) {
+      if (
+        pending.status === "claimed" &&
+        pending.choiceId === body.choice_id &&
+        pending.nextGoal &&
+        pending.idempotencyKey
+      ) {
+        const resumeRequest = buildChoiceResumeRequest(pending);
+        if (pending.resumeReceipt?.status === "accepted") {
+          const resumed = await choiceRegistry.markResumed(pending.requestId, pending.choiceId);
+          return sendJson(response, 202, { request_id: resumed.requestId, status: resumed.status, choice_id: resumed.choiceId, session_id: resumed.sessionId, resumed: true, recovered: true, transport: "agent-resume" });
+        }
+        try {
+          const client = new AgentResumeClient();
+          const receipt = await (choiceQuery ?? ((input) => client.queryReceipt(input)))(resumeRequest);
+          return completeManualChoiceResume(response, choiceRegistry, pending, receipt, true);
+        } catch (error) {
+          return sendJson(response, 502, { request_id: pending.requestId, status: pending.status, choice_id: pending.choiceId, session_id: pending.sessionId, resumed: false, duplicate: true, error: `Agent Resume receipt query failed: ${(error as Error).message}` });
+        }
+      }
       return sendJson(response, 202, {
         request_id: pending.requestId,
         status: pending.status,
@@ -339,13 +416,14 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       });
     }
     if (pending.sessionId.length === 0 || !pending.nextGoal) return sendJson(response, 409, { error: "choice has no resumable goal" });
-    const result = await supervisor.sendMessage("codex", pending.sessionId, { message: pending.nextGoal, queue: true });
-    if (result.ok) {
-      const resumed = await choiceRegistry.markResumed(pending.requestId, pending.choiceId!);
-      return sendJson(response, 202, { request_id: resumed.requestId, status: resumed.status, choice_id: resumed.choiceId, session_id: resumed.sessionId, resumed: true });
+    const resumeRequest = buildChoiceResumeRequest(pending);
+    try {
+      const client = new AgentResumeClient();
+      const receipt = await (choiceResume ?? ((input) => client.resume(input)))(resumeRequest);
+      return completeManualChoiceResume(response, choiceRegistry, pending, receipt, false);
+    } catch (error) {
+      return sendJson(response, 502, { request_id: pending.requestId, status: pending.status, choice_id: pending.choiceId, session_id: pending.sessionId, resumed: false, error: `Agent Resume invocation failed: ${(error as Error).message}` });
     }
-    await choiceRegistry.releaseFailed(pending.requestId, pending.choiceId!);
-    return sendJson(response, 502, { request_id: pending.requestId, status: "pending", choice_id: pending.choiceId, session_id: pending.sessionId, resumed: false, error: result.error });
   }
   if (url.pathname === "/api/adapters" && request.method === "GET") {
     if (!adapterRegistry) return sendJson(response, 503, { error: "Adapter registry is disabled" });
