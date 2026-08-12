@@ -314,6 +314,12 @@ export class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
     });
   }
 
+  /** Read page links on the already owned page; this never opens or navigates a tab. */
+  async conversationSidebarTitles(page: number): Promise<ReadonlySet<string>> {
+    const response = await this.client.callToolRaw("read", { page, format: "links" }, deadline());
+    return conversationTitlesFromLinks(textContent(response));
+  }
+
   async actPage(page: number, action: BrowserClawSemanticAction): Promise<BrowserClawA11ySnapshot> {
     const args: Record<string, unknown> = { page, kind: action.kind };
     if (action.kind === "press") args.key = action.key;
@@ -432,7 +438,7 @@ export async function createCdpChatDriver(options: BrowserClawCdpChatDriverOptio
     async capture(input) {
       await a11yClient.captureHistoryArchiveDiagnostic(input);
     },
-  });
+  }, a11yClient.conversationSidebarTitles.bind(a11yClient));
   const accountExportDriver = BrowserClawAccountExportDriver.fromOwnedPage(ownedA11yPage, {
     async capture(input) {
       await a11yClient.captureAccountExportDiagnostic(input);
@@ -458,6 +464,7 @@ class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
     private readonly page: BrowserClawA11yPage,
     sessionRef: string,
     private readonly diagnostics?: BrowserClawHistoryArchiveDiagnosticReporter,
+    private readonly conversationTitles?: (page: number) => Promise<ReadonlySet<string>>,
   ) {
     this.idPrefix = createHash("sha256").update(sessionRef).digest("hex").slice(0, 24);
   }
@@ -467,7 +474,8 @@ class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
     try {
       snapshot = await this.page.snapshot(deadline());
       this.lastSnapshot = snapshot;
-      return visibleSidebarChats(snapshot, this.idPrefix);
+      const titles = this.conversationTitles ? await this.conversationTitles(snapshot.page) : undefined;
+      return visibleSidebarChats(snapshot, this.idPrefix, titles);
     } catch (error) {
       await this.captureDiagnostic({
         outcome: "failed",
@@ -483,7 +491,8 @@ class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
     let snapshot: BrowserClawA11ySnapshot | undefined;
     try {
       snapshot = await this.page.snapshot(deadline());
-      const chat = visibleSidebarChats(snapshot, this.idPrefix).find((entry) => entry.id === input.chatId);
+      const titles = this.conversationTitles ? await this.conversationTitles(snapshot.page) : undefined;
+      const chat = visibleSidebarChats(snapshot, this.idPrefix, titles).find((entry) => entry.id === input.chatId);
       if (!chat) throw new Error("ChatGPT chat is not visible in the owned sidebar; call cdp_list_chats again");
       const node = findNode(snapshot.root, (entry) => entry.ref === chat.nodeRef);
       if (!node || node.disabled) throw new Error("ChatGPT sidebar chat control was not found on the owned page");
@@ -542,12 +551,14 @@ export type BrowserClawVisibleHistoryChat = ChatGptHistoryChat & { nodeRef: stri
 export function visibleSidebarChats(
   snapshot: BrowserClawA11ySnapshot,
   idPrefix: string,
+  conversationTitles?: ReadonlySet<string>,
 ): BrowserClawVisibleHistoryChat[] {
   const seen = new Set<string>();
   const candidates: Array<{ node: BrowserClawA11yNode; title: string; path: readonly BrowserClawA11yNode[] }> = [];
   const visit = (node: BrowserClawA11yNode, path: readonly BrowserClawA11yNode[]): void => {
     const title = node.name?.trim();
-    if (node.role === "link" && title && isHistorySidebarTitle(title) && node.children.length <= 2 && !seen.has(node.ref) && isLikelyHistoryRow(path)) {
+    if (node.role === "link" && title && isHistorySidebarTitle(title) && node.children.length <= 2 && !seen.has(node.ref) && isLikelyHistoryRow(path)
+      && (conversationTitles === undefined || conversationTitles.has(normalizedHistoryTitle(title)))) {
       seen.add(node.ref);
       candidates.push({ node, title, path });
     }
@@ -568,6 +579,24 @@ export function visibleSidebarChats(
       // becomes a deterministic recent-order marker for the MCP list contract.
       updatedAt: new Date(0).toISOString(),
     }));
+}
+
+function conversationTitlesFromLinks(value: string): ReadonlySet<string> {
+  const titles = new Set<string>();
+  for (const match of value.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)]+|\/[^)]+)\)/gu)) {
+    const href = match[2]!;
+    try {
+      const url = new URL(href, CHATGPT_ORIGIN);
+      if (url.origin === CHATGPT_ORIGIN && /^\/c\/[^/]+/u.test(url.pathname)) titles.add(normalizedHistoryTitle(match[1]!));
+    } catch {
+      // A malformed link cannot identify a ChatGPT conversation row.
+    }
+  }
+  return titles;
+}
+
+function normalizedHistoryTitle(value: string): string {
+  return value.trim().replace(/\s+/gu, " ").toLocaleLowerCase();
 }
 
 function isLikelyHistoryRow(path: readonly BrowserClawA11yNode[]): boolean {

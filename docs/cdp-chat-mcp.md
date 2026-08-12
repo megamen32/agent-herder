@@ -32,6 +32,9 @@ same page, scroll upward, and save each raw accessibility snapshot locally.
   archive also gets `article/article.md` and `article/article.html` rendered
   locally from its raw snapshots. These are convenience copies; raw segments
   remain the authoritative source.
+- Before a click, the BrowserClaw driver intersects fresh a11y sidebar rows
+  with `read(format: "links")` links on that same owned page whose route begins
+  `/c/`. It does not open or navigate a second tab to do this filtering.
 - A click must settle on a same-page ChatGPT conversation route (`/c/...`). A
   sidebar shell, Library, project, or landing-page control fails with a local
   diagnostic instead of being mis-recorded as a chat archive.

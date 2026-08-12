@@ -286,6 +286,33 @@ describe("BrowserClawAccountExportDriver", () => {
     expect(snapshot.url).toBe("https://chatgpt.com/c/real-chat");
   });
 
+  it("reads only same-page ChatGPT conversation links without opening a tab", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const client = {
+      sessionRef: "session-history-links",
+      async callToolRaw(name: string, args: Record<string, unknown>) {
+        calls.push({ name, args });
+        return {
+          result: {
+            content: [{
+              type: "text",
+              text: [
+                "[Research article](https://chatgpt.com/c/real-chat)",
+                "[Project](https://chatgpt.com/g/project)",
+                "[Another article](/c/another-chat)",
+              ].join("\n"),
+            }],
+          },
+        };
+      },
+    };
+
+    const titles = await new BrowserClawMcpA11yClient(client as never).conversationSidebarTitles(7);
+
+    expect([...titles]).toEqual(["research article", "another article"]);
+    expect(calls).toEqual([{ name: "read", args: { page: 7, format: "links" } }]);
+  });
+
   it("keeps only compact non-navigation sidebar links as chat candidates", () => {
     const rows = visibleSidebarChats({
       schema: "agent-herder.browserclaw-a11y.v1",
