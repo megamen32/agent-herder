@@ -7,8 +7,8 @@ Harness: Codex desktop
 PID: unknown (desktop harness)
 Agent session: current Codex task thread (opaque ID not exposed to task shell)
 PID status: active Lead task
-Last PID signal: 2026-08-12 11:57 MSK, read-only BrowserClaw discovery completed.
-Last task-file transition: work opened for the first bounded archive-capability slice.
+Last PID signal: 2026-08-12 14:58 MSK, native-export route retired; one-page history-export slice started.
+Last task-file transition: work redirected to the user-selected YAGNI history-export route.
 
 ## Original request
 
@@ -59,3 +59,33 @@ One persistent BrowserClaw MCP process opens exactly one owned ChatGPT page, req
 ## Evidence / result
 
 - Pending implementation.
+
+## Route change — 2026-08-12 14:58 MSK
+
+The native ChatGPT export surface is not available in the owned page. The user selected the direct route: read a chat in the one persistent owned page, scroll its history, and preserve a resumable local archive.
+
+### Updated 80-20 DoD
+
+1. `cdp_list_chats` returns the page-visible sidebar chats from the one owned page.
+2. `cdp_export_chat` opens one selected chat in that same page, reads the visible history, scrolls backward until complete or a bounded checkpoint, and writes a resumable raw archive plus manifest locally.
+3. Existing chats remain read-only: no send, edit, prompt submission, or use of `E-Frontier` as the canary.
+4. The first live proof is one non-`E-Frontier` chat archived from the running Agent Herder page. File download is the next vertical only when the first archive exposes attachment controls.
+
+### Current bounded cycle
+
+- Started: 2026-08-12 14:58 MSK.
+- Minimum / maximum active time: 15 / 30 minutes.
+- Worker research lane: inspect the existing BrowserClaw semantic contract and report the smallest read-only scroll/download integration point. No live browser access, no code edits, no restart.
+- Lead lane: revise the driver/client boundary, implement the vertical, run focused tests and build, then request one explicit restart approval for the live canary.
+
+### Release canary — 2026-08-12 16:00 MSK
+
+- User approved one restart of `agent-herder.service`.
+- Before that restart, the history route now records a private same-page screenshot receipt after the first chat open and on an action failure. This gives the tester/debug path visual evidence without a second tab.
+- Canary: list the owned sidebar, select one visible non-`E-Frontier` chat, run `cdp_export_chat` with a bounded segment count, and verify the local receipt, raw archive, and manifest. Stop at the first BrowserClaw failure.
+
+### Canary correction — 2026-08-12 16:40 MSK
+
+- The first live action did not reach a `/c/...` route: the a11y selector accepted a sidebar shell link and stored a landing-page snapshot. It is not accepted as a chat archive.
+- The source fix excludes large shell links and non-chat navigation, refreshes the owned page URL after a semantic action, and fails closed unless the click reaches a conversation route. A focused regression test covers both conditions.
+- The corrected build needs one separately authorized service restart before the next live canary. The false local archive is removed below; its screenshot remains as private failure evidence.

@@ -14,11 +14,13 @@ import {
   type BrowserClawSemanticAction,
 } from "./browserclaw-a11y.js";
 import type { ChatGptAccountExportDriver } from "./chatgpt-account-archive.js";
+import type { ChatGptHistoryArchiveDriver, ChatGptHistoryChat, ChatGptHistorySegment } from "./chatgpt-history-archive.js";
 import type { ChatRecord, CdpChatCapabilities, CdpChatDriver, CdpChatPage, DownloadedMedia, MessageRecord, PageIdentity } from "./cdp-chat.js";
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:9010/mcp";
 const CHATGPT_ORIGIN = "https://chatgpt.com";
 const DEFAULT_ACCOUNT_EXPORT_DIAGNOSTIC_ROOT = resolve(process.cwd(), "trash", "logs");
+const DEFAULT_HISTORY_ARCHIVE_DIAGNOSTIC_ROOT = resolve(process.cwd(), "trash", "logs");
 const MAX_ACCOUNT_EXPORT_SCREENSHOT_BYTES = 12 * 1024 * 1024;
 const MAX_ACCOUNT_EXPORT_DIAGNOSTIC_TEXT = 512;
 const ACCOUNT_EXPORT_KEYWORDS = /(?:data|данн|control|управлен|privacy|конфиден|export|экспорт|download|скач)/iu;
@@ -46,10 +48,26 @@ export interface BrowserClawAccountExportDiagnosticArtifact {
   screenshotPath?: string;
 }
 
+export interface BrowserClawHistoryArchiveDiagnosticInput {
+  outcome: "captured" | "failed";
+  stage: "open_chat" | "scroll_back";
+  failure?: string;
+  snapshot: BrowserClawA11ySnapshot;
+}
+
+export interface BrowserClawHistoryArchiveDiagnosticArtifact {
+  receiptPath: string;
+  screenshotPath?: string;
+}
+
+export interface BrowserClawHistoryArchiveDiagnosticReporter {
+  capture(input: BrowserClawHistoryArchiveDiagnosticInput): Promise<void>;
+}
+
 /**
- * BrowserClaw currently attests the owned-page account-export flow, but it does
- * not expose stable chat/message/media identities. Do not advertise chat tools
- * until their real post-action state can be observed and verified.
+ * The history route is intentionally read-only: it can list visible sidebar
+ * rows and persist raw snapshots while scrolling the one owned page. Composer
+ * mutation remains disabled until separately proven.
  */
 export const BROWSERCLAW_CDP_CHAT_CAPABILITIES: CdpChatCapabilities = {
   new_chat: false,
@@ -222,6 +240,46 @@ export class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
     }
   }
 
+  async captureHistoryArchiveDiagnostic(input: BrowserClawHistoryArchiveDiagnosticInput): Promise<BrowserClawHistoryArchiveDiagnosticArtifact> {
+    const root = resolve(process.env.CHATGPT_HISTORY_ARCHIVE_DIAGNOSTIC_ROOT || DEFAULT_HISTORY_ARCHIVE_DIAGNOSTIC_ROOT);
+    const timestamp = new Date().toISOString().replace(/[:.]/gu, "-");
+    const base = `chatgpt-history-archive-${timestamp}-${randomUUID()}`;
+    const receiptPath = join(root, `${base}.json`);
+    const receipt = {
+      schema: "agent-herder.chatgpt-history-archive-diagnostic.v1",
+      capturedAt: new Date().toISOString(),
+      outcome: input.outcome,
+      stage: input.stage,
+      ...(input.failure ? { failure: diagnosticError(input.failure) } : {}),
+      page: input.snapshot.page,
+      url: redactedSnapshotUrl(input.snapshot),
+      screenshot: { captured: true },
+    };
+    await writePrivateFile(receiptPath, JSON.stringify(receipt, null, 2) + "\n");
+
+    try {
+      const screenshot = await this.client.callToolImage("screenshot", {
+        page: input.snapshot.page,
+        format: "png",
+        fullPage: false,
+        size: { width: 1440, height: 1000 },
+      }, deadline());
+      const bytes = Buffer.from(screenshot.data, "base64");
+      if (bytes.length === 0 || bytes.length > MAX_ACCOUNT_EXPORT_SCREENSHOT_BYTES) {
+        throw new Error("BrowserClaw screenshot is empty or exceeds the diagnostic size limit");
+      }
+      const screenshotPath = join(root, `${base}.${imageExtension(screenshot.mimeType)}`);
+      await writePrivateFile(screenshotPath, bytes);
+      return { receiptPath, screenshotPath };
+    } catch (error) {
+      await writePrivateFile(receiptPath, JSON.stringify({
+        ...receipt,
+        screenshot: { captured: false, error: diagnosticError(error) },
+      }, null, 2) + "\n");
+      return { receiptPath };
+    }
+  }
+
   async listTabs(): Promise<readonly BrowserClawA11yTab[]> {
     const response = await this.client.callToolRaw("tabs", { action: "list" }, deadline());
     const text = textContent(response);
@@ -259,12 +317,20 @@ export class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
   async actPage(page: number, action: BrowserClawSemanticAction): Promise<BrowserClawA11ySnapshot> {
     const args: Record<string, unknown> = { page, kind: action.kind };
     if (action.kind === "press") args.key = action.key;
+    else if (action.kind === "scroll") {
+      args.direction = action.direction;
+      if (action.amount !== undefined) args.amount = action.amount;
+    }
     else {
       args.ref = action.ref;
       if (action.kind === "fill") args.value = action.value;
       if (action.kind === "type") args.text = action.text;
     }
     await this.client.callToolRaw("act", args, deadline());
+    // An a11y action can navigate the ChatGPT SPA. Refresh the owned tab's URL
+    // before producing the post-action snapshot so callers can distinguish a
+    // conversation route from the landing page without opening another tab.
+    await this.listTabs();
     return this.snapshotPage(page);
   }
 
@@ -362,6 +428,11 @@ export async function createCdpChatDriver(options: BrowserClawCdpChatDriverOptio
   });
   const ownedA11yPage = await a11y.acquirePage();
   const page = new BrowserClawCdpChatPage(ownedA11yPage, a11yClient.sessionRef);
+  const historyArchiveDriver = new BrowserClawHistoryArchiveDriver(ownedA11yPage, a11yClient.sessionRef, {
+    async capture(input) {
+      await a11yClient.captureHistoryArchiveDiagnostic(input);
+    },
+  });
   const accountExportDriver = BrowserClawAccountExportDriver.fromOwnedPage(ownedA11yPage, {
     async capture(input) {
       await a11yClient.captureAccountExportDiagnostic(input);
@@ -373,7 +444,168 @@ export async function createCdpChatDriver(options: BrowserClawCdpChatDriverOptio
     },
     capabilities: BROWSERCLAW_CDP_CHAT_CAPABILITIES,
     accountExportDriver,
+    historyArchiveDriver,
   };
+}
+
+/** Read-only mapping of the one BrowserClaw-owned page to the history exporter. */
+class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
+  private readonly idPrefix: string;
+  private lastSnapshot: BrowserClawA11ySnapshot | undefined;
+  private activeChatId: string | undefined;
+
+  constructor(
+    private readonly page: BrowserClawA11yPage,
+    sessionRef: string,
+    private readonly diagnostics?: BrowserClawHistoryArchiveDiagnosticReporter,
+  ) {
+    this.idPrefix = createHash("sha256").update(sessionRef).digest("hex").slice(0, 24);
+  }
+
+  async listChats(): Promise<readonly ChatGptHistoryChat[]> {
+    const snapshot = await this.page.snapshot(deadline());
+    this.lastSnapshot = snapshot;
+    return visibleSidebarChats(snapshot, this.idPrefix);
+  }
+
+  async openChat(input: { chatId: string }): Promise<ChatGptHistorySegment> {
+    let snapshot: BrowserClawA11ySnapshot | undefined;
+    try {
+      snapshot = await this.page.snapshot(deadline());
+      const chat = visibleSidebarChats(snapshot, this.idPrefix).find((entry) => entry.id === input.chatId);
+      if (!chat) throw new Error("ChatGPT chat is not visible in the owned sidebar; call cdp_list_chats again");
+      const node = findNode(snapshot.root, (entry) => entry.ref === chat.nodeRef);
+      if (!node || node.disabled) throw new Error("ChatGPT sidebar chat control was not found on the owned page");
+      const afterClick = await this.page.act({ snapshotRef: snapshot.snapshotRef, action: { kind: "click", ref: node.ref } }, deadline());
+      this.lastSnapshot = afterClick;
+      if (!isChatHistoryConversationUrl(afterClick.url)) {
+        throw new Error("ChatGPT sidebar control did not open a conversation route");
+      }
+      this.activeChatId = input.chatId;
+      await this.captureDiagnostic({ outcome: "captured", stage: "open_chat", snapshot: afterClick });
+      return historySegment(this.lastSnapshot, afterClick.url);
+    } catch (error) {
+      await this.captureDiagnostic({
+        outcome: "failed",
+        stage: "open_chat",
+        failure: diagnosticError(error),
+        snapshot: this.lastSnapshot ?? snapshot,
+      });
+      throw error;
+    }
+  }
+
+  async scrollBack(): Promise<{ segment: ChatGptHistorySegment; atStart: boolean }> {
+    try {
+      if (!this.lastSnapshot || !this.activeChatId) throw new Error("ChatGPT history export has no active chat page");
+      const before = snapshotFingerprint(this.lastSnapshot);
+      const after = await this.page.act({
+        snapshotRef: this.lastSnapshot.snapshotRef,
+        action: { kind: "scroll", direction: "up", amount: 12 },
+      }, deadline());
+      this.lastSnapshot = after;
+      return { segment: historySegment(this.lastSnapshot, after.url), atStart: before === snapshotFingerprint(this.lastSnapshot) };
+    } catch (error) {
+      await this.captureDiagnostic({
+        outcome: "failed",
+        stage: "scroll_back",
+        failure: diagnosticError(error),
+        snapshot: this.lastSnapshot,
+      });
+      throw error;
+    }
+  }
+
+  private async captureDiagnostic(input: Omit<BrowserClawHistoryArchiveDiagnosticInput, "snapshot"> & { snapshot?: BrowserClawA11ySnapshot }): Promise<void> {
+    if (!this.diagnostics || !input.snapshot) return;
+    try {
+      await this.diagnostics.capture(input as BrowserClawHistoryArchiveDiagnosticInput);
+    } catch (error) {
+      console.error(`[browserclaw-cdp-chat] history-archive diagnostic failed: ${diagnosticError(error)}`);
+    }
+  }
+}
+
+export type BrowserClawVisibleHistoryChat = ChatGptHistoryChat & { nodeRef: string };
+
+export function visibleSidebarChats(
+  snapshot: BrowserClawA11ySnapshot,
+  idPrefix: string,
+): BrowserClawVisibleHistoryChat[] {
+  const rows: BrowserClawVisibleHistoryChat[] = [];
+  const seen = new Set<string>();
+  const visit = (node: BrowserClawA11yNode): void => {
+    const title = node.name?.trim();
+    if (node.role === "link" && title && isHistorySidebarTitle(title) && node.children.length <= 2 && !seen.has(node.ref)) {
+      seen.add(node.ref);
+      const id = historyChatId(idPrefix, title, node.description);
+      rows.push({
+        id,
+        nodeRef: node.ref,
+        title,
+        unread: /(?:\bunread\b|непрочитан)/iu.test(`${node.description ?? ""} ${node.name ?? ""}`),
+        working: /(?:\bworking\b|thinking|думает|генерир)/iu.test(`${node.description ?? ""} ${node.name ?? ""}`),
+        // BrowserClaw does not expose ChatGPT row timestamps. Stable current order
+        // becomes a deterministic recent-order marker for the MCP list contract.
+        updatedAt: new Date(0).toISOString(),
+      });
+    }
+    for (const child of node.children) visit(child);
+  };
+  visit(snapshot.root);
+  return rows;
+}
+
+function historyChatId(idPrefix: string, title: string, description: string | undefined): string {
+  const normalized = `${title.trim().toLocaleLowerCase()}\u0000${(description ?? "").trim().toLocaleLowerCase()}`;
+  return `${idPrefix}:${createHash("sha256").update(normalized).digest("hex").slice(0, 24)}`;
+}
+
+function isHistorySidebarTitle(title: string): boolean {
+  if (title.length > 512) return false;
+  return !/^(?:new chat|новый чат|library|библиотека|scheduled|запланированное|plugins|плагины|more|больше|search|поиск|download apps|скачать приложения|settings|настройки|profile|профиль)$/iu.test(title);
+}
+
+/** A saved history segment is valid only after the same page reaches a real chat route. */
+export function isChatHistoryConversationUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.origin === CHATGPT_ORIGIN && /^\/c\/[^/]+/u.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function snapshotFingerprint(snapshot: BrowserClawA11ySnapshot): string {
+  const nodes: string[] = [];
+  const visit = (node: BrowserClawA11yNode): void => {
+    nodes.push(`${node.role}\u0000${node.name ?? ""}\u0000${node.value ?? ""}\u0000${node.description ?? ""}`);
+    for (const child of node.children) visit(child);
+  };
+  visit(snapshot.root);
+  return createHash("sha256").update(nodes.join("\n")).digest("hex");
+}
+
+function historySegment(snapshot: BrowserClawA11ySnapshot, url: string): ChatGptHistorySegment {
+  return {
+    capturedAt: new Date().toISOString(),
+    page: { url: normalizeHistoryUrl(url) },
+    content: {
+      schema: snapshot.schema,
+      page: snapshot.page,
+      url: normalizeHistoryUrl(snapshot.url),
+      root: snapshot.root,
+    },
+  };
+}
+
+function normalizeHistoryUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return `${CHATGPT_ORIGIN}/`;
+  }
 }
 
 class BrowserClawCdpChatPage implements CdpChatPage {
@@ -517,14 +749,16 @@ function redactedAccountExportDiagnostic(input: BrowserClawAccountExportDiagnost
     stage: input.stage,
     ...(input.failure ? { failure: input.failure } : {}),
     page: input.snapshot.page,
-    url: (() => {
-      const parsed = new URL(input.snapshot.url);
-      return `${parsed.origin}${parsed.pathname}`;
-    })(),
+    url: redactedSnapshotUrl(input.snapshot),
     ...(input.stoppedNode ? { stoppedNode: diagnosticNode(input.stoppedNode) } : {}),
     relevantNodes: accountExportDiagnosticNodes(input.snapshot.root),
     screenshot: { captured: true },
   };
+}
+
+function redactedSnapshotUrl(snapshot: BrowserClawA11ySnapshot): string {
+  const parsed = new URL(snapshot.url);
+  return `${parsed.origin}${parsed.pathname}`;
 }
 
 function imageExtension(mimeType: BrowserClawScreenshot["mimeType"]): "png" | "jpg" | "webp" {

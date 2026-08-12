@@ -31,6 +31,7 @@ import type {
 } from "./cdp-chat.js";
 import { ALL_CDP_CHAT_CAPABILITIES, CdpChatClient } from "./cdp-chat.js";
 import { ChatGptAccountArchive, type ImportAccountExportInput, type RequestAccountExportInput } from "./chatgpt-account-archive.js";
+import { ChatGptHistoryArchive, type ExportChatHistoryInput, type ListChatHistoryInput } from "./chatgpt-history-archive.js";
 import {
   handleListAgents,
   handleAgentInfo,
@@ -417,10 +418,34 @@ function registerChatGptAccountArchiveTools(server: McpServer, archive: ChatGptA
   );
 }
 
+/** Register the read-only, checkpointed ChatGPT history archive without colliding with fixture chat tools. */
+function registerChatGptHistoryArchiveTools(server: McpServer, archive?: ChatGptHistoryArchive): void {
+  if (!archive) return;
+  server.tool(
+    "cdp_list_chats",
+    "List the currently visible ChatGPT sidebar chats from the one owned page. No chat content is returned.",
+    { view: z.enum(["unread", "working", "recent"]), limit: z.number().int().min(1).max(100).optional() },
+    async (args) => cdpTextResult(await archive.listChats(args as ListChatHistoryInput)),
+  );
+  server.tool(
+    "cdp_export_chat",
+    "Read one listed ChatGPT chat in the same owned page, scroll backward, and save raw snapshots locally. Returns only a checkpoint receipt.",
+    { chatRef: z.string().min(1).max(256), maxSegments: z.number().int().min(1).max(100).optional() },
+    async (args) => cdpTextResult(await archive.exportChat(args as ExportChatHistoryInput)),
+  );
+}
+
 // ===== Register MCP tools =====
 
-function registerTools(server: McpServer, cdpChatClient?: CdpChatClient, cdpCapabilities?: CdpChatCapabilities, cdpAccountArchive?: ChatGptAccountArchive) {
+function registerTools(
+  server: McpServer,
+  cdpChatClient?: CdpChatClient,
+  cdpCapabilities?: CdpChatCapabilities,
+  cdpAccountArchive?: ChatGptAccountArchive,
+  cdpHistoryArchive?: ChatGptHistoryArchive,
+) {
   if (cdpChatClient && cdpCapabilities) registerCdpChatTools(server, cdpChatClient, cdpCapabilities);
+  registerChatGptHistoryArchiveTools(server, cdpHistoryArchive);
   if (cdpAccountArchive) registerChatGptAccountArchiveTools(server, cdpAccountArchive);
 
   server.tool(
@@ -701,6 +726,9 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver): McpSe
     cdpChatDriver ? new CdpChatClient(cdpChatDriver, { mediaRoot: process.env.CDP_CHAT_MEDIA_ROOT }) : undefined,
     cdpChatDriver?.capabilities ?? (cdpChatDriver ? ALL_CDP_CHAT_CAPABILITIES : undefined),
     cdpChatDriver ? new ChatGptAccountArchive(cdpChatDriver.accountExportDriver, { archiveRoot: process.env.CHATGPT_ACCOUNT_ARCHIVE_ROOT }) : undefined,
+    cdpChatDriver?.historyArchiveDriver
+      ? new ChatGptHistoryArchive(cdpChatDriver.historyArchiveDriver, { archiveRoot: process.env.CHATGPT_HISTORY_ARCHIVE_ROOT })
+      : undefined,
   );
   return server;
 }

@@ -14,7 +14,35 @@ fixture binding, opaque references, page lease, and write gates therefore do
 not cross between separate stdio or HTTP MCP sessions. The HTTP route creates
 the server when a new MCP initialize request creates a session.
 
-## Account archive: articles, Deep Research, and files
+## History archive: current direct route
+
+When the native ChatGPT export control is unavailable, the minimal source route
+is the same single owned page: list the visible sidebar, open one chat in that
+same page, scroll upward, and save each raw accessibility snapshot locally.
+
+- `list_chats({ view, limit? })` returns only visible sidebar metadata and
+  opaque chat references.
+- `export_chat({ chatRef, maxSegments? })` is read-only. It clicks one listed
+  chat in the owned page, scrolls back in bounded steps, and writes raw JSON
+  segments plus `manifest.json` under `CHATGPT_HISTORY_ARCHIVE_ROOT` (default:
+  `~/archives/chatgpt-history`). The MCP result is a receipt/path/checkpoint,
+  never the chat text itself.
+- A click must settle on a same-page ChatGPT conversation route (`/c/...`). A
+  sidebar shell, Library, project, or landing-page control fails with a local
+  diagnostic instead of being mis-recorded as a chat archive.
+- A `checkpoint` result means call the same tool again in the same running
+  process. A restart reopens the selected chat and deduplicates already saved
+  source views from the manifest.
+
+The concrete BrowserClaw route exposes these two read-only operations only.
+`E-Frontier` is visible but excluded as the archive canary; it is never sent,
+edited, or used as a test target. Attachment byte downloads remain the next
+vertical after the first real archive proves the actual accessible controls.
+
+In Agent Herder these tools are `cdp_list_chats` and `cdp_export_chat`.
+The standalone server uses their short names.
+
+## Native account archive: fallback
 
 Do not attempt to infer an HTML/Markdown format or scrape every historical chat
 first. ChatGPT's native account export is the canonical first archive: it
@@ -49,13 +77,10 @@ fresh `download(page, ref)` primitive. That follow-up must retain the same
   long-lived BrowserClaw MCP process and single owned page; it must not open a
   tab per file.
 
-The concrete BrowserClaw driver currently advertises only this verified native
-account-export/archive surface. It deliberately does not register
-`new_chat`, `list_chats`, `search_chat`, `export_chat`, `send_message`,
-`edit_message`, or `download_media`: BrowserClaw's current accessibility seam
-does not provide stable chat/message/media identities or an observable
-post-send receipt. Other drivers may expose the complete tool set only when
-their `capabilities` contract attests those operations.
+The concrete BrowserClaw driver exposes the above read-only history archive and
+the native account-export/archive fallback. It does not expose `new_chat`,
+`search_chat`, `send_message`, `edit_message`, or `download_media`: those need
+separate observable browser receipts before they can be advertised.
 
 ## Safety contract
 
@@ -65,9 +90,10 @@ their `capabilities` contract attests those operations.
 2. `new_chat` requires the literal `NEW_CHAT` and an idempotency key. It binds
    the first created chat as the single disposable fixture. It does not submit
    a prompt.
-3. `export_chat`, `send_message`, `edit_message`, and `download_media` reject
-   every chat reference that is not that fixture. Existing production chats can
-   be listed or searched, but their references cannot be targeted.
+3. Fixture `export_chat`, `send_message`, `edit_message`, and `download_media`
+   reject every chat reference that is not that fixture. The read-only history
+   archive is a separate surface: it can only list and locally preserve raw
+   snapshots; it cannot submit, edit, or download a chat attachment.
 4. `send_message` and `edit_message` require their exact confirmation literal.
    The idempotency key is bound to the operation, fixture reference, message
    reference where applicable, and exact payload. It is one-shot and expires
@@ -125,9 +151,11 @@ the same factory through `CDP_CHAT_DRIVER_MODULE`) once; do not run a fresh
 one-shot probe before each tool call, because BrowserClaw page ownership is
 session-scoped.
 
-For a real test use the sequence `new_chat → list_chats → search_chat →
-export_chat`. The test fixture is the only target that may be exported or
-written. If a BrowserClaw action errors, times out, or leaves the page state
+For the history-archive canary use `list_chats → export_chat` on one selected
+non-`E-Frontier` chat and stop on the first failure. The operation is read-only
+and returns only a local receipt. For the legacy fixture route, use
+`new_chat → list_chats → search_chat → export_chat`; the fixture is the only
+target that may be written. If a BrowserClaw action errors, times out, or leaves the page state
 ambiguous, capture and inspect a secret-safe screenshot from that same MCP
 session and page before retrying, reloading, navigating, or opening any new
 tab. Record only the redacted timestamp, page URL without query data, operation
@@ -141,3 +169,8 @@ equivalent of a CDP accessibility tree — containing only the relevant
 name/role/disabled fields near Data Controls and Export. Use it to adjust a
 matcher after a UI change; do not open a second inspection tab or record a
 full chat transcript.
+
+Every first successful `open_chat` and any failed history browser action also
+writes a private `trash/logs/chatgpt-history-archive-*.json` receipt and, when
+BrowserClaw returns it, a same-page PNG. The receipt intentionally contains no
+chat text; it records only the outcome, stage, page, and URL without query data.

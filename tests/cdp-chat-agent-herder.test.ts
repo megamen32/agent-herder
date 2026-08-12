@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createAgentHerderMcpServer } from "../src/index.js";
 import type { ChatRecord, CdpChatDriver, CdpChatPage, MessageRecord, PageIdentity } from "../src/cdp-chat.js";
 import type { ChatGptAccountExportDriver } from "../src/chatgpt-account-archive.js";
+import type { ChatGptHistoryArchiveDriver, ChatGptHistorySegment } from "../src/chatgpt-history-archive.js";
 
 const connected: Array<{ client: Client; server: { close(): Promise<void> } }> = [];
 
@@ -87,6 +88,36 @@ function fakeDriver(): CdpChatDriver {
   return { async acquirePage() { return page; }, accountExportDriver };
 }
 
+function historyOnlyDriver(): CdpChatDriver {
+  const historyArchiveDriver: ChatGptHistoryArchiveDriver = {
+    async listChats() {
+      return [{ id: "history", title: "History canary", unread: false, working: false, updatedAt: "2026-08-12T00:00:00.000Z" }];
+    },
+    async openChat() {
+      return historySegment("bottom");
+    },
+    async scrollBack() {
+      return { segment: historySegment("top"), atStart: true };
+    },
+  };
+  return {
+    async acquirePage() { return new FakeCdpPage(); },
+    capabilities: {
+      new_chat: false, list_chats: false, search_chat: false, export_chat: false,
+      send_message: false, edit_message: false, download_media: false,
+    },
+    historyArchiveDriver,
+  };
+}
+
+function historySegment(label: string): ChatGptHistorySegment {
+  return {
+    capturedAt: "2026-08-12T00:00:00.000Z",
+    page: { url: "https://chatgpt.com/c/history" },
+    content: { label, transcript: `private ${label}` },
+  };
+}
+
 function archiveOnlyDriver(): CdpChatDriver {
   return {
     ...fakeDriver(),
@@ -152,6 +183,18 @@ describe("Agent Herder CDP chat capability", () => {
       "cdp_edit_message",
       "cdp_download_media",
     ]));
+  });
+
+  it("registers the read-only checkpoint archive instead of fixture chat tools", async () => {
+    const client = await connect(historyOnlyDriver());
+    const names = (await client.listTools()).tools.map((tool) => tool.name);
+    expect(names).toEqual(expect.arrayContaining(["cdp_list_chats", "cdp_export_chat"]));
+    expect(names).not.toEqual(expect.arrayContaining(["cdp_new_chat", "cdp_send_message", "cdp_edit_message", "cdp_download_media"]));
+
+    const listed = await client.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });
+    const body = JSON.parse(String(listed.content[0]?.type === "text" ? listed.content[0].text : "{}")) as { chats: Array<{ chatRef: string }> };
+    expect(body.chats).toHaveLength(1);
+    expect(body.chats[0]?.chatRef).toBeTruthy();
   });
 
   it("keeps fixture references isolated between MCP sessions", async () => {

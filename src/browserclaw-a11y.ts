@@ -12,7 +12,7 @@ const DEFAULT_LIMITS = {
   maxSnapshotRefLength: 128,
 } as const;
 
-const ACTION_KINDS = ["click", "fill", "type", "press"] as const;
+const ACTION_KINDS = ["click", "fill", "type", "press", "scroll"] as const;
 
 export type BrowserClawA11yActionKind = (typeof ACTION_KINDS)[number];
 
@@ -40,7 +40,8 @@ export type BrowserClawSemanticAction =
   | { kind: "click"; ref: string }
   | { kind: "fill"; ref: string; value: string }
   | { kind: "type"; ref: string; text: string }
-  | { kind: "press"; key: string };
+  | { kind: "press"; key: string }
+  | { kind: "scroll"; direction: "up" | "down"; amount?: number };
 
 export interface BrowserClawA11yActionInput {
   snapshotRef: string;
@@ -391,6 +392,17 @@ export function validateBrowserClawSemanticAction(
   if (action.kind === "type") {
     if (keys.some((key) => !["kind", "ref", "text"].includes(key)) || typeof action.text !== "string" || action.text.length > DEFAULT_LIMITS.maxTextLength) throw new BrowserClawA11yError("invalid_action", "type action is malformed or oversized");
     return { snapshotRef: snapshot.snapshotRef, action: { kind: "type", ref: checkRef(action.ref), text: action.text } };
+  }
+  if (action.kind === "scroll") {
+    if (keys.some((key) => !["kind", "direction", "amount"].includes(key))
+      || (action.direction !== "up" && action.direction !== "down")
+      || (action.amount !== undefined && (typeof action.amount !== "number" || !Number.isInteger(action.amount) || action.amount < 1 || action.amount > 20))) {
+      throw new BrowserClawA11yError("invalid_action", "scroll action is malformed or out of bounds");
+    }
+    return {
+      snapshotRef: snapshot.snapshotRef,
+      action: { kind: "scroll", direction: action.direction, ...(action.amount === undefined ? {} : { amount: action.amount }) },
+    };
   }
   if (keys.some((key) => !["kind", "key"].includes(key)) || typeof action.key !== "string" || action.key.length === 0 || action.key.length > 64 || /[\u0000-\u001f\u007f\s]/u.test(action.key)) {
     throw new BrowserClawA11yError("invalid_action", "press action key is malformed or oversized");

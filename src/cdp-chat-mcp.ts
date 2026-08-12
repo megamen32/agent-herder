@@ -23,6 +23,11 @@ import {
   type ImportAccountExportInput,
   type RequestAccountExportInput,
 } from "./chatgpt-account-archive.js";
+import {
+  ChatGptHistoryArchive,
+  type ExportChatHistoryInput,
+  type ListChatHistoryInput,
+} from "./chatgpt-history-archive.js";
 
 /** Return an MCP text result containing only bounded JSON data. */
 function textResult(value: unknown): { content: [{ type: "text"; text: string }] } {
@@ -134,6 +139,23 @@ export function registerChatGptAccountArchiveTools(server: McpServer, archive: C
   );
 }
 
+/** Register the read-only, checkpointed history archive surface. */
+export function registerChatGptHistoryArchiveTools(server: McpServer, archive?: ChatGptHistoryArchive): void {
+  if (!archive) return;
+  server.tool(
+    "list_chats",
+    "List the currently visible ChatGPT sidebar chats from the one owned page. No chat content is returned.",
+    { view: z.enum(["unread", "working", "recent"]), limit: z.number().int().min(1).max(100).optional() },
+    async (args) => textResult(await archive.listChats(args as ListChatHistoryInput)),
+  );
+  server.tool(
+    "export_chat",
+    "Read one listed ChatGPT chat in the same owned page, scroll backward, and save raw snapshots locally. Returns only a checkpoint receipt.",
+    { chatRef: z.string().min(1).max(256), maxSegments: z.number().int().min(1).max(100).optional() },
+    async (args) => textResult(await archive.exportChat(args as ExportChatHistoryInput)),
+  );
+}
+
 /** Create the standalone MCP server around an already configured page driver. */
 export function createCdpChatServer(driver: CdpChatDriver, options: ConstructorParameters<typeof CdpChatClient>[1] = {}): McpServer {
   const server = new McpServer({
@@ -142,6 +164,9 @@ export function createCdpChatServer(driver: CdpChatDriver, options: ConstructorP
     description: "Bounded ChatGPT/E-Frontier chat operations over one owned CDP page",
   });
   registerCdpChatTools(server, new CdpChatClient(driver, options), driver.capabilities);
+  registerChatGptHistoryArchiveTools(server, driver.historyArchiveDriver
+    ? new ChatGptHistoryArchive(driver.historyArchiveDriver, { archiveRoot: process.env.CHATGPT_HISTORY_ARCHIVE_ROOT })
+    : undefined);
   registerChatGptAccountArchiveTools(server, new ChatGptAccountArchive(driver.accountExportDriver, {
     archiveRoot: process.env.CHATGPT_ACCOUNT_ARCHIVE_ROOT,
   }));

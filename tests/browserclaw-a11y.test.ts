@@ -159,5 +159,13 @@ describe("BrowserClaw accessibility snapshot normalization", () => {
       snapshotRef: "snapshot-1",
       action: { kind: "press", key: "A".repeat(100) },
     })).toThrow(/invalid_action/);
+    expect(validateBrowserClawSemanticAction(snapshot, {
+      snapshotRef: "snapshot-1",
+      action: { kind: "scroll", direction: "up", amount: 12 },
+    })).toEqual({ snapshotRef: "snapshot-1", action: { kind: "scroll", direction: "up", amount: 12 } });
+    expect(() => validateBrowserClawSemanticAction(snapshot, {
+      snapshotRef: "snapshot-1",
+      action: { kind: "scroll", direction: "up", amount: 0 },
+    })).toThrow(/invalid_action/);
   });
 });

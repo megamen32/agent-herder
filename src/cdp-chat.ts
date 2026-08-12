@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, lstat, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ChatGptAccountExportDriver } from "./chatgpt-account-archive.js";
+import type { ChatGptHistoryArchiveDriver } from "./chatgpt-history-archive.js";
 
 export type ChatView = "unread" | "working" | "recent";
 
@@ -91,6 +92,8 @@ export interface CdpChatDriver {
   capabilities?: CdpChatCapabilities;
   /** Optional account-wide export action sharing this driver's one BrowserClaw page lease. */
   accountExportDriver?: ChatGptAccountExportDriver;
+  /** Optional read-only visible-history export action sharing this driver's one BrowserClaw page lease. */
+  historyArchiveDriver?: ChatGptHistoryArchiveDriver;
 }
 
 export interface CdpChatOptions {

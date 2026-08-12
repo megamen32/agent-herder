@@ -2,7 +2,12 @@ import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BrowserClawAccountExportDriver, BrowserClawMcpA11yClient } from "../src/browserclaw-cdp-chat.js";
+import {
+  BrowserClawAccountExportDriver,
+  BrowserClawMcpA11yClient,
+  isChatHistoryConversationUrl,
+  visibleSidebarChats,
+} from "../src/browserclaw-cdp-chat.js";
 import type { BrowserClawA11yPage } from "../src/browserclaw-a11y-page.js";
 import type { BrowserClawA11ySnapshot } from "../src/browserclaw-a11y.js";
 
@@ -220,5 +225,91 @@ describe("BrowserClawAccountExportDriver", () => {
       else process.env.CHATGPT_ACCOUNT_EXPORT_DIAGNOSTIC_ROOT = previousRoot;
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("writes a same-page screenshot receipt for a history archive capture", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-history-archive-diagnostic-"));
+    const previousRoot = process.env.CHATGPT_HISTORY_ARCHIVE_DIAGNOSTIC_ROOT;
+    process.env.CHATGPT_HISTORY_ARCHIVE_DIAGNOSTIC_ROOT = root;
+    try {
+      const client = {
+        sessionRef: "session-history-diagnostic",
+        async callToolImage(name: string, args: Record<string, unknown>) {
+          expect(name).toBe("screenshot");
+          expect(args).toMatchObject({ page: 7, format: "png" });
+          return { mimeType: "image/png" as const, data: Buffer.from("png-history-image").toString("base64") };
+        },
+      };
+      const reporter = new BrowserClawMcpA11yClient(client as never);
+      const artifact = await reporter.captureHistoryArchiveDiagnostic({
+        outcome: "captured",
+        stage: "open_chat",
+        snapshot: snapshot("history", []),
+      });
+
+      expect(artifact.screenshotPath).toBeDefined();
+      const receipt = JSON.parse(await readFile(artifact.receiptPath, "utf8")) as Record<string, unknown>;
+      expect(receipt).toMatchObject({
+        schema: "agent-herder.chatgpt-history-archive-diagnostic.v1",
+        outcome: "captured",
+        stage: "open_chat",
+        url: "https://chatgpt.com/",
+        screenshot: { captured: true },
+      });
+      expect((await stat(artifact.receiptPath)).mode & 0o777).toBe(0o600);
+      expect((await stat(artifact.screenshotPath!)).mode & 0o777).toBe(0o600);
+    } finally {
+      if (previousRoot === undefined) delete process.env.CHATGPT_HISTORY_ARCHIVE_DIAGNOSTIC_ROOT;
+      else process.env.CHATGPT_HISTORY_ARCHIVE_DIAGNOSTIC_ROOT = previousRoot;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refreshes the owned tab URL after a semantic action", async () => {
+    const calls: string[] = [];
+    const client = {
+      sessionRef: "session-route-refresh",
+      async callToolRaw(name: string) {
+        calls.push(name);
+        if (name === "tabs") {
+          return { result: { content: [{ type: "text", text: "[7] https://chatgpt.com/c/real-chat" }] } };
+        }
+        if (name === "snapshot") {
+          return { result: { content: [{ type: "text", text: 'button "Chat" [ref=e1]' }] } };
+        }
+        return { result: { content: [] } };
+      },
+    };
+
+    const snapshot = await new BrowserClawMcpA11yClient(client as never).actPage(7, { kind: "click", ref: "e1" });
+    expect(calls).toEqual(["act", "tabs", "snapshot"]);
+    expect(snapshot.url).toBe("https://chatgpt.com/c/real-chat");
+  });
+
+  it("keeps only compact non-navigation sidebar links as chat candidates", () => {
+    const rows = visibleSidebarChats({
+      schema: "agent-herder.browserclaw-a11y.v1",
+      page: 7,
+      url: "https://chatgpt.com/",
+      snapshotRef: "sidebar",
+      root: {
+        ref: "root",
+        role: "document",
+        children: [{
+          ref: "shell",
+          role: "link",
+          name: "ChatGPT shell container",
+          children: [
+            { ref: "library", role: "link", name: "Библиотека", children: [] },
+            { ref: "chat-1", role: "link", name: "Research article", children: [{ ref: "menu", role: "button", name: "More", children: [] }] },
+            { ref: "chat-2", role: "link", name: "Deep research", children: [] },
+          ],
+        }],
+      },
+    }, "test");
+
+    expect(rows.map((row) => row.nodeRef)).toEqual(["chat-1", "chat-2"]);
+    expect(isChatHistoryConversationUrl("https://chatgpt.com/c/real-chat")).toBe(true);
+    expect(isChatHistoryConversationUrl("https://chatgpt.com/")).toBe(false);
   });
 });
