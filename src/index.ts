@@ -720,8 +720,15 @@ function registerTools(
 
 // ===== Main =====
 
-/** Build one Agent Herder MCP server and one isolated CDP client for it. */
-export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver): McpServer {
+export interface AgentHerderMcpServerOptions {
+  /** Shared by HTTP MCP sessions so a list binding survives a client reconnect. */
+  cdpHistoryArchive?: ChatGptHistoryArchive;
+  /** Shared alongside the history archive when native ZIP import is enabled. */
+  cdpAccountArchive?: ChatGptAccountArchive;
+}
+
+/** Build one Agent Herder MCP server over process-owned CDP archive state. */
+export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, options: AgentHerderMcpServerOptions = {}): McpServer {
   const server = new McpServer({
     name: "agent-herder",
     version: "0.2.0",
@@ -731,10 +738,10 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver): McpSe
     server,
     cdpChatDriver ? new CdpChatClient(cdpChatDriver, { mediaRoot: process.env.CDP_CHAT_MEDIA_ROOT }) : undefined,
     cdpChatDriver?.capabilities ?? (cdpChatDriver ? ALL_CDP_CHAT_CAPABILITIES : undefined),
-    cdpChatDriver ? new ChatGptAccountArchive(cdpChatDriver.accountExportDriver, { archiveRoot: process.env.CHATGPT_ACCOUNT_ARCHIVE_ROOT }) : undefined,
-    cdpChatDriver?.historyArchiveDriver
+    options.cdpAccountArchive ?? (cdpChatDriver ? new ChatGptAccountArchive(cdpChatDriver.accountExportDriver, { archiveRoot: process.env.CHATGPT_ACCOUNT_ARCHIVE_ROOT }) : undefined),
+    options.cdpHistoryArchive ?? (cdpChatDriver?.historyArchiveDriver
       ? new ChatGptHistoryArchive(cdpChatDriver.historyArchiveDriver, { archiveRoot: process.env.CHATGPT_HISTORY_ARCHIVE_ROOT })
-      : undefined,
+      : undefined),
   );
   return server;
 }
@@ -747,7 +754,13 @@ async function main() {
   await adapterRegistry.load();
   await initAdapters();
   const cdpChatDriver = process.env.CDP_CHAT_DRIVER_MODULE ? await loadCdpChatDriver() : undefined;
-  const createMcpServer = () => createAgentHerderMcpServer(cdpChatDriver);
+  const cdpAccountArchive = cdpChatDriver
+    ? new ChatGptAccountArchive(cdpChatDriver.accountExportDriver, { archiveRoot: process.env.CHATGPT_ACCOUNT_ARCHIVE_ROOT })
+    : undefined;
+  const cdpHistoryArchive = cdpChatDriver?.historyArchiveDriver
+    ? new ChatGptHistoryArchive(cdpChatDriver.historyArchiveDriver, { archiveRoot: process.env.CHATGPT_HISTORY_ARCHIVE_ROOT })
+    : undefined;
+  const createMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive });
   const server = createMcpServer();
 
   const webPort = process.env.AGENT_HERDER_WEB_PORT;

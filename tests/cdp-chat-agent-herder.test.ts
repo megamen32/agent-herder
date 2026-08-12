@@ -1,10 +1,13 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAgentHerderMcpServer } from "../src/index.js";
 import type { ChatRecord, CdpChatDriver, CdpChatPage, MessageRecord, PageIdentity } from "../src/cdp-chat.js";
 import type { ChatGptAccountExportDriver } from "../src/chatgpt-account-archive.js";
-import type { ChatGptHistoryArchiveDriver, ChatGptHistorySegment } from "../src/chatgpt-history-archive.js";
+import { ChatGptHistoryArchive, type ChatGptHistoryArchiveDriver, type ChatGptHistorySegment } from "../src/chatgpt-history-archive.js";
 
 const connected: Array<{ client: Client; server: { close(): Promise<void> } }> = [];
 
@@ -133,9 +136,9 @@ function archiveOnlyDriver(): CdpChatDriver {
   };
 }
 
-async function connect(driver: CdpChatDriver): Promise<Client> {
+async function connect(driver: CdpChatDriver, options?: { cdpHistoryArchive?: ChatGptHistoryArchive }): Promise<Client> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const server = createAgentHerderMcpServer(driver);
+  const server = createAgentHerderMcpServer(driver, options);
   const client = new Client({ name: "cdp-chat-agent-herder-test", version: "1.0.0" });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
@@ -195,6 +198,27 @@ describe("Agent Herder CDP chat capability", () => {
     const body = JSON.parse(String(listed.content[0]?.type === "text" ? listed.content[0].text : "{}")) as { chats: Array<{ chatRef: string }> };
     expect(body.chats).toHaveLength(1);
     expect(body.chats[0]?.chatRef).toBeTruthy();
+  });
+
+  it("keeps history bindings when an HTTP-style MCP reconnect gets the process archive", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-shared-history-"));
+    try {
+      const driver = historyOnlyDriver();
+      const sharedHistory = new ChatGptHistoryArchive(driver.historyArchiveDriver!, { archiveRoot: root });
+      const first = await connect(driver, { cdpHistoryArchive: sharedHistory });
+      const listed = await first.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });
+      const listedBody = JSON.parse(String(listed.content[0]?.type === "text" ? listed.content[0].text : "{}")) as { chats: Array<{ chatRef: string }> };
+
+      // A second HTTP transport gets a new MCP server, but the BrowserClaw page
+      // and history archive belong to the long-lived Agent Herder process.
+      const second = await connect(driver, { cdpHistoryArchive: sharedHistory });
+
+      const exported = await second.callTool({ name: "cdp_export_chat", arguments: { chatRef: listedBody.chats[0]!.chatRef, maxSegments: 2 } });
+      expect(exported.isError).not.toBe(true);
+      expect(JSON.parse(String(exported.content[0]?.type === "text" ? exported.content[0].text : "{}"))).toMatchObject({ status: "complete" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("keeps fixture references isolated between MCP sessions", async () => {
