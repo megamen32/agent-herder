@@ -104,3 +104,9 @@ The native ChatGPT export surface is not available in the owned page. The user s
 - The first restart loaded the route-selector revision. Its `cdp_list_chats` attempt failed before any click because BrowserClaw returned the evaluate result in an unhandled structured form. No transcript was archived and no second tab was created.
 - The current source accepts structured BrowserClaw evaluate values, writes a same-page screenshot receipt on list failures, and adds a bounded `cdp_export_visible_chats` tool. Each completed archive gains local `article/article.md` and `article/article.html` alongside authoritative raw segments.
 - This source change is verified by focused tests/build; it needs the current user-authorized restart before the single live batch canary.
+
+### Result — 2026-08-12 21:11 MSK
+
+- BrowserClaw read-only history capture produced 227 raw snapshots across 33 unique ChatGPT `/c/...` routes. No chat message was sent, edited, or submitted.
+- `cdp_reconcile_known_routes` is now the durable offline recovery path: it materializes the already captured raw snapshots without opening, scrolling, or changing ChatGPT. Live canary: 33 route archives, each with non-empty `article.md` and `article.html`, all `0600`; 141 deduplicated source segments are linked into those route-stable archives. Eight are complete; twenty-five remain honest partial checkpoints.
+- BrowserClaw's saved MCP session later expired. Agent Herder now starts successfully without that optional adapter and does not silently open another tab on restart. The separate future action is an explicitly authorized fresh BrowserClaw acquisition for more history or Library attachment downloads.
