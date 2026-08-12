@@ -15,6 +15,35 @@ afterEach(async () => {
 });
 
 describe("autopilot choice callback HTTP seam", () => {
+  it("lists pending choices for the web inbox without exposing next goals", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-http-list-"));
+    const registry = new ChoiceRegistry(join(root, "choices.json"));
+    const pending = await registry.create({
+      harness: "codex",
+      sessionId: "codex-web-session",
+      turnId: "turn-web",
+      cwd: "/workspace/web",
+      choices: [
+        { choiceId: "inspect", label: "Проверить логи", nextGoal: "Secret continuation prompt." },
+        { choiceId: "retry", label: "Повторить", nextGoal: "Retry prompt." },
+      ],
+    });
+    const server = createWebServer({
+      adapters: new Map(),
+      converter: { async convert() { throw new Error("unused"); } },
+      choiceRegistry: registry,
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/autopilot/choices?status=pending`);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({ choices: [{ requestId: pending.requestId, sessionId: "codex-web-session", harness: "codex", choices: [{ choiceId: "inspect", label: "Проверить логи" }, { choiceId: "retry", label: "Повторить" }] }] });
+    expect(JSON.stringify(body)).not.toContain("Secret continuation prompt");
+  });
+
   it("hands a Hermes selection to the polling plugin without invoking Agent Resume", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-http-hermes-"));
     const registry = new ChoiceRegistry(join(root, "choices.json"));
@@ -80,7 +109,7 @@ describe("autopilot choice callback HTTP seam", () => {
     try {
       const address = server.address();
       if (!address || typeof address === "string") throw new Error("server did not bind");
-      const response = await fetch(`http://127.0.0.1:${address.port}/internal/autopilot/choices/select`, {
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/autopilot/choices/select`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ request_id: pending.requestId, choice_id: "inspect" }),
@@ -93,6 +122,38 @@ describe("autopilot choice callback HTTP seam", () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
+
+  it("keeps bearer auth on the internal callback while allowing the same-origin web action", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-http-auth-"));
+    const registry = new ChoiceRegistry(join(root, "choices.json"));
+    const pending = await registry.create({
+      harness: "hermes",
+      sessionId: "telegram:dm:web",
+      turnId: "turn-web-auth",
+      cwd: "/workspace/hermes",
+      choices: [
+        { choiceId: "continue", label: "Продолжить", nextGoal: "Продолжай." },
+        { choiceId: "inspect", label: "Проверить", nextGoal: "Проверь." },
+      ],
+    });
+    const server = createWebServer({
+      adapters: new Map(),
+      converter: { async convert() { throw new Error("unused"); } },
+      choiceRegistry: registry,
+      mcpAuthToken: "internal-secret",
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const body = JSON.stringify({ request_id: pending.requestId, choice_id: "continue" });
+    const internal = await fetch(`http://127.0.0.1:${address.port}/internal/autopilot/choices/select`, { method: "POST", headers: { "content-type": "application/json" }, body });
+    expect(internal.status).toBe(401);
+    const web = await fetch(`http://127.0.0.1:${address.port}/api/autopilot/choices/select`, { method: "POST", headers: { "content-type": "application/json" }, body });
+    expect(web.status).toBe(202);
+    expect(await web.json()).toMatchObject({ status: "resumed", resumed: true, session_id: "telegram:dm:web" });
+  });
+
   it("resumes the bound Codex session once through Agent Resume and rejects a duplicate selection", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-http-"));
     const requests: ResumeTransportRequest[] = [];

@@ -16,6 +16,8 @@ type HerderSession = SessionListSession & {
 type SessionPart = { type: "text" | "thinking" | "tool_call" | "tool_result"; text?: string; name?: string; input?: unknown; output?: string; error?: boolean };
 type SessionMessage = { id: string; role: "user" | "assistant" | "tool" | "system"; timestamp?: string; text?: string; parts: SessionPart[] };
 type SessionDetails = { session: HerderSession; lineage?: { kind?: string; parentId?: string; role?: string; task?: string }; children?: HerderSession[]; messages: SessionMessage[] };
+type WebAutopilotChoice = { choiceId: string; label: string };
+type WebAutopilotChoiceCard = { requestId: string; sessionId: string; harness: string; cwd: string; status: "pending"; createdAt: string; choices: WebAutopilotChoice[] };
 
 const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, { ...init, headers: { "content-type": "application/json", ...(init?.headers || {}) } });
@@ -71,7 +73,7 @@ function hasVisibleMessage(message: SessionMessage, showReasoning: boolean, show
     || (part.type === "tool_call" || part.type === "tool_result") && showTools);
 }
 
-function SessionList({ entries, activeKey, settings, settingsOpen, searchOpen, searchQuery, options, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect }: {
+function SessionList({ entries, activeKey, settings, settingsOpen, searchOpen, searchQuery, options, choicesBySession, choosingRequestId, choiceError, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect, onChoose }: {
   entries: SessionListEntry[];
   activeKey?: string;
   settings: SessionListSettings;
@@ -79,6 +81,9 @@ function SessionList({ entries, activeKey, settings, settingsOpen, searchOpen, s
   searchOpen: boolean;
   searchQuery: string;
   options: { cwds: string[]; projects: string[]; harnesses: string[] };
+  choicesBySession: ReadonlyMap<string, WebAutopilotChoiceCard>;
+  choosingRequestId?: string;
+  choiceError?: { requestId: string; message: string };
   collapsedChildren: ReadonlySet<string>;
   onSearchChange: (query: string) => void;
   onSearchToggle: () => void;
@@ -86,6 +91,7 @@ function SessionList({ entries, activeKey, settings, settingsOpen, searchOpen, s
   onSettingsToggle: () => void;
   onToggleChildren: (key: string) => void;
   onSelect: (key: string) => void;
+  onChoose: (requestId: string, choiceId: string) => void;
 }) {
   return <aside className="sessions-pane">
     <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Sessions</h1></div><div className="sessions-heading-actions"><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Search sessions" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Session settings" aria-expanded={settingsOpen} onClick={onSettingsToggle}>⚙</button></div></div>
@@ -95,17 +101,26 @@ function SessionList({ entries, activeKey, settings, settingsOpen, searchOpen, s
       <label>Project<select value={settings.project} onChange={(event) => onSettingsChange({ project: event.target.value })}><option value="">All projects</option>{options.projects.map((project) => <option value={project} key={project}>{project}</option>)}</select></label>
       <label>Harness<select value={settings.harness} onChange={(event) => onSettingsChange({ harness: event.target.value })}><option value="">All harnesses</option>{options.harnesses.map((harness) => <option value={harness} key={harness}>{harness}</option>)}</select></label>
       <label>Sort by<select value={settings.sort} onChange={(event) => onSettingsChange({ sort: event.target.value as SessionListSort })}><option value="activity">Recent activity</option><option value="status">Status</option><option value="harness">Harness</option><option value="title">Title</option><option value="cwd">CWD</option></select></label>
+      <label className="session-toggle"><input type="checkbox" aria-label="Show all sessions" checked={settings.showAll} onChange={(event) => onSettingsChange({ showAll: event.target.checked })} /> Show completed sessions</label>
     </div>}
     <div className="session-list" aria-label="Sessions">
       {entries.map(({ session, depth, hasChildren }) => {
         const key = keyOf(session);
+        const decision = choicesBySession.get(key);
         return <div className="session-row-wrap" style={{ marginLeft: `${depth * 14}px` }} key={key}>
           {hasChildren ? <button className="session-fold" aria-label={`Toggle child sessions for ${session.title || session.id}`} onClick={() => onToggleChildren(key)}>{collapsedChildren.has(key) ? "›" : "⌄"}</button> : <span className="session-fold-placeholder" />}
-          <button className={`session-row ${key === activeKey ? "selected" : ""}`} onClick={() => onSelect(key)}>
-            <span className={`status-dot status-${session.status}`} aria-hidden="true" />
-            <span className="session-copy"><strong>{session.title || session.id}</strong><small>{session.harness} · {displayStatus(session.status)}</small><small className="session-preview">{session.lastMessage || session.cwd}</small></span>
-            <time>{formatTime(session.lastActivity)}</time>
-          </button>
+          <div className="session-card">
+            <button className={`session-row ${key === activeKey ? "selected" : ""}`} onClick={() => onSelect(key)}>
+              <span className={`status-dot ${decision ? "status-needs_input" : `status-${session.status}`}`} aria-hidden="true" />
+              <span className="session-copy"><strong>{session.title || session.id}</strong><small>{session.harness} · {decision ? "нужен выбор" : displayStatus(session.status)}</small><small className="session-preview">{session.lastMessage || session.cwd}</small></span>
+              <time>{formatTime(session.lastActivity)}</time>
+            </button>
+            {decision && <div className="choice-card" aria-label={`Autopilot choices for ${session.title || session.id}`}>
+              <strong>Что делать дальше?</strong>
+              {decision.choices.map((choice) => <button className="choice-button" aria-label={`Choose ${choice.label}`} disabled={choosingRequestId === decision.requestId} key={choice.choiceId} onClick={() => onChoose(decision.requestId, choice.choiceId)}>{choice.label}</button>)}
+              {choiceError?.requestId === decision.requestId && <small className="choice-error">{choiceError.message}</small>}
+            </div>}
+          </div>
         </div>;
       })}
       {entries.length === 0 && <div className="empty-list">No sessions match these settings.</div>}
@@ -124,7 +139,10 @@ function App() {
   const [showSessionSettings, setShowSessionSettings] = React.useState(false);
   const [showSessionSearch, setShowSessionSearch] = React.useState(false);
   const [sessionSearch, setSessionSearch] = React.useState("");
-  const [listSettings, setListSettings] = React.useState<SessionListSettings>({ cwd: "", project: "", harness: "", sort: "activity" });
+  const [listSettings, setListSettings] = React.useState<SessionListSettings>({ cwd: "", project: "", harness: "", sort: "activity", showAll: false });
+  const [autopilotChoices, setAutopilotChoices] = React.useState<WebAutopilotChoiceCard[]>([]);
+  const [choosingRequestId, setChoosingRequestId] = React.useState<string>();
+  const [choiceError, setChoiceError] = React.useState<{ requestId: string; message: string }>();
   const [collapsedChildren, setCollapsedChildren] = React.useState<Set<string>>(new Set());
   const foldedInitialized = React.useRef(false);
   const [composer, setComposer] = React.useState("");
@@ -136,14 +154,18 @@ function App() {
   const shouldFollowRef = React.useRef(true);
 
   const loadSessions = React.useCallback(async () => {
-    const result = await api<{ sessions: HerderSession[] }>("/api/sessions");
+    const [result, choiceResult] = await Promise.all([
+      api<{ sessions: HerderSession[] }>("/api/sessions"),
+      api<{ choices: WebAutopilotChoiceCard[] }>("/api/autopilot/choices?status=pending").catch(() => ({ choices: [] })),
+    ]);
     setSessions(result.sessions);
+    setAutopilotChoices(choiceResult.choices);
     if (!foldedInitialized.current && result.sessions.length > 0) {
       const keys = new Set(result.sessions.flatMap((session) => session.meta?.parentSessionKey ? [session.meta.parentSessionKey] : []));
       setCollapsedChildren(keys);
       foldedInitialized.current = true;
     }
-    setActiveKey((current) => current && result.sessions.some((session) => keyOf(session) === current) ? current : result.sessions[0] ? keyOf(result.sessions[0]) : undefined);
+    setActiveKey((current) => current && result.sessions.some((session) => keyOf(session) === current) ? current : undefined);
   }, []);
   React.useEffect(() => { void loadSessions().finally(() => setLoading(false)); const timer = window.setInterval(() => void loadSessions(), 3000); return () => window.clearInterval(timer); }, [loadSessions]);
 
@@ -174,8 +196,35 @@ function App() {
     projects: [...new Set(sessions.map((session) => projectFor(session, sessionMap)).filter(Boolean))].sort(),
     harnesses: [...new Set(sessions.map((session) => session.harness).filter(Boolean))].sort(),
   }), [sessions, sessionMap]);
-  const sessionEntries = React.useMemo(() => filterAndArrangeSessions(sessions, listSettings, collapsedChildren), [sessions, listSettings, collapsedChildren]);
+  const choicesBySession = React.useMemo(() => {
+    const result = new Map<string, WebAutopilotChoiceCard>();
+    for (const choice of autopilotChoices) {
+      const key = `${choice.harness}:${choice.sessionId}`;
+      if (!result.has(key)) result.set(key, choice);
+    }
+    return result;
+  }, [autopilotChoices]);
+  const choiceSessionKeys = React.useMemo(() => new Set(choicesBySession.keys()), [choicesBySession]);
+  const sessionEntries = React.useMemo(() => filterAndArrangeSessions(sessions, listSettings, collapsedChildren, choiceSessionKeys), [sessions, listSettings, collapsedChildren, choiceSessionKeys]);
   const visibleSessionEntries = React.useMemo(() => sessionEntries.filter(({ session }) => matchesSessionQuery(session, sessionSearch)), [sessionEntries, sessionSearch]);
+  React.useEffect(() => {
+    if (activeKey && visibleSessionEntries.some(({ session }) => keyOf(session) === activeKey)) return;
+    setActiveKey(visibleSessionEntries[0] ? keyOf(visibleSessionEntries[0].session) : undefined);
+  }, [activeKey, visibleSessionEntries]);
+  const chooseAutopilot = async (requestId: string, choiceId: string) => {
+    if (choosingRequestId) return;
+    setChoosingRequestId(requestId);
+    setChoiceError(undefined);
+    try {
+      await api("/api/autopilot/choices/select", { method: "POST", body: JSON.stringify({ request_id: requestId, choice_id: choiceId }) });
+      setAutopilotChoices((current) => current.filter((choice) => choice.requestId !== requestId));
+      await loadSessions();
+    } catch (error) {
+      setChoiceError({ requestId, message: (error as Error).message });
+    } finally {
+      setChoosingRequestId(undefined);
+    }
+  };
   const runAction = async (action: "resume" | "stop" | "recover") => {
     if (!activeKey) return;
     const { harness, id } = splitKey(activeKey);
@@ -208,7 +257,7 @@ function App() {
 
   if (loading) return <main className="oc-app"><div className="oc-loading">Loading sessions…</div></main>;
   return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"}`}>
-    <SessionList entries={visibleSessionEntries} activeKey={activeKey} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onSelect={(key) => { shouldFollowRef.current = true; setShowScrollToLatest(false); setActiveKey(key); setMobileView("chat"); }} />
+    <SessionList entries={visibleSessionEntries} activeKey={activeKey} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { shouldFollowRef.current = true; setShowScrollToLatest(false); setActiveKey(key); setMobileView("chat"); }} />
     <section className="chat-pane">
       <header className="chat-header">
         <button className="mobile-back" onClick={() => setMobileView("sessions")} aria-label="Back to sessions">← <span>Sessions</span></button>

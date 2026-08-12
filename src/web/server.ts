@@ -381,9 +381,28 @@ export function createWebServer(dependencies: WebDependencies): Server {
 
 async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
-  if (request.method === "POST" && url.pathname === "/internal/autopilot/choices/select") {
+  if (request.method === "GET" && url.pathname === "/api/autopilot/choices") {
     if (!choiceRegistry) return sendJson(response, 503, { error: "Choice registry is disabled" });
-    if (mcpAuthToken && request.headers.authorization !== `Bearer ${mcpAuthToken}`) return sendJson(response, 401, { error: "unauthorized" });
+    const status = url.searchParams.get("status") || "pending";
+    if (status !== "pending") return sendJson(response, 400, { error: "status must be pending" });
+    const records = await choiceRegistry.list({ status: "pending" });
+    return sendJson(response, 200, {
+      choices: records.map((record) => ({
+        requestId: record.requestId,
+        sessionId: record.sessionId,
+        harness: record.harness ?? "codex",
+        cwd: record.cwd,
+        status: record.status,
+        createdAt: record.createdAt,
+        choices: record.choices.map(({ choiceId, label }) => ({ choiceId, label })),
+      })),
+    });
+  }
+  const internalChoiceSelection = url.pathname === "/internal/autopilot/choices/select";
+  const webChoiceSelection = url.pathname === "/api/autopilot/choices/select";
+  if (request.method === "POST" && (internalChoiceSelection || webChoiceSelection)) {
+    if (!choiceRegistry) return sendJson(response, 503, { error: "Choice registry is disabled" });
+    if (internalChoiceSelection && mcpAuthToken && request.headers.authorization !== `Bearer ${mcpAuthToken}`) return sendJson(response, 401, { error: "unauthorized" });
     const body = await readJson(request);
     if (!isUuid(body.request_id) || typeof body.choice_id !== "string" || body.choice_id.trim() === "") return sendJson(response, 400, { error: "request_id and choice_id are required" });
     const claimed = await choiceRegistry.claimForResume(body.request_id, body.choice_id);

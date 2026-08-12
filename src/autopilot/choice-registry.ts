@@ -113,6 +113,16 @@ export class ChoiceRegistry {
     return record ? clone(record) : null;
   }
 
+  /** Return recent durable choice records for internal projections and operations. */
+  async list(options: { status?: TimeoutChoiceState; limit?: number } = {}): Promise<PendingChoice[]> {
+    const limit = Math.max(1, Math.min(options.limit ?? 100, 200));
+    return (await this.read()).requests
+      .filter((record) => !options.status || record.status === options.status)
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+      .slice(0, limit)
+      .map(clone);
+  }
+
   async claim(requestId: string, choiceId: string): Promise<PendingChoice> {
     if (!isText(choiceId)) throw new Error("choiceId is required");
     return (await this.claimForResume(requestId, choiceId)).record;

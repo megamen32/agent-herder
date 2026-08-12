@@ -148,6 +148,16 @@ callback resumes the exact Codex session and then removes the inline keyboard,
 leaving a `✓ Выбрано: ...` marker. If the user taps an already-resolved card,
 the callback is idempotent and does not send a second turn.
 
+The web dashboard uses the same durable choice registry. Its default inbox
+shows only running sessions, sessions waiting for input, and sessions with a
+pending autopilot decision; enable **Show completed sessions** in settings to
+restore the full list. Pending decisions render as buttons on the bound session
+card. Selecting one resumes that exact Codex/OpenCode session through Agent
+Resume (or hands it to the Hermes polling plugin), then removes the buttons.
+The browser receives only `choiceId` and the user-facing label; `nextGoal`
+remains server-side. Clicking the session row opens its available conversation
+history in the main panel.
+
 Human and completion notices use the existing `notify.event.v1` producer seam:
 
 ```text

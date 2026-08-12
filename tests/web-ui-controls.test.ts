@@ -25,5 +25,9 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('aria-label={isResumeMode ? "Resume session" : "Send message"}');
     expect(main).toContain('{isResumeMode ? "▶" : "↑"}');
     expect(main).toContain("details?.children?.length");
+    expect(main).toContain('aria-label="Show all sessions"');
+    expect(main).toContain('aria-label={`Choose ${choice.label}`}');
+    expect(main).toContain('/api/autopilot/choices?status=pending');
+    expect(main).toContain('/api/autopilot/choices/select');
   });
 });

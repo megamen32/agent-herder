@@ -7,7 +7,7 @@ const sessions = [
   { id: "other", harness: "opencode", title: "Other", cwd: "/work/beta", status: "stopped", lastActivity: "2026-08-09T09:00:00Z", meta: {} },
 ];
 
-const defaults: SessionListSettings = { cwd: "", project: "", harness: "", sort: "activity" };
+const defaults: SessionListSettings = { cwd: "", project: "", harness: "", sort: "activity", showAll: true };
 
 describe("session list settings", () => {
   it("filters by cwd, project, and harness", () => {
@@ -22,5 +22,10 @@ describe("session list settings", () => {
 
     const expanded = filterAndArrangeSessions(sessions, { ...defaults, sort: "title" }, new Set());
     expect(expanded.map((entry) => [entry.session.id, entry.depth])).toEqual([["other", 0], ["parent", 0], ["child", 1]]);
+  });
+
+  it("shows only active or decision-bound sessions by default", () => {
+    const focused = filterAndArrangeSessions(sessions, { ...defaults, showAll: false }, new Set(), new Set(["opencode:other"]));
+    expect(focused.map((entry) => entry.session.id)).toEqual(["other", "child"]);
   });
 });

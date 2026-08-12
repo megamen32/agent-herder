@@ -18,6 +18,7 @@ export type SessionListSettings = {
   project: string;
   harness: string;
   sort: SessionListSort;
+  showAll: boolean;
 };
 
 export type SessionListEntry = {
@@ -73,9 +74,11 @@ export function filterAndArrangeSessions(
   sessions: SessionListSession[],
   settings: SessionListSettings,
   collapsed: ReadonlySet<string>,
+  choiceSessionKeys: ReadonlySet<string> = new Set(),
 ): SessionListEntry[] {
   const byKey = new Map(sessions.map((session) => [sessionKey(session), session]));
   const filtered = sessions.filter((session) => {
+    if (!settings.showAll && !["running", "needs_input"].includes(session.status) && !choiceSessionKeys.has(sessionKey(session))) return false;
     if (settings.harness && session.harness !== settings.harness) return false;
     if (settings.cwd && !session.cwd.startsWith(settings.cwd)) return false;
     if (settings.project && projectFor(session, byKey) !== settings.project) return false;
