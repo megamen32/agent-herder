@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BrowserClawAccountExportDriver,
+  BrowserClawCdpMcpClient,
   BrowserClawMcpA11yClient,
   isChatHistoryConversationUrl,
   visibleSidebarChats,
@@ -284,6 +285,27 @@ describe("BrowserClawAccountExportDriver", () => {
     const snapshot = await new BrowserClawMcpA11yClient(client as never).actPage(7, { kind: "click", ref: "e1" });
     expect(calls).toEqual(["act", "tabs", "snapshot"]);
     expect(snapshot.url).toBe("https://chatgpt.com/c/real-chat");
+  });
+
+  it("resumes an existing BrowserClaw MCP session without sending initialize again", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: Array<{ method: string; sessionId: string | null }> = [];
+    globalThis.fetch = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as { method: string };
+      const headers = new Headers(init?.headers);
+      calls.push({ method: body.method, sessionId: headers.get("mcp-session-id") });
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { tools: [] } }), {
+        status: 200,
+        headers: { "mcp-session-id": "resumed-session" },
+      });
+    }) as typeof fetch;
+    try {
+      const client = await BrowserClawCdpMcpClient.connect("http://browserclaw.test/mcp", Date.now() + 5_000, undefined, "resumed-session");
+      expect(client.sessionRef).toBe("resumed-session");
+      expect(calls).toEqual([{ method: "tools/list", sessionId: "resumed-session" }]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("reads only same-page ChatGPT conversation links without opening a tab", async () => {

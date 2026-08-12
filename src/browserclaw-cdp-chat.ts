@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, mkdir, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
   createBrowserClawA11yDriver,
@@ -19,6 +20,7 @@ import type { ChatRecord, CdpChatCapabilities, CdpChatDriver, CdpChatPage, Downl
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:9010/mcp";
 const CHATGPT_ORIGIN = "https://chatgpt.com";
+const DEFAULT_LEASE_PATH = join(homedir(), ".local", "state", "agent-herder", "browserclaw-cdp-chat-lease.json");
 const DEFAULT_ACCOUNT_EXPORT_DIAGNOSTIC_ROOT = resolve(process.cwd(), "trash", "logs");
 const DEFAULT_HISTORY_ARCHIVE_DIAGNOSTIC_ROOT = resolve(process.cwd(), "trash", "logs");
 const MAX_ACCOUNT_EXPORT_SCREENSHOT_BYTES = 12 * 1024 * 1024;
@@ -84,6 +86,15 @@ export interface BrowserClawCdpChatDriverOptions {
   token?: string;
   /** Existing single page may be reused; otherwise exactly one page is opened by this driver. */
   openPage?: boolean;
+  /** Private process lease used to resume the same BrowserClaw session/page after restart. */
+  leasePath?: string;
+}
+
+interface BrowserClawCdpChatLease {
+  format: "agent-herder.browserclaw-cdp-chat-lease.v1";
+  endpoint: string;
+  sessionId: string;
+  page: number;
 }
 
 function remainingMs(deadlineAt: number): number {
@@ -119,11 +130,14 @@ export class BrowserClawCdpMcpClient {
   private sessionId: string | undefined;
   private requestId = 1;
 
-  private constructor(private readonly endpoint: string, private readonly token?: string) {}
+  private constructor(private readonly endpoint: string, private readonly token?: string, sessionId?: string) {
+    this.sessionId = sessionId;
+  }
 
-  static async connect(endpoint: string, deadlineAt: number, token?: string): Promise<BrowserClawCdpMcpClient> {
-    const client = new BrowserClawCdpMcpClient(endpoint, token);
-    await client.initialize(deadlineAt);
+  static async connect(endpoint: string, deadlineAt: number, token?: string, sessionId?: string): Promise<BrowserClawCdpMcpClient> {
+    const client = new BrowserClawCdpMcpClient(endpoint, token, sessionId);
+    if (sessionId) await client.resume(deadlineAt);
+    else await client.initialize(deadlineAt);
     return client;
   }
 
@@ -173,6 +187,11 @@ export class BrowserClawCdpMcpClient {
     }, deadlineAt);
     if (response?.error || !this.sessionId) throw new Error("BrowserClaw MCP initialization failed");
     await this.post({ jsonrpc: "2.0", method: "notifications/initialized", params: {} }, deadlineAt);
+  }
+
+  private async resume(deadlineAt: number): Promise<void> {
+    const response = await this.post({ jsonrpc: "2.0", id: this.requestId++, method: "tools/list", params: {} }, deadlineAt);
+    if (response?.error || !this.sessionId) throw new Error("BrowserClaw MCP session resume failed");
   }
 
   private async post(body: Record<string, unknown>, deadlineAt: number): Promise<Record<string, unknown> | null> {
@@ -415,24 +434,56 @@ export class BrowserClawAccountExportDriver implements ChatGptAccountExportDrive
   }
 }
 
+function isBrowserClawCdpChatLease(value: unknown): value is BrowserClawCdpChatLease {
+  if (!value || typeof value !== "object") return false;
+  const lease = value as Partial<BrowserClawCdpChatLease>;
+  return lease.format === "agent-herder.browserclaw-cdp-chat-lease.v1"
+    && typeof lease.endpoint === "string" && lease.endpoint.startsWith("http")
+    && typeof lease.sessionId === "string" && lease.sessionId.length > 0
+    && typeof lease.page === "number" && Number.isSafeInteger(lease.page) && lease.page >= 0;
+}
+
+async function readBrowserClawCdpChatLease(path: string, endpoint: string): Promise<BrowserClawCdpChatLease | undefined> {
+  try {
+    const lease = JSON.parse(await readFile(path, "utf8")) as unknown;
+    return isBrowserClawCdpChatLease(lease) && lease.endpoint === endpoint ? lease : undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw new Error("BrowserClaw CDP lease is unreadable");
+  }
+}
+
+async function writeBrowserClawCdpChatLease(path: string, lease: BrowserClawCdpChatLease): Promise<void> {
+  await writePrivateFile(path, JSON.stringify(lease, null, 2) + "\n");
+}
+
 /** Concrete driver factory loaded by CDP_CHAT_DRIVER_MODULE. */
 export async function createCdpChatDriver(options: BrowserClawCdpChatDriverOptions = {}): Promise<CdpChatDriver> {
+  const endpoint = options.endpoint ?? process.env.AGENT_HERDER_BROWSERCLAW_MCP_URL ?? DEFAULT_ENDPOINT;
+  const leasePath = resolve(options.leasePath ?? process.env.AGENT_HERDER_BROWSERCLAW_CDP_LEASE_PATH ?? DEFAULT_LEASE_PATH);
+  const lease = await readBrowserClawCdpChatLease(leasePath, endpoint);
   const client = await BrowserClawCdpMcpClient.connect(
-    options.endpoint ?? process.env.AGENT_HERDER_BROWSERCLAW_MCP_URL ?? DEFAULT_ENDPOINT,
+    endpoint,
     deadline(),
     options.token ?? (process.env.AGENT_HERDER_BROWSERCLAW_MCP_TOKEN?.trim() || undefined),
+    lease?.sessionId,
   );
   const a11yClient = new BrowserClawMcpA11yClient(client);
-  // A BrowserClaw page belongs to its MCP session. A visible pre-existing ChatGPT
-  // tab can therefore be unowned, so this driver creates exactly one page in its
-  // own long-lived session rather than trying to claim that tab.
-  const ownedPage = options.openPage !== false ? await a11yClient.openChatGptPage() : undefined;
+  // BrowserClaw page ownership is session-scoped. Resume a durable lease when
+  // possible; otherwise the initial acquisition creates exactly one root tab.
+  const ownedPage = lease?.page ?? (options.openPage !== false ? await a11yClient.openChatGptPage() : undefined);
   const a11y = createBrowserClawA11yDriver(a11yClient, {
     targetUrl: `${CHATGPT_ORIGIN}/`,
     allowPathPrefix: "/",
     page: ownedPage,
   });
   const ownedA11yPage = await a11y.acquirePage();
+  await writeBrowserClawCdpChatLease(leasePath, {
+    format: "agent-herder.browserclaw-cdp-chat-lease.v1",
+    endpoint,
+    sessionId: a11yClient.sessionRef,
+    page: ownedPage!,
+  });
   const page = new BrowserClawCdpChatPage(ownedA11yPage, a11yClient.sessionRef);
   const historyArchiveDriver = new BrowserClawHistoryArchiveDriver(ownedA11yPage, a11yClient.sessionRef, {
     async capture(input) {
