@@ -132,3 +132,12 @@ ambiguous, capture and inspect a secret-safe screenshot from that same MCP
 session and page before retrying, reloading, navigating, or opening any new
 tab. Record only the redacted timestamp, page URL without query data, operation
 and error class — never a ChatGPT transcript, cookies, headers, or prompt body.
+
+For the native account-export flow, the BrowserClaw driver additionally writes
+a private `trash/logs/chatgpt-account-export-*.a11y.json` diagnostic on a
+failure (and a same-page PNG when BrowserClaw returns one). It is a bounded,
+redacted slice of BrowserClaw's `snapshot(mode: "full")` — the supported
+equivalent of a CDP accessibility tree — containing only the relevant
+name/role/disabled fields near Data Controls and Export. Use it to adjust a
+matcher after a UI change; do not open a second inspection tab or record a
+full chat transcript.

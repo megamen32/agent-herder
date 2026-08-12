@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { chmod, mkdir, rename, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import {
   createBrowserClawA11yDriver,
   type BrowserClawA11yClient,
@@ -16,6 +18,33 @@ import type { ChatRecord, CdpChatCapabilities, CdpChatDriver, CdpChatPage, Downl
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:9010/mcp";
 const CHATGPT_ORIGIN = "https://chatgpt.com";
+const DEFAULT_ACCOUNT_EXPORT_DIAGNOSTIC_ROOT = resolve(process.cwd(), "trash", "logs");
+const MAX_ACCOUNT_EXPORT_SCREENSHOT_BYTES = 12 * 1024 * 1024;
+const MAX_ACCOUNT_EXPORT_DIAGNOSTIC_TEXT = 512;
+const ACCOUNT_EXPORT_KEYWORDS = /(?:data|данн|control|управлен|privacy|конфиден|export|экспорт|download|скач)/iu;
+const ACTIONABLE_ACCOUNT_EXPORT_ROLES = new Set(["button", "link", "menuitem", "tab"]);
+
+export interface BrowserClawScreenshot {
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  data: string;
+}
+
+export interface BrowserClawAccountExportDiagnosticInput {
+  outcome: "failed" | "requested" | "already_requested";
+  stage: string;
+  failure?: string;
+  snapshot: BrowserClawA11ySnapshot;
+  stoppedNode?: BrowserClawA11yNode;
+}
+
+export interface BrowserClawAccountExportDiagnosticReporter {
+  capture(input: BrowserClawAccountExportDiagnosticInput): Promise<void>;
+}
+
+export interface BrowserClawAccountExportDiagnosticArtifact {
+  a11yPath: string;
+  screenshotPath?: string;
+}
 
 /**
  * BrowserClaw currently attests the owned-page account-export flow, but it does
@@ -98,6 +127,21 @@ export class BrowserClawCdpMcpClient {
     return response ?? {};
   }
 
+  async callToolImage(name: string, argumentsValue: Record<string, unknown>, deadlineAt: number): Promise<BrowserClawScreenshot> {
+    const response = await this.callToolRaw(name, argumentsValue, deadlineAt);
+    const result = response.result as { content?: unknown } | undefined;
+    const content = result?.content;
+    const image = Array.isArray(content)
+      ? content.find((item): item is { type: "image"; data: string; mimeType: BrowserClawScreenshot["mimeType"] } => Boolean(
+        item && typeof item === "object" && (item as { type?: unknown }).type === "image"
+          && typeof (item as { data?: unknown }).data === "string"
+          && ["image/png", "image/jpeg", "image/webp"].includes((item as { mimeType?: unknown }).mimeType as string),
+      ))
+      : undefined;
+    if (!image) throw new Error("BrowserClaw screenshot did not return an image");
+    return { mimeType: image.mimeType, data: image.data };
+  }
+
   private async initialize(deadlineAt: number): Promise<void> {
     const response = await this.post({
       jsonrpc: "2.0",
@@ -137,13 +181,45 @@ export class BrowserClawCdpMcpClient {
 }
 
 /** BrowserClaw implementation of the minimal semantic A11y transport. */
-class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
+export class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
   private readonly urls = new Map<number, string>();
 
   constructor(private readonly client: BrowserClawCdpMcpClient) {}
 
   get sessionRef(): string {
     return this.client.sessionRef;
+  }
+
+  async captureAccountExportDiagnostic(input: BrowserClawAccountExportDiagnosticInput): Promise<BrowserClawAccountExportDiagnosticArtifact> {
+    const root = resolve(process.env.CHATGPT_ACCOUNT_EXPORT_DIAGNOSTIC_ROOT || DEFAULT_ACCOUNT_EXPORT_DIAGNOSTIC_ROOT);
+    const timestamp = new Date().toISOString().replace(/[:.]/gu, "-");
+    const base = `chatgpt-account-export-${timestamp}-${randomUUID()}`;
+    const a11yPath = join(root, `${base}.a11y.json`);
+    const payload = JSON.stringify(redactedAccountExportDiagnostic(input), null, 2) + "\n";
+    await writePrivateFile(a11yPath, payload);
+
+    try {
+      const screenshot = await this.client.callToolImage("screenshot", {
+        page: input.snapshot.page,
+        format: "png",
+        fullPage: false,
+        size: { width: 1440, height: 1000 },
+      }, deadline());
+      const bytes = Buffer.from(screenshot.data, "base64");
+      if (bytes.length === 0 || bytes.length > MAX_ACCOUNT_EXPORT_SCREENSHOT_BYTES) {
+        throw new Error("BrowserClaw screenshot is empty or exceeds the diagnostic size limit");
+      }
+      const screenshotPath = join(root, `${base}.${imageExtension(screenshot.mimeType)}`);
+      await writePrivateFile(screenshotPath, bytes);
+      return { a11yPath, screenshotPath };
+    } catch (error) {
+      const updated = JSON.stringify({
+        ...redactedAccountExportDiagnostic(input),
+        screenshot: { captured: false, error: diagnosticError(error) },
+      }, null, 2) + "\n";
+      await writePrivateFile(a11yPath, updated);
+      return { a11yPath };
+    }
   }
 
   async listTabs(): Promise<readonly BrowserClawA11yTab[]> {
@@ -170,7 +246,9 @@ class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
   }
 
   async snapshotPage(page: number): Promise<BrowserClawA11ySnapshot> {
-    const response = await this.client.callToolRaw("snapshot", { page }, deadline());
+    // BrowserClaw's full snapshot is the supported equivalent of a CDP AX tree
+    // for this owned page. It is read-only and does not create or navigate tabs.
+    const response = await this.client.callToolRaw("snapshot", { page, mode: "full", depth: 100 }, deadline());
     return normalizeBrowserClawA11yResponse(response, {
       page,
       url: this.currentUrl(page),
@@ -202,12 +280,12 @@ class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
 export class BrowserClawAccountExportDriver implements ChatGptAccountExportDriver {
   private readonly page: BrowserClawA11yPage;
 
-  private constructor(page: BrowserClawA11yPage) {
+  private constructor(page: BrowserClawA11yPage, private readonly diagnostics?: BrowserClawAccountExportDiagnosticReporter) {
     this.page = page;
   }
 
-  static fromOwnedPage(page: BrowserClawA11yPage): BrowserClawAccountExportDriver {
-    return new BrowserClawAccountExportDriver(page);
+  static fromOwnedPage(page: BrowserClawA11yPage, diagnostics?: BrowserClawAccountExportDiagnosticReporter): BrowserClawAccountExportDriver {
+    return new BrowserClawAccountExportDriver(page, diagnostics);
   }
 
   async requestAccountExport(): Promise<{
@@ -215,19 +293,33 @@ export class BrowserClawAccountExportDriver implements ChatGptAccountExportDrive
     delivery: "email_or_sms";
     status: "requested" | "already_requested";
   }> {
-    let snapshot = await this.page.snapshot(deadline());
-    snapshot = await this.click(snapshot, (node) => node.role === "button" && /(?:открыть )?(?:меню )?профил|profile/i.test(node.name ?? ""), "profile menu");
-    snapshot = await this.click(snapshot, (node) => ["menuitem", "button", "link"].includes(node.role) && /(?:^|\s)(?:настройки|settings)(?:$|\s)/i.test(node.name ?? ""), "settings");
-    snapshot = await this.click(snapshot, (node) => ["tab", "button", "link", "menuitem"].includes(node.role) && /^(управление данными|data controls|data management)$/i.test(node.name ?? ""), "data management");
+    let snapshot: BrowserClawA11ySnapshot | undefined;
+    let stage = "initial snapshot";
+    try {
+      snapshot = await this.page.snapshot(deadline());
+      stage = "profile menu";
+      snapshot = await this.click(snapshot, (node) => node.role === "button" && /(?:открыть )?(?:меню )?профил|profile/i.test(node.name ?? ""), stage);
+      stage = "settings";
+      snapshot = await this.click(snapshot, (node) => ["menuitem", "button", "link"].includes(node.role) && /(?:^|\s)(?:настройки|settings)(?:$|\s)/i.test(node.name ?? ""), stage);
+      stage = "data management";
+      snapshot = await this.click(snapshot, isDataManagementControl, stage);
 
-    const alreadyRequested = findNode(snapshot.root, (node) => /(?:уже )?(?:запрош|request(?:ed)? already|export already)/i.test(`${node.name ?? ""} ${node.description ?? ""}`));
-    if (alreadyRequested) {
-      return { requestedAt: new Date().toISOString(), delivery: "email_or_sms", status: "already_requested" };
+      const alreadyRequested = findNode(snapshot.root, (node) => /(?:уже )?(?:запрош|request(?:ed)? already|export already)/i.test(`${node.name ?? ""} ${node.description ?? ""}`));
+      if (alreadyRequested) {
+        await this.captureDiagnostic({ outcome: "already_requested", stage, snapshot });
+        return { requestedAt: new Date().toISOString(), delivery: "email_or_sms", status: "already_requested" };
+      }
+
+      stage = "account export";
+      snapshot = await this.click(snapshot, isAccountExportControl, stage);
+      stage = "confirm account export";
+      snapshot = await this.click(snapshot, (node) => node.role === "button" && /^(?:подтвердить(?: экспорт)?|confirm(?: export)?|confirm your export)$/i.test(node.name ?? ""), stage);
+      await this.captureDiagnostic({ outcome: "requested", stage, snapshot });
+      return { requestedAt: new Date().toISOString(), delivery: "email_or_sms", status: "requested" };
+    } catch (error) {
+      if (snapshot) await this.captureDiagnostic({ outcome: "failed", stage, failure: diagnosticError(error), snapshot, stoppedNode: findRelevantAccountExportNode(snapshot.root) });
+      throw error;
     }
-
-    snapshot = await this.click(snapshot, (node) => node.role === "button" && /^(?:экспорт(?:ировать)?(?: данн(?:ые|ых))?|export(?: data)?|export your data)$/i.test((node.name ?? "").trim()), "account export");
-    snapshot = await this.click(snapshot, (node) => node.role === "button" && /^(?:подтвердить(?: экспорт)?|confirm(?: export)?|confirm your export)$/i.test(node.name ?? ""), "confirm account export");
-    return { requestedAt: new Date().toISOString(), delivery: "email_or_sms", status: "requested" };
   }
 
   private async click(
@@ -239,6 +331,15 @@ export class BrowserClawAccountExportDriver implements ChatGptAccountExportDrive
     if (!node || node.disabled) throw new Error(`ChatGPT ${label} control was not found on the owned page`);
     await this.page.act({ snapshotRef: snapshot.snapshotRef, action: { kind: "click", ref: node.ref } }, deadline());
     return this.page.snapshot(deadline());
+  }
+
+  private async captureDiagnostic(input: BrowserClawAccountExportDiagnosticInput): Promise<void> {
+    if (!this.diagnostics) return;
+    try {
+      await this.diagnostics.capture(input);
+    } catch (error) {
+      console.error(`[browserclaw-cdp-chat] account-export diagnostic failed: ${diagnosticError(error)}`);
+    }
   }
 }
 
@@ -261,12 +362,17 @@ export async function createCdpChatDriver(options: BrowserClawCdpChatDriverOptio
   });
   const ownedA11yPage = await a11y.acquirePage();
   const page = new BrowserClawCdpChatPage(ownedA11yPage, a11yClient.sessionRef);
+  const accountExportDriver = BrowserClawAccountExportDriver.fromOwnedPage(ownedA11yPage, {
+    async capture(input) {
+      await a11yClient.captureAccountExportDiagnostic(input);
+    },
+  });
   return {
     async acquirePage(): Promise<CdpChatPage> {
       return page;
     },
     capabilities: BROWSERCLAW_CDP_CHAT_CAPABILITIES,
-    accountExportDriver: BrowserClawAccountExportDriver.fromOwnedPage(ownedA11yPage),
+    accountExportDriver,
   };
 }
 
@@ -363,6 +469,74 @@ function textContent(response: Record<string, unknown>): string {
     .filter((item): item is { type: "text"; text: string } => Boolean(item && typeof item === "object" && (item as { type?: unknown }).type === "text" && typeof (item as { text?: unknown }).text === "string"))
     .map((item) => item.text)
     .join("\n");
+}
+
+function isDataManagementControl(node: BrowserClawA11yNode): boolean {
+  return ACTIONABLE_ACCOUNT_EXPORT_ROLES.has(node.role)
+    && /(?:управлен(?:ие|ия) данн|data\s*(?:controls?|management|privacy)|privacy\s*(?:controls?|settings?))/iu.test(`${node.name ?? ""} ${node.description ?? ""}`);
+}
+
+function isAccountExportControl(node: BrowserClawA11yNode): boolean {
+  return ACTIONABLE_ACCOUNT_EXPORT_ROLES.has(node.role)
+    && /(?:экспорт(?:ировать)?(?:\s+данн(?:ые|ых))?|export(?:\s+(?:data|your\s+data))?|download\s+(?:data|your\s+data))/iu.test(`${node.name ?? ""} ${node.description ?? ""}`);
+}
+
+function diagnosticError(error: unknown): string {
+  const value = error instanceof Error ? error.message : String(error);
+  return value.replace(/[\r\n\t]+/gu, " ").slice(0, MAX_ACCOUNT_EXPORT_DIAGNOSTIC_TEXT);
+}
+
+function diagnosticNode(node: BrowserClawA11yNode): { role: string; name?: string; description?: string; disabled?: boolean } {
+  return {
+    role: node.role,
+    ...(node.name ? { name: node.name.slice(0, MAX_ACCOUNT_EXPORT_DIAGNOSTIC_TEXT) } : {}),
+    ...(node.description ? { description: node.description.slice(0, MAX_ACCOUNT_EXPORT_DIAGNOSTIC_TEXT) } : {}),
+    ...(node.disabled === undefined ? {} : { disabled: node.disabled }),
+  };
+}
+
+function accountExportDiagnosticNodes(root: BrowserClawA11yNode): Array<{ role: string; name?: string; description?: string; disabled?: boolean }> {
+  const matches: Array<{ role: string; name?: string; description?: string; disabled?: boolean }> = [];
+  const visit = (node: BrowserClawA11yNode): void => {
+    if (ACCOUNT_EXPORT_KEYWORDS.test(`${node.name ?? ""} ${node.description ?? ""}`)) matches.push(diagnosticNode(node));
+    for (const child of node.children) visit(child);
+  };
+  visit(root);
+  return matches.slice(0, 100);
+}
+
+function findRelevantAccountExportNode(root: BrowserClawA11yNode): BrowserClawA11yNode | undefined {
+  return findNode(root, isAccountExportControl) ?? findNode(root, isDataManagementControl) ?? findNode(root, (node) => ACCOUNT_EXPORT_KEYWORDS.test(`${node.name ?? ""} ${node.description ?? ""}`));
+}
+
+function redactedAccountExportDiagnostic(input: BrowserClawAccountExportDiagnosticInput): Record<string, unknown> {
+  return {
+    schema: "agent-herder.chatgpt-account-export-a11y.v1",
+    capturedAt: new Date().toISOString(),
+    outcome: input.outcome,
+    stage: input.stage,
+    ...(input.failure ? { failure: input.failure } : {}),
+    page: input.snapshot.page,
+    url: (() => {
+      const parsed = new URL(input.snapshot.url);
+      return `${parsed.origin}${parsed.pathname}`;
+    })(),
+    ...(input.stoppedNode ? { stoppedNode: diagnosticNode(input.stoppedNode) } : {}),
+    relevantNodes: accountExportDiagnosticNodes(input.snapshot.root),
+    screenshot: { captured: true },
+  };
+}
+
+function imageExtension(mimeType: BrowserClawScreenshot["mimeType"]): "png" | "jpg" | "webp" {
+  return mimeType === "image/jpeg" ? "jpg" : mimeType === "image/webp" ? "webp" : "png";
+}
+
+async function writePrivateFile(path: string, content: string | Uint8Array): Promise<void> {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(temporary, content, { mode: 0o600 });
+  await rename(temporary, path);
+  await chmod(path, 0o600);
 }
 
 function findNode(node: BrowserClawA11yNode, predicate: (node: BrowserClawA11yNode) => boolean): BrowserClawA11yNode | undefined {
