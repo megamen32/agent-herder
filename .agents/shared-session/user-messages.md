@@ -23,3 +23,20 @@ The user explicitly changed remediation runtime: do not use Hermes; use the
 existing OpenCode harness. This supersedes the local Hermes watchdog-repair
 route. No live OpenCode retry, deploy, restart, Telegram send, or other external
 action is authorized merely by this correction.
+
+## 2026-08-12 — current Agent Herder MVP request
+
+The newest explicit user request in Codex task session
+`019feaff-f476-7592-8e53-e2f2351fbb84` is: `сделай быстрый минимально рабочий
+результат`. It continues the Agent Herder objective recorded in
+`/home/roomhacker/agents-projects/.agents/tasks/work-20260811-agent-herder-runtime-settings-ui.md`:
+after a judge returns `continue`, append one goal to the same Codex thread with
+durable, target-bound admission semantics. This request supersedes the old
+health-remediation P0 for this task lineage only. It does not authorize a live
+health retry, global hook edit, service restart, all-session activation, live
+timeout, deployment, or production-session continuation.
+
+The authoritative bounded task lineage is now
+`.agents/tasks/work-20260812-agent-herder-same-thread-mvp.md`. The older
+workspace-root runtime-settings UI card is preserved as history and is not the
+acceptance contract for this narrowed request.

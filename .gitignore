@@ -14,4 +14,6 @@ graphify-out/
 .tmpbin/
 .worktrees/
 .agents/last-human-commit/
+.agents/shared-session/time/
 dist.backup-*/
+trash/
