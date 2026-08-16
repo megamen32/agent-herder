@@ -125,7 +125,10 @@ async function main(): Promise<void> {
       notify,
       allowSessions,
       allowAllSessions: isAllSessionsOptIn(),
-      ...(sessionOverride?.enabled === true ? {} : { effectivePolicy }),
+      effectivePolicy,
+      ...(sessionOverride?.enabled === true && (effectivePolicy.source !== "persisted" || effectivePolicy.policy.enabled)
+        ? { policyBypassSessionId: input.session_id }
+        : {}),
       receiptStore,
       maxContinuationsPerSession: readPositiveInteger(
         process.env.AGENT_HERDER_AUTOPILOT_MAX_CONTINUATIONS,

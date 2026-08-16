@@ -6,6 +6,7 @@ import * as policyModule from "../src/autopilot/policy.js";
 import {
   DEFAULT_AUTOPILOT_DELAY_MS,
   createDefaultAutopilotPolicy,
+  effectivePolicyAllowsTarget,
   effectivePolicyAllowsSelector,
   normalizeAutopilotPolicy,
   normalizeCodexSelector,
@@ -64,12 +65,43 @@ describe("autopilot policy foundation", () => {
     const policy = createDefaultAutopilotPolicy();
 
     expect(policy.enabled).toBe(false);
-    expect(policy.timeout.delayMs).toBe(DEFAULT_AUTOPILOT_DELAY_MS);
+    expect(policy.harnesses).toEqual(["codex", "opencode", "claude", "hermes"]);
+    expect(policy.timeout).toEqual({ mode: "auto_continue", delayMs: DEFAULT_AUTOPILOT_DELAY_MS });
+    expect(policy.card).toEqual({
+      includeUserMessage: true,
+      includeAssistantMessage: true,
+      includeReason: true,
+    });
     expect(resolveEffectivePolicy({ env: {} })).toMatchObject({
       source: "default",
       policy: { enabled: false },
       coverage: "none",
     });
+  });
+
+  it("authorizes configured harnesses while retaining the Codex allowlist contract", () => {
+    const effective = resolveEffectivePolicy({
+      state: {
+        schemaVersion: 1,
+        revision: "r-harnesses",
+        updatedAt: new Date().toISOString(),
+        policy: {
+          ...createDefaultAutopilotPolicy(),
+          enabled: true,
+          harnesses: ["claude", "hermes"],
+        },
+      },
+    });
+
+    expect(effectivePolicyAllowsTarget(effective, { harness: "claude", sessionId: "claude-1", cwd: "/workspace" })).toBe(true);
+    expect(effectivePolicyAllowsTarget(effective, { harness: "hermes", sessionId: "hermes-1", cwd: "/workspace" })).toBe(true);
+    expect(effectivePolicyAllowsTarget(effective, { harness: "opencode", sessionId: "open-1", cwd: "/workspace" })).toBe(false);
+  });
+
+  it("migrates schema-v1 Codex-only policies that predate harness selection", () => {
+    const legacyShape = { ...createDefaultAutopilotPolicy() } as Record<string, unknown>;
+    delete legacyShape.harnesses;
+    expect(normalizeAutopilotPolicy(legacyShape).harnesses).toEqual(["codex"]);
   });
 
   it("strictly parses and canonicalizes Codex selectors", () => {

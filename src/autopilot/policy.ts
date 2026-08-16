@@ -1,8 +1,10 @@
 import { isAbsolute, normalize } from "node:path";
+import type { AutopilotHarness } from "./session-store.js";
 
 export const AUTOPILOT_POLICY_SCHEMA_VERSION = 1 as const;
 export const AUTOPILOT_INGRESS_ID = "codex-stop-hook-v1" as const;
 export const DEFAULT_AUTOPILOT_DELAY_MS = 30 * 60 * 1_000;
+export const AUTOPILOT_HARNESSES: readonly AutopilotHarness[] = ["codex", "opencode", "claude", "hermes"];
 
 const DEFAULT_MAX_CONTINUATIONS = 3;
 const MAX_CONTINUATIONS = 100;
@@ -19,6 +21,7 @@ export type CodexSelector = {
 export type AutopilotPolicy = {
   schemaVersion: typeof AUTOPILOT_POLICY_SCHEMA_VERSION;
   enabled: boolean;
+  harnesses: AutopilotHarness[];
   scope: { mode: "all_ingress" } | { mode: "allowlist"; selectors: CodexSelector[] };
   maxContinuationsPerSession: number;
   timeout: { mode: "hold" | "auto_continue"; delayMs: number };
@@ -41,7 +44,7 @@ export type EffectivePolicy = {
   policy: AutopilotPolicy;
   source: "persisted" | "legacy" | "default" | "error";
   revision: string;
-  coverage: "codex-ingress" | "codex-selected-sessions" | "none";
+  coverage: "enabled-harnesses" | "codex-ingress" | "codex-selected-sessions" | "none";
   legacyArming?: LegacyArming;
   legacyConflict?: string;
   error?: string;
@@ -52,10 +55,11 @@ export function createDefaultAutopilotPolicy(): AutopilotPolicy {
   return {
     schemaVersion: AUTOPILOT_POLICY_SCHEMA_VERSION,
     enabled: false,
+    harnesses: [...AUTOPILOT_HARNESSES],
     scope: { mode: "all_ingress" },
     maxContinuationsPerSession: DEFAULT_MAX_CONTINUATIONS,
-    timeout: { mode: "hold", delayMs: DEFAULT_AUTOPILOT_DELAY_MS },
-    card: { includeUserMessage: false, includeAssistantMessage: false, includeReason: false },
+    timeout: { mode: "auto_continue", delayMs: DEFAULT_AUTOPILOT_DELAY_MS },
+    card: { includeUserMessage: true, includeAssistantMessage: true, includeReason: true },
   };
 }
 
@@ -88,7 +92,7 @@ export function createCodexSelectorFromStopSession(input: { sessionId: string; c
 /** Strictly validate policy JSON and normalize allowlist ordering for stable revisions. */
 export function normalizeAutopilotPolicy(value: unknown): AutopilotPolicy {
   const object = objectValue(value, "policy");
-  exactKeys(object, ["schemaVersion", "enabled", "scope", "maxContinuationsPerSession", "timeout", "card"], "policy");
+  exactKeys(object, ["schemaVersion", "enabled", "harnesses", "scope", "maxContinuationsPerSession", "timeout", "card"], "policy");
   if (object.schemaVersion !== AUTOPILOT_POLICY_SCHEMA_VERSION) throw new Error("unknown policy schemaVersion");
   if (typeof object.enabled !== "boolean") throw new Error("policy.enabled must be boolean");
   const maxContinuations = object.maxContinuationsPerSession;
@@ -98,6 +102,9 @@ export function normalizeAutopilotPolicy(value: unknown): AutopilotPolicy {
   return {
     schemaVersion: AUTOPILOT_POLICY_SCHEMA_VERSION,
     enabled: object.enabled,
+    // Policies written before the multi-harness UI were Codex-only. Preserve
+    // that meaning instead of silently widening an existing installation.
+    harnesses: object.harnesses === undefined ? ["codex"] : normalizeHarnesses(object.harnesses),
     scope: normalizeScope(object.scope),
     maxContinuationsPerSession: maxContinuations,
     timeout: normalizeTimeout(object.timeout),
@@ -130,6 +137,7 @@ export function resolveEffectivePolicy(input: {
     const policy: AutopilotPolicy = {
       ...fallback,
       enabled: true,
+      harnesses: ["codex"],
       scope: legacy.allIngress ? { mode: "all_ingress" } : { mode: "allowlist", selectors: legacy.sessionIds.map((sessionId) => ({ harness: "codex", sessionId, conversationId: sessionId, cwd: "/", ingressId: AUTOPILOT_INGRESS_ID })) },
     };
     return {
@@ -151,10 +159,26 @@ export function codexSelectorKey(selector: CodexSelector): string {
 
 /** Check whether a persisted policy allows a canonical selector. */
 export function policyAllowsSelector(policy: AutopilotPolicy, selector: CodexSelector): boolean {
-  if (!policy.enabled) return false;
+  if (!policy.enabled || !policy.harnesses.includes("codex")) return false;
   if (policy.scope.mode === "all_ingress") return true;
   const key = codexSelectorKey(selector);
   return policy.scope.selectors.some((candidate) => codexSelectorKey(candidate) === key);
+}
+
+/** Authorize any supported lifecycle target; the legacy selector scope remains Codex-specific. */
+export function effectivePolicyAllowsTarget(
+  effective: EffectivePolicy,
+  target: { harness: AutopilotHarness; sessionId: string; cwd: string },
+): boolean {
+  if (target.harness === "codex") {
+    return effectivePolicyAllowsSelector(
+      effective,
+      createCodexSelectorFromStopSession({ sessionId: target.sessionId, cwd: target.cwd }),
+    );
+  }
+  return effective.source !== "legacy"
+    && effective.policy.enabled
+    && effective.policy.harnesses.includes(target.harness);
 }
 
 /** Authorize a selector against the effective contract, including legacy bare-ID compatibility. */
@@ -168,7 +192,8 @@ export function effectivePolicyAllowsSelector(effective: EffectivePolicy, select
 
 /** Derive the honest ingress coverage label shown by later API/UI layers. */
 export function coverageFor(policy: AutopilotPolicy): EffectivePolicy["coverage"] {
-  if (!policy.enabled) return "none";
+  if (!policy.enabled || policy.harnesses.length === 0) return "none";
+  if (policy.harnesses.some((harness) => harness !== "codex")) return "enabled-harnesses";
   return policy.scope.mode === "all_ingress" ? "codex-ingress" : "codex-selected-sessions";
 }
 
@@ -205,6 +230,19 @@ function normalizeScope(value: unknown): AutopilotPolicy["scope"] {
   const selectors = object.selectors.map(normalizeCodexSelector);
   const deduplicated = new Map(selectors.map((selector) => [codexSelectorKey(selector), selector]));
   return { mode: "allowlist", selectors: [...deduplicated.values()].sort((left, right) => codexSelectorKey(left).localeCompare(codexSelectorKey(right))) };
+}
+
+/** Validate and deduplicate the harness switches while retaining display order. */
+function normalizeHarnesses(value: unknown): AutopilotHarness[] {
+  if (!Array.isArray(value)) throw new Error("policy.harnesses must be an array");
+  const selected = new Set<AutopilotHarness>();
+  for (const harness of value) {
+    if (!(AUTOPILOT_HARNESSES as readonly unknown[]).includes(harness)) {
+      throw new Error("policy.harnesses contains an unsupported harness");
+    }
+    selected.add(harness as AutopilotHarness);
+  }
+  return AUTOPILOT_HARNESSES.filter((harness) => selected.has(harness));
 }
 
 /** Validate the timeout choice and bounded delay. */

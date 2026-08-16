@@ -15,6 +15,8 @@ import {
   type AutopilotDecision,
 } from "./autopilot/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
+import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
+import { effectivePolicyAllowsTarget } from "./autopilot/policy.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "./autopilot/session-store.js";
 import { acquireLock } from "./autopilot-hook.js";
 import { AgentResumeClient } from "./resume-transport.js";
@@ -38,9 +40,14 @@ const stateDir = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR || join(homedir(),
 export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<Record<string, unknown>> {
   const command = input.command ?? "on";
   const store = new AutopilotSessionStore(join(stateDir, "sessions.json"));
+  const policyStore = new AutopilotPolicyStore(resolveAutopilotPolicyStorePath(stateDir));
   if (command === "status") {
     const record = await store.get(input.harness, input.sessionId);
-    return { ok: true, command, harness: input.harness, session_id: input.sessionId, enabled: record?.enabled ?? defaultEnabled(input.harness), source: record ? "session" : "default" };
+    const effectivePolicy = await policyStore.readEffective();
+    const policyEnabled = effectivePolicyAllowsTarget(effectivePolicy, { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) });
+    const sessionEnabled = record?.enabled === true && (effectivePolicy.source !== "persisted" || effectivePolicy.policy.enabled);
+    const enabled = record?.enabled === false ? false : sessionEnabled || policyEnabled;
+    return { ok: true, command, harness: input.harness, session_id: input.sessionId, enabled, source: record ? "session" : effectivePolicy.source };
   }
   if (command === "on" || command === "off") {
     const record = await store.set({ harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) }, command === "on");
@@ -48,7 +55,11 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
   }
 
   const record = await store.get(input.harness, input.sessionId);
-  if (!(record?.enabled ?? defaultEnabled(input.harness))) {
+  const effectivePolicy = await policyStore.readEffective();
+  const policyEnabled = effectivePolicyAllowsTarget(effectivePolicy, { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) });
+  const sessionEnabled = record?.enabled === true && (effectivePolicy.source !== "persisted" || effectivePolicy.policy.enabled);
+  const enabled = record?.enabled === false ? false : sessionEnabled || policyEnabled;
+  if (!enabled) {
     return { ok: true, command, harness: input.harness, session_id: input.sessionId, enabled: false, decision: "disabled" };
   }
   const hook = await buildStopInput(input);
@@ -70,6 +81,8 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
         token: requiredEnv("NOTIFY_CENTER_TOKEN"),
       }),
       allowSessions: new Set([input.sessionId]),
+      effectivePolicy,
+      ...(sessionEnabled ? { policyBypassSessionId: input.sessionId } : {}),
       receiptStore: receipts,
       maxContinuationsPerSession: readInteger(process.env.AGENT_HERDER_AUTOPILOT_MAX_CONTINUATIONS, 3),
       notification: {
@@ -135,10 +148,6 @@ function stopInput(input: AutopilotRunnerInput, lastAssistantMessage: string | n
     stop_hook_active: input.stopHookActive ?? false,
     harness: input.harness,
   };
-}
-
-function defaultEnabled(harness: AutopilotHarness): boolean {
-  return harness === "codex" && process.env.AGENT_HERDER_AUTOPILOT_ALL_SESSIONS === "1";
 }
 
 function requiredEnv(name: string): string {

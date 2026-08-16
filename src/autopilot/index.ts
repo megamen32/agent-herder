@@ -3,8 +3,7 @@ import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { ChoiceRegistry, type AutopilotChoice } from "./choice-registry.js";
 import {
-  createCodexSelectorFromStopSession,
-  effectivePolicyAllowsSelector,
+  effectivePolicyAllowsTarget,
   type EffectivePolicy,
 } from "./policy.js";
 
@@ -258,6 +257,7 @@ export function createAutopilotCore(options: {
   notification?: NotificationConfig;
   choiceRegistry?: ChoiceRegistry;
   effectivePolicy?: EffectivePolicy;
+  policyBypassSessionId?: string;
   harness?: "codex" | "opencode" | "claude" | "hermes";
   onDecision?: (decision: AutopilotDecision, metadata?: { choiceRequestId?: string }) => void;
 }): { handleStop(input: StopHookInput): Promise<AutopilotHookResult> } {
@@ -276,8 +276,15 @@ export function createAutopilotCore(options: {
       validateInput(input);
 
       if (options.effectivePolicy) {
-        const selector = createCodexSelectorFromStopSession({ sessionId: input.session_id, cwd: input.cwd });
-        if (!effectivePolicyAllowsSelector(options.effectivePolicy, selector)) return {};
+        // A per-session opt-in can widen the selector, but never bypasses the
+        // global master switch. Turning the master off is an immediate stop.
+        const explicitSessionOverride = options.policyBypassSessionId === input.session_id
+          && (options.effectivePolicy.source !== "persisted" || options.effectivePolicy.policy.enabled);
+        if (!explicitSessionOverride && !effectivePolicyAllowsTarget(options.effectivePolicy, {
+          harness: options.harness ?? input.harness ?? "codex",
+          sessionId: input.session_id,
+          cwd: input.cwd,
+        })) return {};
       } else if (!options.allowAllSessions && !options.allowSessions.has(input.session_id)) {
         // Compatibility path for callers that have not loaded the durable
         // policy yet. The real Stop hook always supplies effectivePolicy.
@@ -464,7 +471,7 @@ function buildChoiceNotificationBody(
   if (includeReason) {
     sections.push("", "MiniMax не выбрал автоматически: безопасных вариантов несколько.");
   }
-  const harnessLabel = harness === "opencode" ? "OpenCode" : harness === "hermes" ? "Hermes" : "Codex";
+  const harnessLabel = harness === "opencode" ? "OpenCode" : harness === "claude" ? "Claude Code" : harness === "hermes" ? "Hermes" : "Codex";
   sections.push(
     "",
     `Следующий шаг относится именно к этой ${harnessLabel}-сессии:`,

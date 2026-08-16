@@ -14,9 +14,9 @@ import { healthModelForHarness, normalizeHealthExecution } from "../health-remed
 import { convertHermesExport } from "../hermes-conversion.js";
 import { AgentResumeClient, resumeBoundTarget, type ResumeReceipt, type ResumeTransportRequest } from "../resume-transport.js";
 import { ChoiceRegistry, ChoiceRegistryLockUnavailableError, type PendingChoice } from "../autopilot/choice-registry.js";
-import { AutopilotPolicyStore } from "../autopilot/policy-store.js";
+import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../autopilot/policy-store.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
-import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsSelector } from "../autopilot/policy.js";
+import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -61,6 +61,18 @@ export function buildChoiceResumeRequest(choice: Pick<PendingChoice, "harness" |
 
 /** Backwards-compatible name retained for timeout callers and tests. */
 export const buildTimeoutResumeRequest = buildChoiceResumeRequest;
+
+/** Acknowledge Hermes locally; its plugin observes the durable resumed record and injects the goal. */
+function hermesTimeoutReceipt(choice: PendingChoice): ResumeReceipt {
+  if (!choice.idempotencyKey) throw new Error("Hermes timeout has no saved idempotency key");
+  return {
+    status: "accepted",
+    target: { agent: "hermes", locator: { schema: "hermes.locator.v2", session_key: choice.sessionId, platform: "local", chat_id: choice.sessionId, chat_type: "dm" } },
+    result_ref: choice.resultRef,
+    idempotency_key: choice.idempotencyKey,
+    receipt_ref: `agent-herder://hermes/choice/${choice.requestId}`,
+  };
+}
 
 async function completeManualChoiceResume(
   response: ServerResponse,
@@ -121,6 +133,7 @@ const autopilotSweepLocks = new Map<string, Promise<void>>();
 export async function sweepAutopilotChoices(input: {
   choiceRegistry: ChoiceRegistry;
   policyStore: AutopilotPolicyStore;
+  sessionStore?: AutopilotSessionStore;
   now?: Date;
   targetAvailable?: (choice: PendingChoice) => Promise<boolean>;
   validateSavedTarget?: (choice: PendingChoice) => Promise<boolean>;
@@ -145,6 +158,7 @@ export async function sweepAutopilotChoices(input: {
 async function sweepAutopilotChoicesUnlocked(input: {
   choiceRegistry: ChoiceRegistry;
   policyStore: AutopilotPolicyStore;
+  sessionStore?: AutopilotSessionStore;
   now?: Date;
   targetAvailable?: (choice: PendingChoice) => Promise<boolean>;
   validateSavedTarget?: (choice: PendingChoice) => Promise<boolean>;
@@ -271,9 +285,14 @@ async function sweepAutopilotChoicesUnlocked(input: {
     try {
       preparation = await input.policyStore.withMutationFence(async () => {
         const effective = await input.policyStore.readEffective();
-        const selector = createCodexSelectorFromStopSession({ sessionId: choice.sessionId, cwd: choice.cwd });
+        const sessionOverride = await input.sessionStore?.get(choice.harness ?? "codex", choice.sessionId);
+        const targetEnabled = effective.policy.enabled && (sessionOverride?.enabled ?? effectivePolicyAllowsTarget(effective, {
+          harness: choice.harness ?? "codex",
+          sessionId: choice.sessionId,
+          cwd: choice.cwd,
+        }));
         if (effective.source !== "persisted" || effective.revision !== choice.policyRevision ||
-          effective.policy.timeout.mode !== "auto_continue" || !effectivePolicyAllowsSelector(effective, selector)) {
+          effective.policy.timeout.mode !== "auto_continue" || !targetEnabled) {
           return { kind: "human-required", reason: "Autopilot policy or selector changed before timeout dispatch" };
         }
         if (!hasSavedTimeoutTarget(choice) || input.validateSavedTarget && !(await input.validateSavedTarget(choice))) {
@@ -344,6 +363,21 @@ export function liveCodexTargetMatchesChoice(
   }
 }
 
+/** Require the live session to match the timeout's actual harness, id and canonical CWD. */
+export function liveAutopilotTargetMatchesChoice(
+  choice: Pick<PendingChoice, "harness" | "sessionId" | "cwd">,
+  session: AgentSession | null,
+): boolean {
+  const harness = choice.harness ?? "codex";
+  if (!session || session.harness !== harness || session.id !== choice.sessionId) return false;
+  if (harness === "codex") return liveCodexTargetMatchesChoice(choice, session);
+  try {
+    return normalize(session.cwd) === normalize(choice.cwd);
+  } catch {
+    return false;
+  }
+}
+
 const htmlPath = join(dirname(fileURLToPath(import.meta.url)), "index.html");
 const webRoot = dirname(htmlPath);
 
@@ -353,7 +387,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const mcpAuthToken = dependencies.mcpAuthToken?.trim() || undefined;
   const server = createServer(async (request, response) => {
     try {
-      await route(request, response, supervisor, dependencies.humanRequests, dependencies.mcpServerFactory, mcpTransports, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, dependencies.choiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore);
+      await route(request, response, supervisor, dependencies.humanRequests, dependencies.mcpServerFactory, mcpTransports, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, dependencies.choiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore);
     } catch (err) {
       if (err instanceof SessionNotFoundError) {
         sendJson(response, 404, { error: "Session not found" });
@@ -366,12 +400,19 @@ export function createWebServer(dependencies: WebDependencies): Server {
     const sweep = () => sweepAutopilotChoices({
       choiceRegistry: dependencies.choiceRegistry!,
       policyStore: dependencies.autopilotPolicyStore!,
-      targetAvailable: async (choice) => liveCodexTargetMatchesChoice(
+      sessionStore: dependencies.autopilotSessionStore,
+      targetAvailable: async (choice) => choice.harness === "hermes" || liveAutopilotTargetMatchesChoice(
         choice,
-        await supervisor.getSession("codex", choice.sessionId),
+        await supervisor.getSession(choice.harness ?? "codex", choice.sessionId),
       ),
-      resume: (choice) => new AgentResumeClient().resume(buildTimeoutResumeRequest(choice)),
-      query: (choice) => new AgentResumeClient().queryReceipt(buildTimeoutResumeRequest(choice)),
+      resume: async (choice) => {
+        if (choice.harness === "hermes") return hermesTimeoutReceipt(choice);
+        return new AgentResumeClient().resume(buildTimeoutResumeRequest(choice));
+      },
+      query: async (choice) => {
+        if (choice.harness === "hermes") return hermesTimeoutReceipt(choice);
+        return new AgentResumeClient().queryReceipt(buildTimeoutResumeRequest(choice));
+      },
     }).catch((error) => console.error(`[agent-herder] autopilot sweep failed: ${(error as Error).message}`));
     const intervalMs = Math.max(100, dependencies.autopilotSweepIntervalMs ?? 30_000);
     const timer = setInterval(sweep, intervalMs);
@@ -381,22 +422,54 @@ export function createWebServer(dependencies: WebDependencies): Server {
   return server;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
+  if (url.pathname === "/api/autopilot/policy" && (request.method === "GET" || request.method === "PUT")) {
+    if (!autopilotPolicyStore) return sendJson(response, 503, { error: "Autopilot policy store is disabled" });
+    if (request.method === "GET") return sendJson(response, 200, await autopilotPolicyStore.readEffective());
+    const body = await readJson(request);
+    if (!body.policy || !(body.expectedRevision === null || typeof body.expectedRevision === "string")) {
+      return sendJson(response, 400, { error: "policy and expectedRevision are required" });
+    }
+    try {
+      return sendJson(response, 200, await autopilotPolicyStore.replacePolicy(body.policy as never, body.expectedRevision));
+    } catch (error) {
+      if (error instanceof AutopilotPolicyRevisionConflictError) {
+        return sendJson(response, 409, { error: error.message, current: await autopilotPolicyStore.readEffective() });
+      }
+      return sendJson(response, 400, { error: (error as Error).message });
+    }
+  }
   const autopilotSessionMatch = url.pathname.match(/^\/api\/autopilot\/sessions\/([^/]+)\/([^/]+)$/);
-  if (autopilotSessionMatch && (request.method === "GET" || request.method === "PUT")) {
+  if (autopilotSessionMatch && (request.method === "GET" || request.method === "PUT" || request.method === "DELETE")) {
     if (!autopilotSessionStore) return sendJson(response, 503, { error: "Autopilot session store is disabled" });
     const harness = decodeURIComponent(autopilotSessionMatch[1]);
     const sessionId = decodeURIComponent(autopilotSessionMatch[2]);
     if (!isAutopilotHarness(harness) || sessionId.trim().length === 0) return sendJson(response, 400, { error: "unsupported harness or empty session id" });
     if (request.method === "GET") {
       const record = await autopilotSessionStore.get(harness, sessionId);
+      const effective = autopilotPolicyStore ? await autopilotPolicyStore.readEffective() : undefined;
+      const cwd = url.searchParams.get("cwd") || record?.cwd || "/";
+      const inheritedEnabled = effective
+        ? effectivePolicyAllowsTarget(effective, { harness, sessionId, cwd })
+        : harness === "codex";
       return sendJson(response, 200, {
         harness,
         sessionId,
-        enabled: record?.enabled ?? harness === "codex",
-        source: record ? "session" : harness === "codex" ? "plugin-default" : "default",
+        enabled: record?.enabled ?? inheritedEnabled,
+        source: record ? "session" : effective ? "policy" : harness === "codex" ? "plugin-default" : "default",
         ...(record ? { cwd: record.cwd, updatedAt: record.updatedAt } : {}),
+      });
+    }
+    if (request.method === "DELETE") {
+      await autopilotSessionStore.delete(harness, sessionId);
+      const effective = autopilotPolicyStore ? await autopilotPolicyStore.readEffective() : undefined;
+      const cwd = url.searchParams.get("cwd") || "/";
+      return sendJson(response, 200, {
+        harness,
+        sessionId,
+        enabled: effective ? effectivePolicyAllowsTarget(effective, { harness, sessionId, cwd }) : harness === "codex",
+        source: effective ? "policy" : harness === "codex" ? "plugin-default" : "default",
       });
     }
     const body = await readJson(request);

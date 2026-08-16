@@ -81,9 +81,35 @@ h1 { font-size: 19px; } h2 { font-size: 16px; }
 .inspector-pane dl { margin: 25px 0; } .inspector-pane dt { margin-top: 14px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; } .inspector-pane dd { margin: 4px 0 0; overflow-wrap: anywhere; color: var(--text); font-size: 12px; line-height: 1.4; } .inspector-actions { display: flex; flex-wrap: wrap; gap: 6px; } .settings-block { display: grid; gap: 10px; margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; } .settings-block input { accent-color: var(--accent); }
 .autopilot-control { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-raised); }
 .autopilot-control > div { min-width: 0; } .autopilot-control strong, .autopilot-control small { display: block; } .autopilot-control strong { margin-top: 5px; font-size: 13px; } .autopilot-control small { margin-top: 3px; color: var(--muted); font-size: 10px; }
+.inherit-button { margin-top: 8px; padding: 0; border: 0; background: transparent; color: var(--accent); font-size: 10px; text-align: left; }
 .switch-control { position: relative; width: 38px; height: 22px; flex: 0 0 38px; padding: 2px; border-radius: 999px; background: #4a4745; transition: background .15s ease; }
 .switch-control span { display: block; width: 18px; height: 18px; border-radius: 50%; background: #f4f0ec; transition: transform .15s ease; }
 .switch-control.enabled { background: var(--accent); } .switch-control.enabled span { transform: translateX(16px); } .switch-control:disabled { opacity: .55; cursor: wait; }
+.switch-control.large { width: 48px; height: 28px; flex-basis: 48px; padding: 3px; }
+.switch-control.large span { width: 22px; height: 22px; }
+.switch-control.large.enabled span { transform: translateX(20px); }
+.autopilot-settings-overlay { position: absolute; inset: 70px 0 0; z-index: 8; overflow-y: auto; padding: 26px; background: color-mix(in srgb, #08080a 78%, transparent); backdrop-filter: blur(12px); }
+.autopilot-settings-shell { position: relative; width: min(760px, 100%); margin: 0 auto; }
+.settings-close { position: absolute; top: 14px; right: 14px; z-index: 1; width: 32px; height: 32px; border-radius: 8px; background: var(--surface-hover); color: var(--muted); font-size: 20px; }
+.global-autopilot-card { display: grid; gap: 20px; padding: 26px; border: 1px solid #3d3548; border-radius: 16px; background: linear-gradient(145deg, #1c1920, #121214 64%); box-shadow: 0 24px 80px #000b; }
+.global-autopilot-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding-right: 40px; }
+.global-autopilot-head h3 { margin: 5px 0 6px; color: var(--text); font-size: 22px; letter-spacing: -.02em; }
+.global-autopilot-head p { max-width: 520px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.autopilot-state-banner { display: grid; gap: 3px; padding: 12px 14px; border: 1px solid #473d38; border-radius: 9px; background: #211c1a; color: #d5c4b8; }
+.autopilot-state-banner.enabled { border-color: #554171; background: #201829; color: #d9c5f2; }
+.autopilot-state-banner strong { font-size: 12px; }.autopilot-state-banner span { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.settings-group { display: grid; gap: 12px; margin: 0; padding: 0 0 18px; border: 0; border-bottom: 1px solid var(--border); }
+.settings-group legend { margin-bottom: 11px; color: var(--text); font-size: 13px; font-weight: 600; }
+.harness-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.harness-option { display: flex; align-items: center; gap: 10px; padding: 11px; border: 1px solid var(--border); border-radius: 9px; background: #171719; cursor: pointer; }
+.harness-option.selected { border-color: #654b88; background: #211a2b; }
+.harness-option input, .timeout-setting input, .context-options input { accent-color: var(--accent); }
+.harness-option span { min-width: 0; }.harness-option strong, .harness-option small { display: block; }.harness-option strong { color: var(--text); font-size: 12px; }.harness-option small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.settings-help { margin: 0; color: var(--muted); font-size: 10px; }
+.timeout-setting { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }.timeout-setting span { display: grid; gap: 4px; }.timeout-setting strong { color: var(--text); font-size: 12px; }.timeout-setting small { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.minutes-control { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }.minutes-control input { width: 80px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); color: var(--text); }
+.context-options { display: grid; gap: 9px; }.context-options label { display: flex; align-items: center; gap: 9px; color: var(--text); font-size: 12px; }
+.settings-save-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }.settings-save-row > span { color: var(--muted); font-size: 10px; }.settings-saved { color: #91d6ad; }.settings-loading { color: var(--muted); font-size: 12px; }
 .autopilot-error { display: block; margin-top: 7px; color: #f0a8b1; font-size: 10px; }
 .empty-chat, .empty-list, .empty-inspector, .oc-loading { color: var(--muted); font-size: 13px; } .empty-chat { padding: 18vh 0; text-align: center; } .oc-loading { display: grid; height: 100%; place-items: center; }
 @media (max-width: 980px) { .oc-app { grid-template-columns: 260px minmax(0, 1fr); } .inspector-pane { display: none; } }
@@ -96,4 +122,5 @@ h1 { font-size: 19px; } h2 { font-size: 16px; }
   .message-column { padding: 22px 15px 128px; } .message { margin-bottom: 23px; } .message.user { max-width: 92%; } .message p { font-size: 14px; }
   .composer { width: calc(100% - 18px); margin: -94px auto 9px; padding: 9px; } .composer-hint { display: none; } .composer textarea { font-size: 16px; }
   .chat-menu { top: 51px; right: 9px; } .scroll-latest { right: 12px; bottom: 87px; } .scroll-latest span { display: none; }
+  .autopilot-settings-overlay { inset: 60px 0 0; padding: 10px; }.global-autopilot-card { padding: 18px 14px; border-radius: 12px; }.global-autopilot-head { padding-right: 34px; }.global-autopilot-head h3 { font-size: 18px; }.harness-grid { grid-template-columns: 1fr; }
 }

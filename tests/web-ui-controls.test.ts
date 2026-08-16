@@ -33,5 +33,12 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('role="switch"');
     expect(main).toContain('/api/autopilot/sessions/');
     expect(main).toContain('aria-label={`Autopilot for ${activeSession.id}`}');
+    expect(main).toContain('/api/autopilot/policy');
+    expect(main).toContain('Глобальный автопилот');
+    expect(main).toContain('30 минут без ответа');
+    expect(main).toContain('Последний запрос пользователя');
+    expect(main).toContain('Последний ответ агента');
+    expect(main).toContain('Почему нужен выбор');
+    for (const harness of ["Codex", "Claude Code", "OpenCode", "Hermes"]) expect(main).toContain(harness);
   });
 });

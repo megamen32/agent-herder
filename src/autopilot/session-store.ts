@@ -51,6 +51,16 @@ export class AutopilotSessionStore {
     });
   }
 
+  /** Remove an explicit session override so it inherits the harness policy again. */
+  async delete(harness: AutopilotHarness, sessionId: string): Promise<boolean> {
+    const key = sessionKey(harness, sessionId);
+    return this.mutate(async (file) => {
+      const before = file.sessions.length;
+      file.sessions = file.sessions.filter((item) => sessionKey(item.harness, item.sessionId) !== key);
+      return file.sessions.length !== before;
+    });
+  }
+
   private async read(): Promise<SessionFile> {
     try {
       const parsed = JSON.parse(await readFile(this.path, "utf8")) as unknown;

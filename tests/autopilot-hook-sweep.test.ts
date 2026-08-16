@@ -9,7 +9,8 @@ import { ChoiceRegistry, ChoiceRegistryLockUnavailableError, type PendingChoice 
 import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "../src/resume-transport.js";
 import { createDefaultAutopilotPolicy, resolveEffectivePolicy, type AutopilotPolicy, type EffectivePolicy } from "../src/autopilot/policy.js";
 import { AutopilotPolicyStore } from "../src/autopilot/policy-store.js";
-import { buildTimeoutResumeRequest, liveCodexTargetMatchesChoice, sweepAutopilotChoices } from "../src/web/server.js";
+import { AutopilotSessionStore } from "../src/autopilot/session-store.js";
+import { buildTimeoutResumeRequest, liveAutopilotTargetMatchesChoice, liveCodexTargetMatchesChoice, sweepAutopilotChoices } from "../src/web/server.js";
 import type { AgentSession } from "../src/types/index.js";
 
 const input = {
@@ -85,6 +86,7 @@ describe("autopilot policy hook and timeout sweep", () => {
     const notify = { send: vi.fn(async () => undefined) };
     const base = { judge, notify, allowSessions: new Set([input.session_id]), receiptStore: new Map(), maxContinuationsPerSession: 2 };
     await expect(createAutopilotCore({ ...base, effectivePolicy: resolveEffectivePolicy({ env: {} }) }).handleStop(input)).resolves.toEqual({});
+    await expect(createAutopilotCore({ ...base, effectivePolicy: effective({ ...policy(), enabled: false }), policyBypassSessionId: input.session_id }).handleStop(input)).resolves.toEqual({});
     await expect(createAutopilotCore({ ...base, effectivePolicy: effective(policy()) }).handleStop({ ...input, session_id: "other-session" })).resolves.toEqual({});
     expect(judge.decide).not.toHaveBeenCalled();
   });
@@ -120,7 +122,9 @@ describe("autopilot policy hook and timeout sweep", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-sweep-"));
     const choicesPath = join(root, "choices.json");
     const policyStore = new AutopilotPolicyStore(join(root, "autopilot-policy.json"));
+    const sessionStore = new AutopilotSessionStore(join(root, "sessions.json"));
     const saved = await policyStore.replacePolicy(policy(), null);
+    await sessionStore.set({ harness: "codex", sessionId: input.session_id, cwd: input.cwd }, true);
     const registry = new ChoiceRegistry(choicesPath);
     const pending = await registry.create({ sessionId: input.session_id, turnId: input.turn_id, cwd: input.cwd, choices, expiresAt: "2020-01-01T00:00:00.000Z", timeoutChoiceId: "inspect", policyRevision: saved.revision, maxContinuationsPerSession: 3 });
     const resume = vi.fn(async (choice: PendingChoice) => acceptedReceipt(choice));
@@ -134,9 +138,34 @@ describe("autopilot policy hook and timeout sweep", () => {
 
     const second = await registry.create({ sessionId: input.session_id, turnId: "turn-2", cwd: input.cwd, choices, expiresAt: "2020-01-01T00:00:00.000Z", timeoutChoiceId: "inspect", policyRevision: saved.revision, maxContinuationsPerSession: 3 });
     const disabled = await policyStore.replacePolicy({ ...policy(), enabled: false, timeout: { mode: "hold", delayMs: 0 } }, saved.revision);
-    await expect(sweepAutopilotChoices({ choiceRegistry: registry, policyStore, resume, now: new Date("2025-01-01T00:00:00.000Z") })).resolves.toEqual([{ requestId: second.requestId, status: "human-required", reason: "Autopilot policy or selector changed before timeout dispatch" }]);
+    await expect(sweepAutopilotChoices({ choiceRegistry: registry, policyStore, sessionStore, resume, now: new Date("2025-01-01T00:00:00.000Z") })).resolves.toEqual([{ requestId: second.requestId, status: "human-required", reason: "Autopilot policy or selector changed before timeout dispatch" }]);
     expect((await registry.get(second.requestId))?.status).toBe("expired-needs-human");
     expect(disabled.revision).not.toBe(saved.revision);
+  });
+
+  it("sweeps a Claude timeout against the selected harness policy", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-sweep-claude-"));
+    const policyStore = new AutopilotPolicyStore(join(root, "autopilot-policy.json"));
+    const saved = await policyStore.replacePolicy({ ...policy(), scope: { mode: "all_ingress" }, harnesses: ["claude"] }, null);
+    const registry = new ChoiceRegistry(join(root, "choices.json"));
+    const pending = await registry.create({ harness: "claude", sessionId: "claude-session", turnId: "turn-claude", cwd: "/workspace/claude", choices, expiresAt: "2020-01-01T00:00:00.000Z", timeoutChoiceId: "inspect", policyRevision: saved.revision, maxContinuationsPerSession: 3 });
+    const resume = vi.fn(async (choice: PendingChoice): Promise<ResumeReceipt> => ({
+      status: "accepted",
+      target: { agent: "claude", session_id: choice.sessionId, cwd: choice.cwd },
+      result_ref: choice.resultRef,
+      idempotency_key: choice.idempotencyKey,
+      receipt_ref: "receipt:claude-timeout",
+    }));
+
+    await expect(sweepAutopilotChoices({ choiceRegistry: registry, policyStore, resume, now: new Date("2025-01-01T00:00:00.000Z") })).resolves.toEqual([{ requestId: pending.requestId, status: "resumed" }]);
+    expect(buildTimeoutResumeRequest((await registry.get(pending.requestId))!)).toMatchObject({ target: { agent: "claude", session_id: "claude-session", cwd: "/workspace/claude" } });
+  });
+
+  it("matches a live target for its actual harness", () => {
+    expect(liveAutopilotTargetMatchesChoice(
+      { harness: "claude", sessionId: "claude-1", cwd: "/workspace" },
+      { id: "claude-1", harness: "claude", status: "idle", title: "Claude", cwd: "/workspace", lastActivity: "2026-08-12T00:00:00.000Z", needsPermission: false },
+    )).toBe(true);
   });
 
   it("binds the timeout request to the exact saved goal, key, and opaque result reference", async () => {

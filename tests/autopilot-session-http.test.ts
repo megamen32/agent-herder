@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AutopilotSessionStore } from "../src/autopilot/session-store.js";
+import { AutopilotPolicyStore } from "../src/autopilot/policy-store.js";
+import { createDefaultAutopilotPolicy } from "../src/autopilot/policy.js";
 import { createWebServer } from "../src/web/server.js";
 
 const servers: Server[] = [];
@@ -69,6 +71,33 @@ describe("web autopilot session switch", () => {
 
     const reloaded = await fetch(`${base}/codex/codex-web-toggle`);
     await expect(reloaded.json()).resolves.toMatchObject({ enabled: false, source: "session" });
+  });
+
+  it("inherits the global harness policy and can clear an exact session override", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-web-autopilot-inherit-"));
+    const sessions = new AutopilotSessionStore(join(root, "sessions.json"));
+    const policy = new AutopilotPolicyStore(join(root, "autopilot-policy.json"));
+    await policy.replacePolicy({
+      ...createDefaultAutopilotPolicy(),
+      enabled: true,
+      harnesses: ["claude"],
+    }, null);
+    const server = createWebServer({
+      adapters: new Map(),
+      converter: { async convert() { throw new Error("unused"); } },
+      autopilotSessionStore: sessions,
+      autopilotPolicyStore: policy,
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const endpoint = `http://127.0.0.1:${address.port}/api/autopilot/sessions/claude/claude-inherit?cwd=${encodeURIComponent("/workspace/project")}`;
+
+    await expect((await fetch(endpoint)).json()).resolves.toMatchObject({ enabled: true, source: "policy" });
+    await fetch(endpoint, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: false, cwd: "/workspace/project" }) });
+    await expect((await fetch(endpoint)).json()).resolves.toMatchObject({ enabled: false, source: "session" });
+    await expect((await fetch(endpoint, { method: "DELETE" })).json()).resolves.toMatchObject({ enabled: true, source: "policy" });
   });
 
   it("rejects unsupported harnesses and malformed writes", async () => {

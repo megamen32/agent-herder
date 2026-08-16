@@ -33,4 +33,35 @@ describe("autopilot runner", () => {
       decision: "disabled",
     });
   });
+
+  it("inherits the selected harness from the persisted global policy", async () => {
+    const { AutopilotPolicyStore } = await import("../src/autopilot/policy-store.js");
+    const { createDefaultAutopilotPolicy } = await import("../src/autopilot/policy.js");
+    const { runAutopilotCommand } = await import("../src/autopilot-runner.js");
+    const root = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR!;
+    await new AutopilotPolicyStore(join(root, "autopilot-policy.json")).replacePolicy({
+      ...createDefaultAutopilotPolicy(),
+      enabled: true,
+      harnesses: ["claude"],
+    }, null);
+
+    await expect(runAutopilotCommand({ command: "status", harness: "claude", sessionId: "claude-global", cwd: "/workspace/app" })).resolves.toMatchObject({ enabled: true, source: "persisted" });
+    await expect(runAutopilotCommand({ command: "status", harness: "opencode", sessionId: "open-global", cwd: "/workspace/app" })).resolves.toMatchObject({ enabled: false, source: "persisted" });
+  });
+
+  it("lets master off override a saved enabled session", async () => {
+    const { AutopilotPolicyStore } = await import("../src/autopilot/policy-store.js");
+    const { createDefaultAutopilotPolicy } = await import("../src/autopilot/policy.js");
+    const { runAutopilotCommand } = await import("../src/autopilot-runner.js");
+    const target = { harness: "codex" as const, sessionId: "master-off", cwd: "/workspace/app" };
+    await runAutopilotCommand({ ...target, command: "on" });
+    const root = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR!;
+    await new AutopilotPolicyStore(join(root, "autopilot-policy.json")).replacePolicy({
+      ...createDefaultAutopilotPolicy(),
+      enabled: false,
+    }, null);
+
+    await expect(runAutopilotCommand({ ...target, command: "status" })).resolves.toMatchObject({ enabled: false, source: "session" });
+    await expect(runAutopilotCommand({ ...target, command: "stop", turnId: "turn-1" })).resolves.toMatchObject({ enabled: false, decision: "disabled" });
+  });
 });
