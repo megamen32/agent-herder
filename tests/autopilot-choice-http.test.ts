@@ -123,6 +123,36 @@ describe("autopilot choice callback HTTP seam", () => {
     }
   });
 
+  it("hands a selected ZCode choice back to its waiting native Stop hook", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-http-zcode-"));
+    const registry = new ChoiceRegistry(join(root, "choices.json"));
+    const pending = await registry.create({
+      harness: "zcode",
+      sessionId: "sess-zcode-42",
+      turnId: "turn-zcode-1",
+      cwd: "/workspace/zcode",
+      choices: [
+        { choiceId: "inspect", label: "Проверить", nextGoal: "Проверь результат." },
+        { choiceId: "retry", label: "Повторить", nextGoal: "Повтори проверку." },
+      ],
+    });
+    const resume = vi.fn();
+    const server = createWebServer({
+      adapters: new Map(), converter: { async convert() { throw new Error("unused"); } }, choiceRegistry: registry, choiceResume: resume,
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/autopilot/choices/select`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: pending.requestId, choice_id: "inspect" }),
+    });
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({ status: "claimed", resumed: false, delivery: "waiting-for-zcode-stop-hook", transport: "zcode-stop-hook" });
+    expect(resume).not.toHaveBeenCalled();
+    await expect(registry.get(pending.requestId)).resolves.toMatchObject({ status: "claimed", nextGoal: "Проверь результат." });
+  });
+
   it("resumes a Claude Code-bound choice through agent-resume", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-http-claude-"));
     const registry = new ChoiceRegistry(join(root, "choices.json"));

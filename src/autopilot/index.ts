@@ -17,7 +17,7 @@ export type StopHookInput = {
   transcript_path: string | null;
   stop_hook_active: boolean;
   model?: string;
-  harness?: "codex" | "opencode" | "claude" | "hermes";
+  harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode";
 };
 
 export type AutopilotDecision =
@@ -258,7 +258,7 @@ export function createAutopilotCore(options: {
   choiceRegistry?: ChoiceRegistry;
   effectivePolicy?: EffectivePolicy;
   policyBypassSessionId?: string;
-  harness?: "codex" | "opencode" | "claude" | "hermes";
+  harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode";
   onDecision?: (decision: AutopilotDecision, metadata?: { choiceRequestId?: string }) => void;
 }): { handleStop(input: StopHookInput): Promise<AutopilotHookResult> } {
   const continuationCounts = new Map<string, number>();
@@ -440,7 +440,7 @@ function buildChoiceNotificationBody(
   choices: AutopilotChoice[],
   lastUserMessage: string | null,
   card?: { includeUserMessage: boolean; includeAssistantMessage: boolean; includeReason: boolean },
-  harness: "codex" | "opencode" | "claude" | "hermes" = "codex",
+  harness: "codex" | "opencode" | "claude" | "hermes" | "zcode" = "codex",
 ): string {
   const options = choices
     .map((choice, index) => `${index + 1}. ${choice.label}`)
@@ -471,7 +471,7 @@ function buildChoiceNotificationBody(
   if (includeReason) {
     sections.push("", "MiniMax не выбрал автоматически: безопасных вариантов несколько.");
   }
-  const harnessLabel = harness === "opencode" ? "OpenCode" : harness === "claude" ? "Claude Code" : harness === "hermes" ? "Hermes" : "Codex";
+  const harnessLabel = harness === "opencode" ? "OpenCode" : harness === "claude" ? "Claude Code" : harness === "hermes" ? "Hermes" : harness === "zcode" ? "ZCode" : "Codex";
   sections.push(
     "",
     `Следующий шаг относится именно к этой ${harnessLabel}-сессии:`,

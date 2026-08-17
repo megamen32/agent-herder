@@ -18,7 +18,7 @@ type SessionMessage = { id: string; role: "user" | "assistant" | "tool" | "syste
 type SessionDetails = { session: HerderSession; lineage?: { kind?: string; parentId?: string; role?: string; task?: string }; children?: HerderSession[]; messages: SessionMessage[] };
 type WebAutopilotChoice = { choiceId: string; label: string };
 type WebAutopilotChoiceCard = { requestId: string; sessionId: string; harness: string; cwd: string; status: "pending"; createdAt: string; choices: WebAutopilotChoice[] };
-type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes";
+type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes" | "zcode";
 type WebAutopilotPolicy = {
   schemaVersion: 1;
   enabled: boolean;
@@ -36,6 +36,7 @@ const AUTOPILOT_HARNESS_LABELS: Record<AutopilotHarness, string> = {
   claude: "Claude Code",
   opencode: "OpenCode",
   hermes: "Hermes",
+  zcode: "ZCode",
 };
 
 const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
@@ -116,7 +117,7 @@ function AutopilotSettings({ state, draft, saving, error, saved, onChange, onSav
     <div className={`autopilot-state-banner ${draft.enabled ? "enabled" : ""}`}><strong>{draft.enabled ? "Автопилот включён" : "Автопилот выключен"}</strong><span>{draft.enabled ? "Работает в выбранных harness’ах; настройки отдельных сессий могут переопределить режим." : "Новые завершения не оцениваются, кроме явно включённых сессий."}</span></div>
 
     <fieldset className="settings-group"><legend>Где работает</legend><div className="harness-grid">
-      {(Object.keys(AUTOPILOT_HARNESS_LABELS) as AutopilotHarness[]).map((harness) => <label className={`harness-option ${draft.harnesses.includes(harness) ? "selected" : ""}`} key={harness}><input type="checkbox" checked={draft.harnesses.includes(harness)} onChange={(event) => setHarness(harness, event.target.checked)} /><span><strong>{AUTOPILOT_HARNESS_LABELS[harness]}</strong><small>{harness === "codex" ? "Codex Stop hook" : harness === "claude" ? "Claude Code plugin" : harness === "opencode" ? "OpenCode plugin" : "Hermes plugin"}</small></span></label>)}
+      {(Object.keys(AUTOPILOT_HARNESS_LABELS) as AutopilotHarness[]).map((harness) => <label className={`harness-option ${draft.harnesses.includes(harness) ? "selected" : ""}`} key={harness}><input type="checkbox" checked={draft.harnesses.includes(harness)} onChange={(event) => setHarness(harness, event.target.checked)} /><span><strong>{AUTOPILOT_HARNESS_LABELS[harness]}</strong><small>{harness === "codex" ? "Codex Stop hook" : harness === "claude" ? "Claude Code plugin" : harness === "opencode" ? "OpenCode plugin" : harness === "zcode" ? "ZCode native plugin" : "Hermes plugin"}</small></span></label>)}
     </div><p className="settings-help">Для одной сессии режим можно переопределить в её карточке справа.</p></fieldset>
 
     <fieldset className="settings-group"><legend>Если вы не ответили</legend><label className="timeout-setting"><input type="checkbox" checked={draft.timeout.mode === "auto_continue"} onChange={(event) => onChange({ ...draft, timeout: { ...draft.timeout, mode: event.target.checked ? "auto_continue" : "hold" } })} /><span><strong><span className="default-timeout-copy">30 минут без ответа</span>{timeoutMinutes !== 30 ? ` (сейчас ${timeoutMinutes})` : ""} → выбрать следующий шаг автоматически</strong><small>Будет выбран первый рекомендованный Judge вариант. Если выключить — сессия ждёт вас без таймера.</small></span></label><label className="minutes-control">Через <input type="number" min="1" max="10080" value={timeoutMinutes} disabled={draft.timeout.mode === "hold"} onChange={(event) => onChange({ ...draft, timeout: { ...draft.timeout, delayMs: Math.max(1, Number(event.target.value) || 1) * 60_000 } })} /> минут</label></fieldset>
@@ -280,7 +281,7 @@ function App() {
 
   const activeSession = sessions.find((session) => keyOf(session) === activeKey) || details?.session;
   React.useEffect(() => {
-    if (!activeSession || !["codex", "opencode", "claude", "hermes"].includes(activeSession.harness)) {
+    if (!activeSession || !["codex", "opencode", "claude", "hermes", "zcode"].includes(activeSession.harness)) {
       setAutopilotSession(undefined);
       return;
     }

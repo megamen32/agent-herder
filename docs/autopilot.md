@@ -39,10 +39,12 @@ claude plugin marketplace add /path/to/agent-herder --scope user
 claude plugin install agent-herder@agent-herder-local --scope user
 ```
 
-The same `.claude-plugin` package is structurally readable by current ZCode,
-including its `Stop` hook. Full ZCode autopilot is not claimed yet: its exact
-slash-command session binding and durable Agent Resume target still need a
-separate compatibility canary.
+ZCode uses the native plugin under
+`integrations/zcode/agent-herder-autopilot/`. Its `Stop` hook returns ZCode's
+native continuation output for automatic next goals; it never starts an
+app-server or connects to the Z.AI web relay. For a Telegram/NoticePlace
+choice, the active Stop hook waits on the durable selection and then continues
+that same desktop turn.
 
 ## Agent Plugin package
 

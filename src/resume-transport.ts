@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-export type ResumeAgent = "codex" | "opencode" | "claude" | "hermes";
+export type ResumeAgent = "codex" | "opencode" | "claude" | "hermes" | "zcode";
 
 /** Immutable Gateway address selected by the upstream Hermes/session converter. */
 export interface HermesResumeLocator {
@@ -147,7 +147,7 @@ function freezeRequest(input: ResumeTransportRequest): ResumeTransportRequest {
   if (!input || typeof input !== "object") throw new TypeError("resume request is required");
   const target = input.target;
   if (!target || typeof target !== "object") throw new TypeError("resume target is required");
-  if (!["codex", "opencode", "claude", "hermes"].includes(target.agent)) throw new TypeError("unsupported resume agent");
+  if (!["codex", "opencode", "claude", "hermes", "zcode"].includes(target.agent)) throw new TypeError("unsupported resume agent");
   if (target.agent === "hermes") {
     validateHermesLocator(target.locator);
   } else {

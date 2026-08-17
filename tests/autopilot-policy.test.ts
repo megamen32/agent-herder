@@ -65,7 +65,7 @@ describe("autopilot policy foundation", () => {
     const policy = createDefaultAutopilotPolicy();
 
     expect(policy.enabled).toBe(false);
-    expect(policy.harnesses).toEqual(["codex", "opencode", "claude", "hermes"]);
+    expect(policy.harnesses).toEqual(["codex", "opencode", "claude", "hermes", "zcode"]);
     expect(policy.timeout).toEqual({ mode: "auto_continue", delayMs: DEFAULT_AUTOPILOT_DELAY_MS });
     expect(policy.card).toEqual({
       includeUserMessage: true,

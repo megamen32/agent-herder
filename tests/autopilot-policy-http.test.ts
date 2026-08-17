@@ -36,7 +36,7 @@ describe("web autopilot runtime policy", () => {
       revision: "default",
       policy: {
         enabled: false,
-        harnesses: ["codex", "opencode", "claude", "hermes"],
+        harnesses: ["codex", "opencode", "claude", "hermes", "zcode"],
         timeout: { mode: "auto_continue", delayMs: 1_800_000 },
         card: { includeUserMessage: true, includeAssistantMessage: true, includeReason: true },
       },

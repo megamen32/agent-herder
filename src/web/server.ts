@@ -63,8 +63,18 @@ export function buildChoiceResumeRequest(choice: Pick<PendingChoice, "harness" |
 export const buildTimeoutResumeRequest = buildChoiceResumeRequest;
 
 /** Acknowledge Hermes locally; its plugin observes the durable resumed record and injects the goal. */
-function hermesTimeoutReceipt(choice: PendingChoice): ResumeReceipt {
-  if (!choice.idempotencyKey) throw new Error("Hermes timeout has no saved idempotency key");
+function localHookTimeoutReceipt(choice: PendingChoice): ResumeReceipt {
+  if (!choice.idempotencyKey) throw new Error("local hook timeout has no saved idempotency key");
+  const agent = choice.harness === "zcode" ? "zcode" : "hermes";
+  if (agent === "zcode") {
+    return {
+      status: "accepted",
+      target: { agent: "zcode", session_id: choice.sessionId, cwd: choice.cwd },
+      result_ref: choice.resultRef,
+      idempotency_key: choice.idempotencyKey,
+      receipt_ref: `agent-herder://zcode/choice/${choice.requestId}`,
+    };
+  }
   return {
     status: "accepted",
     target: { agent: "hermes", locator: { schema: "hermes.locator.v2", session_key: choice.sessionId, platform: "local", chat_id: choice.sessionId, chat_type: "dm" } },
@@ -401,16 +411,16 @@ export function createWebServer(dependencies: WebDependencies): Server {
       choiceRegistry: dependencies.choiceRegistry!,
       policyStore: dependencies.autopilotPolicyStore!,
       sessionStore: dependencies.autopilotSessionStore,
-      targetAvailable: async (choice) => choice.harness === "hermes" || liveAutopilotTargetMatchesChoice(
+      targetAvailable: async (choice) => choice.harness === "hermes" || choice.harness === "zcode" || liveAutopilotTargetMatchesChoice(
         choice,
         await supervisor.getSession(choice.harness ?? "codex", choice.sessionId),
       ),
       resume: async (choice) => {
-        if (choice.harness === "hermes") return hermesTimeoutReceipt(choice);
+        if (choice.harness === "hermes" || choice.harness === "zcode") return localHookTimeoutReceipt(choice);
         return new AgentResumeClient().resume(buildTimeoutResumeRequest(choice));
       },
       query: async (choice) => {
-        if (choice.harness === "hermes") return hermesTimeoutReceipt(choice);
+        if (choice.harness === "hermes" || choice.harness === "zcode") return localHookTimeoutReceipt(choice);
         return new AgentResumeClient().queryReceipt(buildTimeoutResumeRequest(choice));
       },
     }).catch((error) => console.error(`[agent-herder] autopilot sweep failed: ${(error as Error).message}`));
@@ -509,6 +519,21 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!isUuid(body.request_id) || typeof body.choice_id !== "string" || body.choice_id.trim() === "") return sendJson(response, 400, { error: "request_id and choice_id are required" });
     const claimed = await choiceRegistry.claimForResume(body.request_id, body.choice_id);
     const pending = claimed.record;
+    if (pending.harness === "zcode" && pending.choiceId === body.choice_id) {
+      // The live Stop hook owns the actual continuation. Keep the durable
+      // claim until it reads the goal, so a hook/runtime restart cannot turn a
+      // Telegram click into a lost continuation.
+      return sendJson(response, 202, {
+        request_id: pending.requestId,
+        status: pending.status,
+        choice_id: pending.choiceId,
+        session_id: pending.sessionId,
+        resumed: false,
+        delivery: "waiting-for-zcode-stop-hook",
+        duplicate: !claimed.claimed,
+        transport: "zcode-stop-hook",
+      });
+    }
     if (pending.harness === "hermes" && pending.choiceId === body.choice_id) {
       if (pending.status === "claimed") {
         const resumed = await choiceRegistry.markResumed(pending.requestId, pending.choiceId);
@@ -843,7 +868,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
 }
 
 function isAutopilotHarness(value: string): value is AutopilotHarness {
-  return value === "codex" || value === "opencode" || value === "claude" || value === "hermes";
+  return value === "codex" || value === "opencode" || value === "claude" || value === "hermes" || value === "zcode";
 }
 
 function headerValue(value: string | string[] | undefined): string | undefined {

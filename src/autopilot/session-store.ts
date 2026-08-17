@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
 import lockfile from "proper-lockfile";
 
-export type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes";
+export type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes" | "zcode";
 
 export type AutopilotSessionOverride = {
   harness: AutopilotHarness;
@@ -123,7 +123,7 @@ function parseFile(value: unknown): SessionFile {
 }
 
 function normalizeTarget(target: { harness: AutopilotHarness; sessionId: string; cwd: string }) {
-  if (!(["codex", "opencode", "claude", "hermes"] as string[]).includes(target.harness)) throw new Error("unsupported autopilot harness");
+  if (!(["codex", "opencode", "claude", "hermes", "zcode"] as string[]).includes(target.harness)) throw new Error("unsupported autopilot harness");
   const sessionId = boundedText(target.sessionId, "sessionId");
   const cwd = boundedText(target.cwd, "cwd");
   return { harness: target.harness, sessionId, cwd: normalize(cwd) };

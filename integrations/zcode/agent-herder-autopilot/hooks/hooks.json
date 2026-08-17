@@ -1,0 +1,32 @@
+{
+  "description": "Native ZCode Stop hook for Agent Herder autopilot.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": ["${ZCODE_PLUGIN_ROOT}/hooks/user-prompt.mjs"],
+            "timeoutMs": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": ["${ZCODE_PLUGIN_ROOT}/hooks/stop.mjs"],
+            "timeoutMs": 604800000,
+            "statusMessage": "Agent Herder: evaluating the next step…"
+          }
+        ]
+      }
+    ]
+  }
+}

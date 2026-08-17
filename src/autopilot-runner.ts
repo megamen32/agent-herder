@@ -100,7 +100,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
     await persistReceiptStore(receiptPath, receipts);
     if ("decision" in result && result.decision === "block") {
       const nextGoal = result.reason;
-      if (input.harness === "codex" || input.harness === "claude") {
+      if (input.harness === "codex" || input.harness === "claude" || input.harness === "zcode") {
         return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "continue", next_goal: nextGoal };
       }
       if (input.harness === "hermes") {

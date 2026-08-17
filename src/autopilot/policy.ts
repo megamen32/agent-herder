@@ -4,7 +4,7 @@ import type { AutopilotHarness } from "./session-store.js";
 export const AUTOPILOT_POLICY_SCHEMA_VERSION = 1 as const;
 export const AUTOPILOT_INGRESS_ID = "codex-stop-hook-v1" as const;
 export const DEFAULT_AUTOPILOT_DELAY_MS = 30 * 60 * 1_000;
-export const AUTOPILOT_HARNESSES: readonly AutopilotHarness[] = ["codex", "opencode", "claude", "hermes"];
+export const AUTOPILOT_HARNESSES: readonly AutopilotHarness[] = ["codex", "opencode", "claude", "hermes", "zcode"];
 
 const DEFAULT_MAX_CONTINUATIONS = 3;
 const MAX_CONTINUATIONS = 100;

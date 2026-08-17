@@ -5,13 +5,16 @@ import { describe, expect, it } from "vitest";
 const root = resolve(import.meta.dirname, "..");
 
 describe("/autopilot plugin surfaces", () => {
-  it("packages Codex, Claude Code, OpenCode, and Hermes adapters", () => {
+  it("packages Codex, Claude Code, OpenCode, Hermes, and ZCode adapters", () => {
     const codexSkill = readFileSync(resolve(root, "skills/autopilot/SKILL.md"), "utf8");
     const claudeManifest = readFileSync(resolve(root, ".claude-plugin/plugin.json"), "utf8");
     const claudeHooks = readFileSync(resolve(root, "hooks/hooks.json"), "utf8");
     const commandLauncher = readFileSync(resolve(root, "skills/autopilot/scripts/run.sh"), "utf8");
     const opencode = readFileSync(resolve(root, "integrations/opencode/agent-herder-autopilot.js"), "utf8");
     const hermes = readFileSync(resolve(root, "integrations/hermes/agent-herder-autopilot/__init__.py"), "utf8");
+    const zcodeHooks = readFileSync(resolve(root, "integrations/zcode/agent-herder-autopilot/hooks/hooks.json"), "utf8");
+    const zcodeStop = readFileSync(resolve(root, "integrations/zcode/agent-herder-autopilot/hooks/stop.mjs"), "utf8");
+    const zcodeInstaller = readFileSync(resolve(root, "scripts/install-zcode-autopilot.sh"), "utf8");
     const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as { files: string[] };
     const webUi = readFileSync(resolve(root, "src/web-ui/main.tsx"), "utf8");
 
@@ -26,8 +29,9 @@ describe("/autopilot plugin surfaces", () => {
       ".claude-plugin/plugin.json",
       "hooks/hooks.json",
       "scripts/claude-autopilot-hook-launcher.sh",
+      "integrations/zcode/agent-herder-autopilot/hooks/stop.mjs",
     ]));
-    expect(webUi).toContain('["codex", "opencode", "claude", "hermes"]');
+    expect(webUi).toContain('["codex", "opencode", "claude", "hermes", "zcode"]');
     expect(opencode).toContain('command !== "autopilot"');
     expect(opencode).toContain("config.command.autopilot");
     expect(opencode).toContain('event.type !== "session.idle"');
@@ -39,5 +43,11 @@ describe("/autopilot plugin surfaces", () => {
     expect(hermes).toContain("gateway._enqueue_fifo");
     expect(hermes).toContain("_await_choice");
     expect(hermes).toContain('"lastUserMessage": last_user');
+    expect(zcodeHooks).toContain('"Stop"');
+    expect(zcodeStop).toContain('AGENT_HERDER_AUTOPILOT_ALL_SESSIONS');
+    expect(zcodeStop).toContain('continue: true');
+    expect(zcodeStop).not.toContain('spawn("zcode"');
+    expect(zcodeInstaller).toContain("UserPromptSubmit");
+    expect(zcodeInstaller).toContain("604800000");
   });
 });
