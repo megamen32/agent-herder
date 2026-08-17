@@ -70,6 +70,7 @@ try {
   const cwd = typeof input.cwd === "string" && input.cwd ? input.cwd : process.env.ZCODE_PROJECT_DIR || process.cwd();
   if (!sessionId) throw new Error("ZCode Stop hook did not provide session_id");
   const root = agentHerderRoot();
+  const userContext = await lastUserContext(sessionId);
   // ZCode has no slash-command callback with a session id. Arm the exact
   // session from its authoritative Stop payload before judging it.
   await invoke(root, { command: "on", harness: "zcode", sessionId, cwd });
@@ -77,10 +78,16 @@ try {
     command: "stop",
     harness: "zcode",
     sessionId,
-    turnId: typeof input.turn_id === "string" ? input.turn_id : `zcode-stop-${Date.now()}`,
+    // ZCode normally includes turnId. If an older runtime omits it, use the
+    // nonce captured by UserPromptSubmit: stable for duplicate Stop delivery,
+    // but fresh for the next user message in the same session.
+    turnId: nonEmptyString(input.turn_id)
+      ?? nonEmptyString(input.turnId)
+      ?? userContext?.turnId
+      ?? `zcode-session-${sessionId}`,
     cwd,
     lastAssistantMessage: typeof input.last_assistant_message === "string" ? input.last_assistant_message : null,
-    lastUserMessage: await lastUserMessage(sessionId),
+    lastUserMessage: userContext?.text ?? null,
     transcriptPath: typeof input.transcript_path === "string" ? input.transcript_path : undefined,
     stopHookActive: input.stop_hook_active === true,
   });
@@ -99,12 +106,19 @@ try {
   process.stdout.write("{}");
 }
 
-async function lastUserMessage(sessionId) {
+async function lastUserContext(sessionId) {
   try {
     const file = JSON.parse(await readFile(resolve(stateDirectory(), "zcode-user-prompts.json"), "utf8"));
-    const value = file?.sessions?.[sessionId]?.text;
-    return typeof value === "string" ? value : null;
+    const entry = file?.sessions?.[sessionId];
+    if (!entry || typeof entry !== "object") return null;
+    const text = typeof entry.text === "string" ? entry.text : null;
+    const turnId = nonEmptyString(entry.turnId);
+    return text || turnId ? { text, turnId } : null;
   } catch {
     return null;
   }
+}
+
+function nonEmptyString(value) {
+  return typeof value === "string" && value.trim() ? value : null;
 }

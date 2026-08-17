@@ -46,6 +46,7 @@ describe("/autopilot plugin surfaces", () => {
     expect(zcodeHooks).toContain('"Stop"');
     expect(zcodeStop).toContain('AGENT_HERDER_AUTOPILOT_ALL_SESSIONS');
     expect(zcodeStop).toContain('continue: true');
+    expect(zcodeStop).toContain('userContext?.turnId');
     expect(zcodeStop).not.toContain('spawn("zcode"');
     expect(zcodeInstaller).toContain("UserPromptSubmit");
     expect(zcodeInstaller).toContain("604800000");
