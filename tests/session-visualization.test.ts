@@ -23,4 +23,20 @@ describe("canonical session visualization", () => {
     expect(script).toBeTruthy();
     expect(() => new Function(script!)).not.toThrow();
   });
+
+  it("renders a top-to-bottom FROM/NOW timeline and codex subagent links", () => {
+    const graph = renderSessionGraph({
+      ...details("codex"),
+      messages: [
+        { id: "m1", role: "user", timestamp: "2026-08-18T12:00:00.000Z", text: "Start", parts: [] },
+        { id: "m2", role: "assistant", timestamp: "2026-08-18T12:01:01.000Z", text: "Done", parts: [] },
+      ],
+      children: [{ id: "child-1", harness: "codex", status: "stopped", title: "Worker", cwd: "/tmp/project", lastActivity: "2026-08-18T12:00:30.000Z", needsPermission: false, meta: { agentRole: "worker" } }],
+    });
+    expect(graph).toContain("FROM");
+    expect(graph).toContain("NOW");
+    expect(graph).toContain("duration-marker");
+    expect(graph).toContain("codex://threads/");
+    expect(graph).toContain("child-1");
+  });
 });
