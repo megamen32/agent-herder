@@ -24,7 +24,7 @@ describe("canonical session visualization", () => {
     expect(() => new Function(script!)).not.toThrow();
   });
 
-  it("renders a top-to-bottom FROM/NOW timeline and codex subagent links", () => {
+  it("renders a FROM/NOW graph and codex subagent links", () => {
     const graph = renderSessionGraph({
       ...details("codex"),
       messages: [
@@ -35,10 +35,35 @@ describe("canonical session visualization", () => {
     });
     expect(graph).toContain("FROM");
     expect(graph).toContain("NOW");
-    expect(graph).toContain("duration-text");
-    expect(graph).toContain("SESSION / SUBAGENTS");
+    expect(graph).toContain("duration-marker");
     expect(graph).toContain("subagent-node");
     expect(graph).toContain("codex://threads/");
     expect(graph).toContain("child-1");
+  });
+
+  it("restores the interactive message and file-change graph with playback", () => {
+    const graph = renderSessionGraph({
+      ...details("codex"),
+      messages: [
+        { id: "m1", role: "user", timestamp: "2026-08-18T12:00:00.000Z", text: "Start", parts: [] },
+        {
+          id: "m2",
+          role: "assistant",
+          timestamp: "2026-08-18T12:01:01.000Z",
+          text: "Editing",
+          parts: [{ type: "tool_call", name: "apply_patch", input: { command: "apply_patch src/app.ts" } }],
+        },
+      ],
+    });
+    expect(graph).toContain('id="play"');
+    expect(graph).toContain('id="time"');
+    expect(graph).toContain("rotate");
+    expect(graph).toContain("line-mode");
+    expect(graph).toContain("message-node");
+    expect(graph).toContain("file-node");
+    expect(graph).toContain("duration-marker");
+    expect(graph).toContain("src/app.ts");
+    expect(graph).toContain("subagent-node");
+    expect(graph).toContain("codex://threads/");
   });
 });

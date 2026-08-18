@@ -4,7 +4,7 @@ function jsonForHtml(value: unknown): string {
   return JSON.stringify(value).replace(/</g, "\\u003c");
 }
 
-/** Render canonical session data as a compact timeline/minimap, not a transcript. */
+/** Render canonical session data as the interactive message/file graph used by the audit tool. */
 export function renderSessionGraph(details: SessionDetails): string {
   const data = jsonForHtml({
     schema: "agent-herder-session-graph/v1",
@@ -21,122 +21,102 @@ export function renderSessionGraph(details: SessionDetails): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Agent Herder session minimap · ${escapeHtml(details.session.title || details.session.id)}</title>
+  <title>Agent Herder session graph · ${escapeHtml(details.session.title || details.session.id)}</title>
   <style>
-    :root{color-scheme:dark;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:#071018;color:#dce8ef;--line:#294151;--muted:#8da4b2;--accent:#4fd1c5;--user:#f3a261;--assistant:#63b3ed;--tool:#b794f4;--now:#f6c85f;--subagent:#b794f4}
-    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#102330,#071018 55%)}
-    header{padding:20px clamp(16px,3vw,42px) 14px;border-bottom:1px solid var(--line);background:#09151f}h1{margin:0 0 7px;font:700 21px/1.15 system-ui,sans-serif;color:#f4fbff}.subtitle{color:var(--muted);overflow-wrap:anywhere}.summary{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}.pill{padding:4px 8px;border:1px solid var(--line);border-radius:999px;color:#c7d9e3;background:#0c1c28}.pill.accent{border-color:#267f78;color:#8ff5e9}
-    main{display:grid;grid-template-columns:minmax(0,1fr) 270px;min-height:calc(100vh - 125px)}.map-shell{min-width:0;overflow:auto;padding:14px clamp(10px,2vw,28px) 28px}.map{display:block;width:100%;min-width:680px;height:auto;border:1px solid #1d3542;border-radius:8px;background:#08131c}.map text{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.map-label{fill:#8da4b2;font-size:11px;letter-spacing:.08em}.session-node{fill:#4fd1c5;stroke:#071018;stroke-width:3}.subagent-node{fill:#b794f4;stroke:#071018;stroke-width:2}.subagent-link{stroke:#493d6c;stroke-width:1;opacity:.7}.event-line{stroke:#294151;stroke-width:2}.event-point{stroke:#071018;stroke-width:2}.event-point.user{fill:#f3a261}.event-point.assistant{fill:#63b3ed}.event-point.tool{fill:#b794f4}.event-point.system{fill:#8da4b2}.now-node{fill:#f6c85f;stroke:#071018;stroke-width:3}.duration-line{stroke:#547080;stroke-width:1;stroke-dasharray:3 3}.duration-text{fill:#8da4b2;font-size:10px}.subagent-anchor{text-decoration:none}.subagent-anchor:hover .subagent-node{fill:#fff}.legend{display:flex;gap:14px;flex-wrap:wrap;padding:10px 2px 0;color:#8da4b2;font-size:11px}.legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}.legend .user{background:var(--user)}.legend .assistant{background:var(--assistant)}.legend .tool{background:var(--tool)}.legend .subagent{background:var(--subagent)}
-    aside{padding:18px 16px;border-left:1px solid var(--line);background:#0a151e}aside h2{margin:0 0 12px;font:600 14px system-ui,sans-serif;color:#f4fbff}dl{margin:0}dt{margin-top:11px;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em}dd{margin:3px 0 0;overflow-wrap:anywhere;color:#e5f1f6}.notice{margin-top:18px;padding:9px;border:1px solid var(--line);border-radius:7px;color:var(--muted);font-size:10px}.main-link{display:inline-block;margin-top:14px;color:var(--accent);font-size:11px}
-    @media(max-width:760px){main{display:block}aside{border:0;border-top:1px solid var(--line)}.map-shell{padding-left:8px;padding-right:8px}}
+    :root{color-scheme:dark;--bg:#091017;--panel:#101a24;--line:#263747;--text:#e8f0f7;--muted:#8fa3b7;--cyan:#48d9c7;--blue:#67a9ff;--amber:#ffc65c;--red:#ff6b76;--green:#58e09c;--purple:#bb8cff}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 25% 0,#142638 0,#091017 42%);color:var(--text);font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    header{padding:18px 22px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:4;background:#091017e8;backdrop-filter:blur(12px)}
+    h1{font:600 20px/1.2 system-ui,sans-serif;margin:0 0 4px}.sub{color:var(--muted);font-size:12px;overflow-wrap:anywhere}.controls{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap}
+    input[type=range]{flex:1 1 280px;min-width:160px;accent-color:var(--cyan)}button,input[type=search]{border:1px solid var(--line);background:#111e2a;color:var(--text);border-radius:7px;padding:7px 10px;font:inherit}button{cursor:pointer}button:hover{border-color:var(--cyan)}button.active{border-color:var(--cyan);color:var(--cyan)}#clock{min-width:155px;color:var(--muted)}
+    .layout{display:grid;grid-template-columns:minmax(560px,1fr) minmax(340px,42vw);min-height:calc(100vh - 112px)}.graph-wrap{overflow:auto;padding:14px 18px}.inspect{border-left:1px solid var(--line);background:#0b141d;padding:16px;overflow:auto;max-height:calc(100vh - 112px);position:sticky;top:112px}
+    .legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);margin:0 0 10px}.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px}.summary{display:flex;gap:14px;color:var(--muted);margin-bottom:8px}.count{color:var(--cyan)}
+    svg{display:block;min-width:900px;border:1px solid var(--line);border-radius:10px;background:#0d1720}.lane{stroke:#263747;stroke-width:1}.lane-label{fill:#b9c8d7;font-size:12px}.event,.message-node,.subagent-node{cursor:pointer;stroke:#091017;stroke-width:2}.event.future,.message-node.future,.subagent-node.future{opacity:.14;pointer-events:none}.event.selected,.message-node.selected,.subagent-node.selected{stroke:white;stroke-width:3}.message-node{rx:2}.message-node.user{fill:var(--blue)}.message-node.assistant{fill:var(--green)}.message-node.tool{fill:var(--purple)}.message-node.system{fill:var(--muted)}.subagent-node{fill:var(--purple);stroke-width:3}.subagent-link{stroke:var(--purple);stroke-width:1;stroke-dasharray:3 3;opacity:.6}.edge{stroke:#4a687f;stroke-width:1;opacity:.3}.file-node{cursor:pointer}.file-node rect{fill:#122432;stroke:#35536a}.file-node:hover rect,.file-node.selected rect{stroke:var(--cyan);stroke-width:2}.file-node text{fill:#d8e5ef;font-size:11px}.future-file{opacity:.15;pointer-events:none}.duration-marker{stroke:#6c8292;stroke-dasharray:4 4;opacity:.8}.duration-label{fill:#9db0bd;font-size:11px}.now-marker{stroke:var(--amber);stroke-dasharray:6 4;opacity:.9}.now-label{fill:var(--amber);font-size:11px;font-weight:700}
+    .panel-title{font:600 15px/1.3 system-ui,sans-serif;margin:0 0 10px}.meta{color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}.file-path{color:var(--cyan);overflow-wrap:anywhere;margin:6px 0 14px}.message-body{white-space:pre-wrap;overflow-wrap:anywhere;border-left:3px solid var(--blue);padding:12px;background:#071018;max-height:50vh;overflow:auto}.change{border:1px solid var(--line);border-radius:8px;margin:0 0 12px;overflow:hidden}.change-head{padding:8px 10px;background:#13202c;color:#b9c8d7}.change pre{margin:0;padding:12px;overflow:auto;max-height:35vh;color:#dce7ee;background:#071018}.notice{padding:12px;border:1px dashed #456177;border-radius:8px;color:var(--muted)}
+    .sessions{margin-top:12px;display:flex;gap:7px;flex-wrap:wrap}.session-pill{font-size:11px;padding:4px 7px;border:1px solid var(--line);border-radius:999px;color:#bfd0de;cursor:pointer}.session-pill:hover,.session-pill.selected{border-color:var(--cyan);color:var(--text)}.line-mode-note{color:var(--muted);font-size:11px;margin:7px 0}
+    @media(max-width:950px){.layout{display:block}.inspect{position:static;max-height:none;border-left:0;border-top:1px solid var(--line)}.controls input[type=search]{flex:1 1 100%}}
   </style>
 </head>
 <body>
   <header>
-    <h1>Agent Herder session minimap</h1>
-    <div class="subtitle" id="subtitle"></div>
-    <div class="summary" id="summary"></div>
+    <h1>Agent Herder session graph</h1>
+    <div class="sub" id="subtitle"></div>
+    <div class="controls">
+      <button id="back" title="Step backward">◀</button><button id="play" title="Play timeline">▶</button><button id="forward" title="Step forward">▶</button>
+      <input id="time" type="range" min="0" max="1000" value="1000" aria-label="Session time">
+      <strong id="clock"></strong>
+      <button id="rotate" title="Rotate timeline 90 degrees">↻ 90°</button><button id="line-mode" title="Toggle single-line mode">↔ line</button>
+      <input id="search" type="search" placeholder="Filter files" aria-label="Filter files">
+    </div>
   </header>
-  <main>
-    <section class="map-shell"><svg class="map" id="map" role="img" aria-label="Compact session timeline and subagent graph"></svg><div class="legend"><span><i class="user"></i>user</span><span><i class="assistant"></i>assistant</span><span><i class="tool"></i>tool</span><span><i class="subagent"></i>subagent</span></div></section>
-    <aside><h2>Canonical overview</h2><div id="inspector"></div></aside>
+  <main class="layout">
+    <section class="graph-wrap">
+      <div class="legend"><span><i class="dot" style="background:var(--blue)"></i>messages</span><span><i class="dot" style="background:var(--cyan)"></i>file changes</span><span><i class="dot" style="background:var(--purple)"></i>tool/git</span><span><i class="dot" style="background:var(--amber)"></i>NOW</span></div>
+      <div class="summary" id="summary"></div><svg id="graph" aria-label="Session message and file graph"></svg>
+      <div class="sessions" id="sessions"></div>
+      <div class="line-mode-note">Click a message, event, file, or child session for the selected detail. The slider controls the visible moment; ▶ plays it forward.</div>
+    </section>
+    <aside class="inspect" id="inspect"><h2 class="panel-title">Session graph</h2><div class="notice">Canonical Agent Herder SessionDetails. Blue diamonds are messages; file nodes are inferred from canonical tool-call commands when the harness exposes them.</div></aside>
   </main>
   <script id="session-data" type="application/json">${data}</script>
   <script>
-    const DATA = JSON.parse(document.getElementById("session-data").textContent);
-    const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => {
-      if (char === "&") return "&amp;";
-      if (char === "<") return "&lt;";
-      if (char === ">") return "&gt;";
-      if (char === '"') return "&quot;";
-      return "&#39;";
-    });
-    const session = DATA.session;
-    const children = DATA.children || [];
-    const messages = [...(DATA.messages || [])].sort((left, right) => {
-      const leftTime = Date.parse(left.timestamp || "");
-      const rightTime = Date.parse(right.timestamp || "");
-      if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) return 0;
-      return leftTime - rightTime;
-    });
-    const timeOf = (value) => { const parsed = Date.parse(value || ""); return Number.isFinite(parsed) ? parsed : null; };
-    const formatTime = (value) => { const parsed = timeOf(value); return parsed === null ? "time unavailable" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" }).format(parsed); };
-    const duration = (seconds) => seconds < 60 ? Math.round(seconds) + "s" : Math.floor(seconds / 60) + "m " + Math.round(seconds % 60) + "s";
-    const roleOf = (message) => message.role === "user" ? "user" : message.role === "tool" ? "tool" : message.role === "system" ? "system" : "assistant";
-    const knownTimes = messages.map((message) => timeOf(message.timestamp)).filter((value) => value !== null);
-    const fromTime = knownTimes.length ? new Date(Math.min(...knownTimes)).toISOString() : session.lastActivity;
-    const durationGaps = [];
-    for (let index = 1; index < messages.length; index += 1) {
-      const previous = timeOf(messages[index - 1].timestamp);
-      const current = timeOf(messages[index].timestamp);
-      if (previous !== null && current !== null && (current - previous) / 1000 > 30) durationGaps.push({ index, seconds: (current - previous) / 1000 });
+    const DATA=JSON.parse(document.getElementById('session-data').textContent);
+    const COLORS={files:'#48d9c7',test:'#67a9ff',git:'#bb8cff',runtime:'#ffc65c',error:'#ff6b76'};
+    const $=id=>document.getElementById(id);
+    const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const parsed=value=>{const n=Date.parse(value||'');return Number.isFinite(n)?n:null};
+    const fmt=ts=>new Date(ts).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',hour12:false});
+    const shortPath=(path,n=36)=>path.length<=n?path:'…'+path.slice(-(n-1));
+    const duration=seconds=>seconds<60?Math.round(seconds)+'s':Math.floor(seconds/60)+'m '+Math.round(seconds%60)+'s';
+    const root=DATA.session;
+    const rootId=root.id;
+    const childSessions=(DATA.children||[]).map(child=>({...child,sessionId:child.id}));
+    const sessions=[{...root,sessionId:rootId,depth:0,source:'root'},...childSessions.map(child=>({...child,depth:1,source:child.harness}))];
+    const fallback=parsed(root.lastActivity)||Date.now();
+    const subagentMarkers=childSessions.map(child=>({...child,ts:parsed(child.lastActivity)||fallback}));
+    const messages=(DATA.messages||[]).map((message,index)=>({...message,session:rootId,ts:parsed(message.timestamp)||fallback+index})).sort((a,b)=>a.ts-b.ts);
+    const commandOf=part=>{if(typeof part.input==='string')return part.input;if(part.input&&typeof part.input==='object'){const value=part.input;for(const key of ['command','cmd','script','query','input'])if(typeof value[key]==='string')return value[key];return JSON.stringify(value)}return part.text||part.output||''};
+    const pathsOf=command=>{const found=command.match(/(?:^|[\\s"'])((?:\\.?\\/?|~\\/)[^\\s"']+|(?:src|test|tests|app|lib|packages|integrations)\\/[A-Za-z0-9_./-]+\\.[A-Za-z0-9_-]+)(?=$|[\\s"',;:)])/g)||[];return [...new Set(found.map(value=>value.trim().replace(/^["']/,'').replace(/["',;:)]+$/,'')))].filter(value=>/\\.[A-Za-z0-9_-]+$/.test(value))};
+    const kindOf=(part,command,paths)=>{const lower=(part.name||'')+' '+command.toLowerCase();if(part.error||/\\b(error|failed|failure)\\b/.test(lower))return 'error';if(/\\b(git|commit|checkout|merge|branch|diff)\\b/.test(lower))return 'git';if(/\\b(test|vitest|jest|pytest|npm run build|tsc|lint)\\b/.test(lower))return 'test';if(/\\b(deploy|systemctl|restart|curl|docker|nginx)\\b/.test(lower))return 'runtime';if(paths.length||/\\b(apply_patch|write|edit|create|delete|mkdir|mv|cp|tee|sed -i)\\b/.test(lower))return 'files';return null};
+    const events=[];const fileMap=new Map();
+    const addFile=(path,event,command)=>{if(!fileMap.has(path))fileMap.set(path,{id:'file-'+fileMap.size,path,scope:root.cwd,evidence:'CANONICAL tool_call',changes:[]});fileMap.get(path).changes.push({event:event.id,ts:event.ts,time:event.time,operation:event.kind,command,session:rootId,diff:''})};
+    messages.forEach((message,messageIndex)=>{(message.parts||[]).forEach((part,partIndex)=>{if(part.type!=='tool_call'&&part.type!=='tool_result')return;const command=commandOf(part);const paths=pathsOf(command);const kind=kindOf(part,command,paths);if(!kind)return;const event={id:'event-'+messageIndex+'-'+partIndex,ts:message.ts,time:fmt(message.ts),kind,session:rootId,tool:part.name||part.type,outcome:part.error?'error':'recorded',evidence:'CANONICAL tool_call',detail:command||part.name||part.type,files:paths};events.push(event);paths.forEach(path=>addFile(path,event,command));})});
+    const files=[...fileMap.values()];
+    const start=Math.min(...[...messages.map(message=>message.ts),...events.map(event=>event.ts),...subagentMarkers.map(child=>child.ts),fallback]);
+    const end=Math.max(...[...messages.map(message=>message.ts),...events.map(event=>event.ts),...subagentMarkers.map(child=>child.ts),fallback]);
+    const span=Math.max(1,end-start);
+    let selectedTs=end,selectedFile=null,selectedEvent=null,selectedMessage=null,selectedSession=null,timer=null,vertical=false,lineMode=false;
+    const timeToSlider=ts=>Math.max(0,Math.min(1000,Math.round((ts-start)/span*1000)));
+    const sliderToTs=()=>start+(Number($('time').value)/1000)*span;
+    const titleForMessage=message=>'#'+(messages.indexOf(message)+1)+' · '+message.role+' · '+fmt(message.ts);
+    $('subtitle').textContent=root.harness+' · '+root.id+' · '+DATA.evidence;
+    $('sessions').innerHTML=sessions.map(session=>'<span class="session-pill" data-session="'+esc(session.sessionId)+'">'+(session.depth?'↳ child':'root')+' · '+esc(session.title||session.sessionId)+' · '+esc(session.harness)+'</span>').join('');
+    $('sessions').querySelectorAll('[data-session]').forEach(node=>node.onclick=()=>showSession(node.dataset.session));
+    function setSummary(activeMessages,activeEvents,visibleFiles){$('summary').innerHTML='<span><b class="count">'+activeMessages+'</b> messages</span><span><b class="count">'+activeEvents+'</b> events</span><span><b class="count">'+visibleFiles+'</b> files at selected time</span><span>'+sessions.length+' session lane(s)</span>'}
+    function render(){selectedTs=sliderToTs();$('clock').textContent=fmt(selectedTs);renderGraph();if(selectedFile)showFile(selectedFile,false);else if(selectedEvent)showEvent(selectedEvent,false);else if(selectedMessage)showMessage(selectedMessage,false);else if(selectedSession)showSession(selectedSession,false)}
+    function renderGraph(){
+      const query=$('search').value.toLowerCase();const activeEvents=events.filter(event=>event.ts<=selectedTs);const activeMessages=messages.filter(message=>message.ts<=selectedTs);const visibleFiles=files.filter(file=>file.path.toLowerCase().includes(query)&&file.changes.some(change=>change.ts<=selectedTs));
+      const laneH=66,labelW=175,plotW=920,fileCols=3,fileW=270,fileH=35;const laneCount=lineMode?1:sessions.length;const laneIndex=new Map(sessions.map((session,index)=>[session.sessionId,lineMode?0:index]));const fileBase=lineMode?128:laneCount*laneH+58;const fileRows=lineMode?0:Math.ceil(visibleFiles.length/fileCols);const timelineHeight=vertical?780:0;const width=vertical?Math.max(900,labelW+laneCount*laneH+180):labelW+plotW+40;const height=vertical?timelineHeight+fileRows*fileH+105:Math.max(220,fileBase+fileRows*fileH+48);let out='';const eventPos=new Map();
+      const laneY=index=>lineMode?68:35+index*laneH;const timeX=ts=>labelW+((ts-start)/span)*plotW;const timeY=ts=>55+((ts-start)/span)*timelineHeight;
+      if(vertical){sessions.slice(0,laneCount).forEach((session,index)=>{const x=labelW+38+index*laneH;out+='<line class="lane" x1="'+x+'" y1="55" x2="'+x+'" y2="'+(55+timelineHeight)+'"/><text class="lane-label" x="'+(x-30)+'" y="28">'+esc(session.title||session.sessionId.slice(0,10))+'</text>'})}else{sessions.forEach((session,index)=>{const y=laneY(index);out+='<line class="lane" x1="'+labelW+'" y1="'+y+'" x2="'+(labelW+plotW)+'" y2="'+y+'"/><text class="lane-label" x="'+(10+session.depth*10)+'" y="'+(y+4)+'">'+(session.depth?'↳ ':'')+esc(session.title||session.sessionId.slice(0,10))+' · '+esc(session.harness)+'</text>'})}
+      events.forEach(event=>{const position=vertical?[labelW+38+((laneIndex.get(event.session)||0)*laneH),timeY(event.ts)]:[timeX(event.ts),laneY(laneIndex.get(event.session)||0)];eventPos.set(event.id,position)});
+      subagentMarkers.forEach(child=>{const lane=laneIndex.get(child.sessionId)||0;const x=vertical?labelW+38+lane*laneH:timeX(child.ts);const y=vertical?timeY(child.ts):laneY(lane);const future=child.ts>selectedTs;const href=child.harness==='codex'?'codex://threads/'+encodeURIComponent(child.sessionId):'#';out+='<line class="subagent-link" x1="'+(vertical?x:x-18)+'" y1="'+(vertical?y:y-18)+'" x2="'+(vertical?x:x+18)+'" y2="'+(vertical?y:y+18)+'"/><a href="'+esc(href)+'"'+(href==='#'?'':' target="_blank" rel="noreferrer"')+'"><circle class="subagent-node '+(future?'future ':'')+(selectedSession===child.sessionId?'selected':'')+'" data-session="'+esc(child.sessionId)+'" cx="'+x+'" cy="'+y+'" r="8"><title>'+esc((child.meta&&child.meta.agentRole||child.harness)+' · '+child.sessionId+' · '+fmt(child.ts))+'</title></circle></a>'});
+      const durationGaps=[];for(let index=1;index<messages.length;index++){const gap=(messages[index].ts-messages[index-1].ts)/1000;if(gap>30)durationGaps.push({ts:messages[index].ts,previous:messages[index-1].ts,seconds:gap})}
+      durationGaps.forEach(gap=>{if(vertical){const y1=timeY(gap.previous),y2=timeY(gap.ts),x=labelW+52; if(y2-y1>=30)out+='<line class="duration-marker" x1="'+(x-8)+'" y1="'+y1+'" x2="'+(x-8)+'" y2="'+y2+'"/><text class="duration-label" x="'+(x+2)+'" y="'+((y1+y2)/2)+'">'+duration(gap.seconds)+'</text>'}else{const x1=timeX(gap.previous),x2=timeX(gap.ts);if(x2-x1>=34)out+='<line class="duration-marker" x1="'+x1+'" y1="'+(laneY(0)-24)+'" x2="'+x2+'" y2="'+(laneY(0)-24)+'"/><text class="duration-label" x="'+((x1+x2)/2-12)+'" y="'+(laneY(0)-29)+'">'+duration(gap.seconds)+'</text>'}});
+      const fromPosition=vertical?[labelW+38+((laneIndex.get(rootId)||0)*laneH),timeY(start)]:[timeX(start),laneY(0)-24];const nowPosition=vertical?[labelW+38+((laneIndex.get(rootId)||0)*laneH),timeY(end)]:[timeX(end),laneY(0)-24];out+='<text class="lane-label" x="'+(vertical?fromPosition[0]+23:fromPosition[0]+5)+'" y="'+(vertical?fromPosition[1]-5:fromPosition[1]-12)+'">FROM</text><line class="now-marker" x1="'+(vertical?nowPosition[0]-18:nowPosition[0])+'" y1="'+(vertical?nowPosition[1]:nowPosition[1]-10)+'" x2="'+(vertical?nowPosition[0]+18:nowPosition[0])+'" y2="'+(vertical?nowPosition[1]:nowPosition[1]+10)+'"/><text class="now-label" x="'+(vertical?nowPosition[0]+23:nowPosition[0]+5)+'" y="'+(vertical?nowPosition[1]-5:nowPosition[1]-12)+'">NOW</text>';
+      activeEvents.forEach(event=>{const p=eventPos.get(event.id);if(!p)return;const future=event.ts>selectedTs;out+='<circle class="event '+(future?'future ':'')+(selectedEvent===event.id?'selected':'')+'" data-event="'+esc(event.id)+'" cx="'+p[0]+'" cy="'+p[1]+'" r="7" fill="'+(COLORS[event.kind]||COLORS.files)+'"><title>'+esc(event.time+' · '+event.kind+' · '+event.detail)+'</title></circle>'});
+      messages.forEach(message=>{const lane=laneIndex.get(message.session)||0;const x=vertical?labelW+38+lane*laneH+(message.role==='user'?-13:13):timeX(message.ts);const y=vertical?timeY(message.ts):laneY(lane)+(message.role==='user'?-13:13);const future=message.ts>selectedTs;const fill=message.role==='user'?'var(--blue)':message.role==='assistant'?'var(--green)':message.role==='tool'?'var(--purple)':'var(--muted)';out+='<rect class="message-node '+message.role+' '+(future?'future ':'')+(selectedMessage===message.id?'selected':'')+'" data-message="'+esc(message.id)+'" x="'+(x-5)+'" y="'+(y-5)+'" width="10" height="10" fill="'+fill+'" transform="rotate(45 '+x+' '+y+')"><title>'+esc(titleForMessage(message))+'</title></rect>'});
+      if(!lineMode){visibleFiles.forEach((file,index)=>{const x=vertical?labelW+12+(index%fileCols)*(fileW+20):labelW+12+(index%fileCols)*(fileW+20);const y=vertical?timelineHeight+55+Math.floor(index/fileCols)*fileH:fileBase+Math.floor(index/fileCols)*fileH;const changes=file.changes.filter(change=>change.ts<=selectedTs);changes.forEach(change=>{const p=eventPos.get(change.event);if(p)out+='<line class="edge" x1="'+p[0]+'" y1="'+p[1]+'" x2="'+(x+fileW/2)+'" y2="'+(y+13)+'"/>'});out+='<g class="file-node '+(selectedFile===file.id?'selected':'')+'" data-file="'+esc(file.id)+'" transform="translate('+x+','+y+')"><rect width="'+fileW+'" height="27" rx="6"/><text x="9" y="18">'+esc(shortPath(file.path))+'</text><title>'+esc(file.path)+'</title></g>'})}else{files.forEach(file=>file.changes.filter(change=>change.ts<=selectedTs&&file.path.toLowerCase().includes(query)).forEach(change=>{const p=eventPos.get(change.event);if(!p)return;const x=vertical?p[0]:p[0],y=vertical?p[1]:p[1]+30;out+='<circle class="event" data-file="'+esc(file.id)+'" cx="'+x+'" cy="'+y+'" r="4" fill="'+COLORS.files+'"><title>'+esc(file.path)+'</title></circle>'}))}
+      if(vertical){out+='<text class="lane-label" x="10" y="'+(timelineHeight+34)+'">FILES @ TIME</text>'}else{out+='<text class="lane-label" x="10" y="'+(lineMode?fileBase+20:fileBase+17)+'">'+(lineMode?'LINE':'FILES @ TIME')+'</text>'}
+      $('graph').setAttribute('viewBox','0 0 '+width+' '+height);$('graph').style.height=Math.max(260,height)+'px';$('graph').innerHTML=out;setSummary(activeMessages.length,activeEvents.length,visibleFiles.length);
+      $('graph').querySelectorAll('[data-event]').forEach(node=>node.onclick=()=>showEvent(node.dataset.event));$('graph').querySelectorAll('[data-message]').forEach(node=>node.onclick=()=>showMessage(node.dataset.message));$('graph').querySelectorAll('[data-file]').forEach(node=>node.onclick=()=>showFile(node.dataset.file));$('graph').querySelectorAll('[data-session]').forEach(node=>node.onclick=()=>showSession(node.dataset.session));
     }
-    document.title = "Agent Herder session minimap · " + (session.title || session.id);
-    document.getElementById("subtitle").textContent = session.harness + " · " + session.id + " · " + DATA.evidence;
-    document.getElementById("summary").innerHTML = [
-      [session.status, "pill"], [messages.length + " points", "pill accent"], [children.length + " subagents", "pill"],
-      [durationGaps.length + " gaps >30s", "pill"], ["history: " + DATA.history.source, "pill"],
-    ].map(([text, className]) => '<span class="' + className + '">' + esc(text) + '</span>').join("");
-    document.getElementById("inspector").innerHTML = '<dl>' +
-      '<dt>Title</dt><dd>' + esc(session.title || "—") + '</dd>' +
-      '<dt>Harness</dt><dd>' + esc(session.harness) + '</dd>' +
-      '<dt>Status</dt><dd>' + esc(session.status) + '</dd>' +
-      '<dt>FROM</dt><dd>' + esc(formatTime(fromTime)) + '</dd>' +
-      '<dt>NOW</dt><dd>' + esc(formatTime(new Date().toISOString())) + '</dd>' +
-      '<dt>Lineage</dt><dd>' + esc(DATA.lineage.kind) + (DATA.lineage.parentId ? '<br>parent: ' + esc(DATA.lineage.parentId) : '') + '</dd>' +
-      '<dt>Subagents</dt><dd>' + children.length + '</dd>' +
-      '</dl><div class="notice">Compact minimap only. Full message detail remains on the main Agent Herder page. Nodes and subagents expose details through hover/title and thread links.</div><a class="main-link" href="/">Back to Agent Herder</a>';
-    const svg = document.getElementById("map");
-    const ns = "http://www.w3.org/2000/svg";
-    const childColumns = Math.min(7, Math.max(1, children.length));
-    const childRows = Math.max(1, Math.ceil(children.length / childColumns));
-    const graphTop = 34;
-    const graphHeight = children.length ? 44 + childRows * 28 : 54;
-    const timelineTop = graphTop + graphHeight + 20;
-    const timelineHeight = messages.length > 200 ? 820 : Math.max(360, messages.length * 14);
-    const width = 980;
-    const height = timelineTop + timelineHeight + 58;
-    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
-    const text = (x, y, value, className) => '<text x="' + x + '" y="' + y + '" class="' + className + '">' + esc(value) + '</text>';
-    let markup = text(18, 20, "SESSION / SUBAGENTS", "map-label");
-    const rootX = 42;
-    const rootY = graphTop + 12;
-    markup += '<circle cx="' + rootX + '" cy="' + rootY + '" r="8" class="session-node"><title>' + esc(session.harness + " · " + session.id) + '</title></circle>';
-    markup += text(60, rootY + 4, session.harness + " · " + session.id, "map-label");
-    children.forEach((child, index) => {
-      const column = index % childColumns;
-      const row = Math.floor(index / childColumns);
-      const x = 230 + column * 105;
-      const y = graphTop + 40 + row * 28;
-      const title = ((child.meta && child.meta.agentRole) || child.harness) + " · " + child.id;
-      const threadUrl = child.harness === "codex" ? "codex://threads/" + encodeURIComponent(child.id) : "#";
-      markup += '<line x1="' + rootX + '" y1="' + rootY + '" x2="' + x + '" y2="' + y + '" class="subagent-link" />';
-      markup += '<a class="subagent-anchor" href="' + esc(threadUrl) + '"' + (threadUrl === "#" ? "" : ' target="_blank" rel="noreferrer"') + '><circle cx="' + x + '" cy="' + y + '" r="5" class="subagent-node"><title>' + esc(title) + '</title></circle></a>';
-    });
-    const lineX = 42;
-    markup += text(18, timelineTop - 9, "FROM", "map-label");
-    markup += '<text x="78" y="' + (timelineTop - 9) + '" class="map-label">' + esc(formatTime(fromTime)) + '</text>';
-    markup += '<line x1="' + lineX + '" y1="' + timelineTop + '" x2="' + lineX + '" y2="' + (timelineTop + timelineHeight) + '" class="event-line" />';
-    const pointStep = messages.length > 1 ? timelineHeight / (messages.length - 1) : timelineHeight;
-    const markerSet = new Set(durationGaps.map((gap) => gap.index));
-    messages.forEach((message, index) => {
-      const y = timelineTop + index * pointStep;
-      const role = roleOf(message);
-      const radius = messages.length > 500 ? 2 : 4;
-      const title = "#" + (index + 1) + " · " + message.role + " · " + formatTime(message.timestamp);
-      markup += '<circle cx="' + lineX + '" cy="' + y + '" r="' + radius + '" class="event-point ' + role + '"><title>' + esc(title) + '</title></circle>';
-      if (markerSet.has(index) && pointStep >= 16) {
-        const gap = durationGaps.find((item) => item.index === index);
-        const previousY = timelineTop + (index - 1) * pointStep;
-        const midpoint = (previousY + y) / 2;
-        markup += '<line x1="' + (lineX + 13) + '" y1="' + previousY + '" x2="' + (lineX + 13) + '" y2="' + y + '" class="duration-line" />';
-        markup += text(68, midpoint + 4, duration(gap.seconds), "duration-text");
-      }
-    });
-    markup += text(18, timelineTop + timelineHeight + 19, "NOW", "map-label");
-    markup += '<circle cx="' + lineX + '" cy="' + (timelineTop + timelineHeight) + '" r="7" class="now-node"><title>' + esc(formatTime(new Date().toISOString())) + '</title></circle>';
-    markup += '<text x="78" y="' + (timelineTop + timelineHeight + 19) + '" class="map-label">' + esc(formatTime(new Date().toISOString())) + '</text>';
-    svg.innerHTML = markup;
+    function clearSelection(){selectedFile=selectedEvent=selectedMessage=selectedSession=null}
+    function showEvent(id,rerender=true){clearSelection();selectedEvent=id;const event=events.find(item=>item.id===id);if(!event)return;if(rerender)renderGraph();$('inspect').innerHTML='<h2 class="panel-title">'+esc(event.kind)+' · '+esc(event.time)+'</h2><div class="meta">session '+esc(event.session)+'\\ntool '+esc(event.tool)+'\\noutcome '+esc(event.outcome)+'\\nevidence '+esc(event.evidence)+'</div><div class="file-path">'+esc(event.detail)+'</div>'+(event.files.length?'<div class="meta">files</div>'+event.files.map(path=>'<button class="jump-file" data-path="'+esc(path)+'">'+esc(shortPath(path,55))+'</button>').join(' '):'<div class="notice">No recorded file path on this event.</div>');$('inspect').querySelectorAll('.jump-file').forEach(node=>node.onclick=()=>{const file=files.find(item=>item.path===node.dataset.path);if(file)showFile(file.id)});}
+    function showMessage(id,rerender=true){clearSelection();selectedMessage=id;const message=messages.find(item=>item.id===id);if(!message)return;if(rerender)renderGraph();$('inspect').innerHTML='<h2 class="panel-title">'+esc(message.role)+' message · '+esc(fmt(message.ts))+'</h2><div class="meta">session '+esc(message.session)+'\\nevidence CANONICAL Agent Herder SessionDetails\\nparts '+message.parts.length+'</div><br><div class="message-body">'+esc(message.text||'(no text; inspect tool events below)')+'</div>';}
+    function showSession(id,rerender=true){clearSelection();selectedSession=id;const session=sessions.find(item=>item.sessionId===id);if(!session)return;if(rerender)renderGraph();const children=sessions.filter(item=>item.depth&&item.meta?.parentSessionKey===id);const threadUrl=session.harness==='codex'?'codex://threads/'+encodeURIComponent(session.sessionId):'';$('inspect').innerHTML='<h2 class="panel-title">'+(session.depth?'Child session':'Root session')+' · '+esc(session.title||session.sessionId)+'</h2><div class="meta">id '+esc(session.sessionId)+'\\nharness '+esc(session.harness)+'\\nstatus '+esc(session.status||'-')+'\\nparent '+esc(session.meta?.parentSessionKey||'-')+'\\nevidence CANONICAL Agent Herder SessionDetails</div>'+(threadUrl?'<br><a href="'+esc(threadUrl)+'">Open '+esc(threadUrl)+'</a>':'')+'<div class="notice">'+children.length+' child session(s) · '+messages.filter(message=>message.session===id&&message.ts<=selectedTs).length+' message(s) through selected time.</div>';}
+    function showFile(id,rerender=true){clearSelection();selectedFile=id;const file=files.find(item=>item.id===id);if(!file)return;if(rerender)renderGraph();const changes=file.changes.filter(change=>change.ts<=selectedTs).sort((a,b)=>b.ts-a.ts);let body='<h2 class="panel-title">File changes @ '+esc(fmt(selectedTs))+'</h2><div class="file-path">'+esc(file.path)+'</div><div class="meta">scope '+esc(file.scope)+' · evidence '+esc(file.evidence)+' · '+changes.length+' change(s) through selected time</div><br>';if(!changes.length)body+='<div class="notice">No recorded change before the selected moment.</div>';for(const change of changes)body+='<article class="change"><div class="change-head">'+esc(change.time)+' · '+esc(change.operation)+' · session '+esc(change.session.slice(0,8))+'</div><pre>'+esc(change.diff||change.command||'Recorded tool operation; no diff payload available.')+'</pre></article>';$('inspect').innerHTML=body;}
+    $('time').oninput=render;$('search').oninput=renderGraph;$('back').onclick=()=>{$('time').value=Math.max(0,Number($('time').value)-25);render()};$('forward').onclick=()=>{$('time').value=Math.min(1000,Number($('time').value)+25);render()};$('play').onclick=()=>{if(timer){clearInterval(timer);timer=null;$('play').textContent='▶';return}if(Number($('time').value)>=1000)$('time').value=0;$('play').textContent='❚❚';timer=setInterval(()=>{let value=Number($('time').value)+5;if(value>=1000){value=1000;clearInterval(timer);timer=null;$('play').textContent='▶'}$('time').value=value;render()},40)};$('rotate').onclick=()=>{vertical=!vertical;$('rotate').classList.toggle('active',vertical);render()};$('line-mode').onclick=()=>{lineMode=!lineMode;$('line-mode').classList.toggle('active',lineMode);render()};
+    $('time').value=1000;render();showSession(rootId,false);
   </script>
 </body>
 </html>`;
