@@ -47,7 +47,13 @@ export function renderSessionGraph(details: SessionDetails): string {
   <script id="session-data" type="application/json">${data}</script>
   <script>
     const DATA = JSON.parse(document.getElementById("session-data").textContent);
-    const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[char]));
+    const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => {
+      if (char === "&") return "&amp;";
+      if (char === "<") return "&lt;";
+      if (char === ">") return "&gt;";
+      if (char === '"') return "&quot;";
+      return "&#39;";
+    });
     const session = DATA.session;
     const messages = DATA.messages || [];
     const label = (value) => value || "—";
