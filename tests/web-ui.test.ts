@@ -5,9 +5,9 @@ const html = readFileSync(new URL("../src/web/index.html", import.meta.url), "ut
 const reactSource = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
 
 describe("Codex session visualization", () => {
-  it("exposes a new-tab visualization action only for Codex sessions", () => {
+  it("exposes a new-tab visualization action for every selected harness", () => {
     expect(reactSource).toContain("/visualization`");
-    expect(reactSource).toContain('activeSession?.harness === "codex"');
+    expect(reactSource).toContain("const visualizationUrl = activeSession");
     expect(reactSource).toContain('target="_blank"');
     expect(reactSource).toContain(">Visualize</a>");
   });

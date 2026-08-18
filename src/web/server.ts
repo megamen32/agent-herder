@@ -6,7 +6,7 @@ import { dirname, extname, join, normalize } from "node:path";
 import type { HarnessType } from "session-convert";
 import { LineageStore } from "../lineage-store.js";
 import { SessionNotFoundError, SessionSupervisor } from "../session-supervisor.js";
-import type { AgentSession, HarnessAdapter } from "../types/index.js";
+import type { AgentSession, HarnessAdapter, SessionDetails } from "../types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "../session-convert.js";
 import { HumanRequestRegistry } from "../human-request/index.js";
 import { buildSessionProgress } from "../health-progress.js";
@@ -17,7 +17,7 @@ import { ChoiceRegistry, ChoiceRegistryLockUnavailableError, type PendingChoice 
 import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../autopilot/policy-store.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
-import { renderCodexSessionGraph } from "../session-visualization.js";
+import { renderSessionGraph } from "../session-visualization.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -37,7 +37,7 @@ export interface WebDependencies {
   autopilotPolicyStore?: AutopilotPolicyStore;
   autopilotSessionStore?: AutopilotSessionStore;
   autopilotSweepIntervalMs?: number;
-  sessionVisualizer?: (sessionId: string) => Promise<string>;
+  sessionVisualizer?: (details: SessionDetails) => Promise<string>;
 }
 
 export type AutopilotSweepOutcome = {
@@ -395,7 +395,7 @@ const webRoot = dirname(htmlPath);
 
 export function createWebServer(dependencies: WebDependencies): Server {
   const supervisor = new SessionSupervisor(dependencies.adapters, dependencies.converter, dependencies.lineageStore);
-  const sessionVisualizer = dependencies.sessionVisualizer || renderCodexSessionGraph;
+  const sessionVisualizer = dependencies.sessionVisualizer || ((details: SessionDetails) => Promise.resolve(renderSessionGraph(details)));
   const mcpTransports = new Map<string, StreamableHTTPServerTransport>();
   const mcpAuthToken = dependencies.mcpAuthToken?.trim() || undefined;
   const server = createServer(async (request, response) => {
@@ -435,7 +435,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   return server;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionVisualizer?: (sessionId: string) => Promise<string>): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (url.pathname === "/api/autopilot/policy" && (request.method === "GET" || request.method === "PUT")) {
     if (!autopilotPolicyStore) return sendJson(response, 503, { error: "Autopilot policy store is disabled" });
@@ -788,9 +788,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   if (visualizationMatch && request.method === "GET") {
     const harness = decodeURIComponent(visualizationMatch[1]);
     const sessionId = decodeURIComponent(visualizationMatch[2]);
-    if (harness !== "codex") return sendJson(response, 400, { error: "session visualization is currently available for Codex sessions only" });
     if (!sessionVisualizer) return sendJson(response, 503, { error: "session visualization is disabled" });
-    const html = await sessionVisualizer(sessionId);
+    const details = await supervisor.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" });
+    const html = await sessionVisualizer(details);
     response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     response.end(html);
     return;

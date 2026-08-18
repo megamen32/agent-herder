@@ -213,7 +213,7 @@ describe("agent-herder web API", () => {
           return { success: true, targetSessionId: "codex-session-1", targetPath: "/tmp/codex.jsonl", messageCount: 2 };
         },
       },
-      sessionVisualizer: async (sessionId) => `<html><title>Codex graph ${sessionId}</title></html>`,
+      sessionVisualizer: async (details) => `<html><title>${details.session.harness} graph ${details.session.id}</title></html>`,
     });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
@@ -261,13 +261,10 @@ describe("agent-herder web API", () => {
       history: { source: "unavailable" },
     });
 
-    const visualization = await fetch(`${base}/api/sessions/codex/session-1/visualization`);
+    const visualization = await fetch(`${base}/api/sessions/claude/session-1/visualization`);
     expect(visualization.status).toBe(200);
     expect(visualization.headers.get("content-type")).toContain("text/html");
-    expect(await visualization.text()).toContain("Codex graph session-1");
-
-    const unsupportedVisualization = await fetch(`${base}/api/sessions/claude/session-1/visualization`);
-    expect(unsupportedVisualization.status).toBe(400);
+    expect(await visualization.text()).toContain("claude graph session-1");
 
     const missingDetails = await fetch(`${base}/api/sessions/claude/missing/details`);
     expect(missingDetails.status).toBe(404);

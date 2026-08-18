@@ -395,7 +395,7 @@ function App() {
   };
   const isResumeMode = activeSession?.status === "stopped" || activeSession?.status === "error";
   const readOnlySession = activeSession?.meta?.readOnly === true;
-  const visualizationUrl = activeSession?.harness === "codex"
+  const visualizationUrl = activeSession
     ? `/api/sessions/${encodeURIComponent(activeSession.harness)}/${encodeURIComponent(activeSession.id)}/visualization`
     : undefined;
   const sendMessage = async () => {
