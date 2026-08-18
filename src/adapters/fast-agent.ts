@@ -204,6 +204,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       lastMessage: preview?.slice(0, 300),
       meta: {
         source: "fast-agent-persisted-home",
+        readOnly: true,
         home: this.home,
         sessionDirectory: relative(this.home, record.directory),
         nativeSessionId: nativeId,
