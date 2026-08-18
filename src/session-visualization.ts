@@ -101,17 +101,17 @@ export function renderSessionGraph(details: SessionDetails): string {
     let markup = text(18, 20, "SESSION / SUBAGENTS", "map-label");
     const rootX = 42;
     const rootY = graphTop + 12;
-    markup += '<circle cx="' + rootX + '" cy="' + rootY + '" r="8" class="session-node"><title>' + esc(session.title || session.id) + '</title></circle>';
+    markup += '<circle cx="' + rootX + '" cy="' + rootY + '" r="8" class="session-node"><title>' + esc(session.harness + " · " + session.id) + '</title></circle>';
     markup += text(60, rootY + 4, session.harness + " · " + session.id, "map-label");
     children.forEach((child, index) => {
       const column = index % childColumns;
       const row = Math.floor(index / childColumns);
       const x = 230 + column * 105;
       const y = graphTop + 40 + row * 28;
-      const title = child.title || child.id;
+      const title = ((child.meta && child.meta.agentRole) || child.harness) + " · " + child.id;
       const threadUrl = child.harness === "codex" ? "codex://threads/" + encodeURIComponent(child.id) : "#";
       markup += '<line x1="' + rootX + '" y1="' + rootY + '" x2="' + x + '" y2="' + y + '" class="subagent-link" />';
-      markup += '<a class="subagent-anchor" href="' + esc(threadUrl) + '"' + (threadUrl === "#" ? "" : ' target="_blank" rel="noreferrer"') + '><circle cx="' + x + '" cy="' + y + '" r="5" class="subagent-node"><title>' + esc(title + " · " + child.id) + '</title></circle></a>';
+      markup += '<a class="subagent-anchor" href="' + esc(threadUrl) + '"' + (threadUrl === "#" ? "" : ' target="_blank" rel="noreferrer"') + '><circle cx="' + x + '" cy="' + y + '" r="5" class="subagent-node"><title>' + esc(title) + '</title></circle></a>';
     });
     const lineX = 42;
     markup += text(18, timelineTop - 9, "FROM", "map-label");
@@ -123,7 +123,7 @@ export function renderSessionGraph(details: SessionDetails): string {
       const y = timelineTop + index * pointStep;
       const role = roleOf(message);
       const radius = messages.length > 500 ? 2 : 4;
-      const title = (message.role + " · " + formatTime(message.timestamp) + (message.text ? " · " + message.text.slice(0, 180) : ""));
+      const title = "#" + (index + 1) + " · " + message.role + " · " + formatTime(message.timestamp);
       markup += '<circle cx="' + lineX + '" cy="' + y + '" r="' + radius + '" class="event-point ' + role + '"><title>' + esc(title) + '</title></circle>';
       if (markerSet.has(index) && pointStep >= 16) {
         const gap = durationGaps.find((item) => item.index === index);
