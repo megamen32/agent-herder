@@ -76,7 +76,7 @@ export function renderSessionGraph(details: SessionDetails): string {
     if (!messages.length) { timeline.innerHTML = '<div class="empty">No canonical messages are available for this session.</div>'; }
     else timeline.innerHTML = messages.map((message, index) => {
       const role = message.role === "user" ? "user" : message.role === "tool" ? "tool" : "assistant";
-      const parts = (message.parts || []).map((part) => '<div class="part"><strong>' + esc(part.name || part.type) + '</strong>\n' + esc(part.text || part.output || (part.input === undefined ? "" : JSON.stringify(part.input, null, 2))) + '</div>').join("");
+      const parts = (message.parts || []).map((part) => '<div class="part"><strong>' + esc(part.name || part.type) + '</strong>\\n' + esc(part.text || part.output || (part.input === undefined ? "" : JSON.stringify(part.input, null, 2))) + '</div>').join("");
       return '<article class="' + role + '"><div class="meta"><span class="role">' + esc(message.role) + '</span><span>#' + (index + 1) + '</span><span>' + esc(message.timestamp || "") + '</span></div><div class="body">' + esc(message.text || "") + '</div>' + parts + '</article>';
     }).join("");
   </script>

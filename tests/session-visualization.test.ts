@@ -19,5 +19,8 @@ describe("canonical session visualization", () => {
     expect(html).toContain(`"harness":"${harness}"`);
     expect(html).toContain("CANONICAL Agent Herder SessionDetails");
     expect(html).toContain("Inspect");
+    const script = html.match(/<script>\s*([\s\S]*?)\s*<\/script>/)?.[1];
+    expect(script).toBeTruthy();
+    expect(() => new Function(script!)).not.toThrow();
   });
 });
