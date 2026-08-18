@@ -35,7 +35,9 @@ describe("canonical session visualization", () => {
     });
     expect(graph).toContain("FROM");
     expect(graph).toContain("NOW");
-    expect(graph).toContain("duration-marker");
+    expect(graph).toContain("duration-text");
+    expect(graph).toContain("SESSION / SUBAGENTS");
+    expect(graph).toContain("subagent-node");
     expect(graph).toContain("codex://threads/");
     expect(graph).toContain("child-1");
   });
