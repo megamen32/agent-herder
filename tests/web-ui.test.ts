@@ -2,6 +2,16 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const html = readFileSync(new URL("../src/web/index.html", import.meta.url), "utf8");
+const reactSource = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
+
+describe("Codex session visualization", () => {
+  it("exposes a new-tab visualization action only for Codex sessions", () => {
+    expect(reactSource).toContain("/visualization`");
+    expect(reactSource).toContain('activeSession?.harness === "codex"');
+    expect(reactSource).toContain('target="_blank"');
+    expect(reactSource).toContain(">Visualize</a>");
+  });
+});
 
 describe("session tree project groups", () => {
   it("exposes create_session and new_or_resume through the web UI", () => {

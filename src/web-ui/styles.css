@@ -42,7 +42,7 @@ h1 { font-size: 19px; } h2 { font-size: 16px; }
 .choice-error { color: #f0a8b1; font-size: 10px; }
 .icon-button, .quiet-button, .primary-button, .danger-button { border-radius: 7px; background: transparent; }
 .icon-button { width: 30px; height: 30px; color: var(--muted); font-size: 18px; } .icon-button:hover, .quiet-button:hover { background: var(--surface-hover); color: var(--text); }
-.quiet-button { padding: 6px 9px; color: var(--muted); font-size: 11px; } .primary-button, .danger-button { padding: 7px 11px; font-size: 12px; } .primary-button { background: var(--accent); color: #140c22; } .danger-button { background: #55252d; color: #f0a8b1; }
+.quiet-button { padding: 6px 9px; color: var(--muted); font-size: 11px; text-decoration: none; } .primary-button, .danger-button { padding: 7px 11px; font-size: 12px; } .primary-button { background: var(--accent); color: #140c22; } .danger-button { background: #55252d; color: #f0a8b1; }
 .chat-pane { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--background); }
 .chat-header { min-height: 70px; padding: 13px 20px; border-bottom: 1px solid var(--border); }
 .chat-heading { min-width: 0; flex: 1; } .chat-heading h2, .chat-heading small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .chat-heading small { margin-top: 4px; color: var(--muted); font-size: 11px; }
