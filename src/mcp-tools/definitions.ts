@@ -163,7 +163,7 @@ export const toolDefinitions: Tool[] = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        harness: { type: "string", enum: ["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode"], default: "all", description: "Filter by harness" },
+        harness: { type: "string", enum: ["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], default: "all", description: "Filter by harness" },
         status: { type: "string", enum: ["all", "running", "idle", "needs_input", "stopped", "error"], default: "all", description: "Filter by status" },
         limit: { type: "number", default: 50, description: "Max sessions to return" },
         maxAge: { type: "number", description: "Max session age in seconds (e.g. 3600 for 1h, 86400 for 24h)" },

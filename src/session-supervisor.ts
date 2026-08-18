@@ -340,7 +340,7 @@ export class SessionSupervisor {
       }
     }
 
-    if (session.harness !== "qoder" && session.harness !== "hermes" && session.harness !== "zcode" && mode !== "acp" && this.converter.read) {
+    if (session.harness !== "qoder" && session.harness !== "hermes" && session.harness !== "zcode" && session.harness !== "fast-agent" && mode !== "acp" && this.converter.read) {
       try {
         const conversation = await this.converter.read({
           sessionId: nativeId,

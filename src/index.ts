@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { HarnessAdapter } from "./types/index.js";
-import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter } from "./adapters/index.js";
+import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter } from "./adapters/index.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
@@ -62,6 +62,7 @@ const CODEX_TRANSPORT = process.env.CODEX_TRANSPORT || "app-server";
 const ENABLE_QODER = parseEnvBool(process.env.ENABLE_QODER, true);
 const ENABLE_HERMES = parseEnvBool(process.env.ENABLE_HERMES, true);
 const ENABLE_ZCODE = parseEnvBool(process.env.ENABLE_ZCODE, true);
+const ENABLE_FAST_AGENT = parseEnvBool(process.env.ENABLE_FAST_AGENT, false);
 const ACP_AGENT_COMMAND = process.env.ACP_AGENT_COMMAND;
 const LAZY_ADAPTERS = new Set(["codex", "hermes", "zcode"]);
 
@@ -111,6 +112,10 @@ function configureAdapterRegistry(): void {
     args: process.env.ZCODE_SERVER_ENTRY ? [process.env.ZCODE_SERVER_ENTRY] : undefined,
     cwd: process.env.ZCODE_CWD, modelIds: parseCsv(process.env.ZCODE_MODELS, []),
   }));
+  adapterFactories.set("fast-agent", () => new FastAgentFileAdapter({
+    home: process.env.FAST_AGENT_HOME || join(homedir(), ".fast-agent"),
+    cwd: process.env.FAST_AGENT_CWD || process.cwd(),
+  }));
   for (const definition of [
     ["opencode", "OpenCode", "OpenCode HTTP control adapter", ENABLE_OPENCODE],
     ["claude", "Claude", "Claude SDK or CLI adapter", ENABLE_CLAUDE],
@@ -118,6 +123,7 @@ function configureAdapterRegistry(): void {
     ["qoder", "Qoder", "Qoder ACP adapter", ENABLE_QODER],
     ["hermes", "Hermes", "Hermes MCP adapter", ENABLE_HERMES],
     ["zcode", "ZCode", "ZCode app-server adapter", ENABLE_ZCODE],
+    ["fast-agent", "Fast Agent", "Read-only persisted fast-agent session observer", ENABLE_FAST_AGENT],
   ] as const) {
     const [id, name, description, defaultEnabled] = definition;
     adapterRegistry.register({ id, name, description, defaultEnabled, factory: adapterFactories.get(id) });
@@ -270,6 +276,19 @@ async function initAdapters() {
       console.error(`[agent-herder] ZCode adapter failed to init: ${(err as Error).message}`);
       adapters.delete("zcode");
     });
+  }
+
+  if (adapterRegistry.shouldEnable("fast-agent", ENABLE_FAST_AGENT)) {
+    const adapter = new FastAgentFileAdapter({
+      home: process.env.FAST_AGENT_HOME || join(homedir(), ".fast-agent"),
+      cwd: process.env.FAST_AGENT_CWD || process.cwd(),
+    });
+    adapters.set("fast-agent", adapter);
+    adapterRegistry.registerActive(adapter);
+    inits.push(adapter.init().catch((err) => {
+      console.error(`[agent-herder] Fast Agent persisted observer failed to init: ${(err as Error).message}`);
+      adapters.delete("fast-agent");
+    }));
   }
 
   if (ACP_AGENT_COMMAND) {
@@ -523,7 +542,7 @@ function registerTools(
     "list_agents",
     "List all coding agent sessions, including ZCode. Filter by harness, status, age (maxAge seconds), or folder (CWD prefix like ~/apps). Can show last message preview.",
     {
-      harness: z.enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().default("all").describe("Filter by harness"),
+      harness: z.enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().default("all").describe("Filter by harness"),
       status: z.enum(["all", "running", "idle", "needs_input", "stopped", "error"]).optional().default("all").describe("Filter by status"),
       limit: z.number().int().min(1).max(100).optional().default(50).describe("Max sessions"),
       maxAge: z.number().int().min(0).optional().describe("Max session age in seconds (e.g. 3600=1h, 86400=24h)"),

@@ -24,6 +24,9 @@ Environment=ENABLE_CLAUDE=false
 Environment=ENABLE_CLAUDE_SDK=false
 Environment=ENABLE_QODER=false
 Environment=ENABLE_ZCODE=true
+Environment=ENABLE_FAST_AGENT=true
+Environment=FAST_AGENT_HOME=/home/roomhacker/agents-projects/exmanager/.fast-agent
+Environment=FAST_AGENT_CWD=/home/roomhacker/agents-projects/exmanager
 Environment=AGENT_HERDER_WEB_HOST=127.0.0.1
 Environment=AGENT_HERDER_WEB_PORT=18787
 ExecStart=/usr/local/bin/node %h/agents-projects/agent-herder/dist/index.js

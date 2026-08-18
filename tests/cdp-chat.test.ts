@@ -66,7 +66,7 @@ class FakePage implements CdpChatPage {
 
   async createChat(input: { title?: string }): Promise<ChatRecord> {
     const fixture = chat("fixture-chat", input.title ?? "Disposable fixture", {
-      updatedAt: "2026-08-11T12:01:00.000Z",
+      updatedAt: new Date().toISOString(),
       messages: [
         message("fixture-message", "fixture body with enough text to exercise export bounds ".repeat(200), [
           { id: "fixture-media", filename: "fixture.png", mimeType: "image/png", size: 4 },

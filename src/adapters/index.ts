@@ -8,3 +8,4 @@ export { QoderAdapter } from "./qoder.js";
 export { HermesAdapter } from "./hermes/index.js";
 export { ZcodeAdapter } from "./zcode.js";
 export { ZcodeAppServerClient } from "./zcode-protocol.js";
+export { FastAgentFileAdapter } from "./fast-agent.js";

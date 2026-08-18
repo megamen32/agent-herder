@@ -67,6 +67,7 @@ parallel coding tasks and session recovery.
 | Codex CLI | Native app-server with CLI fallback | Enabled by default |
 | Qoder CLI | Native ACP | Set `ENABLE_QODER=true` |
 | ZCode | Local stdio ZCode Protocol app-server | Enabled by default; set `ZCODE_CWD` for the workspace |
+| Fast Agent | Read-only persisted session home | Set `ENABLE_FAST_AGENT=true` and `FAST_AGENT_HOME` |
 
 ## Core MCP tools
 
@@ -112,11 +113,14 @@ The common switches are:
 | `ENABLE_CODEX` | `true` | Enable the Codex adapter |
 | `ENABLE_QODER` | `false` | Enable the Qoder ACP adapter |
 | `ENABLE_ZCODE` | `true` | Enable the local ZCode app-server adapter |
+| `ENABLE_FAST_AGENT` | `false` | Enable the read-only persisted fast-agent observer |
 | `OPENCODE_URL` | `http://127.0.0.1:4096` | OpenCode server URL |
 | `OPENCODE_SERVER_PASSWORD` | — | OpenCode server password, if configured |
 | `CODEX_TRANSPORT` | `app-server` | Codex native transport or `cli` fallback |
 | `QODER_CWD` | current directory | Workspace used by Qoder |
 | `ZCODE_CWD` | current directory | Workspace used by ZCode |
+| `FAST_AGENT_HOME` | `~/.fast-agent` | Existing fast-agent home to observe; no process is started |
+| `FAST_AGENT_CWD` | current directory | Workspace shown for persisted fast-agent sessions |
 | `ZCODE_SERVER_NODE` | `~/.zcode/server/node` when present | ZCode server runtime executable |
 | `ZCODE_SERVER_ENTRY` | `~/.zcode/server/zcode-server.cjs` when present | ZCode stdio app-server entrypoint |
 | `ZCODE_BIN` / `ZCODE_ARGS` | `zcode` / `["app-server"]` | Fallback command when the bundled server entrypoint is unavailable |

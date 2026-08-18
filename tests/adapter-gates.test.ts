@@ -11,6 +11,7 @@ const expectedGates = [
   "ENABLE_QODER",
   "ENABLE_HERMES",
   "ENABLE_ZCODE",
+  "ENABLE_FAST_AGENT",
 ];
 
 function parseGateValue(source: string): (value: string | undefined, fallback: boolean) => boolean {
@@ -36,12 +37,14 @@ describe("adapter enable gates", () => {
       ENABLE_QODER: "true",
       ENABLE_HERMES: "true",
       ENABLE_ZCODE: "true",
+      ENABLE_FAST_AGENT: "false",
     });
     const parseEnvBool = parseGateValue(source);
     for (const gate of expectedGates) {
-      expect(gates[gate], gate).toBe("true");
-      expect(parseEnvBool(undefined, true), `${gate} default`).toBe(true);
-      expect(parseEnvBool("false", true), `${gate}=false`).toBe(false);
+      const defaultEnabled = gates[gate] === "true";
+      expect(gates[gate], gate).toBe(defaultEnabled ? "true" : "false");
+      expect(parseEnvBool(undefined, defaultEnabled), `${gate} default`).toBe(defaultEnabled);
+      expect(parseEnvBool("false", defaultEnabled), `${gate}=false`).toBe(false);
     }
   });
 });
