@@ -52,6 +52,8 @@ export interface FastAgentFileAdapterOptions {
   home: string;
   /** Workspace shown for sessions whose persisted metadata has no cwd. */
   cwd?: string;
+  /** Fast Agent CLI binary used for resume/send control. */
+  fastAgentBin?: string;
 }
 
 const READ_ONLY_ERROR = "Fast Agent is connected read-only from its persisted home; start/control remains with fast-agent.";
@@ -72,7 +74,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
   readonly controlCapabilities: HarnessCapabilities = {
     cancelTurn: false,
     detach: false,
-    resume: false,
+    resume: true,
     terminate: false,
     recover: false,
     fork: false,
@@ -85,12 +87,13 @@ export class FastAgentFileAdapter implements HarnessAdapter {
   private readonly sessionsRoot: string;
   private readonly fallbackCwd: string;
   private initialized = false;
-  private readonly fastAgentBin = process.env.FAST_AGENT_BIN || "/home/roomhacker/.local/bin/fast-agent";
+  private readonly fastAgentBin: string;
 
   constructor(options: FastAgentFileAdapterOptions) {
     this.home = resolve(options.home);
     this.sessionsRoot = join(this.home, "sessions");
     this.fallbackCwd = resolve(options.cwd || process.cwd());
+    this.fastAgentBin = options.fastAgentBin || process.env.FAST_AGENT_BIN || "/home/roomhacker/.local/bin/fast-agent";
   }
 
   async init(): Promise<void> {
@@ -147,8 +150,42 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     };
   }
 
-  async sendMessage(_id: string, _options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
-    return { ok: false, error: READ_ONLY_ERROR };
+  async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
+    const session = await this.getSession(id);
+    if (!session) return { ok: false, error: `Fast Agent session '${id}' not found` };
+    const nativeId = stringValue(session.meta?.nativeSessionId);
+    if (!nativeId) return { ok: false, error: `Fast Agent session '${id}' has no native session id` };
+    const args = [
+      "go", "--home", this.home, "--workspace", session.cwd,
+      "--resume", nativeId, "--message", options.message, "--quiet",
+    ];
+    if (options.queue) {
+      try {
+        const child = spawn(this.fastAgentBin, args, {
+          cwd: session.cwd, detached: true, stdio: "ignore",
+          env: { ...process.env, FAST_AGENT_HOME: this.home },
+        });
+        child.unref();
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+    return await new Promise((resolveResult) => {
+      const child = spawn(this.fastAgentBin, args, {
+        cwd: session.cwd, stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, FAST_AGENT_HOME: this.home },
+      });
+      let stderr = "";
+      child.stderr?.setEncoding("utf8");
+      child.stderr?.on("data", (chunk) => { stderr += String(chunk); if (stderr.length > 4000) stderr = stderr.slice(-4000); });
+      child.once("error", (error) => resolveResult({ ok: false, error: error.message }));
+      child.once("close", (code) => resolveResult(code === 0 ? { ok: true } : { ok: false, error: stderr.trim() || `fast-agent exited with code ${code}` }));
+    });
+  }
+
+  async resumeSession(_id: string): Promise<{ ok: boolean; error?: string }> {
+    return { ok: true };
   }
 
   async stopSession(_id: string): Promise<{ ok: boolean; error?: string }> {

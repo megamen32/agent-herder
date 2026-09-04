@@ -67,7 +67,7 @@ parallel coding tasks and session recovery.
 | Codex CLI | Native app-server with CLI fallback | Enabled by default |
 | Qoder CLI | Native ACP | Set `ENABLE_QODER=true` |
 | ZCode | Local stdio ZCode Protocol app-server | Enabled by default; set `ZCODE_CWD` for the workspace |
-| Fast Agent | Read-only persisted session home | Set `ENABLE_FAST_AGENT=true` and `FAST_AGENT_HOME` |
+| Fast Agent | Persisted session home + CLI resume/send | Set `ENABLE_FAST_AGENT=true` and `FAST_AGENT_HOME` |
 
 ## Core MCP tools
 

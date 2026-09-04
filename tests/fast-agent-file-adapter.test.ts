@@ -27,7 +27,7 @@ describe("Fast Agent persisted observer", () => {
       { role: "assistant", timestamp: "2026-08-18T10:01:00.000Z", content: [{ type: "text", text: "I inspected it." }] },
     ] }));
 
-    const adapter = new FastAgentFileAdapter({ home, cwd: "/workspace" });
+    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/bin/true" });
     await adapter.init();
     const sessions = await adapter.listSessions();
     expect(sessions).toHaveLength(1);
@@ -36,11 +36,12 @@ describe("Fast Agent persisted observer", () => {
       harness: "fast-agent",
       status: "stopped",
       title: "Inspect the project",
-      cwd: "/workspace",
+      cwd: home,
       messageCount: 2,
       lastMessage: "I inspected it.",
     });
     expect(await adapter.getSessionMessages("fast-agent:session-1", 1)).toMatchObject([{ text: "I inspected it." }]);
-    expect(await adapter.sendMessage("fast-agent:session-1", { message: "do not send" })).toEqual({ ok: false, error: expect.stringContaining("read-only") });
+    expect(await adapter.sendMessage("fast-agent:session-1", { message: "continue work" })).toEqual({ ok: true });
+    expect(await adapter.sendMessage("fast-agent:session-1", { message: "continue in background", queue: true })).toEqual({ ok: true });
   });
 });
