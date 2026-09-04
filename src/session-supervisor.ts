@@ -356,8 +356,11 @@ export class SessionSupervisor {
 
   async getSessionDetails(provider: string, id: string, options: SessionDetailOptions = {}): Promise<SessionDetails> {
     const cachedSessions = provider === "codex" ? await this.listSessions({ harness: provider }) : undefined;
-    const session = cachedSessions?.find((candidate) => candidate.id === id || nativeSessionId(candidate) === id)
-      || await this.getSession(provider, id);
+    // Details are allowed to be richer (and a little more expensive) than the
+    // list snapshot. Ask the adapter first so harnesses such as Codex can read
+    // the selected rollout for model/usage metrics without slowing every list.
+    const session = await this.getSession(provider, id)
+      || cachedSessions?.find((candidate) => candidate.id === id || nativeSessionId(candidate) === id);
     if (!session) throw new SessionNotFoundError(provider, id);
     const limit = Math.max(1, Math.min(options.limit || 3, 50));
     const record = await this.lineage.get(sessionKey(provider, nativeSessionId(session)));

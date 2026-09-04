@@ -140,3 +140,4 @@ h1 { font-size: 19px; } h2 { font-size: 16px; }
 .cwd-suggestions .cwd-folder { color: #9a7bb8; font-size: 14px; }
 .cwd-suggestions button > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .cwd-suggestions small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 8px; text-align: right; }
+.inspector-empty-metrics { margin: 4px 0 16px; padding: 10px 11px; border: 1px solid var(--border); border-radius: 8px; background: #161618; color: var(--muted); font-size: 10px; line-height: 1.45; }

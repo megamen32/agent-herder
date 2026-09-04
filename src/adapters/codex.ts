@@ -97,7 +97,24 @@ export class CodexAdapter implements HarnessAdapter {
 
   async getSession(id: string): Promise<AgentSession | null> {
     const all = await this.listSessions();
-    return all.find((session) => session.id === id) || null;
+    const session = all.find((candidate) => candidate.id === id) || null;
+    if (!session) return null;
+    const state = this.sessionStatesCache?.get(id);
+    if (!state?.filePath) return session;
+    const metrics = await this.readSessionMetrics(state.filePath);
+    return {
+      ...session,
+      model: metrics.model || session.model,
+      messageCount: metrics.messageCount,
+      durationSec: metrics.durationSec,
+      meta: {
+        ...session.meta,
+        ...(metrics.totalTokens !== undefined ? { total_tokens: metrics.totalTokens } : {}),
+        ...(metrics.inputTokens !== undefined ? { input_tokens: metrics.inputTokens } : {}),
+        ...(metrics.outputTokens !== undefined ? { output_tokens: metrics.outputTokens } : {}),
+        ...(metrics.cachedInputTokens !== undefined ? { cached_input_tokens: metrics.cachedInputTokens } : {}),
+      },
+    };
   }
 
   async getNativeSessionMetadata(): Promise<Map<string, Pick<CodexSessionState, "parentThreadId" | "threadSource" | "agentRole">>> {
@@ -217,6 +234,66 @@ export class CodexAdapter implements HarnessAdapter {
       };
     } catch {
       return null;
+    }
+  }
+
+  private async readSessionMetrics(filePath: string): Promise<{
+    model?: string;
+    messageCount: number;
+    durationSec?: number;
+    totalTokens?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    cachedInputTokens?: number;
+  }> {
+    try {
+      const content = await readFile(filePath, "utf-8");
+      let model: string | undefined;
+      let messageCount = 0;
+      let firstTimestampMs: number | undefined;
+      let lastTimestampMs: number | undefined;
+      let totalTokens: number | undefined;
+      let inputTokens: number | undefined;
+      let outputTokens: number | undefined;
+      let cachedInputTokens: number | undefined;
+      for (const line of content.split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          const item = JSON.parse(line) as {
+            timestamp?: string;
+            type?: string;
+            payload?: {
+              type?: string;
+              role?: string;
+              model?: string;
+              info?: { total_token_usage?: Record<string, unknown> };
+            };
+          };
+          const timestampMs = Date.parse(item.timestamp || "");
+          if (Number.isFinite(timestampMs)) {
+            firstTimestampMs = firstTimestampMs === undefined ? timestampMs : Math.min(firstTimestampMs, timestampMs);
+            lastTimestampMs = lastTimestampMs === undefined ? timestampMs : Math.max(lastTimestampMs, timestampMs);
+          }
+          if (item.type === "turn_context" && typeof item.payload?.model === "string") model = item.payload.model;
+          if (item.type === "response_item" && item.payload?.type === "message" && (item.payload.role === "user" || item.payload.role === "assistant")) messageCount += 1;
+          if (item.type === "event_msg" && item.payload?.type === "token_count") {
+            const usage = item.payload.info?.total_token_usage;
+            const number = (key: string) => typeof usage?.[key] === "number" ? usage[key] as number : undefined;
+            totalTokens = number("total_tokens") ?? totalTokens;
+            inputTokens = number("input_tokens") ?? inputTokens;
+            outputTokens = number("output_tokens") ?? outputTokens;
+            cachedInputTokens = number("cached_input_tokens") ?? cachedInputTokens;
+          }
+        } catch { /* ignore a partial line while Codex is writing */ }
+      }
+      return {
+        model,
+        messageCount,
+        durationSec: firstTimestampMs !== undefined && lastTimestampMs !== undefined ? Math.max(0, Math.round((lastTimestampMs - firstTimestampMs) / 1000)) : undefined,
+        totalTokens, inputTokens, outputTokens, cachedInputTokens,
+      };
+    } catch {
+      return { messageCount: 0 };
     }
   }
 

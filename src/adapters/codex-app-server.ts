@@ -134,9 +134,20 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   async getSession(id: string): Promise<AgentSession | null> {
     const cached = this.threads.get(id);
-    if (cached) return this.toSession(cached);
-    if (!this.isReady()) return this.rawTranscriptAdapter.getSession(id);
-    return (await this.listSessions()).find((session) => session.id === id) || null;
+    let base = cached ? this.toSession(cached) : null;
+    if (!base && this.isReady()) base = (await this.listSessions()).find((session) => session.id === id) || null;
+    const raw = await this.rawTranscriptAdapter.getSession(id);
+    if (!base) return raw;
+    if (!raw) return base;
+    return {
+      ...base,
+      model: base.model || raw.model,
+      messageCount: raw.messageCount,
+      durationSec: raw.durationSec,
+      costUsd: raw.costUsd,
+      lastMessage: raw.lastMessage || base.lastMessage,
+      meta: { ...base.meta, ...raw.meta },
+    };
   }
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
