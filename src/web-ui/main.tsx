@@ -673,8 +673,15 @@ function App() {
   const loadStatistics = React.useCallback(async (days = statisticsDays, refresh = false) => {
     setStatisticsLoading(true); setStatisticsError(undefined);
     try {
-      const result = await api<AgentActivityStatistics>(`/api/statistics/activity?days=${days}${refresh ? "&refresh=1" : ""}`);
+      let result = await api<AgentActivityStatistics>(`/api/statistics/activity?days=${days}${refresh ? "&refresh=1" : ""}`);
       setStatistics(result);
+      if (!result.portfolio && !refresh) {
+        for (let attempt = 0; attempt < 8 && !result.portfolio; attempt++) {
+          await new Promise((resolve) => window.setTimeout(resolve, 500));
+          result = await api<AgentActivityStatistics>(`/api/statistics/activity?days=${days}`);
+          setStatistics(result);
+        }
+      }
     } catch (error) { setStatisticsError((error as Error).message); }
     finally { setStatisticsLoading(false); }
   }, [statisticsDays]);

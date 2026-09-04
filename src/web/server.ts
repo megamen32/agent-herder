@@ -756,7 +756,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const normalizedDays = Number.isFinite(days) ? days : 30;
     const statistics = await getAgentActivityStatistics({ days: normalizedDays, refresh });
     const snapshot = supervisor.listSessionsFast();
-    return sendJson(response, 200, withSessionPortfolioStatistics(statistics, snapshot.sessions, normalizedDays));
+    return sendJson(response, 200, snapshot.sessions.length > 0
+      ? withSessionPortfolioStatistics(statistics, snapshot.sessions, normalizedDays)
+      : statistics);
   }
   if (request.method === "GET" && url.pathname === "/api/sessions") {
     const filters = {
