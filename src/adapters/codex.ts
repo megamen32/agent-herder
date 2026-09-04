@@ -1,4 +1,4 @@
-import { HarnessAdapter, AgentSession, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
+import { HarnessAdapter, AgentSession, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessageView } from "../types/index.js";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { open, readFile, readdir, stat, writeFile } from "node:fs/promises";
@@ -207,6 +207,51 @@ export class CodexAdapter implements HarnessAdapter {
 
   async listModels(): Promise<string[]> {
     return ["o4-mini", "o3", "o3-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o", "gpt-4o-mini", "codex-mini"];
+  }
+
+  async getSessionMessages(id: string, limit = 12): Promise<SessionMessageView[] | null> {
+    const state = this.sessionStatesCache?.get(id) || (await this.readSessionStates()).get(id);
+    if (!state) return null;
+    const file = await open(state.filePath, "r");
+    try {
+      const fileStat = await file.stat();
+      const target = Math.max(1, Math.min(limit, 50));
+      let bytesToRead = Math.min(fileStat.size, 256 * 1024);
+      while (bytesToRead <= Math.min(fileStat.size, 4 * 1024 * 1024)) {
+        const buffer = Buffer.alloc(bytesToRead);
+        const { bytesRead } = await file.read(buffer, 0, bytesToRead, fileStat.size - bytesToRead);
+        const text = buffer.subarray(0, bytesRead).toString("utf8");
+        const lines = text.slice(bytesToRead === fileStat.size ? 0 : Math.max(0, text.indexOf("\n") + 1)).split("\n");
+        const messages: SessionMessageView[] = [];
+        for (let index = 0; index < lines.length; index++) {
+          try {
+            const item = JSON.parse(lines[index]) as CodexTranscriptItem & { timestamp?: string };
+            if (item.type !== "response_item" || item.payload?.type !== "message") continue;
+            if (item.payload.role !== "user" && item.payload.role !== "assistant") continue;
+            const parts = (item.payload.content || [])
+              .filter((part) => part.type === "input_text" || part.type === "output_text")
+              .map((part) => ({ type: "text" as const, text: part.text || "" }))
+              .filter((part) => part.text.trim().length > 0);
+            const messageText = parts.map((part) => part.text).join("\n").trim();
+            if (!messageText) continue;
+            messages.push({
+              id: `${id}:tail:${index}:${item.timestamp || ""}`,
+              role: item.payload.role,
+              timestamp: item.timestamp,
+              text: messageText,
+              parts,
+            });
+          } catch { /* partial or non-message line */ }
+        }
+        if (messages.length >= target || bytesToRead === fileStat.size) return messages.slice(-target);
+        const next = Math.min(fileStat.size, bytesToRead * 2);
+        if (next === bytesToRead) return messages.slice(-target);
+        bytesToRead = next;
+      }
+      return [];
+    } finally {
+      await file.close();
+    }
   }
 
   async getTranscript(id: string): Promise<string | null> {

@@ -25,6 +25,8 @@ export interface SessionFilters {
 export interface SessionDetailOptions {
   limit?: number;
   history?: "auto" | "acp" | "files";
+  /** Fast first paint: use the cached lightweight session and skip expensive enrichment/children. */
+  quick?: boolean;
 }
 
 export interface SpawnRecordInput {
@@ -80,7 +82,7 @@ export class SessionSupervisor {
     private readonly lineage = new LineageStore(defaultLineagePath()),
     options: SessionSupervisorOptions = {},
   ) {
-    this.sessionCacheTtlMs = Math.max(0, options.sessionCacheTtlMs ?? 1_500);
+    this.sessionCacheTtlMs = Math.max(0, options.sessionCacheTtlMs ?? 10_000);
   }
 
   async createNamedSession(request: NamedSessionRequest): Promise<NamedSessionResult> {
@@ -93,6 +95,15 @@ export class SessionSupervisor {
 
   getExecutionProfile(harness: string): Record<string, string> | undefined {
     return this.adapters.get(harness)?.getExecutionProfile?.();
+  }
+
+  listSessionsFast(filters: SessionFilters = {}): { sessions: AgentSession[]; warming: boolean } {
+    if (this.sessionSnapshot) {
+      if (Date.now() - this.sessionSnapshot.refreshedAt >= this.sessionCacheTtlMs) void this.refreshSessionSnapshot().catch(() => undefined);
+      return { sessions: this.filterSessions(this.sessionSnapshot.sessions, filters), warming: Boolean(this.sessionRefresh) };
+    }
+    void this.refreshSessionSnapshot().catch(() => undefined);
+    return { sessions: [], warming: true };
   }
 
   async listSessions(filters: SessionFilters = {}): Promise<AgentSession[]> {
@@ -357,14 +368,15 @@ export class SessionSupervisor {
   }
 
   async getSessionDetails(provider: string, id: string, options: SessionDetailOptions = {}): Promise<SessionDetails> {
-    const cachedSessions = provider === "codex" ? await this.listSessions({ harness: provider }) : undefined;
-    // Details are allowed to be richer (and a little more expensive) than the
-    // list snapshot. Ask the adapter first so harnesses such as Codex can read
-    // the selected rollout for model/usage metrics without slowing every list.
-    const rawSession = await this.getSession(provider, id)
-      || cachedSessions?.find((candidate) => candidate.id === id || nativeSessionId(candidate) === id);
+    const cachedSessions = (provider === "codex" || options.quick) ? await this.listSessions({ harness: provider }) : undefined;
+    const cachedSession = cachedSessions?.find((candidate) => candidate.id === id || nativeSessionId(candidate) === id);
+    // Quick details deliberately start from the cached session snapshot. This
+    // lets the UI paint the latest messages first while rich metrics hydrate later.
+    const rawSession = options.quick
+      ? cachedSession || await this.getSession(provider, id)
+      : await this.getSession(provider, id) || cachedSession;
     if (!rawSession) throw new SessionNotFoundError(provider, id);
-    const session = await this.pricing.enrich(rawSession);
+    const session = options.quick ? rawSession : await this.pricing.enrich(rawSession);
     const limit = Math.max(1, Math.min(options.limit || 3, 50));
     const record = await this.lineage.get(sessionKey(provider, nativeSessionId(session)));
     const nativeParentId = typeof session.meta?.parentThreadId === "string" && session.meta.parentThreadId !== nativeSessionId(session) ? session.meta.parentThreadId : undefined;
@@ -373,8 +385,8 @@ export class SessionSupervisor {
     const lineage: SessionLineage = record
       ? { kind: parentKey ? "subagent" : "root", parentId: parentKey, role: record.role, task: record.task }
       : parentKey ? { kind: "subagent", parentId: parentKey, role: nativeRole } : { kind: "external" };
-    const childRecords = await this.lineage.children(sessionKey(provider, id));
-    const nativeChildren = provider === "codex"
+    const childRecords = options.quick ? [] : await this.lineage.children(sessionKey(provider, id));
+    const nativeChildren = !options.quick && provider === "codex"
       ? (cachedSessions || []).filter((candidate) => nativeSessionId(candidate) !== nativeSessionId(session) && candidate.meta?.parentSessionKey === sessionKey(provider, nativeSessionId(session)))
       : [];
     const childKeys = new Map(childRecords.map((child) => [child.sessionKey, child]));

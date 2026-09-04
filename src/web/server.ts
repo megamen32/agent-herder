@@ -720,12 +720,17 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
 
   if (request.method === "GET" && url.pathname === "/api/sessions") {
-    const sessions = await supervisor.listSessions({
+    const filters = {
       harness: url.searchParams.get("harness") || undefined,
       status: url.searchParams.get("status") || undefined,
       cwd: url.searchParams.get("cwd") || undefined,
-    });
-    sendJson(response, 200, { sessions });
+    };
+    if (url.searchParams.get("quick") === "1") {
+      const snapshot = supervisor.listSessionsFast(filters);
+      return sendJson(response, 200, snapshot);
+    }
+    const sessions = await supervisor.listSessions(filters);
+    sendJson(response, 200, { sessions, warming: false });
     return;
   }
   if (request.method === "GET" && url.pathname === "/api/health/remediation") {
@@ -822,10 +827,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   if (detailsMatch && request.method === "GET") {
     const limitValue = Number(url.searchParams.get("limit") || "3");
     const history = url.searchParams.get("history") as "auto" | "acp" | "files" | null;
+    const quick = url.searchParams.get("quick") === "1" || url.searchParams.get("quick") === "true";
     const details = await supervisor.getSessionDetails(
       decodeURIComponent(detailsMatch[1]),
       decodeURIComponent(detailsMatch[2]),
-      { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto" },
+      { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto", quick },
     );
     return sendJson(response, 200, details);
   }

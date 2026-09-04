@@ -90,3 +90,18 @@ describe("session tree project groups", () => {
     expect(html).toContain("history.pushState");
   });
 });
+
+describe("non-blocking session loading", () => {
+  it("shows loading state while the newest turns arrive, then hydrates older history", () => {
+    expect(reactSource).toContain("session-skeletons");
+    expect(reactSource).toContain("Loading latest activity");
+    expect(reactSource).toContain("Loading older history and metrics in background");
+    expect(reactSource).toContain("?limit=12&quick=1");
+    expect(reactSource).toContain("?limit=50");
+  });
+
+  it("restores the selected session across page reloads", () => {
+    expect(reactSource).toContain("agent-herder.active-session");
+    expect(reactSource).toContain("window.localStorage.setItem");
+  });
+});

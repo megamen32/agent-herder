@@ -9,6 +9,7 @@ import type {
   SendMessageOptions,
   SetPermissionsOptions,
   RawTranscriptExport,
+  SessionMessageView,
 } from "../types/index.js";
 
 interface RpcResponse {
@@ -279,6 +280,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     } catch (error) {
       return { ok: false, error: (error as Error).message };
     }
+  }
+
+  async getSessionMessages(id: string, limit = 12): Promise<SessionMessageView[] | null> {
+    return this.rawTranscriptAdapter.getSessionMessages(id, limit);
   }
 
   async listModels(): Promise<string[]> {

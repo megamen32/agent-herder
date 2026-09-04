@@ -144,9 +144,11 @@ function AutopilotSettings({ state, draft, saving, error, saved, onChange, onSav
   </section>;
 }
 
-function SessionList({ entries, activeKey, settings, settingsOpen, searchOpen, searchQuery, options, choicesBySession, choosingRequestId, choiceError, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect, onChoose }: {
+function SessionList({ entries, activeKey, loading, refreshing, settings, settingsOpen, searchOpen, searchQuery, options, choicesBySession, choosingRequestId, choiceError, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect, onChoose }: {
   entries: SessionListEntry[];
   activeKey?: string;
+  loading: boolean;
+  refreshing: boolean;
   settings: SessionListSettings;
   settingsOpen: boolean;
   searchOpen: boolean;
@@ -165,7 +167,7 @@ function SessionList({ entries, activeKey, settings, settingsOpen, searchOpen, s
   onChoose: (requestId: string, choiceId: string) => void;
 }) {
   return <aside className="sessions-pane">
-    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Sessions</h1></div><div className="sessions-heading-actions"><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Search sessions" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Session settings" aria-expanded={settingsOpen} onClick={onSettingsToggle}>⚙</button></div></div>
+    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Sessions {refreshing && <span className="inline-loading-dot" aria-label="Refreshing sessions" />}</h1></div><div className="sessions-heading-actions"><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Search sessions" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Session settings" aria-expanded={settingsOpen} onClick={onSettingsToggle}>⚙</button></div></div>
     {searchOpen && <div className="session-search"><input autoFocus value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search title, harness, CWD…" aria-label="Search session text" /></div>}
     {settingsOpen && <div className="session-settings" aria-label="Session list settings">
       <label>CWD<select value={settings.cwd} onChange={(event) => onSettingsChange({ cwd: event.target.value })}><option value="">All CWDs</option>{options.cwds.map((cwd) => <option value={cwd} key={cwd}>{cwd}</option>)}</select></label>
@@ -194,15 +196,20 @@ function SessionList({ entries, activeKey, settings, settingsOpen, searchOpen, s
           </div>
         </div>;
       })}
-      {entries.length === 0 && <div className="empty-list">No sessions match these settings.</div>}
+      {loading && entries.length === 0 && <div className="session-skeletons" aria-label="Loading sessions">{Array.from({ length: 8 }, (_, index) => <div className="session-skeleton" key={index}><span /><div><b /><i /><i /></div></div>)}</div>}
+      {!loading && entries.length === 0 && <div className="empty-list">No sessions match these settings.</div>}
     </div>
   </aside>;
 }
 
 function App() {
   const [sessions, setSessions] = React.useState<HerderSession[]>([]);
-  const [activeKey, setActiveKey] = React.useState<string>();
+  const [activeKey, setActiveKey] = React.useState<string | undefined>(() => window.localStorage.getItem("agent-herder.active-session") || undefined);
   const [details, setDetails] = React.useState<SessionDetails | null>(null);
+  const [detailsLoading, setDetailsLoading] = React.useState(false);
+  const [detailsHydrating, setDetailsHydrating] = React.useState(false);
+  const [detailsError, setDetailsError] = React.useState<string>();
+  const detailsRequestRef = React.useRef(0);
   const [mobileView, setMobileView] = React.useState<"sessions" | "chat">("sessions");
   const [showReasoning, setShowReasoning] = React.useState(false);
   const [showTools, setShowTools] = React.useState(false);
@@ -227,6 +234,7 @@ function App() {
   const foldedInitialized = React.useRef(false);
   const [composer, setComposer] = React.useState("");
   const [loading, setLoading] = React.useState(true);
+  const [sessionsRefreshing, setSessionsRefreshing] = React.useState(false);
   const [sending, setSending] = React.useState(false);
   const [showCreateSession, setShowCreateSession] = React.useState(false);
   const [createHarness, setCreateHarness] = React.useState("fast-agent");
@@ -245,9 +253,11 @@ function App() {
   const chatScrollRef = React.useRef<HTMLDivElement>(null);
   const shouldFollowRef = React.useRef(true);
 
-  const loadSessions = React.useCallback(async () => {
+  const loadSessions = React.useCallback(async (): Promise<boolean> => {
+    setSessionsRefreshing(true);
+    try {
     const [result, choiceResult] = await Promise.all([
-      api<{ sessions: HerderSession[] }>("/api/sessions"),
+      api<{ sessions: HerderSession[]; warming?: boolean }>("/api/sessions?quick=1"),
       api<{ choices: WebAutopilotChoiceCard[] }>("/api/autopilot/choices?status=pending").catch(() => ({ choices: [] })),
     ]);
     const sessionKeys = new Set(result.sessions.map(keyOf));
@@ -272,9 +282,28 @@ function App() {
       setCollapsedChildren(keys);
       foldedInitialized.current = true;
     }
-    setActiveKey((current) => current && nextSessions.some((session) => keyOf(session) === current) ? current : undefined);
+    if (!result.warming || nextSessions.length > 0) {
+      setActiveKey((current) => current && nextSessions.some((session) => keyOf(session) === current) ? current : undefined);
+    }
+    return !result.warming;
+    } finally {
+      setSessionsRefreshing(false);
+    }
   }, []);
-  React.useEffect(() => { void loadSessions().finally(() => setLoading(false)); const timer = window.setInterval(() => void loadSessions(), 3000); return () => window.clearInterval(timer); }, [loadSessions]);
+  React.useEffect(() => {
+    let cancelled = false;
+    const initial = async () => {
+      for (let attempt = 0; attempt < 30 && !cancelled; attempt++) {
+        const ready = await loadSessions().catch(() => false);
+        if (ready) { setLoading(false); return; }
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+      }
+      if (!cancelled) setLoading(false);
+    };
+    void initial();
+    const timer = window.setInterval(() => void loadSessions(), 3000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [loadSessions]);
   const loadAutopilotPolicy = React.useCallback(async () => {
     const state = await api<WebAutopilotPolicyState>("/api/autopilot/policy");
     setAutopilotPolicy(state);
@@ -283,12 +312,40 @@ function App() {
   }, []);
   React.useEffect(() => { void loadAutopilotPolicy().catch((error) => setAutopilotPolicyError((error as Error).message)); }, [loadAutopilotPolicy]);
 
+  React.useEffect(() => {
+    if (activeKey) window.localStorage.setItem("agent-herder.active-session", activeKey);
+    else window.localStorage.removeItem("agent-herder.active-session");
+  }, [activeKey]);
+
   const loadDetails = React.useCallback(async (key: string) => {
+    const requestId = ++detailsRequestRef.current;
     const { harness, id } = splitKey(key);
-    const next = await api<SessionDetails>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/details?limit=100`);
-    setDetails(next);
+    const base = `/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/details`;
+    setDetailsError(undefined);
+    setDetailsLoading(true);
+    setDetailsHydrating(false);
+    setDetails((current) => current && keyOf(current.session) === key ? current : null);
+    try {
+      const latest = await api<SessionDetails>(`${base}?limit=12&quick=1`);
+      if (requestId !== detailsRequestRef.current) return;
+      setDetails(latest);
+      setDetailsLoading(false);
+      setDetailsHydrating(true);
+      await new Promise((resolve) => window.setTimeout(resolve, 40));
+      const full = await api<SessionDetails>(`${base}?limit=50`);
+      if (requestId !== detailsRequestRef.current) return;
+      setDetails(full);
+    } catch (error) {
+      if (requestId !== detailsRequestRef.current) return;
+      setDetailsError((error as Error).message);
+    } finally {
+      if (requestId === detailsRequestRef.current) { setDetailsLoading(false); setDetailsHydrating(false); }
+    }
   }, []);
-  React.useEffect(() => { if (!activeKey) { setDetails(null); return; } void loadDetails(activeKey); }, [activeKey, loadDetails]);
+  React.useEffect(() => {
+    if (!activeKey) { detailsRequestRef.current += 1; setDetails(null); setDetailsLoading(false); setDetailsHydrating(false); return; }
+    void loadDetails(activeKey);
+  }, [activeKey, loadDetails]);
   React.useLayoutEffect(() => {
     const element = chatScrollRef.current;
     if (!element || !shouldFollowRef.current) return;
@@ -519,13 +576,12 @@ function App() {
     setShowScrollToLatest(!following && element.scrollHeight > element.clientHeight);
   };
 
-  if (loading) return <main className="oc-app"><div className="oc-loading">Loading sessions…</div></main>;
   return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"}`}>
-    <SessionList entries={visibleSessionEntries} activeKey={activeKey} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { shouldFollowRef.current = true; setShowScrollToLatest(false); setActiveKey(key); setMobileView("chat"); }} />
+    <SessionList entries={visibleSessionEntries} activeKey={activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { shouldFollowRef.current = true; setShowScrollToLatest(false); setActiveKey(key); setMobileView("chat"); }} />
     <section className="chat-pane">
       <header className="chat-header">
         <button className="mobile-back" onClick={() => setMobileView("sessions")} aria-label="Back to sessions">← <span>Sessions</span></button>
-        <div className="chat-heading"><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2>{activeSession?.title || "Select a session"}</h2><small>{activeSession?.cwd || ""}</small></div>
+        <div className="chat-heading"><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2>{activeSession?.title || (loading ? "Loading sessions…" : "Select a session")}{(detailsLoading || detailsHydrating) && <span className="inline-loading-dot chat-loading-dot" aria-label="Loading session" />}</h2><small>{activeSession?.cwd || ""}</small></div>
         <div className="header-actions"><button className={`quiet-button ${showAutopilotSettings ? "selected-icon" : ""}`} onClick={() => { setShowAutopilotSettings((value) => !value); setChatMenuOpen(false); }}>Autopilot</button><button className="quiet-button" onClick={() => setShowInspector((value) => !value)}>{showInspector ? "Hide" : "Info"}</button><button className={`icon-button ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Chat menu" aria-expanded={chatMenuOpen} onClick={() => setChatMenuOpen((value) => !value)}>···</button></div>
         {chatMenuOpen && <div className="chat-menu" role="menu"><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label><button className="quiet-button" onClick={() => { setShowAutopilotSettings(true); setChatMenuOpen(false); }}>Настройки автопилота</button><button className="quiet-button" onClick={() => { setShowInspector(true); setChatMenuOpen(false); }}>Session info</button></div>}
       </header>
@@ -533,7 +589,9 @@ function App() {
       {!!details?.children?.length && <details className="subagents-panel"><summary>Subagents <span>{details.children.length}</span></summary><div className="subagents-list">{details.children.map((child) => <button className="subagent-row" key={keyOf(child)} onClick={() => { setActiveKey(keyOf(child)); setMobileView("chat"); }}><span className={`status-dot status-${child.status}`} /><span><strong>{child.title || child.id}</strong><small>{typeof child.meta?.agentRole === "string" ? child.meta.agentRole : child.status} · {child.id}</small></span></button>)}</div></details>}
       <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}>
         <div className="message-column">
-          {!details && <div className="empty-chat">Choose a session to open its conversation.</div>}
+          {detailsLoading && !details && <div className="session-loading-chat" aria-live="polite"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Loading latest activity</strong><small>Starting from the newest turns. You can keep using the rest of Agent Herder.</small></div>}
+          {!detailsLoading && !details && <div className="empty-chat">{detailsError || "Choose a session to open its conversation."}</div>}
+          {detailsHydrating && details && <div className="history-loading-banner"><span className="inline-loading-dot" /> Loading older history and metrics in background…</div>}
           {details?.messages.map((message) => hasVisibleMessage(message, showReasoning, showTools) && <article className={`message ${message.role}`} key={message.id}><div className="message-meta"><span>{message.role === "user" ? "You" : message.role === "tool" ? "Tool" : "Agent"}</span><time>{formatTime(message.timestamp || "")}</time></div><MessageParts message={message} showReasoning={showReasoning} showTools={showTools} /></article>)}
         </div>
       </div>
