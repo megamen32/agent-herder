@@ -8,8 +8,18 @@
           {
             "type": "process",
             "command": "node",
-            "args": ["${ZCODE_PLUGIN_ROOT}/hooks/user-prompt.mjs"],
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/user-prompt.mjs"
+            ],
             "timeoutMs": 5000
+          },
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/coordination.mjs"
+            ],
+            "timeoutMs": 3000
           }
         ]
       }
@@ -21,9 +31,56 @@
           {
             "type": "process",
             "command": "node",
-            "args": ["${ZCODE_PLUGIN_ROOT}/hooks/stop.mjs"],
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/stop.mjs"
+            ],
             "timeoutMs": 604800000,
-            "statusMessage": "Agent Herder: evaluating the next step…"
+            "statusMessage": "Agent Herder: evaluating the next step\u2026"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/coordination.mjs"
+            ],
+            "timeoutMs": 3000
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/coordination.mjs"
+            ],
+            "timeoutMs": 3000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/coordination.mjs"
+            ],
+            "timeoutMs": 3000
           }
         ]
       }

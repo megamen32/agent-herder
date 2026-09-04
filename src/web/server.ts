@@ -19,6 +19,7 @@ import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/sessi
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { coordinationNotes } from "../coordination-notes.js";
+import { getAgentActivityStatistics } from "../session-statistics.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -443,8 +444,29 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const sessionId = url.searchParams.get("sessionId")?.trim();
     const cwd = url.searchParams.get("cwd")?.trim();
     if (!harness || !sessionId || !cwd) return sendJson(response, 400, { error: "harness, sessionId, and cwd are required" });
+    if (url.searchParams.get("touch") === "1") await coordinationNotes.heartbeatSession({ sessionId, cwd });
     const context = await coordinationNotes.renderForSession({ harness, id: sessionId, cwd });
     return sendJson(response, 200, { context, active: Boolean(context) });
+  }
+  if (url.pathname === "/api/coordination/activity" && request.method === "POST") {
+    const body = await readJson(request);
+    const harness = typeof body.harness === "string" ? body.harness.trim() : "";
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+    const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
+    const paths = Array.isArray(body.paths) ? body.paths.filter((value): value is string => typeof value === "string") : [];
+    if (!harness || !sessionId || !cwd) return sendJson(response, 400, { error: "harness, sessionId, and cwd are required" });
+    const ttlSeconds = typeof body.ttlSeconds === "number" ? body.ttlSeconds : undefined;
+    const heartbeat = await coordinationNotes.heartbeatSession({ sessionId, cwd, ttlSeconds });
+    const result = paths.length > 0
+      ? await coordinationNotes.reservePaths({ harness, sessionId, cwd, paths, ttlSeconds })
+      : { reservations: heartbeat, conflicts: [] };
+    const context = result.conflicts.length ? [
+      "<agent-herder-path-conflict>",
+      "Another agent recently worked on an overlapping path. Treat this as a soft lock: coordinate before editing if the work may overlap.",
+      ...result.conflicts.map(({ path, note }) => `- path=${path} owner=${note.authorHarness || "agent"}:${note.authorSessionId} until=${note.expiresAt} note=${note.id} :: ${note.message}`),
+      "</agent-herder-path-conflict>",
+    ].join("\n") : null;
+    return sendJson(response, 200, { ...result, context });
   }
   if (url.pathname === "/api/autopilot/policy" && (request.method === "GET" || request.method === "PUT")) {
     if (!autopilotPolicyStore) return sendJson(response, 503, { error: "Autopilot policy store is disabled" });
@@ -728,6 +750,12 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
   }
 
+  if (request.method === "GET" && url.pathname === "/api/statistics/activity") {
+    const days = Number(url.searchParams.get("days") || "30");
+    const refresh = url.searchParams.get("refresh") === "1";
+    const statistics = await getAgentActivityStatistics({ days: Number.isFinite(days) ? days : 30, refresh });
+    return sendJson(response, 200, statistics);
+  }
   if (request.method === "GET" && url.pathname === "/api/sessions") {
     const filters = {
       harness: url.searchParams.get("harness") || undefined,

@@ -12,6 +12,56 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AGENT_HERDER_HARNESS=claude node \"${CLAUDE_PLUGIN_ROOT}/scripts/coordination-hook.mjs\"",
+            "timeout": 3,
+            "statusMessage": "Syncing Agent Herder coordination"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AGENT_HERDER_HARNESS=claude node \"${CLAUDE_PLUGIN_ROOT}/scripts/coordination-hook.mjs\"",
+            "timeout": 3,
+            "statusMessage": "Syncing Agent Herder coordination"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AGENT_HERDER_HARNESS=claude node \"${CLAUDE_PLUGIN_ROOT}/scripts/coordination-hook.mjs\"",
+            "timeout": 3,
+            "statusMessage": "Syncing Agent Herder coordination"
+          }
+        ],
+        "matcher": ".*"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AGENT_HERDER_HARNESS=claude node \"${CLAUDE_PLUGIN_ROOT}/scripts/coordination-hook.mjs\"",
+            "timeout": 3,
+            "statusMessage": "Syncing Agent Herder coordination"
+          }
+        ],
+        "matcher": ".*"
+      }
     ]
   }
 }

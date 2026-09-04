@@ -16,6 +16,14 @@ type HerderSession = SessionListSession & {
 type SessionPart = { type: "text" | "thinking" | "tool_call" | "tool_result"; text?: string; name?: string; input?: unknown; output?: string; error?: boolean };
 type SessionMessage = { id: string; role: "user" | "assistant" | "tool" | "system"; timestamp?: string; text?: string; parts: SessionPart[] };
 type SessionDetails = { session: HerderSession; lineage?: { kind?: string; parentId?: string; role?: string; task?: string }; children?: HerderSession[]; messages: SessionMessage[] };
+type StatisticsDistribution = { count: number; percentilesSec: { p50: number; p75: number; p90: number; p95: number; p99: number }; coverage: Array<{ seconds: number; count: number; percent: number }>; histogram: Array<{ label: string; minSec: number; maxSec?: number; count: number; percent: number }> };
+type AgentActivityStatistics = {
+  generatedAt: string; windowDays: number;
+  source: { harness: string; writeSignal: string; confidence: string; caveat: string };
+  sample: { sessionFiles: number; sessionsWithPatches: number; toolCalls: number; toolIntervals: number; patchCalls: number; pathWriteEvents: number; sameFileSeries: number; repeatedFileSeries: number };
+  activityGaps: StatisticsDistribution; sameFileRevisits: StatisticsDistribution; sameDirectoryRevisits: StatisticsDistribution;
+  recommendation: { inactivityLeaseSec: number; basis: string; sameFileCoverageAtLeasePercent: number };
+};
 type WebAutopilotChoice = { choiceId: string; label: string };
 type WebAutopilotChoiceCard = { requestId: string; sessionId: string; harness: string; cwd: string; status: "pending"; createdAt: string; choices: WebAutopilotChoice[] };
 type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes" | "zcode";
@@ -86,6 +94,63 @@ const metaNumber = (session: HerderSession, keys: string[]) => {
   }
   return undefined;
 };
+
+const formatStatDuration = (seconds: number) => {
+  if (!Number.isFinite(seconds)) return "—";
+  if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`;
+  if (seconds < 3600) return `${(seconds / 60).toFixed(seconds < 600 ? 1 : 0)}m`;
+  return `${(seconds / 3600).toFixed(1)}h`;
+};
+const formatStatCount = (value: number) => new Intl.NumberFormat(undefined, { notation: value >= 10_000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(value);
+const coverageFor = (distribution: StatisticsDistribution, seconds: number) => distribution.coverage.find((item) => item.seconds === seconds)?.percent || 0;
+
+function StatisticsView({ statistics, loading, error, days, onDays, onRefresh }: {
+  statistics?: AgentActivityStatistics; loading: boolean; error?: string; days: number; onDays: (days: number) => void; onRefresh: () => void;
+}) {
+  if (loading && !statistics) return <div className="statistics-loading"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Analyzing agent activity…</strong><small>Scanning recent Codex transcripts once; results are cached for 10 minutes.</small></div>;
+  if (!statistics) return <div className="statistics-loading"><strong>Statistics unavailable</strong><small>{error || "No activity data yet."}</small><button className="quiet-button" onClick={onRefresh}>Retry</button></div>;
+  const thresholds = [30, 60, 120, 180, 300];
+  const maxHistogram = Math.max(1, ...statistics.sameFileRevisits.histogram.map((item) => item.percent));
+  const p = statistics.sameFileRevisits.percentilesSec;
+  const ap = statistics.activityGaps.percentilesSec;
+  return <div className="statistics-scroll"><div className="statistics-page">
+    <div className="statistics-hero">
+      <div><span className="eyebrow">AGENT ACTIVITY</span><h2>Statistics</h2><p>Measured from real coding sessions, not synthetic benchmarks. Current high-confidence write signal: explicit Codex <code>apply_patch</code> paths.</p></div>
+      <div className="statistics-controls"><div className="statistics-range">{[7, 30, 90].map((value) => <button className={days === value ? "active" : ""} key={value} onClick={() => onDays(value)}>{value}d</button>)}</div><button className="quiet-button" disabled={loading} onClick={onRefresh}>{loading ? "Refreshing…" : "Refresh"}</button></div>
+    </div>
+    {error && <div className="statistics-warning">Last refresh failed: {error}</div>}
+    <div className="statistics-cards">
+      <article><span>Sessions sampled</span><strong>{formatStatCount(statistics.sample.sessionFiles)}</strong><small>{formatStatCount(statistics.sample.sessionsWithPatches)} with patches · {statistics.windowDays} days</small></article>
+      <article><span>Write events</span><strong>{formatStatCount(statistics.sample.pathWriteEvents)}</strong><small>{formatStatCount(statistics.sample.patchCalls)} apply_patch calls</small></article>
+      <article><span>Same-file revisits</span><strong>{formatStatCount(statistics.sameFileRevisits.count)}</strong><small>median {formatStatDuration(p.p50)} · p95 {formatStatDuration(p.p95)}</small></article>
+      <article className="recommendation"><span>Suggested inactivity lease</span><strong>~{formatStatDuration(statistics.recommendation.inactivityLeaseSec)}</strong><small>tool-activity p95 {formatStatDuration(ap.p95)} · renewed while session stays active</small></article>
+    </div>
+
+    <section className="statistics-panel">
+      <div className="statistics-panel-head"><div><span className="eyebrow">LEASE COVERAGE</span><h3>What different TTLs actually cover</h3></div><small>Activity gap = next tool action. File revisit = next write to the same path.</small></div>
+      <div className="coverage-legend"><span><i className="activity" />Next agent activity</span><span><i className="revisit" />Same-file revisit</span></div>
+      <div className="coverage-chart">{thresholds.map((seconds) => { const activity = coverageFor(statistics.activityGaps, seconds); const revisit = coverageFor(statistics.sameFileRevisits, seconds); return <div className="coverage-row" key={seconds}><b>{formatStatDuration(seconds)}</b><div className="coverage-bars"><div className="coverage-bar activity" style={{ width: `${activity}%` }}><span>{activity.toFixed(1)}%</span></div><div className="coverage-bar revisit" style={{ width: `${revisit}%` }}><span>{revisit.toFixed(1)}%</span></div></div></div>; })}</div>
+      <p className="statistics-explainer">A short lease can still be correct even though agents often return to the same file much later: reservations should stay alive from <em>session activity heartbeats</em>, not only from repeated writes to that file.</p>
+    </section>
+
+    <div className="statistics-grid">
+      <section className="statistics-panel">
+        <div className="statistics-panel-head"><div><span className="eyebrow">SAME FILE</span><h3>Write revisit distribution</h3></div><small>{formatStatCount(statistics.sameFileRevisits.count)} intervals</small></div>
+        <div className="histogram">{statistics.sameFileRevisits.histogram.map((item) => <div className="histogram-column" key={item.label}><div className="histogram-value">{item.percent.toFixed(1)}%</div><div className="histogram-track"><span style={{ height: `${Math.max(3, item.percent / maxHistogram * 100)}%` }} /></div><b>{item.label}</b></div>)}</div>
+      </section>
+      <section className="statistics-panel">
+        <div className="statistics-panel-head"><div><span className="eyebrow">PERCENTILES</span><h3>How long gaps get</h3></div></div>
+        <div className="percentile-table"><div className="percentile-head"><span>Percentile</span><span>Any activity</span><span>Same file</span></div>{(["p50","p75","p90","p95","p99"] as const).map((key) => <div className="percentile-row" key={key}><b>{key.toUpperCase()}</b><span>{formatStatDuration(ap[key])}</span><span>{formatStatDuration(p[key])}</span></div>)}</div>
+      </section>
+    </div>
+
+    <section className="statistics-panel statistics-method">
+      <div><span className="eyebrow">METHOD</span><h3>What is being measured</h3></div>
+      <p>{statistics.source.caveat}</p>
+      <div className="method-facts"><span><b>{formatStatCount(statistics.sample.toolCalls)}</b> tool calls</span><span><b>{formatStatCount(statistics.activityGaps.count)}</b> activity intervals</span><span><b>{formatStatCount(statistics.sample.repeatedFileSeries)}</b> repeatedly edited files</span><span><b>{new Date(statistics.generatedAt).toLocaleTimeString()}</b> generated</span></div>
+    </section>
+  </div></div>;
+}
 
 function Markdown({ children }: { children: string }) {
   return <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>;
@@ -220,6 +285,11 @@ function App() {
   const [showReasoning, setShowReasoning] = React.useState(false);
   const [showTools, setShowTools] = React.useState(false);
   const [showInspector, setShowInspector] = React.useState(true);
+  const [showStatistics, setShowStatistics] = React.useState(false);
+  const [statistics, setStatistics] = React.useState<AgentActivityStatistics>();
+  const [statisticsLoading, setStatisticsLoading] = React.useState(false);
+  const [statisticsError, setStatisticsError] = React.useState<string>();
+  const [statisticsDays, setStatisticsDays] = React.useState(30);
   const [showSessionSettings, setShowSessionSettings] = React.useState(false);
   const [showSessionSearch, setShowSessionSearch] = React.useState(false);
   const [sessionSearch, setSessionSearch] = React.useState("");
@@ -565,6 +635,17 @@ function App() {
     finally { setCreatingSession(false); }
   };
 
+  const loadStatistics = React.useCallback(async (days = statisticsDays, refresh = false) => {
+    setStatisticsLoading(true); setStatisticsError(undefined);
+    try {
+      const result = await api<AgentActivityStatistics>(`/api/statistics/activity?days=${days}${refresh ? "&refresh=1" : ""}`);
+      setStatistics(result);
+    } catch (error) { setStatisticsError((error as Error).message); }
+    finally { setStatisticsLoading(false); }
+  }, [statisticsDays]);
+  const openStatistics = () => { setShowStatistics(true); setChatMenuOpen(false); void loadStatistics(statisticsDays); };
+  const changeStatisticsDays = (days: number) => { setStatisticsDays(days); void loadStatistics(days); };
+
   const runAction = async (action: "resume" | "stop" | "recover") => {
     if (!activeKey) return;
     const { harness, id } = splitKey(activeKey);
@@ -599,27 +680,28 @@ function App() {
     setShowScrollToLatest(!following && element.scrollHeight > element.clientHeight);
   };
 
-  return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"}`}>
-    <SessionList entries={visibleSessionEntries} activeKey={activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { shouldFollowRef.current = true; setShowScrollToLatest(false); setActiveKey(key); setMobileView("chat"); }} />
+  return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"} ${(!showInspector || showStatistics) ? "no-inspector" : ""}`}>
+    <SessionList entries={visibleSessionEntries} activeKey={activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { shouldFollowRef.current = true; setShowScrollToLatest(false); setShowStatistics(false); setActiveKey(key); setMobileView("chat"); }} />
     <section className="chat-pane">
       <header className="chat-header">
         <button className="mobile-back" onClick={() => setMobileView("sessions")} aria-label="Back to sessions">← <span>Sessions</span></button>
-        <div className="chat-heading"><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2>{activeSession?.title || (loading ? "Loading sessions…" : "Select a session")}{(detailsLoading || detailsHydrating) && <span className="inline-loading-dot chat-loading-dot" aria-label="Loading session" />}</h2><small>{activeSession?.cwd || ""}</small><div className="load-timings" aria-label="Browser load timings"><span title="Page → session list ready">sessions <b>{formatLoadTiming(sessionsTimingMs)}</b></span>{activeKey && <><span title="Newest turns request">latest <b>{detailsLoading ? "…" : formatLoadTiming(latestTimingMs)}</b></span><span title="Background history + metrics request">hydrate <b>{detailsHydrating ? "…" : formatLoadTiming(hydrateTimingMs)}</b></span></>}</div></div>
-        <div className="header-actions"><button className={`quiet-button ${showAutopilotSettings ? "selected-icon" : ""}`} onClick={() => { setShowAutopilotSettings((value) => !value); setChatMenuOpen(false); }}>Autopilot</button><button className="quiet-button" onClick={() => setShowInspector((value) => !value)}>{showInspector ? "Hide" : "Info"}</button><button className={`icon-button ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Chat menu" aria-expanded={chatMenuOpen} onClick={() => setChatMenuOpen((value) => !value)}>···</button></div>
-        {chatMenuOpen && <div className="chat-menu" role="menu"><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label><button className="quiet-button" onClick={() => { setShowAutopilotSettings(true); setChatMenuOpen(false); }}>Настройки автопилота</button><button className="quiet-button" onClick={() => { setShowInspector(true); setChatMenuOpen(false); }}>Session info</button></div>}
+        <div className="chat-heading">{showStatistics ? <><span className="eyebrow">AGENT HERDER</span><h2>Statistics</h2><small>Real activity patterns from recent coding sessions</small></> : <><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2>{activeSession?.title || (loading ? "Loading sessions…" : "Select a session")}{(detailsLoading || detailsHydrating) && <span className="inline-loading-dot chat-loading-dot" aria-label="Loading session" />}</h2><small>{activeSession?.cwd || ""}</small><div className="load-timings" aria-label="Browser load timings"><span title="Page → session list ready">sessions <b>{formatLoadTiming(sessionsTimingMs)}</b></span>{activeKey && <><span title="Newest turns request">latest <b>{detailsLoading ? "…" : formatLoadTiming(latestTimingMs)}</b></span><span title="Background history + metrics request">hydrate <b>{detailsHydrating ? "…" : formatLoadTiming(hydrateTimingMs)}</b></span></>}</div></>}</div>
+        <div className="header-actions"><button className={`quiet-button ${showStatistics ? "selected-icon" : ""}`} onClick={() => showStatistics ? setShowStatistics(false) : openStatistics()}>Statistics</button>{!showStatistics && <><button className={`quiet-button ${showAutopilotSettings ? "selected-icon" : ""}`} onClick={() => { setShowAutopilotSettings((value) => !value); setChatMenuOpen(false); }}>Autopilot</button><button className="quiet-button" onClick={() => setShowInspector((value) => !value)}>{showInspector ? "Hide" : "Info"}</button></>}<button className={`icon-button ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Chat menu" aria-expanded={chatMenuOpen} onClick={() => setChatMenuOpen((value) => !value)}>···</button></div>
+        {chatMenuOpen && <div className="chat-menu" role="menu"><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label><button className="quiet-button" onClick={() => { setShowAutopilotSettings(true); setChatMenuOpen(false); }}>Настройки автопилота</button><button className="quiet-button" onClick={() => { setShowInspector(true); setChatMenuOpen(false); }}>Session info</button><button className="quiet-button" onClick={openStatistics}>Statistics</button></div>}
       </header>
-      {showAutopilotSettings && <div className="autopilot-settings-overlay"><div className="autopilot-settings-shell"><button className="settings-close" aria-label="Закрыть настройки автопилота" onClick={() => setShowAutopilotSettings(false)}>×</button><AutopilotSettings state={autopilotPolicy} draft={autopilotPolicyDraft} saving={autopilotPolicySaving} error={autopilotPolicyError} saved={autopilotPolicySaved} onChange={(next) => { setAutopilotPolicyDraft(next); setAutopilotPolicySaved(false); }} onSave={() => void saveAutopilotPolicy()} /></div></div>}
-      {!!details?.children?.length && <details className="subagents-panel"><summary>Subagents <span>{details.children.length}</span></summary><div className="subagents-list">{details.children.map((child) => <button className="subagent-row" key={keyOf(child)} onClick={() => { setActiveKey(keyOf(child)); setMobileView("chat"); }}><span className={`status-dot status-${child.status}`} /><span><strong>{child.title || child.id}</strong><small>{typeof child.meta?.agentRole === "string" ? child.meta.agentRole : child.status} · {child.id}</small></span></button>)}</div></details>}
-      <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}>
+      {showStatistics && <StatisticsView statistics={statistics} loading={statisticsLoading} error={statisticsError} days={statisticsDays} onDays={changeStatisticsDays} onRefresh={() => void loadStatistics(statisticsDays, true)} />}
+      {!showStatistics && showAutopilotSettings && <div className="autopilot-settings-overlay"><div className="autopilot-settings-shell"><button className="settings-close" aria-label="Закрыть настройки автопилота" onClick={() => setShowAutopilotSettings(false)}>×</button><AutopilotSettings state={autopilotPolicy} draft={autopilotPolicyDraft} saving={autopilotPolicySaving} error={autopilotPolicyError} saved={autopilotPolicySaved} onChange={(next) => { setAutopilotPolicyDraft(next); setAutopilotPolicySaved(false); }} onSave={() => void saveAutopilotPolicy()} /></div></div>}
+      {!showStatistics && !!details?.children?.length && <details className="subagents-panel"><summary>Subagents <span>{details.children.length}</span></summary><div className="subagents-list">{details.children.map((child) => <button className="subagent-row" key={keyOf(child)} onClick={() => { setActiveKey(keyOf(child)); setMobileView("chat"); }}><span className={`status-dot status-${child.status}`} /><span><strong>{child.title || child.id}</strong><small>{typeof child.meta?.agentRole === "string" ? child.meta.agentRole : child.status} · {child.id}</small></span></button>)}</div></details>}
+      {!showStatistics && <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}>
         <div className="message-column">
           {detailsLoading && !details && <div className="session-loading-chat" aria-live="polite"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Loading latest activity</strong><small>Starting from the newest turns. You can keep using the rest of Agent Herder.</small></div>}
           {!detailsLoading && !details && <div className="empty-chat">{detailsError || "Choose a session to open its conversation."}</div>}
           {detailsHydrating && details && <div className="history-loading-banner"><span className="inline-loading-dot" /> Latest {formatLoadTiming(latestTimingMs)} · loading older history and metrics…</div>}
           {details?.messages.map((message) => hasVisibleMessage(message, showReasoning, showTools) && <article className={`message ${message.role}`} key={message.id}><div className="message-meta"><span>{message.role === "user" ? "You" : message.role === "tool" ? "Tool" : "Agent"}</span><time>{formatTime(message.timestamp || "")}</time></div><MessageParts message={message} showReasoning={showReasoning} showTools={showTools} /></article>)}
         </div>
-      </div>
-      {showScrollToLatest && <button className="scroll-latest" aria-label="Scroll to latest" onClick={scrollToBottom}>↓</button>}
-      <form className="composer" onSubmit={(event) => { event.preventDefault(); if (isResumeMode) void runAction("resume"); else void sendMessage(); }}>
+      </div>}
+      {!showStatistics && showScrollToLatest && <button className="scroll-latest" aria-label="Scroll to latest" onClick={scrollToBottom}>↓</button>}
+      {!showStatistics && <form className="composer" onSubmit={(event) => { event.preventDefault(); if (isResumeMode) void runAction("resume"); else void sendMessage(); }}>
         {showCreateSession && <div className="composer-create-panel">
           <div className="composer-create-row">
             <label>Harness<select value={createHarness} onChange={(event) => { const harness = event.target.value; setCreateHarness(harness); setCreateModel(""); setCreateModels([]); void loadCreateModels(harness); }}>{(createAdapters.length ? createAdapters : [{ id: "fast-agent", name: "Fast Agent", active: true, ready: true, status: "active" }]).map((adapter) => <option key={adapter.id} value={adapter.id} disabled={!adapter.active}>{adapter.name}{adapter.active ? "" : ` · ${adapter.status}`}</option>)}</select></label>
@@ -633,9 +715,9 @@ function App() {
         <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={readOnlySession ? "Read-only persisted session" : isResumeMode ? "Resume the agent…" : activeKey ? "Message the agent…" : "Choose a session first"} disabled={!activeKey || readOnlySession || sending || isResumeMode} onKeyDown={(event) => { if (!isResumeMode && event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} />
         <span className="composer-hint">{sending ? "Waiting for agent…" : readOnlySession ? "Viewing persisted transcript · controls stay with fast-agent" : isResumeMode ? "Resume this session" : "Enter to send · Shift+Enter for a new line"}</span>
         <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || readOnlySession || sending || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Resume session" : "Send message"}>{isResumeMode ? "▶" : "↑"}</button>
-      </form>
+      </form>}
     </section>
-    {showInspector && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">SESSION</span><button className="icon-button" onClick={() => setShowInspector(false)} aria-label="Close inspector">×</button></div>{activeSession ? <><div className="inspector-title">{activeSession.title}</div><div className="inspector-status"><span className={`status-dot status-${activeSession.status}`} />{displayStatus(activeSession.status)}</div>{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">AUTOPILOT</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Переопределено для этой сессии" : autopilotSession.source === "policy" ? "Наследуется от harness policy" : autopilotSession.source === "plugin-default" ? "По умолчанию плагина" : "По умолчанию выключен"}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Наследовать policy</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label={`Autopilot for ${activeSession.id}`} disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}<dl><dt>Harness</dt><dd>{activeSession.harness}</dd><dt>Working directory</dt><dd>{activeSession.cwd}</dd>{activeSession.model && <><dt>Model</dt><dd>{activeSession.model}</dd></>}{activeSession.messageCount !== undefined && <><dt>Messages</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Duration</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.costUsd !== undefined && <><dt>Cost</dt><dd title={activeSession.meta?.pricing_source === "models.dev" ? `Estimated from models.dev · ${String(activeSession.meta?.pricing_provider || "")}/${String(activeSession.meta?.pricing_model || "")}` : undefined}>{`${activeSession.meta?.pricing_kind === "estimate" ? "~" : ""}$${activeSession.costUsd.toFixed(4)}`}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Tokens</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}<dt>Subagents</dt><dd>{details?.children?.length || 0}</dd></dl>{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">No turns yet. Send a message or Resume to start this session.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer">Visualize</a>}{activeSession.status === "running" && <button className="danger-button" onClick={() => void runAction("stop")}>Stop</button>}{(activeSession.status === "stopped" || activeSession.status === "error") && <button className="primary-button" onClick={() => void runAction("resume")}>Resume</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Recover</button>}</div><div className="settings-block"><span className="eyebrow">VIEW</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label></div></> : <div className="empty-inspector">No session selected.</div>}</aside>}
+    {showInspector && !showStatistics && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">SESSION</span><button className="icon-button" onClick={() => setShowInspector(false)} aria-label="Close inspector">×</button></div>{activeSession ? <><div className="inspector-title">{activeSession.title}</div><div className="inspector-status"><span className={`status-dot status-${activeSession.status}`} />{displayStatus(activeSession.status)}</div>{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">AUTOPILOT</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Переопределено для этой сессии" : autopilotSession.source === "policy" ? "Наследуется от harness policy" : autopilotSession.source === "plugin-default" ? "По умолчанию плагина" : "По умолчанию выключен"}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Наследовать policy</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label={`Autopilot for ${activeSession.id}`} disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}<dl><dt>Harness</dt><dd>{activeSession.harness}</dd><dt>Working directory</dt><dd>{activeSession.cwd}</dd>{activeSession.model && <><dt>Model</dt><dd>{activeSession.model}</dd></>}{activeSession.messageCount !== undefined && <><dt>Messages</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Duration</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.costUsd !== undefined && <><dt>Cost</dt><dd title={activeSession.meta?.pricing_source === "models.dev" ? `Estimated from models.dev · ${String(activeSession.meta?.pricing_provider || "")}/${String(activeSession.meta?.pricing_model || "")}` : undefined}>{`${activeSession.meta?.pricing_kind === "estimate" ? "~" : ""}$${activeSession.costUsd.toFixed(4)}`}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Tokens</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}<dt>Subagents</dt><dd>{details?.children?.length || 0}</dd></dl>{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">No turns yet. Send a message or Resume to start this session.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer">Visualize</a>}{activeSession.status === "running" && <button className="danger-button" onClick={() => void runAction("stop")}>Stop</button>}{(activeSession.status === "stopped" || activeSession.status === "error") && <button className="primary-button" onClick={() => void runAction("resume")}>Resume</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Recover</button>}</div><div className="settings-block"><span className="eyebrow">VIEW</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label></div></> : <div className="empty-inspector">No session selected.</div>}</aside>}
   </main>;
 }
 

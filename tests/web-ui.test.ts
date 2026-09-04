@@ -115,3 +115,13 @@ describe("browser load timings", () => {
     expect(reactSource).toContain("formatLoadTiming(hydrateTimingMs)");
   });
 });
+
+describe("activity statistics dashboard", () => {
+  it("renders a dedicated statistics view with coverage, histogram, and refresh controls", () => {
+    expect(reactSource).toContain("function StatisticsView");
+    expect(reactSource).toContain("What different TTLs actually cover");
+    expect(reactSource).toContain("Write revisit distribution");
+    expect(reactSource).toContain("/api/statistics/activity?days=");
+    expect(reactSource).toContain("Suggested inactivity lease");
+  });
+});

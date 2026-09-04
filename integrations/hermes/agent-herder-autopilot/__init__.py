@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import threading
 import time
+import urllib.parse
+import urllib.request
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,87 @@ def _invoke(payload: dict[str, Any]) -> dict[str, Any]:
     env = {**os.environ, "PLUGIN_ROOT": str(_ROOT)}
     result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=45, check=True)
     return json.loads(result.stdout)
+
+
+def _coordination_api(path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    base = os.getenv("AGENT_HERDER_URL", "http://127.0.0.1:18787").rstrip("/")
+    if payload is None:
+        request = urllib.request.Request(f"{base}{path}")
+    else:
+        request = urllib.request.Request(
+            f"{base}{path}", data=json.dumps(payload).encode("utf-8"),
+            headers={"content-type": "application/json"}, method="POST",
+        )
+    with urllib.request.urlopen(request, timeout=1.2) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _coordination_paths(value: Any, found: set[str] | None = None) -> set[str]:
+    found = found if found is not None else set()
+    if isinstance(value, str):
+        return found
+    if isinstance(value, list):
+        for item in value:
+            _coordination_paths(item, found)
+        return found
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key.lower() in {"path", "file", "file_path", "filepath", "filename"} and isinstance(item, str):
+                found.add(item)
+            elif key.lower() in {"paths", "files"} and isinstance(item, list):
+                found.update(str(path) for path in item if isinstance(path, str))
+            _coordination_paths(item, found)
+    return found
+
+
+def _coordination_pre_llm(session_id: str = "", **_: Any) -> dict[str, str] | None:
+    current_session = str(session_id or _CURRENT_SESSION.get())
+    if not current_session:
+        return None
+    try:
+        query = urllib.parse.urlencode({"harness": "hermes", "sessionId": current_session, "cwd": os.getcwd(), "touch": "1"})
+        data = _coordination_api(f"/api/coordination/context?{query}")
+        context = data.get("context")
+        return {"context": str(context)} if context else None
+    except Exception:
+        return None
+
+
+def _coordination_is_write_activity(tool_name: str, args: Any) -> bool:
+    name = str(tool_name or "").lower()
+    if any(part in name for part in ("write", "edit", "patch", "apply_patch", "create_file", "delete_file", "move_file", "rename_file")):
+        return True
+    if not any(part in name for part in ("bash", "shell", "terminal", "exec", "command")):
+        return False
+    command = ""
+    if isinstance(args, str):
+        command = args
+    elif isinstance(args, dict):
+        command = str(args.get("command") or args.get("cmd") or args.get("script") or "")
+    import re
+    patterns = (
+        r"(?:^|[;&|\s])sed\s+-[^\n;]*\bi[^\n;]*",
+        r"(?:^|[;&|\s])perl\s+-[^\n;]*\bi[^\n;]*",
+        r"(?:^|[;&|\s])(?:tee|cp|mv|rm|touch|mkdir|truncate|install)(?:\s|$)",
+        r"(?:^|[;&|\s])git\s+(?:checkout|restore|apply|mv|rm)(?:\s|$)",
+        r"(?:^|[^<])>{1,2}\s*[^&]",
+    )
+    return any(re.search(pattern, command) for pattern in patterns)
+
+
+def _coordination_tool_activity(session_id: str = "", tool_name: str = "", args: Any = None, **_: Any) -> None:
+    current_session = str(session_id or _CURRENT_SESSION.get())
+    if not current_session:
+        return
+    write = _coordination_is_write_activity(tool_name, args)
+    paths = [path.removeprefix("./") for path in _coordination_paths(args or {}) if path and not path.startswith("../")] if write else []
+    try:
+        _coordination_api("/api/coordination/activity", {
+            "harness": "hermes", "sessionId": current_session, "cwd": os.getcwd(),
+            "paths": paths[:32],
+        })
+    except Exception:
+        return
 
 
 def _command(raw_args: str) -> str:
@@ -177,4 +260,7 @@ def register(ctx: Any) -> None:
     ctx.register_command("autopilot", handler=_command, description="Включить Agent Herder autopilot для текущей сессии.", args_hint="[on|status|off]")
     ctx.register_hook("on_session_start", _on_session_start)
     ctx.register_hook("pre_gateway_dispatch", _on_pre_gateway_dispatch)
+    ctx.register_hook("pre_llm_call", _coordination_pre_llm)
+    ctx.register_hook("pre_tool_call", _coordination_tool_activity)
+    ctx.register_hook("post_tool_call", _coordination_tool_activity)
     ctx.register_hook("post_llm_call", _after_turn)

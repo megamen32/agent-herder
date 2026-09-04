@@ -14,6 +14,8 @@ export interface CoordinationNote {
   paths: string[];
   authorHarness?: string;
   authorSessionId: string;
+  source?: "manual" | "hook";
+  activityKey?: string;
   createdAt: string;
   updatedAt: string;
   expiresAt: string;
@@ -21,9 +23,18 @@ export interface CoordinationNote {
 
 type NoteFile = { version: 1; notes: CoordinationNote[] };
 export type CoordinationNoteCreate = Omit<CoordinationNote, "id" | "createdAt" | "updatedAt" | "expiresAt"> & { ttlSeconds?: number };
+export interface CoordinationConflict {
+  path: string;
+  note: CoordinationNote;
+}
+export interface CoordinationReservationResult {
+  reservations: CoordinationNote[];
+  conflicts: CoordinationConflict[];
+}
 export type CoordinationNoteUpdate = Partial<Pick<CoordinationNote, "kind" | "message" | "paths">> & { ttlSeconds?: number };
 
 const DEFAULT_TTL_SECONDS = 30 * 60;
+const DEFAULT_AUTO_TTL_SECONDS = 60;
 const MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export function defaultCoordinationNotePath(): string {
@@ -39,14 +50,17 @@ export class CoordinationNoteStore {
       const file = await this.readAndPrune();
       const now = new Date();
       const ttl = boundedTtl(input.ttlSeconds);
+      const cwd = canonicalCwd(input.cwd);
       const note: CoordinationNote = {
         id: randomUUID(),
         kind: input.kind,
         message: boundedMessage(input.message),
-        cwd: canonicalCwd(input.cwd),
-        paths: normalizePaths(input.paths),
+        cwd,
+        paths: normalizePathsForCwd(input.paths, cwd),
         ...(input.authorHarness ? { authorHarness: input.authorHarness } : {}),
         authorSessionId: requiredText(input.authorSessionId, "authorSessionId", 256),
+        ...(input.source ? { source: input.source } : {}),
+        ...(input.activityKey ? { activityKey: input.activityKey } : {}),
         createdAt: now.toISOString(),
         updatedAt: now.toISOString(),
         expiresAt: new Date(now.getTime() + ttl * 1000).toISOString(),
@@ -83,7 +97,7 @@ export class CoordinationNoteStore {
       assertOwner(note, authorSessionId);
       if (patch.kind) note.kind = patch.kind;
       if (patch.message !== undefined) note.message = boundedMessage(patch.message);
-      if (patch.paths !== undefined) note.paths = normalizePaths(patch.paths);
+      if (patch.paths !== undefined) note.paths = normalizePathsForCwd(patch.paths, note.cwd);
       if (patch.ttlSeconds !== undefined) note.expiresAt = new Date(Date.now() + boundedTtl(patch.ttlSeconds) * 1000).toISOString();
       note.updatedAt = new Date().toISOString();
       await this.write(file);
@@ -103,6 +117,72 @@ export class CoordinationNoteStore {
     });
   }
 
+  async reservePaths(input: { harness: string; sessionId: string; cwd: string; paths: string[]; ttlSeconds?: number }): Promise<CoordinationReservationResult> {
+    return this.serial(async () => {
+      const file = await this.readAndPrune();
+      const cwd = canonicalCwd(input.cwd);
+      const paths = normalizePathsForCwd(input.paths, cwd);
+      const ttl = boundedTtl(input.ttlSeconds ?? autoTtlSeconds());
+      const now = new Date();
+      const conflicts: CoordinationConflict[] = [];
+      const reservations: CoordinationNote[] = [];
+      for (const path of paths) {
+        for (const note of file.notes) {
+          if (note.authorSessionId === input.sessionId || !sameWorkspace(note.cwd, cwd)) continue;
+          if (note.paths.some((candidate) => pathMatches(candidate, path))) conflicts.push({ path, note });
+        }
+        const activityKey = `hook:${input.sessionId}:${path}`;
+        let note = file.notes.find((candidate) => candidate.activityKey === activityKey);
+        if (!note) {
+          note = {
+            id: randomUUID(), kind: "working", message: `Auto-reserved after file activity: ${path}`, cwd, paths: [path],
+            authorHarness: input.harness, authorSessionId: requiredText(input.sessionId, "sessionId", 256),
+            source: "hook", activityKey, createdAt: now.toISOString(), updatedAt: now.toISOString(),
+            expiresAt: new Date(now.getTime() + ttl * 1000).toISOString(),
+          };
+          file.notes.push(note);
+        } else {
+          note.updatedAt = now.toISOString();
+          note.expiresAt = new Date(now.getTime() + ttl * 1000).toISOString();
+          note.authorHarness = input.harness;
+        }
+        reservations.push(note);
+      }
+      if (paths.length > 0) await this.write(file);
+      return { reservations, conflicts: dedupeConflicts(conflicts) };
+    });
+  }
+
+  async heartbeatSession(input: { sessionId: string; cwd: string; ttlSeconds?: number }): Promise<CoordinationNote[]> {
+    return this.serial(async () => {
+      const file = await this.readAndPrune();
+      const cwd = canonicalCwd(input.cwd);
+      const ttl = boundedTtl(input.ttlSeconds ?? autoTtlSeconds());
+      const now = new Date();
+      const touched: CoordinationNote[] = [];
+      for (const note of file.notes) {
+        if (note.source !== "hook" || note.authorSessionId !== input.sessionId || !sameWorkspace(note.cwd, cwd)) continue;
+        note.updatedAt = now.toISOString();
+        note.expiresAt = new Date(now.getTime() + ttl * 1000).toISOString();
+        touched.push(note);
+      }
+      if (touched.length > 0) await this.write(file);
+      return touched;
+    });
+  }
+
+  async findConflicts(input: { sessionId: string; cwd: string; paths: string[] }): Promise<CoordinationConflict[]> {
+    const cwd = canonicalCwd(input.cwd);
+    const paths = normalizePathsForCwd(input.paths, cwd);
+    const notes = await this.list({ cwd });
+    const conflicts: CoordinationConflict[] = [];
+    for (const path of paths) for (const note of notes) {
+      if (note.authorSessionId === input.sessionId) continue;
+      if (note.paths.some((candidate) => pathMatches(candidate, path))) conflicts.push({ path, note });
+    }
+    return dedupeConflicts(conflicts);
+  }
+
   async renderForSession(session: { id: string; harness: string; cwd: string }): Promise<string | null> {
     const notes = (await this.list({ cwd: session.cwd })).filter((note) => note.authorSessionId !== session.id);
     if (notes.length === 0) return null;
@@ -120,6 +200,7 @@ export class CoordinationNoteStore {
   }
 
   async inject(session: { id: string; harness: string; cwd: string }, message: string): Promise<string> {
+    await this.heartbeatSession({ sessionId: session.id, cwd: session.cwd });
     if (message.includes("<agent-herder-coordination>")) return message;
     const context = await this.renderForSession(session);
     return context ? `${context}\n\n${message}` : message;
@@ -186,6 +267,13 @@ export class CoordinationNoteStore {
 
 export const coordinationNotes = new CoordinationNoteStore();
 
+export function autoTtlSeconds(): number {
+  const configured = Number(process.env.AGENT_HERDER_AUTO_TTL_SECONDS || DEFAULT_AUTO_TTL_SECONDS);
+  return Number.isFinite(configured) && configured >= 60 && configured <= MAX_TTL_SECONDS
+    ? Math.round(configured)
+    : DEFAULT_AUTO_TTL_SECONDS;
+}
+
 function boundedTtl(value?: number): number {
   const ttl = value ?? DEFAULT_TTL_SECONDS;
   if (!Number.isFinite(ttl) || ttl < 60 || ttl > MAX_TTL_SECONDS) throw new Error(`ttlSeconds must be between 60 and ${MAX_TTL_SECONDS}`);
@@ -206,6 +294,14 @@ function canonicalCwd(value: string): string {
 function normalizePaths(paths: string[]): string[] {
   return [...new Set((paths ?? []).map((path) => path.trim()).filter(Boolean).slice(0, 64))];
 }
+function normalizePathsForCwd(paths: string[], cwd: string): string[] {
+  return normalizePaths(paths).map((path) => {
+    const expanded = path.replace(/^~(?=\/|$)/, homedir());
+    if (!isAbsolute(expanded)) return expanded.replace(/^\.\//, "");
+    const rel = relative(cwd, resolve(expanded));
+    return rel && rel !== ".." && !rel.startsWith(`..${sep}`) ? rel : expanded;
+  });
+}
 function sameWorkspace(a: string, b: string): boolean {
   const relAB = relative(a, b); const relBA = relative(b, a);
   return relAB === "" || (!relAB.startsWith(`..${sep}`) && relAB !== "..") || (!relBA.startsWith(`..${sep}`) && relBA !== "..");
@@ -216,4 +312,14 @@ function pathMatches(candidate: string, target: string): boolean {
 }
 function assertOwner(note: CoordinationNote, authorSessionId: string): void {
   if (note.authorSessionId !== authorSessionId.trim()) throw new Error(`Coordination note '${note.id}' belongs to another session`);
+}
+
+function dedupeConflicts(conflicts: CoordinationConflict[]): CoordinationConflict[] {
+  const seen = new Set<string>();
+  return conflicts.filter((item) => {
+    const key = `${item.path}\0${item.note.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
