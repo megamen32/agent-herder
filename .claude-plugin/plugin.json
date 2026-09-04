@@ -1,7 +1,7 @@
 {
   "name": "agent-herder",
-  "version": "0.1.5",
-  "description": "AI autopilot for Claude Code: judge Stop, continue the same session, or ask the user through NoticePlace.",
+  "version": "0.2.0",
+  "description": "Coordinate and supervise parent/child sessions across Claude, Codex, OpenCode, ZCode, Fast Agent, Hermes, and Qoder with MCP messaging, TTL coordination notes, session inspection, and autopilot.",
   "author": {
     "name": "Agent Herder contributors"
   }

@@ -1,7 +1,7 @@
 {
   "name": "agent-herder",
-  "version": "0.1.0+codex.20260812125312",
-  "description": "Monitor agent sessions and let an AI judge continue, finish, or ask the user for a bounded decision.",
+  "version": "0.2.0",
+  "description": "Coordinate and supervise parent/child sessions across Claude, Codex, OpenCode, ZCode, Fast Agent, Hermes, and Qoder with MCP messaging, TTL coordination notes, session inspection, and autopilot.",
   "author": {
     "name": "Agent Herder contributors"
   },
@@ -16,8 +16,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Agent Herder",
-    "shortDescription": "AI supervisor for long-running agent sessions",
-    "longDescription": "Agent Herder watches coding-agent sessions, asks an AI judge what should happen next, and continues or escalates through NoticePlace.",
+    "shortDescription": "Coordinate and supervise coding-agent sessions",
+    "longDescription": "Agent Herder monitors coding-agent sessions, lets agents message each other through MCP, injects TTL coordination notes for shared workspaces, resumes or steers sessions, and provides optional autopilot supervision.",
     "developerName": "Agent Herder contributors",
     "category": "Developer Tools",
     "capabilities": [

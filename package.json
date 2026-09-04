@@ -1,7 +1,7 @@
 {
   "name": "agent-herder",
-  "version": "0.1.0",
-  "description": "MCP server to monitor, inspect, search, and coordinate OpenCode, Claude Code, Codex CLI, Qoder, and ZCode parent/child sessions",
+  "version": "0.2.0",
+  "description": "Coordinate and supervise parent/child sessions across Claude, Codex, OpenCode, ZCode, Fast Agent, Hermes, and Qoder with MCP messaging, TTL coordination notes, session inspection, and autopilot.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {

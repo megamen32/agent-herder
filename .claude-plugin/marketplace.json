@@ -4,14 +4,14 @@
     "name": "Agent Herder contributors"
   },
   "metadata": {
-    "description": "Local Agent Herder plugins",
-    "version": "0.1.5"
+    "description": "Local development marketplace for Agent Herder",
+    "version": "0.2.0"
   },
   "plugins": [
     {
       "name": "agent-herder",
-      "description": "AI autopilot for Claude Code sessions.",
-      "version": "0.1.5",
+      "description": "Coordinate and supervise coding-agent sessions with MCP messaging, TTL notes, and autopilot.",
+      "version": "0.2.0",
       "source": "./"
     }
   ]
