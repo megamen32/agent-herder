@@ -591,6 +591,15 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 502, { request_id: pending.requestId, status: pending.status, choice_id: pending.choiceId, session_id: pending.sessionId, resumed: false, error: `Agent Resume invocation failed: ${(error as Error).message}` });
     }
   }
+  if (url.pathname === "/api/models" && request.method === "GET") {
+    const harness = url.searchParams.get("harness")?.trim();
+    if (!harness) return sendJson(response, 400, { error: "harness is required" });
+    try {
+      return sendJson(response, 200, await supervisor.getModels(harness));
+    } catch (error) {
+      return sendJson(response, 404, { error: (error as Error).message });
+    }
+  }
   if (url.pathname === "/api/adapters" && request.method === "GET") {
     if (!adapterRegistry) return sendJson(response, 503, { error: "Adapter registry is disabled" });
     return sendJson(response, 200, { adapters: adapterRegistry.list() });

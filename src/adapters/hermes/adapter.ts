@@ -346,6 +346,10 @@ export class HermesAdapter implements HarnessAdapter {
     return { ok: true };
   }
 
+  async listModels(): Promise<string[]> {
+    return [process.env.HERMES_HEALTH_MODEL || "gpt-5.6-luna"];
+  }
+
   async stopSession(id: string): Promise<ControlResult> {
     const job = this.jobs.get(id);
     return job ? this.stopJob(job) : errorResult("Hermes public MCP surface does not expose stop/cancel");

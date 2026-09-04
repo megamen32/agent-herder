@@ -182,7 +182,39 @@ export class FastAgentFileAdapter implements HarnessAdapter {
   }
 
   async listModels(): Promise<string[]> {
-    return [];
+    const models: string[] = [];
+    const add = (value: unknown) => {
+      if (typeof value !== "string") return;
+      const model = value.trim().replace(/^['"]|['"]$/g, "");
+      if (model && !models.includes(model)) models.push(model);
+    };
+    try {
+      const config = await readFile(join(this.home, "fast-agent.yaml"), "utf8");
+      for (const match of config.matchAll(/^default_model:\s*(.+)$/gm)) add(match[1]);
+      const refs = config.match(/model_references:\s*\n([\s\S]*?)(?=^\S|\Z)/m)?.[1] ?? "";
+      for (const match of refs.matchAll(/^[ \t]+[A-Za-z0-9_.-]+:[ \t]*(.+)$/gm)) add(match[1]);
+    } catch { /* cache can still be populated from logs */ }
+    try {
+      const log = await readFile(join(this.home, "fast-agent-log.jsonl"), "utf8");
+      for (const line of log.split("\n").slice(-5000)) {
+        if (!line.includes('"model"')) continue;
+        try {
+          const row = JSON.parse(line) as { namespace?: unknown; data?: { model?: unknown } };
+          const raw = stringValue(row.data?.model);
+          if (!raw) continue;
+          const ns = stringValue(row.namespace) || "";
+          if (ns.includes("codex_responses") && !raw.includes(".")) add(`codexresponses.${raw}`);
+          else if (raw === "MiniMax-M3") add("generic.MiniMax-M3");
+          else add(raw);
+        } catch { /* ignore malformed log rows */ }
+      }
+    } catch { /* log is optional */ }
+    return models.filter((model) => {
+      if (!model.includes(".") && models.includes(`codexresponses.${model}`)) return false;
+      if (!model.includes(".") && models.includes(`generic.${model}`)) return false;
+      if (model === "gpt-5.3-codex-spark" && models.includes("codexspark")) return false;
+      return true;
+    });
   }
 
   private async findRecord(id: string): Promise<SessionRecord | null> {

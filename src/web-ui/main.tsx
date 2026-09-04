@@ -235,6 +235,9 @@ function App() {
   const [cwdSuggestions, setCwdSuggestions] = React.useState<Array<{ name: string; path: string }>>([]);
   const [cwdSuggestionsOpen, setCwdSuggestionsOpen] = React.useState(false);
   const [createModel, setCreateModel] = React.useState("generic.MiniMax-M3");
+  const [createModels, setCreateModels] = React.useState<string[]>([]);
+  const [createModelsRefreshing, setCreateModelsRefreshing] = React.useState(false);
+  const createModelRequestRef = React.useRef(0);
   const [creatingSession, setCreatingSession] = React.useState(false);
   const [createSessionError, setCreateSessionError] = React.useState<string>();
   const [chatMenuOpen, setChatMenuOpen] = React.useState(false);
@@ -407,6 +410,27 @@ function App() {
       setAutopilotPolicySaving(false);
     }
   };
+  const loadCreateModels = async (harness: string, preferCurrent = false, pollAttempt = 0) => {
+    const requestId = ++createModelRequestRef.current;
+    try {
+      const result = await api<{ models?: string[]; refreshing?: boolean }>(`/api/models?harness=${encodeURIComponent(harness)}`);
+      if (requestId !== createModelRequestRef.current) return;
+      const models = Array.isArray(result.models) ? result.models : [];
+      setCreateModels(models);
+      setCreateModelsRefreshing(Boolean(result.refreshing));
+      setCreateModel((current) => preferCurrent && current && models.includes(current) ? current : (models[0] || ""));
+      if (result.refreshing && pollAttempt < 5) {
+        window.setTimeout(() => {
+          if (requestId === createModelRequestRef.current) void loadCreateModels(harness, true, pollAttempt + 1);
+        }, 700);
+      }
+    } catch {
+      if (requestId !== createModelRequestRef.current) return;
+      setCreateModels([]);
+      setCreateModelsRefreshing(false);
+      setCreateModel("");
+    }
+  };
   const loadCreateAdapters = async () => {
     try {
       const result = await api<{ adapters?: Array<{ id: string; name: string; active: boolean; ready: boolean; status: string }> }>("/api/adapters");
@@ -433,14 +457,14 @@ function App() {
       setCwdSuggestions([]);
     }
   };
-  const openCreateSession = () => {
+  const openCreateSession = async () => {
     const cwd = listSettings.cwd || activeSession?.cwd || "/home/roomhacker";
     setCreateCwd(cwd);
-    void loadCreateAdapters();
-    void loadCwdSuggestions(cwd.endsWith("/") ? cwd : `${cwd}/`);
-    setCreateModel("generic.MiniMax-M3");
     setCreateSessionError(undefined);
+    await loadCreateAdapters();
+    await loadCreateModels(createHarness);
     setShowCreateSession(true);
+    void loadCwdSuggestions(cwd.endsWith("/") ? cwd : `${cwd}/`);
   };
   const createNewSession = async () => {
     if (!createCwd.trim() || creatingSession) return;
@@ -517,14 +541,14 @@ function App() {
       <form className="composer" onSubmit={(event) => { event.preventDefault(); if (isResumeMode) void runAction("resume"); else void sendMessage(); }}>
         {showCreateSession && <div className="composer-create-panel">
           <div className="composer-create-row">
-            <label>Harness<select value={createHarness} onChange={(event) => { const harness = event.target.value; setCreateHarness(harness); setCreateModel(harness === "fast-agent" ? "generic.MiniMax-M3" : ""); }}>{(createAdapters.length ? createAdapters : [{ id: "fast-agent", name: "Fast Agent", active: true, ready: true, status: "active" }]).map((adapter) => <option key={adapter.id} value={adapter.id} disabled={!adapter.active}>{adapter.name}{adapter.active ? "" : ` · ${adapter.status}`}</option>)}</select></label>
+            <label>Harness<select value={createHarness} onChange={(event) => { const harness = event.target.value; setCreateHarness(harness); setCreateModel(""); setCreateModels([]); void loadCreateModels(harness); }}>{(createAdapters.length ? createAdapters : [{ id: "fast-agent", name: "Fast Agent", active: true, ready: true, status: "active" }]).map((adapter) => <option key={adapter.id} value={adapter.id} disabled={!adapter.active}>{adapter.name}{adapter.active ? "" : ` · ${adapter.status}`}</option>)}</select></label>
             <label className="cwd-picker">CWD<input value={createCwd} onChange={(event) => { const value = event.target.value; setCreateCwd(value); void loadCwdSuggestions(value); }} onFocus={() => void loadCwdSuggestions(createCwd.endsWith("/") ? createCwd : `${createCwd}/`)} onBlur={() => window.setTimeout(() => setCwdSuggestionsOpen(false), 120)} placeholder="/home/roomhacker/project" autoComplete="off" />{cwdSuggestionsOpen && cwdSuggestions.length > 0 && <div className="cwd-suggestions">{cwdSuggestions.map((item) => <button type="button" key={item.path} onMouseDown={(event) => event.preventDefault()} onClick={() => { setCreateCwd(`${item.path}/`); void loadCwdSuggestions(`${item.path}/`); }}><span className="cwd-folder">▱</span><span>{item.name}</span><small>{item.path}</small></button>)}</div>}</label>
-            <label>Model<input value={createModel} onChange={(event) => setCreateModel(event.target.value)} placeholder={createHarness === "fast-agent" ? "generic.MiniMax-M3" : "provider/model"} list="composer-create-models" /><datalist id="composer-create-models"><option value="generic.MiniMax-M3" /><option value="codexresponses.gpt-5.6-terra" /></datalist></label>
+            <label>Model{createModels.length > 0 ? <select value={createModel} onChange={(event) => setCreateModel(event.target.value)}>{createModels.map((model) => <option key={model} value={model}>{model}</option>)}</select> : createModelsRefreshing ? <select disabled><option>loading models…</option></select> : <input value={createModel} onChange={(event) => setCreateModel(event.target.value)} placeholder="model (cache empty)" />}</label>
             <button type="button" className="primary-button composer-create-submit" disabled={creatingSession || !createCwd.trim()} onClick={() => void createNewSession()}>{creatingSession ? "…" : "Create"}</button>
           </div>
           {createSessionError && <div className="create-session-error">{createSessionError}</div>}
         </div>}
-        <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="New session" title="New Fast Agent / ZCode session" onClick={() => { if (showCreateSession) setShowCreateSession(false); else openCreateSession(); }}>+</button>
+        <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="New session" title="New Fast Agent / ZCode session" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>
         <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={readOnlySession ? "Read-only persisted session" : isResumeMode ? "Resume the agent…" : activeKey ? "Message the agent…" : "Choose a session first"} disabled={!activeKey || readOnlySession || sending || isResumeMode} onKeyDown={(event) => { if (!isResumeMode && event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} />
         <span className="composer-hint">{sending ? "Waiting for agent…" : readOnlySession ? "Viewing persisted transcript · controls stay with fast-agent" : isResumeMode ? "Resume this session" : "Enter to send · Shift+Enter for a new line"}</span>
         <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || readOnlySession || sending || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Resume session" : "Send message"}>{isResumeMode ? "▶" : "↑"}</button>

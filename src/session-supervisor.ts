@@ -48,6 +48,14 @@ interface SessionSnapshot {
   refreshedAt: number;
 }
 
+export interface HarnessModelCache {
+  harness: string;
+  models: string[];
+  refreshedAt: string | null;
+  stale: boolean;
+  refreshing: boolean;
+}
+
 export class SessionNotFoundError extends Error {
   constructor(provider: string, id: string) {
     super(`Session '${provider}:${id}' not found`);
@@ -60,6 +68,9 @@ export class SessionSupervisor {
   private readonly sessionCacheTtlMs: number;
   private sessionSnapshot: SessionSnapshot | null = null;
   private sessionRefresh: Promise<void> | null = null;
+  private readonly modelCacheTtlMs = 15 * 60_000;
+  private readonly modelCache = new Map<string, { models: string[]; refreshedAt: number }>();
+  private readonly modelRefreshes = new Map<string, Promise<void>>();
 
   constructor(
     private readonly adapters: Map<string, HarnessAdapter>,
@@ -109,7 +120,9 @@ export class SessionSupervisor {
     if (this.sessionRefresh) return this.sessionRefresh;
     this.sessionRefresh = this.readSessionSnapshot()
       .then((sessions) => {
+        this.seedModelCacheFromSessions(sessions);
         this.sessionSnapshot = { sessions, refreshedAt: Date.now() };
+        this.refreshStaleModelCaches();
       })
       .finally(() => {
         this.sessionRefresh = null;
@@ -163,6 +176,69 @@ export class SessionSupervisor {
       }
     }
     return null;
+  }
+
+  async getModels(harness: string): Promise<HarnessModelCache> {
+    if (!this.sessionSnapshot) await this.listSessions();
+    const cached = this.modelCache.get(harness);
+    const stale = !cached || Date.now() - cached.refreshedAt >= this.modelCacheTtlMs;
+    if (stale) void this.refreshModels(harness).catch(() => undefined);
+    const current = this.modelCache.get(harness);
+    return {
+      harness,
+      models: current?.models ?? [],
+      refreshedAt: current ? new Date(current.refreshedAt).toISOString() : null,
+      stale,
+      refreshing: this.modelRefreshes.has(harness),
+    };
+  }
+
+  private refreshStaleModelCaches(): void {
+    const now = Date.now();
+    for (const [harness, adapter] of this.adapters) {
+      if (!adapter.listModels) continue;
+      const cached = this.modelCache.get(harness);
+      if (!cached || now - cached.refreshedAt >= this.modelCacheTtlMs) {
+        void this.refreshModels(harness).catch(() => undefined);
+      }
+    }
+  }
+
+  private refreshModels(harness: string): Promise<void> {
+    const existing = this.modelRefreshes.get(harness);
+    if (existing) return existing;
+    const adapter = this.adapters.get(harness);
+    if (!adapter?.listModels) return Promise.resolve();
+    const refresh = adapter.listModels()
+      .then((nativeModels) => {
+        const cached = this.modelCache.get(harness)?.models ?? [];
+        const models = [...new Set([...cached, ...nativeModels.filter(Boolean)])];
+        this.modelCache.set(harness, { models, refreshedAt: Date.now() });
+      })
+      .finally(() => { this.modelRefreshes.delete(harness); });
+    this.modelRefreshes.set(harness, refresh);
+    return refresh;
+  }
+
+  private seedModelCacheFromSessions(sessions: AgentSession[]): void {
+    const grouped = new Map<string, Array<{ model: string; at: number }>>();
+    for (const session of sessions) {
+      const model = session.model?.trim();
+      if (!model || (model.startsWith("<") && model.endsWith(">"))) continue;
+      const at = Date.parse(session.lastActivity);
+      const rows = grouped.get(session.harness) ?? [];
+      rows.push({ model, at: Number.isFinite(at) ? at : 0 });
+      grouped.set(session.harness, rows);
+    }
+    for (const [harness, rows] of grouped) {
+      rows.sort((a, b) => b.at - a.at);
+      const historical = [...new Set(rows.map((row) => row.model))];
+      const cached = this.modelCache.get(harness);
+      this.modelCache.set(harness, {
+        models: [...new Set([...historical, ...(cached?.models ?? [])])],
+        refreshedAt: cached?.refreshedAt ?? 0,
+      });
+    }
   }
 
   async sendMessage(harness: string, id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {

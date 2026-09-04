@@ -66,3 +66,36 @@ describe("session discovery cache", () => {
     await expect(supervisor.listSessions({ harness: "codex" })).resolves.toMatchObject([{ id: "code", harness: "codex" }]);
   });
 });
+
+describe("SessionSupervisor model cache", () => {
+  it("seeds models from historical sessions and lazily merges native models", async () => {
+    let resolveModels!: (value: string[]) => void;
+    const nativeModels = new Promise<string[]>((resolve) => { resolveModels = resolve; });
+    const adapter = {
+      type: "codex",
+      name: "Codex",
+      async init() {},
+      async listSessions() {
+        return [
+          { id: "new", harness: "codex", status: "idle", title: "new", cwd: "/tmp", lastActivity: "2026-09-04T03:00:00.000Z", model: "gpt-new", needsPermission: false },
+          { id: "old", harness: "codex", status: "idle", title: "old", cwd: "/tmp", lastActivity: "2026-09-03T03:00:00.000Z", model: "gpt-old", needsPermission: false },
+        ];
+      },
+      async getSession() { return null; },
+      async sendMessage() { return { ok: false }; },
+      async stopSession() { return { ok: true }; },
+      async respondPermission() { return { ok: true }; },
+      async setPermissions() { return { ok: true }; },
+      async listModels() { return nativeModels; },
+    } as any;
+    const supervisor = new SessionSupervisor(new Map([["codex", adapter]]), { async convert() { return { success: true }; } } as any);
+    await supervisor.listSessions();
+    const cached = await supervisor.getModels("codex");
+    expect(cached.models).toEqual(["gpt-new", "gpt-old"]);
+    expect(cached.refreshing).toBe(true);
+    resolveModels(["gpt-native", "gpt-new"]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const refreshed = await supervisor.getModels("codex");
+    expect(refreshed.models).toEqual(["gpt-new", "gpt-old", "gpt-native"]);
+  });
+});

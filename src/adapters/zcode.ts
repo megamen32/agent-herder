@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve, join } from "node:path";
 import {
@@ -295,12 +296,14 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly cwd: string;
   private readonly modelIds: string[];
   private readonly client: ZcodeClientLike;
+  private readonly useLocalConfig: boolean;
   private readonly sessionWorkspaces = new Map<string, ZcodeWorkspaceRef>();
   private initialized = false;
 
   constructor(options: ZcodeAdapterOptions = {}) {
     this.cwd = resolve(options.cwd || process.env.ZCODE_CWD || process.cwd());
     this.modelIds = options.modelIds ?? [];
+    this.useLocalConfig = !options.client;
     if (options.client) {
       this.client = options.client;
     } else {
@@ -549,16 +552,27 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async listModels(): Promise<string[]> {
+    const configured = [...this.modelIds];
+    if (this.useLocalConfig) {
+      try {
+        const raw = JSON.parse(await readFile(join(homedir(), ".zcode", "cli", "config.json"), "utf8")) as { model?: Record<string, unknown> };
+        for (const value of Object.values(raw.model ?? {})) {
+          if (typeof value === "string" && value.trim()) configured.push(value.trim());
+        }
+      } catch { /* local CLI config is optional */ }
+    }
     try {
-      const state = record(await this.callAgent("readWorkspaceState", this.workspace()));
+      const state = record(await Promise.race([
+        this.callAgent("readWorkspaceState", this.workspace()),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("ZCode model catalog timeout")), 2_500)),
+      ]));
       const settingsModel = record(record(state.settings).model);
       const available = Array.isArray(settingsModel.available) ? settingsModel.available : [];
       const models = available.map(modelNameFromCatalogEntry).filter((model): model is string => Boolean(model));
-      if (models.length > 0) return models;
+      return [...new Set([...models, ...configured])];
     } catch {
-      // Fall back to explicit configuration when the model catalog is unavailable.
+      return [...new Set(configured)];
     }
-    return [...this.modelIds];
   }
 
   private workspace(cwd = this.cwd): ZcodeWorkspaceRef {
