@@ -53,6 +53,12 @@ const formatTime = (value: string) => {
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(timestamp) : "";
 };
+const formatLoadTiming = (value?: number) => {
+  if (value === undefined || !Number.isFinite(value)) return "—";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)}s`;
+};
+
 const formatSessionAge = (value: string, now = Date.now()) => {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return "";
@@ -235,6 +241,10 @@ function App() {
   const [composer, setComposer] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [sessionsRefreshing, setSessionsRefreshing] = React.useState(false);
+  const [sessionsTimingMs, setSessionsTimingMs] = React.useState<number>();
+  const [latestTimingMs, setLatestTimingMs] = React.useState<number>();
+  const [hydrateTimingMs, setHydrateTimingMs] = React.useState<number>();
+  const initialSessionsStartedRef = React.useRef(performance.now());
   const [sending, setSending] = React.useState(false);
   const [showCreateSession, setShowCreateSession] = React.useState(false);
   const [createHarness, setCreateHarness] = React.useState("fast-agent");
@@ -295,10 +305,17 @@ function App() {
     const initial = async () => {
       for (let attempt = 0; attempt < 30 && !cancelled; attempt++) {
         const ready = await loadSessions().catch(() => false);
-        if (ready) { setLoading(false); return; }
+        if (ready) {
+          setSessionsTimingMs(performance.now() - initialSessionsStartedRef.current);
+          setLoading(false);
+          return;
+        }
         await new Promise((resolve) => window.setTimeout(resolve, 250));
       }
-      if (!cancelled) setLoading(false);
+      if (!cancelled) {
+        setSessionsTimingMs(performance.now() - initialSessionsStartedRef.current);
+        setLoading(false);
+      }
     };
     void initial();
     const timer = window.setInterval(() => void loadSessions(), 3000);
@@ -324,16 +341,22 @@ function App() {
     setDetailsError(undefined);
     setDetailsLoading(true);
     setDetailsHydrating(false);
+    setLatestTimingMs(undefined);
+    setHydrateTimingMs(undefined);
     setDetails((current) => current && keyOf(current.session) === key ? current : null);
     try {
+      const latestStartedAt = performance.now();
       const latest = await api<SessionDetails>(`${base}?limit=12&quick=1`);
       if (requestId !== detailsRequestRef.current) return;
+      setLatestTimingMs(performance.now() - latestStartedAt);
       setDetails(latest);
       setDetailsLoading(false);
       setDetailsHydrating(true);
       await new Promise((resolve) => window.setTimeout(resolve, 40));
+      const hydrateStartedAt = performance.now();
       const full = await api<SessionDetails>(`${base}?limit=50`);
       if (requestId !== detailsRequestRef.current) return;
+      setHydrateTimingMs(performance.now() - hydrateStartedAt);
       setDetails(full);
     } catch (error) {
       if (requestId !== detailsRequestRef.current) return;
@@ -343,7 +366,7 @@ function App() {
     }
   }, []);
   React.useEffect(() => {
-    if (!activeKey) { detailsRequestRef.current += 1; setDetails(null); setDetailsLoading(false); setDetailsHydrating(false); return; }
+    if (!activeKey) { detailsRequestRef.current += 1; setDetails(null); setDetailsLoading(false); setDetailsHydrating(false); setLatestTimingMs(undefined); setHydrateTimingMs(undefined); return; }
     void loadDetails(activeKey);
   }, [activeKey, loadDetails]);
   React.useLayoutEffect(() => {
@@ -581,7 +604,7 @@ function App() {
     <section className="chat-pane">
       <header className="chat-header">
         <button className="mobile-back" onClick={() => setMobileView("sessions")} aria-label="Back to sessions">← <span>Sessions</span></button>
-        <div className="chat-heading"><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2>{activeSession?.title || (loading ? "Loading sessions…" : "Select a session")}{(detailsLoading || detailsHydrating) && <span className="inline-loading-dot chat-loading-dot" aria-label="Loading session" />}</h2><small>{activeSession?.cwd || ""}</small></div>
+        <div className="chat-heading"><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2>{activeSession?.title || (loading ? "Loading sessions…" : "Select a session")}{(detailsLoading || detailsHydrating) && <span className="inline-loading-dot chat-loading-dot" aria-label="Loading session" />}</h2><small>{activeSession?.cwd || ""}</small><div className="load-timings" aria-label="Browser load timings"><span title="Page → session list ready">sessions <b>{formatLoadTiming(sessionsTimingMs)}</b></span>{activeKey && <><span title="Newest turns request">latest <b>{detailsLoading ? "…" : formatLoadTiming(latestTimingMs)}</b></span><span title="Background history + metrics request">hydrate <b>{detailsHydrating ? "…" : formatLoadTiming(hydrateTimingMs)}</b></span></>}</div></div>
         <div className="header-actions"><button className={`quiet-button ${showAutopilotSettings ? "selected-icon" : ""}`} onClick={() => { setShowAutopilotSettings((value) => !value); setChatMenuOpen(false); }}>Autopilot</button><button className="quiet-button" onClick={() => setShowInspector((value) => !value)}>{showInspector ? "Hide" : "Info"}</button><button className={`icon-button ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Chat menu" aria-expanded={chatMenuOpen} onClick={() => setChatMenuOpen((value) => !value)}>···</button></div>
         {chatMenuOpen && <div className="chat-menu" role="menu"><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label><button className="quiet-button" onClick={() => { setShowAutopilotSettings(true); setChatMenuOpen(false); }}>Настройки автопилота</button><button className="quiet-button" onClick={() => { setShowInspector(true); setChatMenuOpen(false); }}>Session info</button></div>}
       </header>
@@ -591,7 +614,7 @@ function App() {
         <div className="message-column">
           {detailsLoading && !details && <div className="session-loading-chat" aria-live="polite"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Loading latest activity</strong><small>Starting from the newest turns. You can keep using the rest of Agent Herder.</small></div>}
           {!detailsLoading && !details && <div className="empty-chat">{detailsError || "Choose a session to open its conversation."}</div>}
-          {detailsHydrating && details && <div className="history-loading-banner"><span className="inline-loading-dot" /> Loading older history and metrics in background…</div>}
+          {detailsHydrating && details && <div className="history-loading-banner"><span className="inline-loading-dot" /> Latest {formatLoadTiming(latestTimingMs)} · loading older history and metrics…</div>}
           {details?.messages.map((message) => hasVisibleMessage(message, showReasoning, showTools) && <article className={`message ${message.role}`} key={message.id}><div className="message-meta"><span>{message.role === "user" ? "You" : message.role === "tool" ? "Tool" : "Agent"}</span><time>{formatTime(message.timestamp || "")}</time></div><MessageParts message={message} showReasoning={showReasoning} showTools={showTools} /></article>)}
         </div>
       </div>

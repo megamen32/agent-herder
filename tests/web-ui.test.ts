@@ -95,7 +95,7 @@ describe("non-blocking session loading", () => {
   it("shows loading state while the newest turns arrive, then hydrates older history", () => {
     expect(reactSource).toContain("session-skeletons");
     expect(reactSource).toContain("Loading latest activity");
-    expect(reactSource).toContain("Loading older history and metrics in background");
+    expect(reactSource).toContain("loading older history and metrics");
     expect(reactSource).toContain("?limit=12&quick=1");
     expect(reactSource).toContain("?limit=50");
   });
@@ -103,5 +103,15 @@ describe("non-blocking session loading", () => {
   it("restores the selected session across page reloads", () => {
     expect(reactSource).toContain("agent-herder.active-session");
     expect(reactSource).toContain("window.localStorage.setItem");
+  });
+});
+
+
+describe("browser load timings", () => {
+  it("shows sessions, latest, and hydrate timings in the chat header", () => {
+    expect(reactSource).toContain("Browser load timings");
+    expect(reactSource).toContain("formatLoadTiming(sessionsTimingMs)");
+    expect(reactSource).toContain("formatLoadTiming(latestTimingMs)");
+    expect(reactSource).toContain("formatLoadTiming(hydrateTimingMs)");
   });
 });
