@@ -1,7 +1,10 @@
 import { readdir, readFile, stat } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { basename, join, relative, resolve } from "node:path";
 import type {
   AgentSession,
+  CreateSessionOptions,
   HarnessAdapter,
   HarnessCapabilities,
   ListSessionsOptions,
@@ -76,6 +79,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
   private readonly sessionsRoot: string;
   private readonly fallbackCwd: string;
   private initialized = false;
+  private readonly fastAgentBin = process.env.FAST_AGENT_BIN || "/home/roomhacker/.local/bin/fast-agent";
 
   constructor(options: FastAgentFileAdapterOptions) {
     this.home = resolve(options.home);
@@ -108,6 +112,33 @@ export class FastAgentFileAdapter implements HarnessAdapter {
   async getSession(id: string): Promise<AgentSession | null> {
     const sessions = await this.listSessions();
     return sessions.find((session) => session.id === id || session.meta?.nativeSessionId === id) || null;
+  }
+
+  async createSession(options: CreateSessionOptions): Promise<AgentSession> {
+    await this.init();
+    const id = `fast-agent:launch:${randomUUID()}`;
+    const cwd = resolve(options.cwd);
+    const args = [
+      "go",
+      "--name", options.name,
+      "--home", this.home,
+      "--workspace", cwd,
+      "--message", "Session initialized from Agent Herder. Wait for the user's task.",
+      "--quiet",
+    ];
+    if (options.model) args.push("--model", options.model);
+    const child = spawn(this.fastAgentBin, args, {
+      cwd,
+      detached: true,
+      stdio: "ignore",
+      env: { ...process.env, FAST_AGENT_HOME: this.home },
+    });
+    child.unref();
+    return {
+      id, harness: this.type, status: "running", title: options.name, cwd,
+      lastActivity: new Date().toISOString(), model: options.model, needsPermission: false, messageCount: 0,
+      meta: { transientLaunch: true, readOnly: false },
+    };
   }
 
   async sendMessage(_id: string, _options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {

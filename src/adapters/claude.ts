@@ -1,9 +1,10 @@
-import { HarnessAdapter, AgentSession, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
-import { execFile } from "node:child_process";
+import { HarnessAdapter, AgentSession, CreateSessionOptions, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile, readdir, stat, access, open } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { homedir } from "node:os";
+import { randomUUID } from "node:crypto";
 
 const execFileAsync = promisify(execFile);
 
@@ -90,6 +91,26 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
       }
     }
     return found;
+  }
+
+  async createSession(options: CreateSessionOptions): Promise<AgentSession> {
+    const id = randomUUID();
+    const cwd = resolve(options.cwd);
+    const args = [
+      "-p",
+      "Session initialized from Agent Herder. Wait for the user's task.",
+      "--session-id", id,
+      "--name", options.name,
+      "--output-format", "json",
+    ];
+    if (options.model) args.push("--model", options.model);
+    const child = spawn(this.claudeBin, args, { cwd, detached: true, stdio: "ignore" });
+    child.unref();
+    return {
+      id, harness: "claude", status: "running", title: options.name, cwd,
+      lastActivity: new Date().toISOString(), model: options.model, needsPermission: false, messageCount: 0,
+      meta: { transientLaunch: true },
+    };
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {

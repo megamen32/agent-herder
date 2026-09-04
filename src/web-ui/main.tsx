@@ -53,6 +53,18 @@ const formatTime = (value: string) => {
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(timestamp) : "";
 };
+const formatSessionAge = (value: string, now = Date.now()) => {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "";
+  const ageMs = Math.max(0, now - timestamp);
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (ageMs < minute) return "now";
+  if (ageMs < hour) return `${Math.floor(ageMs / minute)}m`;
+  if (ageMs < day) return `${Math.floor(ageMs / hour)}h`;
+  return `${Math.floor(ageMs / day)}d`;
+};
 const displayStatus = (status: string) => status.replace("needs_input", "needs input");
 const formatDuration = (seconds?: number) => {
   if (!Number.isFinite(seconds)) return "—";
@@ -172,7 +184,7 @@ function SessionList({ entries, activeKey, settings, settingsOpen, searchOpen, s
             <button className={`session-row ${key === activeKey ? "selected" : ""}`} onClick={() => onSelect(key)}>
               <span className={`status-dot ${decision ? "status-needs_input" : `status-${session.status}`}`} aria-hidden="true" />
               <span className="session-copy"><strong>{session.title || session.id}</strong><small>{session.harness} · {decision ? "нужен выбор" : displayStatus(session.status)}</small><small className="session-preview">{session.lastMessage || session.cwd}</small></span>
-              <time>{formatTime(session.lastActivity)}</time>
+              <time title={new Date(session.lastActivity).toLocaleString()}>{formatSessionAge(session.lastActivity)}</time>
             </button>
             {decision && <div className="choice-card" aria-label={`Autopilot choices for ${session.title || session.id}`}>
               <strong>Что делать дальше?</strong>
@@ -216,6 +228,15 @@ function App() {
   const [composer, setComposer] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [sending, setSending] = React.useState(false);
+  const [showCreateSession, setShowCreateSession] = React.useState(false);
+  const [createHarness, setCreateHarness] = React.useState("fast-agent");
+  const [createAdapters, setCreateAdapters] = React.useState<Array<{ id: string; name: string; active: boolean; ready: boolean; status: string }>>([]);
+  const [createCwd, setCreateCwd] = React.useState("/home/roomhacker");
+  const [cwdSuggestions, setCwdSuggestions] = React.useState<Array<{ name: string; path: string }>>([]);
+  const [cwdSuggestionsOpen, setCwdSuggestionsOpen] = React.useState(false);
+  const [createModel, setCreateModel] = React.useState("generic.MiniMax-M3");
+  const [creatingSession, setCreatingSession] = React.useState(false);
+  const [createSessionError, setCreateSessionError] = React.useState<string>();
   const [chatMenuOpen, setChatMenuOpen] = React.useState(false);
   const [showScrollToLatest, setShowScrollToLatest] = React.useState(false);
   const chatScrollRef = React.useRef<HTMLDivElement>(null);
@@ -386,6 +407,60 @@ function App() {
       setAutopilotPolicySaving(false);
     }
   };
+  const loadCreateAdapters = async () => {
+    try {
+      const result = await api<{ adapters?: Array<{ id: string; name: string; active: boolean; ready: boolean; status: string }> }>("/api/adapters");
+      setCreateAdapters(Array.isArray(result.adapters) ? result.adapters : []);
+    } catch {
+      setCreateAdapters([
+        { id: "opencode", name: "OpenCode", active: true, ready: true, status: "active" },
+        { id: "claude", name: "Claude", active: true, ready: true, status: "active" },
+        { id: "codex", name: "Codex", active: true, ready: true, status: "active" },
+        { id: "qoder", name: "Qoder", active: false, ready: false, status: "disabled" },
+        { id: "hermes", name: "Hermes", active: true, ready: true, status: "active" },
+        { id: "zcode", name: "ZCode", active: true, ready: true, status: "active" },
+        { id: "fast-agent", name: "Fast Agent", active: true, ready: true, status: "active" },
+      ]);
+    }
+  };
+  const loadCwdSuggestions = async (value: string) => {
+    if (!value.trim().startsWith("/") && !value.trim().startsWith("~")) { setCwdSuggestions([]); return; }
+    try {
+      const result = await api<{ dirs?: Array<{ name: string; path: string }> }>(`/api/fs/dirs?path=${encodeURIComponent(value.trim())}`);
+      setCwdSuggestions(Array.isArray(result.dirs) ? result.dirs : []);
+      setCwdSuggestionsOpen(true);
+    } catch {
+      setCwdSuggestions([]);
+    }
+  };
+  const openCreateSession = () => {
+    const cwd = listSettings.cwd || activeSession?.cwd || "/home/roomhacker";
+    setCreateCwd(cwd);
+    void loadCreateAdapters();
+    void loadCwdSuggestions(cwd.endsWith("/") ? cwd : `${cwd}/`);
+    setCreateModel("generic.MiniMax-M3");
+    setCreateSessionError(undefined);
+    setShowCreateSession(true);
+  };
+  const createNewSession = async () => {
+    if (!createCwd.trim() || creatingSession) return;
+    setCreatingSession(true);
+    setCreateSessionError(undefined);
+    const generatedName = `${createHarness.replace(/[^a-z0-9-]/gi, "-")}-${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 12)}`;
+    try {
+      await api("/api/sessions", {
+        method: "POST",
+        body: JSON.stringify({ harness: createHarness, name: generatedName, cwd: createCwd.trim(), model: createModel.trim() || undefined }),
+      });
+      setShowCreateSession(false);
+      await new Promise((resolve) => window.setTimeout(resolve, createHarness === "fast-agent" || createHarness === "claude" ? 1400 : 350));
+      await loadSessions();
+      setListSettings((current) => ({ ...current, harness: createHarness, cwd: "", sort: "activity", showAll: true }));
+      setMobileView("sessions");
+    } catch (error) { setCreateSessionError((error as Error).message); }
+    finally { setCreatingSession(false); }
+  };
+
   const runAction = async (action: "resume" | "stop" | "recover") => {
     if (!activeKey) return;
     const { harness, id } = splitKey(activeKey);
@@ -439,7 +514,21 @@ function App() {
         </div>
       </div>
       {showScrollToLatest && <button className="scroll-latest" aria-label="Scroll to latest" onClick={scrollToBottom}>↓</button>}
-      <form className="composer" onSubmit={(event) => { event.preventDefault(); if (isResumeMode) void runAction("resume"); else void sendMessage(); }}><button type="button" className="composer-plus" aria-label="Add context" disabled={readOnlySession}>+</button><textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={readOnlySession ? "Read-only persisted session" : isResumeMode ? "Resume the agent…" : activeKey ? "Message the agent…" : "Choose a session first"} disabled={!activeKey || readOnlySession || sending || isResumeMode} onKeyDown={(event) => { if (!isResumeMode && event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} /><span className="composer-hint">{sending ? "Waiting for agent…" : readOnlySession ? "Viewing persisted transcript · controls stay with fast-agent" : isResumeMode ? "Resume this session" : "Enter to send · Shift+Enter for a new line"}</span><button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || readOnlySession || sending || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Resume session" : "Send message"}>{isResumeMode ? "▶" : "↑"}</button></form>
+      <form className="composer" onSubmit={(event) => { event.preventDefault(); if (isResumeMode) void runAction("resume"); else void sendMessage(); }}>
+        {showCreateSession && <div className="composer-create-panel">
+          <div className="composer-create-row">
+            <label>Harness<select value={createHarness} onChange={(event) => { const harness = event.target.value; setCreateHarness(harness); setCreateModel(harness === "fast-agent" ? "generic.MiniMax-M3" : ""); }}>{(createAdapters.length ? createAdapters : [{ id: "fast-agent", name: "Fast Agent", active: true, ready: true, status: "active" }]).map((adapter) => <option key={adapter.id} value={adapter.id} disabled={!adapter.active}>{adapter.name}{adapter.active ? "" : ` · ${adapter.status}`}</option>)}</select></label>
+            <label className="cwd-picker">CWD<input value={createCwd} onChange={(event) => { const value = event.target.value; setCreateCwd(value); void loadCwdSuggestions(value); }} onFocus={() => void loadCwdSuggestions(createCwd.endsWith("/") ? createCwd : `${createCwd}/`)} onBlur={() => window.setTimeout(() => setCwdSuggestionsOpen(false), 120)} placeholder="/home/roomhacker/project" autoComplete="off" />{cwdSuggestionsOpen && cwdSuggestions.length > 0 && <div className="cwd-suggestions">{cwdSuggestions.map((item) => <button type="button" key={item.path} onMouseDown={(event) => event.preventDefault()} onClick={() => { setCreateCwd(`${item.path}/`); void loadCwdSuggestions(`${item.path}/`); }}><span className="cwd-folder">▱</span><span>{item.name}</span><small>{item.path}</small></button>)}</div>}</label>
+            <label>Model<input value={createModel} onChange={(event) => setCreateModel(event.target.value)} placeholder={createHarness === "fast-agent" ? "generic.MiniMax-M3" : "provider/model"} list="composer-create-models" /><datalist id="composer-create-models"><option value="generic.MiniMax-M3" /><option value="codexresponses.gpt-5.6-terra" /></datalist></label>
+            <button type="button" className="primary-button composer-create-submit" disabled={creatingSession || !createCwd.trim()} onClick={() => void createNewSession()}>{creatingSession ? "…" : "Create"}</button>
+          </div>
+          {createSessionError && <div className="create-session-error">{createSessionError}</div>}
+        </div>}
+        <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="New session" title="New Fast Agent / ZCode session" onClick={() => { if (showCreateSession) setShowCreateSession(false); else openCreateSession(); }}>+</button>
+        <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={readOnlySession ? "Read-only persisted session" : isResumeMode ? "Resume the agent…" : activeKey ? "Message the agent…" : "Choose a session first"} disabled={!activeKey || readOnlySession || sending || isResumeMode} onKeyDown={(event) => { if (!isResumeMode && event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} />
+        <span className="composer-hint">{sending ? "Waiting for agent…" : readOnlySession ? "Viewing persisted transcript · controls stay with fast-agent" : isResumeMode ? "Resume this session" : "Enter to send · Shift+Enter for a new line"}</span>
+        <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || readOnlySession || sending || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Resume session" : "Send message"}>{isResumeMode ? "▶" : "↑"}</button>
+      </form>
     </section>
     {showInspector && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">SESSION</span><button className="icon-button" onClick={() => setShowInspector(false)} aria-label="Close inspector">×</button></div>{activeSession ? <><div className="inspector-title">{activeSession.title}</div><div className="inspector-status"><span className={`status-dot status-${activeSession.status}`} />{displayStatus(activeSession.status)}</div>{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">AUTOPILOT</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Переопределено для этой сессии" : autopilotSession.source === "policy" ? "Наследуется от harness policy" : autopilotSession.source === "plugin-default" ? "По умолчанию плагина" : "По умолчанию выключен"}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Наследовать policy</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label={`Autopilot for ${activeSession.id}`} disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}<dl><dt>Harness</dt><dd>{activeSession.harness}</dd><dt>Working directory</dt><dd>{activeSession.cwd}</dd><dt>Model</dt><dd>{activeSession.model || "—"}</dd><dt>Messages</dt><dd>{activeSession.messageCount ?? "—"}</dd><dt>Duration</dt><dd>{formatDuration(activeSession.durationSec)}</dd><dt>Cost</dt><dd>{activeSession.costUsd === undefined ? "—" : `$${activeSession.costUsd.toFixed(4)}`}</dd><dt>Tokens</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) ?? "—"}</dd><dt>Subagents</dt><dd>{details?.children?.length || 0}</dd></dl><div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer">Visualize</a>}{activeSession.status === "running" && <button className="danger-button" onClick={() => void runAction("stop")}>Stop</button>}{(activeSession.status === "stopped" || activeSession.status === "error") && <button className="primary-button" onClick={() => void runAction("resume")}>Resume</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Recover</button>}</div><div className="settings-block"><span className="eyebrow">VIEW</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label></div></> : <div className="empty-inspector">No session selected.</div>}</aside>}
   </main>;

@@ -123,7 +123,7 @@ function configureAdapterRegistry(): void {
     ["qoder", "Qoder", "Qoder ACP adapter", ENABLE_QODER],
     ["hermes", "Hermes", "Hermes MCP adapter", ENABLE_HERMES],
     ["zcode", "ZCode", "ZCode app-server adapter", ENABLE_ZCODE],
-    ["fast-agent", "Fast Agent", "Read-only persisted fast-agent session observer", ENABLE_FAST_AGENT],
+    ["fast-agent", "Fast Agent", "Fast Agent persisted session observer and launcher", ENABLE_FAST_AGENT],
   ] as const) {
     const [id, name, description, defaultEnabled] = definition;
     adapterRegistry.register({ id, name, description, defaultEnabled, factory: adapterFactories.get(id) });

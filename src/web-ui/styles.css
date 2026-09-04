@@ -124,3 +124,19 @@ h1 { font-size: 19px; } h2 { font-size: 16px; }
   .chat-menu { top: 51px; right: 9px; } .scroll-latest { right: 12px; bottom: 87px; } .scroll-latest span { display: none; }
   .autopilot-settings-overlay { inset: 60px 0 0; padding: 10px; }.global-autopilot-card { padding: 18px 14px; border-radius: 12px; }.global-autopilot-head { padding-right: 34px; }.global-autopilot-head h3 { font-size: 18px; }.harness-grid { grid-template-columns: 1fr; }
 }
+.composer-plus.active { background: var(--accent-soft); color: var(--accent); }
+.composer-create-panel { position: absolute; left: 0; right: 0; bottom: calc(100% + 9px); z-index: 12; padding: 10px; border: 1px solid #403749; border-radius: 11px; background: #171719; box-shadow: 0 16px 42px #000c; }
+.composer-create-row { display: grid; grid-template-columns: 120px minmax(180px, 1.4fr) minmax(160px, 1fr) auto; align-items: end; gap: 8px; }
+.composer-create-row label { display: grid; gap: 4px; color: var(--muted); font-size: 9px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.composer-create-row select, .composer-create-row input { width: 100%; min-width: 0; height: 31px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px; outline: 0; background: #0d0d0f; color: var(--text); font-size: 11px; text-transform: none; letter-spacing: normal; }
+.composer-create-row select:focus, .composer-create-row input:focus { border-color: #7551a3; box-shadow: 0 0 0 2px #a970ff16; }
+.composer-create-submit { height: 31px; white-space: nowrap; }
+.composer-create-panel .create-session-error { margin-top: 7px; }
+@media (max-width: 680px) { .composer-create-row { grid-template-columns: 1fr 1fr; }.composer-create-row label:nth-child(2) { grid-column: 1 / -1; }.composer-create-submit { width: 100%; } }
+.cwd-picker { position: relative; }
+.cwd-suggestions { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30; max-height: 260px; overflow: auto; padding: 5px; border: 1px solid #403749; border-radius: 8px; background: #151517; box-shadow: 0 14px 36px #000d; }
+.cwd-suggestions button { width: 100%; display: grid; grid-template-columns: 18px minmax(0, auto) 1fr; align-items: center; gap: 5px; padding: 7px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); text-align: left; }
+.cwd-suggestions button:hover { background: #28212f; }
+.cwd-suggestions .cwd-folder { color: #9a7bb8; font-size: 14px; }
+.cwd-suggestions button > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.cwd-suggestions small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 8px; text-align: right; }

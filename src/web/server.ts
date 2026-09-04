@@ -1,8 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { dirname, extname, join, normalize } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import type { HarnessType } from "session-convert";
 import { LineageStore } from "../lineage-store.js";
 import { SessionNotFoundError, SessionSupervisor } from "../session-supervisor.js";
@@ -501,8 +501,16 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const status = url.searchParams.get("status") || "pending";
     if (status !== "pending") return sendJson(response, 400, { error: "status must be pending" });
     const records = await choiceRegistry.list({ status: "pending" });
+    // A forgotten manual choice must not keep a stopped session pinned in the
+    // active dashboard forever. Keep the durable registry intact, but only
+    // project recent pending choices into the web UI.
+    const staleChoiceCutoffMs = Date.now() - 24 * 60 * 60 * 1000;
+    const visibleRecords = records.filter((record) => {
+      const createdAt = Date.parse(record.createdAt);
+      return Number.isFinite(createdAt) && createdAt >= staleChoiceCutoffMs;
+    });
     return sendJson(response, 200, {
-      choices: records.map((record) => ({
+      choices: visibleRecords.map((record) => ({
         requestId: record.requestId,
         sessionId: record.sessionId,
         harness: record.harness ?? "codex",
@@ -675,6 +683,33 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     return;
   }
+  if (request.method === "GET" && url.pathname === "/api/fs/dirs") {
+    const raw = url.searchParams.get("path") ?? "";
+    if (raw.length > 4096 || raw.includes("\0")) return sendJson(response, 400, { error: "invalid path" });
+    const expanded = raw === "~" || raw.startsWith("~/") ? `/home/roomhacker${raw.slice(1)}` : raw;
+    const candidate = expanded || "/home/roomhacker";
+    if (!isAbsolute(candidate)) return sendJson(response, 400, { error: "path must be absolute" });
+    const endsWithSlash = candidate.endsWith(sep);
+    const parent = resolve(endsWithSlash ? candidate : dirname(candidate));
+    const prefix = endsWithSlash ? "" : basename(candidate).toLowerCase();
+    try {
+      const entries = await readdir(parent, { withFileTypes: true });
+      const dirs = entries
+        .filter((entry) => entry.isDirectory())
+        .filter((entry) => prefix.startsWith(".") || !entry.name.startsWith("."))
+        .filter((entry) => entry.name.toLowerCase().startsWith(prefix))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
+        .slice(0, 60)
+        .map((entry) => ({ name: entry.name, path: join(parent, entry.name) }));
+      return sendJson(response, 200, { parent, prefix, dirs });
+    } catch (error) {
+      const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code || "") : "";
+      if (code === "ENOENT" || code === "ENOTDIR") return sendJson(response, 200, { parent, prefix, dirs: [] });
+      if (code === "EACCES") return sendJson(response, 403, { error: "directory is not readable", parent });
+      throw error;
+    }
+  }
+
   if (request.method === "GET" && url.pathname === "/api/sessions") {
     const sessions = await supervisor.listSessions({
       harness: url.searchParams.get("harness") || undefined,
@@ -742,7 +777,8 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (typeof body.harness !== "string" || typeof body.name !== "string" || typeof body.cwd !== "string") {
       return sendJson(response, 400, { error: "harness, name, and cwd are required" });
     }
-    const result = await supervisor.createNamedSession({ harness: body.harness, name: body.name, cwd: body.cwd });
+    if (body.model !== undefined && (typeof body.model !== "string" || body.model.length > 128)) return sendJson(response, 400, { error: "model must be a bounded string" });
+    const result = await supervisor.createNamedSession({ harness: body.harness, name: body.name, cwd: body.cwd, model: typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined });
     return sendNamedSessionResult(response, result);
   }
   if (request.method === "POST" && url.pathname === "/api/sessions/new-or-resume") {

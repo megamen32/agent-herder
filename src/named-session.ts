@@ -11,6 +11,7 @@ export interface NamedSessionRequest {
   harness: string;
   name: string;
   cwd: string;
+  model?: string;
 }
 
 export interface NewOrResumeNamedSessionRequest extends NamedSessionRequest {
@@ -55,8 +56,12 @@ export async function createNamedSession(
       return failed(normalized, `Named session '${normalized.name}' already exists for ${normalized.harness}:${normalized.cwd}`);
     }
     try {
-      const session = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd });
-      return { ok: true, created: true, sessionId: session.id, ...normalized };
+      const session = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model });
+      if (request.model && adapter.changeModel && session.harness !== "fast-agent") {
+        const changed = await adapter.changeModel(session.id, request.model);
+        if (!changed.ok) return failed(normalized, changed.error || "Model selection failed");
+      }
+      return { ok: true, created: true, sessionId: session.id, model: request.model, ...normalized };
     } catch (error) {
       return failed(normalized, (error as Error).message);
     }
@@ -86,7 +91,7 @@ export async function newOrResumeNamedSession(
     let created = false;
     if (!target) {
       try {
-        target = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd });
+        target = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model });
         created = true;
       } catch (error) {
         return { kind: "error", result: failed(normalized, (error as Error).message, "not_attempted") };

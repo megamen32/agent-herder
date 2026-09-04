@@ -133,6 +133,8 @@ export interface CreateSessionOptions {
   name: string;
   /** Absolute, canonical working directory. */
   cwd: string;
+  /** Optional model selected when creating the session. */
+  model?: string;
 }
 
 export interface ListSessionsOptions {

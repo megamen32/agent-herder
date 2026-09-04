@@ -17,6 +17,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import type {
   AgentSession,
+  CreateSessionOptions,
   HarnessAdapter,
   RawTranscriptExport,
   PermissionRequest,
@@ -115,6 +116,22 @@ export class AcpAdapter implements HarnessAdapter {
     if (cached) return cached.session;
     const listed = await this.listSessions();
     return listed.find((session) => session.id === id || session.meta?.nativeSessionId === id) || null;
+  }
+
+  async createSession(options: CreateSessionOptions): Promise<AgentSession> {
+    await this.init();
+    const created = await this.connection!.newSession({ cwd: resolve(options.cwd), mcpServers: [] });
+    const id = this.externalId(created.sessionId);
+    const session = this.cacheSession({
+      id, harness: this.type, status: "idle", title: options.name, cwd: resolve(options.cwd),
+      lastActivity: new Date().toISOString(), model: options.model, needsPermission: false, messageCount: 0,
+      meta: { transport: "acp", profile: this.config.profile, nativeSessionId: created.sessionId },
+    });
+    if (options.model) {
+      const changed = await this.changeModel(id, options.model);
+      if (!changed.ok) throw new Error(changed.error || `Could not select model '${options.model}'`);
+    }
+    return session;
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
