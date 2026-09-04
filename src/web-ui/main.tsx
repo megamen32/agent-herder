@@ -17,12 +17,18 @@ type SessionPart = { type: "text" | "thinking" | "tool_call" | "tool_result"; te
 type SessionMessage = { id: string; role: "user" | "assistant" | "tool" | "system"; timestamp?: string; text?: string; parts: SessionPart[] };
 type SessionDetails = { session: HerderSession; lineage?: { kind?: string; parentId?: string; role?: string; task?: string }; children?: HerderSession[]; messages: SessionMessage[] };
 type StatisticsDistribution = { count: number; percentilesSec: { p50: number; p75: number; p90: number; p95: number; p99: number }; coverage: Array<{ seconds: number; count: number; percent: number }>; histogram: Array<{ label: string; minSec: number; maxSec?: number; count: number; percent: number }> };
+type NumericSummary = { count: number; mean: number; median: number; p75: number; p90: number; p95: number; p99: number; min: number; max: number };
+type RankedCount = { name: string; count: number; percent: number };
+type SessionPortfolioStatistics = { observedSessions: number; tokenCoveragePercent: number; durationCoveragePercent: number; modelCoveragePercent: number; harnesses: RankedCount[]; models: RankedCount[]; tokens: NumericSummary; durationSec: NumericSummary; sessionsByDay: Array<{ day: string; count: number }>; caveat: string };
+type CodexDeepStatistics = { sessions: number; tokenCoveragePercent: number; modelCoveragePercent: number; durationCoveragePercent: number; tokens: NumericSummary; durationSec: NumericSummary; models: RankedCount[]; sessionsByDay: Array<{ day: string; count: number }> };
 type AgentActivityStatistics = {
-  generatedAt: string; windowDays: number;
+  schemaVersion: 2; generatedAt: string; windowDays: number;
   source: { harness: string; writeSignal: string; confidence: string; caveat: string };
   sample: { sessionFiles: number; sessionsWithPatches: number; toolCalls: number; toolIntervals: number; patchCalls: number; pathWriteEvents: number; sameFileSeries: number; repeatedFileSeries: number };
   activityGaps: StatisticsDistribution; sameFileRevisits: StatisticsDistribution; sameDirectoryRevisits: StatisticsDistribution;
   recommendation: { inactivityLeaseSec: number; basis: string; sameFileCoverageAtLeasePercent: number };
+  codexDeep: CodexDeepStatistics;
+  portfolio?: SessionPortfolioStatistics;
 };
 type WebAutopilotChoice = { choiceId: string; label: string };
 type WebAutopilotChoiceCard = { requestId: string; sessionId: string; harness: string; cwd: string; status: "pending"; createdAt: string; choices: WebAutopilotChoice[] };
@@ -102,17 +108,23 @@ const formatStatDuration = (seconds: number) => {
   return `${(seconds / 3600).toFixed(1)}h`;
 };
 const formatStatCount = (value: number) => new Intl.NumberFormat(undefined, { notation: value >= 10_000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(value);
+const formatPercent = (value: number) => `${value.toFixed(value >= 10 ? 0 : 1)}%`;
 const coverageFor = (distribution: StatisticsDistribution, seconds: number) => distribution.coverage.find((item) => item.seconds === seconds)?.percent || 0;
 
 function StatisticsView({ statistics, loading, error, days, onDays, onRefresh }: {
   statistics?: AgentActivityStatistics; loading: boolean; error?: string; days: number; onDays: (days: number) => void; onRefresh: () => void;
 }) {
-  if (loading && !statistics) return <div className="statistics-loading"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Analyzing agent activity…</strong><small>Scanning recent Codex transcripts once; results are cached for 10 minutes.</small></div>;
+  if (loading && !statistics) return <div className="statistics-loading"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Analyzing agent activity…</strong><small>Scanning recent Codex transcripts once; results are cached on disk for an hour.</small></div>;
   if (!statistics) return <div className="statistics-loading"><strong>Statistics unavailable</strong><small>{error || "No activity data yet."}</small><button className="quiet-button" onClick={onRefresh}>Retry</button></div>;
   const thresholds = [30, 60, 120, 180, 300];
   const maxHistogram = Math.max(1, ...statistics.sameFileRevisits.histogram.map((item) => item.percent));
   const p = statistics.sameFileRevisits.percentilesSec;
   const ap = statistics.activityGaps.percentilesSec;
+  const portfolio = statistics.portfolio;
+  const deep = statistics.codexDeep;
+  const topHarnessMax = Math.max(1, ...(portfolio?.harnesses || []).map((item) => item.count));
+  const topModelMax = Math.max(1, ...(portfolio?.models.slice(0, 8) || []).map((item) => item.count));
+  const dayMax = Math.max(1, ...(deep.sessionsByDay || []).map((item) => item.count));
   return <div className="statistics-scroll"><div className="statistics-page">
     <div className="statistics-hero">
       <div><span className="eyebrow">AGENT ACTIVITY</span><h2>Statistics</h2><p>Measured from real coding sessions, not synthetic benchmarks. Current high-confidence write signal: explicit Codex <code>apply_patch</code> paths.</p></div>
@@ -125,6 +137,29 @@ function StatisticsView({ statistics, loading, error, days, onDays, onRefresh }:
       <article><span>Same-file revisits</span><strong>{formatStatCount(statistics.sameFileRevisits.count)}</strong><small>median {formatStatDuration(p.p50)} · p95 {formatStatDuration(p.p95)}</small></article>
       <article className="recommendation"><span>Suggested inactivity lease</span><strong>~{formatStatDuration(statistics.recommendation.inactivityLeaseSec)}</strong><small>tool-activity p95 {formatStatDuration(ap.p95)} · renewed while session stays active</small></article>
     </div>
+
+    {portfolio && <div className="statistics-grid landscape-grid">
+      <section className="statistics-panel">
+        <div className="statistics-panel-head"><div><span className="eyebrow">HARNESS MIX</span><h3>What actually gets used</h3></div><small>{formatStatCount(portfolio.observedSessions)} sessions active in this window</small></div>
+        <div className="ranked-bars">{portfolio.harnesses.map((item) => <div className="ranked-row" key={item.name}><b>{item.name}</b><div><span style={{ width: `${item.count / topHarnessMax * 100}%` }} /></div><em>{item.count} · {formatPercent(item.percent)}</em></div>)}</div>
+      </section>
+      <section className="statistics-panel">
+        <div className="statistics-panel-head"><div><span className="eyebrow">MODEL MIX</span><h3>Most-used models</h3></div><small>known for {formatPercent(portfolio.modelCoveragePercent)} of recent sessions</small></div>
+        <div className="ranked-bars model-bars">{portfolio.models.slice(0, 8).map((item) => <div className="ranked-row" key={item.name}><b title={item.name}>{item.name}</b><div><span style={{ width: `${item.count / topModelMax * 100}%` }} /></div><em>{item.count}</em></div>)}</div>
+      </section>
+    </div>}
+
+    <div className="statistics-cards session-metric-cards">
+      <article><span>Codex session span</span><strong>{formatStatDuration(deep.durationSec.median)}</strong><small>median · mean {formatStatDuration(deep.durationSec.mean)} · p95 {formatStatDuration(deep.durationSec.p95)}</small></article>
+      <article><span>Codex tokens / session</span><strong>{formatStatCount(deep.tokens.median)}</strong><small>median · mean {formatStatCount(deep.tokens.mean)} · p95 {formatStatCount(deep.tokens.p95)}</small></article>
+      <article><span>Token coverage</span><strong>{formatPercent(deep.tokenCoveragePercent)}</strong><small>{formatStatCount(deep.tokens.count)} of {formatStatCount(deep.sessions)} Codex sessions expose cumulative usage</small></article>
+      <article><span>Portfolio token coverage</span><strong>{formatPercent(portfolio?.tokenCoveragePercent || 0)}</strong><small>all harnesses · sparse fields are excluded from averages</small></article>
+    </div>
+
+    <section className="statistics-panel">
+      <div className="statistics-panel-head"><div><span className="eyebrow">SESSION VOLUME</span><h3>Codex sessions by day</h3></div><small>{statistics.windowDays}-day deep sample</small></div>
+      <div className="daily-chart">{deep.sessionsByDay.map((item) => <div className="daily-column" key={item.day} title={`${item.day}: ${item.count} sessions`}><span style={{ height: `${Math.max(3, item.count / dayMax * 100)}%` }} /><b>{item.day.slice(5)}</b></div>)}</div>
+    </section>
 
     <section className="statistics-panel">
       <div className="statistics-panel-head"><div><span className="eyebrow">LEASE COVERAGE</span><h3>What different TTLs actually cover</h3></div><small>Activity gap = next tool action. File revisit = next write to the same path.</small></div>
@@ -146,7 +181,7 @@ function StatisticsView({ statistics, loading, error, days, onDays, onRefresh }:
 
     <section className="statistics-panel statistics-method">
       <div><span className="eyebrow">METHOD</span><h3>What is being measured</h3></div>
-      <p>{statistics.source.caveat}</p>
+      <p>{statistics.source.caveat} {portfolio?.caveat || ""}</p>
       <div className="method-facts"><span><b>{formatStatCount(statistics.sample.toolCalls)}</b> tool calls</span><span><b>{formatStatCount(statistics.activityGaps.count)}</b> activity intervals</span><span><b>{formatStatCount(statistics.sample.repeatedFileSeries)}</b> repeatedly edited files</span><span><b>{new Date(statistics.generatedAt).toLocaleTimeString()}</b> generated</span></div>
     </section>
   </div></div>;

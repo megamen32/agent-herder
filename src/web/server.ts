@@ -19,7 +19,7 @@ import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/sessi
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { coordinationNotes } from "../coordination-notes.js";
-import { getAgentActivityStatistics } from "../session-statistics.js";
+import { getAgentActivityStatistics, withSessionPortfolioStatistics } from "../session-statistics.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -753,8 +753,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   if (request.method === "GET" && url.pathname === "/api/statistics/activity") {
     const days = Number(url.searchParams.get("days") || "30");
     const refresh = url.searchParams.get("refresh") === "1";
-    const statistics = await getAgentActivityStatistics({ days: Number.isFinite(days) ? days : 30, refresh });
-    return sendJson(response, 200, statistics);
+    const normalizedDays = Number.isFinite(days) ? days : 30;
+    const statistics = await getAgentActivityStatistics({ days: normalizedDays, refresh });
+    const snapshot = supervisor.listSessionsFast();
+    return sendJson(response, 200, withSessionPortfolioStatistics(statistics, snapshot.sessions, normalizedDays));
   }
   if (request.method === "GET" && url.pathname === "/api/sessions") {
     const filters = {

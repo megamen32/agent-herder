@@ -123,5 +123,9 @@ describe("activity statistics dashboard", () => {
     expect(reactSource).toContain("Write revisit distribution");
     expect(reactSource).toContain("/api/statistics/activity?days=");
     expect(reactSource).toContain("Suggested inactivity lease");
+    expect(reactSource).toContain("What actually gets used");
+    expect(reactSource).toContain("Most-used models");
+    expect(reactSource).toContain("Codex tokens / session");
+    expect(reactSource).toContain("Codex sessions by day");
   });
 });

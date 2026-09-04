@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
+import type { AgentSession } from "./types/index.js";
 
 export type DistributionSummary = {
   count: number;
@@ -9,7 +10,23 @@ export type DistributionSummary = {
   histogram: Array<{ label: string; minSec: number; maxSec?: number; count: number; percent: number }>;
 };
 
+
+export type NumericSummary = {
+  count: number; mean: number; median: number; p75: number; p90: number; p95: number; p99: number; min: number; max: number;
+};
+export type RankedCount = { name: string; count: number; percent: number };
+export type SessionPortfolioStatistics = {
+  observedSessions: number; tokenCoveragePercent: number; durationCoveragePercent: number; modelCoveragePercent: number;
+  harnesses: RankedCount[]; models: RankedCount[]; tokens: NumericSummary; durationSec: NumericSummary;
+  sessionsByDay: Array<{ day: string; count: number }>; caveat: string;
+};
+export type CodexDeepStatistics = {
+  sessions: number; tokenCoveragePercent: number; modelCoveragePercent: number; durationCoveragePercent: number;
+  tokens: NumericSummary; durationSec: NumericSummary; models: RankedCount[]; sessionsByDay: Array<{ day: string; count: number }>;
+};
+
 export type AgentActivityStatistics = {
+  schemaVersion: 2;
   generatedAt: string;
   windowDays: number;
   source: {
@@ -37,6 +54,8 @@ export type AgentActivityStatistics = {
     basis: string;
     sameFileCoverageAtLeasePercent: number;
   };
+  codexDeep: CodexDeepStatistics;
+  portfolio?: SessionPortfolioStatistics;
 };
 
 type TimedPath = { timestampSec: number; path: string };
@@ -96,7 +115,7 @@ function diskCachePath(days: number): string {
 async function readDiskCache(days: number): Promise<AgentActivityStatistics | null> {
   try {
     const parsed = JSON.parse(await readFile(diskCachePath(days), "utf8")) as AgentActivityStatistics;
-    return parsed?.windowDays === days && typeof parsed?.generatedAt === "string" ? parsed : null;
+    return parsed?.schemaVersion === 2 && parsed?.windowDays === days && typeof parsed?.generatedAt === "string" && Boolean(parsed?.codexDeep) ? parsed : null;
   } catch { return null; }
 }
 
@@ -118,6 +137,10 @@ export async function computeAgentActivityStatistics(days: number, sessionRoot: 
   let patchCalls = 0;
   let pathWriteEvents = 0;
   let sessionsWithPatches = 0;
+  const codexDurations: number[] = [];
+  const codexTokens: number[] = [];
+  const codexModels = new Map<string, number>();
+  const codexDays = new Map<string, number>();
 
   for (const file of files) {
     let raw: string;
@@ -125,14 +148,27 @@ export async function computeAgentActivityStatistics(days: number, sessionRoot: 
     let currentCwd = "";
     const toolTimes: number[] = [];
     let sessionHasPatch = false;
+    let firstTimestampSec: number | undefined;
+    let lastTimestampSec: number | undefined;
+    let latestTotalTokens: number | undefined;
+    let latestModel: string | undefined;
     for (const line of raw.split("\n")) {
       if (!line.trim()) continue;
       let item: any;
       try { item = JSON.parse(line); } catch { continue; }
       const payload = item?.payload;
-      if (item?.type === "turn_context" && payload && typeof payload.cwd === "string") currentCwd = payload.cwd;
+      const anyTimestampSec = timestampSeconds(item?.timestamp);
+      if (anyTimestampSec !== undefined) { firstTimestampSec = firstTimestampSec === undefined ? anyTimestampSec : Math.min(firstTimestampSec, anyTimestampSec); lastTimestampSec = lastTimestampSec === undefined ? anyTimestampSec : Math.max(lastTimestampSec, anyTimestampSec); }
+      if (item?.type === "turn_context" && payload) {
+        if (typeof payload.cwd === "string") currentCwd = payload.cwd;
+        if (typeof payload.model === "string" && payload.model.trim()) latestModel = payload.model.trim();
+      }
+      if (item?.type === "event_msg" && payload?.type === "token_count") {
+        const total = payload?.info?.total_token_usage?.total_tokens;
+        if (typeof total === "number" && Number.isFinite(total)) latestTotalTokens = total;
+      }
       if (item?.type !== "response_item" || !payload || (payload.type !== "function_call" && payload.type !== "custom_tool_call")) continue;
-      const timestampSec = timestampSeconds(item.timestamp);
+      const timestampSec = anyTimestampSec;
       if (timestampSec === undefined) continue;
       toolCalls += 1;
       toolTimes.push(timestampSec);
@@ -150,6 +186,10 @@ export async function computeAgentActivityStatistics(days: number, sessionRoot: 
     }
     if (sessionHasPatch) sessionsWithPatches += 1;
     activityGaps.push(...consecutiveGaps(toolTimes));
+    if (firstTimestampSec !== undefined) { const day = new Date(firstTimestampSec * 1000).toISOString().slice(0, 10); codexDays.set(day, (codexDays.get(day) || 0) + 1); }
+    if (firstTimestampSec !== undefined && lastTimestampSec !== undefined && lastTimestampSec >= firstTimestampSec) codexDurations.push(lastTimestampSec - firstTimestampSec);
+    if (latestTotalTokens !== undefined) codexTokens.push(latestTotalTokens);
+    if (latestModel && !latestModel.startsWith("<")) codexModels.set(latestModel, (codexModels.get(latestModel) || 0) + 1);
   }
 
   const sameFileGaps = gapsFromSeries(fileSeries);
@@ -162,6 +202,7 @@ export async function computeAgentActivityStatistics(days: number, sessionRoot: 
   const fileLeaseCoverage = coverageAt(sameFileGaps, inactivityLeaseSec);
 
   return {
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     windowDays: days,
     source: {
@@ -189,8 +230,47 @@ export async function computeAgentActivityStatistics(days: number, sessionRoot: 
       basis: "Rounded p95 gap between consecutive Codex tool calls, clamped to 60–180 seconds. Existing edited paths should be renewed by session activity rather than only by another write to that file.",
       sameFileCoverageAtLeasePercent: fileLeaseCoverage.percent,
     },
+    codexDeep: {
+      sessions: files.length,
+      tokenCoveragePercent: files.length ? codexTokens.length / files.length * 100 : 0,
+      modelCoveragePercent: files.length ? [...codexModels.values()].reduce((a, b) => a + b, 0) / files.length * 100 : 0,
+      durationCoveragePercent: files.length ? codexDurations.length / files.length * 100 : 0,
+      tokens: summarizeNumeric(codexTokens),
+      durationSec: summarizeNumeric(codexDurations),
+      models: rankCounts(codexModels),
+      sessionsByDay: [...codexDays.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, count]) => ({ day, count })),
+    },
   };
 }
+
+export function withSessionPortfolioStatistics(base: AgentActivityStatistics, sessions: AgentSession[], days: number): AgentActivityStatistics {
+  const cutoff = Date.now() - days * 24 * 60 * 60_000;
+  const recent = sessions.filter((session) => { const time = Date.parse(session.lastActivity); return Number.isFinite(time) && time >= cutoff; });
+  const harnessCounts = new Map<string, number>(); const modelCounts = new Map<string, number>(); const dayCounts = new Map<string, number>();
+  const tokenValues: number[] = []; const durationValues: number[] = []; let modelsKnown = 0;
+  for (const session of recent) {
+    harnessCounts.set(session.harness, (harnessCounts.get(session.harness) || 0) + 1);
+    if (session.model && !session.model.startsWith("<")) { modelsKnown += 1; modelCounts.set(session.model, (modelCounts.get(session.model) || 0) + 1); }
+    const tokens = metaNumber(session.meta, ["total_tokens", "totalTokens", "tokens"]); if (tokens !== undefined) tokenValues.push(tokens);
+    const created = metaString(session.meta, ["createdAt", "created_at", "created"]); const start = created ? Date.parse(created) : NaN; const end = Date.parse(session.lastActivity);
+    if (Number.isFinite(start) && Number.isFinite(end) && end >= start) durationValues.push((end - start) / 1000);
+    const day = new Date(end).toISOString().slice(0, 10); dayCounts.set(day, (dayCounts.get(day) || 0) + 1);
+  }
+  return { ...base, portfolio: {
+    observedSessions: recent.length,
+    tokenCoveragePercent: recent.length ? tokenValues.length / recent.length * 100 : 0,
+    durationCoveragePercent: recent.length ? durationValues.length / recent.length * 100 : 0,
+    modelCoveragePercent: recent.length ? modelsKnown / recent.length * 100 : 0,
+    harnesses: rankCounts(harnessCounts), models: rankCounts(modelCounts), tokens: summarizeNumeric(tokenValues), durationSec: summarizeNumeric(durationValues),
+    sessionsByDay: [...dayCounts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, count]) => ({ day, count })),
+    caveat: "Portfolio popularity uses sessions whose lastActivity falls inside the selected window. Token and duration summaries include only sessions where the harness exposes those fields; coverage is shown explicitly.",
+  } };
+}
+
+function metaNumber(meta: Record<string, unknown> | undefined, keys: string[]): number | undefined { for (const key of keys) { const value = meta?.[key]; if (typeof value === "number" && Number.isFinite(value)) return value; } return undefined; }
+function metaString(meta: Record<string, unknown> | undefined, keys: string[]): string | undefined { for (const key of keys) { const value = meta?.[key]; if (typeof value === "string" && value.trim()) return value; } return undefined; }
+function summarizeNumeric(input: number[]): NumericSummary { const values = input.filter((v) => Number.isFinite(v) && v >= 0).sort((a,b)=>a-b); if (!values.length) return { count:0, mean:0, median:0, p75:0, p90:0, p95:0, p99:0, min:0, max:0 }; return { count: values.length, mean: values.reduce((a,b)=>a+b,0)/values.length, median: percentile(values,.5), p75: percentile(values,.75), p90: percentile(values,.9), p95: percentile(values,.95), p99: percentile(values,.99), min: values[0], max: values[values.length-1] }; }
+function rankCounts(counts: Map<string, number>): RankedCount[] { const total=[...counts.values()].reduce((a,b)=>a+b,0); return [...counts.entries()].sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0])).map(([name,count])=>({name,count,percent: total ? count/total*100 : 0})); }
 
 async function collectSessionFiles(root: string, cutoffMs: number): Promise<string[]> {
   const result: string[] = [];
