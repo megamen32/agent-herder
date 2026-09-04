@@ -18,6 +18,7 @@ import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../a
 import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import { renderSessionGraph } from "../session-visualization.js";
+import { coordinationNotes } from "../coordination-notes.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -437,6 +438,14 @@ export function createWebServer(dependencies: WebDependencies): Server {
 
 async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
+  if (url.pathname === "/api/coordination/context" && request.method === "GET") {
+    const harness = url.searchParams.get("harness")?.trim();
+    const sessionId = url.searchParams.get("sessionId")?.trim();
+    const cwd = url.searchParams.get("cwd")?.trim();
+    if (!harness || !sessionId || !cwd) return sendJson(response, 400, { error: "harness, sessionId, and cwd are required" });
+    const context = await coordinationNotes.renderForSession({ harness, id: sessionId, cwd });
+    return sendJson(response, 200, { context, active: Boolean(context) });
+  }
   if (url.pathname === "/api/autopilot/policy" && (request.method === "GET" || request.method === "PUT")) {
     if (!autopilotPolicyStore) return sendJson(response, 503, { error: "Autopilot policy store is disabled" });
     if (request.method === "GET") return sendJson(response, 200, await autopilotPolicyStore.readEffective());

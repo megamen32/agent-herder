@@ -4,6 +4,7 @@ import { isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import lockfile from "proper-lockfile";
 import type { AgentSession, HarnessAdapter } from "./types/index.js";
+import { coordinationNotes } from "./coordination-notes.js";
 
 export type NamedSessionMode = "queue" | "sync";
 
@@ -125,8 +126,9 @@ export async function newOrResumeNamedSession(
       };
     }
   }
+  const injectedMessage = await coordinationNotes.inject(resolved.target, request.message);
   const delivery = await resolved.adapter.sendMessage(resolved.target.id, {
-      message: request.message,
+      message: injectedMessage,
       queue: mode === "queue",
   });
   if (!delivery.ok) {

@@ -15,6 +15,7 @@ import { getHarnessCapabilities } from "./types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "./session-convert.js";
 import { LineageStore, type LineageRecord } from "./lineage-store.js";
 import { ModelsDevPricing } from "./model-pricing.js";
+import { coordinationNotes } from "./coordination-notes.js";
 
 export interface SessionFilters {
   harness?: string;
@@ -256,7 +257,9 @@ export class SessionSupervisor {
 
   async sendMessage(harness: string, id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
     const adapter = this.requireAdapter(harness);
-    return adapter.sendMessage(id, options);
+    const session = await adapter.getSession(id);
+    const message = session ? await coordinationNotes.inject(session, options.message) : options.message;
+    return adapter.sendMessage(id, { ...options, message });
   }
 
   async changeModel(harness: string, id: string, model: string): Promise<ControlResult> {
@@ -346,7 +349,9 @@ export class SessionSupervisor {
       if (!resumed.ok || !message) return resumed;
     }
     if (!message) return { ok: false, error: `${adapter.name} does not expose a native resume operation` };
-    return adapter.sendMessage(id, { message });
+    const session = await adapter.getSession(id);
+    const injected = session ? await coordinationNotes.inject(session, message) : message;
+    return adapter.sendMessage(id, { message: injected });
   }
 
   async convertSession(input: ConvertSessionInput): Promise<ConversionResult> {

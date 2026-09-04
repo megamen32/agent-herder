@@ -18,6 +18,7 @@ import { acquireAgentHerderSingleton } from "./singleton.js";
 import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
 import { createWebServer } from "./web/server.js";
 import { createConfiguredBrowserWakeService } from "./browser-wake.js";
+import { coordinationNotes } from "./coordination-notes.js";
 import { loadCdpChatDriver } from "./cdp-chat-mcp.js";
 import type {
   CdpChatCapabilities,
@@ -573,7 +574,7 @@ function registerTools(
     "Get detailed info about a specific session. Always shows model and last message.",
     {
       sessionId: z.string().describe("Session ID to inspect"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().describe("Harness type"),
     },
     async (args) => {
       const result = await handleAgentInfo(adapters, args);
@@ -586,7 +587,7 @@ function registerTools(
     "Find the native parent session of an agent session.",
     {
       sessionId: z.string().describe("Child session ID"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().describe("Harness type"),
     },
     async (args) => {
       const result = await handleFindParent(adapters, args);
@@ -599,7 +600,7 @@ function registerTools(
     "List the native child sessions of an agent session.",
     {
       sessionId: z.string().describe("Parent session ID"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().describe("Harness type"),
     },
     async (args) => {
       const result = await handleListChildren(adapters, args);
@@ -612,7 +613,7 @@ function registerTools(
     "Export the raw adapter-owned transcript and return a filesystem navigation card.",
     {
       sessionId: z.string().describe("Session ID"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().describe("Harness type"),
     },
     async (args) => {
       const result = await handleExportTranscript(adapters, args);
@@ -621,11 +622,50 @@ function registerTools(
   );
 
   server.tool(
+    "coordination_note_create",
+    "Publish a TTL coordination note for agents in the same workspace. Use it before editing shared files, e.g. 'I am changing src/parser.ts; do not touch for 30m'. Active notes are injected automatically into later Agent Herder-delivered turns.",
+    {
+      authorSessionId: z.string().trim().min(1).max(256),
+      authorHarness: z.string().trim().min(1).max(64).optional(),
+      cwd: z.string().min(1),
+      paths: z.array(z.string().min(1).max(4096)).max(64).optional().default([]),
+      kind: z.enum(["working", "avoid", "handoff", "info"]).optional().default("working"),
+      message: z.string().trim().min(1).max(4000),
+      ttlSeconds: z.number().int().min(60).max(604800).optional().default(1800),
+    },
+    async (args) => ({ content: [{ type: "text" as const, text: JSON.stringify(await coordinationNotes.create(args), null, 2) }] }),
+  );
+  server.tool(
+    "coordination_note_list",
+    "List active coordination notes explicitly. You normally do not need to poll: Agent Herder injects matching notes into new turns automatically.",
+    { cwd: z.string().optional(), path: z.string().optional(), authorSessionId: z.string().optional() },
+    async (args) => ({ content: [{ type: "text" as const, text: JSON.stringify(await coordinationNotes.list(args), null, 2) }] }),
+  );
+  server.tool(
+    "coordination_note_get",
+    "Read one active coordination note by ID.",
+    { noteId: z.string().uuid() },
+    async (args) => ({ content: [{ type: "text" as const, text: JSON.stringify(await coordinationNotes.get(args.noteId), null, 2) }] }),
+  );
+  server.tool(
+    "coordination_note_update",
+    "Edit your own coordination note (message, kind, paths, TTL). authorSessionId must match the creator.",
+    { noteId: z.string().uuid(), authorSessionId: z.string().trim().min(1).max(256), kind: z.enum(["working", "avoid", "handoff", "info"]).optional(), message: z.string().trim().min(1).max(4000).optional(), paths: z.array(z.string().min(1).max(4096)).max(64).optional(), ttlSeconds: z.number().int().min(60).max(604800).optional() },
+    async (args) => ({ content: [{ type: "text" as const, text: JSON.stringify(await coordinationNotes.update(args.noteId, args.authorSessionId, args), null, 2) }] }),
+  );
+  server.tool(
+    "coordination_note_delete",
+    "Delete your own coordination note before TTL expiry. authorSessionId must match the creator.",
+    { noteId: z.string().uuid(), authorSessionId: z.string().trim().min(1).max(256) },
+    async (args) => ({ content: [{ type: "text" as const, text: JSON.stringify({ deleted: await coordinationNotes.delete(args.noteId, args.authorSessionId) }) }] }),
+  );
+
+  server.tool(
     "send_message",
-    "Send a message to an agent. Modes: sync (wait), queue (fire-and-forget), steer (redirect).",
+    "Send a message to an agent. Active coordination notes for the target workspace are injected automatically before delivery. Modes: sync (wait), queue (fire-and-forget), steer (redirect).",
     {
       sessionId: z.string().describe("Target session ID"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().describe("Harness type"),
       message: z.string().describe("Message to send"),
       mode: z.enum(["queue", "steer", "sync"]).optional().default("sync").describe("Delivery mode"),
     },
@@ -671,7 +711,7 @@ function registerTools(
     "Stop / abort a running agent session.",
     {
       sessionId: z.string().describe("Session ID to stop"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness type"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().describe("Harness type"),
     },
     async (args) => {
       const result = await handleStopAgent(adapters, args);
@@ -684,7 +724,7 @@ function registerTools(
     "Respond to a pending permission request (allow/deny). OpenCode, Claude SDK, and ZCode support this.",
     {
       sessionId: z.string().describe("Session with pending permission"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional(),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional(),
       permissionId: z.string().describe("Permission request ID"),
       response: z.enum(["allow", "deny"]).describe("Allow or deny"),
       remember: z.boolean().optional().describe("Remember this decision"),
@@ -700,7 +740,7 @@ function registerTools(
     "Set permissions for an agent. Claude/Codex set these at launch time.",
     {
       sessionId: z.string().describe("Target session ID"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional(),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional(),
       allowedTools: z.string().optional().describe("Comma-separated allowed tools"),
       mode: z.string().optional().describe("Permission mode"),
     },
@@ -715,7 +755,7 @@ function registerTools(
     "Resume a stopped agent session. Optionally provide a message.",
     {
       sessionId: z.string().describe("Session ID to resume"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional(),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional(),
       message: z.string().optional().describe("Message to send when resuming"),
     },
     async (args) => {
@@ -729,7 +769,7 @@ function registerTools(
     "Change the AI model for a harness. For OpenCode: per-session or global. For Claude/Codex/Qoder/ZCode: per-session where supported by the harness.",
     {
       sessionId: z.string().optional().describe("Session ID (omit for global default)"),
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).describe("Target harness"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).describe("Target harness"),
       model: z.string().describe("Model name (e.g. 'claude-sonnet-4-20250514', 'gpt-4o', 'o4-mini')"),
     },
     async (args) => {
@@ -742,7 +782,7 @@ function registerTools(
     "list_models",
     "List available AI models for each harness.",
     {
-      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode"]).optional().describe("Harness (omit for all)"),
+      harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().describe("Harness (omit for all)"),
     },
     async (args) => {
       const result = await handleListModels(adapters, args);
@@ -764,8 +804,17 @@ export interface AgentHerderMcpServerOptions {
 export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, options: AgentHerderMcpServerOptions = {}): McpServer {
   const server = new McpServer({
     name: "agent-herder",
-    version: "0.2.0",
-    description: "Monitor and control coding agents (OpenCode, Claude Code SDK, Codex CLI, Qoder) with summarization and model management",
+    version: "0.3.0",
+    description: "Monitor, message, and coordinate coding agents across OpenCode, Claude, Codex, Qoder, Hermes, ZCode, and Fast Agent",
+  }, {
+    instructions: [
+      "Use Agent Herder whenever you need to inspect or communicate with another coding-agent session.",
+      "For direct agent-to-agent communication use send_message; list_agents finds the target session.",
+      "Before editing files that another agent may also touch, publish a coordination_note_create with your session ID, workspace CWD, relevant paths, and a bounded TTL (30 minutes is a good default).",
+      "Active coordination notes are automatically injected into new turns delivered through Agent Herder, so agents do not need to poll coordination_note_list on every turn.",
+      "Use coordination_note_list/get for explicit inspection. Update or delete your own note when scope/TTL changes or work finishes.",
+      "If an injected note conflicts with your task, avoid the noted paths and use send_message to coordinate with the author before modifying them.",
+    ].join("\n"),
   });
   registerTools(
     server,

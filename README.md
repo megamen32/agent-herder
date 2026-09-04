@@ -77,7 +77,22 @@ parallel coding tasks and session recovery.
 | Lineage and transcript | `find_parent`, `list_children`, `export_transcript` |
 | Named sessions | `create_session`, `new_or_resume` (OpenCode, Codex, and ZCode) |
 | Control | `send_message`, `resume_agent`, `stop_agent` |
+| Coordination | `coordination_note_create`, `coordination_note_list`, `coordination_note_get`, `coordination_note_update`, `coordination_note_delete` |
 | Permissions and models | `respond_permission`, `set_permissions`, `list_models`, `change_model` |
+
+### Multi-agent coordination notes
+
+When multiple agents share a workspace, publish a short TTL note before touching
+files another agent may also edit. For example: "working on `src/parser.ts`; do
+not touch for 30 minutes" with `paths=["src/parser.ts"]` and `ttlSeconds=1800`.
+Notes are durable, expire automatically, and the creator can update or delete
+them early. Active notes from *other* sessions are injected automatically by
+Agent Herder's pre-send hook into new `send_message`, resume, and named-session
+turns for the same workspace, so agents do not need to poll on every turn. Use
+`coordination_note_list/get` only when explicit inspection is useful. If a note
+conflicts with your task, use `send_message` to contact its author before
+editing the noted paths. Native integrations can consume the same context from
+`GET /api/coordination/context?harness=...&sessionId=...&cwd=...`.
 
 `export_transcript` copies the adapter-owned raw transcript for one session and
 its in-workspace parent/child lineage, then always returns a short navigation

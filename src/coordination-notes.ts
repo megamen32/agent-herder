@@ -1,0 +1,219 @@
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { homedir } from "node:os";
+import { randomUUID } from "node:crypto";
+import type { AgentSession } from "./types/index.js";
+
+export type CoordinationNoteKind = "working" | "avoid" | "handoff" | "info";
+
+export interface CoordinationNote {
+  id: string;
+  kind: CoordinationNoteKind;
+  message: string;
+  cwd: string;
+  paths: string[];
+  authorHarness?: string;
+  authorSessionId: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+}
+
+type NoteFile = { version: 1; notes: CoordinationNote[] };
+export type CoordinationNoteCreate = Omit<CoordinationNote, "id" | "createdAt" | "updatedAt" | "expiresAt"> & { ttlSeconds?: number };
+export type CoordinationNoteUpdate = Partial<Pick<CoordinationNote, "kind" | "message" | "paths">> & { ttlSeconds?: number };
+
+const DEFAULT_TTL_SECONDS = 30 * 60;
+const MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+export function defaultCoordinationNotePath(): string {
+  return process.env.AGENT_HERDER_COORDINATION_NOTES || resolve(homedir(), ".local", "state", "agent-herder", "coordination-notes.json");
+}
+
+export class CoordinationNoteStore {
+  private chain: Promise<unknown> = Promise.resolve();
+  constructor(private readonly filePath = defaultCoordinationNotePath()) {}
+
+  async create(input: CoordinationNoteCreate): Promise<CoordinationNote> {
+    return this.serial(async () => {
+      const file = await this.readAndPrune();
+      const now = new Date();
+      const ttl = boundedTtl(input.ttlSeconds);
+      const note: CoordinationNote = {
+        id: randomUUID(),
+        kind: input.kind,
+        message: boundedMessage(input.message),
+        cwd: canonicalCwd(input.cwd),
+        paths: normalizePaths(input.paths),
+        ...(input.authorHarness ? { authorHarness: input.authorHarness } : {}),
+        authorSessionId: requiredText(input.authorSessionId, "authorSessionId", 256),
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + ttl * 1000).toISOString(),
+      };
+      file.notes.push(note);
+      await this.write(file);
+      return note;
+    });
+  }
+
+  async list(filters: { cwd?: string; path?: string; authorSessionId?: string; includeExpired?: boolean } = {}): Promise<CoordinationNote[]> {
+    return this.serial(async () => {
+      const file = filters.includeExpired ? await this.read() : await this.readAndPrune();
+      const cwd = filters.cwd ? canonicalCwd(filters.cwd) : undefined;
+      const path = filters.path?.trim();
+      return file.notes
+        .filter((note) => !filters.authorSessionId || note.authorSessionId === filters.authorSessionId)
+        .filter((note) => !cwd || sameWorkspace(note.cwd, cwd))
+        .filter((note) => !path || note.paths.length === 0 || note.paths.some((candidate) => pathMatches(candidate, path)))
+        .sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt));
+    });
+  }
+
+  async get(id: string): Promise<CoordinationNote | null> {
+    const notes = await this.list();
+    return notes.find((note) => note.id === id) ?? null;
+  }
+
+  async update(id: string, authorSessionId: string, patch: CoordinationNoteUpdate): Promise<CoordinationNote> {
+    return this.serial(async () => {
+      const file = await this.readAndPrune();
+      const note = file.notes.find((candidate) => candidate.id === id);
+      if (!note) throw new Error(`Coordination note '${id}' not found or expired`);
+      assertOwner(note, authorSessionId);
+      if (patch.kind) note.kind = patch.kind;
+      if (patch.message !== undefined) note.message = boundedMessage(patch.message);
+      if (patch.paths !== undefined) note.paths = normalizePaths(patch.paths);
+      if (patch.ttlSeconds !== undefined) note.expiresAt = new Date(Date.now() + boundedTtl(patch.ttlSeconds) * 1000).toISOString();
+      note.updatedAt = new Date().toISOString();
+      await this.write(file);
+      return note;
+    });
+  }
+
+  async delete(id: string, authorSessionId: string): Promise<boolean> {
+    return this.serial(async () => {
+      const file = await this.readAndPrune();
+      const index = file.notes.findIndex((candidate) => candidate.id === id);
+      if (index < 0) return false;
+      assertOwner(file.notes[index], authorSessionId);
+      file.notes.splice(index, 1);
+      await this.write(file);
+      return true;
+    });
+  }
+
+  async renderForSession(session: { id: string; harness: string; cwd: string }): Promise<string | null> {
+    const notes = (await this.list({ cwd: session.cwd })).filter((note) => note.authorSessionId !== session.id);
+    if (notes.length === 0) return null;
+    const lines = [
+      "<agent-herder-coordination>",
+      "Active coordination notes from other agents in this workspace. Respect path ownership. If a note conflicts with your task, use Agent Herder send_message to contact its author before editing.",
+      ...notes.map((note) => {
+        const paths = note.paths.length ? ` paths=${note.paths.join(",")}` : "";
+        const author = `${note.authorHarness || "agent"}:${note.authorSessionId}`;
+        return `- [${note.kind}] note=${note.id} author=${author} until=${note.expiresAt}${paths} :: ${note.message}`;
+      }),
+      "</agent-herder-coordination>",
+    ];
+    return lines.join("\n");
+  }
+
+  async inject(session: { id: string; harness: string; cwd: string }, message: string): Promise<string> {
+    if (message.includes("<agent-herder-coordination>")) return message;
+    const context = await this.renderForSession(session);
+    return context ? `${context}\n\n${message}` : message;
+  }
+
+  private serial<T>(fn: () => Promise<T>): Promise<T> {
+    const run = () => this.withFileLock(fn);
+    const next = this.chain.then(run, run);
+    this.chain = next.then(() => undefined, () => undefined);
+    return next;
+  }
+
+  private async withFileLock<T>(fn: () => Promise<T>): Promise<T> {
+    const lockPath = `${this.filePath}.lock`;
+    await mkdir(dirname(this.filePath), { recursive: true });
+    let acquired = false;
+    for (let attempt = 0; attempt < 120; attempt++) {
+      try {
+        await mkdir(lockPath);
+        acquired = true;
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        try {
+          const info = await stat(lockPath);
+          if (Date.now() - info.mtimeMs > 30_000) await rm(lockPath, { recursive: true, force: true });
+        } catch { /* lock changed between checks */ }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+    if (!acquired) throw new Error("Timed out acquiring coordination note store lock");
+    try { return await fn(); }
+    finally { await rm(lockPath, { recursive: true, force: true }); }
+  }
+
+  private async read(): Promise<NoteFile> {
+    try {
+      const parsed = JSON.parse(await readFile(this.filePath, "utf8")) as NoteFile;
+      return { version: 1, notes: Array.isArray(parsed.notes) ? parsed.notes : [] };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, notes: [] };
+      throw error;
+    }
+  }
+
+  private async readAndPrune(): Promise<NoteFile> {
+    const file = await this.read();
+    const now = Date.now();
+    const active = file.notes.filter((note) => Date.parse(note.expiresAt) > now);
+    if (active.length !== file.notes.length) {
+      file.notes = active;
+      await this.write(file);
+    }
+    return file;
+  }
+
+  private async write(file: NoteFile): Promise<void> {
+    await mkdir(dirname(this.filePath), { recursive: true });
+    const tmp = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
+    await writeFile(tmp, JSON.stringify(file, null, 2) + "\n", { mode: 0o600 });
+    await rename(tmp, this.filePath);
+  }
+}
+
+export const coordinationNotes = new CoordinationNoteStore();
+
+function boundedTtl(value?: number): number {
+  const ttl = value ?? DEFAULT_TTL_SECONDS;
+  if (!Number.isFinite(ttl) || ttl < 60 || ttl > MAX_TTL_SECONDS) throw new Error(`ttlSeconds must be between 60 and ${MAX_TTL_SECONDS}`);
+  return Math.round(ttl);
+}
+function requiredText(value: string, field: string, max: number): string {
+  const text = value?.trim();
+  if (!text) throw new Error(`${field} is required`);
+  if (text.length > max) throw new Error(`${field} is too long`);
+  return text;
+}
+function boundedMessage(value: string): string { return requiredText(value, "message", 4000); }
+function canonicalCwd(value: string): string {
+  const text = requiredText(value, "cwd", 4096).replace(/^~(?=\/|$)/, homedir());
+  if (!isAbsolute(text)) throw new Error("cwd must be absolute or home-relative");
+  return resolve(text);
+}
+function normalizePaths(paths: string[]): string[] {
+  return [...new Set((paths ?? []).map((path) => path.trim()).filter(Boolean).slice(0, 64))];
+}
+function sameWorkspace(a: string, b: string): boolean {
+  const relAB = relative(a, b); const relBA = relative(b, a);
+  return relAB === "" || (!relAB.startsWith(`..${sep}`) && relAB !== "..") || (!relBA.startsWith(`..${sep}`) && relBA !== "..");
+}
+function pathMatches(candidate: string, target: string): boolean {
+  const c = candidate.replace(/^\.\//, ""); const t = target.replace(/^\.\//, "");
+  return t === c || t.startsWith(`${c}/`) || c.startsWith(`${t}/`);
+}
+function assertOwner(note: CoordinationNote, authorSessionId: string): void {
+  if (note.authorSessionId !== authorSessionId.trim()) throw new Error(`Coordination note '${note.id}' belongs to another session`);
+}

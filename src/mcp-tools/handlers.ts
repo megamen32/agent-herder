@@ -22,6 +22,7 @@ import { relative, resolve, sep } from "node:path";
 import { realpath } from "node:fs/promises";
 import { auditWorktrees } from "../worktree-audit.js";
 import { BrowserWakeService } from "../browser-wake.js";
+import { coordinationNotes } from "../coordination-notes.js";
 import {
   buildTranscriptArchiveCard,
   transcriptArchiveFromEnvironment,
@@ -387,8 +388,9 @@ export async function handleSendMessage(
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
 
+  const injectedMessage = await coordinationNotes.inject(found.session, parsed.message);
   const result = await found.adapter.sendMessage(parsed.sessionId, {
-    message: parsed.message,
+    message: injectedMessage,
     queue: parsed.mode === "queue",
     steer: parsed.mode === "steer",
   });
@@ -487,8 +489,9 @@ export async function handleResumeAgent(
   }
 
   if (parsed.message) {
+    const injectedMessage = await coordinationNotes.inject(found.session, parsed.message);
     const result = await found.adapter.sendMessage(parsed.sessionId, {
-      message: parsed.message,
+      message: injectedMessage,
       queue: false,
     });
     if (result.ok) {
