@@ -32,13 +32,19 @@ type PersistedSession = {
     extras?: Record<string, unknown>;
   };
   execution?: { status?: unknown } | null;
+  continuation?: { agents?: Record<string, { model?: unknown }> };
+  analysis?: { usage_summary?: { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown } };
+  model?: unknown;
 };
+
+type FastAgentUsage = { provider?: string; model?: string; cacheRead: number; cacheWrite: number };
 
 type SessionRecord = {
   directory: string;
   snapshot: PersistedSession;
   historyPath: string;
   messages: SessionMessageView[];
+  usage: FastAgentUsage;
 };
 
 export interface FastAgentFileAdapterOptions {
@@ -240,7 +246,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       const messages = Array.isArray(history.messages)
         ? history.messages.map((message) => messageView(message)).filter((message): message is SessionMessageView => message !== null)
         : [];
-      return { directory, snapshot, historyPath, messages };
+      return { directory, snapshot, historyPath, messages, usage: extractFastAgentUsage(history) };
     } catch {
       return null;
     }
@@ -255,6 +261,18 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     const title = stringValue(record.snapshot.metadata?.title) || stringValue(record.snapshot.metadata?.label) || firstPreview?.split(/\r?\n/, 1)[0] || `Fast Agent · ${nativeId}`;
     const lastActivity = stringValue(record.snapshot.last_activity) || stringValue(record.snapshot.created_at) || new Date(0).toISOString();
     const status = sessionStatus(executionStatus);
+    const usage = record.snapshot.analysis?.usage_summary as Record<string, unknown> | undefined;
+    const promptTokens = typeof usage?.prompt_tokens === "number" ? usage.prompt_tokens : undefined;
+    const completionTokens = typeof usage?.completion_tokens === "number" ? usage.completion_tokens : undefined;
+    const totalTokens = typeof usage?.total_tokens === "number" ? usage.total_tokens : undefined;
+    const snapshotModel = stringValue((record.snapshot as Record<string, unknown>).model)
+      || stringValue(record.snapshot.continuation?.agents?.dev?.model)
+      || stringValue((record.snapshot.metadata as Record<string, unknown> | undefined)?.model);
+    const model = snapshotModel || (record.usage.model
+      ? record.usage.provider === "generic" ? `generic.${record.usage.model}`
+        : record.usage.provider === "codexresponses" ? `codexresponses.${record.usage.model}`
+          : record.usage.model
+      : undefined);
     return {
       id: this.externalId(nativeId),
       harness: this.type,
@@ -262,6 +280,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       title: title.slice(0, 240),
       cwd: this.fallbackCwd,
       lastActivity,
+      model,
       needsPermission: status === "needs_input",
       messageCount: messages.length,
       lastMessage: preview?.slice(0, 300),
@@ -273,6 +292,12 @@ export class FastAgentFileAdapter implements HarnessAdapter {
         nativeSessionId: nativeId,
         executionStatus: executionStatus || "unknown",
         historyPath: relative(this.home, record.historyPath),
+        ...(promptTokens !== undefined ? { input_tokens: promptTokens } : {}),
+        ...(completionTokens !== undefined ? { output_tokens: completionTokens } : {}),
+        ...(totalTokens !== undefined ? { total_tokens: totalTokens } : {}),
+        ...(record.usage.cacheRead > 0 ? { cache_read_tokens: record.usage.cacheRead } : {}),
+        ...(record.usage.cacheWrite > 0 ? { cache_write_tokens: record.usage.cacheWrite } : {}),
+        ...(record.usage.provider ? { billing_provider: record.usage.provider } : {}),
       },
     };
   }
@@ -355,6 +380,32 @@ function contentParts(value: unknown): SessionMessagePart[] {
     else if (type === "tool_result") parts.push({ type: "tool_result", name: stringValue(item.name), output: stringValue(item.output) || stringValue(item.content), error: item.is_error === true || item.error === true });
   }
   return parts.filter((part) => partText(part) || part.type === "tool_call");
+}
+
+function extractFastAgentUsage(history: unknown): FastAgentUsage {
+  const result: FastAgentUsage = { cacheRead: 0, cacheWrite: 0 };
+  const visit = (value: unknown): void => {
+    if (typeof value === "string" && value.includes("fast-agent.usage/v2")) {
+      try {
+        const parsed = JSON.parse(value) as { schema?: string; provider_attempts?: Array<Record<string, unknown>> };
+        if (parsed.schema !== "fast-agent.usage/v2") return;
+        for (const attempt of parsed.provider_attempts ?? []) {
+          const provider = stringValue(attempt.provider);
+          const model = stringValue(attempt.model);
+          if (provider) result.provider = provider;
+          if (model) result.model = model;
+          const prompt = attempt.prompt && typeof attempt.prompt === "object" ? attempt.prompt as Record<string, unknown> : {};
+          if (typeof prompt.cache_read === "number") result.cacheRead += prompt.cache_read;
+          if (typeof prompt.cache_write === "number") result.cacheWrite += prompt.cache_write;
+        }
+      } catch { /* not a usage payload */ }
+      return;
+    }
+    if (Array.isArray(value)) { for (const item of value) visit(item); return; }
+    if (value && typeof value === "object") for (const item of Object.values(value as Record<string, unknown>)) visit(item);
+  };
+  visit(history);
+  return result;
 }
 
 function sessionStatus(status?: string): AgentSession["status"] {

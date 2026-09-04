@@ -14,6 +14,7 @@ import { createNamedSession, newOrResumeNamedSession, type NamedSessionRequest, 
 import { getHarnessCapabilities } from "./types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "./session-convert.js";
 import { LineageStore, type LineageRecord } from "./lineage-store.js";
+import { ModelsDevPricing } from "./model-pricing.js";
 
 export interface SessionFilters {
   harness?: string;
@@ -71,6 +72,7 @@ export class SessionSupervisor {
   private readonly modelCacheTtlMs = 15 * 60_000;
   private readonly modelCache = new Map<string, { models: string[]; refreshedAt: number }>();
   private readonly modelRefreshes = new Map<string, Promise<void>>();
+  private readonly pricing = new ModelsDevPricing();
 
   constructor(
     private readonly adapters: Map<string, HarnessAdapter>,
@@ -359,9 +361,10 @@ export class SessionSupervisor {
     // Details are allowed to be richer (and a little more expensive) than the
     // list snapshot. Ask the adapter first so harnesses such as Codex can read
     // the selected rollout for model/usage metrics without slowing every list.
-    const session = await this.getSession(provider, id)
+    const rawSession = await this.getSession(provider, id)
       || cachedSessions?.find((candidate) => candidate.id === id || nativeSessionId(candidate) === id);
-    if (!session) throw new SessionNotFoundError(provider, id);
+    if (!rawSession) throw new SessionNotFoundError(provider, id);
+    const session = await this.pricing.enrich(rawSession);
     const limit = Math.max(1, Math.min(options.limit || 3, 50));
     const record = await this.lineage.get(sessionKey(provider, nativeSessionId(session)));
     const nativeParentId = typeof session.meta?.parentThreadId === "string" && session.meta.parentThreadId !== nativeSessionId(session) ? session.meta.parentThreadId : undefined;

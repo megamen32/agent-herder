@@ -62,6 +62,12 @@ interface Conversation {
   input_tokens?: number;
   output_tokens?: number;
   total_tokens?: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+  model?: string;
+  billing_provider?: string;
+  estimated_cost_usd?: number;
+  actual_cost_usd?: number;
   chat_id?: string;
   thread_id?: string;
 }
@@ -592,8 +598,10 @@ export class HermesAdapter implements HarnessAdapter {
       title: row.display_name || row.chat_name || id,
       cwd: this.config.cwd || process.cwd(),
       lastActivity: iso(row.updated_at),
+      model: row.model,
       needsPermission: false,
       messageCount: undefined,
+      costUsd: typeof row.actual_cost_usd === "number" ? row.actual_cost_usd : undefined,
       meta: {
         transport: "hermes-mcp",
         sessionId: row.session_id,
@@ -601,6 +609,13 @@ export class HermesAdapter implements HarnessAdapter {
         platform: row.platform,
         chatId: row.chat_id,
         origin,
+        ...(row.billing_provider ? { billing_provider: row.billing_provider } : {}),
+        ...(typeof row.input_tokens === "number" ? { input_tokens: row.input_tokens } : {}),
+        ...(typeof row.output_tokens === "number" ? { output_tokens: row.output_tokens } : {}),
+        ...(typeof row.total_tokens === "number" ? { total_tokens: row.total_tokens } : {}),
+        ...(typeof row.cache_read_tokens === "number" ? { cache_read_tokens: row.cache_read_tokens } : {}),
+        ...(typeof row.cache_write_tokens === "number" ? { cache_write_tokens: row.cache_write_tokens } : {}),
+        ...(typeof row.estimated_cost_usd === "number" ? { hermes_estimated_cost_usd: row.estimated_cost_usd } : {}),
         lineage: { kind: "unknown", reason: "Hermes MCP does not expose session parent/child lineage" },
         history: { source: "live-cache", complete: false, warning: "Public Hermes MCP exposes rendered messages, not native session export" },
       },

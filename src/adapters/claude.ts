@@ -15,6 +15,10 @@ interface ParsedSession {
   model?: string;
   messageCount: number;
   lastMessage?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
 }
 
 /**
@@ -76,19 +80,37 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
         needsPermission: false,
         messageCount: parsed.messageCount,
         lastMessage: parsed.lastMessage,
-        meta: { filePath },
+        meta: { filePath,
+          ...(parsed.inputTokens !== undefined ? { input_tokens: parsed.inputTokens } : {}),
+          ...(parsed.outputTokens !== undefined ? { output_tokens: parsed.outputTokens } : {}),
+          ...(parsed.cacheReadTokens !== undefined ? { cache_read_tokens: parsed.cacheReadTokens } : {}),
+          ...(parsed.cacheWriteTokens !== undefined ? { cache_write_tokens: parsed.cacheWriteTokens } : {}),
+          ...((parsed.inputTokens !== undefined || parsed.outputTokens !== undefined) ? { total_tokens: (parsed.inputTokens ?? 0) + (parsed.outputTokens ?? 0) } : {}),
+        },
       };
     }
 
-    // For getSession, always try to load lastMessage if not already present
-    if (!found.lastMessage) {
-      const filePath = found.meta?.filePath as string | undefined;
-      if (filePath) {
-        try {
-          const parsed = await this.parseSessionFile(filePath, "");
-          found.lastMessage = parsed.lastMessage;
-        } catch { /* ignore */ }
-      }
+    // Details for one selected session may afford a full scan: enrich model and
+    // usage without making the dashboard list parse every large JSONL file.
+    const filePath = found.meta?.filePath as string | undefined;
+    if (filePath) {
+      try {
+        const parsed = await this.parseSessionFile(filePath, "", true);
+        return {
+          ...found,
+          model: parsed.model || found.model,
+          messageCount: parsed.messageCount,
+          lastMessage: parsed.lastMessage || found.lastMessage,
+          meta: {
+            ...found.meta,
+            ...(parsed.inputTokens !== undefined ? { input_tokens: parsed.inputTokens } : {}),
+            ...(parsed.outputTokens !== undefined ? { output_tokens: parsed.outputTokens } : {}),
+            ...(parsed.cacheReadTokens !== undefined ? { cache_read_tokens: parsed.cacheReadTokens } : {}),
+            ...(parsed.cacheWriteTokens !== undefined ? { cache_write_tokens: parsed.cacheWriteTokens } : {}),
+            ...((parsed.inputTokens !== undefined || parsed.outputTokens !== undefined) ? { total_tokens: (parsed.inputTokens ?? 0) + (parsed.outputTokens ?? 0) } : {}),
+          },
+        };
+      } catch { /* keep sampled metadata */ }
     }
     return found;
   }
@@ -276,7 +298,13 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
             needsPermission: false,
             messageCount: info.messageCount,
             lastMessage: info.lastMessage,
-            meta: { projectHash: hash, filePath },
+            meta: { projectHash: hash, filePath,
+              ...(info.inputTokens !== undefined ? { input_tokens: info.inputTokens } : {}),
+              ...(info.outputTokens !== undefined ? { output_tokens: info.outputTokens } : {}),
+              ...(info.cacheReadTokens !== undefined ? { cache_read_tokens: info.cacheReadTokens } : {}),
+              ...(info.cacheWriteTokens !== undefined ? { cache_write_tokens: info.cacheWriteTokens } : {}),
+              ...((info.inputTokens !== undefined || info.outputTokens !== undefined) ? { total_tokens: (info.inputTokens ?? 0) + (info.outputTokens ?? 0) } : {}),
+            },
           };
         } catch {
           return null;
@@ -290,15 +318,24 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
 
   private async parseSessionFile(
     filePath: string,
-    _projectHash: string
+    _projectHash: string,
+    full = false,
   ): Promise<ParsedSession> {
-    const { lines, fileStat } = await readSessionSample(filePath);
+    const fileStat = await stat(filePath);
+    const lines = full
+      ? (await readFile(filePath, "utf8")).split("\n").filter(Boolean)
+      : (await readSessionSample(filePath)).lines;
     let title = "Untitled session";
     let model: string | undefined;
     let messageCount = 0;
     let lastMessage: string | undefined;
     let lastHumanMsg = "";
     let lastAssistantMsg = "";
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let cacheReadTokens = 0;
+    let cacheWriteTokens = 0;
+    let sawUsage = false;
 
     for (const line of lines) {
       try {
@@ -321,6 +358,16 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
         if (entry.type === "assistant" && entry.message?.content) {
           const text = this.extractAssistantText(entry.message.content);
           if (text) lastAssistantMsg = text;
+        }
+
+        const usage = entry.message?.usage || entry.usage;
+        if (usage && typeof usage === "object") {
+          const n = (key: string) => typeof usage[key] === "number" ? usage[key] as number : 0;
+          inputTokens += n("input_tokens");
+          outputTokens += n("output_tokens");
+          cacheReadTokens += n("cache_read_input_tokens") + n("cache_read_tokens");
+          cacheWriteTokens += n("cache_creation_input_tokens") + n("cache_write_tokens");
+          sawUsage = true;
         }
 
         // Extract model — look for model in multiple places
@@ -371,6 +418,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
       model,
       messageCount,
       lastMessage,
+      ...(sawUsage ? { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens } : {}),
     };
   }
 
