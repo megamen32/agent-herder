@@ -460,12 +460,21 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const result = paths.length > 0
       ? await coordinationNotes.reservePaths({ harness, sessionId, cwd, paths, ttlSeconds })
       : { reservations: heartbeat, conflicts: [] };
-    const context = result.conflicts.length ? [
-      "<agent-herder-path-conflict>",
-      "Another agent recently worked on an overlapping path. Treat this as a soft lock: coordinate before editing if the work may overlap.",
-      ...result.conflicts.map(({ path, note }) => `- path=${path} owner=${note.authorHarness || "agent"}:${note.authorSessionId} until=${note.expiresAt} note=${note.id} :: ${note.message}`),
-      "</agent-herder-path-conflict>",
-    ].join("\n") : null;
+    const blocks: string[] = [];
+    if (result.conflicts.length) {
+      blocks.push([
+        "<agent-herder-path-conflict>",
+        "Another agent recently worked on an overlapping path. Treat this as a soft lock: coordinate before editing if the work may overlap.",
+        ...result.conflicts.map(({ path, note }) => `- path=${path} owner=${note.authorHarness || "agent"}:${note.authorSessionId} until=${note.expiresAt} note=${note.id} :: ${note.message}`),
+        "</agent-herder-path-conflict>",
+      ].join("\n"));
+    }
+    // Peer roster shares the injection-dedup slot with the turn-start block:
+    // a session sees peers only when the roster changed (or after the
+    // staleness window), never a repeat of what it already received.
+    const peersBlock = await coordinationNotes.renderWorkspacePeers({ harness, id: sessionId, cwd });
+    if (peersBlock) blocks.push(peersBlock);
+    const context = blocks.length > 0 ? blocks.join("\n\n") : null;
     return sendJson(response, 200, { ...result, context });
   }
   if (url.pathname === "/api/autopilot/policy" && (request.method === "GET" || request.method === "PUT")) {

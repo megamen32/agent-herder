@@ -55,3 +55,69 @@ describe("coordination notes", () => {
     else process.env.AGENT_HERDER_AUTO_TTL_SECONDS = old;
   });
 });
+
+describe("coordination note injection dedup", () => {
+  async function freshStore(): Promise<CoordinationNoteStore> {
+    const dir = await mkdtemp(join(tmpdir(), "agent-herder-dedup-"));
+    return new CoordinationNoteStore(join(dir, "notes.json"));
+  }
+
+  it("injects the notes block once and re-injects only on material change", async () => {
+    const store = await freshStore();
+    await store.create({ kind: "working", message: "refactoring parser", cwd: "/repo", paths: ["src/parser.ts"], authorHarness: "zcode", authorSessionId: "sess-b", source: "hook" });
+
+    const first = await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" });
+    expect(first).toContain("agent-herder-coordination");
+    expect(first).toContain("src/parser.ts");
+
+    // Same roster again — nothing new, no injection.
+    expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
+
+    // TTL refresh of the same note carries no new information either.
+    await store.heartbeatSession({ sessionId: "sess-b", cwd: "/repo" });
+    expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
+
+    // Material change: a second author appears — inject.
+    await store.create({ kind: "working", message: "migrating schema", cwd: "/repo", paths: ["db/migration.sql"], authorHarness: "codex", authorSessionId: "sess-c", source: "manual" });
+    const second = await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" });
+    expect(second).toContain("db/migration.sql");
+    expect(second).toContain("sess-c");
+  });
+
+  it("shares the dedup slot across channels: the peers roster does not repeat the notes block", async () => {
+    const store = await freshStore();
+    await store.create({ kind: "working", message: "touching api", cwd: "/repo", paths: ["api.ts"], authorHarness: "zcode", authorSessionId: "sess-b", source: "hook" });
+
+    expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toContain("agent-herder-coordination");
+    // Same information through the file-activity channel — deduped.
+    expect(await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
+  });
+
+  it("renders a peers roster grouped by author on first sight", async () => {
+    const store = await freshStore();
+    await store.create({ kind: "working", message: "touching api", cwd: "/repo", paths: ["api.ts"], authorHarness: "zcode", authorSessionId: "sess-b", source: "hook" });
+    const peers = await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" });
+    expect(peers).toContain("agent-herder-repo-peers");
+    expect(peers).toContain("[zcode] sess-b");
+    expect(peers).toContain("api.ts");
+    expect(peers).toContain("send_message");
+  });
+
+  it("never shows a session its own notes", async () => {
+    const store = await freshStore();
+    await store.create({ kind: "working", message: "my own work", cwd: "/repo", paths: ["mine.ts"], authorHarness: "zcode", authorSessionId: "sess-a", source: "hook" });
+    expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
+    expect(await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
+  });
+
+  it("re-injects after the staleness window (context compaction safety)", async () => {
+    const store = await freshStore();
+    await store.create({ kind: "working", message: "long task", cwd: "/repo", paths: ["x.ts"], authorHarness: "zcode", authorSessionId: "sess-b", source: "hook" });
+    expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).not.toBeNull();
+    // Age out the injection record past the reshow window.
+    const state = (store as unknown as { injectionState: Map<string, { signature: string; at: number }> }).injectionState;
+    const entry = state.get("sess-a")!;
+    state.set("sess-a", { ...entry, at: entry.at - 46 * 60 * 1000 });
+    expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).not.toBeNull();
+  });
+});

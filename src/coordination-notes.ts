@@ -43,6 +43,10 @@ export function defaultCoordinationNotePath(): string {
 
 export class CoordinationNoteStore {
   private chain: Promise<unknown> = Promise.resolve();
+  /** Per receiving session: last injected roster signature + when. Shared by
+   * all injection channels so the same information never enters a session
+   * twice — only material changes (author/kind/message/paths set) re-inject. */
+  private injectionState = new Map<string, { signature: string; at: number }>();
   constructor(private readonly filePath = defaultCoordinationNotePath()) {}
 
   async create(input: CoordinationNoteCreate): Promise<CoordinationNote> {
@@ -186,6 +190,7 @@ export class CoordinationNoteStore {
   async renderForSession(session: { id: string; harness: string; cwd: string }): Promise<string | null> {
     const notes = (await this.list({ cwd: session.cwd })).filter((note) => note.authorSessionId !== session.id);
     if (notes.length === 0) return null;
+    if (!this.shouldInject(session.id, this.noteSignature(notes))) return null;
     const lines = [
       "<agent-herder-coordination>",
       "Active coordination notes from other agents in this workspace. Respect path ownership. If a note conflicts with your task, use Agent Herder send_message to contact its author before editing.",
@@ -197,6 +202,55 @@ export class CoordinationNoteStore {
       "</agent-herder-coordination>",
     ];
     return lines.join("\n");
+  }
+
+  /**
+   * Roster of other agents recently active in the same workspace, for
+   * file-activity injection: who they are and which paths they are touching.
+   * Shares the injection-dedup slot with renderForSession so the same
+   * information never enters a session twice — only material changes
+   * (author/kind/message/paths set) or the staleness window re-inject.
+   */
+  async renderWorkspacePeers(session: { id: string; harness: string; cwd: string }): Promise<string | null> {
+    const notes = (await this.list({ cwd: session.cwd })).filter((note) => note.authorSessionId !== session.id);
+    if (notes.length === 0) return null;
+    if (!this.shouldInject(session.id, this.noteSignature(notes))) return null;
+    const byAuthor = new Map<string, { harness: string; paths: string[] }>();
+    for (const note of notes) {
+      const entry = byAuthor.get(note.authorSessionId) ?? { harness: note.authorHarness || "agent", paths: [] };
+      entry.harness = note.authorHarness || entry.harness;
+      for (const path of note.paths) if (!entry.paths.includes(path)) entry.paths.push(path);
+      byAuthor.set(note.authorSessionId, entry);
+    }
+    const lines = [...byAuthor.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([authorSessionId, info]) => `- [${info.harness}] ${authorSessionId} :: ${info.paths.slice(0, 8).join(", ") || "(workspace-level)"}`);
+    return [
+      "<agent-herder-repo-peers>",
+      "Other agents recently active in this repo. Before overlapping work, contact them via Agent Herder send_message with sessionId:",
+      ...lines,
+      "</agent-herder-repo-peers>",
+    ].join("\n");
+  }
+
+  /** True when this roster differs from what the session last saw, or the
+   * last injection is old enough that context compaction may have eaten it. */
+  private shouldInject(sessionId: string, signature: string): boolean {
+    const previous = this.injectionState.get(sessionId);
+    const now = Date.now();
+    const reshowMs = Number(process.env.AGENT_HERDER_INJECTION_RESHOW_MS || 45 * 60 * 1000);
+    if (previous && previous.signature === signature && now - previous.at < reshowMs) return false;
+    this.injectionState.set(sessionId, { signature, at: now });
+    return true;
+  }
+
+  /** Volatile-field-free fingerprint: TTL refreshes and id churn must not
+   * re-trigger an injection; only the informative content counts. */
+  private noteSignature(notes: CoordinationNote[]): string {
+    return notes
+      .map((note) => `${note.authorSessionId}|${note.kind}|${note.message}|${note.paths.join(",")}`)
+      .sort()
+      .join("\n");
   }
 
   async inject(session: { id: string; harness: string; cwd: string }, message: string): Promise<string> {
