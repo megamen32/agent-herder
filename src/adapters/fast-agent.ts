@@ -45,6 +45,7 @@ type SessionRecord = {
   historyPath: string;
   messages: SessionMessageView[];
   usage: FastAgentUsage;
+  liveProcess: boolean;
 };
 
 export interface FastAgentFileAdapterOptions {
@@ -283,7 +284,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       const messages = Array.isArray(history.messages)
         ? history.messages.map((message) => messageView(message)).filter((message): message is SessionMessageView => message !== null)
         : [];
-      return { directory, snapshot, historyPath, messages, usage: extractFastAgentUsage(history) };
+      return { directory, snapshot, historyPath, messages, usage: extractFastAgentUsage(history), liveProcess: hasLiveFastAgentProcess(history) };
     } catch {
       return null;
     }
@@ -297,7 +298,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     const firstPreview = stringValue(record.snapshot.metadata?.first_user_preview);
     const title = stringValue(record.snapshot.metadata?.title) || stringValue(record.snapshot.metadata?.label) || firstPreview?.split(/\r?\n/, 1)[0] || `Fast Agent · ${nativeId}`;
     const lastActivity = stringValue(record.snapshot.last_activity) || stringValue(record.snapshot.created_at) || new Date(0).toISOString();
-    const status = sessionStatus(executionStatus);
+    const status = record.liveProcess ? "running" as const : sessionStatus(executionStatus);
     const usage = record.snapshot.analysis?.usage_summary as Record<string, unknown> | undefined;
     const promptTokens = typeof usage?.prompt_tokens === "number" ? usage.prompt_tokens : undefined;
     const completionTokens = typeof usage?.completion_tokens === "number" ? usage.completion_tokens : undefined;
@@ -443,6 +444,28 @@ function extractFastAgentUsage(history: unknown): FastAgentUsage {
   };
   visit(history);
   return result;
+}
+
+function hasLiveFastAgentProcess(history: unknown): boolean {
+  const pids = new Set<number>();
+  const visit = (value: unknown): void => {
+    if (typeof value === "string" && value.includes("os_process_id")) {
+      try { visit(JSON.parse(value)); } catch { /* ordinary text */ }
+      return;
+    }
+    if (Array.isArray(value)) { for (const item of value) visit(item); return; }
+    if (!value || typeof value !== "object") return;
+    const object = value as Record<string, unknown>;
+    if (object.process_status === "running" && typeof object.os_process_id === "number" && Number.isSafeInteger(object.os_process_id) && object.os_process_id > 1) {
+      pids.add(object.os_process_id);
+    }
+    for (const item of Object.values(object)) visit(item);
+  };
+  visit(history);
+  for (const pid of pids) {
+    try { process.kill(pid, 0); return true; } catch { /* stale persisted PID */ }
+  }
+  return false;
 }
 
 function sessionStatus(status?: string): AgentSession["status"] {

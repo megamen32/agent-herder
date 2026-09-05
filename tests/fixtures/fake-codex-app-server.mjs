@@ -26,6 +26,7 @@ const serverRequest = {
 const logPath = process.env.CODEX_APP_SERVER_LOG;
 const forcedStartedTurnId = process.env.CODEX_APP_SERVER_TURN_STARTED_ID;
 const forcedCompletedTurnId = process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID;
+const externalRunningThread = process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD;
 
 function log(event) {
   if (!logPath) return;
@@ -47,7 +48,7 @@ rl.on("line", (line) => {
   log({ kind: "request", method: request.method, id: request.id, params: request.params });
   if (request.method === "initialize") return reply(request.id, { userAgent: "fake-codex/1" });
   if (request.method === "initialized") return;
-  if (request.method === "thread/list") return reply(request.id, { data: threads });
+  if (request.method === "thread/list") return reply(request.id, { data: threads.map((item) => item.id === externalRunningThread ? thread(item.id, { ...item, status: "active" }) : item) });
   if (request.method === "thread/start") {
     const created = thread(`thread-created-${threads.length}`, {
       cwd: request.params.cwd || "/tmp/codex-fixture",

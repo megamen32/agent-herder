@@ -30,6 +30,23 @@ describe("Codex app-server adapter", () => {
     }
   });
 
+  it("reports a turn running in another app-server instance from native thread status", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-external-running-"));
+    const previous = process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD;
+    process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD = "thread-1";
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      await adapter.init();
+      const session = (await adapter.listSessions()).find((item) => item.id === "thread-1");
+      expect(session?.status).toBe("running");
+    } finally {
+      await adapter.dispose();
+      if (previous === undefined) delete process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD;
+      else process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD = previous;
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
   it("keeps a native thread, interrupts turns, resumes, and forks", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-app-"));
     const sessionDir = join(codexDir, "sessions", "2026", "07", "30");

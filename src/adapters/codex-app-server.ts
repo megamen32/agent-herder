@@ -501,7 +501,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private mapStatus(raw: string | undefined, id: string): AgentSession["status"] {
-    if (this.activeTurns.has(id) || raw === "inProgress" || raw === "running") return "running";
+    if (this.activeTurns.has(id) || raw === "inProgress" || raw === "running" || raw === "active") return "running";
     if (raw === "failed" || raw === "error") return "error";
     if (raw === "interrupted" || raw === "completed" || raw === "idle") return "idle";
     return "idle";

@@ -10,6 +10,22 @@ afterEach(async () => {
 });
 
 describe("Fast Agent persisted observer", () => {
+  it("reports running when persisted shell metadata points at a live OS process", async () => {
+    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-live-"));
+    cleanups.push(home);
+    const sessionDir = join(home, "sessions", "session-live");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, "session.json"), JSON.stringify({ session_id: "session-live", execution: { status: "completed" } }));
+    await writeFile(join(sessionDir, "history_dev.json"), JSON.stringify({ messages: [{
+      role: "tool", timestamp: new Date().toISOString(), content: [{ type: "tool_result", content: JSON.stringify({
+        "fast-agent-shell-process-metadata": { process_status: "running", os_process_id: process.pid }
+      }) }]
+    }] }));
+    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/bin/true" });
+    const [session] = await adapter.listSessions();
+    expect(session.status).toBe("running");
+  });
+
   it("lists native sessions and exposes recent messages without starting a process", async () => {
     const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-"));
     cleanups.push(home);
