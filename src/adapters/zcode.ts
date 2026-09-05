@@ -433,9 +433,11 @@ export class ZcodeAdapter implements HarnessAdapter {
     const snapshot = await this.callAgent("createSession", {
       ...workspace,
       sessionTraceId: randomUUID(),
+      // mode must be a concrete session mode ("build"): omitting it or
+      // passing non-session values crashes this zcode-server build with an
+      // NPE while resolving workspace defaults. Headless permission handling
+      // is done via respond_permission approvals instead.
       mode: "build",
-      // Current zcode-server builds validate persistence as
-      // "immediate" | "deferred" (the old "persistent" value is rejected).
       persistence: "immediate",
     });
     const info = sessionInfoFromPayload(snapshot);

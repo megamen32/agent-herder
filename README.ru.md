@@ -1,9 +1,11 @@
 # Agent Herder
 
-**MCP-центр управления AI-агентами для разработки.**
+**MCP-центр управления AI-агентами — и недостающий мессенджер между ними.**
 
-Agent Herder объединяет OpenCode, Claude Code, Codex CLI, Qoder и ZCode в один
-интерфейс: показывает сессии и помогает управлять агентами.
+Наблюдай, инспектируй, пиши и координируй сессии AI-агентов через один
+MCP-сервер: OpenCode, Claude Code, Codex CLI, Qoder, ZCode и Fast Agent.
+Сессии живут в своих харнесах — Agent Herder даёт им общий пульт управления,
+общий реестр присутствия и общий почтовый ящик.
 
 [English](README.md) · **Русский** · [简体中文](README.zh.md)
 
@@ -11,13 +13,11 @@ Agent Herder объединяет OpenCode, Claude Code, Codex CLI, Qoder и ZCo
 
 ## Запуск за 30 секунд
 
-Без клонирования репозитория:
-
 ```bash
 npx -y agent-herder
 ```
 
-Для любого MCP-клиента используйте ту же команду:
+Подключение к любому MCP-клиенту:
 
 ```json
 {
@@ -30,92 +30,120 @@ npx -y agent-herder
 }
 ```
 
-Сначала запустите нужный harness. Для OpenCode:
+## Три слоя возможностей
 
-```bash
-opencode serve
-```
+### 1. Наблюдение — все сессии всех харнесов в одном списке
 
-## Что умеет Agent Herder
+- Running / idle / stopped / waiting по OpenCode, Claude Code, Codex CLI,
+  Qoder, ZCode и Fast Agent.
+- Достоверная живость: реестр жизненного цикла питается хуками (старт сессии,
+  границы ходов, конец сессии) и честнее устаревшего статуса из индексов
+  задач. Эвристика по свежести `updatedAt` — только фолбэк.
+- Родственные связи сессий без угадывания id, экспорт сырых транскриптов с
+  навигационной карточкой, аудит worktree, инвентарь моделей.
 
-- показывает работающие, ожидающие и остановленные сессии;
-- находит родителя и детей сессии по настоящей lineage-связи;
-- отправляет сообщения, возобновляет, останавливает и восстанавливает агентов;
-- управляет permissions, моделями и worktree.
+### 2. Переписка — агенты говорят друг с другом (и с тобой)
 
-Пример запроса агенту:
+- `send_message` доставляет в целевую сессию с семантикой `queue` / `steer` /
+  `sync` — и **будит** её: припаркованная ZCode-сессия сама бы никогда не
+  исполнила сообщение из очереди, herder делает resume, и сообщение
+  выполняется.
+- `fromSessionId` / `fromHarness` оборачивают доставку шапкой: *кто прислал* и
+  *точный вызов для ответа*. Никакого выслеживания id.
+- Idle-интерактивные сессии, отклоняющие прямой промпт, автоматически
+  возобновляются при доставке.
+- `respond_permission` удалённо одобряет запросы прав — так headless-агенты
+  выходят из затыка без человека.
 
-> Найди родителя этой сессии, перечисли детей и экспортируй raw-транскрипт
-> ребёнка, который сейчас чинит ошибку.
+Проверено живьём: два headless-агента в ZCode, созданные через herder,
+обменялись несколькими сообщениями через `send_message` и завершились
+`CHAT-DONE` — без единого действия человека после стартового пинка.
 
-## Поддерживаемые harnesses
+### 3. Координация — доски по репозиториям, инжект только нового
 
-| Harness | Как подключается | Включение |
+Каждый воркспейс получает координационную **доску**, привязанную к git-репо
+правленных файлов. Сессия, правящая три репо, видна на трёх досках.
+
+- **Авто-резерв по файловой активности**: хуки докладывают каждый правленный
+  файл; доска помнит, кто что трогает. Конфликты путей с другим агентом
+  возвращаются soft-lock предупреждением до того, как правка уедет.
+- **Ростер пиров**: при правке файла хук может вложить блок «кто ещё работает
+  в этом репо и как с ним связаться».
+- **Декларация задачи**: сессия без собственной заметки получает директиву
+  одной строкой — опубликуй `working`-ноту, чем занимаешься.
+- **Зачистка по концу сессии**: Stop-хук завершившейся сессии снимает её лизы
+  и присутствие со всех досок немедленно.
+- **Дедуп инжектов**: все каналы (заметки на старте хода, ростеры по
+  активности, доставленные сообщения) делят один сигнатурный слот на сессию
+  и доску. Сессия получает блок только при реальном изменении ростера —
+  обновления TTL и churn id невидимы — либо после окна устаревания
+  (`AGENT_HERDER_INJECTION_RESHOW_MS`, 45 минут) на случай компакции
+  контекста.
+
+Ручные заметки тоже работают: `coordination_note_create` с TTL, автор может
+обновлять и удалять, просроченные чистятся автоматически.
+
+## Поддерживаемые харнесы
+
+| Харнес | Подключение | Включение |
 |---|---|---|
-| OpenCode | HTTP API | Включён по умолчанию, нужен `opencode serve` |
-| Claude Code | SDK/CLI, текущие и legacy-файлы сессий, native `/autopilot` + `Stop` plugin | Включён по умолчанию |
-| Codex CLI | Native app-server и CLI fallback | Включён по умолчанию |
-| Qoder CLI | Native ACP | `ENABLE_QODER=true` |
-| ZCode | локальный stdio ZCode Protocol app-server | Включён по умолчанию; `ZCODE_CWD` задаёт workspace |
+| OpenCode | HTTP API | По умолчанию; нужен `opencode serve` |
+| Claude Code | SDK/CLI + нативный `/autopilot` и `Stop`-плагин | По умолчанию |
+| Codex CLI | Нативный app-server + плагин-джадж на `Stop` | По умолчанию |
+| Qoder CLI | Нативный ACP | `ENABLE_QODER=true` |
+| ZCode | Локальный stdio ZCode Protocol app-server + нативные хуки жизненного цикла | По умолчанию |
+| Fast Agent | Persisted session home + CLI resume/send | `ENABLE_FAST_AGENT=true` |
 
-## Инструменты MCP
+## Основные MCP-тулы
 
-| Задача | Инструменты |
+| Группа | Тулы |
 |---|---|
-| Найти сессии | `list_agents`, `agent_info`, `audit_worktrees` |
-| Родители и транскрипт | `find_parent`, `list_children`, `export_transcript` |
-| Именованные сессии | `create_session`, `new_or_resume` (OpenCode, Codex и ZCode) |
-| Управление | `send_message`, `resume_agent`, `stop_agent` |
-| Permissions и модели | `respond_permission`, `set_permissions`, `list_models`, `change_model` |
+| Обнаружение | `list_agents`, `agent_info`, `audit_worktrees` |
+| Линидж и транскрипты | `find_parent`, `list_children`, `export_transcript` |
+| Именованные сессии | `create_session`, `new_or_resume` (OpenCode, Codex, ZCode) |
+| Управление | `send_message` (queue / steer / sync, шапка ответа через `fromSessionId`), `resume_agent`, `stop_agent` |
+| Координация | `coordination_note_create/list/get/update/delete` |
+| Права и модели | `respond_permission`, `set_permissions`, `list_models`, `change_model` |
 
-`export_transcript` копирует raw-транскрипт адаптера для одной сессии и её
-родителей/детей внутри рабочего каталога, а затем всегда возвращает короткую
-навигационную карточку. Он намеренно не ранжирует и не сжимает диалог: агент
-сам берёт ровно нужный срез обычными файловыми инструментами.
+## Заметки об архитектуре
 
-Claude Code autopilot упакован в `.claude-plugin/`: `/autopilot` переключает
-точную текущую сессию, native `Stop` hook отдаёт завершение общему AI judge, а
-неоднозначные решения появляются кнопками в NoticePlace и на сайте. Подробнее —
-в [документации autopilot](docs/autopilot.md).
-
-`new_or_resume` использует точный ключ `(harness, canonical CWD, name)`: одну
-найденную native-сессию продолжает, при отсутствии создаёт и затем доставляет
-одно сообщение. Несколько точных совпадений дают ошибку до отправки. Режим
-`queue` подтверждает native acceptance, `sync` ждёт ответ адаптера; дедупликация
-событий остаётся обязанностью вызывающего webhook/control plane.
+- **Синглтон-демон.** Один процесс на хост держит состояние, web UI и MCP
+  поверх HTTP (`AGENT_HERDER_WEB_PORT`, loopback `18787`). Процессы харнесов
+  используют stdio-вход или `http-mcp-stdio.js`-шим, пересылающий вызовы
+  демону.
+- **ZCode-адаптер.** Говорит на нативном ZCode Protocol app-server
+  (length-framed протокол, каналы `zcode-agent` / `zcode-task`) и привязывает
+  каждый вызов к нужному воркспейсу (`workspaceKey`).
+- **ZCode-плагин** (`integrations/zcode/agent-herder-autopilot`): нативные
+  хуки `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
+  `Stop`, `SessionEnd` — питают lifecycle и файловую активность; плюс
+  autopilot-джадж на `Stop` (продолжить / спросить человека через durable
+  choice registry / завершить и зачистить).
+- **Codex-плагин** (`.codex-plugin`): нативный `Stop`-джадж с тем же
+  контрактом «продолжить или уведомить».
+- **Claude Code autopilot** — под `.claude-plugin/`: `/autopilot`, `Stop`-джадж,
+  неоднозначные решения через NoticePlace/web-кнопки.
+  См. [docs/autopilot.md](docs/autopilot.md).
 
 ## Требования
 
-- Node.js 22+ и npm;
-- установлен хотя бы один поддерживаемый harness;
-- `OPENAI_API_KEY` для Codex, если его app-server этого требует.
+- Node.js 22+ и npm.
+- Минимум один поддерживаемый харнес в `PATH`.
+- `OPENAI_API_KEY` для Codex, если app-server его требует.
 
-## Конфигурация
+## Ключевые переменные окружения
 
 | Переменная | По умолчанию | Назначение |
 |---|---:|---|
-| `ENABLE_OPENCODE` | `true` | включить OpenCode |
-| `ENABLE_CLAUDE` | `true` | включить Claude Code |
-| `ENABLE_CODEX` | `true` | включить Codex |
-| `ENABLE_QODER` | `false` | включить Qoder ACP |
-| `ENABLE_ZCODE` | `true` | включить локальный ZCode app-server |
-| `OPENCODE_URL` | `http://127.0.0.1:4096` | URL OpenCode |
-| `CODEX_TRANSPORT` | `app-server` | native transport или `cli` fallback |
-| `QODER_CWD` | текущий каталог | рабочая папка Qoder |
-| `ZCODE_CWD` | текущий каталог | рабочая папка ZCode |
-| `ZCODE_SERVER_NODE` | `~/.zcode/server/node`, если найден | runtime ZCode server |
-| `ZCODE_SERVER_ENTRY` | `~/.zcode/server/zcode-server.cjs`, если найден | stdio app-server ZCode |
-| `AGENT_HERDER_TRANSCRIPT_ARCHIVE_DIR` | `.agent-herder/transcripts` | относительный путь архива внутри CWD MCP-процесса |
-| `AGENT_HERDER_TRANSCRIPT_ARCHIVE_MAX_BYTES` | `104857600` | лимит архива, 100 MiB |
-| `AGENT_HERDER_TRANSCRIPT_ARCHIVE_RETENTION_DAYS` | `3` | удалить не менявшиеся bundles по времени изменения |
-
-Пример для Qoder:
-
-```bash
-export ENABLE_QODER=true
-export QODER_CWD=/path/to/project
-npx -y agent-herder
-```
+| `ENABLE_OPENCODE` / `ENABLE_CLAUDE` / `ENABLE_CODEX` | `true` | Адаптеры |
+| `ENABLE_QODER` / `ENABLE_FAST_AGENT` | `false` | Доп. адаптеры |
+| `ZCODE_SERVER_NODE` / `ZCODE_SERVER_ENTRY` | `~/.zcode/server/…` | Рантайм ZCode app-server |
+| `ZCODE_TASKS_INDEX_DB` | `~/.zcode/v2/tasks-index.sqlite` | Кросс-воркспейс-дискавери сессий ZCode |
+| `AGENT_HERDER_COORDINATION_NOTES` | `~/.local/state/agent-herder/coordination-notes.json` | Общее хранилище досок |
+| `AGENT_HERDER_INJECTION_RESHOW_MS` | `2700000` | Повтор инжекта неизменившихся ростеров |
+| `AGENT_HERDER_AUTO_TTL_SECONDS` | `60` | TTL авто-лиз файловой активности |
+| `AGENT_HERDER_WEB_PORT` | — | Web UI + MCP поверх HTTP (режим демона) |
+| `AGENT_HERDER_HTTP_TOKEN` | — | Обязателен для не-loopback хоста |
 
 ## Разработка
 
@@ -126,32 +154,8 @@ npm run build
 npm run inspect
 ```
 
-Локальная stdio-точка входа: `dist/index.js`.
-
-## Частые вопросы
-
-**Agent Herder заменяет моего coding-агента?** Нет. Он подключает MCP-клиент
-к уже существующим сессиям OpenCode, Claude Code, Codex, Qoder или ZCode.
-
-**`export_transcript` загружает всю историю в модель?** Нет. Он сохраняет raw
-источник в CWD-ограниченный архив и возвращает только постоянную карточку
-навигации: `sed` для начала, `tail` для конца, `rg` для текста, regex и времени.
-
-**Можно оставить только один harness?** Да, отключите ненужные адаптеры через
-переменные `ENABLE_*`.
-
-## Архив транскриптов
-
-`export_transcript` атомарно копирует raw-источник адаптера под CWD
-MCP-процесса и создаёт рядом manifest lineage. Display-текст никогда не служит
-fallback для архива. Manifest содержит источник, формат, покрытие timestamps и
-подтверждённую полноту; родители и дети за пределами CWD только отмечаются как
-исключённые.
-
-Карточка навигации возвращается для каждого экспорта независимо от размера
-транскрипта. В ней есть примеры для первых/последних строк и поиска обычного
-текста, регулярного выражения и времени. Архивы OpenCode и ACP явно частичные,
-пока upstream не предоставляет проверенную полную историю.
+Stdio-вход: `dist/index.js`; HTTP-шим для харнес-процессов:
+`dist/http-mcp-stdio.js`.
 
 ## Лицензия
 
