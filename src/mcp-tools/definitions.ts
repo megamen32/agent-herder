@@ -69,6 +69,8 @@ export const SendMessageSchema = z.object({
   sessionId: z.string().describe("Target session ID."),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().describe("Harness (optional if ID is unique)."),
   message: z.string().describe("Message to send to the agent."),
+  fromSessionId: z.string().optional().describe("Sender session ID — when provided, the delivery is wrapped with a reply header so the target knows whom to answer."),
+  fromHarness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().describe("Sender harness."),
   mode: z.enum(["queue", "steer", "sync"]).optional().default("sync").describe(
     "queue = fire-and-forget, steer = redirect agent, sync = wait for response"
   ),
@@ -300,6 +302,8 @@ export const toolDefinitions: Tool[] = [
         sessionId: { type: "string", description: "Target session ID" },
         harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], description: "Harness (optional)" },
         message: { type: "string", description: "Message to send" },
+        fromSessionId: { type: "string", description: "Sender session ID — adds a reply header so the target knows whom to answer" },
+        fromHarness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], description: "Sender harness (optional)" },
         mode: { type: "string", enum: ["queue", "steer", "sync"], default: "sync", description: "Delivery mode" },
       },
       required: ["sessionId", "message"],

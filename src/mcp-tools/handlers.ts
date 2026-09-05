@@ -388,7 +388,13 @@ export async function handleSendMessage(
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
 
-  const injectedMessage = await coordinationNotes.inject(found.session, parsed.message);
+  // Reply header: the target must know who sent the message and how to
+  // answer without hunting for session ids.
+  const replyHeader = parsed.fromSessionId
+    ? `[Agent Herder delivery] От: ${parsed.fromHarness ?? "agent"}:${parsed.fromSessionId}.\nЧтобы ответить: send_message { sessionId: "${parsed.fromSessionId}", harness: "${parsed.fromHarness ?? "zcode"}", mode: "queue" }.`
+    : "";
+  const baseMessage = replyHeader ? `${replyHeader}\n\n${parsed.message}` : parsed.message;
+  const injectedMessage = await coordinationNotes.inject(found.session, baseMessage);
   const result = await found.adapter.sendMessage(parsed.sessionId, {
     message: injectedMessage,
     queue: parsed.mode === "queue",

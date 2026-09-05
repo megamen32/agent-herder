@@ -434,7 +434,9 @@ export class ZcodeAdapter implements HarnessAdapter {
       ...workspace,
       sessionTraceId: randomUUID(),
       mode: "build",
-      persistence: "persistent",
+      // Current zcode-server builds validate persistence as
+      // "immediate" | "deferred" (the old "persistent" value is rejected).
+      persistence: "immediate",
     });
     const info = sessionInfoFromPayload(snapshot);
     if (!info) throw new Error("ZCode createSession returned no sessionId");
@@ -471,14 +473,23 @@ export class ZcodeAdapter implements HarnessAdapter {
       }
     };
     const result = await send();
-    if (result.ok) return result;
-    // Interactive TUI sessions between turns reject direct prompts ("Session
-    // is not active"). Resuming re-attaches the session to this app-server,
-    // after which the same prompt delivers.
-    if (!/not active/i.test(result.error ?? "")) return result;
-    const resumed = await this.resumeSession(id);
-    if (!resumed.ok) return result;
-    return await send();
+    if (result.ok) {
+      // A queued prompt does not wake a stopped/idle session by itself, and
+      // recency heuristics misread just-finished turns as "running" — so the
+      // resume after delivery is unconditional. On an already-attached
+      // session it is a no-op; on a parked one it starts the turn.
+      try { await this.resumeSession(id); } catch { /* best-effort wake-up */ }
+    }
+    if (!result.ok) {
+      // Interactive TUI sessions between turns reject direct prompts ("Session
+      // is not active"). Resuming re-attaches the session to this app-server,
+      // after which the same prompt delivers.
+      if (!/not active/i.test(result.error ?? "")) return result;
+      const resumed = await this.resumeSession(id);
+      if (!resumed.ok) return result;
+      return await send();
+    }
+    return result;
   }
 
   async stopSession(id: string): Promise<ControlResult> {
