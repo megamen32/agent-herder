@@ -334,7 +334,15 @@ export class ZcodeAdapter implements HarnessAdapter {
       const args = options.args || (process.env.ZCODE_SERVER_NODE
         ? [process.env.ZCODE_SERVER_ENTRY || join(process.env.ZCODE_SERVER_RUNTIME_ROOT || join(homedir(), ".zcode", "server"), "zcode-server.cjs")]
         : defaultCommand().args);
-      this.client = new ZcodeAppServerClient({ command, args, cwd: this.cwd });
+      this.client = new ZcodeAppServerClient({
+        command,
+        args,
+        cwd: this.cwd,
+        // standalone-server authority: the spawned app-server uses the CLI
+        // provider registry (zcode login) instead of requiring a desktop
+        // attachment — without it initialize reports provider_not_ready.
+        env: { ZCODE_SERVICE_AUTHORITY_MODE: "standalone-server" },
+      });
     }
   }
 
