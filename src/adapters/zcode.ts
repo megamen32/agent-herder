@@ -397,9 +397,11 @@ export class ZcodeAdapter implements HarnessAdapter {
         continue;
       }
     }
-    // readSession can fail outright for interactive TUI sessions on current
-    // zcode-server builds (runtimePolicy crash), while listSessions still
-    // returns them — fall back to discovery.
+    // readSession is broken server-side on current zcode-server builds: it
+    // crashes with "Cannot read properties of undefined (reading
+    // 'runtimePolicy')" for every interactive session, params-independent
+    // (verified 2026-09-05 with and without runtimePolicy). listSessions
+    // still returns those sessions — fall back to discovery.
     try {
       const sessions = await this.listSessions();
       return sessions.find((session) => session.id === id) ?? null;
@@ -436,18 +438,29 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
-    try {
-      const workspace = this.sessionWorkspaces.get(id) || this.workspace();
-      await this.callAgent("sendPrompt", {
-        ...workspace,
-        sessionId: id,
-        inputId: randomUUID(),
-        content: options.message,
-      });
-      return { ok: true };
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) };
-    }
+    const send = async (): Promise<{ ok: boolean; error?: string }> => {
+      try {
+        const workspace = this.sessionWorkspaces.get(id) || this.workspace();
+        await this.callAgent("sendPrompt", {
+          ...workspace,
+          sessionId: id,
+          inputId: randomUUID(),
+          content: options.message,
+        });
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    };
+    const result = await send();
+    if (result.ok) return result;
+    // Interactive TUI sessions between turns reject direct prompts ("Session
+    // is not active"). Resuming re-attaches the session to this app-server,
+    // after which the same prompt delivers.
+    if (!/not active/i.test(result.error ?? "")) return result;
+    const resumed = await this.resumeSession(id);
+    if (!resumed.ok) return result;
+    return await send();
   }
 
   async stopSession(id: string): Promise<ControlResult> {

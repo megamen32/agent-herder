@@ -122,4 +122,33 @@ describe("ZCode adapter", () => {
     expect(await adapter.forkSession?.("session-1")).toEqual({ ok: false, error: expect.stringContaining("not supported") });
     await adapter.dispose();
   });
+
+  it("auto-resumes an idle TUI session when the direct prompt is rejected as not active", async () => {
+    class NotActiveThenResumedClient extends FakeClient {
+      sendPromptCalls = 0;
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "sendPrompt") {
+          this.calls.push({ channel, method, args });
+          this.sendPromptCalls += 1;
+          if (this.sendPromptCalls === 1) throw new Error("Session is not active: session-1");
+          return { accepted: true };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const client = new NotActiveThenResumedClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    const result = await adapter.sendMessage("session-1", { message: "ping", queue: true });
+    expect(result).toEqual({ ok: true });
+    expect(client.sendPromptCalls).toBe(2);
+    const methods = client.calls.map((call) => call.method);
+    const firstSend = methods.indexOf("sendPrompt");
+    expect(methods[firstSend + 1]).toBe("resumeSession");
+    expect(methods[firstSend + 2]).toBe("sendPrompt");
+
+    await adapter.dispose();
+  });
 });
