@@ -70,6 +70,24 @@ Verified live: two headless ZCode sessions created, tasked with a
 conversation, exchanging multiple messages each through `send_message`, and
 finishing with `CHAT-DONE` — zero human input after the initial kick.
 
+## Screenshots
+
+Live web UI against real workloads — several harnesses, dozens of parallel
+sessions, one board.
+
+![Session roster — every harness, one list](docs/assets/screenshots/01-sessions.png)
+*Session roster: running agents across workspaces with autopilot toggles,
+durations, and a message composer per session.*
+
+![Session detail — chat, autopilot, controls](docs/assets/screenshots/02-session-chat.png)
+*Session detail: conversation view, autopilot switch, stop/visualize
+controls, and a message composer.*
+
+![Statistics — real activity patterns](docs/assets/screenshots/03-statistics.png)
+*Statistics: 805 sessions sampled, 11.1k write events, harness and model
+mix, token coverage, and session-volume histograms measured from real
+coding sessions.*
+
 ### 3. Coordinate — repo boards, only-new-information injections
 
 Every workspace gets a coordination **board** keyed by the git repo that owns
