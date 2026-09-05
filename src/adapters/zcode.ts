@@ -415,11 +415,11 @@ export class ZcodeAdapter implements HarnessAdapter {
         continue;
       }
     }
-    // readSession is broken server-side on current zcode-server builds: it
-    // crashes with "Cannot read properties of undefined (reading
-    // 'runtimePolicy')" for every interactive session, params-independent
-    // (verified 2026-09-05 with and without runtimePolicy). listSessions
-    // still returns those sessions — fall back to discovery.
+    // readSession is unavailable in headless spawns on current zcode-server
+    // builds: it NPEs ("reading 'runtimePolicy'") for every interactive
+    // session, params- and env-independent (the desktop-attached server
+    // reads fine because the desktop app feeds it authority and cloud auth).
+    // listSessions still returns those sessions — fall back to discovery.
     try {
       const sessions = await this.listSessions();
       return sessions.find((session) => session.id === id) ?? null;
