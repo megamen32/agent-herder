@@ -151,4 +151,34 @@ describe("coordination note injection dedup", () => {
     expect(turn).toContain("repoB work");
     expect(turn).toContain('board="repoB"');
   });
+
+  it("asks an undeclared session to declare its task, then goes quiet", async () => {
+    const store = await freshStore();
+    await store.create({ kind: "working", message: "peer work", cwd: "/repo", paths: ["p.ts"], authorHarness: "zcode", authorSessionId: "sess-b", source: "hook" });
+
+    const first = await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" });
+    expect(first).toContain("have not declared your own task yet");
+    expect(first).toContain("coordination_note_create");
+
+    // Dedup: the same roster (still undeclared) is not repeated.
+    expect(await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
+
+    // After declaring, the directive is gone — silently (roster unchanged).
+    await store.create({ kind: "working", message: "my declared task", cwd: "/repo", paths: ["mine.ts"], authorHarness: "zcode", authorSessionId: "sess-a", source: "manual" });
+    expect(await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
+  });
+
+  it("endSession purges hook leases and presence but keeps manual notes", async () => {
+    const store = await freshStore();
+    await store.reservePaths({ harness: "zcode", sessionId: "sess-x", cwd: "/repo", paths: ["a.ts"] });
+    await store.create({ kind: "handoff", message: "handing over", cwd: "/repo", paths: ["b.ts"], authorHarness: "zcode", authorSessionId: "sess-x", source: "manual" });
+
+    const result = await store.endSession("sess-x");
+    expect(result.removed).toBe(1);
+
+    // The deliberate handoff note survives and stays visible to peers.
+    const peers = await store.renderWorkspacePeers({ id: "sess-y", harness: "zcode", cwd: "/repo" });
+    expect(peers).toContain("sess-x");
+    expect(peers).toContain("b.ts");
+  });
 });

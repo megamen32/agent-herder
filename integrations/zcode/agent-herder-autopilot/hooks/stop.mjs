@@ -100,6 +100,17 @@ try {
     process.stdout.write(JSON.stringify({ continue: true, reason: nextGoal, additionalContext: nextGoal }));
   } else {
     process.stdout.write("{}");
+    // Session wrapped up (judge has no next goal): drop its auto-reserved
+    // leases and presence from the coordination boards immediately, so
+    // peers stop seeing a dead agent before the TTL expires.
+    try {
+      await fetch(`${process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787"}/api/coordination/session-end`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ harness: "zcode", sessionId, cwd }),
+        signal: AbortSignal.timeout(1500),
+      });
+    } catch {}
   }
 } catch (error) {
   process.stderr.write(`[agent-herder-zcode] ${(error instanceof Error ? error.message : String(error))}\n`);

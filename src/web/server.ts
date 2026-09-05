@@ -523,6 +523,12 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const context = blocks.length > 0 ? blocks.join("\n\n") : null;
     return sendJson(response, 200, { reservations, conflicts, context });
   }
+  if (url.pathname === "/api/coordination/session-end" && request.method === "POST") {
+    const body = await readJson(request);
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+    if (!sessionId) return sendJson(response, 400, { error: "sessionId is required" });
+    return sendJson(response, 200, await coordinationNotes.endSession(sessionId));
+  }
   if (url.pathname === "/api/autopilot/policy" && (request.method === "GET" || request.method === "PUT")) {
     if (!autopilotPolicyStore) return sendJson(response, 503, { error: "Autopilot policy store is disabled" });
     if (request.method === "GET") return sendJson(response, 200, await autopilotPolicyStore.readEffective());

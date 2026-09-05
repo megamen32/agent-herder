@@ -253,10 +253,15 @@ export class CoordinationNoteStore {
     const peers = [...byAuthor.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([authorSessionId, info]) => `- [${info.harness}] ${authorSessionId} :: ${info.paths.slice(0, 8).join(", ") || "(workspace-level)"}`);
+    const declared = (await this.list({ cwd: board, authorSessionId: session.id })).some((note) => note.source !== "hook");
+    const declaration = declared
+      ? []
+      : ["You have not declared your own task yet — do it now with one note (Agent Herder coordination_note_create: kind=\"working\", message=<one line: what you are doing>, paths=<files you own>) and update it when your goal changes."];
     if (tag === "agent-herder-repo-peers") {
       return [
         `<agent-herder-repo-peers board="${basename(board)}">`,
         "Other agents recently active in this repo. Before overlapping work, contact them via Agent Herder send_message with sessionId:",
+        ...declaration,
         ...peers,
         "</agent-herder-repo-peers>",
       ].join("\n");
@@ -264,6 +269,7 @@ export class CoordinationNoteStore {
     return [
       `<agent-herder-coordination board="${basename(board)}">`,
       `Active coordination notes from other agents in this workspace (${basename(board)}). Respect path ownership. If a note conflicts with your task, use Agent Herder send_message to contact its author before editing.`,
+      ...declaration,
       ...notes.map((note) => {
         const paths = note.paths.length ? ` paths=${note.paths.join(",")}` : "";
         const author = `${note.authorHarness || "agent"}:${note.authorSessionId}`;
@@ -271,6 +277,27 @@ export class CoordinationNoteStore {
       }),
       "</agent-herder-coordination>",
     ].join("\n");
+  }
+
+  /**
+   * Session wrapped up (harness Stop hook with no next goal): drop its
+   * auto-reserved leases and presence from every board so peers stop seeing
+   * a dead agent. Deliberate manual notes survive — they carry their own TTL
+   * and may be intentional handoffs.
+   */
+  async endSession(sessionId: string): Promise<{ removed: number }> {
+    return this.serial(async () => {
+      const file = await this.readAndPrune();
+      const before = file.notes.length;
+      file.notes = file.notes.filter((note) => !(note.authorSessionId === sessionId && note.source === "hook"));
+      const removed = before - file.notes.length;
+      if (removed > 0) await this.write(file);
+      this.presence.delete(sessionId);
+      for (const key of [...this.injectionState.keys()]) {
+        if (key.startsWith(`${sessionId}#`)) this.injectionState.delete(key);
+      }
+      return { removed };
+    });
   }
 
   /** True when this roster differs from what the session last saw, or the
