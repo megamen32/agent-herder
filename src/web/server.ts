@@ -1,8 +1,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
+import { promisify } from "node:util";
 import type { HarnessType } from "session-convert";
 import { LineageStore } from "../lineage-store.js";
 import { SessionNotFoundError, SessionSupervisor } from "../session-supervisor.js";
@@ -18,7 +20,7 @@ import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../a
 import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import { renderSessionGraph } from "../session-visualization.js";
-import { coordinationNotes } from "../coordination-notes.js";
+import { coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
 import { getAgentActivityStatistics, withSessionPortfolioStatistics } from "../session-statistics.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
@@ -437,6 +439,29 @@ export function createWebServer(dependencies: WebDependencies): Server {
   return server;
 }
 
+/** Edited files are attributed to the git repo that actually owns them, so
+ * each repo's coordination board sees the sessions touching it — a session
+ * working across several repos appears on several boards. Non-repo paths
+ * (dotfiles, home config) fall back to the session's launch directory. */
+const repoToplevelCache = new Map<string, { top: string | null; at: number }>();
+const execFileAsync = promisify(execFile);
+
+async function boardForPath(path: string, fallback: string): Promise<string> {
+  let dir: string;
+  try { dir = dirname(path); } catch { return fallback; }
+  if (!path.trim() || !isAbsolute(dir)) return fallback;
+  const cached = repoToplevelCache.get(dir);
+  if (cached && Date.now() - cached.at < 300_000) return cached.top ?? fallback;
+  let top: string | null = null;
+  try {
+    const result = await execFileAsync("git", ["-C", dir, "rev-parse", "--show-toplevel"], { timeout: 2000 });
+    const out = result.stdout.trim();
+    top = out && isAbsolute(out) ? resolve(out) : null;
+  } catch { top = null; }
+  repoToplevelCache.set(dir, { top, at: Date.now() });
+  return top ?? fallback;
+}
+
 async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (url.pathname === "/api/coordination/context" && request.method === "GET") {
@@ -456,26 +481,47 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const paths = Array.isArray(body.paths) ? body.paths.filter((value): value is string => typeof value === "string") : [];
     if (!harness || !sessionId || !cwd) return sendJson(response, 400, { error: "harness, sessionId, and cwd are required" });
     const ttlSeconds = typeof body.ttlSeconds === "number" ? body.ttlSeconds : undefined;
-    const heartbeat = await coordinationNotes.heartbeatSession({ sessionId, cwd, ttlSeconds });
-    const result = paths.length > 0
-      ? await coordinationNotes.reservePaths({ harness, sessionId, cwd, paths, ttlSeconds })
-      : { reservations: heartbeat, conflicts: [] };
-    const blocks: string[] = [];
-    if (result.conflicts.length) {
-      blocks.push([
-        "<agent-herder-path-conflict>",
-        "Another agent recently worked on an overlapping path. Treat this as a soft lock: coordinate before editing if the work may overlap.",
-        ...result.conflicts.map(({ path, note }) => `- path=${path} owner=${note.authorHarness || "agent"}:${note.authorSessionId} until=${note.expiresAt} note=${note.id} :: ${note.message}`),
-        "</agent-herder-path-conflict>",
-      ].join("\n"));
+    // Attribute each edited path to the git repo that owns it: a session
+    // working across several repos reserves on several boards at once.
+    const groups = new Map<string, string[]>();
+    for (const path of paths) {
+      const board = await boardForPath(path, cwd);
+      const bucket = groups.get(board) ?? [];
+      bucket.push(path);
+      groups.set(board, bucket);
     }
-    // Peer roster shares the injection-dedup slot with the turn-start block:
-    // a session sees peers only when the roster changed (or after the
-    // staleness window), never a repeat of what it already received.
-    const peersBlock = await coordinationNotes.renderWorkspacePeers({ harness, id: sessionId, cwd });
-    if (peersBlock) blocks.push(peersBlock);
+    if (groups.size === 0) groups.set(cwd, []);
+
+    const blocks: string[] = [];
+    const reservations: CoordinationNote[] = [];
+    const conflicts: CoordinationConflict[] = [];
+    for (const [board, boardPaths] of groups) {
+      try {
+        await coordinationNotes.heartbeatSession({ sessionId, cwd: board, ttlSeconds });
+        if (boardPaths.length === 0) continue;
+        const result = await coordinationNotes.reservePaths({ harness, sessionId, cwd: board, paths: boardPaths, ttlSeconds });
+        reservations.push(...result.reservations);
+        conflicts.push(...result.conflicts);
+        if (result.conflicts.length) {
+          blocks.push([
+            "<agent-herder-path-conflict>",
+            "Another agent recently worked on an overlapping path. Treat this as a soft lock: coordinate before editing if the work may overlap.",
+            ...result.conflicts.map(({ path, note }) => `- path=${path} owner=${note.authorHarness || "agent"}:${note.authorSessionId} until=${note.expiresAt} note=${note.id} :: ${note.message}`),
+            "</agent-herder-path-conflict>",
+          ].join("\n"));
+        }
+      } catch (error) {
+        console.error(`[agent-herder] coordination activity failed for board ${board}: ${(error as Error).message}`);
+      }
+    }
+    // Peer rosters per touched board share per-board dedup slots: a session
+    // sees a board's roster only when that board's roster changed.
+    for (const board of groups.keys()) {
+      const peersBlock = await coordinationNotes.renderWorkspacePeers({ harness, id: sessionId, cwd: board }).catch(() => null);
+      if (peersBlock) blocks.push(peersBlock);
+    }
     const context = blocks.length > 0 ? blocks.join("\n\n") : null;
-    return sendJson(response, 200, { ...result, context });
+    return sendJson(response, 200, { reservations, conflicts, context });
   }
   if (url.pathname === "/api/autopilot/policy" && (request.method === "GET" || request.method === "PUT")) {
     if (!autopilotPolicyStore) return sendJson(response, 503, { error: "Autopilot policy store is disabled" });

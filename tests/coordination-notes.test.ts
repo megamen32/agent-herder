@@ -116,8 +116,39 @@ describe("coordination note injection dedup", () => {
     expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).not.toBeNull();
     // Age out the injection record past the reshow window.
     const state = (store as unknown as { injectionState: Map<string, { signature: string; at: number }> }).injectionState;
-    const entry = state.get("sess-a")!;
-    state.set("sess-a", { ...entry, at: entry.at - 46 * 60 * 1000 });
+    const key = [...state.keys()].find((candidate) => candidate.startsWith("sess-a#"))!;
+    const entry = state.get(key)!;
+    state.set(key, { ...entry, at: entry.at - 46 * 60 * 1000 });
     expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).not.toBeNull();
+  });
+
+  it("keeps per-board dedup slots: two boards inject independently", async () => {
+    const store = await freshStore();
+    await store.create({ kind: "working", message: "repoA work", cwd: "/repoA", paths: ["a.ts"], authorHarness: "zcode", authorSessionId: "sess-c", source: "hook" });
+    await store.create({ kind: "working", message: "repoB work", cwd: "/repoB", paths: ["b.ts"], authorHarness: "zcode", authorSessionId: "sess-d", source: "hook" });
+    const session = { id: "sess-a", harness: "zcode" };
+
+    const rosterA = await store.renderWorkspacePeers({ ...session, cwd: "/repoA" });
+    const rosterB = await store.renderWorkspacePeers({ ...session, cwd: "/repoB" });
+    expect(rosterA).toContain("a.ts");
+    expect(rosterB).toContain("b.ts");
+    // Repeats per board are deduped independently — board B's roster was not
+    // suppressed by board A's signature.
+    expect(await store.renderWorkspacePeers({ ...session, cwd: "/repoA" })).toBeNull();
+    expect(await store.renderWorkspacePeers({ ...session, cwd: "/repoB" })).toBeNull();
+  });
+
+  it("renders turn-start awareness across every board the session touched", async () => {
+    const store = await freshStore();
+    await store.create({ kind: "working", message: "repoA work", cwd: "/repoA", paths: ["a.ts"], authorHarness: "zcode", authorSessionId: "sess-c", source: "hook" });
+    await store.create({ kind: "working", message: "repoB work", cwd: "/repoB", paths: ["b.ts"], authorHarness: "zcode", authorSessionId: "sess-d", source: "hook" });
+    // sess-a touches both boards (as when editing files across repos).
+    await store.reservePaths({ harness: "zcode", sessionId: "sess-a", cwd: "/repoA", paths: ["a2.ts"] });
+    await store.reservePaths({ harness: "zcode", sessionId: "sess-a", cwd: "/repoB", paths: ["b2.ts"] });
+
+    const turn = await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repoA" });
+    expect(turn).toContain("repoA work");
+    expect(turn).toContain("repoB work");
+    expect(turn).toContain('board="repoB"');
   });
 });

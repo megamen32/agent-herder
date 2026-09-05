@@ -1,5 +1,5 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { AgentSession } from "./types/index.js";
@@ -43,11 +43,37 @@ export function defaultCoordinationNotePath(): string {
 
 export class CoordinationNoteStore {
   private chain: Promise<unknown> = Promise.resolve();
-  /** Per receiving session: last injected roster signature + when. Shared by
-   * all injection channels so the same information never enters a session
-   * twice — only material changes (author/kind/message/paths set) re-inject. */
+  /** Per receiving session+board: last injected roster signature + when.
+   * All injection channels share these slots so the same information never
+   * enters a session twice — only material changes re-inject. Keyed per
+   * board because different boards carry different information. */
   private injectionState = new Map<string, { signature: string; at: number }>();
+  /** sessionId -> board cwd -> last activity ms. Tracks every workspace a
+   * session has actually touched, so turn-start awareness covers all of
+   * them, not just the launch directory. */
+  private presence = new Map<string, Map<string, number>>();
   constructor(private readonly filePath = defaultCoordinationNotePath()) {}
+
+  private touchPresence(sessionId: string, board: string): void {
+    const boards = this.presence.get(sessionId) ?? new Map<string, number>();
+    boards.set(board, Date.now());
+    this.presence.set(sessionId, boards);
+  }
+
+  /** Boards a session has touched recently, launch directory first. */
+  private boardsForSession(sessionId: string, fallbackCwd: string): string[] {
+    const now = Date.now();
+    const boards = this.presence.get(sessionId);
+    const recent: string[] = [];
+    if (boards) {
+      for (const [board, seen] of [...boards.entries()].sort((x, y) => y[1] - x[1])) {
+        if (now - seen > 24 * 60 * 60 * 1000) { boards.delete(board); continue; }
+        recent.push(board);
+      }
+    }
+    const fallback = resolve(fallbackCwd);
+    return [fallback, ...recent.filter((board) => board !== fallback)].slice(0, 10);
+  }
 
   async create(input: CoordinationNoteCreate): Promise<CoordinationNote> {
     return this.serial(async () => {
@@ -125,6 +151,7 @@ export class CoordinationNoteStore {
     return this.serial(async () => {
       const file = await this.readAndPrune();
       const cwd = canonicalCwd(input.cwd);
+      this.touchPresence(input.sessionId, cwd);
       const paths = normalizePathsForCwd(input.paths, cwd);
       const ttl = boundedTtl(input.ttlSeconds ?? autoTtlSeconds());
       const now = new Date();
@@ -161,6 +188,7 @@ export class CoordinationNoteStore {
     return this.serial(async () => {
       const file = await this.readAndPrune();
       const cwd = canonicalCwd(input.cwd);
+      this.touchPresence(input.sessionId, cwd);
       const ttl = boundedTtl(input.ttlSeconds ?? autoTtlSeconds());
       const now = new Date();
       const touched: CoordinationNote[] = [];
@@ -188,33 +216,33 @@ export class CoordinationNoteStore {
   }
 
   async renderForSession(session: { id: string; harness: string; cwd: string }): Promise<string | null> {
-    const notes = (await this.list({ cwd: session.cwd })).filter((note) => note.authorSessionId !== session.id);
-    if (notes.length === 0) return null;
-    if (!this.shouldInject(session.id, this.noteSignature(notes))) return null;
-    const lines = [
-      "<agent-herder-coordination>",
-      "Active coordination notes from other agents in this workspace. Respect path ownership. If a note conflicts with your task, use Agent Herder send_message to contact its author before editing.",
-      ...notes.map((note) => {
-        const paths = note.paths.length ? ` paths=${note.paths.join(",")}` : "";
-        const author = `${note.authorHarness || "agent"}:${note.authorSessionId}`;
-        return `- [${note.kind}] note=${note.id} author=${author} until=${note.expiresAt}${paths} :: ${note.message}`;
-      }),
-      "</agent-herder-coordination>",
-    ];
-    return lines.join("\n");
+    const blocks: string[] = [];
+    for (const board of this.boardsForSession(session.id, session.cwd)) {
+      const block = await this.renderBoard(session, board, "agent-herder-coordination");
+      if (block) blocks.push(block);
+    }
+    return blocks.length > 0 ? blocks.join("\n\n") : null;
   }
 
   /**
-   * Roster of other agents recently active in the same workspace, for
+   * Roster of other agents recently active on one board (a workspace), for
    * file-activity injection: who they are and which paths they are touching.
-   * Shares the injection-dedup slot with renderForSession so the same
-   * information never enters a session twice — only material changes
+   * Shares the per-board injection-dedup slot with renderForSession so the
+   * same information never enters a session twice — only material changes
    * (author/kind/message/paths set) or the staleness window re-inject.
    */
   async renderWorkspacePeers(session: { id: string; harness: string; cwd: string }): Promise<string | null> {
-    const notes = (await this.list({ cwd: session.cwd })).filter((note) => note.authorSessionId !== session.id);
+    return this.renderBoard(session, session.cwd, "agent-herder-repo-peers");
+  }
+
+  private async renderBoard(
+    session: { id: string; harness: string },
+    board: string,
+    tag: string,
+  ): Promise<string | null> {
+    const notes = (await this.list({ cwd: board })).filter((note) => note.authorSessionId !== session.id);
     if (notes.length === 0) return null;
-    if (!this.shouldInject(session.id, this.noteSignature(notes))) return null;
+    if (!this.shouldInject(`${session.id}#${board}`, this.noteSignature(notes))) return null;
     const byAuthor = new Map<string, { harness: string; paths: string[] }>();
     for (const note of notes) {
       const entry = byAuthor.get(note.authorSessionId) ?? { harness: note.authorHarness || "agent", paths: [] };
@@ -222,14 +250,26 @@ export class CoordinationNoteStore {
       for (const path of note.paths) if (!entry.paths.includes(path)) entry.paths.push(path);
       byAuthor.set(note.authorSessionId, entry);
     }
-    const lines = [...byAuthor.entries()]
+    const peers = [...byAuthor.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([authorSessionId, info]) => `- [${info.harness}] ${authorSessionId} :: ${info.paths.slice(0, 8).join(", ") || "(workspace-level)"}`);
+    if (tag === "agent-herder-repo-peers") {
+      return [
+        `<agent-herder-repo-peers board="${basename(board)}">`,
+        "Other agents recently active in this repo. Before overlapping work, contact them via Agent Herder send_message with sessionId:",
+        ...peers,
+        "</agent-herder-repo-peers>",
+      ].join("\n");
+    }
     return [
-      "<agent-herder-repo-peers>",
-      "Other agents recently active in this repo. Before overlapping work, contact them via Agent Herder send_message with sessionId:",
-      ...lines,
-      "</agent-herder-repo-peers>",
+      `<agent-herder-coordination board="${basename(board)}">`,
+      `Active coordination notes from other agents in this workspace (${basename(board)}). Respect path ownership. If a note conflicts with your task, use Agent Herder send_message to contact its author before editing.`,
+      ...notes.map((note) => {
+        const paths = note.paths.length ? ` paths=${note.paths.join(",")}` : "";
+        const author = `${note.authorHarness || "agent"}:${note.authorSessionId}`;
+        return `- [${note.kind}] note=${note.id} author=${author} until=${note.expiresAt}${paths} :: ${note.message}`;
+      }),
+      "</agent-herder-coordination>",
     ].join("\n");
   }
 
