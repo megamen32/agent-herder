@@ -151,4 +151,38 @@ describe("ZCode adapter", () => {
 
     await adapter.dispose();
   });
+
+  it("reports recently-updated sessions as running despite stale idle status", async () => {
+    // Interactive TUI sessions come back from listSessions with a stale
+    // "idle" status while a turn is executing; updatedAt recency is the
+    // reliable liveness signal. readSession crashes for these on current
+    // zcode-server builds, so only the list row is available.
+    class StaleStatusClient extends FakeClient {
+      updatedAtMs = Date.now() - 30_000;
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "listSessions") {
+          return [{
+            ...session,
+            status: "idle",
+            updatedAt: this.updatedAtMs,
+          }];
+        }
+        if (channel === "zcode-agent" && method === "readSession") {
+          throw new Error("Cannot read properties of undefined (reading 'runtimePolicy')");
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const client = new StaleStatusClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    const fresh = await adapter.listSessions();
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0].status).toBe("running");
+
+    client.updatedAtMs = Date.now() - 30 * 60 * 1000;
+    const stale = await adapter.listSessions();
+    expect(stale[0].status).toBe("idle");
+    await adapter.dispose();
+  });
 });

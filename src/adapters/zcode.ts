@@ -232,10 +232,20 @@ function mapSession(payload: unknown, fallbackCwd: string, fallbackTitle?: strin
     workspaceIdentity: nonEmptyString(workspace.workspaceIdentity),
     pendingRequestIds,
   };
+  const rawStatus = mapStatus(session.status);
+  // The tasks-index-backed status is stale for interactive TUI sessions —
+  // it reports "idle" while a turn is literally executing (verified
+  // 2026-09-05: live sessions at updatedAt age 5-78s vs a 1.6h gap to the
+  // next one). Recent updatedAt is the reliable liveness signal.
+  const activeWindowMs = Number(process.env.AGENT_HERDER_ACTIVE_WINDOW_MS || 5 * 60 * 1000);
+  const recentlyActive = Number.isFinite(updatedAt) && updatedAt > 0 && Date.now() - updatedAt < activeWindowMs;
+  const status = recentlyActive && !["stopped", "error", "archived", "needs_input"].includes(rawStatus)
+    ? "running"
+    : rawStatus;
   return {
     id: session.sessionId,
     harness: "zcode",
-    status: mapStatus(session.status),
+    status,
     title: session.title || fallbackTitle || "Untitled ZCode session",
     cwd,
     lastActivity: timestamp(session.updatedAt ?? session.createdAt),
