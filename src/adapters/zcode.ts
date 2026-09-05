@@ -17,6 +17,7 @@ import {
   type SetPermissionsOptions,
 } from "../types/index.js";
 import { ZcodeAppServerClient, type ZcodeClientLike } from "./zcode-protocol.js";
+import { lifecycleStateFor } from "../session-lifecycle.js";
 
 interface ZcodeWorkspaceRef {
   workspacePath: string;
@@ -233,15 +234,22 @@ function mapSession(payload: unknown, fallbackCwd: string, fallbackTitle?: strin
     pendingRequestIds,
   };
   const rawStatus = mapStatus(session.status);
-  // The tasks-index-backed status is stale for interactive TUI sessions —
+  // Preferred source: the hook-fed lifecycle registry observes real session
+  // events (start/turn boundaries/end). Fallback: updatedAt recency, because
+  // the tasks-index-backed status is stale for interactive TUI sessions —
   // it reports "idle" while a turn is literally executing (verified
   // 2026-09-05: live sessions at updatedAt age 5-78s vs a 1.6h gap to the
-  // next one). Recent updatedAt is the reliable liveness signal.
+  // next one).
   const activeWindowMs = Number(process.env.AGENT_HERDER_ACTIVE_WINDOW_MS || 5 * 60 * 1000);
   const recentlyActive = Number.isFinite(updatedAt) && updatedAt > 0 && Date.now() - updatedAt < activeWindowMs;
-  const status = recentlyActive && !["stopped", "error", "archived", "needs_input"].includes(rawStatus)
+  const recencyStatus = recentlyActive && !["stopped", "error", "archived", "needs_input"].includes(rawStatus)
     ? "running"
     : rawStatus;
+  const lifecycle = lifecycleStateFor("zcode", session.sessionId);
+  const status = lifecycle === "ended" ? "stopped"
+    : lifecycle === "running" ? "running"
+    : lifecycle === "idle" ? "idle"
+    : recencyStatus;
   return {
     id: session.sessionId,
     harness: "zcode",

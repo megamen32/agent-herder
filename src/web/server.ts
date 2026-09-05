@@ -21,6 +21,7 @@ import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/sessi
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
+import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
 import { getAgentActivityStatistics, withSessionPortfolioStatistics } from "../session-statistics.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
@@ -527,7 +528,22 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const body = await readJson(request);
     const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
     if (!sessionId) return sendJson(response, 400, { error: "sessionId is required" });
+    const harness = typeof body.harness === "string" && body.harness.trim() ? body.harness.trim() : "zcode";
+    markLifecycleEvent(harness, sessionId, "end", typeof body.cwd === "string" ? body.cwd : undefined);
     return sendJson(response, 200, await coordinationNotes.endSession(sessionId));
+  }
+  if (url.pathname === "/api/coordination/lifecycle" && request.method === "POST") {
+    const body = await readJson(request);
+    const harness = typeof body.harness === "string" ? body.harness.trim() : "";
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+    const event = typeof body.event === "string" ? body.event.trim() : "";
+    const allowed: SessionLifecycleEvent[] = ["start", "turn-start", "turn-end", "end"];
+    if (!harness || !sessionId || !allowed.includes(event as SessionLifecycleEvent)) {
+      return sendJson(response, 400, { error: "harness, sessionId, and event (start|turn-start|turn-end|end) are required" });
+    }
+    markLifecycleEvent(harness, sessionId, event as SessionLifecycleEvent, typeof body.cwd === "string" ? body.cwd : undefined);
+    if (event === "end") await coordinationNotes.endSession(sessionId);
+    return sendJson(response, 200, { ok: true });
   }
   if (url.pathname === "/api/autopilot/policy" && (request.method === "GET" || request.method === "PUT")) {
     if (!autopilotPolicyStore) return sendJson(response, 503, { error: "Autopilot policy store is disabled" });

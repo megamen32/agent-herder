@@ -71,6 +71,16 @@ try {
   if (!sessionId) throw new Error("ZCode Stop hook did not provide session_id");
   const root = agentHerderRoot();
   const userContext = await lastUserContext(sessionId);
+  // The turn just ended: record the lifecycle boundary before judging, so
+  // the coordination boards see this session as idle, not running.
+  try {
+    await fetch(`${process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787"}/api/coordination/lifecycle`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ harness: "zcode", sessionId, cwd, event: "turn-end" }),
+      signal: AbortSignal.timeout(1200),
+    });
+  } catch {}
   // ZCode has no slash-command callback with a session id. Arm the exact
   // session from its authoritative Stop payload before judging it.
   await invoke(root, { command: "on", harness: "zcode", sessionId, cwd });

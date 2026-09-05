@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ZcodeClientLike } from "../src/adapters/zcode-protocol.js";
 import { ZcodeAdapter } from "../src/adapters/zcode.js";
+import { markLifecycleEvent } from "../src/session-lifecycle.js";
 
 const session = {
   sessionId: "session-1",
@@ -58,6 +59,23 @@ class FakeClient implements ZcodeClientLike {
     if (channel === "zcode-task" && method === "stopGeneration") return undefined;
     if (channel === "zcode-task" && method === "respondPermission") return true;
     throw new Error(`unexpected fake call ${channel}.${method}`);
+  }
+}
+
+class StaleStatusClient extends FakeClient {
+  updatedAtMs = Date.now() - 30_000;
+  override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+    if (channel === "zcode-agent" && method === "listSessions") {
+      return [{
+        ...session,
+        status: "idle",
+        updatedAt: this.updatedAtMs,
+      }];
+    }
+    if (channel === "zcode-agent" && method === "readSession") {
+      throw new Error("Cannot read properties of undefined (reading 'runtimePolicy')");
+    }
+    return super.call(channel, method, args);
   }
 }
 
@@ -183,6 +201,21 @@ describe("ZCode adapter", () => {
     client.updatedAtMs = Date.now() - 30 * 60 * 1000;
     const stale = await adapter.listSessions();
     expect(stale[0].status).toBe("idle");
+    await adapter.dispose();
+  });
+
+  it("prefers hook-fed lifecycle state over stale list status", async () => {
+    const client = new StaleStatusClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+
+    markLifecycleEvent("zcode", "session-1", "turn-start");
+    const running = await adapter.listSessions();
+    expect(running[0].status).toBe("running");
+
+    markLifecycleEvent("zcode", "session-1", "end");
+    const ended = await adapter.listSessions();
+    expect(ended[0].status).toBe("stopped");
+
     await adapter.dispose();
   });
 });
