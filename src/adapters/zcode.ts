@@ -21,6 +21,8 @@ import { ZcodeAppServerClient, type ZcodeClientLike } from "./zcode-protocol.js"
 interface ZcodeWorkspaceRef {
   workspacePath: string;
   workspaceIdentity: string;
+  /** Current zcode-server builds validate this key; older ones used workspaceIdentity. */
+  workspaceKey: string;
 }
 
 interface ZcodeModelRef {
@@ -321,7 +323,11 @@ export class ZcodeAdapter implements HarnessAdapter {
       await this.client.start();
       const result = record(await this.callAgent("initialize", this.workspace()));
       if (result.available !== true) {
-        throw new Error(nonEmptyString(result.reason) || "ZCode app-server reported unavailable");
+        // provider_not_ready only blocks session CREATION; discovery and
+        // messaging of existing sessions (listSessions/sendPrompt) work —
+        // degrade instead of failing the whole adapter.
+        const reason = nonEmptyString(result.reason) || "ZCode app-server reported unavailable";
+        console.error(`[agent-herder-zcode] app-server degraded: ${reason}`);
       }
       this.initialized = true;
     } catch (error) {
@@ -577,7 +583,7 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   private workspace(cwd = this.cwd): ZcodeWorkspaceRef {
     const canonical = resolve(cwd);
-    return { workspacePath: canonical, workspaceIdentity: canonical };
+    return { workspacePath: canonical, workspaceIdentity: canonical, workspaceKey: canonical };
   }
 
   private async readSnapshot(id: string, workspace: ZcodeWorkspaceRef, messageLimit?: number): Promise<ZcodeSnapshot> {
