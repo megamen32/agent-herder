@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve, join } from "node:path";
@@ -283,6 +283,9 @@ export class ZcodeAdapter implements HarnessAdapter {
   readonly type = "zcode" as const;
   readonly name = "ZCode";
   readonly lazyStart = true;
+  // Sessions live in workspace-scoped app-server storage that is readable
+  // without starting a run; discovery must not wait for lazyStart.
+  readonly lazyDiscovery = true;
   readonly controlCapabilities: HarnessCapabilities = {
     cancelTurn: true,
     detach: true,
@@ -344,18 +347,30 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
-    const workspace = this.workspace(options.cwd);
-    const result = await this.callAgent("listSessions", {
-      ...workspace,
-      includeArchived: false,
-      limit: 200,
-    });
-    const rows: unknown[] = Array.isArray(result)
-      ? result
-      : (Array.isArray(record(result).sessions) ? record(result).sessions as unknown[] : []);
-    return Promise.all(rows.map(async (row) => {
+    const rows: Array<{ workspace: ZcodeWorkspaceRef; row: unknown }> = [];
+    for (const workspace of await this.workspaceCandidates(options.cwd)) {
+      try {
+        const result = await this.callAgent("listSessions", {
+          ...workspace,
+          includeArchived: false,
+          limit: 200,
+        });
+        const list = Array.isArray(result)
+          ? result
+          : (Array.isArray(record(result).sessions) ? record(result).sessions as unknown[] : []);
+        for (const row of list) rows.push({ workspace, row });
+      } catch {
+        // A workspace the app-server cannot serve (e.g. provider_not_ready
+        // creation-only paths) must not hide the other workspaces.
+      }
+    }
+    const seen = new Set<string>();
+    const sessions: AgentSession[] = [];
+    for (const { workspace, row } of rows) {
       const info = sessionInfoFromPayload(row);
       if (!info) throw new Error("ZCode returned an invalid listSessions entry");
+      if (seen.has(info.sessionId)) continue;
+      seen.add(info.sessionId);
       const rowWorkspace = this.workspace(nonEmptyString(record(info.workspace).workspacePath) || workspace.workspacePath);
       this.sessionWorkspaces.set(info.sessionId, rowWorkspace);
       let mapped = mapSession(row, rowWorkspace.workspacePath);
@@ -367,16 +382,27 @@ export class ZcodeAdapter implements HarnessAdapter {
           // A list row is still useful when a historical snapshot cannot be read.
         }
       }
-      return mapped;
-    }));
+      sessions.push(mapped);
+    }
+    return sessions;
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
+    for (const workspace of await this.workspaceCandidates(this.sessionWorkspaces.get(id)?.workspacePath)) {
+      try {
+        const snapshot = await this.readSnapshot(id, workspace);
+        this.sessionWorkspaces.set(id, workspace);
+        return mapSession(snapshot, workspace.workspacePath);
+      } catch {
+        continue;
+      }
+    }
+    // readSession can fail outright for interactive TUI sessions on current
+    // zcode-server builds (runtimePolicy crash), while listSessions still
+    // returns them — fall back to discovery.
     try {
-      const workspace = this.sessionWorkspaces.get(id) || this.workspace();
-      const snapshot = await this.readSnapshot(id, workspace);
-      this.sessionWorkspaces.set(id, workspace);
-      return mapSession(snapshot, workspace.workspacePath);
+      const sessions = await this.listSessions();
+      return sessions.find((session) => session.id === id) ?? null;
     } catch {
       return null;
     }
@@ -584,6 +610,53 @@ export class ZcodeAdapter implements HarnessAdapter {
   private workspace(cwd = this.cwd): ZcodeWorkspaceRef {
     const canonical = resolve(cwd);
     return { workspacePath: canonical, workspaceIdentity: canonical, workspaceKey: canonical };
+  }
+
+  /**
+   * Workspaces to probe for sessions. The app-server scopes every call by
+   * workspaceKey, so a daemon rooted at one directory cannot see sessions
+   * from other workspaces. The zcode tasks index (workspace_path per task)
+   * and the coordination-notes store (each author's cwd) together form a
+   * cross-workspace directory of live workspaces.
+   */
+  private async workspaceCandidates(explicitCwd?: string): Promise<ZcodeWorkspaceRef[]> {
+    if (explicitCwd) return [this.workspace(explicitCwd)];
+    const candidates: ZcodeWorkspaceRef[] = [this.workspace()];
+    const push = (value: unknown) => {
+      if (typeof value !== "string" || value.length === 0) return;
+      try {
+        const ref = this.workspace(value);
+        if (!existsSync(ref.workspacePath)) return;
+        if (!candidates.some((c) => c.workspaceKey === ref.workspaceKey)) candidates.push(ref);
+      } catch {
+        // Unresolvable path: skip this candidate.
+      }
+    };
+    try {
+      const notesPath = process.env.AGENT_HERDER_COORDINATION_NOTES
+        || join(homedir(), ".local", "state", "agent-herder", "coordination-notes.json");
+      const raw = JSON.parse(readFileSync(notesPath, "utf8")) as { notes?: Array<{ cwd?: string }> };
+      for (const note of raw.notes ?? []) push(note.cwd);
+    } catch {
+      // Missing or unreadable notes store: fall through to the tasks index.
+    }
+    try {
+      const dbPath = process.env.ZCODE_TASKS_INDEX_DB
+        || join(homedir(), ".zcode", "v2", "tasks-index.sqlite");
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      try {
+        const rows = db.prepare(
+          "select workspace_path from tasks where workspace_path is not null order by created_at desc limit 20"
+        ).all();
+        for (const row of rows) push((row as { workspace_path?: unknown }).workspace_path);
+      } finally {
+        db.close();
+      }
+    } catch {
+      // Tasks index unavailable (older zcode builds): notes candidates still apply.
+    }
+    return candidates;
   }
 
   private async readSnapshot(id: string, workspace: ZcodeWorkspaceRef, messageLimit?: number): Promise<ZcodeSnapshot> {
