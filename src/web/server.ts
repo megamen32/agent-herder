@@ -27,6 +27,7 @@ import { toNodeHandler, type NodeMcpRequestHandler } from "@modelcontextprotocol
 import type { AdapterRegistry } from "../adapter-registry.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
+import { handleQuotaLensRequest } from "./quota-lens.js";
 
 export interface WebDependencies {
   adapters: Map<string, HarnessAdapter>;
@@ -486,6 +487,10 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
 
 async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
+  if (url.pathname.startsWith("/api/quota-lens") && request.method === "GET") {
+    const body = await handleQuotaLensRequest(url.pathname, url.searchParams);
+    if (body !== null) return sendJson(response, 200, body);
+  }
   if (url.pathname === "/api/coordination/context" && request.method === "GET") {
     const harness = url.searchParams.get("harness")?.trim();
     const sessionId = url.searchParams.get("sessionId")?.trim();

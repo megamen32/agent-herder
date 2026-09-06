@@ -34,6 +34,7 @@ import type { CdpChatCapabilities, CdpChatDriver } from "./cdp-chat.js";
 import { ALL_CDP_CHAT_CAPABILITIES, CdpChatClient } from "./cdp-chat.js";
 import { ChatGptAccountArchive } from "./chatgpt-account-archive.js";
 import { ChatGptHistoryArchive } from "./chatgpt-history-archive.js";
+import { isQuotaLensEnabled, startQuotaLensSampler } from "./web/quota-lens.js";
 
 // ===== Configuration from environment =====
 
@@ -432,6 +433,7 @@ async function main() {
     if (!isLoopbackHost(host) && !httpToken) {
       throw new Error("AGENT_HERDER_HTTP_TOKEN is required when AGENT_HERDER_WEB_HOST is non-local");
     }
+    if (isQuotaLensEnabled()) startQuotaLensSampler();
     const webServer = createWebServer({
       adapters,
       converter: processSessionConverter,
