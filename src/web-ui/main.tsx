@@ -44,6 +44,8 @@ type WebAutopilotPolicy = {
 };
 type WebAutopilotPolicyState = { policy: WebAutopilotPolicy; source: "persisted" | "legacy" | "default" | "error"; revision: string; coverage: string; error?: string };
 type WebAutopilotSession = { harness: string; sessionId: string; enabled: boolean; source: "session" | "policy" | "plugin-default" | "default"; cwd?: string; updatedAt?: string };
+type HerderJobState = "queued" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "interrupted";
+type HerderJob = { id: string; kind: string; state: HerderJobState; createdAt: string; updatedAt: string; ownerSessionId?: string; progress?: number; statusMessage?: string; result?: unknown; error?: string; resultRef: string };
 
 const AUTOPILOT_HARNESS_LABELS: Record<AutopilotHarness, string> = {
   codex: "Codex",
@@ -62,6 +64,19 @@ const keyOf = sessionKey;
 const splitKey = (key: string) => {
   const separator = key.indexOf(":");
   return { harness: key.slice(0, separator), id: key.slice(separator + 1) };
+};
+
+// deep link: #/session/<harness>:<id> — восстанавливает выбор сессии из URL
+const readSessionFromHash = (): string | undefined => {
+  const match = window.location.hash.match(/^#\/session\/(.+)$/);
+  if (!match) return undefined;
+  return decodeURIComponent(match[1]);
+};
+const writeSessionToHash = (key?: string) => {
+  const target = key ? `#/session/${encodeURIComponent(key)}` : `${window.location.pathname}${window.location.search}`;
+  if (window.location.hash !== (key ? target : "")) {
+    history.replaceState(null, "", key ? target : target || window.location.pathname);
+  }
 };
 const formatTime = (value: string) => {
   const timestamp = Date.parse(value);
@@ -184,6 +199,35 @@ function StatisticsView({ statistics, loading, error, days, onDays, onRefresh }:
       <p>{statistics.source.caveat} {portfolio?.caveat || ""}</p>
       <div className="method-facts"><span><b>{formatStatCount(statistics.sample.toolCalls)}</b> tool calls</span><span><b>{formatStatCount(statistics.activityGaps.count)}</b> activity intervals</span><span><b>{formatStatCount(statistics.sample.repeatedFileSeries)}</b> repeatedly edited files</span><span><b>{new Date(statistics.generatedAt).toLocaleTimeString()}</b> generated</span></div>
     </section>
+  </div></div>;
+}
+
+function JobsView({ jobs, loading, error, cancellingJobId, onRefresh, onCancel }: {
+  jobs: HerderJob[]; loading: boolean; error?: string; cancellingJobId?: string; onRefresh: () => void; onCancel: (jobId: string) => void;
+}) {
+  const active = jobs.filter((job) => job.state === "queued" || job.state === "running" || job.state === "waiting").length;
+  const failed = jobs.filter((job) => job.state === "failed" || job.state === "interrupted").length;
+  return <div className="jobs-scroll"><div className="jobs-page">
+    <div className="jobs-hero">
+      <div><span className="eyebrow">CONTROL PLANE</span><h2>Jobs</h2><p>Long-running Agent Herder operations survive MCP reconnects. Completed history is persisted across service restarts.</p></div>
+      <div className="jobs-summary"><span><b>{active}</b> active</span><span><b>{jobs.length}</b> retained</span>{failed > 0 && <span className="jobs-failed-count"><b>{failed}</b> failed/interrupted</span>}<button className="quiet-button" disabled={loading} onClick={onRefresh}>{loading ? "Refreshing…" : "Refresh"}</button></div>
+    </div>
+    {error && <div className="statistics-warning">Jobs refresh failed: {error}</div>}
+    {loading && jobs.length === 0 && <div className="statistics-loading"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Loading jobs…</strong></div>}
+    {!loading && jobs.length === 0 && <div className="jobs-empty">No jobs yet. Background exports, conversions, browser work and reconciliation will appear here.</div>}
+    <div className="jobs-list">{jobs.map((job) => {
+      const cancellable = job.state === "queued" || job.state === "running" || job.state === "waiting";
+      const progress = Math.max(0, Math.min(1, job.progress ?? (job.state === "completed" ? 1 : 0)));
+      return <article className={`job-card job-${job.state}`} key={job.id}>
+        <div className="job-head"><div><span className={`job-state job-state-${job.state}`}>{job.state}</span><strong>{job.kind}</strong></div><time title={new Date(job.updatedAt).toLocaleString()}>{formatSessionAge(job.updatedAt)}</time></div>
+        <div className="job-progress"><span style={{ width: `${progress * 100}%` }} /></div>
+        <div className="job-meta"><code>{job.id}</code>{job.ownerSessionId && <span>owner · <code>{job.ownerSessionId}</code></span>}<span>updated · {new Date(job.updatedAt).toLocaleString()}</span></div>
+        {job.statusMessage && <p className="job-status-message">{job.statusMessage}</p>}
+        {job.error && <div className="job-error">{job.error}</div>}
+        {job.result !== undefined && <details className="job-result"><summary>Result</summary><pre>{JSON.stringify(job.result, null, 2)}</pre></details>}
+        <div className="job-actions"><code>{job.resultRef}</code>{cancellable && <button className="danger-button" disabled={cancellingJobId === job.id} onClick={() => onCancel(job.id)}>{cancellingJobId === job.id ? "Cancelling…" : "Cancel"}</button>}</div>
+      </article>;
+    })}</div>
   </div></div>;
 }
 
@@ -310,7 +354,10 @@ function SessionList({ entries, activeKey, loading, refreshing, settings, settin
 
 function App() {
   const [sessions, setSessions] = React.useState<HerderSession[]>([]);
-  const [activeKey, setActiveKey] = React.useState<string | undefined>(() => window.localStorage.getItem("agent-herder.active-session") || undefined);
+  const [activeKey, setActiveKey] = React.useState<string | undefined>(() => readSessionFromHash() ?? window.localStorage.getItem("agent-herder.active-session") ?? undefined);
+  // сессия, выбранная через deep link (#/session/...) — не сбрасывается фильтром списка
+  const [deepLinkKey, setDeepLinkKey] = React.useState<string | undefined>(() => readSessionFromHash());
+  const selectSession = React.useCallback((key: string | undefined) => { setDeepLinkKey(key); setActiveKey(key); }, []);
   const [details, setDetails] = React.useState<SessionDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = React.useState(false);
   const [detailsHydrating, setDetailsHydrating] = React.useState(false);
@@ -321,6 +368,11 @@ function App() {
   const [showTools, setShowTools] = React.useState(false);
   const [showInspector, setShowInspector] = React.useState(true);
   const [showStatistics, setShowStatistics] = React.useState(false);
+  const [showJobs, setShowJobs] = React.useState(false);
+  const [jobs, setJobs] = React.useState<HerderJob[]>([]);
+  const [jobsLoading, setJobsLoading] = React.useState(false);
+  const [jobsError, setJobsError] = React.useState<string>();
+  const [cancellingJobId, setCancellingJobId] = React.useState<string>();
   const [statistics, setStatistics] = React.useState<AgentActivityStatistics>();
   const [statisticsLoading, setStatisticsLoading] = React.useState(false);
   const [statisticsError, setStatisticsError] = React.useState<string>();
@@ -423,9 +475,32 @@ function App() {
       }
     };
     void initial();
-    const timer = window.setInterval(() => void loadSessions(), 3000);
+    const timer = window.setInterval(() => void loadSessions(), 30_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [loadSessions]);
+  const loadJobs = React.useCallback(async () => {
+    setJobsLoading(true);
+    try {
+      const result = await api<{ jobs: HerderJob[] }>("/api/jobs?limit=100");
+      setJobs(result.jobs);
+      setJobsError(undefined);
+    } catch (error) {
+      setJobsError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setJobsLoading(false);
+    }
+  }, []);
+  React.useEffect(() => {
+    void loadJobs();
+    const timer = window.setInterval(() => void loadJobs(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [loadJobs]);
+  const cancelJob = async (jobId: string) => {
+    setCancellingJobId(jobId);
+    try { await api(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST", body: JSON.stringify({}) }); await loadJobs(); }
+    finally { setCancellingJobId(undefined); }
+  };
+
   const loadAutopilotPolicy = React.useCallback(async () => {
     const state = await api<WebAutopilotPolicyState>("/api/autopilot/policy");
     setAutopilotPolicy(state);
@@ -437,6 +512,7 @@ function App() {
   React.useEffect(() => {
     if (activeKey) window.localStorage.setItem("agent-herder.active-session", activeKey);
     else window.localStorage.removeItem("agent-herder.active-session");
+    writeSessionToHash(activeKey);
   }, [activeKey]);
 
   const loadDetails = React.useCallback(async (key: string) => {
@@ -474,6 +550,49 @@ function App() {
     if (!activeKey) { detailsRequestRef.current += 1; setDetails(null); setDetailsLoading(false); setDetailsHydrating(false); setLatestTimingMs(undefined); setHydrateTimingMs(undefined); return; }
     void loadDetails(activeKey);
   }, [activeKey, loadDetails]);
+  React.useEffect(() => {
+    let sessionTimer = 0;
+    let jobTimer = 0;
+    let detailTimer = 0;
+    const scheduleSessions = () => {
+      if (sessionTimer) return;
+      sessionTimer = window.setTimeout(() => { sessionTimer = 0; void loadSessions(); }, 120);
+    };
+    const scheduleJobs = () => {
+      if (jobTimer) return;
+      jobTimer = window.setTimeout(() => { jobTimer = 0; void loadJobs(); }, 120);
+    };
+    const scheduleDetails = () => {
+      if (!activeKey || detailTimer) return;
+      detailTimer = window.setTimeout(() => { detailTimer = 0; void loadDetails(activeKey); }, 90);
+    };
+    const storedCursor = Number.parseInt(window.localStorage.getItem("agent-herder.event-cursor") || "0", 10);
+    const cursor = Number.isFinite(storedCursor) && storedCursor > 0 ? storedCursor : 0;
+    const stream = new EventSource(`/api/events/stream?after=${cursor}`);
+    stream.onmessage = (message) => {
+      try {
+        const event = JSON.parse(message.data) as { control?: string; latestSequence?: number; sequence?: number; uri?: string };
+        if (event.control === "reset") {
+          if (typeof event.latestSequence === "number") window.localStorage.setItem("agent-herder.event-cursor", String(event.latestSequence));
+          scheduleSessions(); scheduleJobs(); scheduleDetails();
+          return;
+        }
+        if (typeof event.sequence === "number") window.localStorage.setItem("agent-herder.event-cursor", String(event.sequence));
+        const uri = event.uri || "";
+        if (uri.startsWith("herder://jobs")) scheduleJobs();
+        if (uri.startsWith("herder://sessions") || uri.startsWith("herder://coordination") || uri.startsWith("herder://human-requests")) {
+          scheduleSessions();
+          scheduleDetails();
+        }
+      } catch { /* malformed event; fallback refresh still runs */ }
+    };
+    return () => {
+      stream.close();
+      if (sessionTimer) window.clearTimeout(sessionTimer);
+      if (jobTimer) window.clearTimeout(jobTimer);
+      if (detailTimer) window.clearTimeout(detailTimer);
+    };
+  }, [activeKey, loadDetails, loadJobs, loadSessions]);
   React.useLayoutEffect(() => {
     const element = chatScrollRef.current;
     if (!element || !shouldFollowRef.current) return;
@@ -526,9 +645,9 @@ function App() {
   const sessionEntries = React.useMemo(() => filterAndArrangeSessions(sessions, listSettings, collapsedChildren, choiceSessionKeys), [sessions, listSettings, collapsedChildren, choiceSessionKeys]);
   const visibleSessionEntries = React.useMemo(() => sessionEntries.filter(({ session }) => matchesSessionQuery(session, sessionSearch)), [sessionEntries, sessionSearch]);
   React.useEffect(() => {
-    if (activeKey && visibleSessionEntries.some(({ session }) => keyOf(session) === activeKey)) return;
-    setActiveKey(visibleSessionEntries[0] ? keyOf(visibleSessionEntries[0].session) : undefined);
-  }, [activeKey, visibleSessionEntries]);
+    if (activeKey && (activeKey === deepLinkKey || visibleSessionEntries.some(({ session }) => keyOf(session) === activeKey))) return;
+    selectSession(visibleSessionEntries[0] ? keyOf(visibleSessionEntries[0].session) : undefined);
+  }, [activeKey, visibleSessionEntries, deepLinkKey, selectSession]);
   const chooseAutopilot = async (requestId: string, choiceId: string) => {
     if (choosingRequestId) return;
     setChoosingRequestId(requestId);
@@ -691,7 +810,13 @@ function App() {
   const runAction = async (action: "resume" | "stop" | "recover") => {
     if (!activeKey) return;
     const { harness, id } = splitKey(activeKey);
-    await api(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({}) });
+    const result = await api<{ job?: HerderJob }>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({}) });
+    if (action === "recover" && result.job) {
+      setShowJobs(true);
+      setShowStatistics(false);
+      await loadJobs();
+      return;
+    }
     await loadSessions();
     await loadDetails(activeKey);
   };
@@ -722,19 +847,20 @@ function App() {
     setShowScrollToLatest(!following && element.scrollHeight > element.clientHeight);
   };
 
-  return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"} ${(!showInspector || showStatistics) ? "no-inspector" : ""}`}>
-    <SessionList entries={visibleSessionEntries} activeKey={activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { shouldFollowRef.current = true; setShowScrollToLatest(false); setShowStatistics(false); setActiveKey(key); setMobileView("chat"); }} />
+  return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"} ${(!showInspector || showStatistics || showJobs) ? "no-inspector" : ""}`}>
+    <SessionList entries={visibleSessionEntries} activeKey={activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { shouldFollowRef.current = true; setShowScrollToLatest(false); setShowStatistics(false); setShowJobs(false); selectSession(key); setMobileView("chat"); }} />
     <section className="chat-pane">
       <header className="chat-header">
         <button className="mobile-back" onClick={() => setMobileView("sessions")} aria-label="Back to sessions">← <span>Sessions</span></button>
-        <div className="chat-heading">{showStatistics ? <><span className="eyebrow">AGENT HERDER</span><h2>Statistics</h2><small>Real activity patterns from recent coding sessions</small></> : <><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2>{activeSession?.title || (loading ? "Loading sessions…" : "Select a session")}{(detailsLoading || detailsHydrating) && <span className="inline-loading-dot chat-loading-dot" aria-label="Loading session" />}</h2><small>{activeSession?.cwd || ""}</small><div className="load-timings" aria-label="Browser load timings"><span title="Page → session list ready">sessions <b>{formatLoadTiming(sessionsTimingMs)}</b></span>{activeKey && <><span title="Newest turns request">latest <b>{detailsLoading ? "…" : formatLoadTiming(latestTimingMs)}</b></span><span title="Background history + metrics request">hydrate <b>{detailsHydrating ? "…" : formatLoadTiming(hydrateTimingMs)}</b></span></>}</div></>}</div>
-        <div className="header-actions"><button className={`quiet-button ${showStatistics ? "selected-icon" : ""}`} onClick={() => showStatistics ? setShowStatistics(false) : openStatistics()}>Statistics</button>{!showStatistics && <><button className={`quiet-button ${showAutopilotSettings ? "selected-icon" : ""}`} onClick={() => { setShowAutopilotSettings((value) => !value); setChatMenuOpen(false); }}>Autopilot</button><button className="quiet-button" onClick={() => setShowInspector((value) => !value)}>{showInspector ? "Hide" : "Info"}</button></>}<button className={`icon-button ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Chat menu" aria-expanded={chatMenuOpen} onClick={() => setChatMenuOpen((value) => !value)}>···</button></div>
-        {chatMenuOpen && <div className="chat-menu" role="menu"><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label><button className="quiet-button" onClick={() => { setShowAutopilotSettings(true); setChatMenuOpen(false); }}>Настройки автопилота</button><button className="quiet-button" onClick={() => { setShowInspector(true); setChatMenuOpen(false); }}>Session info</button><button className="quiet-button" onClick={openStatistics}>Statistics</button></div>}
+        <div className="chat-heading">{showJobs ? <><span className="eyebrow">AGENT HERDER</span><h2>Jobs</h2><small>Persistent background work and progress</small></> : showStatistics ? <><span className="eyebrow">AGENT HERDER</span><h2>Statistics</h2><small>Real activity patterns from recent coding sessions</small></> : <><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2>{activeSession?.title || (loading ? "Loading sessions…" : "Select a session")}{(detailsLoading || detailsHydrating) && <span className="inline-loading-dot chat-loading-dot" aria-label="Loading session" />}</h2><small>{activeSession?.cwd || ""}</small><div className="load-timings" aria-label="Browser load timings"><span title="Page → session list ready">sessions <b>{formatLoadTiming(sessionsTimingMs)}</b></span>{activeKey && <><span title="Newest turns request">latest <b>{detailsLoading ? "…" : formatLoadTiming(latestTimingMs)}</b></span><span title="Background history + metrics request">hydrate <b>{detailsHydrating ? "…" : formatLoadTiming(hydrateTimingMs)}</b></span></>}</div></>}</div>
+        <div className="header-actions"><button className={`quiet-button ${showJobs ? "selected-icon" : ""}`} onClick={() => { setShowJobs((value) => !value); setShowStatistics(false); setShowAutopilotSettings(false); }}>Jobs{jobs.some((job) => job.state === "queued" || job.state === "running" || job.state === "waiting") ? ` · ${jobs.filter((job) => job.state === "queued" || job.state === "running" || job.state === "waiting").length}` : ""}</button><button className={`quiet-button ${showStatistics ? "selected-icon" : ""}`} onClick={() => { setShowJobs(false); showStatistics ? setShowStatistics(false) : openStatistics(); }}>Statistics</button>{!showStatistics && !showJobs && <><button className={`quiet-button ${showAutopilotSettings ? "selected-icon" : ""}`} onClick={() => { setShowAutopilotSettings((value) => !value); setChatMenuOpen(false); }}>Autopilot</button><button className="quiet-button" onClick={() => setShowInspector((value) => !value)}>{showInspector ? "Hide" : "Info"}</button></>}<button className={`icon-button ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Chat menu" aria-expanded={chatMenuOpen} onClick={() => setChatMenuOpen((value) => !value)}>···</button></div>
+        {chatMenuOpen && <div className="chat-menu" role="menu"><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label><button className="quiet-button" onClick={() => { setShowAutopilotSettings(true); setChatMenuOpen(false); }}>Настройки автопилота</button><button className="quiet-button" onClick={() => { setShowInspector(true); setChatMenuOpen(false); }}>Session info</button><button className="quiet-button" onClick={() => { setShowJobs(true); setShowStatistics(false); setChatMenuOpen(false); }}>Jobs</button><button className="quiet-button" onClick={() => { setShowJobs(false); openStatistics(); }}>Statistics</button></div>}
       </header>
+      {showJobs && <JobsView jobs={jobs} loading={jobsLoading} error={jobsError} cancellingJobId={cancellingJobId} onRefresh={() => void loadJobs()} onCancel={(jobId) => void cancelJob(jobId)} />}
       {showStatistics && <StatisticsView statistics={statistics} loading={statisticsLoading} error={statisticsError} days={statisticsDays} onDays={changeStatisticsDays} onRefresh={() => void loadStatistics(statisticsDays, true)} />}
-      {!showStatistics && showAutopilotSettings && <div className="autopilot-settings-overlay"><div className="autopilot-settings-shell"><button className="settings-close" aria-label="Закрыть настройки автопилота" onClick={() => setShowAutopilotSettings(false)}>×</button><AutopilotSettings state={autopilotPolicy} draft={autopilotPolicyDraft} saving={autopilotPolicySaving} error={autopilotPolicyError} saved={autopilotPolicySaved} onChange={(next) => { setAutopilotPolicyDraft(next); setAutopilotPolicySaved(false); }} onSave={() => void saveAutopilotPolicy()} /></div></div>}
-      {!showStatistics && !!details?.children?.length && <details className="subagents-panel"><summary>Subagents <span>{details.children.length}</span></summary><div className="subagents-list">{details.children.map((child) => <button className="subagent-row" key={keyOf(child)} onClick={() => { setActiveKey(keyOf(child)); setMobileView("chat"); }}><span className={`status-dot status-${child.status}`} /><span><strong>{child.title || child.id}</strong><small>{typeof child.meta?.agentRole === "string" ? child.meta.agentRole : child.status} · {child.id}</small></span></button>)}</div></details>}
-      {!showStatistics && <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}>
+      {!showStatistics && !showJobs && showAutopilotSettings && <div className="autopilot-settings-overlay"><div className="autopilot-settings-shell"><button className="settings-close" aria-label="Закрыть настройки автопилота" onClick={() => setShowAutopilotSettings(false)}>×</button><AutopilotSettings state={autopilotPolicy} draft={autopilotPolicyDraft} saving={autopilotPolicySaving} error={autopilotPolicyError} saved={autopilotPolicySaved} onChange={(next) => { setAutopilotPolicyDraft(next); setAutopilotPolicySaved(false); }} onSave={() => void saveAutopilotPolicy()} /></div></div>}
+      {!showStatistics && !showJobs && !!details?.children?.length && <details className="subagents-panel"><summary>Subagents <span>{details.children.length}</span></summary><div className="subagents-list">{details.children.map((child) => <button className="subagent-row" key={keyOf(child)} onClick={() => { selectSession(keyOf(child)); setMobileView("chat"); }}><span className={`status-dot status-${child.status}`} /><span><strong>{child.title || child.id}</strong><small>{typeof child.meta?.agentRole === "string" ? child.meta.agentRole : child.status} · {child.id}</small></span></button>)}</div></details>}
+      {!showStatistics && !showJobs && <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}>
         <div className="message-column">
           {detailsLoading && !details && <div className="session-loading-chat" aria-live="polite"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Loading latest activity</strong><small>Starting from the newest turns. You can keep using the rest of Agent Herder.</small></div>}
           {!detailsLoading && !details && <div className="empty-chat">{detailsError || "Choose a session to open its conversation."}</div>}
@@ -742,8 +868,8 @@ function App() {
           {details?.messages.map((message) => hasVisibleMessage(message, showReasoning, showTools) && <article className={`message ${message.role}`} key={message.id}><div className="message-meta"><span>{message.role === "user" ? "You" : message.role === "tool" ? "Tool" : "Agent"}</span><time>{formatTime(message.timestamp || "")}</time></div><MessageParts message={message} showReasoning={showReasoning} showTools={showTools} /></article>)}
         </div>
       </div>}
-      {!showStatistics && showScrollToLatest && <button className="scroll-latest" aria-label="Scroll to latest" onClick={scrollToBottom}>↓</button>}
-      {!showStatistics && <form className="composer" onSubmit={(event) => { event.preventDefault(); if (isResumeMode) void runAction("resume"); else void sendMessage(); }}>
+      {!showStatistics && !showJobs && showScrollToLatest && <button className="scroll-latest" aria-label="Scroll to latest" onClick={scrollToBottom}>↓</button>}
+      {!showStatistics && !showJobs && <form className="composer" onSubmit={(event) => { event.preventDefault(); if (isResumeMode) void runAction("resume"); else void sendMessage(); }}>
         {showCreateSession && <div className="composer-create-panel">
           <div className="composer-create-row">
             <label>Harness<select value={createHarness} onChange={(event) => { const harness = event.target.value; setCreateHarness(harness); setCreateModel(""); setCreateModels([]); void loadCreateModels(harness); }}>{(createAdapters.length ? createAdapters : [{ id: "fast-agent", name: "Fast Agent", active: true, ready: true, status: "active" }]).map((adapter) => <option key={adapter.id} value={adapter.id} disabled={!adapter.active}>{adapter.name}{adapter.active ? "" : ` · ${adapter.status}`}</option>)}</select></label>
@@ -759,7 +885,7 @@ function App() {
         <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || readOnlySession || sending || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Resume session" : "Send message"}>{isResumeMode ? "▶" : "↑"}</button>
       </form>}
     </section>
-    {showInspector && !showStatistics && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">SESSION</span><button className="icon-button" onClick={() => setShowInspector(false)} aria-label="Close inspector">×</button></div>{activeSession ? <><div className="inspector-title">{activeSession.title}</div><div className="inspector-status"><span className={`status-dot status-${activeSession.status}`} />{displayStatus(activeSession.status)}</div>{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">AUTOPILOT</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Переопределено для этой сессии" : autopilotSession.source === "policy" ? "Наследуется от harness policy" : autopilotSession.source === "plugin-default" ? "По умолчанию плагина" : "По умолчанию выключен"}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Наследовать policy</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label={`Autopilot for ${activeSession.id}`} disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}<dl><dt>Harness</dt><dd>{activeSession.harness}</dd><dt>Working directory</dt><dd>{activeSession.cwd}</dd>{activeSession.model && <><dt>Model</dt><dd>{activeSession.model}</dd></>}{activeSession.messageCount !== undefined && <><dt>Messages</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Duration</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.costUsd !== undefined && <><dt>Cost</dt><dd title={activeSession.meta?.pricing_source === "models.dev" ? `Estimated from models.dev · ${String(activeSession.meta?.pricing_provider || "")}/${String(activeSession.meta?.pricing_model || "")}` : undefined}>{`${activeSession.meta?.pricing_kind === "estimate" ? "~" : ""}$${activeSession.costUsd.toFixed(4)}`}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Tokens</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}<dt>Subagents</dt><dd>{details?.children?.length || 0}</dd></dl>{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">No turns yet. Send a message or Resume to start this session.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer">Visualize</a>}{activeSession.status === "running" && <button className="danger-button" onClick={() => void runAction("stop")}>Stop</button>}{(activeSession.status === "stopped" || activeSession.status === "error") && <button className="primary-button" onClick={() => void runAction("resume")}>Resume</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Recover</button>}</div><div className="settings-block"><span className="eyebrow">VIEW</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label></div></> : <div className="empty-inspector">No session selected.</div>}</aside>}
+    {showInspector && !showStatistics && !showJobs && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">SESSION</span><button className="icon-button" onClick={() => setShowInspector(false)} aria-label="Close inspector">×</button></div>{activeSession ? <><div className="inspector-title">{activeSession.title}</div><div className="inspector-status"><span className={`status-dot status-${activeSession.status}`} />{displayStatus(activeSession.status)}</div>{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">AUTOPILOT</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Переопределено для этой сессии" : autopilotSession.source === "policy" ? "Наследуется от harness policy" : autopilotSession.source === "plugin-default" ? "По умолчанию плагина" : "По умолчанию выключен"}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Наследовать policy</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label={`Autopilot for ${activeSession.id}`} disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}<dl><dt>Harness</dt><dd>{activeSession.harness}</dd><dt>Working directory</dt><dd>{activeSession.cwd}</dd>{activeSession.model && <><dt>Model</dt><dd>{activeSession.model}</dd></>}{activeSession.messageCount !== undefined && <><dt>Messages</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Duration</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.costUsd !== undefined && <><dt>Cost</dt><dd title={activeSession.meta?.pricing_source === "models.dev" ? `Estimated from models.dev · ${String(activeSession.meta?.pricing_provider || "")}/${String(activeSession.meta?.pricing_model || "")}` : undefined}>{`${activeSession.meta?.pricing_kind === "estimate" ? "~" : ""}$${activeSession.costUsd.toFixed(4)}`}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Tokens</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}<dt>Subagents</dt><dd>{details?.children?.length || 0}</dd></dl>{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">No turns yet. Send a message or Resume to start this session.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer">Visualize</a>}{activeSession.status === "running" && <button className="danger-button" onClick={() => void runAction("stop")}>Stop</button>}{(activeSession.status === "stopped" || activeSession.status === "error") && <button className="primary-button" onClick={() => void runAction("resume")}>Resume</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Recover</button>}</div><div className="settings-block"><span className="eyebrow">VIEW</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label></div></> : <div className="empty-inspector">No session selected.</div>}</aside>}
   </main>;
 }
 
