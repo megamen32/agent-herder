@@ -263,12 +263,12 @@ export class CodexAdapter implements HarnessAdapter {
     }
   }
 
-  async getRawTranscript(id: string): Promise<RawTranscriptExport | null> {
+  async getRawTranscript(id: string, signal?: AbortSignal): Promise<RawTranscriptExport | null> {
     const state = this.sessionStatesCache?.get(id) || (await this.readSessionStates()).get(id);
     if (!state) return null;
     try {
       return {
-        bytes: await readFile(state.filePath),
+        bytes: await readFile(state.filePath, { signal }),
         complete: true,
         source: { kind: "native-file", location: state.filePath, format: "jsonl" },
         timestampCoverage: "native",

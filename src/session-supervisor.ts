@@ -11,6 +11,7 @@ import type {
   SessionMessagePart,
   SessionMessageView,
 } from "./types/index.js";
+import { throwIfAborted } from "./abort-utils.js";
 import { createNamedSession, newOrResumeNamedSession, type NamedSessionRequest, type NamedSessionResult, type NewOrResumeNamedSessionRequest } from "./named-session.js";
 import { getHarnessCapabilities } from "./types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "./session-convert.js";
@@ -342,11 +343,31 @@ export class SessionSupervisor {
     return result;
   }
 
-  async recoverSession(harness: string, id: string, message?: string): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
+  async recoverSession(harness: string, id: string, message?: string, signal?: AbortSignal): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
+    throwIfAborted(signal);
     const adapter = this.requireAdapter(harness);
-    const result: ControlResult = await (adapter.recover
-      ? adapter.recover(id, message)
-      : Promise.resolve({ ok: false, error: `${adapter.name} does not expose native recovery` }));
+    let cancelling = false;
+    const cancelNative = async (sessionId: string) => {
+      if (adapter.cancelTurn) await adapter.cancelTurn(sessionId);
+      else await adapter.stopSession(sessionId);
+    };
+    const onAbort = () => {
+      cancelling = true;
+      void cancelNative(id).catch(() => undefined);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    let result: ControlResult;
+    try {
+      result = await (adapter.recover
+        ? adapter.recover(id, message, signal)
+        : Promise.resolve({ ok: false, error: `${adapter.name} does not expose native recovery` }));
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
+    }
+    if (signal?.aborted || cancelling) {
+      if (result?.sessionId && result.sessionId !== id) await cancelNative(result.sessionId).catch(() => undefined);
+      throwIfAborted(signal);
+    }
     if (adapter.recover) {
       const key = sessionKey(harness, id);
       const existing = await this.lineage.get(key);

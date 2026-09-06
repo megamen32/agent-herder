@@ -1074,7 +1074,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         run: async ({ signal, progress }) => {
           progress(0.1, `Recovering ${harness}:${id}`);
           if (signal.aborted) throw new Error("cancelled");
-          const result = await supervisor.recoverSession(harness, id, optionalString(body.message));
+          const result = await supervisor.recoverSession(harness, id, optionalString(body.message), signal);
           if (!result.ok) throw new Error(result.error || "session recovery failed");
           return result;
         },

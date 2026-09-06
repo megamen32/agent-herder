@@ -206,7 +206,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       .join("\n\n");
   }
 
-  async getRawTranscript(id: string): Promise<RawTranscriptExport | null> {
+  async getRawTranscript(id: string, signal?: AbortSignal): Promise<RawTranscriptExport | null> {
     const record = await this.findRecord(id);
     if (!record) return null;
     return {

@@ -68,5 +68,26 @@ describe("SessionSupervisor domain events", () => {
     expect(events).toHaveLength(afterNative);
     stop();
   });
+  it("cancels the native recovery turn when its job aborts", async () => {
+    let nativeCancels = 0;
+    const adapter: HarnessAdapter = {
+      type: "opencode", name: "recover-fixture",
+      async init() {}, async listSessions() { return []; }, async getSession() { return null; },
+      async sendMessage() { return { ok: true }; }, async stopSession() { nativeCancels += 1; return { ok: true }; },
+      async cancelTurn() { nativeCancels += 1; return { ok: true }; },
+      async recover(_id, _message, signal) {
+        return new Promise((_, reject) => signal?.addEventListener("abort", () => { const error = new Error("cancelled"); error.name = "AbortError"; reject(error); }, { once: true }));
+      },
+      async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+    };
+    const lineage = { async get() { return null; }, async recordRecovery() {}, async recordSpawn() {} } as any;
+    const supervisor = new SessionSupervisor(new Map([["opencode", adapter]]), { async convert() { return { success: true }; } } as any, lineage);
+    const controller = new AbortController();
+    const pending = supervisor.recoverSession("opencode", "recover-me", "continue", controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    for (let attempt = 0; attempt < 20 && nativeCancels === 0; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 2));
+    expect(nativeCancels).toBeGreaterThan(0);
+  });
 
 });

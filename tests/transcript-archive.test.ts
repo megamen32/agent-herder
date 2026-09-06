@@ -162,6 +162,29 @@ describe("TranscriptArchive", () => {
     expect(await readFile(join(root, ".agent-herder", "transcripts", "opencode", "grandchild.jsonl"), "utf8")).toBe('{"session":"grandchild"}\n');
   });
 
+  it("propagates cancellation into a raw transcript read", async () => {
+    const root = await workspace();
+    const lead = { id: "lead", harness: "opencode" as const, status: "idle" as const, title: "lead", cwd: root, lastActivity: new Date().toISOString() };
+    let sawAbort = false;
+    let started!: () => void;
+    const startedGate = new Promise<void>((resolve) => { started = resolve; });
+    const adapter = {
+      type: "opencode", name: "cancel-fixture",
+      getSession: async () => lead, listSessions: async () => [lead],
+      getRawTranscript: async (_id: string, signal?: AbortSignal) => new Promise((_, reject) => {
+        started();
+        if (signal?.aborted) { const error = new Error("cancelled"); error.name = "AbortError"; reject(error); return; }
+        signal?.addEventListener("abort", () => { sawAbort = true; const error = new Error("cancelled"); error.name = "AbortError"; reject(error); }, { once: true });
+      }),
+    } as unknown as HarnessAdapter;
+    const controller = new AbortController();
+    const pending = handleExportTranscript(new Map([["opencode", adapter]]), { sessionId: "lead", harness: "opencode" }, new TranscriptArchive({ workspaceRoot: root }), controller.signal);
+    await startedGate;
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(sawAbort).toBe(true);
+  });
+
   it("excludes foreign-harness and symlinked-CWD relations before reading raw bytes", async () => {
     const root = await workspace();
     const outside = await workspace();

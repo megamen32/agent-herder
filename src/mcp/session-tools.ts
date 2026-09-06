@@ -71,9 +71,9 @@ export function registerSessionTools(server: McpServer, deps: {
   });
 
   server.registerTool("export_transcript", { description: "Export the raw adapter-owned transcript and return a filesystem navigation card.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }) }, async (args) => ({ content: [{ type: "text" as const, text: await handleExportTranscript(adapters, args) }] }));
-  server.registerTool("export_transcript_async", { description: "Export a raw adapter-owned transcript as a Herder background job.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), ownerSessionId: z.string().optional() }) }, async (args) => startJobResult(jobs, "transcript-export", async (_signal, progress) => {
+  server.registerTool("export_transcript_async", { description: "Export a raw adapter-owned transcript as a Herder background job.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), ownerSessionId: z.string().optional() }) }, async (args) => startJobResult(jobs, "transcript-export", async (signal, progress) => {
     progress(0.1, "Exporting transcript");
-    return handleExportTranscript(adapters, args);
+    return handleExportTranscript(adapters, args, undefined, signal);
   }, args.ownerSessionId));
 
   server.registerTool("send_message", { description: "Send a message to an agent. Active coordination notes for the target workspace are injected automatically before delivery. Modes: sync (wait), queue (fire-and-forget), steer (redirect).", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), message: z.string(), mode: z.enum(["queue", "steer", "sync"]).optional().default("sync") }) }, async (args) => {

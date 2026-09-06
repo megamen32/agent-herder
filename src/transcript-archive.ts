@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { RawTranscriptExport } from "./types/index.js";
+import { throwIfAborted } from "./abort-utils.js";
 
 export type ArchivedTranscript = {
   harness: string;
@@ -124,13 +125,16 @@ export class TranscriptArchive {
     target: ArchivedTranscript;
     related: ArchivedTranscript[];
     excluded?: TranscriptArchiveResult["excluded"];
-  }): Promise<TranscriptArchiveResult> {
+  }, signal?: AbortSignal): Promise<TranscriptArchiveResult> {
+    throwIfAborted(signal);
     const snapshots = [input.target, ...input.related];
     const exported: ExportedEntry[] = [];
     const excluded: TranscriptArchiveResult["excluded"] = [...(input.excluded ?? [])];
 
     await ensureSafeDirectory(this.workspaceRoot, this.archiveRoot);
+    throwIfAborted(signal);
     for (const snapshot of snapshots) {
+      throwIfAborted(signal);
       if (!await isRealPathInside(this.workspaceRoot, snapshot.cwd)) {
         excluded.push({ harness: snapshot.harness, sessionId: snapshot.sessionId, reason: "outside_workspace" });
         continue;
@@ -139,6 +143,7 @@ export class TranscriptArchive {
       await ensureSafeDirectory(this.workspaceRoot, directory);
       const path = join(directory, `${fileStem(snapshot.sessionId)}.${extension(snapshot.raw)}`);
       await atomicWrite(path, snapshot.raw.bytes);
+      throwIfAborted(signal);
       exported.push({
         harness: snapshot.harness,
         sessionId: snapshot.sessionId,
@@ -153,6 +158,7 @@ export class TranscriptArchive {
     const target = exported.find((entry) => entry.harness === input.target.harness && entry.sessionId === input.target.sessionId);
     if (!target) throw new Error("The requested transcript is outside the MCP process CWD and cannot be archived.");
     const manifestPath = join(this.archiveRoot, input.target.harness, `${fileStem(input.target.sessionId)}.manifest.json`);
+    throwIfAborted(signal);
     await atomicWrite(manifestPath, `${JSON.stringify({
       format: "agent-herder-transcript-manifest-v1",
       workspaceRoot: this.workspaceRoot,
@@ -161,11 +167,13 @@ export class TranscriptArchive {
       excluded,
       modifiedAt: new Date().toISOString(),
     }, null, 2)}\n`);
-    const cleanup = await this.cleanup(Date.now(), new Set([...exported.map((entry) => entry.path), manifestPath]));
+    throwIfAborted(signal);
+    const cleanup = await this.cleanup(Date.now(), new Set([...exported.map((entry) => entry.path), manifestPath]), signal);
     return { targetPath: target.path, manifestPath, exported, excluded, cleanup };
   }
 
-  async cleanup(now = Date.now(), protectedPaths = new Set<string>()): Promise<{ removed: string[] }> {
+  async cleanup(now = Date.now(), protectedPaths = new Set<string>(), signal?: AbortSignal): Promise<{ removed: string[] }> {
+    throwIfAborted(signal);
     const files = await this.files();
     const removed: string[] = [];
     const bundles = new Map<string, Array<{ path: string; size: number; mtimeMs: number }>>();
@@ -192,11 +200,13 @@ export class TranscriptArchive {
       }
     };
     for (const group of grouped.filter((group) => !group.protected && now - group.mtimeMs > this.retentionMs)) {
+      throwIfAborted(signal);
       await removeBundle(group);
     }
     const retained = grouped.filter((group) => group.protected || now - group.mtimeMs <= this.retentionMs);
     let total = retained.reduce((sum, group) => sum + group.size, 0);
     for (const group of retained.filter((group) => !group.protected).sort((left, right) => left.mtimeMs - right.mtimeMs)) {
+      throwIfAborted(signal);
       if (total <= this.maxBytes) break;
       await removeBundle(group);
       total -= group.size;

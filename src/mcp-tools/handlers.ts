@@ -16,6 +16,7 @@ import {
   ListModelsSchema,
   AuditWorktreesSchema,
 } from "./definitions.js";
+import { throwIfAborted } from "../abort-utils.js";
 import { createNamedSession, newOrResumeNamedSession } from "../named-session.js";
 import { homedir } from "node:os";
 import { relative, resolve, sep } from "node:path";
@@ -153,13 +154,16 @@ async function exportRawLineage(
   target: AgentSession,
   archive: TranscriptArchive,
   limit = 50,
+  signal?: AbortSignal,
 ): Promise<{ archive: TranscriptArchiveResult; targetRaw: ArchivedTranscript["raw"] } | null> {
+  throwIfAborted(signal);
   if (!adapter.getRawTranscript || !await isInsideWorkspace(archive.workspaceRoot, target.cwd)) return null;
   const visited = new Set<string>();
   const related: ArchivedTranscript[] = [];
   const excluded: TranscriptArchiveResult["excluded"] = [];
 
   const capture = async (session: AgentSession, targetSession = false): Promise<ArchivedTranscript | null> => {
+    throwIfAborted(signal);
     const key = `${session.harness}:${session.id}`;
     if (visited.has(key)) return null;
     visited.add(key);
@@ -175,7 +179,8 @@ async function exportRawLineage(
       excluded.push({ harness: session.harness, sessionId: session.id, reason: "lineage_limit" });
       return null;
     }
-    const raw = await adapter.getRawTranscript!(session.id);
+    const raw = await adapter.getRawTranscript!(session.id, signal);
+    throwIfAborted(signal);
     if (!raw) {
       excluded.push({ harness: session.harness, sessionId: session.id, reason: "raw_unavailable" });
       return null;
@@ -185,19 +190,22 @@ async function exportRawLineage(
     if (adapter.getParent) {
       try {
         const parent = await adapter.getParent(session.id);
+        throwIfAborted(signal);
         if (parent) await capture(parent);
       } catch { /* archival of the target remains useful */ }
     }
     if (adapter.listChildren) {
       try {
-        for (const child of await adapter.listChildren(session.id)) await capture(child);
+        const children = await adapter.listChildren(session.id);
+        throwIfAborted(signal);
+        for (const child of children) await capture(child);
       } catch { /* archival of the target remains useful */ }
     }
     return snapshot;
   };
 
   const snapshot = await capture(target, true);
-  return snapshot ? { archive: await archive.exportLineage({ target: snapshot, related, excluded }), targetRaw: snapshot.raw } : null;
+  return snapshot ? { archive: await archive.exportLineage({ target: snapshot, related, excluded }, signal), targetRaw: snapshot.raw } : null;
 }
 
 export interface ListAgentsResult {
@@ -387,7 +395,9 @@ export async function handleExportTranscript(
   adapters: Map<string, HarnessAdapter>,
   args: unknown,
   archive: TranscriptArchive = transcriptArchiveFromEnvironment(),
+  signal?: AbortSignal,
 ): Promise<string> {
+  throwIfAborted(signal);
   const parsed = ExportTranscriptSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
@@ -395,7 +405,7 @@ export async function handleExportTranscript(
     return `Raw transcript export is not supported by the ${found.adapter.name} adapter.`;
   }
   try {
-    const outcome = await exportRawLineage(found.adapter, found.session, archive);
+    const outcome = await exportRawLineage(found.adapter, found.session, archive, 50, signal);
     if (!outcome) return `Raw transcript unavailable for [${found.session.harness}] ${parsed.sessionId} within the MCP process CWD.`;
     const target = outcome.archive.exported.find((entry) => entry.path === outcome.archive.targetPath);
     return buildTranscriptArchiveCard({
@@ -405,6 +415,7 @@ export async function handleExportTranscript(
       complete: target?.complete ?? false,
     });
   } catch (error) {
+    if (signal?.aborted) throw error;
     return `Raw transcript export failed: ${(error as Error).message}`;
   }
 }

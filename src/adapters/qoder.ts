@@ -203,13 +203,13 @@ export class QoderAdapter implements HarnessAdapter {
     }
   }
 
-  async getRawTranscript(id: string): Promise<RawTranscriptExport | null> {
+  async getRawTranscript(id: string, signal?: AbortSignal): Promise<RawTranscriptExport | null> {
     const session = await this.getSession(id);
     const filePath = session?.meta?.filePath;
     if (typeof filePath !== "string") return null;
     try {
       return {
-        bytes: await readFile(filePath),
+        bytes: await readFile(filePath, { signal }),
         complete: true,
         source: { kind: "native-file", location: filePath, format: "jsonl" },
         timestampCoverage: "native",

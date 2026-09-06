@@ -230,11 +230,11 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
     return filePath ? this.extractTranscriptText(filePath) : null;
   }
 
-  async getRawTranscript(id: string): Promise<RawTranscriptExport | null> {
+  async getRawTranscript(id: string, signal?: AbortSignal): Promise<RawTranscriptExport | null> {
     const filePath = await this.findSessionFile(id);
     if (!filePath) return null;
     return {
-      bytes: await readFile(filePath),
+      bytes: await readFile(filePath, { signal }),
       complete: true,
       source: { kind: "native-file", location: filePath, format: "jsonl" },
       timestampCoverage: "native",

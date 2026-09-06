@@ -251,7 +251,7 @@ export interface HarnessAdapter {
   terminate?(id: string): Promise<ControlResult>;
 
   /** Reconnect/resume a failed transport and optionally recover with a prompt. */
-  recover?(id: string, message?: string): Promise<ControlResult>;
+  recover?(id: string, message?: string, signal?: AbortSignal): Promise<ControlResult>;
 
   /** Fork a native session, preserving a lineage edge for the caller. */
   forkSession?(id: string, message?: string): Promise<ControlResult>;
@@ -274,7 +274,7 @@ export interface HarnessAdapter {
   getTranscript?(id: string): Promise<string | null>;
 
   /** Export adapter-owned source material for the canonical archive. */
-  getRawTranscript?(id: string): Promise<RawTranscriptExport | null>;
+  getRawTranscript?(id: string, signal?: AbortSignal): Promise<RawTranscriptExport | null>;
 
   /** Get structured recent messages from the adapter-owned transport, when available. */
   getSessionMessages?(id: string, limit?: number): Promise<SessionMessageView[] | null>;

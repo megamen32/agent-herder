@@ -44,7 +44,7 @@ export function registerBackgroundTools(server: McpServer, deps: {
       run: async ({ signal, progress }) => {
         progress(0.05, "Reading source session");
         if (signal.aborted) throw new Error("cancelled");
-        const result = await sessionConverter.convert({ sessionId: args.sessionId, from: args.from, to: args.to, projectPath: args.projectPath, searchPaths: args.searchPaths });
+        const result = await sessionConverter.convert({ sessionId: args.sessionId, from: args.from, to: args.to, projectPath: args.projectPath, searchPaths: args.searchPaths }, signal);
         if (signal.aborted) throw new Error("cancelled");
         progress(1, "Conversion finished");
         return result;

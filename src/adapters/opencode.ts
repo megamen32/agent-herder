@@ -1,5 +1,6 @@
 import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, HarnessEvent, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessagePart, SessionMessageView } from "../types/index.js";
 import { readFileSync } from "node:fs";
+import { throwIfAborted } from "../abort-utils.js";
 
 interface OpenCodeSessionPayload {
   id: string;
@@ -339,16 +340,19 @@ export class OpenCodeAdapter implements HarnessAdapter {
     }
   }
 
-  async recover(id: string, message?: string): Promise<ControlResult> {
+  async recover(id: string, message?: string, signal?: AbortSignal): Promise<ControlResult> {
     try {
-      let wait = await this.fetch(`/session/${id}/wait`, { method: "POST" });
-      if (wait.status === 404) wait = await this.fetch(`/api/session/${id}/wait`, { method: "POST" });
+      throwIfAborted(signal);
+      let wait = await this.fetch(`/session/${id}/wait`, { method: "POST", signal });
+      if (wait.status === 404) wait = await this.fetch(`/api/session/${id}/wait`, { method: "POST", signal });
+      throwIfAborted(signal);
       if (!wait.ok && wait.status !== 404) throw new Error(`OpenCode wait failed: HTTP ${wait.status}`);
       if (!message) return { ok: true };
       const result = await this.sendMessage(id, { message, queue: true });
       if (result.ok) return result;
       throw new Error(result.error || "OpenCode recovery prompt failed");
     } catch (error) {
+      if (signal?.aborted) throw error;
       const forked = await this.forkSession(id, message);
       return forked.ok
         ? { ...forked, error: `Recovery used a child session after transport error: ${(error as Error).message}` }
@@ -486,10 +490,10 @@ export class OpenCodeAdapter implements HarnessAdapter {
     }
   }
 
-  async getRawTranscript(id: string): Promise<RawTranscriptExport | null> {
+  async getRawTranscript(id: string, signal?: AbortSignal): Promise<RawTranscriptExport | null> {
     try {
       const endpoint = `/session/${encodeURIComponent(id)}/message?limit=200`;
-      const messages = await this.fetchJson<unknown[]>(endpoint);
+      const messages = await this.fetchJson<unknown[]>(endpoint, { signal });
       if (!Array.isArray(messages)) return null;
       return {
         bytes: Buffer.from(JSON.stringify(messages, null, 2)),
