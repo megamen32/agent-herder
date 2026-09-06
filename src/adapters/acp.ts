@@ -27,6 +27,7 @@ import type {
   SessionMessageView,
   HarnessType,
   HarnessCapabilities,
+  HarnessEvent,
 } from "../types/index.js";
 
 export interface AcpAgentConfig {
@@ -78,6 +79,7 @@ export class AcpAdapter implements HarnessAdapter {
     denyOptionId?: string;
   }>();
   private initPromise?: Promise<void>;
+  private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
 
   constructor(config: AcpAgentConfig) {
     this.config = config;
@@ -89,6 +91,12 @@ export class AcpAdapter implements HarnessAdapter {
   async init(): Promise<void> {
     if (!this.initPromise) this.initPromise = this.start();
     return this.initPromise;
+  }
+
+  subscribeEvents(handler: (event: HarnessEvent) => void): () => void {
+    this.eventListeners.add(handler);
+    if (this.child && !this.child.killed) queueMicrotask(() => handler({ kind: "process.connected", harness: this.type, data: { profile: this.config.profile } }));
+    return () => { this.eventListeners.delete(handler); };
   }
 
   async listSessions(): Promise<AgentSession[]> {
@@ -131,6 +139,7 @@ export class AcpAdapter implements HarnessAdapter {
       const changed = await this.changeModel(id, options.model);
       if (!changed.ok) throw new Error(changed.error || `Could not select model '${options.model}'`);
     }
+    this.emitEvent({ kind: "session.created", harness: this.type, sessionId: id, status: "idle" });
     return session;
   }
 
@@ -142,6 +151,7 @@ export class AcpAdapter implements HarnessAdapter {
       const externalId = this.externalId(this.nativeId(id));
       const cached = this.sessions.get(externalId)!;
       cached.session.status = "running";
+      this.emitEvent({ kind: "turn.started", harness: this.type, sessionId: externalId, status: "running" });
       cached.transcript.push(`User: ${options.message}`);
       appendTextMessage(cached, "user", options.message);
       const prompt = this.connection!.prompt({
@@ -149,7 +159,8 @@ export class AcpAdapter implements HarnessAdapter {
         prompt: [{ type: "text", text: options.message } as ContentBlock],
       });
       if (options.queue) {
-        void prompt.then(() => this.markIdle(externalId)).catch((err: unknown) => this.markError(externalId, err));
+        void prompt.then(() => { this.markIdle(externalId); this.emitEvent({ kind: "turn.completed", harness: this.type, sessionId: externalId, status: "idle" }); })
+          .catch((err: unknown) => { this.markError(externalId, err); this.emitEvent({ kind: "turn.failed", harness: this.type, sessionId: externalId, status: "error" }); });
         return { ok: true };
       }
       const result = await prompt;
@@ -157,6 +168,7 @@ export class AcpAdapter implements HarnessAdapter {
         return { ok: false, error: `ACP prompt stopped with '${result.stopReason}'` };
       }
       this.markIdle(externalId);
+      this.emitEvent({ kind: "turn.completed", harness: this.type, sessionId: externalId, status: "idle" });
       return { ok: true };
     } catch (err) {
       return { ok: false, error: (err as Error).message };
@@ -220,6 +232,7 @@ export class AcpAdapter implements HarnessAdapter {
     const optionId = response === "allow" ? pending.allowOptionId : pending.denyOptionId;
     if (optionId) pending.resolve({ outcome: { outcome: "selected", optionId } });
     else pending.resolve({ outcome: { outcome: "cancelled" } });
+    this.emitEvent({ kind: "permission.resolved", harness: this.type, sessionId: _sessionId, permissionId, status: "running" });
     return { ok: true };
   }
 
@@ -239,6 +252,7 @@ export class AcpAdapter implements HarnessAdapter {
         try {
           await this.connection!.setSessionConfigOption({ sessionId, configId: "model", value: model });
           session.model = model;
+          this.emitEvent({ kind: "model.changed", harness: this.type, sessionId: id, data: { model } });
           return { ok: true };
         } catch {
           // Qoder versions that do not expose the config option may expose the ACP experimental method.
@@ -248,12 +262,14 @@ export class AcpAdapter implements HarnessAdapter {
       try {
         await this.connection!.unstable_setSessionModel({ sessionId, modelId: model });
         session.model = model;
+        this.emitEvent({ kind: "model.changed", harness: this.type, sessionId: id, data: { model } });
         return { ok: true };
       } catch {
         if (this.type !== "qoder") {
           try {
             await this.connection!.setSessionConfigOption({ sessionId, configId: "model", value: model });
             session.model = model;
+            this.emitEvent({ kind: "model.changed", harness: this.type, sessionId: id, data: { model } });
             return { ok: true };
           } catch {
             // Report one stable error below instead of leaking transport-specific details.
@@ -323,9 +339,11 @@ export class AcpAdapter implements HarnessAdapter {
       stdio: "pipe",
     });
     this.child = child;
-    child.on("error", (err) => this.markAllError(err));
+    this.emitEvent({ kind: "process.connected", harness: this.type, data: { profile: this.config.profile } });
+    child.on("error", (err) => { this.markAllError(err); this.emitEvent({ kind: "process.disconnected", harness: this.type, data: { profile: this.config.profile, error: err.message } }); });
     child.on("exit", (code, signal) => {
       if (code !== 0 && signal !== "SIGTERM") this.markAllError(new Error(`ACP process exited with ${code ?? signal}`));
+      this.emitEvent({ kind: "process.disconnected", harness: this.type, data: { profile: this.config.profile, code: code ?? undefined, signal: signal ?? undefined } });
     });
 
     const client: Client = {
@@ -344,6 +362,7 @@ export class AcpAdapter implements HarnessAdapter {
             allowOptionId: params.options.find((option) => option.kind.startsWith("allow"))?.optionId,
             denyOptionId: params.options.find((option) => option.kind.startsWith("reject"))?.optionId,
           });
+          this.emitEvent({ kind: "permission.requested", harness: this.type, sessionId: this.externalId(params.sessionId), permissionId: permission.id, status: "needs_input" });
           setTimeout(() => {
             if (!this.pendingPermissions.delete(permission.id)) return;
             resolve({ outcome: { outcome: "cancelled" } });
@@ -379,6 +398,11 @@ export class AcpAdapter implements HarnessAdapter {
             error: /fail|error/i.test(String(update.status || "")),
           });
         }
+        const externalId = this.externalId(params.sessionId);
+        this.emitEvent({
+          kind: kind.includes("message") || kind.includes("thought") || kind.includes("tool_call") ? "message.updated" : "session.updated",
+          harness: this.type, sessionId: externalId, nativeType: kind || "session/update", at: new Date().toISOString(),
+        });
       },
       readTextFile: async ({ path }) => ({ content: await this.readWorkspaceFile(path) }),
       writeTextFile: async ({ path, content }) => {
@@ -399,6 +423,13 @@ export class AcpAdapter implements HarnessAdapter {
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
     });
     this.capabilities = initialized.agentCapabilities;
+  }
+
+  private emitEvent(event: HarnessEvent): void {
+    const normalized = { ...event, at: event.at ?? new Date().toISOString() };
+    for (const listener of [...this.eventListeners]) {
+      try { listener(normalized); } catch { /* isolate listeners */ }
+    }
   }
 
   private cacheSession(session: AgentSession): AgentSession {

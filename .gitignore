@@ -17,3 +17,7 @@ graphify-out/
 .agents/shared-session/time/
 dist.backup-*/
 trash/
+.agents/shared-session/compaction/
+.agents/shared-session/knowledge/
+.agents/tasks/*-time.json
+**/__pycache__/

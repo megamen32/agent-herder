@@ -3,6 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CoordinationNoteStore, autoTtlSeconds } from "../src/coordination-notes.js";
+import { HerderEventBus } from "../src/herder-events.js";
 
 describe("coordination notes", () => {
   it("creates, injects, updates, and deletes owned TTL notes", async () => {
@@ -166,6 +167,29 @@ describe("coordination note injection dedup", () => {
     // After declaring, the directive is gone — silently (roster unchanged).
     await store.create({ kind: "working", message: "my declared task", cwd: "/repo", paths: ["mine.ts"], authorHarness: "zcode", authorSessionId: "sess-a", source: "manual" });
     expect(await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
+  });
+
+  it("publishes granular presence resource updates", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent-herder-presence-events-"));
+    const events = new HerderEventBus();
+    const seen: string[] = [];
+    events.subscribe((event) => seen.push(event.uri));
+    const store = new CoordinationNoteStore(join(dir, "notes.json"), events);
+    await store.reservePaths({ harness: "zcode", sessionId: "sess-presence", cwd: "/repo", paths: ["a.ts"] });
+    expect(seen).toEqual(expect.arrayContaining([
+      "herder://presence",
+      "herder://presence/sess-presence",
+      "herder://presence/workspaces/%2Frepo",
+    ]));
+  });
+
+  it("exposes granular session and workspace presence snapshots", async () => {
+    const store = await freshStore();
+    await store.reservePaths({ harness: "zcode", sessionId: "sess-presence", cwd: "/repo", paths: ["a.ts"] });
+    await store.reservePaths({ harness: "zcode", sessionId: "sess-other", cwd: "/repo", paths: ["b.ts"] });
+    expect(store.presenceForSession("sess-presence")).toMatchObject({ sessionId: "sess-presence", boards: [expect.objectContaining({ cwd: "/repo" })] });
+    expect(store.presenceForWorkspace("/repo").map((entry) => entry.sessionId).sort()).toEqual(["sess-other", "sess-presence"]);
+    expect(store.presenceForSession("missing")).toBeNull();
   });
 
   it("endSession purges hook leases and presence but keeps manual notes", async () => {

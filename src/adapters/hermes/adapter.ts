@@ -5,6 +5,7 @@ import type {
   ControlResult,
   HarnessAdapter,
   HarnessCapabilities,
+  HarnessEvent,
   ListSessionsOptions,
   RawTranscriptExport,
   SendMessageOptions,
@@ -17,6 +18,7 @@ type JsonObject = Record<string, unknown>;
 /** The public tool surface of `hermes mcp serve`. Kept injectable for tests. */
 export interface HermesToolClient {
   callTool(name: string, args?: JsonObject): Promise<unknown>;
+  onNotification?(handler: (method: string, params: JsonObject) => void): () => void;
   close?(): Promise<void> | void;
 }
 
@@ -116,6 +118,23 @@ export interface HermesExecutionProfile extends Record<string, string> {
   toolsets: string;
 }
 
+function hermesNotificationSessionId(params: JsonObject): string | undefined {
+  const candidates = [params.session_key, params.sessionKey, params.session_id, params.sessionId, params.conversation_id, params.conversationId];
+  return candidates.find((value): value is string => typeof value === "string" && value.length > 0);
+}
+
+function hermesNotificationKind(method: string, params: JsonObject): HarnessEvent["kind"] {
+  const value = `${method} ${String(params.type || "")}`.toLowerCase();
+  if (/permission.*(request|ask)|approval.*request/.test(value)) return "permission.requested";
+  if (/permission.*(resolve|response)|approval.*response/.test(value)) return "permission.resolved";
+  if (/turn.*(start|begin|running)/.test(value)) return "turn.started";
+  if (/turn.*(complete|finish|done|success)/.test(value)) return "turn.completed";
+  if (/turn.*(error|fail)/.test(value)) return "turn.failed";
+  if (/message|delta|content|stream/.test(value)) return "message.updated";
+  if (/conversation|session/.test(value)) return "session.updated";
+  return "session.updated";
+}
+
 function resultJson(value: unknown): JsonObject {
   if (typeof value === "string") {
     try { return JSON.parse(value) as JsonObject; } catch { return { error: value }; }
@@ -163,6 +182,8 @@ export class HermesAdapter implements HarnessAdapter {
   private readonly jobTimeoutMs: number;
   private readonly jobUsefulProgressTimeoutMs: number;
   private readonly observationTimeoutMs: number;
+  private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
+  private notificationUnsubscribe?: () => void;
 
   constructor(config: HermesAdapterConfig = {}) {
     this.config = config;
@@ -179,6 +200,13 @@ export class HermesAdapter implements HarnessAdapter {
   }
 
   isReady(): boolean { return Boolean(this.client) || this.jobs.size > 0; }
+
+  subscribeEvents(handler: (event: HarnessEvent) => void): () => void {
+    this.eventListeners.add(handler);
+    this.attachNotificationBridge();
+    if (this.client) queueMicrotask(() => handler({ kind: "process.connected", harness: "hermes", data: { transport: "mcp-observation" } }));
+    return () => { this.eventListeners.delete(handler); };
+  }
 
   getExecutionProfile(): HermesExecutionProfile {
     return {
@@ -197,7 +225,9 @@ export class HermesAdapter implements HarnessAdapter {
     });
     this.client = new StdioHermesToolClient(child);
     this.ownedClient = true;
+    this.attachNotificationBridge();
     await this.client.callTool("conversations_list", { limit: 1 });
+    this.emitEvent({ kind: "process.connected", harness: "hermes", data: { transport: "mcp-observation" } });
   }
 
   async dispose(): Promise<void> {
@@ -221,7 +251,10 @@ export class HermesAdapter implements HarnessAdapter {
   }
 
   private async disposeObservationClient(): Promise<void> {
+    this.notificationUnsubscribe?.();
+    this.notificationUnsubscribe = undefined;
     if (this.ownedClient) await this.client?.close?.();
+    if (this.client) this.emitEvent({ kind: "process.disconnected", harness: "hermes", data: { transport: "mcp-observation" } });
     this.client = undefined;
     this.ownedClient = false;
   }
@@ -315,6 +348,7 @@ export class HermesAdapter implements HarnessAdapter {
       return { ok: false, error: "Hermes MCP messages_send has no queue or steer control" };
     }
     const data = resultJson(await this.client!.callTool("messages_send", { target: `${platform}:${chatId}`, message: options.message }));
+    if (!data.error) this.emitEvent({ kind: "message.updated", harness: "hermes", sessionId: id, nativeType: "messages_send" });
     return data.error ? { ok: false, error: String(data.error) } : { ok: true };
   }
 
@@ -338,6 +372,7 @@ export class HermesAdapter implements HarnessAdapter {
       finished: false,
     };
     this.jobs.set(job.id, job);
+    this.emitEvent({ kind: "session.created", harness: "hermes", sessionId: job.id, status: "idle", nativeType: "cli-job-created" });
     return this.jobToSession(job);
   }
 
@@ -349,6 +384,7 @@ export class HermesAdapter implements HarnessAdapter {
     if (!normalized || normalized.length > 128) return { ok: false, error: "model must be a bounded non-empty string" };
     job.model = normalized.includes("/") ? normalized.slice(normalized.lastIndexOf("/") + 1) : normalized;
     job.lastActivity = new Date().toISOString();
+    this.emitEvent({ kind: "model.changed", harness: "hermes", sessionId: id, nativeType: "cli-model-change", data: { model: job.model } });
     return { ok: true };
   }
 
@@ -384,6 +420,27 @@ export class HermesAdapter implements HarnessAdapter {
     return errorResult("Hermes permissions are not exposed by the public MCP bridge");
   }
 
+  private attachNotificationBridge(): void {
+    if (this.notificationUnsubscribe || !this.client?.onNotification) return;
+    this.notificationUnsubscribe = this.client.onNotification((method, params) => {
+      const sessionId = hermesNotificationSessionId(params);
+      this.emitEvent({
+        kind: hermesNotificationKind(method, params),
+        harness: "hermes",
+        sessionId,
+        nativeType: method,
+        data: { method },
+      });
+    });
+  }
+
+  private emitEvent(event: HarnessEvent): void {
+    const normalized = { ...event, at: event.at ?? new Date().toISOString() };
+    for (const listener of [...this.eventListeners]) {
+      try { listener(normalized); } catch { /* isolate listeners */ }
+    }
+  }
+
   private sendJob(job: HermesJob, options: SendMessageOptions): { ok: boolean; error?: string } {
     if (options.steer) return { ok: false, error: "Hermes CLI jobs do not support steering" };
     if (job.status === "running") return { ok: false, error: "Hermes job is already running" };
@@ -392,6 +449,7 @@ export class HermesAdapter implements HarnessAdapter {
     const now = new Date().toISOString();
     job.status = "running";
     job.finished = false;
+    this.emitEvent({ kind: "turn.started", harness: "hermes", sessionId: job.id, status: "running", nativeType: "cli-job-start" });
     job.stdout = "";
     job.stderr = "";
     job.timedOut = false;
@@ -475,6 +533,7 @@ export class HermesAdapter implements HarnessAdapter {
         text,
         parts: [{ type: "text", text }],
       });
+      this.emitEvent({ kind: "message.updated", harness: "hermes", sessionId: job.id, nativeType: `cli-${stream}` });
       if (job.messages.filter((message) => message.id.includes(":progress:")).length >= MAX_PROGRESS_MESSAGES) break;
     }
   }
@@ -539,7 +598,9 @@ export class HermesAdapter implements HarnessAdapter {
         text,
         parts: [{ type: "text", text }],
       });
+      this.emitEvent({ kind: "message.updated", harness: "hermes", sessionId: job.id, nativeType: "cli-final-output" });
     }
+    this.emitEvent({ kind: job.status === "stopped" ? "turn.completed" : "turn.failed", harness: "hermes", sessionId: job.id, status: job.status === "stopped" ? "idle" : "error", nativeType: `cli-${reason || "exit"}` });
   }
 
   private stopJob(job: HermesJob): ControlResult {
@@ -555,6 +616,7 @@ export class HermesAdapter implements HarnessAdapter {
       job.child = undefined;
       job.status = "stopped";
       job.lastActivity = new Date().toISOString();
+      this.emitEvent({ kind: "turn.completed", harness: "hermes", sessionId: job.id, status: "idle", nativeType: "cli-cancelled" });
       void child;
     }
     return { ok: true, sessionId: job.id };
@@ -709,11 +771,16 @@ class StdioHermesToolClient implements HermesToolClient {
   private readonly pending = new Map<number, { resolve: (value: unknown) => void; reject: (reason: Error) => void }>();
   private buffer = "";
   private initialized?: Promise<void>;
+  private readonly notificationListeners = new Set<(method: string, params: JsonObject) => void>();
   constructor(private readonly child: ChildProcessWithoutNullStreams) {
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => this.consume(chunk));
     child.once("error", (error) => this.failPending(error));
     child.once("exit", (code, signal) => this.failPending(new Error(`Hermes MCP process exited (${code ?? "null"}, ${signal ?? "none"})`)));
+  }
+  onNotification(handler: (method: string, params: JsonObject) => void): () => void {
+    this.notificationListeners.add(handler);
+    return () => { this.notificationListeners.delete(handler); };
   }
   async callTool(name: string, args: JsonObject = {}): Promise<unknown> {
     await this.ensureInitialized();
@@ -753,7 +820,12 @@ class StdioHermesToolClient implements HermesToolClient {
       this.buffer = this.buffer.slice(newline + 1);
       if (!line) continue;
       try {
-        const message = JSON.parse(line) as { id?: number; result?: unknown };
+        const message = JSON.parse(line) as { id?: number; result?: unknown; method?: string; params?: JsonObject };
+        if (typeof message.method === "string" && message.id === undefined) {
+          for (const listener of [...this.notificationListeners]) {
+            try { listener(message.method, message.params || {}); } catch { /* isolate listeners */ }
+          }
+        }
         if (typeof message.id === "number") {
           const pending = this.pending.get(message.id);
           if (pending) {

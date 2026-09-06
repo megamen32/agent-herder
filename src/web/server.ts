@@ -1,6 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
@@ -23,10 +22,11 @@ import { renderSessionGraph } from "../session-visualization.js";
 import { coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
 import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
 import { getAgentActivityStatistics, withSessionPortfolioStatistics } from "../session-statistics.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
+import { toNodeHandler, type NodeMcpRequestHandler } from "@modelcontextprotocol/node";
 import type { AdapterRegistry } from "../adapter-registry.js";
+import type { HerderEventBus } from "../herder-events.js";
+import type { HerderJobRegistry } from "../herder-jobs.js";
 
 export interface WebDependencies {
   adapters: Map<string, HarnessAdapter>;
@@ -36,6 +36,7 @@ export interface WebDependencies {
   adapterRegistry?: AdapterRegistry;
   mcpServerFactory?: () => McpServer;
   mcpAuthToken?: string;
+  herderEvents?: HerderEventBus;
   choiceRegistry?: ChoiceRegistry;
   choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
@@ -43,6 +44,12 @@ export interface WebDependencies {
   autopilotSessionStore?: AutopilotSessionStore;
   autopilotSweepIntervalMs?: number;
   sessionVisualizer?: (details: SessionDetails) => Promise<string>;
+  sessionObservationIntervalMs?: number;
+  jobs?: HerderJobRegistry;
+  /** Reuse the process-owned supervisor when the daemon starts observation before HTTP. */
+  supervisor?: SessionSupervisor;
+  /** Disable local observer lifecycle when a process-owned supervisor already manages it. */
+  sessionObservationManagedExternally?: boolean;
 }
 
 export type AutopilotSweepOutcome = {
@@ -399,13 +406,22 @@ const htmlPath = join(dirname(fileURLToPath(import.meta.url)), "index.html");
 const webRoot = dirname(htmlPath);
 
 export function createWebServer(dependencies: WebDependencies): Server {
-  const supervisor = new SessionSupervisor(dependencies.adapters, dependencies.converter, dependencies.lineageStore);
+  const supervisor = dependencies.supervisor ?? new SessionSupervisor(dependencies.adapters, dependencies.converter, dependencies.lineageStore, { events: dependencies.herderEvents });
+  const stopSessionObservation = dependencies.herderEvents && !dependencies.sessionObservationManagedExternally
+    ? supervisor.startObservation(dependencies.sessionObservationIntervalMs ?? 5_000)
+    : undefined;
   const sessionVisualizer = dependencies.sessionVisualizer || ((details: SessionDetails) => Promise.resolve(renderSessionGraph(details)));
-  const mcpTransports = new Map<string, StreamableHTTPServerTransport>();
+  const mcpHttp = dependencies.mcpServerFactory
+    ? createMcpHandler(dependencies.mcpServerFactory, { legacy: "stateless" })
+    : undefined;
+  const mcpNodeHandler = mcpHttp ? toNodeHandler(mcpHttp) : undefined;
+  const unsubscribeMcpEvents = mcpHttp && dependencies.herderEvents
+    ? dependencies.herderEvents.subscribe((event) => { mcpHttp.notify.resourceUpdated(event.uri); })
+    : undefined;
   const mcpAuthToken = dependencies.mcpAuthToken?.trim() || undefined;
   const server = createServer(async (request, response) => {
     try {
-      await route(request, response, supervisor, dependencies.humanRequests, dependencies.mcpServerFactory, mcpTransports, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, dependencies.choiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, sessionVisualizer);
+      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, dependencies.choiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents);
     } catch (err) {
       if (err instanceof SessionNotFoundError) {
         sendJson(response, 404, { error: "Session not found" });
@@ -413,6 +429,11 @@ export function createWebServer(dependencies: WebDependencies): Server {
       }
       sendJson(response, 502, { error: (err as Error).message });
     }
+  });
+  server.once("close", () => {
+    stopSessionObservation?.();
+    unsubscribeMcpEvents?.();
+    if (mcpHttp) void mcpHttp.close();
   });
   if (dependencies.choiceRegistry && dependencies.autopilotPolicyStore) {
     const sweep = () => sweepAutopilotChoices({
@@ -463,7 +484,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpServerFactory?: () => McpServer, mcpTransports?: Map<string, StreamableHTTPServerTransport>, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (url.pathname === "/api/coordination/context" && request.method === "GET") {
     const harness = url.searchParams.get("harness")?.trim();
@@ -529,7 +550,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
     if (!sessionId) return sendJson(response, 400, { error: "sessionId is required" });
     const harness = typeof body.harness === "string" && body.harness.trim() ? body.harness.trim() : "zcode";
-    markLifecycleEvent(harness, sessionId, "end", typeof body.cwd === "string" ? body.cwd : undefined);
+    markLifecycleEvent(harness, sessionId, "end", typeof body.cwd === "string" ? body.cwd : undefined, events);
     return sendJson(response, 200, await coordinationNotes.endSession(sessionId));
   }
   if (url.pathname === "/api/coordination/lifecycle" && request.method === "POST") {
@@ -541,7 +562,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!harness || !sessionId || !allowed.includes(event as SessionLifecycleEvent)) {
       return sendJson(response, 400, { error: "harness, sessionId, and event (start|turn-start|turn-end|end) are required" });
     }
-    markLifecycleEvent(harness, sessionId, event as SessionLifecycleEvent, typeof body.cwd === "string" ? body.cwd : undefined);
+    markLifecycleEvent(harness, sessionId, event as SessionLifecycleEvent, typeof body.cwd === "string" ? body.cwd : undefined, events);
     if (event === "end") await coordinationNotes.endSession(sessionId);
     return sendJson(response, 200, { ok: true });
   }
@@ -710,7 +731,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
   if (url.pathname === "/api/adapters" && request.method === "GET") {
     if (!adapterRegistry) return sendJson(response, 503, { error: "Adapter registry is disabled" });
-    return sendJson(response, 200, { adapters: adapterRegistry.list() });
+    return sendJson(response, 200, { adapters: adapterRegistry.list(), eventSources: supervisor.getEventSources() });
+  }
+  if (url.pathname === "/api/adapters/events" && request.method === "GET") {
+    return sendJson(response, 200, { eventSources: supervisor.getEventSources() });
   }
   const adapterMatch = url.pathname.match(/^\/api\/adapters\/([^/]+)$/);
   if (adapterMatch && request.method === "POST") {
@@ -724,28 +748,12 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 404, { error: (error as Error).message });
     }
   }
-  if (url.pathname === "/mcp" && request.method === "POST") {
+  if (url.pathname === "/mcp" && (request.method === "POST" || request.method === "GET" || request.method === "DELETE")) {
     if (mcpAuthToken && request.headers.authorization !== `Bearer ${mcpAuthToken}`) {
       return sendJson(response, 401, { error: "unauthorized" });
     }
-    if (!mcpServerFactory || !mcpTransports) return sendJson(response, 503, { error: "MCP HTTP transport is disabled" });
-    const body = await readJson(request);
-    const sessionId = headerValue(request.headers["mcp-session-id"]);
-    let transport = sessionId ? mcpTransports.get(sessionId) : undefined;
-    if (!transport && !sessionId && isInitializeRequest(body)) {
-      transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (id) => {
-          mcpTransports.set(id, transport!);
-        },
-      });
-      transport.onclose = () => {
-        if (transport?.sessionId) mcpTransports.delete(transport.sessionId);
-      };
-      await mcpServerFactory().connect(transport);
-    }
-    if (!transport) return sendJson(response, 400, { jsonrpc: "2.0", error: { code: -32000, message: "MCP session is required" }, id: null });
-    await transport.handleRequest(request, response, body);
+    if (!mcpNodeHandler) return sendJson(response, 503, { error: "MCP HTTP transport is disabled" });
+    await mcpNodeHandler(request, response);
     return;
   }
   if (request.method === "POST" && (url.pathname === "/internal/human-requests/sss-completion" || url.pathname === "/internal/human-requests/ask-user-completion")) {
@@ -837,6 +845,69 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       ? withSessionPortfolioStatistics(statistics, snapshot.sessions, normalizedDays)
       : statistics);
   }
+  if (request.method === "GET" && url.pathname === "/api/events/stream") {
+    if (!events) return sendJson(response, 503, { error: "Event journal is disabled" });
+    const headerCursor = typeof request.headers["last-event-id"] === "string" ? Number.parseInt(request.headers["last-event-id"], 10) : NaN;
+    const queryCursor = Number.parseInt(url.searchParams.get("after") || "0", 10);
+    const afterSequence = Number.isFinite(headerCursor) ? Math.max(0, headerCursor) : Math.max(0, Number.isFinite(queryCursor) ? queryCursor : 0);
+    const oldestSequence = events.oldestSequence();
+    response.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      "connection": "keep-alive",
+      "x-accel-buffering": "no",
+    });
+    response.write(`retry: 1500\n\n`);
+    const writeEvent = (event: ReturnType<HerderEventBus["listAfter"]>[number]) => {
+      response.write(`id: ${event.sequence}\ndata: ${JSON.stringify(event)}\n\n`);
+    };
+    if (oldestSequence !== null && afterSequence < oldestSequence - 1) {
+      response.write(`data: ${JSON.stringify({ control: "reset", latestSequence: events.latestSequence(), oldestSequence })}\n\n`);
+    } else {
+      for (const event of events.listAfter(afterSequence, 2000)) writeEvent(event);
+    }
+    const unsubscribe = events.subscribe(writeEvent);
+    const heartbeat = setInterval(() => { try { response.write(`: heartbeat ${Date.now()}\n\n`); } catch { /* socket closed */ } }, 15_000);
+    heartbeat.unref?.();
+    const cleanup = () => { clearInterval(heartbeat); unsubscribe(); };
+    request.once("close", cleanup);
+    response.once("close", cleanup);
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/events") {
+    if (!events) return sendJson(response, 503, { error: "Event journal is disabled" });
+    const afterSequence = Math.max(0, Number.parseInt(url.searchParams.get("after") || "0", 10) || 0);
+    const limit = Math.max(1, Math.min(2000, Number.parseInt(url.searchParams.get("limit") || "500", 10) || 500));
+    const uriPrefix = url.searchParams.get("uriPrefix") || undefined;
+    const oldestSequence = events.oldestSequence();
+    return sendJson(response, 200, {
+      afterSequence,
+      latestSequence: events.latestSequence(),
+      oldestSequence,
+      truncated: oldestSequence !== null && afterSequence < oldestSequence - 1,
+      events: events.listAfter(afterSequence, limit, uriPrefix),
+    });
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/jobs") {
+    if (!jobs) return sendJson(response, 503, { error: "Job registry is disabled" });
+    const limit = Number(url.searchParams.get("limit") || "100");
+    return sendJson(response, 200, { jobs: jobs.list(Number.isFinite(limit) ? limit : 100) });
+  }
+  const jobMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)$/);
+  if (jobMatch && request.method === "GET") {
+    if (!jobs) return sendJson(response, 503, { error: "Job registry is disabled" });
+    const job = jobs.get(decodeURIComponent(jobMatch[1]));
+    return job ? sendJson(response, 200, { job }) : sendJson(response, 404, { error: "Job not found" });
+  }
+  const jobCancelMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/cancel$/);
+  if (jobCancelMatch && request.method === "POST") {
+    if (!jobs) return sendJson(response, 503, { error: "Job registry is disabled" });
+    const job = jobs.cancel(decodeURIComponent(jobCancelMatch[1]));
+    return job ? sendJson(response, 200, { job }) : sendJson(response, 404, { error: "Job not found" });
+  }
+
   if (request.method === "GET" && url.pathname === "/api/sessions") {
     const filters = {
       harness: url.searchParams.get("harness") || undefined,
@@ -991,7 +1062,19 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendOperationResult(response, await supervisor.cancelTurn(harness, id));
     }
     if (action === "recover") {
-      return sendOperationResult(response, await supervisor.recoverSession(harness, id, optionalString(body.message)));
+      if (!jobs) return sendOperationResult(response, await supervisor.recoverSession(harness, id, optionalString(body.message)));
+      const job = jobs.start({
+        kind: "session-recover",
+        ownerSessionId: id,
+        run: async ({ signal, progress }) => {
+          progress(0.1, `Recovering ${harness}:${id}`);
+          if (signal.aborted) throw new Error("cancelled");
+          const result = await supervisor.recoverSession(harness, id, optionalString(body.message));
+          if (!result.ok) throw new Error(result.error || "session recovery failed");
+          return result;
+        },
+      });
+      return sendJson(response, 202, { job });
     }
     if (action === "fork") {
       return sendOperationResult(response, await supervisor.forkSession(harness, id, optionalString(body.message)));
@@ -1035,6 +1118,20 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       projectPath: optionalString(body.projectPath),
       searchPaths: Array.isArray(body.searchPaths) ? body.searchPaths.filter((path): path is string => typeof path === "string") : undefined,
     };
+    if (jobs) {
+      const job = jobs.start({
+        kind: "session-convert",
+        ownerSessionId: body.ownerSessionId && typeof body.ownerSessionId === "string" ? body.ownerSessionId : undefined,
+        run: async ({ signal, progress }) => {
+          progress(0.05, "Reading source session");
+          if (signal.aborted) throw new Error("cancelled");
+          const result = await supervisor.convertSession(input);
+          if (!result.success) throw new Error(result.error || "session conversion failed");
+          return result;
+        },
+      });
+      return sendJson(response, 202, { job });
+    }
     const result = await supervisor.convertSession(input);
     return sendJson(response, result.success ? 200 : 502, result);
   }
@@ -1052,10 +1149,6 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
 
 function isAutopilotHarness(value: string): value is AutopilotHarness {
   return value === "codex" || value === "opencode" || value === "claude" || value === "hermes" || value === "zcode";
-}
-
-function headerValue(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
 }
 
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {

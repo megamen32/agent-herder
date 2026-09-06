@@ -48,6 +48,40 @@ export type AgentControlOperation =
   | "subagents"
   | "events";
 
+export type HarnessEventKind =
+  | "session.created"
+  | "session.updated"
+  | "session.deleted"
+  | "turn.started"
+  | "turn.completed"
+  | "turn.failed"
+  | "message.updated"
+  | "permission.requested"
+  | "permission.resolved"
+  | "model.changed"
+  | "process.connected"
+  | "process.disconnected";
+
+export interface HarnessEvent {
+  kind: HarnessEventKind;
+  harness: HarnessType;
+  sessionId?: string;
+  at?: string;
+  nativeType?: string;
+  status?: AgentStatus;
+  messageId?: string;
+  permissionId?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface HarnessEventSourceHealth {
+  mode: "native" | "polling";
+  connected: boolean;
+  lastEventAt?: string;
+  reconnects: number;
+  lastError?: string;
+}
+
 export interface HarnessCapabilities {
   cancelTurn: boolean;
   detach: boolean;
@@ -178,6 +212,9 @@ export interface HarnessAdapter {
 
   /** Effective execution profile for request-bound health jobs, when exposed. */
   getExecutionProfile?(): Record<string, string>;
+
+  /** Native harness event stream when available. Returns an unsubscribe function. */
+  subscribeEvents?(handler: (event: HarnessEvent) => void): () => void;
 
   /** Initialize the adapter (check connectivity, etc.) */
   init(): Promise<void>;

@@ -6,6 +6,9 @@ const INITIALIZE_MESSAGE_TYPE = 200;
 const RESPONSE_MESSAGE_TYPE = 201;
 const ERROR_MESSAGE_TYPE = 202;
 const CANCELED_MESSAGE_TYPE = 203;
+const EVENT_LISTEN_MESSAGE_TYPE = 102;
+const EVENT_DISPOSE_MESSAGE_TYPE = 103;
+const EVENT_FIRE_MESSAGE_TYPE = 204;
 
 export interface ZcodeAppServerClientOptions {
   command: string;
@@ -19,6 +22,7 @@ export interface ZcodeAppServerClientOptions {
 export interface ZcodeClientLike {
   start(): Promise<void>;
   call(channel: string, method: string, args: unknown[]): Promise<unknown>;
+  listen?(channel: string, event: string, arg: unknown, handler: (payload: unknown) => void): () => void;
   close(): Promise<void>;
 }
 
@@ -26,6 +30,10 @@ interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+}
+
+interface EventSubscription {
+  handler: (payload: unknown) => void;
 }
 
 interface DecodedValue {
@@ -128,10 +136,11 @@ export function decodeZcodeValue(data: Uint8Array, offset = 0): DecodedValue {
 }
 
 /** Encode one regular channel request frame. */
-export function encodeZcodeRpcCall(id: number, channel: string, method: string, args: unknown[]): Buffer {
+function encodeZcodeRpcMessage(type: number, id: number, channel?: string, method?: string, payload?: unknown): Buffer {
+  const header = channel !== undefined && method !== undefined ? [type, id, channel, method] : [type, id];
   const body = Buffer.concat([
-    encodeZcodeValue([100, id, channel, method]),
-    encodeZcodeValue(args),
+    encodeZcodeValue(header),
+    encodeZcodeValue(payload),
   ]);
   const frame = Buffer.alloc(PROTOCOL_HEADER_SIZE + body.byteLength);
   frame.writeUInt8(REGULAR_MESSAGE_TYPE, 0);
@@ -140,6 +149,11 @@ export function encodeZcodeRpcCall(id: number, channel: string, method: string, 
   frame.writeUInt32BE(body.byteLength, 9);
   body.copy(frame, PROTOCOL_HEADER_SIZE);
   return frame;
+}
+
+/** Encode one regular channel request frame. */
+export function encodeZcodeRpcCall(id: number, channel: string, method: string, args: unknown[]): Buffer {
+  return encodeZcodeRpcMessage(100, id, channel, method, args);
 }
 
 function errorFromPayload(payload: unknown, fallback: string): Error {
@@ -181,6 +195,7 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
   private serverReadyError?: (error: Error) => void;
   private nextRequestId = 1;
   private readonly pending = new Map<number, PendingRequest>();
+  private readonly subscriptions = new Map<number, EventSubscription>();
 
   constructor(options: ZcodeAppServerClientOptions) {
     this.command = options.command;
@@ -313,9 +328,16 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
       this.serverReady?.();
       return;
     }
-    if (type !== RESPONSE_MESSAGE_TYPE && type !== ERROR_MESSAGE_TYPE && type !== CANCELED_MESSAGE_TYPE) return;
     const requestId = headerValue[1];
     if (typeof requestId !== "number") return;
+    if (type === EVENT_FIRE_MESSAGE_TYPE) {
+      const subscription = this.subscriptions.get(requestId);
+      if (subscription) {
+        try { subscription.handler(payload); } catch { /* isolate event consumers */ }
+      }
+      return;
+    }
+    if (type !== RESPONSE_MESSAGE_TYPE && type !== ERROR_MESSAGE_TYPE && type !== CANCELED_MESSAGE_TYPE) return;
     const request = this.pending.get(requestId);
     if (!request) return;
     this.pending.delete(requestId);
@@ -348,6 +370,28 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
     });
   }
 
+  listen(channel: string, event: string, arg: unknown, handler: (payload: unknown) => void): () => void {
+    const requestId = this.nextRequestId++;
+    let disposed = false;
+    const begin = async () => {
+      await this.start();
+      if (disposed) return;
+      const child = this.child;
+      if (!child || !this.ready) return;
+      this.subscriptions.set(requestId, { handler });
+      child.stdin.write(encodeZcodeRpcMessage(EVENT_LISTEN_MESSAGE_TYPE, requestId, channel, event, arg));
+    };
+    void begin().catch(() => undefined);
+    return () => {
+      disposed = true;
+      this.subscriptions.delete(requestId);
+      const child = this.child;
+      if (child && this.ready) {
+        try { child.stdin.write(encodeZcodeRpcMessage(EVENT_DISPOSE_MESSAGE_TYPE, requestId, undefined, undefined, undefined)); } catch { /* already closed */ }
+      }
+    };
+  }
+
   async close(): Promise<void> {
     const child = this.child;
     this.ready = false;
@@ -355,6 +399,7 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
     this.child = undefined;
     this.serverReadyError?.(new Error("ZCode app-server closed"));
     this.rejectPending(new Error("ZCode app-server closed"));
+    this.subscriptions.clear();
     if (child) await this.disposeChild(child);
   }
 

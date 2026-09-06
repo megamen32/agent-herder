@@ -1,3 +1,6 @@
+import { herderEvents, type HerderEventBus } from "./herder-events.js";
+import { sessionMessagesResourceUri, sessionResourceUri } from "./herder-resource-uris.js";
+
 /** In-process session lifecycle registry fed by harness hooks.
  *
  * Hooks observe real session events (start, turn boundaries, session end)
@@ -35,12 +38,18 @@ export function markLifecycleEvent(
   sessionId: string,
   event: SessionLifecycleEvent,
   cwd?: string,
+  events: HerderEventBus = herderEvents,
 ): void {
   if (!harness.trim() || !sessionId.trim()) return;
   prune();
   const state: SessionLifecycleState =
     event === "start" || event === "turn-start" ? "running" : event === "turn-end" ? "idle" : "ended";
   registry.set(key(harness, sessionId), { state, ...(cwd ? { cwd } : {}), at: Date.now() });
+  events.publish({ kind: "sessions", uri: "herder://sessions", action: "changed", id: sessionId, source: "lifecycle-hook" });
+  events.publish({ kind: "sessions", uri: sessionResourceUri(harness, sessionId), action: "changed", id: sessionId, source: "lifecycle-hook" });
+  if (event === "turn-end" || event === "end") {
+    events.publish({ kind: "sessions", uri: sessionMessagesResourceUri(harness, sessionId), action: "changed", id: sessionId, source: "lifecycle-hook" });
+  }
 }
 
 export function lifecycleStateFor(harness: string, sessionId: string): SessionLifecycleState | undefined {

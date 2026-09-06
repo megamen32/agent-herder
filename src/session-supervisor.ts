@@ -3,6 +3,7 @@ import type {
   AgentSession,
   ControlResult,
   HarnessAdapter,
+  HarnessEvent,
   SendMessageOptions,
   SessionDetails,
   SessionHistoryInfo,
@@ -16,6 +17,9 @@ import type { AgentHerderSessionConverter, ConvertSessionInput } from "./session
 import { LineageStore, type LineageRecord } from "./lineage-store.js";
 import { ModelsDevPricing } from "./model-pricing.js";
 import { coordinationNotes } from "./coordination-notes.js";
+import { herderEvents, type HerderEventBus } from "./herder-events.js";
+import { adapterResourceUri, sessionMessagesResourceUri, sessionResourceUri } from "./herder-resource-uris.js";
+import { harnessEventHealth, type HarnessEventHealthRegistry } from "./harness-event-health.js";
 
 export interface SessionFilters {
   harness?: string;
@@ -45,6 +49,10 @@ export interface SpawnRecordInput {
 export interface SessionSupervisorOptions {
   /** How long a snapshot may be served before a background refresh starts. */
   sessionCacheTtlMs?: number;
+  /** Domain event sink used by MCP resources, Web UI and other observers. */
+  events?: HerderEventBus;
+  /** Shared native-event health registry. */
+  eventHealth?: HarnessEventHealthRegistry;
 }
 
 interface SessionSnapshot {
@@ -76,6 +84,11 @@ export class SessionSupervisor {
   private readonly modelCache = new Map<string, { models: string[]; refreshedAt: number }>();
   private readonly modelRefreshes = new Map<string, Promise<void>>();
   private readonly pricing = new ModelsDevPricing();
+  private readonly events: HerderEventBus;
+  private readonly eventHealth: HarnessEventHealthRegistry;
+  private observationTimer?: NodeJS.Timeout;
+  private readonly nativeEventUnsubscribers = new Map<string, () => void>();
+  private readonly recentNativeEvents = new Map<string, number>();
 
   constructor(
     private readonly adapters: Map<string, HarnessAdapter>,
@@ -84,18 +97,52 @@ export class SessionSupervisor {
     options: SessionSupervisorOptions = {},
   ) {
     this.sessionCacheTtlMs = Math.max(0, options.sessionCacheTtlMs ?? 10_000);
+    this.events = options.events ?? herderEvents;
+    this.eventHealth = options.eventHealth ?? harnessEventHealth;
   }
 
   async createNamedSession(request: NamedSessionRequest): Promise<NamedSessionResult> {
-    return createNamedSession(this.adapters, request);
+    const result = await createNamedSession(this.adapters, request);
+    if (result.ok && result.sessionId) this.publishSessionChanged(result.harness, result.sessionId, "created");
+    return result;
   }
 
   async newOrResumeNamedSession(request: NewOrResumeNamedSessionRequest): Promise<NamedSessionResult> {
-    return newOrResumeNamedSession(this.adapters, request);
+    const result = await newOrResumeNamedSession(this.adapters, request);
+    if (result.ok && result.sessionId) this.publishSessionChanged(result.harness, result.sessionId, result.created ? "created" : "changed");
+    return result;
+  }
+
+  /** Observe native harness events immediately while keeping snapshot polling as a correctness fallback. */
+  startObservation(intervalMs = 5_000): () => void {
+    this.stopObservation();
+    this.ensureNativeSubscriptions();
+    const bounded = Math.max(1_000, intervalMs);
+    const tick = () => {
+      this.ensureNativeSubscriptions();
+      void this.refreshSessionSnapshot().catch(() => undefined);
+    };
+    this.observationTimer = setInterval(tick, bounded);
+    this.observationTimer.unref?.();
+    tick();
+    return () => this.stopObservation();
+  }
+
+  stopObservation(): void {
+    if (this.observationTimer) clearInterval(this.observationTimer);
+    this.observationTimer = undefined;
+    for (const unsubscribe of this.nativeEventUnsubscribers.values()) {
+      try { unsubscribe(); } catch { /* best-effort adapter cleanup */ }
+    }
+    this.nativeEventUnsubscribers.clear();
   }
 
   getExecutionProfile(harness: string): Record<string, string> | undefined {
     return this.adapters.get(harness)?.getExecutionProfile?.();
+  }
+
+  getEventSources(): Array<{ harness: string; mode: "native" | "polling"; connected: boolean; lastEventAt?: string; reconnects: number; lastError?: string }> {
+    return this.eventHealth.list();
   }
 
   listSessionsFast(filters: SessionFilters = {}): { sessions: AgentSession[]; warming: boolean } {
@@ -105,6 +152,11 @@ export class SessionSupervisor {
     }
     void this.refreshSessionSnapshot().catch(() => undefined);
     return { sessions: [], warming: true };
+  }
+
+  async refreshSessions(filters: SessionFilters = {}): Promise<AgentSession[]> {
+    await this.refreshSessionSnapshot();
+    return this.filterSessions(this.sessionSnapshot?.sessions ?? [], filters);
   }
 
   async listSessions(filters: SessionFilters = {}): Promise<AgentSession[]> {
@@ -132,10 +184,12 @@ export class SessionSupervisor {
 
   private refreshSessionSnapshot(): Promise<void> {
     if (this.sessionRefresh) return this.sessionRefresh;
+    const previous = this.sessionSnapshot?.sessions;
     this.sessionRefresh = this.readSessionSnapshot()
       .then((sessions) => {
         this.seedModelCacheFromSessions(sessions);
         this.sessionSnapshot = { sessions, refreshedAt: Date.now() };
+        if (previous) this.publishSnapshotDiff(previous, sessions);
         this.refreshStaleModelCaches();
       })
       .finally(() => {
@@ -259,25 +313,33 @@ export class SessionSupervisor {
     const adapter = this.requireAdapter(harness);
     const session = await adapter.getSession(id);
     const message = session ? await coordinationNotes.inject(session, options.message) : options.message;
-    return adapter.sendMessage(id, { ...options, message });
+    const result = await adapter.sendMessage(id, { ...options, message });
+    if (result.ok) this.publishSessionChanged(harness, id, "changed");
+    return result;
   }
 
   async changeModel(harness: string, id: string, model: string): Promise<ControlResult> {
     const adapter = this.requireAdapter(harness);
-    return adapter.changeModel
-      ? adapter.changeModel(id, model)
+    const result = adapter.changeModel
+      ? await adapter.changeModel(id, model)
       : { ok: false, error: `${adapter.name} does not expose model switching` };
+    if (result.ok) this.publishSessionChanged(harness, id, "changed");
+    return result;
   }
 
   async stopSession(harness: string, id: string): Promise<{ ok: boolean; error?: string }> {
-    return this.requireAdapter(harness).stopSession(id);
+    const result = await this.requireAdapter(harness).stopSession(id);
+    if (result.ok) this.publishSessionChanged(harness, id, "changed");
+    return result;
   }
 
   async cancelTurn(harness: string, id: string): Promise<{ ok: boolean; error?: string }> {
     const adapter = this.requireAdapter(harness);
-    return adapter.cancelTurn
-      ? adapter.cancelTurn(id)
+    const result = adapter.cancelTurn
+      ? await adapter.cancelTurn(id)
       : { ok: false, error: `${adapter.name} does not expose native turn cancellation` };
+    if (result.ok) this.publishSessionChanged(harness, id, "changed");
+    return result;
   }
 
   async recoverSession(harness: string, id: string, message?: string): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
@@ -310,6 +372,7 @@ export class SessionSupervisor {
         });
       }
     }
+    if (result.ok) this.publishSessionChanged(harness, result.sessionId || id, result.sessionId ? "created" : "changed");
     return result;
   }
 
@@ -330,6 +393,7 @@ export class SessionSupervisor {
         source: "supervisor",
       });
     }
+    if (resolved.ok) this.publishSessionChanged(harness, resolved.sessionId || id, resolved.sessionId ? "created" : "changed");
     return resolved;
   }
 
@@ -339,19 +403,26 @@ export class SessionSupervisor {
     permissionId: string,
     response: "allow" | "deny",
   ): Promise<{ ok: boolean; error?: string }> {
-    return this.requireAdapter(harness).respondPermission(id, permissionId, response);
+    const result = await this.requireAdapter(harness).respondPermission(id, permissionId, response);
+    if (result.ok) this.publishSessionChanged(harness, id, "changed");
+    return result;
   }
 
   async resumeSession(harness: string, id: string, message?: string): Promise<{ ok: boolean; error?: string }> {
     const adapter = this.requireAdapter(harness);
     if (adapter.resumeSession) {
       const resumed = await adapter.resumeSession(id);
-      if (!resumed.ok || !message) return resumed;
+      if (!resumed.ok || !message) {
+        if (resumed.ok) this.publishSessionChanged(harness, id, "changed");
+        return resumed;
+      }
     }
     if (!message) return { ok: false, error: `${adapter.name} does not expose a native resume operation` };
     const session = await adapter.getSession(id);
     const injected = session ? await coordinationNotes.inject(session, message) : message;
-    return adapter.sendMessage(id, { message: injected });
+    const result = await adapter.sendMessage(id, { message: injected });
+    if (result.ok) this.publishSessionChanged(harness, id, "changed");
+    return result;
   }
 
   async convertSession(input: ConvertSessionInput): Promise<ConversionResult> {
@@ -480,6 +551,84 @@ export class SessionSupervisor {
     };
   }
 
+  private publishSnapshotDiff(previous: AgentSession[], current: AgentSession[]): void {
+    const before = new Map(previous.map((session) => [`${session.harness}:${session.id}`, session]));
+    const after = new Map(current.map((session) => [`${session.harness}:${session.id}`, session]));
+    let changed = false;
+    for (const [key, session] of after) {
+      const old = before.get(key);
+      if (!old) {
+        if (!this.wasRecentlyNative(session.harness, session.id)) { this.publishSessionChanged(session.harness, session.id, "created", false, "poll"); changed = true; }
+        continue;
+      }
+      if (sessionFingerprint(old) !== sessionFingerprint(session)) {
+        if (!this.wasRecentlyNative(session.harness, session.id)) { this.publishSessionChanged(session.harness, session.id, "changed", false, "poll"); changed = true; }
+      }
+    }
+    for (const [key, session] of before) {
+      if (after.has(key)) continue;
+      if (!this.wasRecentlyNative(session.harness, session.id)) {
+        this.publishSessionChanged(session.harness, session.id, "deleted", false, "poll");
+        changed = true;
+      }
+    }
+    if (changed) this.events.publish({ kind: "sessions", uri: "herder://sessions", action: "changed", source: "poll" });
+  }
+
+  private publishSessionChanged(harness: string, id: string, action: "created" | "changed" | "deleted", includeRoot = true, source = "supervisor"): void {
+    if (this.sessionSnapshot) this.sessionSnapshot.refreshedAt = 0;
+    if (includeRoot) this.events.publish({ kind: "sessions", uri: "herder://sessions", action: "changed", id, source });
+    this.events.publish({ kind: "sessions", uri: sessionResourceUri(harness, id), action, id, source });
+    this.events.publish({ kind: "sessions", uri: sessionMessagesResourceUri(harness, id), action: "changed", id, source });
+  }
+
+  private ensureNativeSubscriptions(): void {
+    for (const [provider, unsubscribe] of [...this.nativeEventUnsubscribers.entries()]) {
+      if (!this.adapters.has(provider) || !this.adapters.get(provider)?.subscribeEvents) {
+        try { unsubscribe(); } catch { /* best effort */ }
+        this.nativeEventUnsubscribers.delete(provider);
+      }
+    }
+    for (const [provider, adapter] of this.adapters) {
+      if (!adapter.subscribeEvents) { this.eventHealth.setMode(provider, "polling"); continue; }
+      this.eventHealth.setMode(provider, "native");
+      if (this.nativeEventUnsubscribers.has(provider)) continue;
+      const unsubscribe = adapter.subscribeEvents((event) => this.handleHarnessEvent(provider, event));
+      this.nativeEventUnsubscribers.set(provider, unsubscribe);
+    }
+  }
+
+  private handleHarnessEvent(provider: string, event: HarnessEvent): void {
+    const at = event.at ?? new Date().toISOString();
+    if (event.kind === "process.disconnected") {
+      this.eventHealth.disconnected(provider, typeof event.data?.error === "string" ? event.data.error : undefined);
+    } else {
+      this.eventHealth.connected(provider);
+      this.eventHealth.event(provider, at);
+    }
+    this.events.publish({ kind: "adapters", uri: "herder://adapters", action: "changed", id: provider, source: `native:${provider}` });
+    this.events.publish({ kind: "adapters", uri: adapterResourceUri(provider), action: "changed", id: provider, source: `native:${provider}` });
+    if (!event.sessionId) return;
+
+    this.recentNativeEvents.set(`${event.harness}:${event.sessionId}`, Date.now());
+    const source = `native:${provider}:${event.nativeType || event.kind}`;
+    const action = event.kind === "session.created" ? "created" : event.kind === "session.deleted" ? "deleted" : "changed";
+    this.events.publish({ kind: "sessions", uri: "herder://sessions", action: "changed", id: event.sessionId, source });
+    this.events.publish({ kind: "sessions", uri: sessionResourceUri(event.harness, event.sessionId), action, id: event.sessionId, source });
+    if (event.kind === "message.updated" || event.kind === "turn.completed" || event.kind === "turn.failed") {
+      this.events.publish({ kind: "sessions", uri: sessionMessagesResourceUri(event.harness, event.sessionId), action: "changed", id: event.sessionId, source });
+    }
+    if (this.sessionSnapshot) this.sessionSnapshot.refreshedAt = 0;
+  }
+
+  private wasRecentlyNative(harness: string, id: string): boolean {
+    const key = `${harness}:${id}`;
+    const at = this.recentNativeEvents.get(key);
+    if (!at) return false;
+    if (Date.now() - at > 7_500) { this.recentNativeEvents.delete(key); return false; }
+    return true;
+  }
+
   private requireAdapter(harness: string): HarnessAdapter {
     const adapter = this.adapters.get(harness);
     if (!adapter) throw new Error(`Harness '${harness}' is not configured`);
@@ -493,6 +642,13 @@ function sessionKey(provider: string, id: string): string {
 
 function nativeSessionId(session: AgentSession): string {
   return typeof session.meta?.nativeSessionId === "string" ? session.meta.nativeSessionId : session.id;
+}
+
+function sessionFingerprint(session: AgentSession): string {
+  return JSON.stringify([
+    session.status, session.title, session.cwd, session.lastActivity, session.model, session.needsPermission,
+    session.messageCount, session.lastMessage, session.permissionDetails,
+  ]);
 }
 
 function defaultLineagePath(): string {

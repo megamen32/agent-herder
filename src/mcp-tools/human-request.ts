@@ -1,4 +1,4 @@
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { Tool } from "@modelcontextprotocol/server";
 import { HumanRequestRegistry, type HumanRequestRecord } from "../human-request/index.js";
 
 export interface HumanRequestToolRegistration {

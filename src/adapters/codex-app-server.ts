@@ -6,6 +6,7 @@ import type {
   CreateSessionOptions,
   HarnessAdapter,
   HarnessCapabilities,
+  HarnessEvent,
   SendMessageOptions,
   SetPermissionsOptions,
   RawTranscriptExport,
@@ -85,6 +86,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly activeTurns = new Map<string, string>();
   private readonly completions = new Map<string, TurnCompletion>();
   private stderrTail = "";
+  private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
 
   constructor(config: {
     codexBin?: string;
@@ -109,6 +111,12 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   isReady(): boolean { return this.initialized && !!this.child && !this.child.killed; }
+
+  subscribeEvents(handler: (event: HarnessEvent) => void): () => void {
+    this.eventListeners.add(handler);
+    if (this.isReady()) queueMicrotask(() => handler({ kind: "process.connected", harness: "codex", data: { transport: "app-server" } }));
+    return () => { this.eventListeners.delete(handler); };
+  }
 
   async dispose(): Promise<void> {
     this.rejectPending(new Error("Codex app-server disposed"));
@@ -160,6 +168,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     thread.name = options.name;
     thread.cwd = thread.cwd || options.cwd;
     this.threads.set(thread.id, thread);
+    this.emitEvent({ kind: "session.created", harness: "codex", sessionId: thread.id, status: "idle" });
     return this.toSession(thread);
   }
 
@@ -276,6 +285,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         thread.model = model;
         this.threads.set(sessionId, thread);
       }
+      this.emitEvent({ kind: "model.changed", harness: "codex", sessionId, data: { model } });
       return { ok: true };
     } catch (error) {
       return { ok: false, error: (error as Error).message };
@@ -316,6 +326,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   private startProcess(): void {
     this.child = spawn(this.codexBin, this.processArgs, { cwd: this.cwd, stdio: ["pipe", "pipe", "pipe"] });
+    this.emitEvent({ kind: "process.connected", harness: "codex", data: { transport: "app-server" } });
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk: string) => this.consumeOutput(chunk));
     this.child.stderr.setEncoding("utf8");
@@ -324,11 +335,13 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       this.initialized = false;
       this.child = undefined;
       this.rejectPending(error);
+      this.emitEvent({ kind: "process.disconnected", harness: "codex", data: { transport: "app-server", error: error.message } });
     });
-    this.child.on("exit", () => {
+    this.child.on("exit", (code, signal) => {
       this.initialized = false;
       this.child = undefined;
       this.rejectPending(new Error("Codex app-server exited"));
+      this.emitEvent({ kind: "process.disconnected", harness: "codex", data: { transport: "app-server", code: code ?? undefined, signal: signal ?? undefined } });
     });
   }
 
@@ -384,8 +397,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
     if (threadId && typeof params.thread === "object" && params.thread) {
       this.threads.set(threadId, params.thread as CodexThread);
+      this.emitEvent({ kind: "session.updated", harness: "codex", sessionId: threadId, nativeType: message.method });
     }
     if (message.method === "turn/started" && threadId) {
+      this.emitEvent({ kind: "turn.started", harness: "codex", sessionId: threadId, nativeType: message.method, status: "running" });
       const turn = params.turn as { id?: string } | undefined;
       if (turn?.id) {
         this.activeTurns.set(threadId, turn.id);
@@ -399,9 +414,12 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (message.method === "item/agentMessage/delta" && threadId && typeof params.delta === "string") {
       const thread = this.threads.get(threadId);
       if (thread) thread.preview = params.delta;
+      this.emitEvent({ kind: "message.updated", harness: "codex", sessionId: threadId, nativeType: message.method });
     }
     if (message.method === "turn/completed" && threadId) {
       this.activeTurns.delete(threadId);
+      const completedTurn = params.turn as { status?: string } | undefined;
+      this.emitEvent({ kind: completedTurn?.status === "failed" ? "turn.failed" : "turn.completed", harness: "codex", sessionId: threadId, nativeType: message.method, status: completedTurn?.status === "failed" ? "error" : "idle" });
       const completion = this.completions.get(threadId);
       if (completion) {
         const turn = params.turn as { id?: string; status?: string } | undefined;
@@ -411,6 +429,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       }
     }
     if (message.method === "error" && threadId) {
+      this.emitEvent({ kind: "turn.failed", harness: "codex", sessionId: threadId, nativeType: message.method, status: "error" });
       const completion = this.completions.get(threadId);
       if (completion) {
         clearTimeout(completion.timer);
@@ -425,6 +444,13 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     const threadId = typeof message.params.threadId === "string" ? message.params.threadId : undefined;
     if (threadId && typeof message.params.thread === "object" && message.params.thread) {
       this.threads.set(threadId, message.params.thread as CodexThread);
+    }
+  }
+
+  private emitEvent(event: HarnessEvent): void {
+    const normalized = { ...event, at: event.at ?? new Date().toISOString() };
+    for (const listener of [...this.eventListeners]) {
+      try { listener(normalized); } catch { /* isolate listeners */ }
     }
   }
 

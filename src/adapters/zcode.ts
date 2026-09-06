@@ -9,6 +9,7 @@ import {
   type CreateSessionOptions,
   type HarnessAdapter,
   type HarnessCapabilities,
+  type HarnessEvent,
   type ListSessionsOptions,
   type RawTranscriptExport,
   type SendMessageOptions,
@@ -274,6 +275,23 @@ function snapshotMessages(payload: unknown): ZcodeMessage[] {
   return [];
 }
 
+function normalizeZcodeTaskEvent(sessionId: string, payload: unknown): HarnessEvent | null {
+  const root = record(payload);
+  const nativeType = nonEmptyString(root.type) || nonEmptyString(record(root.event).type) || "task.event";
+  const lower = nativeType.toLowerCase();
+  let kind: HarnessEvent["kind"];
+  let status: AgentSession["status"] | undefined;
+  if (/(task|turn).*(start|running|begin)/.test(lower)) { kind = "turn.started"; status = "running"; }
+  else if (/(task|turn).*(complete|success|finish|done)/.test(lower)) { kind = "turn.completed"; status = "idle"; }
+  else if (/(task|turn).*(error|fail)/.test(lower)) { kind = "turn.failed"; status = "error"; }
+  else if (/permission.*(request|ask|pending)|elicitation.*request/.test(lower)) { kind = "permission.requested"; status = "needs_input"; }
+  else if (/permission.*(response|resolve)|elicitation.*response/.test(lower)) { kind = "permission.resolved"; status = "running"; }
+  else if (/message|text|reasoning|tool|delta|stream/.test(lower)) kind = "message.updated";
+  else if (/session.*(closed|deleted)/.test(lower)) kind = "session.deleted";
+  else kind = "session.updated";
+  return { kind, harness: "zcode", sessionId, nativeType, status, at: new Date().toISOString(), data: { nativeType } };
+}
+
 function unsupported(operation: string): ControlResult {
   return { ok: false, error: `ZCode Protocol operation '${operation}' is not supported by the native app-server` };
 }
@@ -303,7 +321,9 @@ export class ZcodeAdapter implements HarnessAdapter {
   readonly lazyStart = true;
   // Sessions live in workspace-scoped app-server storage that is readable
   // without starting a run; discovery must not wait for lazyStart.
-  readonly lazyDiscovery = true;
+  // Passive discovery must never spawn the stdio app-server. Explicit control
+  // actions may still initialize the adapter on demand.
+  readonly lazyDiscovery = false;
   readonly controlCapabilities: HarnessCapabilities = {
     cancelTurn: true,
     detach: true,
@@ -313,20 +333,24 @@ export class ZcodeAdapter implements HarnessAdapter {
     fork: false,
     modelSwitch: true,
     subagents: true,
-    events: false,
+    events: true,
   };
 
   private readonly cwd: string;
   private readonly modelIds: string[];
   private readonly client: ZcodeClientLike;
   private readonly useLocalConfig: boolean;
+  private readonly localDbPath: string;
   private readonly sessionWorkspaces = new Map<string, ZcodeWorkspaceRef>();
+  private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
+  private readonly sessionEventUnsubscribers = new Map<string, () => void>();
   private initialized = false;
 
   constructor(options: ZcodeAdapterOptions = {}) {
     this.cwd = resolve(options.cwd || process.env.ZCODE_CWD || process.cwd());
     this.modelIds = options.modelIds ?? [];
     this.useLocalConfig = !options.client;
+    this.localDbPath = process.env.ZCODE_DB_PATH || join(homedir(), ".zcode", "cli", "db", "db.sqlite");
     if (options.client) {
       this.client = options.client;
     } else {
@@ -359,6 +383,8 @@ export class ZcodeAdapter implements HarnessAdapter {
         console.error(`[agent-herder-zcode] app-server degraded: ${reason}`);
       }
       this.initialized = true;
+      this.emitEvent({ kind: "process.connected", harness: "zcode", data: { transport: "app-server-events" } });
+      for (const [sessionId, workspace] of this.sessionWorkspaces) this.ensureSessionEventSubscription(sessionId, workspace);
     } catch (error) {
       await this.client.close().catch(() => undefined);
       throw new Error(`Cannot initialize ZCode app-server: ${error instanceof Error ? error.message : String(error)}`);
@@ -367,9 +393,19 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   isReady(): boolean { return this.initialized; }
 
+  subscribeEvents(handler: (event: HarnessEvent) => void): () => void {
+    this.eventListeners.add(handler);
+    if (this.initialized) queueMicrotask(() => handler({ kind: "process.connected", harness: "zcode", data: { transport: "app-server-events" } }));
+    for (const [sessionId, workspace] of this.sessionWorkspaces) this.ensureSessionEventSubscription(sessionId, workspace);
+    return () => { this.eventListeners.delete(handler); };
+  }
+
   async dispose(): Promise<void> {
     this.initialized = false;
+    for (const unsubscribe of this.sessionEventUnsubscribers.values()) { try { unsubscribe(); } catch { /* best effort */ } }
+    this.sessionEventUnsubscribers.clear();
     await this.client.close();
+    this.emitEvent({ kind: "process.disconnected", harness: "zcode", data: { transport: "app-server-events" } });
   }
 
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
@@ -399,6 +435,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       seen.add(info.sessionId);
       const rowWorkspace = this.workspace(nonEmptyString(record(info.workspace).workspacePath) || workspace.workspacePath);
       this.sessionWorkspaces.set(info.sessionId, rowWorkspace);
+      this.ensureSessionEventSubscription(info.sessionId, rowWorkspace);
       let mapped = mapSession(row, rowWorkspace.workspacePath);
       if (!mapped.lastMessage) {
         try {
@@ -418,6 +455,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       try {
         const snapshot = await this.readSnapshot(id, workspace);
         this.sessionWorkspaces.set(id, workspace);
+        this.ensureSessionEventSubscription(id, workspace);
         return mapSession(snapshot, workspace.workspacePath);
       } catch {
         continue;
@@ -451,6 +489,8 @@ export class ZcodeAdapter implements HarnessAdapter {
     const info = sessionInfoFromPayload(snapshot);
     if (!info) throw new Error("ZCode createSession returned no sessionId");
     this.sessionWorkspaces.set(info.sessionId, workspace);
+    this.ensureSessionEventSubscription(info.sessionId, workspace);
+    this.emitEvent({ kind: "session.created", harness: "zcode", sessionId: info.sessionId, status: "idle" });
     return mapSession(snapshot, workspace.workspacePath, options.name);
   }
 
@@ -617,7 +657,56 @@ export class ZcodeAdapter implements HarnessAdapter {
         sessionId: id,
         limit,
       });
-      return snapshotMessages(result).map(mapMessage);
+      const messages = snapshotMessages(result).map(mapMessage);
+      if (messages.length > 0) return messages;
+    } catch {
+      // Current headless zcode-server builds can list interactive sessions but
+      // fail readSession/readSessionMessages because desktop runtimePolicy is
+      // absent. The CLI SQLite store remains the canonical local transcript.
+    }
+    return this.readLocalSessionMessages(id, limit);
+  }
+
+  private async readLocalSessionMessages(id: string, limit: number): Promise<SessionMessageView[] | null> {
+    if (!this.useLocalConfig || !existsSync(this.localDbPath)) return null;
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(this.localDbPath, { readOnly: true });
+      try {
+        const bounded = Math.max(1, Math.min(limit, 200));
+        const rows = db.prepare(`
+          select id, data
+          from message indexed by message_session_sequence_idx
+          where session_id = ?
+          order by sequence desc, time_created desc, id desc
+          limit ?
+        `).all(id, bounded) as Array<{ id: string; data: string }>;
+        if (rows.length === 0) return null;
+        rows.reverse();
+        const messages = new Map<string, ZcodeMessage>();
+        for (const row of rows) {
+          const data = JSON.parse(row.data) as Record<string, unknown>;
+          messages.set(row.id, {
+            info: { ...data, messageId: row.id } as ZcodeMessage["info"],
+            parts: [],
+          });
+        }
+        const placeholders = rows.map(() => "?").join(",");
+        const partRows = db.prepare(`
+          select message_id as messageId, data
+          from part
+          where session_id = ? and message_id in (${placeholders})
+          order by message_id, sequence, time_created, id
+        `).all(id, ...rows.map((row) => row.id)) as Array<{ messageId: string; data: string }>;
+        for (const row of partRows) {
+          const message = messages.get(row.messageId);
+          if (!message) continue;
+          message.parts!.push(JSON.parse(row.data) as Record<string, unknown>);
+        }
+        return rows.map((row, index) => mapMessage(messages.get(row.id)!, index));
+      } finally {
+        db.close();
+      }
     } catch {
       return null;
     }
@@ -645,6 +734,10 @@ export class ZcodeAdapter implements HarnessAdapter {
         }
       } catch { /* local CLI config is optional */ }
     }
+    // Model refresh is passive discovery: never initialize/spawn the stdio
+    // app-server just to populate dashboard metadata. Query live state only
+    // when an explicit control action has already initialized the adapter.
+    if (!this.isReady()) return [...new Set(configured)];
     try {
       const state = record(await Promise.race([
         this.callAgent("readWorkspaceState", this.workspace()),
@@ -717,6 +810,36 @@ export class ZcodeAdapter implements HarnessAdapter {
       sessionId: id,
       ...(messageLimit !== undefined ? { messageLimit } : {}),
     }) as ZcodeSnapshot;
+  }
+
+  private ensureSessionEventSubscription(sessionId: string, workspace: ZcodeWorkspaceRef): void {
+    if (this.sessionEventUnsubscribers.has(sessionId) || !this.client.listen || this.eventListeners.size === 0) return;
+    let active = true;
+    this.sessionEventUnsubscribers.set(sessionId, () => { active = false; });
+    void this.client.start().then(() => {
+      if (!active || this.eventListeners.size === 0 || !this.client.listen) return;
+      const unsubscribe = this.client.listen("zcode-task", "onDynamicTaskEvent", {
+        taskId: sessionId,
+        workspacePath: workspace.workspacePath,
+        workspaceIdentity: workspace.workspaceIdentity,
+        deliveryKind: "replayable",
+      }, (payload) => {
+        const event = normalizeZcodeTaskEvent(sessionId, payload);
+        if (event) this.emitEvent(event);
+      });
+      this.sessionEventUnsubscribers.set(sessionId, () => { active = false; unsubscribe(); });
+      this.emitEvent({ kind: "process.connected", harness: "zcode", nativeType: "event-subscription-ready", data: { transport: "app-server-events" } });
+    }).catch((error) => {
+      this.sessionEventUnsubscribers.delete(sessionId);
+      this.emitEvent({ kind: "process.disconnected", harness: "zcode", nativeType: "event-subscription-error", data: { transport: "app-server-events", error: error instanceof Error ? error.message : String(error) } });
+    });
+  }
+
+  private emitEvent(event: HarnessEvent): void {
+    const normalized = { ...event, at: event.at ?? new Date().toISOString() };
+    for (const listener of [...this.eventListeners]) {
+      try { listener(normalized); } catch { /* isolate listeners */ }
+    }
   }
 
   private async callAgent(method: string, ...args: unknown[]): Promise<unknown> {

@@ -2,8 +2,7 @@
 
 **MCP control center for coding agents — and the missing inter-agent messenger.**
 
-Monitor, inspect, message, and coordinate AI coding sessions from one MCP
-server: OpenCode, Claude Code, Codex CLI, Qoder, ZCode, and Fast Agent.
+Monitor, inspect, and coordinate AI coding sessions — and message them — from one **MCP server**: OpenCode, Claude Code, Codex CLI, Qoder, ZCode, and Fast Agent.
 Sessions keep living in their own harnesses; Agent Herder gives them a shared
 control plane, a shared presence ledger, and a shared inbox.
 

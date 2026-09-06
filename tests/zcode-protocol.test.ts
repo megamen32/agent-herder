@@ -17,6 +17,11 @@ describe("ZCode app-server protocol client", () => {
       await client.start();
       const result = await client.call("zcode-agent", "initialize", [{ workspacePath: "/workspace", workspaceIdentity: "/workspace" }]);
       expect(result).toEqual({ available: true, protocolName: "ZCode Protocol", protocolVersion: 1, transportKind: "stdio" });
+      const event = await new Promise<unknown>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("event timeout")), 1000);
+        const stop = client.listen("zcode-task", "onDynamicTaskEvent", { taskId: "session-1" }, (payload) => { clearTimeout(timer); stop(); resolve(payload); });
+      });
+      expect(event).toEqual({ type: "task_complete", taskId: "session-1" });
     } finally {
       await client.close();
     }

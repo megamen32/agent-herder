@@ -38,9 +38,15 @@ class FakeClient implements ZcodeClientLike {
   readonly calls: Array<{ channel: string; method: string; args: unknown[] }> = [];
   started = false;
   closed = false;
+  readonly listeners: Array<{ channel: string; event: string; arg: unknown; handler: (payload: unknown) => void }> = [];
 
   async start(): Promise<void> { this.started = true; }
   async close(): Promise<void> { this.closed = true; }
+  listen(channel: string, event: string, arg: unknown, handler: (payload: unknown) => void): () => void {
+    const entry = { channel, event, arg, handler };
+    this.listeners.push(entry);
+    return () => { const index = this.listeners.indexOf(entry); if (index >= 0) this.listeners.splice(index, 1); };
+  }
 
   async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
     this.calls.push({ channel, method, args });
@@ -80,6 +86,34 @@ class StaleStatusClient extends FakeClient {
 }
 
 describe("ZCode adapter", () => {
+  it("normalizes native zcode-task event subscriptions", async () => {
+    const client = new FakeClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    const events: Array<{ kind: string; sessionId?: string; nativeType?: string }> = [];
+    const stop = adapter.subscribeEvents((event) => events.push(event));
+    await adapter.init();
+    await adapter.listSessions();
+    expect(client.listeners).toHaveLength(1);
+    expect(client.listeners[0]).toMatchObject({ channel: "zcode-task", event: "onDynamicTaskEvent" });
+    client.listeners[0].handler({ type: "task_complete" });
+    client.listeners[0].handler({ type: "message_delta" });
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "process.connected" }),
+      expect.objectContaining({ kind: "turn.completed", sessionId: "session-1", nativeType: "task_complete" }),
+      expect.objectContaining({ kind: "message.updated", sessionId: "session-1", nativeType: "message_delta" }),
+    ]));
+    stop();
+  });
+
+  it("does not start the app-server during passive model discovery", async () => {
+    const client = new FakeClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client, modelIds: ["zai/GLM-4.5"] });
+
+    expect(await adapter.listModels?.()).toEqual(["zai/GLM-4.5"]);
+    expect(client.started).toBe(false);
+    expect(client.calls).toEqual([]);
+  });
+
   it("initializes, maps sessions/messages, and controls the native protocol", async () => {
     const client = new FakeClient();
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client, modelIds: ["zai/GLM-4.5"] });

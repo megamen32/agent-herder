@@ -30,6 +30,26 @@ describe("Hermes CLI job adapter", () => {
     expect(outcome).toBeNull();
   });
 
+  it("emits native-style lifecycle events for Hermes CLI jobs", async () => {
+    const child = new FakeChild();
+    const adapter = new HermesAdapter({ spawnJob: () => child as unknown as ChildProcessWithoutNullStreams });
+    const events: Array<{ kind: string; sessionId?: string; nativeType?: string }> = [];
+    const stop = adapter.subscribeEvents((event) => events.push(event));
+    const session = await adapter.createSession({ name: "events", cwd: "/tmp" });
+    await adapter.changeModel(session.id, "gpt-5.6-luna");
+    await adapter.sendMessage(session.id, { message: "run", queue: true });
+    child.stdout.write("working on it\n");
+    child.emit("exit", 0, null);
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "session.created", sessionId: session.id }),
+      expect.objectContaining({ kind: "model.changed", sessionId: session.id }),
+      expect.objectContaining({ kind: "turn.started", sessionId: session.id }),
+      expect.objectContaining({ kind: "message.updated", sessionId: session.id }),
+      expect.objectContaining({ kind: "turn.completed", sessionId: session.id }),
+    ]));
+    stop();
+  });
+
   it("starts a bounded health job with the canonical model, provider, and reasoning", async () => {
     const child = new FakeChild();
     let command = "";

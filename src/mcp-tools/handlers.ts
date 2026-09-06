@@ -34,7 +34,7 @@ import {
 /**
  * Format an agent session for display as MCP tool result text.
  */
-function formatSession(s: AgentSession, verbose = false): string {
+export function formatSession(s: AgentSession, verbose = false): string {
   const lines = [
     `[${s.harness}] ${s.id}`,
     `  Status: ${s.status}${s.needsPermission ? " ⚠ NEEDS INPUT" : ""}`,
@@ -116,7 +116,7 @@ function expandPath(p: string): string {
 /**
  * Find an adapter and session by session ID.
  */
-async function findSession(
+export async function findSession(
   adapters: Map<string, HarnessAdapter>,
   sessionId: string,
   harness?: string
@@ -200,10 +200,17 @@ async function exportRawLineage(
   return snapshot ? { archive: await archive.exportLineage({ target: snapshot, related, excluded }), targetRaw: snapshot.raw } : null;
 }
 
-export async function handleListAgents(
+export interface ListAgentsResult {
+  sessions: AgentSession[];
+  total: number;
+  limited: boolean;
+  filters: { harness: string; status: string; maxAge?: number; folder?: string; includeLastMessage: boolean };
+}
+
+export async function listAgentsResult(
   adapters: Map<string, HarnessAdapter>,
-  args: unknown
-): Promise<string> {
+  args: unknown,
+): Promise<ListAgentsResult> {
   const parsed = ListAgentsSchema.parse(args);
   const allSessions: AgentSession[] = [];
 
@@ -259,7 +266,17 @@ export async function handleListAgents(
 
   const limited = filtered.slice(0, parsed.limit);
 
-  if (limited.length === 0) {
+  return {
+    sessions: limited,
+    total: filtered.length,
+    limited: filtered.length > parsed.limit,
+    filters: { harness: parsed.harness, status: parsed.status, ...(parsed.maxAge !== undefined ? { maxAge: parsed.maxAge } : {}), ...(parsed.folder ? { folder: parsed.folder } : {}), includeLastMessage: parsed.includeLastMessage },
+  };
+}
+
+export function formatListAgentsResult(result: ListAgentsResult): string {
+  const parsed = result.filters;
+  if (result.sessions.length === 0) {
     const filters: string[] = [];
     if (parsed.harness !== "all") filters.push(`harness=${parsed.harness}`);
     if (parsed.status !== "all") filters.push(`status=${parsed.status}`);
@@ -268,16 +285,17 @@ export async function handleListAgents(
     const filterStr = filters.length > 0 ? ` with filters: ${filters.join(", ")}` : "";
     return `No agent sessions found${filterStr}.`;
   }
-
-  const summary = [
-    `Found ${filtered.length} session(s)${parsed.harness !== "all" ? ` on ${parsed.harness}` : ""}${parsed.status !== "all" ? ` with status '${parsed.status}'` : ""}${parsed.maxAge ? ` from last ${formatDuration(parsed.maxAge)}` : ""}${parsed.folder ? ` under ${parsed.folder}` : ""}:`,
+  return [
+    `Found ${result.total} session(s)${parsed.harness !== "all" ? ` on ${parsed.harness}` : ""}${parsed.status !== "all" ? ` with status '${parsed.status}'` : ""}${parsed.maxAge ? ` from last ${formatDuration(parsed.maxAge)}` : ""}${parsed.folder ? ` under ${parsed.folder}` : ""}:`,
     "",
-    ...limited.map((s) => formatSession(s, parsed.includeLastMessage)),
+    ...result.sessions.map((session) => formatSession(session, parsed.includeLastMessage)),
     "",
-    filtered.length > parsed.limit ? `... and ${filtered.length - parsed.limit} more (use limit to see more)` : "",
-  ];
+    result.limited ? `... and ${result.total - result.sessions.length} more (use limit to see more)` : "",
+  ].join("\n");
+}
 
-  return summary.join("\n");
+export async function handleListAgents(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
+  return formatListAgentsResult(await listAgentsResult(adapters, args));
 }
 
 /**
@@ -311,46 +329,57 @@ export async function handleAuditWorktrees(args: unknown): Promise<string> {
   return lines.join("\n");
 }
 
-export async function handleAgentInfo(
-  adapters: Map<string, HarnessAdapter>,
-  args: unknown
-): Promise<string> {
+export async function agentInfoResult(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<AgentSession | null> {
   const parsed = AgentInfoSchema.parse(args);
-  const found = await findSession(adapters, parsed.sessionId, parsed.harness);
-  if (!found) return `Session '${parsed.sessionId}' not found.`;
-  return formatSession(found.session, true);
+  return (await findSession(adapters, parsed.sessionId, parsed.harness))?.session ?? null;
 }
 
-export async function handleFindParent(
-  adapters: Map<string, HarnessAdapter>,
-  args: unknown
-): Promise<string> {
+export async function handleAgentInfo(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
+  const parsed = AgentInfoSchema.parse(args);
+  const session = await agentInfoResult(adapters, parsed);
+  return session ? formatSession(session, true) : `Session '${parsed.sessionId}' not found.`;
+}
+
+export async function findParentResult(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<{ session: AgentSession | null; parent: AgentSession | null; supported: boolean }> {
   const parsed = FindParentSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
-  if (!found) return `Session '${parsed.sessionId}' not found.`;
-  if (!found.adapter.getParent) return `Finding a parent is not supported by the ${found.adapter.name} adapter.`;
-
-  const parent = await found.adapter.getParent(parsed.sessionId);
-  if (!parent) return `No parent found for [${found.session.harness}] ${parsed.sessionId}.`;
-  return [`Parent of [${found.session.harness}] ${parsed.sessionId}:`, "", formatSession(parent, true)].join("\n");
+  if (!found) return { session: null, parent: null, supported: false };
+  if (!found.adapter.getParent) return { session: found.session, parent: null, supported: false };
+  return { session: found.session, parent: await found.adapter.getParent(parsed.sessionId), supported: true };
 }
 
-export async function handleListChildren(
-  adapters: Map<string, HarnessAdapter>,
-  args: unknown
-): Promise<string> {
+export function formatFindParentResult(sessionId: string, result: { session: AgentSession | null; parent: AgentSession | null; supported: boolean }): string {
+  if (!result.session) return `Session '${sessionId}' not found.`;
+  if (!result.supported) return `Finding a parent is not supported by the ${result.session.harness} adapter.`;
+  if (!result.parent) return `No parent found for [${result.session.harness}] ${sessionId}.`;
+  return [`Parent of [${result.session.harness}] ${sessionId}:`, "", formatSession(result.parent, true)].join("\n");
+}
+
+export async function handleFindParent(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
+  const parsed = FindParentSchema.parse(args);
+  const result = await findParentResult(adapters, parsed);
+  return formatFindParentResult(parsed.sessionId, result);
+}
+
+export async function listChildrenResult(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<{ session: AgentSession | null; children: AgentSession[]; supported: boolean }> {
   const parsed = ListChildrenSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
-  if (!found) return `Session '${parsed.sessionId}' not found.`;
-  if (!found.adapter.listChildren) return `Listing children is not supported by the ${found.adapter.name} adapter.`;
+  if (!found) return { session: null, children: [], supported: false };
+  if (!found.adapter.listChildren) return { session: found.session, children: [], supported: false };
+  return { session: found.session, children: await found.adapter.listChildren(parsed.sessionId), supported: true };
+}
 
-  const children = await found.adapter.listChildren(parsed.sessionId);
-  if (children.length === 0) return `No children found for [${found.session.harness}] ${parsed.sessionId}.`;
-  return [
-    `Children of [${found.session.harness}] ${parsed.sessionId} (${children.length}):`,
-    "",
-    ...children.map((child) => formatSession(child, true)),
-  ].join("\n");
+export function formatListChildrenResult(sessionId: string, result: { session: AgentSession | null; children: AgentSession[]; supported: boolean }): string {
+  if (!result.session) return `Session '${sessionId}' not found.`;
+  if (!result.supported) return `Listing children is not supported by the ${result.session.harness} adapter.`;
+  if (result.children.length === 0) return `No children found for [${result.session.harness}] ${sessionId}.`;
+  return [`Children of [${result.session.harness}] ${sessionId} (${result.children.length}):`, "", ...result.children.map((child) => formatSession(child, true))].join("\n");
+}
+
+export async function handleListChildren(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
+  const parsed = ListChildrenSchema.parse(args);
+  const result = await listChildrenResult(adapters, parsed);
+  return formatListChildrenResult(parsed.sessionId, result);
 }
 
 /** Export raw adapter-owned transcript material and return only its navigation card. */
@@ -547,33 +576,28 @@ export async function handleChangeModel(
 /**
  * List available models for a harness.
  */
-export async function handleListModels(
-  adapters: Map<string, HarnessAdapter>,
-  args: unknown
-): Promise<string> {
+export async function listModelsResult(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<Array<{ harness: string; name: string; models: string[]; defaultModel?: string }>> {
   const parsed = ListModelsSchema.parse(args);
-
-  const targets = parsed.harness
-    ? [adapters.get(parsed.harness)].filter(Boolean) as HarnessAdapter[]
-    : [...adapters.values()];
-
-  if (targets.length === 0) return "No harnesses available.";
-
-  const sections: string[] = [];
-
+  const targets = parsed.harness ? [adapters.get(parsed.harness)].filter(Boolean) as HarnessAdapter[] : [...adapters.values()];
+  const results: Array<{ harness: string; name: string; models: string[]; defaultModel?: string }> = [];
   for (const adapter of targets) {
     const models = adapter.listModels ? await adapter.listModels() : [];
-    const currentModel = models.length > 0 ? ` (first = default)` : "";
-    sections.push(
-      `### ${adapter.name}${currentModel}`,
-      models.length > 0
-        ? models.map((m, i) => `  ${i === 0 ? "→ " : "  "}${m}`).join("\n")
-        : "  (model listing not available)",
-      ""
-    );
+    results.push({ harness: adapter.type, name: adapter.name, models, ...(models[0] ? { defaultModel: models[0] } : {}) });
   }
+  return results;
+}
 
+export function formatListModelsResult(results: Array<{ harness: string; name: string; models: string[]; defaultModel?: string }>): string {
+  if (results.length === 0) return "No harnesses available.";
+  const sections: string[] = [];
+  for (const entry of results) {
+    sections.push(`### ${entry.name}${entry.models.length > 0 ? " (first = default)" : ""}`, entry.models.length > 0 ? entry.models.map((model, index) => `  ${index === 0 ? "→ " : "  "}${model}`).join("\n") : "  (model listing not available)", "");
+  }
   return sections.join("\n");
+}
+
+export async function handleListModels(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
+  return formatListModelsResult(await listModelsResult(adapters, args));
 }
 
 export async function handleBrowserWake(

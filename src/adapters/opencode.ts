@@ -1,4 +1,4 @@
-import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessagePart, SessionMessageView } from "../types/index.js";
+import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, HarnessEvent, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessagePart, SessionMessageView } from "../types/index.js";
 import { readFileSync } from "node:fs";
 
 interface OpenCodeSessionPayload {
@@ -21,6 +21,41 @@ interface OpenCodeMessagePayload {
   info?: { id?: string; role?: string; time?: { created?: number } };
   content?: string | Array<Record<string, unknown>>;
   parts?: Array<Record<string, unknown>>;
+}
+
+function normalizeOpenCodeEvent(raw: unknown): HarnessEvent | null {
+  if (!raw || typeof raw !== "object") return null;
+  const event = raw as Record<string, unknown>;
+  const nativeType = typeof event.type === "string" ? event.type : typeof event.event === "string" ? event.event : "";
+  const properties = event.properties && typeof event.properties === "object" ? event.properties as Record<string, unknown> : event;
+  const info = properties.info && typeof properties.info === "object" ? properties.info as Record<string, unknown> : undefined;
+  const session = properties.session && typeof properties.session === "object" ? properties.session as Record<string, unknown> : undefined;
+  const sessionId = stringValue(properties.sessionID, properties.sessionId, properties.session_id, info?.sessionID, info?.sessionId, session?.id);
+  const messageId = stringValue(properties.messageID, properties.messageId, info?.id);
+  const permissionId = stringValue(properties.permissionID, properties.permissionId, properties.id);
+  let kind: HarnessEvent["kind"] | undefined;
+  if (/session\.(created|added)/i.test(nativeType)) kind = "session.created";
+  else if (/session\.(deleted|removed)/i.test(nativeType)) kind = "session.deleted";
+  else if (/session\.(status|updated|idle|busy|error)/i.test(nativeType)) kind = "session.updated";
+  else if (/message(\.part)?\.(updated|created|delta|completed)/i.test(nativeType)) kind = "message.updated";
+  else if (/permission\.(asked|requested|updated)/i.test(nativeType)) kind = "permission.requested";
+  else if (/permission\.(replied|resolved|completed)/i.test(nativeType)) kind = "permission.resolved";
+  else if (/turn\.(started|start)/i.test(nativeType)) kind = "turn.started";
+  else if (/turn\.(completed|finished|idle)/i.test(nativeType)) kind = "turn.completed";
+  else if (/turn\.(failed|error)/i.test(nativeType)) kind = "turn.failed";
+  else if (/model\.(changed|updated)/i.test(nativeType)) kind = "model.changed";
+  else return null;
+  const statusRaw = stringValue(properties.status, properties.type);
+  const status = statusRaw ? (/busy|running|active/i.test(statusRaw) ? "running" : /wait|permission|input/i.test(statusRaw) ? "needs_input" : /error|fail/i.test(statusRaw) ? "error" : /stop|abort/i.test(statusRaw) ? "stopped" : "idle") : undefined;
+  return {
+    kind, harness: "opencode", sessionId, nativeType, messageId, permissionId, status,
+    at: new Date().toISOString(),
+    data: { nativeType },
+  };
+}
+
+function stringValue(...values: unknown[]): string | undefined {
+  return values.find((value): value is string => typeof value === "string" && value.length > 0);
 }
 
 const opencodeMessageTextLimit = 16_384;
@@ -276,10 +311,15 @@ export class OpenCodeAdapter implements HarnessAdapter {
     return children.map((child) => this.toSession(child));
   }
 
-  /** Subscribe to OpenCode's durable SSE stream; the returned function closes it. */
-  subscribeEvents(onEvent: (event: unknown) => void): () => void {
+  /** Subscribe to OpenCode's durable SSE stream and normalize native events. */
+  subscribeEvents(onEvent: (event: HarnessEvent) => void): () => void {
     const controller = new AbortController();
-    void this.consumeEvents(controller.signal, onEvent);
+    void this.consumeEvents(
+      controller.signal,
+      (raw) => { const normalized = normalizeOpenCodeEvent(raw); if (normalized) onEvent(normalized); },
+      () => onEvent({ kind: "process.connected", harness: "opencode", data: { transport: "sse" } }),
+      (error) => onEvent({ kind: "process.disconnected", harness: "opencode", data: { transport: "sse", ...(error ? { error } : {}) } }),
+    );
     return () => controller.abort();
   }
 
@@ -482,28 +522,47 @@ export class OpenCodeAdapter implements HarnessAdapter {
     return res.json() as Promise<T>;
   }
 
-  private async consumeEvents(signal: AbortSignal, onEvent: (event: unknown) => void): Promise<void> {
-    try {
-      const response = await this.fetch("/event", { signal });
-      if (!response.ok || !response.body) return;
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (!signal.aborted) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        buffer += decoder.decode(chunk.value, { stream: true });
-        const events = buffer.split("\n\n");
-        buffer = events.pop() || "";
-        for (const event of events) {
-          const data = event.split("\n").find((line) => line.startsWith("data: "))?.slice(6);
-          if (!data) continue;
-          try { onEvent(JSON.parse(data)); } catch { /* ignore malformed SSE frames */ }
+  private async consumeEvents(
+    signal: AbortSignal,
+    onEvent: (event: unknown) => void,
+    onConnected: () => void,
+    onDisconnected: (error?: string) => void,
+  ): Promise<void> {
+    let backoffMs = 500;
+    while (!signal.aborted) {
+      try {
+        const response = await this.fetch("/event", { signal });
+        if (!response.ok || !response.body) throw new Error(`OpenCode event stream HTTP ${response.status}`);
+        onConnected();
+        backoffMs = 500;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (!signal.aborted) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          buffer += decoder.decode(chunk.value, { stream: true });
+          const frames = buffer.split("\n\n");
+          buffer = frames.pop() || "";
+          for (const frame of frames) {
+            const data = frame.split("\n").find((line) => line.startsWith("data: "))?.slice(6);
+            if (!data) continue;
+            try { onEvent(JSON.parse(data)); } catch { /* ignore malformed SSE frames */ }
+          }
         }
+        try { await reader.cancel(); } catch { /* already closed */ }
+        if (!signal.aborted) onDisconnected("OpenCode event stream closed");
+      } catch (error) {
+        if (signal.aborted) break;
+        onDisconnected(error instanceof Error ? error.message : String(error));
       }
-      await reader.cancel();
-    } catch {
-      // Disconnects are surfaced to the caller through the next recovery call.
+      if (signal.aborted) break;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, backoffMs);
+        const abort = () => { clearTimeout(timer); resolve(); };
+        signal.addEventListener("abort", abort, { once: true });
+      });
+      backoffMs = Math.min(10_000, backoffMs * 2);
     }
   }
 

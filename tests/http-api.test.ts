@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { createWebServer } from "../src/web/server.js";
 import { AdapterRegistry } from "../src/adapter-registry.js";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession, HarnessAdapter } from "../src/types/index.js";
+import { HerderEventBus } from "../src/herder-events.js";
+import { HerderJobRegistry } from "../src/herder-jobs.js";
 
 const servers: Server[] = [];
 
@@ -110,6 +113,39 @@ describe("agent-herder web API", () => {
     expect((await fetch(base, { method: "POST", headers: acceptHeaders, body })).status).toBe(401);
     expect((await fetch(base, { method: "POST", headers: { ...acceptHeaders, authorization: "Bearer wrong" }, body })).status).toBe(401);
     expect((await fetch(base, { method: "POST", headers: { ...acceptHeaders, authorization: "Bearer mcp-secret" }, body })).status).toBe(200);
+  });
+
+  it("serves MCP 2026-07-28 without an HTTP session id", async () => {
+    const server = createWebServer({
+      adapters: new Map(),
+      converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+      mcpAuthToken: "mcp-secret",
+      mcpServerFactory: () => {
+        const mcp = new McpServer({ name: "test-v2", version: "2.0.0" });
+        mcp.registerTool("ping_test", { description: "test tool" }, async () => ({ content: [{ type: "text" as const, text: "pong" }] }));
+        return mcp;
+      },
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+
+    const transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${address.port}/mcp`), {
+      requestInit: { headers: { authorization: "Bearer mcp-secret" } },
+    });
+    const client = new Client({ name: "test-modern-client", version: "1.0.0" }, {
+      versionNegotiation: { mode: "auto" },
+    });
+    try {
+      await client.connect(transport);
+      expect(client.getProtocolEra()).toBe("modern");
+      expect(client.getNegotiatedProtocolVersion()).toBe("2026-07-28");
+      const tools = await client.listTools();
+      expect(tools.tools.some((tool) => tool.name === "ping_test")).toBe(true);
+    } finally {
+      await client.close();
+    }
   });
 
   it("exposes a read-only health remediation route probe without creating a session", async () => {
@@ -358,4 +394,64 @@ describe("agent-herder web API", () => {
     expect(secondJson.fingerprint).toBe(firstJson.fingerprint);
     expect(secondJson.session.lastActivity).not.toBe(firstJson.session.lastActivity);
   });
+
+  it("streams live domain events over SSE with sequence ids", async () => {
+    const events = new HerderEventBus();
+    const server = createWebServer({
+      adapters: new Map(),
+      converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+      herderEvents: events,
+      sessionObservationManagedExternally: true,
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const controller = new AbortController();
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/events/stream?after=0`, { signal: controller.signal });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    const reader = response.body!.getReader();
+    events.publish({ kind: "jobs", uri: "herder://jobs", action: "changed", source: "sse-test" });
+    const decoder = new TextDecoder();
+    let text = "";
+    for (let i = 0; i < 10 && !text.includes('"source":"sse-test"'); i++) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    controller.abort();
+    expect(text).toContain("id: 1");
+    expect(text).toContain('"uri":"herder://jobs"');
+    expect(text).toContain('"source":"sse-test"');
+  });
+
+  it("exposes live jobs over HTTP and cancels active work", async () => {
+    const jobs = new HerderJobRegistry(new HerderEventBus());
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const started = jobs.start({ kind: "http-fixture", run: async ({ progress }) => { progress(0.25, "working"); await gate; return { ok: true }; } });
+    const server = createWebServer({
+      adapters: new Map(),
+      converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+      jobs,
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const base = `http://127.0.0.1:${address.port}`;
+
+    const listed = await fetch(`${base}/api/jobs`);
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toMatchObject({ jobs: [expect.objectContaining({ id: started.id, kind: "http-fixture", progress: 0.25 })] });
+    const one = await fetch(`${base}/api/jobs/${encodeURIComponent(started.id)}`);
+    expect(one.status).toBe(200);
+    expect(await one.json()).toMatchObject({ job: { id: started.id } });
+    const cancelled = await fetch(`${base}/api/jobs/${encodeURIComponent(started.id)}/cancel`, { method: "POST" });
+    expect(cancelled.status).toBe(200);
+    expect(await cancelled.json()).toMatchObject({ job: { id: started.id, state: "cancelled" } });
+    release();
+  });
+
 });

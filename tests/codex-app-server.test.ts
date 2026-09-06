@@ -62,6 +62,8 @@ describe("Codex app-server adapter", () => {
       modelIds: ["gpt-test", "gpt-test-2"],
       codexDir,
     });
+    const nativeEvents: Array<{ kind: string; sessionId?: string }> = [];
+    const unsubscribeEvents = adapter.subscribeEvents((event) => nativeEvents.push(event));
     try {
       await adapter.init();
       const sessions = await adapter.listSessions();
@@ -84,6 +86,11 @@ describe("Codex app-server adapter", () => {
 
       const queued = await adapter.sendMessage("thread-1", { message: "hold", queue: true });
       expect(queued).toEqual({ ok: true });
+      for (let i = 0; i < 20 && !nativeEvents.some((event) => event.kind === "turn.started"); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(nativeEvents).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "process.connected" }),
+        expect.objectContaining({ kind: "turn.started", sessionId: "thread-1" }),
+      ]));
       expect(await adapter.cancelTurn("thread-1")).toEqual({ ok: true });
       expect(await adapter.resumeSession("thread-1")).toEqual({ ok: true });
       expect(await adapter.changeModel("thread-1", "gpt-test-2")).toEqual({ ok: true });
@@ -93,6 +100,7 @@ describe("Codex app-server adapter", () => {
       expect(forked.sessionId).toBe("thread-fork-1");
       expect(await adapter.listModels()).toEqual(["gpt-test", "gpt-test-2"]);
     } finally {
+      unsubscribeEvents();
       await adapter.dispose();
       await rm(codexDir, { recursive: true, force: true });
     }

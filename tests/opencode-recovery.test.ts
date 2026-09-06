@@ -13,6 +13,28 @@ describe("OpenCode native recovery controls", () => {
     server = undefined;
   });
 
+  it("normalizes native OpenCode SSE events", async () => {
+    server = createServer((request, response) => {
+      if (request.url === "/event") {
+        response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+        response.write(`data: ${JSON.stringify({ type: "message.updated", properties: { sessionID: "sess-live", messageID: "msg-1" } })}\n\n`);
+        return;
+      }
+      response.statusCode = 404; response.end();
+    }).listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
+    port = (server.address() as { port: number }).port;
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const events: Array<{ kind: string; sessionId?: string; messageId?: string }> = [];
+    const stop = adapter.subscribeEvents((event) => events.push(event));
+    for (let i = 0; i < 20 && !events.some((event) => event.kind === "message.updated"); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+    stop();
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "process.connected" }),
+      expect.objectContaining({ kind: "message.updated", sessionId: "sess-live", messageId: "msg-1" }),
+    ]));
+  });
+
   it("derives the local server URL from an OpenCode serve command", () => {
     const command = ["/usr/bin/opencode", "serve", "--hostname", "127.0.0.1", "--port", "39225", ""].join(String.fromCharCode(0));
     expect(parseOpenCodeServerCommand(command)).toBe("http://127.0.0.1:39225");

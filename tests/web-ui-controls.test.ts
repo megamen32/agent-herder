@@ -34,6 +34,9 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('/api/autopilot/sessions/');
     expect(main).toContain('aria-label={`Autopilot for ${activeSession.id}`}');
     expect(main).toContain('/api/autopilot/policy');
+    expect(main).toContain('new EventSource(`/api/events/stream?after=${cursor}`)');
+    expect(main).toContain('agent-herder.event-cursor');
+    expect(main).toContain('30_000');
     expect(main).toContain('Глобальный автопилот');
     expect(main).toContain('30 минут без ответа');
     expect(main).toContain('Последний запрос пользователя');

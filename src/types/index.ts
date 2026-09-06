@@ -18,6 +18,9 @@ export {
   type SessionDetails,
   type AgentControlOperation,
   type HarnessCapabilities,
+  type HarnessEventKind,
+  type HarnessEvent,
+  type HarnessEventSourceHealth,
   type ControlResult,
   getHarnessCapabilities,
 } from "./common.js";

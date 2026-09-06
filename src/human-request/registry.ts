@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { herderEvents, type HerderEventBus } from "../herder-events.js";
+import { humanRequestResourceUri } from "../herder-resource-uris.js";
 
 export type HumanRequestKind = "user" | "secret";
 export type HumanRequestStatus = "pending" | "resuming" | "resumed" | "resume_failed";
@@ -164,7 +166,12 @@ function validateRecord(record: HumanRequestRecord): HumanRequestRecord {
 export class HumanRequestRegistry {
   private operation: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly filePath: string) {}
+  constructor(private readonly filePath: string, private readonly events: HerderEventBus = herderEvents) {}
+
+  private publishRequest(requestId: string, action: "created" | "updated"): void {
+    this.events.publish({ kind: "human-request", uri: "herder://human-requests", action, id: requestId });
+    this.events.publish({ kind: "human-request", uri: humanRequestResourceUri(requestId), action, id: requestId });
+  }
 
   async create(input: CreateHumanRequestInput): Promise<HumanRequestRecord> {
     rejectPayloadFields(input);
@@ -186,8 +193,14 @@ export class HumanRequestRegistry {
       if (record.notify) record.notify.dedupKey = `human-request:${record.requestId}`;
       file.requests.push(record);
       await this.write(file);
+      this.publishRequest(record.requestId, "created");
       return record;
     });
+  }
+
+  async list(status?: HumanRequestStatus): Promise<HumanRequestRecord[]> {
+    const records = (await this.read()).requests;
+    return records.filter((record) => !status || record.status === status).map(cloneRecord);
   }
 
   async get(requestId: string): Promise<HumanRequestRecord | null> {
@@ -210,6 +223,7 @@ export class HumanRequestRegistry {
       record.attemptId = randomUUID();
       if (resolutionRef) record.resultRef = resolutionRef;
       await this.write(file);
+      this.publishRequest(record.requestId, "updated");
       return cloneRecord(record);
     });
   }
@@ -228,6 +242,7 @@ export class HumanRequestRegistry {
       record.attemptId = checkedAttemptId;
       if (resultRef) record.resultRef = resultRef;
       await this.write(file);
+      this.publishRequest(record.requestId, "updated");
       return cloneRecord(record);
     });
   }
@@ -266,6 +281,7 @@ export class HumanRequestRegistry {
       if (receipt) record.receipt = receipt;
       record.resolvedAt = new Date().toISOString();
       await this.write(file);
+      this.publishRequest(record.requestId, "updated");
       return cloneRecord(record);
     });
   }
@@ -280,6 +296,7 @@ export class HumanRequestRegistry {
       if (!record.notify) throw new Error(`Human request '${requestId}' has no explicit Notify tuple`);
       record.notify.incidentId = checkedIncidentId;
       await this.write(file);
+      this.publishRequest(record.requestId, "updated");
       return cloneRecord(record);
     });
   }

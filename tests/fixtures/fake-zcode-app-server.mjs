@@ -83,8 +83,14 @@ function handleFrame(data) {
   const state = { offset: 0 };
   const header = decode(data, state);
   const args = decode(data, state);
+  const type = header?.[0];
   const id = header?.[1];
   const method = header?.[3];
+  if (type === 102) {
+    sendMessage([204, id], { type: "task_complete", taskId: args?.taskId });
+    return;
+  }
+  if (type === 103) return;
   if (method === "initialize") {
     sendMessage([201, id], { available: true, protocolName: "ZCode Protocol", protocolVersion: 1, transportKind: "stdio" });
   } else {

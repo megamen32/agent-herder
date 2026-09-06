@@ -3,6 +3,8 @@ import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { AgentSession } from "./types/index.js";
+import { herderEvents, type HerderEventBus } from "./herder-events.js";
+import { coordinationNoteResourceUri, coordinationWorkspaceResourceUri, presenceSessionResourceUri, presenceWorkspaceResourceUri } from "./herder-resource-uris.js";
 
 export type CoordinationNoteKind = "working" | "avoid" | "handoff" | "info";
 
@@ -52,7 +54,19 @@ export class CoordinationNoteStore {
    * session has actually touched, so turn-start awareness covers all of
    * them, not just the launch directory. */
   private presence = new Map<string, Map<string, number>>();
-  constructor(private readonly filePath = defaultCoordinationNotePath()) {}
+  constructor(private readonly filePath = defaultCoordinationNotePath(), private readonly events: HerderEventBus = herderEvents) {}
+
+  private publishNote(note: CoordinationNote, action: "created" | "updated" | "deleted" | "changed"): void {
+    this.events.publish({ kind: "coordination", uri: "herder://coordination", action, id: note.id });
+    this.events.publish({ kind: "coordination", uri: coordinationNoteResourceUri(note.id), action, id: note.id });
+    this.events.publish({ kind: "coordination", uri: coordinationWorkspaceResourceUri(note.cwd), action: "changed", id: note.id });
+  }
+
+  private publishPresence(sessionId: string, cwd?: string, action: "created" | "updated" | "deleted" | "changed" = "changed"): void {
+    this.events.publish({ kind: "presence", uri: "herder://presence", action: "changed", id: sessionId });
+    this.events.publish({ kind: "presence", uri: presenceSessionResourceUri(sessionId), action, id: sessionId });
+    if (cwd) this.events.publish({ kind: "presence", uri: presenceWorkspaceResourceUri(cwd), action: "changed", id: sessionId });
+  }
 
   private touchPresence(sessionId: string, board: string): void {
     const boards = this.presence.get(sessionId) ?? new Map<string, number>();
@@ -97,6 +111,8 @@ export class CoordinationNoteStore {
       };
       file.notes.push(note);
       await this.write(file);
+      this.publishNote(note, "created");
+      this.publishPresence(note.authorSessionId, note.cwd);
       return note;
     });
   }
@@ -131,6 +147,8 @@ export class CoordinationNoteStore {
       if (patch.ttlSeconds !== undefined) note.expiresAt = new Date(Date.now() + boundedTtl(patch.ttlSeconds) * 1000).toISOString();
       note.updatedAt = new Date().toISOString();
       await this.write(file);
+      this.publishNote(note, "updated");
+      this.publishPresence(note.authorSessionId, note.cwd);
       return note;
     });
   }
@@ -141,8 +159,10 @@ export class CoordinationNoteStore {
       const index = file.notes.findIndex((candidate) => candidate.id === id);
       if (index < 0) return false;
       assertOwner(file.notes[index], authorSessionId);
-      file.notes.splice(index, 1);
+      const [removed] = file.notes.splice(index, 1);
       await this.write(file);
+      this.publishNote(removed, "deleted");
+      this.publishPresence(removed.authorSessionId, removed.cwd);
       return true;
     });
   }
@@ -179,7 +199,12 @@ export class CoordinationNoteStore {
         }
         reservations.push(note);
       }
-      if (paths.length > 0) await this.write(file);
+      if (paths.length > 0) {
+        await this.write(file);
+        this.events.publish({ kind: "coordination", uri: "herder://coordination", action: "changed", id: input.sessionId });
+        this.events.publish({ kind: "coordination", uri: coordinationWorkspaceResourceUri(cwd), action: "changed", id: input.sessionId });
+        this.publishPresence(input.sessionId, cwd);
+      }
       return { reservations, conflicts: dedupeConflicts(conflicts) };
     });
   }
@@ -198,7 +223,12 @@ export class CoordinationNoteStore {
         note.expiresAt = new Date(now.getTime() + ttl * 1000).toISOString();
         touched.push(note);
       }
-      if (touched.length > 0) await this.write(file);
+      if (touched.length > 0) {
+        await this.write(file);
+        this.events.publish({ kind: "coordination", uri: "herder://coordination", action: "changed", id: input.sessionId });
+        this.events.publish({ kind: "coordination", uri: coordinationWorkspaceResourceUri(cwd), action: "changed", id: input.sessionId });
+        this.publishPresence(input.sessionId, cwd);
+      }
       return touched;
     });
   }
@@ -292,12 +322,36 @@ export class CoordinationNoteStore {
       file.notes = file.notes.filter((note) => !(note.authorSessionId === sessionId && note.source === "hook"));
       const removed = before - file.notes.length;
       if (removed > 0) await this.write(file);
+      const boards = [...(this.presence.get(sessionId)?.keys() ?? [])];
       this.presence.delete(sessionId);
+      if (removed > 0) this.events.publish({ kind: "coordination", uri: "herder://coordination", action: "changed", id: sessionId });
+      this.publishPresence(sessionId, undefined, "deleted");
+      for (const cwd of boards) this.events.publish({ kind: "presence", uri: presenceWorkspaceResourceUri(cwd), action: "changed", id: sessionId });
       for (const key of [...this.injectionState.keys()]) {
         if (key.startsWith(`${sessionId}#`)) this.injectionState.delete(key);
       }
       return { removed };
     });
+  }
+
+  presenceSnapshot(): Array<{ sessionId: string; boards: Array<{ cwd: string; lastSeenAt: string }> }> {
+    return [...this.presence.entries()].map(([sessionId, boards]) => ({
+      sessionId,
+      boards: [...boards.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([cwd, seen]) => ({ cwd, lastSeenAt: new Date(seen).toISOString() })),
+    }));
+  }
+
+  presenceForSession(sessionId: string): { sessionId: string; boards: Array<{ cwd: string; lastSeenAt: string }> } | null {
+    return this.presenceSnapshot().find((entry) => entry.sessionId === sessionId) ?? null;
+  }
+
+  presenceForWorkspace(cwd: string): Array<{ sessionId: string; lastSeenAt: string }> {
+    const canonical = canonicalCwd(cwd);
+    return this.presenceSnapshot()
+      .flatMap((entry) => entry.boards.filter((board) => sameWorkspace(board.cwd, canonical)).map((board) => ({ sessionId: entry.sessionId, lastSeenAt: board.lastSeenAt })))
+      .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
   }
 
   /** True when this roster differs from what the session last saw, or the
