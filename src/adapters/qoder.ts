@@ -1,8 +1,9 @@
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { execFile } from "node:child_process";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { spawnDetachedWorkload } from "../workload-launcher.js";
 import type {
   AgentSession,
   HarnessAdapter,
@@ -125,13 +126,7 @@ export class QoderAdapter implements HarnessAdapter {
     if (model) args.push("--model", model);
 
     if (options.queue) {
-      const child: ChildProcess = spawn(this.qoderBin, args, {
-        cwd: session.cwd,
-        env: this.env,
-        detached: true,
-        stdio: "ignore",
-      });
-      child.unref();
+      spawnDetachedWorkload(this.qoderBin, args, { label: "qoder-queue", cwd: session.cwd, env: this.env, stdio: "ignore" });
       return { ok: true };
     }
 

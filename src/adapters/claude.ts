@@ -1,10 +1,11 @@
 import { HarnessAdapter, AgentSession, CreateSessionOptions, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile, readdir, stat, access, open } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { spawnDetachedWorkload } from "../workload-launcher.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -126,8 +127,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
       "--output-format", "json",
     ];
     if (options.model) args.push("--model", options.model);
-    const child = spawn(this.claudeBin, args, { cwd, detached: true, stdio: "ignore" });
-    child.unref();
+    spawnDetachedWorkload(this.claudeBin, args, { label: "claude-session", cwd, stdio: "ignore" });
     return {
       id, harness: "claude", status: "running", title: options.name, cwd,
       lastActivity: new Date().toISOString(), model: options.model, needsPermission: false, messageCount: 0,
@@ -149,13 +149,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
     ];
 
     if (options.queue) {
-      const { spawn } = await import("node:child_process");
-      const child = spawn(this.claudeBin, args, {
-        cwd: session.cwd,
-        detached: true,
-        stdio: "ignore",
-      });
-      child.unref();
+      spawnDetachedWorkload(this.claudeBin, args, { label: "claude-queue", cwd: session.cwd, stdio: "ignore" });
       return { ok: true };
     }
 

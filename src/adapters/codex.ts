@@ -1,9 +1,10 @@
 import { HarnessAdapter, AgentSession, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessageView } from "../types/index.js";
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { open, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { spawnDetachedWorkload } from "../workload-launcher.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -138,12 +139,7 @@ export class CodexAdapter implements HarnessAdapter {
     args.push(id, options.message);
 
     if (options.queue) {
-      const child = spawn(this.codexBin, args, {
-        cwd: session.cwd,
-        detached: true,
-        stdio: "ignore",
-      });
-      child.unref();
+      spawnDetachedWorkload(this.codexBin, args, { label: "codex-queue", cwd: session.cwd, stdio: "ignore" });
       return { ok: true };
     }
 

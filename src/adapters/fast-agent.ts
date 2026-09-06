@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { basename, join, relative, resolve } from "node:path";
+import { spawnDetachedWorkload } from "../workload-launcher.js";
 import type {
   AgentSession,
   CreateSessionOptions,
@@ -137,13 +138,10 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       "--quiet",
     ];
     if (options.model) args.push("--model", options.model);
-    const child = spawn(this.fastAgentBin, args, {
-      cwd,
-      detached: true,
-      stdio: "ignore",
+    spawnDetachedWorkload(this.fastAgentBin, args, {
+      label: "fast-agent-session", cwd, stdio: "ignore",
       env: { ...process.env, FAST_AGENT_HOME: this.home },
     });
-    child.unref();
     return {
       id, harness: this.type, status: "running", title: options.name, cwd,
       lastActivity: new Date().toISOString(), model: options.model, needsPermission: false, messageCount: 0,
@@ -162,11 +160,10 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     ];
     if (options.queue) {
       try {
-        const child = spawn(this.fastAgentBin, args, {
-          cwd: session.cwd, detached: true, stdio: "ignore",
+        spawnDetachedWorkload(this.fastAgentBin, args, {
+          label: "fast-agent-queue", cwd: session.cwd, stdio: "ignore",
           env: { ...process.env, FAST_AGENT_HOME: this.home },
         });
-        child.unref();
         return { ok: true };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
