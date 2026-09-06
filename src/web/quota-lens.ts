@@ -207,6 +207,62 @@ async function sampleOnce(): Promise<Record<string, unknown>> {
   return record;
 }
 
+type HistoryPoint = { ts: number; quota?: { primary?: number; secondary?: number; limit_reached?: boolean; reset_s?: number } };
+
+// Прогноз: когда окно кончится при текущем темпе. Скорость — среднее по парам
+// замеров с гауссовым весом по свежести (σ минут, QUOTA_LENS_FORECAST_SIGMA_MIN).
+function computeForecast(entries: HistoryPoint[], sigmaMin: number): Record<string, unknown> {
+  const nowSec = Date.now() / 1000;
+  const clean = entries
+    .filter((e) => typeof e.ts === "number" && e.ts > 0 && e.quota && typeof e.quota.primary === "number")
+    .map((e) => ({ ts: e.ts as number, primary: e.quota!.primary as number, secondary: e.quota!.secondary, quota: e.quota! }))
+    .sort((a, b) => a.ts - b.ts);
+  let wSum = 0, wRate = 0, wSum2 = 0, wRate2 = 0, pairs = 0;
+  for (let i = 1; i < clean.length; i++) {
+    const dtMin = (clean[i].ts - clean[i - 1].ts) / 60;
+    if (dtMin <= 0.5 || dtMin > 60) continue;
+    const dp = clean[i].primary - clean[i - 1].primary;
+    if (dp <= 0.05) continue; // сброс окна или плато — не считаем расходом
+    const ageMin = Math.max((nowSec - clean[i].ts) / 60, 0);
+    const weight = Math.exp(-(ageMin * ageMin) / (2 * sigmaMin * sigmaMin));
+    wSum += weight;
+    wRate += weight * (dp / dtMin);
+    pairs++;
+    if (typeof clean[i].secondary === "number" && typeof clean[i - 1].secondary === "number") {
+      const ds = (clean[i].secondary as number) - (clean[i - 1].secondary as number);
+      if (ds > 0.05) { wSum2 += weight; wRate2 += weight * (ds / dtMin); }
+    }
+  }
+  const last = clean[clean.length - 1];
+  if (!last || pairs === 0 || wSum === 0) {
+    return { available: false, reason: "мало замеров — нужен хотя бы один интервал роста", pairs, sigma_min: sigmaMin };
+  }
+  const ratePrimary = wRate / wSum;
+  const rateSecondary = wSum2 > 0 ? wRate2 / wSum2 : 0;
+  const exhausted = last.primary >= 99.5 || Boolean(last.quota.limit_reached);
+  return {
+    available: true,
+    pairs,
+    sigma_min: sigmaMin,
+    current_primary: last.primary,
+    rate_primary_per_min: Number(ratePrimary.toFixed(4)),
+    exhausted,
+    eta_primary_min: exhausted ? 0 : ratePrimary > 0 ? Math.round((100 - last.primary) / ratePrimary) : null,
+    current_secondary: last.secondary ?? null,
+    rate_secondary_per_min: Number(rateSecondary.toFixed(4)),
+    eta_secondary_min: typeof last.secondary === "number" && rateSecondary > 0
+      ? Math.round((100 - last.secondary) / rateSecondary)
+      : null,
+    secondary_reset_s: last.quota.reset_s ?? null,
+  };
+}
+
+async function forecast(): Promise<Record<string, unknown>> {
+  const sigmaMin = Math.max(5, Number(process.env.QUOTA_LENS_FORECAST_SIGMA_MIN) || 30);
+  const entries = readTimeline(500) as HistoryPoint[];
+  return computeForecast(entries, sigmaMin);
+}
+
 export function startQuotaLensSampler(): void {
   if (samplerStarted || !isQuotaLensEnabled()) return;
   samplerStarted = true;
@@ -240,5 +296,6 @@ export async function handleQuotaLensRequest(pathname: string, params: URLSearch
   if (pathname === "/api/quota-lens/codex") return codexUsage();
   if (pathname === "/api/quota-lens/fastagent") return listFastAgentSessions();
   if (pathname === "/api/quota-lens/timeline") return readTimeline(Math.min(Number(params.get("limit")) || 288, 2000));
+  if (pathname === "/api/quota-lens/forecast") return forecast();
   return { error: `unknown quota-lens route: ${pathname}` };
 }

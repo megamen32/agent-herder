@@ -7,6 +7,18 @@ type KeySummary = { key: string; calls: number; tokens: number };
 type Row = { timestamp: string; provider: string; model: string; api_key_name: string | null; status: number; tokens: number; request_type: string; path: string };
 type CodexCard = { primary_used?: number; secondary_used?: number; limit_reached?: boolean; plan?: string; email?: string; primary_reset_s?: number; error?: string };
 type TimelinePoint = { ts: number; quota?: { primary?: number; secondary?: number; limit_reached?: boolean; reset_s?: number }; deltas?: { key: string; model: string; calls: number; tokens: number }[] };
+type Forecast = {
+  available?: boolean; reason?: string; pairs?: number; sigma_min?: number;
+  current_primary?: number; rate_primary_per_min?: number; exhausted?: boolean; eta_primary_min?: number | null;
+  current_secondary?: number | null; rate_secondary_per_min?: number; eta_secondary_min?: number | null;
+};
+const fmtEta = (minutes: number | null | undefined): string => {
+  if (minutes == null || !Number.isFinite(minutes)) return "—";
+  if (minutes < 1) return "меньше минуты";
+  if (minutes < 90) return `~${Math.round(minutes)} мин`;
+  if (minutes < 48 * 60) return `~${(minutes / 60).toFixed(1)} ч`;
+  return `~${(minutes / 1440).toFixed(1)} дн`;
+};
 
 const esc = (value: unknown) => String(value ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!);
 const fmt = (value: unknown) => Number(value ?? 0).toLocaleString("ru-RU");
@@ -32,6 +44,7 @@ export function QuotaPanel() {
   const [keys, setKeys] = React.useState<KeySummary[]>([]);
   const [rows, setRows] = React.useState<Row[]>([]);
   const [timeline, setTimeline] = React.useState<TimelinePoint[]>([]);
+  const [forecastData, setForecastData] = React.useState<Forecast | null>(null);
   const [model, setModel] = React.useState<string | null>(null);
   const [keyFilter, setKeyFilter] = React.useState<string | null>(null);
   const [days, setDays] = React.useState(7);
@@ -46,12 +59,13 @@ export function QuotaPanel() {
       const status = await getJson<{ enabled?: boolean; hint?: string }>("/api/quota-lens/status");
       if (status.enabled === false) { setEnabled(false); setError(status.hint || "quota-lens disabled"); return; }
       setEnabled(true);
-      const [summaryData, keyData, rowData, codexData, timelineData] = await Promise.all([
+      const [summaryData, keyData, rowData, codexData, timelineData, forecastRaw] = await Promise.all([
         getJson<Summary[]>(`/api/quota-lens/summary?${params}`),
         getJson<KeySummary[]>(`/api/quota-lens/keys?days=${days}`),
         getJson<Row[]>(`/api/quota-lens/rows?${params}`),
         getJson<CodexCard>("/api/quota-lens/codex"),
         getJson<TimelinePoint[]>("/api/quota-lens/timeline?limit=120"),
+        getJson<Forecast>("/api/quota-lens/forecast").catch(() => null),
       ]);
       if (!Array.isArray(summaryData)) { setError(String((summaryData as any)?.error || "summary error")); return; }
       setError("");
@@ -60,6 +74,7 @@ export function QuotaPanel() {
       setRows(Array.isArray(rowData) ? rowData : []);
       setCodex(codexData);
       setTimeline(Array.isArray(timelineData) ? timelineData : []);
+      setForecastData(forecastRaw);
     } catch (loadError) {
       setError(String((loadError as Error).message));
     }
@@ -100,6 +115,23 @@ export function QuotaPanel() {
           </small>
         </div>
       ) : <p><small>нет данных</small></p>}
+      {forecastData ? (
+        forecastData.available ? (
+          <div style={{ fontSize: 12, marginTop: 6 }}>
+            {forecastData.exhausted
+              ? <b style={{ color: "#e94b4b" }}>Окно исчерпано</b>
+              : forecastData.eta_primary_min != null
+                ? <>5ч кончится <b>{fmtEta(forecastData.eta_primary_min)}</b> при темпе {((forecastData.rate_primary_per_min ?? 0) * 5).toFixed(1)}%/5 мин</>
+                : <>расход не обнаружен — прогноза нет</>}
+            {forecastData.eta_secondary_min != null && !forecastData.exhausted
+              ? <> · недельное кончится {fmtEta(forecastData.eta_secondary_min)}</>
+              : null}
+            <small style={{ color: "#888" }}> · гаусс σ={forecastData.sigma_min} мин, пар {forecastData.pairs}</small>
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>прогноз: {esc(forecastData.reason || "недостаточно данных")}</div>
+        )
+      ) : null}
 
       <h3 style={{ margin: "0.8em 0 0.2em" }}>История 5ч-окна (тик 5 мин)</h3>
       {points > 0 ? (
