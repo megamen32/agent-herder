@@ -222,6 +222,9 @@ export interface HarnessAdapter {
   /** List all agent sessions */
   listSessions(options?: ListSessionsOptions): Promise<AgentSession[]>;
 
+  /** Find exact named sessions without forcing a full historical discovery, when supported. */
+  findNamedSessions?(name: string, cwd: string): Promise<AgentSession[]>;
+
   /** Get detailed info about a specific session */
   getSession(id: string): Promise<AgentSession | null>;
 

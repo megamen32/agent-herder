@@ -141,6 +141,17 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     });
   }
 
+  async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {
+    await this.ensureReady();
+    const result = await this.request("thread/list", { limit: 200, archived: false }) as { data?: CodexThread[] };
+    return (result.data || [])
+      .filter((thread) => typeof thread.id === "string" && thread.name === name && thread.cwd === cwd)
+      .map((thread) => {
+        this.threads.set(thread.id, thread);
+        return this.toSession(thread);
+      });
+  }
+
   async getSession(id: string): Promise<AgentSession | null> {
     const cached = this.threads.get(id);
     let base = cached ? this.toSession(cached) : null;

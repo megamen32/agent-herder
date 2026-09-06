@@ -236,4 +236,26 @@ describe("named session creation and reuse", () => {
 
     expect(result).toMatchObject({ ok: false, created: true, sessionId: "codex-1", delivery: "failed", error: "delivery failed" });
   });
+  it("uses adapter exact-name lookup when available", async () => {
+    const cwd = await workspace();
+    const fake = fakeAdapter("codex");
+    let listCalls = 0;
+    let exactCalls = 0;
+    fake.adapter.listSessions = async () => { listCalls += 1; return []; };
+    fake.adapter.findNamedSessions = async (name, requestedCwd) => {
+      exactCalls += 1;
+      expect(name).toBe("repair_100");
+      expect(requestedCwd).toBe(cwd);
+      return [];
+    };
+
+    const result = await newOrResumeNamedSession(new Map([["codex", fake.adapter]]), {
+      harness: "codex", name: "repair_100", cwd, message: "probe", mode: "queue",
+    });
+
+    expect(result).toMatchObject({ ok: true, created: true, delivery: "accepted" });
+    expect(exactCalls).toBe(1);
+    expect(listCalls).toBe(0);
+  });
+
 });

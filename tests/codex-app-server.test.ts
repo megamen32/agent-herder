@@ -174,4 +174,18 @@ describe("Codex app-server adapter", () => {
       await rm(codexDir, { recursive: true, force: true });
     }
   });
+  it("finds an exact named thread without reading the persisted transcript archive", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-named-"));
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      await adapter.init();
+      const created = await adapter.createSession({ name: "Fixture", cwd: "/tmp/codex-fixture" });
+      const matches = await adapter.findNamedSessions("Fixture", "/tmp/codex-fixture");
+      expect(matches).toMatchObject([{ id: created.id, title: "Fixture", cwd: "/tmp/codex-fixture" }]);
+    } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
 });
