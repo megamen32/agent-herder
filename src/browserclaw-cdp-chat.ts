@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { anySignal, throwIfAborted } from "./abort-utils.js";
 import {
   createBrowserClawA11yDriver,
   type BrowserClawA11yClient,
@@ -146,21 +147,21 @@ export class BrowserClawCdpMcpClient {
     return this.sessionId;
   }
 
-  async callToolRaw(name: string, argumentsValue: Record<string, unknown>, deadlineAt: number): Promise<Record<string, unknown>> {
+  async callToolRaw(name: string, argumentsValue: Record<string, unknown>, deadlineAt: number, signal?: AbortSignal): Promise<Record<string, unknown>> {
     const response = await this.post({
       jsonrpc: "2.0",
       id: this.requestId++,
       method: "tools/call",
       params: { name, arguments: argumentsValue },
-    }, deadlineAt);
+    }, deadlineAt, signal);
     if (response?.error) throw new Error("BrowserClaw rejected the browser tool call");
     const result = response?.result as { isError?: unknown } | undefined;
     if (!result || result.isError) throw new Error("BrowserClaw reported a browser tool failure");
     return response ?? {};
   }
 
-  async callToolImage(name: string, argumentsValue: Record<string, unknown>, deadlineAt: number): Promise<BrowserClawScreenshot> {
-    const response = await this.callToolRaw(name, argumentsValue, deadlineAt);
+  async callToolImage(name: string, argumentsValue: Record<string, unknown>, deadlineAt: number, signal?: AbortSignal): Promise<BrowserClawScreenshot> {
+    const response = await this.callToolRaw(name, argumentsValue, deadlineAt, signal);
     const result = response.result as { content?: unknown } | undefined;
     const content = result?.content;
     const image = Array.isArray(content)
@@ -194,7 +195,7 @@ export class BrowserClawCdpMcpClient {
     if (response?.error || !this.sessionId) throw new Error("BrowserClaw MCP session resume failed");
   }
 
-  private async post(body: Record<string, unknown>, deadlineAt: number): Promise<Record<string, unknown> | null> {
+  private async post(body: Record<string, unknown>, deadlineAt: number, signal?: AbortSignal): Promise<Record<string, unknown> | null> {
     const headers: Record<string, string> = {
       "content-type": "application/json",
       accept: "application/json, text/event-stream",
@@ -206,7 +207,7 @@ export class BrowserClawCdpMcpClient {
       method: "POST",
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(remainingMs(deadlineAt)),
+      signal: anySignal([AbortSignal.timeout(remainingMs(deadlineAt)), signal]),
     });
     const sessionId = response.headers.get("mcp-session-id");
     if (sessionId) this.sessionId = sessionId;
@@ -299,8 +300,8 @@ export class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
     }
   }
 
-  async listTabs(): Promise<readonly BrowserClawA11yTab[]> {
-    const response = await this.client.callToolRaw("tabs", { action: "list" }, deadline());
+  async listTabs(signal?: AbortSignal): Promise<readonly BrowserClawA11yTab[]> {
+    const response = await this.client.callToolRaw("tabs", { action: "list" }, deadline(), signal);
     const text = textContent(response);
     const tabs: BrowserClawA11yTab[] = [];
     for (const match of text.matchAll(/^\s*\[(\d+)\]\s+(https?:\/\/\S+)/gm)) {
@@ -322,10 +323,10 @@ export class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
     return Number(match[1]);
   }
 
-  async snapshotPage(page: number): Promise<BrowserClawA11ySnapshot> {
+  async snapshotPage(page: number, signal?: AbortSignal): Promise<BrowserClawA11ySnapshot> {
     // BrowserClaw's full snapshot is the supported equivalent of a CDP AX tree
     // for this owned page. It is read-only and does not create or navigate tabs.
-    const response = await this.client.callToolRaw("snapshot", { page, mode: "full", depth: 100 }, deadline());
+    const response = await this.client.callToolRaw("snapshot", { page, mode: "full", depth: 100 }, deadline(), signal);
     return normalizeBrowserClawA11yResponse(response, {
       page,
       url: this.currentUrl(page),
@@ -339,7 +340,7 @@ export class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
     return conversationRoutesFromLinks(textContent(response));
   }
 
-  async actPage(page: number, action: BrowserClawSemanticAction): Promise<BrowserClawA11ySnapshot> {
+  async actPage(page: number, action: BrowserClawSemanticAction, signal?: AbortSignal): Promise<BrowserClawA11ySnapshot> {
     const args: Record<string, unknown> = { page, kind: action.kind };
     if (action.kind === "press") args.key = action.key;
     else if (action.kind === "scroll") {
@@ -351,12 +352,12 @@ export class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
       if (action.kind === "fill") args.value = action.value;
       if (action.kind === "type") args.text = action.text;
     }
-    await this.client.callToolRaw("act", args, deadline());
+    await this.client.callToolRaw("act", args, deadline(), signal);
     // An a11y action can navigate the ChatGPT SPA. Refresh the owned tab's URL
     // before producing the post-action snapshot so callers can distinguish a
     // conversation route from the landing page without opening another tab.
-    await this.listTabs();
-    return this.snapshotPage(page);
+    await this.listTabs(signal);
+    return this.snapshotPage(page, signal);
   }
 
   private currentUrl(page: number): string {
@@ -379,7 +380,7 @@ export class BrowserClawAccountExportDriver implements ChatGptAccountExportDrive
     return new BrowserClawAccountExportDriver(page, diagnostics);
   }
 
-  async requestAccountExport(): Promise<{
+  async requestAccountExport(signal?: AbortSignal): Promise<{
     requestedAt: string;
     delivery: "email_or_sms";
     status: "requested" | "already_requested";
@@ -387,13 +388,15 @@ export class BrowserClawAccountExportDriver implements ChatGptAccountExportDrive
     let snapshot: BrowserClawA11ySnapshot | undefined;
     let stage = "initial snapshot";
     try {
-      snapshot = await this.page.snapshot(deadline());
+      throwIfAborted(signal);
+      snapshot = await this.page.snapshot(deadline(), signal);
+      throwIfAborted(signal);
       stage = "profile menu";
-      snapshot = await this.click(snapshot, (node) => node.role === "button" && /(?:открыть )?(?:меню )?профил|profile/i.test(node.name ?? ""), stage);
+      snapshot = await this.click(snapshot, (node) => node.role === "button" && /(?:открыть )?(?:меню )?профил|profile/i.test(node.name ?? ""), stage, signal);
       stage = "settings";
-      snapshot = await this.click(snapshot, (node) => ["menuitem", "button", "link"].includes(node.role) && /(?:^|\s)(?:настройки|settings)(?:$|\s)/i.test(node.name ?? ""), stage);
+      snapshot = await this.click(snapshot, (node) => ["menuitem", "button", "link"].includes(node.role) && /(?:^|\s)(?:настройки|settings)(?:$|\s)/i.test(node.name ?? ""), stage, signal);
       stage = "data management";
-      snapshot = await this.click(snapshot, isDataManagementControl, stage);
+      snapshot = await this.click(snapshot, isDataManagementControl, stage, signal);
 
       const alreadyRequested = findNode(snapshot.root, (node) => /(?:уже )?(?:запрош|request(?:ed)? already|export already)/i.test(`${node.name ?? ""} ${node.description ?? ""}`));
       if (alreadyRequested) {
@@ -402,9 +405,9 @@ export class BrowserClawAccountExportDriver implements ChatGptAccountExportDrive
       }
 
       stage = "account export";
-      snapshot = await this.click(snapshot, isAccountExportControl, stage);
+      snapshot = await this.click(snapshot, isAccountExportControl, stage, signal);
       stage = "confirm account export";
-      snapshot = await this.click(snapshot, (node) => node.role === "button" && /^(?:подтвердить(?: экспорт)?|confirm(?: export)?|confirm your export)$/i.test(node.name ?? ""), stage);
+      snapshot = await this.click(snapshot, (node) => node.role === "button" && /^(?:подтвердить(?: экспорт)?|confirm(?: export)?|confirm your export)$/i.test(node.name ?? ""), stage, signal);
       await this.captureDiagnostic({ outcome: "requested", stage, snapshot });
       return { requestedAt: new Date().toISOString(), delivery: "email_or_sms", status: "requested" };
     } catch (error) {
@@ -417,11 +420,16 @@ export class BrowserClawAccountExportDriver implements ChatGptAccountExportDrive
     snapshot: BrowserClawA11ySnapshot,
     predicate: (node: BrowserClawA11yNode) => boolean,
     label: string,
+    signal?: AbortSignal,
   ): Promise<BrowserClawA11ySnapshot> {
+    throwIfAborted(signal);
     const node = findNode(snapshot.root, predicate);
     if (!node || node.disabled) throw new Error(`ChatGPT ${label} control was not found on the owned page`);
-    await this.page.act({ snapshotRef: snapshot.snapshotRef, action: { kind: "click", ref: node.ref } }, deadline());
-    return this.page.snapshot(deadline());
+    await this.page.act({ snapshotRef: snapshot.snapshotRef, action: { kind: "click", ref: node.ref } }, deadline(), signal);
+    throwIfAborted(signal);
+    const next = await this.page.snapshot(deadline(), signal);
+    throwIfAborted(signal);
+    return next;
   }
 
   private async captureDiagnostic(input: BrowserClawAccountExportDiagnosticInput): Promise<void> {
@@ -520,10 +528,12 @@ class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
     this.idPrefix = createHash("sha256").update(sessionRef).digest("hex").slice(0, 24);
   }
 
-  async listChats(): Promise<readonly ChatGptHistoryChat[]> {
+  async listChats(signal?: AbortSignal): Promise<readonly ChatGptHistoryChat[]> {
     let snapshot: BrowserClawA11ySnapshot | undefined;
     try {
-      snapshot = await this.page.snapshot(deadline());
+      throwIfAborted(signal);
+      snapshot = await this.page.snapshot(deadline(), signal);
+      throwIfAborted(signal);
       this.lastSnapshot = snapshot;
       const routes = this.conversationRoutes ? await this.conversationRoutes(snapshot.page) : undefined;
       return visibleSidebarChats(snapshot, this.idPrefix, routes);
@@ -538,16 +548,19 @@ class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
     }
   }
 
-  async openChat(input: { chatId: string }): Promise<ChatGptHistorySegment> {
+  async openChat(input: { chatId: string }, signal?: AbortSignal): Promise<ChatGptHistorySegment> {
     let snapshot: BrowserClawA11ySnapshot | undefined;
     try {
-      snapshot = await this.page.snapshot(deadline());
+      throwIfAborted(signal);
+      snapshot = await this.page.snapshot(deadline(), signal);
+      throwIfAborted(signal);
       const routes = this.conversationRoutes ? await this.conversationRoutes(snapshot.page) : undefined;
       const chat = visibleSidebarChats(snapshot, this.idPrefix, routes).find((entry) => entry.id === input.chatId);
       if (!chat) throw new Error("ChatGPT chat is not visible in the owned sidebar; call cdp_list_chats again");
       const node = findNode(snapshot.root, (entry) => entry.ref === chat.nodeRef);
       if (!node || node.disabled) throw new Error("ChatGPT sidebar chat control was not found on the owned page");
-      const afterClick = await this.page.act({ snapshotRef: snapshot.snapshotRef, action: { kind: "click", ref: node.ref } }, deadline());
+      const afterClick = await this.page.act({ snapshotRef: snapshot.snapshotRef, action: { kind: "click", ref: node.ref } }, deadline(), signal);
+      throwIfAborted(signal);
       this.lastSnapshot = afterClick;
       if (!isChatHistoryConversationUrl(afterClick.url)) {
         throw new Error("ChatGPT sidebar control did not open a conversation route");
@@ -566,14 +579,16 @@ class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
     }
   }
 
-  async scrollBack(): Promise<{ segment: ChatGptHistorySegment; atStart: boolean }> {
+  async scrollBack(signal?: AbortSignal): Promise<{ segment: ChatGptHistorySegment; atStart: boolean }> {
     try {
+      throwIfAborted(signal);
       if (!this.lastSnapshot || !this.activeChatId) throw new Error("ChatGPT history export has no active chat page");
       const before = snapshotFingerprint(this.lastSnapshot);
       const after = await this.page.act({
         snapshotRef: this.lastSnapshot.snapshotRef,
         action: { kind: "scroll", direction: "up", amount: 12 },
-      }, deadline());
+      }, deadline(), signal);
+      throwIfAborted(signal);
       this.lastSnapshot = after;
       return { segment: historySegment(this.lastSnapshot, after.url), atStart: before === snapshotFingerprint(this.lastSnapshot) };
     } catch (error) {

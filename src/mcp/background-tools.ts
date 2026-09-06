@@ -27,9 +27,9 @@ export function registerBackgroundTools(server: McpServer, deps: {
   server.registerTool("browser_wake_async", {
     description: "Run BrowserWorker wake as a Herder background job so long browser deadlines do not pin the MCP request.",
     inputSchema: z.object({ ...browserInput, ownerSessionId: z.string().optional() }),
-  }, async (args) => startJobResult(jobs, "browser-wake", async (_signal, progress) => {
+  }, async (args) => startJobResult(jobs, "browser-wake", async (signal, progress) => {
     progress(0.05, "Dispatching BrowserWorker");
-    return handleBrowserWake(browserWakeService, args);
+    return JSON.stringify(await browserWakeService.wake(args, signal));
   }, args.ownerSessionId));
 
   server.registerTool("session_convert_async", {

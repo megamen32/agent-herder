@@ -2,6 +2,7 @@ import lockfile from "proper-lockfile";
 import { z } from "zod";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { dirname } from "node:path";
+import { throwIfAborted } from "./abort-utils.js";
 import { BrowserWorkerClient, BrowserWorkerDispatchError, BrowserWorkerErrorClass, BrowserWorkerErrorClassSchema, BrowserWorkerReceipt, BrowserWorkerReceiptSchema, BrowserWorkerRequest, BrowserWorkerRequestSchema, createConfiguredBrowserWorkerClient } from "./browser-worker.js";
 
 export const MAX_BROWSER_WAKE_ATTEMPTS = 3;
@@ -109,10 +110,12 @@ export class BrowserWakeService {
     private readonly client: BrowserWorkerClient | null,
   ) {}
 
-  async wake(input: unknown): Promise<BrowserWakeRecord> {
+  async wake(input: unknown, signal?: AbortSignal): Promise<BrowserWakeRecord> {
+    throwIfAborted(signal);
     const request = BrowserWorkerRequestSchema.parse(input);
     const wakeDeadlineAt = Date.now() + request.deadlineMs;
     return this.ledger.withLock(async () => {
+      throwIfAborted(signal);
       const existing = await this.ledger.get(request.idempotencyId);
       if (existing) {
         if (!sameBrowserWakeRequest(existing.request, request)) {
@@ -138,7 +141,8 @@ export class BrowserWakeService {
         const dispatchRequest = remainingMs === request.deadlineMs
           ? request
           : { ...request, deadlineMs: Math.max(1, Math.min(request.deadlineMs, remainingMs)) };
-        receipt = await this.client.dispatchWake(dispatchRequest);
+        receipt = await this.client.dispatchWake(dispatchRequest, signal);
+        throwIfAborted(signal);
         if (
           receipt.worker !== request.worker ||
           receipt.target !== request.target ||
@@ -162,6 +166,7 @@ export class BrowserWakeService {
         await this.ledger.put(finished);
         return finished;
       } catch (error) {
+        if (signal?.aborted) throw error;
         const failedAt = new Date().toISOString();
         const errorClass = error instanceof BrowserWorkerDispatchError ? error.errorClass : "worker_unavailable";
         const failed: BrowserWakeRecord = {

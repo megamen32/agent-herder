@@ -75,6 +75,25 @@ describe("owned BrowserClaw accessibility page", () => {
     expect(client.snapshotCalls).toEqual([7]);
   });
 
+  it("propagates cancellation into the owned-page transport", async () => {
+    const client = new FakeA11yClient();
+    let observedSignal: AbortSignal | undefined;
+    client.snapshotPage = async (_page: number, signal?: AbortSignal) => {
+      observedSignal = signal;
+      return new Promise<BrowserClawA11ySnapshot>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => { const error = new Error("cancelled"); error.name = "AbortError"; reject(error); }, { once: true });
+      });
+    };
+    const page = await driverFor(client).acquirePage();
+    const controller = new AbortController();
+    const pending = page.snapshot(Date.now() + 5_000, controller.signal);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(observedSignal).toBe(controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "BrowserClawA11yPageError" });
+    expect(observedSignal?.aborted).toBe(true);
+  });
+
   it("rejects stale or unknown semantic refs before calling the browser", async () => {
     const client = new FakeA11yClient();
     const page = await driverFor(client).acquirePage();

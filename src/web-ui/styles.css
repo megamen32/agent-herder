@@ -243,14 +243,14 @@ h1 { font-size: 19px; } h2 { font-size: 16px; }
 .jobs-list { display: grid; gap: 10px; }
 .jobs-empty { padding: 60px 20px; border: 1px dashed #303036; border-radius: 12px; color: var(--muted); font-size: 12px; text-align: center; }
 .job-card { display: grid; gap: 10px; padding: 15px 16px; border: 1px solid var(--border); border-radius: 12px; background: linear-gradient(145deg, #171719, #111113); box-shadow: inset 0 1px #ffffff04; }
-.job-card.job-running, .job-card.job-waiting, .job-card.job-queued { border-color: #4b3c59; }
+.job-card.job-running, .job-card.job-waiting, .job-card.job-queued, .job-card.job-cancelling { border-color: #4b3c59; }
 .job-card.job-failed, .job-card.job-interrupted { border-color: #583b41; }
 .job-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .job-head > div { min-width: 0; display: flex; align-items: center; gap: 9px; }
 .job-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-size: 13px; font-weight: 580; white-space: nowrap; }
 .job-head time { color: var(--muted); font-size: 9px; white-space: nowrap; }
 .job-state { padding: 4px 6px; border-radius: 999px; background: #26262a; color: var(--muted); font: 8px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
-.job-state-running, .job-state-waiting, .job-state-queued { background: #2c2138; color: #c9aceb; }
+.job-state-running, .job-state-waiting, .job-state-queued, .job-state-cancelling { background: #2c2138; color: #c9aceb; }
 .job-state-completed { background: #1b3025; color: #99d5b0; }
 .job-state-failed, .job-state-interrupted { background: #351e23; color: #e4a5ae; }
 .job-state-cancelled { background: #2b2926; color: #aaa39b; }

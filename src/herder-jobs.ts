@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { herderEvents, type HerderEventBus } from "./herder-events.js";
 import { jobResourceUri } from "./herder-resource-uris.js";
 
-export type HerderJobState = "queued" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "interrupted";
+export type HerderJobState = "queued" | "running" | "waiting" | "cancelling" | "completed" | "failed" | "cancelled" | "interrupted";
 
 export interface HerderJob<T = unknown> {
   id: string;
@@ -101,7 +101,7 @@ export class HerderJobRegistry {
     if (!job) return null;
     if (isTerminal(job.record.state)) return clone(job.record);
     job.controller.abort();
-    job.record.state = "cancelled";
+    job.record.state = "cancelling";
     job.record.updatedAt = new Date().toISOString();
     job.record.statusMessage = "Cancellation requested";
     this.persist();
@@ -115,23 +115,23 @@ export class HerderJobRegistry {
     const context: HerderJobContext = {
       signal: job.controller.signal,
       progress: (value, statusMessage) => {
-        if (job.record.state === "cancelled") return;
+        if (job.record.state === "cancelled" || job.record.state === "cancelling") return;
         this.patch(job.record, { state: "running", progress: Math.max(0, Math.min(1, value)), statusMessage }, "updated");
       },
       waiting: (statusMessage) => {
-        if (job.record.state === "cancelled") return;
+        if (job.record.state === "cancelled" || job.record.state === "cancelling") return;
         this.patch(job.record, { state: "waiting", statusMessage }, "updated");
       },
     };
     try {
       const result = await runner(context);
-      if (job.controller.signal.aborted || job.record.state === "cancelled") {
+      if (job.controller.signal.aborted || job.record.state === "cancelled" || job.record.state === "cancelling") {
         this.patch(job.record, { state: "cancelled", statusMessage: "Cancelled" }, "updated");
         return;
       }
       this.patch(job.record, { state: "completed", progress: 1, result, statusMessage: undefined }, "updated");
     } catch (error) {
-      if (job.controller.signal.aborted || job.record.state === "cancelled") {
+      if (job.controller.signal.aborted || job.record.state === "cancelled" || job.record.state === "cancelling") {
         this.patch(job.record, { state: "cancelled", statusMessage: "Cancelled" }, "updated");
         return;
       }
@@ -171,7 +171,7 @@ export class HerderJobRegistry {
       for (const raw of parsed.jobs.slice(-this.maxRetained)) {
         if (!raw || typeof raw.id !== "string" || typeof raw.kind !== "string" || typeof raw.state !== "string") continue;
         const record = clone(raw);
-        if (record.state === "queued" || record.state === "running" || record.state === "waiting") {
+        if (record.state === "queued" || record.state === "running" || record.state === "waiting" || record.state === "cancelling") {
           record.state = "interrupted";
           record.updatedAt = now;
           record.statusMessage = "Agent Herder restarted before this job completed";

@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, copyFile, lstat, mkdir, readFile, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { createReadStream } from "node:fs";
+import { chmod, lstat, mkdir, readFile, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
 import { basename, join, relative, resolve, sep } from "node:path";
+import { pipeline } from "node:stream/promises";
+import { abortError, throwIfAborted } from "./abort-utils.js";
 
 const DEFAULT_MAX_ARCHIVE_BYTES = 10 * 1024 * 1024 * 1024;
 const DEFAULT_MAX_ENTRIES = 100_000;
@@ -12,7 +14,7 @@ export type ChatGptAccountExportDelivery = "email_or_sms";
 
 /** Minimal browser seam for the one consequential ChatGPT account-export click path. */
 export interface ChatGptAccountExportDriver {
-  requestAccountExport(): Promise<{
+  requestAccountExport(signal?: AbortSignal): Promise<{
     requestedAt: string;
     delivery: ChatGptAccountExportDelivery;
     status: "requested" | "already_requested";
@@ -113,13 +115,28 @@ async function atomicWrite(path: string, content: string): Promise<void> {
   await chmod(path, 0o600);
 }
 
-async function sha256(path: string): Promise<string> {
+async function copyAbortable(sourcePath: string, targetPath: string, signal?: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  const source = createReadStream(sourcePath);
+  const target = createWriteStream(targetPath, { mode: 0o600 });
+  if (signal) await pipeline(source, target, { signal });
+  else await pipeline(source, target);
+  throwIfAborted(signal);
+}
+
+async function sha256(path: string, signal?: AbortSignal): Promise<string> {
+  throwIfAborted(signal);
   return new Promise((resolveHash, rejectHash) => {
     const hash = createHash("sha256");
     const source = createReadStream(path);
+    let settled = false;
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
+    const fail = (error: Error) => { if (settled) return; settled = true; cleanup(); source.destroy(); rejectHash(error); };
+    const onAbort = () => fail(signal?.reason instanceof Error ? signal.reason : abortError());
+    signal?.addEventListener("abort", onAbort, { once: true });
     source.on("data", (chunk: string | Buffer) => { hash.update(chunk); });
-    source.on("error", rejectHash);
-    source.on("end", () => resolveHash(hash.digest("hex")));
+    source.on("error", fail);
+    source.on("end", () => { if (settled) return; settled = true; cleanup(); resolveHash(hash.digest("hex")); });
   });
 }
 
@@ -137,7 +154,8 @@ function safeZipEntry(entry: string): string {
   return entry;
 }
 
-async function listZipEntries(unzipBin: string, archivePath: string, maxEntries: number): Promise<string[]> {
+async function listZipEntries(unzipBin: string, archivePath: string, maxEntries: number, signal?: AbortSignal): Promise<string[]> {
+  throwIfAborted(signal);
   const maxOutputBytes = Math.max(1_024 * 1_024, maxEntries * 256);
   return new Promise((resolveEntries, rejectEntries) => {
     const child = spawn(unzipBin, ["-Z", "-1", archivePath], { stdio: ["ignore", "pipe", "pipe"] });
@@ -147,9 +165,12 @@ async function listZipEntries(unzipBin: string, archivePath: string, maxEntries:
     const fail = (error: Error): void => {
       if (settled) return;
       settled = true;
+      signal?.removeEventListener("abort", onAbort);
       child.kill();
       rejectEntries(error);
     };
+    const onAbort = () => fail(signal?.reason instanceof Error ? signal.reason : abortError());
+    signal?.addEventListener("abort", onAbort, { once: true });
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
@@ -172,6 +193,7 @@ async function listZipEntries(unzipBin: string, archivePath: string, maxEntries:
         return;
       }
       settled = true;
+      signal?.removeEventListener("abort", onAbort);
       resolveEntries(entries);
     });
   });
@@ -240,7 +262,8 @@ export class ChatGptAccountArchive {
   }
 
   /** Request the official asynchronous ChatGPT account export. */
-  async requestAccountExport(input: RequestAccountExportInput): Promise<RequestAccountExportResult> {
+  async requestAccountExport(input: RequestAccountExportInput, signal?: AbortSignal): Promise<RequestAccountExportResult> {
+    throwIfAborted(signal);
     if (input.confirmation !== "REQUEST_ACCOUNT_EXPORT") {
       throw new ChatGptAccountArchiveError("confirmation_required", "request_account_export requires confirmation REQUEST_ACCOUNT_EXPORT");
     }
@@ -252,7 +275,8 @@ export class ChatGptAccountArchive {
     }
     this.requestInFlight = true;
     try {
-      const result = await this.exportDriver.requestAccountExport();
+      const result = await this.exportDriver.requestAccountExport(signal);
+      throwIfAborted(signal);
       return { ...result, nextStep: "download_zip_then_import_account_export" };
     } finally {
       this.requestInFlight = false;
@@ -260,11 +284,13 @@ export class ChatGptAccountArchive {
   }
 
   /** Copy the downloaded native ZIP and write an inspectable manifest without extracting untrusted paths. */
-  async importAccountExport(input: ImportAccountExportInput): Promise<ImportedAccountExport> {
+  async importAccountExport(input: ImportAccountExportInput, signal?: AbortSignal): Promise<ImportedAccountExport> {
+    throwIfAborted(signal);
     if (!input.sourcePath || !input.sourcePath.trim()) {
       throw new ChatGptAccountArchiveError("invalid_source_path", "sourcePath is required");
     }
     const sourcePath = resolve(input.sourcePath);
+    throwIfAborted(signal);
     const source = await lstat(sourcePath).catch(() => {
       throw new ChatGptAccountArchiveError("source_not_found", "downloaded ChatGPT export ZIP was not found");
     });
@@ -281,7 +307,8 @@ export class ChatGptAccountArchive {
     const root = await ensureRoot(this.archiveRoot);
     const rawDirectory = await ensureChildDirectory(root, "raw");
     const manifestDirectory = await ensureChildDirectory(root, "manifests");
-    const digest = await sha256(sourcePath);
+    const digest = await sha256(sourcePath, signal);
+    throwIfAborted(signal);
     const sourceAfterHash = await stat(sourcePath);
     if (sourceAfterHash.size !== source.size) {
       throw new ChatGptAccountArchiveError("source_changed", "downloaded account export changed while being imported");
@@ -292,13 +319,14 @@ export class ChatGptAccountArchive {
     const temporary = `${archivePath}.${process.pid}.${randomUUID()}.tmp`;
     let entryNames: string[];
     try {
-      await copyFile(sourcePath, temporary);
+      await copyAbortable(sourcePath, temporary, signal);
       await chmod(temporary, 0o600);
       const copied = await stat(temporary);
-      if (copied.size !== source.size || await sha256(temporary) !== digest) {
+      if (copied.size !== source.size || await sha256(temporary, signal) !== digest) {
         throw new ChatGptAccountArchiveError("copy_failed", "copied account export ZIP does not match the source");
       }
-      entryNames = await listZipEntries(this.unzipBin, temporary, this.maxEntries);
+      entryNames = await listZipEntries(this.unzipBin, temporary, this.maxEntries, signal);
+      throwIfAborted(signal);
       await rename(temporary, archivePath);
     } catch (error) {
       await unlink(temporary).catch(() => {});
@@ -320,6 +348,7 @@ export class ChatGptAccountArchive {
       entryNames,
       ...result,
     };
+    throwIfAborted(signal);
     await atomicWrite(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     return result;
   }

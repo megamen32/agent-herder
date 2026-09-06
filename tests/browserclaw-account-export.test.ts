@@ -287,6 +287,28 @@ describe("BrowserClawAccountExportDriver", () => {
     expect(snapshot.url).toBe("https://chatgpt.com/c/real-chat");
   });
 
+  it("cancels an in-flight BrowserClaw MCP HTTP tool call", async () => {
+    const originalFetch = globalThis.fetch;
+    let observedSignal: AbortSignal | null | undefined;
+    globalThis.fetch = (async (_input, init) => new Promise<Response>((_resolve, reject) => {
+      observedSignal = init?.signal;
+      init?.signal?.addEventListener("abort", () => { const error = new Error("aborted"); error.name = "AbortError"; reject(error); }, { once: true });
+    })) as typeof fetch;
+    try {
+      const client = Object.create(BrowserClawCdpMcpClient.prototype) as BrowserClawCdpMcpClient;
+      Object.assign(client as object, { endpoint: "http://browserclaw.test/mcp", token: undefined, sessionId: "existing-session", requestId: 1 });
+      const controller = new AbortController();
+      const pending = client.callToolRaw("snapshot", { page: 7 }, Date.now() + 5_000, controller.signal);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(observedSignal).toBeInstanceOf(AbortSignal);
+      controller.abort();
+      await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      expect(observedSignal?.aborted).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("resumes an existing BrowserClaw MCP session without sending initialize again", async () => {
     const originalFetch = globalThis.fetch;
     const calls: Array<{ method: string; sessionId: string | null }> = [];

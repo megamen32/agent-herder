@@ -52,18 +52,24 @@ describe("HerderJobRegistry", () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
-  it("records cooperative cancellation as terminal state", async () => {
+  it("shows cancellation-in-progress until the runner actually acknowledges abort", async () => {
     const jobs = new HerderJobRegistry(new HerderEventBus());
+    let release!: () => void;
+    const cleanupGate = new Promise<void>((resolve) => { release = resolve; });
     const started = jobs.start({
       kind: "fixture",
       run: async ({ signal }) => {
-        while (!signal.aborted) await new Promise((resolve) => setTimeout(resolve, 5));
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+        await cleanupGate;
         throw new Error("cancelled");
       },
     });
     await tick();
-    expect(jobs.cancel(started.id)).toMatchObject({ state: "cancelled" });
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(jobs.get(started.id)).toMatchObject({ state: "cancelled" });
+    expect(jobs.cancel(started.id)).toMatchObject({ state: "cancelling", statusMessage: "Cancellation requested" });
+    expect(jobs.get(started.id)).toMatchObject({ state: "cancelling" });
+    release();
+    await tick();
+    await tick();
+    expect(jobs.get(started.id)).toMatchObject({ state: "cancelled", statusMessage: "Cancelled" });
   });
 });

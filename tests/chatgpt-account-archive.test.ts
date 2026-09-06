@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -79,6 +79,33 @@ describe("ChatGptAccountArchive", () => {
     expect(manifest.entryNames).toEqual(expect.arrayContaining(["conversations.json", "deep_research_report.md", "assets/article.pdf"]));
 
     await expect(archive.listAccountExports()).resolves.toEqual([expect.objectContaining({ archiveId: imported.archiveId, entries: imported.entries })]);
+  });
+
+  it("kills the in-flight ZIP inspector when an import job is cancelled", async () => {
+    if (process.platform !== "linux") return;
+    const workspace = await root();
+    const source = await fixtureZip(workspace, "cancel.zip");
+    const marker = join(workspace, "zip-inspector.pid");
+    const inspector = join(workspace, "slow-unzip");
+    await writeFile(inspector, `#!/bin/sh\nprintf '%s' "$$" > ${JSON.stringify(marker)}\nexec /bin/sleep 30\n`);
+    await chmod(inspector, 0o755);
+    const archiveRoot = join(workspace, "cancelled-archive");
+    const archive = new ChatGptAccountArchive(undefined, { archiveRoot, unzipBin: inspector });
+    const controller = new AbortController();
+    const pending = archive.importAccountExport({ sourcePath: source }, controller.signal);
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try { await stat(marker); break; } catch { await new Promise((resolve) => setTimeout(resolve, 10)); }
+    }
+    const pid = Number.parseInt(await readFile(marker, "utf8"), 10);
+    expect(pid).toBeGreaterThan(1);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      try { await stat(`/proc/${pid}`); await new Promise((resolve) => setTimeout(resolve, 10)); }
+      catch { break; }
+    }
+    await expect(stat(`/proc/${pid}`)).rejects.toBeDefined();
+    await expect(readdir(join(archiveRoot, "raw"))).resolves.toEqual([]);
   });
 
   it("rejects non-ZIP sources and ZIPs whose listing contains unsafe paths", async () => {

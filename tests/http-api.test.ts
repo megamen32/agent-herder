@@ -450,8 +450,16 @@ describe("agent-herder web API", () => {
     expect(await one.json()).toMatchObject({ job: { id: started.id } });
     const cancelled = await fetch(`${base}/api/jobs/${encodeURIComponent(started.id)}/cancel`, { method: "POST" });
     expect(cancelled.status).toBe(200);
-    expect(await cancelled.json()).toMatchObject({ job: { id: started.id, state: "cancelled" } });
+    expect(await cancelled.json()).toMatchObject({ job: { id: started.id, state: "cancelling", statusMessage: "Cancellation requested" } });
     release();
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const terminal = await fetch(`${base}/api/jobs/${encodeURIComponent(started.id)}`);
+      const payload = await terminal.json() as { job?: { state?: string } };
+      if (payload.job?.state === "cancelled") break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const afterCancel = await fetch(`${base}/api/jobs/${encodeURIComponent(started.id)}`);
+    expect(await afterCancel.json()).toMatchObject({ job: { id: started.id, state: "cancelled", statusMessage: "Cancelled" } });
   });
 
 });

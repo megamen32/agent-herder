@@ -5,6 +5,7 @@ import {
   type BrowserClawA11ySnapshot,
   type BrowserClawSemanticAction,
 } from "./browserclaw-a11y.js";
+import { throwIfAborted } from "./abort-utils.js";
 
 /** A page reported by BrowserClaw in the MCP session that owns it. */
 export interface BrowserClawA11yTab {
@@ -15,9 +16,9 @@ export interface BrowserClawA11yTab {
 /** Minimal BrowserClaw transport needed to keep one accessibility page lease. */
 export interface BrowserClawA11yClient {
   readonly sessionRef: string;
-  listTabs(): Promise<readonly BrowserClawA11yTab[]>;
-  snapshotPage(page: number): Promise<BrowserClawA11ySnapshot>;
-  actPage(page: number, action: BrowserClawSemanticAction): Promise<BrowserClawA11ySnapshot>;
+  listTabs(signal?: AbortSignal): Promise<readonly BrowserClawA11yTab[]>;
+  snapshotPage(page: number, signal?: AbortSignal): Promise<BrowserClawA11ySnapshot>;
+  actPage(page: number, action: BrowserClawSemanticAction, signal?: AbortSignal): Promise<BrowserClawA11ySnapshot>;
 }
 
 export type BrowserClawA11yPageErrorCode = "browser_action_failed" | "page_lease_lost";
@@ -31,8 +32,8 @@ export class BrowserClawA11yPageError extends Error {
 }
 
 export interface BrowserClawA11yPage {
-  snapshot(deadlineAt: number): Promise<BrowserClawA11ySnapshot>;
-  act(input: BrowserClawA11yActionInput, deadlineAt: number): Promise<BrowserClawA11ySnapshot>;
+  snapshot(deadlineAt: number, signal?: AbortSignal): Promise<BrowserClawA11ySnapshot>;
+  act(input: BrowserClawA11yActionInput, deadlineAt: number, signal?: AbortSignal): Promise<BrowserClawA11ySnapshot>;
 }
 
 export interface BrowserClawA11yDriver {
@@ -78,31 +79,37 @@ class OwnedBrowserClawA11yPage implements BrowserClawA11yPage {
     private readonly allowPathPrefix: string | undefined,
   ) {}
 
-  async snapshot(deadlineAt: number): Promise<BrowserClawA11ySnapshot> {
+  async snapshot(deadlineAt: number, signal?: AbortSignal): Promise<BrowserClawA11ySnapshot> {
+    throwIfAborted(signal);
     ensureDeadline(deadlineAt);
-    await this.assertLease();
-    const snapshot = await this.capture(() => this.client.snapshotPage(this.page));
+    await this.assertLease(signal);
+    const snapshot = await this.capture(() => this.client.snapshotPage(this.page, signal));
+    throwIfAborted(signal);
     this.assertSnapshot(snapshot);
     this.latestSnapshot = snapshot;
     return snapshot;
   }
 
-  async act(input: BrowserClawA11yActionInput, deadlineAt: number): Promise<BrowserClawA11ySnapshot> {
+  async act(input: BrowserClawA11yActionInput, deadlineAt: number, signal?: AbortSignal): Promise<BrowserClawA11ySnapshot> {
+    throwIfAborted(signal);
     ensureDeadline(deadlineAt);
     this.assertSession();
     if (!this.latestSnapshot) {
       throw new BrowserClawA11yError("stale_snapshot_ref", "semantic action requires a fresh page snapshot");
     }
     const action = validateBrowserClawSemanticAction(this.latestSnapshot, input).action;
-    const snapshot = await this.capture(() => this.client.actPage(this.page, action));
+    const snapshot = await this.capture(() => this.client.actPage(this.page, action, signal));
+    throwIfAborted(signal);
     this.assertSnapshot(snapshot);
     this.latestSnapshot = snapshot;
     return snapshot;
   }
 
-  private async assertLease(): Promise<void> {
+  private async assertLease(signal?: AbortSignal): Promise<void> {
+    throwIfAborted(signal);
     this.assertSession();
-    const tabs = await this.capture(() => this.client.listTabs());
+    const tabs = await this.capture(() => this.client.listTabs(signal));
+    throwIfAborted(signal);
     const owned = tabs.find((tab) => tab.page === this.page && isValidPage(tab.page) && matchesTarget(tab.url, this.target, this.allowPathPrefix));
     if (!owned) {
       throw new BrowserClawA11yPageError("page_lease_lost", "owned target page disappeared, changed route, or became ambiguous");

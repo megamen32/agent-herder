@@ -159,6 +159,28 @@ describe("browser wake contract", () => {
     expect(calls).toBe(1);
   });
 
+  it("propagates job cancellation into the in-flight worker dispatch", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-browser-cancel-"));
+    const ledger = new BrowserWakeLedger(join(root, "browser-wake.json"));
+    let started!: () => void;
+    const startedGate = new Promise<void>((resolve) => { started = resolve; });
+    const service = new BrowserWakeService(ledger, {
+      async dispatchWake(_input, signal) {
+        started();
+        return new Promise((_, reject) => {
+          signal?.addEventListener("abort", () => { const error = new Error("cancelled"); error.name = "AbortError"; reject(error); }, { once: true });
+        });
+      },
+    });
+    cleanups.push(async () => { await rm(root, { recursive: true, force: true }); });
+    const controller = new AbortController();
+    const pending = service.wake(request({ idempotencyId: "idem-cancel", runId: "run-cancel" }), controller.signal);
+    await startedGate;
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(await ledger.get("idem-cancel")).toMatchObject({ status: "claimed", attempts: 1 });
+  });
+
   it("rejects a receipt whose target does not match the allowed BrowserClaw target", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-browser-target-"));
     const ledger = new BrowserWakeLedger(join(root, "browser-wake.json"));
@@ -286,6 +308,19 @@ describe("browser wake contract", () => {
     expect(() => createConfiguredBrowserWorkerClient({
       AGENT_HERDER_BROWSER_WORKER_URL: "http://mac-mini.example.invalid/browser-wake",
     })).toThrow(/token/i);
+  });
+
+  it("aborts the configured HTTP worker request when its caller cancels", async () => {
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => { const error = new Error("aborted"); error.name = "AbortError"; reject(error); }, { once: true });
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createConfiguredBrowserWorkerClient({ AGENT_HERDER_BROWSER_WORKER_URL: "http://127.0.0.1:18788/browser-wake" });
+    const controller = new AbortController();
+    const pending = client!.dispatchWake(BrowserWorkerRequestSchema.parse(request()), controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ errorClass: "worker_timeout" });
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).signal?.aborted).toBe(true);
   });
 
   it("uses the configured worker token and bounded request deadline", async () => {

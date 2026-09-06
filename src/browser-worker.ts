@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { anySignal } from "./abort-utils.js";
 
 const opaqueRef = z.string().trim().min(1).max(256).regex(/^[A-Za-z0-9._:/=-]+$/, "opaque references must stay compact and printable");
 const boundedTimestamp = z.string().max(64).regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/, "timestamps must be UTC ISO-8601");
@@ -72,7 +73,7 @@ export interface BrowserWorkerClient {
    * repeating a BrowserClaw side effect and return the original receipt on a
    * replay, including when the prior HTTP response was lost after completion.
    */
-  dispatchWake(request: BrowserWorkerRequest): Promise<BrowserWorkerReceipt>;
+  dispatchWake(request: BrowserWorkerRequest, signal?: AbortSignal): Promise<BrowserWorkerReceipt>;
 }
 
 export class BrowserWorkerDispatchError extends Error {
@@ -95,7 +96,7 @@ export function createConfiguredBrowserWorkerClient(environment: NodeJS.ProcessE
     throw new Error("A non-local browser worker endpoint requires AGENT_HERDER_BROWSER_WORKER_TOKEN");
   }
   return {
-    async dispatchWake(request: BrowserWorkerRequest): Promise<BrowserWorkerReceipt> {
+    async dispatchWake(request: BrowserWorkerRequest, signal?: AbortSignal): Promise<BrowserWorkerReceipt> {
       const headers: Record<string, string> = { "content-type": "application/json" };
       if (token) headers.authorization = `Bearer ${token}`;
       let response: Response;
@@ -104,7 +105,7 @@ export function createConfiguredBrowserWorkerClient(environment: NodeJS.ProcessE
           method: "POST",
           headers,
           body: JSON.stringify(request),
-          signal: AbortSignal.timeout(request.deadlineMs),
+          signal: anySignal([AbortSignal.timeout(request.deadlineMs), signal]),
         });
       } catch (error) {
         const name = error instanceof Error ? error.name : "";

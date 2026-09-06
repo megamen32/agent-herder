@@ -41,6 +41,16 @@ class FakeHistoryDriver implements ChatGptHistoryArchiveDriver {
   }
 }
 
+class BlockingScrollHistoryDriver extends FakeHistoryDriver {
+  started?: () => void;
+  override async scrollBack(signal?: AbortSignal): Promise<{ segment: ChatGptHistorySegment; atStart: boolean }> {
+    this.started?.();
+    return new Promise((_, reject) => {
+      signal?.addEventListener("abort", () => { const error = new Error("cancelled"); error.name = "AbortError"; reject(error); }, { once: true });
+    });
+  }
+}
+
 class FailingOpenHistoryDriver extends FakeHistoryDriver {
   override async openChat(): Promise<ChatGptHistorySegment> {
     throw new Error("not a conversation route");
@@ -94,6 +104,26 @@ describe("ChatGptHistoryArchive", () => {
       const segmentFiles = await readdir(join(second.archivePath, "segments"));
       expect(segmentFiles).toHaveLength(3);
       await expect(readFile(join(second.archivePath, "segments", manifest.segments[2]!.file), "utf8")).resolves.toContain("private top text");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("propagates cancellation into an in-flight history driver step", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-history-cancel-"));
+    try {
+      const driver = new BlockingScrollHistoryDriver();
+      let started!: () => void;
+      const startedGate = new Promise<void>((resolve) => { started = resolve; });
+      driver.started = started;
+      const archive = new ChatGptHistoryArchive(driver, { archiveRoot: root });
+      const listed = await archive.listChats({ view: "recent" });
+      const chatRef = listed.chats.find((entry) => entry.title === "Article archive canary")!.chatRef;
+      const controller = new AbortController();
+      const pending = archive.exportChat({ chatRef, maxSegments: 10 }, controller.signal);
+      await startedGate;
+      controller.abort();
+      await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

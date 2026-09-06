@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { throwIfAborted } from "./abort-utils.js";
 
 export type ChatGptHistoryView = "unread" | "working" | "recent";
 
@@ -28,9 +29,9 @@ export interface ChatGptHistorySegment {
 
 /** Read-only browser seam for a single owned ChatGPT page. */
 export interface ChatGptHistoryArchiveDriver {
-  listChats(): Promise<readonly ChatGptHistoryChat[]>;
-  openChat(input: { chatId: string }): Promise<ChatGptHistorySegment>;
-  scrollBack(): Promise<{ segment: ChatGptHistorySegment; atStart: boolean }>;
+  listChats(signal?: AbortSignal): Promise<readonly ChatGptHistoryChat[]>;
+  openChat(input: { chatId: string }, signal?: AbortSignal): Promise<ChatGptHistorySegment>;
+  scrollBack(signal?: AbortSignal): Promise<{ segment: ChatGptHistorySegment; atStart: boolean }>;
 }
 
 export interface ChatGptHistoryArchiveOptions {
@@ -332,10 +333,12 @@ export class ChatGptHistoryArchive {
   }
 
   /** Return only currently visible sidebar metadata; no chat transcript is returned. */
-  async listChats(input: ListChatHistoryInput): Promise<ListChatHistoryResult> {
+  async listChats(input: ListChatHistoryInput, signal?: AbortSignal): Promise<ListChatHistoryResult> {
+    throwIfAborted(signal);
     if (!this.driver) throw new ChatGptHistoryArchiveError("browser_unavailable", "ChatGPT history browser driver is unavailable");
     const limit = boundedLimit(input.limit, 50, 100);
-    const chats = [...await this.driver.listChats()];
+    const chats = [...await this.driver.listChats(signal)];
+    throwIfAborted(signal);
     const selected = input.view === "unread"
       ? chats.filter((chat) => chat.unread)
       : input.view === "working"
@@ -356,7 +359,8 @@ export class ChatGptHistoryArchive {
   }
 
   /** Save a bounded run of raw snapshots and return a resumable local receipt. */
-  async exportChat(input: ExportChatHistoryInput): Promise<ExportChatHistoryResult> {
+  async exportChat(input: ExportChatHistoryInput, signal?: AbortSignal): Promise<ExportChatHistoryResult> {
+    throwIfAborted(signal);
     const maxSegments = boundedLimit(input.maxSegments, 24, 100);
     const binding = this.bindings.get(input.chatRef);
     if (!binding) throw new ChatGptHistoryArchiveError("chat_not_listed", "list chats in this MCP session before exporting one");
@@ -368,20 +372,22 @@ export class ChatGptHistoryArchive {
     }
     this.inFlight.add(input.chatRef);
     try {
-      return await this.exportBoundChat(input.chatRef, binding, maxSegments);
+      return await this.exportBoundChat(input.chatRef, binding, maxSegments, signal);
     } finally {
       this.inFlight.delete(input.chatRef);
     }
   }
 
   /** Export every currently visible non-protected chat, one bounded page at a time. */
-  async exportVisibleChats(input: ExportVisibleChatHistoryInput = {}): Promise<ExportVisibleChatHistoryResult> {
+  async exportVisibleChats(input: ExportVisibleChatHistoryInput = {}, signal?: AbortSignal): Promise<ExportVisibleChatHistoryResult> {
+    throwIfAborted(signal);
     const maxChats = boundedLimit(input.maxChats, 20, 100);
     const maxSegmentsPerChat = boundedLimit(input.maxSegmentsPerChat, 24, 100);
-    const listed = await this.listChats({ view: "recent", limit: maxChats });
+    const listed = await this.listChats({ view: "recent", limit: maxChats }, signal);
     const results: Array<{ chatRef: string; status: "checkpoint" | "complete" | "skipped"; archivePath?: string; article?: { markdownPath: string; htmlPath: string }; error?: string }> = [];
     const seen = new Set<string>();
     for (const chat of listed.chats) {
+      throwIfAborted(signal);
       if (seen.has(chat.chatRef)) {
         results.push({ chatRef: chat.chatRef, status: "skipped", error: "duplicate_sidebar_row" });
         continue;
@@ -392,9 +398,10 @@ export class ChatGptHistoryArchive {
         continue;
       }
       try {
-        const exported = await this.exportChat({ chatRef: chat.chatRef, maxSegments: maxSegmentsPerChat });
+        const exported = await this.exportChat({ chatRef: chat.chatRef, maxSegments: maxSegmentsPerChat }, signal);
         results.push({ chatRef: chat.chatRef, status: exported.status, archivePath: exported.archivePath, ...(exported.article ? { article: exported.article } : {}) });
       } catch (error) {
+        if (signal?.aborted) throw error;
         results.push({ chatRef: chat.chatRef, status: "skipped", error: error instanceof Error ? error.message.slice(0, 240) : "export_failed" });
       }
     }
@@ -405,10 +412,11 @@ export class ChatGptHistoryArchive {
    * Materialize the current route-stable archive from snapshots already saved
    * locally. This intentionally does not open, scroll, or alter a ChatGPT page.
    */
-  async reconcileVisibleChats(input: ReconcileVisibleChatHistoryInput = {}): Promise<ReconcileVisibleChatHistoryResult> {
+  async reconcileVisibleChats(input: ReconcileVisibleChatHistoryInput = {}, signal?: AbortSignal): Promise<ReconcileVisibleChatHistoryResult> {
+    throwIfAborted(signal);
     if (!this.driver) throw new ChatGptHistoryArchiveError("browser_unavailable", "use reconcileKnownRoutes when the ChatGPT browser driver is unavailable");
     const maxChats = boundedLimit(input.maxChats, 100, 100);
-    const listed = await this.listChats({ view: "recent", limit: maxChats });
+    const listed = await this.listChats({ view: "recent", limit: maxChats }, signal);
     const root = await ensureRoot(this.root);
     const sourceSegments = await this.indexRouteSegments(root);
     const results: ReconcileVisibleChatHistoryResult["results"] = [];
@@ -417,6 +425,7 @@ export class ChatGptHistoryArchive {
     let unavailableChats = 0;
 
     for (const chat of listed.chats) {
+      throwIfAborted(signal);
       if (seen.has(chat.chatRef)) {
         results.push({ chatRef: chat.chatRef, status: "skipped" });
         continue;
@@ -459,13 +468,15 @@ export class ChatGptHistoryArchive {
    * Browser-free reconciliation for all raw ChatGPT conversation snapshots
    * already on disk. This is safe to call while BrowserClaw is unavailable.
    */
-  async reconcileKnownRoutes(): Promise<ReconcileKnownRouteHistoryResult> {
+  async reconcileKnownRoutes(signal?: AbortSignal): Promise<ReconcileKnownRouteHistoryResult> {
+    throwIfAborted(signal);
     const root = await ensureRoot(this.root);
     const sourceSegments = await this.indexRouteSegments(root);
     let reconciledRoutes = 0;
     const articles: Array<{ archivePath: string; article: { markdownPath: string; htmlPath: string }; newSegments: number }> = [];
     const catalogEntries: ArchiveCatalogEntry[] = [];
     for (const [route, source] of sourceSegments) {
+      throwIfAborted(signal);
       const id = `route:${sha256(route).slice(0, 24)}`;
       const chatRef = opaqueRef(id);
       const archivePath = join(root, archiveId(id));
@@ -497,7 +508,8 @@ export class ChatGptHistoryArchive {
     return { reconciledRoutes, articles, catalogPath };
   }
 
-  private async exportBoundChat(chatRef: string, binding: ChatBinding, maxSegments: number): Promise<ExportChatHistoryResult> {
+  private async exportBoundChat(chatRef: string, binding: ChatBinding, maxSegments: number, signal?: AbortSignal): Promise<ExportChatHistoryResult> {
+    throwIfAborted(signal);
     const root = await ensureRoot(this.root);
     const id = archiveId(binding.id);
     const archivePath = join(root, id);
@@ -512,7 +524,8 @@ export class ChatGptHistoryArchive {
     const cursor = this.cursor;
     let segment: ChatGptHistorySegment | undefined;
     if (!cursor || cursor.chatRef !== chatRef || cursor.chatId !== binding.id || cursor.archiveId !== id) {
-      segment = await this.driver!.openChat({ chatId: binding.id });
+      segment = await this.driver!.openChat({ chatId: binding.id }, signal);
+      throwIfAborted(signal);
       manifest.resume = "reopen_from_bottom";
     } else {
       manifest.resume = "same_owned_page";
@@ -525,6 +538,7 @@ export class ChatGptHistoryArchive {
     let scannedSegments = 0;
     let atStart = false;
     while (true) {
+      throwIfAborted(signal);
       if (segment) {
         const appended = await this.appendSegment(archivePath, manifest, segment);
         if (appended) newSegments += 1;
@@ -550,7 +564,8 @@ export class ChatGptHistoryArchive {
         }
       }
 
-      const next = await this.driver!.scrollBack();
+      const next = await this.driver!.scrollBack(signal);
+      throwIfAborted(signal);
       segment = next.segment;
       atStart = next.atStart;
     }
