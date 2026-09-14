@@ -3,9 +3,9 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
-import { createNamedSession, newOrResumeNamedSession } from "../src/named-session.js";
+import { createNamedSession, newOrResumeNamedSession, deliverNamedSession } from "../src/named-session.js";
 import { toolDefinitions } from "../src/mcp-tools/definitions.js";
-import { handleCreateSession, handleNewOrResume } from "../src/mcp-tools/handlers.js";
+import { handleCreateSession, handleNewOrResume, handleDeliver } from "../src/mcp-tools/handlers.js";
 import type { AgentSession, CreateSessionOptions, HarnessAdapter, SendMessageOptions } from "../src/types/index.js";
 
 const cleanups: string[] = [];
@@ -256,6 +256,26 @@ describe("named session creation and reuse", () => {
     expect(result).toMatchObject({ ok: true, created: true, delivery: "accepted" });
     expect(exactCalls).toBe(1);
     expect(listCalls).toBe(0);
+  });
+
+  it("deliver if_running skips an inactive session without waking it", async () => {
+    const cwd = await workspace();
+    const fake = fakeAdapter("opencode", [session("existing", "worker", cwd)]);
+    const result = await deliverNamedSession(new Map([["opencode", fake.adapter]]), {
+      harness: "opencode", name: "worker", cwd, message: "FYI", activation: "if_running", create: "never", mode: "queue",
+    });
+    expect(result).toMatchObject({ ok: true, created: false, sessionId: "existing", sessionStatus: "idle", delivery: "skipped_inactive", activated: false });
+    expect(fake.deliveries).toHaveLength(0);
+  });
+
+  it("deliver create=never returns not_found instead of creating", async () => {
+    const cwd = await workspace();
+    const fake = fakeAdapter("opencode");
+    const result = JSON.parse(await handleDeliver(new Map([["opencode", fake.adapter]]), {
+      harness: "opencode", name: "missing", cwd, message: "hello", create: "never", activation: "always", mode: "queue",
+    }));
+    expect(result).toMatchObject({ ok: false, created: false, delivery: "not_found", activated: false });
+    expect(fake.creates()).toBe(0);
   });
 
 });

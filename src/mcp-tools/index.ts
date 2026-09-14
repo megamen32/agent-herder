@@ -5,6 +5,7 @@ export {
   handleSendMessage,
   handleCreateSession,
   handleNewOrResume,
+  handleDeliver,
   handleStopAgent,
   handleRespondPermission,
   handleSetPermissions,

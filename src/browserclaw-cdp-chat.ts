@@ -17,7 +17,7 @@ import {
 } from "./browserclaw-a11y.js";
 import type { ChatGptAccountExportDriver } from "./chatgpt-account-archive.js";
 import type { ChatGptHistoryArchiveDriver, ChatGptHistoryChat, ChatGptHistorySegment } from "./chatgpt-history-archive.js";
-import type { ChatRecord, CdpChatCapabilities, CdpChatDriver, CdpChatPage, DownloadedMedia, MessageRecord, PageIdentity } from "./cdp-chat.js";
+import type { ChatGptHarnessChat, ChatGptHarnessDriver, ChatRecord, CdpChatCapabilities, CdpChatDriver, CdpChatPage, DownloadedMedia, MessageRecord, PageIdentity } from "./cdp-chat.js";
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:9010/mcp";
 const CHATGPT_ORIGIN = "https://chatgpt.com";
@@ -503,6 +503,7 @@ export async function createCdpChatDriver(options: BrowserClawCdpChatDriverOptio
       await a11yClient.captureAccountExportDiagnostic(input);
     },
   });
+  const agentHarnessDriver = new BrowserClawChatGptHarnessDriver(ownedA11yPage, historyArchiveDriver);
   return {
     async acquirePage(): Promise<CdpChatPage> {
       return page;
@@ -510,7 +511,77 @@ export async function createCdpChatDriver(options: BrowserClawCdpChatDriverOptio
     capabilities: BROWSERCLAW_CDP_CHAT_CAPABILITIES,
     accountExportDriver,
     historyArchiveDriver,
+    agentHarnessDriver,
   };
+}
+
+const CHATGPT_WORKING_CONTROL = /(?:stop(?: generating| response)?|останов(?:ить|ка)(?: генерац| ответ)?|прервать)/iu;
+
+/** Existing ChatGPT conversations as resumable Agent Herder sessions. */
+class BrowserClawChatGptHarnessDriver implements ChatGptHarnessDriver {
+  constructor(
+    private readonly page: BrowserClawA11yPage,
+    private readonly history: BrowserClawHistoryArchiveDriver,
+  ) {}
+
+  async listChats(signal?: AbortSignal): Promise<readonly ChatGptHarnessChat[]> {
+    return (await this.history.listChats(signal)).map((chat) => ({
+      id: chat.id,
+      title: chat.title,
+      unread: chat.unread,
+      working: chat.working,
+      updatedAt: chat.updatedAt,
+      sourceRoute: chat.sourceRoute,
+      updatedAtSemantics: chat.updatedAt === new Date(0).toISOString() ? "visible-sidebar-order" : "native",
+    }));
+  }
+
+  async sendMessage(
+    input: { chatId: string; text: string; waitForCompletion?: boolean },
+    signal?: AbortSignal,
+  ): Promise<{ assistantText?: string }> {
+    if (!input.text.trim()) throw new Error("ChatGPT message must not be empty");
+    throwIfAborted(signal);
+    await this.history.openChat({ chatId: input.chatId }, signal);
+    let snapshot = await this.page.snapshot(chatTurnDeadline(), signal);
+    const composer = findComposer(snapshot.root);
+    if (!composer || composer.disabled) throw new Error("ChatGPT composer was not found on the resumed conversation");
+    snapshot = await this.page.act({
+      snapshotRef: snapshot.snapshotRef,
+      action: { kind: "fill", ref: composer.ref, value: input.text },
+    }, chatTurnDeadline(), signal);
+    snapshot = await this.page.act({ snapshotRef: snapshot.snapshotRef, action: { kind: "press", key: "Enter" } }, chatTurnDeadline(), signal);
+    if (input.waitForCompletion === false) return {};
+
+    const deadlineAt = chatTurnDeadline();
+    let sawWorking = hasWorkingControl(snapshot.root);
+    let quietSamples = 0;
+    while (Date.now() < deadlineAt) {
+      throwIfAborted(signal);
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      snapshot = await this.page.snapshot(deadlineAt, signal);
+      const working = hasWorkingControl(snapshot.root);
+      sawWorking ||= working;
+      if (!working) quietSamples += 1;
+      else quietSamples = 0;
+      // Require either observed generation followed by two quiet samples, or
+      // three quiet samples for very fast replies where the stop button never
+      // appeared between snapshots.
+      if ((sawWorking && quietSamples >= 2) || (!sawWorking && quietSamples >= 3)) return {};
+    }
+    throw new Error("ChatGPT response did not settle before the Agent Herder deadline");
+  }
+}
+
+function hasWorkingControl(root: BrowserClawA11yNode): boolean {
+  return Boolean(findNode(root, (node) => ["button", "menuitem"].includes(node.role)
+    && CHATGPT_WORKING_CONTROL.test(`${node.name ?? ""} ${node.description ?? ""}`)));
+}
+
+function chatTurnDeadline(): number {
+  const configured = Number(process.env.AGENT_HERDER_CHATGPT_TURN_TIMEOUT_MS || 180_000);
+  const bounded = Number.isFinite(configured) ? Math.min(Math.max(configured, 15_000), 600_000) : 180_000;
+  return Date.now() + bounded;
 }
 
 /** Read-only mapping of the one BrowserClaw-owned page to the history exporter. */

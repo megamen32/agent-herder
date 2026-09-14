@@ -86,6 +86,21 @@ export const ALL_CDP_CHAT_CAPABILITIES: CdpChatCapabilities = {
 };
 
 /** Acquires the one authenticated page owned by this MCP process. */
+export interface ChatGptHarnessChat {
+  id: string;
+  title: string;
+  unread: boolean;
+  working: boolean;
+  updatedAt: string;
+  sourceRoute?: string;
+  updatedAtSemantics?: string;
+}
+
+export interface ChatGptHarnessDriver {
+  listChats(signal?: AbortSignal): Promise<readonly ChatGptHarnessChat[]>;
+  sendMessage(input: { chatId: string; text: string; waitForCompletion?: boolean }, signal?: AbortSignal): Promise<{ assistantText?: string }>;
+}
+
 export interface CdpChatDriver {
   acquirePage(): Promise<CdpChatPage>;
   /** Undefined keeps the original full-driver contract; concrete partial drivers must opt out explicitly. */
@@ -94,6 +109,8 @@ export interface CdpChatDriver {
   accountExportDriver?: ChatGptAccountExportDriver;
   /** Optional read-only visible-history export action sharing this driver's one BrowserClaw page lease. */
   historyArchiveDriver?: ChatGptHistoryArchiveDriver;
+  /** Optional existing-chat session control sharing the exact same owned page lease. */
+  agentHarnessDriver?: ChatGptHarnessDriver;
 }
 
 export interface CdpChatOptions {

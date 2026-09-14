@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import lockfile from "proper-lockfile";
 import type { AgentSession, HarnessAdapter } from "./types/index.js";
 import { coordinationNotes } from "./coordination-notes.js";
+import { deferredMessages, withDeferred } from "./deferred-messages.js";
 
 export type NamedSessionMode = "queue" | "sync";
 
@@ -227,4 +228,31 @@ function failed(
   delivery?: NamedSessionResult["delivery"],
 ): NamedSessionResult {
   return { ok: false, created: false, error, ...(delivery ? { delivery } : {}), ...request };
+}
+
+export type DeliverActivation = "always" | "if_running" | "defer";
+export type DeliverCreate = "if_missing" | "never";
+export interface DeliverNamedRequest extends NewOrResumeNamedSessionRequest { create?: DeliverCreate; activation?: DeliverActivation; }
+export type DeliverResult = Omit<NamedSessionResult, "delivery"> & { sessionStatus?: AgentSession["status"]; activated?: boolean; delivery?: NamedSessionResult["delivery"] | "deferred" | "skipped_inactive" | "not_found"; };
+
+export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, request: DeliverNamedRequest): Promise<DeliverResult> {
+  return withNamedSessionLock(request, async normalized => {
+    const adapter=adapters.get(normalized.harness);
+    if (!adapter) return {...failed(normalized,`Harness '${normalized.harness}' is not configured`,"not_attempted"),activated:false};
+    let matches:AgentSession[]; try { matches=await exactMatches(adapter,normalized.name,normalized.cwd); } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
+    if (matches.length>1) return {...failed(normalized,`Ambiguous named session '${normalized.name}' for ${normalized.harness}:${normalized.cwd}`,"not_attempted"),activated:false};
+    let target=matches[0], created=false;
+    if (!target) {
+      if ((request.create||"if_missing")==="never") return {ok:false,created:false,harness:normalized.harness,name:normalized.name,cwd:normalized.cwd,delivery:"not_found",activated:false,error:"Named session not found"};
+      if (!adapter.createSession) return {...failed(normalized,`${adapter.name} does not support session creation`,"not_attempted"),activated:false};
+      try { target=await adapter.createSession({name:normalized.name,cwd:normalized.cwd,model:request.model}); created=true; } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
+    }
+    const fresh=(await adapter.getSession(target.id)) || target; const activation=request.activation||"always";
+    if (activation==="if_running" && fresh.status!=="running") return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"skipped_inactive",activated:false,...normalized};
+    if (activation==="defer" && fresh.status!=="running") { await deferredMessages.add(fresh.id,request.message); return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"deferred",activated:false,...normalized}; }
+    const pending=await withDeferred(fresh.id,request.message); const injected=await coordinationNotes.inject(fresh,pending.message);
+    const sent=await adapter.sendMessage(fresh.id,{message:injected,queue:(request.mode||"queue")==="queue"});
+    if (sent.ok && pending.ids.length) await deferredMessages.remove(pending.ids);
+    return sent.ok ? {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:(request.mode||"queue")==="queue"?"accepted":"completed",activated:true,...normalized} : {ok:false,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"failed",activated:false,error:sent.error||"Message delivery failed",...normalized};
+  });
 }

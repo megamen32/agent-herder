@@ -8,6 +8,7 @@ import {
   SendMessageSchema,
   CreateSessionSchema,
   NewOrResumeSchema,
+  DeliverSchema,
   StopAgentSchema,
   RespondPermissionSchema,
   SetPermissionsSchema,
@@ -17,13 +18,14 @@ import {
   AuditWorktreesSchema,
 } from "./definitions.js";
 import { throwIfAborted } from "../abort-utils.js";
-import { createNamedSession, newOrResumeNamedSession } from "../named-session.js";
+import { createNamedSession, newOrResumeNamedSession, deliverNamedSession } from "../named-session.js";
 import { homedir } from "node:os";
 import { relative, resolve, sep } from "node:path";
 import { realpath } from "node:fs/promises";
 import { auditWorktrees } from "../worktree-audit.js";
 import { BrowserWakeService } from "../browser-wake.js";
 import { coordinationNotes } from "../coordination-notes.js";
+import { deferredMessages, withDeferred } from "../deferred-messages.js";
 import {
   buildTranscriptArchiveCard,
   transcriptArchiveFromEnvironment,
@@ -434,7 +436,8 @@ export async function handleSendMessage(
     ? `[Agent Herder delivery] От: ${parsed.fromHarness ?? "agent"}:${parsed.fromSessionId}.\nЧтобы ответить: send_message { sessionId: "${parsed.fromSessionId}", harness: "${parsed.fromHarness ?? "zcode"}", mode: "queue" }.`
     : "";
   const baseMessage = replyHeader ? `${replyHeader}\n\n${parsed.message}` : parsed.message;
-  const injectedMessage = await coordinationNotes.inject(found.session, baseMessage);
+  const pending = await withDeferred(parsed.sessionId, baseMessage);
+  const injectedMessage = await coordinationNotes.inject(found.session, pending.message);
   const result = await found.adapter.sendMessage(parsed.sessionId, {
     message: injectedMessage,
     queue: parsed.mode === "queue",
@@ -442,6 +445,7 @@ export async function handleSendMessage(
   });
 
   if (result.ok) {
+    if (pending.ids.length) await deferredMessages.remove(pending.ids);
     const modeLabel = parsed.mode === "queue" ? " (queued)" : parsed.mode === "steer" ? " (steering)" : " (sync)";
     return `Message sent to [${found.session.harness}] ${parsed.sessionId}${modeLabel}.\nMessage: ${parsed.message}`;
   }
@@ -464,6 +468,23 @@ export async function handleNewOrResume(
   const parsed = NewOrResumeSchema.parse(args);
   const result = await newOrResumeNamedSession(adapters, parsed);
   return JSON.stringify(result);
+}
+
+export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
+  const parsed = DeliverSchema.parse(args);
+  if (parsed.sessionId) {
+    const found = await findSession(adapters, parsed.sessionId, parsed.harness);
+    if (!found) return JSON.stringify({ ok:false, delivery:"not_found", activated:false, error:`Session '${parsed.sessionId}' not found.` });
+    const fresh = (await found.adapter.getSession(parsed.sessionId)) || found.session;
+    if (parsed.activation === "if_running" && fresh.status !== "running") return JSON.stringify({ ok:true, sessionId:fresh.id, harness:fresh.harness, sessionStatus:fresh.status, delivery:"skipped_inactive", activated:false });
+    if (parsed.activation === "defer" && fresh.status !== "running") { await deferredMessages.add(fresh.id, parsed.message); return JSON.stringify({ ok:true, sessionId:fresh.id, harness:fresh.harness, sessionStatus:fresh.status, delivery:"deferred", activated:false }); }
+    const pending = await withDeferred(fresh.id, parsed.message);
+    const injected = await coordinationNotes.inject(fresh, pending.message);
+    const sent = await found.adapter.sendMessage(fresh.id,{message:injected,queue:parsed.mode==="queue"});
+    if (sent.ok && pending.ids.length) await deferredMessages.remove(pending.ids);
+    return JSON.stringify(sent.ok ? {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:parsed.mode==="queue"?"accepted":"completed",activated:true} : {ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"failed",activated:false,error:sent.error||"Message delivery failed"});
+  }
+  return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:parsed.message,create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model}));
 }
 
 export async function handleStopAgent(

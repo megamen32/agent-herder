@@ -18,6 +18,7 @@ import {
   handleSendMessage,
   handleCreateSession,
   handleNewOrResume,
+  handleDeliver,
   handleStopAgent,
   handleRespondPermission,
   handleSetPermissions,
@@ -28,7 +29,7 @@ import {
 } from "../mcp-tools/handlers.js";
 import { startJobResult } from "./results.js";
 
-const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]);
+const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]);
 
 const sessionSchema = z.object({
   id: z.string(), harness: harnessSchema, status: z.enum(["running", "idle", "needs_input", "stopped", "error"]), title: z.string(), cwd: z.string(), lastActivity: z.string(),
@@ -45,7 +46,7 @@ export function registerSessionTools(server: McpServer, deps: {
   const publishSessionsChanged = () => events.publish({ kind: "sessions", uri: "herder://sessions", action: "changed" });
 
   server.registerTool("list_agents", { description: "List all coding agent sessions, including ZCode. Filter by harness, status, age (maxAge seconds), or folder (CWD prefix like ~/apps). Can show last message preview.", inputSchema: z.object({
-    harness: z.enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().default("all"),
+    harness: z.enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().default("all"),
     status: z.enum(["all", "running", "idle", "needs_input", "stopped", "error"]).optional().default("all"),
     limit: z.number().int().min(1).max(100).optional().default(50), maxAge: z.number().int().min(0).optional(), folder: z.string().optional(), includeLastMessage: z.boolean().optional().default(false),
   }), outputSchema: z.object({
@@ -88,6 +89,7 @@ export function registerSessionTools(server: McpServer, deps: {
     const result = await handleNewOrResume(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
+  server.registerTool("deliver", { description: "Deliver a message to an agent. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start the agent; if_running delivers only while currently running and otherwise returns skipped_inactive; defer stores the message for the next Agent Herder-delivered turn without waking an inactive agent. Do not call list_agents first just to check activity; Agent Herder evaluates the policy at delivery time.", inputSchema: z.object({ sessionId:z.string().optional(), harness:harnessSchema.optional(), name:z.string().min(1).max(128).optional(), cwd:z.string().min(1).optional(), message:z.string().min(1), create:z.enum(["if_missing","never"]).optional().default("if_missing"), activation:z.enum(["always","if_running","defer"]).optional().default("always"), mode:z.enum(["queue","sync"]).optional().default("queue"), model:z.string().min(1).max(128).optional() }).superRefine((v,ctx)=>{ const named=Boolean(v.harness&&v.name&&v.cwd); if(!v.sessionId&&!named)ctx.addIssue({code:z.ZodIssueCode.custom,message:"Provide sessionId or harness+name+cwd"}); if(v.sessionId&&(v.name||v.cwd))ctx.addIssue({code:z.ZodIssueCode.custom,message:"Use either sessionId or named target fields, not both"}); }) }, async(args)=>{ const result=await handleDeliver(adapters,args); publishSessionsChanged(); return {content:[{type:"text" as const,text:result}]}; });
   server.registerTool("stop_agent", { description: "Stop / abort a running agent session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }) }, async (args) => {
     const result = await handleStopAgent(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };

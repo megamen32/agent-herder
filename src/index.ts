@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { HarnessAdapter } from "./types/index.js";
-import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter } from "./adapters/index.js";
+import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, ChatGptAdapter } from "./adapters/index.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
@@ -108,6 +108,7 @@ function configureAdapterRegistry(): void {
     ["hermes", "Hermes", "Hermes MCP adapter", ENABLE_HERMES],
     ["zcode", "ZCode", "ZCode app-server adapter", ENABLE_ZCODE],
     ["fast-agent", "Fast Agent", "Fast Agent persisted session observer and launcher", ENABLE_FAST_AGENT],
+    ["chatgpt", "ChatGPT", "Existing ChatGPT conversations on the one owned BrowserClaw page", true],
   ] as const) {
     const [id, name, description, defaultEnabled] = definition;
     adapterRegistry.register({ id, name, description, defaultEnabled, factory: adapterFactories.get(id) });
@@ -117,6 +118,20 @@ function configureAdapterRegistry(): void {
 function queueAdapterInit(inits: Promise<void>[], id: string, adapter: HarnessAdapter, onError: (error: unknown) => void): void {
   if (LAZY_ADAPTERS.has(id)) return;
   inits.push(adapter.init().catch(onError));
+}
+
+async function initAdapterWithRetry(adapter: HarnessAdapter, attempts = 20, delayMs = 500): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await adapter.init();
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError;
 }
 
 async function initAdapters() {
@@ -129,10 +144,10 @@ async function initAdapters() {
     });
     adapters.set("opencode", adapter);
     adapterRegistry.registerActive(adapter);
-    queueAdapterInit(inits, "opencode", adapter, (err) => {
-      console.error(`[agent-herder] OpenCode adapter failed to init: ${(err as Error).message}`);
+    inits.push(initAdapterWithRetry(adapter).catch((err) => {
+      console.error(`[agent-herder] OpenCode adapter failed to init after retries: ${(err as Error).message}`);
       adapters.delete("opencode");
-    });
+    }));
   }
 
   if (adapterRegistry.shouldEnable("claude", ENABLE_CLAUDE)) {
@@ -359,12 +374,12 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
   const server = new McpServer({
     name: "agent-herder",
     version: "0.3.0",
-    description: "Monitor, message, and coordinate coding agents across OpenCode, Claude, Codex, Qoder, Hermes, ZCode, and Fast Agent",
+    description: "Monitor, message, and coordinate agent sessions across OpenCode, Claude, Codex, Qoder, Hermes, ZCode, Fast Agent, and existing ChatGPT conversations",
   }, {
     capabilities: { resources: { subscribe: true, listChanged: true } },
     instructions: [
       "Use Agent Herder whenever you need to inspect or communicate with another coding-agent session.",
-      "For direct agent-to-agent communication use send_message; list_agents finds the target session.",
+      "Prefer deliver for agent communication and activation policy; list_agents finds existing sessions, including ChatGPT conversations.",
       "Before editing files that another agent may also touch, publish a coordination_note_create with your session ID, workspace CWD, relevant paths, and a bounded TTL (30 minutes is a good default).",
       "Active coordination notes are automatically injected into new turns delivered through Agent Herder, so agents do not need to poll coordination_note_list on every turn.",
       "Use coordination_note_list/get for explicit inspection. Update or delete your own note when scope/TTL changes or work finishes.",
@@ -405,21 +420,59 @@ async function main() {
   await adapterRegistry.load();
   await initAdapters();
   let cdpChatDriver: CdpChatDriver | undefined;
-  if (process.env.CDP_CHAT_DRIVER_MODULE) {
-    try {
-      cdpChatDriver = await loadCdpChatDriver();
-    } catch (error) {
-      // An expired BrowserClaw lease must not take down the monitoring/control
-      // plane or silently acquire a new ChatGPT tab during service restart.
-      console.error(`[agent-herder] CDP chat adapter unavailable: ${error instanceof Error ? error.message : "unknown error"}`);
-    }
-  }
-  const cdpAccountArchive = cdpChatDriver
-    ? new ChatGptAccountArchive(cdpChatDriver.accountExportDriver, { archiveRoot: process.env.CHATGPT_ACCOUNT_ARCHIVE_ROOT })
-    : undefined;
-  const cdpHistoryArchive = new ChatGptHistoryArchive(cdpChatDriver?.historyArchiveDriver, {
+  let cdpAccountArchive: ChatGptAccountArchive | undefined;
+  let cdpHistoryArchive = new ChatGptHistoryArchive(undefined, {
     archiveRoot: process.env.CHATGPT_HISTORY_ARCHIVE_ROOT,
   });
+  let cdpInitInFlight: Promise<boolean> | undefined;
+  let chatgptRetryTimer: NodeJS.Timeout | undefined;
+
+  const activateCdpChat = async (): Promise<boolean> => {
+    if (cdpChatDriver?.agentHarnessDriver && adapters.has("chatgpt")) return true;
+    if (cdpInitInFlight) return cdpInitInFlight;
+    cdpInitInFlight = (async () => {
+      try {
+        const driver = await loadCdpChatDriver();
+        cdpChatDriver = driver;
+        cdpAccountArchive = new ChatGptAccountArchive(driver.accountExportDriver, {
+          archiveRoot: process.env.CHATGPT_ACCOUNT_ARCHIVE_ROOT,
+        });
+        cdpHistoryArchive = new ChatGptHistoryArchive(driver.historyArchiveDriver, {
+          archiveRoot: process.env.CHATGPT_HISTORY_ARCHIVE_ROOT,
+        });
+        if (driver.agentHarnessDriver && adapterRegistry.shouldEnable("chatgpt", true)) {
+          const chatgpt = new ChatGptAdapter(driver.agentHarnessDriver);
+          await chatgpt.init();
+          adapters.set("chatgpt", chatgpt);
+          adapterRegistry.registerActive(chatgpt);
+          console.error("[agent-herder] ChatGPT resumable-session adapter initialized");
+        }
+        if (chatgptRetryTimer) {
+          clearInterval(chatgptRetryTimer);
+          chatgptRetryTimer = undefined;
+        }
+        return true;
+      } catch (error) {
+        console.error(`[agent-herder] CDP/ChatGPT adapter unavailable: ${error instanceof Error ? error.message : "unknown error"}`);
+        return false;
+      } finally {
+        cdpInitInFlight = undefined;
+      }
+    })();
+    return cdpInitInFlight;
+  };
+
+  if (process.env.CDP_CHAT_DRIVER_MODULE) {
+    const ready = await activateCdpChat();
+    if (!ready) {
+      const retryMs = Math.max(5_000, Number(process.env.AGENT_HERDER_CHATGPT_ADAPTER_RETRY_MS || 30_000));
+      chatgptRetryTimer = setInterval(() => { void activateCdpChat(); }, retryMs);
+      chatgptRetryTimer.unref();
+      process.once("exit", () => {
+        if (chatgptRetryTimer) clearInterval(chatgptRetryTimer);
+      });
+    }
+  }
   const processSessionConverter = new AgentHerderSessionConverter();
   const processSupervisor = new SessionSupervisor(adapters, processSessionConverter, undefined, { events: herderEvents });
   const stopProcessObservation = processSupervisor.startObservation(Number(process.env.AGENT_HERDER_SESSION_OBSERVATION_INTERVAL_MS || 5_000));

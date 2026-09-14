@@ -5,7 +5,7 @@ import { z } from "zod";
 
 export const ListAgentsSchema = z.object({
   harness: z
-    .enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"])
+    .enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"])
     .optional()
     .default("all")
     .describe("Filter by harness. 'all' lists from every connected harness."),
@@ -39,7 +39,7 @@ export const AuditWorktreesSchema = z.object({
 export const AgentInfoSchema = z.object({
   sessionId: z.string().describe("The session ID to inspect."),
   harness: z
-    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"])
+    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"])
     .optional()
     .describe("Which harness the session belongs to. If omitted, searches all."),
 });
@@ -47,7 +47,7 @@ export const AgentInfoSchema = z.object({
 export const FindParentSchema = z.object({
   sessionId: z.string().describe("The child session ID whose parent should be found."),
   harness: z
-    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"])
+    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"])
     .optional()
     .describe("Which harness owns the session. If omitted, searches all."),
 });
@@ -55,22 +55,22 @@ export const FindParentSchema = z.object({
 export const ListChildrenSchema = z.object({
   sessionId: z.string().describe("The parent session ID whose children should be listed."),
   harness: z
-    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"])
+    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"])
     .optional()
     .describe("Which harness owns the session. If omitted, searches all."),
 });
 
 export const ExportTranscriptSchema = z.object({
   sessionId: z.string().describe("The session ID whose raw source should be exported."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().describe("Which harness owns the session. If omitted, searches all."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Which harness owns the session. If omitted, searches all."),
 });
 
 export const SendMessageSchema = z.object({
   sessionId: z.string().describe("Target session ID."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().describe("Harness (optional if ID is unique)."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Harness (optional if ID is unique)."),
   message: z.string().describe("Message to send to the agent."),
   fromSessionId: z.string().optional().describe("Sender session ID — when provided, the delivery is wrapped with a reply header so the target knows whom to answer."),
-  fromHarness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().describe("Sender harness."),
+  fromHarness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Sender harness."),
   mode: z.enum(["queue", "steer", "sync"]).optional().default("sync").describe(
     "queue = fire-and-forget, steer = redirect agent, sync = wait for response"
   ),
@@ -92,14 +92,30 @@ export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
   model: z.string().trim().min(1).max(128).optional().describe("Optional model selected before the first message is delivered."),
 });
 
+export const DeliverSchema = z.object({
+  sessionId: z.string().optional().describe("Exact target session ID. Use either sessionId or harness+name+cwd."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional(),
+  name: z.string().trim().min(1).max(128).optional(),
+  cwd: z.string().min(1).optional(),
+  message: z.string().trim().min(1),
+  create: z.enum(["if_missing", "never"]).optional().default("if_missing").describe("Named targets only: create the session if it does not exist, or fail with never."),
+  activation: z.enum(["always", "if_running", "defer"]).optional().default("always").describe("always wakes/runs; if_running delivers only during an active turn; defer stores for the next Herder-delivered turn without waking an inactive agent."),
+  mode: z.enum(["queue", "sync"]).optional().default("queue"),
+  model: z.string().trim().min(1).max(128).optional(),
+}).superRefine((v,ctx)=>{
+  const named=Boolean(v.harness && v.name && v.cwd);
+  if (!v.sessionId && !named) ctx.addIssue({code:z.ZodIssueCode.custom,message:"Provide sessionId or harness+name+cwd"});
+  if (v.sessionId && (v.name || v.cwd)) ctx.addIssue({code:z.ZodIssueCode.custom,message:"Use either sessionId or named target fields, not both"});
+});
+
 export const StopAgentSchema = z.object({
   sessionId: z.string().describe("Session ID to stop."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().describe("Harness (optional if ID is unique)."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Harness (optional if ID is unique)."),
 });
 
 export const RespondPermissionSchema = z.object({
   sessionId: z.string().describe("Session with pending permission."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional(),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional(),
   permissionId: z.string().describe("The permission request ID."),
   response: z.enum(["allow", "deny"]).describe("Whether to allow or deny."),
   remember: z.boolean().optional().describe("Remember this decision for future requests."),
@@ -107,14 +123,14 @@ export const RespondPermissionSchema = z.object({
 
 export const SetPermissionsSchema = z.object({
   sessionId: z.string().describe("Target session ID."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional(),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional(),
   allowedTools: z.string().optional().describe("Comma-separated list of allowed tools (e.g. 'Read,Edit,Bash')."),
   mode: z.string().optional().describe("Permission mode (e.g. 'fullAuto', 'plan', 'default')."),
 });
 
 export const ResumeAgentSchema = z.object({
   sessionId: z.string().describe("Session ID to resume."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional(),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional(),
   message: z.string().optional().describe("Optional message to send when resuming."),
 });
 
@@ -122,12 +138,12 @@ export const ChangeModelSchema = z.object({
   sessionId: z.string().optional().describe(
     "Session ID to change model for. If omitted, changes the global default for the harness."
   ),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).describe("Which harness to change model for."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).describe("Which harness to change model for."),
   model: z.string().describe("The model name to use (e.g. 'claude-sonnet-4-20250514', 'gpt-4o', 'o4-mini')."),
 });
 
 export const ListModelsSchema = z.object({
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"]).optional().describe(
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe(
     "Which harness to list models for. If omitted, lists models from all harnesses."
   ),
 });
@@ -180,7 +196,7 @@ export const toolDefinitions: Tool[] = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        harness: { type: "string", enum: ["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], default: "all", description: "Filter by harness" },
+        harness: { type: "string", enum: ["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], default: "all", description: "Filter by harness" },
         status: { type: "string", enum: ["all", "running", "idle", "needs_input", "stopped", "error"], default: "all", description: "Filter by status" },
         limit: { type: "number", default: 50, description: "Max sessions to return" },
         maxAge: { type: "number", description: "Max session age in seconds (e.g. 3600 for 1h, 86400 for 24h)" },
@@ -241,7 +257,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session ID to inspect" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
       },
       required: ["sessionId"],
     },
@@ -253,7 +269,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Child session ID" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
       },
       required: ["sessionId"],
     },
@@ -265,7 +281,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Parent session ID" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
       },
       required: ["sessionId"],
     },
@@ -277,7 +293,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session ID" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
       },
       required: ["sessionId"],
     },
@@ -300,13 +316,28 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Target session ID" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
         message: { type: "string", description: "Message to send" },
         fromSessionId: { type: "string", description: "Sender session ID — adds a reply header so the target knows whom to answer" },
-        fromHarness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], description: "Sender harness (optional)" },
+        fromHarness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Sender harness (optional)" },
         mode: { type: "string", enum: ["queue", "steer", "sync"], default: "sync", description: "Delivery mode" },
       },
       required: ["sessionId", "message"],
+    },
+  },
+  {
+    name: "deliver",
+    description: "High-level agent delivery. Target by sessionId or harness+name+cwd. create controls whether a missing named session is created. activation=always may wake/start the agent; if_running only delivers while currently running; defer stores for the next Agent Herder-delivered turn without waking an inactive target. Herder evaluates activity at delivery time, so callers should not pre-check with list_agents.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        sessionId: { type: "string" }, harness: { type: "string", enum: ["opencode","claude","codex","qoder","hermes","zcode","fast-agent", "chatgpt"] },
+        name: { type: "string" }, cwd: { type: "string" }, message: { type: "string" },
+        create: { type: "string", enum: ["if_missing","never"], default: "if_missing" },
+        activation: { type: "string", enum: ["always","if_running","defer"], default: "always" },
+        mode: { type: "string", enum: ["queue","sync"], default: "queue" }, model: { type: "string" },
+      },
+      required: ["message"],
     },
   },
   {
@@ -316,7 +347,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session ID to stop" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
       },
       required: ["sessionId"],
     },
@@ -330,7 +361,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session with pending permission" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
         permissionId: { type: "string", description: "Permission request ID" },
         response: { type: "string", enum: ["allow", "deny"], description: "Allow or deny" },
         remember: { type: "boolean", description: "Remember this decision" },
@@ -347,7 +378,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Target session ID" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
         allowedTools: { type: "string", description: "Comma-separated allowed tools, e.g. 'Read,Edit,Bash'" },
         mode: { type: "string", description: "Permission mode, e.g. 'fullAuto', 'plan', 'default'" },
       },
@@ -362,7 +393,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session ID to resume" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
         message: { type: "string", description: "Optional message to send when resuming" },
       },
       required: ["sessionId"],
@@ -378,7 +409,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session ID (optional, changes global default if omitted)" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], description: "Target harness" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Target harness" },
         model: { type: "string", description: "Model name (e.g. 'claude-sonnet-4-20250514', 'gpt-4o', 'o4-mini')" },
       },
       required: ["harness", "model"],
@@ -391,7 +422,7 @@ export const toolDefinitions: Tool[] = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"], description: "Harness to list models for (omit = all)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness to list models for (omit = all)" },
       },
     },
   },
