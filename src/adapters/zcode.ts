@@ -530,7 +530,7 @@ export class ZcodeAdapter implements HarnessAdapter {
           workspace_path?: string;
           title?: string;
           task_status?: string;
-          model?: string;
+          model?: string | null;
           created_at?: number;
           updated_at?: number;
         }>;
@@ -553,7 +553,7 @@ export class ZcodeAdapter implements HarnessAdapter {
             title: row.title || "Untitled ZCode session",
             cwd,
             lastActivity: timestamp(updatedAt),
-            model: row.model,
+            model: nonEmptyString(row.model),
             needsPermission: status === "needs_input",
             meta: { persistedTaskStatus: rawStatus, discoverySource: "tasks-index" },
           };

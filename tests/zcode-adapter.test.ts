@@ -101,6 +101,8 @@ describe("ZCode adapter", () => {
     )`);
     db.prepare("insert into tasks (task_id,workspace_path,title,task_status,model,created_at,updated_at) values (?,?,?,?,?,?,?)")
       .run("persisted-1", "/another/workspace", "Unfinished persisted task", "running", "zai/GLM-5.3-Flash", Date.now() - 60_000, Date.now() - 60_000);
+    db.prepare("insert into tasks (task_id,workspace_path,title,task_status,model,created_at,updated_at) values (?,?,?,?,?,?,?)")
+      .run("persisted-no-model", "/another/workspace", "Persisted task without model", "idle", null, Date.now() - 60_000, Date.now() - 60_000);
     db.close();
     try {
       const adapter = new ZcodeAdapter({ client: new FakeClient(), tasksIndexDbPath: dbPath });
@@ -108,6 +110,10 @@ describe("ZCode adapter", () => {
         id: "persisted-1", harness: "zcode", title: "Unfinished persisted task",
         cwd: "/another/workspace", status: "running", model: "zai/GLM-5.3-Flash",
         meta: { discoverySource: "tasks-index" },
+      });
+      expect((await adapter.listSessions()).find((session) => session.id === "persisted-no-model")).toMatchObject({
+        id: "persisted-no-model",
+        model: undefined,
       });
     } finally {
       await rm(root, { recursive: true, force: true });
