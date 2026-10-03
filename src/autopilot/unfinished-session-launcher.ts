@@ -1062,6 +1062,8 @@ function continuationTitle(topic: string): string {
 
 function batchContinuationPrompt(group: SessionBatchPlanGroup, sources: AssessedSession[]): string {
   return [
+    continuationTitle(group.topic),
+    "",
     `Это единое продолжение задачи «${group.topic}», собранное оркестратором из ${sources.length} сесс. Codex/ZCode.`,
     `Исходные сессии: ${sources.map(({ session }) => `${session.harness}:${session.id} (${session.title})`).join("; ")}.`,
     "MiniMax прочитал по четыре последних полных смысловых сообщения каждой сессии, убрал дубли и подготовил общий handoff.",

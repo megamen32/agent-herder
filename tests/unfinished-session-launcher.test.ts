@@ -231,6 +231,7 @@ describe("unfinished session launcher", () => {
     expect(names).toEqual(["Автопродолжение — Восстановить отправку комментариев"]);
     expect(models).toEqual(["account:zai-individual-coding-plan/GLM-5.3-Flash$high"]);
     expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toMatch(/^Автопродолжение — Восстановить отправку комментариев\n\n/);
     expect(prompts[0]).toContain("исправление начато, остались тест и production-canary");
     expect(prompts[0]).toContain("duplicate-new");
     expect(prompts[0]).toContain("duplicate-old");
