@@ -206,6 +206,54 @@ describe("unfinished session launcher", () => {
     expect((await store.list()).map((record) => record.sessionId)).toEqual(["merged-session"]);
   });
 
+  it("never falls back to per-session launches when the one batch plan fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-no-fallback-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const calls = { resumes: 0, messages: [] as string[] };
+    const session = { ...fixtureSession("idle", "codex"), lastActivity: new Date(Date.now() - 5 * 60_000).toISOString() };
+    let individualDecisions = 0;
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", fixtureAdapter(session, calls)]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { individualDecisions += 1; return { verdict: "unfinished", reason: "fallback", confidence: 1 }; },
+        async plan() { throw new Error("batch timeout"); },
+      },
+    }).recoverPending();
+    expect(individualDecisions).toBe(0);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await store.list()).toEqual([]);
+  });
+
+  it("covers a large inventory in bounded MiniMax batches", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-size-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = Array.from({ length: 33 }, (_, index): AgentSession => ({
+      ...fixtureSession("idle", "codex"), id: `session-${index}`, title: `Task ${index}`,
+      lastActivity: new Date(Date.now() - 10 * 60_000 - index).toISOString(),
+    }));
+    const sizes: number[] = [];
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: "done", parts: [{ type: "text", text: "done" }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          sizes.push(batch.length);
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "done", confidence: 1, topic: session.title, handoff: "",
+          })) };
+        },
+      },
+    }).recoverPending();
+    expect(sizes).toEqual([16, 16, 1]);
+    expect(await store.listInventory()).toHaveLength(33);
+  });
+
   it("persists a running autopilot turn and starts the same session after a fresh process", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));

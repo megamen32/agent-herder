@@ -168,9 +168,12 @@ npx -y agent-herder
 | `AGENT_HERDER_UNFINISHED_RESUMES_PER_CYCLE` | `8` | Не более восьми параллельных допусков продолжения за цикл; все запущенные задачи делят общий бюджет user-slice server-100 |
 | `AGENT_HERDER_UNFINISHED_INVENTORY_HOURS` | `48` | Окно поиска по умолчанию; веб-морда сохраняет runtime-значение без рестарта |
 | `AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES` | `4` | Полные последние смысловые сообщения для judge; последнее сообщение пользователя и модели сохраняются обязательно |
-| `AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS` | `32768` | Выходной бюджет единого плана MiniMax для большого числа сгруппированных сессий |
+| `AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS` | `32768` | Выходной бюджет каждого пакета плана MiniMax |
+| `AGENT_HERDER_UNFINISHED_BATCH_SESSIONS` | `16` | Сессий в одном ограниченном пакете MiniMax; окно всё равно обрабатывается полностью |
+| `AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY` | `2` | Максимум параллельных пакетов инвентаризации MiniMax |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Прямой Anthropic-совместимый endpoint MiniMax без дополнительного шлюза |
 | `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash-Preview` | Модель по умолчанию; runtime-выбор из веб-морды имеет приоритет, ключ читается из защищённого окружения `MINIMAX_API_KEY` |
+| `AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS` | `600000` | Максимальное время одного общего плана MiniMax; при timeout посессионные запуски запрещены |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ENABLED` | `true` | Отключает только MiniMax-классификатор незавершённых сессий |
 | `AGENT_HERDER_CODEX_STATE_CACHE_MS` | `60000` | Общий кэш одного чтения Codex rollout-файлов для UI, наблюдения и recovery-цикла |
 | `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | При рестарте заменять сессию с истёкшим документированным кэшем на новую в том же харнесе/модели через краткий handoff MiniMax |
@@ -180,7 +183,7 @@ npx -y agent-herder
 | `AGENT_HERDER_WEB_PORT` | — | Web UI + MCP поверх HTTP (режим демона) |
 | `AGENT_HERDER_HTTP_TOKEN` | — | Обязателен для не-loopback хоста |
 
-Каждая сверка строит один общий план MiniMax по включённым Codex- и ZCode-сессиям. Планировщик получает настроенные четыре полных смысловых сообщения каждой сессии, объединяет дубли одной задачи и создаёт не более одной сессии `Автопродолжение — <понятная тема>` с общей сводкой на каждую незавершённую группу.
+Каждая сверка строит один ограниченный проход MiniMax по включённым Codex- и ZCode-сессиям. Планировщик получает настроенные четыре полных смысловых сообщения каждой сессии пакетами, объединяет дубли внутри пакета, а общий результат создаёт не более одной сессии `Автопродолжение — <понятная тема>` на незавершённую группу. Общий лимит запусков действует на весь проход.
 
 Cache-aware restart использует 30 минут для документированного кэша GPT-5.6+
 и консервативные 5 минут для GLM-5.3 и MiniMax M3/M3.1. Z.ai не обещает

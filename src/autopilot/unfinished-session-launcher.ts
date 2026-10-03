@@ -666,11 +666,21 @@ export class UnfinishedSessionLauncher {
       }
       if (assessed.length > 0) {
         try {
-          const plan = await this.options.judge.plan({ sessions: assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail })) });
-          await this.applyBatchPlan(plan, assessed);
+          const batchSize = positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_SESSIONS || 16), 16);
+          const concurrency = positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY || 2), 2);
+          const inputs = assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail }));
+          const chunks: SessionBatchCandidate[][] = [];
+          for (let index = 0; index < inputs.length; index += batchSize) chunks.push(inputs.slice(index, index + batchSize));
+          const groups: SessionBatchPlanGroup[] = [];
+          for (let index = 0; index < chunks.length; index += concurrency) {
+            const plans = await Promise.all(chunks.slice(index, index + concurrency).map((sessions) => this.options.judge!.plan!({ sessions })));
+            for (const plan of plans) groups.push(...plan.groups);
+          }
+          await this.applyBatchPlan({ groups }, assessed);
           return;
         } catch (error) {
-          console.error(`[agent-herder] единый план MiniMax не построен, используется посессионный fallback: ${errorText(error)}`);
+          console.error(`[agent-herder] единый план MiniMax не построен; посессионный fallback запрещён: ${errorText(error)}`);
+          return;
         }
       }
       if (assessed.length === 0) return;
@@ -1311,7 +1321,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
           ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
           "content-type": "application/json",
         },
-        signal: AbortSignal.timeout(180_000),
+        signal: AbortSignal.timeout(positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
         body: JSON.stringify({
           model: config.model,
           temperature: 0,
@@ -1406,7 +1416,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
           "anthropic-version": "2023-06-01",
           "content-type": "application/json",
         },
-        signal: AbortSignal.timeout(180_000),
+        signal: AbortSignal.timeout(positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
         body: JSON.stringify({
           model: config.model,
           max_tokens: positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || 32_768), 32_768),
