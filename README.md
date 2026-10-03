@@ -229,6 +229,14 @@ proxy (the managed `agent.bezrabotnyi.com` deployment uses `18787`).
 The matching user-service template is
 [`deploy/systemd/agent-herder.service`](deploy/systemd/agent-herder.service).
 
+The managed server-100 service has a measured steady working set of roughly
+170 MiB and an explicit shared budget for the control plane plus its child
+harnesses: 1 GiB soft / 2 GiB hard RAM, 512 MiB swap, four CPUs, 512 tasks, and
+reduced I/O weight. Test workers and child sessions share that allowance; do
+not multiply it by running broad suites in parallel. Raise it only from fresh
+peak measurements while preserving the host reserve documented by
+ServersAdministartion.
+
 </details>
 
 ## FAQ

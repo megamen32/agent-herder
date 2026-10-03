@@ -24,6 +24,30 @@ interface OpenCodeMessagePayload {
   parts?: Array<Record<string, unknown>>;
 }
 
+interface OpenCodeProviderCatalog {
+  all?: Array<{
+    id?: string;
+    models?: Record<string, unknown> | Array<{ id?: string }>;
+  }>;
+  connected?: string[];
+}
+
+export function openCodeConnectedModels(catalog: OpenCodeProviderCatalog): string[] {
+  const connected = new Set((catalog.connected ?? []).filter((value): value is string => typeof value === "string" && value.length > 0));
+  const result: string[] = [];
+  for (const provider of catalog.all ?? []) {
+    const providerId = typeof provider.id === "string" ? provider.id.trim() : "";
+    if (!providerId || (connected.size > 0 && !connected.has(providerId))) continue;
+    const modelIds = Array.isArray(provider.models)
+      ? provider.models.map((model) => typeof model?.id === "string" ? model.id.trim() : "")
+      : Object.keys(provider.models ?? {});
+    for (const modelId of modelIds) {
+      if (modelId) result.push(`${providerId}/${modelId}`);
+    }
+  }
+  return [...new Set(result)];
+}
+
 function normalizeOpenCodeEvent(raw: unknown): HarnessEvent | null {
   if (!raw || typeof raw !== "object") return null;
   const event = raw as Record<string, unknown>;
@@ -411,8 +435,13 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 
   async listModels(): Promise<string[]> {
-    // OpenCode uses provider-based model names
-    // Try to fetch from config, otherwise return common ones
+    // `/provider` is OpenCode's live catalog.  It contains the connected
+    // providers and their current model IDs, while `/config` often exposes
+    // only the selected default and made newly-added routes invisible here.
+    try {
+      const models = openCodeConnectedModels(await this.fetchJson<OpenCodeProviderCatalog>("/provider"));
+      if (models.length > 0) return models;
+    } catch { /* fall through to older OpenCode compatibility */ }
     try {
       const config = await this.fetchJson<{ model?: string; provider?: string; models?: string[] }>("/config");
       if (config.models) return config.models;

@@ -940,9 +940,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     } catch (error) {
       return sendJson(response, 400, { error: (error as Error).message });
     }
-    const harness = body.harness === undefined ? "opencode" : body.harness;
-    if (harness !== "opencode" && harness !== "codex" && harness !== "hermes") {
-      return sendJson(response, 400, { error: "health remediation harness must be opencode, codex, or hermes" });
+    const harness = body.harness === undefined ? "zcode" : body.harness;
+    if (harness !== "opencode" && harness !== "codex" && harness !== "hermes" && harness !== "zcode") {
+      return sendJson(response, 400, { error: "health remediation harness must be opencode, codex, hermes, or zcode" });
     }
     if (typeof body.name !== "string" || body.name.trim().length === 0 || body.name.length > 128 ||
       typeof body.cwd !== "string" || !body.cwd.startsWith("/") ||

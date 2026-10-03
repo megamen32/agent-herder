@@ -32,6 +32,14 @@ Environment=AGENT_HERDER_WEB_PORT=18787
 ExecStart=/usr/local/bin/node %h/agents-projects/agent-herder/dist/index.js
 Restart=on-failure
 RestartSec=3
+# Measured control-plane steady state is about 170 MiB. Child harnesses share
+# this project budget, so the service keeps an explicit bounded headroom.
+MemoryHigh=1G
+MemoryMax=2G
+MemorySwapMax=512M
+CPUQuota=400%
+TasksMax=512
+IOWeight=50
 
 [Install]
 WantedBy=default.target

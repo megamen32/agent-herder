@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ZcodeClientLike } from "../src/adapters/zcode-protocol.js";
-import { ZcodeAdapter } from "../src/adapters/zcode.js";
+import { ZcodeAdapter, resolveConfiguredZcodeModel, zcodeConfiguredModels } from "../src/adapters/zcode.js";
 import { markLifecycleEvent } from "../src/session-lifecycle.js";
 
 const session = {
@@ -86,6 +86,31 @@ class StaleStatusClient extends FakeClient {
 }
 
 describe("ZCode adapter", () => {
+  it("publishes friendly provider model names and resolves them to native provider ids", () => {
+    const config = {
+      model: { main: "provider-uuid/minimax/MiniMax-M3" },
+      provider: {
+        "provider-uuid": {
+          name: "omniroute",
+          models: {
+            "minimax/MiniMax-M3": {},
+            "zc/glm-5.3-flash": {},
+          },
+        },
+      },
+    };
+
+    expect(zcodeConfiguredModels(config)).toEqual([
+      "provider-uuid/minimax/MiniMax-M3",
+      "omniroute/minimax/MiniMax-M3",
+      "omniroute/zc/glm-5.3-flash",
+    ]);
+    expect(resolveConfiguredZcodeModel("omniroute/zc/glm-5.3-flash", config)).toEqual({
+      providerId: "provider-uuid",
+      modelId: "zc/glm-5.3-flash",
+    });
+  });
+
   it("normalizes native zcode-task event subscriptions", async () => {
     const client = new FakeClient();
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });

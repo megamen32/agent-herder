@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { describe, expect, it, afterEach } from "vitest";
-import { OpenCodeAdapter, parseOpenCodeServerCommand } from "../src/adapters/opencode.js";
+import { OpenCodeAdapter, openCodeConnectedModels, parseOpenCodeServerCommand } from "../src/adapters/opencode.js";
 import { handleFindParent, handleListChildren, handleSendMessage } from "../src/mcp-tools/handlers.js";
 import { newOrResumeNamedSession } from "../src/named-session.js";
 
@@ -38,6 +38,41 @@ describe("OpenCode native recovery controls", () => {
   it("derives the local server URL from an OpenCode serve command", () => {
     const command = ["/usr/bin/opencode", "serve", "--hostname", "127.0.0.1", "--port", "39225", ""].join(String.fromCharCode(0));
     expect(parseOpenCodeServerCommand(command)).toBe("http://127.0.0.1:39225");
+  });
+
+  it("lists every live model from connected OpenCode providers", async () => {
+    server = createServer((request, response) => {
+      response.setHeader("content-type", "application/json");
+      if (request.url === "/provider") {
+        return response.end(JSON.stringify({
+          connected: ["omniroute", "minimax-coding-plan"],
+          all: [
+            { id: "omniroute", models: { "zc/glm-5.3-flash": {}, "gpt-5.6-sol": {} } },
+            { id: "minimax-coding-plan", models: { "MiniMax-M3.1-Flash-Preview": {} } },
+            { id: "disconnected", models: { hidden: {} } },
+          ],
+        }));
+      }
+      response.statusCode = 404;
+      response.end(JSON.stringify({ error: "not found" }));
+    }).listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
+    port = (server.address() as { port: number }).port;
+
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+
+    expect(await adapter.listModels()).toEqual([
+      "omniroute/zc/glm-5.3-flash",
+      "omniroute/gpt-5.6-sol",
+      "minimax-coding-plan/MiniMax-M3.1-Flash-Preview",
+    ]);
+  });
+
+  it("normalizes array-shaped provider catalogs without duplicates", () => {
+    expect(openCodeConnectedModels({
+      connected: ["minimax-coding-plan"],
+      all: [{ id: "minimax-coding-plan", models: [{ id: "MiniMax-M3.1-Flash-Preview" }, { id: "MiniMax-M3.1-Flash-Preview" }] }],
+    })).toEqual(["minimax-coding-plan/MiniMax-M3.1-Flash-Preview"]);
   });
 
   it("lists children, forks, and queues a recovery prompt", async () => {

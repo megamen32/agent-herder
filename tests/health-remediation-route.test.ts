@@ -9,7 +9,7 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
 });
 
-function trackedNamedAdapter(harness: "opencode" | "hermes") {
+function trackedNamedAdapter(harness: "opencode" | "hermes" | "zcode") {
   const sessions: AgentSession[] = [];
   let createCalls = 0;
   const adapter: HarnessAdapter = {
@@ -74,12 +74,12 @@ function approvedHermesAdapter() {
 }
 
 describe("health remediation route harness guard", () => {
-  it("rejects a Hermes harness when the execution profile is canonical OpenCode", async () => {
-    const opencode = trackedNamedAdapter("opencode");
+  it("rejects a Hermes harness when the execution profile is canonical ZCode", async () => {
+    const zcode = trackedNamedAdapter("zcode");
     const hermes = approvedHermesAdapter();
     const server = createWebServer({
       adapters: new Map([
-        ["opencode", opencode.adapter],
+        ["zcode", zcode.adapter],
         ["hermes", hermes.adapter],
       ]),
       converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
@@ -98,20 +98,20 @@ describe("health remediation route harness guard", () => {
         name: "health_repair_inc-health-guard-1",
         cwd: "/tmp",
         message: "Repair the selected health incident and report useful progress.",
-        execution: { runtime: "opencode", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
+        execution: { runtime: "zcode", provider: "omniroute", model: "zc/glm-5.3-flash", reasoning: "high", topic: "health" },
       }),
     });
 
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: expect.any(String) });
     expect(hermes.createCalls).toBe(0);
-    expect(opencode.createCalls).toBe(0);
+    expect(zcode.createCalls).toBe(0);
   });
 
-  it("still accepts the canonical OpenCode health remediation request", async () => {
-    const opencode = trackedNamedAdapter("opencode");
+  it("accepts the canonical ZCode health remediation request", async () => {
+    const zcode = trackedNamedAdapter("zcode");
     const server = createWebServer({
-      adapters: new Map([["opencode", opencode.adapter]]),
+      adapters: new Map([["zcode", zcode.adapter]]),
       converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
     });
     servers.push(server);
@@ -124,15 +124,15 @@ describe("health remediation route harness guard", () => {
       body: JSON.stringify({
         incident_id: "inc-health-guard-2",
         plan_id: "repair",
-        harness: "opencode",
+        harness: "zcode",
         name: "health_repair_inc-health-guard-2",
         cwd: "/tmp",
         message: "Repair the selected health incident and report useful progress.",
-        execution: { runtime: "opencode", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
+        execution: { runtime: "zcode", provider: "omniroute", model: "zc/glm-5.3-flash", reasoning: "high", topic: "health" },
       }),
     });
 
     expect(response.status).toBe(200);
-    expect(opencode.createCalls).toBe(1);
+    expect(zcode.createCalls).toBe(1);
   });
 });

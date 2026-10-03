@@ -1,15 +1,15 @@
 export interface HealthExecutionProfile {
-  runtime: "opencode";
-  provider: "openai-codex";
-  model: "gpt-5.6-luna";
+  runtime: "zcode";
+  provider: "omniroute";
+  model: "zc/glm-5.3-flash";
   reasoning: "high";
   topic: "health";
 }
 
 const CANONICAL_PROFILE: HealthExecutionProfile = {
-  runtime: "opencode",
-  provider: "openai-codex",
-  model: "gpt-5.6-luna",
+  runtime: "zcode",
+  provider: "omniroute",
+  model: "zc/glm-5.3-flash",
   reasoning: "high",
   topic: "health",
 };
@@ -44,5 +44,5 @@ export function normalizeHealthExecution(value: unknown): HealthExecutionProfile
 
 /** Translate the provider/model contract to the selected coding harness. */
 export function healthModelForHarness(harness: string, execution: HealthExecutionProfile): string {
-  return harness === "opencode" ? `${execution.provider}/${execution.model}` : execution.model;
+  return harness === "opencode" || harness === "zcode" ? `${execution.provider}/${execution.model}` : execution.model;
 }

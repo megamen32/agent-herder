@@ -44,19 +44,19 @@ function fakeAdapter(): HarnessAdapter {
   };
 }
 
-function fakeNamedAdapter(): HarnessAdapter {
+function fakeNamedAdapter(harness: "opencode" | "zcode" = "opencode"): HarnessAdapter {
   const sessions: AgentSession[] = [];
   let nextId = 0;
   return {
-    type: "opencode",
-    name: "Fake OpenCode",
+    type: harness,
+    name: `Fake ${harness}`,
     async init() {},
     async listSessions() { return [...sessions]; },
     async getSession(id) { return sessions.find((session) => session.id === id) || null; },
     async createSession(options) {
       const session: AgentSession = {
         id: `named-${++nextId}`,
-        harness: "opencode",
+        harness,
         status: "idle",
         title: options.name,
         cwd: options.cwd,
@@ -164,7 +164,7 @@ describe("agent-herder web API", () => {
 
   it("accepts one canonical health remediation request and returns the selected execution profile", async () => {
     const server = createWebServer({
-      adapters: new Map([["opencode", fakeNamedAdapter()]]),
+      adapters: new Map([["zcode", fakeNamedAdapter("zcode")]]),
       converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
     });
     servers.push(server);
@@ -177,11 +177,11 @@ describe("agent-herder web API", () => {
       body: JSON.stringify({
         incident_id: "inc-health-1",
         plan_id: "repair",
-        harness: "opencode",
+        harness: "zcode",
         name: "health_repair_inc-health-1",
         cwd: "/tmp",
         message: "Repair the selected health incident and report useful progress.",
-        execution: { runtime: "opencode", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
+        execution: { runtime: "zcode", provider: "omniroute", model: "zc/glm-5.3-flash", reasoning: "high", topic: "health" },
       }),
     });
     expect(response.status).toBe(200);
@@ -189,14 +189,14 @@ describe("agent-herder web API", () => {
       ok: true,
       incident_id: "inc-health-1",
       plan_id: "repair",
-      model: "openai-codex/gpt-5.6-luna",
-      execution: { runtime: "opencode", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
+      model: "omniroute/zc/glm-5.3-flash",
+      execution: { runtime: "zcode", provider: "omniroute", model: "zc/glm-5.3-flash", reasoning: "high", topic: "health" },
     });
   });
 
-  it("routes the canonical health profile to the real OpenCode harness", async () => {
+  it("routes the canonical health profile to the real ZCode harness", async () => {
     const server = createWebServer({
-      adapters: new Map([["opencode", fakeNamedAdapter()]]),
+      adapters: new Map([["zcode", fakeNamedAdapter("zcode")]]),
       converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
     });
     servers.push(server);
@@ -208,19 +208,19 @@ describe("agent-herder web API", () => {
       body: JSON.stringify({
         incident_id: "inc-health-hermes-1",
         plan_id: "repair",
-        harness: "opencode",
-        name: "health_repair_opencode_inc-health-1",
+        harness: "zcode",
+        name: "health_repair_zcode_inc-health-1",
         cwd: "/tmp",
         message: "Run the selected health remediation job.",
-        execution: { runtime: "opencode", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
+        execution: { runtime: "zcode", provider: "omniroute", model: "zc/glm-5.3-flash", reasoning: "high", topic: "health" },
       }),
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       ok: true,
-      harness: "opencode",
-      model: "openai-codex/gpt-5.6-luna",
-      execution: { runtime: "opencode", provider: "openai-codex", model: "gpt-5.6-luna", reasoning: "high", topic: "health" },
+      harness: "zcode",
+      model: "omniroute/zc/glm-5.3-flash",
+      execution: { runtime: "zcode", provider: "omniroute", model: "zc/glm-5.3-flash", reasoning: "high", topic: "health" },
     });
   });
 

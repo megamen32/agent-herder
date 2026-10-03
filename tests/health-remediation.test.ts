@@ -2,17 +2,17 @@ import { describe, expect, it } from "vitest";
 import { normalizeHealthExecution } from "../src/health-remediation.js";
 
 describe("health remediation execution profile", () => {
-  it("accepts the canonical OpenCode/OpenAI-Codex/Luna high profile", () => {
+  it("accepts the canonical ZCode/OmniRoute/GLM Flash profile", () => {
     expect(normalizeHealthExecution({
-      runtime: "opencode",
-      provider: "openai-codex",
-      model: "gpt-5.6-luna",
+      runtime: "zcode",
+      provider: "omniroute",
+      model: "zc/glm-5.3-flash",
       reasoning: "high",
       topic: "health",
     })).toEqual({
-      runtime: "opencode",
-      provider: "openai-codex",
-      model: "gpt-5.6-luna",
+      runtime: "zcode",
+      provider: "omniroute",
+      model: "zc/glm-5.3-flash",
       reasoning: "high",
       topic: "health",
     });
@@ -20,8 +20,8 @@ describe("health remediation execution profile", () => {
 
   it("rejects a profile that silently changes runtime, provider, model, or reasoning", () => {
     expect(() => normalizeHealthExecution({
-      runtime: "opencode",
-      provider: "openai-codex",
+      runtime: "zcode",
+      provider: "omniroute",
       model: "gpt-4o",
       reasoning: "high",
       topic: "health",
@@ -31,8 +31,8 @@ describe("health remediation execution profile", () => {
   it("rejects Hermes as the canonical runtime", () => {
     expect(() => normalizeHealthExecution({
       runtime: "hermes",
-      provider: "openai-codex",
-      model: "gpt-5.6-luna",
+      provider: "omniroute",
+      model: "zc/glm-5.3-flash",
       reasoning: "high",
       topic: "health",
     })).toThrow(/runtime/);

@@ -33,6 +33,14 @@ interface ZcodeModelRef {
   variant?: string;
 }
 
+interface ZcodeLocalConfig {
+  model?: Record<string, unknown>;
+  provider?: Record<string, {
+    name?: string;
+    models?: Record<string, unknown>;
+  }>;
+}
+
 interface ZcodeSessionInfo {
   sessionId: string;
   workspace?: { workspacePath?: string; workspaceIdentity?: string };
@@ -129,6 +137,38 @@ function parseModelName(value: string, currentProviderId?: string): ZcodeModelRe
   }
   if (!currentProviderId) return undefined;
   return { providerId: currentProviderId, modelId: trimmed };
+}
+
+export function zcodeConfiguredModels(config: ZcodeLocalConfig): string[] {
+  const result = Object.values(config.model ?? {})
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim());
+  for (const [providerId, provider] of Object.entries(config.provider ?? {})) {
+    const alias = provider.name?.trim() || providerId;
+    for (const modelId of Object.keys(provider.models ?? {})) {
+      result.push(`${alias}/${modelId}`);
+    }
+  }
+  return [...new Set(result)];
+}
+
+export function resolveConfiguredZcodeModel(value: string, config: ZcodeLocalConfig): ZcodeModelRef | undefined {
+  const separator = value.indexOf("/");
+  if (separator <= 0) return undefined;
+  const providerAlias = value.slice(0, separator).trim();
+  const modelAndVariant = value.slice(separator + 1);
+  const variantSeparator = modelAndVariant.indexOf("#");
+  const modelId = variantSeparator >= 0 ? modelAndVariant.slice(0, variantSeparator) : modelAndVariant;
+  for (const [providerId, provider] of Object.entries(config.provider ?? {})) {
+    if (providerId !== providerAlias && provider.name?.trim().toLowerCase() !== providerAlias.toLowerCase()) continue;
+    if (!Object.hasOwn(provider.models ?? {}, modelId)) continue;
+    return {
+      providerId,
+      modelId,
+      ...(variantSeparator >= 0 ? { variant: modelAndVariant.slice(variantSeparator + 1) } : {}),
+    };
+  }
+  return undefined;
 }
 
 function mapStatus(status: unknown): AgentSession["status"] {
@@ -615,7 +655,14 @@ export class ZcodeAdapter implements HarnessAdapter {
       const snapshot = await this.readSnapshot(sessionId, workspace, 1);
       const current = record(record(snapshot).settings).model;
       const currentModel = record(current).current as ZcodeModelRef | undefined;
-      const modelRef = parseModelName(model, currentModel?.providerId);
+      let configuredRef: ZcodeModelRef | undefined;
+      if (this.useLocalConfig) {
+        try {
+          const config = JSON.parse(await readFile(join(homedir(), ".zcode", "cli", "config.json"), "utf8")) as ZcodeLocalConfig;
+          configuredRef = resolveConfiguredZcodeModel(model, config);
+        } catch { /* local CLI config is optional */ }
+      }
+      const modelRef = configuredRef || parseModelName(model, currentModel?.providerId);
       if (!modelRef?.providerId || !modelRef.modelId) {
         return { ok: false, error: "ZCode model must be provider/model or a model ID with a known current provider" };
       }
@@ -728,10 +775,8 @@ export class ZcodeAdapter implements HarnessAdapter {
     const configured = [...this.modelIds];
     if (this.useLocalConfig) {
       try {
-        const raw = JSON.parse(await readFile(join(homedir(), ".zcode", "cli", "config.json"), "utf8")) as { model?: Record<string, unknown> };
-        for (const value of Object.values(raw.model ?? {})) {
-          if (typeof value === "string" && value.trim()) configured.push(value.trim());
-        }
+        const raw = JSON.parse(await readFile(join(homedir(), ".zcode", "cli", "config.json"), "utf8")) as ZcodeLocalConfig;
+        configured.push(...zcodeConfiguredModels(raw));
       } catch { /* local CLI config is optional */ }
     }
     // Model refresh is passive discovery: never initialize/spawn the stdio
