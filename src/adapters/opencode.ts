@@ -214,32 +214,10 @@ export class OpenCodeAdapter implements HarnessAdapter {
       // status endpoint may fail
     }
 
-    return Promise.all(sessions.map(async (s) => {
+    return sessions.map((s) => {
       const st = statuses[s.id] as typeof statuses[string] | undefined;
       const status = this.mapStatus(st?.status || st?.type);
       const perm = st?.permission as { id: string; type: string; description: string; toolName?: string; details?: string } | undefined;
-
-      // Try to get last message from the session messages endpoint
-      let lastMessage: string | undefined;
-      try {
-        const messages = await this.fetchJson<Array<{ role?: string; content?: string | Array<{ type?: string; text?: string }>; parts?: Array<{ type?: string; text?: string }> }>>(
-          `/session/${s.id}/message?limit=1`
-        );
-        if (messages && messages.length > 0) {
-          const last = messages[messages.length - 1];
-          const content = last.content || last.parts;
-          if (content) {
-            if (typeof content === "string") {
-              lastMessage = content.slice(0, 300);
-            } else if (Array.isArray(content)) {
-              const textBlock = content.find((b) => b.type === "text");
-              if (textBlock?.text) lastMessage = textBlock.text.slice(0, 300);
-            }
-          }
-        }
-      } catch {
-        // messages endpoint may not exist or may fail
-      }
 
       return {
         id: s.id,
@@ -259,10 +237,9 @@ export class OpenCodeAdapter implements HarnessAdapter {
         } : undefined,
         costUsd: s.costUsd ?? s.cost,
         durationSec: this.durationSeconds(s.time?.created, s.createdAt),
-        lastMessage,
         meta: { createdAt: this.timestamp(s.time?.created, s.createdAt) },
       };
-    }));
+    });
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
