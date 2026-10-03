@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 export interface DetachedWorkloadOptions extends SpawnOptions {
   /** Short harness/workload label used only for the transient systemd scope name. */
   label: string;
+  /** Optional systemd scope limits for a bounded child workload. */
+  resourceProperties?: string[];
 }
 
 export interface IsolatedWorkloadCommand {
@@ -34,7 +36,7 @@ export function buildDetachedWorkloadCommand(
   args: string[],
   options: DetachedWorkloadOptions,
 ): IsolatedWorkloadCommand {
-  const { label, env, ...spawnOptions } = options;
+  const { label, env, resourceProperties = [], ...spawnOptions } = options;
   const isolationDisabled = process.env.AGENT_HERDER_WORKLOAD_ISOLATION === "off" || process.env.VITEST === "true";
   if (isolationDisabled || process.platform !== "linux") {
     return {
@@ -54,6 +56,7 @@ export function buildDetachedWorkloadCommand(
       "--quiet",
       "--collect",
       `--unit=${unitName}`,
+      ...resourceProperties.flatMap((property) => ["--property", property]),
       command,
       ...args,
     ],

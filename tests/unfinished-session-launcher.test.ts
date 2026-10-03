@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -28,6 +28,14 @@ function enabledSettings(root: string) {
   return { settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) };
 }
 
+async function waitUntil(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("timed out waiting for launcher state");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 function fixtureAdapter(session: AgentSession, calls: { resumes: number; messages: string[] }): HarnessAdapter {
   return {
     type: session.harness,
@@ -35,6 +43,10 @@ function fixtureAdapter(session: AgentSession, calls: { resumes: number; message
     async init() {},
     async listSessions() { return [{ ...session }]; },
     async getSession(id) { return id === session.id ? { ...session } : null; },
+    async getSessionMessages(id) {
+      if (id !== session.id) return null;
+      return [{ id: "message-1", role: "user", text: "Продолжи.", parts: [{ type: "text", text: "Продолжи." }] }];
+    },
     async sendMessage(id, input) {
       expect(id).toBe(session.id);
       calls.messages.push(input.message);
@@ -102,7 +114,7 @@ describe("unfinished session launcher", () => {
     }
   });
 
-  it.each(["codex", "zcode"] as const)("does not trust a stale %s running status from the previous Herder generation", async (harness) => {
+  it.each(["codex", "zcode"] as const)("does not duplicate a %s running session from the previous Herder generation", async (harness) => {
     const root = await mkdtemp(join(tmpdir(), `agent-herder-autostart-generation-${harness}-`));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const session = fixtureSession("running", harness);
@@ -118,9 +130,8 @@ describe("unfinished session launcher", () => {
 
     await launcher.recoverPending();
 
-    expect(calls.resumes).toBe(1);
-    expect(calls.messages).toHaveLength(1);
-    expect((await store.list())[0]).toMatchObject({ generationId: "new-process", attempts: 1, state: "active" });
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect((await store.list())[0]).toMatchObject({ generationId: "new-process", attempts: 0, state: "active" });
   });
 
   it("bounds restart retries and emits one Russian Notice Place incident", async () => {
@@ -161,6 +172,17 @@ describe("unfinished session launcher", () => {
     expect(await settingsStore.getEffective("codex", "codex-1", "/tmp/codex")).toMatchObject({ enabled: true, source: "global" });
   });
 
+  it("migrates v1 settings and supports a harness-wide opt-out below the global default", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-v1-"));
+    const path = join(root, "settings.json");
+    await writeFile(path, JSON.stringify({ version: 1, enabled: true, sessions: [] }));
+    const settingsStore = new SessionAutostartStore(path, {});
+    expect(await settingsStore.getSettings()).toMatchObject({ version: 2, enabled: true, harnesses: [] });
+    await settingsStore.setHarness("opencode", false);
+    expect(await settingsStore.getEffective("opencode", "session-1", "/tmp/opencode")).toMatchObject({ enabled: false, source: "harness" });
+    expect(await settingsStore.getEffective("codex", "session-2", "/tmp/codex")).toMatchObject({ enabled: true, source: "global" });
+  });
+
   it("retries inside one Herder process and stops after the configured attempt budget", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-live-retry-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -177,9 +199,146 @@ describe("unfinished session launcher", () => {
     });
     const stop = launcher.start();
     for (let tick = 0; tick < 30 && resumes < 3; tick += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+    for (let tick = 0; tick < 30 && (await store.list())[0]?.state !== "exhausted"; tick += 1) await new Promise((resolve) => setTimeout(resolve, 10));
     stop();
 
     expect(resumes).toBe(3);
     expect((await store.list())[0]).toMatchObject({ attempts: 3, state: "exhausted" });
+  });
+
+  it("discovers an unfinished session from adapter history and reconciles it again without a process restart", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-reconcile-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const calls = { resumes: 0, messages: [] as string[] };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", fixtureAdapter(fixtureSession("idle"), calls)]]),
+      store,
+      ...enabledSettings(root),
+      maxAttempts: 3,
+      retryDelayMs: 0,
+      reconcileIntervalMs: 10,
+    });
+
+    const stop = launcher.start();
+    await waitUntil(() => calls.resumes === 1);
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    stop();
+
+    expect(calls.resumes).toBe(1);
+    expect(calls.messages).toHaveLength(1);
+  });
+
+  it("does not prompt a running discovered session during repeated reconciliation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-running-reconcile-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const calls = { resumes: 0, messages: [] as string[] };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", fixtureAdapter(fixtureSession("running"), calls)]]),
+      store,
+      ...enabledSettings(root),
+      reconcileIntervalMs: 10,
+    });
+
+    const stop = launcher.start();
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    stop();
+
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await store.list()).toHaveLength(1);
+  });
+
+  it("keeps a completed session removed across later reconciliation cycles", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-completed-reconcile-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const calls = { resumes: 0, messages: [] as string[] };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", fixtureAdapter(fixtureSession("idle"), calls)]]),
+      store,
+      ...enabledSettings(root),
+      retryDelayMs: 0,
+      reconcileIntervalMs: 10,
+    });
+
+    const stop = launcher.start();
+    await waitUntil(() => calls.resumes === 1);
+    await launcher.handleEvent("zcode", { kind: "turn.completed", harness: "zcode", sessionId: "session-1" });
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    stop();
+
+    expect(calls.resumes).toBe(1);
+    expect(await store.list()).toEqual([]);
+  });
+
+  it("stop clears the process-lifetime reconciliation timer", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-stop-reconcile-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    let lists = 0;
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(fixtureSession("running"), calls);
+    const listSessions = adapter.listSessions.bind(adapter);
+    adapter.listSessions = async () => { lists += 1; return listSessions(); };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]),
+      store,
+      ...enabledSettings(root),
+      reconcileIntervalMs: 10,
+    });
+
+    const stop = launcher.start();
+    await waitUntil(() => lists >= 2);
+    stop();
+    const stoppedAt = lists;
+    await new Promise((resolve) => setTimeout(resolve, 35));
+
+    expect(lists).toBe(stoppedAt);
+  });
+
+  it("rolls a stale session into a new cache handoff instead of resuming the expensive history", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-handoff-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const old = fixtureSession("idle", "codex");
+    await store.markStarted(old);
+    const calls = { resumes: 0, messages: [] as string[] };
+    const oldAdapter = fixtureAdapter(old, calls);
+    const next = { ...old, id: "session-2", status: "running" as const, lastActivity: "2026-10-03T13:00:00.000Z" };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", oldAdapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), retryDelayMs: 0,
+      cacheHandoff: { async maybeRollover() { return { kind: "rolled_over", session: next, ageMs: 3_600_000, cache: { ttlMs: 1_800_000, source: "openai-30m" } }; } },
+    });
+    await launcher.recoverPending();
+    expect(calls.resumes).toBe(0);
+    expect(await store.list()).toMatchObject([{ sessionId: "session-2", state: "active" }]);
+  });
+
+  it("discovers a recent stopped session whose last turn is still unanswered", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-discovery-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = { ...fixtureSession("idle", "codex"), lastActivity: new Date(Date.now() - 1_000).toISOString() };
+    const calls = { resumes: 0, messages: [] as string[] };
+    const candidate = fixtureAdapter(session, calls);
+    candidate.getSessionMessages = async () => [{ id: "last", role: "user", text: "Продолжи", parts: [{ type: "text", text: "Продолжи" }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", candidate]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), retryDelayMs: 0, discoveryIdleMs: 1,
+    }).recoverPending();
+    expect(calls.resumes).toBe(1);
+    expect(calls.messages).toHaveLength(1);
+    expect(await store.list()).toMatchObject([{ sessionId: "session-1", state: "active" }]);
+  });
+
+  it("records but never double-prompts a session that its harness still reports as running", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-running-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = { ...fixtureSession("running", "zcode"), lastActivity: new Date(Date.now() - 1_000).toISOString() };
+    const calls = { resumes: 0, messages: [] as string[] };
+    const candidate = fixtureAdapter(session, calls);
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", candidate]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), retryDelayMs: 0, discoveryIdleMs: 1,
+    }).recoverPending();
+    expect(calls.resumes).toBe(0);
+    expect(calls.messages).toHaveLength(0);
+    expect(await store.list()).toMatchObject([{ sessionId: "session-1", state: "active" }]);
   });
 });

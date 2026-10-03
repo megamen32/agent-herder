@@ -200,9 +200,19 @@ The common switches are:
 | `AGENT_HERDER_COORDINATION_NOTES` | `~/.local/state/agent-herder/coordination-notes.json` | Shared coordination board store |
 | `AGENT_HERDER_INJECTION_RESHOW_MS` | `2700000` | Re-inject unchanged rosters after this staleness window |
 | `AGENT_HERDER_AUTO_TTL_SECONDS` | `60` | Auto-reserved file-activity lease TTL |
+| `AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS` | `600000` | Recheck unfinished sessions and resume newly stalled work every 10 minutes |
+| `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | On restart, replace a stale documented-cache session with a compact MiniMax handoff in the same harness/model |
+| `AGENT_HERDER_HANDOFF_MODEL` | `generic.minimax/MiniMax-M3.1-Flash-Preview` | Fast Agent model used only to summarize stale sessions; it never executes the task |
+| `AGENT_HERDER_CACHE_TTL_MINUTES` | `{}` | JSON exact overrides such as `{"zcode:provider/model":30}`; unknown provider TTLs are never guessed |
+| `AGENT_HERDER_UNFINISHED_DISCOVERY_IDLE_MS` | `600000` | Do not classify a recently active native session as abandoned before this quiet period |
 | `AGENT_HERDER_WEB_PORT` | — | Serve the web UI + MCP over HTTP (singleton daemon mode) |
 | `AGENT_HERDER_HTTP_TOKEN` | — | Required when the web host is non-loopback |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_DIR` | `.agent-herder/transcripts` | Relative archive path inside the MCP process CWD |
+
+Cache-aware restart uses 30 minutes for documented GPT-5.6+ cache retention,
+and a conservative 5-minute boundary for GLM-5.3 and MiniMax M3/M3.1. Z.ai's
+public docs do not promise a fixed TTL, while MiniMax explicitly describes its
+passive expiry as load-adjusted; the source is retained in each policy result.
 
 ## Develop locally
 

@@ -280,9 +280,14 @@ export class OpenCodeAdapter implements HarnessAdapter {
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
     const query = new URLSearchParams({ directory: options.cwd });
+    const separator = options.model?.indexOf("/") ?? -1;
+    const requestedModel = separator > 0 ? {
+      providerID: options.model!.slice(0, separator),
+      id: options.model!.slice(separator + 1),
+    } : undefined;
     const session = await this.fetchJson<OpenCodeSessionPayload>(`/session?${query.toString()}`, {
       method: "POST",
-      body: JSON.stringify({ title: options.name }),
+      body: JSON.stringify({ title: options.name, ...(requestedModel ? { model: requestedModel } : {}) }),
     });
     return this.toSession(session);
   }

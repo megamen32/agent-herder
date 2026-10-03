@@ -296,7 +296,12 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     const firstPreview = stringValue(record.snapshot.metadata?.first_user_preview);
     const title = stringValue(record.snapshot.metadata?.title) || stringValue(record.snapshot.metadata?.label) || firstPreview?.split(/\r?\n/, 1)[0] || `Fast Agent · ${nativeId}`;
     const lastActivity = stringValue(record.snapshot.last_activity) || stringValue(record.snapshot.created_at) || new Date(0).toISOString();
-    const status = record.liveProcess ? "running" as const : sessionStatus(executionStatus);
+    const persistedStatus = sessionStatus(executionStatus);
+    // A finished execution is authoritative. Historical shell metadata can
+    // contain a PID which the OS has since reused for an unrelated process.
+    const status = persistedStatus === "stopped" || persistedStatus === "error"
+      ? persistedStatus
+      : record.liveProcess ? "running" as const : persistedStatus;
     const usage = record.snapshot.analysis?.usage_summary as Record<string, unknown> | undefined;
     const promptTokens = typeof usage?.prompt_tokens === "number" ? usage.prompt_tokens : undefined;
     const completionTokens = typeof usage?.completion_tokens === "number" ? usage.completion_tokens : undefined;
@@ -410,12 +415,31 @@ function contentParts(value: unknown): SessionMessagePart[] {
     if (!block || typeof block !== "object") continue;
     const item = block as Record<string, unknown>;
     const type = stringValue(item.type);
-    if (type === "text") parts.push({ type: "text", text: stringValue(item.text) || stringValue(item.content) || "" });
+    if (type === "text") parts.push(...splitFastAgentText(stringValue(item.text) || stringValue(item.content) || ""));
     else if (type === "thinking" || type === "reasoning") parts.push({ type: "thinking", text: stringValue(item.text) || stringValue(item.content) || "" });
     else if (type === "tool_use" || type === "tool_call") parts.push({ type: "tool_call", name: stringValue(item.name) || stringValue(item.tool_name) || "tool", input: item.input ?? item.arguments });
     else if (type === "tool_result") parts.push({ type: "tool_result", name: stringValue(item.name), output: stringValue(item.output) || stringValue(item.content), error: item.is_error === true || item.error === true });
   }
   return parts.filter((part) => partText(part) || part.type === "tool_call");
+}
+
+/** MiniMax-compatible transcripts sometimes embed reasoning in text blocks. */
+function splitFastAgentText(value: string): SessionMessagePart[] {
+  if (!value.includes("<think>")) return value ? [{ type: "text", text: value }] : [];
+  const parts: SessionMessagePart[] = [];
+  const pattern = /<think>([\s\S]*?)<\/think>/gi;
+  let cursor = 0;
+  for (const match of value.matchAll(pattern)) {
+    const index = match.index ?? cursor;
+    const before = value.slice(cursor, index).replace(/<\/think>/gi, "").trim();
+    if (before) parts.push({ type: "text", text: before });
+    const thinking = (match[1] || "").trim();
+    if (thinking) parts.push({ type: "thinking", text: thinking });
+    cursor = index + match[0].length;
+  }
+  const after = value.slice(cursor).replace(/<\/?think>/gi, "").trim();
+  if (after) parts.push({ type: "text", text: after });
+  return parts;
 }
 
 function extractFastAgentUsage(history: unknown): FastAgentUsage {

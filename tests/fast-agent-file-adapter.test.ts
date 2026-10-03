@@ -10,7 +10,7 @@ afterEach(async () => {
 });
 
 describe("Fast Agent persisted observer", () => {
-  it("reports running when persisted shell metadata points at a live OS process", async () => {
+  it("does not revive a completed session when a stale shell PID was reused", async () => {
     const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-live-"));
     cleanups.push(home);
     const sessionDir = join(home, "sessions", "session-live");
@@ -23,7 +23,25 @@ describe("Fast Agent persisted observer", () => {
     }] }));
     const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/bin/true" });
     const [session] = await adapter.listSessions();
-    expect(session.status).toBe("running");
+    expect(session.status).toBe("stopped");
+  });
+
+  it("separates embedded MiniMax reasoning from the visible answer", async () => {
+    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-think-"));
+    cleanups.push(home);
+    const sessionDir = join(home, "sessions", "session-think");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, "session.json"), JSON.stringify({ session_id: "session-think", execution: { status: "completed" } }));
+    await writeFile(join(sessionDir, "history_dev.json"), JSON.stringify({ messages: [{
+      role: "assistant", timestamp: new Date().toISOString(), content: [{ type: "text", text: "<think>internal plan</think>\n\nГотово." }]
+    }] }));
+    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/bin/true" });
+    const messages = await adapter.getSessionMessages("fast-agent:session-think", 1);
+    expect(messages?.[0].parts).toEqual([
+      { type: "thinking", text: "internal plan" },
+      { type: "text", text: "Готово." },
+    ]);
+    expect(messages?.[0].text).toBe("internal plan\nГотово.");
   });
 
   it("lists native sessions and exposes recent messages without starting a process", async () => {

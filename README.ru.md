@@ -164,8 +164,18 @@ npx -y agent-herder
 | `AGENT_HERDER_COORDINATION_NOTES` | `~/.local/state/agent-herder/coordination-notes.json` | Общее хранилище досок |
 | `AGENT_HERDER_INJECTION_RESHOW_MS` | `2700000` | Повтор инжекта неизменившихся ростеров |
 | `AGENT_HERDER_AUTO_TTL_SECONDS` | `60` | TTL авто-лиз файловой активности |
+| `AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS` | `600000` | Сверять незавершённые сессии и продолжать остановившиеся задачи каждые 10 минут |
+| `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | При рестарте заменять сессию с истёкшим документированным кэшем на новую в том же харнесе/модели через краткий handoff MiniMax |
+| `AGENT_HERDER_HANDOFF_MODEL` | `generic.minimax/MiniMax-M3.1-Flash-Preview` | Модель Fast Agent только для суммаризации; задачу она не выполняет |
+| `AGENT_HERDER_CACHE_TTL_MINUTES` | `{}` | JSON с точными override, например `{"zcode:provider/model":30}`; неизвестный TTL не угадывается |
+| `AGENT_HERDER_UNFINISHED_DISCOVERY_IDLE_MS` | `600000` | Не считать свежую активную native-сессию брошенной до истечения этого периода тишины |
 | `AGENT_HERDER_WEB_PORT` | — | Web UI + MCP поверх HTTP (режим демона) |
 | `AGENT_HERDER_HTTP_TOKEN` | — | Обязателен для не-loopback хоста |
+
+Cache-aware restart использует 30 минут для документированного кэша GPT-5.6+
+и консервативные 5 минут для GLM-5.3 и MiniMax M3/M3.1. Z.ai не обещает
+фиксированный TTL, а MiniMax прямо называет срок пассивного кэша динамическим;
+поэтому происхождение порога сохраняется в результате policy.
 
 ## Разработка
 

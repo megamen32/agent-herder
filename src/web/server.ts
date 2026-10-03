@@ -639,6 +639,23 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (typeof body.enabled !== "boolean") return sendJson(response, 400, { error: "enabled is required" });
     return sendJson(response, 200, { ...await sessionAutostartStore.setGlobal(body.enabled), source: "persisted" });
   }
+  const autostartHarnessMatch = url.pathname.match(/^\/api\/session-autostart\/harnesses\/([^/]+)$/);
+  if (autostartHarnessMatch && (request.method === "GET" || request.method === "PUT" || request.method === "DELETE")) {
+    if (!sessionAutostartStore) return sendJson(response, 503, { error: "Session autostart settings are disabled" });
+    const harness = decodeURIComponent(autostartHarnessMatch[1]);
+    try {
+      if (request.method === "GET") return sendJson(response, 200, { harness, ...await sessionAutostartStore.getHarnessEffective(harness) });
+      if (request.method === "DELETE") {
+        await sessionAutostartStore.deleteHarness(harness);
+        return sendJson(response, 200, { harness, ...await sessionAutostartStore.getHarnessEffective(harness) });
+      }
+      const body = await readJson(request);
+      if (typeof body.enabled !== "boolean") return sendJson(response, 400, { error: "enabled is required" });
+      return sendJson(response, 200, { ...await sessionAutostartStore.setHarness(harness, body.enabled), source: "harness" });
+    } catch (error) {
+      return sendJson(response, 400, { error: (error as Error).message });
+    }
+  }
   const autostartSessionMatch = url.pathname.match(/^\/api\/session-autostart\/sessions\/([^/]+)\/([^/]+)$/);
   if (autostartSessionMatch && (request.method === "GET" || request.method === "PUT" || request.method === "DELETE")) {
     if (!sessionAutostartStore) return sendJson(response, 503, { error: "Session autostart settings are disabled" });

@@ -173,7 +173,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
     await this.ensureReady();
-    const result = await this.request("thread/start", { cwd: options.cwd }) as { thread?: CodexThread };
+    const result = await this.request("thread/start", { cwd: options.cwd, ...(options.model ? { model: options.model } : {}) }) as { thread?: CodexThread };
     const thread = result.thread;
     if (!thread?.id) throw new Error("Codex thread/start did not return a thread id");
     await this.request("thread/name/set", { threadId: thread.id, name: options.name });

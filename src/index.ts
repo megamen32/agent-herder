@@ -17,6 +17,8 @@ import { SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStor
 import { createNoticePlacePayload, createNoticePlaceSink } from "./autopilot/index.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
 import { SessionSupervisor } from "./session-supervisor.js";
+import { LineageStore } from "./lineage-store.js";
+import { CacheHandoffService, FastAgentMiniMaxSummarizer } from "./cache-handoff.js";
 import { acquireAgentHerderSingleton } from "./singleton.js";
 import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
 import { createWebServer } from "./web/server.js";
@@ -71,6 +73,7 @@ const unfinishedSessionStore = new UnfinishedSessionStore(
 const sessionAutostartStore = new SessionAutostartStore(
   process.env.AGENT_HERDER_SESSION_AUTOSTART_SETTINGS || join(autopilotStateDir, "session-autostart.json"),
 );
+const lineageStore = new LineageStore(join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "agent-herder", "lineage.json"));
 const browserWakeService = createConfiguredBrowserWakeService(process.env);
 const adapterFactories = new Map<string, AdapterFactory>();
 const adapterRegistry = new AdapterRegistry(
@@ -504,13 +507,17 @@ async function main() {
     }
   }
   const processSessionConverter = new AgentHerderSessionConverter();
+  const cacheHandoff = process.env.AGENT_HERDER_CACHE_HANDOFF_ENABLED === "false"
+    ? undefined
+    : new CacheHandoffService(adapters, new FastAgentMiniMaxSummarizer(), lineageStore);
   const unfinishedSessionLauncher = new UnfinishedSessionLauncher({
     adapters,
     store: unfinishedSessionStore,
     settingsStore: sessionAutostartStore,
     notify: createUnfinishedSessionNotifier(),
+    cacheHandoff,
   });
-  const processSupervisor = new SessionSupervisor(adapters, processSessionConverter, undefined, {
+  const processSupervisor = new SessionSupervisor(adapters, processSessionConverter, lineageStore, {
     events: herderEvents,
     unfinishedSessions: unfinishedSessionLauncher,
   });
