@@ -87,18 +87,39 @@ describe("unfinished session launcher", () => {
       const root = await mkdtemp(join(tmpdir(), `agent-herder-autostart-${status}-`));
       const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
       const settings = enabledSettings(root);
-      await store.markStarted(fixtureSession(status));
+      await store.markStarted(fixtureSession(status), "same-process");
       const calls = { resumes: 0, messages: [] as string[] };
       const launcher = new UnfinishedSessionLauncher({
         adapters: new Map([["zcode", fixtureAdapter(fixtureSession(status), calls)]]),
         store,
         ...settings,
         retryDelayMs: 0,
+        generationId: "same-process",
       });
 
       await launcher.recoverPending();
       expect(calls).toEqual({ resumes: 0, messages: [] });
     }
+  });
+
+  it("does not trust a stale running status from the previous Herder generation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-generation-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    await store.markStarted(fixtureSession("running"), "old-process");
+    const calls = { resumes: 0, messages: [] as string[] };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", fixtureAdapter(fixtureSession("running"), calls)]]),
+      store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      retryDelayMs: 0,
+      generationId: "new-process",
+    });
+
+    await launcher.recoverPending();
+
+    expect(calls.resumes).toBe(1);
+    expect(calls.messages).toHaveLength(1);
+    expect((await store.list())[0]).toMatchObject({ generationId: "new-process", attempts: 1, state: "active" });
   });
 
   it("bounds restart retries and emits one Russian Notice Place incident", async () => {

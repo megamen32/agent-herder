@@ -110,6 +110,7 @@ export interface UnfinishedSessionRecord {
   title?: string;
   startedAt: string;
   updatedAt: string;
+  generationId: string;
   attempts: number;
   state: UnfinishedSessionState;
   nextAttemptAt?: string;
@@ -138,7 +139,7 @@ export class UnfinishedSessionStore {
     return (await this.read()).sessions.map((record) => ({ ...record }));
   }
 
-  async markStarted(session: AgentSession, now = new Date()): Promise<UnfinishedSessionRecord> {
+  async markStarted(session: AgentSession, generationId = "external", now = new Date()): Promise<UnfinishedSessionRecord> {
     const harness = harnessType(session.harness);
     const normalized = normalizeRecordTarget({
       harness,
@@ -156,6 +157,7 @@ export class UnfinishedSessionStore {
         ...normalized,
         startedAt: reset || !existing ? now.toISOString() : existing.startedAt,
         updatedAt: now.toISOString(),
+        generationId: bounded(generationId, "generationId"),
         attempts: reset ? 0 : existing?.attempts ?? 0,
         state: "active",
       };
@@ -256,6 +258,8 @@ export interface UnfinishedSessionLauncherOptions {
   retryDelayMs?: number;
   continuationMessage?: string;
   notify?: (notice: UnfinishedSessionNotice) => Promise<void>;
+  /** Stable only for one Agent Herder process; tests may inject it. */
+  generationId?: string;
 }
 
 /** Restarts only durable unfinished turns allowed by the independent opt-out setting. */
@@ -263,6 +267,7 @@ export class UnfinishedSessionLauncher {
   private readonly maxAttempts: number;
   private readonly retryDelayMs: number;
   private readonly continuationMessage: string;
+  private readonly generationId: string;
   private recovering: Promise<void> | null = null;
   private retryTimer?: NodeJS.Timeout;
   private started = false;
@@ -271,6 +276,7 @@ export class UnfinishedSessionLauncher {
     this.maxAttempts = positiveInteger(options.maxAttempts ?? Number(process.env.AGENT_HERDER_AUTOSTART_MAX_ATTEMPTS || 3), 3);
     this.retryDelayMs = nonNegativeInteger(options.retryDelayMs ?? Number(process.env.AGENT_HERDER_AUTOSTART_RETRY_DELAY_MS || 5_000), 5_000);
     this.continuationMessage = options.continuationMessage?.trim() || DEFAULT_CONTINUATION;
+    this.generationId = options.generationId?.trim() || `process-${process.pid}-${randomUUID()}`;
   }
 
   async handleEvent(provider: string, event: HarnessEvent): Promise<void> {
@@ -290,7 +296,7 @@ export class UnfinishedSessionLauncher {
     const adapter = this.options.adapters.get(session.harness);
     if (!adapter?.resumeSession) return false;
     if (!await this.isEnabled(session.harness, session.id, session.cwd)) return false;
-    await this.options.store.markStarted(session);
+    await this.options.store.markStarted(session, this.generationId);
     return true;
   }
 
@@ -364,8 +370,12 @@ export class UnfinishedSessionLauncher {
         await this.fail(record, errorText(error));
         continue;
       }
-      if (session?.status === "running" || session?.status === "needs_input" || session?.needsPermission) {
-        await this.options.store.markStarted(session);
+      if (session?.status === "needs_input" || session?.needsPermission) {
+        await this.options.store.markStarted(session, this.generationId);
+        continue;
+      }
+      if (session?.status === "running" && record.generationId === this.generationId) {
+        await this.options.store.markStarted(session, this.generationId);
         continue;
       }
       const attempt = await this.options.store.beginAttempt(record.harness, record.sessionId, this.maxAttempts, this.retryDelayMs);
@@ -384,7 +394,7 @@ export class UnfinishedSessionLauncher {
           lastActivity: new Date().toISOString(),
           model: record.model,
           needsPermission: false,
-        });
+        }, this.generationId);
         console.error(`[agent-herder] автоматически продолжена незавершённая сессия ${record.harness}:${record.sessionId}`);
       } catch (error) {
         await this.fail(attempt, errorText(error));
@@ -474,6 +484,7 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
     ...target,
     startedAt: isoDate(record.startedAt, "startedAt"),
     updatedAt: isoDate(record.updatedAt, "updatedAt"),
+    generationId: record.generationId === undefined ? "legacy" : bounded(record.generationId, "generationId"),
     attempts,
     state,
     ...(record.nextAttemptAt ? { nextAttemptAt: isoDate(record.nextAttemptAt, "nextAttemptAt") } : {}),
