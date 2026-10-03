@@ -1,4 +1,5 @@
-import { spawn as spawnProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawnIsolatedWorkload } from "../workload-launcher.js";
 
 const PROTOCOL_HEADER_SIZE = 13;
 const REGULAR_MESSAGE_TYPE = 1;
@@ -216,11 +217,12 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
   }
 
   private async startInternal(): Promise<void> {
-    const child = spawnProcess(this.command, this.args, {
+    const child = spawnIsolatedWorkload(this.command, this.args, {
+      label: "zcode-app-server",
       cwd: this.cwd,
       env: this.env ? { ...process.env, ...this.env } : process.env,
       stdio: ["pipe", "pipe", "pipe"],
-    });
+    }) as ChildProcessWithoutNullStreams;
     this.child = child;
     this.outputBuffer = Buffer.alloc(0);
     this.handshakeDone = false;

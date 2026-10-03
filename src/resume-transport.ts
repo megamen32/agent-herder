@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawnIsolatedWorkload } from "./workload-launcher.js";
 
 export type ResumeAgent = "codex" | "opencode" | "claude" | "hermes" | "zcode";
 
@@ -300,7 +301,10 @@ async function runEntrypoint(command: string, args: readonly string[], request: 
     const childArgs = includeRequestArgs
       ? [...args, "--target", JSON.stringify(request.target), "--prompt", prompt, ...(request.goal ? ["--goal", request.goal] : []), "--result-ref", request.result_ref, ...(request.idempotency_key ? ["--idempotency-key", request.idempotency_key] : []), "--execute"]
       : [...args];
-    const child = spawn(command, childArgs, { stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawnIsolatedWorkload(command, childArgs, {
+      label: "agent-resume",
+      stdio: ["ignore", "pipe", "ignore"],
+    }) as ChildProcessWithoutNullStreams;
     let stdout = "";
     let settled = false;
     const timer = setTimeout(() => {

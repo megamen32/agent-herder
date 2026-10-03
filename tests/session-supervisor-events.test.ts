@@ -90,4 +90,39 @@ describe("SessionSupervisor domain events", () => {
     expect(nativeCancels).toBeGreaterThan(0);
   });
 
+  it("automatically resumes the same native session once after duplicate failed-turn events", async () => {
+    let listener: ((event: HarnessEvent) => void) | undefined;
+    let resumes = 0;
+    let modelChanges = 0;
+    const adapter: HarnessAdapter = {
+      type: "codex", name: "auto-resume-fixture",
+      subscribeEvents(handler) { listener = handler; return () => { listener = undefined; }; },
+      async init() {}, async listSessions() { return []; }, async getSession() { return null; },
+      async sendMessage() { return { ok: true }; }, async stopSession() { return { ok: true }; },
+      async resumeSession(id) { resumes += 1; expect(id).toBe("failed-session"); return { ok: true }; },
+      async changeModel() { modelChanges += 1; return { ok: true }; },
+      async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+    };
+    const bus = new HerderEventBus();
+    const events: HerderEvent[] = [];
+    bus.subscribe((event) => events.push(event));
+    const supervisor = new SessionSupervisor(
+      new Map([["codex", adapter]]),
+      { async convert() { return { success: true }; } } as any,
+      undefined,
+      { events: bus, autoResumeDelayMs: 0, autoResumeMaxAttempts: 2 },
+    );
+    const stop = supervisor.startObservation(60_000);
+
+    const failed: HarnessEvent = { kind: "turn.failed", harness: "codex", sessionId: "failed-session" };
+    listener?.(failed);
+    listener?.(failed);
+    for (let attempt = 0; attempt < 20 && resumes === 0; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 2));
+
+    expect(resumes).toBe(1);
+    expect(modelChanges).toBe(0);
+    expect(events.map((event) => event.source)).toContain("auto-resume");
+    stop();
+  });
+
 });

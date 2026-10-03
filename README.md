@@ -230,11 +230,15 @@ The matching user-service template is
 [`deploy/systemd/agent-herder.service`](deploy/systemd/agent-herder.service).
 
 The managed server-100 service has a measured steady working set of roughly
-170 MiB and an explicit shared budget for the control plane plus its child
-harnesses: 1 GiB soft / 2 GiB hard RAM, 512 MiB swap, four CPUs, 512 tasks, and
-reduced I/O weight. Test workers and child sessions share that allowance; do
-not multiply it by running broad suites in parallel. Raise it only from fresh
-peak measurements while preserving the host reserve documented by
+170 MiB and a 1 GiB soft / 2 GiB hard RAM control-plane budget. Persistent
+adapter app servers, interactive sessions, MCP descendants, and health jobs
+run in independent transient systemd scopes, so their memory cannot throttle
+the supervisor that observes and resumes them. Failed native turns are resumed
+on the same session/model with bounded exponential backoff (three attempts by
+default); Herder never forks or switches providers during automatic recovery.
+The transient scopes still inherit server-100's outer per-workload and UID
+guards. Run no more than one heavy suite per agent and raise budgets only from
+fresh measurements while preserving the host reserve documented by
 ServersAdministartion.
 
 </details>

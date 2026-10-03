@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { type ChildProcessWithoutNullStreams } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import { readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
@@ -29,6 +29,7 @@ import type {
   HarnessCapabilities,
   HarnessEvent,
 } from "../types/index.js";
+import { spawnIsolatedWorkload } from "../workload-launcher.js";
 
 export interface AcpAgentConfig {
   profile: string;
@@ -333,11 +334,12 @@ export class AcpAdapter implements HarnessAdapter {
   }
 
   private async start(): Promise<void> {
-    const child = spawn(this.config.command, this.config.args || [], {
+    const child = spawnIsolatedWorkload(this.config.command, this.config.args || [], {
+      label: `${this.config.profile}-acp-server`,
       cwd: this.config.cwd,
       env: { ...process.env, ...this.config.env },
       stdio: "pipe",
-    });
+    }) as ChildProcessWithoutNullStreams;
     this.child = child;
     this.emitEvent({ kind: "process.connected", harness: this.type, data: { profile: this.config.profile } });
     child.on("error", (err) => { this.markAllError(err); this.emitEvent({ kind: "process.disconnected", harness: this.type, data: { profile: this.config.profile, error: err.message } }); });

@@ -1,8 +1,8 @@
 import { readdir, readFile, stat } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { basename, join, relative, resolve } from "node:path";
-import { spawnDetachedWorkload } from "../workload-launcher.js";
+import { spawnDetachedWorkload, spawnIsolatedWorkload } from "../workload-launcher.js";
 import type {
   AgentSession,
   CreateSessionOptions,
@@ -170,10 +170,11 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       }
     }
     return await new Promise((resolveResult) => {
-      const child = spawn(this.fastAgentBin, args, {
+      const child = spawnIsolatedWorkload(this.fastAgentBin, args, {
+        label: "fast-agent-message",
         cwd: session.cwd, stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, FAST_AGENT_HOME: this.home },
-      });
+      }) as ChildProcessWithoutNullStreams;
       let stderr = "";
       child.stderr?.setEncoding("utf8");
       child.stderr?.on("data", (chunk) => { stderr += String(chunk); if (stderr.length > 4000) stderr = stderr.slice(-4000); });

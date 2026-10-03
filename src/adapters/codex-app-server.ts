@@ -1,5 +1,6 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { type ChildProcessWithoutNullStreams } from "node:child_process";
 import { CodexAdapter } from "./codex.js";
+import { spawnIsolatedWorkload } from "../workload-launcher.js";
 import type {
   AgentSession,
   ControlResult,
@@ -336,7 +337,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private startProcess(): void {
-    this.child = spawn(this.codexBin, this.processArgs, { cwd: this.cwd, stdio: ["pipe", "pipe", "pipe"] });
+    this.child = spawnIsolatedWorkload(this.codexBin, this.processArgs, {
+      label: "codex-app-server",
+      cwd: this.cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+    }) as ChildProcessWithoutNullStreams;
     this.emitEvent({ kind: "process.connected", harness: "codex", data: { transport: "app-server" } });
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk: string) => this.consumeOutput(chunk));

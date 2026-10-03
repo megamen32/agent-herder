@@ -54,6 +54,18 @@ export interface SessionSupervisorOptions {
   events?: HerderEventBus;
   /** Shared native-event health registry. */
   eventHealth?: HarnessEventHealthRegistry;
+  /** Resume the same native session after a failed turn. Enabled by default. */
+  autoResumeFailedSessions?: boolean;
+  /** Maximum native resume attempts for one failure burst. */
+  autoResumeMaxAttempts?: number;
+  /** Initial retry delay; subsequent failed resumes use exponential backoff. */
+  autoResumeDelayMs?: number;
+}
+
+interface AutomaticResumeState {
+  attempts: number;
+  inFlight: boolean;
+  timer?: NodeJS.Timeout;
 }
 
 interface SessionSnapshot {
@@ -90,6 +102,10 @@ export class SessionSupervisor {
   private observationTimer?: NodeJS.Timeout;
   private readonly nativeEventUnsubscribers = new Map<string, () => void>();
   private readonly recentNativeEvents = new Map<string, number>();
+  private readonly autoResumeFailedSessions: boolean;
+  private readonly autoResumeMaxAttempts: number;
+  private readonly autoResumeDelayMs: number;
+  private readonly automaticResumes = new Map<string, AutomaticResumeState>();
 
   constructor(
     private readonly adapters: Map<string, HarnessAdapter>,
@@ -100,6 +116,12 @@ export class SessionSupervisor {
     this.sessionCacheTtlMs = Math.max(0, options.sessionCacheTtlMs ?? 10_000);
     this.events = options.events ?? herderEvents;
     this.eventHealth = options.eventHealth ?? harnessEventHealth;
+    this.autoResumeFailedSessions = options.autoResumeFailedSessions
+      ?? process.env.AGENT_HERDER_AUTO_RESUME_FAILED !== "false";
+    this.autoResumeMaxAttempts = Math.max(1, options.autoResumeMaxAttempts
+      ?? Number(process.env.AGENT_HERDER_AUTO_RESUME_MAX_ATTEMPTS || 3));
+    this.autoResumeDelayMs = Math.max(0, options.autoResumeDelayMs
+      ?? Number(process.env.AGENT_HERDER_AUTO_RESUME_DELAY_MS || 2_000));
   }
 
   async createNamedSession(request: NamedSessionRequest): Promise<NamedSessionResult> {
@@ -136,6 +158,10 @@ export class SessionSupervisor {
       try { unsubscribe(); } catch { /* best-effort adapter cleanup */ }
     }
     this.nativeEventUnsubscribers.clear();
+    for (const state of this.automaticResumes.values()) {
+      if (state.timer) clearTimeout(state.timer);
+    }
+    this.automaticResumes.clear();
   }
 
   getExecutionProfile(harness: string): Record<string, string> | undefined {
@@ -631,6 +657,12 @@ export class SessionSupervisor {
     this.events.publish({ kind: "adapters", uri: adapterResourceUri(provider), action: "changed", id: provider, source: `native:${provider}` });
     if (!event.sessionId) return;
 
+    if (event.kind === "turn.failed") {
+      this.scheduleAutomaticResume(provider, event.sessionId);
+    } else if (event.kind === "turn.started" || event.kind === "turn.completed" || event.kind === "session.deleted") {
+      this.clearAutomaticResume(provider, event.sessionId);
+    }
+
     this.recentNativeEvents.set(`${event.harness}:${event.sessionId}`, Date.now());
     const source = `native:${provider}:${event.nativeType || event.kind}`;
     const action = event.kind === "session.created" ? "created" : event.kind === "session.deleted" ? "deleted" : "changed";
@@ -640,6 +672,60 @@ export class SessionSupervisor {
       this.events.publish({ kind: "sessions", uri: sessionMessagesResourceUri(event.harness, event.sessionId), action: "changed", id: event.sessionId, source });
     }
     if (this.sessionSnapshot) this.sessionSnapshot.refreshedAt = 0;
+  }
+
+  private scheduleAutomaticResume(provider: string, sessionId: string): void {
+    if (!this.autoResumeFailedSessions) return;
+    const adapter = this.adapters.get(provider);
+    if (!adapter?.resumeSession) return;
+    const key = sessionKey(provider, sessionId);
+    const state = this.automaticResumes.get(key) ?? { attempts: 0, inFlight: false };
+    if (state.timer || state.inFlight || state.attempts >= this.autoResumeMaxAttempts) return;
+    const delay = this.autoResumeDelayMs * (2 ** state.attempts);
+    state.timer = setTimeout(() => {
+      state.timer = undefined;
+      void this.runAutomaticResume(provider, sessionId, adapter, state);
+    }, delay);
+    state.timer.unref?.();
+    this.automaticResumes.set(key, state);
+  }
+
+  private async runAutomaticResume(
+    provider: string,
+    sessionId: string,
+    adapter: HarnessAdapter,
+    state: AutomaticResumeState,
+  ): Promise<void> {
+    const key = sessionKey(provider, sessionId);
+    if (this.automaticResumes.get(key) !== state || state.inFlight) return;
+    state.inFlight = true;
+    state.attempts += 1;
+    let result: ControlResult;
+    try {
+      // Native resume preserves the session identity and its persisted model;
+      // automatic recovery must never fork or silently switch providers.
+      result = await adapter.resumeSession!(sessionId);
+    } catch (error) {
+      result = { ok: false, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      state.inFlight = false;
+    }
+    if (this.automaticResumes.get(key) !== state) return;
+    if (result.ok) {
+      this.automaticResumes.delete(key);
+      this.publishSessionChanged(provider, sessionId, "changed", true, "auto-resume");
+      console.error(`[agent-herder] auto-resumed ${provider}:${sessionId} after failed turn`);
+      return;
+    }
+    console.error(`[agent-herder] auto-resume ${state.attempts}/${this.autoResumeMaxAttempts} failed for ${provider}:${sessionId}: ${result.error || "unknown error"}`);
+    this.scheduleAutomaticResume(provider, sessionId);
+  }
+
+  private clearAutomaticResume(provider: string, sessionId: string): void {
+    const key = sessionKey(provider, sessionId);
+    const state = this.automaticResumes.get(key);
+    if (state?.timer) clearTimeout(state.timer);
+    this.automaticResumes.delete(key);
   }
 
   private wasRecentlyNative(harness: string, id: string): boolean {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptions } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, type SpawnOptions } from "node:child_process";
 import type {
   AgentSession,
   ControlResult,
@@ -12,6 +12,7 @@ import type {
   SessionMessageView,
   SetPermissionsOptions,
 } from "../../types/index.js";
+import { spawnIsolatedWorkload } from "../../workload-launcher.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -189,7 +190,7 @@ export class HermesAdapter implements HarnessAdapter {
     this.config = config;
     this.client = config.client;
     this.spawnJob = config.spawnJob || ((command, args, options) => (
-      spawn(command, args, options) as ChildProcessWithoutNullStreams
+      spawnIsolatedWorkload(command, args, { ...options, label: "hermes-job" }) as ChildProcessWithoutNullStreams
     ));
     this.jobTimeoutMs = normalizeJobTimeout(config.jobTimeoutMs ?? envNumber("HERMES_HEALTH_TIMEOUT_MS") ?? DEFAULT_JOB_TIMEOUT_MS);
     this.jobUsefulProgressTimeoutMs = normalizeUsefulProgressTimeout(
@@ -218,11 +219,12 @@ export class HermesAdapter implements HarnessAdapter {
 
   async init(): Promise<void> {
     if (this.client) return;
-    const child = spawn(this.config.hermesBin || process.env.HERMES_BIN || "hermes", this.config.args || ["mcp", "serve"], {
+    const child = spawnIsolatedWorkload(this.config.hermesBin || process.env.HERMES_BIN || "hermes", this.config.args || ["mcp", "serve"], {
+      label: "hermes-mcp-server",
       cwd: this.config.cwd || process.cwd(),
       env: { ...process.env, ...this.config.env },
       stdio: ["pipe", "pipe", "pipe"],
-    });
+    }) as ChildProcessWithoutNullStreams;
     this.client = new StdioHermesToolClient(child);
     this.ownedClient = true;
     this.attachNotificationBridge();

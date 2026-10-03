@@ -79,8 +79,22 @@ export function spawnDetachedWorkload(
   args: string[],
   options: DetachedWorkloadOptions,
 ): ChildProcess {
-  const launch = buildDetachedWorkloadCommand(command, args, options);
-  const child = spawn(launch.command, launch.args, launch.options);
+  const child = spawnIsolatedWorkload(command, args, options);
   child.unref();
   return child;
+}
+
+/**
+ * Launch an adapter-owned process in an independent transient scope while
+ * retaining its stdio and lifecycle handle. Persistent app servers must not
+ * share the control plane cgroup: their sessions and MCP descendants can be
+ * much larger than the supervisor itself.
+ */
+export function spawnIsolatedWorkload(
+  command: string,
+  args: string[],
+  options: DetachedWorkloadOptions,
+): ChildProcess {
+  const launch = buildDetachedWorkloadCommand(command, args, options);
+  return spawn(launch.command, launch.args, launch.options);
 }
