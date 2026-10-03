@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "agent-herder-autopilot-hook",
+            "command": "node \"${PLUGIN_ROOT}/scripts/codex-stop-hook.mjs\"",
             "timeout": 45,
             "statusMessage": "Checking Agent Herder autopilot decision"
           }

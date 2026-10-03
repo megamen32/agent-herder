@@ -22,6 +22,7 @@ import { herderEvents, type HerderEventBus } from "./herder-events.js";
 import { adapterResourceUri, sessionMessagesResourceUri, sessionResourceUri } from "./herder-resource-uris.js";
 import { harnessEventHealth, type HarnessEventHealthRegistry } from "./harness-event-health.js";
 import type { UnfinishedSessionLauncher } from "./autopilot/unfinished-session-launcher.js";
+import { deferredMessages, isBusyCodexWriter } from "./deferred-messages.js";
 
 export interface SessionFilters {
   harness?: string;
@@ -345,11 +346,15 @@ export class SessionSupervisor {
     }
   }
 
-  async sendMessage(harness: string, id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
+  async sendMessage(harness: string, id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string; sessionId?: string; delivery?: "deferred" }> {
     const adapter = this.requireAdapter(harness);
     const session = await adapter.getSession(id);
     const message = session ? await coordinationNotes.inject(session, options.message) : options.message;
     const result = await adapter.sendMessage(id, { ...options, message });
+    if (!result.ok && isBusyCodexWriter(harness, result.error)) {
+      await deferredMessages.add(id, options.message);
+      return { ok: true, sessionId: id, delivery: "deferred" };
+    }
     if (result.ok) {
       if (session) await this.unfinishedSessions?.armSession(session);
       this.publishSessionChanged(harness, id, "changed");

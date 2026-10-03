@@ -29,6 +29,7 @@ import type { AdapterRegistry } from "../adapter-registry.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { handleQuotaLensRequest } from "./quota-lens.js";
+import { deferredMessages, renderDeferredMessages } from "../deferred-messages.js";
 
 export interface WebDependencies {
   adapters: Map<string, HarnessAdapter>;
@@ -499,8 +500,13 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const cwd = url.searchParams.get("cwd")?.trim();
     if (!harness || !sessionId || !cwd) return sendJson(response, 400, { error: "harness, sessionId, and cwd are required" });
     if (url.searchParams.get("touch") === "1") await coordinationNotes.heartbeatSession({ sessionId, cwd });
-    const context = await coordinationNotes.renderForSession({ harness, id: sessionId, cwd });
-    return sendJson(response, 200, { context, active: Boolean(context) });
+    const coordinationContext = await coordinationNotes.renderForSession({ harness, id: sessionId, cwd });
+    const inboxMessages = url.searchParams.get("consume") === "1"
+      ? await deferredMessages.take(sessionId)
+      : await deferredMessages.list(sessionId);
+    const inboxContext = renderDeferredMessages(inboxMessages);
+    const context = [inboxContext, coordinationContext].filter(Boolean).join("\n\n") || null;
+    return sendJson(response, 200, { context, inboxContext, inboxCount: inboxMessages.length, active: Boolean(context) });
   }
   if (url.pathname === "/api/coordination/activity" && request.method === "POST") {
     const body = await readJson(request);

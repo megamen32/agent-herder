@@ -16,6 +16,7 @@ describe("/autopilot plugin surfaces", () => {
     const zcodeStop = readFileSync(resolve(root, "integrations/zcode/agent-herder-autopilot/hooks/stop.mjs"), "utf8");
     const zcodeInstaller = readFileSync(resolve(root, "scripts/install-zcode-autopilot.sh"), "utf8");
     const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as { files: string[] };
+    const codexStop = readFileSync(resolve(root, "scripts/codex-stop-hook.mjs"), "utf8");
     const webUi = readFileSync(resolve(root, "src/web-ui/main.tsx"), "utf8");
 
     expect(codexSkill).toContain("/autopilot");
@@ -29,8 +30,11 @@ describe("/autopilot plugin surfaces", () => {
       ".claude-plugin/plugin.json",
       "hooks/hooks.json",
       "scripts/claude-autopilot-hook-launcher.sh",
+      "scripts/codex-stop-hook.mjs",
       "integrations/zcode/agent-herder-autopilot/hooks/stop.mjs",
     ]));
+    expect(codexStop).toContain('decision: "block"');
+    expect(codexStop).toContain('consume: "1"');
     expect(webUi).toContain('["codex", "opencode", "claude", "hermes", "zcode"]');
     expect(opencode).toContain('command !== "autopilot"');
     expect(opencode).toContain("config.command.autopilot");

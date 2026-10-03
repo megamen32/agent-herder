@@ -25,7 +25,7 @@ import { realpath } from "node:fs/promises";
 import { auditWorktrees } from "../worktree-audit.js";
 import { BrowserWakeService } from "../browser-wake.js";
 import { coordinationNotes } from "../coordination-notes.js";
-import { deferredMessages, withDeferred } from "../deferred-messages.js";
+import { deferredMessages, isBusyCodexWriter, withDeferred } from "../deferred-messages.js";
 import {
   buildTranscriptArchiveCard,
   transcriptArchiveFromEnvironment,
@@ -449,6 +449,10 @@ export async function handleSendMessage(
     const modeLabel = parsed.mode === "queue" ? " (queued)" : parsed.mode === "steer" ? " (steering)" : " (sync)";
     return `Message sent to [${found.session.harness}] ${parsed.sessionId}${modeLabel}.\nMessage: ${parsed.message}`;
   }
+  if (isBusyCodexWriter(found.session.harness, result.error)) {
+    await deferredMessages.add(parsed.sessionId, baseMessage);
+    return `Message deferred for [${found.session.harness}] ${parsed.sessionId}; the native hook will inject it at the next safe turn boundary.\nMessage: ${parsed.message}`;
+  }
   return `Failed to send message: ${result.error}`;
 }
 
@@ -482,6 +486,10 @@ export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args:
     const injected = await coordinationNotes.inject(fresh, pending.message);
     const sent = await found.adapter.sendMessage(fresh.id,{message:injected,queue:parsed.mode==="queue"});
     if (sent.ok && pending.ids.length) await deferredMessages.remove(pending.ids);
+    if (!sent.ok && isBusyCodexWriter(fresh.harness, sent.error)) {
+      await deferredMessages.add(fresh.id, parsed.message);
+      return JSON.stringify({ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"deferred",activated:false});
+    }
     return JSON.stringify(sent.ok ? {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:parsed.mode==="queue"?"accepted":"completed",activated:true} : {ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"failed",activated:false,error:sent.error||"Message delivery failed"});
   }
   return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:parsed.message,create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model}));

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import lockfile from "proper-lockfile";
 import type { AgentSession, HarnessAdapter } from "./types/index.js";
 import { coordinationNotes } from "./coordination-notes.js";
-import { deferredMessages, withDeferred } from "./deferred-messages.js";
+import { deferredMessages, isBusyCodexWriter, withDeferred } from "./deferred-messages.js";
 
 export type NamedSessionMode = "queue" | "sync";
 
@@ -252,6 +252,10 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     const pending=await withDeferred(fresh.id,request.message); const injected=await coordinationNotes.inject(fresh,pending.message);
     const sent=await adapter.sendMessage(fresh.id,{message:injected,queue:(request.mode||"queue")==="queue"});
     if (sent.ok && pending.ids.length) await deferredMessages.remove(pending.ids);
+    if (!sent.ok && isBusyCodexWriter(fresh.harness, sent.error)) {
+      await deferredMessages.add(fresh.id, request.message);
+      return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"deferred",activated:false,...normalized};
+    }
     return sent.ok ? {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:(request.mode||"queue")==="queue"?"accepted":"completed",activated:true,...normalized} : {ok:false,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"failed",activated:false,error:sent.error||"Message delivery failed",...normalized};
   });
 }

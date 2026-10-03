@@ -32,6 +32,7 @@
     "com.openai/hooks/hooks.json",
     "scripts/autopilot-hook-launcher.sh",
     "scripts/autopilot-command-launcher.sh",
+    "scripts/codex-stop-hook.mjs",
     "scripts/install-zcode-autopilot.sh",
     "hooks/hooks.json",
     "scripts/claude-autopilot-hook-launcher.sh",

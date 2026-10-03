@@ -4,6 +4,7 @@ import { dirname, normalize } from "node:path";
 
 import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessType, SessionMessageView } from "../types/index.js";
 import { semanticTranscript, type CacheHandoffService } from "../cache-handoff.js";
+import { deferredMessages, isBusyCodexWriter, type DeferredMessageStore } from "../deferred-messages.js";
 
 const SUPPORTED_HARNESSES: readonly HarnessType[] = ["codex", "opencode", "claude", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
 const DEFAULT_CONTINUATION = "Продолжи незавершённую задачу с того места, где выполнение было прервано. Сначала проверь текущее состояние и не повторяй уже завершённые действия.";
@@ -372,6 +373,8 @@ export interface UnfinishedSessionLauncherOptions {
   judge?: SessionCompletionJudge;
   continuationMessage?: string;
   notify?: (notice: UnfinishedSessionNotice) => Promise<void>;
+  /** Durable safe-boundary inbox used when a Codex Desktop writer still owns the thread. */
+  deferredStore?: Pick<DeferredMessageStore, "add" | "list">;
   /** Replaces a stale provider-cache session with a compact same-harness continuation. */
   cacheHandoff?: Pick<CacheHandoffService, "maybeRollover">;
   /** Stable only for one Agent Herder process; tests may inject it. */
@@ -546,6 +549,16 @@ export class UnfinishedSessionLauncher {
     attempt: UnfinishedSessionRecord,
     session: AgentSession | null,
   ): Promise<void> {
+    const trackedSession = session ?? {
+      id: record.sessionId,
+      harness: record.harness,
+      status: "running" as const,
+      title: record.title || "Незавершённая задача",
+      cwd: record.cwd,
+      lastActivity: new Date().toISOString(),
+      model: record.model,
+      needsPermission: false,
+    };
     try {
       if (session && this.options.cacheHandoff) {
         const handoff = await this.options.cacheHandoff.maybeRollover(session);
@@ -560,19 +573,21 @@ export class UnfinishedSessionLauncher {
       if (!resumed.ok) throw new Error(resumed.error || "возобновление отклонено");
       const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true });
       if (!sent.ok) throw new Error(sent.error || "команда продолжения отклонена");
-      await this.options.store.markStarted(session ?? {
-        id: record.sessionId,
-        harness: record.harness,
-        status: "running",
-        title: record.title || "Незавершённая задача",
-        cwd: record.cwd,
-        lastActivity: new Date().toISOString(),
-        model: record.model,
-        needsPermission: false,
-      }, this.generationId);
+      await this.options.store.markStarted(trackedSession, this.generationId);
       console.error(`[agent-herder] автоматически продолжена незавершённая сессия ${record.harness}:${record.sessionId}`);
     } catch (error) {
-      await this.fail(attempt, errorText(error));
+      const failure = errorText(error);
+      if (isBusyCodexWriter(record.harness, failure)) {
+        const inbox = this.options.deferredStore ?? deferredMessages;
+        const pending = await inbox.list(record.sessionId);
+        if (!pending.some((message) => message.message === this.continuationMessage)) {
+          await inbox.add(record.sessionId, this.continuationMessage);
+        }
+        await this.options.store.markStarted(trackedSession, this.generationId);
+        console.error(`[agent-herder] продолжение Codex отложено до безопасной границы хода ${record.sessionId}`);
+        return;
+      }
+      await this.fail(attempt, failure);
     }
   }
 

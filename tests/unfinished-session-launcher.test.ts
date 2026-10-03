@@ -163,6 +163,33 @@ describe("unfinished session launcher", () => {
     expect(resumed).toEqual(["newer"]);
   });
 
+  it("defers Codex continuation when the Desktop writer still owns the thread", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-busy-writer-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = { ...fixtureSession("idle", "codex"), lastActivity: new Date(Date.now() - 60_000).toISOString() };
+    await store.markStarted(session, "previous-process");
+    const deferred: Array<{ id: string; sessionId: string; message: string; createdAt: string }> = [];
+    const adapter = fixtureAdapter(session, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => [];
+    adapter.sendMessage = async () => ({ ok: false, error: `thread ${session.id} already has an active writer` });
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      retryDelayMs: 0, discoveryIdleMs: 1, generationId: "new-process",
+      deferredStore: {
+        async list(id) { return deferred.filter((message) => message.sessionId === id); },
+        async add(sessionId, message) {
+          const item = { id: `deferred-${deferred.length + 1}`, sessionId, message, createdAt: new Date().toISOString() };
+          deferred.push(item);
+          return item;
+        },
+      },
+    }).recoverPending();
+    expect(deferred).toHaveLength(1);
+    expect(deferred[0]?.message).toContain("Продолжи незавершённую задачу");
+    expect(await store.list()).toMatchObject([{ sessionId: session.id, state: "active", generationId: "new-process" }]);
+  });
+
   it("does not duplicate a turn that is still running and does not answer a human prompt", async () => {
     for (const status of ["running", "needs_input"] as const) {
       const root = await mkdtemp(join(tmpdir(), `agent-herder-autostart-${status}-`));

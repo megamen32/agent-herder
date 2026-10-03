@@ -64,7 +64,7 @@ function normalizePaths(paths) {
 }
 try {
   if (event === "SessionStart" || event === "UserPromptSubmit") {
-    const q = new URLSearchParams({ harness, sessionId, cwd, touch: "1" });
+    const q = new URLSearchParams({ harness, sessionId, cwd, touch: "1", consume: "1" });
     const data = await fetchJson(`${endpoint}/api/coordination/context?${q}`);
     output(event, data.context || undefined);
   } else if (event === "PreToolUse" || event === "PostToolUse") {
