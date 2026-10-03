@@ -117,11 +117,21 @@ describe("unfinished session launcher", () => {
       token: "test-token",
       fetchImpl: async (_url, init) => {
         requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return new Response(JSON.stringify({ content: [{ type: "text", text: JSON.stringify({ groups: [{
+        const planText = JSON.stringify({ groups: [{
           source_session_ids: ["codex-1", "zcode-1"], primary_session_id: "zcode-1", verdict: "unfinished",
           reason: "Одна задача оборвалась в двух клиентах", confidence: 0.98,
           topic: "Восстановить отправку комментариев", handoff: "Общий handoff обеих сессий",
-        }] }) }] }), { status: 200, headers: { "content-type": "application/json" } });
+        }] });
+        const split = Math.floor(planText.length / 2);
+        const stream = [
+          `data: ${JSON.stringify({ type: "content_block_start", content_block: { type: "text", text: "" } })}`,
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "thinking_delta", thinking: "grouping" } })}`,
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: planText.slice(0, split) } })}`,
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: planText.slice(split) } })}`,
+          "data: [DONE]",
+          "",
+        ].join("\n\n");
+        return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
       },
     });
     const evidence = "ПОЛЬЗОВАТЕЛЬ: полный запрос\n\nАГЕНТ: полный ответ";
@@ -135,6 +145,7 @@ describe("unfinished session launcher", () => {
     expect(JSON.stringify(requestBody)).toContain("zcode-marker");
     expect(JSON.stringify(requestBody)).toContain("последние четыре полных смысловых сообщения");
     expect(requestBody.max_tokens).toBe(32_768);
+    expect(requestBody.stream).toBe(true);
   });
 
   it("plans all Codex and ZCode evidence once, deduplicates one task, and launches one readable continuation", async () => {

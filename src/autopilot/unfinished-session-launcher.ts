@@ -1216,6 +1216,56 @@ function batchPlannerPayload(sessions: SessionBatchCandidate[]): unknown {
   };
 }
 
+async function anthropicText(response: Response): Promise<string> {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("text/event-stream")) {
+    const body = await response.json() as Record<string, unknown>;
+    const blocks = Array.isArray(body.content) ? body.content : [];
+    const content = blocks.flatMap((block) => block && typeof block === "object"
+      && (block as Record<string, unknown>).type === "text"
+      && typeof (block as Record<string, unknown>).text === "string"
+      ? [(block as Record<string, unknown>).text as string]
+      : []).join("\n");
+    if (content) return content;
+    const stopReason = typeof body.stop_reason === "string" ? body.stop_reason : "unknown";
+    const blockTypes = [...new Set(blocks.flatMap((block) => block && typeof block === "object" && typeof (block as Record<string, unknown>).type === "string"
+      ? [(block as Record<string, unknown>).type as string] : []))].join(",") || "none";
+    throw new Error(`MiniMax Anthropic batch planner returned no text content (stop=${stopReason}, blocks=${blockTypes})`);
+  }
+  if (!response.body) throw new Error("MiniMax Anthropic batch planner returned an empty stream");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  const consume = (line: string): void => {
+    if (!line.startsWith("data:")) return;
+    const raw = line.slice(5).trim();
+    if (!raw || raw === "[DONE]") return;
+    let event: Record<string, unknown>;
+    try { event = JSON.parse(raw) as Record<string, unknown>; } catch { return; }
+    if (event.type === "error") throw new Error(`MiniMax Anthropic stream error: ${JSON.stringify(event.error || event)}`);
+    if (event.type === "content_block_start" && event.content_block && typeof event.content_block === "object") {
+      const block = event.content_block as Record<string, unknown>;
+      if (block.type === "text" && typeof block.text === "string") content += block.text;
+    }
+    if (event.type === "content_block_delta" && event.delta && typeof event.delta === "object") {
+      const delta = event.delta as Record<string, unknown>;
+      if (delta.type === "text_delta" && typeof delta.text === "string") content += delta.text;
+    }
+  };
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    for (const line of lines) consume(line);
+    if (done) break;
+  }
+  if (buffer) consume(buffer);
+  if (!content.trim()) throw new Error("MiniMax Anthropic batch planner returned no streamed text");
+  return content;
+}
+
 function optionalBounded(value: unknown, label: string): string | undefined {
   return value === undefined ? undefined : bounded(value, label);
 }
@@ -1414,24 +1464,13 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
           model: config.model,
           max_tokens: positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || 32_768), 32_768),
           temperature: 0,
+          stream: true,
           system: [{ type: "text", text: batchPlannerPrompt(), cache_control: { type: "ephemeral" } }],
           messages: [{ role: "user", content: JSON.stringify(batchPlannerPayload(sessions)) }],
         }),
       });
       if (!response.ok) throw new Error(`MiniMax Anthropic batch planner rejected with HTTP ${response.status}`);
-      const body = await response.json() as Record<string, unknown>;
-      const blocks = Array.isArray(body.content) ? body.content : [];
-      const content = blocks.flatMap((block) => block && typeof block === "object"
-        && (block as Record<string, unknown>).type === "text"
-        && typeof (block as Record<string, unknown>).text === "string"
-        ? [(block as Record<string, unknown>).text as string]
-        : []).join("\n");
-      if (!content) {
-        const stopReason = typeof body.stop_reason === "string" ? body.stop_reason : "unknown";
-        const blockTypes = [...new Set(blocks.flatMap((block) => block && typeof block === "object" && typeof (block as Record<string, unknown>).type === "string"
-          ? [(block as Record<string, unknown>).type as string] : []))].join(",") || "none";
-        throw new Error(`MiniMax Anthropic batch planner returned no text content (stop=${stopReason}, blocks=${blockTypes})`);
-      }
+      const content = await anthropicText(response);
       const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
       return normalizeBatchPlan(JSON.parse(json) as unknown, sessions);
     },
