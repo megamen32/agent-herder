@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CacheHandoffService, cacheWindowFor, semanticTranscript } from "../src/cache-handoff.js";
+import { AnthropicMiniMaxSummarizer, CacheHandoffService, cacheWindowFor, semanticTranscript } from "../src/cache-handoff.js";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "../src/types/index.js";
 
 const oldSession: AgentSession = {
@@ -24,6 +24,18 @@ function adapter(messages: SessionMessageView[], harness: "codex" | "opencode" =
 }
 
 describe("cache-aware session handoff", () => {
+  it("summarizes directly through MiniMax M3.1 without exposing the transcript in a process command", async () => {
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      requests.push({ url: String(input), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+      return new Response(JSON.stringify({ content: [{ type: "text", text: "Короткий handoff" }] }), { status: 200 });
+    };
+    const summarizer = new AnthropicMiniMaxSummarizer("secret", "https://api.minimax.io/anthropic", "MiniMax-M3.1-Flash-Preview", fetchImpl);
+    await expect(summarizer.summarize("ПОЛЬЗОВАТЕЛЬ: продолжи")).resolves.toBe("Короткий handoff");
+    expect(requests[0]).toMatchObject({ url: "https://api.minimax.io/anthropic/v1/messages", body: { model: "MiniMax-M3.1-Flash-Preview" } });
+    expect(JSON.stringify(requests[0].body)).toContain("ПОЛЬЗОВАТЕЛЬ: продолжи");
+  });
+
   it("uses the documented 30 minute window only for current OpenAI Codex models", () => {
     expect(cacheWindowFor({ harness: "codex", model: "gpt-5.6-sol" })).toEqual({ ttlMs: 1_800_000, source: "openai-30m" });
     expect(cacheWindowFor({ harness: "zcode", model: "account:zai-individual-coding-plan/GLM-5.3-Flash" })).toEqual({ ttlMs: 300_000, source: "zai-measured-5m" });

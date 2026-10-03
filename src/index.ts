@@ -18,7 +18,7 @@ import { createNoticePlacePayload, createNoticePlaceSink } from "./autopilot/ind
 import { AgentHerderSessionConverter } from "./session-convert.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 import { LineageStore } from "./lineage-store.js";
-import { CacheHandoffService, FastAgentMiniMaxSummarizer } from "./cache-handoff.js";
+import { AnthropicMiniMaxSummarizer, CacheHandoffService, FastAgentMiniMaxSummarizer } from "./cache-handoff.js";
 import { acquireAgentHerderSingleton } from "./singleton.js";
 import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
 import { createWebServer } from "./web/server.js";
@@ -507,15 +507,18 @@ async function main() {
     }
   }
   const processSessionConverter = new AgentHerderSessionConverter();
+  const handoffSummarizer = process.env.MINIMAX_API_KEY
+    ? new AnthropicMiniMaxSummarizer(process.env.MINIMAX_API_KEY)
+    : new FastAgentMiniMaxSummarizer();
   const cacheHandoff = process.env.AGENT_HERDER_CACHE_HANDOFF_ENABLED === "false"
     ? undefined
-    : new CacheHandoffService(adapters, new FastAgentMiniMaxSummarizer(), lineageStore);
+    : new CacheHandoffService(adapters, handoffSummarizer, lineageStore);
   const unfinishedJudgeToken = process.env.AGENT_HERDER_UNFINISHED_JUDGE_TOKEN || process.env.MINIMAX_API_KEY;
   const unfinishedJudge = process.env.AGENT_HERDER_UNFINISHED_JUDGE_ENABLED === "false" || !unfinishedJudgeToken
     ? undefined
     : createAnthropicCompatibleSessionCompletionJudge({
         baseUrl: process.env.AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL || "https://api.minimax.io/anthropic",
-        model: process.env.AGENT_HERDER_UNFINISHED_JUDGE_MODEL || "MiniMax-M3",
+        model: process.env.AGENT_HERDER_UNFINISHED_JUDGE_MODEL || "MiniMax-M3.1-Flash-Preview",
         token: unfinishedJudgeToken,
       });
   const unfinishedSessionLauncher = new UnfinishedSessionLauncher({

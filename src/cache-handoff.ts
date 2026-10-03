@@ -26,6 +26,37 @@ export interface SessionSummarizer {
   summarize(source: string): Promise<string>;
 }
 
+export class AnthropicMiniMaxSummarizer implements SessionSummarizer {
+  constructor(
+    private readonly token: string,
+    private readonly baseUrl = process.env.AGENT_HERDER_HANDOFF_ANTHROPIC_BASE_URL || "https://api.minimax.io/anthropic",
+    private readonly model = process.env.AGENT_HERDER_HANDOFF_MODEL?.replace(/^generic\.minimax\//, "") || "MiniMax-M3.1-Flash-Preview",
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {}
+
+  async summarize(source: string): Promise<string> {
+    const response = await this.fetchImpl(`${this.baseUrl.replace(/\/$/, "")}/v1/messages`, {
+      method: "POST",
+      headers: { "x-api-key": this.token, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      signal: AbortSignal.timeout(Number(process.env.AGENT_HERDER_HANDOFF_TIMEOUT_MS || 180_000)),
+      body: JSON.stringify({
+        model: this.model,
+        max_tokens: 2_048,
+        system: "Сожми протухшую сессию разработки для новой frontier-модели. Не выполняй задачу и не добавляй факты.",
+        messages: [{ role: "user", content: [
+          { type: "text", text: "Верни короткий русский handoff: цель, уже сделано, решения, важные файлы и проверки, незавершённое, риски, следующий шаг." },
+          { type: "text", text: source },
+        ] }],
+      }),
+    });
+    if (!response.ok) throw new Error(`MiniMax handoff rejected with HTTP ${response.status}`);
+    const body = await response.json() as { content?: Array<{ type?: string; text?: string }>; error?: { message?: string } };
+    const text = (body.content || []).filter((part) => part.type === "text").map((part) => part.text || "").join("\n").trim();
+    if (!text) throw new Error(body.error?.message || "MiniMax вернул пустой handoff");
+    return text.slice(0, MAX_SUMMARY_CHARS);
+  }
+}
+
 /** Resolve only documented or explicitly configured cache windows. Unknown is never guessed. */
 export function cacheWindowFor(session: Pick<AgentSession, "harness" | "model">, env: NodeJS.ProcessEnv = process.env): CacheWindow {
   const configured = parseOverrides(env.AGENT_HERDER_CACHE_TTL_MINUTES)[`${session.harness}:${session.model || ""}`]
