@@ -742,7 +742,7 @@ function defaultAutostartFile(env: NodeJS.ProcessEnv): SessionAutostartFile {
   return {
     version: 3,
     enabled: env.AGENT_HERDER_UNFINISHED_AUTOSTART !== "false",
-    inventoryWindowHours: positiveInteger(Number(env.AGENT_HERDER_UNFINISHED_INVENTORY_HOURS || 24), 24),
+    inventoryWindowHours: positiveInteger(Number(env.AGENT_HERDER_UNFINISHED_INVENTORY_HOURS || 48), 48),
     evidenceMessageCount: positiveInteger(Number(env.AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES || 4), 4),
     judgeModel: env.AGENT_HERDER_UNFINISHED_JUDGE_MODEL?.trim() || "MiniMax-M3.1-Flash-Preview",
     autopilotJudgeModel: env.AGENT_HERDER_AUTOPILOT_JUDGE_MODEL?.trim() || "MiniMax-M3",
@@ -842,8 +842,8 @@ function cloneInventoryRecord(record: UnfinishedSessionInventoryRecord): Unfinis
   return { ...record, ...(record.verdict ? { verdict: { ...record.verdict } } : {}) };
 }
 
-/** Keep the latest semantic messages and both sides within a bounded judge payload. */
-export function completionEvidence(messages: SessionMessageView[], messageCount = 4, maxChars = 2_000): string {
+/** Keep the configured latest semantic messages in full and retain both sides when present. */
+export function completionEvidence(messages: SessionMessageView[], messageCount = 4): string {
   const semantic = messages.map((message, index) => ({
     index,
     role: message.role,
@@ -862,19 +862,7 @@ export function completionEvidence(messages: SessionMessageView[], messageCount 
     if (required) bounded.splice(0, 1, required);
   }
   bounded.sort((left, right) => left.index - right.index);
-  const finalItems = [...new Map(bounded.map((item) => [item.index, item])).values()];
-  if (finalItems.length === 0) return "";
-  const separators = Math.max(0, finalItems.length - 1) * 2;
-  const perMessage = Math.max(1, Math.floor((Math.max(1, maxChars) - separators) / finalItems.length));
-  return finalItems.map((item) => clipEvidenceMessage(item.text, perMessage)).join("\n\n");
-}
-
-function clipEvidenceMessage(value: string, maxChars: number): string {
-  if (value.length <= maxChars) return value;
-  if (maxChars < 5) return value.slice(0, maxChars);
-  const head = Math.ceil((maxChars - 3) / 2);
-  const tail = Math.floor((maxChars - 3) / 2);
-  return `${value.slice(0, head)}…${value.slice(-tail)}`;
+  return [...new Map(bounded.map((item) => [item.index, item])).values()].map((item) => item.text).join("\n\n");
 }
 
 function parseRecord(value: unknown): UnfinishedSessionRecord {

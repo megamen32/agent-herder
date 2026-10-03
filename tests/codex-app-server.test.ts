@@ -27,7 +27,7 @@ describe("Codex app-server adapter", () => {
     const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
     try {
       await expect(adapter.listSessions()).resolves.toMatchObject([{
-        id: "thread-db", status: "stopped", cwd: "/workspace-db", model: "gpt-test",
+        id: "thread-db", status: "running", cwd: "/workspace-db", model: "gpt-test",
         meta: { parentThreadId: "parent-db", threadSource: "subagent", agentRole: "worker" },
       }]);
     } finally {
