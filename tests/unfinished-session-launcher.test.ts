@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  createAnthropicCompatibleSessionCompletionJudge,
   SessionAutostartStore,
   UnfinishedSessionLauncher,
   UnfinishedSessionStore,
@@ -64,6 +65,32 @@ function fixtureAdapter(session: AgentSession, calls: { resumes: number; message
 }
 
 describe("unfinished session launcher", () => {
+  it("classifies through the direct Anthropic endpoint with an explicit cache breakpoint", async () => {
+    let requestUrl = "";
+    let requestInit: RequestInit | undefined;
+    const judge = createAnthropicCompatibleSessionCompletionJudge({
+      baseUrl: "https://api.minimax.io/anthropic/",
+      model: "MiniMax-M3",
+      token: "test-token",
+      fetchImpl: async (url, init) => {
+        requestUrl = String(url);
+        requestInit = init;
+        return new Response(JSON.stringify({ content: [{ type: "text", text: '{"verdict":"unfinished","reason":"Работа оборвана","confidence":0.97}' }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    await expect(judge.decide({ session: fixtureSession("idle", "codex"), transcriptTail: "ПОЛЬЗОВАТЕЛЬ: продолжи" }))
+      .resolves.toEqual({ verdict: "unfinished", reason: "Работа оборвана", confidence: 0.97 });
+    expect(requestUrl).toBe("https://api.minimax.io/anthropic/v1/messages");
+    expect(new Headers(requestInit?.headers).get("authorization")).toBe("Bearer test-token");
+    const body = JSON.parse(String(requestInit?.body)) as { model: string; system: Array<{ cache_control?: { type?: string } }> };
+    expect(body.model).toBe("MiniMax-M3");
+    expect(body.system[0]?.cache_control).toEqual({ type: "ephemeral" });
+  });
+
   it("persists a running autopilot turn and starts the same session after a fresh process", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));

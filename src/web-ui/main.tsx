@@ -45,7 +45,8 @@ type WebAutopilotPolicy = {
 };
 type WebAutopilotPolicyState = { policy: WebAutopilotPolicy; source: "persisted" | "legacy" | "default" | "error"; revision: string; coverage: string; error?: string };
 type WebAutopilotSession = { harness: string; sessionId: string; enabled: boolean; source: "session" | "policy" | "plugin-default" | "default"; cwd?: string; updatedAt?: string };
-type WebSessionAutostart = { harness: string; sessionId: string; enabled: boolean; source: "session" | "global" | "default"; cwd?: string; updatedAt?: string };
+type WebSessionAutostart = { harness: string; sessionId: string; enabled: boolean; source: "session" | "harness" | "global" | "default"; cwd?: string; updatedAt?: string };
+type WebSessionAutostartHarness = { harness: "codex" | "zcode"; enabled: boolean; source: "harness" | "global" | "default"; updatedAt?: string };
 type HerderJobState = "queued" | "running" | "waiting" | "cancelling" | "completed" | "failed" | "cancelled" | "interrupted";
 type HerderJob = { id: string; kind: string; state: HerderJobState; createdAt: string; updatedAt: string; ownerSessionId?: string; progress?: number; statusMessage?: string; result?: unknown; error?: string; resultRef: string };
 
@@ -257,14 +258,18 @@ function hasVisibleMessage(message: SessionMessage, showReasoning: boolean, show
     || (part.type === "tool_call" || part.type === "tool_result") && showTools);
 }
 
-function AutopilotSettings({ state, draft, saving, error, saved, onChange, onSave }: {
+function AutopilotSettings({ state, draft, saving, error, saved, continuation, continuationSaving, continuationError, onChange, onSave, onContinuationToggle }: {
   state?: WebAutopilotPolicyState;
   draft?: WebAutopilotPolicy;
   saving: boolean;
   error?: string;
   saved: boolean;
+  continuation: Partial<Record<"codex" | "zcode", WebSessionAutostartHarness>>;
+  continuationSaving?: "codex" | "zcode";
+  continuationError?: string;
   onChange: (next: WebAutopilotPolicy) => void;
   onSave: () => void;
+  onContinuationToggle: (harness: "codex" | "zcode") => void;
 }) {
   if (!draft) return <section className="global-autopilot-card"><span className="settings-loading">Загрузка runtime-настроек…</span></section>;
   const timeoutMinutes = Math.max(1, Math.round(draft.timeout.delayMs / 60_000));
@@ -279,6 +284,14 @@ function AutopilotSettings({ state, draft, saving, error, saved, onChange, onSav
       <button className={`switch-control large ${draft.enabled ? "enabled" : ""}`} role="switch" aria-checked={draft.enabled} aria-label="Глобальный автопилот" onClick={() => onChange({ ...draft, enabled: !draft.enabled })}><span /></button>
     </div>
     <div className={`autopilot-state-banner ${draft.enabled ? "enabled" : ""}`}><strong>{draft.enabled ? "Автопилот включён" : "Автопилот выключен"}</strong><span>{draft.enabled ? "Работает в выбранных harness’ах; настройки отдельных сессий могут переопределить режим." : "Новые завершения не оцениваются, кроме явно включённых сессий."}</span></div>
+
+    <fieldset className="settings-group"><legend>Умное автопродолжение каждые 10 минут</legend><div className="harness-grid">
+      {(["codex", "zcode"] as const).map((harness) => {
+        const setting = continuation[harness];
+        const enabled = setting?.enabled ?? true;
+        return <label className={`harness-option ${enabled ? "selected" : ""}`} key={`continuation-${harness}`}><input type="checkbox" checked={enabled} disabled={!setting || continuationSaving === harness} onChange={() => onContinuationToggle(harness)} /><span><strong>{AUTOPILOT_HARNESS_LABELS[harness]}</strong><small>{enabled ? "MiniMax проверяет оборванные задачи и продолжает их" : "Автопродолжение выключено"}</small></span></label>;
+      })}
+    </div><p className="settings-help">Включено по умолчанию и работает независимо от автопилота. Для отдельной сессии режим можно переопределить внизу её карточки.</p>{continuationError && <small className="autopilot-error">{continuationError}</small>}</fieldset>
 
     <fieldset className="settings-group"><legend>Где работает</legend><div className="harness-grid">
       {(Object.keys(AUTOPILOT_HARNESS_LABELS) as AutopilotHarness[]).map((harness) => <label className={`harness-option ${draft.harnesses.includes(harness) ? "selected" : ""}`} key={harness}><input type="checkbox" checked={draft.harnesses.includes(harness)} onChange={(event) => setHarness(harness, event.target.checked)} /><span><strong>{AUTOPILOT_HARNESS_LABELS[harness]}</strong><small>{harness === "codex" ? "Codex Stop hook" : harness === "claude" ? "Claude Code plugin" : harness === "opencode" ? "OpenCode plugin" : harness === "zcode" ? "ZCode native plugin" : "Hermes plugin"}</small></span></label>)}
@@ -393,6 +406,9 @@ function App() {
   const [sessionAutostart, setSessionAutostart] = React.useState<WebSessionAutostart>();
   const [sessionAutostartSaving, setSessionAutostartSaving] = React.useState(false);
   const [sessionAutostartError, setSessionAutostartError] = React.useState<string>();
+  const [continuationHarnesses, setContinuationHarnesses] = React.useState<Partial<Record<"codex" | "zcode", WebSessionAutostartHarness>>>({});
+  const [continuationHarnessSaving, setContinuationHarnessSaving] = React.useState<"codex" | "zcode">();
+  const [continuationHarnessError, setContinuationHarnessError] = React.useState<string>();
   const [autopilotPolicy, setAutopilotPolicy] = React.useState<WebAutopilotPolicyState>();
   const [autopilotPolicyDraft, setAutopilotPolicyDraft] = React.useState<WebAutopilotPolicy>();
   const [autopilotPolicySaving, setAutopilotPolicySaving] = React.useState(false);
@@ -508,10 +524,15 @@ function App() {
   };
 
   const loadAutopilotPolicy = React.useCallback(async () => {
-    const state = await api<WebAutopilotPolicyState>("/api/autopilot/policy");
+    const [state, codexContinuation, zcodeContinuation] = await Promise.all([
+      api<WebAutopilotPolicyState>("/api/autopilot/policy"),
+      api<WebSessionAutostartHarness>("/api/session-autostart/harnesses/codex"),
+      api<WebSessionAutostartHarness>("/api/session-autostart/harnesses/zcode"),
+    ]);
     setAutopilotPolicy(state);
     setAutopilotPolicyDraft(state.policy);
     setAutopilotPolicyError(state.error);
+    setContinuationHarnesses({ codex: codexContinuation, zcode: zcodeContinuation });
   }, []);
   React.useEffect(() => { void loadAutopilotPolicy().catch((error) => setAutopilotPolicyError((error as Error).message)); }, [loadAutopilotPolicy]);
 
@@ -768,6 +789,27 @@ function App() {
       setAutopilotPolicySaving(false);
     }
   };
+  const toggleContinuationHarness = async (harness: "codex" | "zcode") => {
+    const current = continuationHarnesses[harness];
+    if (!current || continuationHarnessSaving) return;
+    setContinuationHarnessSaving(harness);
+    setContinuationHarnessError(undefined);
+    try {
+      const saved = await api<WebSessionAutostartHarness>(`/api/session-autostart/harnesses/${harness}`, {
+        method: "PUT",
+        body: JSON.stringify({ enabled: !current.enabled }),
+      });
+      setContinuationHarnesses((values) => ({ ...values, [harness]: saved }));
+      if (activeSession?.harness === harness) {
+        const state = await api<WebSessionAutostart>(`/api/session-autostart/sessions/${encodeURIComponent(activeSession.harness)}/${encodeURIComponent(activeSession.id)}?cwd=${encodeURIComponent(activeSession.cwd)}`);
+        setSessionAutostart(state);
+      }
+    } catch (error) {
+      setContinuationHarnessError((error as Error).message);
+    } finally {
+      setContinuationHarnessSaving(undefined);
+    }
+  };
   const loadCreateModels = async (harness: string, preferCurrent = false, pollAttempt = 0) => {
     const requestId = ++createModelRequestRef.current;
     try {
@@ -913,7 +955,7 @@ function App() {
       {showJobs && <JobsView jobs={jobs} loading={jobsLoading} error={jobsError} cancellingJobId={cancellingJobId} onRefresh={() => void loadJobs()} onCancel={(jobId) => void cancelJob(jobId)} />}
       {showQuota && <QuotaPanel />}
       {showStatistics && <StatisticsView statistics={statistics} loading={statisticsLoading} error={statisticsError} days={statisticsDays} onDays={changeStatisticsDays} onRefresh={() => void loadStatistics(statisticsDays, true)} />}
-      {!showStatistics && !showJobs && !showQuota && showAutopilotSettings && <div className="autopilot-settings-overlay"><div className="autopilot-settings-shell"><button className="settings-close" aria-label="Закрыть настройки автопилота" onClick={() => setShowAutopilotSettings(false)}>×</button><AutopilotSettings state={autopilotPolicy} draft={autopilotPolicyDraft} saving={autopilotPolicySaving} error={autopilotPolicyError} saved={autopilotPolicySaved} onChange={(next) => { setAutopilotPolicyDraft(next); setAutopilotPolicySaved(false); }} onSave={() => void saveAutopilotPolicy()} /></div></div>}
+      {!showStatistics && !showJobs && !showQuota && showAutopilotSettings && <div className="autopilot-settings-overlay"><div className="autopilot-settings-shell"><button className="settings-close" aria-label="Закрыть настройки автопилота" onClick={() => setShowAutopilotSettings(false)}>×</button><AutopilotSettings state={autopilotPolicy} draft={autopilotPolicyDraft} saving={autopilotPolicySaving} error={autopilotPolicyError} saved={autopilotPolicySaved} continuation={continuationHarnesses} continuationSaving={continuationHarnessSaving} continuationError={continuationHarnessError} onChange={(next) => { setAutopilotPolicyDraft(next); setAutopilotPolicySaved(false); }} onSave={() => void saveAutopilotPolicy()} onContinuationToggle={(harness) => void toggleContinuationHarness(harness)} /></div></div>}
       {!showStatistics && !showJobs && !showQuota && !!details?.children?.length && <details className="subagents-panel"><summary>Subagents <span>{details.children.length}</span></summary><div className="subagents-list">{details.children.map((child) => <button className="subagent-row" key={keyOf(child)} onClick={() => { selectSession(keyOf(child)); setMobileView("chat"); }}><span className={`status-dot status-${child.status}`} /><span><strong>{child.title || child.id}</strong><small>{typeof child.meta?.agentRole === "string" ? child.meta.agentRole : child.status} · {child.id}</small></span></button>)}</div></details>}
       {!showStatistics && !showJobs && !showQuota && <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}>
         <div className="message-column">
@@ -941,7 +983,7 @@ function App() {
           <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || sending || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Resume session" : "Send message"}>{isResumeMode ? "▶" : "↑"}</button>
         </>}
       </form>}
-      {activeSession && sessionAutostart && <div className="autopilot-control session-autostart-control"><div><span className="eyebrow">АВТОПРОДОЛЖЕНИЕ ПОСЛЕ РЕСТАРТА</span><strong>{sessionAutostart.enabled ? "Включено" : "Выключено"}</strong><small>{sessionAutostart.source === "session" ? "Отдельная настройка этой сессии" : sessionAutostart.source === "global" ? "Наследуется от общей настройки" : "Включено по умолчанию и не зависит от автопилота"}</small>{sessionAutostart.source === "session" && <button className="inherit-button" disabled={sessionAutostartSaving} onClick={() => void inheritSessionAutostart()}>Наследовать общую</button>}</div><button className={`switch-control ${sessionAutostart.enabled ? "enabled" : ""}`} role="switch" aria-checked={sessionAutostart.enabled} aria-label={`Autostart unfinished session ${activeSession.id}`} disabled={sessionAutostartSaving} onClick={() => void toggleSessionAutostart()}><span /></button></div>}
+      {activeSession && sessionAutostart && <div className="autopilot-control session-autostart-control"><div><span className="eyebrow">УМНОЕ АВТОПРОДОЛЖЕНИЕ</span><strong>{sessionAutostart.enabled ? "Включено" : "Выключено"}</strong><small>{sessionAutostart.source === "session" ? "Отдельная настройка этой сессии" : sessionAutostart.source === "harness" ? `Наследуется от настройки ${activeSession.harness}` : sessionAutostart.source === "global" ? "Наследуется от общей настройки" : "Включено по умолчанию и не зависит от автопилота"}</small>{sessionAutostart.source === "session" && <button className="inherit-button" disabled={sessionAutostartSaving} onClick={() => void inheritSessionAutostart()}>Наследовать настройку harness</button>}</div><button className={`switch-control ${sessionAutostart.enabled ? "enabled" : ""}`} role="switch" aria-checked={sessionAutostart.enabled} aria-label={`Autocontinue unfinished session ${activeSession.id}`} disabled={sessionAutostartSaving} onClick={() => void toggleSessionAutostart()}><span /></button></div>}
       {sessionAutostartError && <small className="autopilot-error">{sessionAutostartError}</small>}
     </section>
     {showInspector && !showStatistics && !showJobs && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">SESSION</span><button className="icon-button" onClick={() => setShowInspector(false)} aria-label="Close inspector">×</button></div>{activeSession ? <><div className="inspector-title">{activeSession.title}</div><div className="inspector-status"><span className={`status-dot status-${activeSession.status}`} />{displayStatus(activeSession.status)}</div>{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">AUTOPILOT</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Переопределено для этой сессии" : autopilotSession.source === "policy" ? "Наследуется от harness policy" : autopilotSession.source === "plugin-default" ? "По умолчанию плагина" : "По умолчанию выключен"}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Наследовать policy</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label={`Autopilot for ${activeSession.id}`} disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}<dl><dt>Harness</dt><dd>{activeSession.harness}</dd><dt>Working directory</dt><dd>{activeSession.cwd}</dd>{activeSession.model && <><dt>Model</dt><dd>{activeSession.model}</dd></>}{activeSession.messageCount !== undefined && <><dt>Messages</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Duration</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.costUsd !== undefined && <><dt>Cost</dt><dd title={activeSession.meta?.pricing_source === "models.dev" ? `Estimated from models.dev · ${String(activeSession.meta?.pricing_provider || "")}/${String(activeSession.meta?.pricing_model || "")}` : undefined}>{`${activeSession.meta?.pricing_kind === "estimate" ? "~" : ""}$${activeSession.costUsd.toFixed(4)}`}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Tokens</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}<dt>Subagents</dt><dd>{details?.children?.length || 0}</dd></dl>{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">No turns yet. Send a message or Resume to start this session.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer">Visualize</a>}{activeSession.status === "running" && <button className="danger-button" onClick={() => void runAction("stop")}>Stop</button>}{(activeSession.status === "stopped" || activeSession.status === "error") && <button className="primary-button" onClick={() => void runAction("resume")}>Resume</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Recover</button>}</div><div className="settings-block"><span className="eyebrow">VIEW</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label></div></> : <div className="empty-inspector">No session selected.</div>}</aside>}

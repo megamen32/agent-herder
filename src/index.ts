@@ -13,7 +13,7 @@ import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { AutopilotSessionStore } from "./autopilot/session-store.js";
-import { createOpenAICompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
+import { createAnthropicCompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
 import { createNoticePlacePayload, createNoticePlaceSink } from "./autopilot/index.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
 import { SessionSupervisor } from "./session-supervisor.js";
@@ -510,15 +510,14 @@ async function main() {
   const cacheHandoff = process.env.AGENT_HERDER_CACHE_HANDOFF_ENABLED === "false"
     ? undefined
     : new CacheHandoffService(adapters, new FastAgentMiniMaxSummarizer(), lineageStore);
-  const unfinishedJudgeBaseUrl = process.env.AGENT_HERDER_UNFINISHED_JUDGE_BASE_URL || process.env.AGENT_HERDER_AUTOPILOT_JUDGE_BASE_URL;
-  const unfinishedJudgeModel = process.env.AGENT_HERDER_UNFINISHED_JUDGE_MODEL || process.env.AGENT_HERDER_AUTOPILOT_JUDGE_MODEL;
-  const unfinishedJudge = unfinishedJudgeBaseUrl && unfinishedJudgeModel
-    ? createOpenAICompatibleSessionCompletionJudge({
-        baseUrl: unfinishedJudgeBaseUrl,
-        model: unfinishedJudgeModel,
-        token: process.env.AGENT_HERDER_UNFINISHED_JUDGE_TOKEN || process.env.AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN || process.env.OPENAI_API_KEY,
-      })
-    : undefined;
+  const unfinishedJudgeToken = process.env.AGENT_HERDER_UNFINISHED_JUDGE_TOKEN || process.env.MINIMAX_API_KEY;
+  const unfinishedJudge = process.env.AGENT_HERDER_UNFINISHED_JUDGE_ENABLED === "false" || !unfinishedJudgeToken
+    ? undefined
+    : createAnthropicCompatibleSessionCompletionJudge({
+        baseUrl: process.env.AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL || "https://api.minimax.io/anthropic",
+        model: process.env.AGENT_HERDER_UNFINISHED_JUDGE_MODEL || "MiniMax-M3",
+        token: unfinishedJudgeToken,
+      });
   const unfinishedSessionLauncher = new UnfinishedSessionLauncher({
     adapters,
     store: unfinishedSessionStore,

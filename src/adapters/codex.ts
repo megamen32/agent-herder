@@ -460,6 +460,8 @@ export class CodexAdapter implements HarnessAdapter {
           if (status) break;
         }
       }
+      const activeWindowMs = Number(process.env.AGENT_HERDER_ACTIVE_WINDOW_MS || 5 * 60 * 1_000);
+      if (status === "running" && Date.now() - fileStat.mtimeMs > activeWindowMs) status = "idle";
       return { lastMessage, model, status, updatedAtMs: fileStat.mtimeMs };
     } finally {
       await file.close();

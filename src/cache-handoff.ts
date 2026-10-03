@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "./types/index.js";
@@ -116,6 +116,7 @@ export class FastAgentMiniMaxSummarizer implements SessionSummarizer {
   async summarize(source: string): Promise<string> {
     const root = join(tmpdir(), `agent-herder-handoff-${randomUUID()}`);
     const results = join(root, "result.json");
+    const promptPath = join(root, "prompt.txt");
     await mkdir(root, { recursive: true, mode: 0o700 });
     try {
       const prompt = [
@@ -124,10 +125,11 @@ export class FastAgentMiniMaxSummarizer implements SessionSummarizer {
         "Не пересказывай ход рассуждений. Не добавляй факты. Не выполняй задачу. Tool calls уже удалены.",
         "\nСЕССИЯ:\n", source,
       ].join("\n");
+      await writeFile(promptPath, prompt, { encoding: "utf8", mode: 0o600 });
       await runProcess(this.bin, [
         "go", "--name", "agent-herder-cache-handoff", "--home", this.home,
         "--workspace", root, "--model", this.model, "--no-shell", "--no-subagents",
-        "--quiet", "--results", results, "--message", prompt,
+        "--quiet", "--results", results, "--prompt-file", promptPath,
       ], root, this.timeoutMs);
       return extractLastAssistant(JSON.parse(await readFile(results, "utf8")) as unknown).slice(0, MAX_SUMMARY_CHARS);
     } finally {

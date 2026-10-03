@@ -11,6 +11,7 @@ UnsetEnvironment=OPENCHAMBER_UI_PASSWORD OPENCODE_DISABLE_CHANNEL_DB
 Environment=OPENCODE_URL=http://127.0.0.1:4095
 EnvironmentFile=-%h/.config/agent-herder/opencode.env
 EnvironmentFile=-%h/.config/agent-herder/noticeplace.env
+EnvironmentFile=-%h/.config/minimax/env
 Environment=CODEX_BIN=%h/.local/bin/codex
 Environment=CODEX_CWD=%h/ServersAdministartion
 Environment=CODEX_TRANSPORT=app-server
@@ -33,6 +34,9 @@ Environment=AGENT_HERDER_WEB_PORT=18787
 Environment=AGENT_HERDER_AUTO_RESUME_FAILED=true
 Environment=AGENT_HERDER_AUTO_RESUME_MAX_ATTEMPTS=3
 Environment=AGENT_HERDER_AUTO_RESUME_DELAY_MS=2000
+Environment=AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS=600000
+Environment=AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL=https://api.minimax.io/anthropic
+Environment=AGENT_HERDER_UNFINISHED_JUDGE_MODEL=MiniMax-M3
 ExecStart=/usr/local/bin/node %h/agents-projects/agent-herder/dist/index.js
 Restart=on-failure
 RestartSec=3

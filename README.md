@@ -201,6 +201,9 @@ The common switches are:
 | `AGENT_HERDER_INJECTION_RESHOW_MS` | `2700000` | Re-inject unchanged rosters after this staleness window |
 | `AGENT_HERDER_AUTO_TTL_SECONDS` | `60` | Auto-reserved file-activity lease TTL |
 | `AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS` | `600000` | Recheck unfinished sessions and resume newly stalled work every 10 minutes |
+| `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Direct MiniMax Anthropic-compatible classifier endpoint; avoids an extra gateway hop |
+| `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3` | Model that classifies the last 2,000 transcript characters; reads `MINIMAX_API_KEY` from the protected service environment |
+| `AGENT_HERDER_UNFINISHED_JUDGE_ENABLED` | `true` | Disable only the MiniMax unfinished-session classifier |
 | `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | On restart, replace a stale documented-cache session with a compact MiniMax handoff in the same harness/model |
 | `AGENT_HERDER_HANDOFF_MODEL` | `generic.minimax/MiniMax-M3.1-Flash-Preview` | Fast Agent model used only to summarize stale sessions; it never executes the task |
 | `AGENT_HERDER_CACHE_TTL_MINUTES` | `{}` | JSON exact overrides such as `{"zcode:provider/model":30}`; unknown provider TTLs are never guessed |

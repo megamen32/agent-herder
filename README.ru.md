@@ -165,6 +165,9 @@ npx -y agent-herder
 | `AGENT_HERDER_INJECTION_RESHOW_MS` | `2700000` | Повтор инжекта неизменившихся ростеров |
 | `AGENT_HERDER_AUTO_TTL_SECONDS` | `60` | TTL авто-лиз файловой активности |
 | `AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS` | `600000` | Сверять незавершённые сессии и продолжать остановившиеся задачи каждые 10 минут |
+| `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Прямой Anthropic-совместимый endpoint MiniMax без дополнительного шлюза |
+| `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3` | Модель классификации последних 2000 символов; ключ читается из защищённого окружения `MINIMAX_API_KEY` |
+| `AGENT_HERDER_UNFINISHED_JUDGE_ENABLED` | `true` | Отключает только MiniMax-классификатор незавершённых сессий |
 | `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | При рестарте заменять сессию с истёкшим документированным кэшем на новую в том же харнесе/модели через краткий handoff MiniMax |
 | `AGENT_HERDER_HANDOFF_MODEL` | `generic.minimax/MiniMax-M3.1-Flash-Preview` | Модель Fast Agent только для суммаризации; задачу она не выполняет |
 | `AGENT_HERDER_CACHE_TTL_MINUTES` | `{}` | JSON с точными override, например `{"zcode:provider/model":30}`; неизвестный TTL не угадывается |

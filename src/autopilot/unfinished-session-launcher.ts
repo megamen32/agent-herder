@@ -965,6 +965,72 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
   };
 }
 
+/** Direct MiniMax Anthropic-compatible judge with an explicit cached system prefix. */
+export function createAnthropicCompatibleSessionCompletionJudge(config: {
+  baseUrl: string;
+  model: string;
+  token: string;
+  fetchImpl?: typeof fetch;
+}): SessionCompletionJudge {
+  const fetchImpl = config.fetchImpl ?? fetch;
+  const endpoint = `${config.baseUrl.replace(/\/$/, "")}/v1/messages`;
+  return {
+    async decide({ session, transcriptTail }) {
+      const response = await fetchImpl(endpoint, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${config.token}`,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        signal: AbortSignal.timeout(35_000),
+        body: JSON.stringify({
+          model: config.model,
+          max_tokens: 512,
+          temperature: 0,
+          system: [{
+            type: "text",
+            text: [
+              "Ты классификатор незавершённых Codex и ZCode задач Agent Herder.",
+              "Верни только JSON: {verdict:completed|unfinished|needs_human,reason:string,confidence:number}.",
+              "completed — цель явно выполнена; unfinished — работа оборвана, идёт или остались конкретные действия; needs_human — нужен выбор, секрет или содержательный ответ человека.",
+              "Статус БД — только слабый сигнал. Главный источник — последние 2000 символов диалога. При сомнении не выбирай completed.",
+              "reason — одно короткое русское предложение, confidence — число от 0 до 1.",
+            ].join(" "),
+            cache_control: { type: "ephemeral" },
+          }],
+          messages: [{
+            role: "user",
+            content: JSON.stringify({
+              session: {
+                harness: session.harness,
+                id: session.id,
+                title: session.title,
+                cwd: session.cwd,
+                status_signal: session.status,
+                last_activity: session.lastActivity,
+                needs_permission: session.needsPermission,
+              },
+              transcript_tail: transcriptTail,
+            }),
+          }],
+        }),
+      });
+      if (!response.ok) throw new Error(`MiniMax Anthropic judge rejected with HTTP ${response.status}`);
+      const body = await response.json() as Record<string, unknown>;
+      const blocks = Array.isArray(body.content) ? body.content : [];
+      const content = blocks.flatMap((block) => block && typeof block === "object"
+        && (block as Record<string, unknown>).type === "text"
+        && typeof (block as Record<string, unknown>).text === "string"
+        ? [(block as Record<string, unknown>).text as string]
+        : []).join("\n");
+      if (!content) throw new Error("MiniMax Anthropic judge returned no text content");
+      const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+      return normalizeVerdict(JSON.parse(json) as unknown);
+    },
+  };
+}
+
 async function atomicWrite(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;

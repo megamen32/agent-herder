@@ -29,8 +29,16 @@ describe("session autostart settings HTTP", () => {
     const origin = `http://127.0.0.1:${address.port}`;
 
     await expect((await fetch(`${origin}/api/session-autostart`)).json()).resolves.toMatchObject({ enabled: true, source: "default" });
+    const zcodeHarness = `${origin}/api/session-autostart/harnesses/zcode`;
+    await expect((await fetch(zcodeHarness)).json()).resolves.toMatchObject({ harness: "zcode", enabled: true, source: "default" });
+    await fetch(zcodeHarness, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    await expect((await fetch(zcodeHarness)).json()).resolves.toMatchObject({ harness: "zcode", enabled: false, source: "harness" });
     const zcode = `${origin}/api/session-autostart/sessions/zcode/session-1?cwd=${encodeURIComponent("/workspace/zcode")}`;
-    await expect((await fetch(zcode)).json()).resolves.toMatchObject({ enabled: true, source: "default" });
+    await expect((await fetch(zcode)).json()).resolves.toMatchObject({ enabled: false, source: "harness" });
 
     await fetch(zcode, {
       method: "PUT",
@@ -46,7 +54,7 @@ describe("session autostart settings HTTP", () => {
     });
     const codex = `${origin}/api/session-autostart/sessions/codex/codex-1?cwd=${encodeURIComponent("/workspace/codex")}`;
     await expect((await fetch(codex)).json()).resolves.toMatchObject({ enabled: false, source: "global" });
-    await expect((await fetch(zcode, { method: "DELETE" })).json()).resolves.toMatchObject({ enabled: false, source: "global" });
+    await expect((await fetch(zcode, { method: "DELETE" })).json()).resolves.toMatchObject({ enabled: false, source: "harness" });
+    await expect((await fetch(zcodeHarness, { method: "DELETE" })).json()).resolves.toMatchObject({ enabled: false, source: "global" });
   });
 });
-

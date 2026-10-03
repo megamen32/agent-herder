@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, readFile, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
@@ -67,6 +67,28 @@ describe("Codex app-server adapter", () => {
       await adapter.init();
       const session = (await adapter.listSessions()).find((item) => item.id === "thread-1");
       expect(session?.status).toBe(expected);
+    } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not treat an old persisted task_started marker as a live Codex turn", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-stale-running-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
+    const rollout = join(sessionDir, "rollout-thread-1.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-1", thread_name: "Old task", updated_at: new Date().toISOString() }) + "\n");
+    await writeFile(rollout, [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-1", session_id: "thread-1", cwd: "/workspace" } }),
+      JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
+    ].join("\n") + "\n");
+    const old = new Date(Date.now() - 10 * 60_000);
+    await utimes(rollout, old, old);
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      await adapter.init();
+      expect((await adapter.listSessions()).find((item) => item.id === "thread-1")?.status).toBe("idle");
     } finally {
       await adapter.dispose();
       await rm(codexDir, { recursive: true, force: true });
