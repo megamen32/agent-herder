@@ -211,6 +211,7 @@ describe("unfinished session launcher", () => {
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const calls = { resumes: 0, messages: [] as string[] };
     const session = { ...fixtureSession("idle", "codex"), lastActivity: new Date(Date.now() - 5 * 60_000).toISOString() };
+    await store.markStarted(session, "previous-process");
     let individualDecisions = 0;
     await new UnfinishedSessionLauncher({
       adapters: new Map([["codex", fixtureAdapter(session, calls)]]), store,
@@ -222,10 +223,10 @@ describe("unfinished session launcher", () => {
     }).recoverPending();
     expect(individualDecisions).toBe(0);
     expect(calls).toEqual({ resumes: 0, messages: [] });
-    expect(await store.list()).toEqual([]);
+    expect(await store.list()).toMatchObject([{ sessionId: session.id, generationId: "previous-process", state: "active" }]);
   });
 
-  it("sends a large inventory to MiniMax in one globally deduplicated request", async () => {
+  it("covers a large inventory in bounded MiniMax batches", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-size-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = Array.from({ length: 33 }, (_, index): AgentSession => ({
@@ -250,7 +251,7 @@ describe("unfinished session launcher", () => {
         },
       },
     }).recoverPending();
-    expect(sizes).toEqual([33]);
+    expect(sizes).toEqual([16, 16, 1]);
     expect(await store.listInventory()).toHaveLength(33);
   });
 

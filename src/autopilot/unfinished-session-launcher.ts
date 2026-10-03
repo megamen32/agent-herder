@@ -532,7 +532,7 @@ export class UnfinishedSessionLauncher {
   }
 
   private async runRecovery(): Promise<void> {
-    await this.discoverUnfinishedSessions();
+    if (!await this.discoverUnfinishedSessions()) return;
     // Deliberately sequential: a restart must not multiply the host's agent workload.
     let resumedThisCycle = 0;
     const launches: Array<Promise<void>> = [];
@@ -625,7 +625,7 @@ export class UnfinishedSessionLauncher {
     }
   }
 
-  private async discoverUnfinishedSessions(): Promise<void> {
+  private async discoverUnfinishedSessions(): Promise<boolean> {
     const runtimeSettings = await this.options.settingsStore.getSettings();
     const inventoryWindowMs = this.options.inventoryWindowMs
       ?? runtimeSettings.inventoryWindowHours * 60 * 60 * 1_000;
@@ -666,15 +666,27 @@ export class UnfinishedSessionLauncher {
       }
       if (assessed.length > 0) {
         try {
-          const plan = await this.options.judge.plan({ sessions: assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail })) });
-          await this.applyBatchPlan(plan, assessed);
-          return;
+          const batchSize = positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_SESSIONS || 16), 16);
+          const concurrency = positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY || 2), 2);
+          assessed.sort((left, right) => left.session.cwd.localeCompare(right.session.cwd)
+            || left.session.title.localeCompare(right.session.title)
+            || Date.parse(right.session.lastActivity) - Date.parse(left.session.lastActivity));
+          const inputs = assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail }));
+          const chunks: SessionBatchCandidate[][] = [];
+          for (let index = 0; index < inputs.length; index += batchSize) chunks.push(inputs.slice(index, index + batchSize));
+          const groups: SessionBatchPlanGroup[] = [];
+          for (let index = 0; index < chunks.length; index += concurrency) {
+            const plans = await Promise.all(chunks.slice(index, index + concurrency).map((sessions) => this.options.judge!.plan!({ sessions })));
+            for (const plan of plans) groups.push(...plan.groups);
+          }
+          await this.applyBatchPlan({ groups }, assessed);
+          return true;
         } catch (error) {
           console.error(`[agent-herder] единый план MiniMax не построен; посессионный fallback запрещён: ${errorText(error)}`);
-          return;
+          return false;
         }
       }
-      if (assessed.length === 0) return;
+      if (assessed.length === 0) return true;
     }
     let judgements = 0;
     const equivalentSessions = new Map<string, string>();
@@ -737,6 +749,7 @@ export class UnfinishedSessionLauncher {
       known.add(key);
     }
     await this.options.store.upsertInventoryBatch(inventoryBatch);
+    return true;
   }
 
   private async applyBatchPlan(plan: SessionBatchPlan, assessed: AssessedSession[]): Promise<void> {
