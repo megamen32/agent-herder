@@ -666,17 +666,8 @@ export class UnfinishedSessionLauncher {
       }
       if (assessed.length > 0) {
         try {
-          const batchSize = positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_SESSIONS || 16), 16);
-          const concurrency = positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY || 2), 2);
-          const inputs = assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail }));
-          const chunks: SessionBatchCandidate[][] = [];
-          for (let index = 0; index < inputs.length; index += batchSize) chunks.push(inputs.slice(index, index + batchSize));
-          const groups: SessionBatchPlanGroup[] = [];
-          for (let index = 0; index < chunks.length; index += concurrency) {
-            const plans = await Promise.all(chunks.slice(index, index + concurrency).map((sessions) => this.options.judge!.plan!({ sessions })));
-            for (const plan of plans) groups.push(...plan.groups);
-          }
-          await this.applyBatchPlan({ groups }, assessed);
+          const plan = await this.options.judge.plan({ sessions: assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail })) });
+          await this.applyBatchPlan(plan, assessed);
           return;
         } catch (error) {
           console.error(`[agent-herder] единый план MiniMax не построен; посессионный fallback запрещён: ${errorText(error)}`);

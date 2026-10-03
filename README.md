@@ -205,8 +205,6 @@ The common switches are:
 | `AGENT_HERDER_UNFINISHED_INVENTORY_HOURS` | `48` | Default lookback; the Web UI persists a runtime override without a restart |
 | `AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES` | `4` | Full recent semantic messages sent to the judge; latest user and model messages are always retained |
 | `AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS` | `32768` | Output budget for each MiniMax inventory-plan batch |
-| `AGENT_HERDER_UNFINISHED_BATCH_SESSIONS` | `16` | Sessions per bounded MiniMax batch; every enabled session in the window is still covered |
-| `AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY` | `2` | Maximum concurrent MiniMax inventory batches |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Direct MiniMax Anthropic-compatible classifier endpoint; avoids an extra gateway hop |
 | `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash-Preview` | Default classifier model; the Web UI runtime selection overrides it and reads `MINIMAX_API_KEY` from the protected service environment |
 | `AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS` | `600000` | Maximum time for the one all-session MiniMax plan; timeout never falls back to per-session launches |
@@ -220,7 +218,7 @@ The common switches are:
 | `AGENT_HERDER_HTTP_TOKEN` | — | Required when the web host is non-loopback |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_DIR` | `.agent-herder/transcripts` | Relative archive path inside the MCP process CWD |
 
-Every reconciliation runs one bounded MiniMax planning pass over the enabled Codex and ZCode inventory. The planner receives the configured four full semantic messages from every session in batches, groups duplicate tasks inside each batch, and the combined result creates at most one `Автопродолжение — <readable topic>` session for each unfinished group. A single global launch budget still limits the whole pass.
+Every reconciliation sends one MiniMax request with the complete enabled Codex and ZCode inventory. The planner receives the configured four full semantic messages from every session together, groups duplicate tasks globally, and creates at most one `Автопродолжение — <readable topic>` session for each unfinished group. A single global launch budget still limits the whole pass.
 
 Cache-aware restart uses 30 minutes for documented GPT-5.6+ cache retention,
 and a conservative 5-minute boundary for GLM-5.3 and MiniMax M3/M3.1. Z.ai's
