@@ -238,12 +238,22 @@ export class UnfinishedSessionStore {
   }
 
   async upsertInventory(record: UnfinishedSessionInventoryRecord): Promise<void> {
+    await this.upsertInventoryBatch([record]);
+  }
+
+  async upsertInventoryBatch(records: UnfinishedSessionInventoryRecord[]): Promise<void> {
+    if (records.length === 0) return;
     await this.mutate((file) => {
       const inventory = file.inventory ??= [];
-      const key = sessionKey(record.harness, record.sessionId);
-      const index = inventory.findIndex((candidate) => sessionKey(candidate.harness, candidate.sessionId) === key);
-      if (index < 0) inventory.push(cloneInventoryRecord(record));
-      else inventory[index] = cloneInventoryRecord(record);
+      const positions = new Map(inventory.map((candidate, index) => [sessionKey(candidate.harness, candidate.sessionId), index]));
+      for (const record of records) {
+        const key = sessionKey(record.harness, record.sessionId);
+        const index = positions.get(key);
+        if (index === undefined) {
+          positions.set(key, inventory.length);
+          inventory.push(cloneInventoryRecord(record));
+        } else inventory[index] = cloneInventoryRecord(record);
+      }
       inventory.sort((left, right) => Date.parse(right.lastActivity) - Date.parse(left.lastActivity));
     });
   }
@@ -283,7 +293,7 @@ export class UnfinishedSessionStore {
       const before = file.sessions.length;
       file.sessions = file.sessions.filter((record) => sessionKey(record.harness, record.sessionId) !== key);
       return file.sessions.length !== before;
-    });
+    }, (changed) => changed);
   }
 
   async beginAttempt(
@@ -303,7 +313,7 @@ export class UnfinishedSessionStore {
       record.nextAttemptAt = new Date(now.getTime() + retryDelayMs * (2 ** (record.attempts - 1))).toISOString();
       delete record.lastError;
       return { ...record };
-    });
+    }, (record) => record !== null);
   }
 
   async markFailure(
@@ -320,7 +330,7 @@ export class UnfinishedSessionStore {
       record.lastError = bounded(error, "error");
       record.updatedAt = now.toISOString();
       return { ...record };
-    });
+    }, (record) => record !== null);
   }
 
   async markNotified(harness: HarnessType, sessionId: string, now = new Date()): Promise<void> {
@@ -342,7 +352,7 @@ export class UnfinishedSessionStore {
     }
   }
 
-  private async mutate<T>(operation: (file: UnfinishedSessionFile) => T | Promise<T>): Promise<T> {
+  private async mutate<T>(operation: (file: UnfinishedSessionFile) => T | Promise<T>, shouldWrite: (result: T) => boolean = () => true): Promise<T> {
     const previous = this.operation;
     let release!: () => void;
     this.operation = new Promise<void>((resolve) => { release = resolve; });
@@ -350,8 +360,10 @@ export class UnfinishedSessionStore {
     try {
       const file = await this.read();
       const result = await operation(file);
-      await mkdir(dirname(this.path), { recursive: true });
-      await atomicWrite(this.path, file);
+      if (shouldWrite(result)) {
+        await mkdir(dirname(this.path), { recursive: true });
+        await atomicWrite(this.path, file);
+      }
       return result;
     } finally {
       release();
@@ -598,6 +610,7 @@ export class UnfinishedSessionLauncher {
     const known = new Set((await this.options.store.list()).map((record) => sessionKey(record.harness, record.sessionId)));
     const priorInventory = new Map((await this.options.store.listInventory()).map((record) => [sessionKey(record.harness, record.sessionId), record]));
     const candidates: Array<{ adapter: HarnessAdapter; session: AgentSession }> = [];
+    const inventoryBatch: UnfinishedSessionInventoryRecord[] = [];
     for (const [provider, adapter] of this.options.adapters) {
       if (!isAutocontinueInventoryHarness(provider) || !adapter.resumeSession) continue;
       if ((provider === "codex" || provider === "zcode") && adapter.isReady && !adapter.isReady()) {
@@ -671,7 +684,7 @@ export class UnfinishedSessionLauncher {
         observedAt: new Date().toISOString(),
         ...(verdict ? { verdict } : {}),
       };
-      await this.options.store.upsertInventory(inventory);
+      inventoryBatch.push(inventory);
       if (verdict?.verdict !== "unfinished") {
         if (verdict) await this.options.store.remove(harness, session.id);
         known.delete(key);
@@ -681,6 +694,7 @@ export class UnfinishedSessionLauncher {
       await this.options.store.markStarted(session, `judged-${this.generationId}`);
       known.add(key);
     }
+    await this.options.store.upsertInventoryBatch(inventoryBatch);
   }
 
   private async fail(record: UnfinishedSessionRecord, error: string): Promise<void> {
