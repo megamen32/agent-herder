@@ -146,6 +146,11 @@ describe("unfinished session launcher", () => {
       { ...fixtureSession("idle", "zcode"), id: "duplicate-old", title: "Починить комментарии", cwd: "/workspace/video", lastActivity: new Date(now - 60_000).toISOString() },
       { ...fixtureSession("idle", "zcode"), id: "duplicate-new", title: "Комментарии снова не отправляются", cwd: "/workspace/video", model: "account:zai-start-plan/GLM-5.3-Flash", lastActivity: new Date(now).toISOString() },
     ];
+    await store.upsertInventory({
+      harness: "zcode", sessionId: "duplicate-old", cwd: "/workspace/video", title: "Починить комментарии",
+      status: "idle", lastActivity: sessions[0]!.lastActivity, transcriptTail: "старый сохранённый хвост", observedAt: new Date().toISOString(),
+      verdict: { verdict: "completed", reason: "Предыдущая оценка могла быть ошибочной", confidence: 0.6, judgedAt: new Date().toISOString() },
+    });
     const created: AgentSession = { ...sessions[1]!, id: "merged-session", status: "running", title: "Автопродолжение — Восстановить отправку комментариев" };
     const names: string[] = [];
     const models: Array<string | undefined> = [];

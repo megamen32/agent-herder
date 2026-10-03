@@ -661,8 +661,6 @@ export class UnfinishedSessionLauncher {
       for (const { adapter, session } of candidates) {
         await new Promise<void>((resolve) => setImmediate(resolve));
         if (!await this.isEnabled(session.harness, session.id, session.cwd)) continue;
-        const previous = priorInventory.get(sessionKey(session.harness, session.id));
-        if (session.status !== "running" && previous?.lastActivity === session.lastActivity && previous.verdict?.verdict !== "unfinished") continue;
         const messages = await adapter.getSessionMessages?.(session.id, Math.max(50, runtimeSettings.evidenceMessageCount * 3)).catch(() => null);
         assessed.push({ adapter, session, transcriptTail: completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount) });
       }
@@ -1187,7 +1185,7 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
 
 function batchPlannerPrompt(): string {
   return [
-    "Ты единый оркестратор автопродолжения Agent Herder для Codex, ZCode, OpenCode и Fast Agent.",
+    "Ты единый оркестратор автопродолжения Agent Herder для Codex и ZCode.",
     "Получаешь все доступные сессии окна, у каждой ровно последние четыре полных смысловых сообщения без tool noise.",
     "Сгруппируй сессии одной и той же пользовательской задачи, даже если названия различаются; не объединяй просто похожие задачи.",
     "Каждый входной session.id должен встретиться ровно один раз в source_session_ids одной группы.",
