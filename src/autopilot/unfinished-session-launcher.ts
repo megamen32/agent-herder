@@ -539,6 +539,7 @@ export class UnfinishedSessionLauncher {
     const records = await this.options.store.list();
     records.sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt));
     for (const record of records) {
+      if (!isAutocontinueInventoryHarness(record.harness)) continue;
       if (record.state === "exhausted") {
         await this.notifyExhausted(record);
         continue;
@@ -548,7 +549,7 @@ export class UnfinishedSessionLauncher {
         continue;
       }
       const adapter = this.options.adapters.get(record.harness);
-      if (!adapter || (!adapter.resumeSession && record.harness !== "opencode")) {
+      if (!adapter?.resumeSession) {
         await this.fail(record, `${displayHarness(record.harness)} не поддерживает возобновление сессии`);
         continue;
       }
@@ -666,27 +667,15 @@ export class UnfinishedSessionLauncher {
       }
       if (assessed.length > 0) {
         try {
-          const batchSize = positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_SESSIONS || 16), 16);
-          const concurrency = positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY || 2), 2);
-          assessed.sort((left, right) => left.session.cwd.localeCompare(right.session.cwd)
-            || left.session.title.localeCompare(right.session.title)
-            || Date.parse(right.session.lastActivity) - Date.parse(left.session.lastActivity));
-          const inputs = assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail }));
-          const chunks: SessionBatchCandidate[][] = [];
-          for (let index = 0; index < inputs.length; index += batchSize) chunks.push(inputs.slice(index, index + batchSize));
-          const groups: SessionBatchPlanGroup[] = [];
-          for (let index = 0; index < chunks.length; index += concurrency) {
-            const plans = await Promise.all(chunks.slice(index, index + concurrency).map((sessions) => this.options.judge!.plan!({ sessions })));
-            for (const plan of plans) groups.push(...plan.groups);
-          }
-          await this.applyBatchPlan({ groups }, assessed);
+          const plan = await this.options.judge.plan({ sessions: assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail })) });
+          await this.applyBatchPlan(plan, assessed);
           return true;
         } catch (error) {
           console.error(`[agent-herder] единый план MiniMax не построен; посессионный fallback запрещён: ${errorText(error)}`);
           return false;
         }
       }
-      if (assessed.length === 0) return true;
+      if (assessed.length === 0) return false;
     }
     let judgements = 0;
     const equivalentSessions = new Map<string, string>();

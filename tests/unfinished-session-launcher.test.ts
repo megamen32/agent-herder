@@ -226,7 +226,7 @@ describe("unfinished session launcher", () => {
     expect(await store.list()).toMatchObject([{ sessionId: session.id, generationId: "previous-process", state: "active" }]);
   });
 
-  it("covers a large inventory in bounded MiniMax batches", async () => {
+  it("sends a large inventory to MiniMax in one globally deduplicated request", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-size-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = Array.from({ length: 33 }, (_, index): AgentSession => ({
@@ -251,7 +251,7 @@ describe("unfinished session launcher", () => {
         },
       },
     }).recoverPending();
-    expect(sizes).toEqual([16, 16, 1]);
+    expect(sizes).toEqual([33]);
     expect(await store.listInventory()).toHaveLength(33);
   });
 
