@@ -98,7 +98,7 @@ describe("health remediation route harness guard", () => {
         name: "health_repair_inc-health-guard-1",
         cwd: "/tmp",
         message: "Repair the selected health incident and report useful progress.",
-        execution: { runtime: "zcode", provider: "omniroute", model: "zc/glm-5.3-flash", reasoning: "high", topic: "health" },
+        execution: { runtime: "zcode", provider: "account:zai-individual-coding-plan", model: "GLM-5.3-Flash", reasoning: "high", topic: "health" },
       }),
     });
 
@@ -128,7 +128,7 @@ describe("health remediation route harness guard", () => {
         name: "health_repair_inc-health-guard-2",
         cwd: "/tmp",
         message: "Repair the selected health incident and report useful progress.",
-        execution: { runtime: "zcode", provider: "omniroute", model: "zc/glm-5.3-flash", reasoning: "high", topic: "health" },
+        execution: { runtime: "zcode", provider: "account:zai-individual-coding-plan", model: "GLM-5.3-Flash", reasoning: "high", topic: "health" },
       }),
     });
 

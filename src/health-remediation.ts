@@ -1,15 +1,15 @@
 export interface HealthExecutionProfile {
   runtime: "zcode";
-  provider: "omniroute";
-  model: "zc/glm-5.3-flash";
+  provider: "account:zai-individual-coding-plan";
+  model: "GLM-5.3-Flash";
   reasoning: "high";
   topic: "health";
 }
 
 const CANONICAL_PROFILE: HealthExecutionProfile = {
   runtime: "zcode",
-  provider: "omniroute",
-  model: "zc/glm-5.3-flash",
+  provider: "account:zai-individual-coding-plan",
+  model: "GLM-5.3-Flash",
   reasoning: "high",
   topic: "health",
 };

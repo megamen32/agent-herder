@@ -5,14 +5,14 @@ describe("health remediation execution profile", () => {
   it("accepts the canonical ZCode/OmniRoute/GLM Flash profile", () => {
     expect(normalizeHealthExecution({
       runtime: "zcode",
-      provider: "omniroute",
-      model: "zc/glm-5.3-flash",
+      provider: "account:zai-individual-coding-plan",
+      model: "GLM-5.3-Flash",
       reasoning: "high",
       topic: "health",
     })).toEqual({
       runtime: "zcode",
-      provider: "omniroute",
-      model: "zc/glm-5.3-flash",
+      provider: "account:zai-individual-coding-plan",
+      model: "GLM-5.3-Flash",
       reasoning: "high",
       topic: "health",
     });
@@ -21,7 +21,7 @@ describe("health remediation execution profile", () => {
   it("rejects a profile that silently changes runtime, provider, model, or reasoning", () => {
     expect(() => normalizeHealthExecution({
       runtime: "zcode",
-      provider: "omniroute",
+      provider: "account:zai-individual-coding-plan",
       model: "gpt-4o",
       reasoning: "high",
       topic: "health",
@@ -31,8 +31,8 @@ describe("health remediation execution profile", () => {
   it("rejects Hermes as the canonical runtime", () => {
     expect(() => normalizeHealthExecution({
       runtime: "hermes",
-      provider: "omniroute",
-      model: "zc/glm-5.3-flash",
+      provider: "account:zai-individual-coding-plan",
+      model: "GLM-5.3-Flash",
       reasoning: "high",
       topic: "health",
     })).toThrow(/runtime/);
