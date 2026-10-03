@@ -65,7 +65,7 @@ def _coordination_pre_llm(session_id: str = "", **_: Any) -> dict[str, str] | No
     if not current_session:
         return None
     try:
-        query = urllib.parse.urlencode({"harness": "hermes", "sessionId": current_session, "cwd": os.getcwd(), "touch": "1"})
+        query = urllib.parse.urlencode({"harness": "hermes", "sessionId": current_session, "cwd": os.getcwd(), "touch": "1", "consume": "1"})
         data = _coordination_api(f"/api/coordination/context?{query}")
         context = data.get("context")
         return {"context": str(context)} if context else None

@@ -87,7 +87,7 @@ async def before_llm_call(ctx: Any) -> None:
         return
     session_id, cwd = identity
     try:
-        query = urllib.parse.urlencode({"harness": "fast-agent", "sessionId": session_id, "cwd": cwd, "touch": "1"})
+        query = urllib.parse.urlencode({"harness": "fast-agent", "sessionId": session_id, "cwd": cwd, "touch": "1", "consume": "1"})
         data = await asyncio.to_thread(_api, f"/api/coordination/context?{query}")
         context = data.get("context")
         message = getattr(ctx, "message", None)

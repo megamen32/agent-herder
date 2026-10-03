@@ -63,7 +63,7 @@ export default async function AgentHerderAutopilot({ directory, $ }) {
     "experimental.chat.system.transform": async ({ sessionID }, output) => {
       if (!sessionID || !Array.isArray(output.system)) return
       try {
-        const q = new URLSearchParams({ harness: "opencode", sessionId: sessionID, cwd: directory, touch: "1" })
+        const q = new URLSearchParams({ harness: "opencode", sessionId: sessionID, cwd: directory, touch: "1", consume: "1" })
         const data = await coordinationFetch(`/api/coordination/context?${q}`)
         if (data?.context) output.system.push(data.context)
       } catch {}

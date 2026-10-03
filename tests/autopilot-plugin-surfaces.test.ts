@@ -40,6 +40,7 @@ describe("/autopilot plugin surfaces", () => {
     expect(opencode).toContain("config.command.autopilot");
     expect(opencode).toContain('event.type !== "session.idle"');
     expect(opencode).toContain("controlTurns.delete(sessionID)");
+    expect(opencode).toContain('consume: "1"');
     expect(hermes).toContain('ctx.register_command("autopilot"');
     expect(hermes).toContain('ctx.register_hook("post_llm_call"');
     expect(hermes).toContain("get_messages_as_conversation");
@@ -47,6 +48,9 @@ describe("/autopilot plugin surfaces", () => {
     expect(hermes).toContain("gateway._enqueue_fifo");
     expect(hermes).toContain("_await_choice");
     expect(hermes).toContain('"lastUserMessage": last_user');
+    expect(hermes).toContain('"consume": "1"');
+    expect(readFileSync(resolve(root, "integrations/fast-agent/coordination_hooks.py"), "utf8")).toContain('"consume": "1"');
+    expect(readFileSync(resolve(root, "integrations/zcode/agent-herder-autopilot/hooks/coordination.mjs"), "utf8")).toContain("consume:'1'");
     expect(zcodeHooks).toContain('"Stop"');
     expect(zcodeStop).toContain('AGENT_HERDER_AUTOPILOT_ALL_SESSIONS');
     expect(zcodeStop).toContain('continue: true');
