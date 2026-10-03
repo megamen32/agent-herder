@@ -389,6 +389,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly useLocalConfig: boolean;
   private readonly localDbPath: string;
   private readonly tasksIndexDbPath?: string;
+  private readonly persistedSessionIds = new Set<string>();
   private readonly sessionWorkspaces = new Map<string, ZcodeWorkspaceRef>();
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
   private readonly sessionEventUnsubscribers = new Map<string, () => void>();
@@ -533,6 +534,7 @@ export class ZcodeAdapter implements HarnessAdapter {
               : rawStatus === "waiting" || rawStatus === "needs_input" ? "needs_input"
                 : rawStatus === "running" && recentlyActive ? "running" : "idle";
           const cwd = resolve(row.workspace_path || this.cwd);
+          this.persistedSessionIds.add(row.task_id);
           this.sessionWorkspaces.set(row.task_id, this.workspace(cwd));
           return {
             id: row.task_id,
@@ -775,6 +777,10 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async getSessionMessages(id: string, limit = 100): Promise<SessionMessageView[] | null> {
+    if (this.persistedSessionIds.has(id)) {
+      const local = await this.readLocalSessionMessages(id, limit);
+      if (local?.length || !this.isReady()) return local;
+    }
     try {
       const workspace = this.sessionWorkspaces.get(id) || this.workspace();
       const result = await this.callAgent("readSessionMessages", {

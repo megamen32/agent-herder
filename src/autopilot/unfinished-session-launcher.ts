@@ -592,6 +592,10 @@ export class UnfinishedSessionLauncher {
     let judgements = 0;
     const equivalentSessions = new Map<string, string>();
     for (const { adapter, session } of candidates) {
+      // SQLite transcript reads and JSON parsing are local, but a large
+      // 48-hour inventory must still yield so the control-plane HTTP server
+      // remains responsive throughout reconciliation.
+      await new Promise<void>((resolve) => setImmediate(resolve));
       if (!isInventoryHarness(session.harness)) continue;
       const harness = session.harness;
       const key = sessionKey(harness, session.id);
