@@ -225,6 +225,30 @@ describe("ZCode adapter", () => {
     });
   });
 
+  it("persists the requested session name after ZCode derives a prompt title", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-title-"));
+    const dbPath = join(root, "tasks-index.sqlite");
+    const db = new DatabaseSync(dbPath);
+    db.exec(`create table tasks (task_id text primary key, title text)`);
+    db.close();
+    try {
+      const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new FakeClient(), tasksIndexDbPath: dbPath });
+      await adapter.init();
+      const created = await adapter.createSession({ name: "Автопродолжение — Аудит t-proxy", cwd: "/workspace" });
+      const writer = new DatabaseSync(dbPath);
+      writer.prepare("insert into tasks (task_id, title) values (?, ?)").run(created.id, "Автопродолжение — Аудит t-proxy Это единое продолжение");
+      writer.close();
+
+      expect(await adapter.sendMessage(created.id, { message: "Автопродолжение — Аудит t-proxy\n\nПродолжи задачу" })).toEqual({ ok: true });
+      const reader = new DatabaseSync(dbPath, { readOnly: true });
+      const row = reader.prepare("select title from tasks where task_id = ?").get(created.id) as { title: string };
+      reader.close();
+      expect(row.title).toBe("Автопродолжение — Аудит t-proxy");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("initializes, maps sessions/messages, and controls the native protocol", async () => {
     const client = new FakeClient();
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client, modelIds: ["zai/GLM-4.5"] });

@@ -390,6 +390,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly localDbPath: string;
   private readonly tasksIndexDbPath?: string;
   private readonly persistedSessionIds = new Set<string>();
+  private readonly desiredSessionTitles = new Map<string, string>();
   private reportedEmptyTasksIndex = false;
   private readonly sessionWorkspaces = new Map<string, ZcodeWorkspaceRef>();
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
@@ -616,6 +617,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     const info = sessionInfoFromPayload(snapshot);
     if (!info) throw new Error("ZCode createSession returned no sessionId");
     this.sessionWorkspaces.set(info.sessionId, workspace);
+    this.desiredSessionTitles.set(info.sessionId, options.name);
     this.ensureSessionEventSubscription(info.sessionId, workspace);
     this.emitEvent({ kind: "session.created", harness: "zcode", sessionId: info.sessionId, status: "idle" });
     return mapSession(snapshot, workspace.workspacePath, options.name);
@@ -659,6 +661,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       // resume after delivery is unconditional. On an already-attached
       // session it is a no-op; on a parked one it starts the turn.
       try { await this.resumeSession(id); } catch { /* best-effort wake-up */ }
+      await this.persistDesiredSessionTitle(id);
     }
     if (!result.ok) {
       // Interactive TUI sessions between turns reject direct prompts ("Session
@@ -667,9 +670,28 @@ export class ZcodeAdapter implements HarnessAdapter {
       if (!/not active/i.test(result.error ?? "")) return result;
       const resumed = await this.resumeSession(id);
       if (!resumed.ok) return result;
-      return await send();
+      const retried = await send();
+      if (retried.ok) await this.persistDesiredSessionTitle(id);
+      return retried;
     }
     return result;
+  }
+
+  private async persistDesiredSessionTitle(id: string): Promise<void> {
+    const title = this.desiredSessionTitles.get(id);
+    if (!title || !this.tasksIndexDbPath || !existsSync(this.tasksIndexDbPath)) return;
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(this.tasksIndexDbPath);
+      try {
+        const result = db.prepare("update tasks set title = ? where task_id = ?").run(title, id);
+        if (Number(result.changes) > 0) this.desiredSessionTitles.delete(id);
+      } finally {
+        db.close();
+      }
+    } catch (error) {
+      console.error(`[agent-herder] ZCode title persistence failed for ${id}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async stopSession(id: string): Promise<ControlResult> {
