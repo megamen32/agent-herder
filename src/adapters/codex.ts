@@ -1,6 +1,7 @@
 import { HarnessAdapter, AgentSession, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessageView } from "../types/index.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { existsSync } from "node:fs";
 import { open, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -375,6 +376,8 @@ export class CodexAdapter implements HarnessAdapter {
   }
 
   private async readSessionStates(): Promise<Map<string, CodexSessionState>> {
+    const indexed = await this.readSessionStatesFromDatabase();
+    if (indexed) return indexed;
     const result = new Map<string, CodexSessionState>();
     const sessionFiles = await this.findJsonlFiles(join(this.codexDir, "sessions"));
     await Promise.all(sessionFiles.map(async (filePath) => {
@@ -411,6 +414,63 @@ export class CodexAdapter implements HarnessAdapter {
       }
     }));
     return result;
+  }
+
+  /**
+   * Modern Codex already indexes rollout paths and metadata in state_5.sqlite.
+   * Reading that index avoids reparsing hundreds of megabytes across thousands
+   * of archived JSONL files on every control-plane refresh.
+   */
+  private async readSessionStatesFromDatabase(): Promise<Map<string, CodexSessionState> | null> {
+    const databasePath = join(this.codexDir, "state_5.sqlite");
+    if (!existsSync(databasePath)) return null;
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(databasePath, { readOnly: true });
+      try {
+        db.exec("pragma busy_timeout=5000");
+        const edges = new Map((db.prepare("select child_thread_id, parent_thread_id from thread_spawn_edges").all() as Array<{
+          child_thread_id: string; parent_thread_id: string;
+        }>).map((row) => [row.child_thread_id, row.parent_thread_id]));
+        const rows = db.prepare(`
+          select id, rollout_path, cwd, model, preview, updated_at_ms, thread_source, agent_role
+          from threads
+        `).all() as Array<{
+          id: string; rollout_path: string; cwd?: string; model?: string; preview?: string;
+          updated_at_ms?: number; thread_source?: string; agent_role?: string;
+        }>;
+        const result = new Map<string, CodexSessionState>();
+        for (const row of rows) {
+          if (!row.id || !row.rollout_path) continue;
+          result.set(row.id, {
+            cwd: row.cwd,
+            filePath: row.rollout_path,
+            lastMessage: row.preview,
+            model: row.model,
+            parentThreadId: edges.get(row.id),
+            threadSource: row.thread_source,
+            agentRole: row.agent_role,
+            updatedAtMs: normalizeEpochMs(row.updated_at_ms),
+          });
+        }
+        const recent = [...result.values()].filter((state) =>
+          state.updatedAtMs > 0
+          && Date.now() - state.updatedAtMs <= 48 * 60 * 60 * 1_000
+          && existsSync(state.filePath));
+        await Promise.all(recent.map(async (state) => {
+          const tail = await this.readSessionTail(state.filePath);
+          state.lastMessage = tail.lastMessage || state.lastMessage;
+          state.model = tail.model || state.model;
+          state.status = tail.status;
+          state.updatedAtMs = tail.updatedAtMs;
+        }));
+        return result;
+      } finally {
+        db.close();
+      }
+    } catch {
+      return null;
+    }
   }
 
   /** Share one expensive rollout scan across the dashboard, observer and recovery loop. */
@@ -593,4 +653,12 @@ export class CodexAdapter implements HarnessAdapter {
     }
     return result;
   }
+}
+
+function normalizeEpochMs(value: number | undefined): number {
+  if (!Number.isFinite(value) || !value || value < 0) return 0;
+  let normalized = value;
+  while (normalized > 10_000_000_000_000) normalized /= 1_000;
+  if (normalized < 10_000_000_000) normalized *= 1_000;
+  return normalized;
 }

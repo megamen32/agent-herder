@@ -2,11 +2,40 @@ import { describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, rm, readFile, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
 
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
 
 describe("Codex app-server adapter", () => {
+  it("uses the native state database instead of scanning every archived rollout", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-state-db-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
+    const rollout = join(sessionDir, "rollout-thread-db.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(rollout, [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-db", cwd: "/workspace-db" } }),
+      JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
+    ].join("\n") + "\n");
+    await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-db", thread_name: "Indexed", updated_at: new Date().toISOString() }) + "\n");
+    const db = new DatabaseSync(join(codexDir, "state_5.sqlite"));
+    db.exec("create table threads (id text, rollout_path text, cwd text, model text, preview text, updated_at_ms integer, thread_source text, agent_role text)");
+    db.exec("create table thread_spawn_edges (child_thread_id text, parent_thread_id text)");
+    db.prepare("insert into threads values (?, ?, ?, ?, ?, ?, ?, ?)").run("thread-db", rollout, "/workspace-db", "gpt-test", "working", Date.now(), "subagent", "worker");
+    db.prepare("insert into thread_spawn_edges values (?, ?)").run("thread-db", "parent-db");
+    db.close();
+    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    try {
+      await expect(adapter.listSessions()).resolves.toMatchObject([{
+        id: "thread-db", status: "running", cwd: "/workspace-db", model: "gpt-test",
+        meta: { parentThreadId: "parent-db", threadSource: "subagent", agentRole: "worker" },
+      }]);
+    } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
   it("discovers persisted sessions without spawning the app-server", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-lazy-"));
     const sessionDir = join(codexDir, "sessions", "2026", "07", "30");
