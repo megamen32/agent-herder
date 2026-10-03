@@ -94,6 +94,8 @@ export interface ZcodeAdapterOptions {
   modelIds?: string[];
   /** Inject a transport in tests or when embedding agent-herder. */
   client?: ZcodeClientLike;
+  /** Optional persisted cross-workspace task index; injectable for tests. */
+  tasksIndexDbPath?: string;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -386,6 +388,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly client: ZcodeClientLike;
   private readonly useLocalConfig: boolean;
   private readonly localDbPath: string;
+  private readonly tasksIndexDbPath?: string;
   private readonly sessionWorkspaces = new Map<string, ZcodeWorkspaceRef>();
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
   private readonly sessionEventUnsubscribers = new Map<string, () => void>();
@@ -396,6 +399,8 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.modelIds = options.modelIds ?? [];
     this.useLocalConfig = !options.client;
     this.localDbPath = process.env.ZCODE_DB_PATH || join(homedir(), ".zcode", "cli", "db", "db.sqlite");
+    this.tasksIndexDbPath = options.tasksIndexDbPath
+      ?? (this.useLocalConfig ? process.env.ZCODE_TASKS_INDEX_DB || join(homedir(), ".zcode", "v2", "tasks-index.sqlite") : undefined);
     if (options.client) {
       this.client = options.client;
     } else {
@@ -452,6 +457,8 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
+    const persisted = await this.listPersistedSessions(options);
+    if (!this.isReady() && this.useLocalConfig) return persisted;
     const rows: Array<{ workspace: ZcodeWorkspaceRef; row: unknown }> = [];
     for (const workspace of await this.workspaceCandidates(options.cwd)) {
       try {
@@ -470,7 +477,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       }
     }
     const seen = new Set<string>();
-    const sessions: AgentSession[] = [];
+    const sessions = new Map(persisted.map((session) => [session.id, session]));
     for (const { workspace, row } of rows) {
       const info = sessionInfoFromPayload(row);
       if (!info) throw new Error("ZCode returned an invalid listSessions entry");
@@ -487,9 +494,64 @@ export class ZcodeAdapter implements HarnessAdapter {
           // A list row is still useful when a historical snapshot cannot be read.
         }
       }
-      sessions.push(mapped);
+      sessions.set(mapped.id, mapped);
     }
-    return sessions;
+    return [...sessions.values()].sort((left, right) => Date.parse(right.lastActivity) - Date.parse(left.lastActivity));
+  }
+
+  private async listPersistedSessions(options: ListSessionsOptions): Promise<AgentSession[]> {
+    if (!this.tasksIndexDbPath) return [];
+    try {
+      const dbPath = this.tasksIndexDbPath;
+      if (!existsSync(dbPath)) return [];
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      try {
+        const rows = db.prepare(`
+          select task_id, workspace_path, title, task_status, model, created_at, updated_at
+          from tasks
+          where coalesce(deleted, 0) = 0 and coalesce(archived, 0) = 0
+          ${options.cwd ? "and workspace_path = ?" : ""}
+          order by updated_at desc
+          limit 200
+        `).all(...(options.cwd ? [resolve(options.cwd)] : [])) as Array<{
+          task_id: string;
+          workspace_path?: string;
+          title?: string;
+          task_status?: string;
+          model?: string;
+          created_at?: number;
+          updated_at?: number;
+        }>;
+        const activeWindowMs = Number(process.env.AGENT_HERDER_ACTIVE_WINDOW_MS || 5 * 60 * 1_000);
+        return rows.map((row) => {
+          const updatedAt = Number(row.updated_at || row.created_at || 0);
+          const rawStatus = row.task_status?.toLowerCase();
+          const recentlyActive = Number.isFinite(updatedAt) && updatedAt > 0 && Date.now() - updatedAt < activeWindowMs;
+          const status: AgentSession["status"] = rawStatus === "error" ? "error"
+            : rawStatus === "completed" ? "stopped"
+              : rawStatus === "waiting" || rawStatus === "needs_input" ? "needs_input"
+                : rawStatus === "running" && recentlyActive ? "running" : "idle";
+          const cwd = resolve(row.workspace_path || this.cwd);
+          this.sessionWorkspaces.set(row.task_id, this.workspace(cwd));
+          return {
+            id: row.task_id,
+            harness: "zcode" as const,
+            status,
+            title: row.title || "Untitled ZCode session",
+            cwd,
+            lastActivity: timestamp(updatedAt),
+            model: row.model,
+            needsPermission: status === "needs_input",
+            meta: { persistedTaskStatus: rawStatus, discoverySource: "tasks-index" },
+          };
+        });
+      } finally {
+        db.close();
+      }
+    } catch {
+      return [];
+    }
   }
 
   async getSession(id: string): Promise<AgentSession | null> {

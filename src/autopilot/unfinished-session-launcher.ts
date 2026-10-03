@@ -484,6 +484,7 @@ export class UnfinishedSessionLauncher {
     await this.discoverUnfinishedSessions();
     // Deliberately sequential: a restart must not multiply the host's agent workload.
     let resumedThisCycle = 0;
+    const launches: Array<Promise<void>> = [];
     const records = await this.options.store.list();
     records.sort((left, right) => Date.parse(left.startedAt) - Date.parse(right.startedAt));
     for (const record of records) {
@@ -511,43 +512,53 @@ export class UnfinishedSessionLauncher {
         await this.options.store.markStarted(session, this.generationId);
         continue;
       }
-      if (record.generationId === this.generationId) continue;
       if (session?.status === "running") {
         await this.options.store.markStarted(session, this.generationId);
         continue;
       }
+      if (record.generationId === this.generationId && Date.now() - Date.parse(record.updatedAt) < this.discoveryIdleMs) continue;
       if (resumedThisCycle >= this.maxResumesPerCycle) continue;
       const attempt = await this.options.store.beginAttempt(record.harness, record.sessionId, this.maxAttempts, this.retryDelayMs);
       if (!attempt) continue;
       resumedThisCycle += 1;
-      try {
-        if (session && this.options.cacheHandoff) {
-          const handoff = await this.options.cacheHandoff.maybeRollover(session);
-          if (handoff.kind === "rolled_over" && handoff.session) {
-            await this.options.store.remove(record.harness, record.sessionId);
-            await this.options.store.markStarted(handoff.session, this.generationId);
-            console.error(`[agent-herder] протухшая сессия ${record.harness}:${record.sessionId} продолжена в новой ${handoff.session.id}`);
-            continue;
-          }
+      launches.push(this.launchContinuation(adapter, record, attempt, session));
+    }
+    await Promise.all(launches);
+  }
+
+  private async launchContinuation(
+    adapter: HarnessAdapter,
+    record: UnfinishedSessionRecord,
+    attempt: UnfinishedSessionRecord,
+    session: AgentSession | null,
+  ): Promise<void> {
+    try {
+      if (session && this.options.cacheHandoff) {
+        const handoff = await this.options.cacheHandoff.maybeRollover(session);
+        if (handoff.kind === "rolled_over" && handoff.session) {
+          await this.options.store.remove(record.harness, record.sessionId);
+          await this.options.store.markStarted(handoff.session, this.generationId);
+          console.error(`[agent-herder] протухшая сессия ${record.harness}:${record.sessionId} продолжена в новой ${handoff.session.id}`);
+          return;
         }
-        const resumed = adapter.resumeSession ? await adapter.resumeSession(record.sessionId) : { ok: true };
-        if (!resumed.ok) throw new Error(resumed.error || "возобновление отклонено");
-        const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: false });
-        if (!sent.ok) throw new Error(sent.error || "команда продолжения отклонена");
-        await this.options.store.markStarted(session ?? {
-          id: record.sessionId,
-          harness: record.harness,
-          status: "running",
-          title: record.title || "Незавершённая задача",
-          cwd: record.cwd,
-          lastActivity: new Date().toISOString(),
-          model: record.model,
-          needsPermission: false,
-        }, this.generationId);
-        console.error(`[agent-herder] автоматически продолжена незавершённая сессия ${record.harness}:${record.sessionId}`);
-      } catch (error) {
-        await this.fail(attempt, errorText(error));
       }
+      const resumed = adapter.resumeSession ? await adapter.resumeSession(record.sessionId) : { ok: true };
+      if (!resumed.ok) throw new Error(resumed.error || "возобновление отклонено");
+      const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true });
+      if (!sent.ok) throw new Error(sent.error || "команда продолжения отклонена");
+      await this.options.store.markStarted(session ?? {
+        id: record.sessionId,
+        harness: record.harness,
+        status: "running",
+        title: record.title || "Незавершённая задача",
+        cwd: record.cwd,
+        lastActivity: new Date().toISOString(),
+        model: record.model,
+        needsPermission: false,
+      }, this.generationId);
+      console.error(`[agent-herder] автоматически продолжена незавершённая сессия ${record.harness}:${record.sessionId}`);
+    } catch (error) {
+      await this.fail(attempt, errorText(error));
     }
   }
 
@@ -600,17 +611,18 @@ export class UnfinishedSessionLauncher {
         // Keep it visible in inventory, but do not classify a session which may
         // still be receiving events from another harness process.
       } else if (!verdict && transcriptTail && this.options.judge && judgements < this.maxJudgementsPerCycle) {
+        judgements += 1;
         try {
           const judged = await this.options.judge.decide({ session, transcriptTail });
           verdict = { ...normalizeVerdict(judged), judgedAt: new Date().toISOString() };
-          judgements += 1;
         } catch (error) {
           console.error(`[agent-herder] MiniMax не классифицировал ${harness}:${session.id}: ${errorText(error)}`);
         }
-      } else if (!verdict && messages) {
-        verdict = { ...heuristicVerdict(session, messages), judgedAt: new Date().toISOString() };
       } else if (!verdict && !transcriptTail) {
         verdict = { verdict: "needs_human", reason: "Нет доступного хвоста диалога для безопасной классификации", confidence: 1, judgedAt: new Date().toISOString() };
+      }
+      if (!verdict && messages && (session.status === "running" || Date.now() - Date.parse(session.lastActivity) >= this.discoveryIdleMs)) {
+        verdict = { ...heuristicVerdict(session, messages), judgedAt: new Date().toISOString() };
       }
       const inventory: UnfinishedSessionInventoryRecord = {
         harness,
@@ -742,6 +754,12 @@ function parseInventoryRecord(value: unknown): UnfinishedSessionInventoryRecord 
   };
 }
 
+function normalizePersistedVerdict(value: unknown): SessionInventoryVerdict {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid inventory verdict");
+  const record = value as Record<string, unknown>;
+  return { ...normalizeVerdict(record), judgedAt: isoDate(record.judgedAt, "judgedAt") };
+}
+
 function heuristicVerdict(session: AgentSession, messages: SessionMessageView[]): Omit<SessionInventoryVerdict, "judgedAt"> {
   if (session.status === "needs_input" || session.needsPermission) {
     return { verdict: "needs_human", reason: "Сессия ожидает решения или разрешения человека", confidence: 1 };
@@ -761,12 +779,6 @@ function heuristicVerdict(session: AgentSession, messages: SessionMessageView[])
     return { verdict: "completed", reason: "Последним сохранён полный ответ агента", confidence: 0.75 };
   }
   return { verdict: "needs_human", reason: "Финальное состояние диалога неоднозначно", confidence: 0.5 };
-}
-
-function normalizePersistedVerdict(value: unknown): SessionInventoryVerdict {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid inventory verdict");
-  const record = value as Record<string, unknown>;
-  return { ...normalizeVerdict(record), judgedAt: isoDate(record.judgedAt, "judgedAt") };
 }
 
 function cloneInventoryRecord(record: UnfinishedSessionInventoryRecord): UnfinishedSessionInventoryRecord {

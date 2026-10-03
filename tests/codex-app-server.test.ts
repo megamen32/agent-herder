@@ -47,6 +47,32 @@ describe("Codex app-server adapter", () => {
     }
   });
 
+  it.each([
+    ["task_started", "running"],
+    ["task_complete", "idle"],
+    ["turn_aborted", "idle"],
+  ] as const)("overlays persisted Desktop lifecycle %s onto an idle app-server thread", async (marker, expected) => {
+    const codexDir = await mkdtemp(join(tmpdir(), `agent-herder-codex-rollout-${marker}-`));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({
+      id: "thread-1", thread_name: "Desktop task", updated_at: new Date().toISOString(),
+    }) + "\n");
+    await writeFile(join(sessionDir, "rollout-thread-1.jsonl"), [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-1", session_id: "thread-1", cwd: "/workspace" } }),
+      JSON.stringify({ type: "event_msg", payload: { type: marker } }),
+    ].join("\n") + "\n");
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      await adapter.init();
+      const session = (await adapter.listSessions()).find((item) => item.id === "thread-1");
+      expect(session?.status).toBe(expected);
+    } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
   it("keeps a native thread, interrupts turns, resumes, and forks", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-app-"));
     const sessionDir = join(codexDir, "sessions", "2026", "07", "30");

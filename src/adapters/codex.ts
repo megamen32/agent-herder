@@ -22,6 +22,7 @@ interface CodexSessionState {
   parentThreadId?: string;
   threadSource?: string;
   agentRole?: string;
+  status?: "running" | "idle";
   updatedAtMs: number;
 }
 
@@ -75,7 +76,7 @@ export class CodexAdapter implements HarnessAdapter {
       return {
         id: entry.id,
         harness: "codex" as const,
-        status: runningPids.has(entry.id) ? "running" as const : "stopped" as const,
+        status: state?.status ?? (runningPids.has(entry.id) ? "running" as const : "stopped" as const),
         title: entry.thread_name || "Untitled session",
         cwd: state?.cwd || process.cwd(),
         lastActivity: entry.updated_at || new Date(0).toISOString(),
@@ -118,13 +119,14 @@ export class CodexAdapter implements HarnessAdapter {
     };
   }
 
-  async getNativeSessionMetadata(): Promise<Map<string, Pick<CodexSessionState, "parentThreadId" | "threadSource" | "agentRole">>> {
+  async getNativeSessionMetadata(): Promise<Map<string, Pick<CodexSessionState, "parentThreadId" | "threadSource" | "agentRole" | "status">>> {
     const states = this.sessionStatesCache || await this.readSessionStates();
     this.sessionStatesCache = states;
     return new Map([...states.entries()].map(([id, state]) => [id, {
       parentThreadId: state.parentThreadId,
       threadSource: state.threadSource,
       agentRole: state.agentRole,
+      status: state.status,
     }]));
   }
 
@@ -389,6 +391,7 @@ export class CodexAdapter implements HarnessAdapter {
             // The initial turn context persists the model for the thread. A
             // tail context wins when a later turn explicitly changed it.
             model: tail.model || this.extractLatestTurnModel(header),
+            status: tail.status,
             ...this.extractLineage(header),
             updatedAtMs: tail.updatedAtMs,
           };
@@ -426,28 +429,52 @@ export class CodexAdapter implements HarnessAdapter {
 
   private async readSessionTail(
     filePath: string
-  ): Promise<{ lastMessage?: string; model?: string; updatedAtMs: number }> {
+  ): Promise<{ lastMessage?: string; model?: string; status?: "running" | "idle"; updatedAtMs: number }> {
     const file = await open(filePath, "r");
     try {
       const fileStat = await stat(filePath);
       const fileSize = fileStat.size;
-      const bytesToRead = Math.min(fileSize, 32 * 1024);
-      const buffer = Buffer.alloc(bytesToRead);
-      const { bytesRead } = await file.read(buffer, 0, bytesToRead, fileSize - bytesToRead);
-      const lines = buffer.subarray(0, bytesRead).toString("utf-8").split("\n").reverse();
+      let bytesToRead = Math.min(fileSize, 32 * 1024);
+      let buffer = Buffer.alloc(bytesToRead);
+      let read = await file.read(buffer, 0, bytesToRead, fileSize - bytesToRead);
+      let lines = buffer.subarray(0, read.bytesRead).toString("utf-8").split("\n").reverse();
       let lastMessage: string | undefined;
       let model: string | undefined;
+      let status: "running" | "idle" | undefined;
       for (const line of lines) {
         if (!lastMessage) {
           const message = this.extractTranscriptMessage(line)[0];
           if (message) lastMessage = message.slice(0, 300);
         }
         if (!model) model = this.extractTurnModel(line);
-        if (lastMessage && model) break;
+        if (!status) status = this.extractLifecycleStatus(line);
+        if (lastMessage && model && status) break;
       }
-      return { lastMessage, model, updatedAtMs: fileStat.mtimeMs };
+      if (!status && Date.now() - fileStat.mtimeMs <= 48 * 60 * 60 * 1_000 && bytesToRead < Math.min(fileSize, 4 * 1024 * 1024)) {
+        bytesToRead = Math.min(fileSize, 4 * 1024 * 1024);
+        buffer = Buffer.alloc(bytesToRead);
+        read = await file.read(buffer, 0, bytesToRead, fileSize - bytesToRead);
+        lines = buffer.subarray(0, read.bytesRead).toString("utf-8").split("\n").reverse();
+        for (const line of lines) {
+          status = this.extractLifecycleStatus(line);
+          if (status) break;
+        }
+      }
+      return { lastMessage, model, status, updatedAtMs: fileStat.mtimeMs };
     } finally {
       await file.close();
+    }
+  }
+
+  private extractLifecycleStatus(line: string): "running" | "idle" | undefined {
+    try {
+      const item = JSON.parse(line) as { type?: string; payload?: { type?: string } };
+      if (item.type !== "event_msg") return undefined;
+      if (item.payload?.type === "task_started") return "running";
+      if (item.payload?.type === "task_complete" || item.payload?.type === "turn_aborted") return "idle";
+      return undefined;
+    } catch {
+      return undefined;
     }
   }
 

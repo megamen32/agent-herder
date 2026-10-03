@@ -366,4 +366,70 @@ describe("unfinished session launcher", () => {
     expect((await store.list()).map((record) => record.sessionId)).toEqual(["new"]);
     expect((await store.listInventory()).find((record) => record.sessionId === "old")?.verdict?.reason).toContain("Заменена более новой сессией");
   });
+
+  it("persists a MiniMax completed verdict and never resumes that session", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-judge-complete-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = { ...fixtureSession("idle", "codex"), lastActivity: new Date(Date.now() - 30 * 60_000).toISOString() };
+    const calls = { resumes: 0, messages: [] as string[] };
+    let judgedTail = "";
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", fixtureAdapter(session, calls)]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: { async decide(input) { judgedTail = input.transcriptTail; return { verdict: "completed", reason: "Задача завершена", confidence: 0.98 }; } },
+    }).recoverPending();
+
+    expect(judgedTail).toContain("Продолжи.");
+    expect(judgedTail.length).toBeLessThanOrEqual(2_000);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await store.list()).toEqual([]);
+    expect(await store.listInventory()).toMatchObject([{ sessionId: "session-1", verdict: { verdict: "completed", confidence: 0.98 } }]);
+  });
+
+  it("bounds MiniMax attempts per reconciliation cycle even when the judge is unavailable", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-judge-budget-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const base = { ...fixtureSession("idle", "zcode"), lastActivity: new Date(Date.now() - 30 * 60_000).toISOString() };
+    const sessions = ["one", "two", "three"].map((id, index) => ({ ...base, id, title: `Task ${index}` }));
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-user`, role: "user", text: "Продолжи", parts: [{ type: "text", text: "Продолжи" }] }];
+    let attempts = 0;
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    await settingsStore.setHarness("zcode", false);
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store,
+      settingsStore, discoveryIdleMs: 1,
+      maxJudgementsPerCycle: 2,
+      judge: { async decide() { attempts += 1; throw new Error("offline"); } },
+    }).recoverPending();
+
+    expect(attempts).toBe(2);
+    expect(await store.list()).toEqual([]);
+    expect(await store.listInventory()).toHaveLength(3);
+  });
+
+  it("queues a successful continuation and retries the same idle unfinished session after the cooldown", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-idle-again-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = { ...fixtureSession("idle", "zcode"), lastActivity: new Date(Date.now() - 30 * 60_000).toISOString() };
+    await store.markStarted(session, "previous-process");
+    const calls = { resumes: 0, messages: [] as string[] };
+    const queues: Array<boolean | undefined> = [];
+    const adapter = fixtureAdapter(session, calls);
+    const send = adapter.sendMessage.bind(adapter);
+    adapter.sendMessage = async (id, input) => { queues.push(input.queue); return send(id, input); };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      generationId: "current-process", retryDelayMs: 0, discoveryIdleMs: 5,
+    });
+
+    await launcher.recoverPending();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await launcher.recoverPending();
+
+    expect(calls.resumes).toBe(2);
+    expect(queues).toEqual([true, true]);
+  });
 });

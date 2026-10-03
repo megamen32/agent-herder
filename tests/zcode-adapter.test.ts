@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import type { ZcodeClientLike } from "../src/adapters/zcode-protocol.js";
 import { ZcodeAdapter, resolveConfiguredZcodeModel, zcodeConfiguredModels } from "../src/adapters/zcode.js";
 import { markLifecycleEvent } from "../src/session-lifecycle.js";
@@ -86,6 +90,60 @@ class StaleStatusClient extends FakeClient {
 }
 
 describe("ZCode adapter", () => {
+  it("discovers persisted sessions across workspaces before the live app-server is ready", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-index-"));
+    const dbPath = join(root, "tasks-index.sqlite");
+    const db = new DatabaseSync(dbPath);
+    db.exec(`create table tasks (
+      task_id text primary key, workspace_path text, title text, task_status text,
+      model text, created_at integer, updated_at integer, deleted integer default 0,
+      archived integer default 0
+    )`);
+    db.prepare("insert into tasks (task_id,workspace_path,title,task_status,model,created_at,updated_at) values (?,?,?,?,?,?,?)")
+      .run("persisted-1", "/another/workspace", "Unfinished persisted task", "running", "zai/GLM-5.3-Flash", Date.now() - 60_000, Date.now() - 60_000);
+    db.close();
+    try {
+      const adapter = new ZcodeAdapter({ client: new FakeClient(), tasksIndexDbPath: dbPath });
+      expect((await adapter.listSessions()).find((session) => session.id === "persisted-1")).toMatchObject({
+        id: "persisted-1", harness: "zcode", title: "Unfinished persisted task",
+        cwd: "/another/workspace", status: "running", model: "zai/GLM-5.3-Flash",
+        meta: { discoverySource: "tasks-index" },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("discovers recent persisted tasks without starting the ZCode app-server and treats stale running as a signal", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-index-"));
+    const indexPath = join(root, "tasks-index.sqlite");
+    const db = new DatabaseSync(indexPath);
+    db.exec(`create table tasks (
+      task_id text, workspace_path text, title text, task_status text, model text,
+      created_at integer, updated_at integer, archived integer, deleted integer
+    )`);
+    db.prepare("insert into tasks values (?, ?, ?, ?, ?, ?, ?, 0, 0)").run(
+      "persisted-1", root, "Interrupted task", "running", "minimax/MiniMax-M3", Date.now() - 20_000, Date.now() - 10 * 60_000,
+    );
+    db.close();
+    const previous = process.env.ZCODE_TASKS_INDEX_DB;
+    process.env.ZCODE_TASKS_INDEX_DB = indexPath;
+    const adapter = new ZcodeAdapter({ cwd: root, command: "/definitely/not-started" });
+    try {
+      await expect(adapter.listSessions()).resolves.toMatchObject([{
+        id: "persisted-1",
+        status: "idle",
+        meta: { persistedTaskStatus: "running", discoverySource: "tasks-index" },
+      }]);
+      expect(adapter.isReady()).toBe(false);
+    } finally {
+      await adapter.dispose();
+      if (previous === undefined) delete process.env.ZCODE_TASKS_INDEX_DB;
+      else process.env.ZCODE_TASKS_INDEX_DB = previous;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("publishes friendly provider model names and resolves them to native provider ids", () => {
     const config = {
       model: { main: "provider-uuid/minimax/MiniMax-M3" },

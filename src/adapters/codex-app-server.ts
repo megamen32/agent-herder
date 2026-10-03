@@ -138,7 +138,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     return sessions.map((thread) => {
       const session = this.toSession(thread);
       const nativeMeta = nativeMetadata.get(thread.id);
-      return nativeMeta ? { ...session, meta: { ...session.meta, ...nativeMeta } } : session;
+      return nativeMeta ? {
+        ...session,
+        status: nativeMeta.status === "running" ? "running" : session.status,
+        meta: { ...session.meta, ...nativeMeta },
+      } : session;
     });
   }
 
@@ -162,6 +166,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (!raw) return base;
     return {
       ...base,
+      status: raw.status === "running" ? "running" : base.status,
       model: base.model || raw.model,
       messageCount: raw.messageCount,
       durationSec: raw.durationSec,
