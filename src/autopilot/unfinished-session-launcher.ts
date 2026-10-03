@@ -572,6 +572,7 @@ export class UnfinishedSessionLauncher {
     }
     candidates.sort((left, right) => Date.parse(right.session.lastActivity) - Date.parse(left.session.lastActivity));
     let judgements = 0;
+    const equivalentSessions = new Map<string, string>();
     for (const { adapter, session } of candidates) {
       if (!isInventoryHarness(session.harness)) continue;
       const harness = session.harness;
@@ -580,8 +581,13 @@ export class UnfinishedSessionLauncher {
       const transcriptTail = semanticTranscript(messages ?? []).slice(-2_000);
       const previous = priorInventory.get(key);
       const unchanged = previous?.lastActivity === session.lastActivity && previous.transcriptTail === transcriptTail;
-      let verdict = unchanged ? previous?.verdict : undefined;
-      if (this.completedSessions.has(key)) {
+      const equivalentKey = `${harness}:${normalize(session.cwd)}:${session.title.trim().toLowerCase()}`;
+      const newerEquivalent = equivalentSessions.get(equivalentKey);
+      equivalentSessions.set(equivalentKey, newerEquivalent || session.id);
+      let verdict = newerEquivalent
+        ? { verdict: "completed" as const, reason: `Заменена более новой сессией с той же задачей: ${newerEquivalent}`, confidence: 0.95, judgedAt: new Date().toISOString() }
+        : unchanged ? previous?.verdict : undefined;
+      if (!newerEquivalent && this.completedSessions.has(key)) {
         verdict = { verdict: "completed", reason: "Harness reported turn completion", confidence: 1, judgedAt: new Date().toISOString() };
       } else if (!verdict && Date.now() - Date.parse(session.lastActivity) < this.discoveryIdleMs && session.status !== "running") {
         // Keep it visible in inventory, but do not classify a session which may

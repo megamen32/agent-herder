@@ -341,4 +341,29 @@ describe("unfinished session launcher", () => {
     expect(calls.messages).toHaveLength(0);
     expect(await store.list()).toMatchObject([{ sessionId: "session-1", state: "active" }]);
   });
+
+  it("continues only the newest duplicate task discovered in the same harness and workspace", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-dedupe-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const base = { ...fixtureSession("idle", "zcode"), title: "Проверка доступности рабочего каталога" };
+    const sessions = [
+      { ...base, id: "old", lastActivity: new Date(Date.now() - 3_600_000).toISOString() },
+      { ...base, id: "new", lastActivity: new Date(Date.now() - 1_800_000).toISOString() },
+    ];
+    const resumed: string[] = [];
+    const adapter: HarnessAdapter = {
+      type: "zcode", name: "fixture", async init() {}, async listSessions() { return sessions; },
+      async getSession(id) { return sessions.find((session) => session.id === id) || null; },
+      async getSessionMessages(id) { return [{ id: `${id}-user`, role: "user", text: "Проверь", parts: [{ type: "text", text: "Проверь" }] }]; },
+      async resumeSession(id) { resumed.push(id); return { ok: true }; }, async sendMessage() { return { ok: true }; },
+      async stopSession() { return { ok: true }; }, async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+    };
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), retryDelayMs: 0, discoveryIdleMs: 1,
+    }).recoverPending();
+    expect(resumed).toEqual(["new"]);
+    expect((await store.list()).map((record) => record.sessionId)).toEqual(["new"]);
+    expect((await store.listInventory()).find((record) => record.sessionId === "old")?.verdict?.reason).toContain("Заменена более новой сессией");
+  });
 });
