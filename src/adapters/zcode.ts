@@ -390,6 +390,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly localDbPath: string;
   private readonly tasksIndexDbPath?: string;
   private readonly persistedSessionIds = new Set<string>();
+  private reportedEmptyTasksIndex = false;
   private readonly sessionWorkspaces = new Map<string, ZcodeWorkspaceRef>();
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
   private readonly sessionEventUnsubscribers = new Map<string, () => void>();
@@ -459,6 +460,10 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
     const persisted = await this.listPersistedSessions(options);
+    if (!options.cwd && persisted.length === 0 && !this.reportedEmptyTasksIndex) {
+      this.reportedEmptyTasksIndex = true;
+      console.error(`[agent-herder] ZCode tasks-index returned no sessions (local=${this.useLocalConfig}, path=${this.tasksIndexDbPath || "unset"})`);
+    }
     // The tasks index is the authoritative cross-workspace directory. Do not
     // turn a dashboard refresh into N live app-server workspace calls merely
     // because a prior resume made the transport ready. Scoped callers may
