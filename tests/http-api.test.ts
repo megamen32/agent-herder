@@ -189,7 +189,7 @@ describe("agent-herder web API", () => {
       ok: true,
       incident_id: "inc-health-1",
       plan_id: "repair",
-      model: "account:zai-individual-coding-plan/GLM-5.3-Flash",
+      model: "account:zai-individual-coding-plan/GLM-5.3-Flash#high",
       execution: { runtime: "zcode", provider: "account:zai-individual-coding-plan", model: "GLM-5.3-Flash", reasoning: "high", topic: "health" },
     });
   });
@@ -219,7 +219,7 @@ describe("agent-herder web API", () => {
     expect(await response.json()).toMatchObject({
       ok: true,
       harness: "zcode",
-      model: "account:zai-individual-coding-plan/GLM-5.3-Flash",
+      model: "account:zai-individual-coding-plan/GLM-5.3-Flash#high",
       execution: { runtime: "zcode", provider: "account:zai-individual-coding-plan", model: "GLM-5.3-Flash", reasoning: "high", topic: "health" },
     });
   });
