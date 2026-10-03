@@ -118,9 +118,13 @@ describe("unfinished session launcher", () => {
       fetchImpl: async (_url, init) => {
         requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
         const planText = JSON.stringify({ groups: [{
-          source_session_ids: ["S1", "S2"], primary_session_id: "S2", verdict: "unfinished",
-          reason: "Одна задача оборвалась в двух клиентах", confidence: 0.98,
-          topic: "Восстановить отправку комментариев", handoff: "Общий handoff обеих сессий",
+          source_session_ids: ["S1"], primary_session_id: "S1", verdict: "unfinished",
+          reason: "Первая часть задачи оборвалась", confidence: 0.98,
+          topic: "Дубль аудита t-proxy", handoff: "Первая часть общего handoff",
+        }, {
+          source_session_ids: ["S2"], primary_session_id: "S2", verdict: "unfinished",
+          reason: "Вторая часть той же задачи оборвалась", confidence: 0.97,
+          topic: "Дубль аудита t-proxy", handoff: "Вторая часть общего handoff",
         }, {
           source_session_ids: ["S2"], primary_session_id: "S2", verdict: "unfinished",
           reason: "Ошибочный повтор группы", confidence: 0.1,
@@ -151,7 +155,9 @@ describe("unfinished session launcher", () => {
       { session: { ...fixtureSession("idle", "codex"), id: "omitted-1", title: "Пропущенная задача" }, transcriptTail: `${evidence} omitted-marker` },
     ] });
 
-    expect(plan?.groups[0]).toMatchObject({ sourceSessionIds: ["codex-1", "zcode-1"], primarySessionId: "zcode-1", topic: "Восстановить отправку комментариев" });
+    expect(plan?.groups[0]).toMatchObject({ sourceSessionIds: ["codex-1", "zcode-1"], primarySessionId: "codex-1", topic: "Аудит t-proxy" });
+    expect(plan?.groups[0]?.handoff).toContain("Первая часть общего handoff");
+    expect(plan?.groups[0]?.handoff).toContain("Вторая часть общего handoff");
     expect(plan?.groups).toHaveLength(2);
     expect(plan?.groups[1]).toMatchObject({ sourceSessionIds: ["omitted-1"], verdict: "needs_human", confidence: 0, topic: "Пропущенная задача" });
     expect(JSON.stringify(requestBody)).toContain("codex-marker");

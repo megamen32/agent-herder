@@ -1044,9 +1044,20 @@ export function completionEvidence(messages: SessionMessageView[], messageCount 
   return [...new Map(bounded.map((item) => [item.index, item])).values()].map((item) => item.text).join("\n\n");
 }
 
+function cleanPlanTopic(topic: string): string {
+  const cleaned = topic
+    .replace(/^авто(?:матическое)?\s*продолжение\s*[—:.-]*\s*/iu, "")
+    .replace(/^(?:устранение\s+)?(?:дубл\p{L}*|повтор\p{L}*)(?:\s+(?:задач\p{L}*|сесси\p{L}*))?\s*[—:.-]*\s*/iu, "")
+    .replace(/^аудита(?=\s|$)/iu, "Аудит")
+    .replace(/^проверки(?=\s|$)/iu, "Проверка")
+    .replace(/^задачи(?=\s|$)/iu, "Задача")
+    .trim();
+  const fallback = cleaned || "Незавершённая задача";
+  return `${fallback.charAt(0).toLocaleUpperCase("ru-RU")}${fallback.slice(1)}`;
+}
+
 function continuationTitle(topic: string): string {
-  const clean = topic.replace(/^авто(?:матическое)?\s*продолжение\s*[—:.-]*\s*/i, "").trim() || "Незавершённая задача";
-  return `Автопродолжение — ${clean.slice(0, 96)}`;
+  return `Автопродолжение — ${cleanPlanTopic(topic).slice(0, 96)}`;
 }
 
 function batchContinuationPrompt(group: SessionBatchPlanGroup, sources: AssessedSession[]): string {
@@ -1150,6 +1161,39 @@ function normalizeVerdict(value: unknown): Omit<SessionInventoryVerdict, "judged
   };
 }
 
+function mergePlanGroups(groups: SessionBatchPlanGroup[]): SessionBatchPlanGroup[] {
+  const merged = new Map<string, SessionBatchPlanGroup>();
+  const verdictRank = { completed: 0, needs_human: 1, unfinished: 2 } as const;
+  const combineText = (left: string, right: string, separator: string, max: number): string => {
+    if (!right || left === right || left.includes(right)) return left.slice(0, max);
+    if (!left || right.includes(left)) return right.slice(0, max);
+    return `${left}${separator}${right}`.slice(0, max);
+  };
+
+  for (const group of groups) {
+    const topic = cleanPlanTopic(group.topic).slice(0, 120);
+    const key = topic.normalize("NFKC").toLocaleLowerCase("ru-RU").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    const current = merged.get(key);
+    if (!current) {
+      merged.set(key, { ...group, topic, sourceSessionIds: [...group.sourceSessionIds] });
+      continue;
+    }
+    const sourceSessionIds = [...new Set([...current.sourceSessionIds, ...group.sourceSessionIds])];
+    const stronger = verdictRank[group.verdict] > verdictRank[current.verdict] ? group : current;
+    merged.set(key, {
+      ...current,
+      sourceSessionIds,
+      primarySessionId: sourceSessionIds.includes(stronger.primarySessionId) ? stronger.primarySessionId : sourceSessionIds[0],
+      verdict: stronger.verdict,
+      reason: combineText(current.reason, group.reason, "; ", MAX_TEXT),
+      confidence: Math.max(current.confidence, group.confidence),
+      topic,
+      handoff: combineText(current.handoff, group.handoff, "\n\n--- ДОПОЛНЕНИЕ ИЗ ДУБЛЯ ---\n\n", 32_000),
+    });
+  }
+  return [...merged.values()];
+}
+
 function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[]): SessionBatchPlan {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("MiniMax returned an invalid batch plan");
   const rawGroups = (value as Record<string, unknown>).groups;
@@ -1213,7 +1257,7 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
       handoff: "",
     });
   }
-  return { groups };
+  return { groups: mergePlanGroups(groups) };
 }
 
 function batchPlannerPrompt(): string {
