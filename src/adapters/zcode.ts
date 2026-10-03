@@ -459,7 +459,11 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
     const persisted = await this.listPersistedSessions(options);
-    if (!this.isReady() && this.useLocalConfig) return persisted;
+    // The tasks index is the authoritative cross-workspace directory. Do not
+    // turn a dashboard refresh into N live app-server workspace calls merely
+    // because a prior resume made the transport ready. Scoped callers may
+    // still request one workspace and receive a live overlay below.
+    if (this.useLocalConfig && (!options.cwd || !this.isReady())) return persisted;
     const rows: Array<{ workspace: ZcodeWorkspaceRef; row: unknown }> = [];
     for (const workspace of await this.workspaceCandidates(options.cwd)) {
       try {
