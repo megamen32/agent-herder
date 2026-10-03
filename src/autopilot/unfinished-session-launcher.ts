@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
 
 import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessType, SessionMessageView } from "../types/index.js";
-import { semanticTranscript, type CacheHandoffService } from "../cache-handoff.js";
+import { continuationModelFor, semanticTranscript, type CacheHandoffService } from "../cache-handoff.js";
 import { deferredMessages, isBusyCodexWriter, type DeferredMessageStore } from "../deferred-messages.js";
 
 const SUPPORTED_HARNESSES: readonly HarnessType[] = ["codex", "opencode", "claude", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
@@ -206,7 +206,29 @@ export interface UnfinishedSessionInventoryRecord {
 
 export interface SessionCompletionJudge {
   decide(input: { session: AgentSession; transcriptTail: string }): Promise<Omit<SessionInventoryVerdict, "judgedAt">>;
+  plan?(input: { sessions: SessionBatchCandidate[] }): Promise<SessionBatchPlan>;
 }
+
+export interface SessionBatchCandidate {
+  session: AgentSession;
+  transcriptTail: string;
+}
+
+export interface SessionBatchPlanGroup {
+  sourceSessionIds: string[];
+  primarySessionId: string;
+  verdict: SessionCompletionVerdict;
+  reason: string;
+  confidence: number;
+  topic: string;
+  handoff: string;
+}
+
+export interface SessionBatchPlan {
+  groups: SessionBatchPlanGroup[];
+}
+
+type AssessedSession = SessionBatchCandidate & { adapter: HarnessAdapter };
 
 type UnfinishedSessionFile = {
   version: 1;
@@ -634,6 +656,27 @@ export class UnfinishedSessionLauncher {
       }
     }
     candidates.sort((left, right) => Date.parse(right.session.lastActivity) - Date.parse(left.session.lastActivity));
+    if (this.options.judge?.plan) {
+      const assessed: AssessedSession[] = [];
+      for (const { adapter, session } of candidates) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        if (!await this.isEnabled(session.harness, session.id, session.cwd)) continue;
+        const previous = priorInventory.get(sessionKey(session.harness, session.id));
+        if (session.status !== "running" && previous?.lastActivity === session.lastActivity && previous.verdict?.verdict !== "unfinished") continue;
+        const messages = await adapter.getSessionMessages?.(session.id, Math.max(50, runtimeSettings.evidenceMessageCount * 3)).catch(() => null);
+        assessed.push({ adapter, session, transcriptTail: completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount) });
+      }
+      if (assessed.length > 0) {
+        try {
+          const plan = await this.options.judge.plan({ sessions: assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail })) });
+          await this.applyBatchPlan(plan, assessed);
+          return;
+        } catch (error) {
+          console.error(`[agent-herder] единый план MiniMax не построен, используется посессионный fallback: ${errorText(error)}`);
+        }
+      }
+      if (assessed.length === 0) return;
+    }
     let judgements = 0;
     const equivalentSessions = new Map<string, string>();
     for (const { adapter, session } of candidates) {
@@ -693,6 +736,112 @@ export class UnfinishedSessionLauncher {
       if (known.has(key) || !await this.isEnabled(harness, session.id, session.cwd)) continue;
       await this.options.store.markStarted(session, `judged-${this.generationId}`);
       known.add(key);
+    }
+    await this.options.store.upsertInventoryBatch(inventoryBatch);
+  }
+
+  private async applyBatchPlan(plan: SessionBatchPlan, assessed: AssessedSession[]): Promise<void> {
+    const byId = new Map(assessed.map((candidate) => [candidate.session.id, candidate]));
+    const latestActivity = (group: SessionBatchPlanGroup): number => Math.max(...group.sourceSessionIds.map((id) => Date.parse(byId.get(id)!.session.lastActivity)));
+    const groups = [...plan.groups].sort((left, right) => latestActivity(right) - latestActivity(left));
+    const inventoryBatch: UnfinishedSessionInventoryRecord[] = [];
+    let launched = 0;
+    for (const group of groups) {
+      const sources = group.sourceSessionIds.map((id) => byId.get(id)!);
+      const plannedPrimary = byId.get(group.primarySessionId)!;
+      const running = sources.filter(({ session }) => session.status === "running")
+        .sort((left, right) => Date.parse(right.session.lastActivity) - Date.parse(left.session.lastActivity))[0];
+      const primary = running ?? plannedPrimary;
+      const judgedAt = new Date().toISOString();
+      const verdict = { verdict: group.verdict, reason: group.reason, confidence: group.confidence, judgedAt } satisfies SessionInventoryVerdict;
+      const pushInventory = (candidate: AssessedSession, override = verdict): void => {
+        inventoryBatch.push({
+          harness: candidate.session.harness as "codex" | "zcode",
+          sessionId: candidate.session.id,
+          cwd: candidate.session.cwd,
+          title: candidate.session.title,
+          status: candidate.session.status,
+          lastActivity: candidate.session.lastActivity,
+          transcriptTail: candidate.transcriptTail,
+          observedAt: new Date().toISOString(),
+          verdict: override,
+        });
+      };
+
+      if (group.verdict !== "unfinished") {
+        for (const source of sources) {
+          pushInventory(source);
+          await this.options.store.remove(source.session.harness, source.session.id);
+        }
+        continue;
+      }
+
+      const handoff = batchContinuationPrompt(group, sources);
+      if (running) {
+        if (sources.length > 1) {
+          const pending = await deferredMessages.list(running.session.id);
+          if (!pending.some((message) => message.message === handoff)) await deferredMessages.add(running.session.id, handoff);
+        }
+        await this.options.store.markStarted(running.session, this.generationId);
+        for (const source of sources) {
+          if (source.session.id === running.session.id) pushInventory(source);
+          else {
+            pushInventory(source, {
+              verdict: "completed",
+              reason: `Объединена с работающей сессией «${group.topic}»: ${running.session.id}`,
+              confidence: group.confidence,
+              judgedAt,
+            });
+            await this.options.settingsStore.setSession({ harness: source.session.harness, sessionId: source.session.id, cwd: source.session.cwd }, false);
+            await this.options.store.remove(source.session.harness, source.session.id);
+          }
+        }
+        continue;
+      }
+
+      const oldEnough = Date.now() - Date.parse(primary.session.lastActivity) >= this.discoveryIdleMs;
+      if (!oldEnough || launched >= this.maxResumesPerCycle || !primary.adapter.createSession) {
+        for (const source of sources) {
+          pushInventory(source);
+          await this.options.store.remove(source.session.harness, source.session.id);
+        }
+        continue;
+      }
+
+      try {
+        launched += 1;
+        const continuationModel = continuationModelFor(primary.session);
+        const created = await primary.adapter.createSession({
+          name: continuationTitle(group.topic),
+          cwd: primary.session.cwd,
+          model: continuationModel,
+        });
+        if (continuationModel && created.model !== continuationModel && primary.adapter.changeModel) {
+          const selected = await primary.adapter.changeModel(created.id, continuationModel);
+          if (!selected.ok) throw new Error(selected.error || `не удалось выбрать модель ${continuationModel}`);
+        }
+        const sent = await primary.adapter.sendMessage(created.id, { message: handoff, queue: true });
+        if (!sent.ok) throw new Error(sent.error || "новая объединённая сессия не приняла handoff");
+        await this.options.store.markStarted(created, this.generationId);
+        for (const source of sources) {
+          pushInventory(source, {
+            verdict: "completed",
+            reason: `Объединена в новую сессию «${continuationTitle(group.topic)}»: ${created.id}`,
+            confidence: group.confidence,
+            judgedAt,
+          });
+          await this.options.settingsStore.setSession({ harness: source.session.harness, sessionId: source.session.id, cwd: source.session.cwd }, false);
+          await this.options.store.remove(source.session.harness, source.session.id);
+        }
+        console.error(`[agent-herder] единый план продолжил ${sources.length} сесс. как ${created.harness}:${created.id} «${continuationTitle(group.topic)}»`);
+      } catch (error) {
+        launched = Math.max(0, launched - 1);
+        console.error(`[agent-herder] единый план не запустил «${group.topic}»: ${errorText(error)}`);
+        for (const source of sources) {
+          pushInventory(source);
+          await this.options.store.remove(source.session.harness, source.session.id);
+        }
+      }
     }
     await this.options.store.upsertInventoryBatch(inventoryBatch);
   }
@@ -894,6 +1043,22 @@ export function completionEvidence(messages: SessionMessageView[], messageCount 
   return [...new Map(bounded.map((item) => [item.index, item])).values()].map((item) => item.text).join("\n\n");
 }
 
+function continuationTitle(topic: string): string {
+  const clean = topic.replace(/^авто(?:матическое)?\s*продолжение\s*[—:.-]*\s*/i, "").trim() || "Незавершённая задача";
+  return `Автопродолжение — ${clean.slice(0, 96)}`;
+}
+
+function batchContinuationPrompt(group: SessionBatchPlanGroup, sources: AssessedSession[]): string {
+  return [
+    `Это единое продолжение задачи «${group.topic}», собранное оркестратором из ${sources.length} сесс. Codex/ZCode.`,
+    `Исходные сессии: ${sources.map(({ session }) => `${session.harness}:${session.id} (${session.title})`).join("; ")}.`,
+    "MiniMax прочитал по четыре последних полных смысловых сообщения каждой сессии, убрал дубли и подготовил общий handoff.",
+    "\n--- ОБЪЕДИНЁННЫЙ HANDOFF ---\n",
+    group.handoff,
+    "\nПроверь текущее состояние файлов и сервисов, затем продолжи с незавершённого шага. Не повторяй уже подтверждённое.",
+  ].join("\n");
+}
+
 function parseRecord(value: unknown): UnfinishedSessionRecord {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid unfinished session entry");
   const record = value as Record<string, unknown>;
@@ -984,6 +1149,72 @@ function normalizeVerdict(value: unknown): Omit<SessionInventoryVerdict, "judged
   };
 }
 
+function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[]): SessionBatchPlan {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("MiniMax returned an invalid batch plan");
+  const rawGroups = (value as Record<string, unknown>).groups;
+  if (!Array.isArray(rawGroups)) throw new Error("MiniMax batch plan has no groups");
+  const known = new Set(candidates.map(({ session }) => session.id));
+  const assigned = new Set<string>();
+  const groups = rawGroups.map((value, index): SessionBatchPlanGroup => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`MiniMax returned invalid group ${index}`);
+    const record = value as Record<string, unknown>;
+    if (!Array.isArray(record.source_session_ids) || record.source_session_ids.length === 0) throw new Error(`MiniMax group ${index} has no sources`);
+    const sourceSessionIds = record.source_session_ids.map((id) => boundedText(id, "source_session_id", 128));
+    for (const id of sourceSessionIds) {
+      if (!known.has(id)) throw new Error(`MiniMax grouped unknown session ${id}`);
+      if (assigned.has(id)) throw new Error(`MiniMax grouped session twice: ${id}`);
+      assigned.add(id);
+    }
+    const primarySessionId = boundedText(record.primary_session_id, "primary_session_id", 128);
+    if (!sourceSessionIds.includes(primarySessionId)) throw new Error(`MiniMax primary is outside group ${index}`);
+    const verdict = normalizeVerdict(record);
+    return {
+      sourceSessionIds,
+      primarySessionId,
+      ...verdict,
+      topic: boundedText(record.topic, "topic", 120),
+      handoff: verdict.verdict === "unfinished"
+        ? boundedText(record.handoff, "handoff", 32_000)
+        : typeof record.handoff === "string" ? boundedText(record.handoff, "handoff", 32_000, true) : "",
+    };
+  });
+  if (assigned.size !== known.size) {
+    const missing = [...known].filter((id) => !assigned.has(id));
+    throw new Error(`MiniMax omitted sessions from batch plan: ${missing.join(", ")}`);
+  }
+  return { groups };
+}
+
+function batchPlannerPrompt(): string {
+  return [
+    "Ты единый оркестратор автопродолжения Agent Herder для Codex, ZCode, OpenCode и Fast Agent.",
+    "Получаешь все доступные сессии окна, у каждой ровно последние четыре полных смысловых сообщения без tool noise.",
+    "Сгруппируй сессии одной и той же пользовательской задачи, даже если названия различаются; не объединяй просто похожие задачи.",
+    "Каждый входной session.id должен встретиться ровно один раз в source_session_ids одной группы.",
+    "Для группы выбери primary_session_id: работающую сессию, иначе самую новую и содержательную.",
+    "verdict: completed, unfinished или needs_human. Если хотя бы одна сессия группы ещё реально выполняется, verdict=unfinished.",
+    "topic — понятная русская тема из 3-8 слов без UUID, Auto Continue и технического мусора.",
+    "handoff для unfinished — единая краткая сводка всех сессий группы: цель, уже сделано, решения, файлы/проверки, осталось, риски, следующий шаг.",
+    "Не выполняй задачи и не добавляй факты. Верни только JSON {groups:[{source_session_ids,primary_session_id,verdict,reason,confidence,topic,handoff}]}",
+  ].join(" ");
+}
+
+function batchPlannerPayload(sessions: SessionBatchCandidate[]): unknown {
+  return {
+    sessions: sessions.map(({ session, transcriptTail }) => ({
+      id: session.id,
+      harness: session.harness,
+      title: session.title,
+      cwd: session.cwd,
+      model: session.model,
+      status_signal: session.status,
+      last_activity: session.lastActivity,
+      needs_permission: session.needsPermission,
+      last_four_semantic_messages: transcriptTail,
+    })),
+  };
+}
+
 function optionalBounded(value: unknown, label: string): string | undefined {
   return value === undefined ? undefined : bounded(value, label);
 }
@@ -1044,7 +1275,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
                 "Ты классификатор незавершённых Codex и ZCode задач Agent Herder.",
                 "Верни только JSON: {verdict:completed|unfinished|needs_human,reason:string,confidence:number}.",
                 "completed — цель явно выполнена; unfinished — работа оборвана, идёт или остались конкретные действия; needs_human — нужен выбор, секрет или содержательный ответ человека.",
-                "Статус БД — только слабый сигнал. Главный источник — последние 2000 символов диалога. При сомнении не выбирай completed.",
+                "Статус БД — только слабый сигнал. Главный источник — четыре последних полных смысловых сообщения. При сомнении не выбирай completed.",
                 "reason — одно короткое русское предложение, confidence — число от 0 до 1.",
               ].join(" "),
             },
@@ -1074,6 +1305,34 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       if (typeof content !== "string") throw new Error("MiniMax judge returned no content");
       const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
       return normalizeVerdict(JSON.parse(json) as unknown);
+    },
+    async plan({ sessions }) {
+      const response = await fetchImpl(endpoint, {
+        method: "POST",
+        headers: {
+          ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
+          "content-type": "application/json",
+        },
+        signal: AbortSignal.timeout(180_000),
+        body: JSON.stringify({
+          model: config.model,
+          temperature: 0,
+          stream: false,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: batchPlannerPrompt() },
+            { role: "user", content: JSON.stringify(batchPlannerPayload(sessions)) },
+          ],
+        }),
+      });
+      if (!response.ok) throw new Error(`MiniMax batch planner rejected with HTTP ${response.status}`);
+      const body = await response.json() as Record<string, unknown>;
+      const choices = Array.isArray(body.choices) ? body.choices : [];
+      const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message : undefined;
+      const content = message && typeof message === "object" ? (message as Record<string, unknown>).content : undefined;
+      if (typeof content !== "string") throw new Error("MiniMax batch planner returned no content");
+      const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+      return normalizeBatchPlan(JSON.parse(json) as unknown, sessions);
     },
   };
 }
@@ -1107,7 +1366,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
               "Ты классификатор незавершённых Codex и ZCode задач Agent Herder.",
               "Верни только JSON: {verdict:completed|unfinished|needs_human,reason:string,confidence:number}.",
               "completed — цель явно выполнена; unfinished — работа оборвана, идёт или остались конкретные действия; needs_human — нужен выбор, секрет или содержательный ответ человека.",
-              "Статус БД — только слабый сигнал. Главный источник — последние 2000 символов диалога. При сомнении не выбирай completed.",
+              "Статус БД — только слабый сигнал. Главный источник — четыре последних полных смысловых сообщения. При сомнении не выбирай completed.",
               "reason — одно короткое русское предложение, confidence — число от 0 до 1.",
             ].join(" "),
             cache_control: { type: "ephemeral" },
@@ -1140,6 +1399,35 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
       if (!content) throw new Error("MiniMax Anthropic judge returned no text content");
       const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
       return normalizeVerdict(JSON.parse(json) as unknown);
+    },
+    async plan({ sessions }) {
+      const response = await fetchImpl(endpoint, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${config.token}`,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        signal: AbortSignal.timeout(180_000),
+        body: JSON.stringify({
+          model: config.model,
+          max_tokens: 8_192,
+          temperature: 0,
+          system: [{ type: "text", text: batchPlannerPrompt(), cache_control: { type: "ephemeral" } }],
+          messages: [{ role: "user", content: JSON.stringify(batchPlannerPayload(sessions)) }],
+        }),
+      });
+      if (!response.ok) throw new Error(`MiniMax Anthropic batch planner rejected with HTTP ${response.status}`);
+      const body = await response.json() as Record<string, unknown>;
+      const blocks = Array.isArray(body.content) ? body.content : [];
+      const content = blocks.flatMap((block) => block && typeof block === "object"
+        && (block as Record<string, unknown>).type === "text"
+        && typeof (block as Record<string, unknown>).text === "string"
+        ? [(block as Record<string, unknown>).text as string]
+        : []).join("\n");
+      if (!content) throw new Error("MiniMax Anthropic batch planner returned no text content");
+      const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+      return normalizeBatchPlan(JSON.parse(json) as unknown, sessions);
     },
   };
 }

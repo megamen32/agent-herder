@@ -109,6 +109,98 @@ describe("unfinished session launcher", () => {
     expect(body.system[0]?.cache_control).toEqual({ type: "ephemeral" });
   });
 
+  it("sends one direct Anthropic batch request with every full session evidence block", async () => {
+    let requestBody: Record<string, unknown> = {};
+    const judge = createAnthropicCompatibleSessionCompletionJudge({
+      baseUrl: "https://api.minimax.io/anthropic/",
+      model: "MiniMax-M3.1-Flash-Preview",
+      token: "test-token",
+      fetchImpl: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({ content: [{ type: "text", text: JSON.stringify({ groups: [{
+          source_session_ids: ["codex-1", "zcode-1"], primary_session_id: "zcode-1", verdict: "unfinished",
+          reason: "Одна задача оборвалась в двух клиентах", confidence: 0.98,
+          topic: "Восстановить отправку комментариев", handoff: "Общий handoff обеих сессий",
+        }] }) }] }), { status: 200, headers: { "content-type": "application/json" } });
+      },
+    });
+    const evidence = "ПОЛЬЗОВАТЕЛЬ: полный запрос\n\nАГЕНТ: полный ответ";
+    const plan = await judge.plan?.({ sessions: [
+      { session: { ...fixtureSession("idle", "codex"), id: "codex-1" }, transcriptTail: `${evidence} codex-marker` },
+      { session: { ...fixtureSession("idle", "zcode"), id: "zcode-1" }, transcriptTail: `${evidence} zcode-marker` },
+    ] });
+
+    expect(plan?.groups).toMatchObject([{ sourceSessionIds: ["codex-1", "zcode-1"], primarySessionId: "zcode-1", topic: "Восстановить отправку комментариев" }]);
+    expect(JSON.stringify(requestBody)).toContain("codex-marker");
+    expect(JSON.stringify(requestBody)).toContain("zcode-marker");
+    expect(JSON.stringify(requestBody)).toContain("последние четыре полных смысловых сообщения");
+    expect(requestBody.max_tokens).toBe(8_192);
+  });
+
+  it("plans all Codex and ZCode evidence once, deduplicates one task, and launches one readable continuation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-plan-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    const now = Date.now() - 5 * 60_000;
+    const sessions: AgentSession[] = [
+      { ...fixtureSession("idle", "zcode"), id: "duplicate-old", title: "Починить комментарии", cwd: "/workspace/video", lastActivity: new Date(now - 60_000).toISOString() },
+      { ...fixtureSession("idle", "zcode"), id: "duplicate-new", title: "Комментарии снова не отправляются", cwd: "/workspace/video", model: "account:zai-start-plan/GLM-5.3-Flash", lastActivity: new Date(now).toISOString() },
+    ];
+    const created: AgentSession = { ...sessions[1]!, id: "merged-session", status: "running", title: "Автопродолжение — Восстановить отправку комментариев" };
+    const names: string[] = [];
+    const models: Array<string | undefined> = [];
+    const prompts: string[] = [];
+    const adapter: HarnessAdapter = {
+      type: "zcode", name: "fixture", async init() {}, async listSessions() { return sessions; },
+      async getSession(id) { return id === created.id ? created : sessions.find((session) => session.id === id) || null; },
+      async getSessionMessages(id) {
+        return [
+          { id: `${id}-u1`, role: "user", text: `${id}-полный-запрос-1`, parts: [{ type: "text", text: `${id}-полный-запрос-1` }] },
+          { id: `${id}-a1`, role: "assistant", text: `${id}-полный-ответ-1`, parts: [{ type: "text", text: `${id}-полный-ответ-1` }] },
+          { id: `${id}-u2`, role: "user", text: `${id}-полный-запрос-2`, parts: [{ type: "text", text: `${id}-полный-запрос-2` }] },
+          { id: `${id}-a2`, role: "assistant", text: `${id}-полный-ответ-2`, parts: [{ type: "text", text: `${id}-полный-ответ-2` }] },
+        ];
+      },
+      async createSession(options) { names.push(options.name); models.push(options.model); return { ...created, model: options.model }; },
+      async sendMessage(id, input) { expect(id).toBe(created.id); prompts.push(input.message); return { ok: true }; },
+      async resumeSession() { return { ok: true }; }, async stopSession() { return { ok: true }; },
+      async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+    };
+    let planned: Array<{ session: AgentSession; transcriptTail: string }> = [];
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store, settingsStore, discoveryIdleMs: 1, retryDelayMs: 0,
+      judge: {
+        async decide() { throw new Error("per-session fallback must not run"); },
+        async plan(input) {
+          planned = input.sessions;
+          return { groups: [{
+            sourceSessionIds: ["duplicate-new", "duplicate-old"], primarySessionId: "duplicate-new",
+            verdict: "unfinished", reason: "Одна задача оборвалась в двух сессиях", confidence: 0.99,
+            topic: "Восстановить отправку комментариев",
+            handoff: "Проверено в обеих сессиях: исправление начато, остались тест и production-canary.",
+          }] };
+        },
+      },
+    });
+    await launcher.recoverPending();
+
+    expect(planned).toHaveLength(2);
+    expect(planned.map((item) => item.session.id).sort()).toEqual(["duplicate-new", "duplicate-old"]);
+    for (const item of planned) {
+      expect(item.transcriptTail).toContain(`${item.session.id}-полный-запрос-1`);
+      expect(item.transcriptTail).toContain(`${item.session.id}-полный-ответ-2`);
+    }
+    expect(names).toEqual(["Автопродолжение — Восстановить отправку комментариев"]);
+    expect(models).toEqual(["account:zai-individual-coding-plan/GLM-5.3-Flash$high"]);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("исправление начато, остались тест и production-canary");
+    expect(prompts[0]).toContain("duplicate-new");
+    expect(prompts[0]).toContain("duplicate-old");
+    await expect(settingsStore.getEffective("zcode", "duplicate-new", "/workspace/video")).resolves.toMatchObject({ enabled: false, source: "session" });
+    await expect(settingsStore.getEffective("zcode", "duplicate-old", "/workspace/video")).resolves.toMatchObject({ enabled: false, source: "session" });
+    expect((await store.list()).map((record) => record.sessionId)).toEqual(["merged-session"]);
+  });
+
   it("persists a running autopilot turn and starts the same session after a fresh process", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
