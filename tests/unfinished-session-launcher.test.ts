@@ -128,6 +128,9 @@ describe("unfinished session launcher", () => {
         }, {
           source_session_ids: [], primary_session_id: "S2", verdict: "completed",
           reason: "Пустая группа модели", confidence: 0.1, topic: "Пусто", handoff: "",
+        }, {
+          source_session_ids: ["S3"], primary_session_id: "S3", verdict: "unfinished",
+          reason: "Модель забыла сводку", confidence: 0.7, topic: "Пропущенная задача", handoff: "",
         }] });
         const split = Math.floor(planText.length / 2);
         const stream = [

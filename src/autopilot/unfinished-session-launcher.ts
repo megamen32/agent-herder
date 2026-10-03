@@ -1171,15 +1171,21 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
     }
     const primarySessionId = resolveId(record.primary_session_id, "primary_session_id");
     if (!sourceSessionIds.includes(primarySessionId)) throw new Error(`MiniMax primary is outside group ${index}`);
-    const verdict = normalizeVerdict(record);
+    let verdict = normalizeVerdict(record);
+    const handoff = typeof record.handoff === "string" ? boundedText(record.handoff, "handoff", 32_000, true) : "";
+    if (verdict.verdict === "unfinished" && !handoff) {
+      verdict = {
+        verdict: "needs_human",
+        reason: "MiniMax не вернул объединённый handoff; группа будет повторно проверена в следующем цикле",
+        confidence: 0,
+      };
+    }
     return [{
       sourceSessionIds,
       primarySessionId,
       ...verdict,
       topic: boundedText(record.topic, "topic", 120),
-      handoff: verdict.verdict === "unfinished"
-        ? boundedText(record.handoff, "handoff", 32_000)
-        : typeof record.handoff === "string" ? boundedText(record.handoff, "handoff", 32_000, true) : "",
+      handoff,
     }];
   });
   const assignment = new Map<string, { group: number; score: number }>();
