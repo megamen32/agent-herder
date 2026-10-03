@@ -1462,9 +1462,10 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
         signal: AbortSignal.timeout(positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
         body: JSON.stringify({
           model: config.model,
-          max_tokens: positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || 32_768), 32_768),
+          max_tokens: positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || 131_072), 131_072),
           temperature: 0,
           stream: true,
+          output_config: { effort: "low" },
           system: [{ type: "text", text: batchPlannerPrompt(), cache_control: { type: "ephemeral" } }],
           messages: [{ role: "user", content: JSON.stringify(batchPlannerPayload(sessions)) }],
         }),
