@@ -8,6 +8,24 @@ import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
 
 describe("Codex app-server adapter", () => {
+  it("normalizes numeric native timestamps into AgentSession ISO strings", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-numeric-timestamp-"));
+    const previous = process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS;
+    process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS = "1";
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      await adapter.init();
+      const [session] = await adapter.listSessions();
+      expect(session.lastActivity).toBe("2026-07-19T00:00:01.000Z");
+      expect(typeof session.lastActivity).toBe("string");
+    } finally {
+      await adapter.dispose();
+      if (previous === undefined) delete process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS;
+      else process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS = previous;
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
   it("uses the native state database instead of scanning every archived rollout", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-state-db-"));
     const sessionDir = join(codexDir, "sessions", "2026", "10", "03");

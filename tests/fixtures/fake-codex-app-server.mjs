@@ -27,6 +27,12 @@ const logPath = process.env.CODEX_APP_SERVER_LOG;
 const forcedStartedTurnId = process.env.CODEX_APP_SERVER_TURN_STARTED_ID;
 const forcedCompletedTurnId = process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID;
 const externalRunningThread = process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD;
+const numericTimestamps = process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS === "1";
+
+if (numericTimestamps) {
+  threads[0].createdAt = Date.parse(threads[0].createdAt);
+  threads[0].updatedAt = Date.parse(threads[0].updatedAt);
+}
 
 function log(event) {
   if (!logPath) return;

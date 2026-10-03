@@ -29,8 +29,21 @@ interface CodexThread {
   model?: string;
   modelProvider?: string;
   status?: string;
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt?: string | number;
+  updatedAt?: string | number;
+}
+
+function threadTimestamp(value: string | number | undefined): string | undefined {
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : undefined;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const milliseconds = value < 1_000_000_000_000 ? value * 1_000 : value;
+    const parsed = new Date(milliseconds);
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : undefined;
+  }
+  return undefined;
 }
 
 interface TurnCompletion {
@@ -534,7 +547,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       status: this.mapStatus(thread.status, thread.id),
       title: thread.name || thread.preview || "Untitled session",
       cwd: thread.cwd || thread.path || this.cwd,
-      lastActivity: thread.updatedAt || thread.createdAt || new Date(0).toISOString(),
+      lastActivity: threadTimestamp(thread.updatedAt) || threadTimestamp(thread.createdAt) || new Date(0).toISOString(),
       model: thread.model,
       needsPermission: false,
       lastMessage: thread.preview,
