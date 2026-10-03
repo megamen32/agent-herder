@@ -39,6 +39,11 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('aria-label={`Autocontinue unfinished session ${activeSession.id}`}');
     expect(main).toContain('Умное автопродолжение каждые 10 минут');
     expect(main).toContain('работает независимо от автопилота');
+    expect(main).toContain('Искать сессии за последние часы');
+    expect(main).toContain('Сколько последних сообщений читать');
+    expect(main).toContain('Модель автопродолжения');
+    expect(main).toContain('Модель автопилота');
+    expect(main).toContain('/api/models?harness=');
     expect(main).toContain('/api/autopilot/policy');
     expect(main).toContain('new EventSource(`/api/events/stream?after=${cursor}`)');
     expect(main).toContain('agent-herder.event-cursor');

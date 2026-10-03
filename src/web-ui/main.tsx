@@ -47,6 +47,8 @@ type WebAutopilotPolicyState = { policy: WebAutopilotPolicy; source: "persisted"
 type WebAutopilotSession = { harness: string; sessionId: string; enabled: boolean; source: "session" | "policy" | "plugin-default" | "default"; cwd?: string; updatedAt?: string };
 type WebSessionAutostart = { harness: string; sessionId: string; enabled: boolean; source: "session" | "harness" | "global" | "default"; cwd?: string; updatedAt?: string };
 type WebSessionAutostartHarness = { harness: "codex" | "zcode"; enabled: boolean; source: "harness" | "global" | "default"; updatedAt?: string };
+type WebSessionRuntimeSettings = { version: number; enabled: boolean; inventoryWindowHours: number; evidenceMessageCount: number; judgeModel: string; autopilotJudgeModel: string; source: "persisted" | "default" };
+type WebModelOption = { model: string; harness: string };
 type HerderJobState = "queued" | "running" | "waiting" | "cancelling" | "completed" | "failed" | "cancelled" | "interrupted";
 type HerderJob = { id: string; kind: string; state: HerderJobState; createdAt: string; updatedAt: string; ownerSessionId?: string; progress?: number; statusMessage?: string; result?: unknown; error?: string; resultRef: string };
 
@@ -258,7 +260,7 @@ function hasVisibleMessage(message: SessionMessage, showReasoning: boolean, show
     || (part.type === "tool_call" || part.type === "tool_result") && showTools);
 }
 
-function AutopilotSettings({ state, draft, saving, error, saved, continuation, continuationSaving, continuationError, onChange, onSave, onContinuationToggle }: {
+function AutopilotSettings({ state, draft, saving, error, saved, continuation, continuationSaving, continuationError, runtimeDraft, runtimeSaving, runtimeSaved, runtimeError, modelOptions, onChange, onSave, onContinuationToggle, onRuntimeChange, onRuntimeSave }: {
   state?: WebAutopilotPolicyState;
   draft?: WebAutopilotPolicy;
   saving: boolean;
@@ -267,9 +269,16 @@ function AutopilotSettings({ state, draft, saving, error, saved, continuation, c
   continuation: Partial<Record<"codex" | "zcode", WebSessionAutostartHarness>>;
   continuationSaving?: "codex" | "zcode";
   continuationError?: string;
+  runtimeDraft?: WebSessionRuntimeSettings;
+  runtimeSaving: boolean;
+  runtimeSaved: boolean;
+  runtimeError?: string;
+  modelOptions: WebModelOption[];
   onChange: (next: WebAutopilotPolicy) => void;
   onSave: () => void;
   onContinuationToggle: (harness: "codex" | "zcode") => void;
+  onRuntimeChange: (next: WebSessionRuntimeSettings) => void;
+  onRuntimeSave: () => void;
 }) {
   if (!draft) return <section className="global-autopilot-card"><span className="settings-loading">Загрузка runtime-настроек…</span></section>;
   const timeoutMinutes = Math.max(1, Math.round(draft.timeout.delayMs / 60_000));
@@ -292,6 +301,15 @@ function AutopilotSettings({ state, draft, saving, error, saved, continuation, c
         return <label className={`harness-option ${enabled ? "selected" : ""}`} key={`continuation-${harness}`}><input type="checkbox" checked={enabled} disabled={!setting || continuationSaving === harness} onChange={() => onContinuationToggle(harness)} /><span><strong>{AUTOPILOT_HARNESS_LABELS[harness]}</strong><small>{enabled ? "MiniMax проверяет оборванные задачи и продолжает их" : "Автопродолжение выключено"}</small></span></label>;
       })}
     </div><p className="settings-help">Включено по умолчанию и работает независимо от автопилота. Для отдельной сессии режим можно переопределить внизу её карточки.</p>{continuationError && <small className="autopilot-error">{continuationError}</small>}</fieldset>
+
+    {runtimeDraft && <fieldset className="settings-group"><legend>Оркестратор и модели</legend><div className="context-options runtime-settings-grid">
+      <label><span><strong>Искать сессии за последние часы</strong><small>48 часов — текущий стандарт; применяется со следующей сверки без рестарта.</small></span><input type="number" min="1" max="2160" value={runtimeDraft.inventoryWindowHours} onChange={(event) => onRuntimeChange({ ...runtimeDraft, inventoryWindowHours: Math.max(1, Number(event.target.value) || 1) })} /></label>
+      <label><span><strong>Сколько последних сообщений читать</strong><small>Сейчас 4; последнее сообщение пользователя и последний ответ модели сохраняются обязательно и передаются целиком.</small></span><input type="number" min="2" max="50" value={runtimeDraft.evidenceMessageCount} onChange={(event) => onRuntimeChange({ ...runtimeDraft, evidenceMessageCount: Math.max(2, Number(event.target.value) || 2) })} /></label>
+      <label><span><strong>Модель автопродолжения</strong><small>Прямой Anthropic endpoint MiniMax; выбранные сообщения передаются без обрезки по символам.</small></span><input list="autocontinue-models" value={runtimeDraft.judgeModel} onChange={(event) => onRuntimeChange({ ...runtimeDraft, judgeModel: event.target.value })} /></label>
+      <label><span><strong>Модель автопилота</strong><small>Можно выбрать любую модель из живых каталогов Herder или ввести ID вручную.</small></span><input list="all-herder-models" value={runtimeDraft.autopilotJudgeModel} onChange={(event) => onRuntimeChange({ ...runtimeDraft, autopilotJudgeModel: event.target.value })} /></label>
+      <datalist id="autocontinue-models">{[...new Set([runtimeDraft.judgeModel, "MiniMax-M3.1-Flash-Preview", "MiniMax-M3", ...modelOptions.filter((item) => /minimax/i.test(item.model)).map((item) => item.model)])].map((model) => <option value={model} key={`continue-${model}`} />)}</datalist>
+      <datalist id="all-herder-models">{[...new Set([runtimeDraft.autopilotJudgeModel, ...modelOptions.map((item) => item.model)])].map((model) => <option value={model} key={`autopilot-${model}`} />)}</datalist>
+    </div><div className="settings-save-row"><span>{runtimeError ? <small className="autopilot-error">{runtimeError}</small> : runtimeSaved ? <small className="settings-saved">Настройки оркестратора сохранены</small> : <small>Доступно моделей: {modelOptions.length}</small>}</span><button className="primary-button" disabled={runtimeSaving || !runtimeDraft.judgeModel.trim() || !runtimeDraft.autopilotJudgeModel.trim()} onClick={onRuntimeSave}>{runtimeSaving ? "Сохраняю…" : "Сохранить оркестратор"}</button></div></fieldset>}
 
     <fieldset className="settings-group"><legend>Где работает</legend><div className="harness-grid">
       {(Object.keys(AUTOPILOT_HARNESS_LABELS) as AutopilotHarness[]).map((harness) => <label className={`harness-option ${draft.harnesses.includes(harness) ? "selected" : ""}`} key={harness}><input type="checkbox" checked={draft.harnesses.includes(harness)} onChange={(event) => setHarness(harness, event.target.checked)} /><span><strong>{AUTOPILOT_HARNESS_LABELS[harness]}</strong><small>{harness === "codex" ? "Codex Stop hook" : harness === "claude" ? "Claude Code plugin" : harness === "opencode" ? "OpenCode plugin" : harness === "zcode" ? "ZCode native plugin" : "Hermes plugin"}</small></span></label>)}
@@ -409,6 +427,11 @@ function App() {
   const [continuationHarnesses, setContinuationHarnesses] = React.useState<Partial<Record<"codex" | "zcode", WebSessionAutostartHarness>>>({});
   const [continuationHarnessSaving, setContinuationHarnessSaving] = React.useState<"codex" | "zcode">();
   const [continuationHarnessError, setContinuationHarnessError] = React.useState<string>();
+  const [runtimeSettingsDraft, setRuntimeSettingsDraft] = React.useState<WebSessionRuntimeSettings>();
+  const [runtimeSettingsSaving, setRuntimeSettingsSaving] = React.useState(false);
+  const [runtimeSettingsSaved, setRuntimeSettingsSaved] = React.useState(false);
+  const [runtimeSettingsError, setRuntimeSettingsError] = React.useState<string>();
+  const [runtimeModelOptions, setRuntimeModelOptions] = React.useState<WebModelOption[]>([]);
   const [autopilotPolicy, setAutopilotPolicy] = React.useState<WebAutopilotPolicyState>();
   const [autopilotPolicyDraft, setAutopilotPolicyDraft] = React.useState<WebAutopilotPolicy>();
   const [autopilotPolicySaving, setAutopilotPolicySaving] = React.useState(false);
@@ -524,15 +547,17 @@ function App() {
   };
 
   const loadAutopilotPolicy = React.useCallback(async () => {
-    const [state, codexContinuation, zcodeContinuation] = await Promise.all([
+    const [state, codexContinuation, zcodeContinuation, runtime] = await Promise.all([
       api<WebAutopilotPolicyState>("/api/autopilot/policy"),
       api<WebSessionAutostartHarness>("/api/session-autostart/harnesses/codex"),
       api<WebSessionAutostartHarness>("/api/session-autostart/harnesses/zcode"),
+      api<WebSessionRuntimeSettings>("/api/session-autostart"),
     ]);
     setAutopilotPolicy(state);
     setAutopilotPolicyDraft(state.policy);
     setAutopilotPolicyError(state.error);
     setContinuationHarnesses({ codex: codexContinuation, zcode: zcodeContinuation });
+    setRuntimeSettingsDraft(runtime);
   }, []);
   React.useEffect(() => { void loadAutopilotPolicy().catch((error) => setAutopilotPolicyError((error as Error).message)); }, [loadAutopilotPolicy]);
 
@@ -810,6 +835,38 @@ function App() {
       setContinuationHarnessSaving(undefined);
     }
   };
+  const loadRuntimeModels = React.useCallback(async () => {
+    const registry = await api<{ adapters: Array<{ id: string; active: boolean }> }>("/api/adapters");
+    const catalogs = await Promise.all(registry.adapters.filter((adapter) => adapter.active).map(async (adapter) => {
+      const result = await api<{ models?: string[] }>(`/api/models?harness=${encodeURIComponent(adapter.id)}`).catch(() => ({ models: [] as string[] }));
+      return (result.models || []).map((model) => ({ model, harness: adapter.id }));
+    }));
+    setRuntimeModelOptions([...new Map(catalogs.flat().map((item) => [item.model, item])).values()].sort((left, right) => left.model.localeCompare(right.model)));
+  }, []);
+  React.useEffect(() => { if (showAutopilotSettings) void loadRuntimeModels(); }, [showAutopilotSettings, loadRuntimeModels]);
+  const saveRuntimeSettings = async () => {
+    if (!runtimeSettingsDraft || runtimeSettingsSaving) return;
+    setRuntimeSettingsSaving(true);
+    setRuntimeSettingsError(undefined);
+    setRuntimeSettingsSaved(false);
+    try {
+      const saved = await api<WebSessionRuntimeSettings>("/api/session-autostart", {
+        method: "PUT",
+        body: JSON.stringify({
+          inventoryWindowHours: runtimeSettingsDraft.inventoryWindowHours,
+          evidenceMessageCount: runtimeSettingsDraft.evidenceMessageCount,
+          judgeModel: runtimeSettingsDraft.judgeModel.trim(),
+          autopilotJudgeModel: runtimeSettingsDraft.autopilotJudgeModel.trim(),
+        }),
+      });
+      setRuntimeSettingsDraft(saved);
+      setRuntimeSettingsSaved(true);
+    } catch (error) {
+      setRuntimeSettingsError((error as Error).message);
+    } finally {
+      setRuntimeSettingsSaving(false);
+    }
+  };
   const loadCreateModels = async (harness: string, preferCurrent = false, pollAttempt = 0) => {
     const requestId = ++createModelRequestRef.current;
     try {
@@ -955,7 +1012,7 @@ function App() {
       {showJobs && <JobsView jobs={jobs} loading={jobsLoading} error={jobsError} cancellingJobId={cancellingJobId} onRefresh={() => void loadJobs()} onCancel={(jobId) => void cancelJob(jobId)} />}
       {showQuota && <QuotaPanel />}
       {showStatistics && <StatisticsView statistics={statistics} loading={statisticsLoading} error={statisticsError} days={statisticsDays} onDays={changeStatisticsDays} onRefresh={() => void loadStatistics(statisticsDays, true)} />}
-      {!showStatistics && !showJobs && !showQuota && showAutopilotSettings && <div className="autopilot-settings-overlay"><div className="autopilot-settings-shell"><button className="settings-close" aria-label="Закрыть настройки автопилота" onClick={() => setShowAutopilotSettings(false)}>×</button><AutopilotSettings state={autopilotPolicy} draft={autopilotPolicyDraft} saving={autopilotPolicySaving} error={autopilotPolicyError} saved={autopilotPolicySaved} continuation={continuationHarnesses} continuationSaving={continuationHarnessSaving} continuationError={continuationHarnessError} onChange={(next) => { setAutopilotPolicyDraft(next); setAutopilotPolicySaved(false); }} onSave={() => void saveAutopilotPolicy()} onContinuationToggle={(harness) => void toggleContinuationHarness(harness)} /></div></div>}
+      {!showStatistics && !showJobs && !showQuota && showAutopilotSettings && <div className="autopilot-settings-overlay"><div className="autopilot-settings-shell"><button className="settings-close" aria-label="Закрыть настройки автопилота" onClick={() => setShowAutopilotSettings(false)}>×</button><AutopilotSettings state={autopilotPolicy} draft={autopilotPolicyDraft} saving={autopilotPolicySaving} error={autopilotPolicyError} saved={autopilotPolicySaved} continuation={continuationHarnesses} continuationSaving={continuationHarnessSaving} continuationError={continuationHarnessError} runtimeDraft={runtimeSettingsDraft} runtimeSaving={runtimeSettingsSaving} runtimeSaved={runtimeSettingsSaved} runtimeError={runtimeSettingsError} modelOptions={runtimeModelOptions} onChange={(next) => { setAutopilotPolicyDraft(next); setAutopilotPolicySaved(false); }} onSave={() => void saveAutopilotPolicy()} onContinuationToggle={(harness) => void toggleContinuationHarness(harness)} onRuntimeChange={(next) => { setRuntimeSettingsDraft(next); setRuntimeSettingsSaved(false); }} onRuntimeSave={() => void saveRuntimeSettings()} /></div></div>}
       {!showStatistics && !showJobs && !showQuota && !!details?.children?.length && <details className="subagents-panel"><summary>Subagents <span>{details.children.length}</span></summary><div className="subagents-list">{details.children.map((child) => <button className="subagent-row" key={keyOf(child)} onClick={() => { selectSession(keyOf(child)); setMobileView("chat"); }}><span className={`status-dot status-${child.status}`} /><span><strong>{child.title || child.id}</strong><small>{typeof child.meta?.agentRole === "string" ? child.meta.agentRole : child.status} · {child.id}</small></span></button>)}</div></details>}
       {!showStatistics && !showJobs && !showQuota && <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}>
         <div className="message-column">

@@ -72,13 +72,15 @@ describe("unfinished session launcher", () => {
       { id: "a-last", role: "assistant", text: `ответ-модели-${"а".repeat(1_500)}`, parts: [{ type: "text", text: `ответ-модели-${"а".repeat(1_500)}` }] },
       { id: "tool", role: "tool", text: "шум инструмента", parts: [{ type: "tool_result", output: "шум инструмента" }] },
       { id: "u-last", role: "user", text: `последний-запрос-${"б".repeat(1_500)}`, parts: [{ type: "text", text: `последний-запрос-${"б".repeat(1_500)}` }] },
-    ]);
+    ], 2);
 
     expect(evidence).toContain("АГЕНТ: ответ-модели-");
     expect(evidence).toContain("ПОЛЬЗОВАТЕЛЬ: последний-запрос-");
     expect(evidence).not.toContain("старый запрос");
     expect(evidence).not.toContain("шум инструмента");
-    expect(evidence.length).toBeLessThanOrEqual(2_000);
+    expect(evidence).toContain("а".repeat(1_500));
+    expect(evidence).toContain("б".repeat(1_500));
+    expect(evidence.length).toBeGreaterThan(3_000);
   });
 
   it("classifies through the direct Anthropic endpoint with an explicit cache breakpoint", async () => {
@@ -220,7 +222,15 @@ describe("unfinished session launcher", () => {
     const path = join(root, "settings.json");
     await writeFile(path, JSON.stringify({ version: 1, enabled: true, sessions: [] }));
     const settingsStore = new SessionAutostartStore(path, {});
-    expect(await settingsStore.getSettings()).toMatchObject({ version: 2, enabled: true, harnesses: [] });
+    expect(await settingsStore.getSettings()).toMatchObject({
+      version: 3,
+      enabled: true,
+      inventoryWindowHours: 48,
+      evidenceMessageCount: 4,
+      judgeModel: "MiniMax-M3.1-Flash-Preview",
+      autopilotJudgeModel: "MiniMax-M3",
+      harnesses: [],
+    });
     await settingsStore.setHarness("opencode", false);
     expect(await settingsStore.getEffective("opencode", "session-1", "/tmp/opencode")).toMatchObject({ enabled: false, source: "harness" });
     expect(await settingsStore.getEffective("codex", "session-2", "/tmp/codex")).toMatchObject({ enabled: true, source: "global" });
@@ -283,7 +293,7 @@ describe("unfinished session launcher", () => {
     });
 
     const stop = launcher.start();
-    await new Promise((resolve) => setTimeout(resolve, 35));
+    for (let tick = 0; tick < 100 && (await store.list()).length === 0; tick += 1) await new Promise((resolve) => setTimeout(resolve, 5));
     stop();
 
     expect(calls).toEqual({ resumes: 0, messages: [] });

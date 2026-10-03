@@ -25,9 +25,13 @@ export type SessionAutostartHarnessOverride = {
   updatedAt: string;
 };
 
-type SessionAutostartFile = {
-  version: 2;
+export type SessionAutostartFile = {
+  version: 3;
   enabled: boolean;
+  inventoryWindowHours: number;
+  evidenceMessageCount: number;
+  judgeModel: string;
+  autopilotJudgeModel: string;
   harnesses: SessionAutostartHarnessOverride[];
   sessions: SessionAutostartOverride[];
 };
@@ -42,7 +46,7 @@ export class SessionAutostartStore {
     const loaded = await this.readOptional();
     return loaded
       ? { ...cloneAutostartFile(loaded), source: "persisted" }
-      : { version: 2, enabled: this.env.AGENT_HERDER_UNFINISHED_AUTOSTART !== "false", harnesses: [], sessions: [], source: "default" };
+      : { ...defaultAutostartFile(this.env), source: "default" };
   }
 
   async getEffective(harness: string, sessionId: string, cwd: string): Promise<{ enabled: boolean; source: "session" | "harness" | "global" | "default"; cwd: string; updatedAt?: string }> {
@@ -58,6 +62,23 @@ export class SessionAutostartStore {
 
   async setGlobal(enabled: boolean): Promise<SessionAutostartFile> {
     return this.mutate((file) => { file.enabled = enabled; return cloneAutostartFile(file); });
+  }
+
+  async setRuntimeSettings(input: { inventoryWindowHours: number; evidenceMessageCount: number; judgeModel: string; autopilotJudgeModel: string }): Promise<SessionAutostartFile> {
+    const inventoryWindowHours = positiveInteger(input.inventoryWindowHours, -1);
+    if (inventoryWindowHours < 1 || inventoryWindowHours > 24 * 90) throw new Error("inventoryWindowHours must be an integer from 1 to 2160");
+    const evidenceMessageCount = positiveInteger(input.evidenceMessageCount, -1);
+    if (evidenceMessageCount < 2 || evidenceMessageCount > 50) throw new Error("evidenceMessageCount must be an integer from 2 to 50");
+    const judgeModel = boundedText(input.judgeModel, "judgeModel", 256).trim();
+    const autopilotJudgeModel = boundedText(input.autopilotJudgeModel, "autopilotJudgeModel", 256).trim();
+    if (!judgeModel || !autopilotJudgeModel) throw new Error("judge models must not be empty");
+    return this.mutate((file) => {
+      file.inventoryWindowHours = inventoryWindowHours;
+      file.evidenceMessageCount = evidenceMessageCount;
+      file.judgeModel = judgeModel;
+      file.autopilotJudgeModel = autopilotJudgeModel;
+      return cloneAutostartFile(file);
+    });
   }
 
   async getHarnessEffective(harness: string): Promise<{ enabled: boolean; source: "harness" | "global" | "default"; updatedAt?: string }> {
@@ -122,7 +143,7 @@ export class SessionAutostartStore {
 
   private async readOptional(): Promise<SessionAutostartFile | null> {
     try {
-      return parseAutostartFile(JSON.parse(await readFile(this.path, "utf8")) as unknown);
+      return parseAutostartFile(JSON.parse(await readFile(this.path, "utf8")) as unknown, this.env);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
@@ -135,12 +156,7 @@ export class SessionAutostartStore {
     this.operation = new Promise<void>((resolve) => { release = resolve; });
     await previous;
     try {
-      const file = await this.readOptional() ?? {
-        version: 2 as const,
-        enabled: this.env.AGENT_HERDER_UNFINISHED_AUTOSTART !== "false",
-        harnesses: [],
-        sessions: [],
-      };
+      const file = await this.readOptional() ?? defaultAutostartFile(this.env);
       const result = await operation(file);
       await atomicWrite(this.path, file);
       return result;
@@ -367,7 +383,6 @@ export class UnfinishedSessionLauncher {
   private readonly maxAttempts: number;
   private readonly retryDelayMs: number;
   private readonly reconcileIntervalMs: number;
-  private readonly inventoryWindowMs: number;
   private readonly discoveryIdleMs: number;
   private readonly maxJudgementsPerCycle: number;
   private readonly maxResumesPerCycle: number;
@@ -385,7 +400,6 @@ export class UnfinishedSessionLauncher {
       options.reconcileIntervalMs ?? Number(process.env.AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS || 600_000),
       600_000,
     );
-    this.inventoryWindowMs = positiveInteger(options.inventoryWindowMs ?? 48 * 60 * 60 * 1_000, 48 * 60 * 60 * 1_000);
     this.discoveryIdleMs = positiveInteger(
       options.discoveryIdleMs ?? Number(process.env.AGENT_HERDER_UNFINISHED_DISCOVERY_IDLE_MS || 600_000),
       600_000,
@@ -563,6 +577,9 @@ export class UnfinishedSessionLauncher {
   }
 
   private async discoverUnfinishedSessions(): Promise<void> {
+    const runtimeSettings = await this.options.settingsStore.getSettings();
+    const inventoryWindowMs = this.options.inventoryWindowMs
+      ?? runtimeSettings.inventoryWindowHours * 60 * 60 * 1_000;
     const known = new Set((await this.options.store.list()).map((record) => sessionKey(record.harness, record.sessionId)));
     const priorInventory = new Map((await this.options.store.listInventory()).map((record) => [sessionKey(record.harness, record.sessionId), record]));
     const candidates: Array<{ adapter: HarnessAdapter; session: AgentSession }> = [];
@@ -584,7 +601,7 @@ export class UnfinishedSessionLauncher {
       }
       for (const session of sessions) {
         const lastActivity = Date.parse(session.lastActivity);
-        if (!Number.isFinite(lastActivity) || Date.now() - lastActivity > this.inventoryWindowMs) continue;
+        if (!Number.isFinite(lastActivity) || Date.now() - lastActivity > inventoryWindowMs) continue;
         candidates.push({ adapter, session });
       }
     }
@@ -599,8 +616,8 @@ export class UnfinishedSessionLauncher {
       if (!isInventoryHarness(session.harness)) continue;
       const harness = session.harness;
       const key = sessionKey(harness, session.id);
-      const messages = await adapter.getSessionMessages?.(session.id, 50).catch(() => null);
-      const transcriptTail = completionEvidence(messages ?? []);
+      const messages = await adapter.getSessionMessages?.(session.id, Math.max(50, runtimeSettings.evidenceMessageCount * 3)).catch(() => null);
+      const transcriptTail = completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount);
       const previous = priorInventory.get(key);
       const unchanged = previous?.lastActivity === session.lastActivity && previous.transcriptTail === transcriptTail;
       const equivalentKey = `${harness}:${normalize(session.cwd)}:${session.title.trim().toLowerCase()}`;
@@ -682,15 +699,20 @@ export class UnfinishedSessionLauncher {
   }
 }
 
-function parseAutostartFile(value: unknown): SessionAutostartFile {
+function parseAutostartFile(value: unknown, env: NodeJS.ProcessEnv = process.env): SessionAutostartFile {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("session autostart settings must be an object");
   const object = value as Record<string, unknown>;
-  if ((object.version !== 1 && object.version !== 2) || typeof object.enabled !== "boolean" || !Array.isArray(object.sessions)) throw new Error("invalid session autostart settings");
-  const harnesses = object.version === 2 ? object.harnesses : [];
+  if ((object.version !== 1 && object.version !== 2 && object.version !== 3) || typeof object.enabled !== "boolean" || !Array.isArray(object.sessions)) throw new Error("invalid session autostart settings");
+  const harnesses = object.version === 2 || object.version === 3 ? object.harnesses : [];
   if (!Array.isArray(harnesses)) throw new Error("invalid session autostart harness overrides");
+  const defaults = defaultAutostartFile(env);
   return {
-    version: 2,
+    version: 3,
     enabled: object.enabled,
+    inventoryWindowHours: object.version === 3 ? runtimeHours(object.inventoryWindowHours) : defaults.inventoryWindowHours,
+    evidenceMessageCount: object.version === 3 && object.evidenceMessageCount !== undefined ? evidenceCount(object.evidenceMessageCount) : defaults.evidenceMessageCount,
+    judgeModel: object.version === 3 ? runtimeModel(object.judgeModel, "judgeModel") : defaults.judgeModel,
+    autopilotJudgeModel: object.version === 3 ? runtimeModel(object.autopilotJudgeModel, "autopilotJudgeModel") : defaults.autopilotJudgeModel,
     harnesses: harnesses.map((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid session autostart harness override");
       const record = value as Record<string, unknown>;
@@ -714,6 +736,37 @@ function parseAutostartFile(value: unknown): SessionAutostartFile {
       };
     }),
   };
+}
+
+function defaultAutostartFile(env: NodeJS.ProcessEnv): SessionAutostartFile {
+  return {
+    version: 3,
+    enabled: env.AGENT_HERDER_UNFINISHED_AUTOSTART !== "false",
+    inventoryWindowHours: positiveInteger(Number(env.AGENT_HERDER_UNFINISHED_INVENTORY_HOURS || 48), 48),
+    evidenceMessageCount: positiveInteger(Number(env.AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES || 4), 4),
+    judgeModel: env.AGENT_HERDER_UNFINISHED_JUDGE_MODEL?.trim() || "MiniMax-M3.1-Flash-Preview",
+    autopilotJudgeModel: env.AGENT_HERDER_AUTOPILOT_JUDGE_MODEL?.trim() || "MiniMax-M3",
+    harnesses: [],
+    sessions: [],
+  };
+}
+
+function runtimeHours(value: unknown): number {
+  const hours = positiveInteger(value, -1);
+  if (hours < 1 || hours > 24 * 90) throw new Error("invalid inventoryWindowHours");
+  return hours;
+}
+
+function runtimeModel(value: unknown, field: string): string {
+  const model = boundedText(value, field, 256).trim();
+  if (!model) throw new Error(`invalid ${field}`);
+  return model;
+}
+
+function evidenceCount(value: unknown): number {
+  const count = positiveInteger(value, -1);
+  if (count < 2 || count > 50) throw new Error("invalid evidenceMessageCount");
+  return count;
 }
 
 function cloneAutostartFile(file: SessionAutostartFile): SessionAutostartFile {
@@ -752,7 +805,7 @@ function parseInventoryRecord(value: unknown): UnfinishedSessionInventoryRecord 
     title: boundedText(record.title, "title", MAX_TEXT),
     status,
     lastActivity: isoDate(record.lastActivity, "lastActivity"),
-    transcriptTail: boundedText(record.transcriptTail, "transcriptTail", 2_000, true),
+    transcriptTail: boundedText(record.transcriptTail, "transcriptTail", 2_000_000, true),
     observedAt: isoDate(record.observedAt, "observedAt"),
     ...(record.verdict ? { verdict: normalizePersistedVerdict(record.verdict) } : {}),
   };
@@ -789,30 +842,27 @@ function cloneInventoryRecord(record: UnfinishedSessionInventoryRecord): Unfinis
   return { ...record, ...(record.verdict ? { verdict: { ...record.verdict } } : {}) };
 }
 
-/** Keep the latest user request and latest model answer; neither may crowd the other out. */
-export function completionEvidence(messages: SessionMessageView[], maxChars = 2_000): string {
+/** Keep the configured latest semantic messages and always retain both sides when present. */
+export function completionEvidence(messages: SessionMessageView[], messageCount = 4): string {
   const semantic = messages.map((message, index) => ({
     index,
     role: message.role,
     text: message.role === "user" || message.role === "assistant" ? semanticTranscript([message]) : "",
   })).filter((item) => item.text);
   const selected = [
+    ...semantic.slice(-Math.max(2, messageCount)),
     [...semantic].reverse().find((item) => item.role === "user"),
     [...semantic].reverse().find((item) => item.role === "assistant"),
   ].filter((item): item is (typeof semantic)[number] => Boolean(item));
   const unique = [...new Map(selected.map((item) => [item.index, item])).values()].sort((left, right) => left.index - right.index);
-  if (unique.length === 0) return "";
-  const separators = Math.max(0, unique.length - 1) * 2;
-  const perMessage = Math.max(1, Math.floor((Math.max(1, maxChars) - separators) / unique.length));
-  return unique.map((item) => clipEvidenceMessage(item.text, perMessage)).join("\n\n");
-}
-
-function clipEvidenceMessage(value: string, maxChars: number): string {
-  if (value.length <= maxChars) return value;
-  if (maxChars < 5) return value.slice(0, maxChars);
-  const head = Math.ceil((maxChars - 3) / 2);
-  const tail = Math.floor((maxChars - 3) / 2);
-  return `${value.slice(0, head)}…${value.slice(-tail)}`;
+  const bounded = unique.slice(-Math.max(2, messageCount));
+  for (const role of ["user", "assistant"] as const) {
+    if (bounded.some((item) => item.role === role)) continue;
+    const required = [...unique].reverse().find((item) => item.role === role);
+    if (required) bounded.splice(0, 1, required);
+  }
+  bounded.sort((left, right) => left.index - right.index);
+  return [...new Map(bounded.map((item) => [item.index, item])).values()].map((item) => item.text).join("\n\n");
 }
 
 function parseRecord(value: unknown): UnfinishedSessionRecord {

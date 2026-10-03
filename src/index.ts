@@ -514,13 +514,22 @@ async function main() {
     ? undefined
     : new CacheHandoffService(adapters, handoffSummarizer, lineageStore);
   const unfinishedJudgeToken = process.env.AGENT_HERDER_UNFINISHED_JUDGE_TOKEN || process.env.MINIMAX_API_KEY;
+  const unfinishedJudgeClients = new Map<string, ReturnType<typeof createAnthropicCompatibleSessionCompletionJudge>>();
   const unfinishedJudge = process.env.AGENT_HERDER_UNFINISHED_JUDGE_ENABLED === "false" || !unfinishedJudgeToken
     ? undefined
-    : createAnthropicCompatibleSessionCompletionJudge({
-        baseUrl: process.env.AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL || "https://api.minimax.io/anthropic",
-        model: process.env.AGENT_HERDER_UNFINISHED_JUDGE_MODEL || "MiniMax-M3.1-Flash-Preview",
-        token: unfinishedJudgeToken,
-      });
+    : { async decide(input: Parameters<ReturnType<typeof createAnthropicCompatibleSessionCompletionJudge>["decide"]>[0]) {
+        const model = (await sessionAutostartStore.getSettings()).judgeModel;
+        let client = unfinishedJudgeClients.get(model);
+        if (!client) {
+          client = createAnthropicCompatibleSessionCompletionJudge({
+            baseUrl: process.env.AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL || "https://api.minimax.io/anthropic",
+            model,
+            token: unfinishedJudgeToken,
+          });
+          unfinishedJudgeClients.set(model, client);
+        }
+        return client.decide(input);
+      } };
   const unfinishedSessionLauncher = new UnfinishedSessionLauncher({
     adapters,
     store: unfinishedSessionStore,

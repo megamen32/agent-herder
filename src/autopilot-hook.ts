@@ -18,6 +18,7 @@ import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { resolveEffectivePolicy } from "./autopilot/policy.js";
 import { AutopilotSessionStore } from "./autopilot/session-store.js";
+import { SessionAutostartStore } from "./autopilot/unfinished-session-launcher.js";
 
 const DEFAULT_LOCK_WAIT_MS = 2_000;
 const DEFAULT_LOCK_RETRY_INTERVAL_MS = 25;
@@ -117,7 +118,8 @@ async function main(): Promise<void> {
   }
 
   try {
-    const judge = buildJudge();
+    const runtimeSettings = await new SessionAutostartStore(join(stateDir, "session-autostart.json")).getSettings();
+    const judge = buildJudge(runtimeSettings.autopilotJudgeModel);
     const notify = buildNotificationSink();
     const receiptStore = await loadReceiptStore(receiptPath);
     const result = await runAutopilotStopHook(input, {
@@ -168,16 +170,13 @@ async function main(): Promise<void> {
   }
 }
 
-function buildJudge() {
+function buildJudge(model?: string) {
   return createOpenAICompatibleJudge({
     baseUrl: requiredEnv(
       "AGENT_HERDER_AUTOPILOT_JUDGE_BASE_URL",
       "Autopilot judge endpoint is not configured",
     ),
-    model: requiredEnv(
-      "AGENT_HERDER_AUTOPILOT_JUDGE_MODEL",
-      "Autopilot judge model is not configured",
-    ),
+    model: model || requiredEnv("AGENT_HERDER_AUTOPILOT_JUDGE_MODEL", "Autopilot judge model is not configured"),
     token:
       process.env.AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN ??
       process.env.OPENAI_API_KEY,

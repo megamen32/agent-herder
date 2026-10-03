@@ -636,6 +636,21 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!sessionAutostartStore) return sendJson(response, 503, { error: "Session autostart settings are disabled" });
     if (request.method === "GET") return sendJson(response, 200, await sessionAutostartStore.getSettings());
     const body = await readJson(request);
+    if (body.inventoryWindowHours !== undefined || body.evidenceMessageCount !== undefined || body.judgeModel !== undefined || body.autopilotJudgeModel !== undefined) {
+      if (typeof body.inventoryWindowHours !== "number" || typeof body.evidenceMessageCount !== "number" || typeof body.judgeModel !== "string" || typeof body.autopilotJudgeModel !== "string") {
+        return sendJson(response, 400, { error: "inventoryWindowHours, evidenceMessageCount, judgeModel and autopilotJudgeModel are required" });
+      }
+      try {
+        return sendJson(response, 200, { ...await sessionAutostartStore.setRuntimeSettings({
+          inventoryWindowHours: body.inventoryWindowHours,
+          evidenceMessageCount: body.evidenceMessageCount,
+          judgeModel: body.judgeModel,
+          autopilotJudgeModel: body.autopilotJudgeModel,
+        }), source: "persisted" });
+      } catch (error) {
+        return sendJson(response, 400, { error: (error as Error).message });
+      }
+    }
     if (typeof body.enabled !== "boolean") return sendJson(response, 400, { error: "enabled is required" });
     return sendJson(response, 200, { ...await sessionAutostartStore.setGlobal(body.enabled), source: "persisted" });
   }

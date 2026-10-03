@@ -453,17 +453,21 @@ export class CodexAdapter implements HarnessAdapter {
             updatedAtMs: normalizeEpochMs(row.updated_at_ms),
           });
         }
-        const recent = [...result.values()].filter((state) =>
-          state.updatedAtMs > 0
-          && Date.now() - state.updatedAtMs <= 48 * 60 * 60 * 1_000
-          && existsSync(state.filePath));
-        await Promise.all(recent.map(async (state) => {
+        // The database is the cheap directory/index path. Probe only the most
+        // recently active rollouts for live lifecycle markers; this retains
+        // Desktop turn visibility without parsing every 48-hour transcript.
+        const liveCandidates = [...result.values()]
+          .filter((state) => state.updatedAtMs > 0 && Date.now() - state.updatedAtMs <= 48 * 60 * 60 * 1_000 && existsSync(state.filePath))
+          .sort((left, right) => right.updatedAtMs - left.updatedAtMs)
+          .slice(0, 50);
+        for (const state of liveCandidates) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
           const tail = await this.readSessionTail(state.filePath);
           state.lastMessage = tail.lastMessage || state.lastMessage;
           state.model = tail.model || state.model;
           state.status = tail.status;
           state.updatedAtMs = tail.updatedAtMs;
-        }));
+        }
         return result;
       } finally {
         db.close();

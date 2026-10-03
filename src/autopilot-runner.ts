@@ -19,6 +19,7 @@ import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopil
 import { effectivePolicyAllowsTarget } from "./autopilot/policy.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "./autopilot/session-store.js";
 import { acquireLock } from "./autopilot-hook.js";
+import { SessionAutostartStore } from "./autopilot/unfinished-session-launcher.js";
 import { AgentResumeClient } from "./resume-transport.js";
 
 type Command = "on" | "off" | "status" | "stop";
@@ -56,6 +57,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
 
   const record = await store.get(input.harness, input.sessionId);
   const effectivePolicy = await policyStore.readEffective();
+  const runtimeSettings = await new SessionAutostartStore(join(stateDir, "session-autostart.json")).getSettings();
   const policyEnabled = effectivePolicyAllowsTarget(effectivePolicy, { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) });
   const sessionEnabled = record?.enabled === true && (effectivePolicy.source !== "persisted" || effectivePolicy.policy.enabled);
   const enabled = record?.enabled === false ? false : sessionEnabled || policyEnabled;
@@ -73,7 +75,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
     const core = createAutopilotCore({
       judge: createOpenAICompatibleJudge({
         baseUrl: requiredEnv("AGENT_HERDER_AUTOPILOT_JUDGE_BASE_URL"),
-        model: requiredEnv("AGENT_HERDER_AUTOPILOT_JUDGE_MODEL"),
+        model: runtimeSettings.autopilotJudgeModel || requiredEnv("AGENT_HERDER_AUTOPILOT_JUDGE_MODEL"),
         token: process.env.AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN || process.env.OPENAI_API_KEY,
       }),
       notify: createNoticePlaceSink({

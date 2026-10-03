@@ -201,8 +201,10 @@ The common switches are:
 | `AGENT_HERDER_INJECTION_RESHOW_MS` | `2700000` | Re-inject unchanged rosters after this staleness window |
 | `AGENT_HERDER_AUTO_TTL_SECONDS` | `60` | Auto-reserved file-activity lease TTL |
 | `AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS` | `600000` | Recheck unfinished sessions and resume newly stalled work every 10 minutes |
+| `AGENT_HERDER_UNFINISHED_INVENTORY_HOURS` | `48` | Default lookback; the Web UI persists a runtime override without a restart |
+| `AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES` | `4` | Full recent semantic messages given to the judge; latest user and model messages are always retained |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Direct MiniMax Anthropic-compatible classifier endpoint; avoids an extra gateway hop |
-| `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash-Preview` | Model that classifies the last 2,000 transcript characters; reads `MINIMAX_API_KEY` from the protected service environment |
+| `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash-Preview` | Default classifier model; the Web UI runtime selection overrides it and reads `MINIMAX_API_KEY` from the protected service environment |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ENABLED` | `true` | Disable only the MiniMax unfinished-session classifier |
 | `AGENT_HERDER_CODEX_STATE_CACHE_MS` | `60000` | Share one persisted Codex rollout scan across dashboard, observation, and recovery callers |
 | `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | On restart, replace a stale documented-cache session with a compact MiniMax handoff in the same harness/model |
