@@ -168,6 +168,7 @@ npx -y agent-herder
 | `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Прямой Anthropic-совместимый endpoint MiniMax без дополнительного шлюза |
 | `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash-Preview` | Модель классификации последних 2000 символов; ключ читается из защищённого окружения `MINIMAX_API_KEY` |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ENABLED` | `true` | Отключает только MiniMax-классификатор незавершённых сессий |
+| `AGENT_HERDER_CODEX_STATE_CACHE_MS` | `60000` | Общий кэш одного чтения Codex rollout-файлов для UI, наблюдения и recovery-цикла |
 | `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | При рестарте заменять сессию с истёкшим документированным кэшем на новую в том же харнесе/модели через краткий handoff MiniMax |
 | `AGENT_HERDER_HANDOFF_MODEL` | `MiniMax-M3.1-Flash-Preview` | Прямая модель MiniMax только для суммаризации; Fast Agent — резерв при отсутствии `MINIMAX_API_KEY` |
 | `AGENT_HERDER_CACHE_TTL_MINUTES` | `{}` | JSON с точными override, например `{"zcode:provider/model":30}`; неизвестный TTL не угадывается |

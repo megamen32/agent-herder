@@ -204,6 +204,7 @@ The common switches are:
 | `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Direct MiniMax Anthropic-compatible classifier endpoint; avoids an extra gateway hop |
 | `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash-Preview` | Model that classifies the last 2,000 transcript characters; reads `MINIMAX_API_KEY` from the protected service environment |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ENABLED` | `true` | Disable only the MiniMax unfinished-session classifier |
+| `AGENT_HERDER_CODEX_STATE_CACHE_MS` | `60000` | Share one persisted Codex rollout scan across dashboard, observation, and recovery callers |
 | `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | On restart, replace a stale documented-cache session with a compact MiniMax handoff in the same harness/model |
 | `AGENT_HERDER_HANDOFF_MODEL` | `MiniMax-M3.1-Flash-Preview` | Direct MiniMax model used only to summarize stale sessions; Fast Agent is the fallback when `MINIMAX_API_KEY` is absent |
 | `AGENT_HERDER_CACHE_TTL_MINUTES` | `{}` | JSON exact overrides such as `{"zcode:provider/model":30}`; unknown provider TTLs are never guessed |

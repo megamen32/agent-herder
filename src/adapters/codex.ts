@@ -49,6 +49,8 @@ export class CodexAdapter implements HarnessAdapter {
   private codexBin: string;
   private codexDir: string;
   private sessionStatesCache?: Map<string, CodexSessionState>;
+  private sessionStatesCachedAt = 0;
+  private sessionStatesRefresh?: Promise<Map<string, CodexSessionState>>;
 
   constructor(config: { codexBin?: string; codexDir?: string } = {}) {
     this.codexBin = config.codexBin || process.env.CODEX_BIN || "codex";
@@ -66,11 +68,9 @@ export class CodexAdapter implements HarnessAdapter {
   async listSessions(): Promise<AgentSession[]> {
     const [index, sessionStates, runningPids] = await Promise.all([
       this.readSessionIndex(),
-      this.readSessionStates(),
+      this.getSessionStates(),
       this.getRunningCodexPids(),
     ]);
-    this.sessionStatesCache = sessionStates;
-
     const sessions = index.map((entry) => {
       const state = sessionStates.get(entry.id);
       return {
@@ -120,8 +120,7 @@ export class CodexAdapter implements HarnessAdapter {
   }
 
   async getNativeSessionMetadata(): Promise<Map<string, Pick<CodexSessionState, "parentThreadId" | "threadSource" | "agentRole" | "status">>> {
-    const states = this.sessionStatesCache || await this.readSessionStates();
-    this.sessionStatesCache = states;
+    const states = await this.getSessionStates();
     return new Map([...states.entries()].map(([id, state]) => [id, {
       parentThreadId: state.parentThreadId,
       threadSource: state.threadSource,
@@ -208,7 +207,7 @@ export class CodexAdapter implements HarnessAdapter {
   }
 
   async getSessionMessages(id: string, limit = 12): Promise<SessionMessageView[] | null> {
-    const state = this.sessionStatesCache?.get(id) || (await this.readSessionStates()).get(id);
+    const state = (await this.getSessionStates()).get(id);
     if (!state) return null;
     const file = await open(state.filePath, "r");
     try {
@@ -412,6 +411,23 @@ export class CodexAdapter implements HarnessAdapter {
       }
     }));
     return result;
+  }
+
+  /** Share one expensive rollout scan across the dashboard, observer and recovery loop. */
+  private getSessionStates(): Promise<Map<string, CodexSessionState>> {
+    const ttlMs = Math.max(1_000, Number(process.env.AGENT_HERDER_CODEX_STATE_CACHE_MS || 60_000));
+    if (this.sessionStatesCache && Date.now() - this.sessionStatesCachedAt < ttlMs) {
+      return Promise.resolve(this.sessionStatesCache);
+    }
+    if (this.sessionStatesRefresh) return this.sessionStatesRefresh;
+    this.sessionStatesRefresh = this.readSessionStates()
+      .then((states) => {
+        this.sessionStatesCache = states;
+        this.sessionStatesCachedAt = Date.now();
+        return states;
+      })
+      .finally(() => { this.sessionStatesRefresh = undefined; });
+    return this.sessionStatesRefresh;
   }
 
   private async readSessionHeader(filePath: string): Promise<string> {
