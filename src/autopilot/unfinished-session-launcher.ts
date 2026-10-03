@@ -557,6 +557,13 @@ export class UnfinishedSessionLauncher {
     const candidates: Array<{ adapter: HarnessAdapter; session: AgentSession }> = [];
     for (const [provider, adapter] of this.options.adapters) {
       if (!isInventoryHarness(provider) || (!adapter.resumeSession && provider !== "opencode")) continue;
+      if ((provider === "codex" || provider === "zcode") && adapter.isReady && !adapter.isReady()) {
+        try {
+          await adapter.init();
+        } catch (error) {
+          console.error(`[agent-herder] не удалось подключить live-status ${displayHarness(provider)}: ${errorText(error)}`);
+        }
+      }
       let sessions: AgentSession[];
       try {
         sessions = await adapter.listSessions();
