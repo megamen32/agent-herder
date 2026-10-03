@@ -1190,15 +1190,23 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
       if (!previous || score > previous.score) assignment.set(id, { group: index, score });
     }
   });
-  if (assignment.size !== known.size) {
-    const missing = [...known].filter((id) => !assignment.has(id));
-    throw new Error(`MiniMax omitted sessions from batch plan: ${missing.join(", ")}`);
-  }
   const groups = preliminary.flatMap((group, index): SessionBatchPlanGroup[] => {
     const sourceSessionIds = group.sourceSessionIds.filter((id) => assignment.get(id)?.group === index);
     if (sourceSessionIds.length === 0) return [];
     return [{ ...group, sourceSessionIds, primarySessionId: sourceSessionIds.includes(group.primarySessionId) ? group.primarySessionId : sourceSessionIds[0] }];
   });
+  for (const { session } of candidates) {
+    if (assignment.has(session.id)) continue;
+    groups.push({
+      sourceSessionIds: [session.id],
+      primarySessionId: session.id,
+      verdict: "needs_human",
+      reason: "MiniMax не включил сессию в общий план; она будет повторно проверена в следующем цикле",
+      confidence: 0,
+      topic: session.title.slice(0, 120) || "Неопределённая задача",
+      handoff: "",
+    });
+  }
   return { groups };
 }
 

@@ -145,10 +145,12 @@ describe("unfinished session launcher", () => {
     const plan = await judge.plan?.({ sessions: [
       { session: { ...fixtureSession("idle", "codex"), id: "codex-1" }, transcriptTail: `${evidence} codex-marker` },
       { session: { ...fixtureSession("idle", "zcode"), id: "zcode-1" }, transcriptTail: `${evidence} zcode-marker` },
+      { session: { ...fixtureSession("idle", "codex"), id: "omitted-1", title: "Пропущенная задача" }, transcriptTail: `${evidence} omitted-marker` },
     ] });
 
-    expect(plan?.groups).toMatchObject([{ sourceSessionIds: ["codex-1", "zcode-1"], primarySessionId: "zcode-1", topic: "Восстановить отправку комментариев" }]);
-    expect(plan?.groups).toHaveLength(1);
+    expect(plan?.groups[0]).toMatchObject({ sourceSessionIds: ["codex-1", "zcode-1"], primarySessionId: "zcode-1", topic: "Восстановить отправку комментариев" });
+    expect(plan?.groups).toHaveLength(2);
+    expect(plan?.groups[1]).toMatchObject({ sourceSessionIds: ["omitted-1"], verdict: "needs_human", confidence: 0, topic: "Пропущенная задача" });
     expect(JSON.stringify(requestBody)).toContain("codex-marker");
     expect(JSON.stringify(requestBody)).toContain("zcode-marker");
     expect(JSON.stringify(requestBody)).toContain("последние четыре полных смысловых сообщения");
