@@ -109,6 +109,11 @@ describe("ZCode adapter", () => {
       providerId: "provider-uuid",
       modelId: "zc/glm-5.3-flash",
     });
+    expect(resolveConfiguredZcodeModel("provider-uuid/minimax/MiniMax-M3$high", config)).toEqual({
+      providerId: "provider-uuid",
+      modelId: "minimax/MiniMax-M3",
+      options: { reasoningLevel: "high" },
+    });
   });
 
   it("normalizes native zcode-task event subscriptions", async () => {
@@ -118,6 +123,8 @@ describe("ZCode adapter", () => {
     const stop = adapter.subscribeEvents((event) => events.push(event));
     await adapter.init();
     await adapter.listSessions();
+    expect(client.listeners).toHaveLength(0);
+    await adapter.resumeSession("session-1");
     expect(client.listeners).toHaveLength(1);
     expect(client.listeners[0]).toMatchObject({ channel: "zcode-task", event: "onDynamicTaskEvent" });
     client.listeners[0].handler({ type: "task_complete" });
@@ -137,6 +144,21 @@ describe("ZCode adapter", () => {
     expect(await adapter.listModels?.()).toEqual(["zai/GLM-4.5"]);
     expect(client.started).toBe(false);
     expect(client.calls).toEqual([]);
+  });
+
+  it("keeps health sessions on bounded built-in tools", async () => {
+    const client = new FakeClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    await adapter.createSession({ name: "health_remediation_canary", cwd: "/workspace", model: "zai/GLM-4.5$high" });
+
+    const create = client.calls.find((call) => call.method === "createSession");
+    expect(create?.args[0]).toMatchObject({
+      toolAllowlist: ["Bash", "Read", "Edit", "Write", "Glob", "Grep"],
+      model: { providerId: "zai", modelId: "GLM-4.5", options: { reasoningLevel: "high" } },
+      thoughtLevel: "high",
+    });
   });
 
   it("initializes, maps sessions/messages, and controls the native protocol", async () => {
@@ -168,6 +190,7 @@ describe("ZCode adapter", () => {
     expect(await adapter.resumeSession?.("session-1")).toEqual({ ok: true });
     expect(await adapter.terminate?.("session-1")).toEqual({ ok: true });
     expect(await adapter.changeModel?.("session-1", "zai/GLM-4.5")).toEqual({ ok: true });
+    expect(await adapter.changeModel?.("session-1", "zai/GLM-4.5$high")).toEqual({ ok: true });
     expect(await adapter.listModels?.()).toEqual(["zai/GLM-4.5"]);
 
     const raw = await adapter.getRawTranscript?.("session-1");
@@ -185,6 +208,9 @@ describe("ZCode adapter", () => {
       "zcode-agent.setModel",
       "zcode-agent.readWorkspaceState",
     ]));
+    expect(client.calls.filter((call) => call.method === "setModel").at(-1)?.args[0]).toMatchObject({
+      model: { providerId: "zai", modelId: "GLM-4.5", options: { reasoningLevel: "high" } },
+    });
 
     await adapter.dispose();
     expect(client.closed).toBe(true);
@@ -198,6 +224,29 @@ describe("ZCode adapter", () => {
     expect(await adapter.respondPermission("session-1", "request-1", "allow")).toEqual({ ok: true });
     expect(await adapter.forkSession?.("session-1")).toEqual({ ok: false, error: expect.stringContaining("not supported") });
     await adapter.dispose();
+  });
+
+  it("recycles a wedged app-server when stopGeneration times out", async () => {
+    class WedgedClient extends FakeClient {
+      startCalls = 0;
+      override async start(): Promise<void> { this.startCalls += 1; await super.start(); }
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-task" && method === "stopGeneration") {
+          throw new Error("ZCode RPC request timed out: zcode-task.stopGeneration");
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new WedgedClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    expect(await adapter.stopSession("session-1")).toEqual({
+      ok: false,
+      error: "ZCode RPC request timed out: zcode-task.stopGeneration",
+    });
+    expect(client.closed).toBe(true);
+    expect(client.startCalls).toBeGreaterThanOrEqual(2);
   });
 
   it("auto-resumes an idle TUI session when the direct prompt is rejected as not active", async () => {

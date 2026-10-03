@@ -44,6 +44,6 @@ export function normalizeHealthExecution(value: unknown): HealthExecutionProfile
 
 /** Translate the provider/model contract to the selected coding harness. */
 export function healthModelForHarness(harness: string, execution: HealthExecutionProfile): string {
-  if (harness === "zcode") return `${execution.provider}/${execution.model}#${execution.reasoning}`;
+  if (harness === "zcode") return `${execution.provider}/${execution.model}$${execution.reasoning}`;
   return harness === "opencode" ? `${execution.provider}/${execution.model}` : execution.model;
 }

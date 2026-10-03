@@ -30,7 +30,9 @@ interface ZcodeWorkspaceRef {
 interface ZcodeModelRef {
   providerId: string;
   modelId: string;
-  variant?: string;
+  options?: {
+    reasoningLevel?: string;
+  };
 }
 
 interface ZcodeLocalConfig {
@@ -54,6 +56,8 @@ interface ZcodeSessionInfo {
   createdAt?: number | string;
   updatedAt?: number | string;
 }
+
+const HEALTH_SESSION_TOOL_ALLOWLIST = ["Bash", "Read", "Edit", "Write", "Glob", "Grep"] as const;
 
 interface ZcodeMessage {
   info?: {
@@ -111,7 +115,8 @@ function timestamp(value: unknown, fallback = Date.now()): string {
 
 function modelName(model: ZcodeModelRef | undefined): string | undefined {
   if (!model?.providerId || !model.modelId) return undefined;
-  return `${model.providerId}/${model.modelId}${model.variant ? `#${model.variant}` : ""}`;
+  const reasoningLevel = model.options?.reasoningLevel;
+  return `${model.providerId}/${model.modelId}${reasoningLevel ? `$${reasoningLevel}` : ""}`;
 }
 
 function modelNameFromCatalogEntry(value: unknown): string | undefined {
@@ -127,12 +132,12 @@ function parseModelName(value: string, currentProviderId?: string): ZcodeModelRe
   const separator = trimmed.indexOf("/");
   if (separator > 0) {
     const providerId = trimmed.slice(0, separator).trim();
-    const modelAndVariant = trimmed.slice(separator + 1);
-    const variantSeparator = modelAndVariant.indexOf("#");
+    const modelAndReasoning = trimmed.slice(separator + 1);
+    const reasoningSeparator = modelAndReasoning.indexOf("$");
     return {
       providerId,
-      modelId: variantSeparator >= 0 ? modelAndVariant.slice(0, variantSeparator) : modelAndVariant,
-      ...(variantSeparator >= 0 ? { variant: modelAndVariant.slice(variantSeparator + 1) } : {}),
+      modelId: reasoningSeparator >= 0 ? modelAndReasoning.slice(0, reasoningSeparator) : modelAndReasoning,
+      ...(reasoningSeparator >= 0 ? { options: { reasoningLevel: modelAndReasoning.slice(reasoningSeparator + 1) } } : {}),
     };
   }
   if (!currentProviderId) return undefined;
@@ -156,16 +161,16 @@ export function resolveConfiguredZcodeModel(value: string, config: ZcodeLocalCon
   const separator = value.indexOf("/");
   if (separator <= 0) return undefined;
   const providerAlias = value.slice(0, separator).trim();
-  const modelAndVariant = value.slice(separator + 1);
-  const variantSeparator = modelAndVariant.indexOf("#");
-  const modelId = variantSeparator >= 0 ? modelAndVariant.slice(0, variantSeparator) : modelAndVariant;
+  const modelAndReasoning = value.slice(separator + 1);
+  const reasoningSeparator = modelAndReasoning.indexOf("$");
+  const modelId = reasoningSeparator >= 0 ? modelAndReasoning.slice(0, reasoningSeparator) : modelAndReasoning;
   for (const [providerId, provider] of Object.entries(config.provider ?? {})) {
     if (providerId !== providerAlias && provider.name?.trim().toLowerCase() !== providerAlias.toLowerCase()) continue;
     if (!Object.hasOwn(provider.models ?? {}, modelId)) continue;
     return {
       providerId,
       modelId,
-      ...(variantSeparator >= 0 ? { variant: modelAndVariant.slice(variantSeparator + 1) } : {}),
+      ...(reasoningSeparator >= 0 ? { options: { reasoningLevel: modelAndReasoning.slice(reasoningSeparator + 1) } } : {}),
     };
   }
   return undefined;
@@ -424,7 +429,6 @@ export class ZcodeAdapter implements HarnessAdapter {
       }
       this.initialized = true;
       this.emitEvent({ kind: "process.connected", harness: "zcode", data: { transport: "app-server-events" } });
-      for (const [sessionId, workspace] of this.sessionWorkspaces) this.ensureSessionEventSubscription(sessionId, workspace);
     } catch (error) {
       await this.client.close().catch(() => undefined);
       throw new Error(`Cannot initialize ZCode app-server: ${error instanceof Error ? error.message : String(error)}`);
@@ -436,7 +440,6 @@ export class ZcodeAdapter implements HarnessAdapter {
   subscribeEvents(handler: (event: HarnessEvent) => void): () => void {
     this.eventListeners.add(handler);
     if (this.initialized) queueMicrotask(() => handler({ kind: "process.connected", harness: "zcode", data: { transport: "app-server-events" } }));
-    for (const [sessionId, workspace] of this.sessionWorkspaces) this.ensureSessionEventSubscription(sessionId, workspace);
     return () => { this.eventListeners.delete(handler); };
   }
 
@@ -475,7 +478,6 @@ export class ZcodeAdapter implements HarnessAdapter {
       seen.add(info.sessionId);
       const rowWorkspace = this.workspace(nonEmptyString(record(info.workspace).workspacePath) || workspace.workspacePath);
       this.sessionWorkspaces.set(info.sessionId, rowWorkspace);
-      this.ensureSessionEventSubscription(info.sessionId, rowWorkspace);
       let mapped = mapSession(row, rowWorkspace.workspacePath);
       if (!mapped.lastMessage) {
         try {
@@ -516,6 +518,13 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
     const workspace = this.workspace(options.cwd);
+    const initialModel = options.model ? await this.resolveModelRef(options.model) : undefined;
+    if (options.model && !initialModel) {
+      throw new Error("ZCode model must be provider/model or a model ID with a known current provider");
+    }
+    const healthTools = options.name.startsWith("health_")
+      ? { toolAllowlist: [...HEALTH_SESSION_TOOL_ALLOWLIST] }
+      : {};
     const snapshot = await this.callAgent("createSession", {
       ...workspace,
       sessionTraceId: randomUUID(),
@@ -525,6 +534,9 @@ export class ZcodeAdapter implements HarnessAdapter {
       // is done via respond_permission approvals instead.
       mode: "build",
       persistence: "immediate",
+      ...(initialModel ? { model: initialModel } : {}),
+      ...(initialModel?.options?.reasoningLevel ? { thoughtLevel: initialModel.options.reasoningLevel } : {}),
+      ...healthTools,
     });
     const info = sessionInfoFromPayload(snapshot);
     if (!info) throw new Error("ZCode createSession returned no sessionId");
@@ -564,6 +576,9 @@ export class ZcodeAdapter implements HarnessAdapter {
     };
     const result = await send();
     if (result.ok) {
+      const workspace = this.sessionWorkspaces.get(id) || this.workspace();
+      this.sessionWorkspaces.set(id, workspace);
+      this.ensureSessionEventSubscription(id, workspace);
       // A queued prompt does not wake a stopped/idle session by itself, and
       // recency heuristics misread just-finished turns as "running" — so the
       // resume after delivery is unconditional. On an already-attached
@@ -596,7 +611,15 @@ export class ZcodeAdapter implements HarnessAdapter {
       await this.callTask("stopGeneration", { ...workspace, taskId: id });
       return { ok: true };
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      const message = error instanceof Error ? error.message : String(error);
+      if (/timed out/i.test(message)) {
+        // A provider request can wedge the single ZCode app-server so even
+        // stopGeneration cannot be served. Recycle only this adapter-owned
+        // child before the caller starts the approved fallback provider.
+        await this.dispose();
+        try { await this.init(); } catch { /* the next explicit request will retry init */ }
+      }
+      return { ok: false, error: message };
     }
   }
 
@@ -655,14 +678,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       const snapshot = await this.readSnapshot(sessionId, workspace, 1);
       const current = record(record(snapshot).settings).model;
       const currentModel = record(current).current as ZcodeModelRef | undefined;
-      let configuredRef: ZcodeModelRef | undefined;
-      if (this.useLocalConfig) {
-        try {
-          const config = JSON.parse(await readFile(join(homedir(), ".zcode", "cli", "config.json"), "utf8")) as ZcodeLocalConfig;
-          configuredRef = resolveConfiguredZcodeModel(model, config);
-        } catch { /* local CLI config is optional */ }
-      }
-      const modelRef = configuredRef || parseModelName(model, currentModel?.providerId);
+      const modelRef = await this.resolveModelRef(model, currentModel?.providerId);
       if (!modelRef?.providerId || !modelRef.modelId) {
         return { ok: false, error: "ZCode model must be provider/model or a model ID with a known current provider" };
       }
@@ -765,6 +781,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       const snapshot = await this.callAgent("resumeSession", { ...workspace, sessionId: id });
       this.sessionWorkspaces.set(id, workspace);
       if (!sessionInfoFromPayload(snapshot)) throw new Error("ZCode resumeSession returned no sessionId");
+      this.ensureSessionEventSubscription(id, workspace);
       return { ok: true };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -890,6 +907,17 @@ export class ZcodeAdapter implements HarnessAdapter {
   private async callAgent(method: string, ...args: unknown[]): Promise<unknown> {
     await this.client.start();
     return this.client.call("zcode-agent", method, args);
+  }
+
+  private async resolveModelRef(model: string, currentProviderId?: string): Promise<ZcodeModelRef | undefined> {
+    if (this.useLocalConfig) {
+      try {
+        const config = JSON.parse(await readFile(join(homedir(), ".zcode", "cli", "config.json"), "utf8")) as ZcodeLocalConfig;
+        const configured = resolveConfiguredZcodeModel(model, config);
+        if (configured) return configured;
+      } catch { /* local CLI config is optional */ }
+    }
+    return parseModelName(model, currentProviderId);
   }
 
   private async callTask(method: string, ...args: unknown[]): Promise<unknown> {

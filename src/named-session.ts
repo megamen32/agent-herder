@@ -59,10 +59,6 @@ export async function createNamedSession(
     }
     try {
       const session = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model });
-      if (request.model && adapter.changeModel && session.harness !== "fast-agent") {
-        const changed = await adapter.changeModel(session.id, request.model);
-        if (!changed.ok) return failed(normalized, changed.error || "Model selection failed");
-      }
       return { ok: true, created: true, sessionId: session.id, model: request.model, ...normalized };
     } catch (error) {
       return failed(normalized, (error as Error).message);
@@ -104,7 +100,7 @@ export async function newOrResumeNamedSession(
   if (resolved.kind === "error") return resolved.result;
 
   const mode = request.mode || "sync";
-  if (request.model !== undefined) {
+  if (request.model !== undefined && !resolved.created && resolved.target.model !== request.model) {
     if (!resolved.adapter.changeModel) {
       return {
         ok: false,

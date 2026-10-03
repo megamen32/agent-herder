@@ -1051,7 +1051,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     );
     return sendJson(response, 200, buildSessionProgress(details, Number.isFinite(limitValue) ? limitValue : 5));
   }
-  const actionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/(resume|message|stop|cancel|recover|fork|model|permissions\/([^/]+))$/);
+  const actionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/(resume|message|stop|terminate|cancel|recover|fork|model|permissions\/([^/]+))$/);
   if (actionMatch && request.method === "POST") {
     const body = await readJson(request);
     const harness = decodeURIComponent(actionMatch[1]);
@@ -1062,6 +1062,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     if (action === "stop") {
       return sendOperationResult(response, await supervisor.stopSession(harness, id));
+    }
+    if (action === "terminate") {
+      return sendOperationResult(response, await supervisor.terminateSession(harness, id));
     }
     if (action === "cancel") {
       return sendOperationResult(response, await supervisor.cancelTurn(harness, id));

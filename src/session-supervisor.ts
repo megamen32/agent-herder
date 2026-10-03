@@ -360,6 +360,15 @@ export class SessionSupervisor {
     return result;
   }
 
+  async terminateSession(harness: string, id: string): Promise<{ ok: boolean; error?: string }> {
+    const adapter = this.requireAdapter(harness);
+    const result = adapter.terminate
+      ? await adapter.terminate(id)
+      : { ok: false, error: `${adapter.name} does not expose native session termination` };
+    if (result.ok) this.publishSessionChanged(harness, id, "deleted");
+    return result;
+  }
+
   async cancelTurn(harness: string, id: string): Promise<{ ok: boolean; error?: string }> {
     const adapter = this.requireAdapter(harness);
     const result = adapter.cancelTurn
