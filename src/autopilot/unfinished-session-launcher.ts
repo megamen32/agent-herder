@@ -1160,16 +1160,13 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
     const raw = boundedText(value, field, 128);
     return aliases.get(raw) ?? raw;
   };
-  const assigned = new Set<string>();
-  const groups = rawGroups.map((value, index): SessionBatchPlanGroup => {
+  const preliminary = rawGroups.map((value, index): SessionBatchPlanGroup => {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`MiniMax returned invalid group ${index}`);
     const record = value as Record<string, unknown>;
     if (!Array.isArray(record.source_session_ids) || record.source_session_ids.length === 0) throw new Error(`MiniMax group ${index} has no sources`);
-    const sourceSessionIds = record.source_session_ids.map((id) => resolveId(id, "source_session_id"));
+    const sourceSessionIds = [...new Set(record.source_session_ids.map((id) => resolveId(id, "source_session_id")))];
     for (const id of sourceSessionIds) {
       if (!known.has(id)) throw new Error(`MiniMax grouped unknown session ${id}`);
-      if (assigned.has(id)) throw new Error(`MiniMax grouped session twice: ${id}`);
-      assigned.add(id);
     }
     const primarySessionId = resolveId(record.primary_session_id, "primary_session_id");
     if (!sourceSessionIds.includes(primarySessionId)) throw new Error(`MiniMax primary is outside group ${index}`);
@@ -1184,10 +1181,23 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
         : typeof record.handoff === "string" ? boundedText(record.handoff, "handoff", 32_000, true) : "",
     };
   });
-  if (assigned.size !== known.size) {
-    const missing = [...known].filter((id) => !assigned.has(id));
+  const assignment = new Map<string, { group: number; score: number }>();
+  preliminary.forEach((group, index) => {
+    for (const id of group.sourceSessionIds) {
+      const score = (group.primarySessionId === id ? 10 : 0) + group.confidence;
+      const previous = assignment.get(id);
+      if (!previous || score > previous.score) assignment.set(id, { group: index, score });
+    }
+  });
+  if (assignment.size !== known.size) {
+    const missing = [...known].filter((id) => !assignment.has(id));
     throw new Error(`MiniMax omitted sessions from batch plan: ${missing.join(", ")}`);
   }
+  const groups = preliminary.flatMap((group, index): SessionBatchPlanGroup[] => {
+    const sourceSessionIds = group.sourceSessionIds.filter((id) => assignment.get(id)?.group === index);
+    if (sourceSessionIds.length === 0) return [];
+    return [{ ...group, sourceSessionIds, primarySessionId: sourceSessionIds.includes(group.primarySessionId) ? group.primarySessionId : sourceSessionIds[0] }];
+  });
   return { groups };
 }
 
