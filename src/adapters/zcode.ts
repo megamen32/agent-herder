@@ -555,7 +555,8 @@ export class ZcodeAdapter implements HarnessAdapter {
       } finally {
         db.close();
       }
-    } catch {
+    } catch (error) {
+      console.error(`[agent-herder] ZCode tasks-index discovery failed: ${error instanceof Error ? error.message : String(error)}`);
       return [];
     }
   }
