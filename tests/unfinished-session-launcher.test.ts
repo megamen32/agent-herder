@@ -118,7 +118,7 @@ describe("unfinished session launcher", () => {
       fetchImpl: async (_url, init) => {
         requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
         const planText = JSON.stringify({ groups: [{
-          source_session_ids: ["codex-1", "zcode-1"], primary_session_id: "zcode-1", verdict: "unfinished",
+          source_session_ids: ["S1", "S2"], primary_session_id: "S2", verdict: "unfinished",
           reason: "Одна задача оборвалась в двух клиентах", confidence: 0.98,
           topic: "Восстановить отправку комментариев", handoff: "Общий handoff обеих сессий",
         }] });
@@ -144,6 +144,8 @@ describe("unfinished session launcher", () => {
     expect(JSON.stringify(requestBody)).toContain("codex-marker");
     expect(JSON.stringify(requestBody)).toContain("zcode-marker");
     expect(JSON.stringify(requestBody)).toContain("последние четыре полных смысловых сообщения");
+    expect(JSON.stringify(requestBody)).toContain("session_ref");
+    expect(JSON.stringify(requestBody)).toContain("S1");
     expect(requestBody.max_tokens).toBe(131_072);
     expect(requestBody.stream).toBe(true);
     expect(requestBody.output_config).toEqual({ effort: "low" });

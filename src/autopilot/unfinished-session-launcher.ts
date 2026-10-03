@@ -1155,18 +1155,23 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
   const rawGroups = (value as Record<string, unknown>).groups;
   if (!Array.isArray(rawGroups)) throw new Error("MiniMax batch plan has no groups");
   const known = new Set(candidates.map(({ session }) => session.id));
+  const aliases = new Map(candidates.map(({ session }, index) => [`S${index + 1}`, session.id]));
+  const resolveId = (value: unknown, field: string): string => {
+    const raw = boundedText(value, field, 128);
+    return aliases.get(raw) ?? raw;
+  };
   const assigned = new Set<string>();
   const groups = rawGroups.map((value, index): SessionBatchPlanGroup => {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`MiniMax returned invalid group ${index}`);
     const record = value as Record<string, unknown>;
     if (!Array.isArray(record.source_session_ids) || record.source_session_ids.length === 0) throw new Error(`MiniMax group ${index} has no sources`);
-    const sourceSessionIds = record.source_session_ids.map((id) => boundedText(id, "source_session_id", 128));
+    const sourceSessionIds = record.source_session_ids.map((id) => resolveId(id, "source_session_id"));
     for (const id of sourceSessionIds) {
       if (!known.has(id)) throw new Error(`MiniMax grouped unknown session ${id}`);
       if (assigned.has(id)) throw new Error(`MiniMax grouped session twice: ${id}`);
       assigned.add(id);
     }
-    const primarySessionId = boundedText(record.primary_session_id, "primary_session_id", 128);
+    const primarySessionId = resolveId(record.primary_session_id, "primary_session_id");
     if (!sourceSessionIds.includes(primarySessionId)) throw new Error(`MiniMax primary is outside group ${index}`);
     const verdict = normalizeVerdict(record);
     return {
@@ -1191,8 +1196,8 @@ function batchPlannerPrompt(): string {
     "Ты единый оркестратор автопродолжения Agent Herder для Codex и ZCode.",
     "Получаешь все доступные сессии окна, у каждой ровно последние четыре полных смысловых сообщения без tool noise.",
     "Сгруппируй сессии одной и той же пользовательской задачи, даже если названия различаются; не объединяй просто похожие задачи.",
-    "Каждый входной session.id должен встретиться ровно один раз в source_session_ids одной группы.",
-    "Для группы выбери primary_session_id: работающую сессию, иначе самую новую и содержательную.",
+    "Каждый входной session_ref должен встретиться ровно один раз в source_session_ids одной группы; возвращай короткие S1, S2 и т.д., не переписывай UUID.",
+    "Для группы выбери primary_session_id из session_ref: работающую сессию, иначе самую новую и содержательную.",
     "verdict: completed, unfinished или needs_human. Если хотя бы одна сессия группы ещё реально выполняется, verdict=unfinished.",
     "topic — понятная русская тема из 3-8 слов без UUID, Auto Continue и технического мусора.",
     "handoff для unfinished — единая краткая сводка всех сессий группы: цель, уже сделано, решения, файлы/проверки, осталось, риски, следующий шаг.",
@@ -1202,8 +1207,8 @@ function batchPlannerPrompt(): string {
 
 function batchPlannerPayload(sessions: SessionBatchCandidate[]): unknown {
   return {
-    sessions: sessions.map(({ session, transcriptTail }) => ({
-      id: session.id,
+    sessions: sessions.map(({ session, transcriptTail }, index) => ({
+      session_ref: `S${index + 1}`,
       harness: session.harness,
       title: session.title,
       cwd: session.cwd,
