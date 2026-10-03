@@ -26,6 +26,16 @@ export interface SessionSummarizer {
   summarize(source: string): Promise<string>;
 }
 
+/** Migrate only retired Z.AI Coding Plan identities; all other handoffs keep the exact model. */
+export function continuationModelFor(session: Pick<AgentSession, "harness" | "model">): string | undefined {
+  const model = session.model?.trim();
+  if (!model) return undefined;
+  if (session.harness === "zcode" && /^account:zai-(?:start-plan|individual-coding-plan)\/GLM-5\.3(?:-Flash)?(?:\$[^/]+)?$/i.test(model)) {
+    return "account:zai-individual-coding-plan/GLM-5.3-Flash$high";
+  }
+  return model;
+}
+
 export class AnthropicMiniMaxSummarizer implements SessionSummarizer {
   constructor(
     private readonly token: string,
@@ -113,13 +123,14 @@ export class CacheHandoffService {
     if (!source) throw new Error("в сессии нет пользовательского контекста для handoff");
     const summary = (await this.summarizer.summarize(source)).trim().slice(0, MAX_SUMMARY_CHARS);
     if (!summary) throw new Error("MiniMax вернул пустой handoff");
+    const continuationModel = continuationModelFor(session);
     const created = await adapter.createSession({
-      name: `${session.title.slice(0, 180)} · продолжение`, cwd: session.cwd, model: session.model,
+      name: `${session.title.slice(0, 180)} · продолжение`, cwd: session.cwd, model: continuationModel,
     });
-    if (session.model && (session.harness === "opencode" || created.model !== session.model)) {
-      if (!adapter.changeModel) throw new Error(`${session.harness} создал handoff без исходной модели ${session.model}`);
-      const selected = await adapter.changeModel(created.id, session.model);
-      if (!selected.ok) throw new Error(selected.error || `не удалось выбрать исходную модель ${session.model}`);
+    if (continuationModel && (session.harness === "opencode" || created.model !== continuationModel)) {
+      if (!adapter.changeModel) throw new Error(`${session.harness} создал handoff без модели продолжения ${continuationModel}`);
+      const selected = await adapter.changeModel(created.id, continuationModel);
+      if (!selected.ok) throw new Error(selected.error || `не удалось выбрать модель продолжения ${continuationModel}`);
     }
     const sent = await adapter.sendMessage(created.id, { message: handoffPrompt(summary), queue: false });
     if (!sent.ok) throw new Error(sent.error || "новая сессия не приняла handoff");

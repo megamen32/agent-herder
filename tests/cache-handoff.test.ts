@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AnthropicMiniMaxSummarizer, CacheHandoffService, cacheWindowFor, semanticTranscript } from "../src/cache-handoff.js";
+import { AnthropicMiniMaxSummarizer, CacheHandoffService, cacheWindowFor, continuationModelFor, semanticTranscript } from "../src/cache-handoff.js";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "../src/types/index.js";
 
 const oldSession: AgentSession = {
@@ -43,6 +43,14 @@ describe("cache-aware session handoff", () => {
     expect(cacheWindowFor({ harness: "opencode", model: "minimax/MiniMax-M3" }, { AGENT_HERDER_CACHE_TTL_MINUTES: '{"opencode:minimax/MiniMax-M3":12}' })).toEqual({ ttlMs: 720_000, source: "configured" });
   });
 
+  it("moves retired or quota-exhausted Z.AI plans to the individual Flash route", () => {
+    expect(continuationModelFor({ harness: "zcode", model: "account:zai-start-plan/GLM-5.3-Flash" }))
+      .toBe("account:zai-individual-coding-plan/GLM-5.3-Flash$high");
+    expect(continuationModelFor({ harness: "zcode", model: "account:zai-individual-coding-plan/GLM-5.3" }))
+      .toBe("account:zai-individual-coding-plan/GLM-5.3-Flash$high");
+    expect(continuationModelFor({ harness: "codex", model: "gpt-5.6-sol" })).toBe("gpt-5.6-sol");
+  });
+
   it("removes tool calls, tool results, and reasoning before MiniMax", () => {
     expect(semanticTranscript([
       { id: "u", role: "user", text: "Почини", parts: [{ type: "text", text: "Почини token=abcdefghijklmno" }] },
@@ -70,6 +78,19 @@ describe("cache-aware session handoff", () => {
     expect((await service.maybeRollover({ ...oldSession, harness: "zcode", model: "unpublished-model" }, new Date("2026-10-03T12:00:00Z"))).kind).toBe("unknown");
     expect((await service.maybeRollover(oldSession, new Date("2026-10-03T10:29:00Z"))).kind).toBe("fresh");
     expect(summarizer.summarize).not.toHaveBeenCalled();
+  });
+
+  it("creates a stale ZCode continuation on the individual GLM Flash plan", async () => {
+    const fixture = adapter([{ id: "u", role: "user", text: "Доделай", parts: [{ type: "text", text: "Доделай" }] }]);
+    fixture.value.type = "zcode";
+    fixture.value.name = "ZCode fixture";
+    const session = { ...oldSession, harness: "zcode" as const, model: "account:zai-start-plan/GLM-5.3-Flash" };
+    fixture.createSession.mockResolvedValue({ ...session, id: "new", model: "account:zai-individual-coding-plan/GLM-5.3-Flash$high", status: "idle" });
+    const service = new CacheHandoffService(new Map([["zcode", fixture.value]]), { summarize: async () => "handoff" });
+    expect((await service.maybeRollover(session, new Date("2026-10-03T10:06:00Z"))).kind).toBe("rolled_over");
+    expect(fixture.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      model: "account:zai-individual-coding-plan/GLM-5.3-Flash$high",
+    }));
   });
 
   it("selects the original OpenCode model before delivering the handoff", async () => {
