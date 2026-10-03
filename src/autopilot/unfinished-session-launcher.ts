@@ -599,8 +599,8 @@ export class UnfinishedSessionLauncher {
       if (!isInventoryHarness(session.harness)) continue;
       const harness = session.harness;
       const key = sessionKey(harness, session.id);
-      const messages = await adapter.getSessionMessages?.(session.id, 200).catch(() => null);
-      const transcriptTail = semanticTranscript(messages ?? []).slice(-2_000);
+      const messages = await adapter.getSessionMessages?.(session.id, 50).catch(() => null);
+      const transcriptTail = completionEvidence(messages ?? []);
       const previous = priorInventory.get(key);
       const unchanged = previous?.lastActivity === session.lastActivity && previous.transcriptTail === transcriptTail;
       const equivalentKey = `${harness}:${normalize(session.cwd)}:${session.title.trim().toLowerCase()}`;
@@ -787,6 +787,32 @@ function heuristicVerdict(session: AgentSession, messages: SessionMessageView[])
 
 function cloneInventoryRecord(record: UnfinishedSessionInventoryRecord): UnfinishedSessionInventoryRecord {
   return { ...record, ...(record.verdict ? { verdict: { ...record.verdict } } : {}) };
+}
+
+/** Keep the latest user request and latest model answer; neither may crowd the other out. */
+export function completionEvidence(messages: SessionMessageView[], maxChars = 2_000): string {
+  const semantic = messages.map((message, index) => ({
+    index,
+    role: message.role,
+    text: message.role === "user" || message.role === "assistant" ? semanticTranscript([message]) : "",
+  })).filter((item) => item.text);
+  const selected = [
+    [...semantic].reverse().find((item) => item.role === "user"),
+    [...semantic].reverse().find((item) => item.role === "assistant"),
+  ].filter((item): item is (typeof semantic)[number] => Boolean(item));
+  const unique = [...new Map(selected.map((item) => [item.index, item])).values()].sort((left, right) => left.index - right.index);
+  if (unique.length === 0) return "";
+  const separators = Math.max(0, unique.length - 1) * 2;
+  const perMessage = Math.max(1, Math.floor((Math.max(1, maxChars) - separators) / unique.length));
+  return unique.map((item) => clipEvidenceMessage(item.text, perMessage)).join("\n\n");
+}
+
+function clipEvidenceMessage(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  if (maxChars < 5) return value.slice(0, maxChars);
+  const head = Math.ceil((maxChars - 3) / 2);
+  const tail = Math.floor((maxChars - 3) / 2);
+  return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
 
 function parseRecord(value: unknown): UnfinishedSessionRecord {

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  completionEvidence,
   createAnthropicCompatibleSessionCompletionJudge,
   SessionAutostartStore,
   UnfinishedSessionLauncher,
@@ -65,6 +66,21 @@ function fixtureAdapter(session: AgentSession, calls: { resumes: number; message
 }
 
 describe("unfinished session launcher", () => {
+  it("always gives MiniMax the latest user request and latest model answer", () => {
+    const evidence = completionEvidence([
+      { id: "u-old", role: "user", text: "старый запрос", parts: [{ type: "text", text: "старый запрос" }] },
+      { id: "a-last", role: "assistant", text: `ответ-модели-${"а".repeat(1_500)}`, parts: [{ type: "text", text: `ответ-модели-${"а".repeat(1_500)}` }] },
+      { id: "tool", role: "tool", text: "шум инструмента", parts: [{ type: "tool_result", output: "шум инструмента" }] },
+      { id: "u-last", role: "user", text: `последний-запрос-${"б".repeat(1_500)}`, parts: [{ type: "text", text: `последний-запрос-${"б".repeat(1_500)}` }] },
+    ]);
+
+    expect(evidence).toContain("АГЕНТ: ответ-модели-");
+    expect(evidence).toContain("ПОЛЬЗОВАТЕЛЬ: последний-запрос-");
+    expect(evidence).not.toContain("старый запрос");
+    expect(evidence).not.toContain("шум инструмента");
+    expect(evidence.length).toBeLessThanOrEqual(2_000);
+  });
+
   it("classifies through the direct Anthropic endpoint with an explicit cache breakpoint", async () => {
     let requestUrl = "";
     let requestInit: RequestInit | undefined;
