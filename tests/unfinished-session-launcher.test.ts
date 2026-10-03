@@ -134,7 +134,7 @@ describe("unfinished session launcher", () => {
     expect(JSON.stringify(requestBody)).toContain("codex-marker");
     expect(JSON.stringify(requestBody)).toContain("zcode-marker");
     expect(JSON.stringify(requestBody)).toContain("последние четыре полных смысловых сообщения");
-    expect(requestBody.max_tokens).toBe(8_192);
+    expect(requestBody.max_tokens).toBe(32_768);
   });
 
   it("plans all Codex and ZCode evidence once, deduplicates one task, and launches one readable continuation", async () => {

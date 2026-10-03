@@ -168,6 +168,7 @@ npx -y agent-herder
 | `AGENT_HERDER_UNFINISHED_RESUMES_PER_CYCLE` | `8` | Не более восьми параллельных допусков продолжения за цикл; все запущенные задачи делят общий бюджет user-slice server-100 |
 | `AGENT_HERDER_UNFINISHED_INVENTORY_HOURS` | `48` | Окно поиска по умолчанию; веб-морда сохраняет runtime-значение без рестарта |
 | `AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES` | `4` | Полные последние смысловые сообщения для judge; последнее сообщение пользователя и модели сохраняются обязательно |
+| `AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS` | `32768` | Выходной бюджет единого плана MiniMax для большого числа сгруппированных сессий |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Прямой Anthropic-совместимый endpoint MiniMax без дополнительного шлюза |
 | `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash-Preview` | Модель по умолчанию; runtime-выбор из веб-морды имеет приоритет, ключ читается из защищённого окружения `MINIMAX_API_KEY` |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ENABLED` | `true` | Отключает только MiniMax-классификатор незавершённых сессий |

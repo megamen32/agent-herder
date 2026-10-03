@@ -1409,7 +1409,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
         signal: AbortSignal.timeout(180_000),
         body: JSON.stringify({
           model: config.model,
-          max_tokens: 8_192,
+          max_tokens: positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || 32_768), 32_768),
           temperature: 0,
           system: [{ type: "text", text: batchPlannerPrompt(), cache_control: { type: "ephemeral" } }],
           messages: [{ role: "user", content: JSON.stringify(batchPlannerPayload(sessions)) }],
@@ -1423,7 +1423,12 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
         && typeof (block as Record<string, unknown>).text === "string"
         ? [(block as Record<string, unknown>).text as string]
         : []).join("\n");
-      if (!content) throw new Error("MiniMax Anthropic batch planner returned no text content");
+      if (!content) {
+        const stopReason = typeof body.stop_reason === "string" ? body.stop_reason : "unknown";
+        const blockTypes = [...new Set(blocks.flatMap((block) => block && typeof block === "object" && typeof (block as Record<string, unknown>).type === "string"
+          ? [(block as Record<string, unknown>).type as string] : []))].join(",") || "none";
+        throw new Error(`MiniMax Anthropic batch planner returned no text content (stop=${stopReason}, blocks=${blockTypes})`);
+      }
       const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
       return normalizeBatchPlan(JSON.parse(json) as unknown, sessions);
     },
