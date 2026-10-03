@@ -453,21 +453,9 @@ export class CodexAdapter implements HarnessAdapter {
             updatedAtMs: normalizeEpochMs(row.updated_at_ms),
           });
         }
-        // Probe only the newest native rollouts for lifecycle markers. Twenty
-        // covers the visible concurrent Desktop set while keeping startup
-        // bounded; older rows remain cheap directory entries from SQLite.
-        const liveCandidates = [...result.values()]
-          .filter((state) => state.updatedAtMs > 0 && Date.now() - state.updatedAtMs <= 48 * 60 * 60 * 1_000 && existsSync(state.filePath))
-          .sort((left, right) => right.updatedAtMs - left.updatedAtMs)
-          .slice(0, 20);
-        for (const state of liveCandidates) {
-          await new Promise<void>((resolve) => setImmediate(resolve));
-          const tail = await this.readSessionTail(state.filePath);
-          state.lastMessage = tail.lastMessage || state.lastMessage;
-          state.model = tail.model || state.model;
-          state.status = tail.status;
-          state.updatedAtMs = tail.updatedAtMs;
-        }
+        // Keep the directory/index path cheap. Transcript tails are parsed only
+        // on demand by getSessionMessages; bulk enrichment can block the web
+        // event loop for seconds on a busy Codex history.
         return result;
       } finally {
         db.close();

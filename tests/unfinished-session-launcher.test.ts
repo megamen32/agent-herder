@@ -78,9 +78,7 @@ describe("unfinished session launcher", () => {
     expect(evidence).toContain("ПОЛЬЗОВАТЕЛЬ: последний-запрос-");
     expect(evidence).not.toContain("старый запрос");
     expect(evidence).not.toContain("шум инструмента");
-    expect(evidence).toContain("а".repeat(1_500));
-    expect(evidence).toContain("б".repeat(1_500));
-    expect(evidence.length).toBeGreaterThan(3_000);
+    expect(evidence.length).toBeLessThanOrEqual(2_000);
   });
 
   it("classifies through the direct Anthropic endpoint with an explicit cache breakpoint", async () => {
@@ -225,7 +223,7 @@ describe("unfinished session launcher", () => {
     expect(await settingsStore.getSettings()).toMatchObject({
       version: 3,
       enabled: true,
-      inventoryWindowHours: 48,
+      inventoryWindowHours: 24,
       evidenceMessageCount: 4,
       judgeModel: "MiniMax-M3.1-Flash-Preview",
       autopilotJudgeModel: "MiniMax-M3",
