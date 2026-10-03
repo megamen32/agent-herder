@@ -61,6 +61,11 @@ export type NotificationPayload = {
   body: string;
   dedup_key: string;
   correlation_id: string;
+  /** Request identity is distinct from the stable incident deduplication key. */
+  idempotency_key?: string;
+  source_id?: string;
+  host_id?: string;
+  signal_type?: string;
   choices?: Array<{ choice_id: string; label: string }>;
   choice_request_id?: string;
 };
@@ -118,6 +123,10 @@ export function createNoticePlacePayload(input: {
   project?: string;
   recipient?: string;
   kind?: string;
+  idempotencyKey?: string;
+  sourceId?: string;
+  hostId?: string;
+  signalType?: string;
   choices?: Array<{ choice_id: string; label: string }>;
   choice_request_id?: string;
 }): NotificationPayload {
@@ -131,6 +140,10 @@ export function createNoticePlacePayload(input: {
     body: bounded(input.body, 8 * 1024),
     dedup_key: input.dedupKey,
     correlation_id: input.correlationId,
+    ...(input.idempotencyKey ? { idempotency_key: input.idempotencyKey } : {}),
+    ...(input.sourceId ? { source_id: input.sourceId } : {}),
+    ...(input.hostId ? { host_id: input.hostId } : {}),
+    ...(input.signalType ? { signal_type: input.signalType } : {}),
     ...(input.choices ? { choices: input.choices } : {}),
     ...(input.choice_request_id ? { choice_request_id: input.choice_request_id } : {}),
   };
@@ -154,7 +167,7 @@ export function createNoticePlaceSink(config: {
         headers: {
           authorization: `Bearer ${config.token}`,
           "content-type": "application/json",
-          "idempotency-key": payload.dedup_key,
+          "idempotency-key": payload.idempotency_key ?? payload.dedup_key,
         },
         signal: AbortSignal.timeout(10_000),
         body: JSON.stringify(payload),

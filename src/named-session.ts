@@ -100,7 +100,10 @@ export async function newOrResumeNamedSession(
   if (resolved.kind === "error") return resolved.result;
 
   const mode = request.mode || "sync";
-  if (request.model !== undefined && !resolved.created && resolved.target.model !== request.model) {
+  // A create request may accept a model option without the native service
+  // actually applying it. Trust only the returned session state; otherwise
+  // select the model explicitly before the first prompt.
+  if (request.model !== undefined && resolved.target.model !== request.model) {
     if (!resolved.adapter.changeModel) {
       return {
         ok: false,

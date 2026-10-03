@@ -18,6 +18,7 @@ import { ChoiceRegistry, ChoiceRegistryLockUnavailableError, type PendingChoice 
 import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../autopilot/policy-store.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
+import type { SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
 import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
@@ -43,6 +44,7 @@ export interface WebDependencies {
   choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   autopilotPolicyStore?: AutopilotPolicyStore;
   autopilotSessionStore?: AutopilotSessionStore;
+  sessionAutostartStore?: SessionAutostartStore;
   autopilotSweepIntervalMs?: number;
   sessionVisualizer?: (details: SessionDetails) => Promise<string>;
   sessionObservationIntervalMs?: number;
@@ -422,7 +424,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const mcpAuthToken = dependencies.mcpAuthToken?.trim() || undefined;
   const server = createServer(async (request, response) => {
     try {
-      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, dependencies.choiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents);
+      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, dependencies.choiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents);
     } catch (err) {
       if (err instanceof SessionNotFoundError) {
         sendJson(response, 404, { error: "Session not found" });
@@ -485,7 +487,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (url.pathname.startsWith("/api/quota-lens") && request.method === "GET") {
     const body = await handleQuotaLensRequest(url.pathname, url.searchParams);
@@ -626,6 +628,33 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     try {
       const record = await autopilotSessionStore.set({ harness, sessionId, cwd: body.cwd }, body.enabled);
       return sendJson(response, 200, { ...record, source: "session" });
+    } catch (error) {
+      return sendJson(response, 400, { error: (error as Error).message });
+    }
+  }
+  if (url.pathname === "/api/session-autostart" && (request.method === "GET" || request.method === "PUT")) {
+    if (!sessionAutostartStore) return sendJson(response, 503, { error: "Session autostart settings are disabled" });
+    if (request.method === "GET") return sendJson(response, 200, await sessionAutostartStore.getSettings());
+    const body = await readJson(request);
+    if (typeof body.enabled !== "boolean") return sendJson(response, 400, { error: "enabled is required" });
+    return sendJson(response, 200, { ...await sessionAutostartStore.setGlobal(body.enabled), source: "persisted" });
+  }
+  const autostartSessionMatch = url.pathname.match(/^\/api\/session-autostart\/sessions\/([^/]+)\/([^/]+)$/);
+  if (autostartSessionMatch && (request.method === "GET" || request.method === "PUT" || request.method === "DELETE")) {
+    if (!sessionAutostartStore) return sendJson(response, 503, { error: "Session autostart settings are disabled" });
+    const harness = decodeURIComponent(autostartSessionMatch[1]);
+    const sessionId = decodeURIComponent(autostartSessionMatch[2]);
+    const cwd = url.searchParams.get("cwd") || "/";
+    try {
+      if (request.method === "GET") return sendJson(response, 200, { harness, sessionId, ...await sessionAutostartStore.getEffective(harness, sessionId, cwd) });
+      if (request.method === "DELETE") {
+        await sessionAutostartStore.deleteSession(harness, sessionId);
+        return sendJson(response, 200, { harness, sessionId, ...await sessionAutostartStore.getEffective(harness, sessionId, cwd) });
+      }
+      const body = await readJson(request);
+      if (typeof body.enabled !== "boolean" || typeof body.cwd !== "string" || !body.cwd.trim()) return sendJson(response, 400, { error: "enabled and cwd are required" });
+      const saved = await sessionAutostartStore.setSession({ harness, sessionId, cwd: body.cwd }, body.enabled);
+      return sendJson(response, 200, { ...saved, source: "session" });
     } catch (error) {
       return sendJson(response, 400, { error: (error as Error).message });
     }

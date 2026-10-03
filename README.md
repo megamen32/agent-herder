@@ -62,6 +62,11 @@ opencode serve
   *who sent this* and *the exact call to answer*. No id hunting.
 - Idle interactive sessions that reject direct prompts are auto-resumed on
   delivery.
+- Unfinished turns survive an Agent Herder restart. This is a separate,
+  opt-out feature from autopilot: it is enabled by default, records only a
+  turn that actually started, and continues the same harness/session/model
+  sequentially after restart. Disable it globally with
+  `AGENT_HERDER_UNFINISHED_AUTOSTART=false` or use the per-session switch/API.
 - `respond_permission` answers tool-permission requests remotely — this is
   how headless agents get unstuck while nobody is watching.
 
@@ -240,6 +245,15 @@ The transient scopes still inherit server-100's outer per-workload and UID
 guards. Run no more than one heavy suite per agent and raise budgets only from
 fresh measurements while preserving the host reserve documented by
 ServersAdministartion.
+
+Restart continuation settings are available at `GET/PUT
+/api/session-autostart` and `GET/PUT/DELETE
+/api/session-autostart/sessions/{harness}/{sessionId}`. The independent
+durable state lives under `AGENT_HERDER_AUTOPILOT_STATE_DIR` by default.
+Recovery is sequential, retries three times with persisted exponential
+backoff, never forks or changes the model/provider, and emits a Russian
+`health.degraded` Notice Place incident only after the retry budget is
+exhausted.
 
 </details>
 

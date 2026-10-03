@@ -33,6 +33,9 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('role="switch"');
     expect(main).toContain('/api/autopilot/sessions/');
     expect(main).toContain('aria-label={`Autopilot for ${activeSession.id}`}');
+    expect(main).toContain('/api/session-autostart/sessions/');
+    expect(main).toContain('aria-label={`Autostart unfinished session ${activeSession.id}`}');
+    expect(main).toContain('АВТОПРОДОЛЖЕНИЕ ПОСЛЕ РЕСТАРТА');
     expect(main).toContain('/api/autopilot/policy');
     expect(main).toContain('new EventSource(`/api/events/stream?after=${cursor}`)');
     expect(main).toContain('agent-herder.event-cursor');

@@ -3,7 +3,7 @@
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,6 +13,8 @@ import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { AutopilotSessionStore } from "./autopilot/session-store.js";
+import { SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
+import { createNoticePlacePayload, createNoticePlaceSink } from "./autopilot/index.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 import { acquireAgentHerderSingleton } from "./singleton.js";
@@ -63,6 +65,12 @@ const autopilotStateDir = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR || join(h
 const choiceRegistry = new ChoiceRegistry(process.env.AGENT_HERDER_AUTOPILOT_CHOICE_STORE || join(autopilotStateDir, "choices.json"));
 const autopilotPolicyStore = new AutopilotPolicyStore(resolveAutopilotPolicyStorePath(autopilotStateDir));
 const autopilotSessionStore = new AutopilotSessionStore(join(autopilotStateDir, "sessions.json"));
+const unfinishedSessionStore = new UnfinishedSessionStore(
+  process.env.AGENT_HERDER_UNFINISHED_SESSION_STORE || join(autopilotStateDir, "unfinished-sessions.json"),
+);
+const sessionAutostartStore = new SessionAutostartStore(
+  process.env.AGENT_HERDER_SESSION_AUTOSTART_SETTINGS || join(autopilotStateDir, "session-autostart.json"),
+);
 const browserWakeService = createConfiguredBrowserWakeService(process.env);
 const adapterFactories = new Map<string, AdapterFactory>();
 const adapterRegistry = new AdapterRegistry(
@@ -332,6 +340,27 @@ function isLoopbackHost(host: string): boolean {
   return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
 }
 
+function createUnfinishedSessionNotifier(): ((notice: UnfinishedSessionNotice) => Promise<void>) | undefined {
+  const eventUrl = process.env.NOTIFY_CENTER_EVENT_URL?.trim();
+  const token = process.env.NOTIFY_CENTER_TOKEN?.trim();
+  if (!eventUrl || !token) return undefined;
+  const sink = createNoticePlaceSink({ eventUrl, token });
+  return async (notice) => sink.send(createNoticePlacePayload({
+    title: notice.title,
+    body: notice.body,
+    severity: "critical",
+    project: process.env.NOTIFY_CENTER_PROJECT || "agent-herder",
+    recipient: process.env.NOTIFY_CENTER_RECIPIENT || process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT || "me",
+    kind: "health.degraded",
+    dedupKey: notice.dedupKey,
+    correlationId: notice.correlationId,
+    idempotencyKey: `${notice.correlationId}:exhausted`,
+    sourceId: notice.sourceId,
+    hostId: hostname(),
+    signalType: notice.signalType,
+  }));
+}
+
 // ===== Register MCP tools =====
 
 function registerTools(
@@ -474,9 +503,20 @@ async function main() {
     }
   }
   const processSessionConverter = new AgentHerderSessionConverter();
-  const processSupervisor = new SessionSupervisor(adapters, processSessionConverter, undefined, { events: herderEvents });
+  const unfinishedSessionLauncher = new UnfinishedSessionLauncher({
+    adapters,
+    store: unfinishedSessionStore,
+    settingsStore: sessionAutostartStore,
+    notify: createUnfinishedSessionNotifier(),
+  });
+  const processSupervisor = new SessionSupervisor(adapters, processSessionConverter, undefined, {
+    events: herderEvents,
+    unfinishedSessions: unfinishedSessionLauncher,
+  });
   const stopProcessObservation = processSupervisor.startObservation(Number(process.env.AGENT_HERDER_SESSION_OBSERVATION_INTERVAL_MS || 5_000));
   process.once("exit", stopProcessObservation);
+  const stopUnfinishedSessionLauncher = unfinishedSessionLauncher.start();
+  process.once("exit", stopUnfinishedSessionLauncher);
   const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents });
   const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true });
   const webPort = process.env.AGENT_HERDER_WEB_PORT;
@@ -501,6 +541,7 @@ async function main() {
       mcpAuthToken: httpToken,
       autopilotPolicyStore,
       autopilotSessionStore,
+      sessionAutostartStore,
       autopilotSweepIntervalMs: Number(process.env.AGENT_HERDER_AUTOPILOT_SWEEP_INTERVAL_MS || 30_000),
     });
     webServer.listen(Number(webPort), host, () => {

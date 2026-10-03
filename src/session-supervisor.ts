@@ -21,6 +21,7 @@ import { coordinationNotes } from "./coordination-notes.js";
 import { herderEvents, type HerderEventBus } from "./herder-events.js";
 import { adapterResourceUri, sessionMessagesResourceUri, sessionResourceUri } from "./herder-resource-uris.js";
 import { harnessEventHealth, type HarnessEventHealthRegistry } from "./harness-event-health.js";
+import type { UnfinishedSessionLauncher } from "./autopilot/unfinished-session-launcher.js";
 
 export interface SessionFilters {
   harness?: string;
@@ -60,6 +61,8 @@ export interface SessionSupervisorOptions {
   autoResumeMaxAttempts?: number;
   /** Initial retry delay; subsequent failed resumes use exponential backoff. */
   autoResumeDelayMs?: number;
+  /** Durable restart launcher for unfinished turns; independent from autopilot. */
+  unfinishedSessions?: Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget">;
 }
 
 interface AutomaticResumeState {
@@ -106,6 +109,7 @@ export class SessionSupervisor {
   private readonly autoResumeMaxAttempts: number;
   private readonly autoResumeDelayMs: number;
   private readonly automaticResumes = new Map<string, AutomaticResumeState>();
+  private readonly unfinishedSessions?: Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget">;
 
   constructor(
     private readonly adapters: Map<string, HarnessAdapter>,
@@ -122,6 +126,7 @@ export class SessionSupervisor {
       ?? Number(process.env.AGENT_HERDER_AUTO_RESUME_MAX_ATTEMPTS || 3));
     this.autoResumeDelayMs = Math.max(0, options.autoResumeDelayMs
       ?? Number(process.env.AGENT_HERDER_AUTO_RESUME_DELAY_MS || 2_000));
+    this.unfinishedSessions = options.unfinishedSessions;
   }
 
   async createNamedSession(request: NamedSessionRequest): Promise<NamedSessionResult> {
@@ -132,7 +137,11 @@ export class SessionSupervisor {
 
   async newOrResumeNamedSession(request: NewOrResumeNamedSessionRequest): Promise<NamedSessionResult> {
     const result = await newOrResumeNamedSession(this.adapters, request);
-    if (result.ok && result.sessionId) this.publishSessionChanged(result.harness, result.sessionId, result.created ? "created" : "changed");
+    if (result.ok && result.sessionId) {
+      const session = await this.adapters.get(result.harness)?.getSession(result.sessionId);
+      if (session) await this.unfinishedSessions?.armSession(session);
+      this.publishSessionChanged(result.harness, result.sessionId, result.created ? "created" : "changed");
+    }
     return result;
   }
 
@@ -341,7 +350,10 @@ export class SessionSupervisor {
     const session = await adapter.getSession(id);
     const message = session ? await coordinationNotes.inject(session, options.message) : options.message;
     const result = await adapter.sendMessage(id, { ...options, message });
-    if (result.ok) this.publishSessionChanged(harness, id, "changed");
+    if (result.ok) {
+      if (session) await this.unfinishedSessions?.armSession(session);
+      this.publishSessionChanged(harness, id, "changed");
+    }
     return result;
   }
 
@@ -356,7 +368,10 @@ export class SessionSupervisor {
 
   async stopSession(harness: string, id: string): Promise<{ ok: boolean; error?: string }> {
     const result = await this.requireAdapter(harness).stopSession(id);
-    if (result.ok) this.publishSessionChanged(harness, id, "changed");
+    if (result.ok) {
+      await this.unfinishedSessions?.forget(harness, id);
+      this.publishSessionChanged(harness, id, "changed");
+    }
     return result;
   }
 
@@ -365,7 +380,10 @@ export class SessionSupervisor {
     const result = adapter.terminate
       ? await adapter.terminate(id)
       : { ok: false, error: `${adapter.name} does not expose native session termination` };
-    if (result.ok) this.publishSessionChanged(harness, id, "deleted");
+    if (result.ok) {
+      await this.unfinishedSessions?.forget(harness, id);
+      this.publishSessionChanged(harness, id, "deleted");
+    }
     return result;
   }
 
@@ -374,7 +392,10 @@ export class SessionSupervisor {
     const result = adapter.cancelTurn
       ? await adapter.cancelTurn(id)
       : { ok: false, error: `${adapter.name} does not expose native turn cancellation` };
-    if (result.ok) this.publishSessionChanged(harness, id, "changed");
+    if (result.ok) {
+      await this.unfinishedSessions?.forget(harness, id);
+      this.publishSessionChanged(harness, id, "changed");
+    }
     return result;
   }
 
@@ -477,7 +498,10 @@ export class SessionSupervisor {
     const session = await adapter.getSession(id);
     const injected = session ? await coordinationNotes.inject(session, message) : message;
     const result = await adapter.sendMessage(id, { message: injected });
-    if (result.ok) this.publishSessionChanged(harness, id, "changed");
+    if (result.ok) {
+      if (session) await this.unfinishedSessions?.armSession(session);
+      this.publishSessionChanged(harness, id, "changed");
+    }
     return result;
   }
 
@@ -665,6 +689,10 @@ export class SessionSupervisor {
     this.events.publish({ kind: "adapters", uri: "herder://adapters", action: "changed", id: provider, source: `native:${provider}` });
     this.events.publish({ kind: "adapters", uri: adapterResourceUri(provider), action: "changed", id: provider, source: `native:${provider}` });
     if (!event.sessionId) return;
+
+    void this.unfinishedSessions?.handleEvent(provider, event).catch((error) => {
+      console.error(`[agent-herder] не удалось обновить реестр незавершённых сессий: ${error instanceof Error ? error.message : String(error)}`);
+    });
 
     if (event.kind === "turn.failed") {
       this.scheduleAutomaticResume(provider, event.sessionId);

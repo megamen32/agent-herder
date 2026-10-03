@@ -428,10 +428,16 @@ describe("autopilot core", () => {
     const fetchImpl = vi.fn<typeof fetch>(async (_url, init) => {
       expect(init?.headers).toEqual(expect.objectContaining({
         authorization: "Bearer notify-secret",
-        "idempotency-key": "agent-herder:human:session-1:turn-7",
+        "idempotency-key": "request-7",
       }));
       const payload = JSON.parse(String(init?.body));
       expect(payload.schema).toBe("notify.event.v1");
+      expect(payload).toMatchObject({
+        kind: "health.degraded",
+        source_id: "agent-herder-autostart",
+        host_id: "server-100",
+        signal_type: "unfinished-session-autostart-failed",
+      });
       expect(payload).not.toHaveProperty("token");
       return new Response(null, { status: 202 });
     });
@@ -447,6 +453,11 @@ describe("autopilot core", () => {
       severity: "medium",
       dedupKey: "agent-herder:human:session-1:turn-7",
       correlationId: "session-1/turn-7",
+      idempotencyKey: "request-7",
+      kind: "health.degraded",
+      sourceId: "agent-herder-autostart",
+      hostId: "server-100",
+      signalType: "unfinished-session-autostart-failed",
     }));
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
