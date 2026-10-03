@@ -1160,10 +1160,11 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
     const raw = boundedText(value, field, 128);
     return aliases.get(raw) ?? raw;
   };
-  const preliminary = rawGroups.map((value, index): SessionBatchPlanGroup => {
+  const preliminary = rawGroups.flatMap((value, index): SessionBatchPlanGroup[] => {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`MiniMax returned invalid group ${index}`);
     const record = value as Record<string, unknown>;
-    if (!Array.isArray(record.source_session_ids) || record.source_session_ids.length === 0) throw new Error(`MiniMax group ${index} has no sources`);
+    if (!Array.isArray(record.source_session_ids)) throw new Error(`MiniMax group ${index} has invalid sources`);
+    if (record.source_session_ids.length === 0) return [];
     const sourceSessionIds = [...new Set(record.source_session_ids.map((id) => resolveId(id, "source_session_id")))];
     for (const id of sourceSessionIds) {
       if (!known.has(id)) throw new Error(`MiniMax grouped unknown session ${id}`);
@@ -1171,7 +1172,7 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
     const primarySessionId = resolveId(record.primary_session_id, "primary_session_id");
     if (!sourceSessionIds.includes(primarySessionId)) throw new Error(`MiniMax primary is outside group ${index}`);
     const verdict = normalizeVerdict(record);
-    return {
+    return [{
       sourceSessionIds,
       primarySessionId,
       ...verdict,
@@ -1179,7 +1180,7 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
       handoff: verdict.verdict === "unfinished"
         ? boundedText(record.handoff, "handoff", 32_000)
         : typeof record.handoff === "string" ? boundedText(record.handoff, "handoff", 32_000, true) : "",
-    };
+    }];
   });
   const assignment = new Map<string, { group: number; score: number }>();
   preliminary.forEach((group, index) => {
