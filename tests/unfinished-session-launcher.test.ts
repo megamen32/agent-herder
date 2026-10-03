@@ -139,6 +139,30 @@ describe("unfinished session launcher", () => {
     expect(await store.list()).toEqual([]);
   });
 
+  it("prioritizes the most recently interrupted backlog when the cycle budget is full", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-priority-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const older = { ...fixtureSession("idle", "codex"), id: "older" };
+    const newer = { ...fixtureSession("idle", "codex"), id: "newer" };
+    await store.markStarted(older, "previous-process");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await store.markStarted(newer, "previous-process");
+    const resumed: string[] = [];
+    const adapter: HarnessAdapter = {
+      type: "codex", name: "fixture", async init() {}, async listSessions() { return []; },
+      async getSession(id) { return id === newer.id ? newer : id === older.id ? older : null; },
+      async resumeSession(id) { resumed.push(id); return { ok: true }; },
+      async sendMessage() { return { ok: true }; },
+      async stopSession() { return { ok: true }; }, async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+    };
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      retryDelayMs: 0, discoveryIdleMs: 1, maxResumesPerCycle: 1, generationId: "new-process",
+    }).recoverPending();
+    expect(resumed).toEqual(["newer"]);
+  });
+
   it("does not duplicate a turn that is still running and does not answer a human prompt", async () => {
     for (const status of ["running", "needs_input"] as const) {
       const root = await mkdtemp(join(tmpdir(), `agent-herder-autostart-${status}-`));

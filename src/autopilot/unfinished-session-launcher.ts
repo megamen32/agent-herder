@@ -500,7 +500,7 @@ export class UnfinishedSessionLauncher {
     let resumedThisCycle = 0;
     const launches: Array<Promise<void>> = [];
     const records = await this.options.store.list();
-    records.sort((left, right) => Date.parse(left.startedAt) - Date.parse(right.startedAt));
+    records.sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt));
     for (const record of records) {
       if (record.state === "exhausted") {
         await this.notifyExhausted(record);
