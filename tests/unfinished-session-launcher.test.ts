@@ -10,10 +10,10 @@ import {
 } from "../src/autopilot/unfinished-session-launcher.js";
 import type { AgentSession, HarnessAdapter, HarnessEvent } from "../src/types/index.js";
 
-function fixtureSession(status: AgentSession["status"] = "idle"): AgentSession {
+function fixtureSession(status: AgentSession["status"] = "idle", harness: "codex" | "zcode" = "zcode"): AgentSession {
   return {
     id: "session-1",
-    harness: "zcode",
+    harness,
     status,
     title: "Незавершённая проверка",
     cwd: "/tmp/autostart-canary",
@@ -30,8 +30,8 @@ function enabledSettings(root: string) {
 
 function fixtureAdapter(session: AgentSession, calls: { resumes: number; messages: string[] }): HarnessAdapter {
   return {
-    type: "zcode",
-    name: "ZCode fixture",
+    type: session.harness,
+    name: `${session.harness} fixture`,
     async init() {},
     async listSessions() { return [{ ...session }]; },
     async getSession(id) { return id === session.id ? { ...session } : null; },
@@ -102,13 +102,14 @@ describe("unfinished session launcher", () => {
     }
   });
 
-  it("does not trust a stale running status from the previous Herder generation", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-generation-"));
+  it.each(["codex", "zcode"] as const)("does not trust a stale %s running status from the previous Herder generation", async (harness) => {
+    const root = await mkdtemp(join(tmpdir(), `agent-herder-autostart-generation-${harness}-`));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
-    await store.markStarted(fixtureSession("running"), "old-process");
+    const session = fixtureSession("running", harness);
+    await store.markStarted(session, "old-process");
     const calls = { resumes: 0, messages: [] as string[] };
     const launcher = new UnfinishedSessionLauncher({
-      adapters: new Map([["zcode", fixtureAdapter(fixtureSession("running"), calls)]]),
+      adapters: new Map([[harness, fixtureAdapter(session, calls)]]),
       store,
       settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
       retryDelayMs: 0,

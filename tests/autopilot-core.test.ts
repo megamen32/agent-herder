@@ -433,7 +433,8 @@ describe("autopilot core", () => {
       const payload = JSON.parse(String(init?.body));
       expect(payload.schema).toBe("notify.event.v1");
       expect(payload).toMatchObject({
-        kind: "health.degraded",
+        kind: "incident",
+        event_type: "health.degraded",
         source_id: "agent-herder-autostart",
         host_id: "server-100",
         signal_type: "unfinished-session-autostart-failed",
@@ -454,7 +455,8 @@ describe("autopilot core", () => {
       dedupKey: "agent-herder:human:session-1:turn-7",
       correlationId: "session-1/turn-7",
       idempotencyKey: "request-7",
-      kind: "health.degraded",
+      kind: "incident",
+      eventType: "health.degraded",
       sourceId: "agent-herder-autostart",
       hostId: "server-100",
       signalType: "unfinished-session-autostart-failed",

@@ -56,6 +56,7 @@ export type NotificationPayload = {
   project: string;
   recipient: string;
   kind: string;
+  event_type?: string;
   severity: NoticeSeverity;
   title: string;
   body: string;
@@ -123,6 +124,7 @@ export function createNoticePlacePayload(input: {
   project?: string;
   recipient?: string;
   kind?: string;
+  eventType?: string;
   idempotencyKey?: string;
   sourceId?: string;
   hostId?: string;
@@ -135,6 +137,7 @@ export function createNoticePlacePayload(input: {
     project: input.project ?? DEFAULT_NOTIFICATION.project,
     recipient: input.recipient ?? DEFAULT_NOTIFICATION.recipient,
     kind: input.kind ?? DEFAULT_NOTIFICATION.kind,
+    ...(input.eventType ? { event_type: input.eventType } : {}),
     severity: toNoticeSeverity(input.severity),
     title: bounded(input.title, 512),
     body: bounded(input.body, 8 * 1024),
