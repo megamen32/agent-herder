@@ -37,4 +37,21 @@ describe("HerderEventBus journal", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("coalesces a burst before persisting the production journal", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agent-herder-events-batch-"));
+    const persistencePath = join(dir, "events.json");
+    try {
+      const first = new HerderEventBus({ persistencePath, persistDebounceMs: 10 });
+      for (let index = 0; index < 100; index += 1) {
+        first.publish({ kind: "sessions", uri: `herder://sessions/codex/${index}`, action: "changed" });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const restored = new HerderEventBus({ persistencePath });
+      expect(restored.latestSequence()).toBe(100);
+      expect(restored.listAfter(0, 200)).toHaveLength(100);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

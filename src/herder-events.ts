@@ -25,6 +25,8 @@ interface PersistedEventJournal {
 export interface HerderEventBusOptions {
   persistencePath?: string;
   maxRetained?: number;
+  /** Coalesce bursty native events before rewriting the retained journal. */
+  persistDebounceMs?: number;
 }
 
 export function defaultHerderEventPath(): string {
@@ -37,11 +39,14 @@ export class HerderEventBus {
   private readonly revisions = new Map<string, number>();
   private readonly persistencePath?: string;
   private readonly maxRetained: number;
+  private readonly persistDebounceMs: number;
+  private persistTimer?: NodeJS.Timeout;
   private nextSequence = 1;
 
   constructor(options: HerderEventBusOptions = {}) {
     this.persistencePath = options.persistencePath;
     this.maxRetained = Math.max(100, options.maxRetained ?? 5_000);
+    this.persistDebounceMs = Math.max(0, options.persistDebounceMs ?? 0);
     this.restore();
   }
 
@@ -56,7 +61,7 @@ export class HerderEventBus {
     };
     this.events.push(normalized);
     if (this.events.length > this.maxRetained) this.events.splice(0, this.events.length - this.maxRetained);
-    this.persist();
+    this.schedulePersist();
     for (const listener of [...this.listeners]) {
       try { listener(normalized); } catch { /* one listener must not block peers */ }
     }
@@ -123,6 +128,23 @@ export class HerderEventBus {
       console.error(`[agent-herder] failed to persist event journal: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+
+  private schedulePersist(): void {
+    if (!this.persistencePath) return;
+    if (this.persistDebounceMs === 0) {
+      this.persist();
+      return;
+    }
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = undefined;
+      this.persist();
+    }, this.persistDebounceMs);
+    this.persistTimer.unref?.();
+  }
 }
 
-export const herderEvents = new HerderEventBus({ persistencePath: process.env.VITEST ? undefined : defaultHerderEventPath() });
+export const herderEvents = new HerderEventBus({
+  persistencePath: process.env.VITEST ? undefined : defaultHerderEventPath(),
+  persistDebounceMs: 1_000,
+});
