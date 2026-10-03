@@ -215,6 +215,7 @@ export class CodexAdapter implements HarnessAdapter {
       const fileStat = await file.stat();
       const target = Math.max(1, Math.min(limit, 50));
       let bytesToRead = Math.min(fileStat.size, 256 * 1024);
+      let bestMessages: SessionMessageView[] = [];
       while (bytesToRead <= Math.min(fileStat.size, 4 * 1024 * 1024)) {
         const buffer = Buffer.alloc(bytesToRead);
         const { bytesRead } = await file.read(buffer, 0, bytesToRead, fileStat.size - bytesToRead);
@@ -241,12 +242,13 @@ export class CodexAdapter implements HarnessAdapter {
             });
           } catch { /* partial or non-message line */ }
         }
+        bestMessages = messages;
         if (messages.length >= target || bytesToRead === fileStat.size) return messages.slice(-target);
         const next = Math.min(fileStat.size, bytesToRead * 2);
         if (next === bytesToRead) return messages.slice(-target);
         bytesToRead = next;
       }
-      return [];
+      return bestMessages.slice(-target);
     } finally {
       await file.close();
     }

@@ -8,6 +8,38 @@ import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
 
 describe("Codex app-server adapter", () => {
+  it("keeps sparse Codex messages found within the bounded transcript tail", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-sparse-tail-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
+    const rollout = join(sessionDir, "rollout-thread-sparse.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    const filler = `${JSON.stringify({ type: "event_msg", payload: { type: "noise", text: "x".repeat(1_024) } })}\n`.repeat(5_000);
+    const message = (role: "user" | "assistant", text: string) => JSON.stringify({
+      timestamp: new Date().toISOString(),
+      type: "response_item",
+      payload: { type: "message", role, content: [{ type: role === "user" ? "input_text" : "output_text", text }] },
+    });
+    await writeFile(rollout, [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-sparse", cwd: "/workspace" } }),
+      filler,
+      message("user", "finish the interrupted work"),
+      message("assistant", "working"),
+      "",
+    ].join("\n"));
+    await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-sparse", updated_at: new Date().toISOString() }) + "\n");
+    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    try {
+      const messages = await adapter.getSessionMessages?.("thread-sparse", 50);
+      expect(messages?.map((item) => [item.role, item.text])).toEqual([
+        ["user", "finish the interrupted work"],
+        ["assistant", "working"],
+      ]);
+    } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
   it("normalizes numeric native timestamps into AgentSession ISO strings", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-numeric-timestamp-"));
     const previous = process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS;

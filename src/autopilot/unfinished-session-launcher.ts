@@ -401,16 +401,16 @@ export class UnfinishedSessionLauncher {
       600_000,
     );
     this.discoveryIdleMs = positiveInteger(
-      options.discoveryIdleMs ?? Number(process.env.AGENT_HERDER_UNFINISHED_DISCOVERY_IDLE_MS || 600_000),
-      600_000,
+      options.discoveryIdleMs ?? Number(process.env.AGENT_HERDER_UNFINISHED_DISCOVERY_IDLE_MS || 60_000),
+      60_000,
     );
     this.maxJudgementsPerCycle = positiveInteger(
       options.maxJudgementsPerCycle ?? Number(process.env.AGENT_HERDER_UNFINISHED_JUDGEMENTS_PER_CYCLE || 20),
       20,
     );
     this.maxResumesPerCycle = positiveInteger(
-      options.maxResumesPerCycle ?? Number(process.env.AGENT_HERDER_UNFINISHED_RESUMES_PER_CYCLE || 4),
-      4,
+      options.maxResumesPerCycle ?? Number(process.env.AGENT_HERDER_UNFINISHED_RESUMES_PER_CYCLE || 8),
+      8,
     );
     this.continuationMessage = options.continuationMessage?.trim() || DEFAULT_CONTINUATION;
     this.generationId = options.generationId?.trim() || `process-${process.pid}-${randomUUID()}`;

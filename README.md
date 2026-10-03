@@ -201,6 +201,7 @@ The common switches are:
 | `AGENT_HERDER_INJECTION_RESHOW_MS` | `2700000` | Re-inject unchanged rosters after this staleness window |
 | `AGENT_HERDER_AUTO_TTL_SECONDS` | `60` | Auto-reserved file-activity lease TTL |
 | `AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS` | `600000` | Recheck unfinished sessions and resume newly stalled work every 10 minutes |
+| `AGENT_HERDER_UNFINISHED_RESUMES_PER_CYCLE` | `8` | Bounded parallel continuation admissions per cycle; all resumed workloads still share the server-100 user-slice budget |
 | `AGENT_HERDER_UNFINISHED_INVENTORY_HOURS` | `48` | Default lookback; the Web UI persists a runtime override without a restart |
 | `AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES` | `4` | Full recent semantic messages sent to the judge; latest user and model messages are always retained |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Direct MiniMax Anthropic-compatible classifier endpoint; avoids an extra gateway hop |
@@ -210,7 +211,7 @@ The common switches are:
 | `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | On restart, replace a stale documented-cache session with a compact MiniMax handoff in the same harness/model |
 | `AGENT_HERDER_HANDOFF_MODEL` | `MiniMax-M3.1-Flash-Preview` | Direct MiniMax model used only to summarize stale sessions; Fast Agent is the fallback when `MINIMAX_API_KEY` is absent |
 | `AGENT_HERDER_CACHE_TTL_MINUTES` | `{}` | JSON exact overrides such as `{"zcode:provider/model":30}`; unknown provider TTLs are never guessed |
-| `AGENT_HERDER_UNFINISHED_DISCOVERY_IDLE_MS` | `600000` | Do not classify a recently active native session as abandoned before this quiet period |
+| `AGENT_HERDER_UNFINISHED_DISCOVERY_IDLE_MS` | `60000` | Wait one quiet minute before classification, so a 10-minute sweep catches work interrupted just after the previous sweep |
 | `AGENT_HERDER_WEB_PORT` | — | Serve the web UI + MCP over HTTP (singleton daemon mode) |
 | `AGENT_HERDER_HTTP_TOKEN` | — | Required when the web host is non-loopback |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_DIR` | `.agent-herder/transcripts` | Relative archive path inside the MCP process CWD |
