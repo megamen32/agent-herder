@@ -133,7 +133,7 @@ describe("unfinished session launcher", () => {
           source_session_ids: [], primary_session_id: "S2", verdict: "completed",
           reason: "Пустая группа модели", confidence: 0.1, topic: "Пусто", handoff: "",
         }, {
-          source_session_ids: ["S3"], primary_session_id: "S3", verdict: "unfinished",
+          source_session_ids: ["S3"], primary_session_id: "S2", verdict: "unfinished",
           reason: "Модель забыла сводку", confidence: 0.7, topic: "Пропущенная задача", handoff: "",
         }] });
         const split = Math.floor(planText.length / 2);
@@ -159,7 +159,7 @@ describe("unfinished session launcher", () => {
     expect(plan?.groups[0]?.handoff).toContain("Первая часть общего handoff");
     expect(plan?.groups[0]?.handoff).toContain("Вторая часть общего handoff");
     expect(plan?.groups).toHaveLength(2);
-    expect(plan?.groups[1]).toMatchObject({ sourceSessionIds: ["omitted-1"], verdict: "needs_human", confidence: 0, topic: "Пропущенная задача" });
+    expect(plan?.groups[1]).toMatchObject({ sourceSessionIds: ["omitted-1"], primarySessionId: "omitted-1", verdict: "needs_human", confidence: 0, topic: "Пропущенная задача" });
     expect(JSON.stringify(requestBody)).toContain("codex-marker");
     expect(JSON.stringify(requestBody)).toContain("zcode-marker");
     expect(JSON.stringify(requestBody)).toContain("последние четыре полных смысловых сообщения");

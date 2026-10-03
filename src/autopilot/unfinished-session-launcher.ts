@@ -666,6 +666,17 @@ export class UnfinishedSessionLauncher {
         assessed.push({ adapter, session, transcriptTail: completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount) });
       }
       if (assessed.length > 0) {
+        const settledAndUnchanged = assessed.every(({ session, transcriptTail }) => {
+          const previous = priorInventory.get(sessionKey(session.harness, session.id));
+          if (!previous?.verdict || previous.verdict.confidence === 0) return false;
+          if (previous.verdict.verdict === "unfinished" && session.status !== "running") return false;
+          return previous.lastActivity === session.lastActivity
+            && previous.status === session.status
+            && previous.cwd === session.cwd
+            && previous.title === session.title
+            && previous.transcriptTail === transcriptTail;
+        });
+        if (settledAndUnchanged) return true;
         try {
           const plan = await this.options.judge.plan({ sessions: assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail })) });
           await this.applyBatchPlan(plan, assessed);
@@ -1163,8 +1174,9 @@ function normalizeVerdict(value: unknown): Omit<SessionInventoryVerdict, "judged
   };
 }
 
-function mergePlanGroups(groups: SessionBatchPlanGroup[]): SessionBatchPlanGroup[] {
+function mergePlanGroups(groups: SessionBatchPlanGroup[], candidates: SessionBatchCandidate[]): SessionBatchPlanGroup[] {
   const merged = new Map<string, SessionBatchPlanGroup>();
+  const workspaces = new Map(candidates.map(({ session }) => [session.id, normalize(session.cwd)]));
   const verdictRank = { completed: 0, needs_human: 1, unfinished: 2 } as const;
   const combineText = (left: string, right: string, separator: string, max: number): string => {
     if (!right || left === right || left.includes(right)) return left.slice(0, max);
@@ -1174,7 +1186,8 @@ function mergePlanGroups(groups: SessionBatchPlanGroup[]): SessionBatchPlanGroup
 
   for (const group of groups) {
     const topic = cleanPlanTopic(group.topic).slice(0, 120);
-    const key = topic.normalize("NFKC").toLocaleLowerCase("ru-RU").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    const workspaceKey = [...new Set(group.sourceSessionIds.map((id) => workspaces.get(id) || ""))].sort().join("\u0000");
+    const key = `${workspaceKey}\u0001${topic.normalize("NFKC").toLocaleLowerCase("ru-RU").replace(/[^\p{L}\p{N}]+/gu, " ").trim()}`;
     const current = merged.get(key);
     if (!current) {
       merged.set(key, { ...group, topic, sourceSessionIds: [...group.sourceSessionIds] });
@@ -1215,8 +1228,8 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
     for (const id of sourceSessionIds) {
       if (!known.has(id)) throw new Error(`MiniMax grouped unknown session ${id}`);
     }
-    const primarySessionId = resolveId(record.primary_session_id, "primary_session_id");
-    if (!sourceSessionIds.includes(primarySessionId)) throw new Error(`MiniMax primary is outside group ${index}`);
+    const requestedPrimarySessionId = resolveId(record.primary_session_id, "primary_session_id");
+    const primarySessionId = sourceSessionIds.includes(requestedPrimarySessionId) ? requestedPrimarySessionId : sourceSessionIds[0];
     let verdict = normalizeVerdict(record);
     const handoff = typeof record.handoff === "string" ? boundedText(record.handoff, "handoff", 32_000, true) : "";
     if (verdict.verdict === "unfinished" && !handoff) {
@@ -1259,7 +1272,7 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
       handoff: "",
     });
   }
-  return { groups: mergePlanGroups(groups) };
+  return { groups: mergePlanGroups(groups, candidates) };
 }
 
 function batchPlannerPrompt(): string {
