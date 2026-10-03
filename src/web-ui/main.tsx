@@ -331,7 +331,7 @@ function SessionList({ entries, activeKey, loading, refreshing, settings, settin
   onSelect: (key: string) => void;
   onChoose: (requestId: string, choiceId: string) => void;
 }) {
-  return <aside className="sessions-pane">
+  return <nav className="sessions-pane" aria-label="Sessions">
     <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Sessions {refreshing && <span className="inline-loading-dot" role="status" aria-label="Refreshing sessions" />}</h1></div><div className="sessions-heading-actions"><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Search sessions" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Session settings" aria-expanded={settingsOpen} onClick={onSettingsToggle}>⚙</button></div></div>
     {searchOpen && <div className="session-search"><input autoFocus value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search title, harness, CWD…" aria-label="Search session text" /></div>}
     {settingsOpen && <div className="session-settings" aria-label="Session list settings">
@@ -364,7 +364,7 @@ function SessionList({ entries, activeKey, loading, refreshing, settings, settin
       {loading && entries.length === 0 && <div className="session-skeletons" aria-label="Loading sessions">{Array.from({ length: 8 }, (_, index) => <div className="session-skeleton" key={index}><span /><div><b /><i /><i /></div></div>)}</div>}
       {!loading && entries.length === 0 && <div className="empty-list">No sessions match these settings.</div>}
     </div>
-  </aside>;
+  </nav>;
 }
 
 function App() {
