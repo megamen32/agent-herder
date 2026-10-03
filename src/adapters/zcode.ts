@@ -402,7 +402,8 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.useLocalConfig = !options.client;
     this.localDbPath = process.env.ZCODE_DB_PATH || join(homedir(), ".zcode", "cli", "db", "db.sqlite");
     this.tasksIndexDbPath = options.tasksIndexDbPath
-      ?? (this.useLocalConfig ? process.env.ZCODE_TASKS_INDEX_DB || join(homedir(), ".zcode", "v2", "tasks-index.sqlite") : undefined);
+      ?? process.env.ZCODE_TASKS_INDEX_DB
+      ?? (this.useLocalConfig ? join(homedir(), ".zcode", "v2", "tasks-index.sqlite") : undefined);
     if (options.client) {
       this.client = options.client;
     } else {
@@ -468,7 +469,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     // turn a dashboard refresh into N live app-server workspace calls merely
     // because a prior resume made the transport ready. Scoped callers may
     // still request one workspace and receive a live overlay below.
-    if (this.useLocalConfig && (!options.cwd || !this.isReady())) return persisted;
+    if ((!options.cwd && persisted.length > 0) || (this.useLocalConfig && !this.isReady())) return persisted;
     const rows: Array<{ workspace: ZcodeWorkspaceRef; row: unknown }> = [];
     for (const workspace of await this.workspaceCandidates(options.cwd)) {
       try {
