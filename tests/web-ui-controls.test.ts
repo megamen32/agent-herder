@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { matchesSessionQuery } from "../src/web-ui/session-list.js";
 
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
+const styles = readFileSync(new URL("../src/web-ui/styles.css", import.meta.url), "utf8");
 
 describe("mobile chat and session controls", () => {
   it("searches sessions across title, harness, cwd, and preview", () => {
@@ -40,7 +41,8 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('Умное автопродолжение каждые 10 минут');
     expect(main).toContain('работает независимо от автопилота');
     expect(main).toContain('aria-label="Глобальное автопродолжение"');
-    expect(main).toContain('После истечения TTL создавать новую сессию с handoff');
+    expect(main).toContain('Продолжить задачу в новой сессии');
+    expect(main).toContain('provider-cache TTL');
     expect(main).toContain('className="settings-group session-autocontinue-setting"');
     expect(main).toContain('Искать сессии за последние часы');
     expect(main).toContain('Сколько последних сообщений читать');
@@ -79,6 +81,15 @@ describe("mobile chat and session controls", () => {
     expect(main.slice(activityStart, composerStart)).toContain('role="status"');
     expect(main.slice(activityStart, composerStart)).toContain('aria-live="polite"');
     expect(main.slice(composerStart)).not.toContain('className="autopilot-control session-autostart-control"');
+    expect(styles).toContain('.composer-stack { position: relative; width: min(860px, calc(100% - 40px)); margin: 0 auto 22px;');
+  });
+
+  it("keeps automation modes discoverable on mobile with their current state", () => {
+    expect(main).toContain('aria-label="Открыть меню режимов"');
+    expect(main).toContain('Автопродолжение: ${runtimeSettingsDraft?.enabled ? "включено" : "выключено"}');
+    expect(main).toContain('Автопилот: ${(autopilotSession?.enabled ?? autopilotPolicyDraft?.enabled) ? "включён" : "выключен"}');
+    expect(styles).toContain('.header-actions .mobile-automation-button { display: inline-flex;');
+    expect(styles).toContain('.header-actions .desktop-chat-menu { display: none; }');
   });
 
   it("keeps autocontinue and autopilot mutations on separate endpoints and state", () => {
