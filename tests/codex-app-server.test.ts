@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, readFile, utimes, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
 
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
@@ -131,7 +132,7 @@ describe("Codex app-server adapter", () => {
     const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
     try {
       await expect(adapter.listSessions()).resolves.toMatchObject([{
-        id: "thread-db", status: "running", cwd: "/workspace-db", model: "gpt-test",
+        id: "thread-db", status: "idle", cwd: "/workspace-db", model: "gpt-test",
         meta: { parentThreadId: "parent-db", threadSource: "subagent", agentRole: "worker" },
       }]);
     } finally {
@@ -181,7 +182,7 @@ describe("Codex app-server adapter", () => {
   });
 
   it.each([
-    ["task_started", "running"],
+    ["task_started", "idle"],
     ["task_complete", "idle"],
     ["turn_aborted", "idle"],
   ] as const)("overlays persisted Desktop lifecycle %s onto an idle app-server thread", async (marker, expected) => {
@@ -223,6 +224,56 @@ describe("Codex app-server adapter", () => {
       await adapter.init();
       expect((await adapter.listSessions()).find((item) => item.id === "thread-1")?.status).toBe("idle");
     } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not keep a recent task_started marker running after its Codex writer died", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-dead-writer-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
+    const rollout = join(sessionDir, "rollout-thread-1.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-1", thread_name: "Interrupted task", updated_at: new Date().toISOString() }) + "\n");
+    await writeFile(rollout, [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-1", session_id: "thread-1", cwd: "/workspace" } }),
+      JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
+    ].join("\n") + "\n");
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      await adapter.init();
+      expect((await adapter.listSessions()).find((item) => item.id === "thread-1")?.status).toBe("idle");
+    } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a recent task_started marker running while a Codex process owns the rollout", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-live-writer-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
+    const rollout = join(sessionDir, "rollout-thread-1.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-1", thread_name: "Active task", updated_at: new Date().toISOString() }) + "\n");
+    await writeFile(rollout, [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-1", session_id: "thread-1", cwd: "/workspace" } }),
+      JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
+    ].join("\n") + "\n");
+    const holder = spawn(process.execPath, [
+      "-e",
+      "const fs=require('node:fs');fs.openSync(process.argv[1],'a');process.stdout.write('ready');setInterval(()=>{},1000)",
+      rollout,
+    ], { argv0: "codex-rollout-holder", stdio: ["ignore", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        holder.stdout.once("data", () => resolve());
+        holder.once("error", reject);
+      });
+      await adapter.init();
+      expect((await adapter.listSessions()).find((item) => item.id === "thread-1")?.status).toBe("running");
+    } finally {
+      holder.kill();
       await adapter.dispose();
       await rm(codexDir, { recursive: true, force: true });
     }

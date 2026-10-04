@@ -2,7 +2,7 @@ import { HarnessAdapter, AgentSession, ControlResult, RawTranscriptExport, SendM
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createReadStream, existsSync } from "node:fs";
-import { open, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { open, readFile, readdir, readlink, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
@@ -87,17 +87,19 @@ export class CodexAdapter implements HarnessAdapter {
   }
 
   async listSessions(): Promise<AgentSession[]> {
-    const [index, sessionStates, runningPids] = await Promise.all([
+    const [index, sessionStates, runningPids, openRolloutPaths] = await Promise.all([
       this.readSessionIndex(),
       this.getSessionStates(),
       this.getRunningCodexPids(),
+      this.getOpenCodexRolloutPaths(),
     ]);
     const sessions = index.map((entry) => {
       const state = sessionStates.get(entry.id);
+      const persistedStatus = this.reconcilePersistedStatus(state, openRolloutPaths);
       return {
         id: entry.id,
         harness: "codex" as const,
-        status: state?.status ?? (runningPids.has(entry.id) ? "running" as const : "stopped" as const),
+        status: persistedStatus ?? (runningPids.has(entry.id) ? "running" as const : "stopped" as const),
         title: entry.thread_name || "Untitled session",
         cwd: state?.cwd || process.cwd(),
         lastActivity: entry.updated_at || new Date(0).toISOString(),
@@ -142,12 +144,15 @@ export class CodexAdapter implements HarnessAdapter {
   }
 
   async getNativeSessionMetadata(): Promise<Map<string, Pick<CodexSessionState, "parentThreadId" | "threadSource" | "agentRole" | "status" | "pinned">>> {
-    const states = await this.getSessionStates();
+    const [states, openRolloutPaths] = await Promise.all([
+      this.getSessionStates(),
+      this.getOpenCodexRolloutPaths(),
+    ]);
     return new Map([...states.entries()].map(([id, state]) => [id, {
       parentThreadId: state.parentThreadId,
       threadSource: state.threadSource,
       agentRole: state.agentRole,
-      status: state.status,
+      status: this.reconcilePersistedStatus(state, openRolloutPaths),
       pinned: state.pinned,
     }]));
   }
@@ -716,6 +721,56 @@ export class CodexAdapter implements HarnessAdapter {
     } catch {
       // pgrep returns non-zero when no Codex processes are running.
     }
+    return result;
+  }
+
+  private reconcilePersistedStatus(
+    state: CodexSessionState | undefined,
+    openRolloutPaths: Set<string> | null,
+  ): CodexSessionState["status"] {
+    if (state?.status !== "running" || openRolloutPaths === null || !state.filePath) return state?.status;
+    return openRolloutPaths.has(state.filePath) ? "running" : "idle";
+  }
+
+  /**
+   * A live Codex writer keeps its rollout open. Lifecycle JSONL can end at
+   * task_started when that process dies, so file age alone leaves a dead turn
+   * looking active until the stale window expires. Linux /proc gives an
+   * immediate, read-only liveness signal; other platforms retain the bounded
+   * timestamp fallback.
+   */
+  private async getOpenCodexRolloutPaths(): Promise<Set<string> | null> {
+    if (!existsSync("/proc")) return null;
+    const result = new Set<string>();
+    let processList = "";
+    try {
+      ({ stdout: processList } = await execFileAsync("pgrep", ["-af", "codex"], { timeout: 5000 }));
+    } catch (error) {
+      const code = (error as { code?: unknown }).code;
+      if (code === 1 || code === "1") return result;
+      return null;
+    }
+    const pids = processList.split("\n")
+      .map((line) => line.match(/^(\d+)\s/)?.[1])
+      .filter((pid): pid is string => !!pid);
+    await Promise.all(pids.map(async (pid) => {
+      let descriptors: string[];
+      try {
+        descriptors = await readdir(`/proc/${pid}/fd`);
+      } catch {
+        return;
+      }
+      await Promise.all(descriptors.map(async (descriptor) => {
+        try {
+          const target = await readlink(`/proc/${pid}/fd/${descriptor}`);
+          if (target.startsWith(this.codexDir) && target.includes("/sessions/") && target.endsWith(".jsonl")) {
+            result.add(target);
+          }
+        } catch {
+          // The process or descriptor may disappear while it is inspected.
+        }
+      }));
+    }));
     return result;
   }
 }
