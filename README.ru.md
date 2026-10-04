@@ -164,7 +164,7 @@ npx -y agent-herder
 | `AGENT_HERDER_COORDINATION_NOTES` | `~/.local/state/agent-herder/coordination-notes.json` | Общее хранилище досок |
 | `AGENT_HERDER_INJECTION_RESHOW_MS` | `2700000` | Повтор инжекта неизменившихся ростеров |
 | `AGENT_HERDER_AUTO_TTL_SECONDS` | `60` | TTL авто-лиз файловой активности |
-| `AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS` | `600000` | Сверять незавершённые сессии и продолжать остановившиеся задачи каждые 10 минут |
+| `AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS` | `240000` | Сверять рабочую выборку незавершённых сессий каждые 4 минуты — до консервативной 5-минутной границы кэша |
 | `AGENT_HERDER_UNFINISHED_RESUMES_PER_CYCLE` | `8` | Не более восьми параллельных допусков продолжения за цикл; все запущенные задачи делят общий бюджет user-slice server-100 |
 | `AGENT_HERDER_UNFINISHED_INVENTORY_HOURS` | `48` | Окно поиска по умолчанию; веб-морда сохраняет runtime-значение без рестарта |
 | `AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES` | `4` | Полные последние смысловые сообщения для judge; последнее сообщение пользователя и модели сохраняются обязательно |

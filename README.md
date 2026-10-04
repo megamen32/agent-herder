@@ -200,7 +200,7 @@ The common switches are:
 | `AGENT_HERDER_COORDINATION_NOTES` | `~/.local/state/agent-herder/coordination-notes.json` | Shared coordination board store |
 | `AGENT_HERDER_INJECTION_RESHOW_MS` | `2700000` | Re-inject unchanged rosters after this staleness window |
 | `AGENT_HERDER_AUTO_TTL_SECONDS` | `60` | Auto-reserved file-activity lease TTL |
-| `AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS` | `600000` | Recheck unfinished sessions and resume newly stalled work every 10 minutes |
+| `AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS` | `240000` | Recheck actionable unfinished sessions every 4 minutes, before conservative 5-minute cache boundaries |
 | `AGENT_HERDER_UNFINISHED_RESUMES_PER_CYCLE` | `8` | Bounded parallel continuation admissions per cycle; all resumed workloads still share the server-100 user-slice budget |
 | `AGENT_HERDER_UNFINISHED_INVENTORY_HOURS` | `48` | Default lookback; the Web UI persists a runtime override without a restart |
 | `AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES` | `4` | Full recent semantic messages sent to the judge; latest user and model messages are always retained |
