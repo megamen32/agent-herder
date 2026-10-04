@@ -4,6 +4,7 @@ export {
   type AgentSession,
   type PermissionRequest,
   type SendMessageOptions,
+  type SendMessageResult,
   type CreateSessionOptions,
   type ListSessionsOptions,
   type SetPermissionsOptions,

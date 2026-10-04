@@ -12,6 +12,7 @@ import {
   type HarnessEvent,
   type ListSessionsOptions,
   type RawTranscriptExport,
+  type SendMessageResult,
   type SendMessageOptions,
   type SessionMessagePart,
   type SessionMessageView,
@@ -724,7 +725,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     return sessions.filter((candidate) => candidate.meta?.parentSessionId === id);
   }
 
-  async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
+  async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     const send = async (): Promise<{ ok: boolean; error?: string; inputId?: string }> => {
       const inputId = randomUUID();
       try {
@@ -771,7 +772,12 @@ export class ZcodeAdapter implements HarnessAdapter {
     const workspace = this.sessionWorkspaces.get(id) || this.workspace();
     this.sessionWorkspaces.set(id, workspace);
     const started = await this.waitForTurnStart(id, workspace, result.inputId!);
-    if (!started.ok) return started;
+    if (!started.ok) {
+      console.error(started.pending
+        ? `[agent-herder] ZCode prompt accepted for ${id}, but native turn confirmation remains armed: ${started.error || "unknown error"}`
+        : `[agent-herder] ZCode prompt accepted for ${id}, and the native turn then failed: ${started.error || "unknown error"}`);
+      return { ok: true, ...(started.pending ? { pending: true } : {}) };
+    }
     await this.persistDesiredSessionTitle(id);
     return { ok: true };
   }
@@ -1190,8 +1196,10 @@ export class ZcodeAdapter implements HarnessAdapter {
         if (event) {
           const inputId = nonEmptyString(record(event.data).inputId);
           if (inputId) {
-            const waiter = this.turnStartWaiters.get(`${sessionId}:${inputId}`);
+            const waiterKey = `${sessionId}:${inputId}`;
+            const waiter = this.turnStartWaiters.get(waiterKey);
             if (waiter && (event.kind === "turn.started" || event.kind === "turn.completed" || event.kind === "turn.failed")) {
+              this.turnStartWaiters.delete(waiterKey);
               waiter(event.kind === "turn.failed"
                 ? { ok: false, error: `ZCode accepted prompt for ${sessionId}, but the native turn failed before confirmation completed` }
                 : { ok: true });
@@ -1230,7 +1238,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     sessionId: string,
     workspace: ZcodeWorkspaceRef,
     inputId: string,
-  ): Promise<{ ok: boolean; error?: string }> {
+  ): Promise<{ ok: boolean; error?: string; pending?: boolean }> {
     const waiterKey = `${sessionId}:${inputId}`;
     let resolveEvent!: (result: { ok: boolean; error?: string }) => void;
     const eventResult = new Promise<{ ok: boolean; error?: string }>((resolve) => { resolveEvent = resolve; });
@@ -1238,6 +1246,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.ensureSessionEventSubscription(sessionId, workspace);
     const deadline = Date.now() + this.turnStartTimeoutMs;
     let lastReadError: string | undefined;
+    let keepArmed = false;
     try {
       do {
         try {
@@ -1267,12 +1276,14 @@ export class ZcodeAdapter implements HarnessAdapter {
         ]);
         if (signalled) return signalled;
       } while (Date.now() < deadline);
+      keepArmed = true;
       return {
         ok: false,
+        pending: true,
         error: `ZCode accepted prompt for ${sessionId}, but turn start was not observed${lastReadError ? ` (${lastReadError})` : ""}`,
       };
     } finally {
-      if (this.turnStartWaiters.get(waiterKey) === resolveEvent) this.turnStartWaiters.delete(waiterKey);
+      if (!keepArmed && this.turnStartWaiters.get(waiterKey) === resolveEvent) this.turnStartWaiters.delete(waiterKey);
     }
   }
 

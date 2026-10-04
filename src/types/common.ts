@@ -100,6 +100,13 @@ export interface ControlResult {
   sessionId?: string;
 }
 
+export interface SendMessageResult {
+  ok: boolean;
+  error?: string;
+  /** The native harness admitted the prompt, but its turn-start event is not confirmed yet. */
+  pending?: boolean;
+}
+
 export interface SessionHistoryInfo {
   source: SessionHistorySource;
   complete: boolean;
@@ -240,7 +247,7 @@ export interface HarnessAdapter {
   listChildren?(id: string): Promise<AgentSession[]>;
 
   /** Send a message to an agent session */
-  sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }>;
+  sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult>;
 
   /** Abort / stop a running session */
   /** Legacy alias retained for callers that still mean terminate. */

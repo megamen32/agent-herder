@@ -282,6 +282,32 @@ describe("named session creation and reuse", () => {
     expect(fake.deliveries).toHaveLength(0);
   });
 
+  it("reports an admitted but unconfirmed direct delivery without retrying it", async () => {
+    const cwd = await workspace();
+    const fake = fakeAdapter("opencode", [session("existing", "worker", cwd)]);
+    let sends = 0;
+    fake.adapter.sendMessage = async () => {
+      sends += 1;
+      return { ok: true, pending: true };
+    };
+
+    const result = JSON.parse(await handleDeliver(new Map([["opencode", fake.adapter]]), {
+      sessionId: "existing",
+      harness: "opencode",
+      message: "continue exactly once",
+      activation: "always",
+      mode: "queue",
+    }));
+
+    expect(result).toMatchObject({
+      ok: true,
+      sessionId: "existing",
+      delivery: "accepted_unconfirmed",
+      activated: false,
+    });
+    expect(sends).toBe(1);
+  });
+
   it("deliver create=never returns not_found instead of creating", async () => {
     const cwd = await workspace();
     const fake = fakeAdapter("opencode");

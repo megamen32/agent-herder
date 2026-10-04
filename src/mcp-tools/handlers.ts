@@ -446,6 +446,9 @@ export async function handleSendMessage(
 
   if (result.ok) {
     if (pending.ids.length) await deferredMessages.remove(pending.ids);
+    if (result.pending) {
+      return `Message accepted by [${found.session.harness}] ${parsed.sessionId}; native turn start is still being verified.\nMessage: ${parsed.message}`;
+    }
     const modeLabel = parsed.mode === "queue" ? " (queued)" : parsed.mode === "steer" ? " (steering)" : " (sync)";
     return `Message sent to [${found.session.harness}] ${parsed.sessionId}${modeLabel}.\nMessage: ${parsed.message}`;
   }
@@ -490,7 +493,11 @@ export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args:
       await deferredMessages.add(fresh.id, parsed.message);
       return JSON.stringify({ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"deferred",activated:false});
     }
-    return JSON.stringify(sent.ok ? {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:parsed.mode==="queue"?"accepted":"completed",activated:true} : {ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"failed",activated:false,error:sent.error||"Message delivery failed"});
+    return JSON.stringify(sent.ok
+      ? sent.pending
+        ? {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"accepted_unconfirmed",activated:false}
+        : {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:parsed.mode==="queue"?"accepted":"completed",activated:true}
+      : {ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"failed",activated:false,error:sent.error||"Message delivery failed"});
   }
   return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:parsed.message,create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model}));
 }
