@@ -960,6 +960,35 @@ describe("unfinished session launcher", () => {
     expect(await store.list()).toHaveLength(1);
   });
 
+  it("watchdog auto-approves permissions only for legacy ZCode autocontinue sessions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-zcode-permission-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session: AgentSession = {
+      ...fixtureSession("running", "zcode"),
+      title: "Автопродолжение — Довести проверку",
+      meta: { pendingRequestIds: ["perm-1"] },
+    };
+    await store.markStarted(session);
+    const approvals: Array<[string, string, string, boolean | undefined]> = [];
+    const adapter = fixtureAdapter(session, { resumes: 0, messages: [] });
+    adapter.respondPermission = async (sessionId, permissionId, response, remember) => {
+      approvals.push([sessionId, permissionId, response, remember]);
+      return { ok: true };
+    };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store,
+      ...enabledSettings(root),
+      reconcileIntervalMs: 60_000,
+      watchdogIntervalMs: 5,
+    });
+
+    const stop = launcher.start();
+    await waitUntil(() => approvals.length > 0);
+    stop();
+
+    expect(approvals[0]).toEqual([session.id, "perm-1", "allow", true]);
+  });
+
   it("watchdog urgently rechecks and resumes a stalled running session before normal TTL", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-watchdog-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));

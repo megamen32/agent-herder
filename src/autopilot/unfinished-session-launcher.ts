@@ -657,6 +657,19 @@ export class UnfinishedSessionLauncher {
           console.error(`[agent-herder] watchdog: ${key} исчезла из native state; запускаю срочное возобновление`);
           continue;
         }
+        const pendingPermissionIds = session.harness === "zcode"
+          && session.title.trim().startsWith("Автопродолжение —")
+          && Array.isArray(session.meta?.pendingRequestIds)
+          ? session.meta.pendingRequestIds.filter((value): value is string => typeof value === "string" && value.length > 0)
+          : [];
+        for (const permissionId of pendingPermissionIds) {
+          const approved = await adapter.respondPermission(session.id, permissionId, "allow", true);
+          if (approved.ok) {
+            console.error(`[agent-herder] watchdog: разрешён запрос ${permissionId} для автономного продолжения zcode:${session.id}`);
+          } else {
+            console.error(`[agent-herder] watchdog: не удалось разрешить запрос ${permissionId} для zcode:${session.id}: ${approved.error || "операция отклонена"}`);
+          }
+        }
         const fingerprint = [session.status, session.lastActivity, session.messageCount ?? "", session.lastMessage?.slice(-256) ?? ""].join("|");
         const previous = this.watchdogObservations.get(key);
         const observation = previous?.fingerprint === fingerprint
