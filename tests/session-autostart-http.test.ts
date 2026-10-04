@@ -28,13 +28,13 @@ describe("session autostart settings HTTP", () => {
     if (!address || typeof address === "string") throw new Error("server did not bind");
     const origin = `http://127.0.0.1:${address.port}`;
 
-    await expect((await fetch(`${origin}/api/session-autostart`)).json()).resolves.toMatchObject({ version: 5, enabled: true, rolloverExpiredCache: true, movePinnedOnRollover: true, inventoryWindowHours: 48, source: "default" });
+    await expect((await fetch(`${origin}/api/session-autostart`)).json()).resolves.toMatchObject({ version: 6, enabled: true, rolloverExpiredCache: true, movePinnedOnRollover: true, inventoryWindowHours: 48, evidenceMessageCount: 200, watchdogEnabled: true, watchdogIntervalSeconds: 10, stalledTurnMinutes: 2, source: "default" });
     const runtimeSaved = await fetch(`${origin}/api/session-autostart`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ enabled: false, rolloverExpiredCache: false, movePinnedOnRollover: false, inventoryWindowHours: 72, evidenceMessageCount: 4, judgeModel: "MiniMax-M3", autopilotJudgeModel: "gpt-test" }),
+      body: JSON.stringify({ enabled: false, rolloverExpiredCache: false, movePinnedOnRollover: false, inventoryWindowHours: 72, evidenceMessageCount: 4, watchdogEnabled: false, watchdogIntervalSeconds: 30, stalledTurnMinutes: 5, judgeModel: "MiniMax-M3", autopilotJudgeModel: "gpt-test" }),
     });
-    await expect(runtimeSaved.json()).resolves.toMatchObject({ version: 5, enabled: false, rolloverExpiredCache: false, movePinnedOnRollover: false, inventoryWindowHours: 72, evidenceMessageCount: 4, judgeModel: "MiniMax-M3", autopilotJudgeModel: "gpt-test", source: "persisted" });
+    await expect(runtimeSaved.json()).resolves.toMatchObject({ version: 6, enabled: false, rolloverExpiredCache: false, movePinnedOnRollover: false, inventoryWindowHours: 72, evidenceMessageCount: 4, watchdogEnabled: false, watchdogIntervalSeconds: 30, stalledTurnMinutes: 5, judgeModel: "MiniMax-M3", autopilotJudgeModel: "gpt-test", source: "persisted" });
     await expect((await fetch(`${origin}/api/session-autostart`)).json()).resolves.toMatchObject({ enabled: false, rolloverExpiredCache: false, source: "persisted" });
     const zcodeHarness = `${origin}/api/session-autostart/harnesses/zcode`;
     await expect((await fetch(zcodeHarness)).json()).resolves.toMatchObject({ harness: "zcode", enabled: false, source: "global" });

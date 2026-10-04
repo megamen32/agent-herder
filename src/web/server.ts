@@ -680,9 +680,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!sessionAutostartStore) return sendJson(response, 503, { error: "Session autostart settings are disabled" });
     if (request.method === "GET") return sendJson(response, 200, await sessionAutostartStore.getSettings());
     const body = await readJson(request);
-    if (body.rolloverExpiredCache !== undefined || body.movePinnedOnRollover !== undefined || body.inventoryWindowHours !== undefined || body.evidenceMessageCount !== undefined || body.judgeModel !== undefined || body.autopilotJudgeModel !== undefined) {
-      if (typeof body.enabled !== "boolean" || typeof body.rolloverExpiredCache !== "boolean" || typeof body.movePinnedOnRollover !== "boolean" || typeof body.inventoryWindowHours !== "number" || typeof body.evidenceMessageCount !== "number" || typeof body.judgeModel !== "string" || typeof body.autopilotJudgeModel !== "string") {
-        return sendJson(response, 400, { error: "enabled, rolloverExpiredCache, movePinnedOnRollover, inventoryWindowHours, evidenceMessageCount, judgeModel and autopilotJudgeModel are required" });
+    if (body.rolloverExpiredCache !== undefined || body.movePinnedOnRollover !== undefined || body.inventoryWindowHours !== undefined || body.evidenceMessageCount !== undefined || body.watchdogEnabled !== undefined || body.watchdogIntervalSeconds !== undefined || body.stalledTurnMinutes !== undefined || body.judgeModel !== undefined || body.autopilotJudgeModel !== undefined) {
+      if (typeof body.enabled !== "boolean" || typeof body.rolloverExpiredCache !== "boolean" || typeof body.movePinnedOnRollover !== "boolean" || typeof body.inventoryWindowHours !== "number" || typeof body.evidenceMessageCount !== "number" || typeof body.watchdogEnabled !== "boolean" || typeof body.watchdogIntervalSeconds !== "number" || typeof body.stalledTurnMinutes !== "number" || typeof body.judgeModel !== "string" || typeof body.autopilotJudgeModel !== "string") {
+        return sendJson(response, 400, { error: "all autocontinue runtime settings are required" });
       }
       try {
         return sendJson(response, 200, { ...await sessionAutostartStore.setRuntimeSettings({
@@ -691,6 +691,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
           movePinnedOnRollover: body.movePinnedOnRollover,
           inventoryWindowHours: body.inventoryWindowHours,
           evidenceMessageCount: body.evidenceMessageCount,
+          watchdogEnabled: body.watchdogEnabled,
+          watchdogIntervalSeconds: body.watchdogIntervalSeconds,
+          stalledTurnMinutes: body.stalledTurnMinutes,
           judgeModel: body.judgeModel,
           autopilotJudgeModel: body.autopilotJudgeModel,
         }), source: "persisted" });

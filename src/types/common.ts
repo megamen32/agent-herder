@@ -169,6 +169,8 @@ export interface CreateSessionOptions {
   cwd: string;
   /** Optional model selected when creating the session. */
   model?: string;
+  /** Optional native permission mode for an explicitly automated continuation. */
+  mode?: string;
 }
 
 export interface ListSessionsOptions {
@@ -284,6 +286,9 @@ export interface HarnessAdapter {
 
   /** Get structured recent messages from the adapter-owned transport, when available. */
   getSessionMessages?(id: string, limit?: number): Promise<SessionMessageView[] | null>;
+
+  /** Get the earliest user-authored message without relying on a bounded transcript tail. */
+  getFirstUserMessage?(id: string): Promise<SessionMessageView | null>;
 
   /** Resume a session through its owning transport, when supported. */
   resumeSession?(id: string): Promise<{ ok: boolean; error?: string }>;

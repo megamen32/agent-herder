@@ -9,6 +9,11 @@ import { deferredMessages, isBusyCodexWriter, type DeferredMessageStore } from "
 const SUPPORTED_HARNESSES: readonly HarnessType[] = ["codex", "opencode", "claude", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
 const DEFAULT_CONTINUATION = "Продолжи незавершённую задачу с того места, где выполнение было прервано. Сначала проверь текущее состояние и не повторяй уже завершённые действия.";
 const MAX_TEXT = 1_024;
+const DEFAULT_EVIDENCE_MESSAGE_COUNT = 200;
+const MAX_EVIDENCE_MESSAGE_COUNT = 200;
+const DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET = 480_000;
+const DEFAULT_BATCH_OUTPUT_TOKENS = 16_384;
+const MAX_SESSION_EVIDENCE_CHARS = 120_000;
 
 export type UnfinishedSessionState = "active" | "recovering" | "exhausted";
 
@@ -27,7 +32,7 @@ export type SessionAutostartHarnessOverride = {
 };
 
 export type SessionAutostartFile = {
-  version: 5;
+  version: 6;
   enabled: boolean;
   /** Start a compact replacement after the provider cache window expires. */
   rolloverExpiredCache: boolean;
@@ -35,6 +40,9 @@ export type SessionAutostartFile = {
   movePinnedOnRollover: boolean;
   inventoryWindowHours: number;
   evidenceMessageCount: number;
+  watchdogEnabled: boolean;
+  watchdogIntervalSeconds: number;
+  stalledTurnMinutes: number;
   judgeModel: string;
   autopilotJudgeModel: string;
   harnesses: SessionAutostartHarnessOverride[];
@@ -69,17 +77,20 @@ export class SessionAutostartStore {
     return this.mutate((file) => { file.enabled = enabled; return cloneAutostartFile(file); });
   }
 
-  async setRuntimeSettings(input: { enabled?: boolean; inventoryWindowHours: number; evidenceMessageCount: number; judgeModel: string; autopilotJudgeModel: string; rolloverExpiredCache?: boolean; movePinnedOnRollover?: boolean }): Promise<SessionAutostartFile> {
+  async setRuntimeSettings(input: { enabled?: boolean; inventoryWindowHours: number; evidenceMessageCount: number; judgeModel: string; autopilotJudgeModel: string; rolloverExpiredCache?: boolean; movePinnedOnRollover?: boolean; watchdogEnabled?: boolean; watchdogIntervalSeconds?: number; stalledTurnMinutes?: number }): Promise<SessionAutostartFile> {
     const inventoryWindowHours = positiveInteger(input.inventoryWindowHours, -1);
     if (inventoryWindowHours < 1 || inventoryWindowHours > 24 * 90) throw new Error("inventoryWindowHours must be an integer from 1 to 2160");
     const evidenceMessageCount = positiveInteger(input.evidenceMessageCount, -1);
-    if (evidenceMessageCount < 2 || evidenceMessageCount > 50) throw new Error("evidenceMessageCount must be an integer from 2 to 50");
+    if (evidenceMessageCount < 2 || evidenceMessageCount > MAX_EVIDENCE_MESSAGE_COUNT) throw new Error(`evidenceMessageCount must be an integer from 2 to ${MAX_EVIDENCE_MESSAGE_COUNT}`);
     const judgeModel = boundedText(input.judgeModel, "judgeModel", 256).trim();
     const autopilotJudgeModel = boundedText(input.autopilotJudgeModel, "autopilotJudgeModel", 256).trim();
     if (!judgeModel || !autopilotJudgeModel) throw new Error("judge models must not be empty");
     if (input.enabled !== undefined && typeof input.enabled !== "boolean") throw new Error("enabled must be a boolean");
     if (input.rolloverExpiredCache !== undefined && typeof input.rolloverExpiredCache !== "boolean") throw new Error("rolloverExpiredCache must be a boolean");
     if (input.movePinnedOnRollover !== undefined && typeof input.movePinnedOnRollover !== "boolean") throw new Error("movePinnedOnRollover must be a boolean");
+    if (input.watchdogEnabled !== undefined && typeof input.watchdogEnabled !== "boolean") throw new Error("watchdogEnabled must be a boolean");
+    const watchdogIntervalSeconds = boundedInteger(input.watchdogIntervalSeconds ?? 10, 5, 300, "watchdogIntervalSeconds");
+    const stalledTurnMinutes = boundedInteger(input.stalledTurnMinutes ?? 2, 1, 120, "stalledTurnMinutes");
     return this.mutate((file) => {
       if (input.enabled !== undefined) file.enabled = input.enabled;
       file.inventoryWindowHours = inventoryWindowHours;
@@ -88,6 +99,9 @@ export class SessionAutostartStore {
       file.autopilotJudgeModel = autopilotJudgeModel;
       if (input.rolloverExpiredCache !== undefined) file.rolloverExpiredCache = input.rolloverExpiredCache;
       if (input.movePinnedOnRollover !== undefined) file.movePinnedOnRollover = input.movePinnedOnRollover;
+      if (input.watchdogEnabled !== undefined) file.watchdogEnabled = input.watchdogEnabled;
+      file.watchdogIntervalSeconds = watchdogIntervalSeconds;
+      file.stalledTurnMinutes = stalledTurnMinutes;
       return cloneAutostartFile(file);
     });
   }
@@ -238,7 +252,10 @@ export interface SessionBatchPlan {
   groups: SessionBatchPlanGroup[];
 }
 
-type AssessedSession = SessionBatchCandidate & { adapter: HarnessAdapter };
+type AssessedSession = SessionBatchCandidate & {
+  adapter: HarnessAdapter;
+  latestSemanticMessage?: Pick<SessionMessageView, "role" | "text">;
+};
 type DiscoveryOutcome = "ready" | "idle" | "blocked";
 
 type UnfinishedSessionFile = {
@@ -415,6 +432,8 @@ export interface UnfinishedSessionLauncherOptions {
   discoveryIdleMs?: number;
   maxJudgementsPerCycle?: number;
   maxResumesPerCycle?: number;
+  watchdogIntervalMs?: number;
+  stalledTurnMs?: number;
   judge?: SessionCompletionJudge;
   continuationMessage?: string;
   notify?: (notice: UnfinishedSessionNotice) => Promise<void>;
@@ -437,10 +456,17 @@ export class UnfinishedSessionLauncher {
   private readonly continuationMessage: string;
   private readonly generationId: string;
   private readonly candidateDelayOverrideMs?: number;
+  private readonly watchdogIntervalOverrideMs?: number;
+  private readonly stalledTurnOverrideMs?: number;
   private recovering: Promise<void> | null = null;
   private retryTimer?: NodeJS.Timeout;
+  private watchdogTimer?: NodeJS.Timeout;
+  private urgentTimer?: NodeJS.Timeout;
+  private watchdogRunning = false;
   private started = false;
   private readonly completedSessions = new Set<string>();
+  private readonly urgentSessions = new Set<string>();
+  private readonly watchdogObservations = new Map<string, { fingerprint: string; unchangedSince: number; misses: number }>();
   /** Sessions already continued by the batch planner in the current recovery pass. */
   private readonly continuedThisRecovery = new Set<string>();
 
@@ -466,13 +492,29 @@ export class UnfinishedSessionLauncher {
     this.continuationMessage = options.continuationMessage?.trim() || DEFAULT_CONTINUATION;
     this.generationId = options.generationId?.trim() || `process-${process.pid}-${randomUUID()}`;
     this.candidateDelayOverrideMs = options.discoveryIdleMs;
+    this.watchdogIntervalOverrideMs = options.watchdogIntervalMs;
+    this.stalledTurnOverrideMs = options.stalledTurnMs;
   }
 
   async handleEvent(provider: string, event: HarnessEvent): Promise<void> {
     if (!event.sessionId || !isSupportedHarness(provider)) return;
-    if (event.kind === "turn.completed" || event.kind === "session.deleted") {
+    if (event.kind === "session.deleted") {
       this.completedSessions.add(sessionKey(provider, event.sessionId));
+      this.urgentSessions.delete(sessionKey(provider, event.sessionId));
       await this.options.store.remove(provider, event.sessionId);
+      return;
+    }
+    if (event.kind === "turn.completed" || event.kind === "turn.failed") {
+      // A finished model turn is not proof that the user's task is complete.
+      // Keep it eligible for semantic re-evaluation after the quiet window.
+      this.completedSessions.delete(sessionKey(provider, event.sessionId));
+      this.urgentSessions.add(sessionKey(provider, event.sessionId));
+      const adapter = this.options.adapters.get(provider);
+      const session = await adapter?.getSession(event.sessionId);
+      if (session && await this.isEnabled(session.harness, session.id, session.cwd)) {
+        await this.options.store.markStarted({ ...session, status: "idle" }, this.generationId);
+      }
+      this.scheduleUrgentRecovery();
       return;
     }
     if (event.kind !== "turn.started") return;
@@ -487,6 +529,7 @@ export class UnfinishedSessionLauncher {
     if (!adapter || (!adapter.resumeSession && session.harness !== "opencode")) return false;
     if (!await this.isEnabled(session.harness, session.id, session.cwd)) return false;
     this.completedSessions.delete(sessionKey(session.harness, session.id));
+    this.urgentSessions.delete(sessionKey(session.harness, session.id));
     await this.options.store.markStarted(session, this.generationId);
     return true;
   }
@@ -503,6 +546,7 @@ export class UnfinishedSessionLauncher {
     void this.recoverPending().catch((error) => {
       console.error(`[agent-herder] автозапуск незавершённых сессий завершился ошибкой: ${errorText(error)}`);
     });
+    void this.scheduleWatchdog(0);
     return () => this.stop();
   }
 
@@ -510,6 +554,105 @@ export class UnfinishedSessionLauncher {
     this.started = false;
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = undefined;
+    if (this.watchdogTimer) clearTimeout(this.watchdogTimer);
+    this.watchdogTimer = undefined;
+    if (this.urgentTimer) clearTimeout(this.urgentTimer);
+    this.urgentTimer = undefined;
+  }
+
+  private scheduleUrgentRecovery(delayMs = 250): void {
+    if (!this.started) return;
+    if (this.urgentTimer) clearTimeout(this.urgentTimer);
+    this.urgentTimer = setTimeout(() => {
+      this.urgentTimer = undefined;
+      if (!this.started) return;
+      void this.recoverPending().catch((error) => {
+        console.error(`[agent-herder] срочное автопродолжение завершилось ошибкой: ${errorText(error)}`);
+      });
+    }, delayMs);
+    this.urgentTimer.unref?.();
+  }
+
+  private async scheduleWatchdog(delayMs?: number): Promise<void> {
+    if (!this.started) return;
+    if (this.watchdogTimer) clearTimeout(this.watchdogTimer);
+    const settings = await this.options.settingsStore.getSettings().catch(() => null);
+    const configured = this.watchdogIntervalOverrideMs
+      ?? Math.max(5_000, (settings?.watchdogIntervalSeconds ?? 10) * 1_000);
+    this.watchdogTimer = setTimeout(() => {
+      this.watchdogTimer = undefined;
+      void this.runWatchdog().finally(() => { void this.scheduleWatchdog(); });
+    }, delayMs ?? configured);
+    this.watchdogTimer.unref?.();
+  }
+
+  private async runWatchdog(): Promise<void> {
+    if (!this.started || this.watchdogRunning) return;
+    this.watchdogRunning = true;
+    try {
+      const settings = await this.options.settingsStore.getSettings();
+      if (!settings.watchdogEnabled || !settings.enabled) return;
+      const stallMs = this.stalledTurnOverrideMs ?? settings.stalledTurnMinutes * 60_000;
+      const records = (await this.options.store.list())
+        .filter((record) => isAutocontinueInventoryHarness(record.harness) && record.state !== "exhausted")
+        .map((record) => ({ harness: record.harness, sessionId: record.sessionId, cwd: record.cwd, updatedAt: record.updatedAt }));
+      const explicit = settings.sessions
+        .filter((record) => record.enabled && isAutocontinueInventoryHarness(record.harness))
+        .map((record) => ({ harness: record.harness, sessionId: record.sessionId, cwd: record.cwd, updatedAt: record.updatedAt }));
+      const targets = [...new Map([...records, ...explicit]
+        .map((record) => [sessionKey(record.harness, record.sessionId), record])).values()]
+        .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+      let urgent = false;
+      for (const record of targets) {
+        if (!await this.isEnabled(record.harness, record.sessionId, record.cwd)) continue;
+        const adapter = this.options.adapters.get(record.harness);
+        if (!adapter?.resumeSession) continue;
+        const key = sessionKey(record.harness, record.sessionId);
+        let session: AgentSession | null = null;
+        try { session = await adapter.getSession(record.sessionId); } catch { /* counted as a miss below */ }
+        if (!session) {
+          const previous = this.watchdogObservations.get(key);
+          const misses = (previous?.misses ?? 0) + 1;
+          this.watchdogObservations.set(key, { fingerprint: "missing", unchangedSince: previous?.unchangedSince ?? Date.now(), misses });
+          // Native indexes can disappear briefly while a harness persists a
+          // turn. Require three consecutive observations and enqueue exactly
+          // once; the recovery retry loop owns subsequent attempts.
+          if (misses !== 3) continue;
+          await this.options.store.markStarted({
+            id: record.sessionId,
+            harness: record.harness,
+            status: "error",
+            title: "Сессия исчезла из native state",
+            cwd: record.cwd,
+            lastActivity: record.updatedAt,
+            needsPermission: false,
+          }, this.generationId);
+          this.urgentSessions.add(key);
+          urgent = true;
+          console.error(`[agent-herder] watchdog: ${key} исчезла из native state; запускаю срочное возобновление`);
+          continue;
+        }
+        const fingerprint = [session.status, session.lastActivity, session.messageCount ?? "", session.lastMessage?.slice(-256) ?? ""].join("|");
+        const previous = this.watchdogObservations.get(key);
+        const observation = previous?.fingerprint === fingerprint
+          ? { fingerprint, unchangedSince: previous.unchangedSince, misses: 0 }
+          : { fingerprint, unchangedSince: Date.now(), misses: 0 };
+        this.watchdogObservations.set(key, observation);
+        const lastActivity = Date.parse(session.lastActivity);
+        const stalled = session.status === "running"
+          && Number.isFinite(lastActivity)
+          && Date.now() - lastActivity >= stallMs
+          && Date.now() - observation.unchangedSince >= stallMs;
+        if (session.status !== "error" && session.status !== "stopped" && !stalled) continue;
+        await this.options.store.markStarted({ ...session, status: session.status === "running" ? "error" : session.status }, this.generationId);
+        this.urgentSessions.add(key);
+        urgent = true;
+        console.error(`[agent-herder] watchdog: ${key} ${stalled ? "зависла без прогресса" : `перешла в ${session.status}`}; запускаю срочное возобновление`);
+      }
+      if (urgent) this.scheduleUrgentRecovery(0);
+    } finally {
+      this.watchdogRunning = false;
+    }
   }
 
   recoverPending(): Promise<void> {
@@ -578,15 +721,16 @@ export class UnfinishedSessionLauncher {
         await this.fail(record, errorText(error));
         continue;
       }
-      if (session?.status === "needs_input" || session?.needsPermission) {
+      const urgent = this.urgentSessions.has(sessionKey(record.harness, record.sessionId));
+      if (!urgent && (session?.status === "needs_input" || session?.needsPermission)) {
         await this.options.store.markStarted(session, this.generationId);
         continue;
       }
-      if (session?.status === "running") {
+      if (!urgent && session?.status === "running") {
         await this.options.store.markStarted(session, this.generationId);
         continue;
       }
-      if (record.generationId === this.generationId && Date.now() - Date.parse(record.updatedAt) < this.discoveryIdleMs) continue;
+      if (!urgent && record.generationId === this.generationId && Date.now() - Date.parse(record.updatedAt) < this.discoveryIdleMs) continue;
       if (resumedThisCycle >= this.maxResumesPerCycle) continue;
       const attempt = await this.options.store.beginAttempt(record.harness, record.sessionId, this.maxAttempts, this.retryDelayMs);
       if (!attempt) continue;
@@ -621,6 +765,7 @@ export class UnfinishedSessionLauncher {
         if (handoff.kind === "rolled_over" && handoff.session) {
           await this.options.store.remove(record.harness, record.sessionId);
           await this.options.store.markStarted(handoff.session, this.generationId);
+          this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
           console.error(`[agent-herder] протухшая сессия ${record.harness}:${record.sessionId} продолжена в новой ${handoff.session.id}`);
           return;
         }
@@ -630,6 +775,7 @@ export class UnfinishedSessionLauncher {
       const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true });
       if (!sent.ok) throw new Error(sent.error || "команда продолжения отклонена");
       await this.options.store.markStarted(trackedSession, this.generationId);
+      this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
       console.error(`[agent-herder] автоматически продолжена незавершённая сессия ${record.harness}:${record.sessionId}`);
     } catch (error) {
       const failure = errorText(error);
@@ -683,6 +829,7 @@ export class UnfinishedSessionLauncher {
       for (const { adapter, session } of candidates) {
         await new Promise<void>((resolve) => setImmediate(resolve));
         if (!await this.isEnabled(session.harness, session.id, session.cwd)) continue;
+        const urgent = this.urgentSessions.has(sessionKey(session.harness, session.id));
         const previous = priorInventory.get(sessionKey(session.harness, session.id));
         const metadataUnchanged = previous?.lastActivity === session.lastActivity
           && previous.status === session.status
@@ -692,19 +839,24 @@ export class UnfinishedSessionLauncher {
           && (previous.verdict.verdict === "completed"
             || previous.verdict.verdict === "needs_human"
             || (previous.verdict.verdict === "unfinished" && session.status === "running"));
-        if (settledAndUnchanged) continue;
+        if (settledAndUnchanged && !urgent) continue;
         const candidateDelayMs = this.candidateDelayOverrideMs
           ?? Math.max(this.discoveryIdleMs, unfinishedProbeDelayMs(session));
-        const oldEnough = Date.now() - Date.parse(session.lastActivity) >= candidateDelayMs;
-        if (session.status === "running" || !oldEnough) continue;
-        const messages = await adapter.getSessionMessages?.(session.id, Math.max(50, runtimeSettings.evidenceMessageCount * 3)).catch(() => null);
+        const oldEnough = urgent || Date.now() - Date.parse(session.lastActivity) >= candidateDelayMs;
+        if ((session.status === "running" && !urgent) || !oldEnough) continue;
+        const messages = await sessionEvidenceMessages(adapter, session.id, runtimeSettings.evidenceMessageCount);
         const transcriptTail = completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount);
         const unchanged = metadataUnchanged && previous?.transcriptTail === transcriptTail;
-        const actionable = !previous?.verdict
+        const actionable = urgent
+          || !previous?.verdict
           || previous.verdict.confidence === 0
           || !unchanged
           || previous.verdict.verdict === "unfinished";
-        if (actionable) assessed.push({ adapter, session, transcriptTail });
+        const latestSemanticMessage = [...messages].reverse().find((message) =>
+          (message.role === "user" || message.role === "assistant") && Boolean(message.text?.trim()));
+        if (actionable) assessed.push({ adapter, session, transcriptTail, ...(latestSemanticMessage ? {
+          latestSemanticMessage: { role: latestSemanticMessage.role, text: latestSemanticMessage.text },
+        } : {}) });
       }
       if (assessed.length > 0) {
         try {
@@ -731,7 +883,7 @@ export class UnfinishedSessionLauncher {
       if (!isAutocontinueInventoryHarness(session.harness)) continue;
       const harness = session.harness;
       const key = sessionKey(harness, session.id);
-      const messages = await adapter.getSessionMessages?.(session.id, Math.max(50, runtimeSettings.evidenceMessageCount * 3)).catch(() => null);
+      const messages = await sessionEvidenceMessages(adapter, session.id, runtimeSettings.evidenceMessageCount);
       const transcriptTail = completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount);
       const previous = priorInventory.get(key);
       const unchanged = previous?.lastActivity === session.lastActivity && previous.transcriptTail === transcriptTail;
@@ -742,7 +894,7 @@ export class UnfinishedSessionLauncher {
         ? { verdict: "completed" as const, reason: `Заменена более новой сессией с той же задачей: ${newerEquivalent}`, confidence: 0.95, judgedAt: new Date().toISOString() }
         : unchanged ? previous?.verdict : undefined;
       if (!newerEquivalent && this.completedSessions.has(key)) {
-        verdict = { verdict: "completed", reason: "Harness reported turn completion", confidence: 1, judgedAt: new Date().toISOString() };
+        verdict = { verdict: "completed", reason: "Session was deleted or explicitly forgotten", confidence: 1, judgedAt: new Date().toISOString() };
       } else if (!verdict && Date.now() - Date.parse(session.lastActivity) < this.discoveryIdleMs && session.status !== "running") {
         // Keep it visible in inventory, but do not classify a session which may
         // still be receiving events from another harness process.
@@ -795,7 +947,8 @@ export class UnfinishedSessionLauncher {
     for (const group of groups) {
       const sources = group.sourceSessionIds.map((id) => byId.get(id)!);
       const plannedPrimary = byId.get(group.primarySessionId)!;
-      const running = sources.filter(({ session }) => session.status === "running")
+      const running = sources.filter(({ session }) => session.status === "running"
+          && !this.urgentSessions.has(sessionKey(session.harness, session.id)))
         .sort((left, right) => Date.parse(right.session.lastActivity) - Date.parse(left.session.lastActivity))[0];
       const primary = running ?? plannedPrimary;
       const judgedAt = new Date().toISOString();
@@ -817,8 +970,23 @@ export class UnfinishedSessionLauncher {
       if (group.verdict !== "unfinished") {
         for (const source of sources) {
           pushInventory(source);
+          this.urgentSessions.delete(sessionKey(source.session.harness, source.session.id));
           await this.options.store.remove(source.session.harness, source.session.id);
         }
+        continue;
+      }
+
+      // A queued Herder prompt is already durable in the native transcript.
+      // Until the harness produces an assistant message after it, another
+      // resume cycle must not enqueue a near-identical prompt again.
+      if (primary.latestSemanticMessage?.role === "user" && isAutocontinueRequest(primary.latestSemanticMessage.text)) {
+        await this.options.store.markStarted(primary.session, this.generationId);
+        this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
+        for (const source of sources) {
+          pushInventory(source);
+          this.urgentSessions.delete(sessionKey(source.session.harness, source.session.id));
+        }
+        console.error(`[agent-herder] ${primary.session.harness}:${primary.session.id} уже ожидает ответ на автопродолжение; повтор не ставлю`);
         continue;
       }
 
@@ -845,7 +1013,8 @@ export class UnfinishedSessionLauncher {
         continue;
       }
 
-      const oldEnough = Date.now() - Date.parse(primary.session.lastActivity) >= this.discoveryIdleMs;
+      const groupUrgent = sources.some(({ session }) => this.urgentSessions.has(sessionKey(session.harness, session.id)));
+      const oldEnough = groupUrgent || Date.now() - Date.parse(primary.session.lastActivity) >= this.discoveryIdleMs;
       if (!oldEnough || launched >= this.maxResumesPerCycle) {
         for (const source of sources) {
           pushInventory(source);
@@ -866,7 +1035,9 @@ export class UnfinishedSessionLauncher {
           if (!sent.ok) throw new Error(sent.error || "исходная сессия не приняла объединённый handoff");
           await this.options.store.markStarted(primary.session, this.generationId);
           this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
+          this.urgentSessions.delete(sessionKey(primary.session.harness, primary.session.id));
           for (const source of sources) {
+            this.urgentSessions.delete(sessionKey(source.session.harness, source.session.id));
             if (source.session.id === primary.session.id) pushInventory(source);
             else {
               pushInventory(source, {
@@ -920,6 +1091,7 @@ export class UnfinishedSessionLauncher {
           name: continuationTitle(group.topic),
           cwd: primary.session.cwd,
           model: continuationModel,
+          ...(primary.session.harness === "zcode" ? { mode: "yolo" } : {}),
         });
         if (continuationModel && created.model !== continuationModel && primary.adapter.changeModel) {
           const selected = await primary.adapter.changeModel(created.id, continuationModel);
@@ -936,6 +1108,7 @@ export class UnfinishedSessionLauncher {
         await this.options.store.markStarted(created, this.generationId);
         this.continuedThisRecovery.add(sessionKey(created.harness, created.id));
         for (const source of sources) {
+          this.urgentSessions.delete(sessionKey(source.session.harness, source.session.id));
           pushInventory(source, {
             verdict: "completed",
             reason: `Объединена в новую сессию «${continuationTitle(group.topic)}»: ${created.id}`,
@@ -992,19 +1165,22 @@ export class UnfinishedSessionLauncher {
 function parseAutostartFile(value: unknown, env: NodeJS.ProcessEnv = process.env): SessionAutostartFile {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("session autostart settings must be an object");
   const object = value as Record<string, unknown>;
-  if ((object.version !== 1 && object.version !== 2 && object.version !== 3 && object.version !== 4 && object.version !== 5) || typeof object.enabled !== "boolean" || !Array.isArray(object.sessions)) throw new Error("invalid session autostart settings");
-  const harnesses = object.version === 2 || object.version === 3 || object.version === 4 || object.version === 5 ? object.harnesses : [];
+  if ((object.version !== 1 && object.version !== 2 && object.version !== 3 && object.version !== 4 && object.version !== 5 && object.version !== 6) || typeof object.enabled !== "boolean" || !Array.isArray(object.sessions)) throw new Error("invalid session autostart settings");
+  const harnesses = object.version === 2 || object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 ? object.harnesses : [];
   if (!Array.isArray(harnesses)) throw new Error("invalid session autostart harness overrides");
   const defaults = defaultAutostartFile(env);
   return {
-    version: 5,
+    version: 6,
     enabled: object.enabled,
-    rolloverExpiredCache: object.version === 4 || object.version === 5 ? booleanSetting(object.rolloverExpiredCache, "rolloverExpiredCache") : defaults.rolloverExpiredCache,
-    movePinnedOnRollover: object.version === 5 ? booleanSetting(object.movePinnedOnRollover, "movePinnedOnRollover") : defaults.movePinnedOnRollover,
-    inventoryWindowHours: object.version === 3 || object.version === 4 || object.version === 5 ? runtimeHours(object.inventoryWindowHours) : defaults.inventoryWindowHours,
-    evidenceMessageCount: (object.version === 3 || object.version === 4 || object.version === 5) && object.evidenceMessageCount !== undefined ? evidenceCount(object.evidenceMessageCount) : defaults.evidenceMessageCount,
-    judgeModel: object.version === 3 || object.version === 4 || object.version === 5 ? runtimeModel(object.judgeModel, "judgeModel") : defaults.judgeModel,
-    autopilotJudgeModel: object.version === 3 || object.version === 4 || object.version === 5 ? runtimeModel(object.autopilotJudgeModel, "autopilotJudgeModel") : defaults.autopilotJudgeModel,
+    rolloverExpiredCache: object.version === 4 || object.version === 5 || object.version === 6 ? booleanSetting(object.rolloverExpiredCache, "rolloverExpiredCache") : defaults.rolloverExpiredCache,
+    movePinnedOnRollover: object.version === 5 || object.version === 6 ? booleanSetting(object.movePinnedOnRollover, "movePinnedOnRollover") : defaults.movePinnedOnRollover,
+    inventoryWindowHours: object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 ? runtimeHours(object.inventoryWindowHours) : defaults.inventoryWindowHours,
+    evidenceMessageCount: object.version === 6 && object.evidenceMessageCount !== undefined ? evidenceCount(object.evidenceMessageCount) : defaults.evidenceMessageCount,
+    watchdogEnabled: object.version === 6 && object.watchdogEnabled !== undefined ? booleanSetting(object.watchdogEnabled, "watchdogEnabled") : defaults.watchdogEnabled,
+    watchdogIntervalSeconds: object.version === 6 && object.watchdogIntervalSeconds !== undefined ? boundedInteger(object.watchdogIntervalSeconds, 5, 300, "watchdogIntervalSeconds") : defaults.watchdogIntervalSeconds,
+    stalledTurnMinutes: object.version === 6 && object.stalledTurnMinutes !== undefined ? boundedInteger(object.stalledTurnMinutes, 1, 120, "stalledTurnMinutes") : defaults.stalledTurnMinutes,
+    judgeModel: object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 ? runtimeModel(object.judgeModel, "judgeModel") : defaults.judgeModel,
+    autopilotJudgeModel: object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 ? runtimeModel(object.autopilotJudgeModel, "autopilotJudgeModel") : defaults.autopilotJudgeModel,
     harnesses: harnesses.map((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid session autostart harness override");
       const record = value as Record<string, unknown>;
@@ -1032,12 +1208,15 @@ function parseAutostartFile(value: unknown, env: NodeJS.ProcessEnv = process.env
 
 function defaultAutostartFile(env: NodeJS.ProcessEnv): SessionAutostartFile {
   return {
-    version: 5,
+    version: 6,
     enabled: env.AGENT_HERDER_UNFINISHED_AUTOSTART !== "false",
     rolloverExpiredCache: true,
     movePinnedOnRollover: true,
     inventoryWindowHours: positiveInteger(Number(env.AGENT_HERDER_UNFINISHED_INVENTORY_HOURS || 48), 48),
-    evidenceMessageCount: positiveInteger(Number(env.AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES || 4), 4),
+    evidenceMessageCount: evidenceCount(Number(env.AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES || DEFAULT_EVIDENCE_MESSAGE_COUNT)),
+    watchdogEnabled: env.AGENT_HERDER_UNFINISHED_WATCHDOG !== "false",
+    watchdogIntervalSeconds: boundedInteger(Number(env.AGENT_HERDER_UNFINISHED_WATCHDOG_INTERVAL_SECONDS || 10), 5, 300, "watchdogIntervalSeconds"),
+    stalledTurnMinutes: boundedInteger(Number(env.AGENT_HERDER_UNFINISHED_STALLED_TURN_MINUTES || 2), 1, 120, "stalledTurnMinutes"),
     judgeModel: env.AGENT_HERDER_UNFINISHED_JUDGE_MODEL?.trim() || "MiniMax-M3.1-Flash-Preview",
     autopilotJudgeModel: env.AGENT_HERDER_AUTOPILOT_JUDGE_MODEL?.trim() || "MiniMax-M3",
     harnesses: [],
@@ -1064,7 +1243,7 @@ function runtimeModel(value: unknown, field: string): string {
 
 function evidenceCount(value: unknown): number {
   const count = positiveInteger(value, -1);
-  if (count < 2 || count > 50) throw new Error("invalid evidenceMessageCount");
+  if (count < 2 || count > MAX_EVIDENCE_MESSAGE_COUNT) throw new Error("invalid evidenceMessageCount");
   return count;
 }
 
@@ -1141,27 +1320,66 @@ function cloneInventoryRecord(record: UnfinishedSessionInventoryRecord): Unfinis
   return { ...record, ...(record.verdict ? { verdict: { ...record.verdict } } : {}) };
 }
 
-/** Keep the configured latest semantic messages in full and retain both sides when present. */
-export function completionEvidence(messages: SessionMessageView[], messageCount = 4): string {
+async function sessionEvidenceMessages(adapter: HarnessAdapter, sessionId: string, limit: number): Promise<SessionMessageView[]> {
+  const [tail, firstUser] = await Promise.all([
+    adapter.getSessionMessages?.(sessionId, limit).catch(() => null) ?? Promise.resolve(null),
+    adapter.getFirstUserMessage
+      ? adapter.getFirstUserMessage(sessionId).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+  const messages = tail ?? [];
+  if (!firstUser) return messages;
+  const duplicate = (message: SessionMessageView) => message.role === "user"
+    && message.text === firstUser.text
+    && (!message.timestamp || !firstUser.timestamp || message.timestamp === firstUser.timestamp);
+  return [firstUser, ...messages.filter((message) => !duplicate(message))];
+}
+
+/** Keep the first user goal plus the configured latest semantic messages. */
+export function completionEvidence(messages: SessionMessageView[], messageCount = DEFAULT_EVIDENCE_MESSAGE_COUNT): string {
+  const targetCount = Math.max(3, messageCount);
   const semantic = messages.map((message, index) => ({
     index,
     role: message.role,
     text: message.role === "user" || message.role === "assistant" ? semanticTranscript([message]) : "",
   })).filter((item) => item.text);
+  const firstUser = semantic.find((item) => item.role === "user");
   const selected = [
-    ...semantic.slice(-Math.max(2, messageCount)),
+    firstUser,
+    ...semantic.slice(-Math.max(1, targetCount - (firstUser ? 1 : 0))),
     [...semantic].reverse().find((item) => item.role === "user"),
     [...semantic].reverse().find((item) => item.role === "assistant"),
   ].filter((item): item is (typeof semantic)[number] => Boolean(item));
   const unique = [...new Map(selected.map((item) => [item.index, item])).values()].sort((left, right) => left.index - right.index);
-  const bounded = unique.slice(-Math.max(2, messageCount));
+  const recent = unique.filter((item) => item.index !== firstUser?.index).slice(-Math.max(1, targetCount - (firstUser ? 1 : 0)));
+  const bounded = firstUser ? [firstUser, ...recent] : recent;
   for (const role of ["user", "assistant"] as const) {
     if (bounded.some((item) => item.role === role)) continue;
     const required = [...unique].reverse().find((item) => item.role === role);
-    if (required) bounded.splice(0, 1, required);
+    if (required) bounded.splice(firstUser ? 1 : 0, 1, required);
   }
   bounded.sort((left, right) => left.index - right.index);
-  return [...new Map(bounded.map((item) => [item.index, item])).values()].map((item) => item.text).join("\n\n");
+  const deduplicated = [...new Map(bounded.map((item) => [item.index, item])).values()];
+  if (deduplicated.length === 0) return "";
+  const first = firstUser?.text ?? deduplicated[0]!.text;
+  const tail = deduplicated.filter((item) => item.index !== firstUser?.index).map((item) => item.text).join("\n\n");
+  return trimEvidenceChars([
+    "ПЕРВЫЙ ПОЛЬЗОВАТЕЛЬСКИЙ ЗАПРОС:",
+    first,
+    ...(tail ? ["\nПОСЛЕДНИЙ СМЫСЛОВОЙ КОНТЕКСТ:", tail] : []),
+  ].join("\n"), MAX_SESSION_EVIDENCE_CHARS);
+}
+
+function trimEvidenceChars(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  if (maxChars <= 0) return "";
+  const divider = "\nПОСЛЕДНИЙ СМЫСЛОВОЙ КОНТЕКСТ:\n";
+  const split = value.indexOf(divider);
+  if (split < 0) return value.slice(-maxChars);
+  const prefix = value.slice(0, split + divider.length);
+  const prefixBudget = Math.min(prefix.length, Math.min(maxChars, Math.max(1, Math.floor(maxChars * 0.2))));
+  const suffixBudget = Math.max(0, maxChars - prefixBudget);
+  return `${prefix.slice(0, prefixBudget)}${value.slice(-suffixBudget)}`;
 }
 
 function cleanPlanTopic(topic: string): string {
@@ -1180,13 +1398,19 @@ function continuationTitle(topic: string): string {
   return `Автопродолжение — ${cleanPlanTopic(topic).slice(0, 96)}`;
 }
 
+function isAutocontinueRequest(text: string | undefined): boolean {
+  const normalized = text?.trim() || "";
+  return normalized.startsWith("Автопродолжение —")
+    || normalized.startsWith("Продолжи незавершённую задачу с того места, где выполнение было прервано.");
+}
+
 function batchContinuationPrompt(group: SessionBatchPlanGroup, sources: AssessedSession[]): string {
   return [
     continuationTitle(group.topic),
     "",
     `Это единое продолжение задачи «${group.topic}», собранное оркестратором из ${sources.length} сесс. Codex/ZCode.`,
     `Исходные сессии: ${sources.map(({ session }) => `${session.harness}:${session.id} (${session.title})`).join("; ")}.`,
-    "MiniMax прочитал по четыре последних полных смысловых сообщения каждой сессии, убрал дубли и подготовил общий handoff.",
+    "MiniMax прочитал первый пользовательский запрос и свежий смысловой хвост каждой сессии, убрал дубли и подготовил общий handoff.",
     "\n--- ОБЪЕДИНЁННЫЙ HANDOFF ---\n",
     group.handoff,
     "\nПроверь текущее состояние файлов и сервисов, затем продолжи с незавершённого шага. Не повторяй уже подтверждённое.",
@@ -1385,11 +1609,13 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
 function batchPlannerPrompt(): string {
   return [
     "Ты единый оркестратор автопродолжения Agent Herder для Codex и ZCode.",
-    "Получаешь все доступные сессии окна, у каждой ровно последние четыре полных смысловых сообщения без tool noise.",
+    "Получаешь все доступные сессии 48-часового окна в одном общем пакете до безопасного потолка контекста.",
+    "У каждой сессии обязательно сохранён первый пользовательский запрос как исходная цель и максимально полный свежий смысловой хвост без tool noise и скрытых рассуждений.",
     "Сгруппируй сессии одной и той же пользовательской задачи, даже если названия различаются; не объединяй просто похожие задачи.",
     "Каждый входной session_ref должен встретиться ровно один раз в source_session_ids одной группы; возвращай короткие S1, S2 и т.д., не переписывай UUID.",
     "Для группы выбери primary_session_id из session_ref: работающую сессию, иначе самую новую и содержательную.",
     "verdict: completed, unfinished или needs_human. Если хотя бы одна сессия группы ещё реально выполняется, verdict=unfinished.",
+    "completed допустим только когда исходная пользовательская цель явно достигнута и финальный ответ содержит проверяемый результат; план, обещание продолжить, незавершённые пункты или ошибки инструментов означают unfinished.",
     "topic — понятная русская тема из 3-8 слов без UUID, Auto Continue и технического мусора.",
     "handoff для unfinished — единая краткая сводка всех сессий группы: цель, уже сделано, решения, файлы/проверки, осталось, риски, следующий шаг.",
     "Не выполняй задачи и не добавляй факты. Верни только JSON {groups:[{source_session_ids,primary_session_id,verdict,reason,confidence,topic,handoff}]}",
@@ -1407,9 +1633,72 @@ function batchPlannerPayload(sessions: SessionBatchCandidate[]): unknown {
       status_signal: session.status,
       last_activity: session.lastActivity,
       needs_permission: session.needsPermission,
-      last_four_semantic_messages: transcriptTail,
+      semantic_context: transcriptTail,
     })),
   };
+}
+
+/** Conservative MiniMax-oriented estimate: non-ASCII text is budgeted as one token per character. */
+export function estimateContextTokens(value: string): number {
+  let ascii = 0;
+  let nonAscii = 0;
+  for (const char of value) {
+    if (char.charCodeAt(0) <= 0x7f) ascii += 1;
+    else nonAscii += 1;
+  }
+  return Math.ceil(ascii / 3) + nonAscii;
+}
+
+/** Includes the system prompt, serialized payload, and a conservative request-format reserve. */
+export function estimateBatchPlannerInputTokens(sessions: SessionBatchCandidate[]): number {
+  return estimateContextTokens(batchPlannerPrompt())
+    + estimateContextTokens(JSON.stringify(batchPlannerPayload(sessions)))
+    + 512;
+}
+
+/** Fairly pack every candidate under one shared context ceiling while preserving goal + recent tail. */
+export function fitBatchContext(
+  sessions: SessionBatchCandidate[],
+  tokenBudget = DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
+): SessionBatchCandidate[] {
+  if (sessions.length === 0) return [];
+  const metadataOnly = sessions.map((candidate) => ({ ...candidate, transcriptTail: "" }));
+  const fixedTokens = estimateBatchPlannerInputTokens(metadataOnly);
+  if (fixedTokens > tokenBudget) {
+    throw new Error(`MiniMax batch metadata needs ${fixedTokens} input tokens, above the ${tokenBudget} token ceiling`);
+  }
+  const available = tokenBudget - fixedTokens;
+  const sizes = sessions.map((candidate) => estimateContextTokens(candidate.transcriptTail));
+  let low = 0;
+  let high = Math.max(...sizes);
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    const total = sizes.reduce((sum, size) => sum + Math.min(size, middle), 0);
+    if (total <= available) low = middle;
+    else high = middle - 1;
+  }
+  const perSessionCap = low;
+  return sessions.map((candidate, index) => ({
+    ...candidate,
+    transcriptTail: sizes[index]! <= perSessionCap
+      ? candidate.transcriptTail
+      : trimEvidenceTokens(candidate.transcriptTail, perSessionCap),
+  }));
+}
+
+function trimEvidenceTokens(value: string, maxTokens: number): string {
+  if (maxTokens <= 0) return "";
+  if (estimateContextTokens(value) <= maxTokens) return value;
+  let maxChars = Math.max(1, Math.floor(value.length * maxTokens / estimateContextTokens(value)));
+  let trimmed = trimEvidenceChars(value, maxChars);
+  while (estimateContextTokens(trimmed) > maxTokens && maxChars > 1) {
+    maxChars = Math.max(1, Math.floor(maxChars * 0.9));
+    trimmed = trimEvidenceChars(value, maxChars);
+  }
+  while (estimateContextTokens(trimmed) > maxTokens && trimmed.length > 0) {
+    trimmed = trimmed.slice(0, -1);
+  }
+  return trimmed;
 }
 
 async function anthropicText(response: Response): Promise<string> {
@@ -1475,6 +1764,12 @@ function positiveInteger(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : fallback;
 }
 
+function boundedInteger(value: unknown, min: number, max: number, field: string): number {
+  const parsed = positiveInteger(value, -1);
+  if (parsed < min || parsed > max) throw new Error(`${field} must be an integer from ${min} to ${max}`);
+  return parsed;
+}
+
 function nonNegativeInteger(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : fallback;
 }
@@ -1512,6 +1807,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
         signal: AbortSignal.timeout(35_000),
         body: JSON.stringify({
           model: config.model,
+          max_tokens: 512,
           temperature: 0,
           stream: false,
           response_format: { type: "json_object" },
@@ -1522,7 +1818,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
                 "Ты классификатор незавершённых Codex и ZCode задач Agent Herder.",
                 "Верни только JSON: {verdict:completed|unfinished|needs_human,reason:string,confidence:number}.",
                 "completed — цель явно выполнена; unfinished — работа оборвана, идёт или остались конкретные действия; needs_human — нужен выбор, секрет или содержательный ответ человека.",
-                "Статус БД — только слабый сигнал. Главный источник — четыре последних полных смысловых сообщения. При сомнении не выбирай completed.",
+                "Статус БД — только слабый сигнал. Главный источник — первый пользовательский запрос и свежий смысловой хвост. При сомнении не выбирай completed.",
                 "reason — одно короткое русское предложение, confidence — число от 0 до 1.",
               ].join(" "),
             },
@@ -1554,6 +1850,11 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       return normalizeVerdict(JSON.parse(json) as unknown);
     },
     async plan({ sessions }) {
+      const contextBudget = positiveInteger(
+        Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS || DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET),
+        DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
+      );
+      const packedSessions = fitBatchContext(sessions, Math.min(contextBudget, DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET));
       const response = await fetchImpl(endpoint, {
         method: "POST",
         headers: {
@@ -1563,12 +1864,16 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
         signal: AbortSignal.timeout(positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
         body: JSON.stringify({
           model: config.model,
+          max_tokens: Math.min(
+            positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || DEFAULT_BATCH_OUTPUT_TOKENS), DEFAULT_BATCH_OUTPUT_TOKENS),
+            DEFAULT_BATCH_OUTPUT_TOKENS,
+          ),
           temperature: 0,
           stream: false,
           response_format: { type: "json_object" },
           messages: [
             { role: "system", content: batchPlannerPrompt() },
-            { role: "user", content: JSON.stringify(batchPlannerPayload(sessions)) },
+            { role: "user", content: JSON.stringify(batchPlannerPayload(packedSessions)) },
           ],
         }),
       });
@@ -1613,7 +1918,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
               "Ты классификатор незавершённых Codex и ZCode задач Agent Herder.",
               "Верни только JSON: {verdict:completed|unfinished|needs_human,reason:string,confidence:number}.",
               "completed — цель явно выполнена; unfinished — работа оборвана, идёт или остались конкретные действия; needs_human — нужен выбор, секрет или содержательный ответ человека.",
-              "Статус БД — только слабый сигнал. Главный источник — четыре последних полных смысловых сообщения. При сомнении не выбирай completed.",
+              "Статус БД — только слабый сигнал. Главный источник — первый пользовательский запрос и максимально полный свежий смысловой хвост. При сомнении не выбирай completed.",
               "reason — одно короткое русское предложение, confidence — число от 0 до 1.",
             ].join(" "),
             cache_control: { type: "ephemeral" },
@@ -1648,6 +1953,11 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
       return normalizeVerdict(JSON.parse(json) as unknown);
     },
     async plan({ sessions }) {
+      const contextBudget = positiveInteger(
+        Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS || DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET),
+        DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
+      );
+      const packedSessions = fitBatchContext(sessions, Math.min(contextBudget, DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET));
       const response = await fetchImpl(endpoint, {
         method: "POST",
         headers: {
@@ -1658,12 +1968,15 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
         signal: AbortSignal.timeout(positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
         body: JSON.stringify({
           model: config.model,
-          max_tokens: positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || 131_072), 131_072),
+          max_tokens: Math.min(
+            positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || DEFAULT_BATCH_OUTPUT_TOKENS), DEFAULT_BATCH_OUTPUT_TOKENS),
+            DEFAULT_BATCH_OUTPUT_TOKENS,
+          ),
           temperature: 0,
           stream: true,
           output_config: { effort: "low" },
           system: [{ type: "text", text: batchPlannerPrompt(), cache_control: { type: "ephemeral" } }],
-          messages: [{ role: "user", content: JSON.stringify(batchPlannerPayload(sessions)) }],
+          messages: [{ role: "user", content: JSON.stringify(batchPlannerPayload(packedSessions)) }],
         }),
       });
       if (!response.ok) throw new Error(`MiniMax Anthropic batch planner rejected with HTTP ${response.status}`);

@@ -47,7 +47,10 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('provider-cache TTL');
     expect(main).toContain('className="settings-group session-autocontinue-setting"');
     expect(main).toContain('Искать сессии за последние часы');
-    expect(main).toContain('Сколько последних сообщений читать');
+    expect(main).toContain('Сколько сообщений читать на сессию');
+    expect(main).toContain('потолок 512 тыс.');
+    expect(main).toContain('Срочно будить умершие и зависшие сессии');
+    expect(main).toContain('Watchdog проверяет native process/turn отдельно от обычного TTL');
     expect(main).toContain('Модель автопродолжения');
     expect(main).toContain('Модель автопилота');
     expect(main).toContain('/api/models?harness=');

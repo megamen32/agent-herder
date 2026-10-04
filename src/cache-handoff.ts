@@ -154,6 +154,7 @@ export class CacheHandoffService {
     const continuationModel = continuationModelFor(session);
     const created = await adapter.createSession({
       name: `${session.title.slice(0, 180)} · продолжение`, cwd: session.cwd, model: continuationModel,
+      ...(session.harness === "zcode" ? { mode: "yolo" } : {}),
     });
     if (continuationModel && (session.harness === "opencode" || created.model !== continuationModel)) {
       if (!adapter.changeModel) throw new Error(`${session.harness} создал handoff без модели продолжения ${continuationModel}`);

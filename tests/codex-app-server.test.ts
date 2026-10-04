@@ -60,6 +60,40 @@ describe("Codex app-server adapter", () => {
     }
   });
 
+  it("reads the original user request independently of a 200-message transcript tail", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-first-user-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
+    const rollout = join(sessionDir, "rollout-thread-long.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    const message = (role: "user" | "assistant", text: string, offset: number) => JSON.stringify({
+      timestamp: new Date(Date.UTC(2026, 9, 3, 12, 0, offset)).toISOString(),
+      type: "response_item",
+      payload: { type: "message", role, content: [{ type: role === "user" ? "input_text" : "output_text", text }] },
+    });
+    const later = Array.from({ length: 210 }, (_, index) => message(index % 2 ? "assistant" : "user", `later-${index}`, index + 1));
+    await writeFile(rollout, [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-long", cwd: "/workspace" } }),
+      message("user", "original goal that must survive tail truncation", 0),
+      ...later,
+      "",
+    ].join("\n"));
+    await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-long", updated_at: new Date().toISOString() }) + "\n");
+    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    try {
+      const tail = await adapter.getSessionMessages?.("thread-long", 200);
+      expect(tail).toHaveLength(50);
+      expect(tail?.some((item) => item.text === "original goal that must survive tail truncation")).toBe(false);
+      await expect(adapter.getFirstUserMessage?.("thread-long")).resolves.toMatchObject({
+        role: "user",
+        text: "original goal that must survive tail truncation",
+      });
+      expect(adapter.isReady()).toBe(false);
+    } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
   it("normalizes numeric native timestamps into AgentSession ISO strings", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-numeric-timestamp-"));
     const previous = process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS;

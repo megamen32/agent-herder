@@ -1,10 +1,11 @@
 import { HarnessAdapter, AgentSession, ControlResult, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessageView } from "../types/index.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { open, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { createInterface } from "node:readline";
 import { spawnDetachedWorkload } from "../workload-launcher.js";
 
 const execFileAsync = promisify(execFile);
@@ -35,6 +36,24 @@ interface CodexTranscriptItem {
     role?: string;
     model?: string;
     content?: Array<{ type?: string; text?: string }>;
+  };
+}
+
+function mapCodexMessage(id: string, item: CodexTranscriptItem & { timestamp?: string }, index: number, scope: "first" | "tail"): SessionMessageView | null {
+  if (item.type !== "response_item" || item.payload?.type !== "message") return null;
+  if (item.payload.role !== "user" && item.payload.role !== "assistant") return null;
+  const parts = (item.payload.content || [])
+    .filter((part) => part.type === "input_text" || part.type === "output_text")
+    .map((part) => ({ type: "text" as const, text: part.text || "" }))
+    .filter((part) => part.text.trim().length > 0);
+  const messageText = parts.map((part) => part.text).join("\n").trim();
+  if (!messageText) return null;
+  return {
+    id: `${id}:${scope}:${index}:${item.timestamp || ""}`,
+    role: item.payload.role,
+    timestamp: item.timestamp,
+    text: messageText,
+    parts,
   };
 }
 
@@ -253,21 +272,8 @@ export class CodexAdapter implements HarnessAdapter {
         for (let index = 0; index < lines.length; index++) {
           try {
             const item = JSON.parse(lines[index]) as CodexTranscriptItem & { timestamp?: string };
-            if (item.type !== "response_item" || item.payload?.type !== "message") continue;
-            if (item.payload.role !== "user" && item.payload.role !== "assistant") continue;
-            const parts = (item.payload.content || [])
-              .filter((part) => part.type === "input_text" || part.type === "output_text")
-              .map((part) => ({ type: "text" as const, text: part.text || "" }))
-              .filter((part) => part.text.trim().length > 0);
-            const messageText = parts.map((part) => part.text).join("\n").trim();
-            if (!messageText) continue;
-            messages.push({
-              id: `${id}:tail:${index}:${item.timestamp || ""}`,
-              role: item.payload.role,
-              timestamp: item.timestamp,
-              text: messageText,
-              parts,
-            });
+            const message = mapCodexMessage(id, item, index, "tail");
+            if (message) messages.push(message);
           } catch { /* partial or non-message line */ }
         }
         bestMessages = messages;
@@ -279,6 +285,28 @@ export class CodexAdapter implements HarnessAdapter {
       return bestMessages.slice(-target);
     } finally {
       await file.close();
+    }
+  }
+
+  async getFirstUserMessage(id: string): Promise<SessionMessageView | null> {
+    const state = (await this.getSessionStates()).get(id);
+    if (!state) return null;
+    const stream = createReadStream(state.filePath, { encoding: "utf8" });
+    const lines = createInterface({ input: stream, crlfDelay: Infinity });
+    let index = 0;
+    try {
+      for await (const line of lines) {
+        try {
+          const item = JSON.parse(line) as CodexTranscriptItem & { timestamp?: string };
+          const message = mapCodexMessage(id, item, index, "first");
+          if (message?.role === "user") return message;
+        } catch { /* malformed/non-message line */ }
+        index += 1;
+      }
+      return null;
+    } finally {
+      lines.close();
+      stream.destroy();
     }
   }
 

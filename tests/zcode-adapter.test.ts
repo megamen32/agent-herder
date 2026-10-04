@@ -89,6 +89,39 @@ class StaleStatusClient extends FakeClient {
   }
 }
 
+class LongTranscriptClient extends FakeClient {
+  readonly messages = [
+    {
+      info: { messageId: "original-user", sessionId: "session-1", role: "user", time: { created: 1_700_000_000_000 } },
+      parts: [{ partId: "original-part", sessionId: "session-1", messageId: "original-user", type: "text", text: "original zcode goal" }],
+    },
+    ...Array.from({ length: 210 }, (_, index) => ({
+      info: {
+        messageId: `later-${index}`,
+        sessionId: "session-1",
+        role: index % 2 ? "assistant" : "user",
+        time: { created: 1_700_000_001_000 + index },
+      },
+      parts: [{
+        partId: `later-part-${index}`,
+        sessionId: "session-1",
+        messageId: `later-${index}`,
+        type: "text",
+        text: `later zcode message ${index}`,
+      }],
+    })),
+  ];
+
+  override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+    if (channel === "zcode-agent" && method === "readSessionMessages") {
+      const limit = Number((args[0] as { limit?: number } | undefined)?.limit ?? 100);
+      return this.messages.slice(-limit);
+    }
+    if (channel === "zcode-agent" && method === "readSession") return { ...snapshot, messages: this.messages };
+    return super.call(channel, method, args);
+  }
+}
+
 describe("ZCode adapter", () => {
   it("persists native pinned state in the cross-workspace task index", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-pin-"));
@@ -243,6 +276,17 @@ describe("ZCode adapter", () => {
     });
   });
 
+  it("passes the explicit autonomous mode only for automation-owned sessions", async () => {
+    const client = new FakeClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    await adapter.createSession({ name: "autocontinue", cwd: "/workspace", mode: "yolo" });
+
+    const create = client.calls.find((call) => call.method === "createSession");
+    expect(create?.args[0]).toMatchObject({ mode: "yolo" });
+  });
+
   it("persists the requested session name after ZCode derives a prompt title", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-title-"));
     const dbPath = join(root, "tasks-index.sqlite");
@@ -378,6 +422,24 @@ describe("ZCode adapter", () => {
     expect(await adapter.respondPermission("session-1", "request-1", "allow")).toEqual({ ok: true });
     expect(await adapter.forkSession?.("session-1")).toEqual({ ok: false, error: expect.stringContaining("not supported") });
     await adapter.dispose();
+  });
+
+  it("reads the original user request independently of a 200-message native tail", async () => {
+    const client = new LongTranscriptClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+    try {
+      const tail = await adapter.getSessionMessages?.("session-1", 200);
+      expect(tail).toHaveLength(200);
+      expect(tail?.some((item) => item.id === "original-user")).toBe(false);
+      await expect(adapter.getFirstUserMessage?.("session-1")).resolves.toMatchObject({
+        id: "original-user",
+        role: "user",
+        text: "original zcode goal",
+      });
+    } finally {
+      await adapter.dispose();
+    }
   });
 
   it("recycles a wedged app-server when stopGeneration times out", async () => {

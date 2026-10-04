@@ -408,9 +408,12 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.modelIds = options.modelIds ?? [];
     this.useLocalConfig = !options.client;
     this.localDbPath = process.env.ZCODE_DB_PATH || join(homedir(), ".zcode", "cli", "db", "db.sqlite");
+    // An injected transport is an isolated embedding/test boundary: ambient
+    // desktop paths must not silently merge unrelated live sessions into it.
     this.tasksIndexDbPath = options.tasksIndexDbPath
-      ?? process.env.ZCODE_TASKS_INDEX_DB
-      ?? (this.useLocalConfig ? join(homedir(), ".zcode", "v2", "tasks-index.sqlite") : undefined);
+      ?? (this.useLocalConfig
+        ? process.env.ZCODE_TASKS_INDEX_DB || join(homedir(), ".zcode", "v2", "tasks-index.sqlite")
+        : undefined);
     if (options.client) {
       this.client = options.client;
     } else {
@@ -635,7 +638,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       // passing non-session values crashes this zcode-server build with an
       // NPE while resolving workspace defaults. Headless permission handling
       // is done via respond_permission approvals instead.
-      mode: "build",
+      mode: options.mode || "build",
       persistence: "immediate",
       ...(initialModel ? { model: initialModel } : {}),
       ...(initialModel?.options?.reasoningLevel ? { thoughtLevel: initialModel.options.reasoningLevel } : {}),
@@ -910,6 +913,56 @@ export class ZcodeAdapter implements HarnessAdapter {
       // absent. The CLI SQLite store remains the canonical local transcript.
     }
     return this.readLocalSessionMessages(id, limit);
+  }
+
+  async getFirstUserMessage(id: string): Promise<SessionMessageView | null> {
+    if (this.useLocalConfig) {
+      const local = await this.readLocalFirstUserMessage(id);
+      if (local || !this.isReady()) return local;
+    }
+    try {
+      const workspace = this.sessionWorkspaces.get(id) || this.workspace();
+      const snapshot = await this.readSnapshot(id, workspace);
+      const firstUser = (snapshot.messages ?? []).map(mapMessage).find((message) => message.role === "user");
+      if (firstUser) return firstUser;
+    } catch {
+      // Fall through to the canonical local store when the headless runtime
+      // cannot expose a desktop-created session.
+    }
+    return this.readLocalFirstUserMessage(id);
+  }
+
+  private async readLocalFirstUserMessage(id: string): Promise<SessionMessageView | null> {
+    if (!this.useLocalConfig || !existsSync(this.localDbPath)) return null;
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(this.localDbPath, { readOnly: true });
+      try {
+        const row = db.prepare(`
+          select id, data
+          from message indexed by message_session_sequence_idx
+          where session_id = ? and json_extract(data, '$.role') = 'user'
+          order by sequence, time_created, id
+          limit 1
+        `).get(id) as { id: string; data: string } | undefined;
+        if (!row) return null;
+        const data = JSON.parse(row.data) as Record<string, unknown>;
+        const parts = db.prepare(`
+          select data
+          from part
+          where session_id = ? and message_id = ?
+          order by sequence, time_created, id
+        `).all(id, row.id) as Array<{ data: string }>;
+        return mapMessage({
+          info: { ...data, messageId: row.id } as ZcodeMessage["info"],
+          parts: parts.map((part) => JSON.parse(part.data) as Record<string, unknown>),
+        }, 0);
+      } finally {
+        db.close();
+      }
+    } catch {
+      return null;
+    }
   }
 
   private async readLocalSessionMessages(id: string, limit: number): Promise<SessionMessageView[] | null> {

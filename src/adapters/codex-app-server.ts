@@ -333,6 +333,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     return this.rawTranscriptAdapter.getSessionMessages(id, limit);
   }
 
+  async getFirstUserMessage(id: string): Promise<SessionMessageView | null> {
+    return this.rawTranscriptAdapter.getFirstUserMessage(id);
+  }
+
   async listModels(): Promise<string[]> {
     return [...this.modelIds];
   }
