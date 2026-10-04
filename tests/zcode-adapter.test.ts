@@ -279,10 +279,17 @@ describe("ZCode adapter", () => {
       writer.close();
 
       await vi.advanceTimersByTimeAsync(300);
-      const reader = new DatabaseSync(dbPath, { readOnly: true });
-      const row = reader.prepare("select title from tasks where task_id = ?").get(created.id) as { title: string };
-      reader.close();
-      expect(row.title).toBe("Автопродолжение — Поздний индекс");
+      const firstReader = new DatabaseSync(dbPath, { readOnly: true });
+      expect((firstReader.prepare("select title from tasks where task_id = ?").get(created.id) as { title: string }).title).toBe("Автопродолжение — Поздний индекс");
+      firstReader.close();
+
+      const lateWriter = new DatabaseSync(dbPath);
+      lateWriter.prepare("update tasks set title = ? where task_id = ?").run("Продолжи технический хвост снова", created.id);
+      lateWriter.close();
+      await vi.advanceTimersByTimeAsync(15_000);
+      const finalReader = new DatabaseSync(dbPath, { readOnly: true });
+      expect((finalReader.prepare("select title from tasks where task_id = ?").get(created.id) as { title: string }).title).toBe("Автопродолжение — Поздний индекс");
+      finalReader.close();
       await adapter.dispose();
     } finally {
       vi.useRealTimers();

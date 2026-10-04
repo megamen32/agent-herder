@@ -723,18 +723,18 @@ export class ZcodeAdapter implements HarnessAdapter {
     } catch (error) {
       console.error(`[agent-herder] ZCode title persistence failed for ${id}: ${error instanceof Error ? error.message : String(error)}`);
     }
-    if (attempt >= 3) {
+    const delays = [250, 1_000, 3_000, 10_000, 30_000];
+    if (attempt >= delays.length) {
       this.desiredSessionTitles.delete(id);
       this.titlePersistenceTimers.delete(id);
       return;
     }
-    const delays = [250, 1_000, 3_000];
     const previous = this.titlePersistenceTimers.get(id);
     if (previous) clearTimeout(previous);
     const timer = setTimeout(() => {
       this.titlePersistenceTimers.delete(id);
       void this.persistDesiredSessionTitle(id, attempt + 1);
-    }, delays[attempt]);
+    }, delays[attempt]!);
     timer.unref?.();
     this.titlePersistenceTimers.set(id, timer);
   }
