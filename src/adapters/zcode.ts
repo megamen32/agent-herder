@@ -394,6 +394,8 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly titlePersistenceTimers = new Map<string, NodeJS.Timeout>();
   private reportedEmptyTasksIndex = false;
   private readonly sessionWorkspaces = new Map<string, ZcodeWorkspaceRef>();
+  /** Read-after-write identity for sessions created before the task index catches up. */
+  private readonly createdSessions = new Map<string, AgentSession>();
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
   private readonly sessionEventUnsubscribers = new Map<string, () => void>();
   private initialized = false;
@@ -465,6 +467,12 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
     const persisted = await this.listPersistedSessions(options);
+    const created = [...this.createdSessions.values()].filter((session) => !options.cwd || session.cwd === resolve(options.cwd));
+    const mergeCreated = (sessions: AgentSession[]): AgentSession[] => {
+      const merged = new Map(sessions.map((session) => [session.id, session]));
+      for (const session of created) if (!merged.has(session.id)) merged.set(session.id, session);
+      return [...merged.values()].sort((left, right) => Date.parse(right.lastActivity) - Date.parse(left.lastActivity));
+    };
     if (!options.cwd && persisted.length === 0 && !this.reportedEmptyTasksIndex) {
       this.reportedEmptyTasksIndex = true;
       console.error(`[agent-herder] ZCode tasks-index returned no sessions (local=${this.useLocalConfig}, path=${this.tasksIndexDbPath || "unset"})`);
@@ -473,7 +481,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     // turn a dashboard refresh into N live app-server workspace calls merely
     // because a prior resume made the transport ready. Scoped callers may
     // still request one workspace and receive a live overlay below.
-    if ((!options.cwd && persisted.length > 0) || (this.useLocalConfig && !this.isReady())) return persisted;
+    if ((!options.cwd && persisted.length > 0) || (this.useLocalConfig && !this.isReady())) return mergeCreated(persisted);
     const rows: Array<{ workspace: ZcodeWorkspaceRef; row: unknown }> = [];
     for (const workspace of await this.workspaceCandidates(options.cwd)) {
       try {
@@ -511,7 +519,15 @@ export class ZcodeAdapter implements HarnessAdapter {
       }
       sessions.set(mapped.id, mapped);
     }
-    return [...sessions.values()].sort((left, right) => Date.parse(right.lastActivity) - Date.parse(left.lastActivity));
+    return mergeCreated([...sessions.values()]);
+  }
+
+  async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {
+    const normalizedCwd = resolve(cwd);
+    const sessions = await this.listSessions({ cwd: normalizedCwd });
+    return sessions.filter((session) => session.cwd === normalizedCwd && (
+      session.title === name || this.desiredSessionTitles.get(session.id) === name
+    ));
   }
 
   private async listPersistedSessions(options: ListSessionsOptions): Promise<AgentSession[]> {
@@ -623,7 +639,9 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.desiredSessionTitles.set(info.sessionId, options.name);
     this.ensureSessionEventSubscription(info.sessionId, workspace);
     this.emitEvent({ kind: "session.created", harness: "zcode", sessionId: info.sessionId, status: "idle" });
-    return mapSession(snapshot, workspace.workspacePath, options.name);
+    const created = { ...mapSession(snapshot, workspace.workspacePath, options.name), title: options.name };
+    this.createdSessions.set(created.id, created);
+    return created;
   }
 
   async getParent(id: string): Promise<AgentSession | null> {

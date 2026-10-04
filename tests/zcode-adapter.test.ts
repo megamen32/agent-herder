@@ -249,6 +249,19 @@ describe("ZCode adapter", () => {
     }
   });
 
+  it("finds a newly created named session before the task index catches up", async () => {
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new FakeClient() });
+    await adapter.init();
+    const created = await adapter.createSession({ name: "same-id-canary", cwd: "/workspace" });
+
+    await expect(adapter.findNamedSessions?.("same-id-canary", "/workspace")).resolves.toMatchObject([{
+      id: created.id,
+      title: "same-id-canary",
+      cwd: "/workspace",
+    }]);
+    await adapter.dispose();
+  });
+
   it("retries the requested title when ZCode indexes the task after prompt admission", async () => {
     vi.useFakeTimers();
     const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-late-title-"));
