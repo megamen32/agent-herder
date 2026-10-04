@@ -9,6 +9,7 @@ const oldSession: AgentSession = {
 
 function adapter(messages: SessionMessageView[], harness: "codex" | "opencode" = "codex") {
   const sendMessage = vi.fn(async () => ({ ok: true }));
+  const setSessionPinned = vi.fn(async (sessionId: string, _pinned: boolean) => ({ ok: true, sessionId, error: undefined as string | undefined }));
   const createSession = vi.fn(async (options) => ({
     id: "new", harness, status: "idle" as const, title: options.name,
     cwd: options.cwd, model: options.model, lastActivity: "2026-10-03T11:00:00.000Z", needsPermission: false,
@@ -19,8 +20,9 @@ function adapter(messages: SessionMessageView[], harness: "codex" | "opencode" =
     async getSessionMessages() { return messages; }, async resumeSession() { return { ok: true }; },
     async stopSession() { return { ok: true }; }, async respondPermission() { return { ok: true }; },
     async setPermissions() { return { ok: true }; },
+    setSessionPinned,
   };
-  return { value, createSession, sendMessage };
+  return { value, createSession, sendMessage, setSessionPinned };
 }
 
 describe("cache-aware session handoff", () => {
@@ -79,6 +81,24 @@ describe("cache-aware session handoff", () => {
     expect(result).toMatchObject({ kind: "rolled_over", session: { id: "new", model: "gpt-5.6-sol", cwd: "/repo" } });
     expect(fixture.createSession).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-5.6-sol", cwd: "/repo" }));
     expect(fixture.sendMessage).toHaveBeenCalledWith("new", expect.objectContaining({ message: expect.stringContaining("Цель: доделать") }));
+  });
+
+  it("pins the delivered replacement before unpinning the stale source", async () => {
+    const fixture = adapter([{ id: "u", role: "user", text: "Доделай", parts: [{ type: "text", text: "Доделай" }] }]);
+    const service = new CacheHandoffService(new Map([["codex", fixture.value]]), { summarize: async () => "handoff" });
+    await expect(service.maybeRollover(oldSession, new Date("2026-10-03T10:31:00.000Z"), { movePinned: true }))
+      .resolves.toMatchObject({ kind: "rolled_over", session: { id: "new" } });
+    expect(fixture.setSessionPinned.mock.calls).toEqual([["new", true], ["old", false]]);
+    expect(fixture.sendMessage.mock.invocationCallOrder[0]).toBeLessThan(fixture.setSessionPinned.mock.invocationCallOrder[0]);
+  });
+
+  it("keeps the old pin when the replacement cannot be pinned", async () => {
+    const fixture = adapter([{ id: "u", role: "user", text: "Доделай", parts: [{ type: "text", text: "Доделай" }] }]);
+    fixture.setSessionPinned.mockResolvedValueOnce({ ok: false, error: "pin failed" });
+    const service = new CacheHandoffService(new Map([["codex", fixture.value]]), { summarize: async () => "handoff" });
+    await expect(service.maybeRollover(oldSession, new Date("2026-10-03T10:31:00.000Z"), { movePinned: true }))
+      .rejects.toThrow("pin failed");
+    expect(fixture.setSessionPinned.mock.calls).toEqual([["new", true]]);
   });
 
   it("keeps the same session when TTL is unknown or the cache is still fresh", async () => {

@@ -1,4 +1,4 @@
-import { HarnessAdapter, AgentSession, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessageView } from "../types/index.js";
+import { HarnessAdapter, AgentSession, ControlResult, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessageView } from "../types/index.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync } from "node:fs";
@@ -23,6 +23,7 @@ interface CodexSessionState {
   parentThreadId?: string;
   threadSource?: string;
   agentRole?: string;
+  pinned?: boolean;
   status?: "running" | "idle";
   updatedAtMs: number;
 }
@@ -90,6 +91,7 @@ export class CodexAdapter implements HarnessAdapter {
           ...(state?.parentThreadId ? { parentThreadId: state.parentThreadId } : {}),
           ...(state?.threadSource ? { threadSource: state.threadSource } : {}),
           ...(state?.agentRole ? { agentRole: state.agentRole } : {}),
+          pinned: state?.pinned ?? false,
         },
       };
     });
@@ -120,14 +122,40 @@ export class CodexAdapter implements HarnessAdapter {
     };
   }
 
-  async getNativeSessionMetadata(): Promise<Map<string, Pick<CodexSessionState, "parentThreadId" | "threadSource" | "agentRole" | "status">>> {
+  async getNativeSessionMetadata(): Promise<Map<string, Pick<CodexSessionState, "parentThreadId" | "threadSource" | "agentRole" | "status" | "pinned">>> {
     const states = await this.getSessionStates();
     return new Map([...states.entries()].map(([id, state]) => [id, {
       parentThreadId: state.parentThreadId,
       threadSource: state.threadSource,
       agentRole: state.agentRole,
       status: state.status,
+      pinned: state.pinned,
     }]));
+  }
+
+  async setSessionPinned(id: string, pinned: boolean): Promise<ControlResult> {
+    const databasePath = join(this.codexDir, "state_5.sqlite");
+    if (!existsSync(databasePath)) return { ok: false, error: "Codex state database is unavailable" };
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(databasePath);
+      try {
+        db.exec("pragma busy_timeout=5000");
+        const columns = db.prepare("pragma table_info(threads)").all() as Array<{ name?: string }>;
+        if (!columns.some((column) => column.name === "is_pinned")) {
+          return { ok: false, error: "Codex state database does not expose is_pinned" };
+        }
+        const changed = db.prepare("update threads set is_pinned = ? where id = ?").run(pinned ? 1 : 0, id);
+        if (Number(changed.changes) !== 1) return { ok: false, error: `Codex session ${id} is missing from the state database` };
+        const cached = this.sessionStatesCache?.get(id);
+        if (cached) cached.pinned = pinned;
+        return { ok: true, sessionId: id };
+      } finally {
+        db.close();
+      }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
@@ -434,12 +462,14 @@ export class CodexAdapter implements HarnessAdapter {
         const edges = new Map((db.prepare("select child_thread_id, parent_thread_id from thread_spawn_edges").all() as Array<{
           child_thread_id: string; parent_thread_id: string;
         }>).map((row) => [row.child_thread_id, row.parent_thread_id]));
+        const columns = db.prepare("pragma table_info(threads)").all() as Array<{ name?: string }>;
+        const pinnedColumn = columns.some((column) => column.name === "is_pinned") ? "is_pinned" : "0 as is_pinned";
         const rows = db.prepare(`
-          select id, rollout_path, cwd, model, preview, updated_at_ms, thread_source, agent_role
+          select id, rollout_path, cwd, model, preview, updated_at_ms, thread_source, agent_role, ${pinnedColumn}
           from threads
         `).all() as Array<{
           id: string; rollout_path: string; cwd?: string; model?: string; preview?: string;
-          updated_at_ms?: number; thread_source?: string; agent_role?: string;
+          updated_at_ms?: number; thread_source?: string; agent_role?: string; is_pinned?: number;
         }>;
         const result = new Map<string, CodexSessionState>();
         for (const row of rows) {
@@ -452,6 +482,7 @@ export class CodexAdapter implements HarnessAdapter {
             parentThreadId: edges.get(row.id),
             threadSource: row.thread_source,
             agentRole: row.agent_role,
+            pinned: row.is_pinned === 1,
             updatedAtMs: normalizeEpochMs(row.updated_at_ms),
           });
         }

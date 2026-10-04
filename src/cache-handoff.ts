@@ -22,6 +22,22 @@ export interface CacheHandoffResult {
   cache: CacheWindow;
 }
 
+/** Pin the replacement first, then remove stale pins so a failed pin never loses the old anchor. */
+export async function movePinnedContinuation(
+  adapter: HarnessAdapter,
+  sourceSessionIds: string[],
+  replacementSessionId: string,
+): Promise<void> {
+  if (!adapter.setSessionPinned) return;
+  const pinned = await adapter.setSessionPinned(replacementSessionId, true);
+  if (!pinned.ok) throw new Error(pinned.error || `не удалось закрепить новую сессию ${replacementSessionId}`);
+  for (const sourceSessionId of [...new Set(sourceSessionIds)]) {
+    if (sourceSessionId === replacementSessionId) continue;
+    const unpinned = await adapter.setSessionPinned(sourceSessionId, false);
+    if (!unpinned.ok) throw new Error(unpinned.error || `не удалось снять закрепление со старой сессии ${sourceSessionId}`);
+  }
+}
+
 export interface SessionSummarizer {
   summarize(source: string): Promise<string>;
 }
@@ -121,7 +137,7 @@ export class CacheHandoffService {
     private readonly env: NodeJS.ProcessEnv = process.env,
   ) {}
 
-  async maybeRollover(session: AgentSession, now = new Date()): Promise<CacheHandoffResult> {
+  async maybeRollover(session: AgentSession, now = new Date(), options: { movePinned?: boolean } = {}): Promise<CacheHandoffResult> {
     const ageMs = Math.max(0, now.getTime() - Date.parse(session.lastActivity));
     const cache = cacheWindowFor(session, this.env);
     if (!cache.ttlMs) return { kind: "unknown", ageMs, cache };
@@ -144,6 +160,7 @@ export class CacheHandoffService {
     }
     const sent = await adapter.sendMessage(created.id, { message: handoffPrompt(summary), queue: false });
     if (!sent.ok) throw new Error(sent.error || "новая сессия не приняла handoff");
+    if (options.movePinned) await movePinnedContinuation(adapter, [session.id], created.id);
     await this.lineage?.record({
       sessionKey: `${session.harness}:${created.id}`,
       parentKey: `${session.harness}:${session.id}`,

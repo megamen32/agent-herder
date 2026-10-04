@@ -8,6 +8,26 @@ import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
 
 describe("Codex app-server adapter", () => {
+  it("persists native pinned state without starting a second app-server", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-pin-"));
+    const dbPath = join(codexDir, "state_5.sqlite");
+    const db = new DatabaseSync(dbPath);
+    db.exec("create table threads (id text primary key, is_pinned integer not null default 0)");
+    db.prepare("insert into threads (id, is_pinned) values (?, 0)").run("thread-pin");
+    db.close();
+    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    try {
+      await expect(adapter.setSessionPinned?.("thread-pin", true)).resolves.toMatchObject({ ok: true, sessionId: "thread-pin" });
+      const reader = new DatabaseSync(dbPath, { readOnly: true });
+      expect(reader.prepare("select is_pinned from threads where id = ?").get("thread-pin")).toMatchObject({ is_pinned: 1 });
+      reader.close();
+      expect(adapter.isReady()).toBe(false);
+    } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
   it("keeps sparse Codex messages found within the bounded transcript tail", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-sparse-tail-"));
     const sessionDir = join(codexDir, "sessions", "2026", "10", "03");

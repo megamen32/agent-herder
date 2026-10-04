@@ -273,6 +273,9 @@ export interface HarnessAdapter {
   /** Change the model used by a session or globally for this harness */
   changeModel?(sessionId: string, model: string): Promise<{ ok: boolean; error?: string }>;
 
+  /** Persist the session's native pinned state when the harness exposes one. */
+  setSessionPinned?(sessionId: string, pinned: boolean): Promise<ControlResult>;
+
   /** Get the full transcript of a session for summarization */
   getTranscript?(id: string): Promise<string | null>;
 

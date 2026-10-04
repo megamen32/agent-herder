@@ -653,9 +653,10 @@ describe("unfinished session launcher", () => {
     await writeFile(path, JSON.stringify({ version: 1, enabled: true, sessions: [] }));
     const settingsStore = new SessionAutostartStore(path, {});
     expect(await settingsStore.getSettings()).toMatchObject({
-      version: 4,
+      version: 5,
       enabled: true,
       rolloverExpiredCache: true,
+      movePinnedOnRollover: true,
       inventoryWindowHours: 48,
       evidenceMessageCount: 4,
       judgeModel: "MiniMax-M3.1-Flash-Preview",
@@ -667,7 +668,7 @@ describe("unfinished session launcher", () => {
     expect(await settingsStore.getEffective("codex", "session-2", "/tmp/codex")).toMatchObject({ enabled: true, source: "global" });
   });
 
-  it("persists the expired-cache rollover choice and defaults legacy v3 files to rollover", async () => {
+  it("persists rollover choices and defaults legacy files to moving the pin", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-rollover-setting-"));
     const path = join(root, "settings.json");
     await writeFile(path, JSON.stringify({
@@ -675,15 +676,16 @@ describe("unfinished session launcher", () => {
       judgeModel: "MiniMax-M3.1-Flash-Preview", autopilotJudgeModel: "MiniMax-M3", harnesses: [], sessions: [],
     }));
     const settingsStore = new SessionAutostartStore(path, {});
-    await expect(settingsStore.getSettings()).resolves.toMatchObject({ version: 4, rolloverExpiredCache: true, source: "persisted" });
+    await expect(settingsStore.getSettings()).resolves.toMatchObject({ version: 5, rolloverExpiredCache: true, movePinnedOnRollover: true, source: "persisted" });
     await settingsStore.setRuntimeSettings({
       inventoryWindowHours: 48,
       evidenceMessageCount: 4,
       judgeModel: "MiniMax-M3.1-Flash-Preview",
       autopilotJudgeModel: "MiniMax-M3",
       rolloverExpiredCache: false,
+      movePinnedOnRollover: false,
     });
-    await expect(new SessionAutostartStore(path, {}).getSettings()).resolves.toMatchObject({ version: 4, rolloverExpiredCache: false, source: "persisted" });
+    await expect(new SessionAutostartStore(path, {}).getSettings()).resolves.toMatchObject({ version: 5, rolloverExpiredCache: false, movePinnedOnRollover: false, source: "persisted" });
   });
 
   it("retries inside one Herder process and stops after the configured attempt budget", async () => {

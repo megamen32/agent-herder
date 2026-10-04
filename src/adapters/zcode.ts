@@ -543,8 +543,10 @@ export class ZcodeAdapter implements HarnessAdapter {
       const { DatabaseSync } = await import("node:sqlite");
       const db = new DatabaseSync(dbPath, { readOnly: true });
       try {
+        const columns = db.prepare("pragma table_info(tasks)").all() as Array<{ name?: string }>;
+        const pinnedColumn = columns.some((column) => column.name === "pinned") ? "pinned" : "0 as pinned";
         const rows = db.prepare(`
-          select task_id, workspace_path, title, task_status, model, created_at, updated_at
+          select task_id, workspace_path, title, task_status, model, created_at, updated_at, ${pinnedColumn}
           from tasks
           where coalesce(deleted, 0) = 0 and coalesce(archived, 0) = 0
           ${options.cwd ? "and workspace_path = ?" : ""}
@@ -558,6 +560,7 @@ export class ZcodeAdapter implements HarnessAdapter {
           model?: string | null;
           created_at?: number;
           updated_at?: number;
+          pinned?: number;
         }>;
         const activeWindowMs = Number(process.env.AGENT_HERDER_ACTIVE_WINDOW_MS || 5 * 60 * 1_000);
         return rows.map((row) => {
@@ -580,7 +583,7 @@ export class ZcodeAdapter implements HarnessAdapter {
             lastActivity: timestamp(updatedAt),
             model: nonEmptyString(row.model),
             needsPermission: status === "needs_input",
-            meta: { persistedTaskStatus: rawStatus, discoverySource: "tasks-index" },
+            meta: { persistedTaskStatus: rawStatus, discoverySource: "tasks-index", pinned: row.pinned === 1 },
           };
         });
       } finally {
@@ -737,6 +740,39 @@ export class ZcodeAdapter implements HarnessAdapter {
     }, delays[attempt]!);
     timer.unref?.();
     this.titlePersistenceTimers.set(id, timer);
+  }
+
+  async setSessionPinned(id: string, pinned: boolean): Promise<ControlResult> {
+    if (!this.tasksIndexDbPath || !existsSync(this.tasksIndexDbPath)) {
+      return { ok: false, error: "ZCode tasks index is unavailable" };
+    }
+    const delays = [0, 50, 100, 250, 500, 1_000, 2_000];
+    let lastError = `ZCode session ${id} is missing from the tasks index`;
+    for (const delayMs of delays) {
+      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+      try {
+        const { DatabaseSync } = await import("node:sqlite");
+        const db = new DatabaseSync(this.tasksIndexDbPath);
+        try {
+          db.exec("pragma busy_timeout=5000");
+          const columns = db.prepare("pragma table_info(tasks)").all() as Array<{ name?: string }>;
+          if (!columns.some((column) => column.name === "pinned")) {
+            return { ok: false, error: "ZCode tasks index does not expose pinned" };
+          }
+          const changed = db.prepare("update tasks set pinned = ? where task_id = ? and coalesce(deleted, 0) = 0").run(pinned ? 1 : 0, id);
+          if (Number(changed.changes) > 0) {
+            const created = this.createdSessions.get(id);
+            if (created) created.meta = { ...created.meta, pinned };
+            return { ok: true, sessionId: id };
+          }
+        } finally {
+          db.close();
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    return { ok: false, error: lastError };
   }
 
   async stopSession(id: string): Promise<ControlResult> {

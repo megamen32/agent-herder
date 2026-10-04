@@ -325,6 +325,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
   }
 
+  async setSessionPinned(sessionId: string, pinned: boolean): Promise<ControlResult> {
+    return this.rawTranscriptAdapter.setSessionPinned(sessionId, pinned);
+  }
+
   async getSessionMessages(id: string, limit = 12): Promise<SessionMessageView[] | null> {
     return this.rawTranscriptAdapter.getSessionMessages(id, limit);
   }

@@ -90,6 +90,24 @@ class StaleStatusClient extends FakeClient {
 }
 
 describe("ZCode adapter", () => {
+  it("persists native pinned state in the cross-workspace task index", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-pin-"));
+    const dbPath = join(root, "tasks-index.sqlite");
+    const db = new DatabaseSync(dbPath);
+    db.exec("create table tasks (task_id text primary key, pinned integer not null default 0, deleted integer not null default 0)");
+    db.prepare("insert into tasks (task_id, pinned, deleted) values (?, 0, 0)").run("session-pin");
+    db.close();
+    try {
+      const adapter = new ZcodeAdapter({ client: new FakeClient(), tasksIndexDbPath: dbPath });
+      await expect(adapter.setSessionPinned?.("session-pin", true)).resolves.toMatchObject({ ok: true, sessionId: "session-pin" });
+      const reader = new DatabaseSync(dbPath, { readOnly: true });
+      expect(reader.prepare("select pinned from tasks where task_id = ?").get("session-pin")).toMatchObject({ pinned: 1 });
+      reader.close();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("discovers persisted sessions across workspaces before the live app-server is ready", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-index-"));
     const dbPath = join(root, "tasks-index.sqlite");

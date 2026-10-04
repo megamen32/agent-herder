@@ -42,6 +42,8 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('работает независимо от автопилота');
     expect(main).toContain('aria-label="Глобальное автопродолжение"');
     expect(main).toContain('Продолжить задачу в новой сессии');
+    expect(main).toContain('Переносить закрепление на продолжение');
+    expect(main).toContain('сначала закрепит новую Codex/ZCode сессию, затем снимет закрепление со старых');
     expect(main).toContain('provider-cache TTL');
     expect(main).toContain('className="settings-group session-autocontinue-setting"');
     expect(main).toContain('Искать сессии за последние часы');
