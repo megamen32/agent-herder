@@ -390,6 +390,35 @@ describe("ZCode adapter", () => {
     const firstSend = methods.indexOf("sendPrompt");
     expect(methods[firstSend + 1]).toBe("resumeSession");
     expect(methods[firstSend + 2]).toBe("sendPrompt");
+    expect(methods[firstSend + 3]).toBe("resumeSession");
+
+    await adapter.dispose();
+  });
+
+  it("requires both sequential prompts to wake the same resumed session", async () => {
+    class SecondWakeFailsClient extends FakeClient {
+      resumeCalls = 0;
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "resumeSession") {
+          this.calls.push({ channel, method, args });
+          this.resumeCalls += 1;
+          if (this.resumeCalls === 2) throw new Error("second wake failed");
+          return snapshot;
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new SecondWakeFailsClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    await expect(adapter.sendMessage("session-1", { message: "first continuation", queue: true })).resolves.toEqual({ ok: true });
+    await expect(adapter.sendMessage("session-1", { message: "second continuation", queue: true })).resolves.toEqual({
+      ok: false,
+      error: "second wake failed",
+    });
+    expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(2);
+    expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(2);
 
     await adapter.dispose();
   });

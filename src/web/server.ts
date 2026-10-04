@@ -13,7 +13,7 @@ import { HumanRequestRegistry } from "../human-request/index.js";
 import { buildSessionProgress } from "../health-progress.js";
 import { healthModelForHarness, normalizeHealthExecution } from "../health-remediation.js";
 import { convertHermesExport } from "../hermes-conversion.js";
-import { AgentResumeClient, resumeBoundTarget, type ResumeReceipt, type ResumeTransportRequest } from "../resume-transport.js";
+import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "../resume-transport.js";
 import { ChoiceRegistry, ChoiceRegistryLockUnavailableError, type PendingChoice } from "../autopilot/choice-registry.js";
 import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../autopilot/policy-store.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
@@ -102,6 +102,40 @@ function localHookTimeoutReceipt(choice: PendingChoice): ResumeReceipt {
   };
 }
 
+/** Route Codex through Herder's single native app-server writer; legacy
+ * agent-resume remains the provider for harnesses that do not have this seam. */
+async function resumeSelectedTarget(request: ResumeTransportRequest, supervisor: SessionSupervisor): Promise<ResumeReceipt> {
+  if (request.target.agent !== "codex") return new AgentResumeClient().resume(request);
+  const prompt = request.prompt ?? request.goal ?? `Human Request resolved: ${request.result_ref}`;
+  try {
+    const result = await supervisor.sendMessage("codex", request.target.session_id, { message: prompt, queue: false });
+    if (!result.ok) {
+      return {
+        status: "failed",
+        target: request.target,
+        result_ref: request.result_ref,
+        reason: result.error || "Codex native resume failed",
+        ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
+      };
+    }
+    return {
+      status: "accepted",
+      target: request.target,
+      result_ref: request.result_ref,
+      receipt_ref: `agent-herder://codex/${request.target.session_id}/${request.idempotency_key ?? request.result_ref}`,
+      ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
+    };
+  } catch (error) {
+    return {
+      status: "failed",
+      target: request.target,
+      result_ref: request.result_ref,
+      reason: error instanceof Error ? error.message : String(error),
+      ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
+    };
+  }
+}
+
 async function completeManualChoiceResume(
   response: ServerResponse,
   choiceRegistry: ChoiceRegistry,
@@ -144,6 +178,9 @@ async function completeManualChoiceResume(
     });
   }
   const resumed = await choiceRegistry.markResumed(pending.requestId, pending.choiceId);
+  const transport = "receipt_ref" in receipt && receipt.receipt_ref?.startsWith("agent-herder://codex/")
+    ? "codex-app-server"
+    : "agent-resume";
   return sendJson(response, 202, {
     request_id: resumed.requestId,
     status: resumed.status,
@@ -151,7 +188,7 @@ async function completeManualChoiceResume(
     session_id: resumed.sessionId,
     resumed: true,
     ...(recovered ? { recovered: true } : {}),
-    transport: "agent-resume",
+    transport,
   });
 }
 
@@ -423,9 +460,10 @@ export function createWebServer(dependencies: WebDependencies): Server {
     ? dependencies.herderEvents.subscribe((event) => { mcpHttp.notify.resourceUpdated(event.uri); })
     : undefined;
   const mcpAuthToken = dependencies.mcpAuthToken?.trim() || undefined;
+  const selectedResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor));
   const server = createServer(async (request, response) => {
     try {
-      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, dependencies.choiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents);
+      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents);
     } catch (err) {
       if (err instanceof SessionNotFoundError) {
         sendJson(response, 404, { error: "Session not found" });
@@ -450,7 +488,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
       ),
       resume: async (choice) => {
         if (choice.harness === "hermes" || choice.harness === "zcode") return localHookTimeoutReceipt(choice);
-        return new AgentResumeClient().resume(buildTimeoutResumeRequest(choice));
+        return selectedResume(buildTimeoutResumeRequest(choice));
       },
       query: async (choice) => {
         if (choice.harness === "hermes" || choice.harness === "zcode") return localHookTimeoutReceipt(choice);
@@ -642,12 +680,14 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!sessionAutostartStore) return sendJson(response, 503, { error: "Session autostart settings are disabled" });
     if (request.method === "GET") return sendJson(response, 200, await sessionAutostartStore.getSettings());
     const body = await readJson(request);
-    if (body.inventoryWindowHours !== undefined || body.evidenceMessageCount !== undefined || body.judgeModel !== undefined || body.autopilotJudgeModel !== undefined) {
-      if (typeof body.inventoryWindowHours !== "number" || typeof body.evidenceMessageCount !== "number" || typeof body.judgeModel !== "string" || typeof body.autopilotJudgeModel !== "string") {
-        return sendJson(response, 400, { error: "inventoryWindowHours, evidenceMessageCount, judgeModel and autopilotJudgeModel are required" });
+    if (body.rolloverExpiredCache !== undefined || body.inventoryWindowHours !== undefined || body.evidenceMessageCount !== undefined || body.judgeModel !== undefined || body.autopilotJudgeModel !== undefined) {
+      if (typeof body.enabled !== "boolean" || typeof body.rolloverExpiredCache !== "boolean" || typeof body.inventoryWindowHours !== "number" || typeof body.evidenceMessageCount !== "number" || typeof body.judgeModel !== "string" || typeof body.autopilotJudgeModel !== "string") {
+        return sendJson(response, 400, { error: "enabled, rolloverExpiredCache, inventoryWindowHours, evidenceMessageCount, judgeModel and autopilotJudgeModel are required" });
       }
       try {
         return sendJson(response, 200, { ...await sessionAutostartStore.setRuntimeSettings({
+          enabled: body.enabled,
+          rolloverExpiredCache: body.rolloverExpiredCache,
           inventoryWindowHours: body.inventoryWindowHours,
           evidenceMessageCount: body.evidenceMessageCount,
           judgeModel: body.judgeModel,
@@ -853,7 +893,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const resumeTarget = target.agent === "hermes"
       ? { agent: "hermes" as const, locator: target.locator as unknown as import("../resume-transport.js").HermesResumeLocator }
       : { agent: target.agent as "codex" | "opencode" | "claude", session_id: target.sessionId, cwd: target.cwd!, ...(target.marker ? { marker: target.marker } : {}) };
-    const receipt = await resumeBoundTarget({ target: resumeTarget, result_ref: body.result_ref });
+    const receipt = await (choiceResume ?? ((input) => resumeSelectedTarget(input, supervisor)))({ target: resumeTarget, result_ref: body.result_ref });
     const record = receipt.status === "accepted"
       ? await humanRequests.completeResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: receipt.receipt_ref })
       : await humanRequests.failResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: `agent-resume:${receipt.reason}` });

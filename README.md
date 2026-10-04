@@ -65,8 +65,11 @@ opencode serve
 - Unfinished turns survive an Agent Herder restart. This is a separate,
   opt-out feature from autopilot: it is enabled by default, records only a
   turn that actually started, and continues the same harness/session/model
-  sequentially after restart. Disable it globally with
-  `AGENT_HERDER_UNFINISHED_AUTOSTART=false` or use the per-session switch/API.
+  sequentially while the provider cache is fresh. After the documented cache
+  TTL it can create a compact same-harness handoff; that rollover is a
+  persisted Autocontinue setting and defaults on. Disable continuation globally
+  with `AGENT_HERDER_UNFINISHED_AUTOSTART=false` or use the Web UI's separate
+  Autocontinue master, harness, and per-session switches.
 - `respond_permission` answers tool-permission requests remotely — this is
   how headless agents get unstuck while nobody is watching.
 
@@ -272,7 +275,11 @@ ServersAdministartion.
 
 Restart continuation settings are available at `GET/PUT
 /api/session-autostart` and `GET/PUT/DELETE
-/api/session-autostart/sessions/{harness}/{sessionId}`. The independent
+/api/session-autostart/sessions/{harness}/{sessionId}`. `PUT
+/api/session-autostart` persists `rolloverExpiredCache`: fresh sessions always
+resume in place; expired sessions use a new summarized handoff only when that
+switch is enabled. Autocontinue and Autopilot are separate top-level Web UI
+settings and never toggle each other. The independent
 durable state lives under `AGENT_HERDER_AUTOPILOT_STATE_DIR` by default.
 Recovery is sequential, retries three times with persisted exponential
 backoff, never forks or changes the model/provider, and emits a Russian

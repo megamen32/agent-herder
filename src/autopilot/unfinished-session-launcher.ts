@@ -27,8 +27,10 @@ export type SessionAutostartHarnessOverride = {
 };
 
 export type SessionAutostartFile = {
-  version: 3;
+  version: 4;
   enabled: boolean;
+  /** Start a compact replacement after the provider cache window expires. */
+  rolloverExpiredCache: boolean;
   inventoryWindowHours: number;
   evidenceMessageCount: number;
   judgeModel: string;
@@ -65,7 +67,7 @@ export class SessionAutostartStore {
     return this.mutate((file) => { file.enabled = enabled; return cloneAutostartFile(file); });
   }
 
-  async setRuntimeSettings(input: { inventoryWindowHours: number; evidenceMessageCount: number; judgeModel: string; autopilotJudgeModel: string }): Promise<SessionAutostartFile> {
+  async setRuntimeSettings(input: { enabled?: boolean; inventoryWindowHours: number; evidenceMessageCount: number; judgeModel: string; autopilotJudgeModel: string; rolloverExpiredCache?: boolean }): Promise<SessionAutostartFile> {
     const inventoryWindowHours = positiveInteger(input.inventoryWindowHours, -1);
     if (inventoryWindowHours < 1 || inventoryWindowHours > 24 * 90) throw new Error("inventoryWindowHours must be an integer from 1 to 2160");
     const evidenceMessageCount = positiveInteger(input.evidenceMessageCount, -1);
@@ -73,11 +75,15 @@ export class SessionAutostartStore {
     const judgeModel = boundedText(input.judgeModel, "judgeModel", 256).trim();
     const autopilotJudgeModel = boundedText(input.autopilotJudgeModel, "autopilotJudgeModel", 256).trim();
     if (!judgeModel || !autopilotJudgeModel) throw new Error("judge models must not be empty");
+    if (input.enabled !== undefined && typeof input.enabled !== "boolean") throw new Error("enabled must be a boolean");
+    if (input.rolloverExpiredCache !== undefined && typeof input.rolloverExpiredCache !== "boolean") throw new Error("rolloverExpiredCache must be a boolean");
     return this.mutate((file) => {
+      if (input.enabled !== undefined) file.enabled = input.enabled;
       file.inventoryWindowHours = inventoryWindowHours;
       file.evidenceMessageCount = evidenceMessageCount;
       file.judgeModel = judgeModel;
       file.autopilotJudgeModel = autopilotJudgeModel;
+      if (input.rolloverExpiredCache !== undefined) file.rolloverExpiredCache = input.rolloverExpiredCache;
       return cloneAutostartFile(file);
     });
   }
@@ -229,6 +235,7 @@ export interface SessionBatchPlan {
 }
 
 type AssessedSession = SessionBatchCandidate & { adapter: HarnessAdapter };
+type DiscoveryOutcome = "ready" | "idle" | "blocked";
 
 type UnfinishedSessionFile = {
   version: 1;
@@ -430,6 +437,8 @@ export class UnfinishedSessionLauncher {
   private retryTimer?: NodeJS.Timeout;
   private started = false;
   private readonly completedSessions = new Set<string>();
+  /** Sessions already continued by the batch planner in the current recovery pass. */
+  private readonly continuedThisRecovery = new Set<string>();
 
   constructor(private readonly options: UnfinishedSessionLauncherOptions) {
     this.maxAttempts = positiveInteger(options.maxAttempts ?? Number(process.env.AGENT_HERDER_AUTOSTART_MAX_ATTEMPTS || 3), 3);
@@ -534,7 +543,9 @@ export class UnfinishedSessionLauncher {
   }
 
   private async runRecovery(): Promise<void> {
-    if (!await this.discoverUnfinishedSessions()) return;
+    this.continuedThisRecovery.clear();
+    const discovery = await this.discoverUnfinishedSessions();
+    if (discovery === "blocked") return;
     // Deliberately sequential: a restart must not multiply the host's agent workload.
     let resumedThisCycle = 0;
     const launches: Array<Promise<void>> = [];
@@ -542,6 +553,7 @@ export class UnfinishedSessionLauncher {
     records.sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt));
     for (const record of records) {
       if (!isAutocontinueInventoryHarness(record.harness)) continue;
+      if (this.continuedThisRecovery.has(sessionKey(record.harness, record.sessionId))) continue;
       if (record.state === "exhausted") {
         await this.notifyExhausted(record);
         continue;
@@ -597,7 +609,8 @@ export class UnfinishedSessionLauncher {
       needsPermission: false,
     };
     try {
-      if (session && this.options.cacheHandoff) {
+      const runtimeSettings = await this.options.settingsStore.getSettings();
+      if (runtimeSettings.rolloverExpiredCache && session && this.options.cacheHandoff) {
         const handoff = await this.options.cacheHandoff.maybeRollover(session);
         if (handoff.kind === "rolled_over" && handoff.session) {
           await this.options.store.remove(record.harness, record.sessionId);
@@ -628,7 +641,7 @@ export class UnfinishedSessionLauncher {
     }
   }
 
-  private async discoverUnfinishedSessions(): Promise<boolean> {
+  private async discoverUnfinishedSessions(): Promise<DiscoveryOutcome> {
     const runtimeSettings = await this.options.settingsStore.getSettings();
     const inventoryWindowMs = this.options.inventoryWindowMs
       ?? runtimeSettings.inventoryWindowHours * 60 * 60 * 1_000;
@@ -691,13 +704,16 @@ export class UnfinishedSessionLauncher {
         try {
           const plan = await this.options.judge.plan({ sessions: assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail })) });
           await this.applyBatchPlan(plan, assessed);
-          return true;
+          return "ready";
         } catch (error) {
           console.error(`[agent-herder] единый план MiniMax не построен; посессионный fallback запрещён: ${errorText(error)}`);
-          return false;
+          return "blocked";
         }
       }
-      if (assessed.length === 0) return false;
+      // Empty fresh inventory is not an unsafe planner failure. Persisted
+      // turn.started records may still be recoverable by exact session ID even
+      // when ZCode's cross-workspace task index is temporarily incomplete.
+      if (assessed.length === 0) return "idle";
     }
     let judgements = 0;
     const equivalentSessions = new Map<string, string>();
@@ -760,10 +776,11 @@ export class UnfinishedSessionLauncher {
       known.add(key);
     }
     await this.options.store.upsertInventoryBatch(inventoryBatch);
-    return true;
+    return "ready";
   }
 
   private async applyBatchPlan(plan: SessionBatchPlan, assessed: AssessedSession[]): Promise<void> {
+    const runtimeSettings = await this.options.settingsStore.getSettings();
     const byId = new Map(assessed.map((candidate) => [candidate.session.id, candidate]));
     const latestActivity = (group: SessionBatchPlanGroup): number => Math.max(...group.sourceSessionIds.map((id) => Date.parse(byId.get(id)!.session.lastActivity)));
     const groups = [...plan.groups].sort((left, right) => latestActivity(right) - latestActivity(left));
@@ -833,7 +850,7 @@ export class UnfinishedSessionLauncher {
 
       const cache = cacheWindowFor(primary.session);
       const cacheAgeMs = Math.max(0, Date.now() - Date.parse(primary.session.lastActivity));
-      const reuseExisting = !cache.ttlMs || cacheAgeMs < cache.ttlMs;
+      const reuseExisting = !runtimeSettings.rolloverExpiredCache || !cache.ttlMs || cacheAgeMs < cache.ttlMs;
       if (reuseExisting && primary.adapter.resumeSession) {
         launched += 1;
         try {
@@ -842,6 +859,7 @@ export class UnfinishedSessionLauncher {
           const sent = await primary.adapter.sendMessage(primary.session.id, { message: handoff, queue: true });
           if (!sent.ok) throw new Error(sent.error || "исходная сессия не приняла объединённый handoff");
           await this.options.store.markStarted(primary.session, this.generationId);
+          this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
           for (const source of sources) {
             if (source.session.id === primary.session.id) pushInventory(source);
             else {
@@ -859,7 +877,25 @@ export class UnfinishedSessionLauncher {
           continue;
         } catch (error) {
           launched = Math.max(0, launched - 1);
-          console.error(`[agent-herder] исходная сессия ${primary.session.harness}:${primary.session.id} не возобновилась; создаётся продолжение: ${errorText(error)}`);
+          const failure = errorText(error);
+          if (isBusyCodexWriter(primary.session.harness, failure)) {
+            const inbox = this.options.deferredStore ?? deferredMessages;
+            const pending = await inbox.list(primary.session.id);
+            if (!pending.some((message) => message.message === handoff)) await inbox.add(primary.session.id, handoff);
+            await this.options.store.markStarted(primary.session, this.generationId);
+            this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
+            for (const source of sources) pushInventory(source);
+            console.error(`[agent-herder] единый план Codex отложен до безопасной границы хода ${primary.session.id}`);
+            continue;
+          }
+          // A fresh cache window (or an explicit rollover opt-out) promises
+          // same-ID continuation. A transient attach/send failure must remain
+          // retryable on that session instead of silently creating a fork.
+          await this.options.store.markStarted(primary.session, this.generationId);
+          this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
+          for (const source of sources) pushInventory(source);
+          console.error(`[agent-herder] исходная сессия ${primary.session.harness}:${primary.session.id} не возобновилась; новая сессия до TTL не создаётся: ${failure}`);
+          continue;
         }
       }
 
@@ -886,6 +922,7 @@ export class UnfinishedSessionLauncher {
         const sent = await primary.adapter.sendMessage(created.id, { message: handoff, queue: true });
         if (!sent.ok) throw new Error(sent.error || "новая объединённая сессия не приняла handoff");
         await this.options.store.markStarted(created, this.generationId);
+        this.continuedThisRecovery.add(sessionKey(created.harness, created.id));
         for (const source of sources) {
           pushInventory(source, {
             verdict: "completed",
@@ -943,17 +980,18 @@ export class UnfinishedSessionLauncher {
 function parseAutostartFile(value: unknown, env: NodeJS.ProcessEnv = process.env): SessionAutostartFile {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("session autostart settings must be an object");
   const object = value as Record<string, unknown>;
-  if ((object.version !== 1 && object.version !== 2 && object.version !== 3) || typeof object.enabled !== "boolean" || !Array.isArray(object.sessions)) throw new Error("invalid session autostart settings");
-  const harnesses = object.version === 2 || object.version === 3 ? object.harnesses : [];
+  if ((object.version !== 1 && object.version !== 2 && object.version !== 3 && object.version !== 4) || typeof object.enabled !== "boolean" || !Array.isArray(object.sessions)) throw new Error("invalid session autostart settings");
+  const harnesses = object.version === 2 || object.version === 3 || object.version === 4 ? object.harnesses : [];
   if (!Array.isArray(harnesses)) throw new Error("invalid session autostart harness overrides");
   const defaults = defaultAutostartFile(env);
   return {
-    version: 3,
+    version: 4,
     enabled: object.enabled,
-    inventoryWindowHours: object.version === 3 ? runtimeHours(object.inventoryWindowHours) : defaults.inventoryWindowHours,
-    evidenceMessageCount: object.version === 3 && object.evidenceMessageCount !== undefined ? evidenceCount(object.evidenceMessageCount) : defaults.evidenceMessageCount,
-    judgeModel: object.version === 3 ? runtimeModel(object.judgeModel, "judgeModel") : defaults.judgeModel,
-    autopilotJudgeModel: object.version === 3 ? runtimeModel(object.autopilotJudgeModel, "autopilotJudgeModel") : defaults.autopilotJudgeModel,
+    rolloverExpiredCache: object.version === 4 ? booleanSetting(object.rolloverExpiredCache, "rolloverExpiredCache") : defaults.rolloverExpiredCache,
+    inventoryWindowHours: object.version === 3 || object.version === 4 ? runtimeHours(object.inventoryWindowHours) : defaults.inventoryWindowHours,
+    evidenceMessageCount: (object.version === 3 || object.version === 4) && object.evidenceMessageCount !== undefined ? evidenceCount(object.evidenceMessageCount) : defaults.evidenceMessageCount,
+    judgeModel: object.version === 3 || object.version === 4 ? runtimeModel(object.judgeModel, "judgeModel") : defaults.judgeModel,
+    autopilotJudgeModel: object.version === 3 || object.version === 4 ? runtimeModel(object.autopilotJudgeModel, "autopilotJudgeModel") : defaults.autopilotJudgeModel,
     harnesses: harnesses.map((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid session autostart harness override");
       const record = value as Record<string, unknown>;
@@ -981,8 +1019,9 @@ function parseAutostartFile(value: unknown, env: NodeJS.ProcessEnv = process.env
 
 function defaultAutostartFile(env: NodeJS.ProcessEnv): SessionAutostartFile {
   return {
-    version: 3,
+    version: 4,
     enabled: env.AGENT_HERDER_UNFINISHED_AUTOSTART !== "false",
+    rolloverExpiredCache: true,
     inventoryWindowHours: positiveInteger(Number(env.AGENT_HERDER_UNFINISHED_INVENTORY_HOURS || 48), 48),
     evidenceMessageCount: positiveInteger(Number(env.AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES || 4), 4),
     judgeModel: env.AGENT_HERDER_UNFINISHED_JUDGE_MODEL?.trim() || "MiniMax-M3.1-Flash-Preview",
@@ -990,6 +1029,11 @@ function defaultAutostartFile(env: NodeJS.ProcessEnv): SessionAutostartFile {
     harnesses: [],
     sessions: [],
   };
+}
+
+function booleanSetting(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") throw new Error(`invalid ${field}`);
+  return value;
 }
 
 function runtimeHours(value: unknown): number {

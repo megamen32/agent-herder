@@ -1,3 +1,6 @@
+import { access, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AgentResumeClient, type ResumeTransportRequest } from "../src/resume-transport.js";
 
@@ -7,6 +10,21 @@ const request: ResumeTransportRequest = {
 };
 
 describe("AgentResumeClient", () => {
+  it("fails closed instead of spawning a competing Codex CLI resume", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-no-codex-cli-resume-"));
+    const marker = join(root, "spawned");
+    const client = new AgentResumeClient({
+      command: process.execPath,
+      args: ["-e", `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "spawned")`],
+    });
+    try {
+      await expect(client.resume(request)).resolves.toMatchObject({ status: "failed", reason: "unsupported" });
+      await expect(access(marker)).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("forwards the frozen selected target and opaque result ref, then accepts only a matching receipt", async () => {
     let observed: ResumeTransportRequest | undefined;
     const client = new AgentResumeClient({ invoke: async (value) => {

@@ -93,6 +93,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly requestTimeoutMs: number;
   private child?: ChildProcessWithoutNullStreams;
   private initialized = false;
+  private initialization?: Promise<void>;
   private nextRequestId = 1;
   private inputBuffer = "";
   private readonly pending = new Map<number, PendingRequest>();
@@ -272,7 +273,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     try {
       await this.ensureReady();
       const result = await this.request("thread/resume", { threadId: id }) as { thread?: CodexThread };
-      if (result.thread?.id) this.threads.set(result.thread.id, result.thread);
+      if (!result.thread?.id) throw new Error("Codex thread/resume did not return a thread id");
+      if (result.thread.id !== id) throw new Error(`Codex thread/resume returned a different thread id (${result.thread.id})`);
+      this.threads.set(id, result.thread);
       return { ok: true };
     } catch (error) {
       return { ok: false, error: (error as Error).message };
@@ -345,7 +348,16 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   private async ensureReady(): Promise<void> {
     if (this.initialized && this.child && !this.child.killed) return;
-    this.startProcess();
+    if (!this.initialization) {
+      this.initialization = this.initializeTransport().finally(() => {
+        this.initialization = undefined;
+      });
+    }
+    await this.initialization;
+  }
+
+  private async initializeTransport(): Promise<void> {
+    if (!this.child || this.child.killed) this.startProcess();
     await this.request("initialize", {
       clientInfo: { name: "agent-herder", version: "0.1.0" },
       capabilities: { experimentalApi: true },

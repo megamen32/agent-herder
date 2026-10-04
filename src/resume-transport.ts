@@ -107,6 +107,14 @@ export class AgentResumeClient implements ResumeTransport {
 
   async resume(input: ResumeTransportRequest): Promise<ResumeReceipt> {
     const request = freezeRequest(input);
+    // Codex must be controlled by Agent Herder's one persistent app-server
+    // connection. The legacy Agent Resume entrypoint shells out to
+    // `codex exec resume`, which becomes a second writer for the same thread.
+    // An explicitly injected transport remains available to trusted callers
+    // that route to the native Herder adapter and return a bound receipt.
+    if (request.target.agent === "codex" && !this.invokeOverride) {
+      return failed(request, "unsupported", "Codex resume requires the Agent Herder native app-server transport");
+    }
     try {
       const raw = this.invokeOverride
         ? await this.invokeOverride(request)

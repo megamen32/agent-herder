@@ -28,15 +28,16 @@ describe("session autostart settings HTTP", () => {
     if (!address || typeof address === "string") throw new Error("server did not bind");
     const origin = `http://127.0.0.1:${address.port}`;
 
-    await expect((await fetch(`${origin}/api/session-autostart`)).json()).resolves.toMatchObject({ enabled: true, source: "default" });
+    await expect((await fetch(`${origin}/api/session-autostart`)).json()).resolves.toMatchObject({ version: 4, enabled: true, rolloverExpiredCache: true, source: "default" });
     const runtimeSaved = await fetch(`${origin}/api/session-autostart`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ inventoryWindowHours: 72, evidenceMessageCount: 4, judgeModel: "MiniMax-M3", autopilotJudgeModel: "gpt-test" }),
+      body: JSON.stringify({ enabled: false, rolloverExpiredCache: false, inventoryWindowHours: 72, evidenceMessageCount: 4, judgeModel: "MiniMax-M3", autopilotJudgeModel: "gpt-test" }),
     });
-    await expect(runtimeSaved.json()).resolves.toMatchObject({ inventoryWindowHours: 72, evidenceMessageCount: 4, judgeModel: "MiniMax-M3", autopilotJudgeModel: "gpt-test", source: "persisted" });
+    await expect(runtimeSaved.json()).resolves.toMatchObject({ version: 4, enabled: false, rolloverExpiredCache: false, inventoryWindowHours: 72, evidenceMessageCount: 4, judgeModel: "MiniMax-M3", autopilotJudgeModel: "gpt-test", source: "persisted" });
+    await expect((await fetch(`${origin}/api/session-autostart`)).json()).resolves.toMatchObject({ enabled: false, rolloverExpiredCache: false, source: "persisted" });
     const zcodeHarness = `${origin}/api/session-autostart/harnesses/zcode`;
-    await expect((await fetch(zcodeHarness)).json()).resolves.toMatchObject({ harness: "zcode", enabled: true, source: "global" });
+    await expect((await fetch(zcodeHarness)).json()).resolves.toMatchObject({ harness: "zcode", enabled: false, source: "global" });
     await fetch(zcodeHarness, {
       method: "PUT",
       headers: { "content-type": "application/json" },

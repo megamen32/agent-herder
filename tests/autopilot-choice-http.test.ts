@@ -123,6 +123,45 @@ describe("autopilot choice callback HTTP seam", () => {
     }
   });
 
+  it("resumes a Codex choice through the native Herder adapter by default", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-http-native-codex-"));
+    const registry = new ChoiceRegistry(join(root, "choices.json"));
+    const pending = await registry.create({
+      harness: "codex",
+      sessionId: "codex-native-session",
+      turnId: "turn-native",
+      cwd: "/workspace/codex",
+      choices: [
+        { choiceId: "continue", label: "Продолжить", nextGoal: "Продолжи ту же задачу." },
+        { choiceId: "inspect", label: "Проверить", nextGoal: "Проверь состояние." },
+      ],
+    });
+    const sent: Array<{ id: string; message: string }> = [];
+    const adapter: HarnessAdapter = {
+      type: "codex", name: "Native Codex fixture", async init() {}, async listSessions() { return []; },
+      async getSession(id) { return { id, harness: "codex", status: "idle", title: "Existing", cwd: "/workspace/codex", lastActivity: new Date().toISOString(), needsPermission: false }; },
+      async sendMessage(id, input) { sent.push({ id, message: input.message }); return { ok: true }; },
+      async stopSession() { return { ok: true }; }, async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+    };
+    const server = createWebServer({
+      adapters: new Map([["codex", adapter]]),
+      converter: { async convert() { throw new Error("unused"); } },
+      choiceRegistry: registry,
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/autopilot/choices/select`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ request_id: pending.requestId, choice_id: "continue" }),
+    });
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({ status: "resumed", resumed: true, transport: "codex-app-server", session_id: "codex-native-session" });
+    expect(sent).toEqual([{ id: "codex-native-session", message: "Продолжи ту же задачу." }]);
+  });
+
   it("hands a selected ZCode choice back to its waiting native Stop hook", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-http-zcode-"));
     const registry = new ChoiceRegistry(join(root, "choices.json"));

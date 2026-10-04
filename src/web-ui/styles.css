@@ -73,7 +73,15 @@ h1 { font-size: 19px; } h2 { font-size: 16px; }
 .message pre { max-width: 100%; overflow: auto; padding: 13px; border: 1px solid var(--border); border-radius: 8px; background: #0c0c0c; color: #ded7d0; font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
 .message code:not(pre code) { padding: 2px 4px; border-radius: 4px; background: var(--surface-raised); color: #c49aff; font: .9em ui-monospace, monospace; }
 .oc-disclosure { margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); } .oc-disclosure summary { padding: 8px 10px; cursor: pointer; color: var(--muted); font-size: 11px; } .oc-disclosure pre { margin: 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; white-space: pre-wrap; }
-.composer { position: relative; width: min(860px, calc(100% - 40px)); margin: -104px auto 22px; z-index: 2; display: flex; align-items: flex-end; gap: 8px; padding: 10px 11px; border: 1px solid #3a3a40; border-radius: 13px; background: color-mix(in srgb, var(--surface-raised) 94%, transparent); box-shadow: 0 12px 35px #0008; }
+.composer-stack { position: relative; width: min(860px, calc(100% - 40px)); margin: -104px auto 22px; z-index: 2; display: grid; gap: 7px; }
+.composer { position: relative; width: 100%; margin: 0; display: flex; align-items: flex-end; gap: 8px; padding: 10px 11px; border: 1px solid #3a3a40; border-radius: 13px; background: color-mix(in srgb, var(--surface-raised) 94%, transparent); box-shadow: 0 12px 35px #0008; }
+.agent-activity-strip { min-height: 30px; display: flex; align-items: center; gap: 8px; padding: 6px 11px; border: 1px solid #3e3748; border-radius: 10px; background: color-mix(in srgb, #19151f 96%, transparent); color: #cdb7e8; box-shadow: 0 8px 24px #0006; }
+.agent-activity-strip strong { min-width: 0; overflow: hidden; font-size: 10px; font-weight: 560; text-overflow: ellipsis; white-space: nowrap; }
+.agent-activity-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px #a970ff20; animation: activity-pulse 1.2s ease-in-out infinite; }
+.activity-tool { border-color: #365064; color: #b5d7eb; }.activity-tool .agent-activity-dot { background: #70b4d8; box-shadow: 0 0 0 3px #70b4d820; }
+.activity-waiting { border-color: #5c4b34; color: #e2c692; }.activity-waiting .agent-activity-dot { background: #d7a552; box-shadow: none; animation: none; }
+@keyframes activity-pulse { 50% { opacity: .45; transform: scale(.78); } }
+@media (prefers-reduced-motion: reduce) { .agent-activity-dot { animation: none; } }
 .composer textarea { min-height: 28px; max-height: 160px; flex: 1; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 13px; line-height: 1.5; } .composer textarea::placeholder { color: #777069; }
 .composer-plus { width: 27px; height: 27px; border-radius: 7px; background: transparent; color: var(--muted); font-size: 20px; } .composer-plus:hover { background: var(--surface-hover); }
 .composer-readonly { min-width: 0; flex: 1; display: grid; gap: 2px; padding: 2px 3px; } .composer-readonly strong { font-size: 12px; font-weight: 600; } .composer-readonly span { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
@@ -111,6 +119,8 @@ h1 { font-size: 19px; } h2 { font-size: 16px; }
 .minutes-control { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }.minutes-control input { width: 80px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); color: var(--text); }
 .context-options { display: grid; gap: 9px; }.context-options label { display: flex; align-items: center; gap: 9px; color: var(--text); font-size: 12px; }
 .runtime-settings-grid label { justify-content: space-between; gap: 18px; padding: 10px 0; }.runtime-settings-grid label > span { display: grid; gap: 3px; }.runtime-settings-grid label small { color: var(--muted); font-size: 9px; line-height: 1.4; }.runtime-settings-grid input { width: min(310px, 48%); padding: 7px 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-raised); color: var(--text); }
+.runtime-settings-grid .runtime-toggle-setting input[type="checkbox"] { width: 18px; height: 18px; padding: 0; accent-color: var(--accent); }
+.session-autocontinue-setting .autopilot-control { margin-top: 0; }
 .settings-save-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }.settings-save-row > span { color: var(--muted); font-size: 10px; }.settings-saved { color: #91d6ad; }.settings-loading { color: var(--muted); font-size: 12px; }
 .autopilot-error { display: block; margin-top: 7px; color: #f0a8b1; font-size: 10px; }
 .empty-chat, .empty-list, .empty-inspector, .oc-loading { color: var(--muted); font-size: 13px; } .empty-chat { padding: 18vh 0; text-align: center; } .oc-loading { display: grid; height: 100%; place-items: center; }
@@ -122,7 +132,7 @@ h1 { font-size: 19px; } h2 { font-size: 16px; }
   .mobile-back { display: inline-block; } .chat-header { min-height: 60px; padding: 9px 12px; gap: 9px; } .chat-header .chat-heading { order: 2; } .chat-header .header-actions { order: 3; } .mobile-back { order: 1; }
   .chat-heading h2 { font-size: 14px; } .chat-heading small { display: none; } .header-actions .quiet-button { display: none; }
   .message-column { padding: 22px 15px 128px; } .message { margin-bottom: 23px; } .message.user { max-width: 92%; } .message p { font-size: 14px; }
-  .composer { width: calc(100% - 18px); margin: -94px auto 9px; padding: 9px; } .composer-hint { display: none; } .composer textarea { font-size: 16px; }
+  .composer-stack { width: calc(100% - 18px); margin: -94px auto 9px; }.composer { padding: 9px; } .composer-hint { display: none; } .composer textarea { font-size: 16px; }
   .chat-menu { top: 51px; right: 9px; } .scroll-latest { right: 12px; bottom: 87px; } .scroll-latest span { display: none; }
   .autopilot-settings-overlay { inset: 60px 0 0; padding: 10px; }.global-autopilot-card { padding: 18px 14px; border-radius: 12px; }.global-autopilot-head { padding-right: 34px; }.global-autopilot-head h3 { font-size: 18px; }.harness-grid { grid-template-columns: 1fr; }
 }

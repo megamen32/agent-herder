@@ -249,8 +249,61 @@ describe("Codex app-server adapter", () => {
       const log = await readFile(logPath, "utf8").catch(() => "");
       expect(log).toContain('"method":"initialize"');
       expect(log).toContain('"method":"thread/resume"');
+      expect(log).toContain('"threadId":"thread-1"');
       expect(log).toContain('"method":"turn/start"');
       expect(log).not.toContain('"method":"thread/start"');
+    } finally {
+      await adapter.dispose();
+      if (previousLogPath === undefined) delete process.env.CODEX_APP_SERVER_LOG;
+      else process.env.CODEX_APP_SERVER_LOG = previousLogPath;
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("delivers two sequential turns to the same native thread without creating a replacement", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-sequential-turns-"));
+    const logPath = join(codexDir, "app-server.log");
+    const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
+    process.env.CODEX_APP_SERVER_LOG = logPath;
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      await expect(adapter.sendMessage("thread-1", { message: "first continuation" })).resolves.toEqual({ ok: true });
+      await expect(adapter.sendMessage("thread-1", { message: "second continuation" })).resolves.toEqual({ ok: true });
+
+      const requests = (await readFile(logPath, "utf8"))
+        .trim().split("\n").map((line) => JSON.parse(line) as { kind: string; method: string; params?: { threadId?: string } })
+        .filter((entry) => entry.kind === "request");
+      expect(requests.filter((entry) => entry.method === "initialize")).toHaveLength(1);
+      expect(requests.filter((entry) => entry.method === "thread/resume").map((entry) => entry.params?.threadId)).toEqual(["thread-1", "thread-1"]);
+      expect(requests.filter((entry) => entry.method === "turn/start").map((entry) => entry.params?.threadId)).toEqual(["thread-1", "thread-1"]);
+      expect(requests.some((entry) => entry.method === "thread/start")).toBe(false);
+    } finally {
+      await adapter.dispose();
+      if (previousLogPath === undefined) delete process.env.CODEX_APP_SERVER_LOG;
+      else process.env.CODEX_APP_SERVER_LOG = previousLogPath;
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("shares one cold app-server initialization between observer and control callers", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-single-control-"));
+    const logPath = join(codexDir, "app-server.log");
+    const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
+    process.env.CODEX_APP_SERVER_LOG = logPath;
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      const [initialized, observed, resumed] = await Promise.all([
+        adapter.init().then(() => true),
+        adapter.listSessions(),
+        adapter.resumeSession("thread-1"),
+      ]);
+      expect(initialized).toBe(true);
+      expect(observed).toEqual(expect.any(Array));
+      expect(resumed).toEqual({ ok: true });
+
+      const log = await readFile(logPath, "utf8");
+      expect(log.match(/"method":"initialize"/g)).toHaveLength(1);
+      expect(log.match(/"method":"thread\/resume"/g)).toHaveLength(1);
     } finally {
       await adapter.dispose();
       if (previousLogPath === undefined) delete process.env.CODEX_APP_SERVER_LOG;

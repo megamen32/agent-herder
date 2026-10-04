@@ -654,18 +654,7 @@ export class ZcodeAdapter implements HarnessAdapter {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
     };
-    const result = await send();
-    if (result.ok) {
-      const workspace = this.sessionWorkspaces.get(id) || this.workspace();
-      this.sessionWorkspaces.set(id, workspace);
-      this.ensureSessionEventSubscription(id, workspace);
-      // A queued prompt does not wake a stopped/idle session by itself, and
-      // recency heuristics misread just-finished turns as "running" — so the
-      // resume after delivery is unconditional. On an already-attached
-      // session it is a no-op; on a parked one it starts the turn.
-      try { await this.resumeSession(id); } catch { /* best-effort wake-up */ }
-      await this.persistDesiredSessionTitle(id);
-    }
+    let result = await send();
     if (!result.ok) {
       // Interactive TUI sessions between turns reject direct prompts ("Session
       // is not active"). Resuming re-attaches the session to this app-server,
@@ -673,10 +662,20 @@ export class ZcodeAdapter implements HarnessAdapter {
       if (!/not active/i.test(result.error ?? "")) return result;
       const resumed = await this.resumeSession(id);
       if (!resumed.ok) return result;
-      const retried = await send();
-      if (retried.ok) await this.persistDesiredSessionTitle(id);
-      return retried;
+      result = await send();
+      if (!result.ok) return result;
     }
+
+    const workspace = this.sessionWorkspaces.get(id) || this.workspace();
+    this.sessionWorkspaces.set(id, workspace);
+    this.ensureSessionEventSubscription(id, workspace);
+    // sendPrompt only queues the next turn. Always wake the same session after
+    // acceptance, including the not-active retry path, and surface a failed
+    // wake so restart continuation remains retryable instead of reporting a
+    // turn that never started.
+    const woken = await this.resumeSession(id);
+    if (!woken.ok) return woken;
+    await this.persistDesiredSessionTitle(id);
     return result;
   }
 

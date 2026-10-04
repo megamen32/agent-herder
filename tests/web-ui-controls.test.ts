@@ -39,6 +39,9 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('aria-label={`Autocontinue unfinished session ${activeSession.id}`}');
     expect(main).toContain('Умное автопродолжение каждые 10 минут');
     expect(main).toContain('работает независимо от автопилота');
+    expect(main).toContain('aria-label="Глобальное автопродолжение"');
+    expect(main).toContain('После истечения TTL создавать новую сессию с handoff');
+    expect(main).toContain('className="settings-group session-autocontinue-setting"');
     expect(main).toContain('Искать сессии за последние часы');
     expect(main).toContain('Сколько последних сообщений читать');
     expect(main).toContain('Модель автопродолжения');
@@ -54,5 +57,56 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('Последний ответ агента');
     expect(main).toContain('Почему нужен выбор');
     for (const harness of ["Codex", "Claude Code", "OpenCode", "Hermes"]) expect(main).toContain(harness);
+  });
+
+  it("exposes autocontinue and autopilot as separate top-level settings", () => {
+    const headerStart = main.indexOf('<div className="header-actions">');
+    const headerEnd = main.indexOf("</header>", headerStart);
+    const header = main.slice(headerStart, headerEnd);
+
+    expect(headerStart).toBeGreaterThan(-1);
+    expect(header).toContain('aria-label="Открыть настройки автопродолжения"');
+    expect(header).toContain('aria-label="Открыть настройки автопилота"');
+    expect(header.indexOf("Открыть настройки автопродолжения")).toBeLessThan(header.indexOf("Открыть настройки автопилота"));
+  });
+
+  it("puts live agent activity immediately above the composer and never leaves autocontinue below it", () => {
+    const activityStart = main.indexOf('<div className={`agent-activity-strip');
+    const composerStart = main.indexOf('<form className="composer"', activityStart);
+
+    expect(activityStart).toBeGreaterThan(-1);
+    expect(activityStart).toBeLessThan(composerStart);
+    expect(main.slice(activityStart, composerStart)).toContain('role="status"');
+    expect(main.slice(activityStart, composerStart)).toContain('aria-live="polite"');
+    expect(main.slice(composerStart)).not.toContain('className="autopilot-control session-autostart-control"');
+  });
+
+  it("keeps autocontinue and autopilot mutations on separate endpoints and state", () => {
+    const autopilotHandler = main.slice(main.indexOf("const saveAutopilotPolicy = async () => {"), main.indexOf("const toggleContinuationHarness = async"));
+    const autocontinueHandler = main.slice(main.indexOf("const toggleContinuationHarness = async"), main.indexOf("const loadRuntimeModels = React.useCallback"));
+    const globalAutocontinueHandler = main.slice(main.indexOf("const toggleGlobalContinuation = async"), main.indexOf("const saveRuntimeSettings = async"));
+
+    expect(autopilotHandler).toContain("/api/autopilot/policy");
+    expect(autopilotHandler).not.toContain("/api/session-autostart/harnesses/");
+    expect(autocontinueHandler).toContain("/api/session-autostart/harnesses/");
+    expect(autocontinueHandler).not.toContain("/api/autopilot/policy");
+    expect(globalAutocontinueHandler).toContain('"/api/session-autostart"');
+    expect(globalAutocontinueHandler).not.toContain("/api/autopilot/policy");
+  });
+
+  it("loads autocontinue independently when the autopilot policy endpoint fails", () => {
+    expect(main).toContain("Promise.allSettled");
+    expect(main).toContain("setContinuationHarnessError(continuationResult.reason");
+    expect(main).toContain("setRuntimeSettingsError(runtimeResult.reason");
+    expect(main.indexOf('if (section === "autocontinue")')).toBeLessThan(main.indexOf("if (!draft)"));
+  });
+
+  it("uses quick detail refreshes for SSE instead of continuously rehydrating full history", () => {
+    const streamStart = main.indexOf("const stream = new EventSource");
+    const streamEnd = main.indexOf("React.useLayoutEffect", streamStart);
+    const streamEffect = main.slice(streamStart, streamEnd);
+
+    expect(main).toContain("loadDetails(activeKey, false)");
+    expect(streamEffect).not.toContain("?limit=50");
   });
 });
