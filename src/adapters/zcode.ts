@@ -425,6 +425,8 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly queuedPrompts = new Map<string, string[]>();
   private readonly queuedPromptTimers = new Map<string, NodeJS.Timeout>();
   private readonly queuedPromptFlushes = new Set<string>();
+  private readonly wakeRetryTimers = new Map<string, NodeJS.Timeout>();
+  private readonly wakeRetryAttempts = new Map<string, number>();
   private reportedEmptyTasksIndex = false;
   private readonly sessionWorkspaces = new Map<string, ZcodeWorkspaceRef>();
   /** Read-after-write identity for sessions created before the task index catches up. */
@@ -497,6 +499,9 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.titlePersistenceTimers.clear();
     for (const timer of this.queuedPromptTimers.values()) clearTimeout(timer);
     this.queuedPromptTimers.clear();
+    for (const timer of this.wakeRetryTimers.values()) clearTimeout(timer);
+    this.wakeRetryTimers.clear();
+    this.wakeRetryAttempts.clear();
     for (const unsubscribe of this.sessionEventUnsubscribers.values()) { try { unsubscribe(); } catch { /* best effort */ } }
     this.sessionEventUnsubscribers.clear();
     await this.client.close();
@@ -745,10 +750,10 @@ export class ZcodeAdapter implements HarnessAdapter {
     const woken = await this.resumeSession(id);
     if (!woken.ok) {
       console.error(`[agent-herder] ZCode prompt accepted but wake failed for ${id}: ${woken.error || "unknown error"}`);
-      const timer = setTimeout(() => { void this.resumeSession(id); }, 1_000);
-      timer.unref?.();
+      this.scheduleWakeRetry(id);
       return result;
     }
+    this.clearWakeRetry(id);
     await this.persistDesiredSessionTitle(id);
     return result;
   }
@@ -1192,6 +1197,51 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.queuedPromptTimers.set(sessionId, timer);
   }
 
+  private clearWakeRetry(sessionId: string): void {
+    const timer = this.wakeRetryTimers.get(sessionId);
+    if (timer) clearTimeout(timer);
+    this.wakeRetryTimers.delete(sessionId);
+    this.wakeRetryAttempts.delete(sessionId);
+  }
+
+  private scheduleWakeRetry(sessionId: string): void {
+    if (!this.initialized || this.wakeRetryTimers.has(sessionId)) return;
+    const attempts = this.wakeRetryAttempts.get(sessionId) ?? 0;
+    const maxAttempts = 6;
+    if (attempts >= maxAttempts) {
+      console.error(`[agent-herder] ZCode wake retry budget exhausted for ${sessionId} after ${attempts} attempts`);
+      this.clearWakeRetry(sessionId);
+      return;
+    }
+    const delayMs = Math.min(30_000, 1_000 * (2 ** attempts));
+    this.wakeRetryAttempts.set(sessionId, attempts + 1);
+    const timer = setTimeout(() => {
+      this.wakeRetryTimers.delete(sessionId);
+      if (!this.initialized) {
+        this.wakeRetryAttempts.delete(sessionId);
+        return;
+      }
+      void this.resumeSession(sessionId).then((result) => {
+        if (result.ok) {
+          this.clearWakeRetry(sessionId);
+          return;
+        }
+        if (isInactiveSessionError(result.error)) {
+          console.error(`[agent-herder] ZCode wake retry stopped for terminal inactive session ${sessionId}: ${result.error}`);
+          this.clearWakeRetry(sessionId);
+          return;
+        }
+        console.error(`[agent-herder] ZCode wake retry failed for ${sessionId}: ${result.error || "unknown error"}`);
+        this.scheduleWakeRetry(sessionId);
+      }).catch((error) => {
+        console.error(`[agent-herder] ZCode wake retry failed for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+        this.scheduleWakeRetry(sessionId);
+      });
+    }, delayMs);
+    timer.unref?.();
+    this.wakeRetryTimers.set(sessionId, timer);
+  }
+
   private async flushQueuedPrompt(sessionId: string): Promise<void> {
     if (this.queuedPromptFlushes.has(sessionId)) return;
     const queue = this.queuedPrompts.get(sessionId);
@@ -1263,8 +1313,9 @@ export class ZcodeAdapter implements HarnessAdapter {
       const woken = await this.resumeSession(sessionId);
       if (!woken.ok) {
         console.error(`[agent-herder] queued ZCode prompt accepted but wake failed for ${sessionId}: ${woken.error || "unknown error"}`);
-        const timer = setTimeout(() => { void this.resumeSession(sessionId); }, 1_000);
-        timer.unref?.();
+        this.scheduleWakeRetry(sessionId);
+      } else {
+        this.clearWakeRetry(sessionId);
       }
       await this.persistDesiredSessionTitle(sessionId);
     } finally {
