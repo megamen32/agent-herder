@@ -75,7 +75,11 @@ export type NotificationSink = {
   send(payload: NotificationPayload): Promise<void>;
 };
 
-export type Receipt = { kind: AutopilotDecision["kind"] };
+export type Receipt = {
+  kind: AutopilotDecision["kind"];
+  /** Durable completion notice retry; its stable idempotency key prevents duplicates. */
+  pendingNotice?: NotificationPayload;
+};
 export type ReceiptStore = Map<string, Receipt>;
 
 export type NotificationConfig = {
@@ -109,6 +113,22 @@ const SECRET_ASSIGNMENT_PATTERN =
 const STANDALONE_API_KEY_PATTERN =
   /\b(?:sk|pk|rk|ak|ghp|github_pat)[_-][A-Za-z0-9_-]{8,}\b/gi;
 const CHOICE_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+
+/** Drain durable completion notices without re-running the semantic judge. */
+export async function drainPendingNotices(store: ReceiptStore, notify: NotificationSink): Promise<number> {
+  let delivered = 0;
+  for (const [key, receipt] of store) {
+    if (!receipt.pendingNotice) continue;
+    try {
+      await notify.send(receipt.pendingNotice);
+      store.set(key, { kind: receipt.kind });
+      delivered += 1;
+    } catch {
+      // Keep the exact payload for the next background sweep.
+    }
+  }
+  return delivered;
+}
 
 /**
  * Build the exact event envelope consumed by the existing NoticePlace/Notify
@@ -231,7 +251,7 @@ export function createOpenAICompatibleJudge(config: {
                 "enumerated choices cannot represent the answer. When " +
                 "remaining_continuations is 0, never return continue; return done, choice, or human. " +
                 "Shape: {kind:continue,nextGoal:string} or " +
-                "{kind:done,summary:string,notify:boolean} or " +
+                "{kind:done,summary:string} or " +
                 "{kind:human,title:string,body:string,severity:low|medium|high}. " +
                 "Do not put credentials, tokens, private keys, or raw secrets " +
                 "in nextGoal, summary, title, or body.",
@@ -312,7 +332,23 @@ export function createAutopilotCore(options: {
         input.last_assistant_message,
       );
       const receiptKey = receiptKeyFor(input, evidence);
-      if (options.receiptStore.has(receiptKey) || activeReceiptKeys.has(receiptKey)) {
+      const existingReceipt = options.receiptStore.get(receiptKey);
+      if (existingReceipt?.pendingNotice) {
+        if (activeReceiptKeys.has(receiptKey)) return {};
+        activeReceiptKeys.add(receiptKey);
+        try {
+          await options.notify.send(existingReceipt.pendingNotice);
+          options.receiptStore.set(receiptKey, { kind: existingReceipt.kind });
+        } catch {
+          // The terminal decision is already durable. Keep the exact notice in
+          // the receipt outbox so a later Stop can retry without re-judging or
+          // continuing a task that MiniMax already declared complete.
+        } finally {
+          activeReceiptKeys.delete(receiptKey);
+        }
+        return {};
+      }
+      if (existingReceipt || activeReceiptKeys.has(receiptKey)) {
         return {};
       }
 
@@ -424,21 +460,28 @@ export function createAutopilotCore(options: {
               ...notification,
             }),
           );
-        } else if (decision.notify) {
+        } else {
+          // Completion notices are part of the operator contract, not a
+          // judge-controlled preference. Keep accepting the legacy `notify`
+          // field for compatibility, but never let it suppress the durable
+          // Notice Place event (and its configured Telegram fan-out).
           options.onDecision?.(decision);
-          await options.notify.send(
-            createNoticePlacePayload({
-              title: "Agent Herder завершил работу",
-              body: decision.summary,
-              severity: "low",
-              dedupKey: `agent-herder:done:${input.session_id}:${input.turn_id}`,
-              correlationId: `${input.session_id}/${input.turn_id}`,
-              ...notification,
-            }),
-          );
+          const pendingNotice = createNoticePlacePayload({
+            title: "Agent Herder завершил работу",
+            body: decision.summary,
+            severity: "low",
+            dedupKey: `agent-herder:done:${input.session_id}:${input.turn_id}`,
+            correlationId: `${input.session_id}/${input.turn_id}`,
+            ...notification,
+          });
+          options.receiptStore.set(receiptKey, { kind: "done", pendingNotice });
+          try {
+            await options.notify.send(pendingNotice);
+            options.receiptStore.set(receiptKey, { kind: "done" });
+          } catch {
+            return {};
+          }
         }
-
-        if (decision.kind === "done" && !decision.notify) options.onDecision?.(decision);
 
         // done/human are terminal for this hook invocation. Returning block
         // here would cause Codex to continue after the judge said to stop.
@@ -844,10 +887,21 @@ export async function loadReceiptStore(path: string): Promise<ReceiptStore> {
         String((value as Record<string, unknown>).kind),
       )
     ) {
-      store.set(key, { kind: (value as Receipt).kind });
+      const pendingNotice = notificationPayloadFromReceipt((value as Record<string, unknown>).pendingNotice);
+      store.set(key, { kind: (value as Receipt).kind, ...(pendingNotice ? { pendingNotice } : {}) });
     }
   }
   return store;
+}
+
+function notificationPayloadFromReceipt(value: unknown): NotificationPayload | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const payload = value as Record<string, unknown>;
+  if (payload.schema !== "notify.event.v1") return undefined;
+  for (const field of ["project", "recipient", "kind", "severity", "title", "body", "dedup_key", "correlation_id"] as const) {
+    if (typeof payload[field] !== "string") return undefined;
+  }
+  return value as NotificationPayload;
 }
 
 export async function persistReceiptStore(path: string, store: ReceiptStore): Promise<void> {

@@ -14,7 +14,8 @@ import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { AutopilotSessionStore } from "./autopilot/session-store.js";
 import { createAnthropicCompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
-import { createNoticePlacePayload, createNoticePlaceSink } from "./autopilot/index.js";
+import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore } from "./autopilot/index.js";
+import { acquireLock } from "./autopilot-hook.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 import { LineageStore } from "./lineage-store.js";
@@ -365,6 +366,64 @@ function createUnfinishedSessionNotifier(): ((notice: UnfinishedSessionNotice) =
   }));
 }
 
+function startCompletionNoticeSweeper(): () => void {
+  const eventUrl = process.env.NOTIFY_CENTER_EVENT_URL?.trim();
+  const token = process.env.NOTIFY_CENTER_TOKEN?.trim();
+  if (!eventUrl || !token) return () => undefined;
+  const receiptPath = join(autopilotStateDir, "receipts.json");
+  const lockPath = join(autopilotStateDir, "state.lock");
+  const sink = createNoticePlaceSink({ eventUrl, token });
+  let running = false;
+  const sweep = async () => {
+    if (running) return;
+    running = true;
+    try {
+      const readRelease = await acquireLock(lockPath, { waitMs: 250 });
+      if (!readRelease) return;
+      let receipts: Awaited<ReturnType<typeof loadReceiptStore>>;
+      try {
+        receipts = await loadReceiptStore(receiptPath);
+      } finally {
+        await readRelease();
+      }
+      const before = new Map(receipts);
+      if (await drainPendingNotices(receipts, sink) === 0) return;
+      const delivered = [...before.entries()].filter(([key, receipt]) => receipt.pendingNotice && !receipts.get(key)?.pendingNotice);
+      const writeRelease = await acquireLock(lockPath, { waitMs: 250 });
+      if (!writeRelease) return;
+      try {
+        const latest = await loadReceiptStore(receiptPath);
+        let changed = false;
+        for (const [key, receipt] of delivered) {
+          const current = latest.get(key);
+          if (!current?.pendingNotice || !sameNotice(current.pendingNotice, receipt.pendingNotice!)) continue;
+          latest.set(key, { kind: current.kind });
+          changed = true;
+        }
+        if (changed) await persistReceiptStore(receiptPath, latest);
+      } finally {
+        await writeRelease();
+      }
+    } catch (error) {
+      console.error(`[agent-herder] не удалось повторить уведомление о завершении: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      running = false;
+    }
+  };
+  void sweep();
+  const timer = setInterval(() => { void sweep(); }, 30_000);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
+function sameNotice(left: Parameters<ReturnType<typeof createNoticePlaceSink>["send"]>[0], right: Parameters<ReturnType<typeof createNoticePlaceSink>["send"]>[0]): boolean {
+  return left.dedup_key === right.dedup_key
+    && left.correlation_id === right.correlation_id
+    && left.idempotency_key === right.idempotency_key
+    && left.title === right.title
+    && left.body === right.body;
+}
+
 // ===== Register MCP tools =====
 
 function registerTools(
@@ -549,6 +608,8 @@ async function main() {
   });
   const stopProcessObservation = processSupervisor.startObservation(Number(process.env.AGENT_HERDER_SESSION_OBSERVATION_INTERVAL_MS || 5_000));
   process.once("exit", stopProcessObservation);
+  const stopCompletionNoticeSweeper = startCompletionNoticeSweeper();
+  process.once("exit", stopCompletionNoticeSweeper);
   const stopUnfinishedSessionLauncher = unfinishedSessionLauncher.start();
   process.once("exit", stopUnfinishedSessionLauncher);
   const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents });

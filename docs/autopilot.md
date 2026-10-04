@@ -157,7 +157,8 @@ transcript and the last assistant message. It must return one of the strict
 JSON decisions described in the prompt:
 
 - `continue` with `nextGoal`: returned as Codex `{decision:"block",reason}`;
-- `done` with `summary`: terminal, optionally emits a completion notice;
+- `done` with `summary`: terminal and always emits a completion notice through
+  Notice Place (including its configured Telegram fan-out);
 - `human` with `title`, `body`, and `severity`: terminal, emits a notice.
 - `choice` with 2–4 `{choiceId,label,nextGoal}` options when several safe next
   steps are possible. `nextGoal` stays in the durable registry; only the

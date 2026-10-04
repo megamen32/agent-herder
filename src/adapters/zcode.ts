@@ -197,6 +197,35 @@ function textFromMessage(message: ZcodeMessage): string {
     .join("");
 }
 
+function hasActiveToolCall(messages: ZcodeMessage[]): boolean {
+  let latestUserIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (record(messages[index]?.info).role === "user") {
+      latestUserIndex = index;
+      break;
+    }
+  }
+  const currentTurn = messages.slice(latestUserIndex + 1);
+  return currentTurn.some((message) => (message.parts ?? []).some((part) => {
+    if (part.type !== "tool") return false;
+    const status = nonEmptyString(record(part.state).status)?.toLowerCase();
+    return status === "running" || status === "pending" || status === "in_progress" || status === "in-progress";
+  }));
+}
+
+function isInactiveSessionError(value: unknown): boolean {
+  const message = value instanceof Error ? value.message : String(value ?? "");
+  return /\bSession (?:is not active|not found):/i.test(message) || /\bnot active\b/i.test(message);
+}
+
+function terminalInactiveResult(sessionId: string, cause: unknown): { ok: false; error: string } {
+  const message = cause instanceof Error ? cause.message : String(cause ?? "unknown native error");
+  return {
+    ok: false,
+    error: `ZCode terminal inactive: session ${sessionId} could not be reattached by native resume (${message})`,
+  };
+}
+
 function mapMessagePart(part: Record<string, unknown>): SessionMessagePart[] {
   if (part.type === "text" && typeof part.text === "string") {
     return [{ type: "text", text: part.text }];
@@ -294,6 +323,7 @@ function mapSession(payload: unknown, fallbackCwd: string, fallbackTitle?: strin
     ? "running"
     : rawStatus;
   const lifecycle = lifecycleStateFor("zcode", session.sessionId);
+  meta.hasActiveToolCall = lifecycle === "running" && hasActiveToolCall(messages);
   const status = lifecycle === "ended" ? "stopped"
     : lifecycle === "running" ? "running"
     : lifecycle === "idle" ? "idle"
@@ -695,11 +725,15 @@ export class ZcodeAdapter implements HarnessAdapter {
       // Interactive TUI sessions between turns reject direct prompts ("Session
       // is not active"). Resuming re-attaches the session to this app-server,
       // after which the same prompt delivers.
-      if (!/not active/i.test(result.error ?? "")) return result;
+      if (!isInactiveSessionError(result.error)) return result;
       const resumed = await this.resumeSession(id);
-      if (!resumed.ok) return result;
+      if (!resumed.ok) {
+        return isInactiveSessionError(resumed.error) ? terminalInactiveResult(id, resumed.error) : resumed;
+      }
       result = await send();
-      if (!result.ok) return result;
+      if (!result.ok) {
+        return isInactiveSessionError(result.error) ? terminalInactiveResult(id, result.error) : result;
+      }
     }
 
     const workspace = this.sessionWorkspaces.get(id) || this.workspace();
@@ -1019,7 +1053,9 @@ export class ZcodeAdapter implements HarnessAdapter {
       this.ensureSessionEventSubscription(id, workspace);
       return { ok: true };
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      return isInactiveSessionError(error)
+        ? terminalInactiveResult(id, error)
+        : { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
 
@@ -1171,6 +1207,40 @@ export class ZcodeAdapter implements HarnessAdapter {
         const message = error instanceof Error ? error.message : String(error);
         if (/prompt is already running/i.test(message)) {
           nextDelayMs = 1_000;
+          return;
+        }
+        if (isInactiveSessionError(error)) {
+          const resumed = await this.resumeSession(sessionId);
+          if (resumed.ok) {
+            try {
+              await this.callAgent("sendPrompt", {
+                ...workspace,
+                sessionId,
+                inputId: randomUUID(),
+                content: queue[0],
+              });
+            } catch (retryError) {
+              const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
+              if (/prompt is already running/i.test(retryMessage)) {
+                nextDelayMs = 1_000;
+                return;
+              }
+              if (!isInactiveSessionError(retryError)) {
+                console.error(`[agent-herder] queued ZCode prompt failed for ${sessionId}: ${retryMessage}`);
+                nextDelayMs = 5_000;
+                return;
+              }
+              console.error(`[agent-herder] ${terminalInactiveResult(sessionId, retryError).error}; dropping queued prompts`);
+            }
+          } else {
+            if (!isInactiveSessionError(resumed.error)) {
+              console.error(`[agent-herder] queued ZCode prompt resume failed transiently for ${sessionId}: ${resumed.error || "ZCode native resume failed"}`);
+              nextDelayMs = 5_000;
+              return;
+            }
+            console.error(`[agent-herder] ${terminalInactiveResult(sessionId, resumed.error).error}; dropping queued prompts`);
+          }
+          this.queuedPrompts.delete(sessionId);
           return;
         }
         console.error(`[agent-herder] queued ZCode prompt failed for ${sessionId}: ${message}`);

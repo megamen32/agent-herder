@@ -43,14 +43,14 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('aria-label="Глобальное автопродолжение"');
     expect(main).toContain('Продолжить задачу в новой сессии');
     expect(main).toContain('Переносить закрепление на продолжение');
-    expect(main).toContain('сначала закрепит новую Codex/ZCode сессию, затем снимет закрепление со старых');
+    expect(main).toContain('сначала закрепит новую сессию Codex или ZCode, затем снимет закрепление со старых');
     expect(main).toContain('provider-cache TTL');
     expect(main).toContain('className="settings-group session-autocontinue-setting"');
     expect(main).toContain('Искать сессии за последние часы');
     expect(main).toContain('Сколько сообщений читать на сессию');
     expect(main).toContain('потолок 512 тыс.');
-    expect(main).toContain('Срочно будить умершие и зависшие сессии');
-    expect(main).toContain('Watchdog проверяет native process/turn отдельно от обычного TTL');
+    expect(main).toContain('Срочно будить остановившиеся и зависшие сессии');
+    expect(main).toContain('Фоновая проверка отдельно следит за процессом и текущим ответом');
     expect(main).toContain('Модель автопродолжения');
     expect(main).toContain('Модель автопилота');
     expect(main).toContain('/api/models?harness=');
@@ -90,11 +90,43 @@ describe("mobile chat and session controls", () => {
   });
 
   it("keeps automation modes discoverable on mobile with their current state", () => {
-    expect(main).toContain('aria-label="Открыть меню режимов"');
+    expect(main).toContain('aria-label="Открыть настройки автоматизации"');
+    expect(main).toContain('>Автоматизация</button>');
     expect(main).toContain('Автопродолжение: ${runtimeSettingsDraft?.enabled ? "включено" : "выключено"}');
     expect(main).toContain('Автопилот: ${(autopilotSession?.enabled ?? autopilotPolicyDraft?.enabled) ? "включён" : "выключен"}');
     expect(styles).toContain('.header-actions .mobile-automation-button { display: inline-flex;');
     expect(styles).toContain('.header-actions .desktop-chat-menu { display: none; }');
+  });
+
+  it("gives the mobile session title its own full-width row", () => {
+    expect(styles).toContain('grid-template-areas: "back actions" "heading heading"');
+    expect(styles).toContain('.chat-header .chat-heading { grid-area: heading;');
+    expect(styles).toContain('.header-actions .automation-setting-button { display: none; }');
+    expect(styles).toContain('.load-timings { display: none; }');
+  });
+
+  it("opens a session deep link directly in the mobile chat", () => {
+    expect(main).toContain('React.useState<"sessions" | "chat">(() => readSessionFromHash() ? "chat" : "sessions")');
+    expect(main).toContain('window.addEventListener("hashchange", followHash)');
+    expect(main).toContain('setMobileView(key ? "chat" : "sessions")');
+    expect(main).toContain('window.removeEventListener("hashchange", followHash)');
+  });
+
+  it("uses plain Russian for user-facing automation settings", () => {
+    expect(main).toContain("Это общий переключатель");
+    expect(main).toContain("Herder не снимает закрепление после завершения");
+    expect(main).toContain("краткое описание текущего состояния");
+    expect(main).toContain("Фоновая проверка отдельно следит за процессом и текущим ответом");
+    expect(main).toContain("Автопилот решает");
+    expect(main).toContain("первый рекомендованный автопилотом вариант");
+    for (const jargon of ["глобальный master", "этот pin", "Judge решает", "рекомендованный Judge вариант", "native process/turn", "Наследуется от harness policy", "Наследовать policy"]) {
+      expect(main).not.toContain(jargon);
+    }
+  });
+
+  it("keeps mobile settings descriptions readable", () => {
+    expect(styles).toContain('.global-autopilot-head p, .autopilot-state-banner span, .harness-option small, .settings-help, .timeout-setting small, .runtime-settings-grid label small, .autopilot-control small, .settings-save-row > span');
+    expect(styles).toContain('color: #c2bdc7; font-size: 12px; line-height: 1.5;');
   });
 
   it("keeps autocontinue and autopilot mutations on separate endpoints and state", () => {
@@ -115,7 +147,7 @@ describe("mobile chat and session controls", () => {
 
     expect(autocontinue).toContain("Сразу закреплять активные сессии");
     expect(autocontinue).toContain("pinActiveSessions");
-    expect(autocontinue).toContain("Herder не снимает этот pin после завершения");
+    expect(autocontinue).toContain("Herder не снимает закрепление после завершения");
     expect(main.slice(main.indexOf("const saveRuntimeSettings = async"))).toContain("pinActiveSessions: runtimeSettingsDraft.pinActiveSessions ?? true");
   });
 

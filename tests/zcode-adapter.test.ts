@@ -497,6 +497,33 @@ describe("ZCode adapter", () => {
     await adapter.dispose();
   });
 
+  it("returns a terminal inactive result after native resume cannot reattach the task", async () => {
+    class PermanentlyInactiveClient extends FakeClient {
+      sendPromptCalls = 0;
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "sendPrompt") {
+          this.calls.push({ channel, method, args });
+          this.sendPromptCalls += 1;
+          throw new Error("Session is not active: session-1");
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const client = new PermanentlyInactiveClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({
+      ok: false,
+      error: expect.stringMatching(/terminal inactive/i),
+    });
+    expect(client.sendPromptCalls).toBe(2);
+    expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(1);
+
+    await adapter.dispose();
+  });
+
   it("requires both sequential prompts to wake the same resumed session", async () => {
     class SecondWakeFailsClient extends FakeClient {
       resumeCalls = 0;
@@ -556,6 +583,145 @@ describe("ZCode adapter", () => {
       await adapter.dispose();
       vi.useRealTimers();
     }
+  });
+
+  it("drops a queued prompt when the task stays inactive after native resume", async () => {
+    vi.useFakeTimers();
+    class BusyThenInactiveClient extends FakeClient {
+      sendCalls = 0;
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "sendPrompt") {
+          this.calls.push({ channel, method, args });
+          this.sendCalls += 1;
+          if (this.sendCalls === 1) throw new Error("A prompt is already running for this session");
+          throw new Error("Session is not active: session-1");
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new BusyThenInactiveClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    try {
+      await adapter.init();
+      await expect(adapter.sendMessage("session-1", { message: "queued continuation", queue: true })).resolves.toEqual({ ok: true });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(client.sendCalls).toBe(3);
+      expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(client.sendCalls).toBe(3);
+    } finally {
+      await adapter.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a queued prompt after a transient native resume failure", async () => {
+    vi.useFakeTimers();
+    class TransientResumeClient extends FakeClient {
+      sendCalls = 0;
+      resumeCalls = 0;
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "sendPrompt") {
+          this.calls.push({ channel, method, args });
+          this.sendCalls += 1;
+          if (this.sendCalls === 1) throw new Error("A prompt is already running for this session");
+          throw new Error("Session is not active: session-1");
+        }
+        if (channel === "zcode-agent" && method === "resumeSession") {
+          this.calls.push({ channel, method, args });
+          this.resumeCalls += 1;
+          throw new Error("temporary transport timeout");
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new TransientResumeClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    try {
+      await adapter.init();
+      await expect(adapter.sendMessage("session-1", { message: "queued continuation", queue: true })).resolves.toEqual({ ok: true });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(client.sendCalls).toBe(2);
+      expect(client.resumeCalls).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(client.sendCalls).toBe(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(client.sendCalls).toBe(3);
+      expect(client.resumeCalls).toBe(2);
+    } finally {
+      await adapter.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it("marks an unfinished native tool part as an active tool call", async () => {
+    const activeSession = { ...session, sessionId: "active-tool-session" };
+    class ActiveToolClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "listSessions") {
+          return [{
+            ...snapshot,
+            session: activeSession,
+            messages: [{
+              info: { messageId: "user-message", role: "user", time: { created: Date.now() - 1 } },
+              parts: [{ type: "text", text: "Run the tests." }],
+            }, {
+              info: { messageId: "tool-message", role: "assistant", time: { created: Date.now() } },
+              parts: [
+                { type: "text", text: "Running the focused test." },
+                { type: "tool", tool: "Bash", state: { status: "running", input: { command: "pytest" } } },
+              ],
+            }],
+          }];
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new ActiveToolClient() });
+    markLifecycleEvent("zcode", activeSession.sessionId, "turn-start");
+    await adapter.init();
+    await expect(adapter.listSessions({ cwd: "/workspace" })).resolves.toMatchObject([{
+      id: activeSession.sessionId,
+      meta: { hasActiveToolCall: true },
+    }]);
+    await adapter.dispose();
+  });
+
+  it("does not treat an old interrupted tool part as active in a later turn", async () => {
+    const laterSession = { ...session, sessionId: "later-turn-session" };
+    class OldToolClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "listSessions") {
+          return [{
+            ...snapshot,
+            session: laterSession,
+            messages: [{
+              info: { messageId: "old-tool", role: "assistant", time: { created: Date.now() - 3 } },
+              parts: [{ type: "tool", tool: "Bash", state: { status: "running" } }],
+            }, {
+              info: { messageId: "new-user", role: "user", time: { created: Date.now() - 2 } },
+              parts: [{ type: "text", text: "A new turn." }],
+            }, {
+              info: { messageId: "new-assistant", role: "assistant", time: { created: Date.now() - 1 } },
+              parts: [{ type: "text", text: "Ready." }],
+            }],
+          }];
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new OldToolClient() });
+    markLifecycleEvent("zcode", laterSession.sessionId, "turn-start");
+    await adapter.init();
+    await expect(adapter.listSessions({ cwd: "/workspace" })).resolves.toMatchObject([{
+      id: laterSession.sessionId,
+      meta: { hasActiveToolCall: false },
+    }]);
+    await adapter.dispose();
   });
 
   it("reports recently-updated sessions as running despite stale idle status", async () => {

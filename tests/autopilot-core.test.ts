@@ -7,6 +7,9 @@ import {
   createNoticePlacePayload,
   createNoticePlaceSink,
   createOpenAICompatibleJudge,
+  drainPendingNotices,
+  loadReceiptStore,
+  persistReceiptStore,
   readBoundedEvidence,
   type AutopilotDecision,
   type StopHookInput,
@@ -52,7 +55,12 @@ describe("autopilot core", () => {
     await expect(core.handleStop({ ...secondStop, last_assistant_message: "The repair and focused verification are complete." })).resolves.toEqual({});
 
     expect(judge.decide).toHaveBeenCalledTimes(3);
-    expect(sink.send).not.toHaveBeenCalled();
+    expect(sink.send).toHaveBeenCalledTimes(1);
+    expect(sink.send).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Agent Herder завершил работу",
+      dedup_key: "agent-herder:done:session-1:turn-7",
+      correlation_id: "session-1/turn-7",
+    }));
   });
 
   it("rejects malformed judge output", async () => {
@@ -312,6 +320,89 @@ describe("autopilot core", () => {
     });
 
     await expect(core.handleStop(baseInput)).resolves.toEqual({});
+  });
+
+  it("always emits a completion notice even when the judge opts out", async () => {
+    const sink = { send: vi.fn(async () => undefined) };
+    const core = createAutopilotCore({
+      judge: { decide: vi.fn(async () => ({ kind: "done", summary: "finished", notify: false } satisfies AutopilotDecision)) },
+      notify: sink,
+      allowSessions: new Set(["session-1"]),
+      receiptStore: new Map(),
+      maxContinuationsPerSession: 1,
+    });
+
+    await expect(core.handleStop(baseInput)).resolves.toEqual({});
+    expect(sink.send).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Agent Herder завершил работу",
+      body: "finished",
+      dedup_key: "agent-herder:done:session-1:turn-7",
+    }));
+  });
+
+  it("keeps a failed completion notice durable and retries it without re-judging", async () => {
+    const judge = { decide: vi.fn(async () => ({ kind: "done", summary: "finished", notify: false } satisfies AutopilotDecision)) };
+    const sink = { send: vi.fn(async () => {
+      if (sink.send.mock.calls.length === 1) throw new Error("Notice Place unavailable");
+    }) };
+    const receipts = new Map();
+    const core = createAutopilotCore({
+      judge,
+      notify: sink,
+      allowSessions: new Set(["session-1"]),
+      receiptStore: receipts,
+      maxContinuationsPerSession: 1,
+    });
+
+    await expect(core.handleStop(baseInput)).resolves.toEqual({});
+    expect(judge.decide).toHaveBeenCalledTimes(1);
+    expect([...receipts.values()]).toEqual([expect.objectContaining({
+      kind: "done",
+      pendingNotice: expect.objectContaining({ dedup_key: "agent-herder:done:session-1:turn-7" }),
+    })]);
+
+    await expect(core.handleStop(baseInput)).resolves.toEqual({});
+    expect(judge.decide).toHaveBeenCalledTimes(1);
+    expect(sink.send).toHaveBeenCalledTimes(2);
+    expect([...receipts.values()]).toEqual([{ kind: "done" }]);
+  });
+
+  it("persists the pending completion notice outbox across hook processes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autopilot-receipt-"));
+    const path = join(root, "receipts.json");
+    const pendingNotice = createNoticePlacePayload({
+      title: "Agent Herder завершил работу",
+      body: "finished",
+      severity: "low",
+      dedupKey: "agent-herder:done:session-1:turn-7",
+      correlationId: "session-1/turn-7",
+      project: "agent-herder",
+      recipient: "me",
+      kind: "notification",
+    });
+    await persistReceiptStore(path, new Map([["receipt", { kind: "done", pendingNotice }]]));
+
+    await expect(loadReceiptStore(path)).resolves.toEqual(new Map([["receipt", { kind: "done", pendingNotice }]]));
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("drains persisted completion notices independently of a new Stop event", async () => {
+    const sink = { send: vi.fn(async () => undefined) };
+    const pendingNotice = createNoticePlacePayload({
+      title: "Agent Herder завершил работу",
+      body: "finished",
+      severity: "low",
+      dedupKey: "agent-herder:done:session-1:turn-7",
+      correlationId: "session-1/turn-7",
+      project: "agent-herder",
+      recipient: "me",
+      kind: "notification",
+    });
+    const receipts = new Map([["receipt", { kind: "done" as const, pendingNotice }]]);
+
+    await expect(drainPendingNotices(receipts, sink)).resolves.toBe(1);
+    expect(sink.send).toHaveBeenCalledWith(pendingNotice);
+    expect(receipts).toEqual(new Map([["receipt", { kind: "done" }]]));
   });
 
   it("counts persisted continue receipts only toward the current Codex turn budget", async () => {

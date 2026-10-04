@@ -659,8 +659,16 @@ describe("unfinished session launcher", () => {
       harness: "codex", sessionId: "recent", cwd: "/tmp", title: "Recent", status: "idle",
       lastActivity: new Date(now - 47 * 60 * 60_000).toISOString(), transcriptTail: "recent", observedAt: new Date(now).toISOString(),
     });
+    await store.upsertInventory({
+      harness: "fast-agent", sessionId: "recent-fast-agent", cwd: "/tmp", title: "Recent Fast Agent", status: "stopped",
+      lastActivity: new Date(now - 1 * 60 * 60_000).toISOString(), transcriptTail: "recent", observedAt: new Date(now).toISOString(),
+    });
+    await store.upsertInventory({
+      harness: "opencode", sessionId: "recent-opencode", cwd: "/tmp", title: "Recent OpenCode", status: "idle",
+      lastActivity: new Date(now - 1 * 60 * 60_000).toISOString(), transcriptTail: "recent", observedAt: new Date(now).toISOString(),
+    });
 
-    await expect(store.pruneAutocontinueScope(new Date(now - 48 * 60 * 60_000))).resolves.toEqual({ sessions: 1, inventory: 1 });
+    await expect(store.pruneAutocontinueScope(new Date(now - 48 * 60 * 60_000))).resolves.toEqual({ sessions: 1, inventory: 3 });
     expect((await store.list()).map((record) => record.sessionId)).toEqual(["kept-codex"]);
     expect((await store.listInventory()).map((record) => record.sessionId)).toEqual(["recent"]);
   });
@@ -1058,6 +1066,34 @@ describe("unfinished session launcher", () => {
     expect(calls.messages[0]).toContain("Продолжить с последнего подтверждённого шага");
   });
 
+  it("watchdog does not wake a running session while its tool call is still active", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-watchdog-tool-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = {
+      ...fixtureSession("running", "zcode"),
+      lastActivity: new Date(Date.now() - 60_000).toISOString(),
+      meta: { hasActiveToolCall: true },
+    };
+    await store.markStarted(session, "watchdog-tool-process");
+    const calls = { resumes: 0, messages: [] as string[] };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", fixtureAdapter(session, calls)]]),
+      store,
+      ...enabledSettings(root),
+      generationId: "watchdog-tool-process",
+      reconcileIntervalMs: 60_000,
+      discoveryIdleMs: 60_000,
+      watchdogIntervalMs: 5,
+      stalledTurnMs: 10,
+    });
+
+    const stop = launcher.start();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    stop();
+
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+  });
+
   it("watchdog protects an explicitly enabled session even before a native turn-start event", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-explicit-watchdog-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -1245,6 +1281,74 @@ describe("unfinished session launcher", () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     expect(calls).toEqual({ resumes: 0, messages: [] });
+  });
+
+  it("stop invalidates a batch plan that is still waiting on the judge", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-stop-plan-"));
+    const calls = { resumes: 0, messages: [] as string[] };
+    let planStarted = false;
+    let releasePlan!: () => void;
+    const planGate = new Promise<void>((resolve) => { releasePlan = resolve; });
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", fixtureAdapter(fixtureSession("idle"), calls)]]),
+      store: new UnfinishedSessionStore(join(root, "unfinished.json")),
+      ...enabledSettings(root),
+      discoveryIdleMs: 1,
+      reconcileIntervalMs: 60_000,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions }) {
+          planStarted = true;
+          await planGate;
+          return { groups: sessions.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "unfinished" as const,
+            reason: "Нужно продолжить", confidence: 1, topic: "Продолжить задачу", handoff: "Продолжить безопасно.",
+          })) };
+        },
+      },
+    });
+
+    const stop = launcher.start();
+    await waitUntil(() => planStarted);
+    stop();
+    releasePlan();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+  });
+
+  it("stop rolls back a retry attempt reserved before any native resume", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-stop-attempt-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = fixtureSession("idle");
+    await store.markStarted(session, "previous-process");
+    const calls = { resumes: 0, messages: [] as string[] };
+    const originalBeginAttempt = store.beginAttempt.bind(store);
+    let attemptReserved = false;
+    let releaseAttempt!: () => void;
+    const attemptGate = new Promise<void>((resolve) => { releaseAttempt = resolve; });
+    store.beginAttempt = async (harness, sessionId, maxAttempts, retryDelayMs, now) => {
+      const attempt = await originalBeginAttempt(harness, sessionId, maxAttempts, retryDelayMs, now);
+      attemptReserved = true;
+      await attemptGate;
+      return attempt;
+    };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", fixtureAdapter(session, calls)]]),
+      store,
+      ...enabledSettings(root),
+      discoveryIdleMs: 1,
+      reconcileIntervalMs: 60_000,
+    });
+
+    const stop = launcher.start();
+    await waitUntil(() => attemptReserved);
+    stop();
+    releaseAttempt();
+    await waitUntil(async () => (await store.list())[0]?.state === "active");
+
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await store.list()).toMatchObject([{ attempts: 0, state: "active" }]);
   });
 
   it("stop clears the process-lifetime reconciliation timer", async () => {

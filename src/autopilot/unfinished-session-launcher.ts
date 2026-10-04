@@ -322,7 +322,9 @@ export class UnfinishedSessionStore {
         const cutoff = inventoryCutoff.getTime();
         file.inventory = file.inventory.filter((record) => {
           const lastActivity = Date.parse(record.lastActivity);
-          return Number.isFinite(lastActivity) && lastActivity >= cutoff;
+          return isAutocontinueInventoryHarness(record.harness)
+            && Number.isFinite(lastActivity)
+            && lastActivity >= cutoff;
         });
       }
       return {
@@ -388,6 +390,19 @@ export class UnfinishedSessionStore {
       delete record.lastError;
       return { ...record };
     }, (record) => record !== null);
+  }
+
+  async cancelAttempt(attempt: UnfinishedSessionRecord, now = new Date()): Promise<boolean> {
+    return this.mutate((file) => {
+      const record = file.sessions.find((candidate) => candidate.harness === attempt.harness && candidate.sessionId === attempt.sessionId);
+      if (!record || record.state !== "recovering" || record.attempts !== attempt.attempts || record.updatedAt !== attempt.updatedAt) return false;
+      record.attempts = Math.max(0, record.attempts - 1);
+      record.state = "active";
+      record.updatedAt = now.toISOString();
+      delete record.nextAttemptAt;
+      delete record.lastError;
+      return true;
+    }, (changed) => changed);
   }
 
   async markFailure(
@@ -488,6 +503,10 @@ export class UnfinishedSessionLauncher {
   private urgentTimer?: NodeJS.Timeout;
   private watchdogRunning = false;
   private started = false;
+  /** Explicit lifecycle cancellation; unlike `started`, false before a manual one-shot recovery is valid. */
+  private stopped = false;
+  /** Invalidates recovery work that was already awaiting I/O when stop/restart happens. */
+  private lifecycleEpoch = 0;
   private readonly completedSessions = new Set<string>();
   private readonly urgentSessions = new Set<string>();
   private readonly watchdogObservations = new Map<string, { fingerprint: string; unchangedSince: number; misses: number }>();
@@ -567,7 +586,9 @@ export class UnfinishedSessionLauncher {
 
   /** Start process-lifetime recovery without delaying the HTTP/MCP control plane. */
   start(): () => void {
+    this.lifecycleEpoch += 1;
     this.started = true;
+    this.stopped = false;
     void this.recoverPending().catch((error) => {
       console.error(`[agent-herder] автозапуск незавершённых сессий завершился ошибкой: ${errorText(error)}`);
     });
@@ -576,7 +597,9 @@ export class UnfinishedSessionLauncher {
   }
 
   stop(): void {
+    this.lifecycleEpoch += 1;
     this.started = false;
+    this.stopped = true;
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = undefined;
     if (this.watchdogTimer) clearTimeout(this.watchdogTimer);
@@ -670,7 +693,14 @@ export class UnfinishedSessionLauncher {
             console.error(`[agent-herder] watchdog: не удалось разрешить запрос ${permissionId} для zcode:${session.id}: ${approved.error || "операция отклонена"}`);
           }
         }
-        const fingerprint = [session.status, session.lastActivity, session.messageCount ?? "", session.lastMessage?.slice(-256) ?? ""].join("|");
+        const hasActiveToolCall = session.meta?.hasActiveToolCall === true;
+        const fingerprint = [
+          session.status,
+          session.lastActivity,
+          session.messageCount ?? "",
+          session.lastMessage?.slice(-256) ?? "",
+          hasActiveToolCall ? "tool-active" : "tool-idle",
+        ].join("|");
         const previous = this.watchdogObservations.get(key);
         const observation = previous?.fingerprint === fingerprint
           ? { fingerprint, unchangedSince: previous.unchangedSince, misses: 0 }
@@ -678,6 +708,7 @@ export class UnfinishedSessionLauncher {
         this.watchdogObservations.set(key, observation);
         const lastActivity = Date.parse(session.lastActivity);
         const stalled = session.status === "running"
+          && !hasActiveToolCall
           && Number.isFinite(lastActivity)
           && Date.now() - lastActivity >= stallMs
           && Date.now() - observation.unchangedSince >= stallMs;
@@ -728,22 +759,27 @@ export class UnfinishedSessionLauncher {
   }
 
   private async runRecovery(): Promise<void> {
+    const lifecycleEpoch = this.lifecycleEpoch;
     this.continuedThisRecovery.clear();
     const runtimeSettings = await this.options.settingsStore.getSettings();
+    if (!this.lifecycleActive(lifecycleEpoch)) return;
     const inventoryWindowMs = this.options.inventoryWindowMs
       ?? runtimeSettings.inventoryWindowHours * 60 * 60 * 1_000;
     const pruned = await this.options.store.pruneAutocontinueScope(new Date(Date.now() - inventoryWindowMs));
+    if (!this.lifecycleActive(lifecycleEpoch)) return;
     if (pruned.sessions > 0 || pruned.inventory > 0) {
       console.error(`[agent-herder] очищен реестр автопродолжения: ${pruned.sessions} чужих turn-записей, ${pruned.inventory} записей вне окна`);
     }
-    const discovery = await this.discoverUnfinishedSessions();
-    if (discovery === "blocked") return;
+    const discovery = await this.discoverUnfinishedSessions(lifecycleEpoch);
+    if (!this.lifecycleActive(lifecycleEpoch) || discovery === "blocked") return;
     // Deliberately sequential: a restart must not multiply the host's agent workload.
     let resumedThisCycle = 0;
     const launches: Array<Promise<void>> = [];
     const records = await this.options.store.list();
+    if (!this.lifecycleActive(lifecycleEpoch)) return;
     records.sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt));
     for (const record of records) {
+      if (!this.lifecycleActive(lifecycleEpoch)) break;
       if (!isAutocontinueInventoryHarness(record.harness)) continue;
       if (this.continuedThisRecovery.has(sessionKey(record.harness, record.sessionId))) continue;
       if (!await this.isEnabled(record.harness, record.sessionId, record.cwd)) {
@@ -782,10 +818,15 @@ export class UnfinishedSessionLauncher {
         continue;
       }
       if (resumedThisCycle >= this.maxResumesPerCycle) continue;
+      if (!this.lifecycleActive(lifecycleEpoch)) break;
       const attempt = await this.options.store.beginAttempt(record.harness, record.sessionId, this.maxAttempts, this.retryDelayMs);
+      if (!this.lifecycleActive(lifecycleEpoch)) {
+        if (attempt) await this.options.store.cancelAttempt(attempt);
+        break;
+      }
       if (!attempt) continue;
       resumedThisCycle += 1;
-      launches.push(this.launchContinuation(adapter, record, attempt, session));
+      launches.push(this.launchContinuation(adapter, record, attempt, session, lifecycleEpoch));
     }
     await Promise.all(launches);
   }
@@ -795,6 +836,7 @@ export class UnfinishedSessionLauncher {
     record: UnfinishedSessionRecord,
     attempt: UnfinishedSessionRecord,
     session: AgentSession | null,
+    lifecycleEpoch: number,
   ): Promise<void> {
     const trackedSession = session ?? {
       id: record.sessionId,
@@ -807,23 +849,40 @@ export class UnfinishedSessionLauncher {
       needsPermission: false,
     };
     try {
+      if (!this.lifecycleActive(lifecycleEpoch)) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
       const runtimeSettings = await this.options.settingsStore.getSettings();
+      if (!this.lifecycleActive(lifecycleEpoch)) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
       if (runtimeSettings.rolloverExpiredCache && session && this.options.cacheHandoff) {
         const handoff = await this.options.cacheHandoff.maybeRollover(session, new Date(), {
           movePinned: runtimeSettings.movePinnedOnRollover,
         });
+        if (!this.lifecycleActive(lifecycleEpoch)) return;
         if (handoff.kind === "rolled_over" && handoff.session) {
           if (!runtimeSettings.movePinnedOnRollover) await this.pinActiveSession(adapter, handoff.session.id, runtimeSettings);
+          if (!this.lifecycleActive(lifecycleEpoch)) return;
           await this.options.store.remove(record.harness, record.sessionId);
+          if (!this.lifecycleActive(lifecycleEpoch)) return;
           await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true);
           this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
           console.error(`[agent-herder] протухшая сессия ${record.harness}:${record.sessionId} продолжена в новой ${handoff.session.id}`);
           return;
         }
       }
+      if (!this.lifecycleActive(lifecycleEpoch)) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
       const resumed = adapter.resumeSession ? await adapter.resumeSession(record.sessionId) : { ok: true };
       if (!resumed.ok) throw new Error(resumed.error || "возобновление отклонено");
+      if (!this.lifecycleActive(lifecycleEpoch)) return;
       await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
+      if (!this.lifecycleActive(lifecycleEpoch)) return;
       const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true });
       if (!sent.ok) throw new Error(sent.error || "команда продолжения отклонена");
       await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true);
@@ -832,11 +891,15 @@ export class UnfinishedSessionLauncher {
     } catch (error) {
       const failure = errorText(error);
       if (isBusyCodexWriter(record.harness, failure)) {
+        if (!this.lifecycleActive(lifecycleEpoch)) return;
         const inbox = this.options.deferredStore ?? deferredMessages;
         const pending = await inbox.list(record.sessionId);
+        if (!this.lifecycleActive(lifecycleEpoch)) return;
         if (!pending.some((message) => isAutocontinueRequest(message.message))) {
           await inbox.add(record.sessionId, this.continuationMessage);
+          if (!this.lifecycleActive(lifecycleEpoch)) return;
         }
+        if (!this.lifecycleActive(lifecycleEpoch)) return;
         await this.options.store.markStarted(trackedSession, this.generationId);
         console.error(`[agent-herder] продолжение Codex отложено до безопасной границы хода ${record.sessionId}`);
         return;
@@ -845,7 +908,7 @@ export class UnfinishedSessionLauncher {
     }
   }
 
-  private async discoverUnfinishedSessions(): Promise<DiscoveryOutcome> {
+  private async discoverUnfinishedSessions(lifecycleEpoch: number): Promise<DiscoveryOutcome> {
     const runtimeSettings = await this.options.settingsStore.getSettings();
     const inventoryWindowMs = this.options.inventoryWindowMs
       ?? runtimeSettings.inventoryWindowHours * 60 * 60 * 1_000;
@@ -880,6 +943,7 @@ export class UnfinishedSessionLauncher {
       const assessed: AssessedSession[] = [];
       for (const { adapter, session } of candidates) {
         await new Promise<void>((resolve) => setImmediate(resolve));
+        if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
         if (!await this.isEnabled(session.harness, session.id, session.cwd)) continue;
         const urgent = this.urgentSessions.has(sessionKey(session.harness, session.id));
         const previous = priorInventory.get(sessionKey(session.harness, session.id));
@@ -913,7 +977,8 @@ export class UnfinishedSessionLauncher {
       if (assessed.length > 0) {
         try {
           const plan = await this.options.judge.plan({ sessions: assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail })) });
-          await this.applyBatchPlan(plan, assessed);
+          if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
+          await this.applyBatchPlan(plan, assessed, lifecycleEpoch);
           return "ready";
         } catch (error) {
           console.error(`[agent-herder] единый план MiniMax не построен; посессионный fallback запрещён: ${errorText(error)}`);
@@ -932,6 +997,7 @@ export class UnfinishedSessionLauncher {
       // 48-hour inventory must still yield so the control-plane HTTP server
       // remains responsive throughout reconciliation.
       await new Promise<void>((resolve) => setImmediate(resolve));
+      if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
       if (!isAutocontinueInventoryHarness(session.harness)) continue;
       const harness = session.harness;
       const key = sessionKey(harness, session.id);
@@ -989,14 +1055,16 @@ export class UnfinishedSessionLauncher {
     return "ready";
   }
 
-  private async applyBatchPlan(plan: SessionBatchPlan, assessed: AssessedSession[]): Promise<void> {
+  private async applyBatchPlan(plan: SessionBatchPlan, assessed: AssessedSession[], lifecycleEpoch: number): Promise<void> {
     const runtimeSettings = await this.options.settingsStore.getSettings();
+    if (!this.lifecycleActive(lifecycleEpoch)) return;
     const byId = new Map(assessed.map((candidate) => [candidate.session.id, candidate]));
     const latestActivity = (group: SessionBatchPlanGroup): number => Math.max(...group.sourceSessionIds.map((id) => Date.parse(byId.get(id)!.session.lastActivity)));
     const groups = [...plan.groups].sort((left, right) => latestActivity(right) - latestActivity(left));
     const inventoryBatch: UnfinishedSessionInventoryRecord[] = [];
     let launched = 0;
     for (const group of groups) {
+      if (!this.lifecycleActive(lifecycleEpoch)) return;
       const sources = group.sourceSessionIds.map((id) => byId.get(id)!);
       const plannedPrimary = byId.get(group.primarySessionId)!;
       const running = sources.filter(({ session }) => session.status === "running"
@@ -1057,11 +1125,15 @@ export class UnfinishedSessionLauncher {
 
       const handoff = batchContinuationPrompt(group, sources);
       if (running) {
+        if (!this.lifecycleActive(lifecycleEpoch)) return;
         await this.pinActiveSession(running.adapter, running.session.id, runtimeSettings);
+        if (!this.lifecycleActive(lifecycleEpoch)) return;
         if (sources.length > 1) {
           const inbox = this.options.deferredStore ?? deferredMessages;
           const pending = await inbox.list(running.session.id);
+          if (!this.lifecycleActive(lifecycleEpoch)) return;
           if (!pending.some((message) => isAutocontinueRequest(message.message))) await inbox.add(running.session.id, handoff);
+          if (!this.lifecycleActive(lifecycleEpoch)) return;
         }
         await this.options.store.markStarted(running.session, this.generationId);
         for (const source of sources) {
@@ -1096,11 +1168,15 @@ export class UnfinishedSessionLauncher {
       if (reuseExisting && primary.adapter.resumeSession) {
         launched += 1;
         try {
+          if (!this.lifecycleActive(lifecycleEpoch)) return;
           const resumed = await primary.adapter.resumeSession(primary.session.id);
           if (!resumed.ok) throw new Error(resumed.error || "возобновление исходной сессии отклонено");
+          if (!this.lifecycleActive(lifecycleEpoch)) return;
           await this.pinActiveSession(primary.adapter, primary.session.id, runtimeSettings);
+          if (!this.lifecycleActive(lifecycleEpoch)) return;
           const sent = await primary.adapter.sendMessage(primary.session.id, { message: handoff, queue: true });
           if (!sent.ok) throw new Error(sent.error || "исходная сессия не приняла объединённый handoff");
+          if (!this.lifecycleActive(lifecycleEpoch)) return;
           await this.options.store.markStarted(primary.session, this.generationId, new Date(), true);
           this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
           this.urgentSessions.delete(sessionKey(primary.session.harness, primary.session.id));
@@ -1124,8 +1200,10 @@ export class UnfinishedSessionLauncher {
           launched = Math.max(0, launched - 1);
           const failure = errorText(error);
           if (isBusyCodexWriter(primary.session.harness, failure)) {
+            if (!this.lifecycleActive(lifecycleEpoch)) return;
             const inbox = this.options.deferredStore ?? deferredMessages;
             const pending = await inbox.list(primary.session.id);
+            if (!this.lifecycleActive(lifecycleEpoch)) return;
             if (!pending.some((message) => isAutocontinueRequest(message.message))) await inbox.add(primary.session.id, handoff);
             await this.options.store.markStarted(primary.session, this.generationId);
             this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
@@ -1155,24 +1233,30 @@ export class UnfinishedSessionLauncher {
       try {
         launched += 1;
         const continuationModel = continuationModelFor(primary.session);
+        if (!this.lifecycleActive(lifecycleEpoch)) return;
         const created = await primary.adapter.createSession({
           name: continuationTitle(group.topic),
           cwd: primary.session.cwd,
           model: continuationModel,
           ...(primary.session.harness === "zcode" ? { mode: "yolo" } : {}),
         });
+        if (!this.lifecycleActive(lifecycleEpoch)) return;
         if (!runtimeSettings.movePinnedOnRollover) await this.pinActiveSession(primary.adapter, created.id, runtimeSettings);
+        if (!this.lifecycleActive(lifecycleEpoch)) return;
         if (continuationModel && created.model !== continuationModel && primary.adapter.changeModel) {
           const selected = await primary.adapter.changeModel(created.id, continuationModel);
           if (!selected.ok) throw new Error(selected.error || `не удалось выбрать модель ${continuationModel}`);
+          if (!this.lifecycleActive(lifecycleEpoch)) return;
         }
         const sent = await primary.adapter.sendMessage(created.id, { message: handoff, queue: true });
         if (!sent.ok) throw new Error(sent.error || "новая объединённая сессия не приняла handoff");
+        if (!this.lifecycleActive(lifecycleEpoch)) return;
         if (runtimeSettings.movePinnedOnRollover) {
           await movePinnedContinuation(primary.adapter, sources.map((source) => ({
             adapter: source.adapter,
             sessionId: source.session.id,
           })), created.id);
+          if (!this.lifecycleActive(lifecycleEpoch)) return;
         }
         await this.options.store.markStarted(created, this.generationId, new Date(), true);
         this.continuedThisRecovery.add(sessionKey(created.harness, created.id));
@@ -1197,7 +1281,11 @@ export class UnfinishedSessionLauncher {
         }
       }
     }
-    await this.options.store.upsertInventoryBatch(inventoryBatch);
+    if (this.lifecycleActive(lifecycleEpoch)) await this.options.store.upsertInventoryBatch(inventoryBatch);
+  }
+
+  private lifecycleActive(epoch: number): boolean {
+    return !this.stopped && epoch === this.lifecycleEpoch;
   }
 
   private async pinActiveSession(
