@@ -332,7 +332,7 @@ export class UnfinishedSessionStore {
     }, (removed) => removed.sessions > 0 || removed.inventory > 0);
   }
 
-  async markStarted(session: AgentSession, generationId = "external", now = new Date()): Promise<UnfinishedSessionRecord> {
+  async markStarted(session: AgentSession, generationId = "external", now = new Date(), resetAttempts = false): Promise<UnfinishedSessionRecord> {
     const harness = harnessType(session.harness);
     const normalized = normalizeRecordTarget({
       harness,
@@ -351,7 +351,7 @@ export class UnfinishedSessionStore {
         startedAt: reset || !existing ? now.toISOString() : existing.startedAt,
         updatedAt: now.toISOString(),
         generationId: bounded(generationId, "generationId"),
-        attempts: reset ? 0 : existing?.attempts ?? 0,
+        attempts: reset || resetAttempts ? 0 : existing?.attempts ?? 0,
         state: "active",
       };
       if (index < 0) file.sessions.push(record);
@@ -536,7 +536,7 @@ export class UnfinishedSessionLauncher {
       const adapter = this.options.adapters.get(provider);
       const session = await adapter?.getSession(event.sessionId);
       if (session && await this.isEnabled(session.harness, session.id, session.cwd)) {
-        await this.options.store.markStarted({ ...session, status: "idle" }, this.generationId);
+        await this.options.store.markStarted({ ...session, status: "idle" }, this.generationId, new Date(), event.kind === "turn.completed");
       }
       this.scheduleUrgentRecovery();
       return;
@@ -555,7 +555,7 @@ export class UnfinishedSessionLauncher {
     await this.pinActiveSession(adapter, session.id);
     this.completedSessions.delete(sessionKey(session.harness, session.id));
     this.urgentSessions.delete(sessionKey(session.harness, session.id));
-    await this.options.store.markStarted(session, this.generationId);
+    await this.options.store.markStarted(session, this.generationId, new Date(), true);
     return true;
   }
 
@@ -815,7 +815,7 @@ export class UnfinishedSessionLauncher {
         if (handoff.kind === "rolled_over" && handoff.session) {
           if (!runtimeSettings.movePinnedOnRollover) await this.pinActiveSession(adapter, handoff.session.id, runtimeSettings);
           await this.options.store.remove(record.harness, record.sessionId);
-          await this.options.store.markStarted(handoff.session, this.generationId);
+          await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true);
           this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
           console.error(`[agent-herder] протухшая сессия ${record.harness}:${record.sessionId} продолжена в новой ${handoff.session.id}`);
           return;
@@ -826,7 +826,7 @@ export class UnfinishedSessionLauncher {
       await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
       const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true });
       if (!sent.ok) throw new Error(sent.error || "команда продолжения отклонена");
-      await this.options.store.markStarted(trackedSession, this.generationId);
+      await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true);
       this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
       console.error(`[agent-herder] автоматически продолжена незавершённая сессия ${record.harness}:${record.sessionId}`);
     } catch (error) {
@@ -1088,7 +1088,7 @@ export class UnfinishedSessionLauncher {
           await this.pinActiveSession(primary.adapter, primary.session.id, runtimeSettings);
           const sent = await primary.adapter.sendMessage(primary.session.id, { message: handoff, queue: true });
           if (!sent.ok) throw new Error(sent.error || "исходная сессия не приняла объединённый handoff");
-          await this.options.store.markStarted(primary.session, this.generationId);
+          await this.options.store.markStarted(primary.session, this.generationId, new Date(), true);
           this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
           this.urgentSessions.delete(sessionKey(primary.session.harness, primary.session.id));
           for (const source of sources) {
@@ -1161,7 +1161,7 @@ export class UnfinishedSessionLauncher {
             sessionId: source.session.id,
           })), created.id);
         }
-        await this.options.store.markStarted(created, this.generationId);
+        await this.options.store.markStarted(created, this.generationId, new Date(), true);
         this.continuedThisRecovery.add(sessionKey(created.harness, created.id));
         for (const source of sources) {
           this.urgentSessions.delete(sessionKey(source.session.harness, source.session.id));

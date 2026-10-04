@@ -596,10 +596,10 @@ describe("unfinished session launcher", () => {
     expect(calls.resumes).toBe(1);
     expect(calls.messages).toHaveLength(1);
     expect(calls.messages[0]).toContain("Продолжи незавершённую задачу");
-    expect((await store.list())[0]).toMatchObject({ attempts: 1 });
+    expect((await store.list())[0]).toMatchObject({ attempts: 0 });
 
     await afterRestart.handleEvent("zcode", { kind: "turn.completed", harness: "zcode", sessionId: "session-1" });
-    expect(await store.list()).toMatchObject([{ sessionId: "session-1", state: "active", attempts: 1 }]);
+    expect(await store.list()).toMatchObject([{ sessionId: "session-1", state: "active", attempts: 0 }]);
   });
 
   it("keeps non-Codex/ZCode infrastructure turns out of the unfinished registry", async () => {
