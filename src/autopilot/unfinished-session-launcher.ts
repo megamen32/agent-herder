@@ -834,7 +834,7 @@ export class UnfinishedSessionLauncher {
       if (isBusyCodexWriter(record.harness, failure)) {
         const inbox = this.options.deferredStore ?? deferredMessages;
         const pending = await inbox.list(record.sessionId);
-        if (!pending.some((message) => message.message === this.continuationMessage)) {
+        if (!pending.some((message) => isAutocontinueRequest(message.message))) {
           await inbox.add(record.sessionId, this.continuationMessage);
         }
         await this.options.store.markStarted(trackedSession, this.generationId);
@@ -1046,8 +1046,9 @@ export class UnfinishedSessionLauncher {
       if (running) {
         await this.pinActiveSession(running.adapter, running.session.id, runtimeSettings);
         if (sources.length > 1) {
-          const pending = await deferredMessages.list(running.session.id);
-          if (!pending.some((message) => message.message === handoff)) await deferredMessages.add(running.session.id, handoff);
+          const inbox = this.options.deferredStore ?? deferredMessages;
+          const pending = await inbox.list(running.session.id);
+          if (!pending.some((message) => isAutocontinueRequest(message.message))) await inbox.add(running.session.id, handoff);
         }
         await this.options.store.markStarted(running.session, this.generationId);
         for (const source of sources) {
@@ -1112,7 +1113,7 @@ export class UnfinishedSessionLauncher {
           if (isBusyCodexWriter(primary.session.harness, failure)) {
             const inbox = this.options.deferredStore ?? deferredMessages;
             const pending = await inbox.list(primary.session.id);
-            if (!pending.some((message) => message.message === handoff)) await inbox.add(primary.session.id, handoff);
+            if (!pending.some((message) => isAutocontinueRequest(message.message))) await inbox.add(primary.session.id, handoff);
             await this.options.store.markStarted(primary.session, this.generationId);
             this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
             for (const source of sources) pushInventory(source);

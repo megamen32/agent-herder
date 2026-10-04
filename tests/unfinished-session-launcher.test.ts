@@ -407,10 +407,11 @@ describe("unfinished session launcher", () => {
     const session = { ...fixtureSession("idle", "codex"), model: "gpt-5.6-sol", lastActivity: new Date(Date.now() - 5 * 60_000).toISOString() };
     let created = 0;
     const deferred: Array<{ id: string; sessionId: string; message: string; createdAt: string }> = [];
+    let plans = 0;
     const adapter = fixtureAdapter(session, { resumes: 0, messages: [] });
     adapter.resumeSession = async () => ({ ok: false, error: `thread ${session.id} already has an active writer` });
     adapter.createSession = async () => { created += 1; return { ...session, id: "replacement" }; };
-    await new UnfinishedSessionLauncher({
+    const launcher = new UnfinishedSessionLauncher({
       adapters: new Map([["codex", adapter]]), store,
       settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
       deferredStore: {
@@ -424,15 +425,19 @@ describe("unfinished session launcher", () => {
       judge: {
         async decide() { throw new Error("fallback should not run"); },
         async plan() {
+          plans += 1;
           return { groups: [{
             sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "unfinished",
-            reason: "Сессия оборвалась", confidence: 0.99, topic: "Продолжить проверку", handoff: "Продолжить.",
+            reason: "Сессия оборвалась", confidence: 0.99, topic: "Продолжить проверку", handoff: `Продолжить, формулировка ${plans}.`,
           }] };
         },
       },
-    }).recoverPending();
+    });
+    await launcher.recoverPending();
+    await launcher.recoverPending();
 
     expect(created).toBe(0);
+    expect(plans).toBe(2);
     expect(deferred).toHaveLength(1);
     expect(deferred[0]?.sessionId).toBe(session.id);
     expect(deferred[0]?.message).toContain("Продолжить проверку");
