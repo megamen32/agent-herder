@@ -464,6 +464,32 @@ describe("unfinished session launcher", () => {
     expect(await store.list()).toMatchObject([{ sessionId: session.id, generationId: "previous-process", state: "active" }]);
   });
 
+  it("keeps a MiniMax-omitted candidate pending for the next batch without blindly resuming it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-omitted-retry-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const calls = { resumes: 0, messages: [] as string[] };
+    const session = { ...fixtureSession("idle", "codex"), lastActivity: new Date(Date.now() - 5 * 60_000).toISOString() };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", fixtureAdapter(session, calls)]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() {
+          return { groups: [{
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "needs_human",
+            reason: "MiniMax omitted this candidate", confidence: 0, topic: session.title, handoff: "",
+          }] };
+        },
+      },
+    });
+
+    await launcher.recoverPending();
+
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await store.list()).toMatchObject([{ sessionId: session.id, state: "active", attempts: 0 }]);
+    expect(await store.listInventory()).toMatchObject([{ sessionId: session.id, verdict: { verdict: "needs_human", confidence: 0 } }]);
+  });
+
   it("sends a large inventory to MiniMax in one globally deduplicated request", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-size-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));

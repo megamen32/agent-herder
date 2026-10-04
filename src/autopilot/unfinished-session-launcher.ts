@@ -1019,6 +1019,19 @@ export class UnfinishedSessionLauncher {
         });
       };
 
+      // normalizeBatchPlan uses needs_human/confidence=0 when MiniMax omits a
+      // candidate. That is an inconclusive planner result, not a terminal
+      // human blocker: preserve the record for the next batch without sending
+      // an invented continuation or silently dropping the task.
+      if (group.verdict === "needs_human" && group.confidence === 0) {
+        for (const source of sources) {
+          pushInventory(source);
+          await this.options.store.markStarted(source.session, `judge-retry-${this.generationId}`);
+          this.continuedThisRecovery.add(sessionKey(source.session.harness, source.session.id));
+        }
+        continue;
+      }
+
       if (group.verdict !== "unfinished") {
         for (const source of sources) {
           pushInventory(source);
