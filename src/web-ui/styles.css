@@ -135,7 +135,7 @@ h1 { font-size: 19px; } h2 { font-size: 16px; }
   .mobile-back { display: inline-block; } .chat-header { min-height: 60px; padding: 9px 12px; gap: 9px; } .chat-header .chat-heading { order: 2; } .chat-header .header-actions { order: 3; } .mobile-back { order: 1; }
   .chat-heading h2 { font-size: 14px; } .chat-heading small { display: none; } .header-actions .quiet-button { display: none; }.header-actions .mobile-automation-button { display: inline-flex; padding: 6px 8px; }
   .header-actions .desktop-chat-menu { display: none; }
-  .message-column { padding: 22px 15px; } .message { margin-bottom: 23px; } .message.user { max-width: 92%; } .message p { font-size: 14px; }
+  .message-column { padding: 22px 15px; } .message { margin-bottom: 25px; } .message.user { max-width: 92%; } .message p { margin-bottom: 14px; font-size: 14px; line-height: 1.72; }
   .composer-stack { width: calc(100% - 18px); margin: 0 auto 9px; }.composer { padding: 9px; } .composer-hint { display: none; } .composer textarea { font-size: 16px; }
   .chat-menu { top: 51px; right: 9px; } .scroll-latest { right: 12px; bottom: 118px; } .scroll-latest span { display: none; }
   .autopilot-settings-overlay { inset: 60px 0 0; padding: 10px; }.global-autopilot-card { padding: 18px 14px; border-radius: 12px; }.global-autopilot-head { padding-right: 34px; }.global-autopilot-head h3 { font-size: 18px; }.harness-grid { grid-template-columns: 1fr; }
