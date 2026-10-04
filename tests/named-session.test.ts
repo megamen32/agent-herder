@@ -204,6 +204,20 @@ describe("named session creation and reuse", () => {
     expect(fake.deliveries.map((item) => item.options.message).sort()).toEqual(["disk 95%", "disk 96%"]);
   });
 
+  it("reuses a just-created session while provider discovery is eventually consistent", async () => {
+    const cwd = await workspace();
+    const fake = fakeAdapter("opencode");
+    fake.adapter.findNamedSessions = async () => [];
+    const adapters = new Map([["opencode", fake.adapter]]);
+
+    const first = await newOrResumeNamedSession(adapters, { harness: "opencode", name: "eventual-index", cwd, message: "first", mode: "queue" });
+    const second = await newOrResumeNamedSession(adapters, { harness: "opencode", name: "eventual-index", cwd, message: "second", mode: "queue" });
+
+    expect(fake.creates()).toBe(1);
+    expect(first).toMatchObject({ created: true, sessionId: "opencode-1" });
+    expect(second).toMatchObject({ created: false, sessionId: "opencode-1" });
+  });
+
   it("fails closed on duplicate exact identities before delivery", async () => {
     const cwd = await workspace();
     const fake = fakeAdapter("codex", [session("one", "repair_100", cwd, "codex"), session("two", "repair_100", cwd, "codex")]);

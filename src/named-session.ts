@@ -39,6 +39,8 @@ type NamedSessionResolution =
   | { kind: "resolved"; adapter: HarnessAdapter; target: AgentSession; created: boolean; normalized: NamedSessionRequest };
 
 const queues = new Map<string, Promise<void>>();
+const recentNamedSessions = new Map<string, { session: AgentSession; seenAt: number }>();
+const RECENT_NAMED_SESSION_TTL_MS = 60_000;
 
 export async function createNamedSession(
   adapters: Map<string, HarnessAdapter>,
@@ -59,6 +61,7 @@ export async function createNamedSession(
     }
     try {
       const session = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model });
+      rememberNamedSession(normalized, session);
       return { ok: true, created: true, sessionId: session.id, model: request.model, ...normalized };
     } catch (error) {
       return failed(normalized, (error as Error).message);
@@ -90,6 +93,7 @@ export async function newOrResumeNamedSession(
     if (!target) {
       try {
         target = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model });
+        rememberNamedSession(normalized, target);
         created = true;
       } catch (error) {
         return { kind: "error", result: failed(normalized, (error as Error).message, "not_attempted") };
@@ -153,6 +157,10 @@ export async function newOrResumeNamedSession(
 }
 
 async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string): Promise<AgentSession[]> {
+  const identity = namedIdentity(adapter.type, name, cwd);
+  const recent = recentNamedSessions.get(identity);
+  if (recent && Date.now() - recent.seenAt < RECENT_NAMED_SESSION_TTL_MS) return [recent.session];
+  if (recent) recentNamedSessions.delete(identity);
   const sessions = adapter.findNamedSessions
     ? await adapter.findNamedSessions(name, cwd)
     : await adapter.listSessions({ cwd });
@@ -165,7 +173,16 @@ async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string):
       // A vanished legacy CWD cannot be the requested canonical identity.
     }
   }
+  if (matches.length === 1) recentNamedSessions.set(identity, { session: matches[0]!, seenAt: Date.now() });
   return matches;
+}
+
+function namedIdentity(harness: string, name: string, cwd: string): string {
+  return `${harness}\u0000${cwd}\u0000${name}`;
+}
+
+function rememberNamedSession(request: NamedSessionRequest, session: AgentSession): void {
+  recentNamedSessions.set(namedIdentity(request.harness, request.name, request.cwd), { session, seenAt: Date.now() });
 }
 
 async function normalize(request: NamedSessionRequest): Promise<NamedSessionRequest> {
@@ -244,7 +261,7 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     if (!target) {
       if ((request.create||"if_missing")==="never") return {ok:false,created:false,harness:normalized.harness,name:normalized.name,cwd:normalized.cwd,delivery:"not_found",activated:false,error:"Named session not found"};
       if (!adapter.createSession) return {...failed(normalized,`${adapter.name} does not support session creation`,"not_attempted"),activated:false};
-      try { target=await adapter.createSession({name:normalized.name,cwd:normalized.cwd,model:request.model}); created=true; } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
+      try { target=await adapter.createSession({name:normalized.name,cwd:normalized.cwd,model:request.model}); rememberNamedSession(normalized,target); created=true; } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
     }
     const fresh=(await adapter.getSession(target.id)) || target; const activation=request.activation||"always";
     if (activation==="if_running" && fresh.status!=="running") return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"skipped_inactive",activated:false,...normalized};
