@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AnthropicMiniMaxSummarizer, CacheHandoffService, cacheWindowFor, continuationModelFor, semanticTranscript, unfinishedProbeDelayMs } from "../src/cache-handoff.js";
+import { AnthropicMiniMaxSummarizer, CacheHandoffService, cacheWindowFor, continuationModelFor, movePinnedContinuation, semanticTranscript, unfinishedProbeDelayMs } from "../src/cache-handoff.js";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "../src/types/index.js";
 
 const oldSession: AgentSession = {
@@ -99,6 +99,17 @@ describe("cache-aware session handoff", () => {
     await expect(service.maybeRollover(oldSession, new Date("2026-10-03T10:31:00.000Z"), { movePinned: true }))
       .rejects.toThrow("pin failed");
     expect(fixture.setSessionPinned.mock.calls).toEqual([["new", true]]);
+  });
+
+  it("unpins merged sources through their owning harness adapters", async () => {
+    const target = adapter([], "codex");
+    const peer = adapter([], "opencode");
+    await movePinnedContinuation(target.value, [
+      { adapter: target.value, sessionId: "codex-old" },
+      { adapter: peer.value, sessionId: "opencode-old" },
+    ], "codex-new");
+    expect(target.setSessionPinned.mock.calls).toEqual([["codex-new", true], ["codex-old", false]]);
+    expect(peer.setSessionPinned.mock.calls).toEqual([["opencode-old", false]]);
   });
 
   it("keeps the same session when TTL is unknown or the cache is still fresh", async () => {

@@ -24,17 +24,19 @@ export interface CacheHandoffResult {
 
 /** Pin the replacement first, then remove stale pins so a failed pin never loses the old anchor. */
 export async function movePinnedContinuation(
-  adapter: HarnessAdapter,
-  sourceSessionIds: string[],
+  replacementAdapter: HarnessAdapter,
+  sources: Array<{ adapter: HarnessAdapter; sessionId: string }>,
   replacementSessionId: string,
 ): Promise<void> {
-  if (!adapter.setSessionPinned) return;
-  const pinned = await adapter.setSessionPinned(replacementSessionId, true);
+  if (!replacementAdapter.setSessionPinned) return;
+  const pinned = await replacementAdapter.setSessionPinned(replacementSessionId, true);
   if (!pinned.ok) throw new Error(pinned.error || `не удалось закрепить новую сессию ${replacementSessionId}`);
-  for (const sourceSessionId of [...new Set(sourceSessionIds)]) {
-    if (sourceSessionId === replacementSessionId) continue;
-    const unpinned = await adapter.setSessionPinned(sourceSessionId, false);
-    if (!unpinned.ok) throw new Error(unpinned.error || `не удалось снять закрепление со старой сессии ${sourceSessionId}`);
+  const uniqueSources = new Map(sources.map((source) => [`${source.adapter.type}:${source.sessionId}`, source]));
+  for (const source of uniqueSources.values()) {
+    if (source.adapter.type === replacementAdapter.type && source.sessionId === replacementSessionId) continue;
+    if (!source.adapter.setSessionPinned) continue;
+    const unpinned = await source.adapter.setSessionPinned(source.sessionId, false);
+    if (!unpinned.ok) throw new Error(unpinned.error || `не удалось снять закрепление со старой сессии ${source.sessionId}`);
   }
 }
 
@@ -160,7 +162,7 @@ export class CacheHandoffService {
     }
     const sent = await adapter.sendMessage(created.id, { message: handoffPrompt(summary), queue: false });
     if (!sent.ok) throw new Error(sent.error || "новая сессия не приняла handoff");
-    if (options.movePinned) await movePinnedContinuation(adapter, [session.id], created.id);
+    if (options.movePinned) await movePinnedContinuation(adapter, [{ adapter, sessionId: session.id }], created.id);
     await this.lineage?.record({
       sessionKey: `${session.harness}:${created.id}`,
       parentKey: `${session.harness}:${session.id}`,

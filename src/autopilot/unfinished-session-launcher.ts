@@ -928,7 +928,10 @@ export class UnfinishedSessionLauncher {
         const sent = await primary.adapter.sendMessage(created.id, { message: handoff, queue: true });
         if (!sent.ok) throw new Error(sent.error || "новая объединённая сессия не приняла handoff");
         if (runtimeSettings.movePinnedOnRollover) {
-          await movePinnedContinuation(primary.adapter, sources.map((source) => source.session.id), created.id);
+          await movePinnedContinuation(primary.adapter, sources.map((source) => ({
+            adapter: source.adapter,
+            sessionId: source.session.id,
+          })), created.id);
         }
         await this.options.store.markStarted(created, this.generationId);
         this.continuedThisRecovery.add(sessionKey(created.harness, created.id));
