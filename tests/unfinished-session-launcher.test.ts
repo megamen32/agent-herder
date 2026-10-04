@@ -1097,12 +1097,14 @@ describe("unfinished session launcher", () => {
   it("watchdog rechecks an accepted delivery that became idle even when the native completion event was lost", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-watchdog-idle-delivery-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
-    const recordTime = new Date(Date.now() - 1_000);
-    const session = {
+    const acceptedAt = new Date(Date.now() - 1_000);
+    const stableNativeTimestamp = acceptedAt.toISOString();
+    const acceptedSnapshot = {
       ...fixtureSession("idle", "zcode"),
-      lastActivity: new Date().toISOString(),
+      lastActivity: stableNativeTimestamp,
     };
-    await store.markStarted({ ...session, status: "running", lastActivity: recordTime.toISOString() }, "idle-delivery-process", recordTime);
+    await store.markStarted(acceptedSnapshot, "idle-delivery-process", acceptedAt, true, true, true);
+    const session = { ...acceptedSnapshot, status: "running" as AgentSession["status"] };
     const calls = { resumes: 0, messages: [] as string[] };
     let plans = 0;
     const adapter = fixtureAdapter(session, calls);
@@ -1131,6 +1133,11 @@ describe("unfinished session launcher", () => {
     });
 
     const stop = launcher.start();
+    await waitUntil(async () => Boolean((await store.list())[0]?.progressObservedAt));
+    // Polling a running turn refreshes record.updatedAt. Native ZCode may then
+    // publish idle with the same second-resolution timestamp, so neither field
+    // can be used as the completion edge.
+    session.status = "idle";
     await waitUntil(async () => (await store.listInventory()).some((record) => record.sessionId === session.id));
     stop();
 
@@ -1732,5 +1739,34 @@ describe("unfinished session launcher", () => {
 
     expect(calls.resumes).toBe(2);
     expect(queues).toEqual([true, true]);
+  });
+
+  it("never repeats a prompt whose native admission is accepted but turn start is still pending", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-pending-admission-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = { ...fixtureSession("idle", "zcode"), lastActivity: new Date(Date.now() - 30 * 60_000).toISOString() };
+    await store.markStarted(session, "previous-process");
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    adapter.sendMessage = async (_id, input) => {
+      calls.messages.push(input.message);
+      return { ok: true, pending: true };
+    };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]),
+      store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      generationId: "current-process",
+      retryDelayMs: 0,
+      discoveryIdleMs: 1,
+    });
+
+    await launcher.recoverPending();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await launcher.recoverPending();
+
+    expect(calls.resumes).toBe(1);
+    expect(calls.messages).toHaveLength(1);
+    expect(await store.list()).toMatchObject([{ sessionId: session.id, deliveryPending: true, state: "active" }]);
   });
 });

@@ -36,14 +36,23 @@ describe("human-request completion resume", () => {
       needsPermission: false,
     };
     const sent: Array<{ id: string; message: string }> = [];
+    const defaultWorkspace = "/workspace/default";
+    let selectedWorkspace = defaultWorkspace;
     const adapter: HarnessAdapter = {
       type: "zcode",
       name: "ZCode human-gate fixture",
       async init() {},
-      async listSessions() { return [session]; },
+      async listSessions(options) {
+        selectedWorkspace = options?.cwd ?? defaultWorkspace;
+        return selectedWorkspace === session.cwd ? [session] : [];
+      },
       async getSession(id) { return id === session.id ? session : null; },
       async resumeSession() { return { ok: true }; },
-      async sendMessage(id, input) { sent.push({ id, message: input.message }); return { ok: true }; },
+      async sendMessage(id, input) {
+        if (selectedWorkspace !== session.cwd) return { ok: false, error: `wrong workspace: ${selectedWorkspace}` };
+        sent.push({ id, message: input.message });
+        return { ok: true };
+      },
       async stopSession() { return { ok: true }; },
       async respondPermission() { return { ok: true }; },
       async setPermissions() { return { ok: true }; },
@@ -91,6 +100,7 @@ describe("human-request completion resume", () => {
     expect(response.status).toBe(202);
     await expect(response.json()).resolves.toMatchObject({ request_id: request.requestId, status: "resumed", continuation: "resume" });
     expect(sent).toHaveLength(1);
+    expect(selectedWorkspace).toBe(session.cwd);
     expect(sent[0]?.id).toBe(session.id);
     expect(sent[0]?.message).toContain("Human Request resolved:");
     await expect(unfinishedStore.list()).resolves.toMatchObject([{ harness: "zcode", sessionId: session.id, state: "active" }]);

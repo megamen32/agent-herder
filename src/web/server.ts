@@ -109,7 +109,7 @@ async function resumeSelectedTarget(request: ResumeTransportRequest, supervisor:
   const harness = request.target.agent;
   const prompt = request.prompt ?? request.goal ?? `Human Request resolved: ${request.result_ref}`;
   try {
-    const result = await supervisor.sendMessage(harness, request.target.session_id, { message: prompt, queue: false });
+    const result = await supervisor.sendMessage(harness, request.target.session_id, { message: prompt, queue: false }, request.target.cwd);
     if (!result.ok) {
       return {
         status: "failed",

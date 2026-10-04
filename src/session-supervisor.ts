@@ -1,4 +1,5 @@
 import type { ContentPart, Conversation, ConversionResult, HarnessType, Message } from "session-convert";
+import { resolve } from "node:path";
 import type {
   AgentSession,
   ControlResult,
@@ -346,9 +347,21 @@ export class SessionSupervisor {
     }
   }
 
-  async sendMessage(harness: string, id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string; sessionId?: string; delivery?: "deferred" }> {
+  async sendMessage(harness: string, id: string, options: SendMessageOptions, expectedCwd?: string): Promise<{ ok: boolean; error?: string; sessionId?: string; delivery?: "deferred" }> {
     const adapter = this.requireAdapter(harness);
-    const session = await adapter.getSession(id);
+    let session: AgentSession | null;
+    if (expectedCwd) {
+      const canonicalCwd = resolve(expectedCwd);
+      // Workspace-scoped transports (notably a cold ZCode adapter) must bind
+      // the exact original workspace before the first native send. A generic
+      // getSession(id) may otherwise populate the same id under the daemon's
+      // default cwd and deliver the resolved human answer to the wrong task.
+      const scoped = await adapter.listSessions({ cwd: canonicalCwd });
+      session = scoped.find((candidate) => candidate.id === id && resolve(candidate.cwd) === canonicalCwd) ?? null;
+      if (!session) return { ok: false, error: `Session '${harness}:${id}' is not available in '${canonicalCwd}'` };
+    } else {
+      session = await adapter.getSession(id);
+    }
     const message = session ? await coordinationNotes.inject(session, options.message) : options.message;
     const result = await adapter.sendMessage(id, { ...options, message });
     if (!result.ok && isBusyCodexWriter(harness, result.error)) {
@@ -356,7 +369,7 @@ export class SessionSupervisor {
       return { ok: true, sessionId: id, delivery: "deferred" };
     }
     if (result.ok) {
-      if (session) await this.unfinishedSessions?.armSession(session);
+      if (session) await this.unfinishedSessions?.armSession(session, result.pending === true);
       this.publishSessionChanged(harness, id, "changed");
     }
     return result;
@@ -505,7 +518,7 @@ export class SessionSupervisor {
     const injected = session ? await coordinationNotes.inject(session, message) : message;
     const result = await adapter.sendMessage(id, { message: injected });
     if (result.ok) {
-      if (session) await this.unfinishedSessions?.armSession(session);
+      if (session) await this.unfinishedSessions?.armSession(session, result.pending === true);
       this.publishSessionChanged(harness, id, "changed");
     }
     return result;

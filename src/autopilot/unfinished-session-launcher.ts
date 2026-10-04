@@ -15,6 +15,16 @@ const DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET = 480_000;
 const DEFAULT_BATCH_OUTPUT_TOKENS = 16_384;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
 
+function sessionProgressFingerprint(session: AgentSession): string {
+  return [
+    session.status,
+    session.lastActivity,
+    session.messageCount ?? "",
+    session.lastMessage?.slice(-256) ?? "",
+    session.meta?.hasActiveToolCall === true ? "tool-active" : "tool-idle",
+  ].join("|");
+}
+
 export type UnfinishedSessionState = "active" | "recovering" | "exhausted";
 
 export type SessionAutostartOverride = {
@@ -203,6 +213,14 @@ export interface UnfinishedSessionRecord {
   title?: string;
   startedAt: string;
   updatedAt: string;
+  /** Stable boundary for the most recent prompt accepted by the native harness. */
+  acceptedAt?: string;
+  /** Native status/message fingerprint captured at that acceptance boundary. */
+  acceptedFingerprint?: string;
+  /** Durable proof that native state changed after the accepted prompt. */
+  progressObservedAt?: string;
+  /** Admission was acknowledged, but the exact native turn has not started yet. */
+  deliveryPending?: boolean;
   generationId: string;
   attempts: number;
   state: UnfinishedSessionState;
@@ -334,7 +352,14 @@ export class UnfinishedSessionStore {
     }, (removed) => removed.sessions > 0 || removed.inventory > 0);
   }
 
-  async markStarted(session: AgentSession, generationId = "external", now = new Date(), resetAttempts = false): Promise<UnfinishedSessionRecord> {
+  async markStarted(
+    session: AgentSession,
+    generationId = "external",
+    now = new Date(),
+    resetAttempts = false,
+    acceptedDelivery = false,
+    deliveryPending = false,
+  ): Promise<UnfinishedSessionRecord> {
     const harness = harnessType(session.harness);
     const normalized = normalizeRecordTarget({
       harness,
@@ -355,12 +380,49 @@ export class UnfinishedSessionStore {
         generationId: bounded(generationId, "generationId"),
         attempts: reset || resetAttempts ? 0 : existing?.attempts ?? 0,
         state: "active",
+        ...(acceptedDelivery
+          ? {
+              acceptedAt: now.toISOString(),
+              acceptedFingerprint: sessionProgressFingerprint(session),
+              ...(deliveryPending ? { deliveryPending: true } : {}),
+            }
+          : existing?.acceptedAt
+            ? {
+                acceptedAt: existing.acceptedAt,
+                ...(existing.acceptedFingerprint ? { acceptedFingerprint: existing.acceptedFingerprint } : {}),
+                ...(existing.progressObservedAt ? { progressObservedAt: existing.progressObservedAt } : {}),
+                ...(existing.deliveryPending ? { deliveryPending: true } : {}),
+              }
+            : {}),
       };
       if (index < 0) file.sessions.push(record);
       else file.sessions[index] = record;
       sortRecords(file.sessions);
       return { ...record };
     });
+  }
+
+  async observeAcceptedProgress(
+    harness: HarnessType,
+    sessionId: string,
+    acceptedAt: string,
+    fingerprint: string,
+    now = new Date(),
+  ): Promise<UnfinishedSessionRecord | null> {
+    return this.mutate((file) => {
+      const record = file.sessions.find((candidate) => candidate.harness === harness && candidate.sessionId === sessionId);
+      if (!record || record.acceptedAt !== acceptedAt || !record.acceptedFingerprint || record.acceptedFingerprint === fingerprint) return null;
+      let changed = false;
+      if (!record.progressObservedAt) {
+        record.progressObservedAt = now.toISOString();
+        changed = true;
+      }
+      if (record.deliveryPending) {
+        delete record.deliveryPending;
+        changed = true;
+      }
+      return changed ? { ...record } : null;
+    }, (record) => record !== null);
   }
 
   async remove(harness: string, sessionId: string): Promise<boolean> {
@@ -566,7 +628,7 @@ export class UnfinishedSessionLauncher {
     if (session) await this.armSession(session);
   }
 
-  async armSession(session: AgentSession): Promise<boolean> {
+  async armSession(session: AgentSession, deliveryPending = false): Promise<boolean> {
     if (!isAutocontinueInventoryHarness(session.harness)) return false;
     const adapter = this.options.adapters.get(session.harness);
     if (!adapter?.resumeSession) return false;
@@ -574,7 +636,7 @@ export class UnfinishedSessionLauncher {
     await this.pinActiveSession(adapter, session.id);
     this.completedSessions.delete(sessionKey(session.harness, session.id));
     this.urgentSessions.delete(sessionKey(session.harness, session.id));
-    await this.options.store.markStarted(session, this.generationId, new Date(), true);
+    await this.options.store.markStarted(session, this.generationId, new Date(), true, true, deliveryPending);
     return true;
   }
 
@@ -643,11 +705,32 @@ export class UnfinishedSessionLauncher {
       const stallMs = this.stalledTurnOverrideMs ?? settings.stalledTurnMinutes * 60_000;
       const records = (await this.options.store.list())
         .filter((record) => isAutocontinueInventoryHarness(record.harness) && record.state !== "exhausted")
-        .map((record) => ({ harness: record.harness, sessionId: record.sessionId, cwd: record.cwd, updatedAt: record.updatedAt }));
+        .map((record) => ({
+          harness: record.harness,
+          sessionId: record.sessionId,
+          cwd: record.cwd,
+          updatedAt: record.updatedAt,
+          acceptedAt: record.acceptedAt,
+          acceptedFingerprint: record.acceptedFingerprint,
+          progressObservedAt: record.progressObservedAt,
+          deliveryPending: record.deliveryPending,
+        }));
       const explicit = settings.sessions
         .filter((record) => record.enabled && isAutocontinueInventoryHarness(record.harness))
-        .map((record) => ({ harness: record.harness, sessionId: record.sessionId, cwd: record.cwd, updatedAt: record.updatedAt }));
-      const targets = [...new Map([...records, ...explicit]
+        .map((record) => ({
+          harness: record.harness,
+          sessionId: record.sessionId,
+          cwd: record.cwd,
+          updatedAt: record.updatedAt,
+          acceptedAt: undefined,
+          acceptedFingerprint: undefined,
+          progressObservedAt: undefined,
+          deliveryPending: undefined,
+        }));
+      // Durable records carry accepted-delivery progress. Let them override a
+      // matching explicit setting while still adding explicitly enabled
+      // sessions which have not emitted a turn-start event yet.
+      const targets = [...new Map([...explicit, ...records]
         .map((record) => [sessionKey(record.harness, record.sessionId), record])).values()]
         .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
       let urgent = false;
@@ -694,13 +777,7 @@ export class UnfinishedSessionLauncher {
           }
         }
         const hasActiveToolCall = session.meta?.hasActiveToolCall === true;
-        const fingerprint = [
-          session.status,
-          session.lastActivity,
-          session.messageCount ?? "",
-          session.lastMessage?.slice(-256) ?? "",
-          hasActiveToolCall ? "tool-active" : "tool-idle",
-        ].join("|");
+        const fingerprint = sessionProgressFingerprint(session);
         const previous = this.watchdogObservations.get(key);
         const observation = previous?.fingerprint === fingerprint
           ? { fingerprint, unchangedSince: previous.unchangedSince, misses: 0 }
@@ -712,15 +789,23 @@ export class UnfinishedSessionLauncher {
           && Number.isFinite(lastActivity)
           && Date.now() - lastActivity >= stallMs
           && Date.now() - observation.unchangedSince >= stallMs;
-        const trackedAt = Date.parse(record.updatedAt);
+        let progressObservedAt = record.progressObservedAt;
+        if (record.acceptedAt && record.acceptedFingerprint && fingerprint !== record.acceptedFingerprint) {
+          const progressed = await this.options.store.observeAcceptedProgress(
+            record.harness,
+            record.sessionId,
+            record.acceptedAt,
+            fingerprint,
+          );
+          progressObservedAt = progressed?.progressObservedAt ?? progressObservedAt;
+        }
         // Native completion events are best-effort. If a prompt accepted by
         // Herder later becomes idle with newer native activity, re-run the
         // semantic completion check once for that fingerprint instead of
         // leaving the durable turn active forever (or blindly prompting it).
         const idleAfterAcceptedDelivery = session.status === "idle"
-          && Number.isFinite(lastActivity)
-          && Number.isFinite(trackedAt)
-          && lastActivity > trackedAt
+          && Boolean(record.acceptedAt)
+          && Boolean(progressObservedAt || record.acceptedFingerprint !== fingerprint)
           && previous?.fingerprint !== fingerprint;
         if (session.status !== "error" && session.status !== "stopped" && !stalled && !idleAfterAcceptedDelivery) continue;
         await this.options.store.markStarted({ ...session, status: session.status === "running" ? "error" : session.status }, this.generationId);
@@ -818,6 +903,13 @@ export class UnfinishedSessionLauncher {
         continue;
       }
       const urgent = this.urgentSessions.has(sessionKey(record.harness, record.sessionId));
+      if (!urgent && record.deliveryPending) {
+        // sendPrompt admission is the idempotency boundary. Until native state
+        // proves progress, watchdog owns observation and no recovery cycle may
+        // repeat the prompt merely because turn.started is still unconfirmed.
+        await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
+        continue;
+      }
       if (!urgent && (session?.status === "needs_input" || session?.needsPermission)) {
         await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
         await this.options.store.markStarted(session, this.generationId);
@@ -864,6 +956,7 @@ export class UnfinishedSessionLauncher {
       needsPermission: false,
     };
     let promptAccepted = false;
+    let promptPending = false;
     try {
       if (!this.lifecycleActive(lifecycleEpoch)) {
         await this.options.store.cancelAttempt(attempt);
@@ -884,17 +977,17 @@ export class UnfinishedSessionLauncher {
           // do not repeat the rollover on the next process generation.
           if (!this.lifecycleActive(lifecycleEpoch)) {
             await this.options.store.remove(record.harness, record.sessionId);
-            await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true);
+            await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true, true);
             return;
           }
           if (!runtimeSettings.movePinnedOnRollover) await this.pinActiveSession(adapter, handoff.session.id, runtimeSettings);
           if (!this.lifecycleActive(lifecycleEpoch)) {
             await this.options.store.remove(record.harness, record.sessionId);
-            await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true);
+            await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true, true);
             return;
           }
           await this.options.store.remove(record.harness, record.sessionId);
-          await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true);
+          await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true, true);
           this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
           console.error(`[agent-herder] протухшая сессия ${record.harness}:${record.sessionId} продолжена в новой ${handoff.session.id}`);
           return;
@@ -922,16 +1015,17 @@ export class UnfinishedSessionLauncher {
       const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true });
       if (!sent.ok) throw new Error(sent.error || "команда продолжения отклонена");
       promptAccepted = true;
+      promptPending = sent.pending === true;
       // The prompt is now accepted by the native harness. Always settle the
       // durable record even if stop arrived during sendMessage; rolling the
       // attempt back here could enqueue the same continuation after restart.
-      await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true);
+      await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true, true, promptPending);
       this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
       console.error(`[agent-herder] автоматически продолжена незавершённая сессия ${record.harness}:${record.sessionId}`);
     } catch (error) {
       if (promptAccepted) {
         try {
-          await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true);
+          await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true, true, promptPending);
         } catch (settleError) {
           console.error(`[agent-herder] ZCode/Codex prompt accepted but durable settle failed for ${record.sessionId}: ${errorText(settleError)}`);
         }
@@ -965,7 +1059,7 @@ export class UnfinishedSessionLauncher {
         // Existing or newly-added deferred work is already durable. Settle it
         // even if stop arrived after the inbox write so restart cannot add a
         // duplicate continuation.
-        await this.options.store.markStarted(trackedSession, this.generationId);
+        await this.options.store.markStarted(trackedSession, this.generationId, new Date(), false, true, true);
         console.error(`[agent-herder] продолжение Codex отложено до безопасной границы хода ${record.sessionId}`);
         return;
       }
@@ -1242,7 +1336,7 @@ export class UnfinishedSessionLauncher {
           const sent = await primary.adapter.sendMessage(primary.session.id, { message: handoff, queue: true });
           if (!sent.ok) throw new Error(sent.error || "исходная сессия не приняла объединённый handoff");
           if (!this.lifecycleActive(lifecycleEpoch)) return;
-          await this.options.store.markStarted(primary.session, this.generationId, new Date(), true);
+          await this.options.store.markStarted(primary.session, this.generationId, new Date(), true, true, sent.pending === true);
           this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
           this.urgentSessions.delete(sessionKey(primary.session.harness, primary.session.id));
           for (const source of sources) {
@@ -1270,7 +1364,7 @@ export class UnfinishedSessionLauncher {
             const pending = await inbox.list(primary.session.id);
             if (!this.lifecycleActive(lifecycleEpoch)) return;
             if (!pending.some((message) => isAutocontinueRequest(message.message))) await inbox.add(primary.session.id, handoff);
-            await this.options.store.markStarted(primary.session, this.generationId);
+            await this.options.store.markStarted(primary.session, this.generationId, new Date(), false, true, true);
             this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
             for (const source of sources) pushInventory(source);
             console.error(`[agent-herder] единый план Codex отложен до безопасной границы хода ${primary.session.id}`);
@@ -1323,7 +1417,7 @@ export class UnfinishedSessionLauncher {
           })), created.id);
           if (!this.lifecycleActive(lifecycleEpoch)) return;
         }
-        await this.options.store.markStarted(created, this.generationId, new Date(), true);
+        await this.options.store.markStarted(created, this.generationId, new Date(), true, true, sent.pending === true);
         this.continuedThisRecovery.add(sessionKey(created.harness, created.id));
         for (const source of sources) {
           this.urgentSessions.delete(sessionKey(source.session.harness, source.session.id));
@@ -1675,6 +1769,10 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
     ...target,
     startedAt: isoDate(record.startedAt, "startedAt"),
     updatedAt: isoDate(record.updatedAt, "updatedAt"),
+    ...(record.acceptedAt ? { acceptedAt: isoDate(record.acceptedAt, "acceptedAt") } : {}),
+    ...(record.acceptedFingerprint ? { acceptedFingerprint: bounded(record.acceptedFingerprint, "acceptedFingerprint") } : {}),
+    ...(record.progressObservedAt ? { progressObservedAt: isoDate(record.progressObservedAt, "progressObservedAt") } : {}),
+    ...(record.deliveryPending === true ? { deliveryPending: true } : {}),
     generationId: record.generationId === undefined ? "legacy" : bounded(record.generationId, "generationId"),
     attempts,
     state,
