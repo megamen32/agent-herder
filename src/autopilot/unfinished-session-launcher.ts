@@ -712,11 +712,26 @@ export class UnfinishedSessionLauncher {
           && Number.isFinite(lastActivity)
           && Date.now() - lastActivity >= stallMs
           && Date.now() - observation.unchangedSince >= stallMs;
-        if (session.status !== "error" && session.status !== "stopped" && !stalled) continue;
+        const trackedAt = Date.parse(record.updatedAt);
+        // Native completion events are best-effort. If a prompt accepted by
+        // Herder later becomes idle with newer native activity, re-run the
+        // semantic completion check once for that fingerprint instead of
+        // leaving the durable turn active forever (or blindly prompting it).
+        const idleAfterAcceptedDelivery = session.status === "idle"
+          && Number.isFinite(lastActivity)
+          && Number.isFinite(trackedAt)
+          && lastActivity > trackedAt
+          && previous?.fingerprint !== fingerprint;
+        if (session.status !== "error" && session.status !== "stopped" && !stalled && !idleAfterAcceptedDelivery) continue;
         await this.options.store.markStarted({ ...session, status: session.status === "running" ? "error" : session.status }, this.generationId);
         this.urgentSessions.add(key);
         urgent = true;
-        console.error(`[agent-herder] watchdog: ${key} ${stalled ? "зависла без прогресса" : `перешла в ${session.status}`}; запускаю срочное возобновление`);
+        const reason = stalled
+          ? "зависла без прогресса"
+          : idleAfterAcceptedDelivery
+            ? "завершила принятый ход без native completion event"
+            : `перешла в ${session.status}`;
+        console.error(`[agent-herder] watchdog: ${key} ${reason}; запускаю срочную проверку`);
       }
       if (urgent) this.scheduleUrgentRecovery(0);
     } finally {

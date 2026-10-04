@@ -102,19 +102,20 @@ function localHookTimeoutReceipt(choice: PendingChoice): ResumeReceipt {
   };
 }
 
-/** Route Codex through Herder's single native app-server writer; legacy
- * agent-resume remains the provider for harnesses that do not have this seam. */
+/** Route Codex and ZCode through Herder's process-owned native writers so an
+ * accepted human-gate delivery also arms durable Autocontinue tracking. */
 async function resumeSelectedTarget(request: ResumeTransportRequest, supervisor: SessionSupervisor): Promise<ResumeReceipt> {
-  if (request.target.agent !== "codex") return new AgentResumeClient().resume(request);
+  if (request.target.agent !== "codex" && request.target.agent !== "zcode") return new AgentResumeClient().resume(request);
+  const harness = request.target.agent;
   const prompt = request.prompt ?? request.goal ?? `Human Request resolved: ${request.result_ref}`;
   try {
-    const result = await supervisor.sendMessage("codex", request.target.session_id, { message: prompt, queue: false });
+    const result = await supervisor.sendMessage(harness, request.target.session_id, { message: prompt, queue: false });
     if (!result.ok) {
       return {
         status: "failed",
         target: request.target,
         result_ref: request.result_ref,
-        reason: result.error || "Codex native resume failed",
+        reason: result.error || `${harness} native resume failed`,
         ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
       };
     }
@@ -122,7 +123,7 @@ async function resumeSelectedTarget(request: ResumeTransportRequest, supervisor:
       status: "accepted",
       target: request.target,
       result_ref: request.result_ref,
-      receipt_ref: `agent-herder://codex/${request.target.session_id}/${request.idempotency_key ?? request.result_ref}`,
+      receipt_ref: `agent-herder://${harness}/${request.target.session_id}/${request.idempotency_key ?? request.result_ref}`,
       ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
     };
   } catch (error) {
@@ -891,13 +892,13 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 202, { request_id: claimed.requestId, status: claimed.status });
     }
     const target = claimed.target;
-    if (!target.agent || !(["codex", "opencode", "claude"].includes(target.agent) && target.cwd || target.agent === "hermes" && target.locator)) {
+    if (!target.agent || !(["codex", "opencode", "claude", "zcode"].includes(target.agent) && target.cwd || target.agent === "hermes" && target.locator)) {
       const failed = await humanRequests.failResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: "resume-target-unsupported" });
       return sendJson(response, 422, { request_id: failed.requestId, status: failed.status });
     }
     const resumeTarget = target.agent === "hermes"
       ? { agent: "hermes" as const, locator: target.locator as unknown as import("../resume-transport.js").HermesResumeLocator }
-      : { agent: target.agent as "codex" | "opencode" | "claude", session_id: target.sessionId, cwd: target.cwd!, ...(target.marker ? { marker: target.marker } : {}) };
+      : { agent: target.agent as "codex" | "opencode" | "claude" | "zcode", session_id: target.sessionId, cwd: target.cwd!, ...(target.marker ? { marker: target.marker } : {}) };
     const receipt = await (choiceResume ?? ((input) => resumeSelectedTarget(input, supervisor)))({ target: resumeTarget, result_ref: body.result_ref });
     const record = receipt.status === "accepted"
       ? await humanRequests.completeResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: receipt.receipt_ref })
