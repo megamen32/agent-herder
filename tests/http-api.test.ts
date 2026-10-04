@@ -316,7 +316,7 @@ describe("agent-herder web API", () => {
 
     const permission = await fetch(`${base}/api/sessions/claude/session-1/permissions/p-1`, {
       method: "POST",
-      body: JSON.stringify({ response: "allow" }),
+      body: JSON.stringify({ response: "allow", remember: true }),
     });
     expect(permission.status).toBe(502);
     expect(await permission.json()).toEqual({ ok: false, error: "permission backend unavailable" });

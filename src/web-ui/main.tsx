@@ -47,7 +47,7 @@ type WebAutopilotPolicyState = { policy: WebAutopilotPolicy; source: "persisted"
 type WebAutopilotSession = { harness: string; sessionId: string; enabled: boolean; source: "session" | "policy" | "plugin-default" | "default"; cwd?: string; updatedAt?: string };
 type WebSessionAutostart = { harness: string; sessionId: string; enabled: boolean; source: "session" | "harness" | "global" | "default"; cwd?: string; updatedAt?: string };
 type WebSessionAutostartHarness = { harness: "codex" | "zcode"; enabled: boolean; source: "harness" | "global" | "default"; updatedAt?: string };
-type WebSessionRuntimeSettings = { version: number; enabled: boolean; rolloverExpiredCache?: boolean; movePinnedOnRollover?: boolean; inventoryWindowHours: number; evidenceMessageCount: number; watchdogEnabled?: boolean; watchdogIntervalSeconds?: number; stalledTurnMinutes?: number; judgeModel: string; autopilotJudgeModel: string; source: "persisted" | "default" };
+type WebSessionRuntimeSettings = { version: number; enabled: boolean; pinActiveSessions?: boolean; rolloverExpiredCache?: boolean; movePinnedOnRollover?: boolean; inventoryWindowHours: number; evidenceMessageCount: number; watchdogEnabled?: boolean; watchdogIntervalSeconds?: number; stalledTurnMinutes?: number; judgeModel: string; autopilotJudgeModel: string; source: "persisted" | "default" };
 type WebModelOption = { model: string; harness: string };
 type HerderJobState = "queued" | "running" | "waiting" | "cancelling" | "completed" | "failed" | "cancelled" | "interrupted";
 type HerderJob = { id: string; kind: string; state: HerderJobState; createdAt: string; updatedAt: string; ownerSessionId?: string; progress?: number; statusMessage?: string; result?: unknown; error?: string; resultRef: string };
@@ -294,6 +294,7 @@ function AutomationSettings({ section, state, draft, saving, error, saved, conti
       {runtimeDraft && <button className={`switch-control large ${runtimeDraft.enabled ? "enabled" : ""}`} role="switch" aria-checked={runtimeDraft.enabled} aria-label="Глобальное автопродолжение" disabled={runtimeSaving} onClick={onGlobalContinuationToggle}><span /></button>}
     </div>
     {runtimeDraft && <div className={`autopilot-state-banner ${runtimeDraft.enabled ? "enabled" : ""}`}><strong>{runtimeDraft.enabled ? "Автопродолжение включено" : "Автопродолжение выключено"}</strong><span>Это глобальный master. Настройки harness и активной сессии ниже могут его переопределить; автопилот не изменяется.</span></div>}
+    {runtimeDraft && <fieldset className="settings-group"><legend>Закрепление сессий</legend><label className="runtime-toggle-setting timeout-setting"><span><strong>Сразу закреплять активные сессии</strong><small>Codex и ZCode сессия закрепляется при начале работы или успешном автопродолжении. Herder не снимает этот pin после завершения — снимите его сами после проверки результата.</small></span><input type="checkbox" checked={runtimeDraft.pinActiveSessions ?? true} onChange={(event) => onRuntimeChange({ ...runtimeDraft, pinActiveSessions: event.target.checked })} /></label></fieldset>}
     <fieldset className="settings-group"><legend>Умное автопродолжение каждые 10 минут</legend><div className="harness-grid">
       {(["codex", "zcode"] as const).map((harness) => {
         const setting = continuation[harness];
@@ -917,6 +918,7 @@ function App() {
         method: "PUT",
         body: JSON.stringify({
           enabled: runtimeSettingsDraft.enabled,
+          pinActiveSessions: runtimeSettingsDraft.pinActiveSessions ?? true,
           rolloverExpiredCache: runtimeSettingsDraft.rolloverExpiredCache ?? true,
           movePinnedOnRollover: runtimeSettingsDraft.movePinnedOnRollover ?? true,
           inventoryWindowHours: runtimeSettingsDraft.inventoryWindowHours,

@@ -420,6 +420,8 @@ describe("ZCode adapter", () => {
     await adapter.init();
     expect(await adapter.setPermissions("session-1", { mode: "fullAuto" })).toEqual({ ok: false, error: expect.stringContaining("not supported") });
     expect(await adapter.respondPermission("session-1", "request-1", "allow")).toEqual({ ok: true });
+    expect(await adapter.respondPermission("session-1", "request-2", "allow", true)).toEqual({ ok: true });
+    expect(client.calls.filter((call) => call.method === "respondPermission").at(-1)?.args[0]).toMatchObject({ optionId: "allowAlways" });
     expect(await adapter.forkSession?.("session-1")).toEqual({ ok: false, error: expect.stringContaining("not supported") });
     await adapter.dispose();
   });

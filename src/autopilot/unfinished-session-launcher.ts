@@ -32,8 +32,10 @@ export type SessionAutostartHarnessOverride = {
 };
 
 export type SessionAutostartFile = {
-  version: 6;
+  version: 7;
   enabled: boolean;
+  /** Keep Codex/ZCode sessions visible while Autocontinue is responsible for them. */
+  pinActiveSessions: boolean;
   /** Start a compact replacement after the provider cache window expires. */
   rolloverExpiredCache: boolean;
   /** Pin the replacement, then unpin the stale source sessions after a successful handoff. */
@@ -77,7 +79,7 @@ export class SessionAutostartStore {
     return this.mutate((file) => { file.enabled = enabled; return cloneAutostartFile(file); });
   }
 
-  async setRuntimeSettings(input: { enabled?: boolean; inventoryWindowHours: number; evidenceMessageCount: number; judgeModel: string; autopilotJudgeModel: string; rolloverExpiredCache?: boolean; movePinnedOnRollover?: boolean; watchdogEnabled?: boolean; watchdogIntervalSeconds?: number; stalledTurnMinutes?: number }): Promise<SessionAutostartFile> {
+  async setRuntimeSettings(input: { enabled?: boolean; pinActiveSessions?: boolean; inventoryWindowHours: number; evidenceMessageCount: number; judgeModel: string; autopilotJudgeModel: string; rolloverExpiredCache?: boolean; movePinnedOnRollover?: boolean; watchdogEnabled?: boolean; watchdogIntervalSeconds?: number; stalledTurnMinutes?: number }): Promise<SessionAutostartFile> {
     const inventoryWindowHours = positiveInteger(input.inventoryWindowHours, -1);
     if (inventoryWindowHours < 1 || inventoryWindowHours > 24 * 90) throw new Error("inventoryWindowHours must be an integer from 1 to 2160");
     const evidenceMessageCount = positiveInteger(input.evidenceMessageCount, -1);
@@ -86,6 +88,7 @@ export class SessionAutostartStore {
     const autopilotJudgeModel = boundedText(input.autopilotJudgeModel, "autopilotJudgeModel", 256).trim();
     if (!judgeModel || !autopilotJudgeModel) throw new Error("judge models must not be empty");
     if (input.enabled !== undefined && typeof input.enabled !== "boolean") throw new Error("enabled must be a boolean");
+    if (input.pinActiveSessions !== undefined && typeof input.pinActiveSessions !== "boolean") throw new Error("pinActiveSessions must be a boolean");
     if (input.rolloverExpiredCache !== undefined && typeof input.rolloverExpiredCache !== "boolean") throw new Error("rolloverExpiredCache must be a boolean");
     if (input.movePinnedOnRollover !== undefined && typeof input.movePinnedOnRollover !== "boolean") throw new Error("movePinnedOnRollover must be a boolean");
     if (input.watchdogEnabled !== undefined && typeof input.watchdogEnabled !== "boolean") throw new Error("watchdogEnabled must be a boolean");
@@ -93,6 +96,7 @@ export class SessionAutostartStore {
     const stalledTurnMinutes = boundedInteger(input.stalledTurnMinutes ?? 2, 1, 120, "stalledTurnMinutes");
     return this.mutate((file) => {
       if (input.enabled !== undefined) file.enabled = input.enabled;
+      if (input.pinActiveSessions !== undefined) file.pinActiveSessions = input.pinActiveSessions;
       file.inventoryWindowHours = inventoryWindowHours;
       file.evidenceMessageCount = evidenceMessageCount;
       file.judgeModel = judgeModel;
@@ -308,6 +312,26 @@ export class UnfinishedSessionStore {
     });
   }
 
+  /** Remove legacy non-Codex/ZCode turn records and inventory outside the configured audit window. */
+  async pruneAutocontinueScope(inventoryCutoff: Date): Promise<{ sessions: number; inventory: number }> {
+    return this.mutate((file) => {
+      const beforeSessions = file.sessions.length;
+      const beforeInventory = file.inventory?.length ?? 0;
+      file.sessions = file.sessions.filter((record) => isAutocontinueInventoryHarness(record.harness));
+      if (file.inventory) {
+        const cutoff = inventoryCutoff.getTime();
+        file.inventory = file.inventory.filter((record) => {
+          const lastActivity = Date.parse(record.lastActivity);
+          return Number.isFinite(lastActivity) && lastActivity >= cutoff;
+        });
+      }
+      return {
+        sessions: beforeSessions - file.sessions.length,
+        inventory: beforeInventory - (file.inventory?.length ?? 0),
+      };
+    }, (removed) => removed.sessions > 0 || removed.inventory > 0);
+  }
+
   async markStarted(session: AgentSession, generationId = "external", now = new Date()): Promise<UnfinishedSessionRecord> {
     const harness = harnessType(session.harness);
     const normalized = normalizeRecordTarget({
@@ -497,7 +521,7 @@ export class UnfinishedSessionLauncher {
   }
 
   async handleEvent(provider: string, event: HarnessEvent): Promise<void> {
-    if (!event.sessionId || !isSupportedHarness(provider)) return;
+    if (!event.sessionId || !isAutocontinueInventoryHarness(provider)) return;
     if (event.kind === "session.deleted") {
       this.completedSessions.add(sessionKey(provider, event.sessionId));
       this.urgentSessions.delete(sessionKey(provider, event.sessionId));
@@ -524,10 +548,11 @@ export class UnfinishedSessionLauncher {
   }
 
   async armSession(session: AgentSession): Promise<boolean> {
-    if (!isSupportedHarness(session.harness)) return false;
+    if (!isAutocontinueInventoryHarness(session.harness)) return false;
     const adapter = this.options.adapters.get(session.harness);
-    if (!adapter || (!adapter.resumeSession && session.harness !== "opencode")) return false;
+    if (!adapter?.resumeSession) return false;
     if (!await this.isEnabled(session.harness, session.id, session.cwd)) return false;
+    await this.pinActiveSession(adapter, session.id);
     this.completedSessions.delete(sessionKey(session.harness, session.id));
     this.urgentSessions.delete(sessionKey(session.harness, session.id));
     await this.options.store.markStarted(session, this.generationId);
@@ -691,6 +716,13 @@ export class UnfinishedSessionLauncher {
 
   private async runRecovery(): Promise<void> {
     this.continuedThisRecovery.clear();
+    const runtimeSettings = await this.options.settingsStore.getSettings();
+    const inventoryWindowMs = this.options.inventoryWindowMs
+      ?? runtimeSettings.inventoryWindowHours * 60 * 60 * 1_000;
+    const pruned = await this.options.store.pruneAutocontinueScope(new Date(Date.now() - inventoryWindowMs));
+    if (pruned.sessions > 0 || pruned.inventory > 0) {
+      console.error(`[agent-herder] очищен реестр автопродолжения: ${pruned.sessions} чужих turn-записей, ${pruned.inventory} записей вне окна`);
+    }
     const discovery = await this.discoverUnfinishedSessions();
     if (discovery === "blocked") return;
     // Deliberately sequential: a restart must not multiply the host's agent workload.
@@ -701,12 +733,12 @@ export class UnfinishedSessionLauncher {
     for (const record of records) {
       if (!isAutocontinueInventoryHarness(record.harness)) continue;
       if (this.continuedThisRecovery.has(sessionKey(record.harness, record.sessionId))) continue;
-      if (record.state === "exhausted") {
-        await this.notifyExhausted(record);
-        continue;
-      }
       if (!await this.isEnabled(record.harness, record.sessionId, record.cwd)) {
         await this.options.store.remove(record.harness, record.sessionId);
+        continue;
+      }
+      if (record.state === "exhausted") {
+        await this.notifyExhausted(record);
         continue;
       }
       const adapter = this.options.adapters.get(record.harness);
@@ -723,14 +755,19 @@ export class UnfinishedSessionLauncher {
       }
       const urgent = this.urgentSessions.has(sessionKey(record.harness, record.sessionId));
       if (!urgent && (session?.status === "needs_input" || session?.needsPermission)) {
+        await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
         await this.options.store.markStarted(session, this.generationId);
         continue;
       }
       if (!urgent && session?.status === "running") {
+        await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
         await this.options.store.markStarted(session, this.generationId);
         continue;
       }
-      if (!urgent && record.generationId === this.generationId && Date.now() - Date.parse(record.updatedAt) < this.discoveryIdleMs) continue;
+      if (!urgent && record.generationId === this.generationId && Date.now() - Date.parse(record.updatedAt) < this.discoveryIdleMs) {
+        await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
+        continue;
+      }
       if (resumedThisCycle >= this.maxResumesPerCycle) continue;
       const attempt = await this.options.store.beginAttempt(record.harness, record.sessionId, this.maxAttempts, this.retryDelayMs);
       if (!attempt) continue;
@@ -763,6 +800,7 @@ export class UnfinishedSessionLauncher {
           movePinned: runtimeSettings.movePinnedOnRollover,
         });
         if (handoff.kind === "rolled_over" && handoff.session) {
+          if (!runtimeSettings.movePinnedOnRollover) await this.pinActiveSession(adapter, handoff.session.id, runtimeSettings);
           await this.options.store.remove(record.harness, record.sessionId);
           await this.options.store.markStarted(handoff.session, this.generationId);
           this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
@@ -772,6 +810,7 @@ export class UnfinishedSessionLauncher {
       }
       const resumed = adapter.resumeSession ? await adapter.resumeSession(record.sessionId) : { ok: true };
       if (!resumed.ok) throw new Error(resumed.error || "возобновление отклонено");
+      await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
       const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true });
       if (!sent.ok) throw new Error(sent.error || "команда продолжения отклонена");
       await this.options.store.markStarted(trackedSession, this.generationId);
@@ -992,6 +1031,7 @@ export class UnfinishedSessionLauncher {
 
       const handoff = batchContinuationPrompt(group, sources);
       if (running) {
+        await this.pinActiveSession(running.adapter, running.session.id, runtimeSettings);
         if (sources.length > 1) {
           const pending = await deferredMessages.list(running.session.id);
           if (!pending.some((message) => message.message === handoff)) await deferredMessages.add(running.session.id, handoff);
@@ -1031,6 +1071,7 @@ export class UnfinishedSessionLauncher {
         try {
           const resumed = await primary.adapter.resumeSession(primary.session.id);
           if (!resumed.ok) throw new Error(resumed.error || "возобновление исходной сессии отклонено");
+          await this.pinActiveSession(primary.adapter, primary.session.id, runtimeSettings);
           const sent = await primary.adapter.sendMessage(primary.session.id, { message: handoff, queue: true });
           if (!sent.ok) throw new Error(sent.error || "исходная сессия не приняла объединённый handoff");
           await this.options.store.markStarted(primary.session, this.generationId);
@@ -1093,6 +1134,7 @@ export class UnfinishedSessionLauncher {
           model: continuationModel,
           ...(primary.session.harness === "zcode" ? { mode: "yolo" } : {}),
         });
+        if (!runtimeSettings.movePinnedOnRollover) await this.pinActiveSession(primary.adapter, created.id, runtimeSettings);
         if (continuationModel && created.model !== continuationModel && primary.adapter.changeModel) {
           const selected = await primary.adapter.changeModel(created.id, continuationModel);
           if (!selected.ok) throw new Error(selected.error || `не удалось выбрать модель ${continuationModel}`);
@@ -1131,6 +1173,22 @@ export class UnfinishedSessionLauncher {
     await this.options.store.upsertInventoryBatch(inventoryBatch);
   }
 
+  private async pinActiveSession(
+    adapter: HarnessAdapter,
+    sessionId: string,
+    settings?: SessionAutostartFile,
+  ): Promise<void> {
+    if ((adapter.type !== "codex" && adapter.type !== "zcode") || !adapter.setSessionPinned) return;
+    const runtimeSettings = settings ?? await this.options.settingsStore.getSettings();
+    if (!runtimeSettings.pinActiveSessions) return;
+    try {
+      const pinned = await adapter.setSessionPinned(sessionId, true);
+      if (!pinned.ok) console.error(`[agent-herder] не удалось закрепить активную сессию ${adapter.type}:${sessionId}: ${pinned.error || "операция отклонена"}`);
+    } catch (error) {
+      console.error(`[agent-herder] не удалось закрепить активную сессию ${adapter.type}:${sessionId}: ${errorText(error)}`);
+    }
+  }
+
   private async fail(record: UnfinishedSessionRecord, error: string): Promise<void> {
     let attempted = record;
     if (record.state !== "recovering") {
@@ -1165,22 +1223,23 @@ export class UnfinishedSessionLauncher {
 function parseAutostartFile(value: unknown, env: NodeJS.ProcessEnv = process.env): SessionAutostartFile {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("session autostart settings must be an object");
   const object = value as Record<string, unknown>;
-  if ((object.version !== 1 && object.version !== 2 && object.version !== 3 && object.version !== 4 && object.version !== 5 && object.version !== 6) || typeof object.enabled !== "boolean" || !Array.isArray(object.sessions)) throw new Error("invalid session autostart settings");
-  const harnesses = object.version === 2 || object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 ? object.harnesses : [];
+  if ((object.version !== 1 && object.version !== 2 && object.version !== 3 && object.version !== 4 && object.version !== 5 && object.version !== 6 && object.version !== 7) || typeof object.enabled !== "boolean" || !Array.isArray(object.sessions)) throw new Error("invalid session autostart settings");
+  const harnesses = object.version === 2 || object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 || object.version === 7 ? object.harnesses : [];
   if (!Array.isArray(harnesses)) throw new Error("invalid session autostart harness overrides");
   const defaults = defaultAutostartFile(env);
   return {
-    version: 6,
+    version: 7,
     enabled: object.enabled,
-    rolloverExpiredCache: object.version === 4 || object.version === 5 || object.version === 6 ? booleanSetting(object.rolloverExpiredCache, "rolloverExpiredCache") : defaults.rolloverExpiredCache,
-    movePinnedOnRollover: object.version === 5 || object.version === 6 ? booleanSetting(object.movePinnedOnRollover, "movePinnedOnRollover") : defaults.movePinnedOnRollover,
-    inventoryWindowHours: object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 ? runtimeHours(object.inventoryWindowHours) : defaults.inventoryWindowHours,
-    evidenceMessageCount: object.version === 6 && object.evidenceMessageCount !== undefined ? evidenceCount(object.evidenceMessageCount) : defaults.evidenceMessageCount,
-    watchdogEnabled: object.version === 6 && object.watchdogEnabled !== undefined ? booleanSetting(object.watchdogEnabled, "watchdogEnabled") : defaults.watchdogEnabled,
-    watchdogIntervalSeconds: object.version === 6 && object.watchdogIntervalSeconds !== undefined ? boundedInteger(object.watchdogIntervalSeconds, 5, 300, "watchdogIntervalSeconds") : defaults.watchdogIntervalSeconds,
-    stalledTurnMinutes: object.version === 6 && object.stalledTurnMinutes !== undefined ? boundedInteger(object.stalledTurnMinutes, 1, 120, "stalledTurnMinutes") : defaults.stalledTurnMinutes,
-    judgeModel: object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 ? runtimeModel(object.judgeModel, "judgeModel") : defaults.judgeModel,
-    autopilotJudgeModel: object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 ? runtimeModel(object.autopilotJudgeModel, "autopilotJudgeModel") : defaults.autopilotJudgeModel,
+    pinActiveSessions: object.version === 7 && object.pinActiveSessions !== undefined ? booleanSetting(object.pinActiveSessions, "pinActiveSessions") : defaults.pinActiveSessions,
+    rolloverExpiredCache: object.version === 4 || object.version === 5 || object.version === 6 || object.version === 7 ? booleanSetting(object.rolloverExpiredCache, "rolloverExpiredCache") : defaults.rolloverExpiredCache,
+    movePinnedOnRollover: object.version === 5 || object.version === 6 || object.version === 7 ? booleanSetting(object.movePinnedOnRollover, "movePinnedOnRollover") : defaults.movePinnedOnRollover,
+    inventoryWindowHours: object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 || object.version === 7 ? runtimeHours(object.inventoryWindowHours) : defaults.inventoryWindowHours,
+    evidenceMessageCount: (object.version === 6 || object.version === 7) && object.evidenceMessageCount !== undefined ? evidenceCount(object.evidenceMessageCount) : defaults.evidenceMessageCount,
+    watchdogEnabled: (object.version === 6 || object.version === 7) && object.watchdogEnabled !== undefined ? booleanSetting(object.watchdogEnabled, "watchdogEnabled") : defaults.watchdogEnabled,
+    watchdogIntervalSeconds: (object.version === 6 || object.version === 7) && object.watchdogIntervalSeconds !== undefined ? boundedInteger(object.watchdogIntervalSeconds, 5, 300, "watchdogIntervalSeconds") : defaults.watchdogIntervalSeconds,
+    stalledTurnMinutes: (object.version === 6 || object.version === 7) && object.stalledTurnMinutes !== undefined ? boundedInteger(object.stalledTurnMinutes, 1, 120, "stalledTurnMinutes") : defaults.stalledTurnMinutes,
+    judgeModel: object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 || object.version === 7 ? runtimeModel(object.judgeModel, "judgeModel") : defaults.judgeModel,
+    autopilotJudgeModel: object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 || object.version === 7 ? runtimeModel(object.autopilotJudgeModel, "autopilotJudgeModel") : defaults.autopilotJudgeModel,
     harnesses: harnesses.map((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid session autostart harness override");
       const record = value as Record<string, unknown>;
@@ -1208,8 +1267,9 @@ function parseAutostartFile(value: unknown, env: NodeJS.ProcessEnv = process.env
 
 function defaultAutostartFile(env: NodeJS.ProcessEnv): SessionAutostartFile {
   return {
-    version: 6,
+    version: 7,
     enabled: env.AGENT_HERDER_UNFINISHED_AUTOSTART !== "false",
+    pinActiveSessions: env.AGENT_HERDER_UNFINISHED_PIN_ACTIVE_SESSIONS !== "false",
     rolloverExpiredCache: true,
     movePinnedOnRollover: true,
     inventoryWindowHours: positiveInteger(Number(env.AGENT_HERDER_UNFINISHED_INVENTORY_HOURS || 48), 48),

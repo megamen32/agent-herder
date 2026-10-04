@@ -597,6 +597,60 @@ describe("unfinished session launcher", () => {
     expect(await store.list()).toMatchObject([{ sessionId: "session-1", state: "active", attempts: 1 }]);
   });
 
+  it("keeps non-Codex/ZCode infrastructure turns out of the unfinished registry", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-scope-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session: AgentSession = { ...fixtureSession("running", "codex"), harness: "opencode", id: "health_diagnosis_1" };
+    const adapter = fixtureAdapter(session, { resumes: 0, messages: [] });
+    adapter.type = "opencode";
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["opencode", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+    });
+
+    await expect(launcher.armSession(session)).resolves.toBe(false);
+    await launcher.handleEvent("opencode", { kind: "turn.completed", harness: "opencode", sessionId: session.id });
+
+    expect(await store.list()).toEqual([]);
+  });
+
+  it("prunes legacy out-of-scope turns and inventory older than the configured window", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-prune-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const now = Date.now();
+    await store.markStarted({ ...fixtureSession("idle", "codex"), harness: "opencode", id: "legacy-health" });
+    await store.markStarted({ ...fixtureSession("idle", "codex"), id: "kept-codex" });
+    await store.upsertInventory({
+      harness: "codex", sessionId: "old", cwd: "/tmp", title: "Old", status: "idle",
+      lastActivity: new Date(now - 49 * 60 * 60_000).toISOString(), transcriptTail: "old", observedAt: new Date(now).toISOString(),
+    });
+    await store.upsertInventory({
+      harness: "codex", sessionId: "recent", cwd: "/tmp", title: "Recent", status: "idle",
+      lastActivity: new Date(now - 47 * 60 * 60_000).toISOString(), transcriptTail: "recent", observedAt: new Date(now).toISOString(),
+    });
+
+    await expect(store.pruneAutocontinueScope(new Date(now - 48 * 60 * 60_000))).resolves.toEqual({ sessions: 1, inventory: 1 });
+    expect((await store.list()).map((record) => record.sessionId)).toEqual(["kept-codex"]);
+    expect((await store.listInventory()).map((record) => record.sessionId)).toEqual(["recent"]);
+  });
+
+  it("removes a disabled exhausted session instead of retaining a permanent alert", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-disabled-exhausted-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = fixtureSession("idle", "codex");
+    await store.markStarted(session);
+    const attempt = await store.beginAttempt("codex", session.id, 1, 0);
+    expect(attempt).not.toBeNull();
+    await store.markFailure("codex", session.id, "failed", 1);
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    await settingsStore.setSession({ harness: "codex", sessionId: session.id, cwd: session.cwd }, false);
+    const launcher = new UnfinishedSessionLauncher({ adapters: new Map(), store, settingsStore });
+
+    await launcher.recoverPending();
+
+    expect(await store.list()).toEqual([]);
+  });
+
   it("recovers a persisted ZCode turn even when fresh inventory cannot enumerate it", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-missing-inventory-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -756,8 +810,9 @@ describe("unfinished session launcher", () => {
     await writeFile(path, JSON.stringify({ version: 1, enabled: true, sessions: [] }));
     const settingsStore = new SessionAutostartStore(path, {});
     expect(await settingsStore.getSettings()).toMatchObject({
-      version: 6,
+      version: 7,
       enabled: true,
+      pinActiveSessions: true,
       rolloverExpiredCache: true,
       movePinnedOnRollover: true,
       inventoryWindowHours: 48,
@@ -779,16 +834,66 @@ describe("unfinished session launcher", () => {
       judgeModel: "MiniMax-M3.1-Flash-Preview", autopilotJudgeModel: "MiniMax-M3", harnesses: [], sessions: [],
     }));
     const settingsStore = new SessionAutostartStore(path, {});
-    await expect(settingsStore.getSettings()).resolves.toMatchObject({ version: 6, rolloverExpiredCache: true, movePinnedOnRollover: true, evidenceMessageCount: 200, source: "persisted" });
+    await expect(settingsStore.getSettings()).resolves.toMatchObject({ version: 7, pinActiveSessions: true, rolloverExpiredCache: true, movePinnedOnRollover: true, evidenceMessageCount: 200, source: "persisted" });
     await settingsStore.setRuntimeSettings({
       inventoryWindowHours: 48,
       evidenceMessageCount: 4,
       judgeModel: "MiniMax-M3.1-Flash-Preview",
       autopilotJudgeModel: "MiniMax-M3",
+      pinActiveSessions: false,
       rolloverExpiredCache: false,
       movePinnedOnRollover: false,
     });
-    await expect(new SessionAutostartStore(path, {}).getSettings()).resolves.toMatchObject({ version: 6, rolloverExpiredCache: false, movePinnedOnRollover: false, evidenceMessageCount: 4, source: "persisted" });
+    await expect(new SessionAutostartStore(path, {}).getSettings()).resolves.toMatchObject({ version: 7, pinActiveSessions: false, rolloverExpiredCache: false, movePinnedOnRollover: false, evidenceMessageCount: 4, source: "persisted" });
+  });
+
+  it("migrates v6 settings to v7 with active-session pinning enabled", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-v6-"));
+    const path = join(root, "settings.json");
+    await writeFile(path, JSON.stringify({
+      version: 6,
+      enabled: true,
+      rolloverExpiredCache: false,
+      movePinnedOnRollover: false,
+      inventoryWindowHours: 48,
+      evidenceMessageCount: 200,
+      watchdogEnabled: true,
+      watchdogIntervalSeconds: 10,
+      stalledTurnMinutes: 2,
+      judgeModel: "MiniMax-M3.1-Flash-Preview",
+      autopilotJudgeModel: "MiniMax-M3",
+      harnesses: [],
+      sessions: [],
+    }));
+
+    await expect(new SessionAutostartStore(path, {}).getSettings()).resolves.toMatchObject({
+      version: 7,
+      pinActiveSessions: true,
+      rolloverExpiredCache: false,
+      movePinnedOnRollover: false,
+      source: "persisted",
+    });
+  });
+
+  it("pins an armed Codex session and never removes the pin when its turn completes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-pin-active-"));
+    const session = fixtureSession("running", "codex");
+    const adapter = fixtureAdapter(session, { resumes: 0, messages: [] });
+    const pins: Array<[string, boolean]> = [];
+    adapter.setSessionPinned = async (sessionId, pinned) => {
+      pins.push([sessionId, pinned]);
+      return { ok: true, sessionId };
+    };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]),
+      store: new UnfinishedSessionStore(join(root, "unfinished.json")),
+      ...enabledSettings(root),
+    });
+
+    await expect(launcher.armSession(session)).resolves.toBe(true);
+    await launcher.handleEvent("codex", { kind: "turn.completed", harness: "codex", sessionId: session.id });
+
+    expect(pins).toEqual([[session.id, true]]);
   });
 
   it("retries inside one Herder process and stops after the configured attempt budget", async () => {
@@ -1113,14 +1218,29 @@ describe("unfinished session launcher", () => {
     await store.markStarted(old);
     const calls = { resumes: 0, messages: [] as string[] };
     const oldAdapter = fixtureAdapter(old, calls);
+    const pins: Array<[string, boolean]> = [];
+    oldAdapter.setSessionPinned = async (sessionId, pinned) => {
+      pins.push([sessionId, pinned]);
+      return { ok: true, sessionId };
+    };
     const next = { ...old, id: "session-2", status: "running" as const, lastActivity: "2026-10-03T13:00:00.000Z" };
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    await settingsStore.setRuntimeSettings({
+      inventoryWindowHours: 48,
+      evidenceMessageCount: 200,
+      judgeModel: "MiniMax-M3.1-Flash-Preview",
+      autopilotJudgeModel: "MiniMax-M3",
+      pinActiveSessions: true,
+      movePinnedOnRollover: false,
+    });
     const launcher = new UnfinishedSessionLauncher({
       adapters: new Map([["codex", oldAdapter]]), store,
-      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), retryDelayMs: 0,
+      settingsStore, retryDelayMs: 0,
       cacheHandoff: { async maybeRollover() { return { kind: "rolled_over", session: next, ageMs: 3_600_000, cache: { ttlMs: 1_800_000, source: "openai-30m" } }; } },
     });
     await launcher.recoverPending();
     expect(calls.resumes).toBe(0);
+    expect(pins).toEqual([[next.id, true]]);
     expect(await store.list()).toMatchObject([{ sessionId: "session-2", state: "active" }]);
   });
 
@@ -1130,6 +1250,12 @@ describe("unfinished session launcher", () => {
     const old = fixtureSession("idle", "codex");
     await store.markStarted(old, "previous-process");
     const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(old, calls);
+    const pins: Array<[string, boolean]> = [];
+    adapter.setSessionPinned = async (sessionId, pinned) => {
+      pins.push([sessionId, pinned]);
+      return { ok: true, sessionId };
+    };
     const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
     await settingsStore.setRuntimeSettings({
       inventoryWindowHours: 48,
@@ -1140,13 +1266,14 @@ describe("unfinished session launcher", () => {
     });
     let handoffs = 0;
     await new UnfinishedSessionLauncher({
-      adapters: new Map([["codex", fixtureAdapter(old, calls)]]), store, settingsStore,
+      adapters: new Map([["codex", adapter]]), store, settingsStore,
       retryDelayMs: 0, generationId: "current-process",
       cacheHandoff: { async maybeRollover() { handoffs += 1; throw new Error("rollover must stay disabled"); } },
     }).recoverPending();
 
     expect(handoffs).toBe(0);
     expect(calls).toEqual({ resumes: 1, messages: [expect.stringContaining("Продолжи незавершённую задачу")] });
+    expect(pins).toEqual([[old.id, true]]);
     expect(await store.list()).toMatchObject([{ sessionId: old.id, state: "active", generationId: "current-process" }]);
   });
 

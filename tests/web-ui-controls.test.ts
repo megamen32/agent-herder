@@ -110,6 +110,15 @@ describe("mobile chat and session controls", () => {
     expect(globalAutocontinueHandler).not.toContain("/api/autopilot/policy");
   });
 
+  it("exposes active-session pinning as an autocontinue setting", () => {
+    const autocontinue = main.slice(main.indexOf('if (section === "autocontinue")'), main.indexOf("if (!draft)"));
+
+    expect(autocontinue).toContain("Сразу закреплять активные сессии");
+    expect(autocontinue).toContain("pinActiveSessions");
+    expect(autocontinue).toContain("Herder не снимает этот pin после завершения");
+    expect(main.slice(main.indexOf("const saveRuntimeSettings = async"))).toContain("pinActiveSessions: runtimeSettingsDraft.pinActiveSessions ?? true");
+  });
+
   it("loads autocontinue independently when the autopilot policy endpoint fails", () => {
     expect(main).toContain("Promise.allSettled");
     expect(main).toContain("setContinuationHarnessError(continuationResult.reason");

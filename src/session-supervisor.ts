@@ -484,8 +484,9 @@ export class SessionSupervisor {
     id: string,
     permissionId: string,
     response: "allow" | "deny",
+    remember = false,
   ): Promise<{ ok: boolean; error?: string }> {
-    const result = await this.requireAdapter(harness).respondPermission(id, permissionId, response);
+    const result = await this.requireAdapter(harness).respondPermission(id, permissionId, response, remember);
     if (result.ok) this.publishSessionChanged(harness, id, "changed");
     return result;
   }
