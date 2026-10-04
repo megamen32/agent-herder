@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createReadStream, existsSync } from "node:fs";
 import { open, readFile, readdir, readlink, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
 import { spawnDetachedWorkload } from "../workload-launcher.js";
@@ -742,36 +742,50 @@ export class CodexAdapter implements HarnessAdapter {
   private async getOpenCodexRolloutPaths(): Promise<Set<string> | null> {
     if (!existsSync("/proc")) return null;
     const result = new Set<string>();
+    const pids = await this.getCodexCandidatePids();
+    if (pids === null) return null;
+    let complete = true;
+    await Promise.all(pids.map(async (pid) => {
+      try {
+        const commandLine = await readFile(`/proc/${pid}/cmdline`, "utf8");
+        const argv0 = commandLine.split("\0", 1)[0] || "";
+        if (!/^codex(?:-|$)/.test(basename(argv0))) return;
+        const descriptors = await readdir(`/proc/${pid}/fd`);
+        await Promise.all(descriptors.map(async (descriptor) => {
+          try {
+            const target = await readlink(`/proc/${pid}/fd/${descriptor}`);
+            if (!target.startsWith(this.codexDir) || !target.includes("/sessions/") || !target.endsWith(".jsonl")) return;
+            const fdInfo = await readFile(`/proc/${pid}/fdinfo/${descriptor}`, "utf8");
+            const flags = fdInfo.match(/^flags:\s*([0-7]+)$/m)?.[1];
+            if (!flags) {
+              complete = false;
+              return;
+            }
+            const accessMode = Number.parseInt(flags, 8) & 0b11;
+            if (accessMode === 1 || accessMode === 2) result.add(target);
+          } catch {
+            complete = false;
+          }
+        }));
+      } catch {
+        complete = false;
+      }
+    }));
+    return complete ? result : null;
+  }
+
+  private async getCodexCandidatePids(): Promise<string[] | null> {
     let processList = "";
     try {
       ({ stdout: processList } = await execFileAsync("pgrep", ["-af", "codex"], { timeout: 5000 }));
     } catch (error) {
       const code = (error as { code?: unknown }).code;
-      if (code === 1 || code === "1") return result;
+      if (code === 1 || code === "1") return [];
       return null;
     }
-    const pids = processList.split("\n")
+    return processList.split("\n")
       .map((line) => line.match(/^(\d+)\s/)?.[1])
       .filter((pid): pid is string => !!pid);
-    await Promise.all(pids.map(async (pid) => {
-      let descriptors: string[];
-      try {
-        descriptors = await readdir(`/proc/${pid}/fd`);
-      } catch {
-        return;
-      }
-      await Promise.all(descriptors.map(async (descriptor) => {
-        try {
-          const target = await readlink(`/proc/${pid}/fd/${descriptor}`);
-          if (target.startsWith(this.codexDir) && target.includes("/sessions/") && target.endsWith(".jsonl")) {
-            result.add(target);
-          }
-        } catch {
-          // The process or descriptor may disappear while it is inspected.
-        }
-      }));
-    }));
-    return result;
   }
 }
 

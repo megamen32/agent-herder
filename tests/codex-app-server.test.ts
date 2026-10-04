@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
+import { CodexAdapter } from "../src/adapters/codex.js";
 
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
 
@@ -275,6 +276,56 @@ describe("Codex app-server adapter", () => {
     } finally {
       holder.kill();
       await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not count a Codex process with a read-only rollout descriptor as its writer", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-readonly-holder-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
+    const rollout = join(sessionDir, "rollout-thread-1.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-1", thread_name: "Interrupted task", updated_at: new Date().toISOString() }) + "\n");
+    await writeFile(rollout, [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-1", session_id: "thread-1", cwd: "/workspace" } }),
+      JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
+    ].join("\n") + "\n");
+    const holder = spawn(process.execPath, [
+      "-e",
+      "const fs=require('node:fs');fs.openSync(process.argv[1],'r');process.stdout.write('ready');setInterval(()=>{},1000)",
+      rollout,
+    ], { argv0: "codex-rollout-reader", stdio: ["ignore", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        holder.stdout.once("data", () => resolve());
+        holder.once("error", reject);
+      });
+      await adapter.init();
+      expect((await adapter.listSessions()).find((item) => item.id === "thread-1")?.status).toBe("idle");
+    } finally {
+      holder.kill();
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when a Codex candidate disappears during proc inspection", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-proc-race-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
+    const rollout = join(sessionDir, "rollout-thread-race.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-race", updated_at: new Date().toISOString() }) + "\n");
+    await writeFile(rollout, [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-race", cwd: "/workspace" } }),
+      JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
+    ].join("\n") + "\n");
+    const adapter = new CodexAdapter({ codexDir });
+    const internals = adapter as unknown as { getCodexCandidatePids: () => Promise<string[] | null> };
+    internals.getCodexCandidatePids = async () => ["999999999"];
+    try {
+      expect((await adapter.listSessions()).find((item) => item.id === "thread-race")?.status).toBe("running");
+    } finally {
       await rm(codexDir, { recursive: true, force: true });
     }
   });
