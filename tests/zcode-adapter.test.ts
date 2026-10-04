@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -245,6 +245,34 @@ describe("ZCode adapter", () => {
       reader.close();
       expect(row.title).toBe("Автопродолжение — Аудит t-proxy");
     } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("retries the requested title when ZCode indexes the task after prompt admission", async () => {
+    vi.useFakeTimers();
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-late-title-"));
+    const dbPath = join(root, "tasks-index.sqlite");
+    const db = new DatabaseSync(dbPath);
+    db.exec(`create table tasks (task_id text primary key, title text)`);
+    db.close();
+    try {
+      const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new FakeClient(), tasksIndexDbPath: dbPath });
+      await adapter.init();
+      const created = await adapter.createSession({ name: "Автопродолжение — Поздний индекс", cwd: "/workspace" });
+      expect(await adapter.sendMessage(created.id, { message: "Продолжи" })).toEqual({ ok: true });
+      const writer = new DatabaseSync(dbPath);
+      writer.prepare("insert into tasks (task_id, title) values (?, ?)").run(created.id, "Продолжи технический хвост");
+      writer.close();
+
+      await vi.advanceTimersByTimeAsync(300);
+      const reader = new DatabaseSync(dbPath, { readOnly: true });
+      const row = reader.prepare("select title from tasks where task_id = ?").get(created.id) as { title: string };
+      reader.close();
+      expect(row.title).toBe("Автопродолжение — Поздний индекс");
+      await adapter.dispose();
+    } finally {
+      vi.useRealTimers();
       await rm(root, { recursive: true, force: true });
     }
   });

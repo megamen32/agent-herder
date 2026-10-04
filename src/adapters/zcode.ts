@@ -391,6 +391,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly tasksIndexDbPath?: string;
   private readonly persistedSessionIds = new Set<string>();
   private readonly desiredSessionTitles = new Map<string, string>();
+  private readonly titlePersistenceTimers = new Map<string, NodeJS.Timeout>();
   private reportedEmptyTasksIndex = false;
   private readonly sessionWorkspaces = new Map<string, ZcodeWorkspaceRef>();
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
@@ -454,6 +455,8 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   async dispose(): Promise<void> {
     this.initialized = false;
+    for (const timer of this.titlePersistenceTimers.values()) clearTimeout(timer);
+    this.titlePersistenceTimers.clear();
     for (const unsubscribe of this.sessionEventUnsubscribers.values()) { try { unsubscribe(); } catch { /* best effort */ } }
     this.sessionEventUnsubscribers.clear();
     await this.client.close();
@@ -677,21 +680,34 @@ export class ZcodeAdapter implements HarnessAdapter {
     return result;
   }
 
-  private async persistDesiredSessionTitle(id: string): Promise<void> {
+  private async persistDesiredSessionTitle(id: string, attempt = 0): Promise<void> {
     const title = this.desiredSessionTitles.get(id);
     if (!title || !this.tasksIndexDbPath || !existsSync(this.tasksIndexDbPath)) return;
     try {
       const { DatabaseSync } = await import("node:sqlite");
       const db = new DatabaseSync(this.tasksIndexDbPath);
       try {
-        const result = db.prepare("update tasks set title = ? where task_id = ?").run(title, id);
-        if (Number(result.changes) > 0) this.desiredSessionTitles.delete(id);
+        db.prepare("update tasks set title = ? where task_id = ?").run(title, id);
       } finally {
         db.close();
       }
     } catch (error) {
       console.error(`[agent-herder] ZCode title persistence failed for ${id}: ${error instanceof Error ? error.message : String(error)}`);
     }
+    if (attempt >= 3) {
+      this.desiredSessionTitles.delete(id);
+      this.titlePersistenceTimers.delete(id);
+      return;
+    }
+    const delays = [250, 1_000, 3_000];
+    const previous = this.titlePersistenceTimers.get(id);
+    if (previous) clearTimeout(previous);
+    const timer = setTimeout(() => {
+      this.titlePersistenceTimers.delete(id);
+      void this.persistDesiredSessionTitle(id, attempt + 1);
+    }, delays[attempt]);
+    timer.unref?.();
+    this.titlePersistenceTimers.set(id, timer);
   }
 
   async stopSession(id: string): Promise<ControlResult> {
