@@ -436,6 +436,39 @@ describe("ZCode adapter", () => {
     await adapter.dispose();
   });
 
+  it("queues a second prompt while the same ZCode session is still finishing", async () => {
+    vi.useFakeTimers();
+    class BusyThenAcceptClient extends FakeClient {
+      sendCalls = 0;
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "sendPrompt") {
+          this.calls.push({ channel, method, args });
+          this.sendCalls += 1;
+          if (this.sendCalls === 1) throw new Error("A prompt is already running for this session");
+          return { accepted: true };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new BusyThenAcceptClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    try {
+      await adapter.init();
+      await expect(adapter.sendMessage("session-1", { message: "second continuation", queue: true })).resolves.toEqual({ ok: true });
+      expect(client.sendCalls).toBe(1);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(client.sendCalls).toBe(2);
+      expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(1);
+      expect(client.calls.filter((call) => call.method === "sendPrompt")[1]?.args[0]).toMatchObject({
+        sessionId: "session-1",
+        content: "second continuation",
+      });
+    } finally {
+      await adapter.dispose();
+      vi.useRealTimers();
+    }
+  });
+
   it("reports recently-updated sessions as running despite stale idle status", async () => {
     // Interactive TUI sessions come back from listSessions with a stale
     // "idle" status while a turn is executing; updatedAt recency is the

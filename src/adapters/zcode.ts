@@ -392,6 +392,9 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly persistedSessionIds = new Set<string>();
   private readonly desiredSessionTitles = new Map<string, string>();
   private readonly titlePersistenceTimers = new Map<string, NodeJS.Timeout>();
+  private readonly queuedPrompts = new Map<string, string[]>();
+  private readonly queuedPromptTimers = new Map<string, NodeJS.Timeout>();
+  private readonly queuedPromptFlushes = new Set<string>();
   private reportedEmptyTasksIndex = false;
   private readonly sessionWorkspaces = new Map<string, ZcodeWorkspaceRef>();
   /** Read-after-write identity for sessions created before the task index catches up. */
@@ -459,6 +462,8 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.initialized = false;
     for (const timer of this.titlePersistenceTimers.values()) clearTimeout(timer);
     this.titlePersistenceTimers.clear();
+    for (const timer of this.queuedPromptTimers.values()) clearTimeout(timer);
+    this.queuedPromptTimers.clear();
     for (const unsubscribe of this.sessionEventUnsubscribers.values()) { try { unsubscribe(); } catch { /* best effort */ } }
     this.sessionEventUnsubscribers.clear();
     await this.client.close();
@@ -674,6 +679,13 @@ export class ZcodeAdapter implements HarnessAdapter {
     };
     let result = await send();
     if (!result.ok) {
+      if (options.queue && /prompt is already running/i.test(result.error ?? "")) {
+        const queue = this.queuedPrompts.get(id) ?? [];
+        if (!queue.includes(options.message)) queue.push(options.message);
+        this.queuedPrompts.set(id, queue);
+        this.scheduleQueuedPromptFlush(id);
+        return { ok: true };
+      }
       // Interactive TUI sessions between turns reject direct prompts ("Session
       // is not active"). Resuming re-attaches the session to this app-server,
       // after which the same prompt delivers.
@@ -1021,7 +1033,10 @@ export class ZcodeAdapter implements HarnessAdapter {
         deliveryKind: "replayable",
       }, (payload) => {
         const event = normalizeZcodeTaskEvent(sessionId, payload);
-        if (event) this.emitEvent(event);
+        if (event) {
+          this.emitEvent(event);
+          if (event.kind === "turn.completed" || event.kind === "turn.failed") this.scheduleQueuedPromptFlush(sessionId, 0);
+        }
       });
       this.sessionEventUnsubscribers.set(sessionId, () => { active = false; unsubscribe(); });
       this.emitEvent({ kind: "process.connected", harness: "zcode", nativeType: "event-subscription-ready", data: { transport: "app-server-events" } });
@@ -1035,6 +1050,56 @@ export class ZcodeAdapter implements HarnessAdapter {
     const normalized = { ...event, at: event.at ?? new Date().toISOString() };
     for (const listener of [...this.eventListeners]) {
       try { listener(normalized); } catch { /* isolate listeners */ }
+    }
+  }
+
+  private scheduleQueuedPromptFlush(sessionId: string, delayMs = 1_000): void {
+    if (this.queuedPromptTimers.has(sessionId) || this.queuedPromptFlushes.has(sessionId)) return;
+    const timer = setTimeout(() => {
+      this.queuedPromptTimers.delete(sessionId);
+      void this.flushQueuedPrompt(sessionId);
+    }, delayMs);
+    timer.unref?.();
+    this.queuedPromptTimers.set(sessionId, timer);
+  }
+
+  private async flushQueuedPrompt(sessionId: string): Promise<void> {
+    if (this.queuedPromptFlushes.has(sessionId)) return;
+    const queue = this.queuedPrompts.get(sessionId);
+    if (!queue?.length) return;
+    let nextDelayMs = 0;
+    this.queuedPromptFlushes.add(sessionId);
+    try {
+      const workspace = this.sessionWorkspaces.get(sessionId) || this.workspace();
+      try {
+        await this.callAgent("sendPrompt", {
+          ...workspace,
+          sessionId,
+          inputId: randomUUID(),
+          content: queue[0],
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/prompt is already running/i.test(message)) {
+          nextDelayMs = 1_000;
+          return;
+        }
+        console.error(`[agent-herder] queued ZCode prompt failed for ${sessionId}: ${message}`);
+        nextDelayMs = 5_000;
+        return;
+      }
+      queue.shift();
+      if (queue.length === 0) this.queuedPrompts.delete(sessionId);
+      const woken = await this.resumeSession(sessionId);
+      if (!woken.ok) {
+        console.error(`[agent-herder] queued ZCode prompt accepted but wake failed for ${sessionId}: ${woken.error || "unknown error"}`);
+        const timer = setTimeout(() => { void this.resumeSession(sessionId); }, 1_000);
+        timer.unref?.();
+      }
+      await this.persistDesiredSessionTitle(sessionId);
+    } finally {
+      this.queuedPromptFlushes.delete(sessionId);
+      if (this.queuedPrompts.get(sessionId)?.length) this.scheduleQueuedPromptFlush(sessionId, nextDelayMs);
     }
   }
 
