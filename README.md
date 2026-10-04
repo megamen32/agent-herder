@@ -218,7 +218,7 @@ The common switches are:
 | `AGENT_HERDER_HTTP_TOKEN` | — | Required when the web host is non-loopback |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_DIR` | `.agent-herder/transcripts` | Relative archive path inside the MCP process CWD |
 
-Every reconciliation sends one MiniMax request with the complete enabled Codex and ZCode inventory. The planner receives the configured four full semantic messages from every session together, groups duplicate tasks globally, and creates at most one `Автопродолжение — <readable topic>` session for each unfinished group. A single global launch budget still limits the whole pass.
+Every reconciliation first scans the enabled Codex and ZCode inventory inside the configured window, then sends MiniMax only new, changed, previously unclassified, or unfinished non-running sessions. The planner receives the configured four full semantic messages from that actionable set together, groups duplicate tasks globally, and creates at most one `Автопродолжение — <readable topic>` session for each unfinished group. Completed unchanged sessions and healthy running sessions are not re-sent every ten minutes. A single global launch budget still limits the whole pass.
 
 Cache-aware restart uses 30 minutes for documented GPT-5.6+ cache retention,
 and a conservative 5-minute boundary for GLM-5.3 and MiniMax M3/M3.1. Z.ai's

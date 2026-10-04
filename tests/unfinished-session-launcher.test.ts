@@ -182,7 +182,7 @@ describe("unfinished session launcher", () => {
     await store.upsertInventory({
       harness: "zcode", sessionId: "duplicate-old", cwd: "/workspace/video", title: "Починить комментарии",
       status: "idle", lastActivity: sessions[0]!.lastActivity, transcriptTail: "старый сохранённый хвост", observedAt: new Date().toISOString(),
-      verdict: { verdict: "completed", reason: "Предыдущая оценка могла быть ошибочной", confidence: 0.6, judgedAt: new Date().toISOString() },
+      verdict: { verdict: "needs_human", reason: "Предыдущая оценка не завершилась", confidence: 0, judgedAt: new Date().toISOString() },
     });
     const created: AgentSession = { ...sessions[1]!, id: "merged-session", status: "running", title: "Автопродолжение — Восстановить отправку комментариев" };
     const names: string[] = [];
@@ -287,6 +287,45 @@ describe("unfinished session launcher", () => {
     }).recoverPending();
     expect(sizes).toEqual([33]);
     expect(await store.listInventory()).toHaveLength(33);
+  });
+
+  it("replans only new or changed sessions instead of the whole 48-hour inventory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-actionable-inventory-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const oldActivity = new Date(Date.now() - 10 * 60_000).toISOString();
+    let sessions: AgentSession[] = [
+      { ...fixtureSession("idle", "codex"), id: "settled", title: "Settled", lastActivity: oldActivity },
+      { ...fixtureSession("idle", "codex"), id: "changed", title: "Changed", lastActivity: oldActivity },
+    ];
+    const batches: string[][] = [];
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          batches.push(batch.map(({ session }) => session.id));
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "done", confidence: 1, topic: session.title, handoff: "",
+          })) };
+        },
+      },
+    });
+
+    await launcher.recoverPending();
+    sessions = [
+      sessions[0]!,
+      { ...sessions[1]!, lastActivity: new Date(Date.now() - 5 * 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "new", title: "New", lastActivity: oldActivity },
+      { ...fixtureSession("running", "codex"), id: "healthy-running", title: "Running", lastActivity: new Date().toISOString() },
+    ];
+    await launcher.recoverPending();
+
+    expect(batches).toEqual([["settled", "changed"], ["changed", "new"]]);
   });
 
   it("persists a running autopilot turn and starts the same session after a fresh process", async () => {

@@ -662,8 +662,26 @@ export class UnfinishedSessionLauncher {
       for (const { adapter, session } of candidates) {
         await new Promise<void>((resolve) => setImmediate(resolve));
         if (!await this.isEnabled(session.harness, session.id, session.cwd)) continue;
+        const previous = priorInventory.get(sessionKey(session.harness, session.id));
+        const metadataUnchanged = previous?.lastActivity === session.lastActivity
+          && previous.status === session.status
+          && previous.cwd === session.cwd
+          && previous.title === session.title;
+        const settledAndUnchanged = metadataUnchanged && previous?.verdict && previous.verdict.confidence > 0
+          && (previous.verdict.verdict === "completed"
+            || previous.verdict.verdict === "needs_human"
+            || (previous.verdict.verdict === "unfinished" && session.status === "running"));
+        if (settledAndUnchanged) continue;
+        const oldEnough = Date.now() - Date.parse(session.lastActivity) >= this.discoveryIdleMs;
+        if (session.status === "running" || !oldEnough) continue;
         const messages = await adapter.getSessionMessages?.(session.id, Math.max(50, runtimeSettings.evidenceMessageCount * 3)).catch(() => null);
-        assessed.push({ adapter, session, transcriptTail: completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount) });
+        const transcriptTail = completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount);
+        const unchanged = metadataUnchanged && previous?.transcriptTail === transcriptTail;
+        const actionable = !previous?.verdict
+          || previous.verdict.confidence === 0
+          || !unchanged
+          || previous.verdict.verdict === "unfinished";
+        if (actionable) assessed.push({ adapter, session, transcriptTail });
       }
       if (assessed.length > 0) {
         try {
