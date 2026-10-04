@@ -739,12 +739,16 @@ export class ZcodeAdapter implements HarnessAdapter {
     const workspace = this.sessionWorkspaces.get(id) || this.workspace();
     this.sessionWorkspaces.set(id, workspace);
     this.ensureSessionEventSubscription(id, workspace);
-    // sendPrompt only queues the next turn. Always wake the same session after
-    // acceptance, including the not-active retry path, and surface a failed
-    // wake so restart continuation remains retryable instead of reporting a
-    // turn that never started.
+    // sendPrompt acceptance is the idempotency boundary: never report it as a
+    // failed continuation merely because the follow-up wake is transiently
+    // unavailable, or the caller may enqueue the same prompt again.
     const woken = await this.resumeSession(id);
-    if (!woken.ok) return woken;
+    if (!woken.ok) {
+      console.error(`[agent-herder] ZCode prompt accepted but wake failed for ${id}: ${woken.error || "unknown error"}`);
+      const timer = setTimeout(() => { void this.resumeSession(id); }, 1_000);
+      timer.unref?.();
+      return result;
+    }
     await this.persistDesiredSessionTitle(id);
     return result;
   }
@@ -1196,6 +1200,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.queuedPromptFlushes.add(sessionId);
     try {
       const workspace = this.sessionWorkspaces.get(sessionId) || this.workspace();
+      let accepted = false;
       try {
         await this.callAgent("sendPrompt", {
           ...workspace,
@@ -1203,6 +1208,7 @@ export class ZcodeAdapter implements HarnessAdapter {
           inputId: randomUUID(),
           content: queue[0],
         });
+        accepted = true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (/prompt is already running/i.test(message)) {
@@ -1219,6 +1225,7 @@ export class ZcodeAdapter implements HarnessAdapter {
                 inputId: randomUUID(),
                 content: queue[0],
               });
+              accepted = true;
             } catch (retryError) {
               const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
               if (/prompt is already running/i.test(retryMessage)) {
@@ -1231,6 +1238,8 @@ export class ZcodeAdapter implements HarnessAdapter {
                 return;
               }
               console.error(`[agent-herder] ${terminalInactiveResult(sessionId, retryError).error}; dropping queued prompts`);
+              this.queuedPrompts.delete(sessionId);
+              return;
             }
           } else {
             if (!isInactiveSessionError(resumed.error)) {
@@ -1239,14 +1248,16 @@ export class ZcodeAdapter implements HarnessAdapter {
               return;
             }
             console.error(`[agent-herder] ${terminalInactiveResult(sessionId, resumed.error).error}; dropping queued prompts`);
+            this.queuedPrompts.delete(sessionId);
+            return;
           }
-          this.queuedPrompts.delete(sessionId);
+        } else {
+          console.error(`[agent-herder] queued ZCode prompt failed for ${sessionId}: ${message}`);
+          nextDelayMs = 5_000;
           return;
         }
-        console.error(`[agent-herder] queued ZCode prompt failed for ${sessionId}: ${message}`);
-        nextDelayMs = 5_000;
-        return;
       }
+      if (!accepted) return;
       queue.shift();
       if (queue.length === 0) this.queuedPrompts.delete(sessionId);
       const woken = await this.resumeSession(sessionId);

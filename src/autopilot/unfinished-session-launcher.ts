@@ -848,6 +848,7 @@ export class UnfinishedSessionLauncher {
       model: record.model,
       needsPermission: false,
     };
+    let promptAccepted = false;
     try {
       if (!this.lifecycleActive(lifecycleEpoch)) {
         await this.options.store.cancelAttempt(attempt);
@@ -862,15 +863,29 @@ export class UnfinishedSessionLauncher {
         const handoff = await this.options.cacheHandoff.maybeRollover(session, new Date(), {
           movePinned: runtimeSettings.movePinnedOnRollover,
         });
-        if (!this.lifecycleActive(lifecycleEpoch)) return;
         if (handoff.kind === "rolled_over" && handoff.session) {
+          // maybeRollover already created and handed off the replacement. Even
+          // if stop arrived during that await, settle durable registry state;
+          // do not repeat the rollover on the next process generation.
+          if (!this.lifecycleActive(lifecycleEpoch)) {
+            await this.options.store.remove(record.harness, record.sessionId);
+            await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true);
+            return;
+          }
           if (!runtimeSettings.movePinnedOnRollover) await this.pinActiveSession(adapter, handoff.session.id, runtimeSettings);
-          if (!this.lifecycleActive(lifecycleEpoch)) return;
+          if (!this.lifecycleActive(lifecycleEpoch)) {
+            await this.options.store.remove(record.harness, record.sessionId);
+            await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true);
+            return;
+          }
           await this.options.store.remove(record.harness, record.sessionId);
-          if (!this.lifecycleActive(lifecycleEpoch)) return;
           await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true);
           this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
           console.error(`[agent-herder] протухшая сессия ${record.harness}:${record.sessionId} продолжена в новой ${handoff.session.id}`);
+          return;
+        }
+        if (!this.lifecycleActive(lifecycleEpoch)) {
+          await this.options.store.cancelAttempt(attempt);
           return;
         }
       }
@@ -880,26 +895,61 @@ export class UnfinishedSessionLauncher {
       }
       const resumed = adapter.resumeSession ? await adapter.resumeSession(record.sessionId) : { ok: true };
       if (!resumed.ok) throw new Error(resumed.error || "возобновление отклонено");
-      if (!this.lifecycleActive(lifecycleEpoch)) return;
+      if (!this.lifecycleActive(lifecycleEpoch)) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
       await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
-      if (!this.lifecycleActive(lifecycleEpoch)) return;
+      if (!this.lifecycleActive(lifecycleEpoch)) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
       const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true });
       if (!sent.ok) throw new Error(sent.error || "команда продолжения отклонена");
+      promptAccepted = true;
+      // The prompt is now accepted by the native harness. Always settle the
+      // durable record even if stop arrived during sendMessage; rolling the
+      // attempt back here could enqueue the same continuation after restart.
       await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true);
       this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
       console.error(`[agent-herder] автоматически продолжена незавершённая сессия ${record.harness}:${record.sessionId}`);
     } catch (error) {
+      if (promptAccepted) {
+        try {
+          await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true);
+        } catch (settleError) {
+          console.error(`[agent-herder] ZCode/Codex prompt accepted but durable settle failed for ${record.sessionId}: ${errorText(settleError)}`);
+        }
+        return;
+      }
+      if (!this.lifecycleActive(lifecycleEpoch)) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
       const failure = errorText(error);
       if (isBusyCodexWriter(record.harness, failure)) {
-        if (!this.lifecycleActive(lifecycleEpoch)) return;
+        if (!this.lifecycleActive(lifecycleEpoch)) {
+          await this.options.store.cancelAttempt(attempt);
+          return;
+        }
         const inbox = this.options.deferredStore ?? deferredMessages;
         const pending = await inbox.list(record.sessionId);
-        if (!this.lifecycleActive(lifecycleEpoch)) return;
-        if (!pending.some((message) => isAutocontinueRequest(message.message))) {
-          await inbox.add(record.sessionId, this.continuationMessage);
-          if (!this.lifecycleActive(lifecycleEpoch)) return;
+        if (!this.lifecycleActive(lifecycleEpoch)) {
+          await this.options.store.cancelAttempt(attempt);
+          return;
         }
-        if (!this.lifecycleActive(lifecycleEpoch)) return;
+        let deferredAccepted = pending.some((message) => isAutocontinueRequest(message.message));
+        if (!deferredAccepted) {
+          await inbox.add(record.sessionId, this.continuationMessage);
+          deferredAccepted = true;
+        }
+        if (!this.lifecycleActive(lifecycleEpoch) && !deferredAccepted) {
+          await this.options.store.cancelAttempt(attempt);
+          return;
+        }
+        // Existing or newly-added deferred work is already durable. Settle it
+        // even if stop arrived after the inbox write so restart cannot add a
+        // duplicate continuation.
         await this.options.store.markStarted(trackedSession, this.generationId);
         console.error(`[agent-herder] продолжение Codex отложено до безопасной границы хода ${record.sessionId}`);
         return;

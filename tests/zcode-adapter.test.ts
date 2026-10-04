@@ -524,7 +524,8 @@ describe("ZCode adapter", () => {
     await adapter.dispose();
   });
 
-  it("requires both sequential prompts to wake the same resumed session", async () => {
+  it("does not duplicate an accepted prompt when its immediate wake fails", async () => {
+    vi.useFakeTimers();
     class SecondWakeFailsClient extends FakeClient {
       resumeCalls = 0;
       override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
@@ -539,17 +540,20 @@ describe("ZCode adapter", () => {
     }
     const client = new SecondWakeFailsClient();
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
-    await adapter.init();
+    try {
+      await adapter.init();
 
-    await expect(adapter.sendMessage("session-1", { message: "first continuation", queue: true })).resolves.toEqual({ ok: true });
-    await expect(adapter.sendMessage("session-1", { message: "second continuation", queue: true })).resolves.toEqual({
-      ok: false,
-      error: "second wake failed",
-    });
-    expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(2);
-    expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(2);
-
-    await adapter.dispose();
+      await expect(adapter.sendMessage("session-1", { message: "first continuation", queue: true })).resolves.toEqual({ ok: true });
+      await expect(adapter.sendMessage("session-1", { message: "second continuation", queue: true })).resolves.toEqual({ ok: true });
+      expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(2);
+      expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(3);
+      expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(2);
+    } finally {
+      await adapter.dispose();
+      vi.useRealTimers();
+    }
   });
 
   it("queues a second prompt while the same ZCode session is still finishing", async () => {
@@ -650,6 +654,50 @@ describe("ZCode adapter", () => {
       await vi.advanceTimersByTimeAsync(1);
       expect(client.sendCalls).toBe(3);
       expect(client.resumeCalls).toBe(2);
+    } finally {
+      await adapter.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps later queued prompts and wakes after a recovered inactive send", async () => {
+    vi.useFakeTimers();
+    class RecoveredQueueClient extends FakeClient {
+      sendCalls = 0;
+      resumeCalls = 0;
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "sendPrompt") {
+          this.calls.push({ channel, method, args });
+          this.sendCalls += 1;
+          if (this.sendCalls <= 2) throw new Error("A prompt is already running for this session");
+          if (this.sendCalls === 3) throw new Error("Session is not active: session-1");
+          return { accepted: true };
+        }
+        if (channel === "zcode-agent" && method === "resumeSession") {
+          this.calls.push({ channel, method, args });
+          this.resumeCalls += 1;
+          return snapshot;
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new RecoveredQueueClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    try {
+      await adapter.init();
+      await expect(adapter.sendMessage("session-1", { message: "first", queue: true })).resolves.toEqual({ ok: true });
+      await expect(adapter.sendMessage("session-1", { message: "second", queue: true })).resolves.toEqual({ ok: true });
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await vi.runOnlyPendingTimersAsync();
+
+      const acceptedContents = client.calls
+        .filter((call) => call.method === "sendPrompt")
+        .slice(-2)
+        .map((call) => (call.args[0] as { content?: string }).content);
+      expect(acceptedContents).toEqual(["first", "second"]);
+      expect(client.sendCalls).toBe(5);
+      expect(client.resumeCalls).toBe(3);
     } finally {
       await adapter.dispose();
       vi.useRealTimers();

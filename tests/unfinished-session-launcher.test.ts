@@ -1351,6 +1351,131 @@ describe("unfinished session launcher", () => {
     expect(await store.list()).toMatchObject([{ attempts: 0, state: "active" }]);
   });
 
+  it("stop during native resume rolls back the unused retry attempt", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-stop-resume-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = fixtureSession("idle");
+    await store.markStarted(session, "previous-process");
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    let resumeStarted = false;
+    let releaseResume!: () => void;
+    const resumeGate = new Promise<void>((resolve) => { releaseResume = resolve; });
+    adapter.resumeSession = async () => {
+      calls.resumes += 1;
+      resumeStarted = true;
+      await resumeGate;
+      return { ok: true };
+    };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store,
+      ...enabledSettings(root), discoveryIdleMs: 1, reconcileIntervalMs: 60_000,
+    });
+
+    const stop = launcher.start();
+    await waitUntil(() => resumeStarted);
+    stop();
+    releaseResume();
+    await waitUntil(async () => (await store.list())[0]?.state === "active");
+
+    expect(calls.messages).toEqual([]);
+    expect(await store.list()).toMatchObject([{ attempts: 0, state: "active" }]);
+  });
+
+  it("stop during a failed native resume still rolls back the retry attempt", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-stop-resume-fail-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = fixtureSession("idle");
+    await store.markStarted(session, "previous-process");
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    let resumeStarted = false;
+    let releaseResume!: () => void;
+    const resumeGate = new Promise<void>((resolve) => { releaseResume = resolve; });
+    adapter.resumeSession = async () => {
+      calls.resumes += 1;
+      resumeStarted = true;
+      await resumeGate;
+      return { ok: false, error: "temporary attach failure" };
+    };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store,
+      ...enabledSettings(root), discoveryIdleMs: 1, reconcileIntervalMs: 60_000,
+    });
+
+    const stop = launcher.start();
+    await waitUntil(() => resumeStarted);
+    stop();
+    releaseResume();
+    await waitUntil(async () => (await store.list())[0]?.state === "active");
+
+    expect(calls.messages).toEqual([]);
+    expect(await store.list()).toMatchObject([{ attempts: 0, state: "active" }]);
+  });
+
+  it("stop during pinning rolls back before sending a continuation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-stop-pin-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = fixtureSession("idle");
+    await store.markStarted(session, "previous-process");
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    let pinStarted = false;
+    let releasePin!: () => void;
+    const pinGate = new Promise<void>((resolve) => { releasePin = resolve; });
+    adapter.setSessionPinned = async () => {
+      pinStarted = true;
+      await pinGate;
+      return { ok: true };
+    };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store,
+      ...enabledSettings(root), discoveryIdleMs: 1, reconcileIntervalMs: 60_000,
+    });
+
+    const stop = launcher.start();
+    await waitUntil(() => pinStarted);
+    stop();
+    releasePin();
+    await waitUntil(async () => (await store.list())[0]?.state === "active");
+
+    expect(calls.resumes).toBe(1);
+    expect(calls.messages).toEqual([]);
+    expect(await store.list()).toMatchObject([{ attempts: 0, state: "active" }]);
+  });
+
+  it("stop during a rejected send rolls back the retry attempt", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-stop-send-fail-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = fixtureSession("idle");
+    await store.markStarted(session, "previous-process");
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    let sendStarted = false;
+    let releaseSend!: () => void;
+    const sendGate = new Promise<void>((resolve) => { releaseSend = resolve; });
+    adapter.sendMessage = async (_id, input) => {
+      calls.messages.push(input.message);
+      sendStarted = true;
+      await sendGate;
+      return { ok: false, error: "temporary send failure" };
+    };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store,
+      ...enabledSettings(root), discoveryIdleMs: 1, reconcileIntervalMs: 60_000,
+    });
+
+    const stop = launcher.start();
+    await waitUntil(() => sendStarted);
+    stop();
+    releaseSend();
+    await waitUntil(async () => (await store.list())[0]?.state === "active");
+
+    expect(calls.resumes).toBe(1);
+    expect(calls.messages).toHaveLength(1);
+    expect(await store.list()).toMatchObject([{ attempts: 0, state: "active" }]);
+  });
+
   it("stop clears the process-lifetime reconciliation timer", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-stop-reconcile-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
