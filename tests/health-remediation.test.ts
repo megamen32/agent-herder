@@ -28,13 +28,19 @@ describe("health remediation execution profile", () => {
     })).toThrow(/model/);
   });
 
-  it("rejects Hermes as the canonical runtime", () => {
-    expect(() => normalizeHealthExecution({
+  it("accepts the canonical Hermes profile", () => {
+    expect(normalizeHealthExecution({
       runtime: "hermes",
-      provider: "account:zai-individual-coding-plan",
-      model: "GLM-5.3-Flash",
+      provider: "openai-codex",
+      model: "gpt-5.6-luna",
       reasoning: "high",
       topic: "health",
-    })).toThrow(/runtime/);
+    })).toEqual({
+      runtime: "hermes",
+      provider: "openai-codex",
+      model: "gpt-5.6-luna",
+      reasoning: "high",
+      topic: "health",
+    });
   });
 });
