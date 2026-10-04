@@ -192,6 +192,9 @@ AGENT_HERDER_AUTOPILOT_NOTIFY_PROJECT=agent-herder
 AGENT_HERDER_AUTOPILOT_NOTIFY_KIND=notification
 ```
 
+If the autopilot-specific recipient is omitted, Agent Herder uses the shared
+`NOTIFY_CENTER_RECIPIENT` from the Notice Place environment.
+
 Agent Herder does not call Matrix or Telegram directly. NoticePlace keeps its
 configured fan-out, so adding Matrix does not remove existing notification
 channels. `202 Accepted` means the event was durably accepted; it is not proof

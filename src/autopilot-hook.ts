@@ -140,7 +140,7 @@ async function main(): Promise<void> {
         project: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_PROJECT ?? "agent-herder",
         // The sink validates this only if a terminal decision actually emits
         // a notice. `continue` should not require a delivery configuration.
-        recipient: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT ?? "",
+        recipient: resolveNotificationRecipient(),
         kind: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_KIND ?? "notification",
       },
       choiceRegistry: new ChoiceRegistry(join(stateDir, "choices.json")),
@@ -188,10 +188,7 @@ function buildNotificationSink() {
     async send(payload: Parameters<ReturnType<typeof createNoticePlaceSink>["send"]>[0]) {
       // Keep the exact recipient an explicit live gate. An empty/default
       // recipient must never become an outbound NoticePlace request.
-      requiredEnv(
-        "AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT",
-        "Notification recipient is not configured",
-      );
+      if (!resolveNotificationRecipient()) throw new Error("Notification recipient is not configured");
       return createNoticePlaceSink({
         eventUrl: requiredEnv(
           "NOTIFY_CENTER_EVENT_URL",
@@ -201,6 +198,12 @@ function buildNotificationSink() {
       }).send(payload);
     },
   };
+}
+
+export function resolveNotificationRecipient(env: NodeJS.ProcessEnv = process.env): string {
+  return env.AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT?.trim()
+    || env.NOTIFY_CENTER_RECIPIENT?.trim()
+    || "";
 }
 
 function defaultStateDir(): string {
@@ -282,7 +285,7 @@ function writeHelp(): void {
       "  AGENT_HERDER_AUTOPILOT_JUDGE_BASE_URL   OpenAI-compatible /chat/completions base",
       "  AGENT_HERDER_AUTOPILOT_JUDGE_MODEL      structured judge model",
       "  NOTIFY_CENTER_EVENT_URL / TOKEN         NoticePlace producer credentials",
-      "  AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT  exact Notify recipient",
+      "  AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT  exact Notify recipient (falls back to NOTIFY_CENTER_RECIPIENT)",
       "",
       "No hook is installed or trusted by this command.",
       "",

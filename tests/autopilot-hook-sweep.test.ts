@@ -4,7 +4,7 @@ import { join } from "node:path";
 import lockfile from "proper-lockfile";
 import { describe, expect, it, vi } from "vitest";
 import { createAutopilotCore } from "../src/autopilot/index.js";
-import { loadEffectivePolicyForStopHook } from "../src/autopilot-hook.js";
+import { loadEffectivePolicyForStopHook, resolveNotificationRecipient } from "../src/autopilot-hook.js";
 import { ChoiceRegistry, ChoiceRegistryLockUnavailableError, type PendingChoice } from "../src/autopilot/choice-registry.js";
 import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "../src/resume-transport.js";
 import { createDefaultAutopilotPolicy, resolveEffectivePolicy, type AutopilotPolicy, type EffectivePolicy } from "../src/autopilot/policy.js";
@@ -81,6 +81,11 @@ function liveCodexSession(cwd: string): AgentSession {
 }
 
 describe("autopilot policy hook and timeout sweep", () => {
+  it("uses the shared Notice Place recipient when no autopilot-specific override exists", () => {
+    expect(resolveNotificationRecipient({ NOTIFY_CENTER_RECIPIENT: "owner" })).toBe("owner");
+    expect(resolveNotificationRecipient({ NOTIFY_CENTER_RECIPIENT: "owner", AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT: "autopilot-owner" })).toBe("autopilot-owner");
+    expect(resolveNotificationRecipient({})).toBe("");
+  });
   it("fails closed for default-off and rejects a nonmatching selector", async () => {
     const judge = { decide: vi.fn(async () => ({ kind: "choice", choices })) };
     const notify = { send: vi.fn(async () => undefined) };
