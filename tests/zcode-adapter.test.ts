@@ -60,6 +60,19 @@ class FakeClient implements ZcodeClientLike {
     if (channel === "zcode-agent" && method === "listSessions") return [session];
     if (channel === "zcode-agent" && method === "readSession") return snapshot;
     if (channel === "zcode-agent" && method === "readSessionMessages") return snapshot.messages;
+    if (channel === "zcode-agent" && method === "readSessionEvents") {
+      const accepted = [...this.calls].reverse().find((call) => call.channel === "zcode-agent" && call.method === "sendPrompt");
+      const inputId = (accepted?.args[0] as { inputId?: string } | undefined)?.inputId;
+      return inputId ? [{
+        type: "turn.started",
+        eventId: `turn-started-${inputId}`,
+        sessionId: (accepted?.args[0] as { sessionId?: string }).sessionId,
+        turnId: `turn-${inputId}`,
+        seq: 3,
+        timestamp: Date.now(),
+        payload: { inputId },
+      }] : [];
+    }
     if (channel === "zcode-agent" && method === "readWorkspaceState") return { settings: { model: { current: session.model, available: [{ ref: session.model, label: "GLM-4.5" }] } } };
     if (channel === "zcode-agent" && method === "resumeSession") return snapshot;
     if (channel === "zcode-agent" && method === "createSession") return { ...snapshot, session: { ...session, sessionId: "created-1", title: "New task", parentSessionId: undefined, sessionKind: "interactive" } };
@@ -492,7 +505,64 @@ describe("ZCode adapter", () => {
     const firstSend = methods.indexOf("sendPrompt");
     expect(methods[firstSend + 1]).toBe("resumeSession");
     expect(methods[firstSend + 2]).toBe("sendPrompt");
-    expect(methods[firstSend + 3]).toBe("resumeSession");
+    expect(methods[firstSend + 3]).toBe("readSessionEvents");
+
+    await adapter.dispose();
+  });
+
+  it("does not treat a native resume snapshot as proof that an accepted prompt started", async () => {
+    class AcceptedWithoutTurnClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSessionEvents") {
+          this.calls.push({ channel, method, args });
+          return [];
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const client = new AcceptedWithoutTurnClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client, turnStartTimeoutMs: 5 });
+    await adapter.init();
+
+    await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({
+      ok: false,
+      error: expect.stringMatching(/accepted.*turn start.*not observed/i),
+    });
+    expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(0);
+
+    await adapter.dispose();
+  });
+
+  it("accepts replayed turn-start proof when the event history RPC is unavailable", async () => {
+    class ReplayOnlyClient extends FakeClient {
+      override listen(channel: string, event: string, arg: unknown, handler: (payload: unknown) => void): () => void {
+        const unsubscribe = super.listen(channel, event, arg, handler);
+        queueMicrotask(() => {
+          const accepted = [...this.calls].reverse().find((call) => call.method === "sendPrompt");
+          const inputId = (accepted?.args[0] as { inputId?: string } | undefined)?.inputId;
+          handler({ type: "task_run_started", inputId });
+        });
+        return unsubscribe;
+      }
+
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSessionEvents") {
+          this.calls.push({ channel, method, args });
+          throw new Error("event history temporarily unavailable");
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const client = new ReplayOnlyClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client, turnStartTimeoutMs: 100 });
+    await adapter.init();
+
+    const result = await adapter.sendMessage("session-1", { message: "continue", queue: true });
+    expect(client.listeners).toHaveLength(1);
+    expect(result).toEqual({ ok: true });
+    expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(0);
 
     await adapter.dispose();
   });
@@ -524,162 +594,29 @@ describe("ZCode adapter", () => {
     await adapter.dispose();
   });
 
-  it("does not duplicate an accepted prompt when its immediate wake fails", async () => {
-    vi.useFakeTimers();
-    class SecondWakeFailsClient extends FakeClient {
-      resumeCalls = 0;
+  it("surfaces a native turn failure after prompt admission", async () => {
+    class NativeTurnFailedClient extends FakeClient {
       override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
-        if (channel === "zcode-agent" && method === "resumeSession") {
+        if (channel === "zcode-agent" && method === "readSessionEvents") {
           this.calls.push({ channel, method, args });
-          this.resumeCalls += 1;
-          if (this.resumeCalls === 2) throw new Error("second wake failed");
-          return snapshot;
+          const accepted = [...this.calls].reverse().find((call) => call.method === "sendPrompt");
+          const inputId = (accepted?.args[0] as { inputId?: string } | undefined)?.inputId;
+          return [{ type: "turn.failed", payload: { inputId } }];
         }
         return super.call(channel, method, args);
       }
     }
-    const client = new SecondWakeFailsClient();
+    const client = new NativeTurnFailedClient();
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
-    try {
-      await adapter.init();
+    await adapter.init();
 
-      await expect(adapter.sendMessage("session-1", { message: "first continuation", queue: true })).resolves.toEqual({ ok: true });
-      await expect(adapter.sendMessage("session-1", { message: "second continuation", queue: true })).resolves.toEqual({ ok: true });
-      expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(2);
-      expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(2);
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(3);
-      expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(2);
-    } finally {
-      await adapter.dispose();
-      vi.useRealTimers();
-    }
-  });
+    await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({
+      ok: false,
+      error: expect.stringMatching(/native turn failed/i),
+    });
+    expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(0);
 
-  it("retries an accepted prompt wake through repeated transient failures", async () => {
-    vi.useFakeTimers();
-    class RepeatedWakeFailureClient extends FakeClient {
-      resumeCalls = 0;
-      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
-        if (channel === "zcode-agent" && method === "resumeSession") {
-          this.calls.push({ channel, method, args });
-          this.resumeCalls += 1;
-          if (this.resumeCalls < 4) throw new Error("temporary transport timeout");
-          return snapshot;
-        }
-        return super.call(channel, method, args);
-      }
-    }
-    const client = new RepeatedWakeFailureClient();
-    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
-    try {
-      await adapter.init();
-
-      await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({ ok: true });
-      expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(1);
-      expect(client.resumeCalls).toBe(1);
-
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(client.resumeCalls).toBe(2);
-      await vi.advanceTimersByTimeAsync(2_000);
-      expect(client.resumeCalls).toBe(3);
-      await vi.advanceTimersByTimeAsync(4_000);
-      expect(client.resumeCalls).toBe(4);
-      expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(1);
-    } finally {
-      await adapter.dispose();
-      vi.useRealTimers();
-    }
-  });
-
-  it("cancels an accepted prompt wake retry when the adapter is disposed", async () => {
-    vi.useFakeTimers();
-    class FailedWakeClient extends FakeClient {
-      resumeCalls = 0;
-      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
-        if (channel === "zcode-agent" && method === "resumeSession") {
-          this.calls.push({ channel, method, args });
-          this.resumeCalls += 1;
-          throw new Error("temporary transport timeout");
-        }
-        return super.call(channel, method, args);
-      }
-    }
-    const client = new FailedWakeClient();
-    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
-    try {
-      await adapter.init();
-      await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({ ok: true });
-      expect(client.resumeCalls).toBe(1);
-
-      await adapter.dispose();
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(client.resumeCalls).toBe(1);
-    } finally {
-      if (adapter.isReady()) await adapter.dispose();
-      vi.useRealTimers();
-    }
-  });
-
-  it("stops wake retries when native resume reports a terminal inactive session", async () => {
-    vi.useFakeTimers();
-    class TerminalWakeClient extends FakeClient {
-      resumeCalls = 0;
-      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
-        if (channel === "zcode-agent" && method === "resumeSession") {
-          this.calls.push({ channel, method, args });
-          this.resumeCalls += 1;
-          if (this.resumeCalls === 1) throw new Error("temporary transport timeout");
-          throw new Error("Session is not active: session-1");
-        }
-        return super.call(channel, method, args);
-      }
-    }
-    const client = new TerminalWakeClient();
-    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
-    try {
-      await adapter.init();
-      await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({ ok: true });
-
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(client.resumeCalls).toBe(2);
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(client.resumeCalls).toBe(2);
-      expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(1);
-    } finally {
-      await adapter.dispose();
-      vi.useRealTimers();
-    }
-  });
-
-  it("bounds wake retries after an accepted prompt", async () => {
-    vi.useFakeTimers();
-    class AlwaysFailingWakeClient extends FakeClient {
-      resumeCalls = 0;
-      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
-        if (channel === "zcode-agent" && method === "resumeSession") {
-          this.calls.push({ channel, method, args });
-          this.resumeCalls += 1;
-          throw new Error("temporary transport timeout");
-        }
-        return super.call(channel, method, args);
-      }
-    }
-    const client = new AlwaysFailingWakeClient();
-    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
-    try {
-      await adapter.init();
-      await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({ ok: true });
-
-      await vi.advanceTimersByTimeAsync(120_000);
-      expect(client.resumeCalls).toBe(7);
-      await vi.advanceTimersByTimeAsync(120_000);
-      expect(client.resumeCalls).toBe(7);
-      expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(1);
-    } finally {
-      await adapter.dispose();
-      vi.useRealTimers();
-    }
+    await adapter.dispose();
   });
 
   it("queues a second prompt while the same ZCode session is still finishing", async () => {
@@ -704,7 +641,7 @@ describe("ZCode adapter", () => {
       expect(client.sendCalls).toBe(1);
       await vi.advanceTimersByTimeAsync(1_000);
       expect(client.sendCalls).toBe(2);
-      expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(1);
+      expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(0);
       expect(client.calls.filter((call) => call.method === "sendPrompt")[1]?.args[0]).toMatchObject({
         sessionId: "session-1",
         content: "second continuation",
@@ -823,7 +760,7 @@ describe("ZCode adapter", () => {
         .map((call) => (call.args[0] as { content?: string }).content);
       expect(acceptedContents).toEqual(["first", "second"]);
       expect(client.sendCalls).toBe(5);
-      expect(client.resumeCalls).toBe(3);
+      expect(client.resumeCalls).toBe(1);
     } finally {
       await adapter.dispose();
       vi.useRealTimers();

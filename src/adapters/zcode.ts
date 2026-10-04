@@ -96,6 +96,8 @@ export interface ZcodeAdapterOptions {
   client?: ZcodeClientLike;
   /** Optional persisted cross-workspace task index; injectable for tests. */
   tasksIndexDbPath?: string;
+  /** Bound for proving that an admitted prompt actually began a native turn. */
+  turnStartTimeoutMs?: number;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -352,6 +354,14 @@ function snapshotMessages(payload: unknown): ZcodeMessage[] {
   return [];
 }
 
+function sessionEventsFromPayload(payload: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(payload)) return payload.filter((event): event is Record<string, unknown> => Boolean(event) && typeof event === "object");
+  const events = record(payload).events;
+  return Array.isArray(events)
+    ? events.filter((event): event is Record<string, unknown> => Boolean(event) && typeof event === "object")
+    : [];
+}
+
 function normalizeZcodeTaskEvent(sessionId: string, payload: unknown): HarnessEvent | null {
   const root = record(payload);
   const nativeType = nonEmptyString(root.type) || nonEmptyString(record(root.event).type) || "task.event";
@@ -366,7 +376,16 @@ function normalizeZcodeTaskEvent(sessionId: string, payload: unknown): HarnessEv
   else if (/message|text|reasoning|tool|delta|stream/.test(lower)) kind = "message.updated";
   else if (/session.*(closed|deleted)/.test(lower)) kind = "session.deleted";
   else kind = "session.updated";
-  return { kind, harness: "zcode", sessionId, nativeType, status, at: new Date().toISOString(), data: { nativeType } };
+  const inputId = nonEmptyString(root.inputId) || nonEmptyString(record(root.payload).inputId);
+  return {
+    kind,
+    harness: "zcode",
+    sessionId,
+    nativeType,
+    status,
+    at: new Date().toISOString(),
+    data: { nativeType, ...(inputId ? { inputId } : {}) },
+  };
 }
 
 function unsupported(operation: string): ControlResult {
@@ -419,14 +438,14 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly useLocalConfig: boolean;
   private readonly localDbPath: string;
   private readonly tasksIndexDbPath?: string;
+  private readonly turnStartTimeoutMs: number;
   private readonly persistedSessionIds = new Set<string>();
   private readonly desiredSessionTitles = new Map<string, string>();
   private readonly titlePersistenceTimers = new Map<string, NodeJS.Timeout>();
   private readonly queuedPrompts = new Map<string, string[]>();
   private readonly queuedPromptTimers = new Map<string, NodeJS.Timeout>();
   private readonly queuedPromptFlushes = new Set<string>();
-  private readonly wakeRetryTimers = new Map<string, NodeJS.Timeout>();
-  private readonly wakeRetryAttempts = new Map<string, number>();
+  private readonly turnStartWaiters = new Map<string, (result: { ok: boolean; error?: string }) => void>();
   private reportedEmptyTasksIndex = false;
   private readonly sessionWorkspaces = new Map<string, ZcodeWorkspaceRef>();
   /** Read-after-write identity for sessions created before the task index catches up. */
@@ -440,6 +459,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.modelIds = options.modelIds ?? [];
     this.useLocalConfig = !options.client;
     this.localDbPath = process.env.ZCODE_DB_PATH || join(homedir(), ".zcode", "cli", "db", "db.sqlite");
+    this.turnStartTimeoutMs = options.turnStartTimeoutMs ?? 30_000;
     // An injected transport is an isolated embedding/test boundary: ambient
     // desktop paths must not silently merge unrelated live sessions into it.
     this.tasksIndexDbPath = options.tasksIndexDbPath
@@ -499,9 +519,10 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.titlePersistenceTimers.clear();
     for (const timer of this.queuedPromptTimers.values()) clearTimeout(timer);
     this.queuedPromptTimers.clear();
-    for (const timer of this.wakeRetryTimers.values()) clearTimeout(timer);
-    this.wakeRetryTimers.clear();
-    this.wakeRetryAttempts.clear();
+    for (const resolveWaiter of this.turnStartWaiters.values()) {
+      resolveWaiter({ ok: false, error: "ZCode adapter disposed before turn start confirmation" });
+    }
+    this.turnStartWaiters.clear();
     for (const unsubscribe of this.sessionEventUnsubscribers.values()) { try { unsubscribe(); } catch { /* best effort */ } }
     this.sessionEventUnsubscribers.clear();
     await this.client.close();
@@ -704,16 +725,22 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
-    const send = async (): Promise<{ ok: boolean; error?: string }> => {
+    const send = async (): Promise<{ ok: boolean; error?: string; inputId?: string }> => {
+      const inputId = randomUUID();
       try {
         const workspace = this.sessionWorkspaces.get(id) || this.workspace();
-        await this.callAgent("sendPrompt", {
+        const ack = record(await this.callAgent("sendPrompt", {
           ...workspace,
           sessionId: id,
-          inputId: randomUUID(),
+          inputId,
           content: options.message,
-        });
-        return { ok: true };
+        }));
+        if (ack.accepted !== true) throw new Error("ZCode sendPrompt did not acknowledge prompt admission");
+        const ackSessionId = nonEmptyString(ack.sessionId);
+        if (ackSessionId && ackSessionId !== id) {
+          throw new Error(`ZCode sendPrompt acknowledged a different session: ${ackSessionId}`);
+        }
+        return { ok: true, inputId };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
@@ -743,19 +770,10 @@ export class ZcodeAdapter implements HarnessAdapter {
 
     const workspace = this.sessionWorkspaces.get(id) || this.workspace();
     this.sessionWorkspaces.set(id, workspace);
-    this.ensureSessionEventSubscription(id, workspace);
-    // sendPrompt acceptance is the idempotency boundary: never report it as a
-    // failed continuation merely because the follow-up wake is transiently
-    // unavailable, or the caller may enqueue the same prompt again.
-    const woken = await this.resumeSession(id);
-    if (!woken.ok) {
-      console.error(`[agent-herder] ZCode prompt accepted but wake failed for ${id}: ${woken.error || "unknown error"}`);
-      this.scheduleWakeRetry(id);
-      return result;
-    }
-    this.clearWakeRetry(id);
+    const started = await this.waitForTurnStart(id, workspace, result.inputId!);
+    if (!started.ok) return started;
     await this.persistDesiredSessionTitle(id);
-    return result;
+    return { ok: true };
   }
 
   private async persistDesiredSessionTitle(id: string, attempt = 0): Promise<void> {
@@ -1155,11 +1173,13 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   private ensureSessionEventSubscription(sessionId: string, workspace: ZcodeWorkspaceRef): void {
-    if (this.sessionEventUnsubscribers.has(sessionId) || !this.client.listen || this.eventListeners.size === 0) return;
+    const hasTurnWaiter = [...this.turnStartWaiters.keys()].some((key) => key.startsWith(`${sessionId}:`));
+    if (this.sessionEventUnsubscribers.has(sessionId) || !this.client.listen || (this.eventListeners.size === 0 && !hasTurnWaiter)) return;
     let active = true;
     this.sessionEventUnsubscribers.set(sessionId, () => { active = false; });
     void this.client.start().then(() => {
-      if (!active || this.eventListeners.size === 0 || !this.client.listen) return;
+      const stillHasTurnWaiter = [...this.turnStartWaiters.keys()].some((key) => key.startsWith(`${sessionId}:`));
+      if (!active || (this.eventListeners.size === 0 && !stillHasTurnWaiter) || !this.client.listen) return;
       const unsubscribe = this.client.listen("zcode-task", "onDynamicTaskEvent", {
         taskId: sessionId,
         workspacePath: workspace.workspacePath,
@@ -1168,6 +1188,15 @@ export class ZcodeAdapter implements HarnessAdapter {
       }, (payload) => {
         const event = normalizeZcodeTaskEvent(sessionId, payload);
         if (event) {
+          const inputId = nonEmptyString(record(event.data).inputId);
+          if (inputId) {
+            const waiter = this.turnStartWaiters.get(`${sessionId}:${inputId}`);
+            if (waiter && (event.kind === "turn.started" || event.kind === "turn.completed" || event.kind === "turn.failed")) {
+              waiter(event.kind === "turn.failed"
+                ? { ok: false, error: `ZCode accepted prompt for ${sessionId}, but the native turn failed before confirmation completed` }
+                : { ok: true });
+            }
+          }
           this.emitEvent(event);
           if (event.kind === "turn.completed" || event.kind === "turn.failed") this.scheduleQueuedPromptFlush(sessionId, 0);
         }
@@ -1197,49 +1226,54 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.queuedPromptTimers.set(sessionId, timer);
   }
 
-  private clearWakeRetry(sessionId: string): void {
-    const timer = this.wakeRetryTimers.get(sessionId);
-    if (timer) clearTimeout(timer);
-    this.wakeRetryTimers.delete(sessionId);
-    this.wakeRetryAttempts.delete(sessionId);
-  }
-
-  private scheduleWakeRetry(sessionId: string): void {
-    if (!this.initialized || this.wakeRetryTimers.has(sessionId)) return;
-    const attempts = this.wakeRetryAttempts.get(sessionId) ?? 0;
-    const maxAttempts = 6;
-    if (attempts >= maxAttempts) {
-      console.error(`[agent-herder] ZCode wake retry budget exhausted for ${sessionId} after ${attempts} attempts`);
-      this.clearWakeRetry(sessionId);
-      return;
+  private async waitForTurnStart(
+    sessionId: string,
+    workspace: ZcodeWorkspaceRef,
+    inputId: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const waiterKey = `${sessionId}:${inputId}`;
+    let resolveEvent!: (result: { ok: boolean; error?: string }) => void;
+    const eventResult = new Promise<{ ok: boolean; error?: string }>((resolve) => { resolveEvent = resolve; });
+    this.turnStartWaiters.set(waiterKey, resolveEvent);
+    this.ensureSessionEventSubscription(sessionId, workspace);
+    const deadline = Date.now() + this.turnStartTimeoutMs;
+    let lastReadError: string | undefined;
+    try {
+      do {
+        try {
+          const events = sessionEventsFromPayload(await this.callAgent("readSessionEvents", {
+            ...workspace,
+            sessionId,
+            limit: 200,
+          }));
+          for (const event of events) {
+            const payload = record(event.payload);
+            if (nonEmptyString(payload.inputId) !== inputId) continue;
+            const type = nonEmptyString(event.type);
+            if (type === "turn.started" || type === "turn.completed") return { ok: true };
+            if (type === "turn.failed") {
+              return { ok: false, error: `ZCode accepted prompt for ${sessionId}, but the native turn failed before confirmation completed` };
+            }
+          }
+          lastReadError = undefined;
+        } catch (error) {
+          lastReadError = error instanceof Error ? error.message : String(error);
+        }
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) break;
+        const signalled = await Promise.race([
+          eventResult,
+          new Promise<undefined>((resolve) => setTimeout(resolve, Math.min(250, remainingMs))),
+        ]);
+        if (signalled) return signalled;
+      } while (Date.now() < deadline);
+      return {
+        ok: false,
+        error: `ZCode accepted prompt for ${sessionId}, but turn start was not observed${lastReadError ? ` (${lastReadError})` : ""}`,
+      };
+    } finally {
+      if (this.turnStartWaiters.get(waiterKey) === resolveEvent) this.turnStartWaiters.delete(waiterKey);
     }
-    const delayMs = Math.min(30_000, 1_000 * (2 ** attempts));
-    this.wakeRetryAttempts.set(sessionId, attempts + 1);
-    const timer = setTimeout(() => {
-      this.wakeRetryTimers.delete(sessionId);
-      if (!this.initialized) {
-        this.wakeRetryAttempts.delete(sessionId);
-        return;
-      }
-      void this.resumeSession(sessionId).then((result) => {
-        if (result.ok) {
-          this.clearWakeRetry(sessionId);
-          return;
-        }
-        if (isInactiveSessionError(result.error)) {
-          console.error(`[agent-herder] ZCode wake retry stopped for terminal inactive session ${sessionId}: ${result.error}`);
-          this.clearWakeRetry(sessionId);
-          return;
-        }
-        console.error(`[agent-herder] ZCode wake retry failed for ${sessionId}: ${result.error || "unknown error"}`);
-        this.scheduleWakeRetry(sessionId);
-      }).catch((error) => {
-        console.error(`[agent-herder] ZCode wake retry failed for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
-        this.scheduleWakeRetry(sessionId);
-      });
-    }, delayMs);
-    timer.unref?.();
-    this.wakeRetryTimers.set(sessionId, timer);
   }
 
   private async flushQueuedPrompt(sessionId: string): Promise<void> {
@@ -1250,15 +1284,17 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.queuedPromptFlushes.add(sessionId);
     try {
       const workspace = this.sessionWorkspaces.get(sessionId) || this.workspace();
-      let accepted = false;
+      let acceptedInputId: string | undefined;
       try {
-        await this.callAgent("sendPrompt", {
+        const inputId = randomUUID();
+        const ack = record(await this.callAgent("sendPrompt", {
           ...workspace,
           sessionId,
-          inputId: randomUUID(),
+          inputId,
           content: queue[0],
-        });
-        accepted = true;
+        }));
+        if (ack.accepted !== true) throw new Error("ZCode sendPrompt did not acknowledge prompt admission");
+        acceptedInputId = inputId;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (/prompt is already running/i.test(message)) {
@@ -1269,13 +1305,15 @@ export class ZcodeAdapter implements HarnessAdapter {
           const resumed = await this.resumeSession(sessionId);
           if (resumed.ok) {
             try {
-              await this.callAgent("sendPrompt", {
+              const inputId = randomUUID();
+              const ack = record(await this.callAgent("sendPrompt", {
                 ...workspace,
                 sessionId,
-                inputId: randomUUID(),
+                inputId,
                 content: queue[0],
-              });
-              accepted = true;
+              }));
+              if (ack.accepted !== true) throw new Error("ZCode sendPrompt did not acknowledge prompt admission");
+              acceptedInputId = inputId;
             } catch (retryError) {
               const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
               if (/prompt is already running/i.test(retryMessage)) {
@@ -1307,15 +1345,12 @@ export class ZcodeAdapter implements HarnessAdapter {
           return;
         }
       }
-      if (!accepted) return;
+      if (!acceptedInputId) return;
       queue.shift();
       if (queue.length === 0) this.queuedPrompts.delete(sessionId);
-      const woken = await this.resumeSession(sessionId);
-      if (!woken.ok) {
-        console.error(`[agent-herder] queued ZCode prompt accepted but wake failed for ${sessionId}: ${woken.error || "unknown error"}`);
-        this.scheduleWakeRetry(sessionId);
-      } else {
-        this.clearWakeRetry(sessionId);
+      const started = await this.waitForTurnStart(sessionId, workspace, acceptedInputId);
+      if (!started.ok) {
+        console.error(`[agent-herder] queued ZCode prompt admission was not followed by a turn for ${sessionId}: ${started.error || "unknown error"}`);
       }
       await this.persistDesiredSessionTitle(sessionId);
     } finally {
