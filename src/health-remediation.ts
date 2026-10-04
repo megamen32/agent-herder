@@ -1,17 +1,26 @@
 export interface HealthExecutionProfile {
-  runtime: "zcode";
-  provider: "account:zai-individual-coding-plan";
-  model: "GLM-5.3-Flash";
+  runtime: "zcode" | "hermes";
+  provider: "account:zai-individual-coding-plan" | "openai-codex";
+  model: "GLM-5.3-Flash" | "gpt-5.6-luna";
   reasoning: "high";
   topic: "health";
 }
 
-const CANONICAL_PROFILE: HealthExecutionProfile = {
-  runtime: "zcode",
-  provider: "account:zai-individual-coding-plan",
-  model: "GLM-5.3-Flash",
-  reasoning: "high",
-  topic: "health",
+const CANONICAL_PROFILES: Record<HealthExecutionProfile["runtime"], HealthExecutionProfile> = {
+  zcode: {
+    runtime: "zcode",
+    provider: "account:zai-individual-coding-plan",
+    model: "GLM-5.3-Flash",
+    reasoning: "high",
+    topic: "health",
+  },
+  hermes: {
+    runtime: "hermes",
+    provider: "openai-codex",
+    model: "gpt-5.6-luna",
+    reasoning: "high",
+    topic: "health",
+  },
 };
 
 function bounded(value: unknown, field: string, limit = 64): string {
@@ -34,12 +43,16 @@ export function normalizeHealthExecution(value: unknown): HealthExecutionProfile
     reasoning: bounded(raw.reasoning, "reasoning", 16),
     topic: bounded(raw.topic, "topic"),
   };
-  for (const [field, expected] of Object.entries(CANONICAL_PROFILE)) {
+  if (profile.runtime !== "zcode" && profile.runtime !== "hermes") {
+    throw new Error("health execution runtime must be zcode or hermes");
+  }
+  const canonical = CANONICAL_PROFILES[profile.runtime];
+  for (const [field, expected] of Object.entries(canonical)) {
     if (profile[field as keyof typeof profile] !== expected) {
       throw new Error(`health execution ${field} must be ${expected}`);
     }
   }
-  return { ...CANONICAL_PROFILE };
+  return { ...canonical };
 }
 
 /** Translate the provider/model contract to the selected coding harness. */
