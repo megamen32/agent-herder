@@ -88,6 +88,16 @@ export function cacheWindowFor(session: Pick<AgentSession, "harness" | "model">,
   return { source: "unknown" };
 }
 
+/** Poll before cache expiry, while allowing documented long-TTL Codex sessions a wider quiet window. */
+export function unfinishedProbeDelayMs(session: Pick<AgentSession, "harness" | "model">, env: NodeJS.ProcessEnv = process.env): number {
+  const cache = cacheWindowFor(session, env);
+  const unknownDelay = positiveMs(env.AGENT_HERDER_UNFINISHED_UNKNOWN_TTL_CHECK_MS, 240_000);
+  if (!cache.ttlMs) return unknownDelay;
+  const maxDelay = positiveMs(env.AGENT_HERDER_UNFINISHED_MAX_TTL_CHECK_MS, 600_000);
+  const safetyMargin = positiveMs(env.AGENT_HERDER_UNFINISHED_CACHE_MARGIN_MS, 60_000);
+  return Math.max(60_000, Math.min(maxDelay, cache.ttlMs - safetyMargin));
+}
+
 /** Text sent to MiniMax: user/assistant semantics only, never tools or private reasoning. */
 export function semanticTranscript(messages: SessionMessageView[]): string {
   const rows: string[] = [];
@@ -209,6 +219,11 @@ function parseOverrides(value: string | undefined): Record<string, number> {
   } catch {
     return {};
   }
+}
+
+function positiveMs(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
 function extractLastAssistant(value: unknown): string {

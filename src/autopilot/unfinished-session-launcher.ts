@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
 
 import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessType, SessionMessageView } from "../types/index.js";
-import { continuationModelFor, semanticTranscript, type CacheHandoffService } from "../cache-handoff.js";
+import { cacheWindowFor, continuationModelFor, semanticTranscript, unfinishedProbeDelayMs, type CacheHandoffService } from "../cache-handoff.js";
 import { deferredMessages, isBusyCodexWriter, type DeferredMessageStore } from "../deferred-messages.js";
 
 const SUPPORTED_HARNESSES: readonly HarnessType[] = ["codex", "opencode", "claude", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
@@ -425,6 +425,7 @@ export class UnfinishedSessionLauncher {
   private readonly maxResumesPerCycle: number;
   private readonly continuationMessage: string;
   private readonly generationId: string;
+  private readonly candidateDelayOverrideMs?: number;
   private recovering: Promise<void> | null = null;
   private retryTimer?: NodeJS.Timeout;
   private started = false;
@@ -434,8 +435,8 @@ export class UnfinishedSessionLauncher {
     this.maxAttempts = positiveInteger(options.maxAttempts ?? Number(process.env.AGENT_HERDER_AUTOSTART_MAX_ATTEMPTS || 3), 3);
     this.retryDelayMs = nonNegativeInteger(options.retryDelayMs ?? Number(process.env.AGENT_HERDER_AUTOSTART_RETRY_DELAY_MS || 5_000), 5_000);
     this.reconcileIntervalMs = positiveInteger(
-      options.reconcileIntervalMs ?? Number(process.env.AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS || 240_000),
-      240_000,
+      options.reconcileIntervalMs ?? Number(process.env.AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS || 60_000),
+      60_000,
     );
     this.discoveryIdleMs = positiveInteger(
       options.discoveryIdleMs ?? Number(process.env.AGENT_HERDER_UNFINISHED_DISCOVERY_IDLE_MS || 60_000),
@@ -451,6 +452,7 @@ export class UnfinishedSessionLauncher {
     );
     this.continuationMessage = options.continuationMessage?.trim() || DEFAULT_CONTINUATION;
     this.generationId = options.generationId?.trim() || `process-${process.pid}-${randomUUID()}`;
+    this.candidateDelayOverrideMs = options.discoveryIdleMs;
   }
 
   async handleEvent(provider: string, event: HarnessEvent): Promise<void> {
@@ -672,7 +674,9 @@ export class UnfinishedSessionLauncher {
             || previous.verdict.verdict === "needs_human"
             || (previous.verdict.verdict === "unfinished" && session.status === "running"));
         if (settledAndUnchanged) continue;
-        const oldEnough = Date.now() - Date.parse(session.lastActivity) >= this.discoveryIdleMs;
+        const candidateDelayMs = this.candidateDelayOverrideMs
+          ?? Math.max(this.discoveryIdleMs, unfinishedProbeDelayMs(session));
+        const oldEnough = Date.now() - Date.parse(session.lastActivity) >= candidateDelayMs;
         if (session.status === "running" || !oldEnough) continue;
         const messages = await adapter.getSessionMessages?.(session.id, Math.max(50, runtimeSettings.evidenceMessageCount * 3)).catch(() => null);
         const transcriptTail = completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount);
@@ -819,7 +823,47 @@ export class UnfinishedSessionLauncher {
       }
 
       const oldEnough = Date.now() - Date.parse(primary.session.lastActivity) >= this.discoveryIdleMs;
-      if (!oldEnough || launched >= this.maxResumesPerCycle || !primary.adapter.createSession) {
+      if (!oldEnough || launched >= this.maxResumesPerCycle) {
+        for (const source of sources) {
+          pushInventory(source);
+          await this.options.store.remove(source.session.harness, source.session.id);
+        }
+        continue;
+      }
+
+      const cache = cacheWindowFor(primary.session);
+      const cacheAgeMs = Math.max(0, Date.now() - Date.parse(primary.session.lastActivity));
+      const reuseExisting = !cache.ttlMs || cacheAgeMs < cache.ttlMs;
+      if (reuseExisting && primary.adapter.resumeSession) {
+        launched += 1;
+        try {
+          const resumed = await primary.adapter.resumeSession(primary.session.id);
+          if (!resumed.ok) throw new Error(resumed.error || "возобновление исходной сессии отклонено");
+          const sent = await primary.adapter.sendMessage(primary.session.id, { message: handoff, queue: true });
+          if (!sent.ok) throw new Error(sent.error || "исходная сессия не приняла объединённый handoff");
+          await this.options.store.markStarted(primary.session, this.generationId);
+          for (const source of sources) {
+            if (source.session.id === primary.session.id) pushInventory(source);
+            else {
+              pushInventory(source, {
+                verdict: "completed",
+                reason: `Объединена с возобновлённой сессией «${group.topic}»: ${primary.session.id}`,
+                confidence: group.confidence,
+                judgedAt,
+              });
+              await this.options.settingsStore.setSession({ harness: source.session.harness, sessionId: source.session.id, cwd: source.session.cwd }, false);
+              await this.options.store.remove(source.session.harness, source.session.id);
+            }
+          }
+          console.error(`[agent-herder] единый план возобновил ${sources.length} сесс. в ${primary.session.harness}:${primary.session.id} «${continuationTitle(group.topic)}»`);
+          continue;
+        } catch (error) {
+          launched = Math.max(0, launched - 1);
+          console.error(`[agent-herder] исходная сессия ${primary.session.harness}:${primary.session.id} не возобновилась; создаётся продолжение: ${errorText(error)}`);
+        }
+      }
+
+      if (!primary.adapter.createSession) {
         for (const source of sources) {
           pushInventory(source);
           await this.options.store.remove(source.session.harness, source.session.id);

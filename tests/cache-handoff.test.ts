@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AnthropicMiniMaxSummarizer, CacheHandoffService, cacheWindowFor, continuationModelFor, semanticTranscript } from "../src/cache-handoff.js";
+import { AnthropicMiniMaxSummarizer, CacheHandoffService, cacheWindowFor, continuationModelFor, semanticTranscript, unfinishedProbeDelayMs } from "../src/cache-handoff.js";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "../src/types/index.js";
 
 const oldSession: AgentSession = {
@@ -41,6 +41,16 @@ describe("cache-aware session handoff", () => {
     expect(cacheWindowFor({ harness: "zcode", model: "account:zai-individual-coding-plan/GLM-5.3-Flash" })).toEqual({ ttlMs: 300_000, source: "zai-measured-5m" });
     expect(cacheWindowFor({ harness: "opencode", model: "minimax/MiniMax-M3.1-Flash-Preview" })).toEqual({ ttlMs: 300_000, source: "minimax-dynamic-5m" });
     expect(cacheWindowFor({ harness: "opencode", model: "minimax/MiniMax-M3" }, { AGENT_HERDER_CACHE_TTL_MINUTES: '{"opencode:minimax/MiniMax-M3":12}' })).toEqual({ ttlMs: 720_000, source: "configured" });
+  });
+
+  it("derives a TTL-aware unfinished-session probe cadence", () => {
+    expect(unfinishedProbeDelayMs({ harness: "codex", model: "gpt-5.6-sol" })).toBe(600_000);
+    expect(unfinishedProbeDelayMs({ harness: "zcode", model: "account:zai-individual-coding-plan/GLM-5.3-Flash" })).toBe(240_000);
+    expect(unfinishedProbeDelayMs({ harness: "codex", model: "legacy-unknown" })).toBe(240_000);
+    expect(unfinishedProbeDelayMs(
+      { harness: "zcode", model: "custom/model" },
+      { AGENT_HERDER_CACHE_TTL_MINUTES: '{"zcode:custom/model":12}' } as NodeJS.ProcessEnv,
+    )).toBe(600_000);
   });
 
   it("moves retired or quota-exhausted Z.AI plans to the individual Flash route", () => {

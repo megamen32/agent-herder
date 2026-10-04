@@ -240,6 +240,36 @@ describe("unfinished session launcher", () => {
     expect((await store.list()).map((record) => record.sessionId)).toEqual(["merged-session"]);
   });
 
+  it("resumes the same broken session while its provider cache is still fresh", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-fresh-cache-resume-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session: AgentSession = {
+      ...fixtureSession("idle", "zcode"),
+      lastActivity: new Date(Date.now() - 270_000).toISOString(),
+    };
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() {
+          return { groups: [{
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "unfinished",
+            reason: "Сессия оборвалась", confidence: 0.99, topic: "Продолжить проверку",
+            handoff: "Проверить текущее состояние и продолжить с последнего шага.",
+          }] };
+        },
+      },
+    }).recoverPending();
+
+    expect(calls.resumes).toBe(1);
+    expect(calls.messages).toHaveLength(1);
+    expect(calls.messages[0]).toContain("Продолжить проверку");
+    expect((await store.list())).toMatchObject([{ sessionId: session.id, state: "active" }]);
+  });
+
   it("never falls back to per-session launches when the one batch plan fails", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-no-fallback-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -304,6 +334,7 @@ describe("unfinished session launcher", () => {
     const launcher = new UnfinishedSessionLauncher({
       adapters: new Map([["codex", adapter]]), store,
       settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      discoveryIdleMs: 1,
       judge: {
         async decide() { throw new Error("fallback should not run"); },
         async plan({ sessions: batch }) {

@@ -200,7 +200,10 @@ The common switches are:
 | `AGENT_HERDER_COORDINATION_NOTES` | `~/.local/state/agent-herder/coordination-notes.json` | Shared coordination board store |
 | `AGENT_HERDER_INJECTION_RESHOW_MS` | `2700000` | Re-inject unchanged rosters after this staleness window |
 | `AGENT_HERDER_AUTO_TTL_SECONDS` | `60` | Auto-reserved file-activity lease TTL |
-| `AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS` | `240000` | Recheck actionable unfinished sessions every 4 minutes, before conservative 5-minute cache boundaries |
+| `AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS` | `60000` | Cheap local observer cadence; MiniMax is called only when a session reaches its TTL-aware broken-session deadline |
+| `AGENT_HERDER_UNFINISHED_UNKNOWN_TTL_CHECK_MS` | `240000` | Candidate delay when the provider/model cache TTL is unknown |
+| `AGENT_HERDER_UNFINISHED_MAX_TTL_CHECK_MS` | `600000` | Maximum candidate delay for documented long-TTL models such as current Codex GPT-5.6+ |
+| `AGENT_HERDER_UNFINISHED_CACHE_MARGIN_MS` | `60000` | Safety margin subtracted from short cache TTLs before classification |
 | `AGENT_HERDER_UNFINISHED_RESUMES_PER_CYCLE` | `8` | Bounded parallel continuation admissions per cycle; all resumed workloads still share the server-100 user-slice budget |
 | `AGENT_HERDER_UNFINISHED_INVENTORY_HOURS` | `48` | Default lookback; the Web UI persists a runtime override without a restart |
 | `AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES` | `4` | Full recent semantic messages sent to the judge; latest user and model messages are always retained |
@@ -218,7 +221,7 @@ The common switches are:
 | `AGENT_HERDER_HTTP_TOKEN` | — | Required when the web host is non-loopback |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_DIR` | `.agent-herder/transcripts` | Relative archive path inside the MCP process CWD |
 
-Every reconciliation first scans the enabled Codex and ZCode inventory inside the configured window, then sends MiniMax only new, changed, previously unclassified, or unfinished non-running sessions. The planner receives the configured four full semantic messages from that actionable set together, groups duplicate tasks globally, and creates at most one `Автопродолжение — <readable topic>` session for each unfinished group. Completed unchanged sessions and healthy running sessions are not re-sent every ten minutes. A single global launch budget still limits the whole pass.
+Every observer pass scans only local Codex and ZCode status metadata inside the configured window. A non-running session becomes actionable after a model-aware delay: 10 minutes for documented 30-minute Codex caches, 4 minutes for conservative 5-minute or unknown caches, with exact overrides available through `AGENT_HERDER_CACHE_TTL_MINUTES`. MiniMax receives one global request only when new, changed, unclassified, or unfinished candidates are due. The planner gets the configured four full semantic messages from that candidate set, groups duplicate tasks globally, and creates at most one `Автопродолжение — <readable topic>` session per unfinished group. Completed unchanged and healthy running sessions never enter the request.
 
 Cache-aware restart uses 30 minutes for documented GPT-5.6+ cache retention,
 and a conservative 5-minute boundary for GLM-5.3 and MiniMax M3/M3.1. Z.ai's
