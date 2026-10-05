@@ -310,7 +310,7 @@ describe("Codex app-server adapter", () => {
     }
   });
 
-  it("fails closed when a Codex candidate disappears during proc inspection", async () => {
+  it("ignores unrelated Codex candidate churn when no rollout ownership was observed", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-proc-race-"));
     const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
     const rollout = join(sessionDir, "rollout-thread-race.jsonl");
@@ -323,6 +323,30 @@ describe("Codex app-server adapter", () => {
     const adapter = new CodexAdapter({ codexDir });
     const internals = adapter as unknown as { getCodexCandidatePids: () => Promise<string[] | null> };
     internals.getCodexCandidatePids = async () => ["999999999"];
+    try {
+      expect((await adapter.listSessions()).find((item) => item.id === "thread-race")?.status).toBe("idle");
+    } finally {
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when access mode is unreadable for an observed rollout descriptor", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-relevant-proc-race-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
+    const rollout = join(sessionDir, "rollout-thread-race.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-race", updated_at: new Date().toISOString() }) + "\n");
+    await writeFile(rollout, [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-race", cwd: "/workspace" } }),
+      JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
+    ].join("\n") + "\n");
+    const adapter = new CodexAdapter({ codexDir });
+    const internals = adapter as unknown as {
+      getCodexCandidatePids: () => Promise<string[] | null>;
+      inspectCodexProcessRollouts: (pid: string) => Promise<Set<string> | null>;
+    };
+    internals.getCodexCandidatePids = async () => ["relevant-candidate"];
+    internals.inspectCodexProcessRollouts = async () => null;
     try {
       expect((await adapter.listSessions()).find((item) => item.id === "thread-race")?.status).toBe("running");
     } finally {

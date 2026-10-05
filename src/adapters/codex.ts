@@ -744,34 +744,55 @@ export class CodexAdapter implements HarnessAdapter {
     const result = new Set<string>();
     const pids = await this.getCodexCandidatePids();
     if (pids === null) return null;
-    let complete = true;
-    await Promise.all(pids.map(async (pid) => {
+    const inspections = await Promise.all(pids.map((pid) => this.inspectCodexProcessRollouts(pid)));
+    if (inspections.some((inspection) => inspection === null)) return null;
+    for (const inspection of inspections) {
+      for (const rolloutPath of inspection || []) result.add(rolloutPath);
+    }
+    return result;
+  }
+
+  private async inspectCodexProcessRollouts(pid: string): Promise<Set<string> | null> {
+    let commandLine: string;
+    let descriptors: string[];
+    try {
+      commandLine = await readFile(`/proc/${pid}/cmdline`, "utf8");
+      const argv0 = commandLine.split("\0", 1)[0] || "";
+      if (!/^codex(?:-|$)/.test(basename(argv0))) return new Set();
+      descriptors = await readdir(`/proc/${pid}/fd`);
+    } catch {
+      // A short-lived or unreadable process has not provided evidence that it
+      // owns one of our rollout files, so it cannot make the whole scan unknown.
+      return new Set();
+    }
+
+    const result = new Set<string>();
+    let relevantComplete = true;
+    await Promise.all(descriptors.map(async (descriptor) => {
+      let target: string;
       try {
-        const commandLine = await readFile(`/proc/${pid}/cmdline`, "utf8");
-        const argv0 = commandLine.split("\0", 1)[0] || "";
-        if (!/^codex(?:-|$)/.test(basename(argv0))) return;
-        const descriptors = await readdir(`/proc/${pid}/fd`);
-        await Promise.all(descriptors.map(async (descriptor) => {
-          try {
-            const target = await readlink(`/proc/${pid}/fd/${descriptor}`);
-            if (!target.startsWith(this.codexDir) || !target.includes("/sessions/") || !target.endsWith(".jsonl")) return;
-            const fdInfo = await readFile(`/proc/${pid}/fdinfo/${descriptor}`, "utf8");
-            const flags = fdInfo.match(/^flags:\s*([0-7]+)$/m)?.[1];
-            if (!flags) {
-              complete = false;
-              return;
-            }
-            const accessMode = Number.parseInt(flags, 8) & 0b11;
-            if (accessMode === 1 || accessMode === 2) result.add(target);
-          } catch {
-            complete = false;
-          }
-        }));
+        target = await readlink(`/proc/${pid}/fd/${descriptor}`);
       } catch {
-        complete = false;
+        // Volatile sockets and unrelated descriptors routinely disappear.
+        return;
+      }
+      if (!target.startsWith(`${join(this.codexDir, "sessions")}/`) || !target.endsWith(".jsonl")) return;
+      try {
+        const fdInfo = await readFile(`/proc/${pid}/fdinfo/${descriptor}`, "utf8");
+        const flags = fdInfo.match(/^flags:\s*([0-7]+)$/m)?.[1];
+        if (!flags) {
+          relevantComplete = false;
+          return;
+        }
+        const accessMode = Number.parseInt(flags, 8) & 0b11;
+        if (accessMode === 1 || accessMode === 2) result.add(target);
+      } catch {
+        // We already proved this descriptor targets our rollout; losing its
+        // access-mode evidence must fail closed to avoid a duplicate writer.
+        relevantComplete = false;
       }
     }));
-    return complete ? result : null;
+    return relevantComplete ? result : null;
   }
 
   private async getCodexCandidatePids(): Promise<string[] | null> {
