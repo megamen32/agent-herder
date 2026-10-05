@@ -22,6 +22,10 @@ const MAX_SESSION_EVIDENCE_CHARS = 120_000;
 // refreshed once under the corrected planner.
 const CURRENT_EVIDENCE_VERSION = 2;
 
+class BatchPlanValidationError extends Error {
+  override name = "BatchPlanValidationError";
+}
+
 function sessionProgressFingerprint(session: AgentSession): string {
   return [
     session.status,
@@ -1762,16 +1766,31 @@ export class UnfinishedSessionLauncher {
     let repaired = false;
     for (let offset = 0; offset < packedAssessed.length; offset += MAX_BATCH_PLAN_SESSIONS_PER_REQUEST) {
       const chunk = packedAssessed.slice(offset, offset + MAX_BATCH_PLAN_SESSIONS_PER_REQUEST);
-      const plan = canonicalizePlanSourceKeys(await planner({
-        sessions: chunk.map(({ session, transcriptTail }) => ({ session, transcriptTail })),
-      }), chunk);
-      const missing = missingBatchPlanCandidates(plan, chunk);
-      if (missing.length > 0) {
+      const requestPlan = async (candidates: AssessedSession[]): Promise<SessionBatchPlan> => canonicalizePlanSourceKeys(await planner({
+        sessions: candidates.map(({ session, transcriptTail }) => ({ session, transcriptTail })),
+      }), candidates);
+      let initial: { plan: SessionBatchPlan; missing: AssessedSession[] } | undefined;
+      let initialFailure: unknown;
+      try {
+        const plan = await requestPlan(chunk);
+        initial = { plan, missing: missingBatchPlanCandidates(plan, chunk) };
+      } catch (error) {
+        if (!(error instanceof BatchPlanValidationError)) throw error;
+        initialFailure = error;
+      }
+      let plan: SessionBatchPlan;
+      if (!initial) {
         repaired = true;
-        const repair = canonicalizePlanSourceKeys(await planner({
-          sessions: missing.map(({ session, transcriptTail }) => ({ session, transcriptTail })),
-        }), missing);
-        assertBatchPlanCoverage(repair, missing);
+        console.error(`[agent-herder] MiniMax вернул некорректный chunk; повторяю весь chunk один раз: ${errorText(initialFailure)}`);
+        plan = await requestPlan(chunk);
+        assertBatchPlanCoverage(plan, chunk);
+      } else {
+        plan = initial.plan;
+      }
+      if (initial && initial.missing.length > 0) {
+        repaired = true;
+        const repair = await requestPlan(initial.missing);
+        assertBatchPlanCoverage(repair, initial.missing);
         plan.groups.push(...repair.groups);
         assertBatchPlanCoverage(plan, chunk);
       }
@@ -2432,17 +2451,17 @@ function canonicalizePlanSourceKeys(plan: SessionBatchPlan, candidates: Assessed
     if (known.has(value)) return value;
     const matches = byNativeId.get(value) ?? [];
     if (matches.length === 1) return matches[0]!;
-    if (matches.length > 1) throw new Error(`planner returned ambiguous workspace-free session ${value}`);
-    throw new Error(`planner returned unknown session ${value}`);
+    if (matches.length > 1) throw new BatchPlanValidationError(`planner returned ambiguous workspace-free session ${value}`);
+    throw new BatchPlanValidationError(`planner returned unknown session ${value}`);
   };
   return {
     groups: plan.groups.map((group) => {
       const sourceSessionIds = group.sourceSessionIds.map(resolve);
       if (new Set(sourceSessionIds).size !== sourceSessionIds.length) {
-        throw new Error("planner assigned the same session more than once inside a group");
+        throw new BatchPlanValidationError("planner assigned the same session more than once inside a group");
       }
       const requestedPrimary = resolve(group.primarySessionId);
-      if (!sourceSessionIds.includes(requestedPrimary)) throw new Error("planner primary is outside its group sources");
+      if (!sourceSessionIds.includes(requestedPrimary)) throw new BatchPlanValidationError("planner primary is outside its group sources");
       return {
         ...group,
         sourceSessionIds,
@@ -2456,13 +2475,13 @@ function missingBatchPlanCandidates(plan: SessionBatchPlan, candidates: Assessed
   const expected = new Set(candidates.map((candidate) => candidate.sourceKey));
   const seen = new Set<string>();
   for (const [index, group] of plan.groups.entries()) {
-    if (group.sourceSessionIds.length === 0) throw new Error(`MiniMax batch group ${index} has no sessions`);
+    if (group.sourceSessionIds.length === 0) throw new BatchPlanValidationError(`MiniMax batch group ${index} has no sessions`);
     if (!group.sourceSessionIds.includes(group.primarySessionId)) {
-      throw new Error(`MiniMax batch group ${index} primary is outside its sources`);
+      throw new BatchPlanValidationError(`MiniMax batch group ${index} primary is outside its sources`);
     }
     for (const sourceKey of group.sourceSessionIds) {
-      if (!expected.has(sourceKey)) throw new Error(`MiniMax batch plan contains unknown session ${sourceKey}`);
-      if (seen.has(sourceKey)) throw new Error(`MiniMax batch plan assigned session more than once: ${sourceKey}`);
+      if (!expected.has(sourceKey)) throw new BatchPlanValidationError(`MiniMax batch plan contains unknown session ${sourceKey}`);
+      if (seen.has(sourceKey)) throw new BatchPlanValidationError(`MiniMax batch plan assigned session more than once: ${sourceKey}`);
       seen.add(sourceKey);
     }
   }
@@ -2472,7 +2491,7 @@ function missingBatchPlanCandidates(plan: SessionBatchPlan, candidates: Assessed
 function assertBatchPlanCoverage(plan: SessionBatchPlan, candidates: AssessedSession[]): void {
   const missing = missingBatchPlanCandidates(plan, candidates);
   if (missing.length > 0) {
-    throw new Error(`MiniMax batch plan omitted ${missing.length} assessed session(s): ${missing.slice(0, 3).map((candidate) => candidate.sourceKey).join(", ")}`);
+    throw new BatchPlanValidationError(`MiniMax batch plan omitted ${missing.length} assessed session(s): ${missing.slice(0, 3).map((candidate) => candidate.sourceKey).join(", ")}`);
   }
 }
 
@@ -2600,6 +2619,16 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
     }
   });
   return { groups: mergePlanGroups(preliminary) };
+}
+
+function normalizeBatchPlanText(content: string, candidates: SessionBatchCandidate[]): SessionBatchPlan {
+  try {
+    const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    return normalizeBatchPlan(JSON.parse(json) as unknown, candidates);
+  } catch (error) {
+    if (error instanceof BatchPlanValidationError) throw error;
+    throw new BatchPlanValidationError(errorText(error));
+  }
 }
 
 function batchReconciliationPrompt(): string {
@@ -3036,9 +3065,8 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       const choices = Array.isArray(body.choices) ? body.choices : [];
       const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message : undefined;
       const content = message && typeof message === "object" ? (message as Record<string, unknown>).content : undefined;
-      if (typeof content !== "string") throw new Error("MiniMax batch planner returned no content");
-      const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-      return normalizeBatchPlan(JSON.parse(json) as unknown, sessions);
+      if (typeof content !== "string") throw new BatchPlanValidationError("MiniMax batch planner returned no content");
+      return normalizeBatchPlanText(content, sessions);
     },
     async reconcile({ groups }) {
       const response = await fetchImpl(endpoint, {
@@ -3167,8 +3195,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
       });
       if (!response.ok) throw new Error(`MiniMax Anthropic batch planner rejected with HTTP ${response.status}`);
       const content = await anthropicText(response);
-      const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-      return normalizeBatchPlan(JSON.parse(json) as unknown, sessions);
+      return normalizeBatchPlanText(content, sessions);
     },
     async reconcile({ groups }) {
       const response = await fetchImpl(endpoint, {
