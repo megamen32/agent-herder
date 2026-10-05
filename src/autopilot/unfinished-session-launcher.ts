@@ -13,6 +13,9 @@ const DEFAULT_EVIDENCE_MESSAGE_COUNT = 200;
 const MAX_EVIDENCE_MESSAGE_COUNT = 200;
 const DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET = 480_000;
 const DEFAULT_BATCH_OUTPUT_TOKENS = 16_384;
+// Bound group count against the 16k response ceiling. Any still-truncated
+// chunk is rejected by exact coverage before a verdict or continuation applies.
+const MAX_BATCH_PLAN_SESSIONS_PER_REQUEST = 64;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
 const CURRENT_EVIDENCE_VERSION = 1;
 
@@ -1309,7 +1312,7 @@ export class UnfinishedSessionLauncher {
         // from the authoritative inventory, nor preserve a stale verdict.
         await this.options.store.upsertInventoryBatch(assessed.map((candidate) => inventoryFromAssessment(candidate)));
         try {
-          const plan = await this.options.judge.plan({ sessions: assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail })) });
+          const plan = await this.planAssessedSessions(assessed);
           if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
           await this.applyBatchPlan(plan, assessed, lifecycleEpoch);
           return "ready";
@@ -1398,6 +1401,7 @@ export class UnfinishedSessionLauncher {
     if (!this.lifecycleActive(lifecycleEpoch)) return;
     const byId = new Map(assessed.map((candidate) => [candidate.sourceKey, candidate]));
     plan = canonicalizePlanSourceKeys(plan, assessed);
+    assertBatchPlanCoverage(plan, assessed);
     plan = enforcePlanWorkspaceBoundaries(plan, byId);
     const latestActivity = (group: SessionBatchPlanGroup): number => Math.max(...group.sourceSessionIds.map((id) => Date.parse(byId.get(id)!.session.lastActivity)));
     const groups = [...plan.groups].sort((left, right) => latestActivity(right) - latestActivity(left));
@@ -1421,10 +1425,9 @@ export class UnfinishedSessionLauncher {
         inventoryBatch.push(inventoryFromAssessment(candidate, override));
       };
 
-      // normalizeBatchPlan uses needs_human/confidence=0 when MiniMax omits a
-      // candidate. That is an inconclusive planner result, not a terminal
-      // human blocker: preserve the record for the next batch without sending
-      // an invented continuation or silently dropping the task.
+      // Workspace splits and missing handoffs use needs_human/confidence=0 as
+      // an inconclusive result, not a terminal human blocker. Preserve the
+      // record for the next batch without inventing a continuation.
       if (group.verdict === "needs_human" && group.confidence === 0) {
         for (const source of sources) {
           pushInventory(source);
@@ -1658,6 +1661,23 @@ export class UnfinishedSessionLauncher {
       }
     }
     if (this.lifecycleActive(lifecycleEpoch)) await this.options.store.upsertInventoryBatch(inventoryBatch);
+  }
+
+  private async planAssessedSessions(assessed: AssessedSession[]): Promise<SessionBatchPlan> {
+    const planner = this.options.judge?.plan;
+    if (!planner) throw new Error("MiniMax batch planner is unavailable");
+    const groups: SessionBatchPlanGroup[] = [];
+    for (let offset = 0; offset < assessed.length; offset += MAX_BATCH_PLAN_SESSIONS_PER_REQUEST) {
+      const chunk = assessed.slice(offset, offset + MAX_BATCH_PLAN_SESSIONS_PER_REQUEST);
+      const plan = canonicalizePlanSourceKeys(await planner({
+        sessions: chunk.map(({ session, transcriptTail }) => ({ session, transcriptTail })),
+      }), chunk);
+      assertBatchPlanCoverage(plan, chunk);
+      groups.push(...plan.groups);
+    }
+    const plan = { groups };
+    assertBatchPlanCoverage(plan, assessed);
+    return plan;
   }
 
   private lifecycleActive(epoch: number): boolean {
@@ -2315,6 +2335,26 @@ function canonicalizePlanSourceKeys(plan: SessionBatchPlan, candidates: Assessed
   };
 }
 
+function assertBatchPlanCoverage(plan: SessionBatchPlan, candidates: AssessedSession[]): void {
+  const expected = new Set(candidates.map((candidate) => candidate.sourceKey));
+  const seen = new Set<string>();
+  for (const [index, group] of plan.groups.entries()) {
+    if (group.sourceSessionIds.length === 0) throw new Error(`MiniMax batch group ${index} has no sessions`);
+    if (!group.sourceSessionIds.includes(group.primarySessionId)) {
+      throw new Error(`MiniMax batch group ${index} primary is outside its sources`);
+    }
+    for (const sourceKey of group.sourceSessionIds) {
+      if (!expected.has(sourceKey)) throw new Error(`MiniMax batch plan contains unknown session ${sourceKey}`);
+      if (seen.has(sourceKey)) throw new Error(`MiniMax batch plan assigned session more than once: ${sourceKey}`);
+      seen.add(sourceKey);
+    }
+  }
+  const missing = [...expected].filter((sourceKey) => !seen.has(sourceKey));
+  if (missing.length > 0) {
+    throw new Error(`MiniMax batch plan omitted ${missing.length} assessed session(s): ${missing.slice(0, 3).join(", ")}`);
+  }
+}
+
 function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[]): SessionBatchPlan {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("MiniMax returned an invalid batch plan");
   const rawGroups = (value as Record<string, unknown>).groups;
@@ -2378,19 +2418,10 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
     if (sourceSessionIds.length === 0) return [];
     return [{ ...group, sourceSessionIds, primarySessionId: sourceSessionIds.includes(group.primarySessionId) ? group.primarySessionId : sourceSessionIds[0] }];
   });
-  for (const { session } of candidates) {
-    const sourceKey = sessionSourceKey(session);
-    if (assignment.has(sourceKey)) continue;
-    groups.push({
-      sourceSessionIds: [sourceKey],
-      primarySessionId: sourceKey,
-      verdict: "needs_human",
-      reason: "MiniMax не включил сессию в общий план; она будет повторно проверена в следующем цикле",
-      confidence: 0,
-      topic: session.title.slice(0, 120) || "Неопределённая задача",
-      handoff: "",
-    });
-  }
+  const omitted = candidates
+    .map(({ session }) => sessionSourceKey(session))
+    .filter((sourceKey) => !assignment.has(sourceKey));
+  if (omitted.length > 0) throw new Error(`MiniMax batch plan omitted ${omitted.length} session(s)`);
   return { groups: mergePlanGroups(groups) };
 }
 

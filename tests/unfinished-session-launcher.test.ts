@@ -245,6 +245,30 @@ describe("unfinished session launcher", () => {
     expect(requestBody.output_config).toEqual({ effort: "low" });
   });
 
+  it("rejects a syntactically valid MiniMax plan that omits an assessed session", async () => {
+    const judge = createAnthropicCompatibleSessionCompletionJudge({
+      baseUrl: "https://api.minimax.io/anthropic/",
+      model: "MiniMax-M3.1-Flash-Preview",
+      token: "test-token",
+      fetchImpl: async () => {
+        const planText = JSON.stringify({ groups: [{
+          source_session_ids: ["S1"], primary_session_id: "S1", verdict: "completed",
+          reason: "done", confidence: 1, topic: "First", handoff: "",
+        }] });
+        return new Response([
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: planText } })}`,
+          "data: [DONE]",
+          "",
+        ].join("\n\n"), { status: 200, headers: { "content-type": "text/event-stream" } });
+      },
+    });
+
+    await expect(judge.plan?.({ sessions: [
+      { session: { ...fixtureSession("idle", "codex"), id: "covered" }, transcriptTail: "covered evidence" },
+      { session: { ...fixtureSession("idle", "zcode"), id: "omitted" }, transcriptTail: "omitted evidence" },
+    ] })).rejects.toThrow(/omitted 1 session/);
+  });
+
   it("plans all Codex and ZCode evidence once, deduplicates one task, and launches one readable continuation", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-plan-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -606,6 +630,39 @@ describe("unfinished session launcher", () => {
     expect(await store.list()).toMatchObject([{ sessionId: session.id, generationId: "previous-process", state: "active" }]);
   });
 
+  it("applies none of a partial injected plan and leaves every assessed session undecided", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-partial-atomic-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = [
+      { ...fixtureSession("idle", "codex"), id: "covered", title: "Covered" },
+      { ...fixtureSession("idle", "codex"), id: "omitted", title: "Omitted" },
+    ];
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(sessions[0]!, calls);
+    adapter.listSessions = async () => sessions;
+    adapter.getSession = async (id) => sessions.find((session) => session.id === id) || null;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() {
+          return { groups: [{
+            sourceSessionIds: ["covered"], primarySessionId: "covered", verdict: "unfinished",
+            reason: "continue", confidence: 1, topic: "Covered", handoff: "continue covered",
+          }] };
+        },
+      },
+    }).recoverPending();
+
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await store.list()).toEqual([]);
+    const inventory = await store.listInventory();
+    expect(inventory.map((record) => record.sessionId).sort()).toEqual(["covered", "omitted"]);
+    expect(inventory.every((record) => record.verdict === undefined)).toBe(true);
+  });
+
   it("keeps a MiniMax-omitted candidate pending for the next batch without blindly resuming it", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-omitted-retry-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -659,6 +716,37 @@ describe("unfinished session launcher", () => {
     }).recoverPending();
     expect(sizes).toEqual([33]);
     expect(await store.listInventory()).toHaveLength(33);
+  });
+
+  it("partitions output-heavy inventories deterministically and applies only after every chunk is complete", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-output-chunks-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = Array.from({ length: 70 }, (_, index): AgentSession => ({
+      ...fixtureSession("idle", "codex"), id: `chunked-${index}`, title: `Chunked ${index}`,
+      lastActivity: new Date(Date.now() - 10 * 60_000 - index).toISOString(),
+    }));
+    const sizes: number[] = [];
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          sizes.push(batch.length);
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "done", confidence: 1, topic: session.title, handoff: "",
+          })) };
+        },
+      },
+    }).recoverPending();
+
+    expect(sizes).toEqual([64, 6]);
+    expect(await store.listInventory()).toHaveLength(70);
+    expect((await store.listInventory()).every((record) => record.verdict?.verdict === "completed")).toBe(true);
   });
 
   it("prepends the adapter-owned first user request when the evidence tail is truncated", async () => {
