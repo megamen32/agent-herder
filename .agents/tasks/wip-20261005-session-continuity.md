@@ -118,7 +118,8 @@ probe changed from invalid confidence to a parsed plan with numeric confidence 1
   the live drop-in; the configured judge and business models remain unchanged.
 - Five affected suites passed 224/224 after `da15efe`; bounded production build
   passed. `3ddaa96` adds a focused 3/3 regression pass and TypeScript check for
-  in-flight events; final deployment observation follows below.
+  in-flight events. Final whole launcher suite passed 154/154 and the production
+  build passed; independent delta review cleared the in-flight race fix.
 
 ## Watchdog duplicate urgency
 
@@ -150,3 +151,24 @@ watchdog fix must prevent unchanged sessions from bypassing that timer. Keep thi
 tracker WIP until that real path succeeds or the user explicitly defers it.
 The optional ChatGPT/CDP dependency and old desktop-window rehydration boundary
 remain separately recorded above.
+
+## Final deployed local fix — 10:33:38 UTC
+
+Remote main `722fd7c` (code through `3ddaa96`) was clean and synchronized at
+Herder-only restart. New Herder PID 454232, active, NRestarts=0. Managed Codex
+PID 4019392 and Mac native app PID 1100 were preserved. The live process uses
+the shared socket, output budget 4096, concurrency one, and the tracked drop-in
+matches byte-for-byte. Compiled launcher SHA256:
+`7620d710a81e8b723613d3dde5ca94fc6910fa84a4b68b3d81b4abc584c480ea`.
+
+Over the first 86 seconds after restart, each of the two original stopped ZCode
+sessions emitted exactly one urgent watchdog signal; no ten-second urgency storm
+recurred. Existing ZCode same-ID echo remains visible through live Herder details;
+existing Codex canary is idle on the same ID/model. Original two ZCode overrides
+remain enabled=true; global enable and rollover/pin transfer remain false. No
+new business sessions were created by this task.
+
+This local fix is deployed and independently reviewed. The latest known provider
+failure still is HTTP 529; a complete live bulk plan/reconcile success remains
+unproven and the external MiniMax dependency keeps this task WIP. A docs-only
+commit may follow this deployed identity; its code/build bytes must remain equal.
