@@ -2082,18 +2082,21 @@ export class UnfinishedSessionLauncher {
       ),
       DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
     );
+    const outputTokenBudget = configuredBatchOutputTokens();
     const rawCandidates = assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail }));
-    if (partitionBatchCandidates(rawCandidates).length > MAX_BATCH_PLAN_CHUNKS) {
+    if (partitionBatchCandidates(rawCandidates, batchPlanChunkSize(outputTokenBudget)).length > MAX_BATCH_PLAN_CHUNKS) {
       throw new BatchPlanValidationError(`MiniMax assessment needs more than ${MAX_BATCH_PLAN_CHUNKS} workspace-homogeneous chunks`);
     }
     const globallyPacked = fitBatchContextForSerializedRequest(rawCandidates, contextBudget, (sessions) => ({
-      chunkRequests: partitionBatchCandidates(sessions).map(buildBatchPlannerBudgetRequest),
+      chunkRequests: partitionBatchCandidates(sessions, batchPlanChunkSize(outputTokenBudget))
+        .map((chunk) => buildBatchPlannerBudgetRequest(chunk, outputTokenBudget)),
       // Reserve one bounded repair pass for every chunk before the first fetch.
       // A malformed or incomplete result retries the entire chunk and discards
       // the first result, so the repair envelope must be the same full request.
       repairRequests: largestBatchPlannerBudgetRequests(
-        partitionBatchCandidates(sessions),
+        partitionBatchCandidates(sessions, batchPlanChunkSize(outputTokenBudget)),
         MAX_REPAIRED_CHUNKS,
+        outputTokenBudget,
       ),
       // Persistent omissions are globally capped. Reserve exactly the four
       // largest possible decide envelopes rather than multiplying evidence by
@@ -2112,7 +2115,7 @@ export class UnfinishedSessionLauncher {
     );
     this.activePlannerController = plannerPhaseController;
     try {
-    const plannerChunks = partitionBatchCandidates(packedAssessed);
+    const plannerChunks = partitionBatchCandidates(packedAssessed, batchPlanChunkSize(outputTokenBudget));
     const plannerConcurrency = Math.min(DEFAULT_BATCH_PLAN_CONCURRENCY, positiveInteger(
       Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY || DEFAULT_BATCH_PLAN_CONCURRENCY),
       DEFAULT_BATCH_PLAN_CONCURRENCY,
@@ -3312,7 +3315,10 @@ function batchReconciliationPayload(groups: SessionBatchReconciliationCandidate[
   };
 }
 
-function partitionBatchCandidates<T extends SessionBatchCandidate>(sessions: T[]): T[][] {
+function partitionBatchCandidates<T extends SessionBatchCandidate>(
+  sessions: T[],
+  maxSessions = batchPlanChunkSize(),
+): T[][] {
   const byWorkspace = new Map<string, T[]>();
   for (const candidate of sessions) {
     const workspace = sessionWorkspaceIdentity(candidate.session);
@@ -3322,18 +3328,35 @@ function partitionBatchCandidates<T extends SessionBatchCandidate>(sessions: T[]
   }
   const chunks: T[][] = [];
   for (const grouped of byWorkspace.values()) {
-    for (let offset = 0; offset < grouped.length; offset += MAX_BATCH_PLAN_SESSIONS_PER_REQUEST) {
-      chunks.push(grouped.slice(offset, offset + MAX_BATCH_PLAN_SESSIONS_PER_REQUEST));
+    for (let offset = 0; offset < grouped.length; offset += maxSessions) {
+      chunks.push(grouped.slice(offset, offset + maxSessions));
     }
   }
   return chunks;
 }
 
+function configuredBatchOutputTokens(): number {
+  return Math.min(
+    positiveInteger(
+      Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || DEFAULT_BATCH_OUTPUT_TOKENS),
+      DEFAULT_BATCH_OUTPUT_TOKENS,
+    ),
+    DEFAULT_BATCH_OUTPUT_TOKENS,
+  );
+}
+
+function batchPlanChunkSize(outputTokens = configuredBatchOutputTokens()): number {
+  return Math.max(1, Math.min(MAX_BATCH_PLAN_SESSIONS_PER_REQUEST, Math.floor(outputTokens / 512)));
+}
+
 /** Conservative common envelope used only to reserve the shared wire-input budget. */
-function buildBatchPlannerBudgetRequest(sessions: SessionBatchCandidate[]): unknown {
+function buildBatchPlannerBudgetRequest(
+  sessions: SessionBatchCandidate[],
+  maxTokens = configuredBatchOutputTokens(),
+): unknown {
   return {
     model: "m".repeat(256),
-    max_tokens: DEFAULT_BATCH_OUTPUT_TOKENS,
+    max_tokens: maxTokens,
     temperature: 0,
     stream: true,
     response_format: { type: "json_object" },
@@ -3343,10 +3366,14 @@ function buildBatchPlannerBudgetRequest(sessions: SessionBatchCandidate[]): unkn
   };
 }
 
-function largestBatchPlannerBudgetRequests(chunks: SessionBatchCandidate[][], limit: number): unknown[] {
+function largestBatchPlannerBudgetRequests(
+  chunks: SessionBatchCandidate[][],
+  limit: number,
+  maxTokens = configuredBatchOutputTokens(),
+): unknown[] {
   return chunks
     .map((chunk) => {
-      const request = buildBatchPlannerBudgetRequest(chunk);
+      const request = buildBatchPlannerBudgetRequest(chunk, maxTokens);
       return { request, tokens: estimateContextTokens(JSON.stringify(request)) };
     })
     .sort((left, right) => right.tokens - left.tokens)
@@ -3409,10 +3436,13 @@ function worstCaseReconciliationCandidates(sessions: SessionBatchCandidate[]): S
   }));
 }
 
-function buildBatchReconciliationBudgetRequest(groups: SessionBatchReconciliationCandidate[]): unknown {
+function buildBatchReconciliationBudgetRequest(
+  groups: SessionBatchReconciliationCandidate[],
+  maxTokens = configuredBatchOutputTokens(),
+): unknown {
   return {
     model: "m".repeat(256),
-    max_tokens: DEFAULT_BATCH_OUTPUT_TOKENS,
+    max_tokens: maxTokens,
     temperature: 0,
     stream: true,
     response_format: { type: "json_object" },
@@ -3433,7 +3463,10 @@ function worstCaseWorkspaceReconciliationBudgetRequests(sessions: SessionBatchCa
   const mandatory: unknown[] = [];
   const optional: Array<{ request: unknown; tokens: number }> = [];
   for (const grouped of byWorkspace.values()) {
-    const request = buildBatchReconciliationBudgetRequest(worstCaseReconciliationCandidates(grouped));
+    const request = buildBatchReconciliationBudgetRequest(
+      worstCaseReconciliationCandidates(grouped),
+      configuredBatchOutputTokens(),
+    );
     if (partitionBatchCandidates(grouped).length > 1) {
       mandatory.push(request, request);
     } else {
@@ -3497,6 +3530,7 @@ function batchPlannerPrompt(): string {
     "Каждый входной session_ref должен встретиться ровно один раз в source_session_ids одной группы; возвращай короткие S1, S2 и т.д., не переписывай UUID.",
     "Для группы выбери primary_session_id из session_ref: работающую сессию, иначе самую новую и содержательную.",
     "verdict: completed, unfinished или needs_human. Если хотя бы одна сессия группы ещё реально выполняется, verdict=unfinished.",
+    "confidence — обязательное JSON-число от 0 до 1 включительно (например 0.95), не процент и не строка; reason, topic и handoff — строки.",
     "completed допустим только когда исходная пользовательская цель явно достигнута и финальный ответ содержит проверяемый результат; план, обещание продолжить, незавершённые пункты или ошибки инструментов означают unfinished.",
     "topic — понятная русская тема из 3-8 слов без UUID, Auto Continue и технического мусора.",
     "handoff для unfinished — единая краткая сводка всех сессий группы: цель, уже сделано, решения, файлы/проверки, осталось, риски, следующий шаг.",
@@ -3852,10 +3886,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
         DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
       );
       const inputCeiling = Math.min(contextBudget, DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET);
-      const maxTokens = Math.min(
-        positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || DEFAULT_BATCH_OUTPUT_TOKENS), DEFAULT_BATCH_OUTPUT_TOKENS),
-        DEFAULT_BATCH_OUTPUT_TOKENS,
-      );
+      const maxTokens = configuredBatchOutputTokens();
       const buildRequest = (packedSessions: SessionBatchCandidate[]) => ({
         model: config.model,
         max_tokens: maxTokens,
@@ -3895,7 +3926,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
         signal: judgeAbortSignal(signal, positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
         body: JSON.stringify({
           model: config.model,
-          max_tokens: DEFAULT_BATCH_OUTPUT_TOKENS,
+          max_tokens: configuredBatchOutputTokens(),
           temperature: 0,
           stream: false,
           response_format: { type: "json_object" },
@@ -3991,10 +4022,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
         DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
       );
       const inputCeiling = Math.min(contextBudget, DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET);
-      const maxTokens = Math.min(
-        positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || DEFAULT_BATCH_OUTPUT_TOKENS), DEFAULT_BATCH_OUTPUT_TOKENS),
-        DEFAULT_BATCH_OUTPUT_TOKENS,
-      );
+      const maxTokens = configuredBatchOutputTokens();
       const buildRequest = (packedSessions: SessionBatchCandidate[]) => ({
         model: config.model,
         max_tokens: maxTokens,
@@ -4030,7 +4058,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
         signal: judgeAbortSignal(signal, positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
         body: JSON.stringify({
           model: config.model,
-          max_tokens: DEFAULT_BATCH_OUTPUT_TOKENS,
+          max_tokens: configuredBatchOutputTokens(),
           temperature: 0,
           stream: true,
           output_config: { effort: "low" },

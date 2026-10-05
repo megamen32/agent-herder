@@ -243,6 +243,94 @@ describe("unfinished session launcher", () => {
     expect(requestBody.output_config).toEqual({ effort: "low" });
   });
 
+  it("adapts planner chunk and wire budgets while keeping the numeric confidence contract", async () => {
+    const previousTokens = process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS;
+    const previousConcurrency = process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY;
+    process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY = "1";
+    const runScenario = async (outputTokens: number | undefined, candidateCount: number) => {
+      if (outputTokens === undefined) delete process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS;
+      else process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS = String(outputTokens);
+      const root = await mkdtemp(join(tmpdir(), "agent-herder-output-token-budget-"));
+      const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+      const sessions: AgentSession[] = Array.from({ length: candidateCount }, (_, index) => ({
+        ...fixtureSession("idle", "codex"),
+        id: `output-budget-${index}`,
+        title: `Output budget candidate ${index}`,
+        cwd: "/workspace/output-budget",
+        lastActivity: new Date(Date.now() - 10 * 60_000 - index).toISOString(),
+      }));
+      const planBatchSizes: number[] = [];
+      const reconciliationSizes: number[] = [];
+      const requestBodies: Array<{ max_tokens: number; system?: Array<{ text?: string }>; messages: Array<{ content: string }> }> = [];
+      const judge = createAnthropicCompatibleSessionCompletionJudge({
+        baseUrl: "https://api.minimax.io/anthropic/",
+        model: "MiniMax-M3.1-Flash-Preview",
+        token: "test-token",
+        fetchImpl: async (_url, init) => {
+          const body = JSON.parse(String(init?.body)) as typeof requestBodies[number];
+          requestBodies.push(body);
+          const payload = JSON.parse(body.messages[0]!.content) as {
+            sessions?: Array<{ session_ref: string; title: string }>;
+            groups?: Array<{ group_ref: string }>;
+          };
+          let result: unknown;
+          if (payload.sessions) {
+            planBatchSizes.push(payload.sessions.length);
+            result = { groups: payload.sessions.map(({ session_ref, title }) => ({
+              source_session_ids: [session_ref], primary_session_id: session_ref,
+              verdict: "completed", reason: "done", confidence: 1, topic: title, handoff: "",
+            })) };
+          } else {
+            const groups = payload.groups ?? [];
+            reconciliationSizes.push(groups.length);
+            result = { clusters: groups.map(({ group_ref }) => [group_ref]) };
+          }
+          const text = JSON.stringify(result);
+          const stream = [
+            `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } })}`,
+            "data: [DONE]",
+            "",
+          ].join("\n\n");
+          return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+        },
+      });
+      const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+      adapter.listSessions = async () => sessions;
+      adapter.getSessionMessages = async (id) => [{ id: `${id}-goal`, role: "user", text: `goal-${id}`, parts: [{ type: "text", text: `goal-${id}` }] }];
+      await new UnfinishedSessionLauncher({
+        adapters: new Map([["codex", adapter]]),
+        store,
+        settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+        discoveryIdleMs: 1,
+        judge,
+      }).recoverPending();
+      return { planBatchSizes, reconciliationSizes, requestBodies, inventory: await store.listInventory() };
+    };
+
+    try {
+      const reduced = await runScenario(8_192, 20);
+      expect(reduced.planBatchSizes).toEqual([16, 4]);
+      expect(reduced.reconciliationSizes).toEqual([20]);
+      expect(reduced.requestBodies.map(({ max_tokens }) => max_tokens)).toEqual([8_192, 8_192, 8_192]);
+      expect(reduced.requestBodies[0]?.system?.[0]?.text).toContain("обязательное JSON-число от 0 до 1 включительно");
+      expect(reduced.requestBodies[0]?.system?.[0]?.text).toContain("например 0.95");
+      expect(reduced.inventory).toHaveLength(20);
+      expect(reduced.inventory.every((record) => record.verdict?.verdict === "completed")).toBe(true);
+
+      const defaults = await runScenario(undefined, 33);
+      expect(defaults.planBatchSizes).toEqual([32, 1]);
+      expect(defaults.reconciliationSizes).toEqual([33]);
+      expect(defaults.requestBodies.map(({ max_tokens }) => max_tokens)).toEqual([16_384, 16_384, 16_384]);
+      expect(defaults.inventory).toHaveLength(33);
+      expect(defaults.inventory.every((record) => record.verdict?.verdict === "completed")).toBe(true);
+    } finally {
+      if (previousTokens === undefined) delete process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS;
+      else process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS = previousTokens;
+      if (previousConcurrency === undefined) delete process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY;
+      else process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY = previousConcurrency;
+    }
+  });
+
   it("preserves a syntactically valid partial MiniMax plan for bounded launcher repair", async () => {
     const judge = createAnthropicCompatibleSessionCompletionJudge({
       baseUrl: "https://api.minimax.io/anthropic/",
