@@ -646,7 +646,7 @@ describe("unfinished session launcher", () => {
     ]);
   });
 
-  it("rejects a global reconciliation that merges same-topic sessions from different workspaces", async () => {
+  it("keeps clean same-topic sessions in different workspaces independent without reconciliation", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-cross-workspace-dedupe-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions: AgentSession[] = [
@@ -654,6 +654,7 @@ describe("unfinished session launcher", () => {
       { ...fixtureSession("idle", "codex"), id: "canary", title: "Finish Agent Herder", cwd: "/tmp/agent-herder-codex-canary", lastActivity: new Date(Date.now() - 10_001).toISOString() },
     ];
     const calls = { resumes: 0, messages: [] as string[] };
+    let reconciliations = 0;
     const adapter = fixtureAdapter(sessions[0]!, calls);
     adapter.listSessions = async () => sessions;
     adapter.getSession = async (id) => sessions.find((session) => session.id === id) ?? null;
@@ -666,18 +667,20 @@ describe("unfinished session launcher", () => {
         async plan({ sessions: batch }) {
           expect(new Set(batch.map(({ session }) => session.cwd)).size).toBe(1);
           return { groups: batch.map(({ session }) => ({
-            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "unfinished" as const,
-            reason: "Same topic", confidence: 1, topic: "Finish Agent Herder", handoff: `Continue ${session.id}`,
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "Done independently", confidence: 1, topic: "Finish Agent Herder", handoff: "",
           })) };
         },
         async reconcile({ groups }) {
+          reconciliations += 1;
           return { clusters: [groups.map(({ groupRef }) => groupRef)] };
         },
       },
     }).recoverPending();
 
     expect(calls).toEqual({ resumes: 0, messages: [] });
-    expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
+    expect(reconciliations).toBe(0);
+    expect((await store.listInventory()).every((record) => record.verdict?.verdict === "completed")).toBe(true);
     await expect(settingsStore.getEffective("codex", "root-work", sessions[0]!.cwd)).resolves.toMatchObject({ enabled: true, source: "default" });
     await expect(settingsStore.getEffective("codex", "canary", sessions[1]!.cwd)).resolves.toMatchObject({ enabled: true, source: "default" });
   });
@@ -1697,6 +1700,54 @@ describe("unfinished session launcher", () => {
     expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
   });
 
+  it("aborts sibling workspace reconciliations and applies nothing when one workspace fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-workspace-reconciliation-atomic-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = [
+      { ...fixtureSession("idle", "codex"), id: "atomic-a", cwd: "/workspace/atomic-a", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "atomic-b", cwd: "/workspace/atomic-b", lastActivity: new Date(Date.now() - 60_001).toISOString() },
+    ];
+    const planAttempts = new Map<string, number>();
+    const reconciliationStarted: string[] = [];
+    let reconciliationAborted = 0;
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          const id = batch[0]!.session.id;
+          const attempt = (planAttempts.get(id) || 0) + 1;
+          planAttempts.set(id, attempt);
+          if (attempt === 1) return { groups: [] };
+          return { groups: [{
+            sourceSessionIds: [id], primarySessionId: id, verdict: "completed" as const,
+            reason: "done", confidence: 1, topic: id, handoff: "",
+          }] };
+        },
+        async reconcile({ groups, signal }) {
+          const topic = groups[0]!.topic;
+          reconciliationStarted.push(topic);
+          if (topic.includes("atomic-a")) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            throw new Error("workspace reconciliation transport failed");
+          }
+          return await new Promise((_resolve, reject) => signal?.addEventListener("abort", () => {
+            reconciliationAborted += 1;
+            reject(signal.reason);
+          }, { once: true }));
+        },
+      },
+    }).recoverPending();
+
+    expect(reconciliationStarted.slice().sort()).toEqual(["atomic-a", "atomic-b"]);
+    expect(reconciliationAborted).toBe(1);
+    expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
+  });
+
   it.each([
     { name: "zero confidence", evidence: "unfinished evidence", confidence: 0 },
     { name: "empty unfinished evidence", evidence: "", confidence: 0.9 },
@@ -1856,7 +1907,7 @@ describe("unfinished session launcher", () => {
       ["mixed-0", "mixed-2", "mixed-4", "mixed-6"],
       ["mixed-1", "mixed-3", "mixed-5", "mixed-7"],
     ]);
-    expect(reconciliations).toBe(1);
+    expect(reconciliations).toBe(0);
     expect((await store.listInventory()).every((record) => record.verdict?.verdict === "completed")).toBe(true);
   });
 
@@ -1864,9 +1915,10 @@ describe("unfinished session launcher", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-reconciliation-retry-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = [
-      { ...fixtureSession("idle", "codex"), id: "reconcile-a", cwd: "/workspace/reconcile-a", lastActivity: new Date(Date.now() - 60_000).toISOString() },
-      { ...fixtureSession("idle", "codex"), id: "reconcile-b", cwd: "/workspace/reconcile-b", lastActivity: new Date(Date.now() - 60_001).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "reconcile-a", cwd: "/workspace/reconcile", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "reconcile-b", cwd: "/workspace/reconcile", lastActivity: new Date(Date.now() - 60_001).toISOString() },
     ];
+    let plans = 0;
     let reconciliations = 0;
     const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
     adapter.listSessions = async () => sessions;
@@ -1877,6 +1929,8 @@ describe("unfinished session launcher", () => {
       judge: {
         async decide() { throw new Error("fallback should not run"); },
         async plan({ sessions: batch }) {
+          plans += 1;
+          if (plans === 1) return { groups: [] };
           return { groups: batch.map(({ session }) => ({
             sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
             reason: "done", confidence: 1, topic: session.title, handoff: "",
@@ -1902,10 +1956,11 @@ describe("unfinished session launcher", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-reconciliation-failure-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = [
-      { ...fixtureSession("idle", "codex"), id: "failure-a", cwd: "/workspace/failure-a", lastActivity: new Date(Date.now() - 60_000).toISOString() },
-      { ...fixtureSession("idle", "codex"), id: "failure-b", cwd: "/workspace/failure-b", lastActivity: new Date(Date.now() - 60_001).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "failure-a", cwd: "/workspace/failure", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "failure-b", cwd: "/workspace/failure", lastActivity: new Date(Date.now() - 60_001).toISOString() },
     ];
     let calls = 0;
+    let plans = 0;
     const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
     adapter.listSessions = async () => sessions;
     adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
@@ -1915,6 +1970,8 @@ describe("unfinished session launcher", () => {
       judge: {
         async decide() { throw new Error("fallback should not run"); },
         async plan({ sessions: batch }) {
+          plans += 1;
+          if (plans === 1) return { groups: [] };
           return { groups: batch.map(({ session }) => ({
             sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
             reason: "done", confidence: 1, topic: session.title, handoff: "",
@@ -1935,10 +1992,11 @@ describe("unfinished session launcher", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-production-reconciliation-failure-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = [
-      { ...fixtureSession("idle", "codex"), id: "production-a", cwd: "/workspace/production-a", lastActivity: new Date(Date.now() - 60_000).toISOString() },
-      { ...fixtureSession("idle", "codex"), id: "production-b", cwd: "/workspace/production-b", lastActivity: new Date(Date.now() - 60_001).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "production-a", cwd: "/workspace/production", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "production-b", cwd: "/workspace/production", lastActivity: new Date(Date.now() - 60_001).toISOString() },
     ];
     let reconciliationCalls = 0;
+    let plannerCalls = 0;
     const judge = createAnthropicCompatibleSessionCompletionJudge({
       baseUrl: "https://api.minimax.io/anthropic/", model: "MiniMax-M3.1-Flash-Preview", token: "test-token",
       fetchImpl: async (_url, init) => {
@@ -1951,6 +2009,14 @@ describe("unfinished session launcher", () => {
           reconciliationCalls += 1;
           if (!invalidJson) return new Response("provider failed", { status: 500 });
           return new Response("{truncated", { status: 200, headers: { "content-type": "application/json" } });
+        }
+        plannerCalls += 1;
+        if (plannerCalls === 1) {
+          const text = JSON.stringify({ groups: [] });
+          return new Response([
+            `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } })}`,
+            "data: [DONE]", "",
+          ].join("\n\n"), { status: 200, headers: { "content-type": "text/event-stream" } });
         }
         const text = JSON.stringify({ groups: (payload.sessions || []).map(({ session_ref, title }) => ({
           source_session_ids: [session_ref], primary_session_id: session_ref, verdict: "completed",
@@ -1978,10 +2044,11 @@ describe("unfinished session launcher", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-openai-reconciliation-json-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = [
-      { ...fixtureSession("idle", "codex"), id: "openai-a", cwd: "/workspace/openai-a", lastActivity: new Date(Date.now() - 60_000).toISOString() },
-      { ...fixtureSession("idle", "codex"), id: "openai-b", cwd: "/workspace/openai-b", lastActivity: new Date(Date.now() - 60_001).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "openai-a", cwd: "/workspace/openai", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "openai-b", cwd: "/workspace/openai", lastActivity: new Date(Date.now() - 60_001).toISOString() },
     ];
     let reconciliationCalls = 0;
+    let plannerCalls = 0;
     const judge = createOpenAICompatibleSessionCompletionJudge({
       baseUrl: "https://api.example.test/v1", model: "test-model",
       fetchImpl: async (_url, init) => {
@@ -1996,6 +2063,12 @@ describe("unfinished session launcher", () => {
           if (reconciliationCalls === 1) return new Response("{truncated", { status: 200, headers: { "content-type": "application/json" } });
           const content = JSON.stringify({ clusters: (payload.groups || []).map(({ group_ref }) => [group_ref]) });
           return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        plannerCalls += 1;
+        if (plannerCalls === 1) {
+          return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ groups: [] }) } }] }), {
+            status: 200, headers: { "content-type": "application/json" },
+          });
         }
         const content = JSON.stringify({ groups: (payload.sessions || []).map(({ session_ref, title }) => ({
           source_session_ids: [session_ref], primary_session_id: session_ref, verdict: "completed",
@@ -2044,9 +2117,9 @@ describe("unfinished session launcher", () => {
   });
 
   it.each([
-    { invalidChunks: 4, expectedPlans: 8, expectApplied: true },
-    { invalidChunks: 5, expectedPlans: 5, expectApplied: false },
-  ])("globally bounds $invalidChunks typed-invalid chunks before repair", async ({ invalidChunks, expectedPlans, expectApplied }) => {
+    { invalidChunks: 4, expectedPlans: 8, expectedReconciliations: 4, expectApplied: true },
+    { invalidChunks: 5, expectedPlans: 5, expectedReconciliations: 0, expectApplied: false },
+  ])("globally bounds $invalidChunks typed-invalid chunks before repair", async ({ invalidChunks, expectedPlans, expectedReconciliations, expectApplied }) => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-global-repair-cap-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = Array.from({ length: invalidChunks }, (_, index): AgentSession => ({
@@ -2083,7 +2156,7 @@ describe("unfinished session launcher", () => {
     }).recoverPending();
 
     expect(plans).toBe(expectedPlans);
-    expect(reconciliations).toBe(expectApplied ? 1 : 0);
+    expect(reconciliations).toBe(expectedReconciliations);
     expect((await store.listInventory()).every((record) => expectApplied
       ? record.verdict?.verdict === "completed"
       : record.verdict === undefined)).toBe(true);
@@ -2120,6 +2193,57 @@ describe("unfinished session launcher", () => {
     expect(plans).toBe(64);
     expect((await store.listInventory()).every((record) => record.verdict?.verdict === "completed")).toBe(true);
   });
+
+  it("fits a realistic 350-session mixed-workspace metadata preflight under 480k", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-350-metadata-preflight-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = Array.from({ length: 350 }, (_, index): AgentSession => {
+      const workspace = index % 12;
+      return {
+        ...fixtureSession("idle", "codex"),
+        id: `01a1${String(index).padStart(4, "0")}-1234-5678-9abc-${String(index).padStart(12, "0")}`,
+        title: `Agent Herder task ${index} ${"metadata".repeat(8)}`,
+        cwd: `/home/roomhacker/agents-projects/workspaces/project-${workspace}-${"nested".repeat(5)}`,
+        meta: { workspaceIdentity: `/canonical/workspace/project-${workspace}-${"identity".repeat(5)}` },
+        lastActivity: new Date(Date.now() - 60_000 - index).toISOString(),
+      };
+    });
+    let plans = 0;
+    let reconciliations = 0;
+    const previousBudget = process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS;
+    process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS = "480000";
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    try {
+      await new UnfinishedSessionLauncher({
+        adapters: new Map([["codex", adapter]]), store,
+        settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+        judge: {
+          async decide() { throw new Error("fallback should not run"); },
+          async plan({ sessions: batch }) {
+            plans += 1;
+            return { groups: batch.map(({ session }) => ({
+              sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+              reason: "done", confidence: 1, topic: session.title, handoff: "",
+            })) };
+          },
+          async reconcile({ groups }) {
+            reconciliations += 1;
+            return { clusters: groups.map(({ groupRef }) => [groupRef]) };
+          },
+        },
+      }).recoverPending();
+    } finally {
+      if (previousBudget === undefined) delete process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS;
+      else process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS = previousBudget;
+    }
+
+    expect(plans).toBe(12);
+    expect(reconciliations).toBe(0);
+    expect(await store.listInventory()).toHaveLength(350);
+    expect((await store.listInventory()).every((record) => record.verdict?.verdict === "completed")).toBe(true);
+  }, 15_000);
 
   it("cancels sibling repairs and leaves zero apply when one phase-two repair fails terminally", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-repair-terminal-failure-"));
@@ -2390,6 +2514,7 @@ describe("unfinished session launcher", () => {
     const requestBodies: unknown[] = [];
     const plannerAttempts = new Map<string, number>();
     let reconciliationRequests = 0;
+    const reconciliationAttempts = new Map<string, number>();
     const previousBudget = process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS;
     process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS = "480000";
     const judge = createAnthropicCompatibleSessionCompletionJudge({
@@ -2403,16 +2528,19 @@ describe("unfinished session launcher", () => {
         };
         requestBodies.push(body);
         const payload = JSON.parse(body.messages[0]!.content) as {
-          sessions?: Array<{ session_ref: string; workspace_identity: string }>;
-          groups?: Array<{ group_ref: string }>;
+          sessions?: Array<{ session_ref: string; workspace_identity: string; title: string }>;
+          groups?: Array<{ group_ref: string; topic?: string }>;
         };
         let text: string;
         if (body.system[0]!.text.includes("финальный дедупликатор")) {
           reconciliationRequests += 1;
-          if (reconciliationRequests === 1) {
+          const groups = payload.groups || [];
+          const signature = groups[0]?.topic || "unknown";
+          const attempt = (reconciliationAttempts.get(signature) || 0) + 1;
+          reconciliationAttempts.set(signature, attempt);
+          if (attempt === 1) {
             return new Response("{truncated", { status: 200, headers: { "content-type": "application/json" } });
           }
-          const groups = payload.groups || [];
           text = JSON.stringify({ clusters: groups.map(({ group_ref }) => [group_ref]) });
         } else if ((body as unknown as { max_tokens?: number }).max_tokens === 512) {
           return new Response(JSON.stringify({ content: [{
@@ -2427,16 +2555,16 @@ describe("unfinished session launcher", () => {
           const workspaceIndex = Number(signature.slice(signature.lastIndexOf("-") + 1));
           const repairable = workspaceIndex >= 2;
           if (attempt === 1 && repairable) {
-            text = JSON.stringify({ groups: sessionsInRequest.map(({ session_ref }, index) => ({
+            text = JSON.stringify({ groups: sessionsInRequest.map(({ session_ref, title }, index) => ({
               source_session_ids: [session_ref],
               primary_session_id: index === 0 ? sessionsInRequest[1]?.session_ref || "999" : session_ref,
-              verdict: "completed", reason: "malformed initial", confidence: 1, topic: `Topic ${session_ref}`, handoff: "",
+              verdict: "completed", reason: "malformed initial", confidence: 1, topic: title, handoff: "",
             })) });
           } else {
             const selected = signature.endsWith("budget-5") ? sessionsInRequest.slice(0, -4) : sessionsInRequest;
-            text = JSON.stringify({ groups: selected.map(({ session_ref }) => ({
+            text = JSON.stringify({ groups: selected.map(({ session_ref, title }) => ({
               source_session_ids: [session_ref], primary_session_id: session_ref,
-              verdict: "completed", reason: "valid retry", confidence: 1, topic: `Topic ${session_ref}`, handoff: "",
+              verdict: "completed", reason: "valid retry", confidence: 1, topic: title, handoff: "",
             })) });
           }
         }
@@ -2451,7 +2579,7 @@ describe("unfinished session launcher", () => {
     adapter.listSessions = async () => sessions;
     adapter.getSessionMessages = async (id) => {
       const index = Number(id.slice("budgeted-".length));
-      const hostile = `${id}:${'"\\\n'.repeat(index % 6 >= 2 ? 6_000 : 100)}`;
+      const hostile = `${id}:${'"\\\n'.repeat(index % 6 >= 2 ? 2_000 : 100)}`;
       return [{ id: `${id}-u`, role: "user", text: hostile, parts: [{ type: "text", text: hostile }] }];
     };
     try {
@@ -2465,8 +2593,11 @@ describe("unfinished session launcher", () => {
       else process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS = previousBudget;
     }
 
-    expect(reconciliationRequests).toBe(2);
-    expect(requestBodies).toHaveLength(16);
+    expect(reconciliationRequests).toBe(8);
+    expect(requestBodies).toHaveLength(22);
+    const reconciliationBodies = requestBodies.filter((body) => (body as { system?: Array<{ text?: string }> }).system?.[0]?.text?.includes("финальный дедупликатор"));
+    expect(JSON.stringify(reconciliationBodies)).not.toContain("source_session_refs");
+    expect(JSON.stringify(reconciliationBodies)).not.toContain("workspace_identity");
     const totalTokens = requestBodies.reduce((sum, body) => sum + estimateContextTokens(JSON.stringify(body)), 0);
     expect(totalTokens).toBeLessThanOrEqual(480_000);
     expect(await store.listInventory()).toHaveLength(70);

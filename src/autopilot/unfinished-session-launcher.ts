@@ -1852,10 +1852,7 @@ export class UnfinishedSessionLauncher {
       // largest possible decide envelopes rather than multiplying evidence by
       // every source in a large 48-hour inventory.
       decisionRequests: largestSessionDecisionBudgetRequests(sessions, MAX_PERSISTENT_OMISSION_DECISIONS),
-      reconciliationRequests: [
-        buildBatchReconciliationBudgetRequest(worstCaseReconciliationCandidates(sessions)),
-        buildBatchReconciliationBudgetRequest(worstCaseReconciliationCandidates(sessions)),
-      ],
+      reconciliationRequests: worstCaseWorkspaceReconciliationBudgetRequests(sessions),
     })).sessions;
     const packedAssessed = assessed.map((candidate, index) => ({
       ...candidate,
@@ -1933,7 +1930,6 @@ export class UnfinishedSessionLauncher {
     });
     const groups = chunkResults.flatMap((result) => result.groups);
     const persistentOmissions = chunkResults.flatMap((result) => result.omissions);
-    const repaired = invalidChunkIndices.length > 0;
     if (persistentOmissions.length > MAX_PERSISTENT_OMISSION_DECISIONS) {
       throw new BatchPlanValidationError(`MiniMax full retries omitted ${persistentOmissions.length} sessions, above the safe fallback limit ${MAX_PERSISTENT_OMISSION_DECISIONS}`);
     }
@@ -1979,32 +1975,69 @@ export class UnfinishedSessionLauncher {
     }
     let plan = { groups };
     assertBatchPlanCoverage(plan, packedAssessed);
-    if (plannerChunks.length > 1 || repaired) {
+    const bySourceKey = new Map(packedAssessed.map((candidate) => [candidate.sourceKey, candidate]));
+    const workspaceOrder = [...new Set(packedAssessed.map(({ session }) => sessionWorkspaceIdentity(session)))];
+    const chunkCountByWorkspace = new Map<string, number>();
+    for (const chunk of plannerChunks) {
+      const workspace = sessionWorkspaceIdentity(chunk[0]!.session);
+      chunkCountByWorkspace.set(workspace, (chunkCountByWorkspace.get(workspace) || 0) + 1);
+    }
+    const repairedWorkspaces = new Set(invalidChunkIndices.map((index) => sessionWorkspaceIdentity(plannerChunks[index]![0]!.session)));
+    const omissionWorkspaces = new Set(persistentOmissions.map(({ session }) => sessionWorkspaceIdentity(session)));
+    const groupsByWorkspace = new Map(workspaceOrder.map((workspace) => [workspace, [] as SessionBatchPlanGroup[]]));
+    for (const group of plan.groups) {
+      const workspaces = new Set(group.sourceSessionIds.map((sourceKey) => sessionWorkspaceIdentity(bySourceKey.get(sourceKey)!.session)));
+      if (workspaces.size !== 1) throw new Error("MiniMax planner group crossed workspace before reconciliation");
+      groupsByWorkspace.get([...workspaces][0]!)!.push(group);
+    }
+    const reconciliationWorkspaces = workspaceOrder.filter((workspace) => (chunkCountByWorkspace.get(workspace) || 0) > 1
+      || repairedWorkspaces.has(workspace)
+      || omissionWorkspaces.has(workspace));
+    if (reconciliationWorkspaces.length > 0) {
       const reconcile = this.options.judge?.reconcile;
-      if (!reconcile) throw new Error("MiniMax cross-chunk reconciliation is unavailable");
-      const summaries = batchReconciliationCandidates(plan, packedAssessed);
-      const unreconciledPlan = plan;
-      const requestReconciliation = async (): Promise<SessionBatchPlan> => {
-        const reconciliation = await withAbortDeadline(reconcile({
-          groups: summaries,
-          signal: plannerPhaseController.signal,
-        }), plannerPhaseDeadline, plannerPhaseController);
-        try {
-          const reconciled = applyBatchReconciliation(unreconciledPlan, summaries, reconciliation);
-          assertBatchPlanCoverage(reconciled, packedAssessed);
-          return reconciled;
-        } catch (error) {
-          if (error instanceof BatchReconciliationValidationError) throw error;
-          throw new BatchReconciliationValidationError(errorText(error));
-        }
-      };
+      if (!reconcile) throw new Error("MiniMax workspace reconciliation is unavailable");
+      let reconciledWorkspaces: SessionBatchPlan[];
       try {
-        plan = await requestReconciliation();
+        reconciledWorkspaces = await mapConcurrentOrdered(
+          reconciliationWorkspaces,
+          plannerConcurrency,
+          async (workspace) => {
+            const candidates = packedAssessed.filter(({ session }) => sessionWorkspaceIdentity(session) === workspace);
+            const unreconciledPlan = { groups: groupsByWorkspace.get(workspace)! };
+            const summaries = batchReconciliationCandidates(unreconciledPlan, candidates);
+            const requestReconciliation = async (): Promise<SessionBatchPlan> => {
+              const reconciliation = await withAbortDeadline(reconcile({
+                groups: summaries,
+                signal: plannerPhaseController.signal,
+              }), plannerPhaseDeadline, plannerPhaseController);
+              try {
+                const reconciled = applyBatchReconciliation(unreconciledPlan, summaries, reconciliation);
+                assertBatchPlanCoverage(reconciled, candidates);
+                return reconciled;
+              } catch (error) {
+                if (error instanceof BatchReconciliationValidationError) throw error;
+                throw new BatchReconciliationValidationError(errorText(error));
+              }
+            };
+            try {
+              return await requestReconciliation();
+            } catch (error) {
+              if (!(error instanceof BatchReconciliationValidationError)) throw error;
+              console.error(`[agent-herder] MiniMax вернул некорректную reconciliation workspace; повторяю её целиком один раз: ${errorText(error)}`);
+              return requestReconciliation();
+            }
+          },
+          plannerPhaseController,
+        );
       } catch (error) {
-        if (!(error instanceof BatchReconciliationValidationError)) throw error;
-        console.error(`[agent-herder] MiniMax вернул некорректную reconciliation; повторяю её целиком один раз: ${errorText(error)}`);
-        plan = await requestReconciliation();
+        plannerPhaseController.abort(error);
+        throw error;
       }
+      const reconciledByWorkspace = new Map(reconciliationWorkspaces.map((workspace, index) => [workspace, reconciledWorkspaces[index]!]));
+      plan = {
+        groups: workspaceOrder.flatMap((workspace) => reconciledByWorkspace.get(workspace)?.groups ?? groupsByWorkspace.get(workspace)!),
+      };
+      assertBatchPlanCoverage(plan, packedAssessed);
     }
     return plan;
     } finally {
@@ -2812,12 +2845,12 @@ function batchReconciliationCandidates(
     return {
       groupRef: `G${index + 1}`,
       workspaceIdentity: workspaces[0]!,
-      topic: group.topic,
+      topic: group.topic.slice(0, 96),
       verdict: group.verdict,
-      reason: group.reason.slice(0, 128),
-      handoff: group.handoff.slice(0, 256),
+      reason: group.reason.slice(0, 64),
+      handoff: group.handoff.slice(0, 128),
       sourceSessionIds: [...group.sourceSessionIds],
-      memberTitles: members.map(({ session }) => session.title.slice(0, 160)),
+      memberTitles: members.map(({ session }) => session.title.slice(0, 80)),
       humanGate: members.some(({ session }) => session.status === "needs_input" || session.needsPermission),
     };
   });
@@ -2940,7 +2973,7 @@ function batchReconciliationPrompt(): string {
   return [
     "Ты финальный дедупликатор уже проверенных групп Agent Herder.",
     "Сгруппируй group_ref одной и той же пользовательской задачи, даже если они пришли из разных batch chunks.",
-    "Никогда не объединяй разные workspace_identity.",
+    "Все группы этого запроса уже относятся к одному workspace; не изобретай внешние группы.",
     "human_gate — свойство участника задачи, а не отдельная задача: сохрани его в одном кластере с sibling той же работы.",
     "Каждый входной group_ref должен встретиться ровно один раз.",
     "Верни только компактный JSON {clusters:[[\"G1\",\"G2\"],[\"G3\"]]}; не повторяй summaries, handoff или причины.",
@@ -2951,12 +2984,10 @@ function batchReconciliationPayload(groups: SessionBatchReconciliationCandidate[
   return {
     groups: groups.map((group) => ({
       group_ref: group.groupRef,
-      workspace_identity: group.workspaceIdentity,
       topic: group.topic,
       verdict: group.verdict,
       reason: group.reason,
       handoff: group.handoff,
-      source_session_refs: group.sourceSessionIds,
       member_titles: group.memberTitles,
       human_gate: group.humanGate,
     })),
@@ -3050,12 +3081,12 @@ function worstCaseReconciliationCandidates(sessions: SessionBatchCandidate[]): S
   return sessions.map(({ session }, index) => ({
     groupRef: `G${index + 1}`,
     workspaceIdentity: sessionWorkspaceIdentity(session),
-    topic: "я".repeat(120),
+    topic: "я".repeat(96),
     verdict: "unfinished",
-    reason: "я".repeat(128),
-    handoff: "я".repeat(256),
+    reason: "я".repeat(64),
+    handoff: "я".repeat(128),
     sourceSessionIds: [sessionSourceKey(session)],
-    memberTitles: [session.title.slice(0, 160)],
+    memberTitles: [session.title.slice(0, 80)],
     humanGate: session.status === "needs_input" || session.needsPermission,
   }));
 }
@@ -3071,6 +3102,31 @@ function buildBatchReconciliationBudgetRequest(groups: SessionBatchReconciliatio
     system: [{ type: "text", text: batchReconciliationPrompt(), cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: JSON.stringify(batchReconciliationPayload(groups)) }],
   };
+}
+
+function worstCaseWorkspaceReconciliationBudgetRequests(sessions: SessionBatchCandidate[]): unknown[] {
+  const byWorkspace = new Map<string, SessionBatchCandidate[]>();
+  for (const candidate of sessions) {
+    const workspace = sessionWorkspaceIdentity(candidate.session);
+    const grouped = byWorkspace.get(workspace) ?? [];
+    grouped.push(candidate);
+    byWorkspace.set(workspace, grouped);
+  }
+  const mandatory: unknown[] = [];
+  const optional: Array<{ request: unknown; tokens: number }> = [];
+  for (const grouped of byWorkspace.values()) {
+    const request = buildBatchReconciliationBudgetRequest(worstCaseReconciliationCandidates(grouped));
+    if (partitionBatchCandidates(grouped).length > 1) {
+      mandatory.push(request, request);
+    } else {
+      optional.push({ request, tokens: estimateContextTokens(JSON.stringify(request)) });
+    }
+  }
+  const repairEligible = optional
+    .sort((left, right) => right.tokens - left.tokens)
+    .slice(0, MAX_REPAIRED_CHUNKS)
+    .flatMap(({ request }) => [request, request]);
+  return [...mandatory, ...repairEligible];
 }
 
 function normalizeBatchReconciliation(
