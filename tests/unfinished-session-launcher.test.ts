@@ -1017,7 +1017,7 @@ describe("unfinished session launcher", () => {
   it("applies no earlier chunk when a later chunk remains malformed after its full retry", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-later-chunk-failure-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
-    const sessions = Array.from({ length: 65 }, (_, index): AgentSession => ({
+    const sessions = Array.from({ length: 33 }, (_, index): AgentSession => ({
       ...fixtureSession("idle", "codex"), id: `later-${index}`, title: `Later ${index}`,
       lastActivity: new Date(Date.now() - 10 * 60_000 - index).toISOString(),
     }));
@@ -1033,8 +1033,8 @@ describe("unfinished session launcher", () => {
         async decide() { throw new Error("fallback should not run"); },
         async plan({ sessions: batch }) {
           planned.push(batch.map(({ session }) => session.id));
-          if (batch[0]?.session.id === "later-64") return { groups: [{
-            sourceSessionIds: ["later-64"], primarySessionId: "unknown", verdict: "unfinished" as const,
+          if (batch[0]?.session.id === "later-32") return { groups: [{
+            sourceSessionIds: ["later-32"], primarySessionId: "unknown", verdict: "unfinished" as const,
             reason: "malformed later chunk", confidence: 1, topic: "Malformed", handoff: "continue",
           }] };
           return { groups: batch.map(({ session }, index) => ({
@@ -1047,7 +1047,7 @@ describe("unfinished session launcher", () => {
       },
     }).recoverPending();
 
-    expect(planned.map((batch) => batch.length)).toEqual([64, 1, 1]);
+    expect(planned.map((batch) => batch.length)).toEqual([32, 1, 1]);
     expect(calls).toEqual({ resumes: 0, messages: [] });
     expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
   });
@@ -1189,7 +1189,7 @@ describe("unfinished session launcher", () => {
     expect(await store.listInventory()).toMatchObject([{ sessionId: session.id, verdict: { verdict: "needs_human", confidence: 0 } }]);
   });
 
-  it("sends a large inventory to MiniMax in one globally deduplicated request", async () => {
+  it("partitions an inventory just above the 32-session output boundary", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-size-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = Array.from({ length: 33 }, (_, index): AgentSession => ({
@@ -1217,7 +1217,7 @@ describe("unfinished session launcher", () => {
         },
       },
     }).recoverPending();
-    expect(sizes).toEqual([33]);
+    expect(sizes).toEqual([32, 1]);
     expect(await store.listInventory()).toHaveLength(33);
   });
 
@@ -1250,7 +1250,7 @@ describe("unfinished session launcher", () => {
       },
     }).recoverPending();
 
-    expect(sizes).toEqual([64, 6]);
+    expect(sizes).toEqual([32, 32, 6]);
     expect(await store.listInventory()).toHaveLength(70);
     expect((await store.listInventory()).every((record) => record.verdict?.verdict === "completed")).toBe(true);
   });
@@ -1314,18 +1314,18 @@ describe("unfinished session launcher", () => {
       else process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS = previousBudget;
     }
 
-    expect(requestBodies).toHaveLength(5);
+    expect(requestBodies).toHaveLength(7);
     const totalTokens = requestBodies.reduce((sum, body) => sum + estimateContextTokens(JSON.stringify(body)), 0);
     expect(totalTokens).toBeLessThanOrEqual(480_000);
     expect(await store.listInventory()).toHaveLength(70);
   }, 15_000);
 
-  it("globally reconciles one task split across the 64-session boundary into one send", async () => {
+  it("globally reconciles one task split across the 32-session boundary into one send", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-cross-chunk-dedupe-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
-    const sessions = Array.from({ length: 65 }, (_, index): AgentSession => ({
+    const sessions = Array.from({ length: 33 }, (_, index): AgentSession => ({
       ...fixtureSession("idle", "codex"), id: `cross-${index}`,
-      title: index >= 63 ? `Shared interrupted task part ${index - 62}` : `Completed task ${index}`,
+      title: index >= 31 ? `Shared interrupted task part ${index - 30}` : `Completed task ${index}`,
       cwd: "/workspace/cross-chunk",
       lastActivity: new Date(Date.now() - 60_000 - index).toISOString(),
     }));
@@ -1345,10 +1345,10 @@ describe("unfinished session launcher", () => {
         async plan({ sessions: batch }) {
           return { groups: batch.map(({ session }) => ({
             sourceSessionIds: [session.id], primarySessionId: session.id,
-            verdict: session.id === "cross-63" || session.id === "cross-64" ? "unfinished" as const : "completed" as const,
+            verdict: session.id === "cross-31" || session.id === "cross-32" ? "unfinished" as const : "completed" as const,
             reason: "classified", confidence: 1,
-            topic: session.id === "cross-63" || session.id === "cross-64" ? "Shared cross chunk task" : session.title,
-            handoff: session.id === "cross-63" || session.id === "cross-64" ? `Continue ${session.id}` : "",
+            topic: session.id === "cross-31" || session.id === "cross-32" ? "Shared cross chunk task" : session.title,
+            handoff: session.id === "cross-31" || session.id === "cross-32" ? `Continue ${session.id}` : "",
           })) };
         },
         async reconcile({ groups }) {
@@ -1359,21 +1359,21 @@ describe("unfinished session launcher", () => {
       },
     }).recoverPending();
 
-    expect(resumed).toEqual(["cross-63"]);
+    expect(resumed).toEqual(["cross-31"]);
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ id: "cross-63" });
-    expect(sent[0]?.message).toContain("Continue cross-63");
-    expect(sent[0]?.message).toContain("Continue cross-64");
+    expect(sent[0]).toMatchObject({ id: "cross-31" });
+    expect(sent[0]?.message).toContain("Continue cross-31");
+    expect(sent[0]?.message).toContain("Continue cross-32");
   });
 
   it("lets a human-gated member block its cross-chunk sibling after global reconciliation", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-cross-chunk-human-gate-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
-    const sessions = Array.from({ length: 65 }, (_, index): AgentSession => ({
-      ...fixtureSession(index === 64 ? "needs_input" : "idle", "codex"), id: `gated-${index}`,
-      title: index >= 63 ? `Gated shared task part ${index - 62}` : `Completed gated test ${index}`,
+    const sessions = Array.from({ length: 33 }, (_, index): AgentSession => ({
+      ...fixtureSession(index === 32 ? "needs_input" : "idle", "codex"), id: `gated-${index}`,
+      title: index >= 31 ? `Gated shared task part ${index - 30}` : `Completed gated test ${index}`,
       cwd: "/workspace/cross-chunk-gate",
-      needsPermission: index === 64,
+      needsPermission: index === 32,
       lastActivity: new Date(Date.now() - 60_000 - index).toISOString(),
     }));
     const calls = { resumes: 0, messages: [] as string[] };
@@ -1391,10 +1391,10 @@ describe("unfinished session launcher", () => {
         async plan({ sessions: batch }) {
           return { groups: batch.map(({ session }) => ({
             sourceSessionIds: [session.id], primarySessionId: session.id,
-            verdict: session.id === "gated-63" || session.id === "gated-64" ? "unfinished" as const : "completed" as const,
+            verdict: session.id === "gated-31" || session.id === "gated-32" ? "unfinished" as const : "completed" as const,
             reason: "classified", confidence: 1,
-            topic: session.id === "gated-63" || session.id === "gated-64" ? "Gated shared task" : session.title,
-            handoff: session.id === "gated-63" || session.id === "gated-64" ? "Continue shared work" : "",
+            topic: session.id === "gated-31" || session.id === "gated-32" ? "Gated shared task" : session.title,
+            handoff: session.id === "gated-31" || session.id === "gated-32" ? "Continue shared work" : "",
           })) };
         },
         async reconcile({ groups }) {
@@ -1407,8 +1407,8 @@ describe("unfinished session launcher", () => {
 
     expect(calls).toEqual({ resumes: 0, messages: [] });
     const inventory = await store.listInventory();
-    expect(inventory.find((record) => record.sessionId === "gated-64")?.verdict?.verdict).toBe("needs_human");
-    expect(inventory.find((record) => record.sessionId === "gated-63")?.verdict?.verdict).toBe("needs_human");
+    expect(inventory.find((record) => record.sessionId === "gated-32")?.verdict?.verdict).toBe("needs_human");
+    expect(inventory.find((record) => record.sessionId === "gated-31")?.verdict?.verdict).toBe("needs_human");
   });
 
   it("prepends the adapter-owned first user request when the evidence tail is truncated", async () => {

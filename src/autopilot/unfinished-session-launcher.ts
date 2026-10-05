@@ -15,7 +15,7 @@ const DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET = 480_000;
 const DEFAULT_BATCH_OUTPUT_TOKENS = 16_384;
 // Bound group count against the 16k response ceiling. Any still-truncated
 // chunk is rejected by exact coverage before a verdict or continuation applies.
-const MAX_BATCH_PLAN_SESSIONS_PER_REQUEST = 64;
+const MAX_BATCH_PLAN_SESSIONS_PER_REQUEST = 32;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
 // Version 2 invalidates verdicts produced before complete, globally reconciled
 // batch planning. Native transcripts stay intact; only their semantic audit is
