@@ -10,6 +10,7 @@ import {
   estimateBatchPlannerInputTokens,
   estimateContextTokens,
   fitBatchContext,
+  fitBatchContextForSerializedRequest,
   SessionAutostartStore,
   UnfinishedSessionLauncher,
   UnfinishedSessionStore,
@@ -110,6 +111,30 @@ describe("unfinished session launcher", () => {
       expect(candidate.transcriptTail).toContain("ПОСЛЕДНИЙ СМЫСЛОВОЙ КОНТЕКСТ");
     }
     expect(estimateBatchPlannerInputTokens(packed)).toBeLessThanOrEqual(6_000);
+  });
+
+  it("fits the final escaped JSON request under 480k tokens", () => {
+    const hostile = `${'"\\\n'.repeat(70_000)}конец`;
+    const sessions = Array.from({ length: 6 }, (_, index) => ({
+      session: { ...fixtureSession("idle", index % 2 ? "zcode" : "codex"), id: `escaped-${index}` },
+      transcriptTail: `ПЕРВЫЙ ПОЛЬЗОВАТЕЛЬСКИЙ ЗАПРОС:\nцель-${index}\n\nПОСЛЕДНИЙ СМЫСЛОВОЙ КОНТЕКСТ:\n${hostile}`,
+    }));
+    const buildRequest = (packed: typeof sessions) => ({
+      model: "MiniMax-M3.1-Flash-Preview",
+      system: [{ type: "text", text: "planner" }],
+      messages: [{ role: "user", content: JSON.stringify({ sessions: packed.map((candidate) => ({
+        id: candidate.session.id,
+        semantic_context: candidate.transcriptTail,
+      })) }) }],
+    });
+    const fitted = fitBatchContextForSerializedRequest(sessions, 480_000, buildRequest);
+    expect(fitted.sessions).toHaveLength(sessions.length);
+    expect(fitted.estimatedTokens).toBe(estimateContextTokens(JSON.stringify(fitted.request)));
+    expect(fitted.estimatedTokens).toBeLessThanOrEqual(480_000);
+    for (const candidate of fitted.sessions) {
+      expect(candidate.transcriptTail).toContain("ПЕРВЫЙ ПОЛЬЗОВАТЕЛЬСКИЙ ЗАПРОС");
+      expect(candidate.transcriptTail).toContain("ПОСЛЕДНИЙ СМЫСЛОВОЙ КОНТЕКСТ");
+    }
   });
 
   it("refuses an impossible metadata-only batch instead of exceeding the input ceiling", () => {
@@ -764,6 +789,70 @@ describe("unfinished session launcher", () => {
     expect(inventory[0]?.lastActivity).toBe(session.lastActivity);
     expect(inventory[0]?.transcriptTail).toContain(`goal-${session.lastActivity}`);
     expect(await store.list()).toEqual([]);
+  });
+
+  it("atomically migrates a legacy active key before one canonical session can send", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-legacy-identity-"));
+    const statePath = join(root, "unfinished.json");
+    const now = new Date(Date.now() - 10_000).toISOString();
+    await writeFile(statePath, JSON.stringify({ version: 1, sessions: [{
+      harness: "zcode", sessionId: "same-native", cwd: "/legacy", title: "Legacy", startedAt: now, updatedAt: now,
+      generationId: "legacy", attempts: 0, state: "active",
+    }], inventory: [{
+      harness: "zcode", sessionId: "same-native", cwd: "/legacy", title: "Legacy", status: "idle",
+      lastActivity: now, transcriptTail: "legacy", observedAt: now,
+    }] }));
+    const store = new UnfinishedSessionStore(statePath);
+    const session = {
+      ...fixtureSession("idle", "zcode"), id: "same-native", cwd: "/canonical", lastActivity: now,
+      meta: { workspaceIdentity: "workspace-42" },
+    };
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    adapter.getSessionSnapshotReceipt = () => ({ exhaustive: true, observedAt: new Date().toISOString(), source: "test" });
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() { return { groups: [{
+          sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "unfinished" as const,
+          reason: "continue", confidence: 1, topic: "Canonical task", handoff: "continue once",
+        }] }; },
+      },
+    }).recoverPending();
+    expect(calls).toEqual({ resumes: 1, messages: [expect.stringContaining("continue once")] });
+    expect(await store.list()).toHaveLength(1);
+    expect((await store.list())[0]).toMatchObject({ sessionId: session.id, cwd: "/canonical", workspaceIdentity: "workspace-42" });
+    expect(await store.listInventory()).toHaveLength(1);
+    expect((await store.listInventory())[0]).toMatchObject({ sessionId: session.id, cwd: "/canonical", workspaceIdentity: "workspace-42" });
+  });
+
+  it("prunes unseen inventory only after an explicitly exhaustive adapter snapshot", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-snapshot-receipt-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const now = new Date(Date.now() - 10_000).toISOString();
+    await store.upsertInventory({
+      harness: "codex", sessionId: "unseen", cwd: "/tmp", title: "Unseen", status: "idle",
+      lastActivity: now, transcriptTail: "legacy", observedAt: now,
+    });
+    const session = { ...fixtureSession("idle", "codex"), id: "visible", lastActivity: now };
+    const adapter = fixtureAdapter(session, { resumes: 0, messages: [] });
+    let exhaustive = false;
+    adapter.getSessionSnapshotReceipt = () => ({ exhaustive, observedAt: new Date().toISOString(), source: "test" });
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: { async decide() { throw new Error("fallback"); }, async plan({ sessions }) { return { groups: sessions.map(({ session: candidate }) => ({
+        sourceSessionIds: [candidate.id], primarySessionId: candidate.id, verdict: "completed" as const,
+        reason: "done", confidence: 1, topic: candidate.title, handoff: "",
+      })) }; } },
+    });
+    await launcher.recoverPending();
+    expect((await store.listInventory()).map((record) => record.sessionId).sort()).toEqual(["unseen", "visible"]);
+    exhaustive = true;
+    await launcher.recoverPending();
+    expect((await store.listInventory()).map((record) => record.sessionId)).toEqual(["visible"]);
   });
 
   it("persists a running autopilot turn and starts the same session after a fresh process", async () => {

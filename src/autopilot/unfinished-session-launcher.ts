@@ -362,6 +362,40 @@ export class UnfinishedSessionStore {
     }, (removed) => removed > 0);
   }
 
+  /** Atomically migrate legacy cwd-only keys before recovery can observe both identities. */
+  async migrateWorkspaceIdentities(sessions: AgentSession[]): Promise<{ sessions: number; inventory: number }> {
+    if (sessions.length === 0) return { sessions: 0, inventory: 0 };
+    return this.mutate((file) => {
+      let migratedSessions = 0;
+      let migratedInventory = 0;
+      for (const session of sessions) {
+        const harness = harnessType(session.harness);
+        const identity = sessionWorkspaceIdentity(session);
+        const matchingRecords = file.sessions.filter((record) => record.harness === harness && record.sessionId === session.id);
+        if (matchingRecords.length > 0 && (matchingRecords.length > 1
+          || matchingRecords[0]!.workspaceIdentity !== identity
+          || matchingRecords[0]!.cwd !== normalize(session.cwd))) {
+          const merged = mergeUnfinishedIdentityRecords(matchingRecords, session, identity);
+          file.sessions = file.sessions.filter((record) => record.harness !== harness || record.sessionId !== session.id);
+          file.sessions.push(merged);
+          migratedSessions += matchingRecords.length;
+        }
+        const matchingInventory = (file.inventory ?? []).filter((record) => record.harness === harness && record.sessionId === session.id);
+        if (matchingInventory.length > 0 && (matchingInventory.length > 1
+          || matchingInventory[0]!.workspaceIdentity !== identity
+          || matchingInventory[0]!.cwd !== normalize(session.cwd))) {
+          const merged = mergeInventoryIdentityRecords(matchingInventory, session, identity);
+          file.inventory = (file.inventory ?? []).filter((record) => record.harness !== harness || record.sessionId !== session.id);
+          file.inventory.push(merged);
+          migratedInventory += matchingInventory.length;
+        }
+      }
+      sortRecords(file.sessions);
+      file.inventory?.sort((left, right) => Date.parse(right.lastActivity) - Date.parse(left.lastActivity));
+      return { sessions: migratedSessions, inventory: migratedInventory };
+    }, ({ sessions: migratedSessions, inventory }) => migratedSessions > 0 || inventory > 0);
+  }
+
   /** Remove legacy non-Codex/ZCode turn records and inventory outside the configured audit window. */
   async pruneAutocontinueScope(inventoryCutoff: Date): Promise<{ sessions: number; inventory: number }> {
     return this.mutate((file) => {
@@ -1156,15 +1190,9 @@ export class UnfinishedSessionLauncher {
     const runtimeSettings = await this.options.settingsStore.getSettings();
     const inventoryWindowMs = this.options.inventoryWindowMs
       ?? runtimeSettings.inventoryWindowHours * 60 * 60 * 1_000;
-    const durableRecords = await this.options.store.list();
-    const known = new Set(durableRecords.map(unfinishedRecordKey));
-    const nonRetryableAdmissions = new Set(durableRecords
-      .filter((record) => record.nonRetryableAdmission)
-      .map(unfinishedRecordKey));
-    const priorInventory = new Map((await this.options.store.listInventory()).map((record) => [inventoryRecordKey(record), record]));
-    const candidates: Array<{ adapter: HarnessAdapter; session: AgentSession }> = [];
+    const listedCandidates: Array<{ adapter: HarnessAdapter; session: AgentSession }> = [];
     const inventoryBatch: UnfinishedSessionInventoryRecord[] = [];
-    const successfulHarnesses = new Set<"codex" | "zcode">();
+    const exhaustiveHarnesses = new Set<"codex" | "zcode">();
     const observedSourceKeys = new Set<string>();
     for (const [provider, adapter] of this.options.adapters) {
       if (!isAutocontinueInventoryHarness(provider) || !adapter.resumeSession) continue;
@@ -1182,21 +1210,33 @@ export class UnfinishedSessionLauncher {
         console.error(`[agent-herder] не удалось сверить ${displayHarness(provider)} сессии: ${errorText(error)}`);
         continue;
       }
-      successfulHarnesses.add(provider);
+      let receipt = null;
+      try { receipt = adapter.getSessionSnapshotReceipt?.() ?? null; } catch { /* unknown snapshot: preserve inventory */ }
+      if (receipt?.exhaustive === true) exhaustiveHarnesses.add(provider);
       for (const session of sessions) {
         const lastActivity = Date.parse(session.lastActivity);
         if (!Number.isFinite(lastActivity) || Date.now() - lastActivity > inventoryWindowMs) continue;
         const sourceKey = sessionSourceKey(session);
         observedSourceKeys.add(sourceKey);
-        // A terminal native admission remains visible in the exact 48h
-        // snapshot, but must never be replanned into another prompt.
-        if (nonRetryableAdmissions.has(sourceKey)) continue;
-        candidates.push({ adapter, session });
+        listedCandidates.push({ adapter, session });
       }
     }
+    // Migration and dedupe must finish in one store transaction before known
+    // keys or recovery records are read. Otherwise a legacy cwd key and the
+    // same native session's canonical workspace key can each admit a prompt.
+    await this.options.store.migrateWorkspaceIdentities(listedCandidates.map(({ session }) => session));
+    const durableRecords = await this.options.store.list();
+    const known = new Set(durableRecords.map(unfinishedRecordKey));
+    const nonRetryableAdmissions = new Set(durableRecords
+      .filter((record) => record.nonRetryableAdmission)
+      .map(unfinishedRecordKey));
+    const priorInventory = new Map((await this.options.store.listInventory()).map((record) => [inventoryRecordKey(record), record]));
+    // A terminal native admission remains visible in the exact 48h snapshot,
+    // but must never be replanned into another prompt.
+    const candidates = listedCandidates.filter(({ session }) => !nonRetryableAdmissions.has(sessionSourceKey(session)));
     candidates.sort((left, right) => Date.parse(right.session.lastActivity) - Date.parse(left.session.lastActivity));
     await this.options.store.reconcileInventorySnapshot(
-      successfulHarnesses,
+      exhaustiveHarnesses,
       observedSourceKeys,
     );
     if (this.options.judge?.plan) {
@@ -2071,6 +2111,66 @@ function findUnfinishedRecord(
   return records.find((candidate) => candidate.harness === harness && candidate.sessionId === sessionId);
 }
 
+function mergeUnfinishedIdentityRecords(
+  records: UnfinishedSessionRecord[],
+  session: AgentSession,
+  workspaceIdentity: string,
+): UnfinishedSessionRecord {
+  const safetyRank = (record: UnfinishedSessionRecord): number => record.nonRetryableAdmission ? 5
+    : record.deliveryPending ? 4
+      : record.acceptedAt ? 3
+        : record.state === "exhausted" ? 2
+          : record.state === "recovering" ? 1 : 0;
+  const winner = [...records].sort((left, right) => safetyRank(right) - safetyRank(left)
+    || Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0]!;
+  const admission = [...records].filter((record) => record.acceptedAt)
+    .sort((left, right) => Date.parse(right.acceptedAt!) - Date.parse(left.acceptedAt!))[0];
+  const latest = [...records].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0]!;
+  const state: UnfinishedSessionState = records.some((record) => record.nonRetryableAdmission)
+    ? "active"
+    : records.some((record) => record.state === "exhausted") ? "exhausted"
+      : records.some((record) => record.state === "recovering") ? "recovering" : "active";
+  return {
+    ...winner,
+    harness: harnessType(session.harness),
+    sessionId: session.id,
+    cwd: normalize(session.cwd),
+    workspaceIdentity,
+    model: session.model || winner.model,
+    title: session.title || winner.title,
+    startedAt: new Date(Math.min(...records.map((record) => Date.parse(record.startedAt)))).toISOString(),
+    updatedAt: latest.updatedAt,
+    generationId: latest.generationId,
+    attempts: Math.max(...records.map((record) => record.attempts)),
+    state,
+    ...(admission?.acceptedAt ? {
+      acceptedAt: admission.acceptedAt,
+      ...(admission.acceptedFingerprint ? { acceptedFingerprint: admission.acceptedFingerprint } : {}),
+      ...(admission.progressObservedAt ? { progressObservedAt: admission.progressObservedAt } : {}),
+      ...(admission.deliveryPending ? { deliveryPending: true } : {}),
+    } : {}),
+  };
+}
+
+function mergeInventoryIdentityRecords(
+  records: UnfinishedSessionInventoryRecord[],
+  session: AgentSession,
+  workspaceIdentity: string,
+): UnfinishedSessionInventoryRecord {
+  const winner = [...records].sort((left, right) => Number(evidenceIsCurrent(right)) - Number(evidenceIsCurrent(left))
+    || Date.parse(right.observedAt) - Date.parse(left.observedAt))[0]!;
+  return {
+    ...winner,
+    harness: session.harness as "codex" | "zcode",
+    sessionId: session.id,
+    cwd: normalize(session.cwd),
+    workspaceIdentity,
+    title: session.title,
+    status: session.status,
+    lastActivity: session.lastActivity,
+  };
+}
+
 function sortRecords(records: UnfinishedSessionRecord[]): void {
   records.sort((left, right) => unfinishedRecordKey(left).localeCompare(unfinishedRecordKey(right)));
 }
@@ -2326,6 +2426,48 @@ export function fitBatchContext(
   }));
 }
 
+/** Fit against the exact JSON body sent on the wire, including nested escaping. */
+export function fitBatchContextForSerializedRequest<T>(
+  sessions: SessionBatchCandidate[],
+  tokenBudget: number,
+  buildRequest: (packed: SessionBatchCandidate[]) => T,
+): { sessions: SessionBatchCandidate[]; request: T; estimatedTokens: number } {
+  if (sessions.length === 0) {
+    const request = buildRequest([]);
+    return { sessions: [], request, estimatedTokens: estimateContextTokens(JSON.stringify(request)) };
+  }
+  const metadataOnly = sessions.map((candidate) => ({ ...candidate, transcriptTail: "" }));
+  const fixedRequest = buildRequest(metadataOnly);
+  const fixedTokens = estimateContextTokens(JSON.stringify(fixedRequest));
+  if (fixedTokens > tokenBudget) {
+    throw new Error(`MiniMax serialized batch metadata needs ${fixedTokens} input tokens, above the ${tokenBudget} token ceiling`);
+  }
+  const sizes = sessions.map((candidate) => estimateContextTokens(candidate.transcriptTail));
+  const pack = (cap: number): SessionBatchCandidate[] => sessions.map((candidate, index) => ({
+    ...candidate,
+    transcriptTail: sizes[index]! <= cap ? candidate.transcriptTail : trimEvidenceTokens(candidate.transcriptTail, cap),
+  }));
+  let low = 0;
+  let high = Math.max(...sizes);
+  let best = metadataOnly;
+  let bestRequest = fixedRequest;
+  let bestTokens = fixedTokens;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const packed = pack(middle);
+    const request = buildRequest(packed);
+    const estimatedTokens = estimateContextTokens(JSON.stringify(request));
+    if (estimatedTokens <= tokenBudget) {
+      best = packed;
+      bestRequest = request;
+      bestTokens = estimatedTokens;
+      low = middle + 1;
+    } else high = middle - 1;
+  }
+  if (bestTokens > tokenBudget) throw new Error(`MiniMax serialized request exceeds the ${tokenBudget} token ceiling`);
+  return { sessions: best, request: bestRequest, estimatedTokens: bestTokens };
+}
+
 function trimEvidenceTokens(value: string, maxTokens: number): string {
   if (maxTokens <= 0) return "";
   if (estimateContextTokens(value) <= maxTokens) return value;
@@ -2494,7 +2636,23 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
         Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS || DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET),
         DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
       );
-      const packedSessions = fitBatchContext(sessions, Math.min(contextBudget, DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET));
+      const inputCeiling = Math.min(contextBudget, DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET);
+      const maxTokens = Math.min(
+        positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || DEFAULT_BATCH_OUTPUT_TOKENS), DEFAULT_BATCH_OUTPUT_TOKENS),
+        DEFAULT_BATCH_OUTPUT_TOKENS,
+      );
+      const buildRequest = (packedSessions: SessionBatchCandidate[]) => ({
+        model: config.model,
+        max_tokens: maxTokens,
+        temperature: 0,
+        stream: false,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: batchPlannerPrompt() },
+          { role: "user", content: JSON.stringify(batchPlannerPayload(packedSessions)) },
+        ],
+      });
+      const fitted = fitBatchContextForSerializedRequest(sessions, inputCeiling, buildRequest);
       const response = await fetchImpl(endpoint, {
         method: "POST",
         headers: {
@@ -2502,20 +2660,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
           "content-type": "application/json",
         },
         signal: AbortSignal.timeout(positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
-        body: JSON.stringify({
-          model: config.model,
-          max_tokens: Math.min(
-            positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || DEFAULT_BATCH_OUTPUT_TOKENS), DEFAULT_BATCH_OUTPUT_TOKENS),
-            DEFAULT_BATCH_OUTPUT_TOKENS,
-          ),
-          temperature: 0,
-          stream: false,
-          response_format: { type: "json_object" },
-          messages: [
-            { role: "system", content: batchPlannerPrompt() },
-            { role: "user", content: JSON.stringify(batchPlannerPayload(packedSessions)) },
-          ],
-        }),
+        body: JSON.stringify(fitted.request),
       });
       if (!response.ok) throw new Error(`MiniMax batch planner rejected with HTTP ${response.status}`);
       const body = await response.json() as Record<string, unknown>;
@@ -2597,7 +2742,21 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
         Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS || DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET),
         DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
       );
-      const packedSessions = fitBatchContext(sessions, Math.min(contextBudget, DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET));
+      const inputCeiling = Math.min(contextBudget, DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET);
+      const maxTokens = Math.min(
+        positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || DEFAULT_BATCH_OUTPUT_TOKENS), DEFAULT_BATCH_OUTPUT_TOKENS),
+        DEFAULT_BATCH_OUTPUT_TOKENS,
+      );
+      const buildRequest = (packedSessions: SessionBatchCandidate[]) => ({
+        model: config.model,
+        max_tokens: maxTokens,
+        temperature: 0,
+        stream: true,
+        output_config: { effort: "low" },
+        system: [{ type: "text", text: batchPlannerPrompt(), cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: JSON.stringify(batchPlannerPayload(packedSessions)) }],
+      });
+      const fitted = fitBatchContextForSerializedRequest(sessions, inputCeiling, buildRequest);
       const response = await fetchImpl(endpoint, {
         method: "POST",
         headers: {
@@ -2606,18 +2765,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
           "content-type": "application/json",
         },
         signal: AbortSignal.timeout(positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
-        body: JSON.stringify({
-          model: config.model,
-          max_tokens: Math.min(
-            positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS || DEFAULT_BATCH_OUTPUT_TOKENS), DEFAULT_BATCH_OUTPUT_TOKENS),
-            DEFAULT_BATCH_OUTPUT_TOKENS,
-          ),
-          temperature: 0,
-          stream: true,
-          output_config: { effort: "low" },
-          system: [{ type: "text", text: batchPlannerPrompt(), cache_control: { type: "ephemeral" } }],
-          messages: [{ role: "user", content: JSON.stringify(batchPlannerPayload(packedSessions)) }],
-        }),
+        body: JSON.stringify(fitted.request),
       });
       if (!response.ok) throw new Error(`MiniMax Anthropic batch planner rejected with HTTP ${response.status}`);
       const content = await anthropicText(response);
