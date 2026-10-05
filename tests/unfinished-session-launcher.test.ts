@@ -293,6 +293,49 @@ describe("unfinished session launcher", () => {
     }] });
   });
 
+  it("rejects a numeric-string alias that collides with a different native session id", async () => {
+    const judge = createAnthropicCompatibleSessionCompletionJudge({
+      baseUrl: "https://api.minimax.io/anthropic/", model: "MiniMax-M3.1-Flash-Preview", token: "test-token",
+      fetchImpl: async () => {
+        const text = JSON.stringify({ groups: [{
+          source_session_ids: ["1"], primary_session_id: "1", verdict: "completed",
+          reason: "done", confidence: 1, topic: "Ambiguous", handoff: "",
+        }] });
+        return new Response([
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } })}`,
+          "data: [DONE]", "",
+        ].join("\n\n"), { status: 200, headers: { "content-type": "text/event-stream" } });
+      },
+    });
+    await expect(judge.plan?.({ sessions: [
+      { session: { ...fixtureSession("idle", "codex"), id: "position-one" }, transcriptTail: "first" },
+      { session: { ...fixtureSession("idle", "zcode"), id: "1" }, transcriptTail: "native numeric id" },
+    ] })).rejects.toThrow(/ambiguous numeric session 1/);
+  });
+
+  it("keeps a JSON number positional even when its text collides with another native id", async () => {
+    const judge = createAnthropicCompatibleSessionCompletionJudge({
+      baseUrl: "https://api.minimax.io/anthropic/", model: "MiniMax-M3.1-Flash-Preview", token: "test-token",
+      fetchImpl: async () => {
+        const text = JSON.stringify({ groups: [{
+          source_session_ids: [1], primary_session_id: 1, verdict: "completed",
+          reason: "done", confidence: 1, topic: "Positional", handoff: "",
+        }] });
+        return new Response([
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } })}`,
+          "data: [DONE]", "",
+        ].join("\n\n"), { status: 200, headers: { "content-type": "text/event-stream" } });
+      },
+    });
+    await expect(judge.plan?.({ sessions: [
+      { session: { ...fixtureSession("idle", "codex"), id: "position-one" }, transcriptTail: "first" },
+      { session: { ...fixtureSession("idle", "zcode"), id: "1" }, transcriptTail: "native numeric id" },
+    ] })).resolves.toMatchObject({ groups: [{
+      sourceSessionIds: ["codex:position-one:/tmp/autostart-canary"],
+      primarySessionId: "codex:position-one:/tmp/autostart-canary",
+    }] });
+  });
+
   it.each([3, "3", "023", "unknown"])("strictly rejects out-of-range or unknown MiniMax alias %s", async (invalidRef) => {
     const judge = createAnthropicCompatibleSessionCompletionJudge({
       baseUrl: "https://api.minimax.io/anthropic/",

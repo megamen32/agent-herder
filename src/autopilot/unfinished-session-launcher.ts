@@ -2538,17 +2538,24 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
     idAliases.set(session.id, ids);
   }
   const resolveId = (value: unknown, field: string): string => {
-    const numericPosition = typeof value === "number" && Number.isSafeInteger(value)
-      ? value
-      : typeof value === "string" && /^[1-9]\d*$/.test(value) ? Number(value) : undefined;
-    if (numericPosition !== undefined && numericPosition >= 1 && numericPosition <= candidates.length) {
-      return sessionSourceKey(candidates[numericPosition - 1]!.session);
+    if (typeof value === "number" && Number.isSafeInteger(value)) {
+      if (value >= 1 && value <= candidates.length) return sessionSourceKey(candidates[value - 1]!.session);
+      throw new Error(`MiniMax returned out-of-range numeric session ${value}`);
     }
     const raw = boundedText(value, field, 128);
     const alias = aliases.get(raw);
     if (alias) return alias;
-    if (known.has(raw)) return raw;
     const matches = idAliases.get(raw) ?? [];
+    if (/^[1-9]\d*$/.test(raw)) {
+      const numericPosition = Number(raw);
+      if (Number.isSafeInteger(numericPosition) && numericPosition >= 1 && numericPosition <= candidates.length) {
+        const positionalTarget = sessionSourceKey(candidates[numericPosition - 1]!.session);
+        const nativeMatches = [...(known.has(raw) ? [raw] : []), ...matches];
+        if (nativeMatches.length === 0 || nativeMatches.every((match) => match === positionalTarget)) return positionalTarget;
+        throw new Error(`MiniMax returned ambiguous numeric session ${raw}`);
+      }
+    }
+    if (known.has(raw)) return raw;
     if (matches.length === 1) return matches[0]!;
     if (matches.length > 1) throw new Error(`MiniMax returned ambiguous workspace-free session ${raw}`);
     return raw;
