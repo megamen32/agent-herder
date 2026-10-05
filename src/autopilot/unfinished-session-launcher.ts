@@ -30,6 +30,10 @@ class BatchPlanValidationError extends Error {
   override name = "BatchPlanValidationError";
 }
 
+class BatchReconciliationValidationError extends Error {
+  override name = "BatchReconciliationValidationError";
+}
+
 function sessionProgressFingerprint(session: AgentSession): string {
   return [
     session.status,
@@ -1844,7 +1848,10 @@ export class UnfinishedSessionLauncher {
       // largest possible decide envelopes rather than multiplying evidence by
       // every source in a large 48-hour inventory.
       decisionRequests: largestSessionDecisionBudgetRequests(sessions, MAX_PERSISTENT_OMISSION_DECISIONS),
-      reconciliationRequest: buildBatchReconciliationBudgetRequest(worstCaseReconciliationCandidates(sessions)),
+      reconciliationRequests: [
+        buildBatchReconciliationBudgetRequest(worstCaseReconciliationCandidates(sessions)),
+        buildBatchReconciliationBudgetRequest(worstCaseReconciliationCandidates(sessions)),
+      ],
     })).sessions;
     const packedAssessed = assessed.map((candidate, index) => ({
       ...candidate,
@@ -1965,12 +1972,28 @@ export class UnfinishedSessionLauncher {
       const reconcile = this.options.judge?.reconcile;
       if (!reconcile) throw new Error("MiniMax cross-chunk reconciliation is unavailable");
       const summaries = batchReconciliationCandidates(plan, packedAssessed);
-      const reconciliation = await withAbortDeadline(reconcile({
-        groups: summaries,
-        signal: plannerPhaseController.signal,
-      }), plannerPhaseDeadline, plannerPhaseController);
-      plan = applyBatchReconciliation(plan, summaries, reconciliation);
-      assertBatchPlanCoverage(plan, packedAssessed);
+      const unreconciledPlan = plan;
+      const requestReconciliation = async (): Promise<SessionBatchPlan> => {
+        const reconciliation = await withAbortDeadline(reconcile({
+          groups: summaries,
+          signal: plannerPhaseController.signal,
+        }), plannerPhaseDeadline, plannerPhaseController);
+        try {
+          const reconciled = applyBatchReconciliation(unreconciledPlan, summaries, reconciliation);
+          assertBatchPlanCoverage(reconciled, packedAssessed);
+          return reconciled;
+        } catch (error) {
+          if (error instanceof BatchReconciliationValidationError) throw error;
+          throw new BatchReconciliationValidationError(errorText(error));
+        }
+      };
+      try {
+        plan = await requestReconciliation();
+      } catch (error) {
+        if (!(error instanceof BatchReconciliationValidationError)) throw error;
+        console.error(`[agent-herder] MiniMax вернул некорректную reconciliation; повторяю её целиком один раз: ${errorText(error)}`);
+        plan = await requestReconciliation();
+      }
     }
     return plan;
     } finally {
@@ -3055,6 +3078,19 @@ function normalizeBatchReconciliation(
   return { clusters };
 }
 
+function normalizeBatchReconciliationText(
+  content: string,
+  candidates: SessionBatchReconciliationCandidate[],
+): SessionBatchReconciliation {
+  try {
+    const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    return normalizeBatchReconciliation(JSON.parse(json) as unknown, candidates);
+  } catch (error) {
+    if (error instanceof BatchReconciliationValidationError) throw error;
+    throw new BatchReconciliationValidationError(errorText(error));
+  }
+}
+
 function batchPlannerPrompt(): string {
   return [
     "Ты единый оркестратор автопродолжения Agent Herder для Codex и ZCode.",
@@ -3478,9 +3514,8 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       const choices = Array.isArray(body.choices) ? body.choices : [];
       const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message : undefined;
       const content = message && typeof message === "object" ? (message as Record<string, unknown>).content : undefined;
-      if (typeof content !== "string") throw new Error("MiniMax reconciliation returned no content");
-      const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-      return normalizeBatchReconciliation(JSON.parse(json) as unknown, groups);
+      if (typeof content !== "string") throw new BatchReconciliationValidationError("MiniMax reconciliation returned no content");
+      return normalizeBatchReconciliationText(content, groups);
     },
   };
 }
@@ -3602,9 +3637,14 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
         }),
       });
       if (!response.ok) throw new Error(`MiniMax Anthropic reconciliation rejected with HTTP ${response.status}`);
-      const content = await anthropicText(response);
-      const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-      return normalizeBatchReconciliation(JSON.parse(json) as unknown, groups);
+      let content: string;
+      try {
+        content = await anthropicText(response);
+      } catch (error) {
+        if (error instanceof BatchPlanValidationError) throw new BatchReconciliationValidationError(errorText(error));
+        throw error;
+      }
+      return normalizeBatchReconciliationText(content, groups);
     },
   };
 }

@@ -1859,6 +1859,74 @@ describe("unfinished session launcher", () => {
     expect((await store.listInventory()).every((record) => record.verdict?.verdict === "completed")).toBe(true);
   });
 
+  it("discards an omitted reconciliation and applies only its one valid full retry", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-reconciliation-retry-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = [
+      { ...fixtureSession("idle", "codex"), id: "reconcile-a", cwd: "/workspace/reconcile-a", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "reconcile-b", cwd: "/workspace/reconcile-b", lastActivity: new Date(Date.now() - 60_001).toISOString() },
+    ];
+    let reconciliations = 0;
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "done", confidence: 1, topic: session.title, handoff: "",
+          })) };
+        },
+        async reconcile({ groups }) {
+          reconciliations += 1;
+          expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
+          if (reconciliations === 1) return { clusters: [[groups[0]!.groupRef]] };
+          return { clusters: groups.map(({ groupRef }) => [groupRef]) };
+        },
+      },
+    }).recoverPending();
+
+    expect(reconciliations).toBe(2);
+    expect((await store.listInventory()).every((record) => record.verdict?.verdict === "completed")).toBe(true);
+  });
+
+  it.each([
+    { name: "malformed twice", expectedCalls: 2, reconcile: async (groups: Array<{ groupRef: string }>) => ({ clusters: [[groups[0]!.groupRef]] }) },
+    { name: "HTTP transport failure", expectedCalls: 1, reconcile: async () => { throw new Error("MiniMax reconciliation rejected with HTTP 500"); } },
+  ])("applies nothing when reconciliation ends with $name", async ({ expectedCalls, reconcile }) => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-reconciliation-failure-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = [
+      { ...fixtureSession("idle", "codex"), id: "failure-a", cwd: "/workspace/failure-a", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "failure-b", cwd: "/workspace/failure-b", lastActivity: new Date(Date.now() - 60_001).toISOString() },
+    ];
+    let calls = 0;
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "done", confidence: 1, topic: session.title, handoff: "",
+          })) };
+        },
+        async reconcile({ groups }) { calls += 1; return await reconcile(groups); },
+      },
+    }).recoverPending();
+
+    expect(calls).toBe(expectedCalls);
+    expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
+  });
+
   it("fails before planner I/O when singleton workspaces exceed the bounded chunk count", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-workspace-chunk-cap-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -2110,6 +2178,7 @@ describe("unfinished session launcher", () => {
     }));
     const requestBodies: unknown[] = [];
     const plannerAttempts = new Map<string, number>();
+    let reconciliationRequests = 0;
     const previousBudget = process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS;
     process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS = "480000";
     const judge = createAnthropicCompatibleSessionCompletionJudge({
@@ -2128,7 +2197,11 @@ describe("unfinished session launcher", () => {
         };
         let text: string;
         if (body.system[0]!.text.includes("финальный дедупликатор")) {
-          text = JSON.stringify({ clusters: (payload.groups || []).map(({ group_ref }) => [group_ref]) });
+          reconciliationRequests += 1;
+          const groups = payload.groups || [];
+          text = JSON.stringify({
+            clusters: (reconciliationRequests === 1 ? groups.slice(0, -2) : groups).map(({ group_ref }) => [group_ref]),
+          });
         } else if ((body as unknown as { max_tokens?: number }).max_tokens === 512) {
           return new Response(JSON.stringify({ content: [{
             type: "text",
@@ -2178,7 +2251,8 @@ describe("unfinished session launcher", () => {
       else process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS = previousBudget;
     }
 
-    expect(requestBodies).toHaveLength(11);
+    expect(reconciliationRequests).toBe(2);
+    expect(requestBodies).toHaveLength(12);
     const totalTokens = requestBodies.reduce((sum, body) => sum + estimateContextTokens(JSON.stringify(body)), 0);
     expect(totalTokens).toBeLessThanOrEqual(480_000);
     expect(await store.listInventory()).toHaveLength(70);
