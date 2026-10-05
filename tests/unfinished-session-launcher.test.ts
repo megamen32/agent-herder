@@ -1769,4 +1769,31 @@ describe("unfinished session launcher", () => {
     expect(calls.messages).toHaveLength(1);
     expect(await store.list()).toMatchObject([{ sessionId: session.id, deliveryPending: true, state: "active" }]);
   });
+
+  it("never repeats a prompt whose admitted native turn failed non-retryably", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-admitted-failure-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = { ...fixtureSession("idle", "zcode"), lastActivity: new Date(Date.now() - 30 * 60_000).toISOString() };
+    await store.markStarted(session, "previous-process");
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    adapter.sendMessage = async (_id, input) => {
+      calls.messages.push(input.message);
+      return { ok: false, admitted: true, nonRetryable: true, error: "exact native turn failed" };
+    };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      generationId: "current-process", retryDelayMs: 0, discoveryIdleMs: 1,
+    });
+
+    await launcher.recoverPending();
+    await launcher.recoverPending();
+
+    expect(calls.resumes).toBe(1);
+    expect(calls.messages).toHaveLength(1);
+    expect(await store.list()).toMatchObject([{
+      sessionId: session.id, nonRetryableAdmission: true, lastError: "exact native turn failed", state: "active",
+    }]);
+  });
 });

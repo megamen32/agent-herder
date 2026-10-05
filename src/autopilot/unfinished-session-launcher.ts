@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
 
-import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessType, SessionMessageView } from "../types/index.js";
+import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessType, SendMessageResult, SessionMessageView } from "../types/index.js";
 import { cacheWindowFor, continuationModelFor, movePinnedContinuation, semanticTranscript, unfinishedProbeDelayMs, type CacheHandoffService } from "../cache-handoff.js";
 import { deferredMessages, isBusyCodexWriter, type DeferredMessageStore } from "../deferred-messages.js";
 
@@ -23,6 +23,12 @@ function sessionProgressFingerprint(session: AgentSession): string {
     session.lastMessage?.slice(-256) ?? "",
     session.meta?.hasActiveToolCall === true ? "tool-active" : "tool-idle",
   ].join("|");
+}
+
+function admittedNonRetryableFailure(result: SendMessageResult): string | undefined {
+  return !result.ok && result.admitted === true && result.nonRetryable === true
+    ? result.error || "Native harness admitted the prompt, then failed the exact turn"
+    : undefined;
 }
 
 export type UnfinishedSessionState = "active" | "recovering" | "exhausted";
@@ -221,6 +227,8 @@ export interface UnfinishedSessionRecord {
   progressObservedAt?: string;
   /** Admission was acknowledged, but the exact native turn has not started yet. */
   deliveryPending?: boolean;
+  /** Native admission crossed the idempotency boundary and then failed terminally. */
+  nonRetryableAdmission?: boolean;
   generationId: string;
   attempts: number;
   state: UnfinishedSessionState;
@@ -359,6 +367,7 @@ export class UnfinishedSessionStore {
     resetAttempts = false,
     acceptedDelivery = false,
     deliveryPending = false,
+    admittedFailure?: string,
   ): Promise<UnfinishedSessionRecord> {
     const harness = harnessType(session.harness);
     const normalized = normalizeRecordTarget({
@@ -385,6 +394,7 @@ export class UnfinishedSessionStore {
               acceptedAt: now.toISOString(),
               acceptedFingerprint: sessionProgressFingerprint(session),
               ...(deliveryPending ? { deliveryPending: true } : {}),
+              ...(admittedFailure ? { lastError: bounded(admittedFailure, "admittedFailure"), nonRetryableAdmission: true } : {}),
             }
           : existing?.acceptedAt
             ? {
@@ -392,6 +402,10 @@ export class UnfinishedSessionStore {
                 ...(existing.acceptedFingerprint ? { acceptedFingerprint: existing.acceptedFingerprint } : {}),
                 ...(existing.progressObservedAt ? { progressObservedAt: existing.progressObservedAt } : {}),
                 ...(existing.deliveryPending ? { deliveryPending: true } : {}),
+                ...(existing.nonRetryableAdmission ? {
+                  nonRetryableAdmission: true,
+                  ...(existing.lastError ? { lastError: existing.lastError } : {}),
+                } : {}),
               }
             : {}),
       };
@@ -628,7 +642,7 @@ export class UnfinishedSessionLauncher {
     if (session) await this.armSession(session);
   }
 
-  async armSession(session: AgentSession, deliveryPending = false): Promise<boolean> {
+  async armSession(session: AgentSession, deliveryPending = false, admittedFailure?: string): Promise<boolean> {
     if (!isAutocontinueInventoryHarness(session.harness)) return false;
     const adapter = this.options.adapters.get(session.harness);
     if (!adapter?.resumeSession) return false;
@@ -636,7 +650,7 @@ export class UnfinishedSessionLauncher {
     await this.pinActiveSession(adapter, session.id);
     this.completedSessions.delete(sessionKey(session.harness, session.id));
     this.urgentSessions.delete(sessionKey(session.harness, session.id));
-    await this.options.store.markStarted(session, this.generationId, new Date(), true, true, deliveryPending);
+    await this.options.store.markStarted(session, this.generationId, new Date(), true, true, deliveryPending, admittedFailure);
     return true;
   }
 
@@ -704,7 +718,7 @@ export class UnfinishedSessionLauncher {
       if (!settings.watchdogEnabled || !settings.enabled) return;
       const stallMs = this.stalledTurnOverrideMs ?? settings.stalledTurnMinutes * 60_000;
       const records = (await this.options.store.list())
-        .filter((record) => isAutocontinueInventoryHarness(record.harness) && record.state !== "exhausted")
+        .filter((record) => isAutocontinueInventoryHarness(record.harness) && record.state !== "exhausted" && !record.nonRetryableAdmission)
         .map((record) => ({
           harness: record.harness,
           sessionId: record.sessionId,
@@ -903,6 +917,13 @@ export class UnfinishedSessionLauncher {
         continue;
       }
       const urgent = this.urgentSessions.has(sessionKey(record.harness, record.sessionId));
+      if (record.nonRetryableAdmission) {
+        // The exact prompt crossed the native idempotency boundary and its turn
+        // failed terminally. Keep ownership/diagnostics durable, but never
+        // submit that prompt again from watchdog or reconciliation.
+        await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
+        continue;
+      }
       if (!urgent && record.deliveryPending) {
         // sendPrompt admission is the idempotency boundary. Until native state
         // proves progress, watchdog owns observation and no recovery cycle may
@@ -957,6 +978,7 @@ export class UnfinishedSessionLauncher {
     };
     let promptAccepted = false;
     let promptPending = false;
+    let promptAdmissionFailure: string | undefined;
     try {
       if (!this.lifecycleActive(lifecycleEpoch)) {
         await this.options.store.cancelAttempt(attempt);
@@ -1013,6 +1035,15 @@ export class UnfinishedSessionLauncher {
         return;
       }
       const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true });
+      const terminalAdmission = admittedNonRetryableFailure(sent);
+      if (terminalAdmission) {
+        promptAccepted = true;
+        promptAdmissionFailure = terminalAdmission;
+        await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true, true, false, terminalAdmission);
+        this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
+        console.error(`[agent-herder] ${record.harness}:${record.sessionId} приняла prompt, но native turn завершился без безопасного retry: ${terminalAdmission}`);
+        return;
+      }
       if (!sent.ok) throw new Error(sent.error || "команда продолжения отклонена");
       promptAccepted = true;
       promptPending = sent.pending === true;
@@ -1025,7 +1056,7 @@ export class UnfinishedSessionLauncher {
     } catch (error) {
       if (promptAccepted) {
         try {
-          await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true, true, promptPending);
+          await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true, true, promptPending, promptAdmissionFailure);
         } catch (settleError) {
           console.error(`[agent-herder] ZCode/Codex prompt accepted but durable settle failed for ${record.sessionId}: ${errorText(settleError)}`);
         }
@@ -1071,7 +1102,11 @@ export class UnfinishedSessionLauncher {
     const runtimeSettings = await this.options.settingsStore.getSettings();
     const inventoryWindowMs = this.options.inventoryWindowMs
       ?? runtimeSettings.inventoryWindowHours * 60 * 60 * 1_000;
-    const known = new Set((await this.options.store.list()).map((record) => sessionKey(record.harness, record.sessionId)));
+    const durableRecords = await this.options.store.list();
+    const known = new Set(durableRecords.map((record) => sessionKey(record.harness, record.sessionId)));
+    const nonRetryableAdmissions = new Set(durableRecords
+      .filter((record) => record.nonRetryableAdmission)
+      .map((record) => sessionKey(record.harness, record.sessionId)));
     const priorInventory = new Map((await this.options.store.listInventory()).map((record) => [sessionKey(record.harness, record.sessionId), record]));
     const candidates: Array<{ adapter: HarnessAdapter; session: AgentSession }> = [];
     const inventoryBatch: UnfinishedSessionInventoryRecord[] = [];
@@ -1092,6 +1127,7 @@ export class UnfinishedSessionLauncher {
         continue;
       }
       for (const session of sessions) {
+        if (nonRetryableAdmissions.has(sessionKey(session.harness, session.id))) continue;
         const lastActivity = Date.parse(session.lastActivity);
         if (!Number.isFinite(lastActivity) || Date.now() - lastActivity > inventoryWindowMs) continue;
         candidates.push({ adapter, session });
@@ -1334,6 +1370,15 @@ export class UnfinishedSessionLauncher {
           await this.pinActiveSession(primary.adapter, primary.session.id, runtimeSettings);
           if (!this.lifecycleActive(lifecycleEpoch)) return;
           const sent = await primary.adapter.sendMessage(primary.session.id, { message: handoff, queue: true });
+          const terminalAdmission = admittedNonRetryableFailure(sent);
+          if (terminalAdmission) {
+            await this.options.store.markStarted(primary.session, this.generationId, new Date(), true, true, false, terminalAdmission);
+            this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
+            this.urgentSessions.delete(sessionKey(primary.session.harness, primary.session.id));
+            for (const source of sources) pushInventory(source);
+            console.error(`[agent-herder] единый plan prompt принят ${primary.session.harness}:${primary.session.id}, но native turn failed без безопасного retry: ${terminalAdmission}`);
+            continue;
+          }
           if (!sent.ok) throw new Error(sent.error || "исходная сессия не приняла объединённый handoff");
           if (!this.lifecycleActive(lifecycleEpoch)) return;
           await this.options.store.markStarted(primary.session, this.generationId, new Date(), true, true, sent.pending === true);
@@ -1408,6 +1453,24 @@ export class UnfinishedSessionLauncher {
           if (!this.lifecycleActive(lifecycleEpoch)) return;
         }
         const sent = await primary.adapter.sendMessage(created.id, { message: handoff, queue: true });
+        const terminalAdmission = admittedNonRetryableFailure(sent);
+        if (terminalAdmission) {
+          await this.options.store.markStarted(created, this.generationId, new Date(), true, true, false, terminalAdmission);
+          this.continuedThisRecovery.add(sessionKey(created.harness, created.id));
+          for (const source of sources) {
+            this.urgentSessions.delete(sessionKey(source.session.harness, source.session.id));
+            pushInventory(source, {
+              verdict: "needs_human",
+              reason: `Передана в новую сессию ${created.id}; native turn failed после admission без безопасного retry`,
+              confidence: 1,
+              judgedAt,
+            });
+            await this.options.settingsStore.setSession({ harness: source.session.harness, sessionId: source.session.id, cwd: source.session.cwd }, false);
+            await this.options.store.remove(source.session.harness, source.session.id);
+          }
+          console.error(`[agent-herder] новая сессия ${created.harness}:${created.id} приняла handoff, но native turn failed без безопасного retry: ${terminalAdmission}`);
+          continue;
+        }
         if (!sent.ok) throw new Error(sent.error || "новая объединённая сессия не приняла handoff");
         if (!this.lifecycleActive(lifecycleEpoch)) return;
         if (runtimeSettings.movePinnedOnRollover) {
@@ -1773,6 +1836,7 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
     ...(record.acceptedFingerprint ? { acceptedFingerprint: bounded(record.acceptedFingerprint, "acceptedFingerprint") } : {}),
     ...(record.progressObservedAt ? { progressObservedAt: isoDate(record.progressObservedAt, "progressObservedAt") } : {}),
     ...(record.deliveryPending === true ? { deliveryPending: true } : {}),
+    ...(record.nonRetryableAdmission === true ? { nonRetryableAdmission: true } : {}),
     generationId: record.generationId === undefined ? "legacy" : bounded(record.generationId, "generationId"),
     attempts,
     state,

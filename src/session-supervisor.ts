@@ -6,6 +6,7 @@ import type {
   HarnessAdapter,
   HarnessEvent,
   SendMessageOptions,
+  SendMessageResult,
   SessionDetails,
   SessionHistoryInfo,
   SessionLineage,
@@ -347,7 +348,7 @@ export class SessionSupervisor {
     }
   }
 
-  async sendMessage(harness: string, id: string, options: SendMessageOptions, expectedCwd?: string): Promise<{ ok: boolean; error?: string; sessionId?: string; delivery?: "deferred" }> {
+  async sendMessage(harness: string, id: string, options: SendMessageOptions, expectedCwd?: string): Promise<SendMessageResult & { sessionId?: string; delivery?: "deferred" }> {
     const adapter = this.requireAdapter(harness);
     let session: AgentSession | null;
     if (expectedCwd) {
@@ -368,8 +369,12 @@ export class SessionSupervisor {
       await deferredMessages.add(id, options.message);
       return { ok: true, sessionId: id, delivery: "deferred" };
     }
-    if (result.ok) {
-      if (session) await this.unfinishedSessions?.armSession(session, result.pending === true);
+    if (result.ok || result.admitted === true) {
+      if (session) await this.unfinishedSessions?.armSession(
+        session,
+        result.pending === true,
+        !result.ok && result.nonRetryable === true ? result.error || "Native admitted turn failed" : undefined,
+      );
       this.publishSessionChanged(harness, id, "changed");
     }
     return result;
@@ -517,8 +522,12 @@ export class SessionSupervisor {
     const session = await adapter.getSession(id);
     const injected = session ? await coordinationNotes.inject(session, message) : message;
     const result = await adapter.sendMessage(id, { message: injected });
-    if (result.ok) {
-      if (session) await this.unfinishedSessions?.armSession(session, result.pending === true);
+    if (result.ok || result.admitted === true) {
+      if (session) await this.unfinishedSessions?.armSession(
+        session,
+        result.pending === true,
+        !result.ok && result.nonRetryable === true ? result.error || "Native admitted turn failed" : undefined,
+      );
       this.publishSessionChanged(harness, id, "changed");
     }
     return result;

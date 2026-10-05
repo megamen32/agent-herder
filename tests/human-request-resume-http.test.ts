@@ -105,4 +105,46 @@ describe("human-request completion resume", () => {
     expect(sent[0]?.message).toContain("Human Request resolved:");
     await expect(unfinishedStore.list()).resolves.toMatchObject([{ harness: "zcode", sessionId: session.id, state: "active" }]);
   });
+
+  it("marks an admitted terminal ZCode turn failure as resume_failed while preserving durable ownership", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-human-resume-zcode-admitted-failure-"));
+    const session: AgentSession = {
+      id: "zcode-admitted-failure", harness: "zcode", status: "needs_input", title: "Resume after human gate",
+      cwd: "/workspace/exact", lastActivity: new Date().toISOString(), needsPermission: false,
+    };
+    let sends = 0;
+    const adapter: HarnessAdapter = {
+      type: "zcode", name: "ZCode admitted failure fixture", async init() {},
+      async listSessions(options) { return options?.cwd === session.cwd ? [session] : []; },
+      async getSession(id) { return id === session.id ? session : null; },
+      async resumeSession() { return { ok: true }; },
+      async sendMessage() { sends += 1; return { ok: false, admitted: true, nonRetryable: true, error: "native exact turn failed" }; },
+      async stopSession() { return { ok: true }; }, async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+    };
+    const adapters = new Map<string, HarnessAdapter>([["zcode", adapter]]);
+    const unfinishedStore = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const launcher = new UnfinishedSessionLauncher({ adapters, store: unfinishedStore, settingsStore: new SessionAutostartStore(join(root, "autocontinue.json"), {}) });
+    const converter = { async convert() { throw new Error("unused"); } };
+    const supervisor = new SessionSupervisor(adapters, converter, new LineageStore(join(root, "lineage.json")), { unfinishedSessions: launcher });
+    const humanRequests = new HumanRequestRegistry(join(root, "human-requests.json"));
+    const request = await humanRequests.create({ kind: "user", target: { agent: "zcode", sessionId: session.id, cwd: session.cwd } });
+    const server = createWebServer({ adapters, converter, humanRequests, supervisor, sessionObservationManagedExternally: true });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/internal/human-requests/ask-user-completion`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ event: "ask.user.completed", event_version: 1, status: "completed", request_id: request.requestId, result_ref: randomUUID() }),
+    });
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toMatchObject({ request_id: request.requestId, status: "resume_failed" });
+    await expect(humanRequests.get(request.requestId)).resolves.toMatchObject({ status: "resume_failed" });
+    expect(sends).toBe(1);
+    await expect(unfinishedStore.list()).resolves.toMatchObject([{
+      harness: "zcode", sessionId: session.id, state: "active", nonRetryableAdmission: true, lastError: "native exact turn failed",
+    }]);
+  });
 });
