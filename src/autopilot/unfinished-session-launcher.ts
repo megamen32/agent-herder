@@ -16,6 +16,7 @@ const DEFAULT_BATCH_OUTPUT_TOKENS = 16_384;
 // Bound group count against the 16k response ceiling. Any still-truncated
 // chunk is rejected by exact coverage before a verdict or continuation applies.
 const MAX_BATCH_PLAN_SESSIONS_PER_REQUEST = 32;
+const MAX_OMISSION_DECISION_CONCURRENCY = 4;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
 // Version 2 invalidates verdicts produced before complete, globally reconciled
 // batch planning. Native transcripts stay intact; only their semantic audit is
@@ -314,7 +315,7 @@ export interface UnfinishedSessionInventoryRecord {
 }
 
 export interface SessionCompletionJudge {
-  decide(input: { session: AgentSession; transcriptTail: string }): Promise<Omit<SessionInventoryVerdict, "judgedAt">>;
+  decide(input: { session: AgentSession; transcriptTail: string; signal?: AbortSignal }): Promise<Omit<SessionInventoryVerdict, "judgedAt">>;
   plan?(input: { sessions: SessionBatchCandidate[] }): Promise<SessionBatchPlan>;
   reconcile?(input: { groups: SessionBatchReconciliationCandidate[] }): Promise<SessionBatchReconciliation>;
 }
@@ -1757,6 +1758,10 @@ export class UnfinishedSessionLauncher {
       // A malformed or incomplete result retries the entire chunk and discards
       // the first result, so the repair envelope must be the same full request.
       repairRequests: partitionBatchCandidates(sessions).map(buildBatchPlannerBudgetRequest),
+      // In the worst case the full retry can omit every source. Reserve one
+      // conservative per-session judge request for all candidates up front;
+      // only persistent omissions are actually sent.
+      decisionRequests: sessions.map(buildSessionDecisionBudgetRequest),
       reconciliationRequest: buildBatchReconciliationBudgetRequest(worstCaseReconciliationCandidates(sessions)),
     })).sessions;
     const packedAssessed = assessed.map((candidate, index) => ({
@@ -1765,6 +1770,11 @@ export class UnfinishedSessionLauncher {
     }));
     const groups: SessionBatchPlanGroup[] = [];
     let repaired = false;
+    const omissionDecisionController = new AbortController();
+    const omissionDecisionDeadline = Date.now() + positiveInteger(
+      Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000),
+      600_000,
+    );
     for (let offset = 0; offset < packedAssessed.length; offset += MAX_BATCH_PLAN_SESSIONS_PER_REQUEST) {
       const chunk = packedAssessed.slice(offset, offset + MAX_BATCH_PLAN_SESSIONS_PER_REQUEST);
       const requestPlan = async (candidates: AssessedSession[]): Promise<SessionBatchPlan> => canonicalizePlanSourceKeys(await planner({
@@ -1787,6 +1797,48 @@ export class UnfinishedSessionLauncher {
         repaired = true;
         console.error(`[agent-herder] MiniMax вернул некорректный chunk; повторяю весь chunk один раз: ${errorText(initialFailure)}`);
         plan = await requestPlan(chunk);
+        // The second response remains strict for every structural defect. A
+        // pure coverage omission is the sole recoverable case: classify each
+        // missing source independently from the already packed evidence, then
+        // feed those strict singleton groups through normal reconciliation.
+        const missing = missingBatchPlanCandidates(plan, chunk);
+        const decide = this.options.judge?.decide;
+        if (missing.length > 0 && !decide) throw new Error("MiniMax per-session omission judge is unavailable");
+        let decisions: Array<{ candidate: AssessedSession; verdict: Omit<SessionInventoryVerdict, "judgedAt">; handoff: string }> = [];
+        try {
+          decisions = await withAbortDeadline(mapConcurrentOrdered(
+            missing,
+            MAX_OMISSION_DECISION_CONCURRENCY,
+            async (candidate) => {
+              if (omissionDecisionController.signal.aborted) throw new Error("MiniMax omission decision phase was aborted");
+              const verdict = normalizeVerdict(await decide!({
+                session: candidate.session,
+                transcriptTail: candidate.transcriptTail,
+                signal: omissionDecisionController.signal,
+              }));
+              if (verdict.confidence <= 0) throw new Error(`MiniMax omission judge returned zero confidence for ${candidate.sourceKey}`);
+              const handoff = verdict.verdict === "unfinished"
+                ? trimEvidenceChars(candidate.transcriptTail, 32_000)
+                : "";
+              if (verdict.verdict === "unfinished" && !handoff.trim()) {
+                throw new Error(`MiniMax omission judge returned unfinished without evidence for ${candidate.sourceKey}`);
+              }
+              return { candidate, verdict, handoff };
+            },
+          ), omissionDecisionDeadline, omissionDecisionController);
+        } catch (error) {
+          omissionDecisionController.abort(error);
+          throw error;
+        }
+        for (const { candidate, verdict, handoff } of decisions) {
+          plan.groups.push({
+            sourceSessionIds: [candidate.sourceKey],
+            primarySessionId: candidate.sourceKey,
+            ...verdict,
+            topic: candidate.session.title.slice(0, 120) || "Неопределённая задача",
+            handoff,
+          });
+        }
         assertBatchPlanCoverage(plan, chunk);
       }
       groups.push(...plan.groups);
@@ -2402,7 +2454,10 @@ function normalizeVerdict(value: unknown): Omit<SessionInventoryVerdict, "judged
 
 function mergePlanGroups(groups: SessionBatchPlanGroup[]): SessionBatchPlanGroup[] {
   const merged = new Map<string, SessionBatchPlanGroup>();
-  const verdictRank = { completed: 0, needs_human: 1, unfinished: 2 } as const;
+  // A human requirement is a hard safety gate for the whole semantic task.
+  // Reconciliation may join it with an unfinished sibling; that cluster must
+  // remain blocked rather than inheriting the runnable verdict.
+  const verdictRank = { completed: 0, unfinished: 1, needs_human: 2 } as const;
   const combineText = (left: string, right: string, separator: string, max: number): string => {
     if (!right || left === right || left.includes(right)) return left.slice(0, max);
     if (!left || right.includes(left)) return right.slice(0, max);
@@ -2675,6 +2730,36 @@ function buildBatchPlannerBudgetRequest(sessions: SessionBatchCandidate[]): unkn
   };
 }
 
+/** Superset of the OpenAI and Anthropic per-session judge wire envelopes. */
+function buildSessionDecisionBudgetRequest({ session, transcriptTail }: SessionBatchCandidate): unknown {
+  const conservativeSystem = "я".repeat(1_000);
+  const payload = JSON.stringify({
+    session: {
+      harness: session.harness,
+      id: session.id,
+      title: session.title,
+      cwd: session.cwd,
+      status_signal: session.status,
+      last_activity: session.lastActivity,
+      needs_permission: session.needsPermission,
+    },
+    transcript_tail: transcriptTail,
+  });
+  return {
+    model: "m".repeat(256),
+    max_tokens: 512,
+    temperature: 0,
+    stream: false,
+    response_format: { type: "json_object" },
+    output_config: { effort: "low" },
+    system: [{ type: "text", text: conservativeSystem, cache_control: { type: "ephemeral" } }],
+    messages: [
+      { role: "system", content: conservativeSystem },
+      { role: "user", content: payload },
+    ],
+  };
+}
+
 function worstCaseReconciliationCandidates(sessions: SessionBatchCandidate[]): SessionBatchReconciliationCandidate[] {
   return sessions.map(({ session }, index) => ({
     groupRef: `G${index + 1}`,
@@ -2926,6 +3011,53 @@ async function anthropicText(response: Response): Promise<string> {
   return content;
 }
 
+async function mapConcurrentOrdered<T, R>(
+  values: readonly T[],
+  concurrency: number,
+  mapper: (value: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= values.length) return;
+      results[index] = await mapper(values[index]!, index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), values.length) }, () => worker()));
+  return results;
+}
+
+async function withAbortDeadline<T>(promise: Promise<T>, deadline: number, controller: AbortController): Promise<T> {
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) {
+    const error = new Error("MiniMax omission decision phase timed out");
+    controller.abort(error);
+    throw error;
+  }
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error("MiniMax omission decision phase timed out");
+      controller.abort(error);
+      reject(error);
+    }, remainingMs);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function judgeAbortSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 function optionalBounded(value: unknown, label: string): string | undefined {
   return value === undefined ? undefined : bounded(value, label);
 }
@@ -2972,14 +3104,14 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
   const fetchImpl = config.fetchImpl ?? fetch;
   const endpoint = `${config.baseUrl.replace(/\/$/, "")}/chat/completions`;
   return {
-    async decide({ session, transcriptTail }) {
+    async decide({ session, transcriptTail, signal }) {
       const response = await fetchImpl(endpoint, {
         method: "POST",
         headers: {
           ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
           "content-type": "application/json",
         },
-        signal: AbortSignal.timeout(35_000),
+        signal: judgeAbortSignal(signal, 35_000),
         body: JSON.stringify({
           model: config.model,
           max_tokens: 512,
@@ -3105,7 +3237,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
   const fetchImpl = config.fetchImpl ?? fetch;
   const endpoint = `${config.baseUrl.replace(/\/$/, "")}/v1/messages`;
   return {
-    async decide({ session, transcriptTail }) {
+    async decide({ session, transcriptTail, signal }) {
       const response = await fetchImpl(endpoint, {
         method: "POST",
         headers: {
@@ -3113,7 +3245,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
           "anthropic-version": "2023-06-01",
           "content-type": "application/json",
         },
-        signal: AbortSignal.timeout(35_000),
+        signal: judgeAbortSignal(signal, 35_000),
         body: JSON.stringify({
           model: config.model,
           max_tokens: 512,
