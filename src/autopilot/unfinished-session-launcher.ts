@@ -84,9 +84,14 @@ export class SessionAutostartStore {
   async getEffective(harness: string, sessionId: string, cwd: string): Promise<{ enabled: boolean; source: "session" | "harness" | "global" | "default"; cwd: string; updatedAt?: string }> {
     const normalizedHarness = harnessType(harness);
     const normalizedCwd = normalize(bounded(cwd, "cwd"));
+    const normalizedSessionId = bounded(sessionId, "sessionId");
     const settings = await this.getSettings();
-    const override = settings.sessions.find((record) => sessionKey(record.harness, record.sessionId, record.cwd)
-      === sessionKey(normalizedHarness, bounded(sessionId, "sessionId"), normalizedCwd));
+    const aliases = settings.sessions.filter((record) => record.harness === normalizedHarness && record.sessionId === normalizedSessionId);
+    const exact = aliases.find((record) => sessionKey(record.harness, record.sessionId, record.cwd)
+      === sessionKey(normalizedHarness, normalizedSessionId, normalizedCwd));
+    // An explicit opt-out is the strongest session-level instruction. Keep it
+    // effective across cwd/identity rewrites until the alias migration lands.
+    const override = aliases.find((record) => !record.enabled) ?? exact ?? aliases[0];
     if (override) return { enabled: override.enabled, source: "session", cwd: override.cwd, updatedAt: override.updatedAt };
     const harnessOverride = settings.harnesses.find((record) => record.harness === normalizedHarness);
     return harnessOverride
@@ -190,6 +195,29 @@ export class SessionAutostartStore {
     });
   }
 
+  /** Atomically rewrite every legacy session override to the canonical cwd. */
+  async migrateWorkspaceIdentities(sessions: AgentSession[]): Promise<number> {
+    if (sessions.length === 0) return 0;
+    return this.mutate((file) => {
+      let migrated = 0;
+      for (const session of sessions) {
+        const harness = harnessType(session.harness);
+        const matches = file.sessions.filter((record) => record.harness === harness && record.sessionId === session.id);
+        if (matches.length === 0) continue;
+        const canonicalCwd = normalize(session.cwd);
+        if (matches.length === 1 && matches[0]!.cwd === canonicalCwd) continue;
+        const enabled = !matches.some((record) => !record.enabled);
+        const selected = [...matches].filter((record) => record.enabled === enabled)
+          .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0]!;
+        file.sessions = file.sessions.filter((record) => record.harness !== harness || record.sessionId !== session.id);
+        file.sessions.push({ ...selected, cwd: canonicalCwd, enabled });
+        migrated += matches.length;
+      }
+      file.sessions.sort((left, right) => sessionKey(left.harness, left.sessionId, left.cwd).localeCompare(sessionKey(right.harness, right.sessionId, right.cwd)));
+      return migrated;
+    }, (migrated) => migrated > 0);
+  }
+
   private async readOptional(): Promise<SessionAutostartFile | null> {
     try {
       return parseAutostartFile(JSON.parse(await readFile(this.path, "utf8")) as unknown, this.env);
@@ -199,7 +227,10 @@ export class SessionAutostartStore {
     }
   }
 
-  private async mutate<T>(operation: (file: SessionAutostartFile) => T | Promise<T>): Promise<T> {
+  private async mutate<T>(
+    operation: (file: SessionAutostartFile) => T | Promise<T>,
+    shouldWrite: (result: T) => boolean = () => true,
+  ): Promise<T> {
     const previous = this.operation;
     let release!: () => void;
     this.operation = new Promise<void>((resolve) => { release = resolve; });
@@ -207,7 +238,7 @@ export class SessionAutostartStore {
     try {
       const file = await this.readOptional() ?? defaultAutostartFile(this.env);
       const result = await operation(file);
-      await atomicWrite(this.path, file);
+      if (shouldWrite(result)) await atomicWrite(this.path, file);
       return result;
     } finally {
       release();
@@ -1224,7 +1255,9 @@ export class UnfinishedSessionLauncher {
     // Migration and dedupe must finish in one store transaction before known
     // keys or recovery records are read. Otherwise a legacy cwd key and the
     // same native session's canonical workspace key can each admit a prompt.
-    await this.options.store.migrateWorkspaceIdentities(listedCandidates.map(({ session }) => session));
+    const listedSessions = listedCandidates.map(({ session }) => session);
+    await this.options.settingsStore.migrateWorkspaceIdentities(listedSessions);
+    await this.options.store.migrateWorkspaceIdentities(listedSessions);
     const durableRecords = await this.options.store.list();
     const known = new Set(durableRecords.map(unfinishedRecordKey));
     const nonRetryableAdmissions = new Set(durableRecords
@@ -2159,7 +2192,7 @@ function mergeInventoryIdentityRecords(
 ): UnfinishedSessionInventoryRecord {
   const winner = [...records].sort((left, right) => Number(evidenceIsCurrent(right)) - Number(evidenceIsCurrent(left))
     || Date.parse(right.observedAt) - Date.parse(left.observedAt))[0]!;
-  return {
+  const rewritten: UnfinishedSessionInventoryRecord = {
     ...winner,
     harness: session.harness as "codex" | "zcode",
     sessionId: session.id,
@@ -2168,7 +2201,16 @@ function mergeInventoryIdentityRecords(
     title: session.title,
     status: session.status,
     lastActivity: session.lastActivity,
+    // Evidence and verdict describe the old identity. Carrying them across a
+    // cwd/workspace rewrite could settle a canonical unfinished task as the
+    // completed ghost, so force one canonical transcript read and replan.
+    transcriptTail: "",
+    observedAt: new Date().toISOString(),
   };
+  delete rewritten.evidenceVersion;
+  delete rewritten.evidenceFingerprint;
+  delete rewritten.verdict;
+  return rewritten;
 }
 
 function sortRecords(records: UnfinishedSessionRecord[]): void {

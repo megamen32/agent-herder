@@ -828,6 +828,59 @@ describe("unfinished session launcher", () => {
     expect((await store.listInventory())[0]).toMatchObject({ sessionId: session.id, cwd: "/canonical", workspaceIdentity: "workspace-42" });
   });
 
+  it("preserves a disabled ghost override and reaudits canonical evidence after identity rewrite", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-ghost-identity-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    const calls = { resumes: 0, messages: [] as string[] };
+    let session: AgentSession = {
+      ...fixtureSession("idle", "zcode"), id: "ghost", cwd: "/ghost",
+      lastActivity: new Date(Date.now() - 20_000).toISOString(), meta: { workspaceIdentity: "ghost-workspace" },
+    };
+    let transcript = "ghost task completed";
+    const adapter = fixtureAdapter(session, calls);
+    adapter.listSessions = async () => [session];
+    adapter.getSession = async () => session;
+    adapter.getSessionMessages = async () => [{ id: "u", role: "user", text: transcript, parts: [{ type: "text", text: transcript }] }];
+    adapter.getFirstUserMessage = async () => ({ id: "first", role: "user", text: transcript, parts: [{ type: "text", text: transcript }] });
+    adapter.getSessionSnapshotReceipt = () => ({ exhaustive: true, observedAt: new Date().toISOString(), source: "test" });
+    const plannedEvidence: string[] = [];
+    let verdict: "completed" | "unfinished" = "completed";
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store, settingsStore, discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions }) {
+          plannedEvidence.push(sessions[0]!.transcriptTail);
+          return { groups: [{
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict,
+            reason: verdict, confidence: 1, topic: "Ghost migration", handoff: verdict === "unfinished" ? "must not launch" : "",
+          }] };
+        },
+      },
+    });
+    await launcher.recoverPending();
+    await settingsStore.setSession({ harness: "zcode", sessionId: session.id, cwd: session.cwd }, false);
+
+    verdict = "unfinished";
+    transcript = "canonical task is unfinished";
+    session = {
+      ...session, cwd: "/canonical", lastActivity: new Date(Date.now() - 10_000).toISOString(),
+      meta: { workspaceIdentity: "canonical-workspace" },
+    };
+    await launcher.recoverPending();
+
+    expect(await settingsStore.getEffective("zcode", session.id, session.cwd)).toMatchObject({ enabled: false, source: "session", cwd: "/canonical" });
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(plannedEvidence).toHaveLength(2);
+    expect(plannedEvidence[1]).toContain("canonical task is unfinished");
+    expect(plannedEvidence[1]).not.toContain("ghost task completed");
+    expect(await store.listInventory()).toMatchObject([{
+      sessionId: session.id, cwd: "/canonical", workspaceIdentity: "canonical-workspace",
+      verdict: { verdict: "unfinished" },
+    }]);
+  });
+
   it("prunes unseen inventory only after an explicitly exhaustive adapter snapshot", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-snapshot-receipt-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
