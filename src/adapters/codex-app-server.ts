@@ -1,4 +1,6 @@
 import { type ChildProcessWithoutNullStreams } from "node:child_process";
+import { isAbsolute } from "node:path";
+import WebSocket from "ws";
 import { CodexAdapter } from "./codex.js";
 import { spawnIsolatedWorkload } from "../workload-launcher.js";
 import type {
@@ -63,11 +65,11 @@ interface PendingRequest {
 }
 
 /**
- * Persistent native transport for Codex's JSONL app-server.
+ * Persistent native transport for Codex's JSONL app-server or shared Unix socket.
  *
- * The adapter owns one app-server process, while Codex owns thread and turn
- * state. A thread can therefore be cancelled and resumed without killing the
- * transport or losing events.
+ * Codex owns thread and turn state. A configured Unix socket lets this adapter
+ * share that authority with another client instead of starting a competing
+ * app-server writer.
  */
 export class CodexAppServerAdapter implements HarnessAdapter {
   readonly type = "codex" as const;
@@ -89,10 +91,12 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly codexBin: string;
   private readonly processArgs: string[];
   private readonly cwd: string;
+  private readonly socketPath?: string;
   private readonly modelIds: string[];
   private readonly rawTranscriptAdapter: CodexAdapter;
   private readonly requestTimeoutMs: number;
   private child?: ChildProcessWithoutNullStreams;
+  private socket?: WebSocket;
   private initialized = false;
   private initialization?: Promise<void>;
   private nextRequestId = 1;
@@ -101,6 +105,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly activeTurns = new Map<string, string>();
   private readonly completions = new Map<string, TurnCompletion>();
   private readonly transportCleanups = new WeakMap<ChildProcessWithoutNullStreams, () => void>();
+  private readonly socketCleanups = new WeakMap<WebSocket, () => void>();
   private stderrTail = "";
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
   private sessionSnapshotReceipt: SessionSnapshotReceipt = {
@@ -115,6 +120,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     /** Exact process arguments. Defaults to the native `app-server` command. */
     args?: string[];
     cwd?: string;
+    /** Existing app-server control socket to share its thread writer authority. */
+    socketPath?: string;
     modelIds?: string[];
     requestTimeoutMs?: number;
     /** Codex's local data root holding native rollout JSONL files. */
@@ -123,6 +130,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     this.codexBin = config.codexBin || process.env.CODEX_BIN || "codex";
     this.processArgs = config.args || ["app-server"];
     this.cwd = config.cwd || process.cwd();
+    this.socketPath = config.socketPath ?? process.env.CODEX_APP_SERVER_SOCKET;
+    if (this.socketPath && (!isAbsolute(this.socketPath) || this.socketPath.includes(":") || this.socketPath.includes("?"))) {
+      throw new Error("CODEX_APP_SERVER_SOCKET must be an absolute Unix socket path without ':' or '?' characters");
+    }
     this.modelIds = config.modelIds || ["o4-mini", "o3", "o3-mini", "gpt-4.1", "gpt-4o"];
     this.requestTimeoutMs = config.requestTimeoutMs || 30_000;
     this.rawTranscriptAdapter = new CodexAdapter({ codexBin: this.codexBin, codexDir: config.codexDir });
@@ -132,15 +143,29 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     await this.ensureReady();
   }
 
-  isReady(): boolean { return this.initialized && !!this.child && !this.child.killed; }
+  isReady(): boolean {
+    return this.initialized && (this.socketPath
+      ? this.socket?.readyState === WebSocket.OPEN
+      : !!this.child && !this.child.killed);
+  }
 
   subscribeEvents(handler: (event: HarnessEvent) => void): () => void {
     this.eventListeners.add(handler);
-    if (this.isReady()) queueMicrotask(() => handler({ kind: "process.connected", harness: "codex", data: { transport: "app-server" } }));
+    if (this.isReady()) queueMicrotask(() => handler({
+      kind: "process.connected",
+      harness: "codex",
+      data: { transport: this.socketPath ? "app-server-unix-websocket" : "app-server" },
+    }));
     return () => { this.eventListeners.delete(handler); };
   }
 
   async dispose(): Promise<void> {
+    const socket = this.socket;
+    if (socket) {
+      this.handleSocketDisconnect(socket, new Error("Codex app-server disposed"), { reason: "disposed" });
+      socket.close();
+      return;
+    }
     const child = this.child;
     if (child) {
       this.handleTransportDisconnect(child, new Error("Codex app-server disposed"), { reason: "disposed" });
@@ -173,11 +198,13 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const result = sessions.map((thread) => {
         const session = this.toSession(thread);
         const nativeMeta = nativeMetadata.get(thread.id);
-        return nativeMeta ? {
+        if (!nativeMeta) return session;
+        const { status: nativeStatus, ...nativeMetadataFields } = nativeMeta;
+        return {
           ...session,
-          status: nativeMeta.status === "running" ? "running" : session.status,
-          meta: { ...session.meta, ...nativeMeta },
-        } : session;
+          status: !this.socketPath && nativeStatus === "running" ? "running" : session.status,
+          meta: { ...session.meta, ...(this.socketPath ? nativeMetadataFields : nativeMeta) },
+        };
       });
       this.sessionSnapshotReceipt = {
         exhaustive: true,
@@ -308,7 +335,24 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   async cancelTurn(id: string): Promise<ControlResult> {
     await this.ensureReady();
-    const turnId = this.activeTurns.get(id);
+    let turnId = this.activeTurns.get(id);
+    if (!turnId) {
+      try {
+        const result = await this.request("thread/turns/list", {
+          threadId: id,
+          limit: 1,
+          sortDirection: "desc",
+          itemsView: "notLoaded",
+        }) as { data?: Array<{ id?: string; status?: string }> };
+        const activeTurn = result.data?.find((turn) => turn.status === "inProgress" && typeof turn.id === "string");
+        if (activeTurn?.id) {
+          turnId = activeTurn.id;
+          this.activeTurns.set(id, turnId);
+        }
+      } catch (error) {
+        return { ok: false, error: (error as Error).message };
+      }
+    }
     if (!turnId) return { ok: false, error: `No active Codex turn found for session ${id}` };
     try {
       await this.request("turn/interrupt", { threadId: id, turnId });
@@ -418,7 +462,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private async ensureReady(): Promise<void> {
-    if (this.initialized && this.child && !this.child.killed) return;
+    if (this.isReady()) return;
     if (!this.initialization) {
       this.initialization = this.initializeTransport().finally(() => {
         this.initialization = undefined;
@@ -428,13 +472,74 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private async initializeTransport(): Promise<void> {
-    if (!this.child || this.child.killed) this.startProcess();
+    if (this.socketPath) {
+      if (!this.socket || this.socket.readyState >= WebSocket.CLOSING) await this.startSocket();
+    } else if (!this.child || this.child.killed) {
+      this.startProcess();
+    }
     await this.request("initialize", {
-      clientInfo: { name: "agent-herder", version: "0.1.0" },
+      clientInfo: { name: "agent-herder", title: "Agent Herder", version: "0.1.0" },
       capabilities: { experimentalApi: true },
     });
     this.notify("initialized", {});
     this.initialized = true;
+  }
+
+  private async startSocket(): Promise<void> {
+    const socketPath = this.socketPath;
+    if (!socketPath) throw new Error("Codex app-server socket path is not configured");
+    const socket = new WebSocket(`ws+unix:${socketPath}:/rpc`, {
+      perMessageDeflate: false,
+      handshakeTimeout: this.requestTimeoutMs,
+    });
+    this.socket = socket;
+    this.stderrTail = "";
+    const onMessage = (data: WebSocket.RawData) => {
+      if (this.socket !== socket) return;
+      try {
+        this.consumeMessage(JSON.parse(data.toString()) as RpcResponse & { method?: string; params?: Record<string, unknown> });
+      } catch {
+        // Ignore malformed app-server messages, matching the stdio parser.
+      }
+    };
+    const onError = (error: Error) => {
+      this.handleSocketDisconnect(socket, error, { error: error.message });
+    };
+    const onClose = (code: number, reason: Buffer) => {
+      this.handleSocketDisconnect(socket, new Error("Codex app-server socket closed"), {
+        code,
+        reason: reason.toString("utf8"),
+      });
+    };
+    socket.on("message", onMessage);
+    socket.on("error", onError);
+    socket.on("close", onClose);
+    this.socketCleanups.set(socket, () => {
+      socket.off("message", onMessage);
+      socket.off("error", onError);
+      socket.off("close", onClose);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const onOpen = () => {
+        socket.off("close", onOpeningClose);
+        socket.off("error", onOpeningError);
+        this.emitEvent({ kind: "process.connected", harness: "codex", data: { transport: "app-server-unix-websocket" } });
+        resolve();
+      };
+      const onOpeningError = (error: Error) => {
+        socket.off("open", onOpen);
+        socket.off("close", onOpeningClose);
+        reject(error);
+      };
+      const onOpeningClose = (code: number, reason: Buffer) => {
+        socket.off("open", onOpen);
+        socket.off("error", onOpeningError);
+        reject(new Error(`Codex app-server socket closed before connecting (${code}${reason.length ? `: ${reason.toString("utf8")}` : ""})`));
+      };
+      socket.once("open", onOpen);
+      socket.once("error", onOpeningError);
+      socket.once("close", onOpeningClose);
+    });
   }
 
   private startProcess(): void {
@@ -486,30 +591,45 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     this.transportCleanups.delete(child);
     this.initialized = false;
     this.child = undefined;
+    this.clearTransportState(error, data, true);
+  }
+
+  private handleSocketDisconnect(socket: WebSocket, error: Error, data: Record<string, unknown>): void {
+    if (this.socket !== socket) return;
+    this.socketCleanups.get(socket)?.();
+    this.socketCleanups.delete(socket);
+    socket.on("error", () => {});
+    this.initialized = false;
+    this.socket = undefined;
+    this.clearTransportState(error, { transport: "app-server-unix-websocket", ...data }, false);
+  }
+
+  private clearTransportState(error: Error, data: Record<string, unknown>, failActiveTurns: boolean): void {
     const interruptedSessions = [...this.activeTurns.keys()];
     this.activeTurns.clear();
     this.failCompletions(error);
     this.rejectPending(error);
-    for (const sessionId of interruptedSessions) {
-      this.emitEvent({
-        kind: "turn.failed",
-        harness: "codex",
-        sessionId,
-        nativeType: "process.disconnected",
-        status: "error",
-        data: { transport: "app-server", error: error.message },
-      });
+    if (failActiveTurns) {
+      for (const sessionId of interruptedSessions) {
+        this.emitEvent({
+          kind: "turn.failed",
+          harness: "codex",
+          sessionId,
+          nativeType: "process.disconnected",
+          status: "error",
+          data: { transport: "app-server", error: error.message },
+        });
+      }
     }
     this.emitEvent({ kind: "process.disconnected", harness: "codex", data: { transport: "app-server", ...data } });
   }
 
   private notify(method: string, params: unknown): void {
-    if (!this.child?.stdin.writable) throw new Error("Codex app-server stdin is not writable");
-    this.child.stdin.write(`${JSON.stringify({ method, params })}\n`);
+    this.writeMessage({ method, params });
   }
 
   private request(method: string, params: unknown, stage = method): Promise<unknown> {
-    if (!this.child?.stdin.writable) return Promise.reject(new Error("Codex app-server is not connected"));
+    if (!this.isTransportWritable()) return Promise.reject(new Error("Codex app-server is not connected"));
     const id = this.nextRequestId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -518,8 +638,40 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       }, this.requestTimeoutMs);
       timer.unref?.();
       this.pending.set(id, { resolve, reject, timer });
-      this.child!.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
+      try {
+        this.writeMessage({ id, method, params }, id);
+      } catch (error) {
+        this.rejectRequest(id, error instanceof Error ? error : new Error(String(error)));
+      }
     });
+  }
+
+  private isTransportWritable(): boolean {
+    return this.socketPath
+      ? this.socket?.readyState === WebSocket.OPEN
+      : !!this.child?.stdin.writable;
+  }
+
+  private writeMessage(message: Record<string, unknown>, requestId?: number): void {
+    const serialized = JSON.stringify(message);
+    if (this.socketPath) {
+      const socket = this.socket;
+      if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error("Codex app-server WebSocket is not connected");
+      socket.send(serialized, (error) => {
+        if (error && requestId !== undefined) this.rejectRequest(requestId, error);
+      });
+      return;
+    }
+    if (!this.child?.stdin.writable) throw new Error("Codex app-server stdin is not writable");
+    this.child.stdin.write(`${serialized}\n`);
+  }
+
+  private rejectRequest(id: number, error: Error): void {
+    const pending = this.pending.get(id);
+    if (!pending) return;
+    this.pending.delete(id);
+    clearTimeout(pending.timer);
+    pending.reject(error);
   }
 
   private consumeOutput(chunk: string, inputBuffer: string): string {

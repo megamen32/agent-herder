@@ -4,12 +4,159 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createServer } from "node:http";
+import { createServer as createNetServer } from "node:net";
+import { WebSocketServer } from "ws";
 import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
 import { CodexAdapter } from "../src/adapters/codex.js";
 
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
 
 describe("Codex app-server adapter", () => {
+  it("bounds a Unix socket that accepts but never upgrades the WebSocket", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-unix-timeout-"));
+    const socketPath = join(tempDir, "app-server.sock");
+    const server = createNetServer((socket) => socket.on("data", () => {}));
+    const sockets = new Set<import("node:net").Socket>();
+    server.on("connection", (socket) => {
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
+    });
+    const listening = new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    const adapter = new CodexAppServerAdapter({
+      codexBin: "/definitely/not-started",
+      socketPath,
+      requestTimeoutMs: 100,
+    });
+    try {
+      await listening;
+      await expect(adapter.init()).rejects.toThrow(/timed out/i);
+      expect(adapter.isReady()).toBe(false);
+    } finally {
+      await adapter.dispose();
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("shares an existing app-server Unix socket for thread control", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-unix-socket-"));
+    const socketPath = join(tempDir, "app-server.sock");
+    const codexDir = join(tempDir, "codex");
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "05");
+    const rolloutPath = join(sessionDir, "rollout-thread-unix.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(rolloutPath, [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-unix", session_id: "thread-unix", cwd: "/workspace" } }),
+      JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
+      "",
+    ].join("\n"));
+    const db = new DatabaseSync(join(codexDir, "state_5.sqlite"));
+    db.exec("create table threads (id text, rollout_path text, cwd text, model text, preview text, updated_at_ms integer, thread_source text, agent_role text, is_pinned integer)");
+    db.exec("create table thread_spawn_edges (child_thread_id text, parent_thread_id text)");
+    db.prepare("insert into threads values (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+      "thread-unix", rolloutPath, "/workspace", "gpt-test", "", Date.now(), null, null, 0,
+    );
+    db.close();
+    const server = createServer();
+    const webSocketServer = new WebSocketServer({ server });
+    const methods: string[] = [];
+    const interruptTurnIds: string[] = [];
+    const events: Array<{ kind: string }> = [];
+    let activeTurnId: string | undefined;
+    let disconnectAfterTurnStart = false;
+    const thread = {
+      id: "thread-unix",
+      cwd: "/workspace",
+      name: "Unix socket fixture",
+      model: "gpt-test",
+      status: "idle",
+    };
+    webSocketServer.on("connection", (socket) => {
+      socket.on("message", (data) => {
+        const request = JSON.parse(data.toString()) as {
+          id?: number;
+          method?: string;
+          params?: { threadId?: string; turnId?: string; input?: Array<{ text?: string }> };
+        };
+        if (!request.method) return;
+        methods.push(request.method);
+        const reply = (result: unknown) => {
+          if (request.id !== undefined) socket.send(JSON.stringify({ id: request.id, result }));
+        };
+        if (request.method === "initialize") return reply({ userAgent: "fixture" });
+        if (request.method === "thread/list") return reply({ data: [thread], nextCursor: null });
+        if (request.method === "thread/resume") return reply({ thread });
+        if (request.method === "thread/turns/list") return reply({
+          data: activeTurnId ? [{ id: activeTurnId, status: "inProgress" }] : [],
+          nextCursor: null,
+          backwardsCursor: null,
+        });
+        if (request.method === "turn/start") {
+          activeTurnId = "turn-unix";
+          socket.send(JSON.stringify({
+            method: "turn/started",
+            params: { threadId: request.params?.threadId, turn: { id: activeTurnId, status: "inProgress" } },
+          }));
+          reply({ turn: { id: activeTurnId, status: "inProgress" } });
+          if (disconnectAfterTurnStart) {
+            disconnectAfterTurnStart = false;
+            setTimeout(() => socket.terminate(), 0);
+          }
+          return;
+        }
+        if (request.method === "turn/interrupt") {
+          interruptTurnIds.push(request.params?.turnId || "");
+          activeTurnId = undefined;
+          socket.send(JSON.stringify({
+            method: "turn/completed",
+            params: { threadId: request.params?.threadId, turn: { id: request.params?.turnId, status: "interrupted" } },
+          }));
+          return reply({});
+        }
+        reply({});
+      });
+    });
+
+    const listening = new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    let adapter: CodexAppServerAdapter | undefined;
+    try {
+      await listening;
+      adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", socketPath, codexDir });
+      const unsubscribe = adapter.subscribeEvents((event) => events.push({ kind: event.kind }));
+      await adapter.init();
+      expect(adapter.isReady()).toBe(true);
+      const sessions = await adapter.listSessions();
+      expect(sessions).toMatchObject([{ id: "thread-unix", title: "Unix socket fixture", status: "idle" }]);
+      expect(sessions[0].meta).not.toHaveProperty("status");
+      disconnectAfterTurnStart = true;
+      await expect(adapter.sendMessage("thread-unix", { message: "hold", queue: true })).resolves.toEqual({ ok: true });
+      for (let attempt = 0; attempt < 100 && adapter.isReady(); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(adapter.isReady()).toBe(false);
+      expect(events.some((event) => event.kind === "turn.failed")).toBe(false);
+      expect(events.some((event) => event.kind === "process.disconnected")).toBe(true);
+      await expect(adapter.cancelTurn("thread-unix")).resolves.toEqual({ ok: true });
+      expect(adapter.isReady()).toBe(true);
+      expect(interruptTurnIds).toEqual(["turn-unix"]);
+      expect(methods).toEqual(expect.arrayContaining([
+        "initialize",
+        "initialized",
+        "thread/list",
+        "thread/resume",
+        "turn/start",
+        "thread/turns/list",
+        "turn/interrupt",
+      ]));
+      unsubscribe();
+    } finally {
+      await adapter?.dispose();
+      await new Promise<void>((resolve) => webSocketServer.close(() => resolve()));
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("persists native pinned state without starting a second app-server", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-pin-"));
     const dbPath = join(codexDir, "state_5.sqlite");
