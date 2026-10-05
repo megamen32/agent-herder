@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -1313,10 +1313,10 @@ describe("unfinished session launcher", () => {
     expect(reset?.evidenceFingerprint).not.toBe(repeated?.evidenceFingerprint);
   });
 
-  it("wakes a whole backed-off cohort when one sibling changes and preserves its unchanged native human gate", async () => {
+  it("wakes a whole backed-off workspace cohort when a new sibling appears and preserves its native human gate", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-cohort-human-gate-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
-    const sessions = [
+    const sessions: AgentSession[] = [
       { ...fixtureSession("idle", "codex"), id: "changed", title: "Shared cohort task", lastActivity: new Date(Date.now() - 60_000).toISOString() },
       { ...fixtureSession("needs_input", "codex"), id: "gate", title: "Shared cohort task", needsPermission: true, lastActivity: new Date(Date.now() - 60_001).toISOString() },
     ];
@@ -1347,10 +1347,17 @@ describe("unfinished session launcher", () => {
 
     await launcher.recoverPending();
     await launcher.recoverPending();
-    evidence.set("changed", "changed-v2");
+    sessions.push({
+      ...fixtureSession("idle", "codex"), id: "new-sibling", title: "Shared cohort task",
+      lastActivity: new Date(Date.now() - 60_002).toISOString(),
+    });
+    evidence.set("new-sibling", "new-v1");
     await launcher.recoverPending();
 
-    expect(planned.slice(-2)).toEqual([["changed", "gate"], ["changed", "gate"]]);
+    expect(planned.slice(-2).map((ids) => [...ids].sort())).toEqual([
+      ["changed", "gate", "new-sibling"].sort(),
+      ["changed", "gate", "new-sibling"].sort(),
+    ]);
     expect(calls).toEqual({ resumes: 0, messages: [] });
     expect((await store.listInventory()).every((record) => record.verdict?.verdict === "needs_human")).toBe(true);
   });
@@ -1399,14 +1406,14 @@ describe("unfinished session launcher", () => {
     expect((await store.listInventory()).every((record) => record.assessmentFailure === undefined)).toBe(true);
   });
 
-  it("keeps a different-workspace assessment cohort backed off when another workspace changes", async () => {
+  it("keeps a failed workspace cohort asleep when a new session appears in another workspace", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-cohort-workspace-isolation-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
-    const sessions = [
-      { ...fixtureSession("idle", "codex"), id: "workspace-a", cwd: "/workspace/a", lastActivity: new Date(Date.now() - 60_000).toISOString() },
-      { ...fixtureSession("idle", "codex"), id: "workspace-b", cwd: "/workspace/b", lastActivity: new Date(Date.now() - 60_001).toISOString() },
+    const sessions: AgentSession[] = [
+      { ...fixtureSession("idle", "codex"), id: "sleeping-a", cwd: "/workspace/sleeping", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "sleeping-b", cwd: "/workspace/sleeping", lastActivity: new Date(Date.now() - 60_001).toISOString() },
     ];
-    const evidence = new Map([["workspace-a", "a-v1"], ["workspace-b", "b-v1"]]);
+    const evidence = new Map([["sleeping-a", "a-v1"], ["sleeping-b", "b-v1"]]);
     const planned: string[][] = [];
     const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
     adapter.listSessions = async () => sessions;
@@ -1429,11 +1436,67 @@ describe("unfinished session launcher", () => {
 
     await launcher.recoverPending();
     await launcher.recoverPending();
-    evidence.set("workspace-a", "a-v2");
+    sessions.push({
+      ...fixtureSession("idle", "codex"), id: "other-new", cwd: "/workspace/other",
+      lastActivity: new Date(Date.now() - 60_002).toISOString(),
+    });
+    evidence.set("other-new", "other-v1");
     await launcher.recoverPending();
 
-    expect(planned[2]).toEqual(["workspace-a"]);
-    expect((await store.listInventory()).find((record) => record.sessionId === "workspace-b")?.assessmentFailure).toMatchObject({ count: 2 });
+    expect(planned[2]).toEqual(["other-new"]);
+    const inventory = await store.listInventory();
+    expect(inventory.find((record) => record.sessionId === "sleeping-a")?.assessmentFailure).toMatchObject({ count: 2 });
+    expect(inventory.find((record) => record.sessionId === "sleeping-b")?.assessmentFailure).toMatchObject({ count: 2 });
+  });
+
+  it("derives a legacy cohort from workspaceIdentity so different cwd aliases wake together", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-cohort-legacy-workspace-"));
+    const statePath = join(root, "unfinished.json");
+    const store = new UnfinishedSessionStore(statePath);
+    const sessions: AgentSession[] = [
+      {
+        ...fixtureSession("idle", "codex"), id: "legacy-a", cwd: "/workspace/legacy-a",
+        meta: { workspaceIdentity: "shared-legacy-workspace" }, lastActivity: new Date(Date.now() - 60_000).toISOString(),
+      },
+      {
+        ...fixtureSession("idle", "codex"), id: "legacy-b", cwd: "/workspace/legacy-b",
+        meta: { workspaceIdentity: "shared-legacy-workspace" }, lastActivity: new Date(Date.now() - 60_001).toISOString(),
+      },
+    ];
+    const evidence = new Map([["legacy-a", "a-v1"], ["legacy-b", "b-v1"]]);
+    const planned: string[][] = [];
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: evidence.get(id)!, parts: [{ type: "text", text: evidence.get(id)! }] }];
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          planned.push(batch.map(({ session }) => session.id));
+          if (planned.length <= 2) throw new Error("planner unavailable");
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "done", confidence: 1, topic: session.title, handoff: "",
+          })) };
+        },
+      },
+    });
+
+    await launcher.recoverPending();
+    await launcher.recoverPending();
+    const raw = JSON.parse(await readFile(statePath, "utf8")) as { inventory?: Array<{ assessmentFailure?: { cohortId?: string } }> };
+    for (const record of raw.inventory || []) {
+      if (record.assessmentFailure) delete record.assessmentFailure.cohortId;
+    }
+    await writeFile(statePath, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
+
+    evidence.set("legacy-a", "a-v2");
+    await launcher.recoverPending();
+
+    expect(planned[2]).toEqual(["legacy-a", "legacy-b"]);
+    expect((await store.listInventory()).every((record) => record.assessmentFailure === undefined)).toBe(true);
   });
 
   it("lets a needs-human twice-omitted member block its reconciled unfinished sibling", async () => {

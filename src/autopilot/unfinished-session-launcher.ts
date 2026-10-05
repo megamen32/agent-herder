@@ -1336,18 +1336,36 @@ export class UnfinishedSessionLauncher {
     if (this.options.judge?.plan) {
       const cohortEvidence = new Map<string, { messages: SessionMessageView[]; transcriptTail: string }>();
       const cohortWake = new Map<string, boolean>();
+      const activeFailedCohorts = new Set([...priorInventory.values()].flatMap((record) => record.assessmentFailure
+        ? [record.assessmentFailure.cohortId] : []));
       for (const { adapter, session } of candidates) {
         const sourceKey = sessionSourceKey(session);
-        const failure = priorInventory.get(sourceKey)?.assessmentFailure;
-        if (!failure) continue;
+        const cohortId = assessmentCohortId(session);
+        if (!activeFailedCohorts.has(cohortId)) continue;
+        const previous = priorInventory.get(sourceKey);
+        const failure = previous?.assessmentFailure;
         const messages = await sessionEvidenceMessages(adapter, session.id, runtimeSettings.evidenceMessageCount);
         const transcriptTail = completionEvidence(messages, runtimeSettings.evidenceMessageCount);
         cohortEvidence.set(sourceKey, { messages, transcriptTail });
         const urgent = this.urgentSessions.has(sourceKey) || this.urgentSessions.has(sessionKey(session.harness, session.id));
-        const evidenceChanged = failure.evidenceFingerprint !== evidenceFingerprint(transcriptTail);
-        const deadlineExpired = !failure.nextAttemptAt || Date.parse(failure.nextAttemptAt) <= Date.now();
-        cohortWake.set(failure.cohortId, cohortWake.get(failure.cohortId) === true
-          || urgent || evidenceChanged || deadlineExpired);
+        const fingerprint = evidenceFingerprint(transcriptTail);
+        const metadataChanged = !previous
+          || previous.lastActivity !== session.lastActivity
+          || previous.status !== session.status
+          || (previous.workspaceIdentity || previous.cwd) !== sessionWorkspaceIdentity(session)
+          || previous.title !== session.title
+          || previous.progressFingerprint !== sessionInventoryProgressFingerprint(session);
+        const evidenceChanged = failure
+          ? failure.evidenceFingerprint !== fingerprint
+          : !previous || previous.transcriptTail !== transcriptTail;
+        const deadlineExpired = Boolean(failure && (!failure.nextAttemptAt || Date.parse(failure.nextAttemptAt) <= Date.now()));
+        const independentlyActionable = !failure && (!previous?.verdict
+          || previous.verdict.confidence === 0
+          || previous.verdict.verdict === "unfinished"
+          || metadataChanged
+          || evidenceChanged);
+        cohortWake.set(cohortId, cohortWake.get(cohortId) === true
+          || urgent || evidenceChanged || deadlineExpired || independentlyActionable);
       }
       const assessed: AssessedSession[] = [];
       for (const { adapter, session } of candidates) {
@@ -1357,9 +1375,10 @@ export class UnfinishedSessionLauncher {
         const sourceKey = sessionSourceKey(session);
         const urgent = this.urgentSessions.has(sourceKey) || this.urgentSessions.has(sessionKey(session.harness, session.id));
         const previous = priorInventory.get(sourceKey);
-        const failedCohortId = previous?.assessmentFailure?.cohortId;
-        const cohortAwake = failedCohortId ? cohortWake.get(failedCohortId) === true : false;
-        if (failedCohortId && !cohortAwake) continue;
+        const cohortId = assessmentCohortId(session);
+        const cohortManaged = activeFailedCohorts.has(cohortId);
+        const cohortAwake = cohortManaged && cohortWake.get(cohortId) === true;
+        if (cohortManaged && !cohortAwake) continue;
         const progressUnchanged = previous?.progressFingerprint === sessionInventoryProgressFingerprint(session);
         const metadataUnchanged = previous?.lastActivity === session.lastActivity
           && previous.status === session.status
@@ -1370,7 +1389,7 @@ export class UnfinishedSessionLauncher {
           && (previous.verdict.verdict === "completed"
             || previous.verdict.verdict === "needs_human"
             || (previous.verdict.verdict === "unfinished" && session.status === "running"));
-        if (settledAndUnchanged && !urgent) continue;
+        if (!cohortAwake && settledAndUnchanged && !urgent) continue;
         const candidateDelayMs = this.candidateDelayOverrideMs
           ?? Math.max(this.discoveryIdleMs, unfinishedProbeDelayMs(session));
         const oldEnough = urgent || Date.now() - Date.parse(session.lastActivity) >= candidateDelayMs;
@@ -2142,7 +2161,13 @@ function parseInventoryRecord(value: unknown): UnfinishedSessionInventoryRecord 
     ...(record.assessmentFailure ? {
       assessmentFailure: parseAssessmentFailure(
         record.assessmentFailure,
-        assessmentCohortId({ harness, cwd: bounded(record.cwd, "cwd") }),
+        assessmentCohortId({
+          harness,
+          cwd: bounded(record.cwd, "cwd"),
+          ...(record.workspaceIdentity ? {
+            meta: { workspaceIdentity: normalize(bounded(record.workspaceIdentity, "workspaceIdentity")) },
+          } : {}),
+        }),
       ),
     } : {}),
   };
