@@ -1446,6 +1446,7 @@ export class UnfinishedSessionLauncher {
         try {
           plan = await this.planAssessedSessions(assessed);
         } catch (error) {
+          if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
           await this.recordAssessmentFailure(assessed, priorInventory, errorText(error));
           console.error(`[agent-herder] единый план MiniMax не построен; посессионный fallback запрещён: ${errorText(error)}`);
           return "blocked";

@@ -1988,6 +1988,7 @@ describe("unfinished session launcher", () => {
     }));
     let started = 0;
     let aborted = 0;
+    const notices: UnfinishedSessionNotice[] = [];
     const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
     adapter.listSessions = async () => sessions;
     adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
@@ -2004,6 +2005,7 @@ describe("unfinished session launcher", () => {
           }, { once: true }));
         },
       },
+      notify: async (notice) => { notices.push(notice); },
     });
     const recovery = launcher.recoverPending();
     await waitUntil(() => started === 3);
@@ -2011,6 +2013,26 @@ describe("unfinished session launcher", () => {
     await recovery;
 
     expect(aborted).toBe(3);
+    expect(notices).toEqual([]);
+    expect((await store.listInventory()).every((record) => record.assessmentFailure === undefined)).toBe(true);
+
+    let reassessed = 0;
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          reassessed += batch.length;
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "done", confidence: 1, topic: session.title, handoff: "",
+          })) };
+        },
+        async reconcile({ groups }) { return { clusters: groups.map(({ groupRef }) => [groupRef]) }; },
+      },
+    }).recoverPending();
+    expect(reassessed).toBe(3);
   });
 
   it("aborts active planner I/O at the shared phase deadline", async () => {
@@ -2041,6 +2063,7 @@ describe("unfinished session launcher", () => {
     }
 
     expect(aborted).toBe(1);
+    expect((await store.listInventory())[0]?.assessmentFailure).toMatchObject({ count: 1 });
   });
 
   it("partitions output-heavy inventories deterministically and applies only after every chunk is complete", async () => {
