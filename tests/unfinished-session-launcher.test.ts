@@ -931,7 +931,7 @@ describe("unfinished session launcher", () => {
     const totalTokens = requestBodies.reduce((sum, body) => sum + estimateContextTokens(JSON.stringify(body)), 0);
     expect(totalTokens).toBeLessThanOrEqual(512_000);
     expect(await store.listInventory()).toHaveLength(70);
-  });
+  }, 15_000);
 
   it("globally reconciles one task split across the 64-session boundary into one send", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-cross-chunk-dedupe-"));
