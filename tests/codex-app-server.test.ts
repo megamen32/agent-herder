@@ -465,6 +465,50 @@ describe("Codex app-server adapter", () => {
     }
   });
 
+  it("drops cached running state and fails the same turn when the native writer process dies", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-writer-death-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "05");
+    const rollout = join(sessionDir, "rollout-thread-1.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-1", thread_name: "Interrupted native turn", updated_at: new Date().toISOString() }) + "\n");
+    await writeFile(rollout, [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-1", session_id: "thread-1", cwd: "/workspace" } }),
+      JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
+    ].join("\n") + "\n");
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const events: Array<{ kind: string; sessionId?: string }> = [];
+    const unsubscribe = adapter.subscribeEvents((event) => events.push(event));
+    try {
+      await adapter.init();
+      await expect(adapter.sendMessage("thread-1", { message: "hold", queue: true })).resolves.toEqual({ ok: true });
+      for (let attempt = 0; attempt < 50 && !events.some((event) => event.kind === "turn.started"); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      await expect(adapter.getSession("thread-1")).resolves.toMatchObject({
+        id: "thread-1",
+        status: "running",
+        meta: { activeTurnId: "turn-1" },
+      });
+
+      const child = (adapter as unknown as { child?: ChildProcessWithoutNullStreams }).child;
+      expect(child?.pid).toEqual(expect.any(Number));
+      child?.kill("SIGTERM");
+      for (let attempt = 0; attempt < 100 && !events.some((event) => event.kind === "process.disconnected"); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+
+      await expect(adapter.getSession("thread-1")).resolves.toMatchObject({ id: "thread-1", status: "idle" });
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "turn.failed", sessionId: "thread-1" }),
+        expect.objectContaining({ kind: "process.disconnected" }),
+      ]));
+    } finally {
+      unsubscribe();
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
   it("shares one cold app-server initialization between observer and control callers", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-single-control-"));
     const logPath = join(codexDir, "app-server.log");

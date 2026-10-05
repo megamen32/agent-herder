@@ -134,10 +134,16 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async dispose(): Promise<void> {
-    this.rejectPending(new Error("Codex app-server disposed"));
-    this.initialized = false;
-    this.child?.kill();
-    this.child = undefined;
+    const child = this.child;
+    if (child) {
+      this.handleTransportDisconnect(child, new Error("Codex app-server disposed"), { reason: "disposed" });
+      child.kill();
+    } else {
+      this.rejectPending(new Error("Codex app-server disposed"));
+      this.failCompletions(new Error("Codex app-server disposed"));
+      this.activeTurns.clear();
+      this.initialized = false;
+    }
   }
 
   async listSessions(): Promise<AgentSession[]> {
@@ -375,28 +381,48 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private startProcess(): void {
-    this.child = spawnIsolatedWorkload(this.codexBin, this.processArgs, {
+    const child = spawnIsolatedWorkload(this.codexBin, this.processArgs, {
       label: "codex-app-server",
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams;
+    this.child = child;
     this.emitEvent({ kind: "process.connected", harness: "codex", data: { transport: "app-server" } });
-    this.child.stdout.setEncoding("utf8");
-    this.child.stdout.on("data", (chunk: string) => this.consumeOutput(chunk));
-    this.child.stderr.setEncoding("utf8");
-    this.child.stderr.on("data", (chunk: string) => this.consumeStderr(chunk));
-    this.child.on("error", (error) => {
-      this.initialized = false;
-      this.child = undefined;
-      this.rejectPending(error);
-      this.emitEvent({ kind: "process.disconnected", harness: "codex", data: { transport: "app-server", error: error.message } });
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => this.consumeOutput(chunk));
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => this.consumeStderr(chunk));
+    child.on("error", (error) => {
+      this.handleTransportDisconnect(child, error, { error: error.message });
     });
-    this.child.on("exit", (code, signal) => {
-      this.initialized = false;
-      this.child = undefined;
-      this.rejectPending(new Error("Codex app-server exited"));
-      this.emitEvent({ kind: "process.disconnected", harness: "codex", data: { transport: "app-server", code: code ?? undefined, signal: signal ?? undefined } });
+    child.on("exit", (code, signal) => {
+      this.handleTransportDisconnect(child, new Error("Codex app-server exited"), { code: code ?? undefined, signal: signal ?? undefined });
     });
+  }
+
+  private handleTransportDisconnect(
+    child: ChildProcessWithoutNullStreams,
+    error: Error,
+    data: Record<string, unknown>,
+  ): void {
+    if (this.child !== child) return;
+    this.initialized = false;
+    this.child = undefined;
+    const interruptedSessions = [...this.activeTurns.keys()];
+    this.activeTurns.clear();
+    this.failCompletions(error);
+    this.rejectPending(error);
+    for (const sessionId of interruptedSessions) {
+      this.emitEvent({
+        kind: "turn.failed",
+        harness: "codex",
+        sessionId,
+        nativeType: "process.disconnected",
+        status: "error",
+        data: { transport: "app-server", error: error.message },
+      });
+    }
+    this.emitEvent({ kind: "process.disconnected", harness: "codex", data: { transport: "app-server", ...data } });
   }
 
   private notify(method: string, params: unknown): void {
@@ -558,6 +584,14 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       pending.reject(error);
     }
     this.pending.clear();
+  }
+
+  private failCompletions(error: Error): void {
+    for (const completion of this.completions.values()) {
+      clearTimeout(completion.timer);
+      completion.resolve({ ok: false, error: error.message });
+    }
+    this.completions.clear();
   }
 
   private toSession(thread: CodexThread): AgentSession {
