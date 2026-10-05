@@ -153,6 +153,11 @@ export class CacheHandoffService {
     if (ageMs < cache.ttlMs) return { kind: "fresh", ageMs, cache };
     const adapter = this.adapters.get(session.harness);
     if (!adapter?.getSessionMessages || !adapter.createSession) throw new Error(`${session.harness} не умеет создать cache handoff`);
+    const durableAdmission = await this.restoreDurableAdmission(sourceKey, ageMs, cache);
+    if (durableAdmission) {
+      this.admittedResults.set(sourceKey, durableAdmission);
+      return durableAdmission;
+    }
     const messages = await adapter.getSessionMessages(session.id, 1_000);
     const source = semanticTranscript(messages || []);
     if (!source) throw new Error("в сессии нет пользовательского контекста для handoff");
@@ -168,6 +173,21 @@ export class CacheHandoffService {
       const selected = await adapter.changeModel(created.id, continuationModel);
       if (!selected.ok) throw new Error(selected.error || `не удалось выбрать модель продолжения ${continuationModel}`);
     }
+    const admissionRecord = {
+      sessionKey: `${session.harness}:${created.id}`,
+      parentKey: sourceKey,
+      role: "cache-handoff",
+      task: `Продолжение после истечения кэша (${Math.round(ageMs / 60_000)} мин)`,
+      provider: session.harness,
+      createdAt: new Date().toISOString(),
+      source: "supervisor" as const,
+      nativeSessionId: created.id,
+      cacheHandoffAdmission: { state: "prepared" as const, session: created },
+    };
+    // Write-ahead ownership closes the crash window between native admission
+    // and the launcher's durable settlement. A prepared record is ambiguous
+    // after restart and therefore must never be sent again.
+    await this.lineage?.record(admissionRecord);
     const sent = await adapter.sendMessage(created.id, { message: handoffPrompt(summary), queue: false });
     if (!sent.ok && !(sent.admitted && sent.nonRetryable)) throw new Error(sent.error || "новая сессия не приняла handoff");
     const result: CacheHandoffResult = sent.admitted && sent.nonRetryable
@@ -182,17 +202,49 @@ export class CacheHandoffService {
     // Admission is the idempotency boundary. Remember the replacement before
     // pin/lineage side effects so their failure cannot create or send another handoff.
     if (sent.admitted || sent.pending) this.admittedResults.set(sourceKey, result);
-    if (options.movePinned) await movePinnedContinuation(adapter, [{ adapter, sessionId: session.id }], created.id);
     await this.lineage?.record({
-      sessionKey: `${session.harness}:${created.id}`,
-      parentKey: `${session.harness}:${session.id}`,
-      role: "cache-handoff",
-      task: `Продолжение после истечения кэша (${Math.round(ageMs / 60_000)} мин)`,
-      provider: session.harness,
-      createdAt: new Date().toISOString(),
-      source: "supervisor",
+      ...admissionRecord,
+      ...(sent.admitted && sent.nonRetryable ? { lastError: result.admittedFailure } : {}),
+      cacheHandoffAdmission: sent.admitted && sent.nonRetryable
+        ? { state: "failed", session: created, error: result.admittedFailure }
+        : sent.pending
+          ? { state: "pending", session: created }
+          : { state: "confirmed", session: created },
+      updatedAt: new Date().toISOString(),
     });
+    if (options.movePinned) await movePinnedContinuation(adapter, [{ adapter, sessionId: session.id }], created.id);
     return result;
+  }
+
+  private async restoreDurableAdmission(
+    sourceKey: string,
+    ageMs: number,
+    cache: CacheWindow,
+  ): Promise<CacheHandoffResult | undefined> {
+    if (!this.lineage) return undefined;
+    const records = (await this.lineage.children(sourceKey))
+      .filter((record) => record.role === "cache-handoff" && record.cacheHandoffAdmission)
+      .sort((left, right) => Date.parse(right.updatedAt || right.createdAt) - Date.parse(left.updatedAt || left.createdAt));
+    const admission = records[0]?.cacheHandoffAdmission;
+    if (!admission) return undefined;
+    if (admission.state === "failed" || admission.state === "prepared") {
+      return {
+        kind: "admitted_failed",
+        session: admission.session,
+        admittedFailure: admission.error || (admission.state === "prepared"
+          ? "Cache handoff admission outcome is unknown after restart; unsafe retry suppressed"
+          : "Native handoff turn failed after admission"),
+        ageMs,
+        cache,
+      };
+    }
+    return {
+      kind: "rolled_over",
+      session: admission.session,
+      ...(admission.state === "pending" ? { deliveryPending: true } : {}),
+      ageMs,
+      cache,
+    };
   }
 }
 

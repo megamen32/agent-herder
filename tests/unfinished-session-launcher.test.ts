@@ -13,6 +13,8 @@ import {
   UnfinishedSessionLauncher,
   UnfinishedSessionStore,
 } from "../src/autopilot/unfinished-session-launcher.js";
+import { CacheHandoffService } from "../src/cache-handoff.js";
+import { LineageStore } from "../src/lineage-store.js";
 import type { AgentSession, HarnessAdapter, HarnessEvent } from "../src/types/index.js";
 
 function fixtureSession(status: AgentSession["status"] = "idle", harness: "codex" | "zcode" = "zcode"): AgentSession {
@@ -1630,6 +1632,78 @@ describe("unfinished session launcher", () => {
       state: "active",
       nonRetryableAdmission: true,
       lastError: "native cache handoff turn failed",
+    }]);
+  });
+
+  it("restores a prepared cache admission after process recreation without creating or sending again", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-handoff-crash-window-"));
+    const lineagePath = join(root, "lineage.json");
+    const storePath = join(root, "unfinished.json");
+    const old = fixtureSession("idle", "codex");
+    const replacement = { ...old, id: "session-2", status: "error" as const, lastActivity: new Date().toISOString() };
+    const firstCalls = { resumes: 0, messages: [] as string[] };
+    const firstAdapter = fixtureAdapter(old, firstCalls);
+    let firstCreates = 0;
+    firstAdapter.createSession = async () => { firstCreates += 1; return replacement; };
+    firstAdapter.sendMessage = async (_id, input) => {
+      firstCalls.messages.push(input.message);
+      return { ok: false, admitted: true, nonRetryable: true, error: "native handoff turn failed" };
+    };
+    class CrashAfterAdmissionLineage extends LineageStore {
+      private recordCalls = 0;
+      override async record(record: Parameters<LineageStore["record"]>[0]): Promise<void> {
+        this.recordCalls += 1;
+        if (this.recordCalls === 2) throw new Error("simulated process crash after native admission");
+        await super.record(record);
+      }
+    }
+    const firstService = new CacheHandoffService(
+      new Map([["codex", firstAdapter]]),
+      { summarize: async () => "handoff" },
+      new CrashAfterAdmissionLineage(lineagePath),
+    );
+
+    await expect(firstService.maybeRollover(old, new Date("2026-10-03T13:00:00.000Z")))
+      .rejects.toThrow("simulated process crash");
+    expect(firstCreates).toBe(1);
+    expect(firstCalls.messages).toHaveLength(1);
+
+    const restartedStore = new UnfinishedSessionStore(storePath);
+    await restartedStore.markStarted(old, "crashed-process");
+    const restartedCalls = { resumes: 0, messages: [] as string[] };
+    const restartedAdapter = fixtureAdapter(old, restartedCalls);
+    let restartedCreates = 0;
+    restartedAdapter.createSession = async () => { restartedCreates += 1; return { ...replacement, id: `unexpected-${restartedCreates}` }; };
+    const restartedService = new CacheHandoffService(
+      new Map([["codex", restartedAdapter]]),
+      { summarize: async () => { throw new Error("durable admission must bypass summarization"); } },
+      new LineageStore(lineagePath),
+    );
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    await settingsStore.setRuntimeSettings({
+      inventoryWindowHours: 48,
+      evidenceMessageCount: 4,
+      judgeModel: "MiniMax-M3.1-Flash-Preview",
+      autopilotJudgeModel: "MiniMax-M3",
+      rolloverExpiredCache: true,
+    });
+    const restartedLauncher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", restartedAdapter]]),
+      store: restartedStore,
+      settingsStore,
+      retryDelayMs: 0,
+      cacheHandoff: restartedService,
+    });
+
+    await restartedLauncher.recoverPending();
+    await restartedLauncher.recoverPending();
+
+    expect(restartedCreates).toBe(0);
+    expect(restartedCalls.messages).toHaveLength(0);
+    expect(await restartedStore.list()).toMatchObject([{
+      sessionId: replacement.id,
+      nonRetryableAdmission: true,
+      lastError: expect.stringContaining("unsafe retry suppressed"),
     }]);
   });
 

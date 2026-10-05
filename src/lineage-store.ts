@@ -1,5 +1,12 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import type { AgentSession } from "./types/index.js";
+
+export interface CacheHandoffAdmissionCheckpoint {
+  state: "prepared" | "pending" | "failed" | "confirmed";
+  session: AgentSession;
+  error?: string;
+}
 
 export interface LineageRecord {
   sessionKey: string;
@@ -18,6 +25,7 @@ export interface LineageRecord {
   lastError?: string;
   recoveredFrom?: string;
   updatedAt?: string;
+  cacheHandoffAdmission?: CacheHandoffAdmissionCheckpoint;
 }
 
 export interface RecoveryCheckpoint {
