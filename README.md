@@ -279,7 +279,7 @@ ServersAdministartion.
 The server-100 continuity drop-in is
 [`session-continuity.conf`](deploy/systemd/agent-herder.service.d/session-continuity.conf).
 It joins the existing managed Codex daemon and limits MiniMax planning to one
-request with an 8192-token output reservation. On 2026-10-05 the same tiny API
+request with a 4096-token output reservation (eight sessions per chunk). On 2026-10-05 the same tiny API
 probe returned `overloaded_error` at 16384 and succeeded at 8192 and 4096; the
 production planner also returned a validated small plan after the numeric
 confidence contract was clarified. Global input packing and coverage validation
