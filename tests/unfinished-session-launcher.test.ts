@@ -645,7 +645,7 @@ describe("unfinished session launcher", () => {
     ]);
   });
 
-  it("never merges or completes same-topic sessions from different workspaces", async () => {
+  it("rejects a global reconciliation that merges same-topic sessions from different workspaces", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-cross-workspace-dedupe-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions: AgentSession[] = [
@@ -662,20 +662,21 @@ describe("unfinished session launcher", () => {
       adapters: new Map([["codex", adapter]]), store, settingsStore, discoveryIdleMs: 1,
       judge: {
         async decide() { throw new Error("fallback should not run"); },
-        async plan() {
-          return { groups: [{
-            sourceSessionIds: ["root-work", "canary"], primarySessionId: "canary", verdict: "unfinished" as const,
-            reason: "Same topic", confidence: 1, topic: "Finish Agent Herder", handoff: "Continue the combined task",
-          }] };
+        async plan({ sessions: batch }) {
+          expect(new Set(batch.map(({ session }) => session.cwd)).size).toBe(1);
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "unfinished" as const,
+            reason: "Same topic", confidence: 1, topic: "Finish Agent Herder", handoff: `Continue ${session.id}`,
+          })) };
+        },
+        async reconcile({ groups }) {
+          return { clusters: [groups.map(({ groupRef }) => groupRef)] };
         },
       },
     }).recoverPending();
 
     expect(calls).toEqual({ resumes: 0, messages: [] });
-    expect((await store.listInventory()).sort((left, right) => left.sessionId.localeCompare(right.sessionId))).toMatchObject([
-      { sessionId: "canary", verdict: { verdict: "needs_human", confidence: 0 } },
-      { sessionId: "root-work", verdict: { verdict: "needs_human", confidence: 0 } },
-    ]);
+    expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
     await expect(settingsStore.getEffective("codex", "root-work", sessions[0]!.cwd)).resolves.toMatchObject({ enabled: true, source: "default" });
     await expect(settingsStore.getEffective("codex", "canary", sessions[1]!.cwd)).resolves.toMatchObject({ enabled: true, source: "default" });
   });
@@ -1815,6 +1816,76 @@ describe("unfinished session launcher", () => {
     expect(await store.listInventory()).toHaveLength(33);
   });
 
+  it("partitions interleaved workspaces into deterministic homogeneous planner requests", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-workspace-homogeneous-chunks-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = Array.from({ length: 8 }, (_, index): AgentSession => ({
+      ...fixtureSession("idle", "codex"), id: `mixed-${index}`, title: `Mixed ${index}`,
+      cwd: index % 2 === 0 ? "/workspace/a" : "/workspace/b",
+      lastActivity: new Date(Date.now() - 60_000 - index).toISOString(),
+    }));
+    const planned: string[][] = [];
+    let reconciliations = 0;
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          expect(new Set(batch.map(({ session }) => session.cwd)).size).toBe(1);
+          for (const { session, transcriptTail } of batch) expect(transcriptTail).toContain(session.id);
+          planned.push(batch.map(({ session }) => session.id));
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "done", confidence: 1, topic: session.title, handoff: "",
+          })) };
+        },
+        async reconcile({ groups }) {
+          reconciliations += 1;
+          expect(groups.every((group) => new Set(group.sourceSessionIds.map((sourceKey) => sourceKey.split(":").at(-1))).size === 1)).toBe(true);
+          return { clusters: groups.map(({ groupRef }) => [groupRef]) };
+        },
+      },
+    }).recoverPending();
+
+    expect(planned).toEqual([
+      ["mixed-0", "mixed-2", "mixed-4", "mixed-6"],
+      ["mixed-1", "mixed-3", "mixed-5", "mixed-7"],
+    ]);
+    expect(reconciliations).toBe(1);
+    expect((await store.listInventory()).every((record) => record.verdict?.verdict === "completed")).toBe(true);
+  });
+
+  it("fails before planner I/O when singleton workspaces exceed the bounded chunk count", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-workspace-chunk-cap-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = Array.from({ length: 65 }, (_, index): AgentSession => ({
+      ...fixtureSession("idle", "codex"), id: `singleton-${index}`, cwd: `/workspace/singleton-${index}`,
+      lastActivity: new Date(Date.now() - 60_000 - index).toISOString(),
+    }));
+    let plans = 0;
+    let reconciliations = 0;
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("decide must not run"); },
+        async plan() { plans += 1; return { groups: [] }; },
+        async reconcile() { reconciliations += 1; return { clusters: [] }; },
+      },
+    }).recoverPending();
+
+    expect(plans).toBe(0);
+    expect(reconciliations).toBe(0);
+    expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
+  });
+
   it("partitions output-heavy inventories deterministically and applies only after every chunk is complete", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-output-chunks-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -1854,6 +1925,7 @@ describe("unfinished session launcher", () => {
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = Array.from({ length: 70 }, (_, index): AgentSession => ({
       ...fixtureSession("idle", "codex"), id: `budgeted-${index}`, title: `Budgeted ${index}`,
+      cwd: `/workspace/budget-${index % 3}`,
       lastActivity: new Date(Date.now() - 10 * 60_000 - index).toISOString(),
     }));
     const requestBodies: unknown[] = [];
@@ -1907,7 +1979,7 @@ describe("unfinished session launcher", () => {
     adapter.listSessions = async () => sessions;
     adapter.getSessionMessages = async (id) => {
       const index = Number(id.slice("budgeted-".length));
-      const hostile = `${id}:${'"\\\n'.repeat(index >= 66 ? 6_000 : 100)}`;
+      const hostile = `${id}:${'"\\\n'.repeat(index >= 59 && index % 3 === 2 ? 6_000 : 100)}`;
       return [{ id: `${id}-u`, role: "user", text: hostile, parts: [{ type: "text", text: hostile }] }];
     };
     try {

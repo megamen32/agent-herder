@@ -16,6 +16,7 @@ const DEFAULT_BATCH_OUTPUT_TOKENS = 16_384;
 // Bound group count against the 16k response ceiling. Any still-truncated
 // chunk is rejected by exact coverage before a verdict or continuation applies.
 const MAX_BATCH_PLAN_SESSIONS_PER_REQUEST = 32;
+const MAX_BATCH_PLAN_CHUNKS = 64;
 const MAX_OMISSION_DECISION_CONCURRENCY = 4;
 const MAX_PERSISTENT_OMISSION_DECISIONS = 4;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
@@ -327,8 +328,8 @@ export interface UnfinishedSessionInventoryRecord {
 
 export interface SessionCompletionJudge {
   decide(input: { session: AgentSession; transcriptTail: string; signal?: AbortSignal }): Promise<Omit<SessionInventoryVerdict, "judgedAt">>;
-  plan?(input: { sessions: SessionBatchCandidate[] }): Promise<SessionBatchPlan>;
-  reconcile?(input: { groups: SessionBatchReconciliationCandidate[] }): Promise<SessionBatchReconciliation>;
+  plan?(input: { sessions: SessionBatchCandidate[]; signal?: AbortSignal }): Promise<SessionBatchPlan>;
+  reconcile?(input: { groups: SessionBatchReconciliationCandidate[]; signal?: AbortSignal }): Promise<SessionBatchReconciliation>;
 }
 
 export interface SessionBatchCandidate {
@@ -1825,6 +1826,9 @@ export class UnfinishedSessionLauncher {
       DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
     );
     const rawCandidates = assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail }));
+    if (partitionBatchCandidates(rawCandidates).length > MAX_BATCH_PLAN_CHUNKS) {
+      throw new BatchPlanValidationError(`MiniMax assessment needs more than ${MAX_BATCH_PLAN_CHUNKS} workspace-homogeneous chunks`);
+    }
     const globallyPacked = fitBatchContextForSerializedRequest(rawCandidates, contextBudget, (sessions) => ({
       chunkRequests: partitionBatchCandidates(sessions).map(buildBatchPlannerBudgetRequest),
       // Reserve one bounded repair pass for every chunk before the first fetch.
@@ -1844,16 +1848,20 @@ export class UnfinishedSessionLauncher {
     const groups: SessionBatchPlanGroup[] = [];
     const persistentOmissions: AssessedSession[] = [];
     let repaired = false;
-    const omissionDecisionController = new AbortController();
-    const omissionDecisionDeadline = Date.now() + positiveInteger(
+    const plannerPhaseController = new AbortController();
+    const plannerPhaseDeadline = Date.now() + positiveInteger(
       Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000),
       600_000,
     );
-    for (let offset = 0; offset < packedAssessed.length; offset += MAX_BATCH_PLAN_SESSIONS_PER_REQUEST) {
-      const chunk = packedAssessed.slice(offset, offset + MAX_BATCH_PLAN_SESSIONS_PER_REQUEST);
-      const requestPlan = async (candidates: AssessedSession[]): Promise<SessionBatchPlan> => canonicalizePlanSourceKeys(await planner({
-        sessions: candidates.map(({ session, transcriptTail }) => ({ session, transcriptTail })),
-      }), candidates);
+    const plannerChunks = partitionBatchCandidates(packedAssessed);
+    for (const chunk of plannerChunks) {
+      const requestPlan = async (candidates: AssessedSession[]): Promise<SessionBatchPlan> => canonicalizePlanSourceKeys(
+        await withAbortDeadline(planner({
+          sessions: candidates.map(({ session, transcriptTail }) => ({ session, transcriptTail })),
+          signal: plannerPhaseController.signal,
+        }), plannerPhaseDeadline, plannerPhaseController),
+        candidates,
+      );
       let plan: SessionBatchPlan | undefined;
       let initialFailure: unknown;
       try {
@@ -1892,11 +1900,11 @@ export class UnfinishedSessionLauncher {
           persistentOmissions,
           MAX_OMISSION_DECISION_CONCURRENCY,
           async (candidate) => {
-            if (omissionDecisionController.signal.aborted) throw new Error("MiniMax omission decision phase was aborted");
+            if (plannerPhaseController.signal.aborted) throw new Error("MiniMax omission decision phase was aborted");
             const verdict = normalizeVerdict(await decide({
               session: candidate.session,
               transcriptTail: candidate.transcriptTail,
-              signal: omissionDecisionController.signal,
+              signal: plannerPhaseController.signal,
             }));
             if (verdict.confidence <= 0) throw new Error(`MiniMax omission judge returned zero confidence for ${candidate.sourceKey}`);
             const handoff = verdict.verdict === "unfinished"
@@ -1907,9 +1915,9 @@ export class UnfinishedSessionLauncher {
             }
             return { candidate, verdict, handoff };
           },
-        ), omissionDecisionDeadline, omissionDecisionController);
+        ), plannerPhaseDeadline, plannerPhaseController);
       } catch (error) {
-        omissionDecisionController.abort(error);
+        plannerPhaseController.abort(error);
         throw error;
       }
       for (const { candidate, verdict, handoff } of decisions) {
@@ -1924,11 +1932,14 @@ export class UnfinishedSessionLauncher {
     }
     let plan = { groups };
     assertBatchPlanCoverage(plan, packedAssessed);
-    if (packedAssessed.length > MAX_BATCH_PLAN_SESSIONS_PER_REQUEST || repaired) {
+    if (plannerChunks.length > 1 || repaired) {
       const reconcile = this.options.judge?.reconcile;
       if (!reconcile) throw new Error("MiniMax cross-chunk reconciliation is unavailable");
       const summaries = batchReconciliationCandidates(plan, packedAssessed);
-      const reconciliation = await reconcile({ groups: summaries });
+      const reconciliation = await withAbortDeadline(reconcile({
+        groups: summaries,
+        signal: plannerPhaseController.signal,
+      }), plannerPhaseDeadline, plannerPhaseController);
       plan = applyBatchReconciliation(plan, summaries, reconciliation);
       assertBatchPlanCoverage(plan, packedAssessed);
     }
@@ -2886,10 +2897,19 @@ function batchReconciliationPayload(groups: SessionBatchReconciliationCandidate[
   };
 }
 
-function partitionBatchCandidates(sessions: SessionBatchCandidate[]): SessionBatchCandidate[][] {
-  const chunks: SessionBatchCandidate[][] = [];
-  for (let offset = 0; offset < sessions.length; offset += MAX_BATCH_PLAN_SESSIONS_PER_REQUEST) {
-    chunks.push(sessions.slice(offset, offset + MAX_BATCH_PLAN_SESSIONS_PER_REQUEST));
+function partitionBatchCandidates<T extends SessionBatchCandidate>(sessions: T[]): T[][] {
+  const byWorkspace = new Map<string, T[]>();
+  for (const candidate of sessions) {
+    const workspace = sessionWorkspaceIdentity(candidate.session);
+    const grouped = byWorkspace.get(workspace) ?? [];
+    grouped.push(candidate);
+    byWorkspace.set(workspace, grouped);
+  }
+  const chunks: T[][] = [];
+  for (const grouped of byWorkspace.values()) {
+    for (let offset = 0; offset < grouped.length; offset += MAX_BATCH_PLAN_SESSIONS_PER_REQUEST) {
+      chunks.push(grouped.slice(offset, offset + MAX_BATCH_PLAN_SESSIONS_PER_REQUEST));
+    }
   }
   return chunks;
 }
@@ -3345,7 +3365,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
       return normalizeVerdict(JSON.parse(json) as unknown);
     },
-    async plan({ sessions }) {
+    async plan({ sessions, signal }) {
       const contextBudget = positiveInteger(
         Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS || DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET),
         DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
@@ -3373,7 +3393,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
           ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
           "content-type": "application/json",
         },
-        signal: AbortSignal.timeout(positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
+        signal: judgeAbortSignal(signal, positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
         body: JSON.stringify(fitted.request),
       });
       if (!response.ok) throw new Error(`MiniMax batch planner rejected with HTTP ${response.status}`);
@@ -3384,14 +3404,14 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       if (typeof content !== "string") throw new BatchPlanValidationError("MiniMax batch planner returned no content");
       return normalizeBatchPlanText(content, sessions);
     },
-    async reconcile({ groups }) {
+    async reconcile({ groups, signal }) {
       const response = await fetchImpl(endpoint, {
         method: "POST",
         headers: {
           ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
           "content-type": "application/json",
         },
-        signal: AbortSignal.timeout(positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
+        signal: judgeAbortSignal(signal, positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
         body: JSON.stringify({
           model: config.model,
           max_tokens: DEFAULT_BATCH_OUTPUT_TOKENS,
@@ -3479,7 +3499,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
       const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
       return normalizeVerdict(JSON.parse(json) as unknown);
     },
-    async plan({ sessions }) {
+    async plan({ sessions, signal }) {
       const contextBudget = positiveInteger(
         Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS || DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET),
         DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
@@ -3506,14 +3526,14 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
           "anthropic-version": "2023-06-01",
           "content-type": "application/json",
         },
-        signal: AbortSignal.timeout(positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
+        signal: judgeAbortSignal(signal, positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
         body: JSON.stringify(fitted.request),
       });
       if (!response.ok) throw new Error(`MiniMax Anthropic batch planner rejected with HTTP ${response.status}`);
       const content = await anthropicText(response);
       return normalizeBatchPlanText(content, sessions);
     },
-    async reconcile({ groups }) {
+    async reconcile({ groups, signal }) {
       const response = await fetchImpl(endpoint, {
         method: "POST",
         headers: {
@@ -3521,7 +3541,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
           "anthropic-version": "2023-06-01",
           "content-type": "application/json",
         },
-        signal: AbortSignal.timeout(positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
+        signal: judgeAbortSignal(signal, positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
         body: JSON.stringify({
           model: config.model,
           max_tokens: DEFAULT_BATCH_OUTPUT_TOKENS,
