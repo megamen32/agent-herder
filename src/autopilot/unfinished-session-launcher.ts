@@ -889,7 +889,10 @@ export class UnfinishedSessionLauncher {
           && session.status === "stopped"
           && priorAssessment?.verdict?.verdict === "completed"
           && priorAssessment.verdict.confidence > 0
-          && evidenceIsCurrent(priorAssessment)) continue;
+          && evidenceIsCurrent(priorAssessment)
+          && inventoryRecordKey(priorAssessment) === sessionSourceKey(session)
+          && priorAssessment.title === session.title
+          && priorAssessment.lastActivity === session.lastActivity) continue;
         const pendingPermissionIds = session.harness === "zcode"
           && session.title.trim().startsWith("Автопродолжение —")
           && Array.isArray(session.meta?.pendingRequestIds)
@@ -1446,14 +1449,14 @@ export class UnfinishedSessionLauncher {
       // explicit in inventory; a later transcript/status change will cause a
       // fresh audit and can then make the group eligible again.
       if (humanGatedSources.length > 0) {
-        const humanGatedKeys = new Set(humanGatedSources.map((source) => source.sourceKey));
+        const humanGateVerdict = {
+          verdict: "needs_human",
+          reason: "Объединённая задача ожидает ответа или разрешения человека",
+          confidence: 1,
+          judgedAt,
+        } satisfies SessionInventoryVerdict;
         for (const source of sources) {
-          pushInventory(source, humanGatedKeys.has(source.sourceKey) ? {
-            verdict: "needs_human",
-            reason: "Сессия ожидает ответа или разрешения человека",
-            confidence: 1,
-            judgedAt,
-          } : verdict);
+          pushInventory(source, humanGateVerdict);
           this.urgentSessions.delete(source.sourceKey);
           await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
         }
