@@ -1810,26 +1810,36 @@ function isAutocontinueRequest(text: string | undefined): boolean {
     || normalized.startsWith("Продолжи незавершённую задачу с того места, где выполнение было прервано.");
 }
 
-function enforcePlanWorkspaceBoundaries(
+export function enforcePlanWorkspaceBoundaries(
   plan: SessionBatchPlan,
-  candidates: Map<string, AssessedSession>,
+  candidates: ReadonlyMap<string, SessionBatchCandidate>,
 ): SessionBatchPlan {
   return {
     groups: plan.groups.flatMap((group) => {
-      const workspaces = new Set(group.sourceSessionIds.map((id) => normalize(candidates.get(id)!.session.cwd)));
-      if (workspaces.size <= 1) return [group];
+      const partitions = new Map<string, string[]>();
+      for (const id of group.sourceSessionIds) {
+        const cwd = normalize(candidates.get(id)!.session.cwd);
+        const ids = partitions.get(cwd) ?? [];
+        ids.push(id);
+        partitions.set(cwd, ids);
+      }
+      if (partitions.size <= 1) return [group];
       // Similar titles/topics are not task identity. A canary or unrelated
       // checkout must never supersede an active/pinned session in another
-      // workspace, even when MiniMax grouped them together.
-      return group.sourceSessionIds.map((id): SessionBatchPlanGroup => {
-        const candidate = candidates.get(id)!;
+      // workspace, even when MiniMax grouped them together. Preserve genuine
+      // same-workspace duplicates as one subgroup, but force each workspace to
+      // be replanned independently before any completion or resume action.
+      return [...partitions.values()].map((sourceSessionIds): SessionBatchPlanGroup => {
+        const primarySessionId = sourceSessionIds.includes(group.primarySessionId)
+          ? group.primarySessionId
+          : sourceSessionIds[0]!;
         return {
-          sourceSessionIds: [id],
-          primarySessionId: id,
+          sourceSessionIds,
+          primarySessionId,
           verdict: "needs_human",
-          reason: "MiniMax попытался объединить сессии из разных рабочих каталогов; сессия сохранена для отдельной проверки",
+          reason: "MiniMax попытался объединить разные рабочие каталоги; эта подгруппа сохранена для отдельной проверки",
           confidence: 0,
-          topic: candidate.session.title.slice(0, 120) || group.topic,
+          topic: group.topic,
           handoff: "",
         };
       });
@@ -2050,6 +2060,7 @@ function batchPlannerPrompt(): string {
     "Получаешь все доступные сессии 48-часового окна в одном общем пакете до безопасного потолка контекста.",
     "У каждой сессии обязательно сохранён первый пользовательский запрос как исходная цель и максимально полный свежий смысловой хвост без tool noise и скрытых рассуждений.",
     "Сгруппируй сессии одной и той же пользовательской задачи, даже если названия различаются; не объединяй просто похожие задачи.",
+    "Никогда не объединяй session_ref из разных cwd: рабочий каталог — жёсткая граница задачи, даже если тема и заголовок одинаковы.",
     "Каждый входной session_ref должен встретиться ровно один раз в source_session_ids одной группы; возвращай короткие S1, S2 и т.д., не переписывай UUID.",
     "Для группы выбери primary_session_id из session_ref: работающую сессию, иначе самую новую и содержательную.",
     "verdict: completed, unfinished или needs_human. Если хотя бы одна сессия группы ещё реально выполняется, verdict=unfinished.",

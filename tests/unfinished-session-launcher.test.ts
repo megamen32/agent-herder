@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   completionEvidence,
   createAnthropicCompatibleSessionCompletionJudge,
+  enforcePlanWorkspaceBoundaries,
   estimateBatchPlannerInputTokens,
   estimateContextTokens,
   fitBatchContext,
@@ -270,6 +271,24 @@ describe("unfinished session launcher", () => {
     await expect(settingsStore.getEffective("zcode", "duplicate-new", "/workspace/video")).resolves.toMatchObject({ enabled: false, source: "session" });
     await expect(settingsStore.getEffective("zcode", "duplicate-old", "/workspace/video")).resolves.toMatchObject({ enabled: false, source: "session" });
     expect((await store.list()).map((record) => record.sessionId)).toEqual(["merged-session"]);
+  });
+
+  it("partitions a mixed MiniMax group by cwd without splitting legitimate same-workspace duplicates", () => {
+    const sessions = [
+      { ...fixtureSession("idle", "codex"), id: "A1", cwd: "/workspace/a" },
+      { ...fixtureSession("idle", "codex"), id: "A2", cwd: "/workspace/a" },
+      { ...fixtureSession("idle", "codex"), id: "B1", cwd: "/workspace/b" },
+    ];
+    const candidates = new Map(sessions.map((session) => [session.id, { session, transcriptTail: session.id }]));
+    const result = enforcePlanWorkspaceBoundaries({ groups: [{
+      sourceSessionIds: ["A1", "A2", "B1"], primarySessionId: "A2", verdict: "unfinished",
+      reason: "Same task", confidence: 1, topic: "Finish Agent Herder", handoff: "Combined handoff",
+    }] }, candidates);
+
+    expect(result.groups).toMatchObject([
+      { sourceSessionIds: ["A1", "A2"], primarySessionId: "A2", verdict: "needs_human", confidence: 0 },
+      { sourceSessionIds: ["B1"], primarySessionId: "B1", verdict: "needs_human", confidence: 0 },
+    ]);
   });
 
   it("never merges or completes same-topic sessions from different workspaces", async () => {
