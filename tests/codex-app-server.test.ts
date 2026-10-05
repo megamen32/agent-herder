@@ -114,6 +114,61 @@ describe("Codex app-server adapter", () => {
     }
   });
 
+  it("enumerates every native thread page and proves the snapshot exhaustive", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-pagination-"));
+    const logPath = join(codexDir, "app-server.log");
+    const previousCount = process.env.CODEX_APP_SERVER_THREAD_COUNT;
+    const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
+    process.env.CODEX_APP_SERVER_THREAD_COUNT = "325";
+    process.env.CODEX_APP_SERVER_LOG = logPath;
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      await adapter.init();
+      const sessions = await adapter.listSessions();
+      expect(sessions).toHaveLength(325);
+      expect(new Set(sessions.map((session) => session.id)).size).toBe(325);
+      expect(adapter.getSessionSnapshotReceipt()).toMatchObject({
+        exhaustive: true,
+        source: "codex-app-server",
+      });
+      const listRequests = (await readFile(logPath, "utf8"))
+        .trim().split("\n").map((line) => JSON.parse(line) as { kind: string; method: string; params?: { cursor?: string } })
+        .filter((entry) => entry.kind === "request" && entry.method === "thread/list");
+      expect(listRequests.map((entry) => entry.params?.cursor)).toEqual([undefined, "200"]);
+    } finally {
+      await adapter.dispose();
+      if (previousCount === undefined) delete process.env.CODEX_APP_SERVER_THREAD_COUNT;
+      else process.env.CODEX_APP_SERVER_THREAD_COUNT = previousCount;
+      if (previousLogPath === undefined) delete process.env.CODEX_APP_SERVER_LOG;
+      else process.env.CODEX_APP_SERVER_LOG = previousLogPath;
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("marks a multi-page snapshot incomplete when a later native page fails", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-pagination-failure-"));
+    const previousCount = process.env.CODEX_APP_SERVER_THREAD_COUNT;
+    const previousFailure = process.env.CODEX_APP_SERVER_FAIL_LIST_CURSOR;
+    process.env.CODEX_APP_SERVER_THREAD_COUNT = "325";
+    process.env.CODEX_APP_SERVER_FAIL_LIST_CURSOR = "200";
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      await adapter.init();
+      await expect(adapter.listSessions()).rejects.toThrow(/forced thread\/list failure at 200/);
+      expect(adapter.getSessionSnapshotReceipt()).toMatchObject({
+        exhaustive: false,
+        source: "codex-app-server",
+      });
+    } finally {
+      await adapter.dispose();
+      if (previousCount === undefined) delete process.env.CODEX_APP_SERVER_THREAD_COUNT;
+      else process.env.CODEX_APP_SERVER_THREAD_COUNT = previousCount;
+      if (previousFailure === undefined) delete process.env.CODEX_APP_SERVER_FAIL_LIST_CURSOR;
+      else process.env.CODEX_APP_SERVER_FAIL_LIST_CURSOR = previousFailure;
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
   it("uses the native state database instead of scanning every archived rollout", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-state-db-"));
     const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
@@ -159,6 +214,7 @@ describe("Codex app-server adapter", () => {
       expect(sessions).toMatchObject([{ id: "thread-lazy", title: "Existing", cwd: "/workspace", meta: { parentThreadId: "thread-parent", threadSource: "subagent", agentRole: "worker" } }]);
       expect(sessions).toHaveLength(1);
       expect(adapter.isReady()).toBe(false);
+      expect(adapter.getSessionSnapshotReceipt()).toMatchObject({ exhaustive: true, source: "codex-state-index" });
     } finally {
       await adapter.dispose();
       await rm(codexDir, { recursive: true, force: true });

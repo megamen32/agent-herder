@@ -1,4 +1,4 @@
-import { HarnessAdapter, AgentSession, ControlResult, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessageView } from "../types/index.js";
+import { HarnessAdapter, AgentSession, ControlResult, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessageView, SessionSnapshotReceipt } from "../types/index.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createReadStream, existsSync } from "node:fs";
@@ -72,6 +72,12 @@ export class CodexAdapter implements HarnessAdapter {
   private sessionStatesCache?: Map<string, CodexSessionState>;
   private sessionStatesCachedAt = 0;
   private sessionStatesRefresh?: Promise<Map<string, CodexSessionState>>;
+  private sessionSnapshotReceipt: SessionSnapshotReceipt = {
+    exhaustive: false,
+    observedAt: new Date(0).toISOString(),
+    source: "codex-state-index",
+    reason: "not_observed",
+  };
 
   constructor(config: { codexBin?: string; codexDir?: string } = {}) {
     this.codexBin = config.codexBin || process.env.CODEX_BIN || "codex";
@@ -87,12 +93,19 @@ export class CodexAdapter implements HarnessAdapter {
   }
 
   async listSessions(): Promise<AgentSession[]> {
-    const [index, sessionStates, runningPids, openRolloutPaths] = await Promise.all([
+    const [indexSnapshot, sessionStates, runningPids, openRolloutPaths] = await Promise.all([
       this.readSessionIndex(),
       this.getSessionStates(),
       this.getRunningCodexPids(),
       this.getOpenCodexRolloutPaths(),
     ]);
+    const index = indexSnapshot.entries;
+    this.sessionSnapshotReceipt = {
+      exhaustive: indexSnapshot.exhaustive,
+      observedAt: new Date().toISOString(),
+      source: "codex-state-index",
+      ...(indexSnapshot.exhaustive ? {} : { reason: "session_index_unavailable" }),
+    };
     const sessions = index.map((entry) => {
       const state = sessionStates.get(entry.id);
       const persistedStatus = this.reconcilePersistedStatus(state, openRolloutPaths);
@@ -119,6 +132,10 @@ export class CodexAdapter implements HarnessAdapter {
 
     sessions.sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
     return sessions;
+  }
+
+  getSessionSnapshotReceipt(): SessionSnapshotReceipt {
+    return { ...this.sessionSnapshotReceipt };
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
@@ -418,23 +435,28 @@ export class CodexAdapter implements HarnessAdapter {
     }
   }
 
-  private async readSessionIndex(): Promise<CodexSessionIndexEntry[]> {
+  private async readSessionIndex(): Promise<{ entries: CodexSessionIndexEntry[]; exhaustive: boolean }> {
     try {
       const content = await readFile(join(this.codexDir, "session_index.jsonl"), "utf-8");
       const byId = new Map<string, CodexSessionIndexEntry>();
+      let exhaustive = true;
       for (const line of content.split("\n")) {
+        if (!line.trim()) continue;
         try {
           const entry = JSON.parse(line) as CodexSessionIndexEntry;
-          if (typeof entry.id !== "string") continue;
+          if (typeof entry.id !== "string") {
+            exhaustive = false;
+            continue;
+          }
           const previous = byId.get(entry.id);
           if (!previous || String(entry.updated_at || "") >= String(previous.updated_at || "")) byId.set(entry.id, entry);
         } catch {
-          // Ignore incomplete or corrupt index lines while Codex is writing.
+          exhaustive = false;
         }
       }
-      return [...byId.values()];
+      return { entries: [...byId.values()], exhaustive };
     } catch {
-      return [];
+      return { entries: [], exhaustive: false };
     }
   }
 

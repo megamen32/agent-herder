@@ -17,7 +17,8 @@ const thread = (id = "thread-1", overrides = {}) => ({
 
 let activeTurnId = null;
 let nextId = 0;
-const threads = [thread()];
+const configuredThreadCount = Math.max(1, Number(process.env.CODEX_APP_SERVER_THREAD_COUNT || 1));
+const threads = Array.from({ length: configuredThreadCount }, (_, index) => thread(index === 0 ? "thread-1" : `thread-${index + 1}`));
 const serverRequest = {
   id: 77,
   method: "tools/list",
@@ -28,6 +29,7 @@ const forcedStartedTurnId = process.env.CODEX_APP_SERVER_TURN_STARTED_ID;
 const forcedCompletedTurnId = process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID;
 const externalRunningThread = process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD;
 const numericTimestamps = process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS === "1";
+const failListCursor = process.env.CODEX_APP_SERVER_FAIL_LIST_CURSOR;
 
 if (numericTimestamps) {
   threads[0].createdAt = Date.parse(threads[0].createdAt);
@@ -43,6 +45,10 @@ function reply(id, result) {
   process.stdout.write(`${JSON.stringify({ id, result })}\n`);
 }
 
+function replyError(id, message) {
+  process.stdout.write(`${JSON.stringify({ id, error: { code: -32000, message } })}\n`);
+}
+
 function notify(method, params) {
   log({ kind: "notify", method, params });
   process.stdout.write(`${JSON.stringify({ method, params })}\n`);
@@ -54,7 +60,16 @@ rl.on("line", (line) => {
   log({ kind: "request", method: request.method, id: request.id, params: request.params });
   if (request.method === "initialize") return reply(request.id, { userAgent: "fake-codex/1" });
   if (request.method === "initialized") return;
-  if (request.method === "thread/list") return reply(request.id, { data: threads.map((item) => item.id === externalRunningThread ? thread(item.id, { ...item, status: "active" }) : item) });
+  if (request.method === "thread/list") {
+    const cursor = typeof request.params?.cursor === "string" ? request.params.cursor : "";
+    if (failListCursor !== undefined && cursor === failListCursor) return replyError(request.id, `forced thread/list failure at ${cursor || "first"}`);
+    const offset = cursor ? Number(cursor) : 0;
+    const limit = Math.max(1, Number(request.params?.limit || 200));
+    const data = threads.slice(offset, offset + limit)
+      .map((item) => item.id === externalRunningThread ? thread(item.id, { ...item, status: "active" }) : item);
+    const nextOffset = offset + data.length;
+    return reply(request.id, { data, nextCursor: nextOffset < threads.length ? String(nextOffset) : null });
+  }
   if (request.method === "thread/start") {
     const created = thread(`thread-created-${threads.length}`, {
       cwd: request.params.cwd || "/tmp/codex-fixture",

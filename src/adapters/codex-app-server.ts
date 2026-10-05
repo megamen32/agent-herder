@@ -12,6 +12,7 @@ import type {
   SetPermissionsOptions,
   RawTranscriptExport,
   SessionMessageView,
+  SessionSnapshotReceipt,
 } from "../types/index.js";
 
 interface RpcResponse {
@@ -102,6 +103,12 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly transportCleanups = new WeakMap<ChildProcessWithoutNullStreams, () => void>();
   private stderrTail = "";
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
+  private sessionSnapshotReceipt: SessionSnapshotReceipt = {
+    exhaustive: false,
+    observedAt: new Date(0).toISOString(),
+    source: "codex-app-server",
+    reason: "not_observed",
+  };
 
   constructor(config: {
     codexBin?: string;
@@ -147,23 +154,73 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async listSessions(): Promise<AgentSession[]> {
-    if (!this.isReady()) return this.rawTranscriptAdapter.listSessions();
-    await this.ensureReady();
-    const result = await this.request("thread/list", { limit: 200, archived: false }) as {
-      data?: CodexThread[];
+    this.sessionSnapshotReceipt = {
+      exhaustive: false,
+      observedAt: new Date().toISOString(),
+      source: this.isReady() ? "codex-app-server" : "codex-state-index",
+      reason: "enumeration_in_progress",
     };
-    const sessions = (result.data || []).filter((thread) => typeof thread.id === "string");
-    for (const thread of sessions) this.threads.set(thread.id, thread);
-    const nativeMetadata = await this.rawTranscriptAdapter.getNativeSessionMetadata();
-    return sessions.map((thread) => {
-      const session = this.toSession(thread);
-      const nativeMeta = nativeMetadata.get(thread.id);
-      return nativeMeta ? {
-        ...session,
-        status: nativeMeta.status === "running" ? "running" : session.status,
-        meta: { ...session.meta, ...nativeMeta },
-      } : session;
-    });
+    if (!this.isReady()) {
+      const sessions = await this.rawTranscriptAdapter.listSessions();
+      this.sessionSnapshotReceipt = this.rawTranscriptAdapter.getSessionSnapshotReceipt();
+      return sessions;
+    }
+    try {
+      await this.ensureReady();
+      const sessions = await this.listAllThreads();
+      for (const thread of sessions) this.threads.set(thread.id, thread);
+      const nativeMetadata = await this.rawTranscriptAdapter.getNativeSessionMetadata();
+      const result = sessions.map((thread) => {
+        const session = this.toSession(thread);
+        const nativeMeta = nativeMetadata.get(thread.id);
+        return nativeMeta ? {
+          ...session,
+          status: nativeMeta.status === "running" ? "running" : session.status,
+          meta: { ...session.meta, ...nativeMeta },
+        } : session;
+      });
+      this.sessionSnapshotReceipt = {
+        exhaustive: true,
+        observedAt: new Date().toISOString(),
+        source: "codex-app-server",
+      };
+      return result;
+    } catch (error) {
+      this.sessionSnapshotReceipt = {
+        exhaustive: false,
+        observedAt: new Date().toISOString(),
+        source: "codex-app-server",
+        reason: error instanceof Error ? error.message : "thread_list_failed",
+      };
+      throw error;
+    }
+  }
+
+  getSessionSnapshotReceipt(): SessionSnapshotReceipt {
+    return { ...this.sessionSnapshotReceipt };
+  }
+
+  private async listAllThreads(): Promise<CodexThread[]> {
+    const threads = new Map<string, CodexThread>();
+    const seenCursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const result = await this.request("thread/list", {
+        limit: 200,
+        archived: false,
+        ...(cursor ? { cursor } : {}),
+      }) as { data?: CodexThread[]; nextCursor?: string | null };
+      for (const thread of result.data || []) {
+        if (typeof thread.id === "string") threads.set(thread.id, thread);
+      }
+      const nextCursor = typeof result.nextCursor === "string" && result.nextCursor.length > 0
+        ? result.nextCursor
+        : undefined;
+      if (nextCursor && seenCursors.has(nextCursor)) throw new Error("Codex thread/list returned a repeated pagination cursor");
+      if (nextCursor) seenCursors.add(nextCursor);
+      cursor = nextCursor;
+    } while (cursor);
+    return [...threads.values()];
   }
 
   async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {

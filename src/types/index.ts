@@ -10,6 +10,7 @@ export {
   type ListSessionsOptions,
   type SetPermissionsOptions,
   type RawTranscriptExport,
+  type SessionSnapshotReceipt,
   type HarnessAdapter,
   type SessionLineageKind,
   type SessionLineage,

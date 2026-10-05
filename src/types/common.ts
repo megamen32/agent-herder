@@ -214,6 +214,14 @@ export type RawTranscriptExport = {
   limitations?: string[];
 };
 
+/** Evidence describing whether the latest native session enumeration was exhaustive. */
+export interface SessionSnapshotReceipt {
+  exhaustive: boolean;
+  observedAt: string;
+  source: string;
+  reason?: string;
+}
+
 export interface HarnessAdapter {
   /** Harness type identifier */
   readonly type: HarnessType;
@@ -239,6 +247,9 @@ export interface HarnessAdapter {
 
   /** List all agent sessions */
   listSessions(options?: ListSessionsOptions): Promise<AgentSession[]>;
+
+  /** Completeness evidence for the most recent listSessions() call, when supported. */
+  getSessionSnapshotReceipt?(): SessionSnapshotReceipt;
 
   /** Find exact named sessions without forcing a full historical discovery, when supported. */
   findNamedSessions?(name: string, cwd: string): Promise<AgentSession[]>;
