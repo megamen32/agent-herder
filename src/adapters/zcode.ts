@@ -773,10 +773,13 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.sessionWorkspaces.set(id, workspace);
     const started = await this.waitForTurnStart(id, workspace, result.inputId!);
     if (!started.ok) {
-      console.error(started.pending
-        ? `[agent-herder] ZCode prompt accepted for ${id}, but native turn confirmation remains armed: ${started.error || "unknown error"}`
-        : `[agent-herder] ZCode prompt accepted for ${id}, and the native turn then failed: ${started.error || "unknown error"}`);
-      return { ok: true, ...(started.pending ? { pending: true } : {}) };
+      if (started.pending) {
+        console.error(`[agent-herder] ZCode prompt accepted for ${id}, but native turn confirmation remains armed: ${started.error || "unknown error"}`);
+        return { ok: true, admitted: true, pending: true };
+      }
+      const error = started.error || `ZCode native turn failed for ${id}`;
+      console.error(`[agent-herder] ZCode prompt accepted for ${id}, and the native turn then failed: ${error}`);
+      return { ok: false, admitted: true, nonRetryable: true, error };
     }
     await this.persistDesiredSessionTitle(id);
     return { ok: true };

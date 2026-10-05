@@ -103,6 +103,10 @@ export interface ControlResult {
 export interface SendMessageResult {
   ok: boolean;
   error?: string;
+  /** The native harness accepted this exact prompt, so callers must not submit it again. */
+  admitted?: boolean;
+  /** A failed result that crossed the native idempotency boundary and cannot be retried safely. */
+  nonRetryable?: boolean;
   /** The native harness admitted the prompt, but its turn-start event is not confirmed yet. */
   pending?: boolean;
 }

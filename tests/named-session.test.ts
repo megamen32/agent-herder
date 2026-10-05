@@ -308,6 +308,35 @@ describe("named session creation and reuse", () => {
     expect(sends).toBe(1);
   });
 
+  it("reports an admitted native failure without retrying or claiming activation", async () => {
+    const cwd = await workspace();
+    const fake = fakeAdapter("opencode", [session("existing", "worker", cwd)]);
+    let sends = 0;
+    fake.adapter.sendMessage = async () => {
+      sends += 1;
+      return { ok: false, admitted: true, nonRetryable: true, error: "native turn failed" };
+    };
+
+    const result = JSON.parse(await handleDeliver(new Map([["opencode", fake.adapter]]), {
+      sessionId: "existing",
+      harness: "opencode",
+      message: "continue exactly once",
+      activation: "always",
+      mode: "queue",
+    }));
+
+    expect(result).toMatchObject({
+      ok: false,
+      sessionId: "existing",
+      delivery: "accepted_failed",
+      activated: false,
+      admitted: true,
+      nonRetryable: true,
+      error: "native turn failed",
+    });
+    expect(sends).toBe(1);
+  });
+
   it("deliver create=never returns not_found instead of creating", async () => {
     const cwd = await workspace();
     const fake = fakeAdapter("opencode");

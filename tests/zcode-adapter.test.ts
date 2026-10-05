@@ -527,6 +527,7 @@ describe("ZCode adapter", () => {
 
     await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({
       ok: true,
+      admitted: true,
       pending: true,
     });
     expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(1);
@@ -611,7 +612,12 @@ describe("ZCode adapter", () => {
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     await adapter.init();
 
-    await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({ ok: true });
+    await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({
+      ok: false,
+      admitted: true,
+      nonRetryable: true,
+      error: expect.stringMatching(/native turn failed/i),
+    });
     expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(0);
 
     await adapter.dispose();

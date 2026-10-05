@@ -452,6 +452,10 @@ export async function handleSendMessage(
     const modeLabel = parsed.mode === "queue" ? " (queued)" : parsed.mode === "steer" ? " (steering)" : " (sync)";
     return `Message sent to [${found.session.harness}] ${parsed.sessionId}${modeLabel}.\nMessage: ${parsed.message}`;
   }
+  if (result.admitted && result.nonRetryable) {
+    if (pending.ids.length) await deferredMessages.remove(pending.ids);
+    return `Message was accepted by [${found.session.harness}] ${parsed.sessionId}, but its native turn failed and will not be retried: ${result.error || "unknown native failure"}`;
+  }
   if (isBusyCodexWriter(found.session.harness, result.error)) {
     await deferredMessages.add(parsed.sessionId, baseMessage);
     return `Message deferred for [${found.session.harness}] ${parsed.sessionId}; the native hook will inject it at the next safe turn boundary.\nMessage: ${parsed.message}`;
@@ -488,7 +492,10 @@ export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args:
     const pending = await withDeferred(fresh.id, parsed.message);
     const injected = await coordinationNotes.inject(fresh, pending.message);
     const sent = await found.adapter.sendMessage(fresh.id,{message:injected,queue:parsed.mode==="queue"});
-    if (sent.ok && pending.ids.length) await deferredMessages.remove(pending.ids);
+    if ((sent.ok || sent.admitted) && pending.ids.length) await deferredMessages.remove(pending.ids);
+    if (!sent.ok && sent.admitted && sent.nonRetryable) {
+      return JSON.stringify({ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"accepted_failed",activated:false,admitted:true,nonRetryable:true,error:sent.error||"Native turn failed after prompt admission"});
+    }
     if (!sent.ok && isBusyCodexWriter(fresh.harness, sent.error)) {
       await deferredMessages.add(fresh.id, parsed.message);
       return JSON.stringify({ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"deferred",activated:false});
