@@ -373,7 +373,7 @@ function createUnfinishedSessionNotifier(): ((notice: UnfinishedSessionNotice) =
   return async (notice) => sink.send(createNoticePlacePayload({
     title: notice.title,
     body: notice.body,
-    severity: "critical",
+    severity: notice.severity ?? "critical",
     project: process.env.NOTIFY_CENTER_PROJECT || "agent-herder",
     recipient: process.env.NOTIFY_CENTER_RECIPIENT || process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT || "me",
     kind: "incident",

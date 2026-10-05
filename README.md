@@ -65,9 +65,10 @@ opencode serve
 - Unfinished turns survive an Agent Herder restart. This is a separate,
   opt-out feature from autopilot: it is enabled by default, records only a
   turn that actually started, and continues the same harness/session/model
-  sequentially while the provider cache is fresh. After the documented cache
-  TTL it can create a compact same-harness handoff; that rollover is a
-  persisted Autocontinue setting and defaults on. Disable continuation globally
+  sequentially, including after the provider cache expires. Cache rollover and
+  pin transfer default off; a new summarized session requires an explicit
+  Autocontinue setting. Missing resume support never creates a replacement
+  while rollover is disabled. Disable continuation globally
   with `AGENT_HERDER_UNFINISHED_AUTOSTART=false` or use the Web UI's separate
   Autocontinue master, harness, and per-session switches.
 - `respond_permission` answers tool-permission requests remotely — this is
@@ -210,13 +211,15 @@ The common switches are:
 | `AGENT_HERDER_UNFINISHED_RESUMES_PER_CYCLE` | `8` | Bounded parallel continuation admissions per cycle; all resumed workloads still share the server-100 user-slice budget |
 | `AGENT_HERDER_UNFINISHED_INVENTORY_HOURS` | `48` | Default lookback; the Web UI persists a runtime override without a restart |
 | `AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES` | `200` | Maximum recent semantic messages read per session before fair shared-budget packing; the first user goal and latest user/model tail are always retained |
-| `AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS` | `16384` | Hard output ceiling for the single full-inventory plan; planner effort is fixed to `low` |
+| `AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS` | `16384` | Per-request output ceiling for planning and reconciliation; chunk size scales with this budget (32 sessions at the default, 16 at 8192) |
+| `AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY` | `3` | Maximum simultaneous planner calls, capped at three; managed server-100 uses one to preserve shared provider capacity |
+| `CODEX_APP_SERVER_SOCKET` | — | Join the existing managed Codex daemon through its Unix WebSocket endpoint so Desktop and Herder share native thread/turn control |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Direct MiniMax Anthropic-compatible classifier endpoint; avoids an extra gateway hop |
 | `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash-Preview` | Default classifier model; the Web UI runtime selection overrides it and reads `MINIMAX_API_KEY` from the protected service environment |
 | `AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS` | `600000` | Maximum time for each MiniMax batch; a failed planning pass never falls back to ungrouped launches |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ENABLED` | `true` | Disable only the MiniMax unfinished-session classifier |
 | `AGENT_HERDER_CODEX_STATE_CACHE_MS` | `60000` | Share one persisted Codex rollout scan across dashboard, observation, and recovery callers |
-| `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | On restart, replace a stale documented-cache session with a compact MiniMax handoff in the same harness/model |
+| `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | Make cache handoff available; replacement also requires the persisted `rolloverExpiredCache` opt-in, which defaults off |
 | `AGENT_HERDER_HANDOFF_MODEL` | `MiniMax-M3.1-Flash-Preview` | Direct MiniMax model used only to summarize stale sessions; Fast Agent is the fallback when `MINIMAX_API_KEY` is absent |
 | `AGENT_HERDER_CACHE_TTL_MINUTES` | `{}` | JSON exact overrides such as `{"zcode:provider/model":30}`; unknown provider TTLs are never guessed |
 | `AGENT_HERDER_UNFINISHED_DISCOVERY_IDLE_MS` | `60000` | Wait one quiet minute before classification, so a 10-minute sweep catches work interrupted just after the previous sweep |
@@ -273,12 +276,23 @@ guards. Run no more than one heavy suite per agent and raise budgets only from
 fresh measurements while preserving the host reserve documented by
 ServersAdministartion.
 
+The server-100 continuity drop-in is
+[`session-continuity.conf`](deploy/systemd/agent-herder.service.d/session-continuity.conf).
+It joins the existing managed Codex daemon and limits MiniMax planning to one
+request with an 8192-token output reservation. On 2026-10-05 the same tiny API
+probe returned `overloaded_error` at 16384 and succeeded at 8192 and 4096; the
+production planner also returned a validated small plan after the numeric
+confidence contract was clarified. Global input packing and coverage validation
+remain enforced.
+
 Restart continuation settings are available at `GET/PUT
 /api/session-autostart` and `GET/PUT/DELETE
 /api/session-autostart/sessions/{harness}/{sessionId}`. `PUT
 /api/session-autostart` persists `rolloverExpiredCache`: fresh sessions always
 resume in place; expired sessions use a new summarized handoff only when that
-switch is enabled. Autocontinue and Autopilot are separate top-level Web UI
+switch is explicitly enabled (default off). Pending tool-permission requests
+wait for the user's answer; neither the chat title nor a stopped snapshot
+authorizes another prompt or permission approval. Autocontinue and Autopilot are separate top-level Web UI
 settings and never toggle each other. The independent
 durable state lives under `AGENT_HERDER_AUTOPILOT_STATE_DIR` by default.
 Recovery is sequential, retries three times with persisted exponential

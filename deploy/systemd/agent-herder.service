@@ -15,6 +15,9 @@ EnvironmentFile=-%h/.config/minimax/env
 Environment=CODEX_BIN=%h/.local/bin/codex
 Environment=CODEX_CWD=%h/ServersAdministartion
 Environment=CODEX_TRANSPORT=app-server
+# Desktop/SSH deployments can join the managed daemon through its supported
+# Unix WebSocket endpoint. Enable only after the daemon is bootstrapped:
+# Environment=CODEX_APP_SERVER_SOCKET=%h/.codex/app-server-control/app-server-control.sock
 Environment=HERMES_BIN=%h/.hermes/hermes-agent/venv/bin/hermes
 Environment=HERMES_HEALTH_PROVIDER=openai-codex
 Environment=HERMES_HEALTH_REASONING=high
