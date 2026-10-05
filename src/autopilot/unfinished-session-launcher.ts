@@ -32,6 +32,14 @@ function sessionProgressFingerprint(session: AgentSession): string {
   ].join("|");
 }
 
+function sessionInventoryProgressFingerprint(session: AgentSession): string {
+  return [
+    session.messageCount ?? "",
+    session.lastMessage?.slice(-256) ?? "",
+    session.meta?.hasActiveToolCall === true ? "tool-active" : "tool-idle",
+  ].join("|");
+}
+
 function admittedNonRetryableFailure(result: SendMessageResult): string | undefined {
   return !result.ok && result.admitted === true && result.nonRetryable === true
     ? result.error || "Native harness admitted the prompt, then failed the exact turn"
@@ -295,6 +303,8 @@ export interface UnfinishedSessionInventoryRecord {
   /** Version/fingerprint prove that legacy evidence was rebuilt by the current packer. */
   evidenceVersion?: number;
   evidenceFingerprint?: string;
+  /** Native status/message snapshot used to detect progress when timestamps collide. */
+  progressFingerprint?: string;
   observedAt: string;
   verdict?: SessionInventoryVerdict;
 }
@@ -912,7 +922,8 @@ export class UnfinishedSessionLauncher {
           && evidenceIsCurrent(priorAssessment)
           && inventoryRecordKey(priorAssessment) === sessionSourceKey(session)
           && priorAssessment.title === session.title
-          && priorAssessment.lastActivity === session.lastActivity) continue;
+          && priorAssessment.lastActivity === session.lastActivity
+          && priorAssessment.progressFingerprint === sessionInventoryProgressFingerprint(session)) continue;
         const pendingPermissionIds = session.harness === "zcode"
           && session.title.trim().startsWith("Автопродолжение —")
           && Array.isArray(session.meta?.pendingRequestIds)
@@ -1315,11 +1326,12 @@ export class UnfinishedSessionLauncher {
         const sourceKey = sessionSourceKey(session);
         const urgent = this.urgentSessions.has(sourceKey) || this.urgentSessions.has(sessionKey(session.harness, session.id));
         const previous = priorInventory.get(sourceKey);
+        const progressUnchanged = previous?.progressFingerprint === sessionInventoryProgressFingerprint(session);
         const metadataUnchanged = previous?.lastActivity === session.lastActivity
           && previous.status === session.status
           && (previous.workspaceIdentity || previous.cwd) === sessionWorkspaceIdentity(session)
           && previous.title === session.title;
-        const settledAndUnchanged = metadataUnchanged && evidenceIsCurrent(previous)
+        const settledAndUnchanged = metadataUnchanged && progressUnchanged && evidenceIsCurrent(previous)
           && previous?.verdict && previous.verdict.confidence > 0
           && (previous.verdict.verdict === "completed"
             || previous.verdict.verdict === "needs_human"
@@ -1331,7 +1343,8 @@ export class UnfinishedSessionLauncher {
         if ((session.status === "running" && !urgent) || !oldEnough) continue;
         const messages = await sessionEvidenceMessages(adapter, session.id, runtimeSettings.evidenceMessageCount);
         const transcriptTail = completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount);
-        const unchanged = metadataUnchanged && previous?.transcriptTail === transcriptTail;
+        const unchanged = metadataUnchanged && progressUnchanged && evidenceIsCurrent(previous)
+          && previous?.transcriptTail === transcriptTail;
         const actionable = urgent
           || !previous?.verdict
           || previous.verdict.confidence === 0
@@ -1378,6 +1391,7 @@ export class UnfinishedSessionLauncher {
       const transcriptTail = completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount);
       const previous = priorInventory.get(key);
       const unchanged = previous?.lastActivity === session.lastActivity
+        && previous.progressFingerprint === sessionInventoryProgressFingerprint(session)
         && previous.transcriptTail === transcriptTail
         && evidenceIsCurrent(previous);
       const equivalentKey = `${harness}:${normalize(session.cwd)}:${session.title.trim().toLowerCase()}`;
@@ -1416,6 +1430,7 @@ export class UnfinishedSessionLauncher {
         transcriptTail,
         evidenceVersion: CURRENT_EVIDENCE_VERSION,
         evidenceFingerprint: evidenceFingerprint(transcriptTail),
+        progressFingerprint: sessionInventoryProgressFingerprint(session),
         observedAt: new Date().toISOString(),
         ...(verdict ? { verdict } : {}),
       };
@@ -1949,6 +1964,7 @@ function parseInventoryRecord(value: unknown): UnfinishedSessionInventoryRecord 
     transcriptTail: boundedText(record.transcriptTail, "transcriptTail", 2_000_000, true),
     ...(record.evidenceVersion === undefined ? {} : { evidenceVersion: positiveInteger(record.evidenceVersion, -1) }),
     ...(record.evidenceFingerprint === undefined ? {} : { evidenceFingerprint: bounded(record.evidenceFingerprint, "evidenceFingerprint") }),
+    ...(record.progressFingerprint === undefined ? {} : { progressFingerprint: bounded(record.progressFingerprint, "progressFingerprint") }),
     observedAt: isoDate(record.observedAt, "observedAt"),
     ...(record.verdict ? { verdict: normalizePersistedVerdict(record.verdict) } : {}),
   };
@@ -2061,6 +2077,7 @@ function inventoryFromAssessment(
     transcriptTail: candidate.transcriptTail,
     evidenceVersion: CURRENT_EVIDENCE_VERSION,
     evidenceFingerprint: evidenceFingerprint(candidate.transcriptTail),
+    progressFingerprint: sessionInventoryProgressFingerprint(candidate.session),
     observedAt: now.toISOString(),
     ...(verdict ? { verdict } : {}),
   };
@@ -2316,6 +2333,7 @@ function mergeInventoryIdentityRecords(
     title: session.title,
     status: session.status,
     lastActivity: session.lastActivity,
+    progressFingerprint: sessionInventoryProgressFingerprint(session),
     // Evidence and verdict describe the old identity. Carrying them across a
     // cwd/workspace rewrite could settle a canonical unfinished task as the
     // completed ghost, so force one canonical transcript read and replan.

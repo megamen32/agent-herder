@@ -1070,6 +1070,7 @@ describe("unfinished session launcher", () => {
     let sessions: AgentSession[] = [
       { ...fixtureSession("idle", "codex"), id: "settled", title: "Settled", lastActivity: oldActivity },
       { ...fixtureSession("idle", "codex"), id: "changed", title: "Changed", lastActivity: oldActivity },
+      { ...fixtureSession("idle", "codex"), id: "same-timestamp", title: "Same timestamp", lastActivity: oldActivity, lastMessage: "old reply", messageCount: 2 },
     ];
     const batches: string[][] = [];
     const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
@@ -1095,12 +1096,13 @@ describe("unfinished session launcher", () => {
     sessions = [
       sessions[0]!,
       { ...sessions[1]!, lastActivity: new Date(Date.now() - 5 * 60_000).toISOString() },
+      { ...sessions[2]!, lastMessage: "new reply", messageCount: 3 },
       { ...fixtureSession("idle", "codex"), id: "new", title: "New", lastActivity: oldActivity },
       { ...fixtureSession("running", "codex"), id: "healthy-running", title: "Running", lastActivity: new Date().toISOString() },
     ];
     await launcher.recoverPending();
 
-    expect(batches).toEqual([["settled", "changed"], ["changed", "new"]]);
+    expect(batches).toEqual([["settled", "changed", "same-timestamp"], ["changed", "same-timestamp", "new"]]);
   });
 
   it("rebuilds legacy evidence and reaudits a changed disabled session without launching it", async () => {
@@ -1140,7 +1142,11 @@ describe("unfinished session launcher", () => {
     let inventory = await store.listInventory();
     expect(plans).toBe(1);
     expect(calls).toEqual({ resumes: 0, messages: [] });
-    expect(inventory[0]).toMatchObject({ evidenceVersion: 2, verdict: { verdict: "completed" } });
+    expect(inventory[0]).toMatchObject({
+      evidenceVersion: 2,
+      progressFingerprint: expect.any(String),
+      verdict: { verdict: "completed" },
+    });
     expect(inventory[0]?.transcriptTail).toContain("ПЕРВЫЙ ПОЛЬЗОВАТЕЛЬСКИЙ ЗАПРОС");
     expect(inventory[0]?.transcriptTail).toContain("ПОСЛЕДНИЙ СМЫСЛОВОЙ КОНТЕКСТ");
 
@@ -1892,7 +1898,7 @@ describe("unfinished session launcher", () => {
     }]);
   });
 
-  it("watchdog urgently re-audits a completed explicit session with newer native activity", async () => {
+  it("watchdog urgently re-audits newer native progress even when lastActivity is unchanged", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-completed-progress-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
@@ -1900,6 +1906,8 @@ describe("unfinished session launcher", () => {
       ...fixtureSession("idle", "codex"),
       title: "Agent Herder control canary",
       lastActivity: new Date(Date.now() - 5 * 60_000).toISOString(),
+      lastMessage: "Completed old reply",
+      messageCount: 2,
       model: "gpt-5.6-sol",
     };
     await settingsStore.setSession({ harness: "codex", sessionId: session.id, cwd: session.cwd }, true);
@@ -1934,7 +1942,8 @@ describe("unfinished session launcher", () => {
     const stop = launcher.start();
     await new Promise((resolve) => setTimeout(resolve, 20));
     session.status = "stopped";
-    session.lastActivity = new Date().toISOString();
+    session.lastMessage = "New user request at the same timestamp";
+    session.messageCount = 3;
     await waitUntil(() => calls.messages.length > 0);
     await waitUntil(async () => (await store.listInventory()).some((record) =>
       record.sessionId === session.id && record.verdict?.verdict === "unfinished"));
