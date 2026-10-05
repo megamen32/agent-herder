@@ -2914,6 +2914,111 @@ describe("unfinished session launcher", () => {
     expect(await store.list()).toEqual([]);
   });
 
+  it("keeps an unchanged disabled unfinished verdict settled until the session is enabled", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-disabled-unfinished-settled-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    const defaults = await settingsStore.getSettings();
+    await settingsStore.setRuntimeSettings({
+      enabled: defaults.enabled,
+      pinActiveSessions: defaults.pinActiveSessions,
+      rolloverExpiredCache: false,
+      movePinnedOnRollover: defaults.movePinnedOnRollover,
+      inventoryWindowHours: defaults.inventoryWindowHours,
+      evidenceMessageCount: defaults.evidenceMessageCount,
+      watchdogEnabled: defaults.watchdogEnabled,
+      watchdogIntervalSeconds: defaults.watchdogIntervalSeconds,
+      stalledTurnMinutes: defaults.stalledTurnMinutes,
+      judgeModel: defaults.judgeModel,
+      autopilotJudgeModel: defaults.autopilotJudgeModel,
+    });
+    const session = {
+      ...fixtureSession("idle", "codex"), id: "disabled-unfinished",
+      lastActivity: new Date(Date.now() - 10 * 60_000).toISOString(),
+    };
+    await settingsStore.setSession({ harness: "codex", sessionId: session.id, cwd: session.cwd }, false);
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    adapter.listSessions = async () => [session];
+    adapter.getSessionMessages = async () => [{
+      id: "u", role: "user", text: "finish the original task", parts: [{ type: "text", text: "finish the original task" }],
+    }];
+    let plans = 0;
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store, settingsStore, discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions }) {
+          plans += 1;
+          return { groups: sessions.map(({ session: candidate }) => ({
+            sourceSessionIds: [candidate.id], primarySessionId: candidate.id, verdict: "unfinished" as const,
+            reason: "work remains", confidence: 1, topic: candidate.title,
+            handoff: plans === 1 ? "disabled audit handoff" : "fresh enabled handoff",
+          })) };
+        },
+      },
+    });
+
+    await launcher.recoverPending();
+    expect(plans).toBe(1);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect((await store.listInventory())[0]?.verdict?.verdict).toBe("unfinished");
+
+    await launcher.recoverPending();
+    expect(plans).toBe(1);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+
+    await launcher.handleEvent("codex", {
+      kind: "turn.completed", harness: "codex", sessionId: session.id,
+    });
+    await launcher.recoverPending();
+    expect(plans).toBe(2);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+
+    await settingsStore.setSession({ harness: "codex", sessionId: session.id, cwd: session.cwd }, true);
+    await launcher.recoverPending();
+    expect(plans).toBe(3);
+    expect(calls.resumes).toBe(1);
+    expect(calls.messages).toHaveLength(1);
+    expect(calls.messages[0]).toContain("fresh enabled handoff");
+    expect(calls.messages[0]).not.toContain("disabled audit handoff");
+  });
+
+  it("does not settle a zero-confidence disabled verdict", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-disabled-zero-confidence-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    const session = {
+      ...fixtureSession("idle", "codex"), id: "disabled-zero-confidence",
+      lastActivity: new Date(Date.now() - 10 * 60_000).toISOString(),
+    };
+    await settingsStore.setSession({ harness: "codex", sessionId: session.id, cwd: session.cwd }, false);
+    const adapter = fixtureAdapter(session, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => [session];
+    adapter.getSessionMessages = async () => [{
+      id: "u", role: "user", text: "ambiguous task", parts: [{ type: "text", text: "ambiguous task" }],
+    }];
+    let plans = 0;
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store, settingsStore, discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions }) {
+          plans += 1;
+          return { groups: sessions.map(({ session: candidate }) => ({
+            sourceSessionIds: [candidate.id], primarySessionId: candidate.id, verdict: "needs_human" as const,
+            reason: "inconclusive", confidence: 0, topic: candidate.title, handoff: "",
+          })) };
+        },
+      },
+    });
+
+    await launcher.recoverPending();
+    await launcher.recoverPending();
+    expect(plans).toBe(2);
+    expect((await store.listInventory())[0]?.verdict).toMatchObject({ verdict: "needs_human", confidence: 0 });
+  });
+
   it("atomically migrates a legacy active key before one canonical session can send", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-legacy-identity-"));
     const statePath = join(root, "unfinished.json");

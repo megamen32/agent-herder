@@ -1417,7 +1417,8 @@ export class UnfinishedSessionLauncher {
           && previous?.verdict && previous.verdict.confidence > 0
           && (previous.verdict.verdict === "completed"
             || previous.verdict.verdict === "needs_human"
-            || (previous.verdict.verdict === "unfinished" && session.status === "running"));
+            || (previous.verdict.verdict === "unfinished"
+              && (!autoResumeEnabled || session.status === "running")));
         if (!cohortAwake && settledAndUnchanged && !urgent) continue;
         const candidateDelayMs = this.candidateDelayOverrideMs
           ?? Math.max(this.discoveryIdleMs, unfinishedProbeDelayMs(session));
