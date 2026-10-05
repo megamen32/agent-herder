@@ -28,7 +28,8 @@ ZCode turns stopping after a few seconds and native Mac Codex send/stop failures
   overrides through the live API to prevent repeated admission across the human
   gate. Original overrides saved mode 0600 in
   `~/.local/state/agent-herder/recovery/session-continuity-20261005-paused-overrides.json`.
-  Restore their original values after gate verification; no session was stopped.
+  Original enabled=true values were restored through the live API at 10:10:57 UTC;
+  no session was stopped.
 - Native Codex read-thread proves the last turn of `01a1066d...` is failed with
   model-at-capacity; current native state is notLoaded. Desktop stop/steer calls
   target this stale in-memory identity. Reopening/rehydration remains unverified.
@@ -51,7 +52,8 @@ Host measured 30 GiB available and UID 34.3 GiB against a 44 GiB outer cap.
 ## Ownership
 
 - `/root/continuity_launcher`: launcher, launcher tests, rollover UI defaults.
-- `/root/zcode_short_stops`: ZCode adapter/protocol and focused adapter tests.
+- `/root/zcode_fix`: ZCode adapter/protocol and focused adapter tests.
+- `/root/integration_review`: independent read-only safety review.
 - `/root/codex_mac_control`: Codex app-server adapter and focused tests.
 - Root: integration, deployed identity, existing isolated canaries, this tracker.
 
@@ -94,12 +96,57 @@ the strict numeric confidence contract explicitly; a small production-judge
 probe changed from invalid confidence to a parsed plan with numeric confidence 1.
 `d84f7f0` invalidates obsolete failure backoffs once (pipeline version 2).
 
-## Integration checks before rollout
+## Deployment and real consumer evidence
 
-Five affected suites passed 222/222 under the shared resource guard. The last
-Codex-only delta passed 28/28 and the production build. Independent review found
-no remaining blocker after removal of the unsafe ZCode turn-ID inference.
-Source is ready for scoped main publication and Herder-only deployment. The
-managed Codex daemon and Mac application must stay running. Final deployed
-identity, original ZCode echo, restored override values, and bulk planner
-observation are still required; do not claim that these have already passed.
+- Herder-only deployment at 09:55 UTC attached the managed Codex daemon via its
+  Unix WebSocket. The daemon stayed PID 4019392/version 0.160.0; native Mac
+  ChatGPT/Codex stayed PID 1100. No native runtime sources were patched.
+- Existing ZCode canary `sess_9b3946bd-35f7-4fa9-a3d3-292d929ee454`, model
+  GLM 5.3, was sent one exact echo through the actual Herder message API. Native
+  details returned the exact assistant response `ZCODE_SAME_ID_OK_20261005` in
+  that original session. A stopped state after a completed one-reply turn is
+  normal. Business-chat permission gates are preserved; no approval was issued.
+- Existing Codex canary `01a10946-be4a-7052-9604-025f46a19b2c` returned
+  `CANARY_OK`; a second connection hydrated and interrupted its sleep turn.
+  The Mac-connected native read-thread tool independently confirmed interrupted
+  for turn `01a10b62-a5dd-7793-8f5f-4f66d8a94d46`. Fresh adapter status is idle.
+  This proves shared native backend control; refreshing every stale desktop
+  window after an earlier model-capacity failure is not proven.
+- `63a65fd` wires severity through the notifier, documents same-ID behavior,
+  and tracks the optional shared socket drop-in. `3586bcc` sets the live output
+  reservation to 4096 (eight-session chunks), concurrency one. This matches
+  the live drop-in; the configured judge and business models remain unchanged.
+- Five affected suites passed 224/224 after `da15efe`; bounded production build
+  passed. `3ddaa96` adds a focused 3/3 regression pass and TypeScript check for
+  in-flight events; final deployment observation follows below.
+
+## Watchdog duplicate urgency
+
+Restoring the two original overrides exposed repeated urgency every ten seconds
+for unchanged stopped sessions, bypassing assessment backoff and repeatedly
+requesting MiniMax. `da15efe` remembers the urgent progress fingerprint and
+consumes a failed assessment's urgency. New native events and changed progress
+must reset that marker. Independent review caught a race where a native event
+arriving during a failed planner call could be consumed by that old call; the
+`3ddaa96` fixes this race with monotonic signal generations: a failed pass
+consumes only the signal it assessed, preserving newer native events. The
+assistant-proof signal updates its own captured generation only if no newer
+event arrived during the asynchronous history read.
+
+## Remaining external dependencies and completion boundary
+
+MiniMax remains intermittently unavailable: at 10:25 UTC the latest live failure
+was HTTP 529/overloaded_error even with a 4096 reservation. Earlier live passes
+also received HTTP 504. The official read-only token-plan quota endpoint returned
+status 0 with 97% interval and 92% weekly allowance remaining, so this is not
+exhausted quota. One small plan parsed successfully after the confidence contract
+fix, but a later three-candidate plan/reconcile attempt still failed HTTP 529.
+Do not claim reliable bulk continuation or completed task totals from failed
+assessments. Do not switch user-selected models or loosen validators to guess.
+
+Owner remains Agent Herder; next action is one scheduled bounded plan/reconcile
+retry after backoff, with a successful native same-ID continuation receipt. The
+watchdog fix must prevent unchanged sessions from bypassing that timer. Keep this
+tracker WIP until that real path succeeds or the user explicitly defers it.
+The optional ChatGPT/CDP dependency and old desktop-window rehydration boundary
+remain separately recorded above.
