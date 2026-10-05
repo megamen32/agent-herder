@@ -17,6 +17,7 @@ const DEFAULT_BATCH_OUTPUT_TOKENS = 16_384;
 // chunk is rejected by exact coverage before a verdict or continuation applies.
 const MAX_BATCH_PLAN_SESSIONS_PER_REQUEST = 32;
 const MAX_OMISSION_DECISION_CONCURRENCY = 4;
+const MAX_PERSISTENT_OMISSION_DECISIONS = 4;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
 // Version 2 invalidates verdicts produced before complete, globally reconciled
 // batch planning. Native transcripts stay intact; only their semantic audit is
@@ -312,6 +313,15 @@ export interface UnfinishedSessionInventoryRecord {
   progressFingerprint?: string;
   observedAt: string;
   verdict?: SessionInventoryVerdict;
+  /** Durable semantic-planning backoff, independent from native resume attempts. */
+  assessmentFailure?: {
+    evidenceFingerprint: string;
+    count: number;
+    lastError: string;
+    failedAt: string;
+    nextAttemptAt?: string;
+    notifiedAt?: string;
+  };
 }
 
 export interface SessionCompletionJudge {
@@ -1348,6 +1358,11 @@ export class UnfinishedSessionLauncher {
         if ((session.status === "running" && !urgent) || !oldEnough) continue;
         const messages = await sessionEvidenceMessages(adapter, session.id, runtimeSettings.evidenceMessageCount);
         const transcriptTail = completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount);
+        const currentEvidenceFingerprint = evidenceFingerprint(transcriptTail);
+        const assessmentFailure = previous?.assessmentFailure;
+        const repeatedFailedEvidence = assessmentFailure?.evidenceFingerprint === currentEvidenceFingerprint;
+        if (!urgent && repeatedFailedEvidence && assessmentFailure?.nextAttemptAt
+          && Date.parse(assessmentFailure.nextAttemptAt) > Date.now()) continue;
         const unchanged = metadataUnchanged && progressUnchanged && evidenceIsCurrent(previous)
           && previous?.transcriptTail === transcriptTail;
         const actionable = urgent
@@ -1366,15 +1381,17 @@ export class UnfinishedSessionLauncher {
         // failed/timeout plan must not leave a new or changed 48h source absent
         // from the authoritative inventory, nor preserve a stale verdict.
         await this.options.store.upsertInventoryBatch(assessed.map((candidate) => inventoryFromAssessment(candidate)));
+        let plan: SessionBatchPlan;
         try {
-          const plan = await this.planAssessedSessions(assessed);
-          if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
-          await this.applyBatchPlan(plan, assessed, lifecycleEpoch);
-          return "ready";
+          plan = await this.planAssessedSessions(assessed);
         } catch (error) {
+          await this.recordAssessmentFailure(assessed, priorInventory, errorText(error));
           console.error(`[agent-herder] единый план MiniMax не построен; посессионный fallback запрещён: ${errorText(error)}`);
           return "blocked";
         }
+        if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
+        await this.applyBatchPlan(plan, assessed, lifecycleEpoch);
+        return "ready";
       }
       // Empty fresh inventory is not an unsafe planner failure. Persisted
       // turn.started records may still be recoverable by exact session ID even
@@ -1758,10 +1775,10 @@ export class UnfinishedSessionLauncher {
       // A malformed or incomplete result retries the entire chunk and discards
       // the first result, so the repair envelope must be the same full request.
       repairRequests: partitionBatchCandidates(sessions).map(buildBatchPlannerBudgetRequest),
-      // In the worst case the full retry can omit every source. Reserve one
-      // conservative per-session judge request for all candidates up front;
-      // only persistent omissions are actually sent.
-      decisionRequests: sessions.map(buildSessionDecisionBudgetRequest),
+      // Persistent omissions are globally capped. Reserve exactly the four
+      // largest possible decide envelopes rather than multiplying evidence by
+      // every source in a large 48-hour inventory.
+      decisionRequests: largestSessionDecisionBudgetRequests(sessions, MAX_PERSISTENT_OMISSION_DECISIONS),
       reconciliationRequest: buildBatchReconciliationBudgetRequest(worstCaseReconciliationCandidates(sessions)),
     })).sessions;
     const packedAssessed = assessed.map((candidate, index) => ({
@@ -1769,6 +1786,7 @@ export class UnfinishedSessionLauncher {
       transcriptTail: globallyPacked[index]!.transcriptTail,
     }));
     const groups: SessionBatchPlanGroup[] = [];
+    const persistentOmissions: AssessedSession[] = [];
     let repaired = false;
     const omissionDecisionController = new AbortController();
     const omissionDecisionDeadline = Date.now() + positiveInteger(
@@ -1802,46 +1820,51 @@ export class UnfinishedSessionLauncher {
         // missing source independently from the already packed evidence, then
         // feed those strict singleton groups through normal reconciliation.
         const missing = missingBatchPlanCandidates(plan, chunk);
-        const decide = this.options.judge?.decide;
-        if (missing.length > 0 && !decide) throw new Error("MiniMax per-session omission judge is unavailable");
-        let decisions: Array<{ candidate: AssessedSession; verdict: Omit<SessionInventoryVerdict, "judgedAt">; handoff: string }> = [];
-        try {
-          decisions = await withAbortDeadline(mapConcurrentOrdered(
-            missing,
-            MAX_OMISSION_DECISION_CONCURRENCY,
-            async (candidate) => {
-              if (omissionDecisionController.signal.aborted) throw new Error("MiniMax omission decision phase was aborted");
-              const verdict = normalizeVerdict(await decide!({
-                session: candidate.session,
-                transcriptTail: candidate.transcriptTail,
-                signal: omissionDecisionController.signal,
-              }));
-              if (verdict.confidence <= 0) throw new Error(`MiniMax omission judge returned zero confidence for ${candidate.sourceKey}`);
-              const handoff = verdict.verdict === "unfinished"
-                ? trimEvidenceChars(candidate.transcriptTail, 32_000)
-                : "";
-              if (verdict.verdict === "unfinished" && !handoff.trim()) {
-                throw new Error(`MiniMax omission judge returned unfinished without evidence for ${candidate.sourceKey}`);
-              }
-              return { candidate, verdict, handoff };
-            },
-          ), omissionDecisionDeadline, omissionDecisionController);
-        } catch (error) {
-          omissionDecisionController.abort(error);
-          throw error;
-        }
-        for (const { candidate, verdict, handoff } of decisions) {
-          plan.groups.push({
-            sourceSessionIds: [candidate.sourceKey],
-            primarySessionId: candidate.sourceKey,
-            ...verdict,
-            topic: candidate.session.title.slice(0, 120) || "Неопределённая задача",
-            handoff,
-          });
-        }
-        assertBatchPlanCoverage(plan, chunk);
+        persistentOmissions.push(...missing);
       }
       groups.push(...plan.groups);
+    }
+    if (persistentOmissions.length > MAX_PERSISTENT_OMISSION_DECISIONS) {
+      throw new BatchPlanValidationError(`MiniMax full retries omitted ${persistentOmissions.length} sessions, above the safe fallback limit ${MAX_PERSISTENT_OMISSION_DECISIONS}`);
+    }
+    if (persistentOmissions.length > 0) {
+      const decide = this.options.judge?.decide;
+      if (!decide) throw new Error("MiniMax per-session omission judge is unavailable");
+      let decisions: Array<{ candidate: AssessedSession; verdict: Omit<SessionInventoryVerdict, "judgedAt">; handoff: string }> = [];
+      try {
+        decisions = await withAbortDeadline(mapConcurrentOrdered(
+          persistentOmissions,
+          MAX_OMISSION_DECISION_CONCURRENCY,
+          async (candidate) => {
+            if (omissionDecisionController.signal.aborted) throw new Error("MiniMax omission decision phase was aborted");
+            const verdict = normalizeVerdict(await decide({
+              session: candidate.session,
+              transcriptTail: candidate.transcriptTail,
+              signal: omissionDecisionController.signal,
+            }));
+            if (verdict.confidence <= 0) throw new Error(`MiniMax omission judge returned zero confidence for ${candidate.sourceKey}`);
+            const handoff = verdict.verdict === "unfinished"
+              ? trimEvidenceChars(candidate.transcriptTail, 32_000)
+              : "";
+            if (verdict.verdict === "unfinished" && !handoff.trim()) {
+              throw new Error(`MiniMax omission judge returned unfinished without evidence for ${candidate.sourceKey}`);
+            }
+            return { candidate, verdict, handoff };
+          },
+        ), omissionDecisionDeadline, omissionDecisionController);
+      } catch (error) {
+        omissionDecisionController.abort(error);
+        throw error;
+      }
+      for (const { candidate, verdict, handoff } of decisions) {
+        groups.push({
+          sourceSessionIds: [candidate.sourceKey],
+          primarySessionId: candidate.sourceKey,
+          ...verdict,
+          topic: candidate.session.title.slice(0, 120) || "Неопределённая задача",
+          handoff,
+        });
+      }
     }
     let plan = { groups };
     assertBatchPlanCoverage(plan, packedAssessed);
@@ -1873,6 +1896,57 @@ export class UnfinishedSessionLauncher {
       if (!pinned.ok) console.error(`[agent-herder] не удалось закрепить активную сессию ${adapter.type}:${sessionId}: ${pinned.error || "операция отклонена"}`);
     } catch (error) {
       console.error(`[agent-herder] не удалось закрепить активную сессию ${adapter.type}:${sessionId}: ${errorText(error)}`);
+    }
+  }
+
+  private async recordAssessmentFailure(
+    assessed: AssessedSession[],
+    priorInventory: ReadonlyMap<string, UnfinishedSessionInventoryRecord>,
+    error: string,
+  ): Promise<void> {
+    const now = new Date();
+    const baseDelayMs = Math.max(60_000, this.reconcileIntervalMs, this.retryDelayMs);
+    const capDelayMs = 30 * 60_000;
+    const records = assessed.map((candidate) => {
+      const fingerprint = evidenceFingerprint(candidate.transcriptTail);
+      const previous = priorInventory.get(candidate.sourceKey)?.assessmentFailure;
+      const repeated = previous?.evidenceFingerprint === fingerprint;
+      const count = repeated ? previous.count + 1 : 1;
+      const delayMs = count <= 1 ? 0 : Math.min(capDelayMs, baseDelayMs * (2 ** Math.min(10, count - 2)));
+      return {
+        ...inventoryFromAssessment(candidate),
+        assessmentFailure: {
+          evidenceFingerprint: fingerprint,
+          count,
+          lastError: error.slice(0, MAX_TEXT),
+          failedAt: now.toISOString(),
+          ...(delayMs > 0 ? { nextAttemptAt: new Date(now.getTime() + delayMs).toISOString() } : {}),
+          ...(repeated && previous?.notifiedAt ? { notifiedAt: previous.notifiedAt } : {}),
+        },
+      } satisfies UnfinishedSessionInventoryRecord;
+    });
+    await this.options.store.upsertInventoryBatch(records);
+
+    const newlyRepeated = records.filter((record) => record.assessmentFailure!.count >= 2
+      && !record.assessmentFailure!.notifiedAt);
+    if (!this.options.notify || newlyRepeated.length === 0) return;
+    const correlation = createHash("sha256")
+      .update(newlyRepeated.map((record) => `${inventoryRecordKey(record)}:${record.assessmentFailure!.evidenceFingerprint}`).sort().join("\n"))
+      .digest("hex").slice(0, 24);
+    try {
+      await this.options.notify({
+        title: "Agent Herder повторно не смог разобрать сессии",
+        body: `MiniMax повторно не построил безопасный план для ${newlyRepeated.length} сесс. Автопродолжение временно отложено с увеличивающимся интервалом; новые сообщения сбросят задержку автоматически.`,
+        dedupKey: `agent-herder:assessment-failed:${correlation}`,
+        correlationId: `assessment-${correlation}`,
+        sourceId: "agent-herder-autocontinue-assessment",
+        signalType: "autocontinue-assessment-failed",
+      });
+      const notifiedAt = new Date().toISOString();
+      for (const record of newlyRepeated) record.assessmentFailure!.notifiedAt = notifiedAt;
+      await this.options.store.upsertInventoryBatch(newlyRepeated);
+    } catch (noticeError) {
+      console.error(`[agent-herder] не удалось отправить уведомление о повторном сбое MiniMax: ${errorText(noticeError)}`);
     }
   }
 
@@ -2041,6 +2115,20 @@ function parseInventoryRecord(value: unknown): UnfinishedSessionInventoryRecord 
     ...(record.progressFingerprint === undefined ? {} : { progressFingerprint: bounded(record.progressFingerprint, "progressFingerprint") }),
     observedAt: isoDate(record.observedAt, "observedAt"),
     ...(record.verdict ? { verdict: normalizePersistedVerdict(record.verdict) } : {}),
+    ...(record.assessmentFailure ? { assessmentFailure: parseAssessmentFailure(record.assessmentFailure) } : {}),
+  };
+}
+
+function parseAssessmentFailure(value: unknown): NonNullable<UnfinishedSessionInventoryRecord["assessmentFailure"]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid inventory assessment failure");
+  const record = value as Record<string, unknown>;
+  return {
+    evidenceFingerprint: bounded(record.evidenceFingerprint, "assessmentFailure.evidenceFingerprint"),
+    count: boundedInteger(record.count, 1, 1_000_000, "assessmentFailure.count"),
+    lastError: boundedText(record.lastError, "assessmentFailure.lastError", MAX_TEXT),
+    failedAt: isoDate(record.failedAt, "assessmentFailure.failedAt"),
+    ...(record.nextAttemptAt ? { nextAttemptAt: isoDate(record.nextAttemptAt, "assessmentFailure.nextAttemptAt") } : {}),
+    ...(record.notifiedAt ? { notifiedAt: isoDate(record.notifiedAt, "assessmentFailure.notifiedAt") } : {}),
   };
 }
 
@@ -2072,7 +2160,11 @@ function heuristicVerdict(session: AgentSession, messages: SessionMessageView[])
 }
 
 function cloneInventoryRecord(record: UnfinishedSessionInventoryRecord): UnfinishedSessionInventoryRecord {
-  return { ...record, ...(record.verdict ? { verdict: { ...record.verdict } } : {}) };
+  return {
+    ...record,
+    ...(record.verdict ? { verdict: { ...record.verdict } } : {}),
+    ...(record.assessmentFailure ? { assessmentFailure: { ...record.assessmentFailure } } : {}),
+  };
 }
 
 async function sessionEvidenceMessages(adapter: HarnessAdapter, sessionId: string, limit: number): Promise<SessionMessageView[]> {
@@ -2765,6 +2857,17 @@ function buildSessionDecisionBudgetRequest({ session, transcriptTail }: SessionB
       { role: "user", content: payload },
     ],
   };
+}
+
+function largestSessionDecisionBudgetRequests(sessions: SessionBatchCandidate[], limit: number): unknown[] {
+  return sessions
+    .map((candidate) => {
+      const request = buildSessionDecisionBudgetRequest(candidate);
+      return { request, tokens: estimateContextTokens(JSON.stringify(request)) };
+    })
+    .sort((left, right) => right.tokens - left.tokens)
+    .slice(0, limit)
+    .map(({ request }) => request);
 }
 
 function worstCaseReconciliationCandidates(sessions: SessionBatchCandidate[]): SessionBatchReconciliationCandidate[] {

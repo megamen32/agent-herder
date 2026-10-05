@@ -14,6 +14,7 @@ import {
   SessionAutostartStore,
   UnfinishedSessionLauncher,
   UnfinishedSessionStore,
+  type UnfinishedSessionNotice,
 } from "../src/autopilot/unfinished-session-launcher.js";
 import { CacheHandoffService } from "../src/cache-handoff.js";
 import { LineageStore } from "../src/lineage-store.js";
@@ -1197,7 +1198,7 @@ describe("unfinished session launcher", () => {
   it("bounds persistent-omission decisions to four concurrent requests", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-omission-concurrency-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
-    const sessions = Array.from({ length: 9 }, (_, index): AgentSession => ({
+    const sessions = Array.from({ length: 4 }, (_, index): AgentSession => ({
       ...fixtureSession("idle", "codex"), id: `omitted-${index}`, title: `Omitted ${index}`,
       lastActivity: new Date(Date.now() - 60_000 - index).toISOString(),
     }));
@@ -1225,6 +1226,91 @@ describe("unfinished session launcher", () => {
     expect(maxInFlight).toBeGreaterThan(1);
     expect(maxInFlight).toBeLessThanOrEqual(4);
     expect((await store.listInventory()).every((record) => record.verdict?.verdict === "completed")).toBe(true);
+  });
+
+  it("aborts before any decide or reconciliation when full retries omit more than four sessions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-too-many-omissions-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = Array.from({ length: 34 }, (_, index): AgentSession => ({
+      ...fixtureSession("idle", "codex"), id: `omitted-${index}`,
+      lastActivity: new Date(Date.now() - 60_000 - index).toISOString(),
+    }));
+    const calls = { resumes: 0, messages: [] as string[] };
+    let decisions = 0;
+    let reconciliations = 0;
+    let plans = 0;
+    const adapter = fixtureAdapter(sessions[0]!, calls);
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { decisions += 1; return { verdict: "completed", reason: "done", confidence: 1 }; },
+        async plan({ sessions: batch }) {
+          plans += 1;
+          const omittedInChunk = batch[0]?.session.id === "omitted-0" ? 3 : 2;
+          return { groups: batch.slice(omittedInChunk).map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "done", confidence: 1, topic: session.title, handoff: "",
+          })) };
+        },
+        async reconcile() { reconciliations += 1; return { clusters: [] }; },
+      },
+    }).recoverPending();
+
+    expect(decisions).toBe(0);
+    expect(reconciliations).toBe(0);
+    expect(plans).toBe(4);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
+  });
+
+  it("durably backs off repeated assessment failures and resets immediately when evidence changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-assessment-backoff-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = { ...fixtureSession("idle", "codex"), id: "backoff", lastActivity: new Date(Date.now() - 60_000).toISOString() };
+    let evidence = "evidence-v1";
+    let plans = 0;
+    const notices: UnfinishedSessionNotice[] = [];
+    const adapter = fixtureAdapter(session, { resumes: 0, messages: [] });
+    adapter.getSessionMessages = async () => [{ id: "evidence", role: "user", text: evidence, parts: [{ type: "text", text: evidence }] }];
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() { plans += 1; throw new Error("repeated planner failure"); },
+      },
+      notify: async (notice) => { notices.push(notice); },
+    });
+
+    await launcher.recoverPending();
+    expect(plans).toBe(1);
+    expect(notices).toHaveLength(0);
+    expect((await store.listInventory())[0]?.assessmentFailure).toMatchObject({ count: 1, evidenceFingerprint: expect.any(String) });
+    expect((await store.listInventory())[0]?.assessmentFailure?.nextAttemptAt).toBeUndefined();
+
+    await launcher.recoverPending();
+    expect(plans).toBe(2);
+    expect(notices).toHaveLength(1);
+    const repeated = (await store.listInventory())[0]?.assessmentFailure;
+    expect(repeated).toMatchObject({ count: 2, nextAttemptAt: expect.any(String), notifiedAt: expect.any(String) });
+
+    await launcher.recoverPending();
+    expect(plans).toBe(2);
+    expect(notices).toHaveLength(1);
+
+    evidence = "evidence-v2";
+    await launcher.recoverPending();
+    expect(plans).toBe(3);
+    expect(notices).toHaveLength(1);
+    const reset = (await store.listInventory())[0]?.assessmentFailure;
+    expect(reset).toMatchObject({ count: 1, evidenceFingerprint: expect.any(String) });
+    expect(reset?.nextAttemptAt).toBeUndefined();
+    expect(reset?.notifiedAt).toBeUndefined();
+    expect(reset?.evidenceFingerprint).not.toBe(repeated?.evidenceFingerprint);
   });
 
   it("lets a needs-human twice-omitted member block its reconciled unfinished sibling", async () => {
@@ -1451,7 +1537,7 @@ describe("unfinished session launcher", () => {
     expect((await store.listInventory()).every((record) => record.verdict?.verdict === "completed")).toBe(true);
   });
 
-  it("keeps initial, full retries, all omission decisions, and reconciliation within one 480k budget", async () => {
+  it("keeps initial, full retries, four omission decisions, and reconciliation within one 480k budget", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-global-chunk-budget-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = Array.from({ length: 70 }, (_, index): AgentSession => ({
@@ -1459,6 +1545,7 @@ describe("unfinished session launcher", () => {
       lastActivity: new Date(Date.now() - 10 * 60_000 - index).toISOString(),
     }));
     const requestBodies: unknown[] = [];
+    let plannerRequests = 0;
     const previousBudget = process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS;
     process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS = "480000";
     const judge = createAnthropicCompatibleSessionCompletionJudge({
@@ -1481,7 +1568,21 @@ describe("unfinished session launcher", () => {
             text: JSON.stringify({ verdict: "completed", reason: "done", confidence: 0.9 }),
           }] }), { status: 200, headers: { "content-type": "application/json" } });
         } else {
-          text = JSON.stringify({ groups: [] });
+          plannerRequests += 1;
+          const sessionsInRequest = payload.sessions || [];
+          if (plannerRequests % 2 === 1) {
+            text = JSON.stringify({ groups: sessionsInRequest.map(({ session_ref }, index) => ({
+              source_session_ids: [session_ref],
+              primary_session_id: index === 0 ? sessionsInRequest[1]?.session_ref || "999" : session_ref,
+              verdict: "completed", reason: "malformed initial", confidence: 1, topic: `Topic ${session_ref}`, handoff: "",
+            })) });
+          } else {
+            const selected = plannerRequests === 6 ? sessionsInRequest.slice(0, -4) : sessionsInRequest;
+            text = JSON.stringify({ groups: selected.map(({ session_ref }) => ({
+              source_session_ids: [session_ref], primary_session_id: session_ref,
+              verdict: "completed", reason: "valid retry", confidence: 1, topic: `Topic ${session_ref}`, handoff: "",
+            })) });
+          }
         }
         return new Response([
           `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } })}`,
@@ -1492,10 +1593,11 @@ describe("unfinished session launcher", () => {
     });
     const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
     adapter.listSessions = async () => sessions;
-    adapter.getSessionMessages = async (id) => [{
-      id: `${id}-u`, role: "user", text: `${id}:${'"\\\n'.repeat(3_000)}`,
-      parts: [{ type: "text", text: `${id}:${'"\\\n'.repeat(3_000)}` }],
-    }];
+    adapter.getSessionMessages = async (id) => {
+      const index = Number(id.slice("budgeted-".length));
+      const hostile = `${id}:${'"\\\n'.repeat(index >= 66 ? 6_000 : 100)}`;
+      return [{ id: `${id}-u`, role: "user", text: hostile, parts: [{ type: "text", text: hostile }] }];
+    };
     try {
       await new UnfinishedSessionLauncher({
         adapters: new Map([["codex", adapter]]), store,
@@ -1507,7 +1609,7 @@ describe("unfinished session launcher", () => {
       else process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS = previousBudget;
     }
 
-    expect(requestBodies).toHaveLength(77);
+    expect(requestBodies).toHaveLength(11);
     const totalTokens = requestBodies.reduce((sum, body) => sum + estimateContextTokens(JSON.stringify(body)), 0);
     expect(totalTokens).toBeLessThanOrEqual(480_000);
     expect(await store.listInventory()).toHaveLength(70);
