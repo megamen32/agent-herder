@@ -184,6 +184,93 @@ describe("ZCode adapter", () => {
     }
   });
 
+  it("pages the complete persisted task index instead of truncating discovery at 200 rows", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-large-index-"));
+    const dbPath = join(root, "tasks-index.sqlite");
+    const db = new DatabaseSync(dbPath);
+    db.exec(`create table tasks (
+      task_id text primary key, workspace_path text, title text, task_status text,
+      model text, created_at integer, updated_at integer, deleted integer default 0,
+      archived integer default 0
+    )`);
+    const insert = db.prepare("insert into tasks (task_id,workspace_path,title,task_status,created_at,updated_at) values (?,?,?,?,?,?)");
+    const now = Date.now();
+    db.exec("begin");
+    for (let index = 0; index < 605; index += 1) {
+      insert.run(`persisted-${index}`, `/workspace/${index}`, `Task ${index}`, "completed", now - index, now - index);
+    }
+    db.exec("commit");
+    db.close();
+    try {
+      const adapter = new ZcodeAdapter({ client: new FakeClient(), tasksIndexDbPath: dbPath });
+      const sessions = await adapter.listSessions();
+      expect(sessions).toHaveLength(605);
+      expect(new Set(sessions.map((item) => item.id)).size).toBe(605);
+      expect(sessions.map((item) => item.id)).toContain("persisted-604");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("deduplicates ghost task rows using the native session workspace identity", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-duplicate-index-"));
+    const taskDbPath = join(root, "tasks-index.sqlite");
+    const sessionDbPath = join(root, "db.sqlite");
+    const canonicalCwd = join(root, "canonical");
+    const ghostCwd = join(root, "ghost");
+    const workspaceIdentity = "remote:ssh:example.test:22:user:/canonical";
+    const tasks = new DatabaseSync(taskDbPath);
+    tasks.exec(`create table tasks (
+      workspace_key text not null, task_id text not null, workspace_path text,
+      workspace_identity text, title text, task_status text, model text,
+      created_at integer, updated_at integer, pinned integer default 0,
+      deleted integer default 0, archived integer default 0,
+      primary key (workspace_key, task_id)
+    )`);
+    const insert = tasks.prepare(`insert into tasks (
+      workspace_key,task_id,workspace_path,workspace_identity,title,task_status,
+      created_at,updated_at,pinned
+    ) values (?,?,?,?,?,?,?,?,?)`);
+    insert.run(canonicalCwd, "duplicate-1", canonicalCwd, canonicalCwd, "Canonical task", "running", 1, Date.now() - 60_000, 1);
+    insert.run(ghostCwd, "duplicate-1", ghostCwd, ghostCwd, "Ghost task", "completed", 1, Date.now(), 0);
+    tasks.close();
+    const sessionsDb = new DatabaseSync(sessionDbPath);
+    sessionsDb.exec("create table session (id text primary key, directory text not null, workspace_id text)");
+    sessionsDb.prepare("insert into session (id,directory,workspace_id) values (?,?,?)")
+      .run("duplicate-1", canonicalCwd, workspaceIdentity);
+    sessionsDb.close();
+    try {
+      const client = new FakeClient();
+      const adapter = new ZcodeAdapter({
+        client,
+        tasksIndexDbPath: taskDbPath,
+        localDbPath: sessionDbPath,
+      });
+      await expect(adapter.listSessions()).resolves.toMatchObject([{
+        id: "duplicate-1",
+        cwd: canonicalCwd,
+        title: "Canonical task",
+        status: "running",
+        meta: {
+          pinned: true,
+          workspaceIdentity,
+          duplicateTaskRows: 2,
+          taskIndexWorkspacePaths: expect.arrayContaining([canonicalCwd, ghostCwd]),
+        },
+      }]);
+      await adapter.init();
+      await expect(adapter.sendMessage("duplicate-1", { message: "Continue canonical session" })).resolves.toEqual({ ok: true });
+      expect(client.calls.find((call) => call.method === "sendPrompt")?.args[0]).toMatchObject({
+        sessionId: "duplicate-1",
+        workspacePath: canonicalCwd,
+        workspaceIdentity,
+        workspaceKey: canonicalCwd,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("discovers recent persisted tasks without starting the ZCode app-server and treats stale running as a signal", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-index-"));
     const indexPath = join(root, "tasks-index.sqlite");

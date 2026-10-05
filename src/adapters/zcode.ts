@@ -97,6 +97,8 @@ export interface ZcodeAdapterOptions {
   client?: ZcodeClientLike;
   /** Optional persisted cross-workspace task index; injectable for tests. */
   tasksIndexDbPath?: string;
+  /** Optional native session database; injectable for persisted identity tests. */
+  localDbPath?: string;
   /** Bound for proving that an admitted prompt actually began a native turn. */
   turnStartTimeoutMs?: number;
 }
@@ -459,7 +461,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.cwd = resolve(options.cwd || process.env.ZCODE_CWD || process.cwd());
     this.modelIds = options.modelIds ?? [];
     this.useLocalConfig = !options.client;
-    this.localDbPath = process.env.ZCODE_DB_PATH || join(homedir(), ".zcode", "cli", "db", "db.sqlite");
+    this.localDbPath = options.localDbPath ?? (process.env.ZCODE_DB_PATH || join(homedir(), ".zcode", "cli", "db", "db.sqlite"));
     this.turnStartTimeoutMs = options.turnStartTimeoutMs ?? 30_000;
     // An injected transport is an isolated embedding/test boundary: ambient
     // desktop paths must not silently merge unrelated live sessions into it.
@@ -605,25 +607,104 @@ export class ZcodeAdapter implements HarnessAdapter {
       try {
         const columns = db.prepare("pragma table_info(tasks)").all() as Array<{ name?: string }>;
         const pinnedColumn = columns.some((column) => column.name === "pinned") ? "pinned" : "0 as pinned";
-        const rows = db.prepare(`
-          select task_id, workspace_path, title, task_status, model, created_at, updated_at, ${pinnedColumn}
-          from tasks
-          where coalesce(deleted, 0) = 0 and coalesce(archived, 0) = 0
-          ${options.cwd ? "and workspace_path = ?" : ""}
-          order by updated_at desc
-          limit 200
-        `).all(...(options.cwd ? [resolve(options.cwd)] : [])) as Array<{
+        const workspaceIdentityColumn = columns.some((column) => column.name === "workspace_identity")
+          ? "workspace_identity"
+          : "null as workspace_identity";
+        const workspaceKeyColumn = columns.some((column) => column.name === "workspace_key")
+          ? "workspace_key"
+          : "null as workspace_key";
+        type PersistedTaskRow = {
+          task_rowid: number;
           task_id: string;
           workspace_path?: string;
+          workspace_identity?: string | null;
+          workspace_key?: string | null;
           title?: string;
           task_status?: string;
           model?: string | null;
           created_at?: number;
           updated_at?: number;
           pinned?: number;
-        }>;
+        };
+        const pageSize = 500;
+        const rows: PersistedTaskRow[] = [];
+        const page = db.prepare(`
+          select rowid as task_rowid, task_id, workspace_path, ${workspaceIdentityColumn}, ${workspaceKeyColumn},
+                 title, task_status, model, created_at, updated_at, ${pinnedColumn}
+          from tasks
+          where coalesce(deleted, 0) = 0 and coalesce(archived, 0) = 0
+          order by updated_at desc, task_id asc, workspace_path asc, rowid asc
+          limit ? offset ?
+        `);
+        db.exec("begin");
+        try {
+          for (let offset = 0; ; offset += pageSize) {
+            const next = page.all(pageSize, offset) as PersistedTaskRow[];
+            rows.push(...next);
+            if (next.length < pageSize) break;
+          }
+          db.exec("commit");
+        } catch (error) {
+          db.exec("rollback");
+          throw error;
+        }
+
+        const nativeSessions = new Map<string, { directory?: string; workspaceIdentity?: string }>();
+        if (existsSync(this.localDbPath)) {
+          try {
+            const nativeDb = new DatabaseSync(this.localDbPath, { readOnly: true });
+            try {
+              const nativeColumns = nativeDb.prepare("pragma table_info(session)").all() as Array<{ name?: string }>;
+              const names = new Set(nativeColumns.map((column) => column.name));
+              if (names.has("id") && names.has("directory")) {
+                const workspaceIdentity = names.has("workspace_id") ? "workspace_id" : "null as workspace_id";
+                const nativeRows = nativeDb.prepare(`select id, directory, ${workspaceIdentity} from session`).all() as Array<{
+                  id: string;
+                  directory?: string;
+                  workspace_id?: string | null;
+                }>;
+                for (const row of nativeRows) {
+                  nativeSessions.set(row.id, {
+                    directory: nonEmptyString(row.directory),
+                    workspaceIdentity: nonEmptyString(row.workspace_id),
+                  });
+                }
+              }
+            } finally {
+              nativeDb.close();
+            }
+          } catch {
+            // The task index remains usable while the native transcript DB is
+            // temporarily unavailable. Duplicate rows fall back to recency.
+          }
+        }
+
+        const rowsBySession = new Map<string, PersistedTaskRow[]>();
+        for (const row of rows) {
+          const group = rowsBySession.get(row.task_id) ?? [];
+          group.push(row);
+          rowsBySession.set(row.task_id, group);
+        }
         const activeWindowMs = Number(process.env.AGENT_HERDER_ACTIVE_WINDOW_MS || 5 * 60 * 1_000);
-        return rows.map((row) => {
+        const requestedCwd = options.cwd ? resolve(options.cwd) : undefined;
+        const sessions: AgentSession[] = [];
+        for (const [sessionId, duplicateRows] of rowsBySession) {
+          const native = nativeSessions.get(sessionId);
+          const nativeDirectory = native?.directory ? resolve(native.directory) : undefined;
+          const ranked = [...duplicateRows].sort((left, right) => {
+            const leftPath = left.workspace_path ? resolve(left.workspace_path) : undefined;
+            const rightPath = right.workspace_path ? resolve(right.workspace_path) : undefined;
+            const leftIdentity = nonEmptyString(left.workspace_identity);
+            const rightIdentity = nonEmptyString(right.workspace_identity);
+            const leftScore = Number(Boolean(nativeDirectory && leftPath === nativeDirectory)) * 2
+              + Number(Boolean(native?.workspaceIdentity && leftIdentity === native.workspaceIdentity));
+            const rightScore = Number(Boolean(nativeDirectory && rightPath === nativeDirectory)) * 2
+              + Number(Boolean(native?.workspaceIdentity && rightIdentity === native.workspaceIdentity));
+            return rightScore - leftScore
+              || Number(right.updated_at || right.created_at || 0) - Number(left.updated_at || left.created_at || 0)
+              || right.task_rowid - left.task_rowid;
+          });
+          const row = ranked[0]!;
           const updatedAt = Number(row.updated_at || row.created_at || 0);
           const rawStatus = row.task_status?.toLowerCase();
           const recentlyActive = Number.isFinite(updatedAt) && updatedAt > 0 && Date.now() - updatedAt < activeWindowMs;
@@ -631,10 +712,17 @@ export class ZcodeAdapter implements HarnessAdapter {
             : rawStatus === "completed" ? "stopped"
               : rawStatus === "waiting" || rawStatus === "needs_input" ? "needs_input"
                 : rawStatus === "running" && recentlyActive ? "running" : "idle";
-          const cwd = resolve(row.workspace_path || this.cwd);
+          const cwd = nativeDirectory || resolve(row.workspace_path || this.cwd);
+          if (requestedCwd && cwd !== requestedCwd) continue;
+          const workspaceIdentity = native?.workspaceIdentity || nonEmptyString(row.workspace_identity) || cwd;
+          const workspaceKey = nonEmptyString(row.workspace_key) || cwd;
           this.persistedSessionIds.add(row.task_id);
-          this.sessionWorkspaces.set(row.task_id, this.workspace(cwd));
-          return {
+          this.sessionWorkspaces.set(row.task_id, {
+            workspacePath: cwd,
+            workspaceIdentity,
+            workspaceKey,
+          });
+          sessions.push({
             id: row.task_id,
             harness: "zcode" as const,
             status,
@@ -643,9 +731,19 @@ export class ZcodeAdapter implements HarnessAdapter {
             lastActivity: timestamp(updatedAt),
             model: nonEmptyString(row.model),
             needsPermission: status === "needs_input",
-            meta: { persistedTaskStatus: rawStatus, discoverySource: "tasks-index", pinned: row.pinned === 1 },
-          };
-        });
+            meta: {
+              persistedTaskStatus: rawStatus,
+              discoverySource: "tasks-index",
+              pinned: row.pinned === 1,
+              workspaceIdentity,
+              duplicateTaskRows: duplicateRows.length,
+              ...(duplicateRows.length > 1 ? {
+                taskIndexWorkspacePaths: duplicateRows.map((candidate) => candidate.workspace_path).filter(Boolean),
+              } : {}),
+            },
+          });
+        }
+        return sessions.sort((left, right) => Date.parse(right.lastActivity) - Date.parse(left.lastActivity));
       } finally {
         db.close();
       }
