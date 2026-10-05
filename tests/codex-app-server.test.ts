@@ -492,6 +492,8 @@ describe("Codex app-server adapter", () => {
 
       const child = (adapter as unknown as { child?: ChildProcessWithoutNullStreams }).child;
       expect(child?.pid).toEqual(expect.any(Number));
+      const lateStdout = child?.stdout.listeners("data")[0] as ((chunk: string) => void) | undefined;
+      expect(lateStdout).toEqual(expect.any(Function));
       child?.kill("SIGTERM");
       for (let attempt = 0; attempt < 100 && !events.some((event) => event.kind === "process.disconnected"); attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 5));
@@ -502,6 +504,28 @@ describe("Codex app-server adapter", () => {
         expect.objectContaining({ kind: "turn.failed", sessionId: "thread-1" }),
         expect.objectContaining({ kind: "process.disconnected" }),
       ]));
+
+      events.length = 0;
+      await expect(adapter.sendMessage("thread-1", { message: "hold", queue: true })).resolves.toEqual({ ok: true });
+      for (let attempt = 0; attempt < 100 && !events.some((event) => event.kind === "turn.started"); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      await expect(adapter.getSession("thread-1")).resolves.toMatchObject({
+        id: "thread-1",
+        status: "running",
+        meta: { activeTurnId: "turn-1" },
+      });
+
+      lateStdout?.('{"method":"turn/com');
+      lateStdout?.('pleted","params":{"threadId":"thread-1","turn":{"id":"turn-1","status":"completed"}}}\n');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      await expect(adapter.getSession("thread-1")).resolves.toMatchObject({
+        id: "thread-1",
+        status: "running",
+        meta: { activeTurnId: "turn-1" },
+      });
+      expect(events.some((event) => event.kind === "turn.completed")).toBe(false);
     } finally {
       unsubscribe();
       await adapter.dispose();

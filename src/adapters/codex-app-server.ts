@@ -95,11 +95,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private initialized = false;
   private initialization?: Promise<void>;
   private nextRequestId = 1;
-  private inputBuffer = "";
   private readonly pending = new Map<number, PendingRequest>();
   private readonly threads = new Map<string, CodexThread>();
   private readonly activeTurns = new Map<string, string>();
   private readonly completions = new Map<string, TurnCompletion>();
+  private readonly transportCleanups = new WeakMap<ChildProcessWithoutNullStreams, () => void>();
   private stderrTail = "";
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
 
@@ -387,16 +387,35 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams;
     this.child = child;
+    this.stderrTail = "";
+    let inputBuffer = "";
     this.emitEvent({ kind: "process.connected", harness: "codex", data: { transport: "app-server" } });
     child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => this.consumeOutput(chunk));
     child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => this.consumeStderr(chunk));
-    child.on("error", (error) => {
+    const onStdout = (chunk: string) => {
+      if (this.child !== child) return;
+      inputBuffer = this.consumeOutput(chunk, inputBuffer);
+    };
+    const onStderr = (chunk: string) => {
+      if (this.child !== child) return;
+      this.consumeStderr(chunk);
+    };
+    const onError = (error: Error) => {
       this.handleTransportDisconnect(child, error, { error: error.message });
-    });
-    child.on("exit", (code, signal) => {
+    };
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
       this.handleTransportDisconnect(child, new Error("Codex app-server exited"), { code: code ?? undefined, signal: signal ?? undefined });
+    };
+    child.stdout.on("data", onStdout);
+    child.stderr.on("data", onStderr);
+    child.on("error", onError);
+    child.on("exit", onExit);
+    this.transportCleanups.set(child, () => {
+      child.stdout.off("data", onStdout);
+      child.stderr.off("data", onStderr);
+      child.off("error", onError);
+      child.off("exit", onExit);
+      inputBuffer = "";
     });
   }
 
@@ -406,6 +425,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     data: Record<string, unknown>,
   ): void {
     if (this.child !== child) return;
+    this.transportCleanups.get(child)?.();
+    this.transportCleanups.delete(child);
     this.initialized = false;
     this.child = undefined;
     const interruptedSessions = [...this.activeTurns.keys()];
@@ -444,10 +465,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     });
   }
 
-  private consumeOutput(chunk: string): void {
-    this.inputBuffer += chunk;
-    const lines = this.inputBuffer.split("\n");
-    this.inputBuffer = lines.pop() || "";
+  private consumeOutput(chunk: string, inputBuffer: string): string {
+    const lines = `${inputBuffer}${chunk}`.split("\n");
+    const remainder = lines.pop() || "";
     for (const line of lines) {
       if (!line.trim()) continue;
       try {
@@ -456,6 +476,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         // Ignore non-JSON diagnostic output on stdout from an incompatible wrapper.
       }
     }
+    return remainder;
   }
 
   private consumeMessage(message: RpcResponse & { method?: string; params?: Record<string, unknown> }): void {
