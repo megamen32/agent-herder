@@ -14,6 +14,7 @@ import {
   type RawTranscriptExport,
   type SendMessageResult,
   type SendMessageOptions,
+  type SessionSnapshotReceipt,
   type SessionMessagePart,
   type SessionMessageView,
   type SetPermissionsOptions,
@@ -455,6 +456,12 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly createdSessions = new Map<string, AgentSession>();
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
   private readonly sessionEventUnsubscribers = new Map<string, () => void>();
+  private sessionSnapshotReceipt: SessionSnapshotReceipt = {
+    exhaustive: false,
+    observedAt: new Date(0).toISOString(),
+    source: "zcode-tasks-index",
+    reason: "not_observed",
+  };
   private initialized = false;
 
   constructor(options: ZcodeAdapterOptions = {}) {
@@ -509,6 +516,10 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   isReady(): boolean { return this.initialized; }
+
+  getSessionSnapshotReceipt(): SessionSnapshotReceipt {
+    return { ...this.sessionSnapshotReceipt };
+  }
 
   subscribeEvents(handler: (event: HarnessEvent) => void): () => void {
     this.eventListeners.add(handler);
@@ -598,10 +609,30 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   private async listPersistedSessions(options: ListSessionsOptions): Promise<AgentSession[]> {
-    if (!this.tasksIndexDbPath) return [];
+    this.sessionSnapshotReceipt = {
+      exhaustive: false,
+      observedAt: new Date().toISOString(),
+      source: "zcode-tasks-index",
+      reason: "snapshot_in_progress",
+    };
+    if (!this.tasksIndexDbPath) {
+      this.sessionSnapshotReceipt = {
+        ...this.sessionSnapshotReceipt,
+        observedAt: new Date().toISOString(),
+        reason: "tasks_index_unconfigured",
+      };
+      return [];
+    }
     try {
       const dbPath = this.tasksIndexDbPath;
-      if (!existsSync(dbPath)) return [];
+      if (!existsSync(dbPath)) {
+        this.sessionSnapshotReceipt = {
+          ...this.sessionSnapshotReceipt,
+          observedAt: new Date().toISOString(),
+          reason: "tasks_index_missing",
+        };
+        return [];
+      }
       const { DatabaseSync } = await import("node:sqlite");
       const db = new DatabaseSync(dbPath, { readOnly: true });
       try {
@@ -650,6 +681,7 @@ export class ZcodeAdapter implements HarnessAdapter {
         }
 
         const nativeSessions = new Map<string, { directory?: string; workspaceIdentity?: string }>();
+        let nativeCanonicalizationError: string | undefined;
         if (existsSync(this.localDbPath)) {
           try {
             const nativeDb = new DatabaseSync(this.localDbPath, { readOnly: true });
@@ -669,14 +701,19 @@ export class ZcodeAdapter implements HarnessAdapter {
                     workspaceIdentity: nonEmptyString(row.workspace_id),
                   });
                 }
+              } else {
+                nativeCanonicalizationError = "native_session_schema_missing";
               }
             } finally {
               nativeDb.close();
             }
-          } catch {
+          } catch (error) {
             // The task index remains usable while the native transcript DB is
             // temporarily unavailable. Duplicate rows fall back to recency.
+            nativeCanonicalizationError = `native_session_read_failed: ${error instanceof Error ? error.message : String(error)}`;
           }
+        } else {
+          nativeCanonicalizationError = "native_session_db_missing";
         }
 
         const rowsBySession = new Map<string, PersistedTaskRow[]>();
@@ -743,11 +780,23 @@ export class ZcodeAdapter implements HarnessAdapter {
             },
           });
         }
+        this.sessionSnapshotReceipt = {
+          exhaustive: nativeCanonicalizationError === undefined,
+          observedAt: new Date().toISOString(),
+          source: "zcode-tasks-index",
+          ...(nativeCanonicalizationError ? { reason: nativeCanonicalizationError } : {}),
+        };
         return sessions.sort((left, right) => Date.parse(right.lastActivity) - Date.parse(left.lastActivity));
       } finally {
         db.close();
       }
     } catch (error) {
+      this.sessionSnapshotReceipt = {
+        exhaustive: false,
+        observedAt: new Date().toISOString(),
+        source: "zcode-tasks-index",
+        reason: `tasks_index_read_failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
       console.error(`[agent-herder] ZCode tasks-index discovery failed: ${error instanceof Error ? error.message : String(error)}`);
       return [];
     }

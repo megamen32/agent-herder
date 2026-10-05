@@ -187,6 +187,7 @@ describe("ZCode adapter", () => {
   it("pages the complete persisted task index instead of truncating discovery at 200 rows", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-large-index-"));
     const dbPath = join(root, "tasks-index.sqlite");
+    const sessionDbPath = join(root, "db.sqlite");
     const db = new DatabaseSync(dbPath);
     db.exec(`create table tasks (
       task_id text primary key, workspace_path text, title text, task_status text,
@@ -201,12 +202,97 @@ describe("ZCode adapter", () => {
     }
     db.exec("commit");
     db.close();
+    const sessionDb = new DatabaseSync(sessionDbPath);
+    sessionDb.exec("create table session (id text primary key, directory text not null, workspace_id text)");
+    sessionDb.close();
     try {
-      const adapter = new ZcodeAdapter({ client: new FakeClient(), tasksIndexDbPath: dbPath });
+      const adapter = new ZcodeAdapter({ client: new FakeClient(), tasksIndexDbPath: dbPath, localDbPath: sessionDbPath });
       const sessions = await adapter.listSessions();
       expect(sessions).toHaveLength(605);
       expect(new Set(sessions.map((item) => item.id)).size).toBe(605);
       expect(sessions.map((item) => item.id)).toContain("persisted-604");
+      expect(adapter.getSessionSnapshotReceipt?.()).toMatchObject({
+        exhaustive: true,
+        source: "zcode-tasks-index",
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("marks a multi-page persisted snapshot non-exhaustive when a later page fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-partial-index-"));
+    const taskDbPath = join(root, "tasks-index.sqlite");
+    const sessionDbPath = join(root, "db.sqlite");
+    const tasks = new DatabaseSync(taskDbPath);
+    tasks.exec(`create table task_rows (
+      position integer primary key, task_id text, workspace_path text,
+      workspace_identity text, title text, task_status text, model text,
+      created_at integer, updated_at integer, pinned integer default 0,
+      deleted integer default 0, archived integer default 0
+    )`);
+    const insert = tasks.prepare(`insert into task_rows (
+      position,task_id,workspace_path,workspace_identity,title,task_status,created_at,updated_at
+    ) values (?,?,?,?,?,?,?,?)`);
+    const now = Date.now();
+    tasks.exec("begin");
+    for (let index = 0; index < 605; index += 1) {
+      insert.run(index, `persisted-${index}`, `/workspace/${index}`, `/workspace/${index}`, `Task ${index}`, "completed", now - index, now - index);
+    }
+    tasks.exec("commit");
+    tasks.exec(`create view tasks as
+      select task_id, workspace_path,
+             case when position >= 500 then json_extract('malformed', '$.workspace') else workspace_identity end as workspace_identity,
+             title, task_status, model, created_at, updated_at, pinned, deleted, archived
+      from task_rows`);
+    tasks.close();
+    const sessionDb = new DatabaseSync(sessionDbPath);
+    sessionDb.exec("create table session (id text primary key, directory text not null, workspace_id text)");
+    sessionDb.close();
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const adapter = new ZcodeAdapter({
+        cwd: root,
+        command: "/definitely/not-started",
+        tasksIndexDbPath: taskDbPath,
+        localDbPath: sessionDbPath,
+      });
+      await expect(adapter.listSessions()).resolves.toEqual([]);
+      expect(adapter.getSessionSnapshotReceipt?.()).toMatchObject({
+        exhaustive: false,
+        source: "zcode-tasks-index",
+        reason: expect.stringContaining("tasks_index_read_failed"),
+      });
+    } finally {
+      error.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a task listing non-exhaustive when native workspace canonicalization fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-native-index-error-"));
+    const taskDbPath = join(root, "tasks-index.sqlite");
+    const sessionDbPath = join(root, "db.sqlite");
+    const tasks = new DatabaseSync(taskDbPath);
+    tasks.exec(`create table tasks (
+      task_id text primary key, workspace_path text, title text, task_status text,
+      model text, created_at integer, updated_at integer, deleted integer default 0,
+      archived integer default 0
+    )`);
+    tasks.prepare("insert into tasks (task_id,workspace_path,title,task_status,created_at,updated_at) values (?,?,?,?,?,?)")
+      .run("persisted-1", root, "Task", "completed", Date.now(), Date.now());
+    tasks.close();
+    const invalidNativeDb = new DatabaseSync(sessionDbPath);
+    invalidNativeDb.exec("create table unrelated (id text primary key)");
+    invalidNativeDb.close();
+    try {
+      const adapter = new ZcodeAdapter({ client: new FakeClient(), tasksIndexDbPath: taskDbPath, localDbPath: sessionDbPath });
+      await expect(adapter.listSessions()).resolves.toHaveLength(1);
+      expect(adapter.getSessionSnapshotReceipt?.()).toMatchObject({
+        exhaustive: false,
+        source: "zcode-tasks-index",
+        reason: "native_session_schema_missing",
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
