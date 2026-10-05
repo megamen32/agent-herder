@@ -876,7 +876,7 @@ describe("unfinished session launcher", () => {
     expect((await store.listInventory()).every((record) => record.verdict?.verdict === "completed")).toBe(true);
   });
 
-  it("shares one 480k evidence budget across chunk requests plus compact reconciliation overhead", async () => {
+  it("keeps all serialized chunk requests plus reconciliation within one 480k budget", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-global-chunk-budget-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = Array.from({ length: 70 }, (_, index): AgentSession => ({
@@ -929,7 +929,7 @@ describe("unfinished session launcher", () => {
 
     expect(requestBodies).toHaveLength(3);
     const totalTokens = requestBodies.reduce((sum, body) => sum + estimateContextTokens(JSON.stringify(body)), 0);
-    expect(totalTokens).toBeLessThanOrEqual(512_000);
+    expect(totalTokens).toBeLessThanOrEqual(480_000);
     expect(await store.listInventory()).toHaveLength(70);
   }, 15_000);
 

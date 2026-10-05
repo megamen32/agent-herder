@@ -1748,13 +1748,10 @@ export class UnfinishedSessionLauncher {
     );
     const rawCandidates = assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail }));
     const globallyPacked = fitBatchContextForSerializedRequest(rawCandidates, contextBudget, (sessions) => ({
-      model: "MiniMax-batch-budget",
-      max_tokens: DEFAULT_BATCH_OUTPUT_TOKENS,
-      temperature: 0,
-      stream: true,
-      output_config: { effort: "low" },
-      system: [{ type: "text", text: batchPlannerPrompt(), cache_control: { type: "ephemeral" } }],
-      messages: [{ role: "user", content: JSON.stringify(batchPlannerPayload(sessions)) }],
+      chunkRequests: partitionBatchCandidates(sessions).map(buildBatchPlannerBudgetRequest),
+      ...(sessions.length > MAX_BATCH_PLAN_SESSIONS_PER_REQUEST ? {
+        reconciliationRequest: buildBatchReconciliationBudgetRequest(worstCaseReconciliationCandidates(sessions)),
+      } : {}),
     })).sessions;
     const packedAssessed = assessed.map((candidate, index) => ({
       ...candidate,
@@ -2474,8 +2471,8 @@ function batchReconciliationCandidates(
       workspaceIdentity: workspaces[0]!,
       topic: group.topic,
       verdict: group.verdict,
-      reason: group.reason.slice(0, 512),
-      handoff: group.handoff.slice(0, 1_000),
+      reason: group.reason.slice(0, 128),
+      handoff: group.handoff.slice(0, 256),
       sourceSessionIds: [...group.sourceSessionIds],
       memberTitles: members.map(({ session }) => session.title.slice(0, 160)),
       humanGate: members.some(({ session }) => session.status === "needs_input" || session.needsPermission),
@@ -2603,6 +2600,55 @@ function batchReconciliationPayload(groups: SessionBatchReconciliationCandidate[
       member_titles: group.memberTitles,
       human_gate: group.humanGate,
     })),
+  };
+}
+
+function partitionBatchCandidates(sessions: SessionBatchCandidate[]): SessionBatchCandidate[][] {
+  const chunks: SessionBatchCandidate[][] = [];
+  for (let offset = 0; offset < sessions.length; offset += MAX_BATCH_PLAN_SESSIONS_PER_REQUEST) {
+    chunks.push(sessions.slice(offset, offset + MAX_BATCH_PLAN_SESSIONS_PER_REQUEST));
+  }
+  return chunks;
+}
+
+/** Conservative common envelope used only to reserve the shared wire-input budget. */
+function buildBatchPlannerBudgetRequest(sessions: SessionBatchCandidate[]): unknown {
+  return {
+    model: "m".repeat(256),
+    max_tokens: DEFAULT_BATCH_OUTPUT_TOKENS,
+    temperature: 0,
+    stream: true,
+    response_format: { type: "json_object" },
+    output_config: { effort: "low" },
+    system: [{ type: "text", text: batchPlannerPrompt(), cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: JSON.stringify(batchPlannerPayload(sessions)) }],
+  };
+}
+
+function worstCaseReconciliationCandidates(sessions: SessionBatchCandidate[]): SessionBatchReconciliationCandidate[] {
+  return sessions.map(({ session }, index) => ({
+    groupRef: `G${index + 1}`,
+    workspaceIdentity: sessionWorkspaceIdentity(session),
+    topic: "я".repeat(120),
+    verdict: "unfinished",
+    reason: "я".repeat(128),
+    handoff: "я".repeat(256),
+    sourceSessionIds: [sessionSourceKey(session)],
+    memberTitles: [session.title.slice(0, 160)],
+    humanGate: session.status === "needs_input" || session.needsPermission,
+  }));
+}
+
+function buildBatchReconciliationBudgetRequest(groups: SessionBatchReconciliationCandidate[]): unknown {
+  return {
+    model: "m".repeat(256),
+    max_tokens: DEFAULT_BATCH_OUTPUT_TOKENS,
+    temperature: 0,
+    stream: true,
+    response_format: { type: "json_object" },
+    output_config: { effort: "low" },
+    system: [{ type: "text", text: batchReconciliationPrompt(), cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: JSON.stringify(batchReconciliationPayload(groups)) }],
   };
 }
 
