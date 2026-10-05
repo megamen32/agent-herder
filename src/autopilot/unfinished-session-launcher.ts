@@ -315,6 +315,7 @@ export interface UnfinishedSessionInventoryRecord {
   verdict?: SessionInventoryVerdict;
   /** Durable semantic-planning backoff, independent from native resume attempts. */
   assessmentFailure?: {
+    cohortId: string;
     evidenceFingerprint: string;
     count: number;
     lastError: string;
@@ -1333,6 +1334,21 @@ export class UnfinishedSessionLauncher {
       observedSourceKeys,
     );
     if (this.options.judge?.plan) {
+      const cohortEvidence = new Map<string, { messages: SessionMessageView[]; transcriptTail: string }>();
+      const cohortWake = new Map<string, boolean>();
+      for (const { adapter, session } of candidates) {
+        const sourceKey = sessionSourceKey(session);
+        const failure = priorInventory.get(sourceKey)?.assessmentFailure;
+        if (!failure) continue;
+        const messages = await sessionEvidenceMessages(adapter, session.id, runtimeSettings.evidenceMessageCount);
+        const transcriptTail = completionEvidence(messages, runtimeSettings.evidenceMessageCount);
+        cohortEvidence.set(sourceKey, { messages, transcriptTail });
+        const urgent = this.urgentSessions.has(sourceKey) || this.urgentSessions.has(sessionKey(session.harness, session.id));
+        const evidenceChanged = failure.evidenceFingerprint !== evidenceFingerprint(transcriptTail);
+        const deadlineExpired = !failure.nextAttemptAt || Date.parse(failure.nextAttemptAt) <= Date.now();
+        cohortWake.set(failure.cohortId, cohortWake.get(failure.cohortId) === true
+          || urgent || evidenceChanged || deadlineExpired);
+      }
       const assessed: AssessedSession[] = [];
       for (const { adapter, session } of candidates) {
         await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1341,6 +1357,9 @@ export class UnfinishedSessionLauncher {
         const sourceKey = sessionSourceKey(session);
         const urgent = this.urgentSessions.has(sourceKey) || this.urgentSessions.has(sessionKey(session.harness, session.id));
         const previous = priorInventory.get(sourceKey);
+        const failedCohortId = previous?.assessmentFailure?.cohortId;
+        const cohortAwake = failedCohortId ? cohortWake.get(failedCohortId) === true : false;
+        if (failedCohortId && !cohortAwake) continue;
         const progressUnchanged = previous?.progressFingerprint === sessionInventoryProgressFingerprint(session);
         const metadataUnchanged = previous?.lastActivity === session.lastActivity
           && previous.status === session.status
@@ -1355,14 +1374,12 @@ export class UnfinishedSessionLauncher {
         const candidateDelayMs = this.candidateDelayOverrideMs
           ?? Math.max(this.discoveryIdleMs, unfinishedProbeDelayMs(session));
         const oldEnough = urgent || Date.now() - Date.parse(session.lastActivity) >= candidateDelayMs;
-        if ((session.status === "running" && !urgent) || !oldEnough) continue;
-        const messages = await sessionEvidenceMessages(adapter, session.id, runtimeSettings.evidenceMessageCount);
-        const transcriptTail = completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount);
-        const currentEvidenceFingerprint = evidenceFingerprint(transcriptTail);
-        const assessmentFailure = previous?.assessmentFailure;
-        const repeatedFailedEvidence = assessmentFailure?.evidenceFingerprint === currentEvidenceFingerprint;
-        if (!urgent && repeatedFailedEvidence && assessmentFailure?.nextAttemptAt
-          && Date.parse(assessmentFailure.nextAttemptAt) > Date.now()) continue;
+        if (!cohortAwake && ((session.status === "running" && !urgent) || !oldEnough)) continue;
+        const cachedEvidence = cohortEvidence.get(sourceKey);
+        const messages = cachedEvidence?.messages
+          ?? await sessionEvidenceMessages(adapter, session.id, runtimeSettings.evidenceMessageCount);
+        const transcriptTail = cachedEvidence?.transcriptTail
+          ?? completionEvidence(messages, runtimeSettings.evidenceMessageCount);
         const unchanged = metadataUnchanged && progressUnchanged && evidenceIsCurrent(previous)
           && previous?.transcriptTail === transcriptTail;
         const actionable = urgent
@@ -1372,7 +1389,7 @@ export class UnfinishedSessionLauncher {
           || previous.verdict.verdict === "unfinished";
         const latestSemanticMessage = [...messages].reverse().find((message) =>
           (message.role === "user" || message.role === "assistant") && Boolean(message.text?.trim()));
-        if (actionable) assessed.push({ adapter, session, sourceKey, autoResumeEnabled, transcriptTail, ...(latestSemanticMessage ? {
+        if (cohortAwake || actionable) assessed.push({ adapter, session, sourceKey, autoResumeEnabled, transcriptTail, ...(latestSemanticMessage ? {
           latestSemanticMessage: { role: latestSemanticMessage.role, text: latestSemanticMessage.text },
         } : {}) });
       }
@@ -1380,7 +1397,13 @@ export class UnfinishedSessionLauncher {
         // Persist the refreshed native snapshot before the remote plan. A
         // failed/timeout plan must not leave a new or changed 48h source absent
         // from the authoritative inventory, nor preserve a stale verdict.
-        await this.options.store.upsertInventoryBatch(assessed.map((candidate) => inventoryFromAssessment(candidate)));
+        await this.options.store.upsertInventoryBatch(assessed.map((candidate) => {
+          const failure = priorInventory.get(candidate.sourceKey)?.assessmentFailure;
+          return {
+            ...inventoryFromAssessment(candidate),
+            ...(failure ? { assessmentFailure: { ...failure } } : {}),
+          };
+        }));
         let plan: SessionBatchPlan;
         try {
           plan = await this.planAssessedSessions(assessed);
@@ -1916,6 +1939,7 @@ export class UnfinishedSessionLauncher {
       return {
         ...inventoryFromAssessment(candidate),
         assessmentFailure: {
+          cohortId: assessmentCohortId(candidate.session),
           evidenceFingerprint: fingerprint,
           count,
           lastError: error.slice(0, MAX_TEXT),
@@ -2115,14 +2139,23 @@ function parseInventoryRecord(value: unknown): UnfinishedSessionInventoryRecord 
     ...(record.progressFingerprint === undefined ? {} : { progressFingerprint: bounded(record.progressFingerprint, "progressFingerprint") }),
     observedAt: isoDate(record.observedAt, "observedAt"),
     ...(record.verdict ? { verdict: normalizePersistedVerdict(record.verdict) } : {}),
-    ...(record.assessmentFailure ? { assessmentFailure: parseAssessmentFailure(record.assessmentFailure) } : {}),
+    ...(record.assessmentFailure ? {
+      assessmentFailure: parseAssessmentFailure(
+        record.assessmentFailure,
+        assessmentCohortId({ harness, cwd: bounded(record.cwd, "cwd") }),
+      ),
+    } : {}),
   };
 }
 
-function parseAssessmentFailure(value: unknown): NonNullable<UnfinishedSessionInventoryRecord["assessmentFailure"]> {
+function parseAssessmentFailure(
+  value: unknown,
+  legacyCohortId: string,
+): NonNullable<UnfinishedSessionInventoryRecord["assessmentFailure"]> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid inventory assessment failure");
   const record = value as Record<string, unknown>;
   return {
+    cohortId: record.cohortId === undefined ? legacyCohortId : bounded(record.cohortId, "assessmentFailure.cohortId"),
     evidenceFingerprint: bounded(record.evidenceFingerprint, "assessmentFailure.evidenceFingerprint"),
     count: boundedInteger(record.count, 1, 1_000_000, "assessmentFailure.count"),
     lastError: boundedText(record.lastError, "assessmentFailure.lastError", MAX_TEXT),
@@ -2419,6 +2452,13 @@ function sessionWorkspaceIdentity(session: Pick<AgentSession, "cwd" | "meta">): 
 
 function sessionSourceKey(session: Pick<AgentSession, "harness" | "id" | "cwd" | "meta">): string {
   return sessionKey(harnessType(session.harness), session.id, sessionWorkspaceIdentity(session));
+}
+
+function assessmentCohortId(session: Pick<AgentSession, "harness" | "cwd" | "meta">): string {
+  return createHash("sha256")
+    .update(`${harnessType(session.harness)}:${sessionWorkspaceIdentity(session)}`)
+    .digest("hex")
+    .slice(0, 32);
 }
 
 function unfinishedRecordKey(record: Pick<UnfinishedSessionRecord, "harness" | "sessionId" | "cwd" | "workspaceIdentity">): string {
