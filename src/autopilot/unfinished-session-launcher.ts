@@ -1754,7 +1754,8 @@ export class UnfinishedSessionLauncher {
     const globallyPacked = fitBatchContextForSerializedRequest(rawCandidates, contextBudget, (sessions) => ({
       chunkRequests: partitionBatchCandidates(sessions).map(buildBatchPlannerBudgetRequest),
       // Reserve one bounded repair pass for every chunk before the first fetch.
-      // Actual repairs contain only missing refs, so they can never exceed it.
+      // A malformed or incomplete result retries the entire chunk and discards
+      // the first result, so the repair envelope must be the same full request.
       repairRequests: partitionBatchCandidates(sessions).map(buildBatchPlannerBudgetRequest),
       reconciliationRequest: buildBatchReconciliationBudgetRequest(worstCaseReconciliationCandidates(sessions)),
     })).sessions;
@@ -1769,29 +1770,23 @@ export class UnfinishedSessionLauncher {
       const requestPlan = async (candidates: AssessedSession[]): Promise<SessionBatchPlan> => canonicalizePlanSourceKeys(await planner({
         sessions: candidates.map(({ session, transcriptTail }) => ({ session, transcriptTail })),
       }), candidates);
-      let initial: { plan: SessionBatchPlan; missing: AssessedSession[] } | undefined;
+      let plan: SessionBatchPlan | undefined;
       let initialFailure: unknown;
       try {
-        const plan = await requestPlan(chunk);
-        initial = { plan, missing: missingBatchPlanCandidates(plan, chunk) };
+        plan = await requestPlan(chunk);
+        assertBatchPlanCoverage(plan, chunk);
       } catch (error) {
         if (!(error instanceof BatchPlanValidationError)) throw error;
+        // The failed response is never eligible for partial reuse. In
+        // particular, an omitted-session error is raised after `plan` was
+        // assigned, so clear it explicitly before the full-chunk retry.
+        plan = undefined;
         initialFailure = error;
       }
-      let plan: SessionBatchPlan;
-      if (!initial) {
+      if (!plan) {
         repaired = true;
         console.error(`[agent-herder] MiniMax вернул некорректный chunk; повторяю весь chunk один раз: ${errorText(initialFailure)}`);
         plan = await requestPlan(chunk);
-        assertBatchPlanCoverage(plan, chunk);
-      } else {
-        plan = initial.plan;
-      }
-      if (initial && initial.missing.length > 0) {
-        repaired = true;
-        const repair = await requestPlan(initial.missing);
-        assertBatchPlanCoverage(repair, initial.missing);
-        plan.groups.push(...repair.groups);
         assertBatchPlanCoverage(plan, chunk);
       }
       groups.push(...plan.groups);
@@ -2895,9 +2890,9 @@ async function anthropicText(response: Response): Promise<string> {
     const stopReason = typeof body.stop_reason === "string" ? body.stop_reason : "unknown";
     const blockTypes = [...new Set(blocks.flatMap((block) => block && typeof block === "object" && typeof (block as Record<string, unknown>).type === "string"
       ? [(block as Record<string, unknown>).type as string] : []))].join(",") || "none";
-    throw new Error(`MiniMax Anthropic batch planner returned no text content (stop=${stopReason}, blocks=${blockTypes})`);
+    throw new BatchPlanValidationError(`MiniMax Anthropic batch planner returned no text content (stop=${stopReason}, blocks=${blockTypes})`);
   }
-  if (!response.body) throw new Error("MiniMax Anthropic batch planner returned an empty stream");
+  if (!response.body) throw new BatchPlanValidationError("MiniMax Anthropic batch planner returned an empty stream");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -2927,7 +2922,7 @@ async function anthropicText(response: Response): Promise<string> {
     if (done) break;
   }
   if (buffer) consume(buffer);
-  if (!content.trim()) throw new Error("MiniMax Anthropic batch planner returned no streamed text");
+  if (!content.trim()) throw new BatchPlanValidationError("MiniMax Anthropic batch planner returned no streamed text");
   return content;
 }
 

@@ -265,6 +265,86 @@ describe("unfinished session launcher", () => {
     ] })).resolves.toMatchObject({ groups: [{ sourceSessionIds: ["codex:covered:/tmp/autostart-canary"] }] });
   });
 
+  it("retries the full chunk after an empty Anthropic SSE response and uses only the valid retry", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-anthropic-empty-retry-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = {
+      ...fixtureSession("idle", "codex"), id: "empty-then-valid",
+      lastActivity: new Date(Date.now() - 60_000).toISOString(),
+    };
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    adapter.getSessionMessages = async () => [{
+      id: "original-request", role: "user", text: "Finish the deployment audit.",
+      parts: [{ type: "text", text: "Finish the deployment audit." }],
+    }];
+    let requests = 0;
+    const sse = (text: string, thinkingOnly = false) => new Response([
+      `data: ${JSON.stringify(thinkingOnly
+        ? { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "still grouping" } }
+        : { type: "content_block_delta", delta: { type: "text_delta", text } })}`,
+      "data: [DONE]",
+      "",
+    ].join("\n\n"), { status: 200, headers: { "content-type": "text/event-stream" } });
+    const judge = createAnthropicCompatibleSessionCompletionJudge({
+      baseUrl: "https://api.minimax.io/anthropic/", model: "MiniMax-M3.1-Flash-Preview", token: "test-token",
+      fetchImpl: async () => {
+        requests += 1;
+        if (requests === 1) return sse("", true);
+        if (requests === 2) {
+          expect(calls).toEqual({ resumes: 0, messages: [] });
+          expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
+          return sse(JSON.stringify({ groups: [{
+            source_session_ids: ["S1"], primary_session_id: "S1", verdict: "unfinished",
+            reason: "valid retry", confidence: 1, topic: "Retried", handoff: "valid-retry-marker",
+          }] }));
+        }
+        return sse(JSON.stringify({ clusters: [["G1"]] }));
+      },
+    });
+
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1, judge,
+    }).recoverPending();
+
+    expect(requests).toBe(3);
+    expect(calls.resumes).toBe(1);
+    expect(calls.messages).toHaveLength(1);
+    expect(calls.messages[0]).toContain("valid-retry-marker");
+  });
+
+  it("aborts globally when Anthropic returns empty SSE content twice", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-anthropic-empty-twice-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = {
+      ...fixtureSession("idle", "codex"), id: "empty-twice",
+      lastActivity: new Date(Date.now() - 60_000).toISOString(),
+    };
+    const calls = { resumes: 0, messages: [] as string[] };
+    let requests = 0;
+    const judge = createAnthropicCompatibleSessionCompletionJudge({
+      baseUrl: "https://api.minimax.io/anthropic/", model: "MiniMax-M3.1-Flash-Preview", token: "test-token",
+      fetchImpl: async () => {
+        requests += 1;
+        return new Response([
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "thinking_delta", thinking: "no final answer" } })}`,
+          "data: [DONE]",
+          "",
+        ].join("\n\n"), { status: 200, headers: { "content-type": "text/event-stream" } });
+      },
+    });
+
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", fixtureAdapter(session, calls)]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1, judge,
+    }).recoverPending();
+
+    expect(requests).toBe(2);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
+  });
+
   it("accepts bounded numeric and decimal-string aliases when MiniMax strips the S prefix", async () => {
     const judge = createAnthropicCompatibleSessionCompletionJudge({
       baseUrl: "https://api.minimax.io/anthropic/",
@@ -844,7 +924,7 @@ describe("unfinished session launcher", () => {
     expect(await store.list()).toMatchObject([{ sessionId: session.id, generationId: "previous-process", state: "active" }]);
   });
 
-  it("repairs only missing refs and applies nothing before repair coverage is complete", async () => {
+  it("discards a partial initial plan and retries the full chunk before applying anything", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-repair-success-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = [
@@ -873,7 +953,7 @@ describe("unfinished session launcher", () => {
             sourceSessionIds: [session.id], primarySessionId: session.id,
             verdict: "unfinished" as const,
             reason: "classified", confidence: 1, topic: "One repaired task",
-            handoff: `continue ${session.id}`,
+            handoff: planned.length === 1 ? `discard-initial-${session.id}` : `continue ${session.id}`,
           })) };
         },
         async reconcile({ groups }) {
@@ -882,11 +962,12 @@ describe("unfinished session launcher", () => {
       },
     }).recoverPending();
 
-    expect(planned).toEqual([["covered", "omitted"], ["omitted"]]);
+    expect(planned).toEqual([["covered", "omitted"], ["covered", "omitted"]]);
     expect(calls.resumes).toBe(1);
     expect(calls.messages).toHaveLength(1);
     expect(calls.messages[0]).toContain("continue covered");
     expect(calls.messages[0]).toContain("continue omitted");
+    expect(calls.messages[0]).not.toContain("discard-initial");
   });
 
   it("discards a malformed initial chunk and retries the full chunk exactly once", async () => {
@@ -1010,7 +1091,7 @@ describe("unfinished session launcher", () => {
     expect(verdicts.every((verdict) => verdict?.verdict === "needs_human")).toBe(true);
   });
 
-  it("applies none of a partial plan when the bounded missing-ref repair fails", async () => {
+  it("applies none of a partial plan when the full-chunk retry is still incomplete", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-partial-atomic-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = [
@@ -1050,7 +1131,7 @@ describe("unfinished session launcher", () => {
     { name: "duplicate refs", sources: ["covered", "covered"], primary: "covered" },
     { name: "outside primary", sources: ["covered"], primary: "omitted" },
     { name: "unknown refs", sources: ["unknown"], primary: "unknown" },
-  ])("strictly rejects $name before missing-ref repair", async ({ sources, primary }) => {
+  ])("strictly rejects $name and retries the full chunk only", async ({ sources, primary }) => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-strict-shape-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = [
