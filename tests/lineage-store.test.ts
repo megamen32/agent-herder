@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LineageStore } from "../src/lineage-store.js";
@@ -62,5 +62,25 @@ describe("LineageStore", () => {
       transportGeneration: 2,
       recoveryAttempts: 1,
     });
+  });
+
+  it("serializes concurrent WAL mutations without temp-file collisions or lost records", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-lineage-concurrent-"));
+    const filePath = join(root, "lineage.json");
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    const store = new LineageStore(filePath);
+    const records = Array.from({ length: 24 }, (_, index) => ({
+      sessionKey: `zcode:child-${index}`,
+      parentKey: "zcode:parent",
+      provider: "zcode",
+      createdAt: new Date(1_800_000_000_000 + index).toISOString(),
+      source: "supervisor" as const,
+    }));
+
+    await Promise.all(records.map((record) => store.record(record)));
+
+    const reloaded = new LineageStore(filePath);
+    expect(await reloaded.children("zcode:parent")).toHaveLength(records.length);
+    expect((await readdir(root)).filter((name) => name.includes(".tmp"))).toEqual([]);
   });
 });

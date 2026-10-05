@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "./types/index.js";
-import type { LineageStore } from "./lineage-store.js";
+import type { CacheHandoffAdmissionCheckpoint, LineageRecord, LineageStore } from "./lineage-store.js";
 import { spawnIsolatedWorkload } from "./workload-launcher.js";
 
 const MAX_SOURCE_CHARS = 120_000;
@@ -23,6 +23,10 @@ export interface CacheHandoffResult {
   ageMs: number;
   cache: CacheWindow;
 }
+
+type DurableAdmissionRestore =
+  | { kind: "result"; result: CacheHandoffResult }
+  | { kind: "retry"; record: LineageRecord; admission: CacheHandoffAdmissionCheckpoint };
 
 /** Pin the replacement first, then remove stale pins so a failed pin never loses the old anchor. */
 export async function movePinnedContinuation(
@@ -133,6 +137,13 @@ export function semanticTranscript(messages: SessionMessageView[]): string {
   return rows.join("\n\n").slice(-MAX_SOURCE_CHARS);
 }
 
+function messageText(message: SessionMessageView): string {
+  return message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text || "")
+    .join("\n") || message.text || "";
+}
+
 export class CacheHandoffService {
   private readonly admittedResults = new Map<string, CacheHandoffResult>();
 
@@ -153,42 +164,55 @@ export class CacheHandoffService {
     if (ageMs < cache.ttlMs) return { kind: "fresh", ageMs, cache };
     const adapter = this.adapters.get(session.harness);
     if (!adapter?.getSessionMessages || !adapter.createSession) throw new Error(`${session.harness} не умеет создать cache handoff`);
-    const durableAdmission = await this.restoreDurableAdmission(sourceKey, ageMs, cache);
-    if (durableAdmission) {
-      this.admittedResults.set(sourceKey, durableAdmission);
-      return durableAdmission;
+    const durableAdmission = await this.restoreDurableAdmission(sourceKey, ageMs, cache, adapter);
+    if (durableAdmission?.kind === "result") {
+      this.admittedResults.set(sourceKey, durableAdmission.result);
+      return durableAdmission.result;
     }
-    const messages = await adapter.getSessionMessages(session.id, 1_000);
-    const source = semanticTranscript(messages || []);
-    if (!source) throw new Error("в сессии нет пользовательского контекста для handoff");
-    const summary = (await this.summarizer.summarize(source)).trim().slice(0, MAX_SUMMARY_CHARS);
-    if (!summary) throw new Error("MiniMax вернул пустой handoff");
-    const continuationModel = continuationModelFor(session);
-    const created = await adapter.createSession({
-      name: `${session.title.slice(0, 180)} · продолжение`, cwd: session.cwd, model: continuationModel,
-      ...(session.harness === "zcode" ? { mode: "yolo" } : {}),
-    });
-    if (continuationModel && (session.harness === "opencode" || created.model !== continuationModel)) {
-      if (!adapter.changeModel) throw new Error(`${session.harness} создал handoff без модели продолжения ${continuationModel}`);
-      const selected = await adapter.changeModel(created.id, continuationModel);
-      if (!selected.ok) throw new Error(selected.error || `не удалось выбрать модель продолжения ${continuationModel}`);
+    let created: AgentSession;
+    let prompt: string;
+    let operationId: string;
+    let admissionRecord: LineageRecord;
+    if (durableAdmission?.kind === "retry") {
+      created = durableAdmission.admission.session;
+      prompt = durableAdmission.admission.prompt;
+      operationId = durableAdmission.admission.operationId;
+      admissionRecord = durableAdmission.record;
+    } else {
+      const messages = await adapter.getSessionMessages(session.id, 1_000);
+      const source = semanticTranscript(messages || []);
+      if (!source) throw new Error("в сессии нет пользовательского контекста для handoff");
+      const summary = (await this.summarizer.summarize(source)).trim().slice(0, MAX_SUMMARY_CHARS);
+      if (!summary) throw new Error("MiniMax вернул пустой handoff");
+      const continuationModel = continuationModelFor(session);
+      created = await adapter.createSession({
+        name: `${session.title.slice(0, 180)} · продолжение`, cwd: session.cwd, model: continuationModel,
+        ...(session.harness === "zcode" ? { mode: "yolo" } : {}),
+      });
+      if (continuationModel && (session.harness === "opencode" || created.model !== continuationModel)) {
+        if (!adapter.changeModel) throw new Error(`${session.harness} создал handoff без модели продолжения ${continuationModel}`);
+        const selected = await adapter.changeModel(created.id, continuationModel);
+        if (!selected.ok) throw new Error(selected.error || `не удалось выбрать модель продолжения ${continuationModel}`);
+      }
+      prompt = handoffPrompt(summary);
+      operationId = randomUUID();
+      admissionRecord = {
+        sessionKey: `${session.harness}:${created.id}`,
+        parentKey: sourceKey,
+        role: "cache-handoff",
+        task: `Продолжение после истечения кэша (${Math.round(ageMs / 60_000)} мин)`,
+        provider: session.harness,
+        createdAt: new Date().toISOString(),
+        source: "supervisor",
+        nativeSessionId: created.id,
+        cacheHandoffAdmission: { state: "prepared", session: created, operationId, prompt },
+      };
+      // Persist the exact operation and payload before send. On restart we
+      // reconcile this identity; an actually unsent operation is retried in
+      // the same replacement, while an admitted one is never duplicated.
+      await this.lineage?.record(admissionRecord);
     }
-    const admissionRecord = {
-      sessionKey: `${session.harness}:${created.id}`,
-      parentKey: sourceKey,
-      role: "cache-handoff",
-      task: `Продолжение после истечения кэша (${Math.round(ageMs / 60_000)} мин)`,
-      provider: session.harness,
-      createdAt: new Date().toISOString(),
-      source: "supervisor" as const,
-      nativeSessionId: created.id,
-      cacheHandoffAdmission: { state: "prepared" as const, session: created },
-    };
-    // Write-ahead ownership closes the crash window between native admission
-    // and the launcher's durable settlement. A prepared record is ambiguous
-    // after restart and therefore must never be sent again.
-    await this.lineage?.record(admissionRecord);
-    const sent = await adapter.sendMessage(created.id, { message: handoffPrompt(summary), queue: false });
+    const sent = await adapter.sendMessage(created.id, { message: prompt, queue: false, inputId: operationId });
     if (!sent.ok && !(sent.admitted && sent.nonRetryable)) throw new Error(sent.error || "новая сессия не приняла handoff");
     const result: CacheHandoffResult = sent.admitted && sent.nonRetryable
       ? {
@@ -206,10 +230,10 @@ export class CacheHandoffService {
       ...admissionRecord,
       ...(sent.admitted && sent.nonRetryable ? { lastError: result.admittedFailure } : {}),
       cacheHandoffAdmission: sent.admitted && sent.nonRetryable
-        ? { state: "failed", session: created, error: result.admittedFailure }
+        ? { state: "failed", session: created, operationId, prompt, error: result.admittedFailure }
         : sent.pending
-          ? { state: "pending", session: created }
-          : { state: "confirmed", session: created },
+          ? { state: "pending", session: created, operationId, prompt }
+          : { state: "confirmed", session: created, operationId, prompt },
       updatedAt: new Date().toISOString(),
     });
     if (options.movePinned) await movePinnedContinuation(adapter, [{ adapter, sessionId: session.id }], created.id);
@@ -220,31 +244,68 @@ export class CacheHandoffService {
     sourceKey: string,
     ageMs: number,
     cache: CacheWindow,
-  ): Promise<CacheHandoffResult | undefined> {
+    adapter: HarnessAdapter,
+  ): Promise<DurableAdmissionRestore | undefined> {
     if (!this.lineage) return undefined;
     const records = (await this.lineage.children(sourceKey))
       .filter((record) => record.role === "cache-handoff" && record.cacheHandoffAdmission)
       .sort((left, right) => Date.parse(right.updatedAt || right.createdAt) - Date.parse(left.updatedAt || left.createdAt));
-    const admission = records[0]?.cacheHandoffAdmission;
+    const record = records[0];
+    const admission = record?.cacheHandoffAdmission;
     if (!admission) return undefined;
-    if (admission.state === "failed" || admission.state === "prepared") {
-      return {
+    if (admission.state === "prepared") {
+      const reconciled = await this.reconcilePreparedAdmission(adapter, admission);
+      if (reconciled.state === "not_found") return { kind: "retry", record: record!, admission };
+      if (reconciled.state === "unknown") {
+        throw new Error(`Cache handoff admission cannot be reconciled safely yet: ${reconciled.error || "native state unavailable"}`);
+      }
+      const failed = reconciled.state === "failed";
+      const updatedAdmission: CacheHandoffAdmissionCheckpoint = {
+        ...admission,
+        state: failed ? "failed" : "pending",
+        ...(reconciled.error ? { error: reconciled.error } : {}),
+      };
+      await this.lineage!.record({
+        ...record!,
+        ...(failed ? { lastError: reconciled.error || "Native handoff turn failed after admission" } : {}),
+        cacheHandoffAdmission: updatedAdmission,
+        updatedAt: new Date().toISOString(),
+      });
+      admission.state = updatedAdmission.state;
+      admission.error = updatedAdmission.error;
+    }
+    if (admission.state === "failed") {
+      return { kind: "result", result: {
         kind: "admitted_failed",
         session: admission.session,
-        admittedFailure: admission.error || (admission.state === "prepared"
-          ? "Cache handoff admission outcome is unknown after restart; unsafe retry suppressed"
-          : "Native handoff turn failed after admission"),
+        admittedFailure: admission.error || "Native handoff turn failed after admission",
         ageMs,
         cache,
-      };
+      } };
     }
-    return {
+    return { kind: "result", result: {
       kind: "rolled_over",
       session: admission.session,
       ...(admission.state === "pending" ? { deliveryPending: true } : {}),
       ageMs,
       cache,
-    };
+    } };
+  }
+
+  private async reconcilePreparedAdmission(
+    adapter: HarnessAdapter,
+    admission: CacheHandoffAdmissionCheckpoint,
+  ): Promise<import("./types/index.js").MessageAdmissionResult> {
+    if (adapter.getMessageAdmission) {
+      const native = await adapter.getMessageAdmission(admission.session.id, admission.operationId, admission.session.cwd);
+      if (native.state !== "unknown") return native;
+    }
+    const messages = await adapter.getSessionMessages?.(admission.session.id, 100);
+    if (messages === null || messages === undefined) return { state: "unknown", error: "replacement transcript unavailable" };
+    const userMessages = messages.filter((message) => message.role === "user");
+    if (userMessages.some((message) => messageText(message) === admission.prompt)) return { state: "admitted" };
+    if (userMessages.length === 0) return { state: "not_found" };
+    return { state: "unknown", error: "replacement contains different user input" };
   }
 }
 

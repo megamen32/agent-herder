@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { AnthropicMiniMaxSummarizer, CacheHandoffService, cacheWindowFor, continuationModelFor, movePinnedContinuation, semanticTranscript, unfinishedProbeDelayMs } from "../src/cache-handoff.js";
+import { LineageStore } from "../src/lineage-store.js";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "../src/types/index.js";
 
 const oldSession: AgentSession = {
@@ -100,6 +104,38 @@ describe("cache-aware session handoff", () => {
 
     expect(fixture.createSession).toHaveBeenCalledTimes(1);
     expect(fixture.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a prepared handoff retryable when neither native events nor transcript can prove admission", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-cache-handoff-unknown-"));
+    try {
+      const lineage = new LineageStore(join(root, "lineage.json"));
+      const replacement = { ...oldSession, id: "new", status: "idle" as const };
+      await lineage.record({
+        sessionKey: "codex:new",
+        parentKey: "codex:old",
+        role: "cache-handoff",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        source: "supervisor",
+        cacheHandoffAdmission: {
+          state: "prepared",
+          session: replacement,
+          operationId: "operation-unknown",
+          prompt: "persisted handoff",
+        },
+      });
+      const fixture = adapter([{ id: "u", role: "user", text: "Доделай", parts: [{ type: "text", text: "Доделай" }] }]);
+      fixture.value.getSessionMessages = async (id) => id === replacement.id ? null : [];
+      const service = new CacheHandoffService(new Map([["codex", fixture.value]]), { summarize: async () => "unused" }, lineage);
+
+      await expect(service.maybeRollover(oldSession, new Date("2026-10-03T10:31:00.000Z")))
+        .rejects.toThrow("cannot be reconciled safely yet");
+      expect(fixture.createSession).not.toHaveBeenCalled();
+      expect(fixture.sendMessage).not.toHaveBeenCalled();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("pins the delivered replacement before unpinning the stale source", async () => {

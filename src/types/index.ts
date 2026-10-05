@@ -5,6 +5,7 @@ export {
   type PermissionRequest,
   type SendMessageOptions,
   type SendMessageResult,
+  type MessageAdmissionResult,
   type CreateSessionOptions,
   type ListSessionsOptions,
   type SetPermissionsOptions,

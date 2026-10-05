@@ -1672,6 +1672,7 @@ describe("unfinished session launcher", () => {
     await restartedStore.markStarted(old, "crashed-process");
     const restartedCalls = { resumes: 0, messages: [] as string[] };
     const restartedAdapter = fixtureAdapter(old, restartedCalls);
+    restartedAdapter.getMessageAdmission = async () => ({ state: "failed", error: "native handoff turn failed" });
     let restartedCreates = 0;
     restartedAdapter.createSession = async () => { restartedCreates += 1; return { ...replacement, id: `unexpected-${restartedCreates}` }; };
     const restartedService = new CacheHandoffService(
@@ -1703,8 +1704,75 @@ describe("unfinished session launcher", () => {
     expect(await restartedStore.list()).toMatchObject([{
       sessionId: replacement.id,
       nonRetryableAdmission: true,
-      lastError: expect.stringContaining("unsafe retry suppressed"),
+      lastError: "native handoff turn failed",
     }]);
+  });
+
+  it("retries the same prepared operation after a crash before send without creating a second replacement", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-handoff-before-send-crash-"));
+    const lineagePath = join(root, "lineage.json");
+    const storePath = join(root, "unfinished.json");
+    const old = fixtureSession("idle", "codex");
+    const replacement = { ...old, id: "session-2", status: "idle" as const, lastActivity: new Date().toISOString() };
+    const firstAdapter = fixtureAdapter(old, { resumes: 0, messages: [] });
+    let firstCreates = 0;
+    firstAdapter.createSession = async () => { firstCreates += 1; return replacement; };
+    firstAdapter.sendMessage = async () => { throw new Error("simulated crash before native send"); };
+    const firstService = new CacheHandoffService(
+      new Map([["codex", firstAdapter]]),
+      { summarize: async () => "handoff" },
+      new LineageStore(lineagePath),
+    );
+
+    await expect(firstService.maybeRollover(old, new Date("2026-10-03T13:00:00.000Z")))
+      .rejects.toThrow("simulated crash before native send");
+    expect(firstCreates).toBe(1);
+    const prepared = (await new LineageStore(lineagePath).children("codex:session-1"))[0]?.cacheHandoffAdmission;
+    expect(prepared).toMatchObject({ state: "prepared", session: { id: replacement.id }, operationId: expect.any(String) });
+
+    const restartedStore = new UnfinishedSessionStore(storePath);
+    await restartedStore.markStarted(old, "crashed-before-send");
+    const restartedCalls = { resumes: 0, messages: [] as string[] };
+    const restartedAdapter = fixtureAdapter(old, restartedCalls);
+    restartedAdapter.getSessionMessages = async (id) => id === replacement.id ? [] : [{
+      id: "source-user", role: "user", text: "Продолжи.", parts: [{ type: "text", text: "Продолжи." }],
+    }];
+    let restartedCreates = 0;
+    let retriedInputId: string | undefined;
+    restartedAdapter.createSession = async () => { restartedCreates += 1; return { ...replacement, id: `unexpected-${restartedCreates}` }; };
+    restartedAdapter.sendMessage = async (_id, input) => {
+      restartedCalls.messages.push(input.message);
+      retriedInputId = input.inputId;
+      return { ok: true };
+    };
+    const restartedService = new CacheHandoffService(
+      new Map([["codex", restartedAdapter]]),
+      { summarize: async () => { throw new Error("prepared retry must reuse persisted prompt"); } },
+      new LineageStore(lineagePath),
+    );
+    const settingsStore = new SessionAutostartStore(join(root, "settings-before-send.json"), {});
+    await settingsStore.setRuntimeSettings({
+      inventoryWindowHours: 48,
+      evidenceMessageCount: 4,
+      judgeModel: "MiniMax-M3.1-Flash-Preview",
+      autopilotJudgeModel: "MiniMax-M3",
+      rolloverExpiredCache: true,
+    });
+    const restartedLauncher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", restartedAdapter]]),
+      store: restartedStore,
+      settingsStore,
+      retryDelayMs: 0,
+      cacheHandoff: restartedService,
+    });
+
+    await restartedLauncher.recoverPending();
+    await restartedLauncher.recoverPending();
+
+    expect(restartedCreates).toBe(0);
+    expect(restartedCalls.messages).toHaveLength(1);
+    expect(retriedInputId).toBe(prepared?.operationId);
+    expect(await restartedStore.list()).toMatchObject([{ sessionId: replacement.id, state: "active" }]);
   });
 
   it("keeps restart continuation on the expired session when rollover is disabled", async () => {

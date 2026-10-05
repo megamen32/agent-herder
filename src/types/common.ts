@@ -169,6 +169,13 @@ export interface SendMessageOptions {
   queue?: boolean;
   /** If true, steer the agent's current direction */
   steer?: boolean;
+  /** Stable native operation identity for crash-safe delivery reconciliation. */
+  inputId?: string;
+}
+
+export interface MessageAdmissionResult {
+  state: "not_found" | "admitted" | "failed" | "unknown";
+  error?: string;
 }
 
 export interface CreateSessionOptions {
@@ -250,6 +257,9 @@ export interface HarnessAdapter {
 
   /** Send a message to an agent session */
   sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult>;
+
+  /** Reconcile one stable send operation against native events or transcript state. */
+  getMessageAdmission?(id: string, inputId: string, cwd?: string): Promise<MessageAdmissionResult>;
 
   /** Abort / stop a running session */
   /** Legacy alias retained for callers that still mean terminate. */

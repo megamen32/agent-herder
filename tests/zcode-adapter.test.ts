@@ -536,6 +536,25 @@ describe("ZCode adapter", () => {
     await adapter.dispose();
   });
 
+  it("reuses a caller operation id and reconciles its native turn event", async () => {
+    const client = new FakeClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    await expect(adapter.sendMessage("session-1", {
+      message: "stable handoff",
+      inputId: "handoff-operation-1",
+    })).resolves.toEqual({ ok: true });
+    expect(client.calls.find((call) => call.method === "sendPrompt")?.args[0]).toMatchObject({
+      sessionId: "session-1",
+      inputId: "handoff-operation-1",
+    });
+    await expect(adapter.getMessageAdmission("session-1", "handoff-operation-1"))
+      .resolves.toEqual({ state: "admitted" });
+
+    await adapter.dispose();
+  });
+
   it("accepts replayed turn-start proof when the event history RPC is unavailable", async () => {
     class ReplayOnlyClient extends FakeClient {
       override listen(channel: string, event: string, arg: unknown, handler: (payload: unknown) => void): () => void {

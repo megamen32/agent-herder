@@ -727,7 +727,7 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     const send = async (): Promise<{ ok: boolean; error?: string; inputId?: string }> => {
-      const inputId = randomUUID();
+      const inputId = options.inputId || randomUUID();
       try {
         const workspace = this.sessionWorkspaces.get(id) || this.workspace();
         const ack = record(await this.callAgent("sendPrompt", {
@@ -892,6 +892,39 @@ export class ZcodeAdapter implements HarnessAdapter {
     const resumed = await this.resumeSession(id);
     if (!resumed.ok || !message) return resumed;
     return this.sendMessage(id, { message, queue: true });
+  }
+
+  async getMessageAdmission(id: string, inputId: string, cwd?: string): Promise<import("../types/index.js").MessageAdmissionResult> {
+    const workspace = this.sessionWorkspaces.get(id) || this.workspace(cwd);
+    const read = async () => sessionEventsFromPayload(await this.callAgent("readSessionEvents", {
+      ...workspace,
+      sessionId: id,
+      limit: 200,
+    }));
+    let events: Array<Record<string, unknown>>;
+    try {
+      events = await read();
+    } catch (error) {
+      if (!isInactiveSessionError(error)) {
+        return { state: "unknown", error: error instanceof Error ? error.message : String(error) };
+      }
+      const resumed = await this.resumeSession(id);
+      if (!resumed.ok) return { state: "unknown", error: resumed.error || "native resume failed during admission reconciliation" };
+      try {
+        events = await read();
+      } catch (retryError) {
+        return { state: "unknown", error: retryError instanceof Error ? retryError.message : String(retryError) };
+      }
+    }
+    for (const event of events) {
+      if (nonEmptyString(record(event.payload).inputId) !== inputId) continue;
+      const type = nonEmptyString(event.type);
+      if (type === "turn.failed") {
+        return { state: "failed", error: "ZCode native turn failed after admission" };
+      }
+      if (type === "turn.started" || type === "turn.completed") return { state: "admitted" };
+    }
+    return { state: "not_found" };
   }
 
   async forkSession(_id: string, _message?: string): Promise<ControlResult> {
