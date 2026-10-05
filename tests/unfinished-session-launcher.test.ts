@@ -1497,7 +1497,7 @@ describe("unfinished session launcher", () => {
     await failingLauncher.recoverPending();
     await failingLauncher.recoverPending();
     expect(failures).toBe(2);
-    expect((await store.listInventory())[0]?.assessmentFailure).toMatchObject({ pipelineVersion: 1, count: 2 });
+    expect((await store.listInventory())[0]?.assessmentFailure).toMatchObject({ pipelineVersion: 2, count: 2 });
 
     let sameVersionPlans = 0;
     await new UnfinishedSessionLauncher({
@@ -1537,7 +1537,7 @@ describe("unfinished session launcher", () => {
     }).recoverPending();
     expect(upgradedFailures).toBe(1);
     expect((await store.listInventory())[0]?.assessmentFailure).toMatchObject({
-      pipelineVersion: 1, count: 1,
+      pipelineVersion: 2, count: 1,
     });
     expect((await store.listInventory())[0]?.assessmentFailure?.nextAttemptAt).toBeUndefined();
     expect((await store.listInventory())[0]?.assessmentFailure?.notifiedAt).toBeUndefined();

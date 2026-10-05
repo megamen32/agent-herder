@@ -28,7 +28,7 @@ const MAX_SESSION_EVIDENCE_CHARS = 120_000;
 const CURRENT_EVIDENCE_VERSION = 2;
 // Increment only when semantic planning/packing changes make persisted
 // assessment failures obsolete. Successful verdict evidence is unaffected.
-const CURRENT_ASSESSMENT_PIPELINE_VERSION = 1;
+const CURRENT_ASSESSMENT_PIPELINE_VERSION = 2;
 
 class BatchPlanValidationError extends Error {
   override name = "BatchPlanValidationError";
