@@ -1140,7 +1140,7 @@ describe("unfinished session launcher", () => {
     let inventory = await store.listInventory();
     expect(plans).toBe(1);
     expect(calls).toEqual({ resumes: 0, messages: [] });
-    expect(inventory[0]).toMatchObject({ evidenceVersion: 1, verdict: { verdict: "completed" } });
+    expect(inventory[0]).toMatchObject({ evidenceVersion: 2, verdict: { verdict: "completed" } });
     expect(inventory[0]?.transcriptTail).toContain("ПЕРВЫЙ ПОЛЬЗОВАТЕЛЬСКИЙ ЗАПРОС");
     expect(inventory[0]?.transcriptTail).toContain("ПОСЛЕДНИЙ СМЫСЛОВОЙ КОНТЕКСТ");
 

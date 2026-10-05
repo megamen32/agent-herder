@@ -17,7 +17,10 @@ const DEFAULT_BATCH_OUTPUT_TOKENS = 16_384;
 // chunk is rejected by exact coverage before a verdict or continuation applies.
 const MAX_BATCH_PLAN_SESSIONS_PER_REQUEST = 64;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
-const CURRENT_EVIDENCE_VERSION = 1;
+// Version 2 invalidates verdicts produced before complete, globally reconciled
+// batch planning. Native transcripts stay intact; only their semantic audit is
+// refreshed once under the corrected planner.
+const CURRENT_EVIDENCE_VERSION = 2;
 
 function sessionProgressFingerprint(session: AgentSession): string {
   return [
