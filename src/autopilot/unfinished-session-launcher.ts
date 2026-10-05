@@ -831,7 +831,12 @@ export class UnfinishedSessionLauncher {
   private lifecycleEpoch = 0;
   private readonly completedSessions = new Set<string>();
   private readonly urgentSessions = new Set<string>();
-  private readonly watchdogObservations = new Map<string, { fingerprint: string; unchangedSince: number; misses: number }>();
+  private readonly watchdogObservations = new Map<string, {
+    fingerprint: string;
+    unchangedSince: number;
+    misses: number;
+    urgentFingerprint?: string;
+  }>();
   /** Sessions already continued by the batch planner in the current recovery pass. */
   private readonly continuedThisRecovery = new Set<string>();
 
@@ -879,6 +884,7 @@ export class UnfinishedSessionLauncher {
       const adapter = this.options.adapters.get(provider);
       const session = await adapter?.getSession(event.sessionId);
       const key = session ? sessionSourceKey(session) : sessionKey(provider, event.sessionId);
+      this.watchdogObservations.delete(key);
       this.completedSessions.delete(key);
       this.urgentSessions.add(key);
       if (session && await this.isEnabled(session.harness, session.id, session.cwd)) {
@@ -900,6 +906,7 @@ export class UnfinishedSessionLauncher {
     const adapter = this.options.adapters.get(provider);
     const session = await adapter?.getSession(event.sessionId);
     if (session && await this.isEnabled(session.harness, session.id, session.cwd)) {
+      this.watchdogObservations.delete(sessionSourceKey(session));
       const progressed = await this.options.store.markAdmissionInProgress(
         session.harness,
         session.id,
@@ -1090,7 +1097,12 @@ export class UnfinishedSessionLauncher {
         const fingerprint = sessionProgressFingerprint(session);
         const previous = this.watchdogObservations.get(key);
         const observation = previous?.fingerprint === fingerprint
-          ? { fingerprint, unchangedSince: previous.unchangedSince, misses: 0 }
+          ? {
+              fingerprint,
+              unchangedSince: previous.unchangedSince,
+              misses: 0,
+              ...(previous.urgentFingerprint ? { urgentFingerprint: previous.urgentFingerprint } : {}),
+            }
           : { fingerprint, unchangedSince: Date.now(), misses: 0 };
         this.watchdogObservations.set(key, observation);
         const lastActivity = Date.parse(session.lastActivity);
@@ -1114,6 +1126,8 @@ export class UnfinishedSessionLauncher {
         // deadline own the next semantic decision.
         if (record.acceptedAt && record.admissionPhase !== "terminal_observed") continue;
         if (session.status !== "error" && session.status !== "stopped" && !stalled) continue;
+        if (observation.urgentFingerprint === fingerprint) continue;
+        this.watchdogObservations.set(key, { ...observation, urgentFingerprint: fingerprint });
         await this.options.store.markStarted({ ...session, status: session.status === "running" ? "error" : session.status }, this.generationId);
         this.urgentSessions.add(key);
         urgent = true;
@@ -2345,6 +2359,10 @@ export class UnfinishedSessionLauncher {
       } satisfies UnfinishedSessionInventoryRecord;
     });
     await this.options.store.upsertInventoryBatch(records);
+    for (const candidate of assessed) {
+      this.urgentSessions.delete(candidate.sourceKey);
+      this.urgentSessions.delete(sessionKey(candidate.session.harness, candidate.session.id));
+    }
 
     const newlyRepeated = records.filter((record) => record.assessmentFailure!.count >= 2
       && !record.assessmentFailure!.notifiedAt);

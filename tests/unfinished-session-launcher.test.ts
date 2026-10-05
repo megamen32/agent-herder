@@ -3788,6 +3788,75 @@ describe("unfinished session launcher", () => {
     expect(calls.messages[0]).toContain("Продолжить с последнего подтверждённого шага");
   });
 
+  it("queues one watchdog retry per stopped-session fingerprint and wakes on new native evidence", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-watchdog-urgent-dedup-stopped-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = {
+      ...fixtureSession("stopped", "zcode"),
+      lastActivity: new Date(Date.now() - 1_000).toISOString(),
+    };
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    await settingsStore.setSession({ harness: "zcode", sessionId: session.id, cwd: session.cwd }, true);
+    const adapter = fixtureAdapter(session, { resumes: 0, messages: [] });
+    adapter.getSessionMessages = async () => [{ id: "goal", role: "user", text: "Continue this task", parts: [{ type: "text", text: "Continue this task" }] }];
+    let plans = 0;
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store, settingsStore,
+      generationId: "watchdog-stopped-dedup",
+      reconcileIntervalMs: 60_000, discoveryIdleMs: 60_000, watchdogIntervalMs: 5,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() { plans += 1; throw new Error("MiniMax Anthropic batch planner rejected with HTTP529"); },
+      },
+    });
+
+    const stop = launcher.start();
+    await waitUntil(() => plans === 1);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(plans).toBe(1);
+
+    await launcher.handleEvent("zcode", { kind: "turn.completed", harness: "zcode", sessionId: session.id });
+    await waitUntil(() => plans === 2);
+    session.messageCount += 1;
+    await waitUntil(() => plans === 3);
+    await waitUntil(async () => (await store.listInventory())[0]?.assessmentFailure?.count === 3);
+    stop();
+
+    expect(plans).toBe(3);
+    expect((await store.listInventory())[0]?.assessmentFailure).toMatchObject({ count: 3, nextAttemptAt: expect.any(String) });
+  });
+
+  it("does not repeatedly wake a stalled running session with an unchanged fingerprint", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-watchdog-urgent-dedup-stalled-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = {
+      ...fixtureSession("running", "zcode"),
+      lastActivity: new Date(Date.now() - 1_000).toISOString(),
+    };
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    await settingsStore.setSession({ harness: "zcode", sessionId: session.id, cwd: session.cwd }, true);
+    const adapter = fixtureAdapter(session, { resumes: 0, messages: [] });
+    adapter.getSessionMessages = async () => [{ id: "goal", role: "user", text: "Continue this task", parts: [{ type: "text", text: "Continue this task" }] }];
+    let plans = 0;
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store, settingsStore,
+      generationId: "watchdog-stalled-dedup",
+      reconcileIntervalMs: 60_000, discoveryIdleMs: 60_000, watchdogIntervalMs: 5, stalledTurnMs: 5,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() { plans += 1; throw new Error("MiniMax Anthropic batch planner rejected with HTTP529"); },
+      },
+    });
+
+    const stop = launcher.start();
+    await waitUntil(() => plans === 1);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    stop();
+
+    expect(plans).toBe(1);
+    expect((await store.listInventory())[0]?.assessmentFailure).toMatchObject({ count: 1 });
+  });
+
   it("watchdog does not wake a running session while its tool call is still active", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-watchdog-tool-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
