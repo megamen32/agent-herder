@@ -677,8 +677,9 @@ describe("ZCode adapter", () => {
     const methods = client.calls.map((call) => call.method);
     const firstSend = methods.indexOf("sendPrompt");
     expect(methods[firstSend + 1]).toBe("resumeSession");
-    expect(methods[firstSend + 2]).toBe("sendPrompt");
-    expect(methods[firstSend + 3]).toBe("readSessionEvents");
+    expect(methods[firstSend + 2]).toBe("readSession");
+    expect(methods[firstSend + 3]).toBe("sendPrompt");
+    expect(methods[firstSend + 4]).toBe("readSessionEvents");
 
     await adapter.dispose();
   });
@@ -705,6 +706,59 @@ describe("ZCode adapter", () => {
     });
     expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(1);
     expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(0);
+
+    await adapter.dispose();
+  });
+
+  it("does not send another prompt while a fresh native snapshot has pending permission", async () => {
+    class PendingPermissionClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSession") {
+          this.calls.push({ channel, method, args });
+          return { ...snapshot, runtime: { ...snapshot.runtime, pendingRequestIds: ["permission-current"] } };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const client = new PendingPermissionClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({
+      ok: false,
+      error: "ZCode ожидает вашего разрешения. Ответьте на запрос в этой сессии, затем продолжите работу.",
+    });
+    expect(client.calls.filter((call) => call.method === "readSession")).toHaveLength(1);
+    expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(0);
+    expect(client.calls.filter((call) => call.method === "respondPermission")).toHaveLength(0);
+
+    await adapter.dispose();
+  });
+
+  it("keeps a pending native permission visible as needs_input even when lifecycle ended", async () => {
+    class PendingPermissionClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSession") {
+          this.calls.push({ channel, method, args });
+          return {
+            ...snapshot,
+            session: { ...session, status: "stopped" },
+            runtime: { ...snapshot.runtime, pendingRequestIds: ["permission-current"] },
+          };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new PendingPermissionClient() });
+    await adapter.init();
+
+    await expect(adapter.getSession("session-1")).resolves.toMatchObject({
+      status: "needs_input",
+      needsPermission: true,
+      meta: { pendingRequestIds: ["permission-current"] },
+    });
 
     await adapter.dispose();
   });

@@ -330,7 +330,8 @@ function mapSession(payload: unknown, fallbackCwd: string, fallbackTitle?: strin
     : rawStatus;
   const lifecycle = lifecycleStateFor("zcode", session.sessionId);
   meta.hasActiveToolCall = lifecycle === "running" && hasActiveToolCall(messages);
-  const status = lifecycle === "ended" ? "stopped"
+  const status = pendingRequestIds.length > 0 ? "needs_input"
+    : lifecycle === "ended" ? "stopped"
     : lifecycle === "running" ? "running"
     : lifecycle === "idle" ? "idle"
     : recencyStatus;
@@ -874,6 +875,8 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     const send = async (): Promise<{ ok: boolean; error?: string; inputId?: string }> => {
+      const permissionError = await this.pendingPermissionError(id);
+      if (permissionError) return { ok: false, error: permissionError };
       const inputId = options.inputId || randomUUID();
       try {
         const workspace = this.sessionWorkspaces.get(id) || this.workspace();
@@ -1361,6 +1364,23 @@ export class ZcodeAdapter implements HarnessAdapter {
     }) as ZcodeSnapshot;
   }
 
+  private async pendingPermissionError(sessionId: string): Promise<string | undefined> {
+    for (const workspace of await this.workspaceCandidates(this.sessionWorkspaces.get(sessionId)?.workspacePath)) {
+      try {
+        const snapshot = await this.readSnapshot(sessionId, workspace);
+        if (sessionInfoFromPayload(snapshot)?.sessionId !== sessionId) continue;
+        this.sessionWorkspaces.set(sessionId, workspace);
+        const pendingRequestIds = record(record(snapshot).runtime).pendingRequestIds;
+        if (!Array.isArray(pendingRequestIds) || pendingRequestIds.length === 0) return undefined;
+        return "ZCode ожидает вашего разрешения. Ответьте на запрос в этой сессии, затем продолжите работу.";
+      } catch {
+        // Try the next workspace known to the native session index.
+      }
+    }
+    // Preserve the existing send/resume path when no workspace exposes a snapshot.
+    return undefined;
+  }
+
   private ensureSessionEventSubscription(sessionId: string, workspace: ZcodeWorkspaceRef): void {
     const hasTurnWaiter = [...this.turnStartWaiters.keys()].some((key) => key.startsWith(`${sessionId}:`));
     if (this.sessionEventUnsubscribers.has(sessionId) || !this.client.listen || (this.eventListeners.size === 0 && !hasTurnWaiter)) return;
@@ -1477,6 +1497,12 @@ export class ZcodeAdapter implements HarnessAdapter {
     let nextDelayMs = 0;
     this.queuedPromptFlushes.add(sessionId);
     try {
+      const permissionError = await this.pendingPermissionError(sessionId);
+      if (permissionError) {
+        console.error(`[agent-herder] ${permissionError}`);
+        nextDelayMs = 60_000;
+        return;
+      }
       const workspace = this.sessionWorkspaces.get(sessionId) || this.workspace();
       let acceptedInputId: string | undefined;
       try {
@@ -1499,6 +1525,12 @@ export class ZcodeAdapter implements HarnessAdapter {
           const resumed = await this.resumeSession(sessionId);
           if (resumed.ok) {
             try {
+              const retryPermissionError = await this.pendingPermissionError(sessionId);
+              if (retryPermissionError) {
+                console.error(`[agent-herder] ${retryPermissionError}`);
+                nextDelayMs = 60_000;
+                return;
+              }
               const inputId = randomUUID();
               const ack = record(await this.callAgent("sendPrompt", {
                 ...workspace,
