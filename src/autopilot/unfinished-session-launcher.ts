@@ -1165,6 +1165,7 @@ export class UnfinishedSessionLauncher {
     const candidates: Array<{ adapter: HarnessAdapter; session: AgentSession }> = [];
     const inventoryBatch: UnfinishedSessionInventoryRecord[] = [];
     const successfulHarnesses = new Set<"codex" | "zcode">();
+    const observedSourceKeys = new Set<string>();
     for (const [provider, adapter] of this.options.adapters) {
       if (!isAutocontinueInventoryHarness(provider) || !adapter.resumeSession) continue;
       if ((provider === "codex" || provider === "zcode") && adapter.isReady && !adapter.isReady()) {
@@ -1183,16 +1184,20 @@ export class UnfinishedSessionLauncher {
       }
       successfulHarnesses.add(provider);
       for (const session of sessions) {
-        if (nonRetryableAdmissions.has(sessionSourceKey(session))) continue;
         const lastActivity = Date.parse(session.lastActivity);
         if (!Number.isFinite(lastActivity) || Date.now() - lastActivity > inventoryWindowMs) continue;
+        const sourceKey = sessionSourceKey(session);
+        observedSourceKeys.add(sourceKey);
+        // A terminal native admission remains visible in the exact 48h
+        // snapshot, but must never be replanned into another prompt.
+        if (nonRetryableAdmissions.has(sourceKey)) continue;
         candidates.push({ adapter, session });
       }
     }
     candidates.sort((left, right) => Date.parse(right.session.lastActivity) - Date.parse(left.session.lastActivity));
     await this.options.store.reconcileInventorySnapshot(
       successfulHarnesses,
-      new Set(candidates.map(({ session }) => sessionSourceKey(session))),
+      observedSourceKeys,
     );
     if (this.options.judge?.plan) {
       const assessed: AssessedSession[] = [];
