@@ -265,6 +265,49 @@ describe("unfinished session launcher", () => {
     ] })).resolves.toMatchObject({ groups: [{ sourceSessionIds: ["codex:covered:/tmp/autostart-canary"] }] });
   });
 
+  it.each([
+    {
+      name: "zero-confidence needs-human does not block unfinished",
+      gateConfidence: 0,
+      expectedVerdict: "unfinished",
+      expectedConfidence: 1,
+    },
+    {
+      name: "positive needs-human blocks unfinished without borrowing its confidence",
+      gateConfidence: 0.7,
+      expectedVerdict: "needs_human",
+      expectedConfidence: 0.7,
+    },
+  ])("merges same-task mixed verdicts safely: $name", async ({ gateConfidence, expectedVerdict, expectedConfidence }) => {
+    const judge = createAnthropicCompatibleSessionCompletionJudge({
+      baseUrl: "https://api.minimax.io/anthropic/",
+      model: "MiniMax-M3.1-Flash-Preview",
+      token: "test-token",
+      fetchImpl: async () => {
+        const text = JSON.stringify({ groups: [{
+          source_session_ids: ["S1"], primary_session_id: "S1", verdict: "needs_human",
+          reason: "human gate", confidence: gateConfidence, topic: "Shared task", handoff: "",
+        }, {
+          source_session_ids: ["S2"], primary_session_id: "S2", verdict: "unfinished",
+          reason: "work remains", confidence: 1, topic: "Shared task", handoff: "continue work",
+        }] });
+        return new Response([
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } })}`,
+          "data: [DONE]",
+          "",
+        ].join("\n\n"), { status: 200, headers: { "content-type": "text/event-stream" } });
+      },
+    });
+
+    const plan = await judge.plan?.({ sessions: [
+      { session: { ...fixtureSession("idle", "codex"), id: "gate" }, transcriptTail: "gate evidence" },
+      { session: { ...fixtureSession("idle", "codex"), id: "unfinished" }, transcriptTail: "unfinished evidence" },
+    ] });
+
+    expect(plan?.groups).toHaveLength(1);
+    expect(plan?.groups[0]).toMatchObject({ verdict: expectedVerdict, confidence: expectedConfidence });
+  });
+
   it("retries the full chunk after an empty Anthropic SSE response and uses only the valid retry", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-anthropic-empty-retry-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));

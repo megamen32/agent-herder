@@ -2456,8 +2456,12 @@ function mergePlanGroups(groups: SessionBatchPlanGroup[]): SessionBatchPlanGroup
   const merged = new Map<string, SessionBatchPlanGroup>();
   // A human requirement is a hard safety gate for the whole semantic task.
   // Reconciliation may join it with an unfinished sibling; that cluster must
-  // remain blocked rather than inheriting the runnable verdict.
-  const verdictRank = { completed: 0, unfinished: 1, needs_human: 2 } as const;
+  // remain blocked rather than inheriting the runnable verdict. A zero-
+  // confidence needs_human result is only an inconclusive retry marker and
+  // must not block a positive unfinished assessment.
+  const verdictRank = (group: SessionBatchPlanGroup): number => group.verdict === "needs_human"
+    ? group.confidence > 0 ? 3 : 1
+    : group.verdict === "unfinished" ? 2 : 0;
   const combineText = (left: string, right: string, separator: string, max: number): string => {
     if (!right || left === right || left.includes(right)) return left.slice(0, max);
     if (!left || right.includes(left)) return right.slice(0, max);
@@ -2473,14 +2477,17 @@ function mergePlanGroups(groups: SessionBatchPlanGroup[]): SessionBatchPlanGroup
       continue;
     }
     const sourceSessionIds = [...new Set([...current.sourceSessionIds, ...group.sourceSessionIds])];
-    const stronger = verdictRank[group.verdict] > verdictRank[current.verdict] ? group : current;
+    const stronger = verdictRank(group) > verdictRank(current) ? group : current;
+    const supportingChosenVerdict = [current, group].filter((candidate) => candidate.verdict === stronger.verdict
+      && (stronger.verdict !== "needs_human"
+        || (candidate.confidence > 0) === (stronger.confidence > 0)));
     merged.set(key, {
       ...current,
       sourceSessionIds,
       primarySessionId: sourceSessionIds.includes(stronger.primarySessionId) ? stronger.primarySessionId : sourceSessionIds[0],
       verdict: stronger.verdict,
       reason: combineText(current.reason, group.reason, "; ", MAX_TEXT),
-      confidence: Math.max(current.confidence, group.confidence),
+      confidence: Math.max(...supportingChosenVerdict.map(({ confidence }) => confidence)),
       topic,
       handoff: combineText(current.handoff, group.handoff, "\n\n--- ДОПОЛНЕНИЕ ИЗ ДУБЛЯ ---\n\n", 32_000),
     });
