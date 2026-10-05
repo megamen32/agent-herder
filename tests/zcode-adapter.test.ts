@@ -736,6 +736,108 @@ describe("ZCode adapter", () => {
     await adapter.dispose();
   });
 
+  it("proves turn start from a fresh snapshot when event history rejects a newer field", async () => {
+    const inputId = "input-snapshot-fallback";
+    class NewEventFieldClient extends FakeClient {
+      sendPromptAccepted = false;
+
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSessionEvents") {
+          this.calls.push({ channel, method, args });
+          throw new Error('Unrecognized key: "executionStartedAt"');
+        }
+        if (channel === "zcode-agent" && method === "readSession") {
+          this.calls.push({ channel, method, args });
+          if (!this.sendPromptAccepted) return snapshot;
+          return {
+            ...snapshot,
+            runtime: { ...snapshot.runtime, eventSeq: 4, stateRevision: 4, activeTurnId: "turn-current" },
+            projection: { currentTurnId: "turn-current" },
+            messages: [
+              ...snapshot.messages,
+              {
+                info: {
+                  messageId: "user-current",
+                  sessionId: "session-1",
+                  role: "user",
+                  metadata: { inputId },
+                },
+                parts: [{ type: "text", text: "snapshot fallback prompt" }],
+              },
+            ],
+          };
+        }
+        if (channel === "zcode-agent" && method === "sendPrompt") {
+          this.calls.push({ channel, method, args });
+          this.sendPromptAccepted = true;
+          return { accepted: true, sessionId: "session-1", stateRevision: 4 };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const client = new NewEventFieldClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client, turnStartTimeoutMs: 100 });
+    await adapter.init();
+
+    await expect(adapter.sendMessage("session-1", {
+      message: "snapshot fallback prompt",
+      inputId,
+    })).resolves.toEqual({ ok: true });
+    expect(client.calls.find((call) => call.method === "readSessionEvents")?.args[0]).toMatchObject({ afterSeq: 2 });
+    expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(1);
+
+    await adapter.dispose();
+  });
+
+  it("does not mistake an existing active turn for a queued prompt starting", async () => {
+    const inputId = "input-still-queued";
+    class ExistingTurnClient extends FakeClient {
+      accepted = false;
+
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSessionEvents") {
+          this.calls.push({ channel, method, args });
+          throw new Error('Unrecognized key: "executionStartedAt"');
+        }
+        if (channel === "zcode-agent" && method === "readSession") {
+          this.calls.push({ channel, method, args });
+          return {
+            ...snapshot,
+            runtime: { ...snapshot.runtime, eventSeq: 4, stateRevision: this.accepted ? 4 : 2, activeTurnId: "turn-existing" },
+            projection: { currentTurnId: "turn-existing" },
+            ...(this.accepted ? {
+              messages: [
+                ...snapshot.messages,
+                {
+                  info: { messageId: "user-queued", sessionId: "session-1", role: "user", metadata: { inputId } },
+                  parts: [{ type: "text", text: "queued while another turn runs" }],
+                },
+              ],
+            } : {}),
+          };
+        }
+        if (channel === "zcode-agent" && method === "sendPrompt") {
+          this.calls.push({ channel, method, args });
+          this.accepted = true;
+          return { accepted: true, sessionId: "session-1", stateRevision: 4 };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const client = new ExistingTurnClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client, turnStartTimeoutMs: 5 });
+    await adapter.init();
+
+    await expect(adapter.sendMessage("session-1", {
+      message: "queued while another turn runs",
+      inputId,
+    })).resolves.toEqual({ ok: true, admitted: true, pending: true });
+
+    await adapter.dispose();
+  });
+
   it("keeps a pending native permission visible as needs_input even when lifecycle ended", async () => {
     class PendingPermissionClient extends FakeClient {
       override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {

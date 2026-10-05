@@ -64,8 +64,10 @@ const HEALTH_SESSION_TOOL_ALLOWLIST = ["Bash", "Read", "Edit", "Write", "Glob", 
 interface ZcodeMessage {
   info?: {
     messageId?: string;
+    parentMessageId?: string;
     role?: string;
     time?: { created?: number | string };
+    metadata?: Record<string, unknown>;
     cost?: number;
   };
   parts?: Array<Record<string, unknown>>;
@@ -79,7 +81,8 @@ interface ZcodeSnapshot {
       available?: Array<ZcodeModelRef | string>;
     };
   };
-  runtime?: { pendingRequestIds?: string[] };
+  runtime?: { eventSeq?: number; stateRevision?: number; activeTurnId?: string; pendingRequestIds?: string[] };
+  projection?: { currentTurnId?: string };
   messages?: ZcodeMessage[];
 }
 
@@ -357,6 +360,45 @@ function snapshotMessages(payload: unknown): ZcodeMessage[] {
   const root = record(payload);
   if (Array.isArray(root.messages)) return root.messages as ZcodeMessage[];
   return [];
+}
+
+function snapshotConfirmsPromptTurnStarted(
+  current: ZcodeSnapshot,
+  baseline: ZcodeSnapshot,
+  inputId: string,
+  message: string,
+  acceptedStateRevision: number | undefined,
+): boolean {
+  const currentRevision = current.runtime?.stateRevision;
+  if (acceptedStateRevision !== undefined && currentRevision !== undefined && currentRevision < acceptedStateRevision) return false;
+
+  const beforeMessages = baseline.messages ?? [];
+  const messages = current.messages ?? [];
+  const previousUserId = [...beforeMessages].reverse()
+    .find((candidate) => record(candidate.info).role === "user");
+  const previousUserMessageId = nonEmptyString(record(previousUserId?.info).messageId);
+  const userMessage = [...messages].reverse().find((candidate) => {
+    const info = record(candidate.info);
+    if (info.role !== "user") return false;
+    const messageId = nonEmptyString(info.messageId);
+    if (!messageId || messageId === previousUserMessageId) return false;
+    const metadataInputId = nonEmptyString(record(info.metadata).inputId);
+    return metadataInputId ? metadataInputId === inputId : textFromMessage(candidate) === message;
+  });
+  if (!userMessage) return false;
+
+  const baselineTurnId = nonEmptyString(baseline.runtime?.activeTurnId)
+    || nonEmptyString(baseline.projection?.currentTurnId);
+  const currentTurnId = nonEmptyString(current.runtime?.activeTurnId)
+    || nonEmptyString(current.projection?.currentTurnId);
+  if (currentTurnId && currentTurnId !== baselineTurnId) return true;
+
+  const userMessageId = nonEmptyString(record(userMessage.info).messageId);
+  if (!userMessageId) return false;
+  return messages.some((candidate) => {
+    const info = record(candidate.info);
+    return info.role === "assistant" && nonEmptyString(info.parentMessageId) === userMessageId;
+  });
 }
 
 function sessionEventsFromPayload(payload: unknown): Array<Record<string, unknown>> {
@@ -874,8 +916,15 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
-    const send = async (): Promise<{ ok: boolean; error?: string; inputId?: string }> => {
-      const permissionError = await this.pendingPermissionError(id);
+    const send = async (): Promise<{
+      ok: boolean;
+      error?: string;
+      inputId?: string;
+      baseline?: ZcodeSnapshot;
+      acceptedStateRevision?: number;
+    }> => {
+      const baseline = await this.readCurrentSnapshot(id);
+      const permissionError = this.pendingPermissionError(baseline);
       if (permissionError) return { ok: false, error: permissionError };
       const inputId = options.inputId || randomUUID();
       try {
@@ -891,7 +940,12 @@ export class ZcodeAdapter implements HarnessAdapter {
         if (ackSessionId && ackSessionId !== id) {
           throw new Error(`ZCode sendPrompt acknowledged a different session: ${ackSessionId}`);
         }
-        return { ok: true, inputId };
+        return {
+          ok: true,
+          inputId,
+          baseline,
+          acceptedStateRevision: typeof ack.stateRevision === "number" ? ack.stateRevision : undefined,
+        };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
@@ -921,7 +975,7 @@ export class ZcodeAdapter implements HarnessAdapter {
 
     const workspace = this.sessionWorkspaces.get(id) || this.workspace();
     this.sessionWorkspaces.set(id, workspace);
-    const started = await this.waitForTurnStart(id, workspace, result.inputId!);
+    const started = await this.waitForTurnStart(id, workspace, result.inputId!, options.message, result.baseline, result.acceptedStateRevision);
     if (!started.ok) {
       if (started.pending) {
         console.error(`[agent-herder] ZCode prompt accepted for ${id}, but native turn confirmation remains armed: ${started.error || "unknown error"}`);
@@ -1364,21 +1418,26 @@ export class ZcodeAdapter implements HarnessAdapter {
     }) as ZcodeSnapshot;
   }
 
-  private async pendingPermissionError(sessionId: string): Promise<string | undefined> {
+  private async readCurrentSnapshot(sessionId: string): Promise<ZcodeSnapshot | undefined> {
     for (const workspace of await this.workspaceCandidates(this.sessionWorkspaces.get(sessionId)?.workspacePath)) {
       try {
         const snapshot = await this.readSnapshot(sessionId, workspace);
         if (sessionInfoFromPayload(snapshot)?.sessionId !== sessionId) continue;
         this.sessionWorkspaces.set(sessionId, workspace);
-        const pendingRequestIds = record(record(snapshot).runtime).pendingRequestIds;
-        if (!Array.isArray(pendingRequestIds) || pendingRequestIds.length === 0) return undefined;
-        return "ZCode ожидает вашего разрешения. Ответьте на запрос в этой сессии, затем продолжите работу.";
+        return snapshot;
       } catch {
         // Try the next workspace known to the native session index.
       }
     }
     // Preserve the existing send/resume path when no workspace exposes a snapshot.
     return undefined;
+  }
+
+  private pendingPermissionError(snapshot: ZcodeSnapshot | undefined): string | undefined {
+    const pendingRequestIds = record(record(snapshot).runtime).pendingRequestIds;
+    return Array.isArray(pendingRequestIds) && pendingRequestIds.length > 0
+      ? "ZCode ожидает вашего разрешения. Ответьте на запрос в этой сессии, затем продолжите работу."
+      : undefined;
   }
 
   private ensureSessionEventSubscription(sessionId: string, workspace: ZcodeWorkspaceRef): void {
@@ -1441,6 +1500,9 @@ export class ZcodeAdapter implements HarnessAdapter {
     sessionId: string,
     workspace: ZcodeWorkspaceRef,
     inputId: string,
+    message: string,
+    baseline: ZcodeSnapshot | undefined,
+    acceptedStateRevision: number | undefined,
   ): Promise<{ ok: boolean; error?: string; pending?: boolean }> {
     const waiterKey = `${sessionId}:${inputId}`;
     let resolveEvent!: (result: { ok: boolean; error?: string }) => void;
@@ -1449,27 +1511,42 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.ensureSessionEventSubscription(sessionId, workspace);
     const deadline = Date.now() + this.turnStartTimeoutMs;
     let lastReadError: string | undefined;
+    let eventHistoryUnavailable = false;
     let keepArmed = false;
     try {
       do {
-        try {
-          const events = sessionEventsFromPayload(await this.callAgent("readSessionEvents", {
-            ...workspace,
-            sessionId,
-            limit: 200,
-          }));
-          for (const event of events) {
-            const payload = record(event.payload);
-            if (nonEmptyString(payload.inputId) !== inputId) continue;
-            const type = nonEmptyString(event.type);
-            if (type === "turn.started" || type === "turn.completed") return { ok: true };
-            if (type === "turn.failed") {
-              return { ok: false, error: `ZCode accepted prompt for ${sessionId}, but the native turn failed before confirmation completed` };
+        if (!eventHistoryUnavailable) {
+          try {
+            const events = sessionEventsFromPayload(await this.callAgent("readSessionEvents", {
+              ...workspace,
+              sessionId,
+              ...(typeof baseline?.runtime?.eventSeq === "number" ? { afterSeq: baseline.runtime.eventSeq } : {}),
+              limit: 200,
+            }));
+            for (const event of events) {
+              const payload = record(event.payload);
+              if (nonEmptyString(payload.inputId) !== inputId) continue;
+              const type = nonEmptyString(event.type);
+              if (type === "turn.started" || type === "turn.completed") return { ok: true };
+              if (type === "turn.failed") {
+                return { ok: false, error: `ZCode accepted prompt for ${sessionId}, but the native turn failed before confirmation completed` };
+              }
             }
+            lastReadError = undefined;
+          } catch (error) {
+            lastReadError = error instanceof Error ? error.message : String(error);
+            eventHistoryUnavailable = true;
           }
-          lastReadError = undefined;
-        } catch (error) {
-          lastReadError = error instanceof Error ? error.message : String(error);
+        }
+        if (eventHistoryUnavailable && baseline) {
+          try {
+            const snapshot = await this.readSnapshot(sessionId, workspace);
+            if (snapshotConfirmsPromptTurnStarted(snapshot, baseline, inputId, message, acceptedStateRevision)) {
+              return { ok: true };
+            }
+          } catch (error) {
+            lastReadError = error instanceof Error ? error.message : String(error);
+          }
         }
         const remainingMs = deadline - Date.now();
         if (remainingMs <= 0) break;
@@ -1494,27 +1571,31 @@ export class ZcodeAdapter implements HarnessAdapter {
     if (this.queuedPromptFlushes.has(sessionId)) return;
     const queue = this.queuedPrompts.get(sessionId);
     if (!queue?.length) return;
+    const queuedMessage = queue[0];
     let nextDelayMs = 0;
     this.queuedPromptFlushes.add(sessionId);
     try {
-      const permissionError = await this.pendingPermissionError(sessionId);
+      let baseline = await this.readCurrentSnapshot(sessionId);
+      const permissionError = this.pendingPermissionError(baseline);
       if (permissionError) {
         console.error(`[agent-herder] ${permissionError}`);
         nextDelayMs = 60_000;
         return;
       }
-      const workspace = this.sessionWorkspaces.get(sessionId) || this.workspace();
+      let workspace = this.sessionWorkspaces.get(sessionId) || this.workspace();
       let acceptedInputId: string | undefined;
+      let acceptedStateRevision: number | undefined;
       try {
         const inputId = randomUUID();
         const ack = record(await this.callAgent("sendPrompt", {
           ...workspace,
           sessionId,
           inputId,
-          content: queue[0],
+          content: queuedMessage,
         }));
         if (ack.accepted !== true) throw new Error("ZCode sendPrompt did not acknowledge prompt admission");
         acceptedInputId = inputId;
+        acceptedStateRevision = typeof ack.stateRevision === "number" ? ack.stateRevision : undefined;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (/prompt is already running/i.test(message)) {
@@ -1525,21 +1606,24 @@ export class ZcodeAdapter implements HarnessAdapter {
           const resumed = await this.resumeSession(sessionId);
           if (resumed.ok) {
             try {
-              const retryPermissionError = await this.pendingPermissionError(sessionId);
+              baseline = await this.readCurrentSnapshot(sessionId);
+              const retryPermissionError = this.pendingPermissionError(baseline);
               if (retryPermissionError) {
                 console.error(`[agent-herder] ${retryPermissionError}`);
                 nextDelayMs = 60_000;
                 return;
               }
+              workspace = this.sessionWorkspaces.get(sessionId) || workspace;
               const inputId = randomUUID();
               const ack = record(await this.callAgent("sendPrompt", {
                 ...workspace,
                 sessionId,
                 inputId,
-                content: queue[0],
+                content: queuedMessage,
               }));
               if (ack.accepted !== true) throw new Error("ZCode sendPrompt did not acknowledge prompt admission");
               acceptedInputId = inputId;
+              acceptedStateRevision = typeof ack.stateRevision === "number" ? ack.stateRevision : undefined;
             } catch (retryError) {
               const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
               if (/prompt is already running/i.test(retryMessage)) {
@@ -1574,7 +1658,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       if (!acceptedInputId) return;
       queue.shift();
       if (queue.length === 0) this.queuedPrompts.delete(sessionId);
-      const started = await this.waitForTurnStart(sessionId, workspace, acceptedInputId);
+      const started = await this.waitForTurnStart(sessionId, workspace, acceptedInputId, queuedMessage, baseline, acceptedStateRevision);
       if (!started.ok) {
         console.error(`[agent-herder] queued ZCode prompt admission was not followed by a turn for ${sessionId}: ${started.error || "unknown error"}`);
       }
