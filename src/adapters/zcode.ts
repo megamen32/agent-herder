@@ -82,7 +82,11 @@ interface ZcodeSnapshot {
     };
   };
   runtime?: { eventSeq?: number; stateRevision?: number; activeTurnId?: string; pendingRequestIds?: string[] };
-  projection?: { currentTurnId?: string };
+  projection?: {
+    currentTurnId?: string;
+    pendingPermissions?: unknown[];
+    activeToolCalls?: Array<{ status?: string }>;
+  };
   messages?: ZcodeMessage[];
 }
 
@@ -391,7 +395,14 @@ function snapshotConfirmsPromptTurnStarted(
     || nonEmptyString(baseline.projection?.currentTurnId);
   const currentTurnId = nonEmptyString(current.runtime?.activeTurnId)
     || nonEmptyString(current.projection?.currentTurnId);
-  if (currentTurnId && currentTurnId !== baselineTurnId) return true;
+  const baselineStatus = nonEmptyString(baseline.session?.status)?.toLowerCase();
+  const baselineHadActiveTurn = Boolean(baseline.runtime?.activeTurnId)
+    || baselineStatus === "running"
+    || baselineStatus === "waiting"
+    || baselineStatus === "paused"
+    || (baseline.projection?.pendingPermissions?.length ?? 0) > 0
+    || (baseline.projection?.activeToolCalls ?? []).some((toolCall) => toolCall.status === "pending" || toolCall.status === "running");
+  if (!baselineHadActiveTurn && currentTurnId && currentTurnId !== baselineTurnId) return true;
 
   const userMessageId = nonEmptyString(record(userMessage.info).messageId);
   if (!userMessageId) return false;

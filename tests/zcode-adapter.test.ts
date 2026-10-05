@@ -748,9 +748,10 @@ describe("ZCode adapter", () => {
         }
         if (channel === "zcode-agent" && method === "readSession") {
           this.calls.push({ channel, method, args });
-          if (!this.sendPromptAccepted) return snapshot;
+          if (!this.sendPromptAccepted) return { ...snapshot, session: { ...session, status: "idle" } };
           return {
             ...snapshot,
+            session: { ...session, status: "running" },
             runtime: { ...snapshot.runtime, eventSeq: 4, stateRevision: 4, activeTurnId: "turn-current" },
             projection: { currentTurnId: "turn-current" },
             messages: [
@@ -786,6 +787,56 @@ describe("ZCode adapter", () => {
     })).resolves.toEqual({ ok: true });
     expect(client.calls.find((call) => call.method === "readSessionEvents")?.args[0]).toMatchObject({ afterSeq: 2 });
     expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(1);
+
+    await adapter.dispose();
+  });
+
+  it("does not treat an unrelated turn change as the queued prompt starting", async () => {
+    const inputId = "input-queued-behind-existing-turn";
+    class TurnSwitchWhileQueuedClient extends FakeClient {
+      accepted = false;
+
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSessionEvents") {
+          this.calls.push({ channel, method, args });
+          throw new Error('Unrecognized key: "executionStartedAt"');
+        }
+        if (channel === "zcode-agent" && method === "readSession") {
+          this.calls.push({ channel, method, args });
+          const activeTurnId = this.accepted ? "turn-b" : "turn-a";
+          return {
+            ...snapshot,
+            session: { ...session, status: "running" },
+            runtime: { ...snapshot.runtime, eventSeq: this.accepted ? 4 : 2, stateRevision: this.accepted ? 4 : 2, activeTurnId },
+            projection: { currentTurnId: activeTurnId },
+            ...(this.accepted ? {
+              messages: [
+                ...snapshot.messages,
+                {
+                  info: { messageId: "user-queued", sessionId: "session-1", role: "user", metadata: { inputId } },
+                  parts: [{ type: "text", text: "queued behind existing turn" }],
+                },
+              ],
+            } : {}),
+          };
+        }
+        if (channel === "zcode-agent" && method === "sendPrompt") {
+          this.calls.push({ channel, method, args });
+          this.accepted = true;
+          return { accepted: true, sessionId: "session-1", stateRevision: 4 };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const client = new TurnSwitchWhileQueuedClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client, turnStartTimeoutMs: 5 });
+    await adapter.init();
+
+    await expect(adapter.sendMessage("session-1", {
+      message: "queued behind existing turn",
+      inputId,
+    })).resolves.toEqual({ ok: true, admitted: true, pending: true });
 
     await adapter.dispose();
   });
