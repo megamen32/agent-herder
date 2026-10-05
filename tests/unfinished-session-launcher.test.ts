@@ -265,6 +265,58 @@ describe("unfinished session launcher", () => {
     ] })).resolves.toMatchObject({ groups: [{ sourceSessionIds: ["codex:covered:/tmp/autostart-canary"] }] });
   });
 
+  it("accepts bounded numeric and decimal-string aliases when MiniMax strips the S prefix", async () => {
+    const judge = createAnthropicCompatibleSessionCompletionJudge({
+      baseUrl: "https://api.minimax.io/anthropic/",
+      model: "MiniMax-M3.1-Flash-Preview",
+      token: "test-token",
+      fetchImpl: async () => {
+        const text = JSON.stringify({ groups: [{
+          source_session_ids: [1, "2"], primary_session_id: "2", verdict: "completed",
+          reason: "done", confidence: 1, topic: "Both", handoff: "",
+        }] });
+        return new Response([
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } })}`,
+          "data: [DONE]",
+          "",
+        ].join("\n\n"), { status: 200, headers: { "content-type": "text/event-stream" } });
+      },
+    });
+    const plan = await judge.plan?.({ sessions: [
+      { session: { ...fixtureSession("idle", "codex"), id: "first" }, transcriptTail: "first" },
+      { session: { ...fixtureSession("idle", "zcode"), id: "second" }, transcriptTail: "second" },
+    ] });
+
+    expect(plan).toMatchObject({ groups: [{
+      sourceSessionIds: ["codex:first:/tmp/autostart-canary", "zcode:second:/tmp/autostart-canary"],
+      primarySessionId: "zcode:second:/tmp/autostart-canary",
+    }] });
+  });
+
+  it.each([3, "3", "023", "unknown"])("strictly rejects out-of-range or unknown MiniMax alias %s", async (invalidRef) => {
+    const judge = createAnthropicCompatibleSessionCompletionJudge({
+      baseUrl: "https://api.minimax.io/anthropic/",
+      model: "MiniMax-M3.1-Flash-Preview",
+      token: "test-token",
+      fetchImpl: async () => {
+        const text = JSON.stringify({ groups: [{
+          source_session_ids: [invalidRef], primary_session_id: invalidRef, verdict: "completed",
+          reason: "done", confidence: 1, topic: "Invalid", handoff: "",
+        }] });
+        return new Response([
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } })}`,
+          "data: [DONE]",
+          "",
+        ].join("\n\n"), { status: 200, headers: { "content-type": "text/event-stream" } });
+      },
+    });
+
+    await expect(judge.plan?.({ sessions: [
+      { session: { ...fixtureSession("idle", "codex"), id: "first" }, transcriptTail: "first" },
+      { session: { ...fixtureSession("idle", "zcode"), id: "second" }, transcriptTail: "second" },
+    ] })).rejects.toThrow();
+  });
+
   it("rejects a compact reconciliation that omits a chunk group", async () => {
     const judge = createAnthropicCompatibleSessionCompletionJudge({
       baseUrl: "https://api.minimax.io/anthropic/",

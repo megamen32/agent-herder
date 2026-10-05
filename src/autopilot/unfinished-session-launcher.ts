@@ -2538,6 +2538,12 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
     idAliases.set(session.id, ids);
   }
   const resolveId = (value: unknown, field: string): string => {
+    const numericPosition = typeof value === "number" && Number.isSafeInteger(value)
+      ? value
+      : typeof value === "string" && /^[1-9]\d*$/.test(value) ? Number(value) : undefined;
+    if (numericPosition !== undefined && numericPosition >= 1 && numericPosition <= candidates.length) {
+      return sessionSourceKey(candidates[numericPosition - 1]!.session);
+    }
     const raw = boundedText(value, field, 128);
     const alias = aliases.get(raw);
     if (alias) return alias;
