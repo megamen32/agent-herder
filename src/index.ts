@@ -13,7 +13,7 @@ import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { AutopilotSessionStore } from "./autopilot/session-store.js";
-import { createAnthropicCompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
+import { createAnthropicCompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
 import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore } from "./autopilot/index.js";
 import { acquireLock } from "./autopilot-hook.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
@@ -58,6 +58,27 @@ const LAZY_ADAPTERS = new Set(["codex", "hermes", "zcode"]);
 function parseEnvBool(val: string | undefined, fallback: boolean): boolean {
   if (!val) return fallback;
   return val === "1" || val === "true" || val === "yes";
+}
+
+/** Resolve the currently configured MiniMax client for every batch operation. */
+export function createDynamicSessionCompletionJudge(
+  getClient: () => Promise<SessionCompletionJudge>,
+): SessionCompletionJudge {
+  return {
+    async decide(input) {
+      return (await getClient()).decide(input);
+    },
+    async plan(input) {
+      const plan = (await getClient()).plan;
+      if (!plan) throw new Error("Configured session judge does not support batch planning");
+      return plan(input);
+    },
+    async reconcile(input) {
+      const reconcile = (await getClient()).reconcile;
+      if (!reconcile) throw new Error("Configured session judge does not support batch reconciliation");
+      return reconcile(input);
+    },
+  };
 }
 
 // ===== Create adapters =====
@@ -589,11 +610,7 @@ async function main() {
   };
   const unfinishedJudge = process.env.AGENT_HERDER_UNFINISHED_JUDGE_ENABLED === "false" || !unfinishedJudgeToken
     ? undefined
-    : { async decide(input: Parameters<ReturnType<typeof createAnthropicCompatibleSessionCompletionJudge>["decide"]>[0]) {
-        return (await getUnfinishedJudgeClient()).decide(input);
-      }, async plan(input: Parameters<NonNullable<ReturnType<typeof createAnthropicCompatibleSessionCompletionJudge>["plan"]>>[0]) {
-        return (await getUnfinishedJudgeClient()).plan!(input);
-      } };
+    : createDynamicSessionCompletionJudge(getUnfinishedJudgeClient);
   const unfinishedSessionLauncher = new UnfinishedSessionLauncher({
     adapters,
     store: unfinishedSessionStore,
