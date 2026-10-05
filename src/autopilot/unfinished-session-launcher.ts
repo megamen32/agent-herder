@@ -18,6 +18,7 @@ const DEFAULT_BATCH_OUTPUT_TOKENS = 16_384;
 const MAX_BATCH_PLAN_SESSIONS_PER_REQUEST = 32;
 const MAX_BATCH_PLAN_CHUNKS = 64;
 const DEFAULT_BATCH_PLAN_CONCURRENCY = 3;
+const MAX_REPAIRED_CHUNKS = 4;
 const MAX_OMISSION_DECISION_CONCURRENCY = 4;
 const MAX_PERSISTENT_OMISSION_DECISIONS = 4;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
@@ -1843,7 +1844,10 @@ export class UnfinishedSessionLauncher {
       // Reserve one bounded repair pass for every chunk before the first fetch.
       // A malformed or incomplete result retries the entire chunk and discards
       // the first result, so the repair envelope must be the same full request.
-      repairRequests: partitionBatchCandidates(sessions).map(buildBatchPlannerBudgetRequest),
+      repairRequests: largestBatchPlannerBudgetRequests(
+        partitionBatchCandidates(sessions),
+        MAX_REPAIRED_CHUNKS,
+      ),
       // Persistent omissions are globally capped. Reserve exactly the four
       // largest possible decide envelopes rather than multiplying evidence by
       // every source in a large 48-hour inventory.
@@ -1869,60 +1873,67 @@ export class UnfinishedSessionLauncher {
       Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY || DEFAULT_BATCH_PLAN_CONCURRENCY),
       DEFAULT_BATCH_PLAN_CONCURRENCY,
     ));
-    const processChunk = async (chunk: AssessedSession[]): Promise<{
-      groups: SessionBatchPlanGroup[];
-      omissions: AssessedSession[];
-      repaired: boolean;
-    }> => {
-      const requestPlan = async (candidates: AssessedSession[]): Promise<SessionBatchPlan> => canonicalizePlanSourceKeys(
+    const requestPlan = async (candidates: AssessedSession[]): Promise<SessionBatchPlan> => canonicalizePlanSourceKeys(
         await withAbortDeadline(planner({
           sessions: candidates.map(({ session, transcriptTail }) => ({ session, transcriptTail })),
           signal: plannerPhaseController.signal,
         }), plannerPhaseDeadline, plannerPhaseController),
         candidates,
       );
-      let plan: SessionBatchPlan | undefined;
-      let chunkRepaired = false;
-      let initialFailure: unknown;
-      try {
-        plan = await requestPlan(chunk);
-        assertBatchPlanCoverage(plan, chunk);
-      } catch (error) {
-        if (!(error instanceof BatchPlanValidationError)) throw error;
-        // The failed response is never eligible for partial reuse. In
-        // particular, an omitted-session error is raised after `plan` was
-        // assigned, so clear it explicitly before the full-chunk retry.
-        plan = undefined;
-        initialFailure = error;
-      }
-      if (!plan) {
-        chunkRepaired = true;
-        console.error(`[agent-herder] MiniMax вернул некорректный chunk; повторяю весь chunk один раз: ${errorText(initialFailure)}`);
-        plan = await requestPlan(chunk);
-        // The second response remains strict for every structural defect. A
-        // pure coverage omission is the sole recoverable case: classify each
-        // missing source independently from the already packed evidence, then
-        // feed those strict singleton groups through normal reconciliation.
-        const missing = missingBatchPlanCandidates(plan, chunk);
-        return { groups: plan.groups, omissions: missing, repaired: chunkRepaired };
-      }
-      return { groups: plan.groups, omissions: [], repaired: chunkRepaired };
-    };
-    let chunkResults: Array<{ groups: SessionBatchPlanGroup[]; omissions: AssessedSession[]; repaired: boolean }>;
+    let phaseOne: Array<{ plan?: SessionBatchPlan; validationError?: BatchPlanValidationError }>;
     try {
-      chunkResults = await mapConcurrentOrdered(
+      phaseOne = await mapConcurrentOrdered(
         plannerChunks,
         plannerConcurrency,
-        processChunk,
+        async (chunk) => {
+          try {
+            const plan = await requestPlan(chunk);
+            assertBatchPlanCoverage(plan, chunk);
+            return { plan };
+          } catch (error) {
+            if (!(error instanceof BatchPlanValidationError)) throw error;
+            return { validationError: error };
+          }
+        },
         plannerPhaseController,
       );
     } catch (error) {
       plannerPhaseController.abort(error);
       throw error;
     }
+    const invalidChunkIndices = phaseOne.flatMap((result, index) => result.validationError ? [index] : []);
+    if (invalidChunkIndices.length > MAX_REPAIRED_CHUNKS) {
+      throw new BatchPlanValidationError(`MiniMax returned ${invalidChunkIndices.length} invalid chunks, above the safe repair limit ${MAX_REPAIRED_CHUNKS}`);
+    }
+    let repairedChunks: Array<{ index: number; plan: SessionBatchPlan; omissions: AssessedSession[] }> = [];
+    if (invalidChunkIndices.length > 0) {
+      try {
+        repairedChunks = await mapConcurrentOrdered(
+          invalidChunkIndices,
+          plannerConcurrency,
+          async (index) => {
+            const chunk = plannerChunks[index]!;
+            console.error(`[agent-herder] MiniMax вернул некорректный chunk; повторяю весь chunk один раз: ${errorText(phaseOne[index]!.validationError)}`);
+            const plan = await requestPlan(chunk);
+            const omissions = missingBatchPlanCandidates(plan, chunk);
+            return { index, plan, omissions };
+          },
+          plannerPhaseController,
+        );
+      } catch (error) {
+        plannerPhaseController.abort(error);
+        throw error;
+      }
+    }
+    const repairsByIndex = new Map(repairedChunks.map((result) => [result.index, result]));
+    const chunkResults = phaseOne.map((result, index) => {
+      const repairedChunk = repairsByIndex.get(index);
+      if (repairedChunk) return { groups: repairedChunk.plan.groups, omissions: repairedChunk.omissions };
+      return { groups: result.plan!.groups, omissions: [] as AssessedSession[] };
+    });
     const groups = chunkResults.flatMap((result) => result.groups);
     const persistentOmissions = chunkResults.flatMap((result) => result.omissions);
-    const repaired = chunkResults.some((result) => result.repaired);
+    const repaired = invalidChunkIndices.length > 0;
     if (persistentOmissions.length > MAX_PERSISTENT_OMISSION_DECISIONS) {
       throw new BatchPlanValidationError(`MiniMax full retries omitted ${persistentOmissions.length} sessions, above the safe fallback limit ${MAX_PERSISTENT_OMISSION_DECISIONS}`);
     }
@@ -2981,6 +2992,17 @@ function buildBatchPlannerBudgetRequest(sessions: SessionBatchCandidate[]): unkn
     system: [{ type: "text", text: batchPlannerPrompt(), cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: JSON.stringify(batchPlannerPayload(sessions)) }],
   };
+}
+
+function largestBatchPlannerBudgetRequests(chunks: SessionBatchCandidate[][], limit: number): unknown[] {
+  return chunks
+    .map((chunk) => {
+      const request = buildBatchPlannerBudgetRequest(chunk);
+      return { request, tokens: estimateContextTokens(JSON.stringify(request)) };
+    })
+    .sort((left, right) => right.tokens - left.tokens)
+    .slice(0, limit)
+    .map(({ request }) => request);
 }
 
 /** Superset of the OpenAI and Anthropic per-session judge wire envelopes. */
