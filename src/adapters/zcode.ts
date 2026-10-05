@@ -81,12 +81,7 @@ interface ZcodeSnapshot {
       available?: Array<ZcodeModelRef | string>;
     };
   };
-  runtime?: { eventSeq?: number; stateRevision?: number; activeTurnId?: string; pendingRequestIds?: string[] };
-  projection?: {
-    currentTurnId?: string;
-    pendingPermissions?: unknown[];
-    activeToolCalls?: Array<{ status?: string }>;
-  };
+  runtime?: { eventSeq?: number; stateRevision?: number; pendingRequestIds?: string[] };
   messages?: ZcodeMessage[];
 }
 
@@ -390,19 +385,6 @@ function snapshotConfirmsPromptTurnStarted(
     return metadataInputId ? metadataInputId === inputId : textFromMessage(candidate) === message;
   });
   if (!userMessage) return false;
-
-  const baselineTurnId = nonEmptyString(baseline.runtime?.activeTurnId)
-    || nonEmptyString(baseline.projection?.currentTurnId);
-  const currentTurnId = nonEmptyString(current.runtime?.activeTurnId)
-    || nonEmptyString(current.projection?.currentTurnId);
-  const baselineStatus = nonEmptyString(baseline.session?.status)?.toLowerCase();
-  const baselineHadActiveTurn = Boolean(baseline.runtime?.activeTurnId)
-    || baselineStatus === "running"
-    || baselineStatus === "waiting"
-    || baselineStatus === "paused"
-    || (baseline.projection?.pendingPermissions?.length ?? 0) > 0
-    || (baseline.projection?.activeToolCalls ?? []).some((toolCall) => toolCall.status === "pending" || toolCall.status === "running");
-  if (!baselineHadActiveTurn && currentTurnId && currentTurnId !== baselineTurnId) return true;
 
   const userMessageId = nonEmptyString(record(userMessage.info).messageId);
   if (!userMessageId) return false;

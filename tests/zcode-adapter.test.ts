@@ -736,7 +736,7 @@ describe("ZCode adapter", () => {
     await adapter.dispose();
   });
 
-  it("proves turn start from a fresh snapshot when event history rejects a newer field", async () => {
+  it("proves prompt processing from its assistant parent when event history rejects a newer field", async () => {
     const inputId = "input-snapshot-fallback";
     class NewEventFieldClient extends FakeClient {
       sendPromptAccepted = false;
@@ -765,6 +765,10 @@ describe("ZCode adapter", () => {
                 },
                 parts: [{ type: "text", text: "snapshot fallback prompt" }],
               },
+              {
+                info: { messageId: "assistant-current", sessionId: "session-1", role: "assistant", parentMessageId: "user-current" },
+                parts: [{ type: "text", text: "processed snapshot fallback prompt" }],
+              },
             ],
           };
         }
@@ -791,7 +795,7 @@ describe("ZCode adapter", () => {
     await adapter.dispose();
   });
 
-  it("does not treat an unrelated turn change as the queued prompt starting", async () => {
+  it("does not treat an unrelated turn after an idle baseline as the queued prompt starting", async () => {
     const inputId = "input-queued-behind-existing-turn";
     class TurnSwitchWhileQueuedClient extends FakeClient {
       accepted = false;
@@ -803,12 +807,12 @@ describe("ZCode adapter", () => {
         }
         if (channel === "zcode-agent" && method === "readSession") {
           this.calls.push({ channel, method, args });
-          const activeTurnId = this.accepted ? "turn-b" : "turn-a";
+          const activeTurnId = this.accepted ? "turn-b" : undefined;
           return {
             ...snapshot,
-            session: { ...session, status: "running" },
-            runtime: { ...snapshot.runtime, eventSeq: this.accepted ? 4 : 2, stateRevision: this.accepted ? 4 : 2, activeTurnId },
-            projection: { currentTurnId: activeTurnId },
+            session: { ...session, status: this.accepted ? "running" : "idle" },
+            runtime: { ...snapshot.runtime, eventSeq: this.accepted ? 4 : 2, stateRevision: this.accepted ? 4 : 2, ...(activeTurnId ? { activeTurnId } : {}) },
+            projection: { currentTurnId: this.accepted ? "turn-b" : "turn-old" },
             ...(this.accepted ? {
               messages: [
                 ...snapshot.messages,
