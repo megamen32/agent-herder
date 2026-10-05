@@ -16,8 +16,10 @@ export interface CacheWindow {
 }
 
 export interface CacheHandoffResult {
-  kind: "fresh" | "unknown" | "rolled_over";
+  kind: "fresh" | "unknown" | "rolled_over" | "admitted_failed";
   session?: AgentSession;
+  deliveryPending?: boolean;
+  admittedFailure?: string;
   ageMs: number;
   cache: CacheWindow;
 }
@@ -132,6 +134,8 @@ export function semanticTranscript(messages: SessionMessageView[]): string {
 }
 
 export class CacheHandoffService {
+  private readonly admittedResults = new Map<string, CacheHandoffResult>();
+
   constructor(
     private readonly adapters: Map<string, HarnessAdapter>,
     private readonly summarizer: SessionSummarizer,
@@ -140,6 +144,9 @@ export class CacheHandoffService {
   ) {}
 
   async maybeRollover(session: AgentSession, now = new Date(), options: { movePinned?: boolean } = {}): Promise<CacheHandoffResult> {
+    const sourceKey = `${session.harness}:${session.id}`;
+    const admitted = this.admittedResults.get(sourceKey);
+    if (admitted) return admitted;
     const ageMs = Math.max(0, now.getTime() - Date.parse(session.lastActivity));
     const cache = cacheWindowFor(session, this.env);
     if (!cache.ttlMs) return { kind: "unknown", ageMs, cache };
@@ -162,7 +169,19 @@ export class CacheHandoffService {
       if (!selected.ok) throw new Error(selected.error || `не удалось выбрать модель продолжения ${continuationModel}`);
     }
     const sent = await adapter.sendMessage(created.id, { message: handoffPrompt(summary), queue: false });
-    if (!sent.ok) throw new Error(sent.error || "новая сессия не приняла handoff");
+    if (!sent.ok && !(sent.admitted && sent.nonRetryable)) throw new Error(sent.error || "новая сессия не приняла handoff");
+    const result: CacheHandoffResult = sent.admitted && sent.nonRetryable
+      ? {
+          kind: "admitted_failed",
+          session: created,
+          admittedFailure: sent.error || "Native handoff turn failed after admission",
+          ageMs,
+          cache,
+        }
+      : { kind: "rolled_over", session: created, ...(sent.pending ? { deliveryPending: true } : {}), ageMs, cache };
+    // Admission is the idempotency boundary. Remember the replacement before
+    // pin/lineage side effects so their failure cannot create or send another handoff.
+    if (sent.admitted || sent.pending) this.admittedResults.set(sourceKey, result);
     if (options.movePinned) await movePinnedContinuation(adapter, [{ adapter, sessionId: session.id }], created.id);
     await this.lineage?.record({
       sessionKey: `${session.harness}:${created.id}`,
@@ -173,7 +192,7 @@ export class CacheHandoffService {
       createdAt: new Date().toISOString(),
       source: "supervisor",
     });
-    return { kind: "rolled_over", session: created, ageMs, cache };
+    return result;
   }
 }
 

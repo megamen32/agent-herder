@@ -891,8 +891,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   async recover(id: string, message?: string): Promise<ControlResult> {
     const resumed = await this.resumeSession(id);
     if (!resumed.ok || !message) return resumed;
-    const sent = await this.sendMessage(id, { message, queue: true });
-    return sent.ok ? resumed : { ok: false, error: sent.error };
+    return this.sendMessage(id, { message, queue: true });
   }
 
   async forkSession(_id: string, _message?: string): Promise<ControlResult> {

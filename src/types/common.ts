@@ -94,12 +94,6 @@ export interface HarnessCapabilities {
   events: boolean;
 }
 
-export interface ControlResult {
-  ok: boolean;
-  error?: string;
-  sessionId?: string;
-}
-
 export interface SendMessageResult {
   ok: boolean;
   error?: string;
@@ -109,6 +103,10 @@ export interface SendMessageResult {
   nonRetryable?: boolean;
   /** The native harness admitted the prompt, but its turn-start event is not confirmed yet. */
   pending?: boolean;
+}
+
+export interface ControlResult extends SendMessageResult {
+  sessionId?: string;
 }
 
 export interface SessionHistoryInfo {

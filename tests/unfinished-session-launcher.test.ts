@@ -1586,6 +1586,53 @@ describe("unfinished session launcher", () => {
     expect(await store.list()).toMatchObject([{ sessionId: "session-2", state: "active" }]);
   });
 
+  it("does not repeat a cache handoff whose replacement turn failed after admission", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-handoff-admitted-failure-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const old = fixtureSession("idle", "codex");
+    await store.markStarted(old, "previous-process");
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(old, calls);
+    const next = { ...old, id: "session-2", status: "error" as const, lastActivity: new Date().toISOString() };
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    await settingsStore.setRuntimeSettings({
+      inventoryWindowHours: 48,
+      evidenceMessageCount: 4,
+      judgeModel: "MiniMax-M3.1-Flash-Preview",
+      autopilotJudgeModel: "MiniMax-M3",
+      rolloverExpiredCache: true,
+    });
+    let handoffs = 0;
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store, settingsStore, retryDelayMs: 0,
+      cacheHandoff: {
+        async maybeRollover() {
+          handoffs += 1;
+          return {
+            kind: "admitted_failed" as const,
+            session: next,
+            admittedFailure: "native cache handoff turn failed",
+            ageMs: 3_600_000,
+            cache: { ttlMs: 1_800_000, source: "openai-30m" as const },
+          };
+        },
+      },
+    });
+
+    await launcher.recoverPending();
+    await launcher.recoverPending();
+
+    expect(handoffs).toBe(1);
+    expect(calls.resumes).toBe(0);
+    expect(calls.messages).toHaveLength(0);
+    expect(await store.list()).toMatchObject([{
+      sessionId: "session-2",
+      state: "active",
+      nonRetryableAdmission: true,
+      lastError: "native cache handoff turn failed",
+    }]);
+  });
+
   it("keeps restart continuation on the expired session when rollover is disabled", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-no-handoff-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));

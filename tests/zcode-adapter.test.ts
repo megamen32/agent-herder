@@ -623,6 +623,27 @@ describe("ZCode adapter", () => {
     await adapter.dispose();
   });
 
+  it("preserves admitted failure metadata through recover", async () => {
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new FakeClient() });
+    await adapter.init();
+    adapter.resumeSession = async () => ({ ok: true });
+    adapter.sendMessage = async () => ({
+      ok: false,
+      admitted: true,
+      nonRetryable: true,
+      error: "native recovered turn failed",
+    });
+
+    await expect(adapter.recover("session-1", "continue")).resolves.toEqual({
+      ok: false,
+      admitted: true,
+      nonRetryable: true,
+      error: "native recovered turn failed",
+    });
+
+    await adapter.dispose();
+  });
+
   it("queues a second prompt while the same ZCode session is still finishing", async () => {
     vi.useFakeTimers();
     class BusyThenAcceptClient extends FakeClient {

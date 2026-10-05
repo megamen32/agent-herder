@@ -445,7 +445,10 @@ export async function handleSendMessage(
   });
 
   if (result.ok) {
-    if (pending.ids.length) await deferredMessages.remove(pending.ids);
+    if (pending.ids.length) {
+      try { await deferredMessages.remove(pending.ids); }
+      catch (error) { console.error(`[agent-herder] accepted delivery cleanup failed for ${parsed.sessionId}: ${error instanceof Error ? error.message : String(error)}`); }
+    }
     if (result.pending) {
       return `Message accepted by [${found.session.harness}] ${parsed.sessionId}; native turn start is still being verified.\nMessage: ${parsed.message}`;
     }
@@ -453,7 +456,10 @@ export async function handleSendMessage(
     return `Message sent to [${found.session.harness}] ${parsed.sessionId}${modeLabel}.\nMessage: ${parsed.message}`;
   }
   if (result.admitted && result.nonRetryable) {
-    if (pending.ids.length) await deferredMessages.remove(pending.ids);
+    if (pending.ids.length) {
+      try { await deferredMessages.remove(pending.ids); }
+      catch (error) { console.error(`[agent-herder] admitted-failure cleanup failed for ${parsed.sessionId}: ${error instanceof Error ? error.message : String(error)}`); }
+    }
     return `Message was accepted by [${found.session.harness}] ${parsed.sessionId}, but its native turn failed and will not be retried: ${result.error || "unknown native failure"}`;
   }
   if (isBusyCodexWriter(found.session.harness, result.error)) {
@@ -492,7 +498,10 @@ export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args:
     const pending = await withDeferred(fresh.id, parsed.message);
     const injected = await coordinationNotes.inject(fresh, pending.message);
     const sent = await found.adapter.sendMessage(fresh.id,{message:injected,queue:parsed.mode==="queue"});
-    if ((sent.ok || sent.admitted) && pending.ids.length) await deferredMessages.remove(pending.ids);
+    if ((sent.ok || sent.admitted) && pending.ids.length) {
+      try { await deferredMessages.remove(pending.ids); }
+      catch (error) { console.error(`[agent-herder] accepted delivery cleanup failed for ${fresh.id}: ${error instanceof Error ? error.message : String(error)}`); }
+    }
     if (!sent.ok && sent.admitted && sent.nonRetryable) {
       return JSON.stringify({ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"accepted_failed",activated:false,admitted:true,nonRetryable:true,error:sent.error||"Native turn failed after prompt admission"});
     }
@@ -583,6 +592,12 @@ export async function handleResumeAgent(
       message: injectedMessage,
       queue: false,
     });
+    if (result.admitted && result.nonRetryable) {
+      return `Failed to resume: the message was admitted by [${found.session.harness}] ${parsed.sessionId}, but its native turn failed and will not be retried: ${result.error || "unknown native failure"}`;
+    }
+    if (result.pending) {
+      return `Resume message accepted by [${found.session.harness}] ${parsed.sessionId}; native turn start is still being verified.`;
+    }
     if (result.ok) {
       return `Resumed agent [${found.session.harness}] ${parsed.sessionId} with message.`;
     }

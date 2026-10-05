@@ -993,25 +993,33 @@ export class UnfinishedSessionLauncher {
         const handoff = await this.options.cacheHandoff.maybeRollover(session, new Date(), {
           movePinned: runtimeSettings.movePinnedOnRollover,
         });
-        if (handoff.kind === "rolled_over" && handoff.session) {
+        if ((handoff.kind === "rolled_over" || handoff.kind === "admitted_failed") && handoff.session) {
+          const handoffFailure = handoff.kind === "admitted_failed"
+            ? handoff.admittedFailure || "Native cache handoff turn failed after admission"
+            : undefined;
           // maybeRollover already created and handed off the replacement. Even
           // if stop arrived during that await, settle durable registry state;
           // do not repeat the rollover on the next process generation.
           if (!this.lifecycleActive(lifecycleEpoch)) {
+            await this.options.settingsStore.setSession({ harness: record.harness, sessionId: record.sessionId, cwd: record.cwd }, false);
             await this.options.store.remove(record.harness, record.sessionId);
-            await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true, true);
+            await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true, true, handoff.deliveryPending === true, handoffFailure);
             return;
           }
           if (!runtimeSettings.movePinnedOnRollover) await this.pinActiveSession(adapter, handoff.session.id, runtimeSettings);
           if (!this.lifecycleActive(lifecycleEpoch)) {
+            await this.options.settingsStore.setSession({ harness: record.harness, sessionId: record.sessionId, cwd: record.cwd }, false);
             await this.options.store.remove(record.harness, record.sessionId);
-            await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true, true);
+            await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true, true, handoff.deliveryPending === true, handoffFailure);
             return;
           }
+          await this.options.settingsStore.setSession({ harness: record.harness, sessionId: record.sessionId, cwd: record.cwd }, false);
           await this.options.store.remove(record.harness, record.sessionId);
-          await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true, true);
+          await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true, true, handoff.deliveryPending === true, handoffFailure);
           this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
-          console.error(`[agent-herder] протухшая сессия ${record.harness}:${record.sessionId} продолжена в новой ${handoff.session.id}`);
+          console.error(handoffFailure
+            ? `[agent-herder] новая cache-handoff сессия ${handoff.session.id} приняла prompt, но native turn failed без безопасного retry: ${handoffFailure}`
+            : `[agent-herder] протухшая сессия ${record.harness}:${record.sessionId} продолжена в новой ${handoff.session.id}`);
           return;
         }
         if (!this.lifecycleActive(lifecycleEpoch)) {

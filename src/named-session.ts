@@ -29,7 +29,10 @@ export interface NamedSessionResult {
   name: string;
   cwd: string;
   sessionId?: string;
-  delivery?: "accepted" | "completed" | "failed" | "not_attempted";
+  delivery?: "accepted" | "accepted_unconfirmed" | "accepted_failed" | "completed" | "failed" | "not_attempted" | "deferred" | "skipped_inactive" | "not_found";
+  admitted?: boolean;
+  nonRetryable?: boolean;
+  pending?: boolean;
   model?: string;
   error?: string;
 }
@@ -40,6 +43,7 @@ type NamedSessionResolution =
 
 const queues = new Map<string, Promise<void>>();
 const recentNamedSessions = new Map<string, { session: AgentSession; seenAt: number }>();
+const recentNamedDeliveries = new Map<string, { result: NamedSessionResult; seenAt: number }>();
 const RECENT_NAMED_SESSION_TTL_MS = 60_000;
 
 export async function createNamedSession(
@@ -103,6 +107,10 @@ export async function newOrResumeNamedSession(
   });
   if (resolved.kind === "error") return resolved.result;
 
+  const deliveryIdentity = namedDeliveryIdentity(resolved.normalized, request.message);
+  const priorDelivery = recentNamedDelivery(deliveryIdentity);
+  if (priorDelivery) return priorDelivery;
+
   const mode = request.mode || "sync";
   // A create request may accept a model option without the native service
   // actually applying it. Trust only the returned session state; otherwise
@@ -130,30 +138,41 @@ export async function newOrResumeNamedSession(
       };
     }
   }
-  const injectedMessage = await coordinationNotes.inject(resolved.target, request.message);
+  const pending = await withDeferred(resolved.target.id, request.message);
+  const injectedMessage = await coordinationNotes.inject(resolved.target, pending.message);
   const delivery = await resolved.adapter.sendMessage(resolved.target.id, {
       message: injectedMessage,
       queue: mode === "queue",
   });
   if (!delivery.ok) {
-    return {
+    const result: NamedSessionResult = {
       ok: false,
       created: resolved.created,
       sessionId: resolved.target.id,
-      delivery: "failed",
+      delivery: delivery.admitted && delivery.nonRetryable ? "accepted_failed" : "failed",
+      ...(delivery.admitted ? { admitted: true } : {}),
+      ...(delivery.nonRetryable ? { nonRetryable: true } : {}),
       error: delivery.error || "Message delivery failed",
       ...(request.model ? { model: request.model } : {}),
       ...resolved.normalized,
     };
+    if (delivery.admitted) rememberNamedDelivery(deliveryIdentity, result);
+    if (delivery.admitted && pending.ids.length) await deferredMessages.remove(pending.ids);
+    return result;
   }
-  return {
+  const result: NamedSessionResult = {
     ok: true,
     created: resolved.created,
     sessionId: resolved.target.id,
-    delivery: mode === "queue" ? "accepted" : "completed",
+    delivery: delivery.pending ? "accepted_unconfirmed" : mode === "queue" ? "accepted" : "completed",
+    ...(delivery.admitted ? { admitted: true } : {}),
+    ...(delivery.pending ? { pending: true } : {}),
     ...(request.model ? { model: request.model } : {}),
     ...resolved.normalized,
   };
+  if (delivery.pending) rememberNamedDelivery(deliveryIdentity, result);
+  if (pending.ids.length) await deferredMessages.remove(pending.ids);
+  return result;
 }
 
 async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string): Promise<AgentSession[]> {
@@ -179,6 +198,24 @@ async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string):
 
 function namedIdentity(harness: string, name: string, cwd: string): string {
   return `${harness}\u0000${cwd}\u0000${name}`;
+}
+
+function namedDeliveryIdentity(request: NamedSessionRequest, message: string): string {
+  return `${namedIdentity(request.harness, request.name, request.cwd)}\0${createHash("sha256").update(message).digest("hex")}`;
+}
+
+function recentNamedDelivery(identity: string): NamedSessionResult | undefined {
+  const cached = recentNamedDeliveries.get(identity);
+  if (!cached) return undefined;
+  if (Date.now() - cached.seenAt >= RECENT_NAMED_SESSION_TTL_MS) {
+    recentNamedDeliveries.delete(identity);
+    return undefined;
+  }
+  return cached.result;
+}
+
+function rememberNamedDelivery(identity: string, result: NamedSessionResult): void {
+  recentNamedDeliveries.set(identity, { result, seenAt: Date.now() });
 }
 
 function rememberNamedSession(request: NamedSessionRequest, session: AgentSession): void {
@@ -253,6 +290,9 @@ export type DeliverResult = Omit<NamedSessionResult, "delivery"> & { sessionStat
 
 export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, request: DeliverNamedRequest): Promise<DeliverResult> {
   return withNamedSessionLock(request, async normalized => {
+    const deliveryIdentity = namedDeliveryIdentity(normalized, request.message);
+    const priorDelivery = recentNamedDelivery(deliveryIdentity);
+    if (priorDelivery) return {...priorDelivery,activated:false};
     const adapter=adapters.get(normalized.harness);
     if (!adapter) return {...failed(normalized,`Harness '${normalized.harness}' is not configured`,"not_attempted"),activated:false};
     let matches:AgentSession[]; try { matches=await exactMatches(adapter,normalized.name,normalized.cwd); } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
@@ -268,11 +308,23 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     if (activation==="defer" && fresh.status!=="running") { await deferredMessages.add(fresh.id,request.message); return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"deferred",activated:false,...normalized}; }
     const pending=await withDeferred(fresh.id,request.message); const injected=await coordinationNotes.inject(fresh,pending.message);
     const sent=await adapter.sendMessage(fresh.id,{message:injected,queue:(request.mode||"queue")==="queue"});
-    if (sent.ok && pending.ids.length) await deferredMessages.remove(pending.ids);
+    if (!sent.ok && sent.admitted && sent.nonRetryable) {
+      const result: DeliverResult = {ok:false,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"accepted_failed",activated:false,admitted:true,nonRetryable:true,error:sent.error||"Native turn failed after prompt admission",...normalized};
+      rememberNamedDelivery(deliveryIdentity, result);
+      if (pending.ids.length) await deferredMessages.remove(pending.ids);
+      return result;
+    }
     if (!sent.ok && isBusyCodexWriter(fresh.harness, sent.error)) {
       await deferredMessages.add(fresh.id, request.message);
       return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"deferred",activated:false,...normalized};
     }
+    if (sent.ok && sent.pending) {
+      const result: DeliverResult = {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"accepted_unconfirmed",activated:false,admitted:sent.admitted === true,pending:true,...normalized};
+      rememberNamedDelivery(deliveryIdentity, result);
+      if (pending.ids.length) await deferredMessages.remove(pending.ids);
+      return result;
+    }
+    if (sent.ok && pending.ids.length) await deferredMessages.remove(pending.ids);
     return sent.ok ? {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:(request.mode||"queue")==="queue"?"accepted":"completed",activated:true,...normalized} : {ok:false,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"failed",activated:false,error:sent.error||"Message delivery failed",...normalized};
   });
 }

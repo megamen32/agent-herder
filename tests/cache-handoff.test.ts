@@ -83,6 +83,25 @@ describe("cache-aware session handoff", () => {
     expect(fixture.sendMessage).toHaveBeenCalledWith("new", expect.objectContaining({ message: expect.stringContaining("Цель: доделать") }));
   });
 
+  it("does not create or send a second cache handoff after native admission failed", async () => {
+    const fixture = adapter([{ id: "u", role: "user", text: "Доделай", parts: [{ type: "text", text: "Доделай" }] }]);
+    fixture.sendMessage.mockResolvedValue({ ok: false, admitted: true, nonRetryable: true, error: "native handoff turn failed" });
+    const service = new CacheHandoffService(new Map([["codex", fixture.value]]), { summarize: async () => "handoff" });
+
+    await expect(service.maybeRollover(oldSession, new Date("2026-10-03T10:31:00.000Z"))).resolves.toMatchObject({
+      kind: "admitted_failed",
+      session: { id: "new" },
+      admittedFailure: "native handoff turn failed",
+    });
+    await expect(service.maybeRollover(oldSession, new Date("2026-10-03T10:32:00.000Z"))).resolves.toMatchObject({
+      kind: "admitted_failed",
+      session: { id: "new" },
+    });
+
+    expect(fixture.createSession).toHaveBeenCalledTimes(1);
+    expect(fixture.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
   it("pins the delivered replacement before unpinning the stale source", async () => {
     const fixture = adapter([{ id: "u", role: "user", text: "Доделай", parts: [{ type: "text", text: "Доделай" }] }]);
     const service = new CacheHandoffService(new Map([["codex", fixture.value]]), { summarize: async () => "handoff" });

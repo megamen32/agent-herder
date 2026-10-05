@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { createNamedSession, newOrResumeNamedSession, deliverNamedSession } from "../src/named-session.js";
 import { toolDefinitions } from "../src/mcp-tools/definitions.js";
-import { handleCreateSession, handleNewOrResume, handleDeliver } from "../src/mcp-tools/handlers.js";
+import { handleCreateSession, handleNewOrResume, handleDeliver, handleResumeAgent } from "../src/mcp-tools/handlers.js";
 import type { AgentSession, CreateSessionOptions, HarnessAdapter, SendMessageOptions } from "../src/types/index.js";
 
 const cleanups: string[] = [];
@@ -250,6 +250,25 @@ describe("named session creation and reuse", () => {
 
     expect(result).toMatchObject({ ok: false, created: true, sessionId: "codex-1", delivery: "failed", error: "delivery failed" });
   });
+
+  it("reuses the admitted-failed named session without creating or sending again", async () => {
+    const cwd = await workspace();
+    const fake = fakeAdapter("codex");
+    let sends = 0;
+    fake.adapter.sendMessage = async () => {
+      sends += 1;
+      return { ok: false, admitted: true, nonRetryable: true, error: "native named turn failed" };
+    };
+    const request = { harness: "codex", name: "repair_once", cwd, message: "same handoff", mode: "queue" as const };
+
+    const first = await newOrResumeNamedSession(new Map([["codex", fake.adapter]]), request);
+    const second = await newOrResumeNamedSession(new Map([["codex", fake.adapter]]), request);
+
+    expect(first).toMatchObject({ ok: false, created: true, sessionId: "codex-1", delivery: "accepted_failed", admitted: true, nonRetryable: true });
+    expect(second).toEqual(first);
+    expect(fake.creates()).toBe(1);
+    expect(sends).toBe(1);
+  });
   it("uses adapter exact-name lookup when available", async () => {
     const cwd = await workspace();
     const fake = fakeAdapter("codex");
@@ -335,6 +354,46 @@ describe("named session creation and reuse", () => {
       error: "native turn failed",
     });
     expect(sends).toBe(1);
+  });
+
+  it("deduplicates the same admitted-failed named delivery on a later call", async () => {
+    const cwd = await workspace();
+    const fake = fakeAdapter("opencode");
+    let sends = 0;
+    fake.adapter.sendMessage = async () => {
+      sends += 1;
+      return { ok: false, admitted: true, nonRetryable: true, error: "native named delivery failed" };
+    };
+    const request = {
+      harness: "opencode", name: "worker_once", cwd, message: "same delivery",
+      activation: "always" as const, mode: "queue" as const,
+    };
+
+    const first = await deliverNamedSession(new Map([["opencode", fake.adapter]]), request);
+    const second = await deliverNamedSession(new Map([["opencode", fake.adapter]]), request);
+
+    expect(first).toMatchObject({ ok: false, created: true, delivery: "accepted_failed", activated: false, admitted: true, nonRetryable: true });
+    expect(second).toEqual(first);
+    expect(fake.creates()).toBe(1);
+    expect(sends).toBe(1);
+  });
+
+  it("does not report an admitted failed resume as successful", async () => {
+    const cwd = await workspace();
+    const target = session("existing", "worker", cwd);
+    const fake = fakeAdapter("opencode", [target]);
+    fake.adapter.resumeSession = async () => ({ ok: true });
+    fake.adapter.sendMessage = async () => ({ ok: false, admitted: true, nonRetryable: true, error: "native resume turn failed" });
+
+    const result = await handleResumeAgent(new Map([["opencode", fake.adapter]]), {
+      sessionId: target.id,
+      harness: "opencode",
+      message: "continue",
+    });
+
+    expect(result).toContain("native turn failed");
+    expect(result).toContain("will not be retried");
+    expect(result).not.toContain("Resumed agent");
   });
 
   it("deliver create=never returns not_found instead of creating", async () => {
