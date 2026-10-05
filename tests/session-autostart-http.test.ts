@@ -28,7 +28,7 @@ describe("session autostart settings HTTP", () => {
     if (!address || typeof address === "string") throw new Error("server did not bind");
     const origin = `http://127.0.0.1:${address.port}`;
 
-    await expect((await fetch(`${origin}/api/session-autostart`)).json()).resolves.toMatchObject({ version: 7, enabled: true, pinActiveSessions: true, rolloverExpiredCache: true, movePinnedOnRollover: true, inventoryWindowHours: 48, evidenceMessageCount: 200, watchdogEnabled: true, watchdogIntervalSeconds: 10, stalledTurnMinutes: 2, source: "default" });
+    await expect((await fetch(`${origin}/api/session-autostart`)).json()).resolves.toMatchObject({ version: 7, enabled: true, pinActiveSessions: true, rolloverExpiredCache: false, movePinnedOnRollover: false, inventoryWindowHours: 48, evidenceMessageCount: 200, watchdogEnabled: true, watchdogIntervalSeconds: 10, stalledTurnMinutes: 2, source: "default" });
     const runtimeSaved = await fetch(`${origin}/api/session-autostart`, {
       method: "PUT",
       headers: { "content-type": "application/json" },

@@ -408,6 +408,7 @@ type UnfinishedSessionFile = {
 };
 
 export interface UnfinishedSessionNotice {
+  severity?: "critical" | "notice" | "info";
   title: string;
   body: string;
   dedupKey: string;
@@ -2345,17 +2346,26 @@ export class UnfinishedSessionLauncher {
     const newlyRepeated = records.filter((record) => record.assessmentFailure!.count >= 2
       && !record.assessmentFailure!.notifiedAt);
     if (!this.options.notify || newlyRepeated.length === 0) return;
+    const overloadStatus = transientPlannerHttpStatus(error);
+    const overloaded = overloadStatus !== null;
     const correlation = createHash("sha256")
       .update(`pipeline:${CURRENT_ASSESSMENT_PIPELINE_VERSION}\n${newlyRepeated.map((record) => `${inventoryRecordKey(record)}:${record.assessmentFailure!.evidenceFingerprint}`).sort().join("\n")}`)
       .digest("hex").slice(0, 24);
     try {
       await this.options.notify({
-        title: "Agent Herder повторно не смог разобрать сессии",
-        body: `MiniMax повторно не построил безопасный план для ${newlyRepeated.length} сесс. Автопродолжение временно отложено с увеличивающимся интервалом; новые сообщения сбросят задержку автоматически.`,
-        dedupKey: `agent-herder:assessment-failed:${correlation}`,
-        correlationId: `assessment-${correlation}`,
+        ...(overloaded ? { severity: "notice" as const } : { severity: "critical" as const }),
+        title: overloaded ? "MiniMax временно перегружен" : "Agent Herder повторно не смог разобрать сессии",
+        body: overloaded
+          ? "Agent Herder пока не может безопасно проверить незавершённые задачи из-за временной перегрузки MiniMax. Повторная проверка отложена с увеличивающимся интервалом и возобновится автоматически; действий от вас не требуется."
+          : `MiniMax повторно не построил безопасный план для ${newlyRepeated.length} сесс. Автопродолжение временно отложено с увеличивающимся интервалом; новые сообщения сбросят задержку автоматически.`,
+        dedupKey: overloaded
+          ? "agent-herder:minimax-batch-planner-overload"
+          : `agent-herder:assessment-failed:${correlation}`,
+        correlationId: overloaded
+          ? `minimax-batch-planner-http-${overloadStatus === 429 ? "429" : "5xx"}`
+          : `assessment-${correlation}`,
         sourceId: "agent-herder-autocontinue-assessment",
-        signalType: "autocontinue-assessment-failed",
+        signalType: overloaded ? "minimax-planner-overloaded" : "autocontinue-assessment-failed",
       });
       const notifiedAt = new Date().toISOString();
       for (const record of newlyRepeated) record.assessmentFailure!.notifiedAt = notifiedAt;
@@ -2710,6 +2720,11 @@ function cleanPlanTopic(topic: string): string {
 
 function continuationTitle(topic: string): string {
   return `Автопродолжение — ${cleanPlanTopic(topic).slice(0, 96)}`;
+}
+
+function transientPlannerHttpStatus(error: string): number | null {
+  const status = error.match(/\bMiniMax.{0,120}\bHTTP\s*(429|5\d{2})\b/i)?.[1];
+  return status ? Number(status) : null;
 }
 
 function isAutocontinueRequest(text: string | undefined): boolean {

@@ -1324,7 +1324,7 @@ describe("unfinished session launcher", () => {
       discoveryIdleMs: 1,
       judge: {
         async decide() { throw new Error("fallback should not run"); },
-        async plan() { plans += 1; throw new Error("repeated planner failure"); },
+        async plan() { plans += 1; throw new Error("MiniMax returned an invalid confidence"); },
       },
       notify: async (notice) => { notices.push(notice); },
     });
@@ -1332,12 +1332,15 @@ describe("unfinished session launcher", () => {
     await launcher.recoverPending();
     expect(plans).toBe(1);
     expect(notices).toHaveLength(0);
-    expect((await store.listInventory())[0]?.assessmentFailure).toMatchObject({ count: 1, evidenceFingerprint: expect.any(String) });
+    expect((await store.listInventory())[0]?.assessmentFailure).toMatchObject({
+      count: 1, evidenceFingerprint: expect.any(String), lastError: "MiniMax returned an invalid confidence",
+    });
     expect((await store.listInventory())[0]?.assessmentFailure?.nextAttemptAt).toBeUndefined();
 
     await launcher.recoverPending();
     expect(plans).toBe(2);
     expect(notices).toHaveLength(1);
+    expect(notices[0]?.severity).toBe("critical");
     const repeated = (await store.listInventory())[0]?.assessmentFailure;
     expect(repeated).toMatchObject({ count: 2, nextAttemptAt: expect.any(String), notifiedAt: expect.any(String) });
 
@@ -1354,6 +1357,37 @@ describe("unfinished session launcher", () => {
     expect(reset?.nextAttemptAt).toBeUndefined();
     expect(reset?.notifiedAt).toBeUndefined();
     expect(reset?.evidenceFingerprint).not.toBe(repeated?.evidenceFingerprint);
+  });
+
+  it("reports repeated MiniMax overload as one stable warning across changing cohorts", async () => {
+    const notices: UnfinishedSessionNotice[] = [];
+    for (const id of ["overload-a", "overload-b"]) {
+      const root = await mkdtemp(join(tmpdir(), `agent-herder-${id}-`));
+      const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+      const session = { ...fixtureSession("idle", "codex"), id, cwd: `/tmp/${id}`, lastActivity: new Date(Date.now() - 60_000).toISOString() };
+      const adapter = fixtureAdapter(session, { resumes: 0, messages: [] });
+      adapter.getSessionMessages = async () => [{ id: `${id}-evidence`, role: "user", text: `task-${id}`, parts: [{ type: "text", text: `task-${id}` }] }];
+      const launcher = new UnfinishedSessionLauncher({
+        adapters: new Map([["codex", adapter]]), store,
+        settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+        discoveryIdleMs: 1,
+        judge: {
+          async decide() { throw new Error("fallback should not run"); },
+          async plan() { throw new Error("MiniMax Anthropic batch planner rejected with HTTP529"); },
+        },
+        notify: async (notice) => { notices.push(notice); },
+      });
+
+      await launcher.recoverPending();
+      await launcher.recoverPending();
+    }
+
+    expect(notices).toHaveLength(2);
+    expect(notices.map(({ severity }) => severity)).toEqual(["notice", "notice"]);
+    expect(new Set(notices.map(({ dedupKey }) => dedupKey))).toEqual(new Set(["agent-herder:minimax-batch-planner-overload"]));
+    expect(new Set(notices.map(({ correlationId }) => correlationId))).toEqual(new Set(["minimax-batch-planner-http-5xx"]));
+    expect(notices[0]?.title).toContain("MiniMax");
+    expect(notices[0]?.body).toContain("действий от вас не требуется");
   });
 
   it("preserves same-pipeline backoff across restart but wakes an obsolete pipeline failure once", async () => {
