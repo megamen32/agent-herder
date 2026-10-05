@@ -916,15 +916,16 @@ export class ZcodeAdapter implements HarnessAdapter {
         return { state: "unknown", error: retryError instanceof Error ? retryError.message : String(retryError) };
       }
     }
+    let admitted = false;
     for (const event of events) {
       if (nonEmptyString(record(event.payload).inputId) !== inputId) continue;
       const type = nonEmptyString(event.type);
       if (type === "turn.failed") {
         return { state: "failed", error: "ZCode native turn failed after admission" };
       }
-      if (type === "turn.started" || type === "turn.completed") return { state: "admitted" };
+      if (type === "turn.completed" || type === "turn.started") admitted = true;
     }
-    return { state: "not_found" };
+    return admitted ? { state: "admitted" } : { state: "not_found" };
   }
 
   async forkSession(_id: string, _message?: string): Promise<ControlResult> {

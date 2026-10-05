@@ -555,6 +555,28 @@ describe("ZCode adapter", () => {
     await adapter.dispose();
   });
 
+  it("gives a later native turn failure precedence over the matching start event", async () => {
+    class StartedThenFailedClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSessionEvents") {
+          this.calls.push({ channel, method, args });
+          return [
+            { type: "turn.started", payload: { inputId: "handoff-operation-failed" } },
+            { type: "turn.failed", payload: { inputId: "handoff-operation-failed" } },
+          ];
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new StartedThenFailedClient() });
+    await adapter.init();
+
+    await expect(adapter.getMessageAdmission("session-1", "handoff-operation-failed"))
+      .resolves.toEqual({ state: "failed", error: "ZCode native turn failed after admission" });
+
+    await adapter.dispose();
+  });
+
   it("accepts replayed turn-start proof when the event history RPC is unavailable", async () => {
     class ReplayOnlyClient extends FakeClient {
       override listen(channel: string, event: string, arg: unknown, handler: (payload: unknown) => void): () => void {
