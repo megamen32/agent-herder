@@ -1886,6 +1886,163 @@ describe("unfinished session launcher", () => {
     expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
   });
 
+  it("caps planner concurrency at three, keeps ordered results, and retries one malformed chunk without aborting peers", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-planner-concurrency-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = Array.from({ length: 6 }, (_, index): AgentSession => ({
+      ...fixtureSession("idle", "codex"), id: `parallel-${index}`, cwd: `/workspace/parallel-${index}`,
+      lastActivity: new Date(Date.now() - 60_000 - index).toISOString(),
+    }));
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const attempts = new Map<string, number>();
+    const previousConcurrency = process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY;
+    process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY = "999";
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    try {
+      await new UnfinishedSessionLauncher({
+        adapters: new Map([["codex", adapter]]), store,
+        settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+        judge: {
+          async decide() { throw new Error("fallback should not run"); },
+          async plan({ sessions: batch, signal }) {
+            expect(signal?.aborted).toBe(false);
+            const id = batch[0]!.session.id;
+            attempts.set(id, (attempts.get(id) || 0) + 1);
+            inFlight += 1;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            const index = Number(id.slice("parallel-".length));
+            await new Promise((resolve) => setTimeout(resolve, (6 - index) * 3));
+            inFlight -= 1;
+            if (id === "parallel-0" && attempts.get(id) === 1) return { groups: [] };
+            return { groups: [{
+              sourceSessionIds: [id], primarySessionId: id, verdict: "completed" as const,
+              reason: "done", confidence: 1, topic: id, handoff: "",
+            }] };
+          },
+          async reconcile({ groups }) {
+            expect(groups.map((group) => group.sourceSessionIds[0]?.split(":")[1])).toEqual(sessions.map(({ id }) => id));
+            return { clusters: groups.map(({ groupRef }) => [groupRef]) };
+          },
+        },
+      }).recoverPending();
+    } finally {
+      if (previousConcurrency === undefined) delete process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY;
+      else process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY = previousConcurrency;
+    }
+
+    expect(maxInFlight).toBeLessThanOrEqual(3);
+    expect(maxInFlight).toBeGreaterThan(1);
+    expect(attempts.get("parallel-0")).toBe(2);
+    expect([...attempts.entries()].filter(([id]) => id !== "parallel-0").every(([, count]) => count === 1)).toBe(true);
+  });
+
+  it("aborts in-flight planner siblings before claiming later chunks after one terminal failure", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-planner-fail-fast-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = Array.from({ length: 6 }, (_, index): AgentSession => ({
+      ...fixtureSession("idle", "codex"), id: `fail-${index}`, cwd: `/workspace/fail-${index}`,
+      lastActivity: new Date(Date.now() - 60_000 - index).toISOString(),
+    }));
+    const started: string[] = [];
+    let aborted = 0;
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(sessions[0]!, calls);
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch, signal }) {
+          const id = batch[0]!.session.id;
+          started.push(id);
+          if (id === "fail-0") {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            throw new Error("terminal planner failure");
+          }
+          return await new Promise((_resolve, reject) => signal?.addEventListener("abort", () => {
+            aborted += 1;
+            reject(signal.reason);
+          }, { once: true }));
+        },
+        async reconcile() { throw new Error("reconcile must not run"); },
+      },
+    }).recoverPending();
+
+    expect(started.slice().sort()).toEqual(["fail-0", "fail-1", "fail-2"]);
+    expect(aborted).toBe(2);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
+  });
+
+  it("aborts active planner chunks when the launcher stops", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-planner-stop-abort-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = Array.from({ length: 3 }, (_, index): AgentSession => ({
+      ...fixtureSession("idle", "codex"), id: `stop-${index}`, cwd: `/workspace/stop-${index}`,
+      lastActivity: new Date(Date.now() - 60_000 - index).toISOString(),
+    }));
+    let started = 0;
+    let aborted = 0;
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ signal }) {
+          started += 1;
+          return await new Promise((_resolve, reject) => signal?.addEventListener("abort", () => {
+            aborted += 1;
+            reject(signal.reason);
+          }, { once: true }));
+        },
+      },
+    });
+    const recovery = launcher.recoverPending();
+    await waitUntil(() => started === 3);
+    launcher.stop();
+    await recovery;
+
+    expect(aborted).toBe(3);
+  });
+
+  it("aborts active planner I/O at the shared phase deadline", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-planner-deadline-abort-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = { ...fixtureSession("idle", "codex"), id: "deadline", lastActivity: new Date(Date.now() - 60_000).toISOString() };
+    let aborted = 0;
+    const previousTimeout = process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS;
+    process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS = "20";
+    const adapter = fixtureAdapter(session, { resumes: 0, messages: [] });
+    try {
+      await new UnfinishedSessionLauncher({
+        adapters: new Map([["codex", adapter]]), store,
+        settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+        judge: {
+          async decide() { throw new Error("fallback should not run"); },
+          async plan({ signal }) {
+            return await new Promise((_resolve, reject) => signal?.addEventListener("abort", () => {
+              aborted += 1;
+              reject(signal.reason);
+            }, { once: true }));
+          },
+        },
+      }).recoverPending();
+    } finally {
+      if (previousTimeout === undefined) delete process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS;
+      else process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS = previousTimeout;
+    }
+
+    expect(aborted).toBe(1);
+  });
+
   it("partitions output-heavy inventories deterministically and applies only after every chunk is complete", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-output-chunks-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -1929,7 +2086,7 @@ describe("unfinished session launcher", () => {
       lastActivity: new Date(Date.now() - 10 * 60_000 - index).toISOString(),
     }));
     const requestBodies: unknown[] = [];
-    let plannerRequests = 0;
+    const plannerAttempts = new Map<string, number>();
     const previousBudget = process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS;
     process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS = "480000";
     const judge = createAnthropicCompatibleSessionCompletionJudge({
@@ -1942,7 +2099,10 @@ describe("unfinished session launcher", () => {
           messages: Array<{ content: string }>;
         };
         requestBodies.push(body);
-        const payload = JSON.parse(body.messages[0]!.content) as { sessions?: Array<{ session_ref: string }>; groups?: Array<{ group_ref: string }> };
+        const payload = JSON.parse(body.messages[0]!.content) as {
+          sessions?: Array<{ session_ref: string; workspace_identity: string }>;
+          groups?: Array<{ group_ref: string }>;
+        };
         let text: string;
         if (body.system[0]!.text.includes("финальный дедупликатор")) {
           text = JSON.stringify({ clusters: (payload.groups || []).map(({ group_ref }) => [group_ref]) });
@@ -1952,16 +2112,18 @@ describe("unfinished session launcher", () => {
             text: JSON.stringify({ verdict: "completed", reason: "done", confidence: 0.9 }),
           }] }), { status: 200, headers: { "content-type": "application/json" } });
         } else {
-          plannerRequests += 1;
           const sessionsInRequest = payload.sessions || [];
-          if (plannerRequests % 2 === 1) {
+          const signature = sessionsInRequest[0]?.workspace_identity || "unknown";
+          const attempt = (plannerAttempts.get(signature) || 0) + 1;
+          plannerAttempts.set(signature, attempt);
+          if (attempt === 1) {
             text = JSON.stringify({ groups: sessionsInRequest.map(({ session_ref }, index) => ({
               source_session_ids: [session_ref],
               primary_session_id: index === 0 ? sessionsInRequest[1]?.session_ref || "999" : session_ref,
               verdict: "completed", reason: "malformed initial", confidence: 1, topic: `Topic ${session_ref}`, handoff: "",
             })) });
           } else {
-            const selected = plannerRequests === 6 ? sessionsInRequest.slice(0, -4) : sessionsInRequest;
+            const selected = signature.endsWith("budget-2") ? sessionsInRequest.slice(0, -4) : sessionsInRequest;
             text = JSON.stringify({ groups: selected.map(({ session_ref }) => ({
               source_session_ids: [session_ref], primary_session_id: session_ref,
               verdict: "completed", reason: "valid retry", confidence: 1, topic: `Topic ${session_ref}`, handoff: "",

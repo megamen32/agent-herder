@@ -17,6 +17,7 @@ const DEFAULT_BATCH_OUTPUT_TOKENS = 16_384;
 // chunk is rejected by exact coverage before a verdict or continuation applies.
 const MAX_BATCH_PLAN_SESSIONS_PER_REQUEST = 32;
 const MAX_BATCH_PLAN_CHUNKS = 64;
+const DEFAULT_BATCH_PLAN_CONCURRENCY = 3;
 const MAX_OMISSION_DECISION_CONCURRENCY = 4;
 const MAX_PERSISTENT_OMISSION_DECISIONS = 4;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
@@ -720,6 +721,7 @@ export class UnfinishedSessionLauncher {
   private retryTimer?: NodeJS.Timeout;
   private watchdogTimer?: NodeJS.Timeout;
   private urgentTimer?: NodeJS.Timeout;
+  private activePlannerController?: AbortController;
   private watchdogRunning = false;
   private started = false;
   /** Explicit lifecycle cancellation; unlike `started`, false before a manual one-shot recovery is valid. */
@@ -826,6 +828,8 @@ export class UnfinishedSessionLauncher {
     this.watchdogTimer = undefined;
     if (this.urgentTimer) clearTimeout(this.urgentTimer);
     this.urgentTimer = undefined;
+    this.activePlannerController?.abort(new Error("Agent Herder launcher stopped"));
+    this.activePlannerController = undefined;
   }
 
   private scheduleUrgentRecovery(delayMs = 250): void {
@@ -1845,16 +1849,23 @@ export class UnfinishedSessionLauncher {
       ...candidate,
       transcriptTail: globallyPacked[index]!.transcriptTail,
     }));
-    const groups: SessionBatchPlanGroup[] = [];
-    const persistentOmissions: AssessedSession[] = [];
-    let repaired = false;
     const plannerPhaseController = new AbortController();
     const plannerPhaseDeadline = Date.now() + positiveInteger(
       Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000),
       600_000,
     );
+    this.activePlannerController = plannerPhaseController;
+    try {
     const plannerChunks = partitionBatchCandidates(packedAssessed);
-    for (const chunk of plannerChunks) {
+    const plannerConcurrency = Math.min(DEFAULT_BATCH_PLAN_CONCURRENCY, positiveInteger(
+      Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY || DEFAULT_BATCH_PLAN_CONCURRENCY),
+      DEFAULT_BATCH_PLAN_CONCURRENCY,
+    ));
+    const processChunk = async (chunk: AssessedSession[]): Promise<{
+      groups: SessionBatchPlanGroup[];
+      omissions: AssessedSession[];
+      repaired: boolean;
+    }> => {
       const requestPlan = async (candidates: AssessedSession[]): Promise<SessionBatchPlan> => canonicalizePlanSourceKeys(
         await withAbortDeadline(planner({
           sessions: candidates.map(({ session, transcriptTail }) => ({ session, transcriptTail })),
@@ -1863,6 +1874,7 @@ export class UnfinishedSessionLauncher {
         candidates,
       );
       let plan: SessionBatchPlan | undefined;
+      let chunkRepaired = false;
       let initialFailure: unknown;
       try {
         plan = await requestPlan(chunk);
@@ -1876,7 +1888,7 @@ export class UnfinishedSessionLauncher {
         initialFailure = error;
       }
       if (!plan) {
-        repaired = true;
+        chunkRepaired = true;
         console.error(`[agent-herder] MiniMax вернул некорректный chunk; повторяю весь chunk один раз: ${errorText(initialFailure)}`);
         plan = await requestPlan(chunk);
         // The second response remains strict for every structural defect. A
@@ -1884,10 +1896,25 @@ export class UnfinishedSessionLauncher {
         // missing source independently from the already packed evidence, then
         // feed those strict singleton groups through normal reconciliation.
         const missing = missingBatchPlanCandidates(plan, chunk);
-        persistentOmissions.push(...missing);
+        return { groups: plan.groups, omissions: missing, repaired: chunkRepaired };
       }
-      groups.push(...plan.groups);
+      return { groups: plan.groups, omissions: [], repaired: chunkRepaired };
+    };
+    let chunkResults: Array<{ groups: SessionBatchPlanGroup[]; omissions: AssessedSession[]; repaired: boolean }>;
+    try {
+      chunkResults = await mapConcurrentOrdered(
+        plannerChunks,
+        plannerConcurrency,
+        processChunk,
+        plannerPhaseController,
+      );
+    } catch (error) {
+      plannerPhaseController.abort(error);
+      throw error;
     }
+    const groups = chunkResults.flatMap((result) => result.groups);
+    const persistentOmissions = chunkResults.flatMap((result) => result.omissions);
+    const repaired = chunkResults.some((result) => result.repaired);
     if (persistentOmissions.length > MAX_PERSISTENT_OMISSION_DECISIONS) {
       throw new BatchPlanValidationError(`MiniMax full retries omitted ${persistentOmissions.length} sessions, above the safe fallback limit ${MAX_PERSISTENT_OMISSION_DECISIONS}`);
     }
@@ -1915,6 +1942,7 @@ export class UnfinishedSessionLauncher {
             }
             return { candidate, verdict, handoff };
           },
+          plannerPhaseController,
         ), plannerPhaseDeadline, plannerPhaseController);
       } catch (error) {
         plannerPhaseController.abort(error);
@@ -1944,6 +1972,9 @@ export class UnfinishedSessionLauncher {
       assertBatchPlanCoverage(plan, packedAssessed);
     }
     return plan;
+    } finally {
+      if (this.activePlannerController === plannerPhaseController) this.activePlannerController = undefined;
+    }
   }
 
   private lifecycleActive(epoch: number): boolean {
@@ -3224,32 +3255,49 @@ async function mapConcurrentOrdered<T, R>(
   values: readonly T[],
   concurrency: number,
   mapper: (value: T, index: number) => Promise<R>,
+  failureController?: AbortController,
 ): Promise<R[]> {
   const results = new Array<R>(values.length);
   let nextIndex = 0;
+  let failure: unknown;
   const worker = async (): Promise<void> => {
     while (true) {
+      if (failure !== undefined || failureController?.signal.aborted) return;
       const index = nextIndex;
       nextIndex += 1;
       if (index >= values.length) return;
-      results[index] = await mapper(values[index]!, index);
+      try {
+        results[index] = await mapper(values[index]!, index);
+      } catch (error) {
+        if (failure === undefined) {
+          failure = error;
+          failureController?.abort(error);
+        }
+        return;
+      }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), values.length) }, () => worker()));
+  await Promise.allSettled(Array.from({ length: Math.min(Math.max(1, concurrency), values.length) }, () => worker()));
+  if (failure !== undefined) throw failure;
+  if (failureController?.signal.aborted) {
+    throw failureController.signal.reason instanceof Error
+      ? failureController.signal.reason
+      : new Error("Concurrent operation aborted");
+  }
   return results;
 }
 
 async function withAbortDeadline<T>(promise: Promise<T>, deadline: number, controller: AbortController): Promise<T> {
   const remainingMs = deadline - Date.now();
   if (remainingMs <= 0) {
-    const error = new Error("MiniMax omission decision phase timed out");
+    const error = new Error("MiniMax planner phase timed out");
     controller.abort(error);
     throw error;
   }
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
-      const error = new Error("MiniMax omission decision phase timed out");
+      const error = new Error("MiniMax planner phase timed out");
       controller.abort(error);
       reject(error);
     }, remainingMs);
