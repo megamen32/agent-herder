@@ -1153,6 +1153,29 @@ describe("unfinished session launcher", () => {
     expect(await settingsStore.getEffective("codex", "codex-1", "/tmp/codex")).toMatchObject({ enabled: true, source: "global" });
   });
 
+  it("resolves workspace override aliases by recency before migrating them", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-alias-recency-"));
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    const older = new Date("2026-10-05T00:00:00.000Z");
+    const newer = new Date("2026-10-05T00:01:00.000Z");
+
+    await settingsStore.setSession({ harness: "zcode", sessionId: "reenabled", cwd: "/legacy" }, false, older);
+    await settingsStore.setSession({ harness: "zcode", sessionId: "reenabled", cwd: "/canonical" }, true, newer);
+    expect(await settingsStore.getEffective("zcode", "reenabled", "/canonical")).toMatchObject({ enabled: true, cwd: "/canonical" });
+    await settingsStore.migrateWorkspaceIdentities([{
+      ...fixtureSession("idle", "zcode"), id: "reenabled", cwd: "/canonical", meta: { workspaceIdentity: "canonical" },
+    }]);
+    expect(await settingsStore.getEffective("zcode", "reenabled", "/canonical")).toMatchObject({ enabled: true, cwd: "/canonical" });
+
+    await settingsStore.setSession({ harness: "zcode", sessionId: "disabled", cwd: "/legacy" }, true, older);
+    await settingsStore.setSession({ harness: "zcode", sessionId: "disabled", cwd: "/canonical" }, false, newer);
+    expect(await settingsStore.getEffective("zcode", "disabled", "/canonical")).toMatchObject({ enabled: false, cwd: "/canonical" });
+    await settingsStore.migrateWorkspaceIdentities([{
+      ...fixtureSession("idle", "zcode"), id: "disabled", cwd: "/canonical", meta: { workspaceIdentity: "canonical" },
+    }]);
+    expect(await settingsStore.getEffective("zcode", "disabled", "/canonical")).toMatchObject({ enabled: false, cwd: "/canonical" });
+  });
+
   it("migrates v1 settings and supports a harness-wide opt-out below the global default", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-v1-"));
     const path = join(root, "settings.json");

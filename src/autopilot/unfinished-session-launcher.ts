@@ -87,11 +87,7 @@ export class SessionAutostartStore {
     const normalizedSessionId = bounded(sessionId, "sessionId");
     const settings = await this.getSettings();
     const aliases = settings.sessions.filter((record) => record.harness === normalizedHarness && record.sessionId === normalizedSessionId);
-    const exact = aliases.find((record) => sessionKey(record.harness, record.sessionId, record.cwd)
-      === sessionKey(normalizedHarness, normalizedSessionId, normalizedCwd));
-    // An explicit opt-out is the strongest session-level instruction. Keep it
-    // effective across cwd/identity rewrites until the alias migration lands.
-    const override = aliases.find((record) => !record.enabled) ?? exact ?? aliases[0];
+    const override = resolveSessionOverride(aliases, normalizedCwd);
     if (override) return { enabled: override.enabled, source: "session", cwd: override.cwd, updatedAt: override.updatedAt };
     const harnessOverride = settings.harnesses.find((record) => record.harness === normalizedHarness);
     return harnessOverride
@@ -206,11 +202,9 @@ export class SessionAutostartStore {
         if (matches.length === 0) continue;
         const canonicalCwd = normalize(session.cwd);
         if (matches.length === 1 && matches[0]!.cwd === canonicalCwd) continue;
-        const enabled = !matches.some((record) => !record.enabled);
-        const selected = [...matches].filter((record) => record.enabled === enabled)
-          .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0]!;
+        const selected = resolveSessionOverride(matches, canonicalCwd)!;
         file.sessions = file.sessions.filter((record) => record.harness !== harness || record.sessionId !== session.id);
-        file.sessions.push({ ...selected, cwd: canonicalCwd, enabled });
+        file.sessions.push({ ...selected, cwd: canonicalCwd });
         migrated += matches.length;
       }
       file.sessions.sort((left, right) => sessionKey(left.harness, left.sessionId, left.cwd).localeCompare(sessionKey(right.harness, right.sessionId, right.cwd)));
@@ -2112,6 +2106,20 @@ function harnessType(value: unknown): HarnessType {
 function sessionKey(harness: HarnessType, sessionId: string, workspaceIdentity?: string): string {
   const base = `${harness}:${bounded(sessionId, "sessionId")}`;
   return workspaceIdentity ? `${base}:${normalize(bounded(workspaceIdentity, "workspaceIdentity"))}` : base;
+}
+
+function resolveSessionOverride(
+  records: SessionAutostartOverride[],
+  canonicalCwd: string,
+): SessionAutostartOverride | undefined {
+  if (records.length === 0) return undefined;
+  const newestTimestamp = Math.max(...records.map((record) => Date.parse(record.updatedAt)));
+  const newest = records.filter((record) => Date.parse(record.updatedAt) === newestTimestamp);
+  // Recency is authoritative. At an exact timestamp tie, opt-out is the safe
+  // fallback; otherwise prefer the canonical row over a stale cwd alias.
+  return newest.find((record) => !record.enabled)
+    ?? newest.find((record) => normalize(record.cwd) === normalize(canonicalCwd))
+    ?? newest[0];
 }
 
 function sessionWorkspaceIdentity(session: Pick<AgentSession, "cwd" | "meta">): string {
