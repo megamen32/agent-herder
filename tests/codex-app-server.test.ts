@@ -65,7 +65,9 @@ describe("Codex app-server adapter", () => {
     const interruptTurnIds: string[] = [];
     const events: Array<{ kind: string }> = [];
     let activeTurnId: string | undefined;
+    let turnSequence = 0;
     let disconnectAfterTurnStart = false;
+    let threadReadStatus: { type: string; activeFlags?: string[] } = { type: "idle" };
     const thread = {
       id: "thread-unix",
       cwd: "/workspace",
@@ -87,6 +89,7 @@ describe("Codex app-server adapter", () => {
         };
         if (request.method === "initialize") return reply({ userAgent: "fixture" });
         if (request.method === "thread/list") return reply({ data: [thread], nextCursor: null });
+        if (request.method === "thread/read") return reply({ thread: { ...thread, status: threadReadStatus } });
         if (request.method === "thread/resume") return reply({ thread });
         if (request.method === "thread/turns/list") return reply({
           data: activeTurnId ? [{ id: activeTurnId, status: "inProgress" }] : [],
@@ -94,7 +97,7 @@ describe("Codex app-server adapter", () => {
           backwardsCursor: null,
         });
         if (request.method === "turn/start") {
-          activeTurnId = "turn-unix";
+          activeTurnId = `turn-unix-${++turnSequence}`;
           socket.send(JSON.stringify({
             method: "turn/started",
             params: { threadId: request.params?.threadId, turn: { id: activeTurnId, status: "inProgress" } },
@@ -130,24 +133,43 @@ describe("Codex app-server adapter", () => {
       const sessions = await adapter.listSessions();
       expect(sessions).toMatchObject([{ id: "thread-unix", title: "Unix socket fixture", status: "idle" }]);
       expect(sessions[0].meta).not.toHaveProperty("status");
-      disconnectAfterTurnStart = true;
+      const liveSession = await adapter.getSession("thread-unix");
+      expect(liveSession).toMatchObject({ id: "thread-unix", status: "idle", needsPermission: false });
+      expect(liveSession?.meta).not.toHaveProperty("status");
+      threadReadStatus = { type: "active", activeFlags: ["waitingOnApproval"] };
+      await expect(adapter.getSession("thread-unix")).resolves.toMatchObject({
+        id: "thread-unix", status: "needs_input", needsPermission: true,
+      });
+      threadReadStatus = { type: "idle" };
+      await expect(adapter.getSession("thread-unix")).resolves.toMatchObject({
+        id: "thread-unix", status: "idle", needsPermission: false,
+      });
       await expect(adapter.sendMessage("thread-unix", { message: "hold", queue: true })).resolves.toEqual({ ok: true });
+      threadReadStatus = { type: "idle" };
+      activeTurnId = undefined;
+      await expect(adapter.getSession("thread-unix")).resolves.toMatchObject({
+        id: "thread-unix", status: "idle", meta: { activeTurnId: undefined },
+      });
+      disconnectAfterTurnStart = true;
+      await expect(adapter.sendMessage("thread-unix", { message: "hold after fresh status", queue: true })).resolves.toEqual({ ok: true });
       for (let attempt = 0; attempt < 100 && adapter.isReady(); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
       expect(adapter.isReady()).toBe(false);
       expect(events.some((event) => event.kind === "turn.failed")).toBe(false);
       expect(events.some((event) => event.kind === "process.disconnected")).toBe(true);
       await expect(adapter.cancelTurn("thread-unix")).resolves.toEqual({ ok: true });
       expect(adapter.isReady()).toBe(true);
-      expect(interruptTurnIds).toEqual(["turn-unix"]);
+      expect(interruptTurnIds).toEqual(["turn-unix-2"]);
       expect(methods).toEqual(expect.arrayContaining([
         "initialize",
         "initialized",
         "thread/list",
+        "thread/read",
         "thread/resume",
         "turn/start",
         "thread/turns/list",
         "turn/interrupt",
       ]));
+      expect(methods.filter((method) => method === "turn/start")).toHaveLength(2);
       unsubscribe();
     } finally {
       await adapter?.dispose();

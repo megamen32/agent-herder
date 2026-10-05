@@ -31,7 +31,7 @@ interface CodexThread {
   preview?: string;
   model?: string;
   modelProvider?: string;
-  status?: string;
+  status?: string | { type?: string; activeFlags?: string[] };
   createdAt?: string | number;
   updatedAt?: string | number;
 }
@@ -182,10 +182,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     this.sessionSnapshotReceipt = {
       exhaustive: false,
       observedAt: new Date().toISOString(),
-      source: this.isReady() ? "codex-app-server" : "codex-state-index",
+      source: this.isReady() || this.socketPath ? "codex-app-server" : "codex-state-index",
       reason: "enumeration_in_progress",
     };
-    if (!this.isReady()) {
+    if (!this.isReady() && !this.socketPath) {
       const sessions = await this.rawTranscriptAdapter.listSessions();
       this.sessionSnapshotReceipt = this.rawTranscriptAdapter.getSessionSnapshotReceipt();
       return sessions;
@@ -193,7 +193,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     try {
       await this.ensureReady();
       const sessions = await this.listAllThreads();
-      for (const thread of sessions) this.threads.set(thread.id, thread);
+      for (const thread of sessions) {
+        if (this.socketPath) this.activeTurns.delete(thread.id);
+        this.threads.set(thread.id, thread);
+      }
       const nativeMetadata = await this.rawTranscriptAdapter.getNativeSessionMetadata();
       const result = sessions.map((thread) => {
         const session = this.toSession(thread);
@@ -250,6 +253,14 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     return [...threads.values()];
   }
 
+  private threadStatusTag(status: CodexThread["status"]): string | undefined {
+    return typeof status === "string" ? status : status?.type;
+  }
+
+  private threadActiveFlags(status: CodexThread["status"]): string[] {
+    return typeof status === "object" && status ? status.activeFlags || [] : [];
+  }
+
   async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {
     await this.ensureReady();
     const result = await this.request("thread/list", { limit: 200, archived: false }) as { data?: CodexThread[] };
@@ -262,21 +273,41 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
-    const cached = this.threads.get(id);
-    let base = cached ? this.toSession(cached) : null;
+    let base: AgentSession | null = null;
+    if (this.socketPath) {
+      await this.ensureReady();
+      try {
+        const result = await this.request("thread/read", { threadId: id, includeTurns: false }) as { thread?: CodexThread };
+        if (result.thread?.id === id) {
+          this.activeTurns.delete(id);
+          this.threads.set(id, result.thread);
+          base = this.toSession(result.thread);
+        } else {
+          this.threads.delete(id);
+        }
+      } catch {
+        this.threads.delete(id);
+      }
+    }
+    if (!base) {
+      const cached = this.threads.get(id);
+      base = cached ? this.toSession(cached) : null;
+    }
     if (!base && this.isReady()) base = (await this.listSessions()).find((session) => session.id === id) || null;
     const raw = await this.rawTranscriptAdapter.getSession(id);
     if (!base) return raw;
     if (!raw) return base;
+    const rawMeta = { ...raw.meta };
+    if (this.socketPath) delete rawMeta.status;
     return {
       ...base,
-      status: raw.status === "running" ? "running" : base.status,
+      status: !this.socketPath && raw.status === "running" ? "running" : base.status,
       model: base.model || raw.model,
       messageCount: raw.messageCount,
       durationSec: raw.durationSec,
       costUsd: raw.costUsd,
       lastMessage: raw.lastMessage || base.lastMessage,
-      meta: { ...base.meta, ...raw.meta },
+      meta: { ...base.meta, ...rawMeta },
     };
   }
 
@@ -825,6 +856,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private toSession(thread: CodexThread): AgentSession {
+    const activeFlags = this.threadActiveFlags(thread.status);
     return {
       id: thread.id,
       harness: "codex",
@@ -833,7 +865,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       cwd: thread.cwd || thread.path || this.cwd,
       lastActivity: threadTimestamp(thread.updatedAt) || threadTimestamp(thread.createdAt) || new Date(0).toISOString(),
       model: thread.model,
-      needsPermission: false,
+      needsPermission: activeFlags.includes("waitingOnApproval"),
       lastMessage: thread.preview,
       meta: {
         nativeSessionId: thread.id,
@@ -844,10 +876,15 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     };
   }
 
-  private mapStatus(raw: string | undefined, id: string): AgentSession["status"] {
-    if (this.activeTurns.has(id) || raw === "inProgress" || raw === "running" || raw === "active") return "running";
-    if (raw === "failed" || raw === "error") return "error";
-    if (raw === "interrupted" || raw === "completed" || raw === "idle") return "idle";
+  private mapStatus(raw: CodexThread["status"], id: string): AgentSession["status"] {
+    const status = this.threadStatusTag(raw);
+    const activeFlags = this.threadActiveFlags(raw);
+    if (status === "active" && activeFlags.some((flag) => flag === "waitingOnApproval" || flag === "waitingOnUserInput")) {
+      return "needs_input";
+    }
+    if (this.activeTurns.has(id) || status === "inProgress" || status === "running" || status === "active") return "running";
+    if (status === "failed" || status === "error" || status === "systemError") return "error";
+    if (status === "interrupted" || status === "completed" || status === "idle" || status === "notLoaded") return "idle";
     return "idle";
   }
 }
