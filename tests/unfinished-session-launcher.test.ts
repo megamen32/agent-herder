@@ -2201,8 +2201,8 @@ describe("unfinished session launcher", () => {
   });
 
   it.each([
-    { invalidChunks: 4, expectedPlans: 8, expectedReconciliations: 4, expectApplied: true },
-    { invalidChunks: 5, expectedPlans: 5, expectedReconciliations: 0, expectApplied: false },
+    { invalidChunks: 6, expectedPlans: 12, expectedReconciliations: 6, expectApplied: true },
+    { invalidChunks: 7, expectedPlans: 7, expectedReconciliations: 0, expectApplied: false },
   ])("globally bounds $invalidChunks typed-invalid chunks before repair", async ({ invalidChunks, expectedPlans, expectedReconciliations, expectApplied }) => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-global-repair-cap-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -2592,7 +2592,7 @@ describe("unfinished session launcher", () => {
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = Array.from({ length: 70 }, (_, index): AgentSession => ({
       ...fixtureSession("idle", "codex"), id: `budgeted-${index}`, title: `Budgeted ${index}`,
-      cwd: `/workspace/budget-${index % 6}`,
+      cwd: `/workspace/budget-${index % 8}`,
       lastActivity: new Date(Date.now() - 10 * 60_000 - index).toISOString(),
     }));
     const requestBodies: unknown[] = [];
@@ -2645,7 +2645,7 @@ describe("unfinished session launcher", () => {
               verdict: "completed", reason: "malformed initial", confidence: 1, topic: title, handoff: "",
             })) });
           } else {
-            const selected = signature.endsWith("budget-5") ? sessionsInRequest.slice(0, -4) : sessionsInRequest;
+            const selected = signature.endsWith("budget-7") ? sessionsInRequest.slice(0, -4) : sessionsInRequest;
             text = JSON.stringify({ groups: selected.map(({ session_ref, title }) => ({
               source_session_ids: [session_ref], primary_session_id: session_ref,
               verdict: "completed", reason: "valid retry", confidence: 1, topic: title, handoff: "",
@@ -2663,7 +2663,7 @@ describe("unfinished session launcher", () => {
     adapter.listSessions = async () => sessions;
     adapter.getSessionMessages = async (id) => {
       const index = Number(id.slice("budgeted-".length));
-      const hostile = `${id}:${'"\\\n'.repeat(index % 6 >= 2 ? 2_000 : 100)}`;
+      const hostile = `${id}:${'"\\\n'.repeat(index % 8 >= 2 ? 2_000 : 100)}`;
       return [{ id: `${id}-u`, role: "user", text: hostile, parts: [{ type: "text", text: hostile }] }];
     };
     try {
@@ -2677,8 +2677,8 @@ describe("unfinished session launcher", () => {
       else process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS = previousBudget;
     }
 
-    expect(reconciliationRequests).toBe(8);
-    expect(requestBodies).toHaveLength(22);
+    expect(reconciliationRequests).toBe(12);
+    expect(requestBodies).toHaveLength(30);
     const reconciliationBodies = requestBodies.filter((body) => (body as { system?: Array<{ text?: string }> }).system?.[0]?.text?.includes("финальный дедупликатор"));
     expect(JSON.stringify(reconciliationBodies)).not.toContain("source_session_refs");
     expect(JSON.stringify(reconciliationBodies)).not.toContain("workspace_identity");
