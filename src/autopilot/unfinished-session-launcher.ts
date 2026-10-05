@@ -394,6 +394,7 @@ type AssessedSession = SessionBatchCandidate & {
   adapter: HarnessAdapter;
   sourceKey: string;
   autoResumeEnabled: boolean;
+  urgentSignalVersions: Map<string, number>;
   latestSemanticMessage?: Pick<SessionMessageView, "role" | "text">;
   acceptedTerminalRetryCount?: number;
   acceptedTerminalReason?: string;
@@ -831,6 +832,8 @@ export class UnfinishedSessionLauncher {
   private lifecycleEpoch = 0;
   private readonly completedSessions = new Set<string>();
   private readonly urgentSessions = new Set<string>();
+  private readonly urgentSessionVersions = new Map<string, number>();
+  private urgentSessionVersion = 0;
   private readonly watchdogObservations = new Map<string, {
     fingerprint: string;
     unchangedSince: number;
@@ -874,7 +877,7 @@ export class UnfinishedSessionLauncher {
     if (!event.sessionId || !isAutocontinueInventoryHarness(provider)) return;
     if (event.kind === "session.deleted") {
       this.completedSessions.add(sessionKey(provider, event.sessionId));
-      this.urgentSessions.delete(sessionKey(provider, event.sessionId));
+      this.clearUrgentSession(sessionKey(provider, event.sessionId));
       await this.options.store.remove(provider, event.sessionId);
       return;
     }
@@ -886,7 +889,7 @@ export class UnfinishedSessionLauncher {
       const key = session ? sessionSourceKey(session) : sessionKey(provider, event.sessionId);
       this.watchdogObservations.delete(key);
       this.completedSessions.delete(key);
-      this.urgentSessions.add(key);
+      this.queueUrgentSession(key);
       if (session && await this.isEnabled(session.harness, session.id, session.cwd)) {
         const terminal = await this.options.store.markAdmissionTerminal(
           session.harness,
@@ -919,7 +922,7 @@ export class UnfinishedSessionLauncher {
         // may mark delivery accepted; treating every native start as our own
         // admission would strand a task after a process restart.
         this.completedSessions.delete(sessionSourceKey(session));
-        this.urgentSessions.delete(sessionSourceKey(session));
+        this.clearUrgentSession(sessionSourceKey(session));
         await this.pinActiveSession(adapter!, session.id);
         await this.options.store.markStarted(session, this.generationId);
       }
@@ -933,7 +936,7 @@ export class UnfinishedSessionLauncher {
     if (!await this.isEnabled(session.harness, session.id, session.cwd)) return false;
     await this.pinActiveSession(adapter, session.id);
     this.completedSessions.delete(sessionSourceKey(session));
-    this.urgentSessions.delete(sessionSourceKey(session));
+    this.clearUrgentSession(sessionSourceKey(session));
     await this.options.store.markStarted(session, this.generationId, new Date(), true, true, deliveryPending, admittedFailure);
     return true;
   }
@@ -968,6 +971,18 @@ export class UnfinishedSessionLauncher {
     this.urgentTimer = undefined;
     this.activePlannerController?.abort(new Error("Agent Herder launcher stopped"));
     this.activePlannerController = undefined;
+  }
+
+  private queueUrgentSession(key: string): number {
+    this.urgentSessions.add(key);
+    this.urgentSessionVersion += 1;
+    this.urgentSessionVersions.set(key, this.urgentSessionVersion);
+    return this.urgentSessionVersion;
+  }
+
+  private clearUrgentSession(key: string): void {
+    this.urgentSessions.delete(key);
+    this.urgentSessionVersions.delete(key);
   }
 
   private scheduleUrgentRecovery(delayMs = 250): void {
@@ -1070,7 +1085,7 @@ export class UnfinishedSessionLauncher {
             lastActivity: record.updatedAt,
             needsPermission: false,
           }, this.generationId);
-          this.urgentSessions.add(key);
+          this.queueUrgentSession(key);
           urgent = true;
           console.error(`[agent-herder] watchdog: ${key} исчезла из native state; запускаю срочное возобновление`);
           continue;
@@ -1129,7 +1144,7 @@ export class UnfinishedSessionLauncher {
         if (observation.urgentFingerprint === fingerprint) continue;
         this.watchdogObservations.set(key, { ...observation, urgentFingerprint: fingerprint });
         await this.options.store.markStarted({ ...session, status: session.status === "running" ? "error" : session.status }, this.generationId);
-        this.urgentSessions.add(key);
+        this.queueUrgentSession(key);
         urgent = true;
         const reason = stalled
           ? "зависла без прогресса"
@@ -1343,7 +1358,7 @@ export class UnfinishedSessionLauncher {
           await this.options.settingsStore.setSession({ harness: record.harness, sessionId: record.sessionId, cwd: record.cwd }, false);
           await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
           await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true, true, handoff.deliveryPending === true, handoffFailure);
-          this.urgentSessions.delete(unfinishedRecordKey(record));
+          this.clearUrgentSession(unfinishedRecordKey(record));
           console.error(handoffFailure
             ? `[agent-herder] новая cache-handoff сессия ${handoff.session.id} приняла prompt, но native turn failed без безопасного retry: ${handoffFailure}`
             : `[agent-herder] протухшая сессия ${record.harness}:${record.sessionId} продолжена в новой ${handoff.session.id}`);
@@ -1375,7 +1390,7 @@ export class UnfinishedSessionLauncher {
         promptAccepted = true;
         promptAdmissionFailure = terminalAdmission;
         await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true, true, false, terminalAdmission);
-        this.urgentSessions.delete(unfinishedRecordKey(record));
+        this.clearUrgentSession(unfinishedRecordKey(record));
         console.error(`[agent-herder] ${record.harness}:${record.sessionId} приняла prompt, но native turn завершился без безопасного retry: ${terminalAdmission}`);
         return;
       }
@@ -1386,7 +1401,7 @@ export class UnfinishedSessionLauncher {
       // durable record even if stop arrived during sendMessage; rolling the
       // attempt back here could enqueue the same continuation after restart.
       await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true, true, promptPending);
-      this.urgentSessions.delete(unfinishedRecordKey(record));
+      this.clearUrgentSession(unfinishedRecordKey(record));
       console.error(`[agent-herder] автоматически продолжена незавершённая сессия ${record.harness}:${record.sessionId}`);
     } catch (error) {
       if (promptAccepted) {
@@ -1545,6 +1560,8 @@ export class UnfinishedSessionLauncher {
         const autoResumeEnabled = await this.isEnabled(session.harness, session.id, session.cwd);
         const sourceKey = sessionSourceKey(session);
         let urgent = this.urgentSessions.has(sourceKey) || this.urgentSessions.has(sessionKey(session.harness, session.id));
+        const urgentSignalVersions = new Map([sourceKey, sessionKey(session.harness, session.id)]
+          .map((key) => [key, this.urgentSessionVersions.get(key) ?? 0] as const));
         const durableAdmission = durableBySourceKey.get(sourceKey);
         let admissionPhase = durableAdmission?.admissionPhase
           ?? (durableAdmission?.acceptedAt || durableAdmission?.deliveryPending ? "accepted_pending" : undefined);
@@ -1562,7 +1579,10 @@ export class UnfinishedSessionLauncher {
               true,
             );
             admissionPhase = "terminal_observed";
-            this.urgentSessions.add(sourceKey);
+            const snapshotVersion = urgentSignalVersions.get(sourceKey) ?? 0;
+            const versionBeforeQueue = this.urgentSessionVersions.get(sourceKey) ?? 0;
+            const queuedVersion = this.queueUrgentSession(sourceKey);
+            if (versionBeforeQueue === snapshotVersion) urgentSignalVersions.set(sourceKey, queuedVersion);
             urgent = true;
           }
         }
@@ -1616,7 +1636,7 @@ export class UnfinishedSessionLauncher {
         const latestSemanticMessage = [...messages].reverse().find((message) =>
           (message.role === "user" || message.role === "assistant") && Boolean(message.text?.trim()));
         if (cohortAwake || actionable) assessed.push({
-          adapter, session, sourceKey, autoResumeEnabled, transcriptTail,
+          adapter, session, sourceKey, autoResumeEnabled, urgentSignalVersions, transcriptTail,
           ...(latestSemanticMessage ? {
             latestSemanticMessage: { role: latestSemanticMessage.role, text: latestSemanticMessage.text },
           } : {}),
@@ -1772,7 +1792,7 @@ export class UnfinishedSessionLauncher {
         } satisfies SessionInventoryVerdict;
         for (const source of sources) {
           pushInventory(source, timeoutVerdict);
-          this.urgentSessions.delete(source.sourceKey);
+          this.clearUrgentSession(source.sourceKey);
           await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
         }
         if (this.options.notify) {
@@ -1798,7 +1818,7 @@ export class UnfinishedSessionLauncher {
         } satisfies SessionInventoryVerdict;
         for (const source of sources) {
           pushInventory(source, exhaustedVerdict);
-          this.urgentSessions.delete(source.sourceKey);
+          this.clearUrgentSession(source.sourceKey);
           await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
         }
         if (this.options.notify) {
@@ -1828,7 +1848,7 @@ export class UnfinishedSessionLauncher {
         } satisfies SessionInventoryVerdict;
         for (const source of sources) {
           pushInventory(source, humanGateVerdict);
-          this.urgentSessions.delete(source.sourceKey);
+          this.clearUrgentSession(source.sourceKey);
           await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
         }
         continue;
@@ -1851,7 +1871,7 @@ export class UnfinishedSessionLauncher {
       if (group.verdict !== "unfinished") {
         for (const source of sources) {
           pushInventory(source);
-          this.urgentSessions.delete(source.sourceKey);
+          this.clearUrgentSession(source.sourceKey);
           await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
         }
         continue;
@@ -1863,7 +1883,7 @@ export class UnfinishedSessionLauncher {
       if (resumableSources.length === 0) {
         for (const source of sources) {
           pushInventory(source);
-          this.urgentSessions.delete(source.sourceKey);
+          this.clearUrgentSession(source.sourceKey);
           await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
         }
         continue;
@@ -1880,7 +1900,7 @@ export class UnfinishedSessionLauncher {
         this.continuedThisRecovery.add(primary.sourceKey);
         for (const source of sources) {
           pushInventory(source);
-          this.urgentSessions.delete(source.sourceKey);
+          this.clearUrgentSession(source.sourceKey);
         }
         console.error(`[agent-herder] ${primary.session.harness}:${primary.session.id} уже ожидает ответ на автопродолжение; повтор не ставлю`);
         continue;
@@ -1943,7 +1963,7 @@ export class UnfinishedSessionLauncher {
           if (terminalAdmission) {
             await this.options.store.markStarted(primary.session, this.generationId, new Date(), true, true, false, terminalAdmission);
             this.continuedThisRecovery.add(primary.sourceKey);
-            this.urgentSessions.delete(primary.sourceKey);
+            this.clearUrgentSession(primary.sourceKey);
             for (const source of sources) pushInventory(source);
             console.error(`[agent-herder] единый plan prompt принят ${primary.session.harness}:${primary.session.id}, но native turn failed без безопасного retry: ${terminalAdmission}`);
             continue;
@@ -1952,9 +1972,9 @@ export class UnfinishedSessionLauncher {
           if (!this.lifecycleActive(lifecycleEpoch)) return;
           await this.options.store.markStarted(primary.session, this.generationId, new Date(), true, true, sent.pending === true);
           this.continuedThisRecovery.add(primary.sourceKey);
-          this.urgentSessions.delete(primary.sourceKey);
+          this.clearUrgentSession(primary.sourceKey);
           for (const source of sources) {
-            this.urgentSessions.delete(source.sourceKey);
+            this.clearUrgentSession(source.sourceKey);
             if (source.sourceKey === primary.sourceKey) pushInventory(source);
             else {
               pushInventory(source, {
@@ -2038,7 +2058,7 @@ export class UnfinishedSessionLauncher {
           await this.options.store.markStarted(created, this.generationId, new Date(), true, true, false, terminalAdmission);
           this.continuedThisRecovery.add(sessionSourceKey(created));
           for (const source of sources) {
-            this.urgentSessions.delete(source.sourceKey);
+            this.clearUrgentSession(source.sourceKey);
             pushInventory(source, {
               verdict: "needs_human",
               reason: `Передана в новую сессию ${created.id}; native turn failed после admission без безопасного retry`,
@@ -2063,7 +2083,7 @@ export class UnfinishedSessionLauncher {
         await this.options.store.markStarted(created, this.generationId, new Date(), true, true, sent.pending === true);
         this.continuedThisRecovery.add(sessionSourceKey(created));
         for (const source of sources) {
-          this.urgentSessions.delete(source.sourceKey);
+          this.clearUrgentSession(source.sourceKey);
           pushInventory(source, {
             verdict: "completed",
             reason: `Объединена в новую сессию «${continuationTitle(group.topic)}»: ${created.id}`,
@@ -2360,8 +2380,9 @@ export class UnfinishedSessionLauncher {
     });
     await this.options.store.upsertInventoryBatch(records);
     for (const candidate of assessed) {
-      this.urgentSessions.delete(candidate.sourceKey);
-      this.urgentSessions.delete(sessionKey(candidate.session.harness, candidate.session.id));
+      for (const [key, assessedVersion] of candidate.urgentSignalVersions) {
+        if ((this.urgentSessionVersions.get(key) ?? 0) === assessedVersion) this.clearUrgentSession(key);
+      }
     }
 
     const newlyRepeated = records.filter((record) => record.assessmentFailure!.count >= 2

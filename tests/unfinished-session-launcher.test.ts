@@ -1478,6 +1478,54 @@ describe("unfinished session launcher", () => {
     expect(notices[0]?.body).toContain("действий от вас не требуется");
   });
 
+  it("preserves a new native event that arrives while an assessment failure is being recorded", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-assessment-urgent-during-plan-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = { ...fixtureSession("idle", "codex"), id: "urgent-during-plan", lastActivity: new Date(Date.now() - 5 * 60_000).toISOString() };
+    const adapter = fixtureAdapter(session, { resumes: 0, messages: [] });
+    adapter.getSessionMessages = async () => [{ id: "goal", role: "user", text: "Continue this task", parts: [{ type: "text", text: "Continue this task" }] }];
+    let plans = 0;
+    let rejectSecondPlan: ((reason?: unknown) => void) | undefined;
+    let signalSecondPlanStarted: (() => void) | undefined;
+    const secondPlanStarted = new Promise<void>((resolve) => { signalSecondPlanStarted = resolve; });
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          plans += 1;
+          if (plans === 1) throw new Error("first assessment failure");
+          if (plans === 2) {
+            return await new Promise<never>((_, reject) => {
+              rejectSecondPlan = reject;
+              signalSecondPlanStarted?.();
+            });
+          }
+          return { groups: batch.map(({ session: candidate }) => ({
+            sourceSessionIds: [candidate.id], primarySessionId: candidate.id, verdict: "completed" as const,
+            reason: "event retried after a new native signal", confidence: 1, topic: candidate.title, handoff: "",
+          })) };
+        },
+      },
+    });
+
+    await launcher.recoverPending();
+    expect((await store.listInventory())[0]?.assessmentFailure).toMatchObject({ count: 1 });
+
+    const pendingAssessment = launcher.recoverPending();
+    await secondPlanStarted;
+    await launcher.handleEvent("codex", { kind: "turn.completed", harness: "codex", sessionId: session.id });
+    rejectSecondPlan?.(new Error("second assessment failure"));
+    await pendingAssessment;
+    expect((await store.listInventory())[0]?.assessmentFailure).toMatchObject({ count: 2, nextAttemptAt: expect.any(String) });
+
+    await launcher.recoverPending();
+    expect(plans).toBe(3);
+    expect((await store.listInventory())[0]).toMatchObject({ sessionId: session.id, verdict: { verdict: "completed" } });
+  });
+
   it("preserves same-pipeline backoff across restart but wakes an obsolete pipeline failure once", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-assessment-pipeline-version-"));
     const statePath = join(root, "unfinished.json");
