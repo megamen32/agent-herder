@@ -1318,6 +1318,90 @@ describe("unfinished session launcher", () => {
     expect(reset?.evidenceFingerprint).not.toBe(repeated?.evidenceFingerprint);
   });
 
+  it("preserves same-pipeline backoff across restart but wakes an obsolete pipeline failure once", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-assessment-pipeline-version-"));
+    const statePath = join(root, "unfinished.json");
+    const store = new UnfinishedSessionStore(statePath);
+    const session = { ...fixtureSession("idle", "codex"), id: "pipeline-version", lastActivity: new Date(Date.now() - 60_000).toISOString() };
+    const adapter = fixtureAdapter(session, { resumes: 0, messages: [] });
+    adapter.getSessionMessages = async () => [{ id: "evidence", role: "user", text: "stable evidence", parts: [{ type: "text", text: "stable evidence" }] }];
+    let failures = 0;
+    const failingLauncher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() { failures += 1; throw new Error("obsolete planner failure"); },
+      },
+    });
+    await failingLauncher.recoverPending();
+    await failingLauncher.recoverPending();
+    expect(failures).toBe(2);
+    expect((await store.listInventory())[0]?.assessmentFailure).toMatchObject({ pipelineVersion: 1, count: 2 });
+
+    let sameVersionPlans = 0;
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() { sameVersionPlans += 1; return { groups: [] }; },
+      },
+    }).recoverPending();
+    expect(sameVersionPlans).toBe(0);
+
+    const raw = JSON.parse(await readFile(statePath, "utf8")) as {
+      inventory?: Array<{ assessmentFailure?: { pipelineVersion?: unknown } }>;
+    };
+    for (const record of raw.inventory || []) {
+      if (record.assessmentFailure) record.assessmentFailure.pipelineVersion = "malformed";
+    }
+    await writeFile(statePath, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
+    expect((await store.listInventory())[0]?.assessmentFailure?.pipelineVersion).toBe(0);
+    for (const record of raw.inventory || []) {
+      if (record.assessmentFailure) delete record.assessmentFailure.pipelineVersion;
+    }
+    await writeFile(statePath, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
+
+    let upgradedFailures = 0;
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() {
+          upgradedFailures += 1;
+          throw new Error("new pipeline first failure");
+        },
+      },
+    }).recoverPending();
+    expect(upgradedFailures).toBe(1);
+    expect((await store.listInventory())[0]?.assessmentFailure).toMatchObject({
+      pipelineVersion: 1, count: 1,
+    });
+    expect((await store.listInventory())[0]?.assessmentFailure?.nextAttemptAt).toBeUndefined();
+    expect((await store.listInventory())[0]?.assessmentFailure?.notifiedAt).toBeUndefined();
+
+    let successfulPlans = 0;
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          successfulPlans += 1;
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "new pipeline succeeded", confidence: 1, topic: session.title, handoff: "",
+          })) };
+        },
+      },
+    }).recoverPending();
+    expect(successfulPlans).toBe(1);
+    expect((await store.listInventory())[0]).toMatchObject({ verdict: { verdict: "completed" } });
+    expect((await store.listInventory())[0]?.assessmentFailure).toBeUndefined();
+  });
+
   it("wakes a whole backed-off workspace cohort when a new sibling appears and preserves its native human gate", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-cohort-human-gate-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));

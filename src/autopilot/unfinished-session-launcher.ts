@@ -26,6 +26,9 @@ const MAX_SESSION_EVIDENCE_CHARS = 120_000;
 // batch planning. Native transcripts stay intact; only their semantic audit is
 // refreshed once under the corrected planner.
 const CURRENT_EVIDENCE_VERSION = 2;
+// Increment only when semantic planning/packing changes make persisted
+// assessment failures obsolete. Successful verdict evidence is unaffected.
+const CURRENT_ASSESSMENT_PIPELINE_VERSION = 1;
 
 class BatchPlanValidationError extends Error {
   override name = "BatchPlanValidationError";
@@ -322,6 +325,7 @@ export interface UnfinishedSessionInventoryRecord {
   verdict?: SessionInventoryVerdict;
   /** Durable semantic-planning backoff, independent from native resume attempts. */
   assessmentFailure?: {
+    pipelineVersion: number;
     cohortId: string;
     evidenceFingerprint: string;
     count: number;
@@ -1374,7 +1378,8 @@ export class UnfinishedSessionLauncher {
           || previous.title !== session.title
           || previous.progressFingerprint !== sessionInventoryProgressFingerprint(session);
         const evidenceChanged = failure
-          ? failure.evidenceFingerprint !== fingerprint
+          ? failure.pipelineVersion !== CURRENT_ASSESSMENT_PIPELINE_VERSION
+            || failure.evidenceFingerprint !== fingerprint
           : !previous || previous.transcriptTail !== transcriptTail;
         const deadlineExpired = Boolean(failure && (!failure.nextAttemptAt || Date.parse(failure.nextAttemptAt) <= Date.now()));
         const independentlyActionable = !failure && (!previous?.verdict
@@ -2076,12 +2081,14 @@ export class UnfinishedSessionLauncher {
     const records = assessed.map((candidate) => {
       const fingerprint = evidenceFingerprint(candidate.transcriptTail);
       const previous = priorInventory.get(candidate.sourceKey)?.assessmentFailure;
-      const repeated = previous?.evidenceFingerprint === fingerprint;
+      const repeated = previous?.pipelineVersion === CURRENT_ASSESSMENT_PIPELINE_VERSION
+        && previous.evidenceFingerprint === fingerprint;
       const count = repeated ? previous.count + 1 : 1;
       const delayMs = count <= 1 ? 0 : Math.min(capDelayMs, baseDelayMs * (2 ** Math.min(10, count - 2)));
       return {
         ...inventoryFromAssessment(candidate),
         assessmentFailure: {
+          pipelineVersion: CURRENT_ASSESSMENT_PIPELINE_VERSION,
           cohortId: assessmentCohortId(candidate.session),
           evidenceFingerprint: fingerprint,
           count,
@@ -2098,7 +2105,7 @@ export class UnfinishedSessionLauncher {
       && !record.assessmentFailure!.notifiedAt);
     if (!this.options.notify || newlyRepeated.length === 0) return;
     const correlation = createHash("sha256")
-      .update(newlyRepeated.map((record) => `${inventoryRecordKey(record)}:${record.assessmentFailure!.evidenceFingerprint}`).sort().join("\n"))
+      .update(`pipeline:${CURRENT_ASSESSMENT_PIPELINE_VERSION}\n${newlyRepeated.map((record) => `${inventoryRecordKey(record)}:${record.assessmentFailure!.evidenceFingerprint}`).sort().join("\n")}`)
       .digest("hex").slice(0, 24);
     try {
       await this.options.notify({
@@ -2304,6 +2311,11 @@ function parseAssessmentFailure(
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid inventory assessment failure");
   const record = value as Record<string, unknown>;
   return {
+    pipelineVersion: typeof record.pipelineVersion === "number"
+      && Number.isInteger(record.pipelineVersion)
+      && record.pipelineVersion >= 0
+      && record.pipelineVersion <= 1_000_000
+      ? record.pipelineVersion : 0,
     cohortId: record.cohortId === undefined ? legacyCohortId : bounded(record.cohortId, "assessmentFailure.cohortId"),
     evidenceFingerprint: bounded(record.evidenceFingerprint, "assessmentFailure.evidenceFingerprint"),
     count: boundedInteger(record.count, 1, 1_000_000, "assessmentFailure.count"),
