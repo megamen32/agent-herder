@@ -1749,26 +1749,37 @@ export class UnfinishedSessionLauncher {
     const rawCandidates = assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail }));
     const globallyPacked = fitBatchContextForSerializedRequest(rawCandidates, contextBudget, (sessions) => ({
       chunkRequests: partitionBatchCandidates(sessions).map(buildBatchPlannerBudgetRequest),
-      ...(sessions.length > MAX_BATCH_PLAN_SESSIONS_PER_REQUEST ? {
-        reconciliationRequest: buildBatchReconciliationBudgetRequest(worstCaseReconciliationCandidates(sessions)),
-      } : {}),
+      // Reserve one bounded repair pass for every chunk before the first fetch.
+      // Actual repairs contain only missing refs, so they can never exceed it.
+      repairRequests: partitionBatchCandidates(sessions).map(buildBatchPlannerBudgetRequest),
+      reconciliationRequest: buildBatchReconciliationBudgetRequest(worstCaseReconciliationCandidates(sessions)),
     })).sessions;
     const packedAssessed = assessed.map((candidate, index) => ({
       ...candidate,
       transcriptTail: globallyPacked[index]!.transcriptTail,
     }));
     const groups: SessionBatchPlanGroup[] = [];
+    let repaired = false;
     for (let offset = 0; offset < packedAssessed.length; offset += MAX_BATCH_PLAN_SESSIONS_PER_REQUEST) {
       const chunk = packedAssessed.slice(offset, offset + MAX_BATCH_PLAN_SESSIONS_PER_REQUEST);
       const plan = canonicalizePlanSourceKeys(await planner({
         sessions: chunk.map(({ session, transcriptTail }) => ({ session, transcriptTail })),
       }), chunk);
-      assertBatchPlanCoverage(plan, chunk);
+      const missing = missingBatchPlanCandidates(plan, chunk);
+      if (missing.length > 0) {
+        repaired = true;
+        const repair = canonicalizePlanSourceKeys(await planner({
+          sessions: missing.map(({ session, transcriptTail }) => ({ session, transcriptTail })),
+        }), missing);
+        assertBatchPlanCoverage(repair, missing);
+        plan.groups.push(...repair.groups);
+        assertBatchPlanCoverage(plan, chunk);
+      }
       groups.push(...plan.groups);
     }
     let plan = { groups };
     assertBatchPlanCoverage(plan, packedAssessed);
-    if (packedAssessed.length > MAX_BATCH_PLAN_SESSIONS_PER_REQUEST) {
+    if (packedAssessed.length > MAX_BATCH_PLAN_SESSIONS_PER_REQUEST || repaired) {
       const reconcile = this.options.judge?.reconcile;
       if (!reconcile) throw new Error("MiniMax cross-chunk reconciliation is unavailable");
       const summaries = batchReconciliationCandidates(plan, packedAssessed);
@@ -2426,18 +2437,22 @@ function canonicalizePlanSourceKeys(plan: SessionBatchPlan, candidates: Assessed
   };
   return {
     groups: plan.groups.map((group) => {
-      const sourceSessionIds = [...new Set(group.sourceSessionIds.map(resolve))];
+      const sourceSessionIds = group.sourceSessionIds.map(resolve);
+      if (new Set(sourceSessionIds).size !== sourceSessionIds.length) {
+        throw new Error("planner assigned the same session more than once inside a group");
+      }
       const requestedPrimary = resolve(group.primarySessionId);
+      if (!sourceSessionIds.includes(requestedPrimary)) throw new Error("planner primary is outside its group sources");
       return {
         ...group,
         sourceSessionIds,
-        primarySessionId: sourceSessionIds.includes(requestedPrimary) ? requestedPrimary : sourceSessionIds[0]!,
+        primarySessionId: requestedPrimary,
       };
     }),
   };
 }
 
-function assertBatchPlanCoverage(plan: SessionBatchPlan, candidates: AssessedSession[]): void {
+function missingBatchPlanCandidates(plan: SessionBatchPlan, candidates: AssessedSession[]): AssessedSession[] {
   const expected = new Set(candidates.map((candidate) => candidate.sourceKey));
   const seen = new Set<string>();
   for (const [index, group] of plan.groups.entries()) {
@@ -2451,9 +2466,13 @@ function assertBatchPlanCoverage(plan: SessionBatchPlan, candidates: AssessedSes
       seen.add(sourceKey);
     }
   }
-  const missing = [...expected].filter((sourceKey) => !seen.has(sourceKey));
+  return candidates.filter((candidate) => !seen.has(candidate.sourceKey));
+}
+
+function assertBatchPlanCoverage(plan: SessionBatchPlan, candidates: AssessedSession[]): void {
+  const missing = missingBatchPlanCandidates(plan, candidates);
   if (missing.length > 0) {
-    throw new Error(`MiniMax batch plan omitted ${missing.length} assessed session(s): ${missing.slice(0, 3).join(", ")}`);
+    throw new Error(`MiniMax batch plan omitted ${missing.length} assessed session(s): ${missing.slice(0, 3).map((candidate) => candidate.sourceKey).join(", ")}`);
   }
 }
 
@@ -2533,12 +2552,16 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
     const record = value as Record<string, unknown>;
     if (!Array.isArray(record.source_session_ids)) throw new Error(`MiniMax group ${index} has invalid sources`);
     if (record.source_session_ids.length === 0) return [];
-    const sourceSessionIds = [...new Set(record.source_session_ids.map((id) => resolveId(id, "source_session_id")))];
+    const sourceSessionIds = record.source_session_ids.map((id) => resolveId(id, "source_session_id"));
+    if (new Set(sourceSessionIds).size !== sourceSessionIds.length) {
+      throw new Error(`MiniMax group ${index} repeats a session`);
+    }
     for (const id of sourceSessionIds) {
       if (!known.has(id)) throw new Error(`MiniMax grouped unknown session ${id}`);
     }
     const requestedPrimarySessionId = resolveId(record.primary_session_id, "primary_session_id");
-    const primarySessionId = sourceSessionIds.includes(requestedPrimarySessionId) ? requestedPrimarySessionId : sourceSessionIds[0];
+    if (!sourceSessionIds.includes(requestedPrimarySessionId)) throw new Error(`MiniMax group ${index} primary is outside its sources`);
+    const primarySessionId = requestedPrimarySessionId;
     let verdict = normalizeVerdict(record);
     const handoff = typeof record.handoff === "string" ? boundedText(record.handoff, "handoff", 32_000, true) : "";
     if (verdict.verdict === "unfinished" && !handoff) {
@@ -2556,24 +2579,14 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
       handoff,
     }];
   });
-  const assignment = new Map<string, { group: number; score: number }>();
-  preliminary.forEach((group, index) => {
+  const assignment = new Set<string>();
+  preliminary.forEach((group) => {
     for (const id of group.sourceSessionIds) {
-      const score = (group.primarySessionId === id ? 10 : 0) + group.confidence;
-      const previous = assignment.get(id);
-      if (!previous || score > previous.score) assignment.set(id, { group: index, score });
+      if (assignment.has(id)) throw new Error(`MiniMax assigned session more than once: ${id}`);
+      assignment.add(id);
     }
   });
-  const groups = preliminary.flatMap((group, index): SessionBatchPlanGroup[] => {
-    const sourceSessionIds = group.sourceSessionIds.filter((id) => assignment.get(id)?.group === index);
-    if (sourceSessionIds.length === 0) return [];
-    return [{ ...group, sourceSessionIds, primarySessionId: sourceSessionIds.includes(group.primarySessionId) ? group.primarySessionId : sourceSessionIds[0] }];
-  });
-  const omitted = candidates
-    .map(({ session }) => sessionSourceKey(session))
-    .filter((sourceKey) => !assignment.has(sourceKey));
-  if (omitted.length > 0) throw new Error(`MiniMax batch plan omitted ${omitted.length} session(s)`);
-  return { groups: mergePlanGroups(groups) };
+  return { groups: mergePlanGroups(preliminary) };
 }
 
 function batchReconciliationPrompt(): string {

@@ -189,14 +189,10 @@ describe("unfinished session launcher", () => {
           reason: "Вторая часть той же задачи оборвалась", confidence: 0.97,
           topic: "Дубль аудита t-proxy", handoff: "Вторая часть общего handoff",
         }, {
-          source_session_ids: ["S2"], primary_session_id: "S2", verdict: "unfinished",
-          reason: "Ошибочный повтор группы", confidence: 0.1,
-          topic: "Повтор", handoff: "Повторный handoff",
-        }, {
           source_session_ids: [], primary_session_id: "S2", verdict: "completed",
           reason: "Пустая группа модели", confidence: 0.1, topic: "Пусто", handoff: "",
         }, {
-          source_session_ids: ["S3"], primary_session_id: "S2", verdict: "unfinished",
+          source_session_ids: ["S3"], primary_session_id: "S3", verdict: "unfinished",
           reason: "Модель забыла сводку", confidence: 0.7, topic: "Пропущенная задача", handoff: "",
         }] });
         const split = Math.floor(planText.length / 2);
@@ -245,7 +241,7 @@ describe("unfinished session launcher", () => {
     expect(requestBody.output_config).toEqual({ effort: "low" });
   });
 
-  it("rejects a syntactically valid MiniMax plan that omits an assessed session", async () => {
+  it("preserves a syntactically valid partial MiniMax plan for bounded launcher repair", async () => {
     const judge = createAnthropicCompatibleSessionCompletionJudge({
       baseUrl: "https://api.minimax.io/anthropic/",
       model: "MiniMax-M3.1-Flash-Preview",
@@ -266,7 +262,7 @@ describe("unfinished session launcher", () => {
     await expect(judge.plan?.({ sessions: [
       { session: { ...fixtureSession("idle", "codex"), id: "covered" }, transcriptTail: "covered evidence" },
       { session: { ...fixtureSession("idle", "zcode"), id: "omitted" }, transcriptTail: "omitted evidence" },
-    ] })).rejects.toThrow(/omitted 1 session/);
+    ] })).resolves.toMatchObject({ groups: [{ sourceSessionIds: ["codex:covered:/tmp/autostart-canary"] }] });
   });
 
   it("rejects a compact reconciliation that omits a chunk group", async () => {
@@ -751,7 +747,91 @@ describe("unfinished session launcher", () => {
     expect(await store.list()).toMatchObject([{ sessionId: session.id, generationId: "previous-process", state: "active" }]);
   });
 
-  it("applies none of a partial injected plan and leaves every assessed session undecided", async () => {
+  it("repairs only missing refs and applies nothing before repair coverage is complete", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-repair-success-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = [
+      { ...fixtureSession("idle", "codex"), id: "covered", title: "Covered", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "omitted", title: "Omitted", lastActivity: new Date(Date.now() - 60_001).toISOString() },
+    ];
+    const calls = { resumes: 0, messages: [] as string[] };
+    const planned: string[][] = [];
+    const adapter = fixtureAdapter(sessions[0]!, calls);
+    adapter.listSessions = async () => sessions;
+    adapter.getSession = async (id) => sessions.find((session) => session.id === id) || null;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          planned.push(batch.map(({ session }) => session.id));
+          if (planned.length === 2) {
+            expect(calls).toEqual({ resumes: 0, messages: [] });
+            expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
+          }
+          const selected = planned.length === 1 ? batch.filter(({ session }) => session.id === "covered") : batch;
+          return { groups: selected.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id,
+            verdict: "unfinished" as const,
+            reason: "classified", confidence: 1, topic: "One repaired task",
+            handoff: `continue ${session.id}`,
+          })) };
+        },
+        async reconcile({ groups }) {
+          return { clusters: [groups.map(({ groupRef }) => groupRef)] };
+        },
+      },
+    }).recoverPending();
+
+    expect(planned).toEqual([["covered", "omitted"], ["omitted"]]);
+    expect(calls.resumes).toBe(1);
+    expect(calls.messages).toHaveLength(1);
+    expect(calls.messages[0]).toContain("continue covered");
+    expect(calls.messages[0]).toContain("continue omitted");
+  });
+
+  it("reconciles a repaired human gate with its sibling and blocks the whole task", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-repair-human-gate-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = [
+      { ...fixtureSession("idle", "codex"), id: "sibling", title: "Sibling", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("needs_input", "codex"), id: "human-gate", title: "Gate", needsPermission: true, lastActivity: new Date(Date.now() - 60_001).toISOString() },
+    ];
+    const calls = { resumes: 0, messages: [] as string[] };
+    let plans = 0;
+    const adapter = fixtureAdapter(sessions[0]!, calls);
+    adapter.listSessions = async () => sessions;
+    adapter.getSession = async (id) => sessions.find((session) => session.id === id) || null;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          plans += 1;
+          const selected = plans === 1 ? batch.filter(({ session }) => session.id === "sibling") : batch;
+          return { groups: selected.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "unfinished" as const,
+            reason: "same task", confidence: 1, topic: "One gated repaired task", handoff: "continue",
+          })) };
+        },
+        async reconcile({ groups }) {
+          return { clusters: [groups.map(({ groupRef }) => groupRef)] };
+        },
+      },
+    }).recoverPending();
+
+    expect(plans).toBe(2);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    const verdicts = (await store.listInventory()).map((record) => record.verdict);
+    expect(verdicts).toHaveLength(2);
+    expect(verdicts.every((verdict) => verdict?.verdict === "needs_human")).toBe(true);
+  });
+
+  it("applies none of a partial plan when the bounded missing-ref repair fails", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-partial-atomic-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const sessions = [
@@ -759,6 +839,7 @@ describe("unfinished session launcher", () => {
       { ...fixtureSession("idle", "codex"), id: "omitted", title: "Omitted" },
     ];
     const calls = { resumes: 0, messages: [] as string[] };
+    let plans = 0;
     const adapter = fixtureAdapter(sessions[0]!, calls);
     adapter.listSessions = async () => sessions;
     adapter.getSession = async (id) => sessions.find((session) => session.id === id) || null;
@@ -769,6 +850,7 @@ describe("unfinished session launcher", () => {
       judge: {
         async decide() { throw new Error("fallback should not run"); },
         async plan() {
+          plans += 1;
           return { groups: [{
             sourceSessionIds: ["covered"], primarySessionId: "covered", verdict: "unfinished",
             reason: "continue", confidence: 1, topic: "Covered", handoff: "continue covered",
@@ -778,10 +860,47 @@ describe("unfinished session launcher", () => {
     }).recoverPending();
 
     expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(plans).toBe(2);
     expect(await store.list()).toEqual([]);
     const inventory = await store.listInventory();
     expect(inventory.map((record) => record.sessionId).sort()).toEqual(["covered", "omitted"]);
     expect(inventory.every((record) => record.verdict === undefined)).toBe(true);
+  });
+
+  it.each([
+    { name: "duplicate refs", sources: ["covered", "covered"], primary: "covered" },
+    { name: "outside primary", sources: ["covered"], primary: "omitted" },
+    { name: "unknown refs", sources: ["unknown"], primary: "unknown" },
+  ])("strictly rejects $name before missing-ref repair", async ({ sources, primary }) => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-strict-shape-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = [
+      { ...fixtureSession("idle", "codex"), id: "covered" },
+      { ...fixtureSession("idle", "codex"), id: "omitted" },
+    ];
+    const calls = { resumes: 0, messages: [] as string[] };
+    let plans = 0;
+    const adapter = fixtureAdapter(sessions[0]!, calls);
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() {
+          plans += 1;
+          return { groups: [{
+            sourceSessionIds: sources, primarySessionId: primary, verdict: "unfinished",
+            reason: "invalid shape", confidence: 1, topic: "Invalid", handoff: "continue",
+          }] };
+        },
+      },
+    }).recoverPending();
+
+    expect(plans).toBe(1);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
   });
 
   it("keeps a MiniMax-omitted candidate pending for the next batch without blindly resuming it", async () => {
@@ -899,7 +1018,7 @@ describe("unfinished session launcher", () => {
         const payload = JSON.parse(body.messages[0]!.content) as { sessions?: Array<{ session_ref: string }>; groups?: Array<{ group_ref: string }> };
         const text = body.system[0]!.text.includes("финальный дедупликатор")
           ? JSON.stringify({ clusters: (payload.groups || []).map(({ group_ref }) => [group_ref]) })
-          : JSON.stringify({ groups: (payload.sessions || []).map(({ session_ref }) => ({
+          : JSON.stringify({ groups: ((payload.sessions || []).length > 1 ? (payload.sessions || []).slice(0, -1) : (payload.sessions || [])).map(({ session_ref }) => ({
             source_session_ids: [session_ref], primary_session_id: session_ref, verdict: "completed",
             reason: "done", confidence: 1, topic: `Topic ${session_ref}`, handoff: "",
           })) });
@@ -927,7 +1046,7 @@ describe("unfinished session launcher", () => {
       else process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS = previousBudget;
     }
 
-    expect(requestBodies).toHaveLength(3);
+    expect(requestBodies).toHaveLength(5);
     const totalTokens = requestBodies.reduce((sum, body) => sum + estimateContextTokens(JSON.stringify(body)), 0);
     expect(totalTokens).toBeLessThanOrEqual(480_000);
     expect(await store.listInventory()).toHaveLength(70);
