@@ -1499,6 +1499,132 @@ describe("unfinished session launcher", () => {
     expect((await store.listInventory()).every((record) => record.assessmentFailure === undefined)).toBe(true);
   });
 
+  it.each(["idle", "running"] as const)("keeps the whole cohort asleep for a fresh new %s sibling until it is old and idle", async (freshStatus) => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-cohort-native-safe-new-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions: AgentSession[] = [
+      { ...fixtureSession("idle", "codex"), id: "safe-a", cwd: "/workspace/native-safe", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "safe-b", cwd: "/workspace/native-safe", lastActivity: new Date(Date.now() - 60_001).toISOString() },
+    ];
+    const planned: string[][] = [];
+    const calls = { resumes: 0, messages: [] as string[] };
+    const deferred: string[] = [];
+    const adapter = fixtureAdapter(sessions[0]!, calls);
+    adapter.listSessions = async () => sessions;
+    adapter.getSession = async (id) => sessions.find((session) => session.id === id) || null;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1_000,
+      deferredStore: {
+        async add(_sessionId, message) { deferred.push(message); return { id: "deferred" }; },
+        async list() { return []; },
+      },
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          planned.push(batch.map(({ session }) => session.id));
+          if (planned.length <= 2) throw new Error("planner unavailable");
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "done", confidence: 1, topic: session.title, handoff: "",
+          })) };
+        },
+      },
+    });
+
+    await launcher.recoverPending();
+    await launcher.recoverPending();
+    sessions.push({
+      ...fixtureSession(freshStatus, "codex"), id: "fresh-c", cwd: "/workspace/native-safe",
+      lastActivity: new Date().toISOString(),
+    });
+    await launcher.recoverPending();
+    expect(planned).toHaveLength(2);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(deferred).toEqual([]);
+
+    sessions[2] = { ...sessions[2]!, status: "idle", lastActivity: new Date(Date.now() - 60_002).toISOString() };
+    await launcher.recoverPending();
+    expect(planned[2]?.slice().sort()).toEqual(["fresh-c", "safe-a", "safe-b"].sort());
+  });
+
+  it("waits for a fresh changed cohort member to become old before planning the workspace", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-cohort-native-safe-change-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions: AgentSession[] = [
+      { ...fixtureSession("idle", "codex"), id: "changed-a", cwd: "/workspace/change-safe", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "changed-b", cwd: "/workspace/change-safe", lastActivity: new Date(Date.now() - 60_001).toISOString() },
+    ];
+    const evidence = new Map([["changed-a", "a-v1"], ["changed-b", "b-v1"]]);
+    const planned: string[][] = [];
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: evidence.get(id)!, parts: [{ type: "text", text: evidence.get(id)! }] }];
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1_000,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          planned.push(batch.map(({ session }) => session.id));
+          if (planned.length <= 2) throw new Error("planner unavailable");
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "done", confidence: 1, topic: session.title, handoff: "",
+          })) };
+        },
+      },
+    });
+    await launcher.recoverPending();
+    await launcher.recoverPending();
+
+    evidence.set("changed-a", "a-v2");
+    sessions[0] = { ...sessions[0]!, lastActivity: new Date().toISOString() };
+    await launcher.recoverPending();
+    expect(planned).toHaveLength(2);
+
+    sessions[0] = { ...sessions[0]!, lastActivity: new Date(Date.now() - 60_000).toISOString() };
+    await launcher.recoverPending();
+    expect(planned[2]?.slice().sort()).toEqual(["changed-a", "changed-b"].sort());
+  });
+
+  it("lets an explicit urgent member override native-safe waiting for its whole cohort", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-cohort-explicit-urgent-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions: AgentSession[] = [
+      { ...fixtureSession("idle", "codex"), id: "urgent-a", cwd: "/workspace/urgent", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "urgent-b", cwd: "/workspace/urgent", lastActivity: new Date(Date.now() - 60_001).toISOString() },
+    ];
+    const planned: string[][] = [];
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSession = async (id) => sessions.find((session) => session.id === id) || null;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1_000,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          planned.push(batch.map(({ session }) => session.id));
+          if (planned.length <= 2) throw new Error("planner unavailable");
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "done", confidence: 1, topic: session.title, handoff: "",
+          })) };
+        },
+      },
+    });
+    await launcher.recoverPending();
+    await launcher.recoverPending();
+
+    sessions[1] = { ...sessions[1]!, status: "running", lastActivity: new Date().toISOString() };
+    await launcher.handleEvent("codex", { kind: "turn.completed", harness: "codex", sessionId: "urgent-a" });
+    await launcher.recoverPending();
+    expect(planned[2]?.slice().sort()).toEqual(["urgent-a", "urgent-b"].sort());
+  });
+
   it("lets a needs-human twice-omitted member block its reconciled unfinished sibling", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-omission-human-gate-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));

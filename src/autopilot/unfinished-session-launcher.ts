@@ -1335,7 +1335,9 @@ export class UnfinishedSessionLauncher {
     );
     if (this.options.judge?.plan) {
       const cohortEvidence = new Map<string, { messages: SessionMessageView[]; transcriptTail: string }>();
-      const cohortWake = new Map<string, boolean>();
+      const cohortWakeRequested = new Map<string, boolean>();
+      const cohortAllMembersSafe = new Map<string, boolean>();
+      const cohortExplicitUrgent = new Map<string, boolean>();
       const activeFailedCohorts = new Set([...priorInventory.values()].flatMap((record) => record.assessmentFailure
         ? [record.assessmentFailure.cohortId] : []));
       for (const { adapter, session } of candidates) {
@@ -1348,6 +1350,12 @@ export class UnfinishedSessionLauncher {
         const transcriptTail = completionEvidence(messages, runtimeSettings.evidenceMessageCount);
         cohortEvidence.set(sourceKey, { messages, transcriptTail });
         const urgent = this.urgentSessions.has(sourceKey) || this.urgentSessions.has(sessionKey(session.harness, session.id));
+        const candidateDelayMs = this.candidateDelayOverrideMs
+          ?? Math.max(this.discoveryIdleMs, unfinishedProbeDelayMs(session));
+        const oldEnough = Date.now() - Date.parse(session.lastActivity) >= candidateDelayMs;
+        const nativeSafe = urgent || (session.status !== "running" && oldEnough);
+        cohortAllMembersSafe.set(cohortId, (cohortAllMembersSafe.get(cohortId) ?? true) && nativeSafe);
+        cohortExplicitUrgent.set(cohortId, cohortExplicitUrgent.get(cohortId) === true || urgent);
         const fingerprint = evidenceFingerprint(transcriptTail);
         const metadataChanged = !previous
           || previous.lastActivity !== session.lastActivity
@@ -1364,8 +1372,14 @@ export class UnfinishedSessionLauncher {
           || previous.verdict.verdict === "unfinished"
           || metadataChanged
           || evidenceChanged);
-        cohortWake.set(cohortId, cohortWake.get(cohortId) === true
-          || urgent || evidenceChanged || deadlineExpired || independentlyActionable);
+        cohortWakeRequested.set(cohortId, cohortWakeRequested.get(cohortId) === true
+          || evidenceChanged || deadlineExpired || independentlyActionable);
+      }
+      const cohortWake = new Map<string, boolean>();
+      for (const cohortId of activeFailedCohorts) {
+        const explicitUrgent = cohortExplicitUrgent.get(cohortId) === true;
+        cohortWake.set(cohortId, explicitUrgent
+          || (cohortWakeRequested.get(cohortId) === true && cohortAllMembersSafe.get(cohortId) === true));
       }
       const assessed: AssessedSession[] = [];
       for (const { adapter, session } of candidates) {
