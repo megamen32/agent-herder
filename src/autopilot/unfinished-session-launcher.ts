@@ -299,6 +299,7 @@ export interface UnfinishedSessionInventoryRecord {
 export interface SessionCompletionJudge {
   decide(input: { session: AgentSession; transcriptTail: string }): Promise<Omit<SessionInventoryVerdict, "judgedAt">>;
   plan?(input: { sessions: SessionBatchCandidate[] }): Promise<SessionBatchPlan>;
+  reconcile?(input: { groups: SessionBatchReconciliationCandidate[] }): Promise<SessionBatchReconciliation>;
 }
 
 export interface SessionBatchCandidate {
@@ -318,6 +319,22 @@ export interface SessionBatchPlanGroup {
 
 export interface SessionBatchPlan {
   groups: SessionBatchPlanGroup[];
+}
+
+export interface SessionBatchReconciliationCandidate {
+  groupRef: string;
+  workspaceIdentity: string;
+  topic: string;
+  verdict: SessionCompletionVerdict;
+  reason: string;
+  handoff: string;
+  sourceSessionIds: string[];
+  memberTitles: string[];
+  humanGate: boolean;
+}
+
+export interface SessionBatchReconciliation {
+  clusters: string[][];
 }
 
 type AssessedSession = SessionBatchCandidate & {
@@ -1704,17 +1721,46 @@ export class UnfinishedSessionLauncher {
   private async planAssessedSessions(assessed: AssessedSession[]): Promise<SessionBatchPlan> {
     const planner = this.options.judge?.plan;
     if (!planner) throw new Error("MiniMax batch planner is unavailable");
+    const contextBudget = Math.min(
+      positiveInteger(
+        Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS || DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET),
+        DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
+      ),
+      DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
+    );
+    const rawCandidates = assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail }));
+    const globallyPacked = fitBatchContextForSerializedRequest(rawCandidates, contextBudget, (sessions) => ({
+      model: "MiniMax-batch-budget",
+      max_tokens: DEFAULT_BATCH_OUTPUT_TOKENS,
+      temperature: 0,
+      stream: true,
+      output_config: { effort: "low" },
+      system: [{ type: "text", text: batchPlannerPrompt(), cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: JSON.stringify(batchPlannerPayload(sessions)) }],
+    })).sessions;
+    const packedAssessed = assessed.map((candidate, index) => ({
+      ...candidate,
+      transcriptTail: globallyPacked[index]!.transcriptTail,
+    }));
     const groups: SessionBatchPlanGroup[] = [];
-    for (let offset = 0; offset < assessed.length; offset += MAX_BATCH_PLAN_SESSIONS_PER_REQUEST) {
-      const chunk = assessed.slice(offset, offset + MAX_BATCH_PLAN_SESSIONS_PER_REQUEST);
+    for (let offset = 0; offset < packedAssessed.length; offset += MAX_BATCH_PLAN_SESSIONS_PER_REQUEST) {
+      const chunk = packedAssessed.slice(offset, offset + MAX_BATCH_PLAN_SESSIONS_PER_REQUEST);
       const plan = canonicalizePlanSourceKeys(await planner({
         sessions: chunk.map(({ session, transcriptTail }) => ({ session, transcriptTail })),
       }), chunk);
       assertBatchPlanCoverage(plan, chunk);
       groups.push(...plan.groups);
     }
-    const plan = { groups };
-    assertBatchPlanCoverage(plan, assessed);
+    let plan = { groups };
+    assertBatchPlanCoverage(plan, packedAssessed);
+    if (packedAssessed.length > MAX_BATCH_PLAN_SESSIONS_PER_REQUEST) {
+      const reconcile = this.options.judge?.reconcile;
+      if (!reconcile) throw new Error("MiniMax cross-chunk reconciliation is unavailable");
+      const summaries = batchReconciliationCandidates(plan, packedAssessed);
+      const reconciliation = await reconcile({ groups: summaries });
+      plan = applyBatchReconciliation(plan, summaries, reconciliation);
+      assertBatchPlanCoverage(plan, packedAssessed);
+    }
     return plan;
   }
 
@@ -2393,6 +2439,55 @@ function assertBatchPlanCoverage(plan: SessionBatchPlan, candidates: AssessedSes
   }
 }
 
+function batchReconciliationCandidates(
+  plan: SessionBatchPlan,
+  candidates: AssessedSession[],
+): SessionBatchReconciliationCandidate[] {
+  const byId = new Map(candidates.map((candidate) => [candidate.sourceKey, candidate]));
+  return plan.groups.map((group, index) => {
+    const members = group.sourceSessionIds.map((sourceKey) => byId.get(sourceKey)!);
+    const workspaces = [...new Set(members.map(({ session }) => sessionWorkspaceIdentity(session)))];
+    if (workspaces.length !== 1) throw new Error(`MiniMax chunk group ${index} crosses workspace boundaries`);
+    return {
+      groupRef: `G${index + 1}`,
+      workspaceIdentity: workspaces[0]!,
+      topic: group.topic,
+      verdict: group.verdict,
+      reason: group.reason.slice(0, 512),
+      handoff: group.handoff.slice(0, 1_000),
+      sourceSessionIds: [...group.sourceSessionIds],
+      memberTitles: members.map(({ session }) => session.title.slice(0, 160)),
+      humanGate: members.some(({ session }) => session.status === "needs_input" || session.needsPermission),
+    };
+  });
+}
+
+function applyBatchReconciliation(
+  plan: SessionBatchPlan,
+  candidates: SessionBatchReconciliationCandidate[],
+  reconciliation: SessionBatchReconciliation,
+): SessionBatchPlan {
+  const byRef = new Map(candidates.map((candidate, index) => [candidate.groupRef, { candidate, group: plan.groups[index]! }]));
+  const seen = new Set<string>();
+  const groups = reconciliation.clusters.map((cluster, index): SessionBatchPlanGroup => {
+    if (!Array.isArray(cluster) || cluster.length === 0) throw new Error(`MiniMax reconciliation cluster ${index} is empty`);
+    const entries = cluster.map((groupRef) => {
+      const entry = byRef.get(groupRef);
+      if (!entry) throw new Error(`MiniMax reconciliation returned unknown group ${groupRef}`);
+      if (seen.has(groupRef)) throw new Error(`MiniMax reconciliation repeated group ${groupRef}`);
+      seen.add(groupRef);
+      return entry;
+    });
+    const workspaces = new Set(entries.map(({ candidate }) => candidate.workspaceIdentity));
+    if (workspaces.size !== 1) throw new Error(`MiniMax reconciliation cluster ${index} crosses workspace boundaries`);
+    const topic = entries[0]!.group.topic;
+    return mergePlanGroups(entries.map(({ group }) => ({ ...group, topic })))[0]!;
+  });
+  const missing = candidates.filter(({ groupRef }) => !seen.has(groupRef));
+  if (missing.length > 0) throw new Error(`MiniMax reconciliation omitted ${missing.length} chunk group(s)`);
+  return { groups };
+}
+
 function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[]): SessionBatchPlan {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("MiniMax returned an invalid batch plan");
   const rawGroups = (value as Record<string, unknown>).groups;
@@ -2461,6 +2556,60 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
     .filter((sourceKey) => !assignment.has(sourceKey));
   if (omitted.length > 0) throw new Error(`MiniMax batch plan omitted ${omitted.length} session(s)`);
   return { groups: mergePlanGroups(groups) };
+}
+
+function batchReconciliationPrompt(): string {
+  return [
+    "Ты финальный дедупликатор уже проверенных групп Agent Herder.",
+    "Сгруппируй group_ref одной и той же пользовательской задачи, даже если они пришли из разных batch chunks.",
+    "Никогда не объединяй разные workspace_identity.",
+    "human_gate — свойство участника задачи, а не отдельная задача: сохрани его в одном кластере с sibling той же работы.",
+    "Каждый входной group_ref должен встретиться ровно один раз.",
+    "Верни только компактный JSON {clusters:[[\"G1\",\"G2\"],[\"G3\"]]}; не повторяй summaries, handoff или причины.",
+  ].join(" ");
+}
+
+function batchReconciliationPayload(groups: SessionBatchReconciliationCandidate[]): unknown {
+  return {
+    groups: groups.map((group) => ({
+      group_ref: group.groupRef,
+      workspace_identity: group.workspaceIdentity,
+      topic: group.topic,
+      verdict: group.verdict,
+      reason: group.reason,
+      handoff: group.handoff,
+      source_session_refs: group.sourceSessionIds,
+      member_titles: group.memberTitles,
+      human_gate: group.humanGate,
+    })),
+  };
+}
+
+function normalizeBatchReconciliation(
+  value: unknown,
+  candidates: SessionBatchReconciliationCandidate[],
+): SessionBatchReconciliation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("MiniMax returned an invalid reconciliation");
+  const rawClusters = (value as Record<string, unknown>).clusters;
+  if (!Array.isArray(rawClusters)) throw new Error("MiniMax reconciliation has no clusters");
+  const known = new Map(candidates.map((candidate) => [candidate.groupRef, candidate]));
+  const seen = new Set<string>();
+  const clusters = rawClusters.map((rawCluster, index): string[] => {
+    if (!Array.isArray(rawCluster) || rawCluster.length === 0) throw new Error(`MiniMax reconciliation cluster ${index} is empty`);
+    const cluster = rawCluster.map((value) => boundedText(value, "group_ref", 32));
+    const workspaces = new Set(cluster.map((groupRef) => {
+      const candidate = known.get(groupRef);
+      if (!candidate) throw new Error(`MiniMax reconciliation returned unknown group ${groupRef}`);
+      if (seen.has(groupRef)) throw new Error(`MiniMax reconciliation repeated group ${groupRef}`);
+      seen.add(groupRef);
+      return candidate.workspaceIdentity;
+    }));
+    if (workspaces.size !== 1) throw new Error(`MiniMax reconciliation cluster ${index} crosses workspace boundaries`);
+    return cluster;
+  });
+  const missing = candidates.filter(({ groupRef }) => !seen.has(groupRef));
+  if (missing.length > 0) throw new Error(`MiniMax reconciliation omitted ${missing.length} group(s)`);
+  return { clusters };
 }
 
 function batchPlannerPrompt(): string {
@@ -2570,12 +2719,12 @@ export function fitBatchContextForSerializedRequest<T>(
   let low = 0;
   let high = Math.max(...sizes);
   while (low < high) {
-    const middle = Math.floor((low + high) / 2);
+    const middle = Math.ceil((low + high) / 2);
     const evidenceTokens = sizes.reduce((sum, size) => sum + Math.min(size, middle), 0);
-    if (evidenceTokens <= available) low = middle + 1;
-    else high = middle;
+    if (evidenceTokens <= available) low = middle;
+    else high = middle - 1;
   }
-  let cap = Math.max(0, low - 1);
+  let cap = low;
   // Escaping overhead is measured from the real request, then corrected
   // proportionally. This converges in a few full serializations instead of
   // rebuilding every multi-megabyte candidate at each binary-search step.
@@ -2798,6 +2947,35 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
       return normalizeBatchPlan(JSON.parse(json) as unknown, sessions);
     },
+    async reconcile({ groups }) {
+      const response = await fetchImpl(endpoint, {
+        method: "POST",
+        headers: {
+          ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
+          "content-type": "application/json",
+        },
+        signal: AbortSignal.timeout(positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
+        body: JSON.stringify({
+          model: config.model,
+          max_tokens: DEFAULT_BATCH_OUTPUT_TOKENS,
+          temperature: 0,
+          stream: false,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: batchReconciliationPrompt() },
+            { role: "user", content: JSON.stringify(batchReconciliationPayload(groups)) },
+          ],
+        }),
+      });
+      if (!response.ok) throw new Error(`MiniMax reconciliation rejected with HTTP ${response.status}`);
+      const body = await response.json() as Record<string, unknown>;
+      const choices = Array.isArray(body.choices) ? body.choices : [];
+      const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message : undefined;
+      const content = message && typeof message === "object" ? (message as Record<string, unknown>).content : undefined;
+      if (typeof content !== "string") throw new Error("MiniMax reconciliation returned no content");
+      const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+      return normalizeBatchReconciliation(JSON.parse(json) as unknown, groups);
+    },
   };
 }
 
@@ -2898,6 +3076,30 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
       const content = await anthropicText(response);
       const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
       return normalizeBatchPlan(JSON.parse(json) as unknown, sessions);
+    },
+    async reconcile({ groups }) {
+      const response = await fetchImpl(endpoint, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${config.token}`,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        signal: AbortSignal.timeout(positiveInteger(Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS || 600_000), 600_000)),
+        body: JSON.stringify({
+          model: config.model,
+          max_tokens: DEFAULT_BATCH_OUTPUT_TOKENS,
+          temperature: 0,
+          stream: true,
+          output_config: { effort: "low" },
+          system: [{ type: "text", text: batchReconciliationPrompt(), cache_control: { type: "ephemeral" } }],
+          messages: [{ role: "user", content: JSON.stringify(batchReconciliationPayload(groups)) }],
+        }),
+      });
+      if (!response.ok) throw new Error(`MiniMax Anthropic reconciliation rejected with HTTP ${response.status}`);
+      const content = await anthropicText(response);
+      const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+      return normalizeBatchReconciliation(JSON.parse(json) as unknown, groups);
     },
   };
 }

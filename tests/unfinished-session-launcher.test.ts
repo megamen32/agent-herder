@@ -269,6 +269,35 @@ describe("unfinished session launcher", () => {
     ] })).rejects.toThrow(/omitted 1 session/);
   });
 
+  it("rejects a compact reconciliation that omits a chunk group", async () => {
+    const judge = createAnthropicCompatibleSessionCompletionJudge({
+      baseUrl: "https://api.minimax.io/anthropic/",
+      model: "MiniMax-M3.1-Flash-Preview",
+      token: "test-token",
+      fetchImpl: async () => {
+        const text = JSON.stringify({ clusters: [["G1"]] });
+        return new Response([
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } })}`,
+          "data: [DONE]",
+          "",
+        ].join("\n\n"), { status: 200, headers: { "content-type": "text/event-stream" } });
+      },
+    });
+    const groups = ["G1", "G2"].map((groupRef) => ({
+      groupRef,
+      workspaceIdentity: "/workspace",
+      topic: `Topic ${groupRef}`,
+      verdict: "completed" as const,
+      reason: "done",
+      handoff: "",
+      sourceSessionIds: [`source-${groupRef}`],
+      memberTitles: [`Title ${groupRef}`],
+      humanGate: false,
+    }));
+
+    await expect(judge.reconcile?.({ groups })).rejects.toThrow(/omitted 1 group/);
+  });
+
   it("plans all Codex and ZCode evidence once, deduplicates one task, and launches one readable continuation", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-plan-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -804,6 +833,9 @@ describe("unfinished session launcher", () => {
             reason: "done", confidence: 1, topic: session.title, handoff: "",
           })) };
         },
+        async reconcile({ groups }) {
+          return { clusters: groups.map(({ groupRef }) => [groupRef]) };
+        },
       },
     }).recoverPending();
     expect(sizes).toEqual([33]);
@@ -833,12 +865,163 @@ describe("unfinished session launcher", () => {
             reason: "done", confidence: 1, topic: session.title, handoff: "",
           })) };
         },
+        async reconcile({ groups }) {
+          return { clusters: groups.map(({ groupRef }) => [groupRef]) };
+        },
       },
     }).recoverPending();
 
     expect(sizes).toEqual([64, 6]);
     expect(await store.listInventory()).toHaveLength(70);
     expect((await store.listInventory()).every((record) => record.verdict?.verdict === "completed")).toBe(true);
+  });
+
+  it("shares one 480k evidence budget across chunk requests plus compact reconciliation overhead", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-global-chunk-budget-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = Array.from({ length: 70 }, (_, index): AgentSession => ({
+      ...fixtureSession("idle", "codex"), id: `budgeted-${index}`, title: `Budgeted ${index}`,
+      lastActivity: new Date(Date.now() - 10 * 60_000 - index).toISOString(),
+    }));
+    const requestBodies: unknown[] = [];
+    const previousBudget = process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS;
+    process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS = "480000";
+    const judge = createAnthropicCompatibleSessionCompletionJudge({
+      baseUrl: "https://api.minimax.io/anthropic/",
+      model: "MiniMax-M3.1-Flash-Preview",
+      token: "test-token",
+      fetchImpl: async (_url, init) => {
+        const body = JSON.parse(String(init?.body)) as {
+          system: Array<{ text: string }>;
+          messages: Array<{ content: string }>;
+        };
+        requestBodies.push(body);
+        const payload = JSON.parse(body.messages[0]!.content) as { sessions?: Array<{ session_ref: string }>; groups?: Array<{ group_ref: string }> };
+        const text = body.system[0]!.text.includes("финальный дедупликатор")
+          ? JSON.stringify({ clusters: (payload.groups || []).map(({ group_ref }) => [group_ref]) })
+          : JSON.stringify({ groups: (payload.sessions || []).map(({ session_ref }) => ({
+            source_session_ids: [session_ref], primary_session_id: session_ref, verdict: "completed",
+            reason: "done", confidence: 1, topic: `Topic ${session_ref}`, handoff: "",
+          })) });
+        return new Response([
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } })}`,
+          "data: [DONE]",
+          "",
+        ].join("\n\n"), { status: 200, headers: { "content-type": "text/event-stream" } });
+      },
+    });
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{
+      id: `${id}-u`, role: "user", text: `${id}:${'"\\\n'.repeat(5_000)}`,
+      parts: [{ type: "text", text: `${id}:${'"\\\n'.repeat(5_000)}` }],
+    }];
+    try {
+      await new UnfinishedSessionLauncher({
+        adapters: new Map([["codex", adapter]]), store,
+        settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+        judge,
+      }).recoverPending();
+    } finally {
+      if (previousBudget === undefined) delete process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS;
+      else process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS = previousBudget;
+    }
+
+    expect(requestBodies).toHaveLength(3);
+    const totalTokens = requestBodies.reduce((sum, body) => sum + estimateContextTokens(JSON.stringify(body)), 0);
+    expect(totalTokens).toBeLessThanOrEqual(512_000);
+    expect(await store.listInventory()).toHaveLength(70);
+  });
+
+  it("globally reconciles one task split across the 64-session boundary into one send", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-cross-chunk-dedupe-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = Array.from({ length: 65 }, (_, index): AgentSession => ({
+      ...fixtureSession("idle", "codex"), id: `cross-${index}`,
+      title: index >= 63 ? `Shared interrupted task part ${index - 62}` : `Completed task ${index}`,
+      cwd: "/workspace/cross-chunk",
+      lastActivity: new Date(Date.now() - 60_000 - index).toISOString(),
+    }));
+    const resumed: string[] = [];
+    const sent: Array<{ id: string; message: string }> = [];
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSession = async (id) => sessions.find((session) => session.id === id) || null;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    adapter.resumeSession = async (id) => { resumed.push(id); return { ok: true }; };
+    adapter.sendMessage = async (id, input) => { sent.push({ id, message: input.message }); return { ok: true }; };
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id,
+            verdict: session.id === "cross-63" || session.id === "cross-64" ? "unfinished" as const : "completed" as const,
+            reason: "classified", confidence: 1,
+            topic: session.id === "cross-63" || session.id === "cross-64" ? "Shared cross chunk task" : session.title,
+            handoff: session.id === "cross-63" || session.id === "cross-64" ? `Continue ${session.id}` : "",
+          })) };
+        },
+        async reconcile({ groups }) {
+          const shared = groups.filter((group) => group.topic === "Shared cross chunk task");
+          const other = groups.filter((group) => group.topic !== "Shared cross chunk task");
+          return { clusters: [...other.map(({ groupRef }) => [groupRef]), shared.map(({ groupRef }) => groupRef)] };
+        },
+      },
+    }).recoverPending();
+
+    expect(resumed).toEqual(["cross-63"]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ id: "cross-63" });
+    expect(sent[0]?.message).toContain("Continue cross-63");
+    expect(sent[0]?.message).toContain("Continue cross-64");
+  });
+
+  it("lets a human-gated member block its cross-chunk sibling after global reconciliation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-cross-chunk-human-gate-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = Array.from({ length: 65 }, (_, index): AgentSession => ({
+      ...fixtureSession(index === 64 ? "needs_input" : "idle", "codex"), id: `gated-${index}`,
+      title: index >= 63 ? `Gated shared task part ${index - 62}` : `Completed gated test ${index}`,
+      cwd: "/workspace/cross-chunk-gate",
+      needsPermission: index === 64,
+      lastActivity: new Date(Date.now() - 60_000 - index).toISOString(),
+    }));
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(sessions[0]!, calls);
+    adapter.listSessions = async () => sessions;
+    adapter.getSession = async (id) => sessions.find((session) => session.id === id) || null;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    adapter.resumeSession = async () => { calls.resumes += 1; return { ok: true }; };
+    adapter.sendMessage = async (_id, input) => { calls.messages.push(input.message); return { ok: true }; };
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          return { groups: batch.map(({ session }) => ({
+            sourceSessionIds: [session.id], primarySessionId: session.id,
+            verdict: session.id === "gated-63" || session.id === "gated-64" ? "unfinished" as const : "completed" as const,
+            reason: "classified", confidence: 1,
+            topic: session.id === "gated-63" || session.id === "gated-64" ? "Gated shared task" : session.title,
+            handoff: session.id === "gated-63" || session.id === "gated-64" ? "Continue shared work" : "",
+          })) };
+        },
+        async reconcile({ groups }) {
+          const shared = groups.filter((group) => group.topic === "Gated shared task");
+          const other = groups.filter((group) => group.topic !== "Gated shared task");
+          return { clusters: [...other.map(({ groupRef }) => [groupRef]), shared.map(({ groupRef }) => groupRef)] };
+        },
+      },
+    }).recoverPending();
+
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    const inventory = await store.listInventory();
+    expect(inventory.find((record) => record.sessionId === "gated-64")?.verdict?.verdict).toBe("needs_human");
+    expect(inventory.find((record) => record.sessionId === "gated-63")?.verdict?.verdict).toBe("needs_human");
   });
 
   it("prepends the adapter-owned first user request when the evidence tail is truncated", async () => {
