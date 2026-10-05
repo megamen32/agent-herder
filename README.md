@@ -209,8 +209,8 @@ The common switches are:
 | `AGENT_HERDER_UNFINISHED_CACHE_MARGIN_MS` | `60000` | Safety margin subtracted from short cache TTLs before classification |
 | `AGENT_HERDER_UNFINISHED_RESUMES_PER_CYCLE` | `8` | Bounded parallel continuation admissions per cycle; all resumed workloads still share the server-100 user-slice budget |
 | `AGENT_HERDER_UNFINISHED_INVENTORY_HOURS` | `48` | Default lookback; the Web UI persists a runtime override without a restart |
-| `AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES` | `4` | Full recent semantic messages sent to the judge; latest user and model messages are always retained |
-| `AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS` | `131072` | Officially recommended M3/M3.1 output ceiling for the single full-inventory plan; planner effort is fixed to `low` |
+| `AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES` | `200` | Maximum recent semantic messages read per session before fair shared-budget packing; the first user goal and latest user/model tail are always retained |
+| `AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS` | `16384` | Hard output ceiling for the single full-inventory plan; planner effort is fixed to `low` |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Direct MiniMax Anthropic-compatible classifier endpoint; avoids an extra gateway hop |
 | `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash-Preview` | Default classifier model; the Web UI runtime selection overrides it and reads `MINIMAX_API_KEY` from the protected service environment |
 | `AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS` | `600000` | Maximum time for each MiniMax batch; a failed planning pass never falls back to ungrouped launches |
@@ -224,7 +224,7 @@ The common switches are:
 | `AGENT_HERDER_HTTP_TOKEN` | — | Required when the web host is non-loopback |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_DIR` | `.agent-herder/transcripts` | Relative archive path inside the MCP process CWD |
 
-Every observer pass scans only local Codex and ZCode status metadata inside the configured window. A non-running session becomes actionable after a model-aware delay: 10 minutes for documented 30-minute Codex caches, 4 minutes for conservative 5-minute or unknown caches, with exact overrides available through `AGENT_HERDER_CACHE_TTL_MINUTES`. MiniMax receives one global request only when new, changed, unclassified, or unfinished candidates are due. The planner gets the configured four full semantic messages from that candidate set, groups duplicate tasks globally, and creates at most one `Автопродолжение — <readable topic>` session per unfinished group. Completed unchanged and healthy running sessions never enter the request.
+Every observer pass scans only local Codex and ZCode status metadata inside the configured window. A non-running session becomes actionable after a model-aware delay: 10 minutes for documented 30-minute Codex caches, 4 minutes for conservative 5-minute or unknown caches, with exact overrides available through `AGENT_HERDER_CACHE_TTL_MINUTES`. MiniMax receives one global request only when new, changed, unclassified, unfinished, or legacy-evidence candidates are due. The planner keeps the first user goal plus the freshest semantic tail from up to 200 messages per session, then fairly packs every candidate under the shared 480,000-token input ceiling. Completed unchanged sessions with current evidence stay out of the request; a session-level Autocontinue opt-out blocks launch but never blocks changed-session auditing.
 
 Cache-aware restart uses 30 minutes for documented GPT-5.6+ cache retention,
 and a conservative 5-minute boundary for GLM-5.3 and MiniMax M3/M3.1. Z.ai's

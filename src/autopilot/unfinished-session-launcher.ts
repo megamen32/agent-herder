@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
 
@@ -14,6 +14,7 @@ const MAX_EVIDENCE_MESSAGE_COUNT = 200;
 const DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET = 480_000;
 const DEFAULT_BATCH_OUTPUT_TOKENS = 16_384;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
+const CURRENT_EVIDENCE_VERSION = 1;
 
 function sessionProgressFingerprint(session: AgentSession): string {
   return [
@@ -82,13 +83,15 @@ export class SessionAutostartStore {
 
   async getEffective(harness: string, sessionId: string, cwd: string): Promise<{ enabled: boolean; source: "session" | "harness" | "global" | "default"; cwd: string; updatedAt?: string }> {
     const normalizedHarness = harnessType(harness);
+    const normalizedCwd = normalize(bounded(cwd, "cwd"));
     const settings = await this.getSettings();
-    const override = settings.sessions.find((record) => record.harness === normalizedHarness && record.sessionId === bounded(sessionId, "sessionId"));
+    const override = settings.sessions.find((record) => sessionKey(record.harness, record.sessionId, record.cwd)
+      === sessionKey(normalizedHarness, bounded(sessionId, "sessionId"), normalizedCwd));
     if (override) return { enabled: override.enabled, source: "session", cwd: override.cwd, updatedAt: override.updatedAt };
     const harnessOverride = settings.harnesses.find((record) => record.harness === normalizedHarness);
     return harnessOverride
       ? { enabled: harnessOverride.enabled, source: "harness", cwd: normalize(bounded(cwd, "cwd")), updatedAt: harnessOverride.updatedAt }
-      : { enabled: settings.enabled, source: settings.source === "persisted" ? "global" : "default", cwd: normalize(bounded(cwd, "cwd")) };
+      : { enabled: settings.enabled, source: settings.source === "persisted" ? "global" : "default", cwd: normalizedCwd };
   }
 
   async setGlobal(enabled: boolean): Promise<SessionAutostartFile> {
@@ -168,20 +171,21 @@ export class SessionAutostartStore {
       updatedAt: now.toISOString(),
     };
     return this.mutate((file) => {
-      const key = sessionKey(normalized.harness, normalized.sessionId);
-      const index = file.sessions.findIndex((record) => sessionKey(record.harness, record.sessionId) === key);
+      const key = sessionKey(normalized.harness, normalized.sessionId, normalized.cwd);
+      const index = file.sessions.findIndex((record) => sessionKey(record.harness, record.sessionId, record.cwd) === key);
       if (index < 0) file.sessions.push(normalized);
       else file.sessions[index] = normalized;
-      file.sessions.sort((left, right) => sessionKey(left.harness, left.sessionId).localeCompare(sessionKey(right.harness, right.sessionId)));
+      file.sessions.sort((left, right) => sessionKey(left.harness, left.sessionId, left.cwd).localeCompare(sessionKey(right.harness, right.sessionId, right.cwd)));
       return { ...normalized };
     });
   }
 
   async deleteSession(harness: string, sessionId: string): Promise<boolean> {
     return this.mutate((file) => {
-      const key = sessionKey(harnessType(harness), sessionId);
+      const normalizedHarness = harnessType(harness);
+      const normalizedSessionId = bounded(sessionId, "sessionId");
       const before = file.sessions.length;
-      file.sessions = file.sessions.filter((record) => sessionKey(record.harness, record.sessionId) !== key);
+      file.sessions = file.sessions.filter((record) => record.harness !== normalizedHarness || record.sessionId !== normalizedSessionId);
       return file.sessions.length !== before;
     });
   }
@@ -215,6 +219,7 @@ export interface UnfinishedSessionRecord {
   harness: HarnessType;
   sessionId: string;
   cwd: string;
+  workspaceIdentity?: string;
   model?: string;
   title?: string;
   startedAt: string;
@@ -250,10 +255,15 @@ export interface UnfinishedSessionInventoryRecord {
   harness: "codex" | "zcode" | "opencode" | "fast-agent";
   sessionId: string;
   cwd: string;
+  /** Stable adapter-owned workspace identity; cwd is the compatibility fallback. */
+  workspaceIdentity?: string;
   title: string;
   status: AgentSession["status"];
   lastActivity: string;
   transcriptTail: string;
+  /** Version/fingerprint prove that legacy evidence was rebuilt by the current packer. */
+  evidenceVersion?: number;
+  evidenceFingerprint?: string;
   observedAt: string;
   verdict?: SessionInventoryVerdict;
 }
@@ -284,6 +294,8 @@ export interface SessionBatchPlan {
 
 type AssessedSession = SessionBatchCandidate & {
   adapter: HarnessAdapter;
+  sourceKey: string;
+  autoResumeEnabled: boolean;
   latestSemanticMessage?: Pick<SessionMessageView, "role" | "text">;
 };
 type DiscoveryOutcome = "ready" | "idle" | "blocked";
@@ -325,9 +337,9 @@ export class UnfinishedSessionStore {
     if (records.length === 0) return;
     await this.mutate((file) => {
       const inventory = file.inventory ??= [];
-      const positions = new Map(inventory.map((candidate, index) => [sessionKey(candidate.harness, candidate.sessionId), index]));
+      const positions = new Map(inventory.map((candidate, index) => [inventoryRecordKey(candidate), index]));
       for (const record of records) {
-        const key = sessionKey(record.harness, record.sessionId);
+        const key = inventoryRecordKey(record);
         const index = positions.get(key);
         if (index === undefined) {
           positions.set(key, inventory.length);
@@ -336,6 +348,18 @@ export class UnfinishedSessionStore {
       }
       inventory.sort((left, right) => Date.parse(right.lastActivity) - Date.parse(left.lastActivity));
     });
+  }
+
+  /** Keep inventory equal to the latest successful native snapshots for the selected harnesses. */
+  async reconcileInventorySnapshot(harnesses: ReadonlySet<"codex" | "zcode">, sourceKeys: ReadonlySet<string>): Promise<number> {
+    if (harnesses.size === 0) return 0;
+    return this.mutate((file) => {
+      if (!file.inventory) return 0;
+      const before = file.inventory.length;
+      file.inventory = file.inventory.filter((record) => !harnesses.has(record.harness as "codex" | "zcode")
+        || sourceKeys.has(inventoryRecordKey(record)));
+      return before - file.inventory.length;
+    }, (removed) => removed > 0);
   }
 
   /** Remove legacy non-Codex/ZCode turn records and inventory outside the configured audit window. */
@@ -378,12 +402,14 @@ export class UnfinishedSessionStore {
       title: session.title,
     });
     return this.mutate((file) => {
-      const key = sessionKey(harness, session.id);
-      const index = file.sessions.findIndex((record) => sessionKey(record.harness, record.sessionId) === key);
+      const workspaceIdentity = sessionWorkspaceIdentity(session);
+      const key = sessionKey(harness, session.id, workspaceIdentity);
+      const index = file.sessions.findIndex((record) => unfinishedRecordKey(record) === key);
       const existing = index >= 0 ? file.sessions[index] : undefined;
       const reset = existing?.state === "exhausted";
       const record: UnfinishedSessionRecord = {
         ...normalized,
+        workspaceIdentity,
         startedAt: reset || !existing ? now.toISOString() : existing.startedAt,
         updatedAt: now.toISOString(),
         generationId: bounded(generationId, "generationId"),
@@ -419,12 +445,14 @@ export class UnfinishedSessionStore {
   async observeAcceptedProgress(
     harness: HarnessType,
     sessionId: string,
+    cwd: string,
     acceptedAt: string,
     fingerprint: string,
     now = new Date(),
   ): Promise<UnfinishedSessionRecord | null> {
     return this.mutate((file) => {
-      const record = file.sessions.find((candidate) => candidate.harness === harness && candidate.sessionId === sessionId);
+      const key = sessionKey(harness, sessionId, cwd);
+      const record = file.sessions.find((candidate) => unfinishedRecordKey(candidate) === key);
       if (!record || record.acceptedAt !== acceptedAt || !record.acceptedFingerprint || record.acceptedFingerprint === fingerprint) return null;
       let changed = false;
       if (!record.progressObservedAt) {
@@ -439,11 +467,15 @@ export class UnfinishedSessionStore {
     }, (record) => record !== null);
   }
 
-  async remove(harness: string, sessionId: string): Promise<boolean> {
+  async remove(harness: string, sessionId: string, cwd?: string): Promise<boolean> {
     return this.mutate((file) => {
-      const key = sessionKey(harnessType(harness), sessionId);
+      const normalizedHarness = harnessType(harness);
+      const normalizedSessionId = bounded(sessionId, "sessionId");
+      const key = cwd ? sessionKey(normalizedHarness, normalizedSessionId, cwd) : undefined;
       const before = file.sessions.length;
-      file.sessions = file.sessions.filter((record) => sessionKey(record.harness, record.sessionId) !== key);
+      file.sessions = file.sessions.filter((record) => key
+        ? unfinishedRecordKey(record) !== key
+        : record.harness !== normalizedHarness || record.sessionId !== normalizedSessionId);
       return file.sessions.length !== before;
     }, (changed) => changed);
   }
@@ -454,9 +486,10 @@ export class UnfinishedSessionStore {
     maxAttempts: number,
     retryDelayMs: number,
     now = new Date(),
+    cwd?: string,
   ): Promise<UnfinishedSessionRecord | null> {
     return this.mutate((file) => {
-      const record = file.sessions.find((candidate) => candidate.harness === harness && candidate.sessionId === sessionId);
+      const record = findUnfinishedRecord(file.sessions, harness, sessionId, cwd);
       if (!record || record.state === "exhausted" || record.attempts >= maxAttempts) return null;
       if (record.nextAttemptAt && Date.parse(record.nextAttemptAt) > now.getTime()) return null;
       record.attempts += 1;
@@ -470,7 +503,7 @@ export class UnfinishedSessionStore {
 
   async cancelAttempt(attempt: UnfinishedSessionRecord, now = new Date()): Promise<boolean> {
     return this.mutate((file) => {
-      const record = file.sessions.find((candidate) => candidate.harness === attempt.harness && candidate.sessionId === attempt.sessionId);
+      const record = file.sessions.find((candidate) => unfinishedRecordKey(candidate) === unfinishedRecordKey(attempt));
       if (!record || record.state !== "recovering" || record.attempts !== attempt.attempts || record.updatedAt !== attempt.updatedAt) return false;
       record.attempts = Math.max(0, record.attempts - 1);
       record.state = "active";
@@ -487,9 +520,10 @@ export class UnfinishedSessionStore {
     error: string,
     maxAttempts: number,
     now = new Date(),
+    cwd?: string,
   ): Promise<UnfinishedSessionRecord | null> {
     return this.mutate((file) => {
-      const record = file.sessions.find((candidate) => candidate.harness === harness && candidate.sessionId === sessionId);
+      const record = findUnfinishedRecord(file.sessions, harness, sessionId, cwd);
       if (!record) return null;
       record.state = record.attempts >= maxAttempts ? "exhausted" : "active";
       record.lastError = bounded(error, "error");
@@ -498,9 +532,9 @@ export class UnfinishedSessionStore {
     }, (record) => record !== null);
   }
 
-  async markNotified(harness: HarnessType, sessionId: string, now = new Date()): Promise<void> {
+  async markNotified(harness: HarnessType, sessionId: string, now = new Date(), cwd?: string): Promise<void> {
     await this.mutate((file) => {
-      const record = file.sessions.find((candidate) => candidate.harness === harness && candidate.sessionId === sessionId);
+      const record = findUnfinishedRecord(file.sessions, harness, sessionId, cwd);
       if (record) {
         record.notifiedAt = now.toISOString();
         record.updatedAt = now.toISOString();
@@ -626,10 +660,11 @@ export class UnfinishedSessionLauncher {
     if (event.kind === "turn.completed" || event.kind === "turn.failed") {
       // A finished model turn is not proof that the user's task is complete.
       // Keep it eligible for semantic re-evaluation after the quiet window.
-      this.completedSessions.delete(sessionKey(provider, event.sessionId));
-      this.urgentSessions.add(sessionKey(provider, event.sessionId));
       const adapter = this.options.adapters.get(provider);
       const session = await adapter?.getSession(event.sessionId);
+      const key = session ? sessionSourceKey(session) : sessionKey(provider, event.sessionId);
+      this.completedSessions.delete(key);
+      this.urgentSessions.add(key);
       if (session && await this.isEnabled(session.harness, session.id, session.cwd)) {
         await this.options.store.markStarted({ ...session, status: "idle" }, this.generationId, new Date(), event.kind === "turn.completed");
       }
@@ -648,8 +683,8 @@ export class UnfinishedSessionLauncher {
     if (!adapter?.resumeSession) return false;
     if (!await this.isEnabled(session.harness, session.id, session.cwd)) return false;
     await this.pinActiveSession(adapter, session.id);
-    this.completedSessions.delete(sessionKey(session.harness, session.id));
-    this.urgentSessions.delete(sessionKey(session.harness, session.id));
+    this.completedSessions.delete(sessionSourceKey(session));
+    this.urgentSessions.delete(sessionSourceKey(session));
     await this.options.store.markStarted(session, this.generationId, new Date(), true, true, deliveryPending, admittedFailure);
     return true;
   }
@@ -723,6 +758,7 @@ export class UnfinishedSessionLauncher {
           harness: record.harness,
           sessionId: record.sessionId,
           cwd: record.cwd,
+          workspaceIdentity: record.workspaceIdentity,
           updatedAt: record.updatedAt,
           acceptedAt: record.acceptedAt,
           acceptedFingerprint: record.acceptedFingerprint,
@@ -735,6 +771,7 @@ export class UnfinishedSessionLauncher {
           harness: record.harness,
           sessionId: record.sessionId,
           cwd: record.cwd,
+          workspaceIdentity: record.cwd,
           updatedAt: record.updatedAt,
           acceptedAt: undefined,
           acceptedFingerprint: undefined,
@@ -745,14 +782,14 @@ export class UnfinishedSessionLauncher {
       // matching explicit setting while still adding explicitly enabled
       // sessions which have not emitted a turn-start event yet.
       const targets = [...new Map([...explicit, ...records]
-        .map((record) => [sessionKey(record.harness, record.sessionId), record])).values()]
+        .map((record) => [sessionKey(record.harness, record.sessionId, record.workspaceIdentity || record.cwd), record])).values()]
         .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
       let urgent = false;
       for (const record of targets) {
         if (!await this.isEnabled(record.harness, record.sessionId, record.cwd)) continue;
         const adapter = this.options.adapters.get(record.harness);
         if (!adapter?.resumeSession) continue;
-        const key = sessionKey(record.harness, record.sessionId);
+        const key = sessionKey(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
         let session: AgentSession | null = null;
         try { session = await adapter.getSession(record.sessionId); } catch { /* counted as a miss below */ }
         if (!session) {
@@ -808,6 +845,7 @@ export class UnfinishedSessionLauncher {
           const progressed = await this.options.store.observeAcceptedProgress(
             record.harness,
             record.sessionId,
+            record.workspaceIdentity || record.cwd,
             record.acceptedAt,
             fingerprint,
           );
@@ -895,9 +933,10 @@ export class UnfinishedSessionLauncher {
     for (const record of records) {
       if (!this.lifecycleActive(lifecycleEpoch)) break;
       if (!isAutocontinueInventoryHarness(record.harness)) continue;
-      if (this.continuedThisRecovery.has(sessionKey(record.harness, record.sessionId))) continue;
+      const recordKey = unfinishedRecordKey(record);
+      if (this.continuedThisRecovery.has(recordKey)) continue;
       if (!await this.isEnabled(record.harness, record.sessionId, record.cwd)) {
-        await this.options.store.remove(record.harness, record.sessionId);
+        await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
         continue;
       }
       if (record.state === "exhausted") {
@@ -916,7 +955,7 @@ export class UnfinishedSessionLauncher {
         await this.fail(record, errorText(error));
         continue;
       }
-      const urgent = this.urgentSessions.has(sessionKey(record.harness, record.sessionId));
+      const urgent = this.urgentSessions.has(recordKey) || this.urgentSessions.has(sessionKey(record.harness, record.sessionId));
       if (record.nonRetryableAdmission) {
         // The exact prompt crossed the native idempotency boundary and its turn
         // failed terminally. Keep ownership/diagnostics durable, but never
@@ -947,7 +986,14 @@ export class UnfinishedSessionLauncher {
       }
       if (resumedThisCycle >= this.maxResumesPerCycle) continue;
       if (!this.lifecycleActive(lifecycleEpoch)) break;
-      const attempt = await this.options.store.beginAttempt(record.harness, record.sessionId, this.maxAttempts, this.retryDelayMs);
+      const attempt = await this.options.store.beginAttempt(
+        record.harness,
+        record.sessionId,
+        this.maxAttempts,
+        this.retryDelayMs,
+        new Date(),
+        record.workspaceIdentity || record.cwd,
+      );
       if (!this.lifecycleActive(lifecycleEpoch)) {
         if (attempt) await this.options.store.cancelAttempt(attempt);
         break;
@@ -1002,21 +1048,21 @@ export class UnfinishedSessionLauncher {
           // do not repeat the rollover on the next process generation.
           if (!this.lifecycleActive(lifecycleEpoch)) {
             await this.options.settingsStore.setSession({ harness: record.harness, sessionId: record.sessionId, cwd: record.cwd }, false);
-            await this.options.store.remove(record.harness, record.sessionId);
+            await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
             await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true, true, handoff.deliveryPending === true, handoffFailure);
             return;
           }
           if (!runtimeSettings.movePinnedOnRollover) await this.pinActiveSession(adapter, handoff.session.id, runtimeSettings);
           if (!this.lifecycleActive(lifecycleEpoch)) {
             await this.options.settingsStore.setSession({ harness: record.harness, sessionId: record.sessionId, cwd: record.cwd }, false);
-            await this.options.store.remove(record.harness, record.sessionId);
+            await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
             await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true, true, handoff.deliveryPending === true, handoffFailure);
             return;
           }
           await this.options.settingsStore.setSession({ harness: record.harness, sessionId: record.sessionId, cwd: record.cwd }, false);
-          await this.options.store.remove(record.harness, record.sessionId);
+          await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
           await this.options.store.markStarted(handoff.session, this.generationId, new Date(), true, true, handoff.deliveryPending === true, handoffFailure);
-          this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
+          this.urgentSessions.delete(unfinishedRecordKey(record));
           console.error(handoffFailure
             ? `[agent-herder] новая cache-handoff сессия ${handoff.session.id} приняла prompt, но native turn failed без безопасного retry: ${handoffFailure}`
             : `[agent-herder] протухшая сессия ${record.harness}:${record.sessionId} продолжена в новой ${handoff.session.id}`);
@@ -1048,7 +1094,7 @@ export class UnfinishedSessionLauncher {
         promptAccepted = true;
         promptAdmissionFailure = terminalAdmission;
         await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true, true, false, terminalAdmission);
-        this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
+        this.urgentSessions.delete(unfinishedRecordKey(record));
         console.error(`[agent-herder] ${record.harness}:${record.sessionId} приняла prompt, но native turn завершился без безопасного retry: ${terminalAdmission}`);
         return;
       }
@@ -1059,7 +1105,7 @@ export class UnfinishedSessionLauncher {
       // durable record even if stop arrived during sendMessage; rolling the
       // attempt back here could enqueue the same continuation after restart.
       await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true, true, promptPending);
-      this.urgentSessions.delete(sessionKey(record.harness, record.sessionId));
+      this.urgentSessions.delete(unfinishedRecordKey(record));
       console.error(`[agent-herder] автоматически продолжена незавершённая сессия ${record.harness}:${record.sessionId}`);
     } catch (error) {
       if (promptAccepted) {
@@ -1111,13 +1157,14 @@ export class UnfinishedSessionLauncher {
     const inventoryWindowMs = this.options.inventoryWindowMs
       ?? runtimeSettings.inventoryWindowHours * 60 * 60 * 1_000;
     const durableRecords = await this.options.store.list();
-    const known = new Set(durableRecords.map((record) => sessionKey(record.harness, record.sessionId)));
+    const known = new Set(durableRecords.map(unfinishedRecordKey));
     const nonRetryableAdmissions = new Set(durableRecords
       .filter((record) => record.nonRetryableAdmission)
-      .map((record) => sessionKey(record.harness, record.sessionId)));
-    const priorInventory = new Map((await this.options.store.listInventory()).map((record) => [sessionKey(record.harness, record.sessionId), record]));
+      .map(unfinishedRecordKey));
+    const priorInventory = new Map((await this.options.store.listInventory()).map((record) => [inventoryRecordKey(record), record]));
     const candidates: Array<{ adapter: HarnessAdapter; session: AgentSession }> = [];
     const inventoryBatch: UnfinishedSessionInventoryRecord[] = [];
+    const successfulHarnesses = new Set<"codex" | "zcode">();
     for (const [provider, adapter] of this.options.adapters) {
       if (!isAutocontinueInventoryHarness(provider) || !adapter.resumeSession) continue;
       if ((provider === "codex" || provider === "zcode") && adapter.isReady && !adapter.isReady()) {
@@ -1134,27 +1181,34 @@ export class UnfinishedSessionLauncher {
         console.error(`[agent-herder] не удалось сверить ${displayHarness(provider)} сессии: ${errorText(error)}`);
         continue;
       }
+      successfulHarnesses.add(provider);
       for (const session of sessions) {
-        if (nonRetryableAdmissions.has(sessionKey(session.harness, session.id))) continue;
+        if (nonRetryableAdmissions.has(sessionSourceKey(session))) continue;
         const lastActivity = Date.parse(session.lastActivity);
         if (!Number.isFinite(lastActivity) || Date.now() - lastActivity > inventoryWindowMs) continue;
         candidates.push({ adapter, session });
       }
     }
     candidates.sort((left, right) => Date.parse(right.session.lastActivity) - Date.parse(left.session.lastActivity));
+    await this.options.store.reconcileInventorySnapshot(
+      successfulHarnesses,
+      new Set(candidates.map(({ session }) => sessionSourceKey(session))),
+    );
     if (this.options.judge?.plan) {
       const assessed: AssessedSession[] = [];
       for (const { adapter, session } of candidates) {
         await new Promise<void>((resolve) => setImmediate(resolve));
         if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
-        if (!await this.isEnabled(session.harness, session.id, session.cwd)) continue;
-        const urgent = this.urgentSessions.has(sessionKey(session.harness, session.id));
-        const previous = priorInventory.get(sessionKey(session.harness, session.id));
+        const autoResumeEnabled = await this.isEnabled(session.harness, session.id, session.cwd);
+        const sourceKey = sessionSourceKey(session);
+        const urgent = this.urgentSessions.has(sourceKey) || this.urgentSessions.has(sessionKey(session.harness, session.id));
+        const previous = priorInventory.get(sourceKey);
         const metadataUnchanged = previous?.lastActivity === session.lastActivity
           && previous.status === session.status
-          && previous.cwd === session.cwd
+          && (previous.workspaceIdentity || previous.cwd) === sessionWorkspaceIdentity(session)
           && previous.title === session.title;
-        const settledAndUnchanged = metadataUnchanged && previous?.verdict && previous.verdict.confidence > 0
+        const settledAndUnchanged = metadataUnchanged && evidenceIsCurrent(previous)
+          && previous?.verdict && previous.verdict.confidence > 0
           && (previous.verdict.verdict === "completed"
             || previous.verdict.verdict === "needs_human"
             || (previous.verdict.verdict === "unfinished" && session.status === "running"));
@@ -1173,11 +1227,15 @@ export class UnfinishedSessionLauncher {
           || previous.verdict.verdict === "unfinished";
         const latestSemanticMessage = [...messages].reverse().find((message) =>
           (message.role === "user" || message.role === "assistant") && Boolean(message.text?.trim()));
-        if (actionable) assessed.push({ adapter, session, transcriptTail, ...(latestSemanticMessage ? {
+        if (actionable) assessed.push({ adapter, session, sourceKey, autoResumeEnabled, transcriptTail, ...(latestSemanticMessage ? {
           latestSemanticMessage: { role: latestSemanticMessage.role, text: latestSemanticMessage.text },
         } : {}) });
       }
       if (assessed.length > 0) {
+        // Persist the refreshed native snapshot before the remote plan. A
+        // failed/timeout plan must not leave a new or changed 48h source absent
+        // from the authoritative inventory, nor preserve a stale verdict.
+        await this.options.store.upsertInventoryBatch(assessed.map((candidate) => inventoryFromAssessment(candidate)));
         try {
           const plan = await this.options.judge.plan({ sessions: assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail })) });
           if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
@@ -1203,11 +1261,13 @@ export class UnfinishedSessionLauncher {
       if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
       if (!isAutocontinueInventoryHarness(session.harness)) continue;
       const harness = session.harness;
-      const key = sessionKey(harness, session.id);
+      const key = sessionSourceKey(session);
       const messages = await sessionEvidenceMessages(adapter, session.id, runtimeSettings.evidenceMessageCount);
       const transcriptTail = completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount);
       const previous = priorInventory.get(key);
-      const unchanged = previous?.lastActivity === session.lastActivity && previous.transcriptTail === transcriptTail;
+      const unchanged = previous?.lastActivity === session.lastActivity
+        && previous.transcriptTail === transcriptTail
+        && evidenceIsCurrent(previous);
       const equivalentKey = `${harness}:${normalize(session.cwd)}:${session.title.trim().toLowerCase()}`;
       const newerEquivalent = equivalentSessions.get(equivalentKey);
       equivalentSessions.set(equivalentKey, newerEquivalent || session.id);
@@ -1237,16 +1297,19 @@ export class UnfinishedSessionLauncher {
         harness,
         sessionId: session.id,
         cwd: session.cwd,
+        workspaceIdentity: sessionWorkspaceIdentity(session),
         title: session.title,
         status: session.status,
         lastActivity: session.lastActivity,
         transcriptTail,
+        evidenceVersion: CURRENT_EVIDENCE_VERSION,
+        evidenceFingerprint: evidenceFingerprint(transcriptTail),
         observedAt: new Date().toISOString(),
         ...(verdict ? { verdict } : {}),
       };
       inventoryBatch.push(inventory);
       if (verdict?.verdict !== "unfinished") {
-        if (verdict) await this.options.store.remove(harness, session.id);
+        if (verdict) await this.options.store.remove(harness, session.id, sessionWorkspaceIdentity(session));
         known.delete(key);
         continue;
       }
@@ -1261,7 +1324,8 @@ export class UnfinishedSessionLauncher {
   private async applyBatchPlan(plan: SessionBatchPlan, assessed: AssessedSession[], lifecycleEpoch: number): Promise<void> {
     const runtimeSettings = await this.options.settingsStore.getSettings();
     if (!this.lifecycleActive(lifecycleEpoch)) return;
-    const byId = new Map(assessed.map((candidate) => [candidate.session.id, candidate]));
+    const byId = new Map(assessed.map((candidate) => [candidate.sourceKey, candidate]));
+    plan = canonicalizePlanSourceKeys(plan, assessed);
     plan = enforcePlanWorkspaceBoundaries(plan, byId);
     const latestActivity = (group: SessionBatchPlanGroup): number => Math.max(...group.sourceSessionIds.map((id) => Date.parse(byId.get(id)!.session.lastActivity)));
     const groups = [...plan.groups].sort((left, right) => latestActivity(right) - latestActivity(left));
@@ -1271,24 +1335,18 @@ export class UnfinishedSessionLauncher {
       if (!this.lifecycleActive(lifecycleEpoch)) return;
       const sources = group.sourceSessionIds.map((id) => byId.get(id)!);
       const plannedPrimary = byId.get(group.primarySessionId)!;
-      const running = sources.filter(({ session }) => session.status === "running"
-          && !this.urgentSessions.has(sessionKey(session.harness, session.id)))
+      const resumableSources = sources.filter((candidate) => candidate.autoResumeEnabled);
+      const running = resumableSources.filter(({ session, sourceKey }) => session.status === "running"
+          && !this.urgentSessions.has(sourceKey))
         .sort((left, right) => Date.parse(right.session.lastActivity) - Date.parse(left.session.lastActivity))[0];
-      const primary = running ?? plannedPrimary;
+      const primary = running
+        ?? (plannedPrimary.autoResumeEnabled ? plannedPrimary : undefined)
+        ?? [...resumableSources].sort((left, right) => Date.parse(right.session.lastActivity) - Date.parse(left.session.lastActivity))[0]
+        ?? plannedPrimary;
       const judgedAt = new Date().toISOString();
       const verdict = { verdict: group.verdict, reason: group.reason, confidence: group.confidence, judgedAt } satisfies SessionInventoryVerdict;
       const pushInventory = (candidate: AssessedSession, override = verdict): void => {
-        inventoryBatch.push({
-          harness: candidate.session.harness as "codex" | "zcode",
-          sessionId: candidate.session.id,
-          cwd: candidate.session.cwd,
-          title: candidate.session.title,
-          status: candidate.session.status,
-          lastActivity: candidate.session.lastActivity,
-          transcriptTail: candidate.transcriptTail,
-          observedAt: new Date().toISOString(),
-          verdict: override,
-        });
+        inventoryBatch.push(inventoryFromAssessment(candidate, override));
       };
 
       // normalizeBatchPlan uses needs_human/confidence=0 when MiniMax omits a
@@ -1298,8 +1356,10 @@ export class UnfinishedSessionLauncher {
       if (group.verdict === "needs_human" && group.confidence === 0) {
         for (const source of sources) {
           pushInventory(source);
-          await this.options.store.markStarted(source.session, `judge-retry-${this.generationId}`);
-          this.continuedThisRecovery.add(sessionKey(source.session.harness, source.session.id));
+          if (source.autoResumeEnabled) {
+            await this.options.store.markStarted(source.session, `judge-retry-${this.generationId}`);
+            this.continuedThisRecovery.add(source.sourceKey);
+          }
         }
         continue;
       }
@@ -1307,8 +1367,20 @@ export class UnfinishedSessionLauncher {
       if (group.verdict !== "unfinished") {
         for (const source of sources) {
           pushInventory(source);
-          this.urgentSessions.delete(sessionKey(source.session.harness, source.session.id));
-          await this.options.store.remove(source.session.harness, source.session.id);
+          this.urgentSessions.delete(source.sourceKey);
+          await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
+        }
+        continue;
+      }
+
+      // A session-level opt-out disables autonomous continuation only. Its
+      // evidence is still audited and refreshed above, but no prompt may be
+      // delivered unless this group has an explicitly resumable source.
+      if (resumableSources.length === 0) {
+        for (const source of sources) {
+          pushInventory(source);
+          this.urgentSessions.delete(source.sourceKey);
+          await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
         }
         continue;
       }
@@ -1318,10 +1390,10 @@ export class UnfinishedSessionLauncher {
       // resume cycle must not enqueue a near-identical prompt again.
       if (primary.latestSemanticMessage?.role === "user" && isAutocontinueRequest(primary.latestSemanticMessage.text)) {
         await this.options.store.markStarted(primary.session, this.generationId);
-        this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
+        this.continuedThisRecovery.add(primary.sourceKey);
         for (const source of sources) {
           pushInventory(source);
-          this.urgentSessions.delete(sessionKey(source.session.harness, source.session.id));
+          this.urgentSessions.delete(source.sourceKey);
         }
         console.error(`[agent-herder] ${primary.session.harness}:${primary.session.id} уже ожидает ответ на автопродолжение; повтор не ставлю`);
         continue;
@@ -1341,7 +1413,7 @@ export class UnfinishedSessionLauncher {
         }
         await this.options.store.markStarted(running.session, this.generationId);
         for (const source of sources) {
-          if (source.session.id === running.session.id) pushInventory(source);
+          if (source.sourceKey === running.sourceKey) pushInventory(source);
           else {
             pushInventory(source, {
               verdict: "completed",
@@ -1350,18 +1422,19 @@ export class UnfinishedSessionLauncher {
               judgedAt,
             });
             await this.options.settingsStore.setSession({ harness: source.session.harness, sessionId: source.session.id, cwd: source.session.cwd }, false);
-            await this.options.store.remove(source.session.harness, source.session.id);
+            await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
           }
         }
         continue;
       }
 
-      const groupUrgent = sources.some(({ session }) => this.urgentSessions.has(sessionKey(session.harness, session.id)));
+      const groupUrgent = sources.some(({ sourceKey, session }) => this.urgentSessions.has(sourceKey)
+        || this.urgentSessions.has(sessionKey(session.harness, session.id)));
       const oldEnough = groupUrgent || Date.now() - Date.parse(primary.session.lastActivity) >= this.discoveryIdleMs;
       if (!oldEnough || launched >= this.maxResumesPerCycle) {
         for (const source of sources) {
           pushInventory(source);
-          await this.options.store.remove(source.session.harness, source.session.id);
+          await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
         }
         continue;
       }
@@ -1382,8 +1455,8 @@ export class UnfinishedSessionLauncher {
           const terminalAdmission = admittedNonRetryableFailure(sent);
           if (terminalAdmission) {
             await this.options.store.markStarted(primary.session, this.generationId, new Date(), true, true, false, terminalAdmission);
-            this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
-            this.urgentSessions.delete(sessionKey(primary.session.harness, primary.session.id));
+            this.continuedThisRecovery.add(primary.sourceKey);
+            this.urgentSessions.delete(primary.sourceKey);
             for (const source of sources) pushInventory(source);
             console.error(`[agent-herder] единый plan prompt принят ${primary.session.harness}:${primary.session.id}, но native turn failed без безопасного retry: ${terminalAdmission}`);
             continue;
@@ -1391,11 +1464,11 @@ export class UnfinishedSessionLauncher {
           if (!sent.ok) throw new Error(sent.error || "исходная сессия не приняла объединённый handoff");
           if (!this.lifecycleActive(lifecycleEpoch)) return;
           await this.options.store.markStarted(primary.session, this.generationId, new Date(), true, true, sent.pending === true);
-          this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
-          this.urgentSessions.delete(sessionKey(primary.session.harness, primary.session.id));
+          this.continuedThisRecovery.add(primary.sourceKey);
+          this.urgentSessions.delete(primary.sourceKey);
           for (const source of sources) {
-            this.urgentSessions.delete(sessionKey(source.session.harness, source.session.id));
-            if (source.session.id === primary.session.id) pushInventory(source);
+            this.urgentSessions.delete(source.sourceKey);
+            if (source.sourceKey === primary.sourceKey) pushInventory(source);
             else {
               pushInventory(source, {
                 verdict: "completed",
@@ -1404,7 +1477,7 @@ export class UnfinishedSessionLauncher {
                 judgedAt,
               });
               await this.options.settingsStore.setSession({ harness: source.session.harness, sessionId: source.session.id, cwd: source.session.cwd }, false);
-              await this.options.store.remove(source.session.harness, source.session.id);
+              await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
             }
           }
           console.error(`[agent-herder] единый план возобновил ${sources.length} сесс. в ${primary.session.harness}:${primary.session.id} «${continuationTitle(group.topic)}»`);
@@ -1419,7 +1492,7 @@ export class UnfinishedSessionLauncher {
             if (!this.lifecycleActive(lifecycleEpoch)) return;
             if (!pending.some((message) => isAutocontinueRequest(message.message))) await inbox.add(primary.session.id, handoff);
             await this.options.store.markStarted(primary.session, this.generationId, new Date(), false, true, true);
-            this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
+            this.continuedThisRecovery.add(primary.sourceKey);
             for (const source of sources) pushInventory(source);
             console.error(`[agent-herder] единый план Codex отложен до безопасной границы хода ${primary.session.id}`);
             continue;
@@ -1428,7 +1501,7 @@ export class UnfinishedSessionLauncher {
           // same-ID continuation. A transient attach/send failure must remain
           // retryable on that session instead of silently creating a fork.
           await this.options.store.markStarted(primary.session, this.generationId);
-          this.continuedThisRecovery.add(sessionKey(primary.session.harness, primary.session.id));
+          this.continuedThisRecovery.add(primary.sourceKey);
           for (const source of sources) pushInventory(source);
           console.error(`[agent-herder] исходная сессия ${primary.session.harness}:${primary.session.id} не возобновилась; новая сессия до TTL не создаётся: ${failure}`);
           continue;
@@ -1438,7 +1511,7 @@ export class UnfinishedSessionLauncher {
       if (!primary.adapter.createSession) {
         for (const source of sources) {
           pushInventory(source);
-          await this.options.store.remove(source.session.harness, source.session.id);
+          await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
         }
         continue;
       }
@@ -1465,9 +1538,9 @@ export class UnfinishedSessionLauncher {
         const terminalAdmission = admittedNonRetryableFailure(sent);
         if (terminalAdmission) {
           await this.options.store.markStarted(created, this.generationId, new Date(), true, true, false, terminalAdmission);
-          this.continuedThisRecovery.add(sessionKey(created.harness, created.id));
+          this.continuedThisRecovery.add(sessionSourceKey(created));
           for (const source of sources) {
-            this.urgentSessions.delete(sessionKey(source.session.harness, source.session.id));
+            this.urgentSessions.delete(source.sourceKey);
             pushInventory(source, {
               verdict: "needs_human",
               reason: `Передана в новую сессию ${created.id}; native turn failed после admission без безопасного retry`,
@@ -1475,7 +1548,7 @@ export class UnfinishedSessionLauncher {
               judgedAt,
             });
             await this.options.settingsStore.setSession({ harness: source.session.harness, sessionId: source.session.id, cwd: source.session.cwd }, false);
-            await this.options.store.remove(source.session.harness, source.session.id);
+            await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
           }
           console.error(`[agent-herder] новая сессия ${created.harness}:${created.id} приняла handoff, но native turn failed без безопасного retry: ${terminalAdmission}`);
           continue;
@@ -1490,9 +1563,9 @@ export class UnfinishedSessionLauncher {
           if (!this.lifecycleActive(lifecycleEpoch)) return;
         }
         await this.options.store.markStarted(created, this.generationId, new Date(), true, true, sent.pending === true);
-        this.continuedThisRecovery.add(sessionKey(created.harness, created.id));
+        this.continuedThisRecovery.add(sessionSourceKey(created));
         for (const source of sources) {
-          this.urgentSessions.delete(sessionKey(source.session.harness, source.session.id));
+          this.urgentSessions.delete(source.sourceKey);
           pushInventory(source, {
             verdict: "completed",
             reason: `Объединена в новую сессию «${continuationTitle(group.topic)}»: ${created.id}`,
@@ -1500,7 +1573,7 @@ export class UnfinishedSessionLauncher {
             judgedAt,
           });
           await this.options.settingsStore.setSession({ harness: source.session.harness, sessionId: source.session.id, cwd: source.session.cwd }, false);
-          await this.options.store.remove(source.session.harness, source.session.id);
+          await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
         }
         console.error(`[agent-herder] единый план продолжил ${sources.length} сесс. как ${created.harness}:${created.id} «${continuationTitle(group.topic)}»`);
       } catch (error) {
@@ -1508,7 +1581,7 @@ export class UnfinishedSessionLauncher {
         console.error(`[agent-herder] единый план не запустил «${group.topic}»: ${errorText(error)}`);
         for (const source of sources) {
           pushInventory(source);
-          await this.options.store.remove(source.session.harness, source.session.id);
+          await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
         }
       }
     }
@@ -1538,11 +1611,15 @@ export class UnfinishedSessionLauncher {
   private async fail(record: UnfinishedSessionRecord, error: string): Promise<void> {
     let attempted = record;
     if (record.state !== "recovering") {
-      const begun = await this.options.store.beginAttempt(record.harness, record.sessionId, this.maxAttempts, this.retryDelayMs);
+      const begun = await this.options.store.beginAttempt(
+        record.harness, record.sessionId, this.maxAttempts, this.retryDelayMs, new Date(), record.workspaceIdentity || record.cwd,
+      );
       if (!begun) return;
       attempted = begun;
     }
-    const failed = await this.options.store.markFailure(record.harness, record.sessionId, error, this.maxAttempts);
+    const failed = await this.options.store.markFailure(
+      record.harness, record.sessionId, error, this.maxAttempts, new Date(), record.workspaceIdentity || record.cwd,
+    );
     console.error(`[agent-herder] автозапуск ${attempted.attempts}/${this.maxAttempts} не удался для ${record.harness}:${record.sessionId}: ${error}`);
     if (failed?.state === "exhausted") await this.notifyExhausted(failed);
   }
@@ -1553,12 +1630,12 @@ export class UnfinishedSessionLauncher {
     await this.options.notify({
       title: "Agent Herder не смог продолжить задачу",
       body: `${harness}: незавершённая сессия не запущена после ${record.attempts} попыток. Работа остановлена; откройте сессию и запустите продолжение вручную.`,
-      dedupKey: `agent-herder:unfinished-session:${record.harness}:${record.sessionId}`,
-      correlationId: `unfinished-${record.harness}-${record.sessionId}-${record.startedAt}`,
+      dedupKey: `agent-herder:unfinished-session:${unfinishedRecordKey(record)}`,
+      correlationId: `unfinished-${unfinishedRecordKey(record)}-${record.startedAt}`,
       sourceId: "agent-herder-autostart",
       signalType: "unfinished-session-autostart-failed",
     });
-    await this.options.store.markNotified(record.harness, record.sessionId);
+    await this.options.store.markNotified(record.harness, record.sessionId, new Date(), record.workspaceIdentity || record.cwd);
   }
 
   private async isEnabled(harness: HarnessType, sessionId: string, cwd: string): Promise<boolean> {
@@ -1686,10 +1763,13 @@ function parseInventoryRecord(value: unknown): UnfinishedSessionInventoryRecord 
     harness,
     sessionId: bounded(record.sessionId, "sessionId"),
     cwd: normalize(bounded(record.cwd, "cwd")),
+    ...(record.workspaceIdentity ? { workspaceIdentity: normalize(bounded(record.workspaceIdentity, "workspaceIdentity")) } : {}),
     title: boundedText(record.title, "title", MAX_TEXT),
     status,
     lastActivity: isoDate(record.lastActivity, "lastActivity"),
     transcriptTail: boundedText(record.transcriptTail, "transcriptTail", 2_000_000, true),
+    ...(record.evidenceVersion === undefined ? {} : { evidenceVersion: positiveInteger(record.evidenceVersion, -1) }),
+    ...(record.evidenceFingerprint === undefined ? {} : { evidenceFingerprint: bounded(record.evidenceFingerprint, "evidenceFingerprint") }),
     observedAt: isoDate(record.observedAt, "observedAt"),
     ...(record.verdict ? { verdict: normalizePersistedVerdict(record.verdict) } : {}),
   };
@@ -1768,12 +1848,43 @@ export function completionEvidence(messages: SessionMessageView[], messageCount 
   const deduplicated = [...new Map(bounded.map((item) => [item.index, item])).values()];
   if (deduplicated.length === 0) return "";
   const first = firstUser?.text ?? deduplicated[0]!.text;
-  const tail = deduplicated.filter((item) => item.index !== firstUser?.index).map((item) => item.text).join("\n\n");
+  const tail = deduplicated.filter((item) => item.index !== firstUser?.index).map((item) => item.text).join("\n\n") || first;
   return trimEvidenceChars([
     "ПЕРВЫЙ ПОЛЬЗОВАТЕЛЬСКИЙ ЗАПРОС:",
     first,
-    ...(tail ? ["\nПОСЛЕДНИЙ СМЫСЛОВОЙ КОНТЕКСТ:", tail] : []),
+    "\nПОСЛЕДНИЙ СМЫСЛОВОЙ КОНТЕКСТ:",
+    tail,
   ].join("\n"), MAX_SESSION_EVIDENCE_CHARS);
+}
+
+function evidenceFingerprint(value: string): string {
+  return createHash("sha256").update(`${CURRENT_EVIDENCE_VERSION}\0${value}`).digest("hex");
+}
+
+function evidenceIsCurrent(record: UnfinishedSessionInventoryRecord | undefined): boolean {
+  return record?.evidenceVersion === CURRENT_EVIDENCE_VERSION
+    && record.evidenceFingerprint === evidenceFingerprint(record.transcriptTail);
+}
+
+function inventoryFromAssessment(
+  candidate: AssessedSession,
+  verdict?: SessionInventoryVerdict,
+  now = new Date(),
+): UnfinishedSessionInventoryRecord {
+  return {
+    harness: candidate.session.harness as "codex" | "zcode",
+    sessionId: candidate.session.id,
+    cwd: candidate.session.cwd,
+    workspaceIdentity: sessionWorkspaceIdentity(candidate.session),
+    title: candidate.session.title,
+    status: candidate.session.status,
+    lastActivity: candidate.session.lastActivity,
+    transcriptTail: candidate.transcriptTail,
+    evidenceVersion: CURRENT_EVIDENCE_VERSION,
+    evidenceFingerprint: evidenceFingerprint(candidate.transcriptTail),
+    observedAt: now.toISOString(),
+    ...(verdict ? { verdict } : {}),
+  };
 }
 
 function trimEvidenceChars(value: string, maxChars: number): string {
@@ -1818,10 +1929,10 @@ export function enforcePlanWorkspaceBoundaries(
     groups: plan.groups.flatMap((group) => {
       const partitions = new Map<string, string[]>();
       for (const id of group.sourceSessionIds) {
-        const cwd = normalize(candidates.get(id)!.session.cwd);
-        const ids = partitions.get(cwd) ?? [];
+        const workspaceIdentity = sessionWorkspaceIdentity(candidates.get(id)!.session);
+        const ids = partitions.get(workspaceIdentity) ?? [];
         ids.push(id);
-        partitions.set(cwd, ids);
+        partitions.set(workspaceIdentity, ids);
       }
       if (partitions.size <= 1) return [group];
       // Similar titles/topics are not task identity. A canary or unrelated
@@ -1876,6 +1987,7 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
   if (attempts < 0) throw new Error("invalid unfinished session attempts");
   return {
     ...target,
+    ...(record.workspaceIdentity ? { workspaceIdentity: normalize(bounded(record.workspaceIdentity, "workspaceIdentity")) } : {}),
     startedAt: isoDate(record.startedAt, "startedAt"),
     updatedAt: isoDate(record.updatedAt, "updatedAt"),
     ...(record.acceptedAt ? { acceptedAt: isoDate(record.acceptedAt, "acceptedAt") } : {}),
@@ -1919,12 +2031,43 @@ function harnessType(value: unknown): HarnessType {
   return value;
 }
 
-function sessionKey(harness: HarnessType, sessionId: string): string {
-  return `${harness}:${bounded(sessionId, "sessionId")}`;
+function sessionKey(harness: HarnessType, sessionId: string, workspaceIdentity?: string): string {
+  const base = `${harness}:${bounded(sessionId, "sessionId")}`;
+  return workspaceIdentity ? `${base}:${normalize(bounded(workspaceIdentity, "workspaceIdentity"))}` : base;
+}
+
+function sessionWorkspaceIdentity(session: Pick<AgentSession, "cwd" | "meta">): string {
+  const configured = session.meta?.workspaceIdentity;
+  return normalize(typeof configured === "string" && configured.trim() ? configured : session.cwd);
+}
+
+function sessionSourceKey(session: Pick<AgentSession, "harness" | "id" | "cwd" | "meta">): string {
+  return sessionKey(harnessType(session.harness), session.id, sessionWorkspaceIdentity(session));
+}
+
+function unfinishedRecordKey(record: Pick<UnfinishedSessionRecord, "harness" | "sessionId" | "cwd" | "workspaceIdentity">): string {
+  return sessionKey(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
+}
+
+function inventoryRecordKey(record: Pick<UnfinishedSessionInventoryRecord, "harness" | "sessionId" | "cwd" | "workspaceIdentity">): string {
+  return sessionKey(harnessType(record.harness), record.sessionId, record.workspaceIdentity || record.cwd);
+}
+
+function findUnfinishedRecord(
+  records: UnfinishedSessionRecord[],
+  harness: HarnessType,
+  sessionId: string,
+  workspaceIdentity?: string,
+): UnfinishedSessionRecord | undefined {
+  if (workspaceIdentity) {
+    const key = sessionKey(harness, sessionId, workspaceIdentity);
+    return records.find((candidate) => unfinishedRecordKey(candidate) === key);
+  }
+  return records.find((candidate) => candidate.harness === harness && candidate.sessionId === sessionId);
 }
 
 function sortRecords(records: UnfinishedSessionRecord[]): void {
-  records.sort((left, right) => sessionKey(left.harness, left.sessionId).localeCompare(sessionKey(right.harness, right.sessionId)));
+  records.sort((left, right) => unfinishedRecordKey(left).localeCompare(unfinishedRecordKey(right)));
 }
 
 function bounded(value: unknown, label: string): string {
@@ -1988,15 +2131,56 @@ function mergePlanGroups(groups: SessionBatchPlanGroup[]): SessionBatchPlanGroup
   return [...merged.values()];
 }
 
+/** Normalize injected/test judges and legacy judge implementations to the same workspace-qualified keys. */
+function canonicalizePlanSourceKeys(plan: SessionBatchPlan, candidates: AssessedSession[]): SessionBatchPlan {
+  const known = new Set(candidates.map((candidate) => candidate.sourceKey));
+  const byNativeId = new Map<string, string[]>();
+  for (const candidate of candidates) {
+    const keys = byNativeId.get(candidate.session.id) ?? [];
+    keys.push(candidate.sourceKey);
+    byNativeId.set(candidate.session.id, keys);
+  }
+  const resolve = (value: string): string => {
+    if (known.has(value)) return value;
+    const matches = byNativeId.get(value) ?? [];
+    if (matches.length === 1) return matches[0]!;
+    if (matches.length > 1) throw new Error(`planner returned ambiguous workspace-free session ${value}`);
+    throw new Error(`planner returned unknown session ${value}`);
+  };
+  return {
+    groups: plan.groups.map((group) => {
+      const sourceSessionIds = [...new Set(group.sourceSessionIds.map(resolve))];
+      const requestedPrimary = resolve(group.primarySessionId);
+      return {
+        ...group,
+        sourceSessionIds,
+        primarySessionId: sourceSessionIds.includes(requestedPrimary) ? requestedPrimary : sourceSessionIds[0]!,
+      };
+    }),
+  };
+}
+
 function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[]): SessionBatchPlan {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("MiniMax returned an invalid batch plan");
   const rawGroups = (value as Record<string, unknown>).groups;
   if (!Array.isArray(rawGroups)) throw new Error("MiniMax batch plan has no groups");
-  const known = new Set(candidates.map(({ session }) => session.id));
-  const aliases = new Map(candidates.map(({ session }, index) => [`S${index + 1}`, session.id]));
+  const known = new Set(candidates.map(({ session }) => sessionSourceKey(session)));
+  const aliases = new Map(candidates.map(({ session }, index) => [`S${index + 1}`, sessionSourceKey(session)]));
+  const idAliases = new Map<string, string[]>();
+  for (const { session } of candidates) {
+    const ids = idAliases.get(session.id) ?? [];
+    ids.push(sessionSourceKey(session));
+    idAliases.set(session.id, ids);
+  }
   const resolveId = (value: unknown, field: string): string => {
     const raw = boundedText(value, field, 128);
-    return aliases.get(raw) ?? raw;
+    const alias = aliases.get(raw);
+    if (alias) return alias;
+    if (known.has(raw)) return raw;
+    const matches = idAliases.get(raw) ?? [];
+    if (matches.length === 1) return matches[0]!;
+    if (matches.length > 1) throw new Error(`MiniMax returned ambiguous workspace-free session ${raw}`);
+    return raw;
   };
   const preliminary = rawGroups.flatMap((value, index): SessionBatchPlanGroup[] => {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`MiniMax returned invalid group ${index}`);
@@ -2040,10 +2224,11 @@ function normalizeBatchPlan(value: unknown, candidates: SessionBatchCandidate[])
     return [{ ...group, sourceSessionIds, primarySessionId: sourceSessionIds.includes(group.primarySessionId) ? group.primarySessionId : sourceSessionIds[0] }];
   });
   for (const { session } of candidates) {
-    if (assignment.has(session.id)) continue;
+    const sourceKey = sessionSourceKey(session);
+    if (assignment.has(sourceKey)) continue;
     groups.push({
-      sourceSessionIds: [session.id],
-      primarySessionId: session.id,
+      sourceSessionIds: [sourceKey],
+      primarySessionId: sourceKey,
       verdict: "needs_human",
       reason: "MiniMax не включил сессию в общий план; она будет повторно проверена в следующем цикле",
       confidence: 0,
@@ -2078,6 +2263,7 @@ function batchPlannerPayload(sessions: SessionBatchCandidate[]): unknown {
       harness: session.harness,
       title: session.title,
       cwd: session.cwd,
+      workspace_identity: sessionWorkspaceIdentity(session),
       model: session.model,
       status_signal: session.status,
       last_activity: session.lastActivity,

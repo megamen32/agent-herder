@@ -90,6 +90,14 @@ describe("unfinished session launcher", () => {
     expect(evidence.length).toBeGreaterThan(3_000);
   });
 
+  it("keeps explicit first-goal and fresh-tail sections even for a one-message session", () => {
+    const evidence = completionEvidence([
+      { id: "u-only", role: "user", text: "single task", parts: [{ type: "text", text: "single task" }] },
+    ]);
+    expect(evidence).toContain("ПЕРВЫЙ ПОЛЬЗОВАТЕЛЬСКИЙ ЗАПРОС:\nПОЛЬЗОВАТЕЛЬ: single task");
+    expect(evidence).toContain("ПОСЛЕДНИЙ СМЫСЛОВОЙ КОНТЕКСТ:\nПОЛЬЗОВАТЕЛЬ: single task");
+  });
+
   it("fairly packs every 48-hour candidate under one conservative token budget", () => {
     const sessions = ["a", "b", "c"].map((id) => ({
       session: { ...fixtureSession("idle", "zcode"), id },
@@ -185,11 +193,22 @@ describe("unfinished session launcher", () => {
       { session: { ...fixtureSession("idle", "codex"), id: "omitted-1", title: "Пропущенная задача" }, transcriptTail: `${evidence} omitted-marker` },
     ] });
 
-    expect(plan?.groups[0]).toMatchObject({ sourceSessionIds: ["codex-1", "zcode-1"], primarySessionId: "codex-1", topic: "Аудит t-proxy" });
+    expect(plan?.groups[0]).toMatchObject({
+      sourceSessionIds: [
+        "codex:codex-1:/tmp/autostart-canary",
+        "zcode:zcode-1:/tmp/autostart-canary",
+      ],
+      primarySessionId: "codex:codex-1:/tmp/autostart-canary",
+      topic: "Аудит t-proxy",
+    });
     expect(plan?.groups[0]?.handoff).toContain("Первая часть общего handoff");
     expect(plan?.groups[0]?.handoff).toContain("Вторая часть общего handoff");
     expect(plan?.groups).toHaveLength(2);
-    expect(plan?.groups[1]).toMatchObject({ sourceSessionIds: ["omitted-1"], primarySessionId: "omitted-1", verdict: "needs_human", confidence: 0, topic: "Пропущенная задача" });
+    expect(plan?.groups[1]).toMatchObject({
+      sourceSessionIds: ["codex:omitted-1:/tmp/autostart-canary"],
+      primarySessionId: "codex:omitted-1:/tmp/autostart-canary",
+      verdict: "needs_human", confidence: 0, topic: "Пропущенная задача",
+    });
     expect(JSON.stringify(requestBody)).toContain("codex-marker");
     expect(JSON.stringify(requestBody)).toContain("zcode-marker");
     expect(JSON.stringify(requestBody)).toContain("первый пользовательский запрос");
@@ -288,6 +307,48 @@ describe("unfinished session launcher", () => {
     expect(result.groups).toMatchObject([
       { sourceSessionIds: ["A1", "A2"], primarySessionId: "A2", verdict: "needs_human", confidence: 0 },
       { sourceSessionIds: ["B1"], primarySessionId: "B1", verdict: "needs_human", confidence: 0 },
+    ]);
+  });
+
+  it("keeps equal native session ids separate when their workspace identities differ", () => {
+    const left = { ...fixtureSession("idle", "zcode"), id: "same-id", cwd: "/workspace/a", meta: { workspaceIdentity: "workspace-a" } };
+    const right = { ...fixtureSession("idle", "zcode"), id: "same-id", cwd: "/workspace/b", meta: { workspaceIdentity: "workspace-b" } };
+    const leftKey = "zcode:same-id:workspace-a";
+    const rightKey = "zcode:same-id:workspace-b";
+    const candidates = new Map([
+      [leftKey, { session: left, transcriptTail: "left" }],
+      [rightKey, { session: right, transcriptTail: "right" }],
+    ]);
+    const result = enforcePlanWorkspaceBoundaries({ groups: [{
+      sourceSessionIds: [leftKey, rightKey], primarySessionId: rightKey, verdict: "unfinished",
+      reason: "same id", confidence: 1, topic: "Two workspaces", handoff: "unsafe merge",
+    }] }, candidates);
+    expect(result.groups).toMatchObject([
+      { sourceSessionIds: [leftKey], primarySessionId: leftKey, verdict: "needs_human", confidence: 0 },
+      { sourceSessionIds: [rightKey], primarySessionId: rightKey, verdict: "needs_human", confidence: 0 },
+    ]);
+  });
+
+  it("stores each workspace-qualified source exactly once and prunes stale snapshot members", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-qualified-inventory-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const base = {
+      harness: "zcode" as const, sessionId: "same-id", title: "Task", status: "idle" as const,
+      lastActivity: new Date().toISOString(), transcriptTail: "evidence", observedAt: new Date().toISOString(),
+    };
+    await store.upsertInventoryBatch([
+      { ...base, cwd: "/a", workspaceIdentity: "workspace-a" },
+      { ...base, cwd: "/b", workspaceIdentity: "workspace-b" },
+      { ...base, sessionId: "stale", cwd: "/stale", workspaceIdentity: "workspace-stale" },
+    ]);
+    await store.upsertInventory({ ...base, cwd: "/a", workspaceIdentity: "workspace-a", title: "Task refreshed" });
+    expect(await store.reconcileInventorySnapshot(new Set(["zcode"]), new Set([
+      "zcode:same-id:workspace-a",
+      "zcode:same-id:workspace-b",
+    ]))).toBe(1);
+    expect((await store.listInventory()).map((record) => `${record.workspaceIdentity}:${record.title}`).sort()).toEqual([
+      "workspace-a:Task refreshed",
+      "workspace-b:Task",
     ]);
   });
 
@@ -652,6 +713,57 @@ describe("unfinished session launcher", () => {
     await launcher.recoverPending();
 
     expect(batches).toEqual([["settled", "changed"], ["changed", "new"]]);
+  });
+
+  it("rebuilds legacy evidence and reaudits a changed disabled session without launching it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-disabled-audit-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    let session = { ...fixtureSession("idle", "codex"), id: "disabled", lastActivity: new Date(Date.now() - 10 * 60_000).toISOString() };
+    await settingsStore.setSession({ harness: "codex", sessionId: session.id, cwd: session.cwd }, false);
+    await store.upsertInventory({
+      harness: "codex", sessionId: session.id, cwd: session.cwd, title: session.title,
+      status: session.status, lastActivity: session.lastActivity, transcriptTail: "legacy tail",
+      observedAt: new Date().toISOString(),
+      verdict: { verdict: "completed", reason: "legacy", confidence: 1, judgedAt: new Date().toISOString() },
+    });
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    adapter.listSessions = async () => [session];
+    adapter.getSessionMessages = async () => [{
+      id: "u", role: "user", text: `goal-${session.lastActivity}`, parts: [{ type: "text", text: `goal-${session.lastActivity}` }],
+    }];
+    let plans = 0;
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store, settingsStore, discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions }) {
+          plans += 1;
+          return { groups: sessions.map(({ session: candidate }) => ({
+            sourceSessionIds: [candidate.id], primarySessionId: candidate.id, verdict: "completed" as const,
+            reason: "audited", confidence: 1, topic: candidate.title, handoff: "",
+          })) };
+        },
+      },
+    });
+
+    await launcher.recoverPending();
+    let inventory = await store.listInventory();
+    expect(plans).toBe(1);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(inventory[0]).toMatchObject({ evidenceVersion: 1, verdict: { verdict: "completed" } });
+    expect(inventory[0]?.transcriptTail).toContain("ПЕРВЫЙ ПОЛЬЗОВАТЕЛЬСКИЙ ЗАПРОС");
+    expect(inventory[0]?.transcriptTail).toContain("ПОСЛЕДНИЙ СМЫСЛОВОЙ КОНТЕКСТ");
+
+    session = { ...session, lastActivity: new Date(Date.now() - 5 * 60_000).toISOString() };
+    await launcher.recoverPending();
+    inventory = await store.listInventory();
+    expect(plans).toBe(2);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(inventory[0]?.lastActivity).toBe(session.lastActivity);
+    expect(inventory[0]?.transcriptTail).toContain(`goal-${session.lastActivity}`);
+    expect(await store.list()).toEqual([]);
   });
 
   it("persists a running autopilot turn and starts the same session after a fresh process", async () => {
@@ -1194,7 +1306,8 @@ describe("unfinished session launcher", () => {
     // publish idle with the same second-resolution timestamp, so neither field
     // can be used as the completion edge.
     session.status = "idle";
-    await waitUntil(async () => (await store.listInventory()).some((record) => record.sessionId === session.id));
+    await waitUntil(async () => (await store.listInventory()).some((record) =>
+      record.sessionId === session.id && record.verdict?.verdict === "completed"));
     stop();
 
     expect(plans).toBe(1);
