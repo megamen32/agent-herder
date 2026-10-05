@@ -1262,6 +1262,7 @@ export class UnfinishedSessionLauncher {
     const runtimeSettings = await this.options.settingsStore.getSettings();
     if (!this.lifecycleActive(lifecycleEpoch)) return;
     const byId = new Map(assessed.map((candidate) => [candidate.session.id, candidate]));
+    plan = enforcePlanWorkspaceBoundaries(plan, byId);
     const latestActivity = (group: SessionBatchPlanGroup): number => Math.max(...group.sourceSessionIds.map((id) => Date.parse(byId.get(id)!.session.lastActivity)));
     const groups = [...plan.groups].sort((left, right) => latestActivity(right) - latestActivity(left));
     const inventoryBatch: UnfinishedSessionInventoryRecord[] = [];
@@ -1807,6 +1808,33 @@ function isAutocontinueRequest(text: string | undefined): boolean {
   const normalized = text?.trim() || "";
   return normalized.startsWith("Автопродолжение —")
     || normalized.startsWith("Продолжи незавершённую задачу с того места, где выполнение было прервано.");
+}
+
+function enforcePlanWorkspaceBoundaries(
+  plan: SessionBatchPlan,
+  candidates: Map<string, AssessedSession>,
+): SessionBatchPlan {
+  return {
+    groups: plan.groups.flatMap((group) => {
+      const workspaces = new Set(group.sourceSessionIds.map((id) => normalize(candidates.get(id)!.session.cwd)));
+      if (workspaces.size <= 1) return [group];
+      // Similar titles/topics are not task identity. A canary or unrelated
+      // checkout must never supersede an active/pinned session in another
+      // workspace, even when MiniMax grouped them together.
+      return group.sourceSessionIds.map((id): SessionBatchPlanGroup => {
+        const candidate = candidates.get(id)!;
+        return {
+          sourceSessionIds: [id],
+          primarySessionId: id,
+          verdict: "needs_human",
+          reason: "MiniMax попытался объединить сессии из разных рабочих каталогов; сессия сохранена для отдельной проверки",
+          confidence: 0,
+          topic: candidate.session.title.slice(0, 120) || group.topic,
+          handoff: "",
+        };
+      });
+    }),
+  };
 }
 
 function batchContinuationPrompt(group: SessionBatchPlanGroup, sources: AssessedSession[]): string {

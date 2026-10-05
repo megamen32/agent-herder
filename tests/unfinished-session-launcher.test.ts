@@ -272,6 +272,41 @@ describe("unfinished session launcher", () => {
     expect((await store.list()).map((record) => record.sessionId)).toEqual(["merged-session"]);
   });
 
+  it("never merges or completes same-topic sessions from different workspaces", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-cross-workspace-dedupe-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions: AgentSession[] = [
+      { ...fixtureSession("idle", "codex"), id: "root-work", title: "Finish Agent Herder", cwd: "/home/roomhacker/agents-projects", lastActivity: new Date(Date.now() - 10_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "canary", title: "Finish Agent Herder", cwd: "/tmp/agent-herder-codex-canary", lastActivity: new Date().toISOString() },
+    ];
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(sessions[0]!, calls);
+    adapter.listSessions = async () => sessions;
+    adapter.getSession = async (id) => sessions.find((session) => session.id === id) ?? null;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: "Finish Agent Herder", parts: [{ type: "text", text: "Finish Agent Herder" }] }];
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store, settingsStore, discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() {
+          return { groups: [{
+            sourceSessionIds: ["root-work", "canary"], primarySessionId: "canary", verdict: "unfinished" as const,
+            reason: "Same topic", confidence: 1, topic: "Finish Agent Herder", handoff: "Continue the combined task",
+          }] };
+        },
+      },
+    }).recoverPending();
+
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await store.listInventory()).toMatchObject([
+      { sessionId: "canary", verdict: { verdict: "needs_human", confidence: 0 } },
+      { sessionId: "root-work", verdict: { verdict: "needs_human", confidence: 0 } },
+    ]);
+    await expect(settingsStore.getEffective("codex", "root-work", sessions[0]!.cwd)).resolves.toMatchObject({ enabled: true, source: "default" });
+    await expect(settingsStore.getEffective("codex", "canary", sessions[1]!.cwd)).resolves.toMatchObject({ enabled: true, source: "default" });
+  });
+
   it("resumes the same broken session while its provider cache is still fresh", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-fresh-cache-resume-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
