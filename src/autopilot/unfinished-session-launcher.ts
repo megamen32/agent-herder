@@ -3510,7 +3510,13 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
         }),
       });
       if (!response.ok) throw new Error(`MiniMax reconciliation rejected with HTTP ${response.status}`);
-      const body = await response.json() as Record<string, unknown>;
+      let body: Record<string, unknown>;
+      try {
+        body = await response.json() as Record<string, unknown>;
+      } catch (error) {
+        if (error instanceof SyntaxError) throw new BatchReconciliationValidationError(`MiniMax reconciliation returned invalid JSON: ${error.message}`);
+        throw error;
+      }
       const choices = Array.isArray(body.choices) ? body.choices : [];
       const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message : undefined;
       const content = message && typeof message === "object" ? (message as Record<string, unknown>).content : undefined;
@@ -3642,6 +3648,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
         content = await anthropicText(response);
       } catch (error) {
         if (error instanceof BatchPlanValidationError) throw new BatchReconciliationValidationError(errorText(error));
+        if (error instanceof SyntaxError) throw new BatchReconciliationValidationError(`MiniMax reconciliation returned invalid JSON: ${error.message}`);
         throw error;
       }
       return normalizeBatchReconciliationText(content, groups);

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   completionEvidence,
   createAnthropicCompatibleSessionCompletionJudge,
+  createOpenAICompatibleSessionCompletionJudge,
   enforcePlanWorkspaceBoundaries,
   estimateBatchPlannerInputTokens,
   estimateContextTokens,
@@ -1927,6 +1928,94 @@ describe("unfinished session launcher", () => {
     expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
   });
 
+  it.each([
+    { name: "HTTP 200 invalid JSON twice", invalidJson: true, expectedCalls: 2 },
+    { name: "HTTP 500", invalidJson: false, expectedCalls: 1 },
+  ])("uses production Anthropic reconciliation retry policy for $name", async ({ invalidJson, expectedCalls }) => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-production-reconciliation-failure-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = [
+      { ...fixtureSession("idle", "codex"), id: "production-a", cwd: "/workspace/production-a", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "production-b", cwd: "/workspace/production-b", lastActivity: new Date(Date.now() - 60_001).toISOString() },
+    ];
+    let reconciliationCalls = 0;
+    const judge = createAnthropicCompatibleSessionCompletionJudge({
+      baseUrl: "https://api.minimax.io/anthropic/", model: "MiniMax-M3.1-Flash-Preview", token: "test-token",
+      fetchImpl: async (_url, init) => {
+        const body = JSON.parse(String(init?.body)) as { system: Array<{ text: string }>; messages: Array<{ content: string }> };
+        const payload = JSON.parse(body.messages[0]!.content) as {
+          sessions?: Array<{ session_ref: string; title: string }>;
+          groups?: Array<{ group_ref: string }>;
+        };
+        if (body.system[0]!.text.includes("финальный дедупликатор")) {
+          reconciliationCalls += 1;
+          if (!invalidJson) return new Response("provider failed", { status: 500 });
+          return new Response("{truncated", { status: 200, headers: { "content-type": "application/json" } });
+        }
+        const text = JSON.stringify({ groups: (payload.sessions || []).map(({ session_ref, title }) => ({
+          source_session_ids: [session_ref], primary_session_id: session_ref, verdict: "completed",
+          reason: "done", confidence: 1, topic: title, handoff: "",
+        })) });
+        return new Response([
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } })}`,
+          "data: [DONE]", "",
+        ].join("\n\n"), { status: 200, headers: { "content-type": "text/event-stream" } });
+      },
+    });
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1, judge,
+    }).recoverPending();
+
+    expect(reconciliationCalls).toBe(expectedCalls);
+    expect((await store.listInventory()).every((record) => record.verdict === undefined)).toBe(true);
+  });
+
+  it("retries an OpenAI-compatible HTTP 200 invalid reconciliation JSON body once", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-openai-reconciliation-json-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const sessions = [
+      { ...fixtureSession("idle", "codex"), id: "openai-a", cwd: "/workspace/openai-a", lastActivity: new Date(Date.now() - 60_000).toISOString() },
+      { ...fixtureSession("idle", "codex"), id: "openai-b", cwd: "/workspace/openai-b", lastActivity: new Date(Date.now() - 60_001).toISOString() },
+    ];
+    let reconciliationCalls = 0;
+    const judge = createOpenAICompatibleSessionCompletionJudge({
+      baseUrl: "https://api.example.test/v1", model: "test-model",
+      fetchImpl: async (_url, init) => {
+        const body = JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> };
+        const system = body.messages[0]!.content;
+        const payload = JSON.parse(body.messages[1]!.content) as {
+          sessions?: Array<{ session_ref: string; title: string }>;
+          groups?: Array<{ group_ref: string }>;
+        };
+        if (system.includes("финальный дедупликатор")) {
+          reconciliationCalls += 1;
+          if (reconciliationCalls === 1) return new Response("{truncated", { status: 200, headers: { "content-type": "application/json" } });
+          const content = JSON.stringify({ clusters: (payload.groups || []).map(({ group_ref }) => [group_ref]) });
+          return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        const content = JSON.stringify({ groups: (payload.sessions || []).map(({ session_ref, title }) => ({
+          source_session_ids: [session_ref], primary_session_id: session_ref, verdict: "completed",
+          reason: "done", confidence: 1, topic: title, handoff: "",
+        })) });
+        return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200, headers: { "content-type": "application/json" } });
+      },
+    });
+    const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
+    adapter.listSessions = async () => sessions;
+    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1, judge,
+    }).recoverPending();
+
+    expect(reconciliationCalls).toBe(2);
+    expect((await store.listInventory()).every((record) => record.verdict?.verdict === "completed")).toBe(true);
+  });
+
   it("fails before planner I/O when singleton workspaces exceed the bounded chunk count", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-workspace-chunk-cap-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -2198,10 +2287,11 @@ describe("unfinished session launcher", () => {
         let text: string;
         if (body.system[0]!.text.includes("финальный дедупликатор")) {
           reconciliationRequests += 1;
+          if (reconciliationRequests === 1) {
+            return new Response("{truncated", { status: 200, headers: { "content-type": "application/json" } });
+          }
           const groups = payload.groups || [];
-          text = JSON.stringify({
-            clusters: (reconciliationRequests === 1 ? groups.slice(0, -2) : groups).map(({ group_ref }) => [group_ref]),
-          });
+          text = JSON.stringify({ clusters: groups.map(({ group_ref }) => [group_ref]) });
         } else if ((body as unknown as { max_tokens?: number }).max_tokens === 512) {
           return new Response(JSON.stringify({ content: [{
             type: "text",
