@@ -507,6 +507,41 @@ describe("unfinished session launcher", () => {
     expect(await store.listInventory()).toMatchObject([{ sessionId: session.id, verdict: { verdict: "unfinished" } }]);
   });
 
+  it.each([
+    { status: "needs_input" as const, needsPermission: false },
+    { status: "idle" as const, needsPermission: true },
+  ])("keeps a $status/$needsPermission human gate out of planner launches", async ({ status, needsPermission }) => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-human-gate-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = {
+      ...fixtureSession(status, "zcode"),
+      needsPermission,
+      lastActivity: new Date(Date.now() - 5 * 60_000).toISOString(),
+    };
+    const calls = { resumes: 0, messages: [] as string[] };
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", fixtureAdapter(session, calls)]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() {
+          return { groups: [{
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "unfinished",
+            reason: "Continue autonomously", confidence: 1, topic: "Human-gated task", handoff: "Continue.",
+          }] };
+        },
+      },
+    }).recoverPending();
+
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await store.list()).toEqual([]);
+    expect(await store.listInventory()).toMatchObject([{
+      sessionId: session.id,
+      verdict: { verdict: "needs_human", confidence: 1 },
+    }]);
+  });
+
   it("never replaces a fresh-cache session when same-ID continuation fails", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-fresh-cache-failure-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -1567,6 +1602,54 @@ describe("unfinished session launcher", () => {
     expect(calls).toEqual({ resumes: 0, messages: [] });
     expect(await store.list()).toEqual([]);
     expect(await store.listInventory()).toMatchObject([{ sessionId: session.id, verdict: { verdict: "completed" } }]);
+  });
+
+  it("watchdog does not rearm an unchanged completed explicit control session after it stops", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-completed-watchdog-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    const session: AgentSession = {
+      ...fixtureSession("idle", "codex"),
+      title: "Agent Herder control canary",
+      lastActivity: new Date(Date.now() - 5 * 60_000).toISOString(),
+      model: "gpt-5.6-sol",
+    };
+    await settingsStore.setSession({ harness: "codex", sessionId: session.id, cwd: session.cwd }, true);
+    const calls = { resumes: 0, messages: [] as string[] };
+    let plans = 0;
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", fixtureAdapter(session, calls)]]),
+      store,
+      settingsStore,
+      reconcileIntervalMs: 60_000,
+      discoveryIdleMs: 1,
+      watchdogIntervalMs: 5,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions }) {
+          plans += 1;
+          return { groups: sessions.map(({ session: candidate }) => ({
+            sourceSessionIds: [candidate.id], primarySessionId: candidate.id, verdict: "completed" as const,
+            reason: "Control canary completed", confidence: 1, topic: "Completed canary", handoff: "",
+          })) };
+        },
+      },
+    });
+
+    await launcher.recoverPending();
+    const stop = launcher.start();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    session.status = "stopped";
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    stop();
+
+    expect(plans).toBe(1);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await store.list()).toEqual([]);
+    expect(await store.listInventory()).toMatchObject([{
+      sessionId: session.id,
+      verdict: { verdict: "completed", confidence: 1 },
+    }]);
   });
 
   it("watchdog protects an explicitly enabled session even before a native turn-start event", async () => {

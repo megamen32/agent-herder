@@ -817,6 +817,7 @@ export class UnfinishedSessionLauncher {
       const records = (await this.options.store.list())
         .filter((record) => isAutocontinueInventoryHarness(record.harness) && record.state !== "exhausted" && !record.nonRetryableAdmission)
         .map((record) => ({
+          durable: true,
           harness: record.harness,
           sessionId: record.sessionId,
           cwd: record.cwd,
@@ -830,6 +831,7 @@ export class UnfinishedSessionLauncher {
       const explicit = settings.sessions
         .filter((record) => record.enabled && isAutocontinueInventoryHarness(record.harness))
         .map((record) => ({
+          durable: false,
           harness: record.harness,
           sessionId: record.sessionId,
           cwd: record.cwd,
@@ -840,6 +842,8 @@ export class UnfinishedSessionLauncher {
           progressObservedAt: undefined,
           deliveryPending: undefined,
         }));
+      const inventory = new Map((await this.options.store.listInventory())
+        .map((record) => [inventoryRecordKey(record), record]));
       // Durable records carry accepted-delivery progress. Let them override a
       // matching explicit setting while still adding explicitly enabled
       // sessions which have not emitted a turn-start event yet.
@@ -876,6 +880,16 @@ export class UnfinishedSessionLauncher {
           console.error(`[agent-herder] watchdog: ${key} исчезла из native state; запускаю срочное возобновление`);
           continue;
         }
+        const priorAssessment = inventory.get(sessionSourceKey(session));
+        // An explicit opt-in remains after a task is completed. A later native
+        // idle -> stopped transition is not new work, so leave it to normal
+        // discovery (which invalidates the verdict when transcript evidence
+        // actually changes) instead of manufacturing an urgent recovery.
+        if (!record.durable
+          && session.status === "stopped"
+          && priorAssessment?.verdict?.verdict === "completed"
+          && priorAssessment.verdict.confidence > 0
+          && evidenceIsCurrent(priorAssessment)) continue;
         const pendingPermissionIds = session.harness === "zcode"
           && session.title.trim().startsWith("Автопродолжение —")
           && Array.isArray(session.meta?.pendingRequestIds)
@@ -1411,7 +1425,9 @@ export class UnfinishedSessionLauncher {
       if (!this.lifecycleActive(lifecycleEpoch)) return;
       const sources = group.sourceSessionIds.map((id) => byId.get(id)!);
       const plannedPrimary = byId.get(group.primarySessionId)!;
-      const resumableSources = sources.filter((candidate) => candidate.autoResumeEnabled);
+      const humanGatedSources = sources.filter(({ session }) => session.status === "needs_input" || session.needsPermission);
+      const resumableSources = sources.filter((candidate) => candidate.autoResumeEnabled
+        && !humanGatedSources.includes(candidate));
       const running = resumableSources.filter(({ session, sourceKey }) => session.status === "running"
           && !this.urgentSessions.has(sourceKey))
         .sort((left, right) => Date.parse(right.session.lastActivity) - Date.parse(left.session.lastActivity))[0];
@@ -1424,6 +1440,25 @@ export class UnfinishedSessionLauncher {
       const pushInventory = (candidate: AssessedSession, override = verdict): void => {
         inventoryBatch.push(inventoryFromAssessment(candidate, override));
       };
+
+      // A semantic planner cannot answer a native input/permission request on
+      // the user's behalf. Keep the whole task group stopped and make the gate
+      // explicit in inventory; a later transcript/status change will cause a
+      // fresh audit and can then make the group eligible again.
+      if (humanGatedSources.length > 0) {
+        const humanGatedKeys = new Set(humanGatedSources.map((source) => source.sourceKey));
+        for (const source of sources) {
+          pushInventory(source, humanGatedKeys.has(source.sourceKey) ? {
+            verdict: "needs_human",
+            reason: "Сессия ожидает ответа или разрешения человека",
+            confidence: 1,
+            judgedAt,
+          } : verdict);
+          this.urgentSessions.delete(source.sourceKey);
+          await this.options.store.remove(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session));
+        }
+        continue;
+      }
 
       // Workspace splits and missing handoffs use needs_human/confidence=0 as
       // an inconclusive result, not a terminal human blocker. Preserve the
