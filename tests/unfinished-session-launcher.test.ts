@@ -518,6 +518,11 @@ describe("unfinished session launcher", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-batch-plan-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    await settingsStore.setRuntimeSettings({
+      inventoryWindowHours: 48, evidenceMessageCount: 200,
+      judgeModel: "MiniMax-M3.1-Flash-Preview", autopilotJudgeModel: "MiniMax-M3",
+      rolloverExpiredCache: true, movePinnedOnRollover: true,
+    });
     const now = Date.now() - 5 * 60_000;
     const sessions: AgentSession[] = [
       { ...fixtureSession("idle", "zcode"), id: "duplicate-old", title: "Починить комментарии", cwd: "/workspace/video", lastActivity: new Date(now - 60_000).toISOString() },
@@ -712,6 +717,7 @@ describe("unfinished session launcher", () => {
       },
     });
     await launcher.recoverPending();
+    await launcher.handleEvent("zcode", { kind: "turn.failed", harness: "zcode", sessionId: session.id });
     await launcher.recoverPending();
 
     expect(calls.resumes).toBe(2);
@@ -720,6 +726,37 @@ describe("unfinished session launcher", () => {
     expect(created).toBe(0);
     await expect(settingsStore.getEffective("zcode", session.id, session.cwd)).resolves.toMatchObject({ enabled: true });
     expect((await store.list())).toMatchObject([{ sessionId: session.id, state: "active" }]);
+  });
+
+  it("does not create a replacement when the same-session resume method is unavailable", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-no-rollover-without-resume-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = { ...fixtureSession("idle", "zcode"), lastActivity: new Date(Date.now() - 30 * 60_000).toISOString() };
+    await store.markStarted(session, "previous-process");
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    adapter.resumeSession = undefined;
+    let created = 0;
+    adapter.createSession = async () => { created += 1; return { ...session, id: `replacement-${created}` }; };
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]),
+      store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() { return { groups: [{
+          sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "unfinished" as const,
+          reason: "Keep the original session", confidence: 1, topic: "Continue", handoff: "Continue in this session.",
+        }] }; },
+      },
+    });
+
+    await launcher.recoverPending();
+
+    expect(created).toBe(0);
+    expect(calls.messages).toEqual([]);
+    expect(await store.list()).toMatchObject([{ sessionId: session.id, state: "active" }]);
   });
 
   it("does not enqueue another continuation while the previous Herder prompt still awaits an assistant response", async () => {
@@ -941,6 +978,7 @@ describe("unfinished session launcher", () => {
       },
     });
     await launcher.recoverPending();
+    await launcher.handleEvent("codex", { kind: "turn.failed", harness: "codex", sessionId: session.id });
     await launcher.recoverPending();
 
     expect(created).toBe(0);
@@ -3404,7 +3442,7 @@ describe("unfinished session launcher", () => {
     expect(await settingsStore.getEffective("zcode", "disabled", "/canonical")).toMatchObject({ enabled: false, cwd: "/canonical" });
   });
 
-  it("migrates v1 settings and supports a harness-wide opt-out below the global default", async () => {
+  it("migrates v1 settings with same-session continuation as the default", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-v1-"));
     const path = join(root, "settings.json");
     await writeFile(path, JSON.stringify({ version: 1, enabled: true, sessions: [] }));
@@ -3413,8 +3451,8 @@ describe("unfinished session launcher", () => {
       version: 7,
       enabled: true,
       pinActiveSessions: true,
-      rolloverExpiredCache: true,
-      movePinnedOnRollover: true,
+      rolloverExpiredCache: false,
+      movePinnedOnRollover: false,
       inventoryWindowHours: 48,
       evidenceMessageCount: 200,
       judgeModel: "MiniMax-M3.1-Flash-Preview",
@@ -3426,7 +3464,7 @@ describe("unfinished session launcher", () => {
     expect(await settingsStore.getEffective("codex", "session-2", "/tmp/codex")).toMatchObject({ enabled: true, source: "global" });
   });
 
-  it("persists rollover choices and defaults legacy files to moving the pin", async () => {
+  it("persists explicit rollover choices while defaulting legacy files to same-session continuation", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-rollover-setting-"));
     const path = join(root, "settings.json");
     await writeFile(path, JSON.stringify({
@@ -3434,7 +3472,7 @@ describe("unfinished session launcher", () => {
       judgeModel: "MiniMax-M3.1-Flash-Preview", autopilotJudgeModel: "MiniMax-M3", harnesses: [], sessions: [],
     }));
     const settingsStore = new SessionAutostartStore(path, {});
-    await expect(settingsStore.getSettings()).resolves.toMatchObject({ version: 7, pinActiveSessions: true, rolloverExpiredCache: true, movePinnedOnRollover: true, evidenceMessageCount: 200, source: "persisted" });
+    await expect(settingsStore.getSettings()).resolves.toMatchObject({ version: 7, pinActiveSessions: true, rolloverExpiredCache: false, movePinnedOnRollover: false, evidenceMessageCount: 200, source: "persisted" });
     await settingsStore.setRuntimeSettings({
       inventoryWindowHours: 48,
       evidenceMessageCount: 4,
@@ -3560,7 +3598,7 @@ describe("unfinished session launcher", () => {
     expect(await store.list()).toHaveLength(1);
   });
 
-  it("watchdog auto-approves permissions only for legacy ZCode autocontinue sessions", async () => {
+  it("never approves or resumes a ZCode session with a pending native permission", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-zcode-permission-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const session: AgentSession = {
@@ -3583,10 +3621,11 @@ describe("unfinished session launcher", () => {
     });
 
     const stop = launcher.start();
-    await waitUntil(() => approvals.length > 0);
+    await new Promise((resolve) => setTimeout(resolve, 40));
     stop();
 
-    expect(approvals[0]).toEqual([session.id, "perm-1", "allow", true]);
+    expect(approvals).toEqual([]);
+    expect(await store.list()).toMatchObject([{ sessionId: session.id, state: "active" }]);
   });
 
   it("watchdog urgently rechecks and resumes a stalled running session before normal TTL", async () => {
@@ -3671,6 +3710,7 @@ describe("unfinished session launcher", () => {
     const adapter = fixtureAdapter(session, calls);
     adapter.getSessionMessages = async () => [
       { id: "goal", role: "user", text: "Finish the task", parts: [{ type: "text", text: "Finish the task" }] },
+      { id: "continuation", role: "user", text: "Автопродолжение — Проверка задачи\n\nПродолжи текущую задачу.", parts: [{ type: "text", text: "Автопродолжение — Проверка задачи\n\nПродолжи текущую задачу." }] },
       { id: "done", role: "assistant", text: "Completed and verified", parts: [{ type: "text", text: "Completed and verified" }] },
     ];
     const launcher = new UnfinishedSessionLauncher({
@@ -3970,6 +4010,7 @@ describe("unfinished session launcher", () => {
 
     const stop = launcher.start();
     await waitUntil(() => calls.resumes === 1);
+    await waitUntil(() => calls.messages.length === 1);
     await launcher.handleEvent("zcode", { kind: "turn.completed", harness: "zcode", sessionId: "session-1" });
     await waitUntil(() => calls.messages.length >= 2);
     await waitUntil(async () => (await store.list())[0]?.state === "active");
@@ -4243,6 +4284,7 @@ describe("unfinished session launcher", () => {
       judgeModel: "MiniMax-M3.1-Flash-Preview",
       autopilotJudgeModel: "MiniMax-M3",
       pinActiveSessions: true,
+      rolloverExpiredCache: true,
       movePinnedOnRollover: false,
     });
     const launcher = new UnfinishedSessionLauncher({
@@ -4592,6 +4634,7 @@ describe("unfinished session launcher", () => {
 
     await launcher.recoverPending();
     await new Promise((resolve) => setTimeout(resolve, 10));
+    await launcher.handleEvent("zcode", { kind: "turn.failed", harness: "zcode", sessionId: session.id });
     await launcher.recoverPending();
 
     expect(calls.resumes).toBe(2);
@@ -4625,6 +4668,196 @@ describe("unfinished session launcher", () => {
     expect(calls.resumes).toBe(1);
     expect(calls.messages).toHaveLength(1);
     expect(await store.list()).toMatchObject([{ sessionId: session.id, deliveryPending: true, state: "active" }]);
+  });
+
+  it("does not exhaust legitimate continuations after durable assistant responses", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-terminal-retry-reset-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = { ...fixtureSession("idle", "zcode"), lastActivity: new Date(Date.now() - 30 * 60_000).toISOString() };
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    let transcript: Array<{ id: string; role: "user" | "assistant"; text: string; parts: Array<{ type: "text"; text: string }> }> = [
+      { id: "goal", role: "user", text: "Complete the task", parts: [{ type: "text", text: "Complete the task" }] },
+    ];
+    adapter.getSessionMessages = async () => transcript;
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]),
+      store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions }) { return { groups: sessions.map(({ session: candidate }) => ({
+          sourceSessionIds: [candidate.id], primarySessionId: candidate.id, verdict: "unfinished" as const,
+          reason: "The task still needs work", confidence: 1, topic: "Continue the task", handoff: "Continue in this session.",
+        })) }; },
+      },
+    });
+
+    await launcher.recoverPending();
+    for (let turn = 1; turn <= 3; turn += 1) {
+      const prompt = `Автопродолжение — Продолжение ${turn}\n\nПродолжай в этой сессии.`;
+      const answer = `Verified progress ${turn}`;
+      transcript = [
+        ...transcript,
+        { id: `prompt-${turn}`, role: "user", text: prompt, parts: [{ type: "text", text: prompt }] },
+        { id: `answer-${turn}`, role: "assistant", text: answer, parts: [{ type: "text", text: answer }] },
+      ];
+      await launcher.handleEvent("zcode", { kind: "turn.completed", harness: "zcode", sessionId: session.id });
+      await launcher.recoverPending();
+    }
+
+    expect(calls.messages).toHaveLength(4);
+    expect((await store.list())[0]).toMatchObject({ sessionId: session.id, state: "active", terminalRetryCount: 0 });
+    expect((await store.listInventory()).every((record) => record.verdict?.verdict !== "needs_human")).toBe(true);
+  });
+
+  it("does not time out an accepted turn with active native tool work", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-admission-active-tool-timeout-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = {
+      ...fixtureSession("running", "zcode"),
+      lastActivity: new Date(Date.now() - 30 * 60_000).toISOString(),
+      meta: { hasActiveToolCall: true },
+    };
+    const acceptedAt = new Date(Date.now() - 60 * 60_000);
+    await store.markStarted(session, "active-turn", acceptedAt, true, true, false);
+    await store.markAdmissionInProgress("zcode", session.id, session.cwd, "native-progress", new Date());
+    const calls = { resumes: 0, messages: [] as string[] };
+    let plans = 0;
+    const adapter = fixtureAdapter(session, calls);
+    adapter.listSessions = async () => [{ ...session }];
+    adapter.getSessionMessages = async () => [{ id: "prompt", role: "user", text: "Автопродолжение — Continue", parts: [{ type: "text", text: "Автопродолжение — Continue" }] }];
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      discoveryIdleMs: 1,
+      acceptedAdmissionTimeoutMs: 5,
+      stalledTurnMs: 5,
+      judge: { async decide() { throw new Error("fallback should not run"); }, async plan() { plans += 1; return { groups: [] }; } },
+    });
+
+    const stop = launcher.start();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    stop();
+
+    expect(plans).toBe(0);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await store.list()).toMatchObject([{ sessionId: session.id, admissionPhase: "in_progress" }]);
+  });
+
+  it("keeps an accepted durable Codex prompt in-flight across stale idle/error snapshots and restart until explicit urgent", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-accepted-discovery-gate-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    let session: AgentSession = {
+      ...fixtureSession("idle", "codex"), id: "accepted-codex",
+      lastActivity: new Date(Date.now() - 30 * 60_000).toISOString(),
+    };
+    await store.markStarted(session, "accepted-process", new Date(Date.now() - 20 * 60_000), true, true, false);
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    adapter.listSessions = async () => [{ ...session }];
+    adapter.getSession = async () => ({ ...session });
+    adapter.getSessionMessages = async () => [
+      { id: "goal", role: "user", text: "finish accepted task", parts: [{ type: "text", text: "finish accepted task" }] },
+      { id: "assistant", role: "assistant", text: "supervisor snapshot", parts: [{ type: "text", text: "supervisor snapshot" }] },
+    ];
+    let plans = 0;
+    const createLauncher = () => new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          plans += 1;
+          return { groups: batch.map(({ session: candidate }) => ({
+            sourceSessionIds: [candidate.id], primarySessionId: candidate.id, verdict: "completed" as const,
+            reason: "accepted turn completed", confidence: 1, topic: candidate.title, handoff: "",
+          })) };
+        },
+      },
+    });
+    const firstLauncher = createLauncher();
+    await firstLauncher.recoverPending();
+    await firstLauncher.recoverPending();
+    session = { ...session, status: "error" };
+    await firstLauncher.recoverPending();
+
+    const restarted = createLauncher();
+    await restarted.recoverPending();
+    expect(plans).toBe(0);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+
+    await restarted.handleEvent("codex", { kind: "turn.completed", harness: "codex", sessionId: session.id });
+    await restarted.recoverPending();
+    expect(plans).toBe(1);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+  });
+
+  it("does not exhaust legitimate continuations after durable assistant responses", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-terminal-retry-reset-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = { ...fixtureSession("idle", "zcode"), lastActivity: new Date(Date.now() - 30 * 60_000).toISOString() };
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    let transcript: Array<{ id: string; role: "user" | "assistant"; text: string; parts: Array<{ type: "text"; text: string }> }> = [
+      { id: "goal", role: "user", text: "Complete the task", parts: [{ type: "text", text: "Complete the task" }] },
+    ];
+    adapter.getSessionMessages = async () => transcript;
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions }) { return { groups: sessions.map(({ session: candidate }) => ({
+          sourceSessionIds: [candidate.id], primarySessionId: candidate.id, verdict: "unfinished" as const,
+          reason: "The task still needs work", confidence: 1, topic: "Continue the task", handoff: "Continue in this session.",
+        })) }; },
+      },
+    });
+
+    await launcher.recoverPending();
+    for (let turn = 1; turn <= 3; turn += 1) {
+      const prompt = `Автопродолжение — Продолжение ${turn}\n\nПродолжай в этой сессии.`;
+      const answer = `Verified progress ${turn}`;
+      transcript = [
+        ...transcript,
+        { id: `prompt-${turn}`, role: "user", text: prompt, parts: [{ type: "text", text: prompt }] },
+        { id: `answer-${turn}`, role: "assistant", text: answer, parts: [{ type: "text", text: answer }] },
+      ];
+      await launcher.handleEvent("zcode", { kind: "turn.completed", harness: "zcode", sessionId: session.id });
+      await launcher.recoverPending();
+    }
+
+    expect(calls.messages).toHaveLength(4);
+    expect((await store.list())[0]).toMatchObject({ sessionId: session.id, state: "active", terminalRetryCount: 0 });
+    expect((await store.listInventory()).every((record) => record.verdict?.verdict !== "needs_human")).toBe(true);
+  });
+
+  it("keeps a durable ZCode deliveryPending admission out of planner and resend paths", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-delivery-pending-gate-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = {
+      ...fixtureSession("idle", "zcode"), id: "pending-zcode",
+      lastActivity: new Date(Date.now() - 30 * 60_000).toISOString(),
+    };
+    await store.markStarted(session, "pending-process", new Date(Date.now() - 20 * 60_000), true, true, true);
+    const calls = { resumes: 0, messages: [] as string[] };
+    let plans = 0;
+    const adapter = fixtureAdapter(session, calls);
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["zcode", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan() { plans += 1; return { groups: [] }; },
+      },
+    }).recoverPending();
+
+    expect(plans).toBe(0);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await store.list()).toMatchObject([{ sessionId: session.id, acceptedAt: expect.any(String), deliveryPending: true }]);
   });
 
   it("never repeats a prompt whose admitted native turn failed non-retryably", async () => {
