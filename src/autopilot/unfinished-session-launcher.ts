@@ -2447,25 +2447,33 @@ export function fitBatchContextForSerializedRequest<T>(
     ...candidate,
     transcriptTail: sizes[index]! <= cap ? candidate.transcriptTail : trimEvidenceTokens(candidate.transcriptTail, cap),
   }));
+  const available = tokenBudget - fixedTokens;
   let low = 0;
   let high = Math.max(...sizes);
-  let best = metadataOnly;
-  let bestRequest = fixedRequest;
-  let bestTokens = fixedTokens;
-  while (low <= high) {
+  while (low < high) {
     const middle = Math.floor((low + high) / 2);
-    const packed = pack(middle);
+    const evidenceTokens = sizes.reduce((sum, size) => sum + Math.min(size, middle), 0);
+    if (evidenceTokens <= available) low = middle + 1;
+    else high = middle;
+  }
+  let cap = Math.max(0, low - 1);
+  // Escaping overhead is measured from the real request, then corrected
+  // proportionally. This converges in a few full serializations instead of
+  // rebuilding every multi-megabyte candidate at each binary-search step.
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const packed = pack(cap);
     const request = buildRequest(packed);
     const estimatedTokens = estimateContextTokens(JSON.stringify(request));
-    if (estimatedTokens <= tokenBudget) {
-      best = packed;
-      bestRequest = request;
-      bestTokens = estimatedTokens;
-      low = middle + 1;
-    } else high = middle - 1;
+    if (estimatedTokens <= tokenBudget) return { sessions: packed, request, estimatedTokens };
+    const actualEvidenceTokens = Math.max(1, estimatedTokens - fixedTokens);
+    const nextCap = Math.max(0, Math.floor(cap * available / actualEvidenceTokens * 0.98));
+    cap = nextCap < cap ? nextCap : Math.max(0, cap - 1);
   }
-  if (bestTokens > tokenBudget) throw new Error(`MiniMax serialized request exceeds the ${tokenBudget} token ceiling`);
-  return { sessions: best, request: bestRequest, estimatedTokens: bestTokens };
+  const packed = pack(0);
+  const request = buildRequest(packed);
+  const estimatedTokens = estimateContextTokens(JSON.stringify(request));
+  if (estimatedTokens > tokenBudget) throw new Error(`MiniMax serialized request exceeds the ${tokenBudget} token ceiling`);
+  return { sessions: packed, request, estimatedTokens };
 }
 
 function trimEvidenceTokens(value: string, maxTokens: number): string {
