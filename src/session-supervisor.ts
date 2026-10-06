@@ -140,6 +140,7 @@ export class SessionSupervisor {
 
   async isAutomationHeld(harness: string, id: string): Promise<boolean> {
     if (harness !== "codex" && harness !== "zcode") return false;
+    if (await this.humanStops.isHeld(harness, id)) return true;
     const session = await this.adapters.get(harness)?.getSession(id);
     const held = session ? await this.humanStops.observe(session) : await this.humanStops.isHeld(harness, id);
     if (!held) this.immediateStops.delete(sessionKey(harness, id));
@@ -149,8 +150,10 @@ export class SessionSupervisor {
   async releaseHumanStop(harness: string, id: string, prompt?: { id: string; at: string; turnId?: string; text?: string }): Promise<boolean> {
     if (harness !== "codex" && harness !== "zcode") return false;
     if (prompt && await this.humanStops.isGeneratedPrompt(harness, id, prompt)) return false;
-    const session = await this.adapters.get(harness)?.getSession(id);
-    if (session) await this.humanStops.observe(session);
+    if (!prompt) {
+      const session = await this.adapters.get(harness)?.getSession(id);
+      if (session) await this.humanStops.observe(session);
+    }
     const released = await this.humanStops.release(harness, id, prompt);
     if (released || !await this.humanStops.isHeld(harness, id)) this.immediateStops.delete(sessionKey(harness, id));
     return released;

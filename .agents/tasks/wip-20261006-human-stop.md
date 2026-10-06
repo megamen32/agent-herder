@@ -105,3 +105,19 @@ application drop-in at2026-10-06 04:31:27MSK. Native daemon is healthy and this
 owner review of the supported user-unit logging namespace and archival scope;
 do not silently rerun broad30-day session archival as a diagnosis/planner
 cleanup canary. This does not block the Herder human-stop API.
+
+Corrective callback/concurrency gate:
+- Peer live send failed before native admission at11:04:36UTC with generated
+  prompt lock contention. No duplicate or successful-delivery claim was made.
+  Observations of unfenced prompt metadata now read instead of taking a write
+  lock; mutation acquisition has bounded randomized backoff. A real shared
+  filesystem lock held for1.1s regression verifies eventual input registration.
+- A hook can be executing inside the native runtime that a fresh read would
+  re-enter. Existing durable holds return immediately; a qualified native
+  prompt release uses its supplied evidence without waiting on that runtime.
+  Tests emulate a runtime unable to read until its hook returns.
+- The already-installed ZCode UserPromptSubmit helper now forwards real prompt
+  evidence, preserving the automation input prefix and protected state mode0600.
+- 4 focused files/35 checks and TypeScript passed. Supported official Codex
+  plugin reinstall refreshed its cached scripts and compiled store/MCP code;
+  five source/cache byte comparisons matched. Native daemon2262581 preserved.

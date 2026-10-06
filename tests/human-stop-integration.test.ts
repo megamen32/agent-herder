@@ -61,6 +61,20 @@ function fixture(harness: "codex" | "zcode") {
 }
 
 describe.each(["codex", "zcode"] as const)("%s explicit stop delivery boundary", (harness) => {
+  it("answers a held hook and accepts fresh native prompt evidence without re-entering its blocked runtime", async () => {
+    const f = fixture(harness);
+    const store = new HumanStopStore(path);
+    await store.hold(f.current, { id: "stop-before-hook", at: new Date(Date.now() - 1_000).toISOString(), reason: "explicit-stop" });
+    const nativeRead = vi.fn(async () => { throw new Error("runtime is waiting for its UserPromptSubmit hook"); });
+    f.adapters.get(harness)!.getSession = nativeRead;
+    const supervisor = f.supervisor();
+    await expect(supervisor.isAutomationHeld(harness, f.current.id)).resolves.toBe(true);
+    await expect(supervisor.releaseHumanStop(harness, f.current.id, {
+      id: "native-human-prompt", at: new Date().toISOString(), text: "fresh genuine request", turnId: "next-human-turn",
+    })).resolves.toBe(true);
+    expect(nativeRead).not.toHaveBeenCalled();
+    expect(await store.isHeld(harness, f.current.id)).toBe(false);
+  });
   it("accepts an explicit stop of an already idle chat and persists the fence without interrupting a nonexistent turn", async () => {
     const f = fixture(harness);
     f.current.status = "idle";

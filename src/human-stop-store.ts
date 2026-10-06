@@ -99,6 +99,10 @@ export class HumanStopStore {
     const stop = normalizeStopEvidenceOrUndefined(session.meta?.automationStop);
     const prompt = normalizePromptEvidenceOrUndefined(session.meta?.latestUserPrompt);
     if (!stop && !prompt) return this.isHeld(target.harness, target.id);
+    if (!stop) {
+      const file = await this.read();
+      if (!file.sessions.some((record) => record.harness === target.harness && record.id === target.id && record.active)) return false;
+    }
     const result = await this.mutate((file) => {
       const key = sessionKey(target.harness, target.id);
       let index = file.sessions.findIndex((record) => sessionKey(record.harness, record.id) === key);
@@ -286,7 +290,7 @@ export class HumanStopStore {
         realpath: false,
         stale: 30_000,
         update: 10_000,
-        retries: { retries: 40, minTimeout: 25, maxTimeout: 100, factor: 1 },
+        retries: { retries: 30, minTimeout: 25, maxTimeout: 100, factor: 1.5, randomize: true },
       });
       try {
         const file = await this.readUnsafe();

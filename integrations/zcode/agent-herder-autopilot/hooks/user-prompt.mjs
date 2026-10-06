@@ -22,6 +22,17 @@ try {
       const promptId = nonEmptyString(input.prompt_id) ?? nonEmptyString(input.promptId) ?? inputId ?? nativeTurnId ?? `zcode-prompt-${randomUUID()}`;
       const automated = Boolean(inputId?.startsWith("agent-herder:auto:"));
       const at = new Date().toISOString();
+      if (!automated) {
+        try {
+          await fetch(`${process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787"}/api/coordination/lifecycle`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ harness: "zcode", sessionId, cwd: input.cwd, event: "user-prompt", promptId, at, text: prompt,
+              ...(inputId ? { inputId } : {}), ...(nativeTurnId ? { turnId: nativeTurnId } : {}) }),
+            signal: AbortSignal.timeout(1200),
+          });
+        } catch { /* Native input still runs if the supervisor is unavailable. */ }
+      }
       file.sessions[sessionId] = {
         text: prompt.slice(0, 12_000),
         cwd: input.cwd,
@@ -35,7 +46,7 @@ try {
       };
     await mkdir(dirname(path), { recursive: true });
     const temporary = `${path}.${process.pid}.tmp`;
-    await writeFile(temporary, `${JSON.stringify(file)}\n`, "utf8");
+    await writeFile(temporary, `${JSON.stringify(file)}\n`, { encoding: "utf8", mode: 0o600 });
     await rename(temporary, path);
   }
 } catch (error) {

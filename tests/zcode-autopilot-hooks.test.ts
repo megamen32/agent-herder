@@ -11,7 +11,7 @@ const stopHook = resolve(root, "integrations/zcode/agent-herder-autopilot/hooks/
 
 async function runNode(script: string, input: unknown, env: NodeJS.ProcessEnv): Promise<string> {
   return await new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [script], { env, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [script], { env: { ...env, AGENT_HERDER_URL: env.AGENT_HERDER_URL || "http://127.0.0.1:1" }, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });

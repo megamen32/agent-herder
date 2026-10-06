@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import lockfile from "proper-lockfile";
 
 import { getHumanStopStore, type HumanStopStore } from "../src/human-stop-store.js";
 
@@ -20,6 +21,32 @@ afterEach(async () => {
 });
 
 describe("HumanStopStore", () => {
+  it("reads an unfenced user prompt without acquiring another process's write lock", async () => {
+    const { path, store } = await fixtureStore();
+    await store.rememberGeneratedPrompt("codex", "other-session", "previous generated input");
+    const release = await lockfile.lock(`${path}.lock`, { realpath: false });
+    try {
+      await expect(store.observe({
+        id: "unfenced", harness: "zcode", status: "idle", cwd: "/tmp/project", title: "Task", needsPermission: false,
+        lastActivity: new Date().toISOString(), meta: { latestUserPrompt: {
+          id: "real-prompt", at: new Date().toISOString(), origin: "real_user",
+        } },
+      })).resolves.toBe(false);
+    } finally { await release(); }
+  });
+
+  it("waits through a brief cross-process write collision before registering generated input", async () => {
+    const { path, store } = await fixtureStore();
+    await store.rememberGeneratedPrompt("codex", "initial", "initial input");
+    const release = await lockfile.lock(`${path}.lock`, { realpath: false });
+    let released = false;
+    const releaseOnce = async () => { if (!released) { released = true; await release(); } };
+    const timer = setTimeout(() => { void releaseOnce(); }, 1100);
+    try {
+      await store.rememberGeneratedPrompt("codex", "contended", "message awaiting native admission");
+      expect(await store.isGeneratedPrompt("codex", "contended", { text: "message awaiting native admission" })).toBe(true);
+    } finally { clearTimeout(timer); await releaseOnce(); }
+  });
   it("persists an exact harness/native ID fence across store instances", async () => {
     const { path, store } = await fixtureStore();
     await store.hold(
