@@ -77,6 +77,7 @@ h1 { font-size: 19px; } h2 { font-size: 16px; }
 .composer { position: relative; width: 100%; margin: 0; display: flex; align-items: flex-end; gap: 8px; padding: 10px 11px; border: 1px solid #3a3a40; border-radius: 13px; background: color-mix(in srgb, var(--surface-raised) 94%, transparent); box-shadow: 0 12px 35px #0008; }
 .agent-activity-strip { min-height: 36px; display: flex; align-items: center; gap: 9px; padding: 8px 12px; border: 1px solid #614b75; border-radius: 10px; background: #21192a; color: #eadcff; box-shadow: 0 8px 24px #0006; }
 .agent-activity-strip strong { min-width: 0; overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.agent-activity-strip.activity-loading { position: absolute; bottom: calc(100% + 7px); left: 0; right: 0; pointer-events: none; }
 .agent-activity-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px #a970ff20; animation: activity-pulse 1.2s ease-in-out infinite; }
 .activity-tool { border-color: #365064; color: #b5d7eb; }.activity-tool .agent-activity-dot { background: #70b4d8; box-shadow: 0 0 0 3px #70b4d820; }
 .activity-waiting { border-color: #5c4b34; color: #e2c692; }.activity-waiting .agent-activity-dot { background: #d7a552; box-shadow: none; animation: none; }
