@@ -1074,9 +1074,14 @@ function App() {
   const sendMessage = async () => {
     if (!activeKey || readOnlySession || !composer.trim() || sending) return;
     const { harness, id } = splitKey(activeKey);
-    const text = composer.trim();
-    setComposer(""); setSending(true); shouldFollowRef.current = true; setShowScrollToLatest(false);
-    try { await api(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message`, { method: "POST", body: JSON.stringify({ message: text, mode: "queue", humanRequested: true }) }); await loadDetails(activeKey); } finally { setSending(false); }
+    const draft = composer;
+    const text = draft.trim();
+    setSending(true); shouldFollowRef.current = true; setShowScrollToLatest(false);
+    try {
+      await api(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message`, { method: "POST", body: JSON.stringify({ message: text, mode: "queue", humanRequested: true }) });
+      setComposer((current) => current === draft ? "" : current);
+      await loadDetails(activeKey);
+    } finally { setSending(false); }
   };
   const scrollToBottom = () => {
     const element = chatScrollRef.current;

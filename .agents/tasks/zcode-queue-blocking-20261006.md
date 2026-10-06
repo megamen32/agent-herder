@@ -84,3 +84,12 @@ reviewed bounded checks after shared heavy slot release, then coherent runtime
 and fresh same-ID signedchoice/duplicate capture. Existing typed source/hold
 contracts must remain intact. No browser/build while AutoFind fulltest2git
 owns sharedheavy slot737877/737878 (start17:43:22MSK), per coordinated window.
+
+Root released ONLY main.tsx sendMessage for confirmed failed-POST draft loss:
+keep the composer until successful submission, then clear only if its value
+still equals the submitted draft. Request body, explicit-human flag, native
+identity, source/hold guards stay unchanged. The earlier static isResumeMode
+claim was withdrawn: nonempty composer already routes to message submission.
+No runAction change. Runtime proof after root's coherent build will intercept
+502 only on the owned canary endpoint (no native retry), verify draft retained,
+then intercept200 and verify unchanged draft cleared. No broad/mirror suite.
