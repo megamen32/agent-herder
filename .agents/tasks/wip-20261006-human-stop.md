@@ -154,3 +154,44 @@ account/chat; latest-request-wins fixes the race. First documented complaint
 Oct5 07:49UTC predates today's performance work; initial failure time is unknown.
 Source main99e0ae is clean per owning-root handoff; deployment of later message
 edit support remains separately owned, not part of the restored-button claim.
+
+Native callback and signed delivery acceptance (e55429b runtime3722532):
+- Actual same-ID Codex MCP delivery contained the Russian AI sender name,
+  full root session ID, canonical copyable URL and correct reverse reply route.
+  Automatic follow-up AUTO_SIGNED_MESSAGE_OK_20261006 received its native
+  assistant reply; the digest of the actual final delivered body, including
+  signature, matched generatedInputs. The initial deliberate human resume was
+  not classified as automation. No business messages or new chats.
+- Manifest compatibility cfdd2c2 and official plugin refresh still did not
+  make Herder plugin hooks visible in native hooks/list. Added the supported
+  user UserPromptSubmit callback through installer0c7e3d0, preserving all other
+  handlers and the disabled legacy Stop hook. Native CLI /hooks reviewed and
+  trusted only this exact new definition; seven unrelated hooks stayed
+  untrusted. Callback hash1f0f16111b7c9bea03fa7c075187ddf80e2dff4d0f9e3ff7698075b378c7a958.
+- Before new native CLI input, consume=0 held=true. A typed prompt in original
+  Codex01a11036 triggered the actual callback and produced
+  NATIVE_USER_RELEASE_OK_20261006; the durable row changed to held=false,
+  clearedBy=new-user-prompt at2026-10-06T12:43:34.349Z. No Herder
+  humanRequested RPC or guessed transcript release was used for this proof.
+  Repeated idle Stop200 restored the hold afterwards.
+- Own temporary Autopilot overrides restored: Codex inherits the original
+  enabled policy; ZCode retains its original enabled per-session setting/CWD.
+  Holds remain intact. Global Autocontinue/watchdog settings were not changed.
+- Own finished Codex test thread archived via API200; later exact-ID details
+  returned200/history retained. Peer immediate archival read exposed a60s
+  stale rollout-path cache; archive presence does not prove which racing actor
+  committed the archive. Do not replay that mutation. Fix exact-ID reads from
+  authoritative SQLite on ENOENT and retain unknown-stop failure semantics.
+- Native daemon3673547 began2026-10-06 15:17:34MSK, before our Herder restart
+  at15:23:51MSK; old2262581 had disappeared. No native daemon restart was
+  requested here. Do not claim that old PID was preserved throughout.
+
+Mac-native log acceptance remains externally blocked:
+- Canonical reverseSSH127.0.0.1:2222 accepted then closed before key exchange;
+  permitted recoveryLAN192.168.2.8:22 reset the connection. Registered Mac
+  Tailscale100.84.94.127 reportsOnline=false. No alternate device/phone used.
+- Smallest next step: make the actual Mac reachable and verify hostname
+  MacBook-Pro-User.local, then read its native Codex errors and reproduce the
+  affected Mac interface. A text availability question is pending; elapsed
+  time is not an answer. Server/native-ID/browser stop acceptance is separate
+  from this unverified Mac interface claim.
