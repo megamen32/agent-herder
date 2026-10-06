@@ -40,6 +40,7 @@ const snapshot = {
 
 class FakeClient implements ZcodeClientLike {
   readonly calls: Array<{ channel: string; method: string; args: unknown[] }> = [];
+  nativeEvents: Array<Record<string, unknown>> = [];
   started = false;
   closed = false;
   readonly listeners: Array<{ channel: string; event: string; arg: unknown; handler: (payload: unknown) => void }> = [];
@@ -63,7 +64,7 @@ class FakeClient implements ZcodeClientLike {
     if (channel === "zcode-agent" && method === "readSessionEvents") {
       const accepted = [...this.calls].reverse().find((call) => call.channel === "zcode-agent" && call.method === "sendPrompt");
       const inputId = (accepted?.args[0] as { inputId?: string } | undefined)?.inputId;
-      return inputId ? [{
+      const acceptedEvent = inputId ? [{
         type: "turn.started",
         eventId: `turn-started-${inputId}`,
         sessionId: (accepted?.args[0] as { sessionId?: string }).sessionId,
@@ -72,6 +73,7 @@ class FakeClient implements ZcodeClientLike {
         timestamp: Date.now(),
         payload: { inputId },
       }] : [];
+      return { events: [...this.nativeEvents, ...acceptedEvent] };
     }
     if (channel === "zcode-agent" && method === "readWorkspaceState") return { settings: { model: { current: session.model, available: [{ ref: session.model, label: "GLM-4.5" }] } } };
     if (channel === "zcode-agent" && method === "resumeSession") return snapshot;
@@ -422,25 +424,200 @@ describe("ZCode adapter", () => {
     });
   });
 
-  it("normalizes native zcode-task event subscriptions", async () => {
+  it("preserves native cancellation, sequence, and ordinary terminal outcomes", async () => {
     const client = new FakeClient();
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
-    const events: Array<{ kind: string; sessionId?: string; nativeType?: string }> = [];
+    const events: Array<{ kind: string; sessionId?: string; nativeType?: string; data?: Record<string, unknown> }> = [];
     const stop = adapter.subscribeEvents((event) => events.push(event));
     await adapter.init();
     await adapter.listSessions();
     expect(client.listeners).toHaveLength(0);
-    await adapter.resumeSession("session-1");
+    await adapter.getSession("session-1");
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(client.listeners).toHaveLength(1);
-    expect(client.listeners[0]).toMatchObject({ channel: "zcode-task", event: "onDynamicTaskEvent" });
-    client.listeners[0].handler({ type: "task_complete" });
-    client.listeners[0].handler({ type: "message_delta" });
+    expect(client.listeners[0]).toMatchObject({
+      channel: "zcode-agent",
+      event: "onDynamicSessionEvent",
+      arg: { sessionId: "session-1", deliveryKind: "replayable", afterSeq: 2, includeSnapshot: true },
+    });
+    client.listeners[0].handler({ type: "session.event", event: {
+      type: "turn.completed", eventId: "zcode-stop-1", sessionId: "session-1", turnId: "turn-1", seq: 3,
+      timestamp: 1_700_000_020_000, payload: { response: "", tokenCount: 0, toolCallCount: 0, duration: 0, resultType: "cancelled" },
+    } });
+    client.listeners[0].handler({ type: "session.event", event: {
+      type: "turn.completed", eventId: "zcode-done-1", sessionId: "session-1", turnId: "turn-2", seq: 4,
+      timestamp: 1_700_000_030_000, payload: { response: "done", tokenCount: 0, toolCallCount: 0, duration: 0, resultType: "success" },
+    } });
+    client.listeners[0].handler({ type: "session.event", event: {
+      type: "turn.failed", eventId: "zcode-error-1", sessionId: "session-1", turnId: "turn-3", seq: 5,
+      timestamp: 1_700_000_040_000, payload: { turnPhase: "execution", error: { type: "provider_error", message: "failed" } },
+    } });
+    client.listeners[0].handler({ type: "session.event", event: {
+      type: "message.upserted", eventId: "zcode-message-1", sessionId: "session-1", turnId: "turn-3", seq: 6,
+      timestamp: 1_700_000_041_000, payload: { content: "partial" },
+    } });
     expect(events).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "process.connected" }),
-      expect.objectContaining({ kind: "turn.completed", sessionId: "session-1", nativeType: "task_complete" }),
-      expect.objectContaining({ kind: "message.updated", sessionId: "session-1", nativeType: "message_delta" }),
+      expect.objectContaining({
+        kind: "turn.completed", sessionId: "session-1", nativeType: "turn.completed",
+        data: expect.objectContaining({ nativeType: "turn.completed", turnId: "turn-1", nativeResultType: "cancelled", nativeEventSeq: 3, automationStop: { id: "zcode-stop-1", at: new Date(1_700_000_020_000).toISOString(), reason: "cancelled", turnId: "turn-1" } }),
+      }),
+      expect.objectContaining({ kind: "turn.completed", sessionId: "session-1", nativeType: "turn.completed", data: expect.not.objectContaining({ automationStop: expect.anything() }) }),
+      expect.objectContaining({ kind: "turn.failed", sessionId: "session-1", nativeType: "turn.failed", status: "error" }),
+      expect.objectContaining({ kind: "message.updated", sessionId: "session-1", nativeType: "message.upserted" }),
     ]));
     stop();
+  });
+
+  it("replays a native stop across adapter restart and ignores a newer generated prompt", async () => {
+    const human = {
+      info: {
+        messageId: "human-before-stop", sessionId: "session-1", role: "user", time: { created: 1_700_000_010_000 },
+        semantics: { origin: "real_user", kind: "user_prompt" }, metadata: { inputId: "native-user-input" },
+      },
+      parts: [{ type: "text", text: "Please continue manually" }],
+    };
+    const generated = {
+      info: {
+        messageId: "generated-after-stop", sessionId: "session-1", role: "user", time: { created: 1_700_000_030_000 },
+        semantics: { origin: "real_user", kind: "user_prompt" }, metadata: { inputId: "agent-herder:auto:generated-1" },
+      },
+      parts: [{ type: "text", text: "Continue automatically" }],
+    };
+    class PersistedNativeHistoryClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSession") {
+          this.calls.push({ channel, method, args });
+          return { ...snapshot, runtime: { ...snapshot.runtime, eventSeq: 3 }, messages: [human, generated] };
+        }
+        if (channel === "zcode-agent" && method === "readSessionEvents") {
+          this.calls.push({ channel, method, args });
+          return { events: [
+            { type: "turn.started", eventId: "human-start", sessionId: "session-1", turnId: "turn-human", seq: 1, timestamp: 1_700_000_010_000, payload: { messageId: "human-before-stop", inputId: "native-user-input" } },
+            { type: "turn.completed", eventId: "human-stop", sessionId: "session-1", turnId: "turn-human", seq: 2, timestamp: 1_700_000_020_000, payload: { response: "", tokenCount: 0, toolCallCount: 0, duration: 0, resultType: "cancelled" } },
+            { type: "turn.started", eventId: "auto-start", sessionId: "session-1", turnId: "turn-auto", seq: 3, timestamp: 1_700_000_030_000, payload: { messageId: "generated-after-stop", inputId: "agent-herder:auto:generated-1" } },
+          ] };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new PersistedNativeHistoryClient() });
+    await adapter.init();
+    await expect(adapter.getSession("session-1")).resolves.toMatchObject({
+      meta: {
+        automationStop: { id: "human-stop", at: new Date(1_700_000_020_000).toISOString(), reason: "cancelled", turnId: "turn-human" },
+        automationStopSequence: 2,
+        automationStopHistoryAvailable: true,
+        latestUserPrompt: { id: "human-before-stop", turnId: "turn-human" },
+        latestUserPromptSequence: 1,
+      },
+    });
+    await adapter.dispose();
+  });
+
+  it("clears a replayed native stop only after a newer explicit human prompt", async () => {
+    const oldHuman = {
+      info: { messageId: "human-old", sessionId: "session-1", role: "user", time: { created: 1_700_000_010_000 }, semantics: { origin: "real_user", kind: "user_prompt" } },
+      parts: [{ type: "text", text: "old request" }],
+    };
+    const newHuman = {
+      info: { messageId: "human-new", sessionId: "session-1", role: "user", time: { created: 1_700_000_030_000 }, semantics: { origin: "real_user", kind: "user_prompt" }, metadata: { inputId: "native-human-new" } },
+      parts: [{ type: "text", text: "I am explicitly asking again" }],
+    };
+    class NewHumanPromptClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSession") {
+          this.calls.push({ channel, method, args });
+          return { ...snapshot, runtime: { ...snapshot.runtime, eventSeq: 3 }, messages: [oldHuman, newHuman] };
+        }
+        if (channel === "zcode-agent" && method === "readSessionEvents") {
+          this.calls.push({ channel, method, args });
+          return { events: [
+            { type: "turn.started", eventId: "old-start", sessionId: "session-1", turnId: "turn-old", seq: 1, timestamp: 1_700_000_010_000, payload: { messageId: "human-old" } },
+            { type: "turn.completed", eventId: "old-stop", sessionId: "session-1", turnId: "turn-old", seq: 2, timestamp: 1_700_000_020_000, payload: { response: "", tokenCount: 0, toolCallCount: 0, duration: 0, resultType: "cancelled" } },
+            { type: "turn.started", eventId: "new-start", sessionId: "session-1", turnId: "turn-new", seq: 3, timestamp: 1_700_000_030_000, payload: { messageId: "human-new", inputId: "native-human-new" } },
+          ] };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new NewHumanPromptClient() });
+    await adapter.init();
+    await expect(adapter.getSession("session-1")).resolves.toMatchObject({
+      meta: { automationStopHistoryAvailable: true, latestUserPrompt: { id: "human-new", turnId: "turn-new" } },
+    });
+    const sessionResult = await adapter.getSession("session-1");
+    expect(sessionResult?.meta?.automationStop).toBeUndefined();
+    await adapter.dispose();
+  });
+
+  it("tags only generated native input IDs and keeps explicit human IDs unchanged", async () => {
+    const client = new FakeClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+    await adapter.sendMessage("session-1", { message: "generated prompt", inputId: "generated-id" });
+    await adapter.sendMessage("session-1", { message: "human prompt", inputId: "human-id", origin: "human" });
+    expect(client.calls.filter((call) => call.method === "sendPrompt").map((call) => (call.args[0] as { inputId: string }).inputId))
+      .toEqual(["agent-herder:auto:generated-id", "human-id"]);
+    await adapter.dispose();
+  });
+
+  it("discards queued generated prompts when a native stop arrives", async () => {
+    class BusyQueuedClient extends FakeClient {
+      sendPromptCalls = 0;
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "sendPrompt") {
+          this.calls.push({ channel, method, args });
+          this.sendPromptCalls += 1;
+          throw new Error("prompt is already running");
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new BusyQueuedClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    const unsubscribe = adapter.subscribeEvents(() => undefined);
+    await adapter.init();
+    await adapter.getSession("session-1");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await expect(adapter.sendMessage("session-1", { message: "queued automation", queue: true })).resolves.toEqual({ ok: true });
+    client.listeners[0]!.handler({ type: "session.event", event: {
+      type: "turn.completed", eventId: "queue-stop", sessionId: "session-1", turnId: "turn-queue", seq: 3,
+      timestamp: 1_700_000_050_000, payload: { response: "", tokenCount: 0, toolCallCount: 0, duration: 0, resultType: "cancelled" },
+    } });
+    await new Promise((resolve) => setTimeout(resolve, 1_050));
+    expect(client.sendPromptCalls).toBe(1);
+    unsubscribe();
+    await adapter.dispose();
+  });
+
+  it("does not mislabel a native cancellation matched to a Herder stop as a human stop", async () => {
+    class ActiveTurnClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSession") {
+          this.calls.push({ channel, method, args });
+          return { ...snapshot, runtime: { ...snapshot.runtime, activeTurnId: "turn-active" } };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new ActiveTurnClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    const events: Array<{ data?: Record<string, unknown> }> = [];
+    const unsubscribe = adapter.subscribeEvents((event) => events.push(event));
+    await adapter.init();
+    await adapter.getSession("session-1");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await expect(adapter.cancelTurn("session-1")).resolves.toEqual({ ok: true });
+    client.listeners[0]!.handler({ type: "session.event", event: {
+      type: "turn.completed", eventId: "internal-stop", sessionId: "session-1", turnId: "turn-active", seq: 3,
+      timestamp: 1_700_000_060_000, payload: { response: "", tokenCount: 0, toolCallCount: 0, duration: 0, resultType: "cancelled" },
+    } });
+    expect(events.at(-1)?.data).toMatchObject({ herderCancellation: true, nativeEventSeq: 3 });
+    expect(events.at(-1)?.data?.automationStop).toBeUndefined();
+    unsubscribe();
+    await adapter.dispose();
   });
 
   it("does not start the app-server during passive model discovery", async () => {
@@ -836,7 +1013,7 @@ describe("ZCode adapter", () => {
                   messageId: "user-current",
                   sessionId: "session-1",
                   role: "user",
-                  metadata: { inputId },
+                  metadata: { inputId: (this.calls.find((call) => call.method === "sendPrompt")?.args[0] as { inputId: string }).inputId },
                 },
                 parts: [{ type: "text", text: "snapshot fallback prompt" }],
               },
@@ -1006,7 +1183,7 @@ describe("ZCode adapter", () => {
     })).resolves.toEqual({ ok: true });
     expect(client.calls.find((call) => call.method === "sendPrompt")?.args[0]).toMatchObject({
       sessionId: "session-1",
-      inputId: "handoff-operation-1",
+      inputId: "agent-herder:auto:handoff-operation-1",
     });
     await expect(adapter.getMessageAdmission("session-1", "handoff-operation-1"))
       .resolves.toEqual({ state: "admitted" });

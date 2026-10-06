@@ -68,9 +68,36 @@ interface ZcodeMessage {
     role?: string;
     time?: { created?: number | string };
     metadata?: Record<string, unknown>;
+    semantics?: { origin?: string; kind?: string; source?: string };
+    source?: string;
+    synthetic?: boolean;
+    visibility?: string;
     cost?: number;
   };
   parts?: Array<Record<string, unknown>>;
+}
+
+interface ZcodeSessionEvent {
+  eventId?: string;
+  sessionId?: string;
+  turnId?: string;
+  seq?: number;
+  timestamp?: number | string;
+  type?: string;
+  payload?: Record<string, unknown>;
+}
+
+interface AutomationStopMarker {
+  id: string;
+  at: string;
+  reason: "cancelled";
+  turnId?: string;
+}
+
+interface LatestUserPrompt {
+  id: string;
+  at: string;
+  turnId?: string;
 }
 
 interface ZcodeSnapshot {
@@ -126,6 +153,22 @@ function timestamp(value: unknown, fallback = Date.now()): string {
     if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
   }
   return new Date(fallback).toISOString();
+}
+
+function exactTimestamp(value: unknown): string | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return new Date(value).toISOString();
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
+  }
+  return undefined;
+}
+
+const AGENT_HERDER_AUTOMATION_INPUT_PREFIX = "agent-herder:auto:";
+
+function zcodeInputId(inputId: string, origin: "human" | "automation"): string {
+  if (origin === "human" || inputId.startsWith(AGENT_HERDER_AUTOMATION_INPUT_PREFIX)) return inputId;
+  return `${AGENT_HERDER_AUTOMATION_INPUT_PREFIX}${inputId}`;
 }
 
 function modelName(model: ZcodeModelRef | undefined): string | undefined {
@@ -276,6 +319,79 @@ function mapMessage(message: ZcodeMessage, index: number): SessionMessageView {
   };
 }
 
+function sessionEventsFromPayload(payload: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(payload)) return payload.filter((event): event is Record<string, unknown> => Boolean(event) && typeof event === "object");
+  const events = record(payload).events;
+  return Array.isArray(events)
+    ? events.filter((event): event is Record<string, unknown> => Boolean(event) && typeof event === "object")
+    : [];
+}
+
+function nativeSessionEvent(value: unknown): Record<string, unknown> | undefined {
+  const root = record(value);
+  if (root.type === "session.event" && root.event && typeof root.event === "object") return record(root.event);
+  return typeof root.type === "string" && typeof root.eventId === "string" ? root : undefined;
+}
+
+function automationStopFromEvent(value: unknown): (AutomationStopMarker & { seq?: number }) | undefined {
+  const event = nativeSessionEvent(value);
+  if (!event || event.type !== "turn.completed") return undefined;
+  if (record(event.payload).resultType !== "cancelled") return undefined;
+  const id = nonEmptyString(event.eventId);
+  const at = exactTimestamp(event.timestamp);
+  if (!id || !at) return undefined;
+  const turnId = nonEmptyString(event.turnId);
+  const seq = typeof event.seq === "number" && Number.isInteger(event.seq) && event.seq >= 0 ? event.seq : undefined;
+  return { id, at, reason: "cancelled", ...(turnId ? { turnId } : {}), ...(seq !== undefined ? { seq } : {}) };
+}
+
+function latestExplicitUserPrompt(messages: ZcodeMessage[], events: Array<Record<string, unknown>>): (LatestUserPrompt & { seq?: number }) | undefined {
+  for (const message of [...messages].reverse()) {
+    const info = record(message.info);
+    const semantics = record(info.semantics);
+    const metadata = record(info.metadata);
+    const inputId = nonEmptyString(metadata.inputId);
+    const id = nonEmptyString(info.messageId);
+    const start = id ? events.map(nativeSessionEvent).find((event) => {
+      const payload = record(event?.payload);
+      return event?.type === "turn.started" && nonEmptyString(payload.messageId) === id;
+    }) : undefined;
+    const startPayload = record(start?.payload);
+    const originMeta = record(startPayload.originMeta);
+    if (info.role !== "user"
+      || semantics.origin !== "real_user"
+      || semantics.kind !== "user_prompt"
+      || info.synthetic === true
+      || info.visibility === "model-only"
+      || nonEmptyString(info.source)
+      || nonEmptyString(metadata.automationId)
+      || nonEmptyString(metadata.offPeakTaskId)
+      || nonEmptyString(startPayload.inputSource)
+      || nonEmptyString(originMeta.automationId)
+      || nonEmptyString(originMeta.offPeakTaskId)
+      || (inputId && inputId.startsWith(AGENT_HERDER_AUTOMATION_INPUT_PREFIX))) continue;
+    const at = exactTimestamp(record(info.time).created);
+    if (!id || !at) continue;
+    const seq = typeof start?.seq === "number" && Number.isInteger(start.seq) && start.seq >= 0 ? start.seq : undefined;
+    const turnId = nonEmptyString(start?.turnId) || nonEmptyString(metadata.turnId);
+    return { id, at, ...(turnId ? { turnId } : {}), ...(seq !== undefined ? { seq } : {}) };
+  }
+  return undefined;
+}
+
+function currentAutomationStop(events: Array<Record<string, unknown>>, latestPrompt?: LatestUserPrompt & { seq?: number }): AutomationStopMarker | undefined {
+  for (const rawEvent of [...events].reverse()) {
+    const marker = automationStopFromEvent(rawEvent);
+    if (!marker) continue;
+    const nativeSeq = (marker as AutomationStopMarker & { seq?: number }).seq;
+    if (latestPrompt && ((nativeSeq !== undefined && latestPrompt.seq !== undefined && latestPrompt.seq > nativeSeq)
+      || (latestPrompt.seq === undefined && Date.parse(latestPrompt.at) > Date.parse(marker.at)))) return undefined;
+    const { seq: _seq, ...publicMarker } = marker as AutomationStopMarker & { seq?: number };
+    return publicMarker;
+  }
+  return undefined;
+}
+
 function sessionInfoFromPayload(payload: unknown): ZcodeSessionInfo | undefined {
   const root = record(payload);
   const nested = record(root.session);
@@ -296,7 +412,13 @@ function sessionInfoFromPayload(payload: unknown): ZcodeSessionInfo | undefined 
   } : undefined;
 }
 
-function mapSession(payload: unknown, fallbackCwd: string, fallbackTitle?: string): AgentSession {
+function mapSession(
+  payload: unknown,
+  fallbackCwd: string,
+  fallbackTitle?: string,
+  nativeEvents: Array<Record<string, unknown>> = [],
+  nativeEventHistoryAvailable = false,
+): AgentSession {
   const root = record(payload);
   const session = sessionInfoFromPayload(payload);
   if (!session) throw new Error("ZCode returned a session payload without sessionId");
@@ -315,6 +437,11 @@ function mapSession(payload: unknown, fallbackCwd: string, fallbackTitle?: strin
     ? (record(root.runtime).pendingRequestIds as unknown[]).filter((id): id is string => typeof id === "string")
     : [];
   const costUsd = messages.reduce((sum, message) => sum + (typeof record(message.info).cost === "number" ? record(message.info).cost as number : 0), 0);
+  const latestUserPrompt = latestExplicitUserPrompt(messages, nativeEvents);
+  const automationStop = currentAutomationStop(nativeEvents, latestUserPrompt);
+  const automationStopSequence = automationStop
+    ? nativeEvents.map(nativeSessionEvent).find((event) => event?.eventId === automationStop.id)?.seq
+    : undefined;
   const meta: Record<string, unknown> = {
     sessionKind: session.sessionKind,
     mode: session.mode,
@@ -326,6 +453,11 @@ function mapSession(payload: unknown, fallbackCwd: string, fallbackTitle?: strin
     parentSessionId: session.parentSessionId,
     workspaceIdentity: nonEmptyString(workspace.workspaceIdentity),
     pendingRequestIds,
+    automationStop,
+    automationStopSequence: typeof automationStopSequence === "number" ? automationStopSequence : undefined,
+    automationStopHistoryAvailable: nativeEventHistoryAvailable,
+    latestUserPrompt: latestUserPrompt ? { id: latestUserPrompt.id, at: latestUserPrompt.at, ...(latestUserPrompt.turnId ? { turnId: latestUserPrompt.turnId } : {}) } : undefined,
+    latestUserPromptSequence: latestUserPrompt?.seq,
   };
   const rawStatus = mapStatus(session.status);
   // Preferred source: the hook-fed lifecycle registry observes real session
@@ -403,17 +535,12 @@ function snapshotConfirmsPromptTurnStarted(
   });
 }
 
-function sessionEventsFromPayload(payload: unknown): Array<Record<string, unknown>> {
-  if (Array.isArray(payload)) return payload.filter((event): event is Record<string, unknown> => Boolean(event) && typeof event === "object");
-  const events = record(payload).events;
-  return Array.isArray(events)
-    ? events.filter((event): event is Record<string, unknown> => Boolean(event) && typeof event === "object")
-    : [];
-}
-
 function normalizeZcodeTaskEvent(sessionId: string, payload: unknown): HarnessEvent | null {
-  const root = record(payload);
-  const nativeType = nonEmptyString(root.type) || nonEmptyString(record(root.event).type) || "task.event";
+  const envelope = record(payload);
+  if (envelope.type === "snapshot") return null;
+  const rawNativeEvent = nativeSessionEvent(payload);
+  const root = rawNativeEvent || envelope;
+  const nativeType = nonEmptyString(root.type) || "task.event";
   const lower = nativeType.toLowerCase();
   let kind: HarnessEvent["kind"];
   let status: AgentSession["status"] | undefined;
@@ -425,15 +552,40 @@ function normalizeZcodeTaskEvent(sessionId: string, payload: unknown): HarnessEv
   else if (/message|text|reasoning|tool|delta|stream/.test(lower)) kind = "message.updated";
   else if (/session.*(closed|deleted)/.test(lower)) kind = "session.deleted";
   else kind = "session.updated";
-  const inputId = nonEmptyString(root.inputId) || nonEmptyString(record(root.payload).inputId);
+  const payloadData = record(root.payload);
+  const inputId = nonEmptyString(root.inputId) || nonEmptyString(payloadData.inputId) || nonEmptyString(envelope.inputId);
+  const resultType = nonEmptyString(payloadData.resultType) || nonEmptyString(envelope.stopReason);
+  const exactStop = rawNativeEvent ? automationStopFromEvent({ type: "session.event", event: rawNativeEvent }) : undefined;
+  const legacyStopAt = exactTimestamp(envelope.timestamp);
+  const legacyStopId = nonEmptyString(envelope.eventId) || nonEmptyString(envelope.turnId) || nonEmptyString(envelope.traceId) || inputId;
+  const legacyStop = !rawNativeEvent && kind === "turn.completed" && resultType === "cancelled" && legacyStopAt && legacyStopId
+    ? { id: legacyStopId, at: legacyStopAt, reason: "cancelled" as const, ...(nonEmptyString(envelope.turnId) ? { turnId: nonEmptyString(envelope.turnId) } : {}) }
+    : undefined;
+  const automationStop: AutomationStopMarker | undefined = exactStop
+    ? { id: exactStop.id, at: exactStop.at, reason: exactStop.reason, ...(exactStop.turnId ? { turnId: exactStop.turnId } : {}) }
+    : legacyStop;
+  const eventTimestamp = rawNativeEvent?.timestamp ?? envelope.timestamp;
+  const at = exactTimestamp(eventTimestamp) || new Date().toISOString();
   return {
     kind,
     harness: "zcode",
     sessionId,
     nativeType,
-    status,
-    at: new Date().toISOString(),
-    data: { nativeType, ...(inputId ? { inputId } : {}) },
+    status: automationStop ? "stopped" : status,
+    at,
+    data: {
+      nativeType,
+      ...(inputId ? { inputId } : {}),
+      ...(resultType ? { nativeResultType: resultType } : {}),
+      ...(nonEmptyString(rawNativeEvent?.eventId) ? { nativeEventId: nonEmptyString(rawNativeEvent?.eventId) } : {}),
+      ...(nonEmptyString(rawNativeEvent?.turnId) || nonEmptyString(envelope.turnId)
+        ? { turnId: nonEmptyString(rawNativeEvent?.turnId) || nonEmptyString(envelope.turnId) }
+        : {}),
+      ...(rawNativeEvent && typeof rawNativeEvent.seq === "number" ? { nativeEventSeq: rawNativeEvent.seq } : {}),
+      ...(automationStop ? { automationStop } : {}),
+      ...(nonEmptyString(payloadData.inputSource) ? { inputSource: nonEmptyString(payloadData.inputSource) } : {}),
+      ...(nonEmptyString(payloadData.messageId) ? { messageId: nonEmptyString(payloadData.messageId) } : {}),
+    },
   };
 }
 
@@ -497,6 +649,8 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly turnStartWaiters = new Map<string, (result: { ok: boolean; error?: string }) => void>();
   private reportedEmptyTasksIndex = false;
   private readonly sessionWorkspaces = new Map<string, ZcodeWorkspaceRef>();
+  private readonly sessionEventCursors = new Map<string, number>();
+  private readonly locallyCancelledSessions = new Map<string, { requestedAt: number; turnId?: string }>();
   /** Read-after-write identity for sessions created before the task index catches up. */
   private readonly createdSessions = new Map<string, AgentSession>();
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
@@ -851,9 +1005,30 @@ export class ZcodeAdapter implements HarnessAdapter {
     for (const workspace of await this.workspaceCandidates(this.sessionWorkspaces.get(id)?.workspacePath)) {
       try {
         const snapshot = await this.readSnapshot(id, workspace);
+        let nativeEvents: Array<Record<string, unknown>> = [];
+        let nativeEventHistoryAvailable = false;
+        try {
+          const eventSeq = snapshot.runtime?.eventSeq ?? 0;
+          const afterSeq = Math.max(0, eventSeq - 200);
+          nativeEvents = sessionEventsFromPayload(await this.callAgent("readSessionEvents", {
+            ...workspace,
+            sessionId: id,
+            afterSeq,
+            limit: 200,
+          })).sort((left, right) => Number(left.seq ?? 0) - Number(right.seq ?? 0));
+          const lastSeq = nativeEvents.length > 0 ? Number(nativeEvents.at(-1)?.seq) : 0;
+          const firstSeq = nativeEvents.length > 0 ? Number(nativeEvents[0]?.seq) : 0;
+          nativeEventHistoryAvailable = eventSeq === 0
+            || (eventSeq <= 200 && lastSeq >= eventSeq && firstSeq <= 1);
+        } catch {
+          // Missing native event history is not proof that no human stop occurred.
+        }
         this.sessionWorkspaces.set(id, workspace);
-        this.ensureSessionEventSubscription(id, workspace);
-        return mapSession(snapshot, workspace.workspacePath);
+        const eventSeq = snapshot.runtime?.eventSeq ?? 0;
+        this.sessionEventCursors.set(id, eventSeq);
+        const mapped = mapSession(snapshot, workspace.workspacePath, undefined, nativeEvents, nativeEventHistoryAvailable);
+        this.ensureSessionEventSubscription(id, workspace, eventSeq);
+        return mapped;
       } catch {
         continue;
       }
@@ -904,9 +1079,10 @@ export class ZcodeAdapter implements HarnessAdapter {
     }
     this.sessionWorkspaces.set(info.sessionId, workspace);
     this.desiredSessionTitles.set(info.sessionId, options.name);
-    this.ensureSessionEventSubscription(info.sessionId, workspace);
+    this.sessionEventCursors.set(info.sessionId, record(record(snapshot).runtime).eventSeq as number || 0);
+    this.ensureSessionEventSubscription(info.sessionId, workspace, this.sessionEventCursors.get(info.sessionId));
     this.emitEvent({ kind: "session.created", harness: "zcode", sessionId: info.sessionId, status: "idle" });
-    const created = { ...mapSession(snapshot, workspace.workspacePath, options.name), title: options.name };
+    const created = { ...mapSession(snapshot, workspace.workspacePath, options.name, [], true), title: options.name };
     this.createdSessions.set(created.id, created);
     return created;
   }
@@ -925,6 +1101,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
+    const origin = options.origin === "human" ? "human" : "automation";
     const send = async (): Promise<{
       ok: boolean;
       error?: string;
@@ -935,7 +1112,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       const baseline = await this.readCurrentSnapshot(id);
       const permissionError = this.pendingPermissionError(baseline);
       if (permissionError) return { ok: false, error: permissionError };
-      const inputId = options.inputId || randomUUID();
+      const inputId = zcodeInputId(options.inputId || randomUUID(), origin);
       try {
         const workspace = this.sessionWorkspaces.get(id) || this.workspace();
         const ack = record(await this.callAgent("sendPrompt", {
@@ -1070,11 +1247,15 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   private async stopGeneration(id: string): Promise<ControlResult> {
+    const before = await this.readCurrentSnapshot(id).catch(() => undefined);
+    const turnId = nonEmptyString(record(record(before).runtime).activeTurnId);
+    this.locallyCancelledSessions.set(id, { requestedAt: Date.now(), ...(turnId ? { turnId } : {}) });
     try {
       const workspace = this.sessionWorkspaces.get(id) || this.workspace();
       await this.callTask("stopGeneration", { ...workspace, taskId: id });
       return { ok: true };
     } catch (error) {
+      this.locallyCancelledSessions.delete(id);
       const message = error instanceof Error ? error.message : String(error);
       if (/timed out/i.test(message)) {
         // A provider request can wedge the single ZCode app-server so even
@@ -1131,7 +1312,8 @@ export class ZcodeAdapter implements HarnessAdapter {
     }
     let admitted = false;
     for (const event of events) {
-      if (nonEmptyString(record(event.payload).inputId) !== inputId) continue;
+      const nativeInputId = nonEmptyString(record(event.payload).inputId);
+      if (nativeInputId !== inputId && nativeInputId !== zcodeInputId(inputId, "automation")) continue;
       const type = nonEmptyString(event.type);
       if (type === "turn.failed") {
         return { state: "failed", error: "ZCode native turn failed after admission" };
@@ -1332,7 +1514,9 @@ export class ZcodeAdapter implements HarnessAdapter {
       const snapshot = await this.callAgent("resumeSession", { ...workspace, sessionId: id });
       this.sessionWorkspaces.set(id, workspace);
       if (!sessionInfoFromPayload(snapshot)) throw new Error("ZCode resumeSession returned no sessionId");
-      this.ensureSessionEventSubscription(id, workspace);
+      const eventSeq = record(record(snapshot).runtime).eventSeq;
+      if (typeof eventSeq === "number") this.sessionEventCursors.set(id, eventSeq);
+      this.ensureSessionEventSubscription(id, workspace, typeof eventSeq === "number" ? eventSeq : undefined);
       return { ok: true };
     } catch (error) {
       return isInactiveSessionError(error)
@@ -1433,6 +1617,7 @@ export class ZcodeAdapter implements HarnessAdapter {
         const snapshot = await this.readSnapshot(sessionId, workspace);
         if (sessionInfoFromPayload(snapshot)?.sessionId !== sessionId) continue;
         this.sessionWorkspaces.set(sessionId, workspace);
+        if (typeof snapshot.runtime?.eventSeq === "number") this.sessionEventCursors.set(sessionId, snapshot.runtime.eventSeq);
         return snapshot;
       } catch {
         // Try the next workspace known to the native session index.
@@ -1449,7 +1634,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       : undefined;
   }
 
-  private ensureSessionEventSubscription(sessionId: string, workspace: ZcodeWorkspaceRef): void {
+  private ensureSessionEventSubscription(sessionId: string, workspace: ZcodeWorkspaceRef, afterSeq = this.sessionEventCursors.get(sessionId) ?? 0): void {
     const hasTurnWaiter = [...this.turnStartWaiters.keys()].some((key) => key.startsWith(`${sessionId}:`));
     if (this.sessionEventUnsubscribers.has(sessionId) || !this.client.listen || (this.eventListeners.size === 0 && !hasTurnWaiter)) return;
     let active = true;
@@ -1457,15 +1642,26 @@ export class ZcodeAdapter implements HarnessAdapter {
     void this.client.start().then(() => {
       const stillHasTurnWaiter = [...this.turnStartWaiters.keys()].some((key) => key.startsWith(`${sessionId}:`));
       if (!active || (this.eventListeners.size === 0 && !stillHasTurnWaiter) || !this.client.listen) return;
-      const unsubscribe = this.client.listen("zcode-task", "onDynamicTaskEvent", {
-        taskId: sessionId,
+      const unsubscribe = this.client.listen("zcode-agent", "onDynamicSessionEvent", {
+        sessionId,
         workspacePath: workspace.workspacePath,
         workspaceIdentity: workspace.workspaceIdentity,
         deliveryKind: "replayable",
+        afterSeq,
+        includeSnapshot: true,
       }, (payload) => {
         const event = normalizeZcodeTaskEvent(sessionId, payload);
         if (event) {
           const inputId = nonEmptyString(record(event.data).inputId);
+          const nativeResultType = nonEmptyString(record(event.data).nativeResultType);
+          const cancelled = nativeResultType === "cancelled";
+          if (cancelled) this.clearQueuedPrompts(sessionId);
+          if (cancelled && this.isRecentHerderCancellation(sessionId, nonEmptyString(record(record(event.data).automationStop).turnId))) {
+            if (event.data) {
+              delete event.data.automationStop;
+              event.data.herderCancellation = true;
+            }
+          }
           if (inputId) {
             const waiterKey = `${sessionId}:${inputId}`;
             const waiter = this.turnStartWaiters.get(waiterKey);
@@ -1477,7 +1673,7 @@ export class ZcodeAdapter implements HarnessAdapter {
             }
           }
           this.emitEvent(event);
-          if (event.kind === "turn.completed" || event.kind === "turn.failed") this.scheduleQueuedPromptFlush(sessionId, 0);
+          if (!cancelled && (event.kind === "turn.completed" || event.kind === "turn.failed")) this.scheduleQueuedPromptFlush(sessionId, 0);
         }
       });
       this.sessionEventUnsubscribers.set(sessionId, () => { active = false; unsubscribe(); });
@@ -1486,6 +1682,24 @@ export class ZcodeAdapter implements HarnessAdapter {
       this.sessionEventUnsubscribers.delete(sessionId);
       this.emitEvent({ kind: "process.disconnected", harness: "zcode", nativeType: "event-subscription-error", data: { transport: "app-server-events", error: error instanceof Error ? error.message : String(error) } });
     });
+  }
+
+  private clearQueuedPrompts(sessionId: string): void {
+    this.queuedPrompts.delete(sessionId);
+    const timer = this.queuedPromptTimers.get(sessionId);
+    if (timer) clearTimeout(timer);
+    this.queuedPromptTimers.delete(sessionId);
+  }
+
+  private isRecentHerderCancellation(sessionId: string, turnId?: string): boolean {
+    const request = this.locallyCancelledSessions.get(sessionId);
+    if (!request || Date.now() - request.requestedAt > 60_000) {
+      this.locallyCancelledSessions.delete(sessionId);
+      return false;
+    }
+    if (!request.turnId || !turnId || request.turnId !== turnId) return false;
+    this.locallyCancelledSessions.delete(sessionId);
+    return true;
   }
 
   private emitEvent(event: HarnessEvent): void {
@@ -1595,7 +1809,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       let acceptedInputId: string | undefined;
       let acceptedStateRevision: number | undefined;
       try {
-        const inputId = randomUUID();
+        const inputId = zcodeInputId(randomUUID(), "automation");
         const ack = record(await this.callAgent("sendPrompt", {
           ...workspace,
           sessionId,
@@ -1623,7 +1837,7 @@ export class ZcodeAdapter implements HarnessAdapter {
                 return;
               }
               workspace = this.sessionWorkspaces.get(sessionId) || workspace;
-              const inputId = randomUUID();
+              const inputId = zcodeInputId(randomUUID(), "automation");
               const ack = record(await this.callAgent("sendPrompt", {
                 ...workspace,
                 sessionId,
