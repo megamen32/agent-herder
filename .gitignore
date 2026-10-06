@@ -21,3 +21,7 @@ trash/
 .agents/shared-session/knowledge/
 .agents/tasks/*-time.json
 **/__pycache__/
+
+# Scoped local browser evidence for stable timing layout (2026-10-06)
+.tmp/b/
+.tmp/ui-timings-20261006/
