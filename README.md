@@ -290,9 +290,12 @@ Restart continuation settings are available at `GET/PUT
 /api/session-autostart/sessions/{harness}/{sessionId}`. `PUT
 /api/session-autostart` persists `rolloverExpiredCache`: fresh sessions always
 resume in place; expired sessions use a new summarized handoff only when that
-switch is explicitly enabled (default off). Pending tool-permission requests
-wait for the user's answer; neither the chat title nor a stopped snapshot
-authorizes another prompt or permission approval. Autocontinue and Autopilot are separate top-level Web UI
+switch is explicitly enabled (default off). Herder-created Codex, ZCode, and
+OpenCode sessions receive native full access before their first task. Existing
+manual sessions retain their permission policy; outstanding requests still wait
+for the user. Completed assessments remain closed while semantic evidence is
+unchanged, including across terminal events and status/title/time changes. New
+user work reopens assessment; a stopped snapshot alone does not authorize a prompt. Autocontinue and Autopilot are separate top-level Web UI
 settings and never toggle each other. The independent
 durable state lives under `AGENT_HERDER_AUTOPILOT_STATE_DIR` by default.
 Recovery is sequential, retries three times with persisted exponential
@@ -312,10 +315,11 @@ Agent — and adds the messenger layer between them.
 through the harness itself (native prompt injection). The herder MCP on the
 agent side is only needed to *send* and to manage notes.
 
-**Why do headless ZCode sessions stop to ask for permission?** Harness
-policy, not the herder: each tool call can require an approval. Approve
-remotely with `respond_permission` (`remember: true` scopes the grant); the
-grant lives in the app-server process, so daemon restarts clear it.
+**How do unattended sessions get tool access?** Herder requests native full
+access at creation: ZCode uses `yolo`, Codex uses `approvalPolicy: never` with
+`danger-full-access`, and OpenCode uses a per-session allow-all ruleset. This
+applies to new Herder-created sessions. Existing manually created sessions keep
+their policy and can still require `respond_permission`.
 
 **Does `export_transcript` load everything into the model?** No. It writes the
 raw source to a CWD-scoped archive and returns only the permanent navigation
