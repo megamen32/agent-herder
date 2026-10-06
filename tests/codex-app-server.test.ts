@@ -56,7 +56,7 @@ describe("Codex app-server adapter", () => {
     db.exec("create table threads (id text, rollout_path text, cwd text, model text, preview text, updated_at_ms integer, thread_source text, agent_role text, is_pinned integer)");
     db.exec("create table thread_spawn_edges (child_thread_id text, parent_thread_id text)");
     db.prepare("insert into threads values (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
-      "thread-unix", rolloutPath, "/workspace", "gpt-test", "", Date.now(), null, null, 0,
+      "thread-unix", rolloutPath, "/workspace", null, "", Date.now(), null, null, 0,
     );
     db.close();
     const server = createServer();
@@ -72,7 +72,7 @@ describe("Codex app-server adapter", () => {
       id: "thread-unix",
       cwd: "/workspace",
       name: "Unix socket fixture",
-      model: "gpt-test",
+      model: null,
       status: "idle",
     };
     webSocketServer.on("connection", (socket) => {
@@ -132,9 +132,11 @@ describe("Codex app-server adapter", () => {
       expect(adapter.isReady()).toBe(true);
       const sessions = await adapter.listSessions();
       expect(sessions).toMatchObject([{ id: "thread-unix", title: "Unix socket fixture", status: "idle" }]);
+      expect(sessions[0]).not.toHaveProperty("model");
       expect(sessions[0].meta).not.toHaveProperty("status");
       const liveSession = await adapter.getSession("thread-unix");
       expect(liveSession).toMatchObject({ id: "thread-unix", status: "idle", needsPermission: false });
+      expect(liveSession).not.toHaveProperty("model");
       expect(liveSession?.meta).not.toHaveProperty("status");
       threadReadStatus = { type: "active", activeFlags: ["waitingOnApproval"] };
       await expect(adapter.getSession("thread-unix")).resolves.toMatchObject({

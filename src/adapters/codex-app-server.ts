@@ -29,7 +29,7 @@ interface CodexThread {
   path?: string;
   name?: string;
   preview?: string;
-  model?: string;
+  model?: string | null;
   modelProvider?: string;
   status?: string | { type?: string; activeFlags?: string[] };
   createdAt?: string | number;
@@ -43,6 +43,13 @@ interface CodexThreadPermissionState {
 
 function hasCodexFullAccess(state: CodexThreadPermissionState): boolean {
   return state.approvalPolicy === "never" && state.sandbox?.type === "dangerFullAccess";
+}
+
+function withKnownModel(session: AgentSession, model: unknown): AgentSession {
+  const normalized = { ...session };
+  if (typeof model === "string") normalized.model = model;
+  else delete normalized.model;
+  return normalized;
 }
 
 function threadTimestamp(value: string | number | undefined): string | undefined {
@@ -305,20 +312,20 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     if (!base && this.isReady()) base = (await this.listSessions()).find((session) => session.id === id) || null;
     const raw = await this.rawTranscriptAdapter.getSession(id);
-    if (!base) return raw;
+    if (!base) return raw ? withKnownModel(raw, raw.model) : null;
     if (!raw) return base;
     const rawMeta = { ...raw.meta };
     if (this.socketPath) delete rawMeta.status;
-    return {
+    const session: AgentSession = {
       ...base,
       status: !this.socketPath && raw.status === "running" ? "running" : base.status,
-      model: base.model || raw.model,
       messageCount: raw.messageCount,
       durationSec: raw.durationSec,
       costUsd: raw.costUsd,
       lastMessage: raw.lastMessage || base.lastMessage,
       meta: { ...base.meta, ...rawMeta },
     };
+    return withKnownModel(session, typeof base.model === "string" ? base.model : raw.model);
   }
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
@@ -897,7 +904,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       title: thread.name || thread.preview || "Untitled session",
       cwd: thread.cwd || thread.path || this.cwd,
       lastActivity: threadTimestamp(thread.updatedAt) || threadTimestamp(thread.createdAt) || new Date(0).toISOString(),
-      model: thread.model,
+      ...(typeof thread.model === "string" ? { model: thread.model } : {}),
       needsPermission: activeFlags.includes("waitingOnApproval"),
       lastMessage: thread.preview,
       meta: {
