@@ -1603,6 +1603,27 @@ export class UnfinishedSessionLauncher {
         const cohortManaged = activeFailedCohorts.has(cohortId);
         const cohortAwake = cohortManaged && cohortWake.get(cohortId) === true;
         if (cohortManaged && !cohortAwake) continue;
+        let previouslyCompletedMessages: SessionMessageView[] | undefined;
+        if (previous?.verdict?.verdict === "completed"
+          && previous.verdict.confidence > 0
+          && evidenceIsCurrent(previous)
+          && !durableAdmission?.acceptedAt
+          && !durableAdmission?.deliveryPending) {
+          const signalKeys = [sourceKey, sessionKey(session.harness, session.id)];
+          const signalVersions = new Map(signalKeys.map((key) => [key, this.urgentSessionVersions.get(key) ?? 0] as const));
+          const cached = cohortEvidence.get(sourceKey);
+          previouslyCompletedMessages = cached?.messages
+            ?? await sessionEvidenceMessages(adapter, session.id, runtimeSettings.evidenceMessageCount);
+          const currentTranscriptTail = cached?.transcriptTail
+            ?? completionEvidence(previouslyCompletedMessages, runtimeSettings.evidenceMessageCount);
+          if (previouslyCompletedMessages.length === 0 || currentTranscriptTail === previous.transcriptTail) {
+            await this.options.store.remove(session.harness, session.id, sessionWorkspaceIdentity(session));
+            for (const [key, assessedVersion] of signalVersions) {
+              if ((this.urgentSessionVersions.get(key) ?? 0) === assessedVersion) this.clearUrgentSession(key);
+            }
+            continue;
+          }
+        }
         const progressUnchanged = previous?.progressFingerprint === sessionInventoryProgressFingerprint(session);
         const metadataUnchanged = previous?.lastActivity === session.lastActivity
           && previous.status === session.status
@@ -1620,7 +1641,7 @@ export class UnfinishedSessionLauncher {
         const oldEnough = urgent || Date.now() - Date.parse(session.lastActivity) >= candidateDelayMs;
         if (!cohortAwake && ((session.status === "running" && !urgent) || !oldEnough)) continue;
         const cachedEvidence = cohortEvidence.get(sourceKey);
-        const messages = admissionMessages ?? cachedEvidence?.messages
+        const messages = admissionMessages ?? cachedEvidence?.messages ?? previouslyCompletedMessages
           ?? await sessionEvidenceMessages(adapter, session.id, runtimeSettings.evidenceMessageCount);
         const transcriptTail = admissionMessages
           ? completionEvidence(admissionMessages, runtimeSettings.evidenceMessageCount)
@@ -2042,7 +2063,7 @@ export class UnfinishedSessionLauncher {
           name: continuationTitle(group.topic),
           cwd: primary.session.cwd,
           model: continuationModel,
-          ...(primary.session.harness === "zcode" ? { mode: "yolo" } : {}),
+          fullAccess: true,
         });
         if (!this.lifecycleActive(lifecycleEpoch)) return;
         if (!runtimeSettings.movePinnedOnRollover) await this.pinActiveSession(primary.adapter, created.id, runtimeSettings);

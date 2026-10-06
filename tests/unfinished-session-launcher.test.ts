@@ -19,7 +19,7 @@ import {
 } from "../src/autopilot/unfinished-session-launcher.js";
 import { CacheHandoffService } from "../src/cache-handoff.js";
 import { LineageStore } from "../src/lineage-store.js";
-import type { AgentSession, HarnessAdapter, HarnessEvent } from "../src/types/index.js";
+import type { AgentSession, HarnessAdapter, HarnessEvent, SessionMessageView } from "../src/types/index.js";
 
 function fixtureSession(status: AgentSession["status"] = "idle", harness: "codex" | "zcode" = "zcode"): AgentSession {
   return {
@@ -624,7 +624,7 @@ describe("unfinished session launcher", () => {
     const created: AgentSession = { ...sessions[1]!, id: "merged-session", status: "running", title: "Автопродолжение — Восстановить отправку комментариев" };
     const names: string[] = [];
     const models: Array<string | undefined> = [];
-    const modes: Array<string | undefined> = [];
+    const fullAccess: Array<boolean | undefined> = [];
     const prompts: string[] = [];
     const adapter: HarnessAdapter = {
       type: "zcode", name: "fixture", async init() {}, async listSessions() { return sessions; },
@@ -637,7 +637,7 @@ describe("unfinished session launcher", () => {
           { id: `${id}-a2`, role: "assistant", text: `${id}-полный-ответ-2`, parts: [{ type: "text", text: `${id}-полный-ответ-2` }] },
         ];
       },
-      async createSession(options) { names.push(options.name); models.push(options.model); modes.push(options.mode); return { ...created, model: options.model }; },
+      async createSession(options) { names.push(options.name); models.push(options.model); fullAccess.push(options.fullAccess); return { ...created, model: options.model }; },
       async sendMessage(id, input) { expect(id).toBe(created.id); prompts.push(input.message); return { ok: true }; },
       async resumeSession() { return { ok: true }; }, async stopSession() { return { ok: true }; },
       async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
@@ -668,7 +668,7 @@ describe("unfinished session launcher", () => {
     }
     expect(names).toEqual(["Автопродолжение — Восстановить отправку комментариев"]);
     expect(models).toEqual(["account:zai-individual-coding-plan/GLM-5.3-Flash$high"]);
-    expect(modes).toEqual(["yolo"]);
+    expect(fullAccess).toEqual([true]);
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toMatch(/^Автопродолжение — Восстановить отправку комментариев\n\n/);
     expect(prompts[0]).toContain("исправление начато, остались тест и production-canary");
@@ -1524,6 +1524,67 @@ describe("unfinished session launcher", () => {
     await launcher.recoverPending();
     expect(plans).toBe(3);
     expect((await store.listInventory())[0]).toMatchObject({ sessionId: session.id, verdict: { verdict: "completed" } });
+  });
+
+  it("keeps an unchanged completed task closed across status churn but reopens for a new user request", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-completed-sticky-semantic-evidence-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = {
+      ...fixtureSession("idle", "codex"),
+      id: "completed-status-churn",
+      lastActivity: new Date(Date.now() - 5 * 60_000).toISOString(),
+    };
+    let messages: SessionMessageView[] = [
+      { id: "goal", role: "user", text: "Finish the export", parts: [{ type: "text", text: "Finish the export" }] },
+      { id: "result", role: "assistant", text: "Export saved and checked", parts: [{ type: "text", text: "Export saved and checked" }] },
+    ];
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    adapter.getSessionMessages = async () => messages;
+    let plans = 0;
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          plans += 1;
+          return { groups: batch.map(({ session: candidate }) => plans === 1
+            ? {
+                sourceSessionIds: [candidate.id], primarySessionId: candidate.id, verdict: "completed" as const,
+                reason: "The export is complete", confidence: 1, topic: "Export", handoff: "",
+              }
+            : {
+                sourceSessionIds: [candidate.id], primarySessionId: candidate.id, verdict: "unfinished" as const,
+                reason: "A new export was requested", confidence: 1, topic: "New export", handoff: "Run the new export request.",
+              }) };
+        },
+      },
+    });
+
+    await launcher.recoverPending();
+    expect((await store.listInventory())[0]?.verdict?.verdict).toBe("completed");
+
+    session.status = "stopped";
+    session.title = "Renamed after completion";
+    session.lastActivity = new Date().toISOString();
+    await launcher.handleEvent("codex", { kind: "turn.completed", harness: "codex", sessionId: session.id });
+    await launcher.recoverPending();
+    expect(plans).toBe(1);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await store.list()).toEqual([]);
+
+    const newRequest = "Create a second export with the latest data";
+    messages = [...messages, { id: "new-goal", role: "user", text: newRequest, parts: [{ type: "text", text: newRequest }] }];
+    session.messageCount += 1;
+    session.lastActivity = new Date(Date.now() + 1).toISOString();
+    await launcher.handleEvent("codex", { kind: "turn.completed", harness: "codex", sessionId: session.id });
+    await launcher.recoverPending();
+
+    expect(plans).toBe(2);
+    expect(calls.resumes).toBe(1);
+    expect(calls.messages).toHaveLength(1);
+    expect(calls.messages[0]).toContain("Run the new export request.");
   });
 
   it("preserves same-pipeline backoff across restart but wakes an obsolete pipeline failure once", async () => {
@@ -4238,8 +4299,9 @@ describe("unfinished session launcher", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-completed-reconcile-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
     const calls = { resumes: 0, messages: [] as string[] };
+    const session = { ...fixtureSession("idle"), lastActivity: new Date(Date.now() - 5 * 60_000).toISOString() };
     const launcher = new UnfinishedSessionLauncher({
-      adapters: new Map([["zcode", fixtureAdapter(fixtureSession("idle"), calls)]]),
+      adapters: new Map([["zcode", fixtureAdapter(session, calls)]]),
       store,
       ...enabledSettings(root),
       retryDelayMs: 0,
