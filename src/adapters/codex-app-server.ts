@@ -280,12 +280,39 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {
     await this.ensureReady();
-    const result = await this.request("thread/list", { limit: 200, archived: false }) as { data?: CodexThread[] };
-    return (result.data || [])
-      .filter((thread) => typeof thread.id === "string" && thread.name === name && thread.cwd === cwd)
+    const [listedThreads, nativeThreads] = await Promise.all([
+      this.listAllThreads(),
+      this.rawTranscriptAdapter.findNativeNamedThreads(name, cwd),
+    ]);
+    const threads = new Map(listedThreads.map((thread) => [thread.id, thread]));
+    const nativeById = new Map(nativeThreads.map((thread) => [thread.id, thread]));
+    for (const nativeThread of nativeThreads) {
+      if (threads.has(nativeThread.id)) continue;
+      try {
+        const result = await this.request("thread/read", { threadId: nativeThread.id, includeTurns: false }) as { thread?: CodexThread };
+        if (result.thread?.id === nativeThread.id) {
+          threads.set(nativeThread.id, {
+            ...result.thread,
+            name: nativeThread.name,
+            cwd: nativeThread.cwd,
+          });
+        }
+      } catch {
+        // A stale SQLite row cannot be reused unless the native server can still read its thread.
+      }
+    }
+    return [...threads.values()]
+      .filter((thread) => {
+        const nativeThread = nativeById.get(thread.id);
+        return (nativeThread?.name || thread.name) === name && (nativeThread?.cwd || thread.cwd) === cwd;
+      })
       .map((thread) => {
-        this.threads.set(thread.id, thread);
-        return this.toSession(thread);
+        const nativeThread = nativeById.get(thread.id);
+        const matched = nativeThread
+          ? { ...thread, name: nativeThread.name, cwd: nativeThread.cwd }
+          : thread;
+        this.threads.set(matched.id, matched);
+        return this.toSession(matched);
       });
   }
 

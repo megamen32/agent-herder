@@ -9,6 +9,7 @@ import { createServer as createNetServer } from "node:net";
 import { WebSocketServer } from "ws";
 import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
 import { CodexAdapter } from "../src/adapters/codex.js";
+import { createNamedSession } from "../src/named-session.js";
 
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
 
@@ -839,6 +840,64 @@ describe("Codex app-server adapter", () => {
       expect(matches).toMatchObject([{ id: created.id, title: "Fixture", cwd: "/tmp/codex-fixture" }]);
     } finally {
       await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("finds and reuses a named zero-turn thread omitted from thread/list", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-named-empty-"));
+    const cwd = join(codexDir, "workspace");
+    const socketPath = join(codexDir, "app-server.sock");
+    const name = "Previously created native thread";
+    await mkdir(cwd, { recursive: true });
+    const db = new DatabaseSync(join(codexDir, "state_5.sqlite"));
+    db.exec("create table threads (id text, name text, cwd text, archived integer, archived_at text)");
+    db.prepare("insert into threads values (?, ?, ?, ?, ?)").run("thread-zero-turn", name, cwd, 0, null);
+    db.prepare("insert into threads values (?, ?, ?, ?, ?)").run("thread-archived", name, cwd, 1, "2026-10-05T00:00:00Z");
+    db.close();
+
+    const server = createServer();
+    const webSocketServer = new WebSocketServer({ server });
+    const methods: string[] = [];
+    let createdThreads = 0;
+    webSocketServer.on("connection", (socket) => {
+      socket.on("message", (data) => {
+        const request = JSON.parse(data.toString()) as { id?: number; method?: string; params?: { threadId?: string } };
+        if (!request.method) return;
+        methods.push(request.method);
+        const reply = (result: unknown) => {
+          if (request.id !== undefined) socket.send(JSON.stringify({ id: request.id, result }));
+        };
+        if (request.method === "initialize") return reply({ userAgent: "fixture" });
+        if (request.method === "thread/list") return reply({ data: [], nextCursor: null });
+        if (request.method === "thread/read" && request.params?.threadId === "thread-zero-turn") {
+          return reply({ thread: { id: "thread-zero-turn", model: null, status: "idle" } });
+        }
+        if (request.method === "thread/start") {
+          createdThreads += 1;
+          return reply({ thread: { id: `thread-created-${createdThreads}`, name, cwd, status: "idle" } });
+        }
+        return reply({});
+      });
+    });
+    const listening = new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", socketPath, codexDir });
+    try {
+      await listening;
+      await adapter.init();
+      const matches = await adapter.findNamedSessions(name, cwd);
+      expect(matches).toMatchObject([{ id: "thread-zero-turn", title: name, cwd }]);
+      expect(matches).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "thread-archived" })]));
+      const duplicate = await createNamedSession(new Map([["codex", adapter]]), { harness: "codex", name, cwd });
+      expect(duplicate).toMatchObject({ ok: false, created: false });
+      expect(duplicate.error).toMatch(/already exists/i);
+      expect(methods.filter((method) => method === "thread/read")).toHaveLength(2);
+      expect(createdThreads).toBe(0);
+      expect(methods).not.toContain("thread/start");
+    } finally {
+      await adapter.dispose();
+      await new Promise<void>((resolve) => webSocketServer.close(() => resolve()));
+      await new Promise<void>((resolve) => server.close(() => resolve()));
       await rm(codexDir, { recursive: true, force: true });
     }
   });

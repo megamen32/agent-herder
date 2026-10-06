@@ -174,6 +174,34 @@ export class CodexAdapter implements HarnessAdapter {
     }]));
   }
 
+  async findNativeNamedThreads(name: string, cwd: string): Promise<Array<{ id: string; name: string; cwd: string }>> {
+    const databasePath = join(this.codexDir, "state_5.sqlite");
+    if (!existsSync(databasePath)) return [];
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(databasePath, { readOnly: true });
+      try {
+        db.exec("pragma busy_timeout=5000");
+        const columns = new Set((db.prepare("pragma table_info(threads)").all() as Array<{ name?: string }>)
+          .map((column) => column.name)
+          .filter((column): column is string => typeof column === "string"));
+        if (!["id", "name", "cwd"].every((column) => columns.has(column))) return [];
+        const archiveFilter = columns.has("archived")
+          ? " and (archived = 0 or archived is null)"
+          : columns.has("archived_at") ? " and archived_at is null" : "";
+        const rows = db.prepare(`select id, name, cwd from threads where name = ? and cwd = ?${archiveFilter}`)
+          .all(name, cwd) as Array<{ id?: unknown; name?: unknown; cwd?: unknown }>;
+        return rows.flatMap((row) => typeof row.id === "string" && typeof row.name === "string" && typeof row.cwd === "string"
+          ? [{ id: row.id, name: row.name, cwd: row.cwd }]
+          : []);
+      } finally {
+        db.close();
+      }
+    } catch {
+      return [];
+    }
+  }
+
   async setSessionPinned(id: string, pinned: boolean): Promise<ControlResult> {
     const databasePath = join(this.codexDir, "state_5.sqlite");
     if (!existsSync(databasePath)) return { ok: false, error: "Codex state database is unavailable" };
