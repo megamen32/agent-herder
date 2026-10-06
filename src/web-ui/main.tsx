@@ -2,7 +2,7 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { filterAndArrangeSessions, matchesSessionQuery, projectFor, sessionKey, type SessionListEntry, type SessionListSession, type SessionListSettings, type SessionListSort } from "./session-list.js";
+import { filterAndArrangeSessions, matchesSessionQuery, projectFor, sessionKey, sessionKeyFromHash, selectionAfterSessionRefresh, type SessionListEntry, type SessionListSession, type SessionListSettings, type SessionListSort } from "./session-list.js";
 import { QuotaPanel } from "./quota-panel.js";
 import "./styles.css";
 
@@ -73,9 +73,7 @@ const splitKey = (key: string) => {
 
 // deep link: #/session/<harness>:<id> — восстанавливает выбор сессии из URL
 const readSessionFromHash = (): string | undefined => {
-  const match = window.location.hash.match(/^#\/session\/(.+)$/);
-  if (!match) return undefined;
-  return decodeURIComponent(match[1]);
+  return sessionKeyFromHash(window.location.hash);
 };
 const writeSessionToHash = (key?: string) => {
   const target = key ? `#/session/${encodeURIComponent(key)}` : `${window.location.pathname}${window.location.search}`;
@@ -516,7 +514,7 @@ function App() {
       foldedInitialized.current = true;
     }
     if (!result.warming || nextSessions.length > 0) {
-      setActiveKey((current) => current && nextSessions.some((session) => keyOf(session) === current) ? current : undefined);
+      setActiveKey((current) => selectionAfterSessionRefresh(current, readSessionFromHash(), nextSessions));
     }
     return !result.warming;
     } finally {

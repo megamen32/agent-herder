@@ -29,6 +29,25 @@ export type SessionListEntry = {
 
 export const sessionKey = (session: Pick<SessionListSession, "harness" | "id">) => `${session.harness}:${session.id}`;
 
+export function sessionKeyFromHash(hash: string): string | undefined {
+  try {
+    const canonical = hash.match(/^#\/session\/(.+)$/);
+    if (canonical) return decodeURIComponent(canonical[1]);
+    // Keep previously delivered Notice Place links useful after the React UI
+    // replaced the older #<harness>/<session> route.
+    const legacy = hash.match(/^#([^/]+)\/(.+)$/);
+    return legacy ? `${decodeURIComponent(legacy[1])}:${decodeURIComponent(legacy[2])}` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function selectionAfterSessionRefresh(current: string | undefined, linked: string | undefined, sessions: Array<Pick<SessionListSession, "harness" | "id">>): string | undefined {
+  // A quick active list is not evidence that an explicitly linked historical
+  // session disappeared. Its details are fetched independently by the chat.
+  return current && (current === linked || sessions.some((session) => sessionKey(session) === current)) ? current : undefined;
+}
+
 export function matchesSessionQuery(session: Pick<SessionListSession, "id" | "harness" | "title" | "cwd" | "lastMessage">, query: string): boolean {
   const normalized = query.trim().toLocaleLowerCase();
   if (!normalized) return true;
