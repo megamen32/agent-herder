@@ -65,3 +65,22 @@ selection/duplicate/no-noise proof, strict final hold and original settings
 restoration. No new sessions or vendor-source changes.
 Evidence: Codex visualizations zcode-queue/pre-terminal-fix.json and inspected
 browser screenshots (including expired blank page before any cleanup).
+
+Final root release cbce504/PID713377 built with28core +45related checks,
+clean synchronizedmain. Fresh owned browser actual Resume then showed error;
+no native history newer than13:53 and no new choice appeared. API details
+incorrectly showedrunning from lifecycle while inspectedUI showederror.
+Screenshot final-resume-pending.png was captured and inspected before cleanup.
+No retry/recover/newsession. Root owns cold/native failure and status cause.
+Owned Stop returned200, strictcontext consume0 heldtrue, sessionautopilotfalse,
+owned browser closed. Fresh signed human choice acceptance remains pending.
+
+An independent readonly healthplanner01a111a7 reported terminal plans_ready
+14:39:00.597Z followed by unfinished-launcher auto continuation17:41:49MSK and
+17:45:23MSK after another terminal answer14:44:29.662Z. This separate launcher
+seam is root-owned; report forwarded, no source edits in occupied paths here.
+Smallest next actions: root repairs false unfinished admission/coldZresume,
+reviewed bounded checks after shared heavy slot release, then coherent runtime
+and fresh same-ID signedchoice/duplicate capture. Existing typed source/hold
+contracts must remain intact. No browser/build while AutoFind fulltest2git
+owns sharedheavy slot737877/737878 (start17:43:22MSK), per coordinated window.
