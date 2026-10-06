@@ -9,6 +9,7 @@ import { createServer as createNetServer } from "node:net";
 import { WebSocketServer } from "ws";
 import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
 import { CodexAdapter } from "../src/adapters/codex.js";
+import { getHumanStopStore } from "../src/human-stop-store.js";
 import { createNamedSession } from "../src/named-session.js";
 
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
@@ -45,6 +46,8 @@ describe("Codex app-server adapter", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-unix-socket-"));
     const socketPath = join(tempDir, "app-server.sock");
     const codexDir = join(tempDir, "codex");
+    const previousHumanStopStore = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+    process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(tempDir, "human-stops.json");
     const sessionDir = join(codexDir, "sessions", "2026", "10", "05");
     const rolloutPath = join(sessionDir, "rollout-thread-unix.jsonl");
     await mkdir(sessionDir, { recursive: true });
@@ -64,7 +67,7 @@ describe("Codex app-server adapter", () => {
     const webSocketServer = new WebSocketServer({ server });
     const methods: string[] = [];
     const interruptTurnIds: string[] = [];
-    const events: Array<{ kind: string }> = [];
+    const events: Array<{ kind: string; data?: { automationStop?: unknown } }> = [];
     let activeTurnId: string | undefined;
     let turnSequence = 0;
     let disconnectAfterTurnStart = false;
@@ -128,7 +131,7 @@ describe("Codex app-server adapter", () => {
     try {
       await listening;
       adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", socketPath, codexDir });
-      const unsubscribe = adapter.subscribeEvents((event) => events.push({ kind: event.kind }));
+      const unsubscribe = adapter.subscribeEvents((event) => events.push({ kind: event.kind, data: event.data }));
       await adapter.init();
       expect(adapter.isReady()).toBe(true);
       const sessions = await adapter.listSessions();
@@ -148,6 +151,9 @@ describe("Codex app-server adapter", () => {
         id: "thread-unix", status: "idle", needsPermission: false,
       });
       await expect(adapter.sendMessage("thread-unix", { message: "hold", queue: true })).resolves.toEqual({ ok: true });
+      await expect(adapter.getSession("thread-unix")).resolves.toMatchObject({
+        id: "thread-unix", meta: { activeTurnId: "turn-unix-1" },
+      });
       threadReadStatus = { type: "idle" };
       activeTurnId = undefined;
       await expect(adapter.getSession("thread-unix")).resolves.toMatchObject({
@@ -162,6 +168,52 @@ describe("Codex app-server adapter", () => {
       await expect(adapter.cancelTurn("thread-unix")).resolves.toEqual({ ok: true });
       expect(adapter.isReady()).toBe(true);
       expect(interruptTurnIds).toEqual(["turn-unix-2"]);
+      expect(events.filter((event) => event.kind === "turn.completed").every((event) => !event.data?.automationStop)).toBe(true);
+      expect(JSON.parse(await readFile(join(tempDir, "human-stops.json"), "utf8"))).toMatchObject({
+        sessions: [expect.objectContaining({ ignoredStopIds: ["turn-unix-2"] })],
+      });
+      await writeFile(rolloutPath, `${JSON.stringify({
+        type: "event_msg",
+        timestamp: "2026-10-06T12:34:56.000Z",
+        payload: { type: "turn_aborted", reason: "interrupted", turn_id: "turn-unix-2" },
+      })}\n`, { flag: "a" });
+      const restartedNativeMetadata = await new CodexAdapter({ codexDir }).getNativeAutomationMetadata("thread-unix");
+      expect(restartedNativeMetadata.automationStop).toMatchObject({
+        id: "turn-unix-2", turnId: "turn-unix-2", reason: "interrupted",
+      });
+      await expect(getHumanStopStore().observe({
+        id: "thread-unix", harness: "codex", status: "idle", title: "Unix socket fixture", cwd: "/workspace",
+        lastActivity: new Date().toISOString(), needsPermission: false, meta: restartedNativeMetadata,
+      })).resolves.toBe(false);
+
+      const publishTerminalTurn = (id: string, status: "interrupted" | "completed" | "failed") => {
+        for (const client of webSocketServer.clients) {
+          client.send(JSON.stringify({
+            method: "turn/completed",
+            params: { threadId: "thread-unix", turn: { id, status, completedAt: "2026-10-06T12:34:56.000Z" } },
+          }));
+        }
+      };
+      const terminalEventsStart = events.length;
+      publishTerminalTurn("turn-external-interrupted", "interrupted");
+      for (let attempt = 0; attempt < 100 && events.length === terminalEventsStart; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+      publishTerminalTurn("turn-normal-completed", "completed");
+      for (let attempt = 0; attempt < 100 && events.length < terminalEventsStart + 2; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+      publishTerminalTurn("turn-normal-failed", "failed");
+      for (let attempt = 0; attempt < 100 && events.length < terminalEventsStart + 3; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(events.slice(terminalEventsStart)).toEqual([
+        expect.objectContaining({
+          kind: "turn.completed",
+          data: { automationStop: {
+            id: "turn-external-interrupted",
+            at: "2026-10-06T12:34:56.000Z",
+            reason: "interrupted",
+            turnId: "turn-external-interrupted",
+          } },
+        }),
+        expect.objectContaining({ kind: "turn.completed", data: undefined }),
+        expect.objectContaining({ kind: "turn.failed", data: undefined }),
+      ]);
       expect(methods).toEqual(expect.arrayContaining([
         "initialize",
         "initialized",
@@ -179,6 +231,8 @@ describe("Codex app-server adapter", () => {
       await new Promise<void>((resolve) => webSocketServer.close(() => resolve()));
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await rm(tempDir, { recursive: true, force: true });
+      if (previousHumanStopStore === undefined) delete process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+      else process.env.AGENT_HERDER_HUMAN_STOP_STORE = previousHumanStopStore;
     }
   });
 
@@ -204,6 +258,8 @@ describe("Codex app-server adapter", () => {
 
   it("keeps sparse Codex messages found within the bounded transcript tail", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-sparse-tail-"));
+    const previousHumanStopStore = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+    process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(codexDir, "human-stops.json");
     const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
     const rollout = join(sessionDir, "rollout-thread-sparse.jsonl");
     await mkdir(sessionDir, { recursive: true });
@@ -436,6 +492,46 @@ describe("Codex app-server adapter", () => {
     }
   });
 
+  it("replays an interrupted native stop across adapter restart without claiming prompt origin", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-stop-replay-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "06");
+    const rollout = join(sessionDir, "rollout-thread-stopped.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({
+      id: "thread-stopped", thread_name: "Stopped task", updated_at: "2026-10-06T12:34:57.000Z",
+    }) + "\n");
+    await writeFile(rollout, [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-stopped", session_id: "thread-stopped", cwd: "/workspace" } }),
+      JSON.stringify({ type: "turn_context", payload: { model: "gpt-test" } }),
+      JSON.stringify({ type: "response_item", timestamp: "2026-10-06T12:00:00.000Z", id: "user-prompt-1", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Please inspect the fixture." }] } }),
+      JSON.stringify({ type: "event_msg", timestamp: "2026-10-06T12:00:01.000Z", payload: { type: "task_started" } }),
+      JSON.stringify({ type: "response_item", timestamp: "2026-10-06T12:34:56.000Z", id: "aborted-user-item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<turn_aborted>" }] } }),
+      JSON.stringify({ type: "event_msg", timestamp: "2026-10-06T12:34:56.000Z", payload: { type: "turn_aborted", reason: "interrupted", turn_id: "turn-stopped-1" } }),
+      "",
+    ].join("\n"));
+
+    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    const restartedAdapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    try {
+      for (const current of [adapter, restartedAdapter]) {
+        const session = (await current.listSessions()).find((item) => item.id === "thread-stopped");
+        expect(session?.meta).toMatchObject({
+          automationStop: {
+            id: "turn-stopped-1",
+            at: "2026-10-06T12:34:56.000Z",
+            reason: "interrupted",
+            turnId: "turn-stopped-1",
+          },
+        });
+        expect(session?.meta).not.toHaveProperty("latestUserPrompt");
+      }
+    } finally {
+      await adapter.dispose();
+      await restartedAdapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
   it("does not treat an old persisted task_started marker as a live Codex turn", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-stale-running-"));
     const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
@@ -638,6 +734,8 @@ describe("Codex app-server adapter", () => {
       unsubscribeEvents();
       await adapter.dispose();
       await rm(codexDir, { recursive: true, force: true });
+      if (previousHumanStopStore === undefined) delete process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+      else process.env.AGENT_HERDER_HUMAN_STOP_STORE = previousHumanStopStore;
     }
   });
 

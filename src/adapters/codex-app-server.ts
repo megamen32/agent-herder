@@ -1,7 +1,8 @@
 import { type ChildProcessWithoutNullStreams } from "node:child_process";
 import { isAbsolute } from "node:path";
 import WebSocket from "ws";
-import { CodexAdapter } from "./codex.js";
+import { getHumanStopStore } from "../human-stop-store.js";
+import { CodexAdapter, type CodexAutomationStop, type CodexNativeAutomationMetadata } from "./codex.js";
 import { spawnIsolatedWorkload } from "../workload-launcher.js";
 import type {
   AgentSession,
@@ -19,6 +20,7 @@ import type {
 
 interface RpcResponse {
   id?: number;
+  emittedAtMs?: number;
   result?: unknown;
   error?: { message?: string; code?: number };
 }
@@ -50,6 +52,13 @@ function withKnownModel(session: AgentSession, model: unknown): AgentSession {
   if (typeof model === "string") normalized.model = model;
   else delete normalized.model;
   return normalized;
+}
+
+function mergeAutomationMetadata(meta: AgentSession["meta"], automation: CodexNativeAutomationMetadata): AgentSession["meta"] {
+  const merged = { ...meta };
+  delete merged.automationStop;
+  if (automation.automationStop) merged.automationStop = automation.automationStop;
+  return merged;
 }
 
 function threadTimestamp(value: string | number | undefined): string | undefined {
@@ -121,6 +130,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly fullAccessThreads = new Set<string>();
   private readonly activeTurns = new Map<string, string>();
   private readonly completions = new Map<string, TurnCompletion>();
+  private readonly internalInterrupts = new Map<string, { turnId: string; expiresAt: number }>();
   private readonly transportCleanups = new WeakMap<ChildProcessWithoutNullStreams, () => void>();
   private readonly socketCleanups = new WeakMap<WebSocket, () => void>();
   private stderrTail = "";
@@ -220,10 +230,13 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         const nativeMeta = nativeMetadata.get(thread.id);
         if (!nativeMeta) return session;
         const { status: nativeStatus, ...nativeMetadataFields } = nativeMeta;
+        const automation = this.externalAutomationMetadata(thread.id, nativeMeta);
+        delete nativeMetadataFields.automationStop;
+        if (automation.automationStop) nativeMetadataFields.automationStop = automation.automationStop;
         return {
           ...session,
           status: !this.socketPath && nativeStatus === "running" ? "running" : session.status,
-          meta: { ...session.meta, ...(this.socketPath ? nativeMetadataFields : nativeMeta) },
+          meta: { ...session.meta, ...nativeMetadataFields, ...(!this.socketPath && nativeStatus ? { status: nativeStatus } : {}) },
         };
       });
       this.sessionSnapshotReceipt = {
@@ -324,6 +337,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         const result = await this.request("thread/read", { threadId: id, includeTurns: false }) as { thread?: CodexThread };
         if (result.thread?.id === id) {
           this.activeTurns.delete(id);
+          await this.refreshActiveTurnId(id);
           this.threads.set(id, result.thread);
           base = this.toSession(result.thread);
         } else {
@@ -339,10 +353,16 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     if (!base && this.isReady()) base = (await this.listSessions()).find((session) => session.id === id) || null;
     const raw = await this.rawTranscriptAdapter.getSession(id);
-    if (!base) return raw ? withKnownModel(raw, raw.model) : null;
-    if (!raw) return base;
+    const nativeAutomation = this.externalAutomationMetadata(id, await this.rawTranscriptAdapter.getNativeAutomationMetadata(id));
+    if (!base) {
+      if (!raw) return null;
+      const normalized = withKnownModel({ ...raw, meta: mergeAutomationMetadata(raw.meta, nativeAutomation) }, raw.model);
+      return normalized;
+    }
+    if (!raw) return { ...base, meta: mergeAutomationMetadata(base.meta, nativeAutomation) };
     const rawMeta = { ...raw.meta };
     if (this.socketPath) delete rawMeta.status;
+    delete rawMeta.automationStop;
     const session: AgentSession = {
       ...base,
       status: !this.socketPath && raw.status === "running" ? "running" : base.status,
@@ -350,7 +370,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       durationSec: raw.durationSec,
       costUsd: raw.costUsd,
       lastMessage: raw.lastMessage || base.lastMessage,
-      meta: { ...base.meta, ...rawMeta },
+      meta: mergeAutomationMetadata({ ...base.meta, ...rawMeta }, nativeAutomation),
     };
     return withKnownModel(session, typeof base.model === "string" ? base.model : raw.model);
   }
@@ -438,10 +458,53 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     if (!turnId) return { ok: false, error: `No active Codex turn found for session ${id}` };
     try {
+      await getHumanStopStore().ignoreNativeStop("codex", id, {
+        id: turnId,
+        at: new Date().toISOString(),
+        reason: "interrupted",
+        turnId,
+      });
+    } catch (error) {
+      return { ok: false, error: `Could not persist the Codex interrupt origin: ${error instanceof Error ? error.message : String(error)}` };
+    }
+    this.pruneInternalInterrupts();
+    this.internalInterrupts.set(id, { turnId, expiresAt: Date.now() + 24 * 60 * 60 * 1_000 });
+    try {
       await this.request("turn/interrupt", { threadId: id, turnId });
       return { ok: true };
     } catch (error) {
       return { ok: false, error: (error as Error).message };
+    }
+  }
+
+  private async refreshActiveTurnId(id: string): Promise<void> {
+    try {
+      const result = await this.request("thread/turns/list", {
+        threadId: id,
+        limit: 1,
+        sortDirection: "desc",
+        itemsView: "notLoaded",
+      }) as { data?: Array<{ id?: string; status?: string }> };
+      const turn = result.data?.find((candidate) => candidate.status === "inProgress" && typeof candidate.id === "string");
+      if (turn?.id) this.activeTurns.set(id, turn.id);
+      else this.activeTurns.delete(id);
+    } catch {
+      // Keep the read-only session view available when turn metadata is unavailable.
+    }
+  }
+
+  private externalAutomationMetadata(id: string, metadata: CodexNativeAutomationMetadata): CodexNativeAutomationMetadata {
+    this.pruneInternalInterrupts();
+    const internal = this.internalInterrupts.get(id);
+    if (!internal || !metadata.automationStop?.turnId || metadata.automationStop.turnId !== internal.turnId) return metadata;
+    const { automationStop: _internalStop, ...externalMetadata } = metadata;
+    return externalMetadata;
+  }
+
+  private pruneInternalInterrupts(): void {
+    const now = Date.now();
+    for (const [sessionId, interrupt] of this.internalInterrupts) {
+      if (interrupt.expiresAt <= now) this.internalInterrupts.delete(sessionId);
     }
   }
 
@@ -826,8 +889,30 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     if (message.method === "turn/completed" && threadId) {
       this.activeTurns.delete(threadId);
-      const completedTurn = params.turn as { status?: string } | undefined;
-      this.emitEvent({ kind: completedTurn?.status === "failed" ? "turn.failed" : "turn.completed", harness: "codex", sessionId: threadId, nativeType: message.method, status: completedTurn?.status === "failed" ? "error" : "idle" });
+      const completedTurn = params.turn as { id?: string; status?: string; completedAt?: string | number } | undefined;
+      const ownInterrupt = this.internalInterrupts.get(threadId);
+      const isOwnInterrupt = completedTurn?.status === "interrupted"
+        && typeof completedTurn.id === "string"
+        && ownInterrupt?.turnId === completedTurn.id;
+      if (completedTurn?.status === "interrupted" && !isOwnInterrupt && typeof completedTurn.id === "string") {
+        const at = threadTimestamp(completedTurn.completedAt) || threadTimestamp(message.emittedAtMs) || new Date().toISOString();
+        const automationStop: CodexAutomationStop = {
+          id: completedTurn.id,
+          at,
+          reason: "interrupted",
+          turnId: completedTurn.id,
+        };
+        this.emitEvent({
+          kind: "turn.completed",
+          harness: "codex",
+          sessionId: threadId,
+          nativeType: message.method,
+          status: "idle",
+          data: { automationStop },
+        });
+      } else {
+        this.emitEvent({ kind: completedTurn?.status === "failed" ? "turn.failed" : "turn.completed", harness: "codex", sessionId: threadId, nativeType: message.method, status: completedTurn?.status === "failed" ? "error" : "idle" });
+      }
       const completion = this.completions.get(threadId);
       if (completion) {
         const turn = params.turn as { id?: string; status?: string } | undefined;

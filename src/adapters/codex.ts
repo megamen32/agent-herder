@@ -16,6 +16,17 @@ interface CodexSessionIndexEntry {
   updated_at?: string;
 }
 
+export interface CodexAutomationStop {
+  id: string;
+  at: string;
+  reason: "interrupted";
+  turnId?: string;
+}
+
+export interface CodexNativeAutomationMetadata {
+  automationStop?: CodexAutomationStop;
+}
+
 interface CodexSessionState {
   cwd?: string;
   filePath: string;
@@ -26,17 +37,70 @@ interface CodexSessionState {
   agentRole?: string;
   pinned?: boolean;
   status?: "running" | "idle";
+  automationStop?: CodexAutomationStop;
   updatedAtMs: number;
 }
 
 interface CodexTranscriptItem {
   type?: string;
+  timestamp?: string | number;
   payload?: {
     type?: string;
     role?: string;
     model?: string;
+    turn_id?: string;
+    reason?: string;
+    completed_at?: string | number;
     content?: Array<{ type?: string; text?: string }>;
   };
+}
+
+interface CodexRolloutTail {
+  lastMessage?: string;
+  model?: string;
+  status?: "running" | "idle";
+  automationStop?: CodexAutomationStop;
+  updatedAtMs: number;
+}
+
+function rolloutIsoTimestamp(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const milliseconds = Date.parse(value);
+    return Number.isFinite(milliseconds) ? new Date(milliseconds).toISOString() : undefined;
+  }
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    const milliseconds = value < 1_000_000_000_000 ? value * 1_000 : value;
+    const parsed = new Date(milliseconds);
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : undefined;
+  }
+  return undefined;
+}
+
+function nativeAutomationMetadataFromLines(lines: string[]): CodexNativeAutomationMetadata {
+  let automationStop: CodexAutomationStop | undefined;
+  for (const line of lines) {
+    try {
+      const item = JSON.parse(line) as CodexTranscriptItem;
+      const payload = item.payload;
+      if (!payload) continue;
+      if (!automationStop && item.type === "event_msg" && payload.type === "turn_aborted" && payload.reason === "interrupted") {
+        const at = rolloutIsoTimestamp(item.timestamp) || rolloutIsoTimestamp(payload.completed_at);
+        const turnId = typeof payload.turn_id === "string" && payload.turn_id ? payload.turn_id : undefined;
+        if (at && turnId) {
+          automationStop = {
+            id: turnId,
+            at,
+            reason: "interrupted",
+            turnId,
+          };
+        }
+      }
+      if (automationStop) break;
+    } catch {
+      // Ignore partial trailing records and malformed historical lines.
+    }
+  }
+  return automationStop ? { automationStop } : {};
 }
 
 function mapCodexMessage(id: string, item: CodexTranscriptItem & { timestamp?: string }, index: number, scope: "first" | "tail"): SessionMessageView | null {
@@ -125,6 +189,7 @@ export class CodexAdapter implements HarnessAdapter {
           ...(state?.parentThreadId ? { parentThreadId: state.parentThreadId } : {}),
           ...(state?.threadSource ? { threadSource: state.threadSource } : {}),
           ...(state?.agentRole ? { agentRole: state.agentRole } : {}),
+          ...(state?.automationStop ? { automationStop: state.automationStop } : {}),
           pinned: state?.pinned ?? false,
         },
       };
@@ -160,7 +225,7 @@ export class CodexAdapter implements HarnessAdapter {
     };
   }
 
-  async getNativeSessionMetadata(): Promise<Map<string, Pick<CodexSessionState, "parentThreadId" | "threadSource" | "agentRole" | "status" | "pinned">>> {
+  async getNativeSessionMetadata(): Promise<Map<string, Pick<CodexSessionState, "parentThreadId" | "threadSource" | "agentRole" | "status" | "pinned" | "automationStop">>> {
     const [states, openRolloutPaths] = await Promise.all([
       this.getSessionStates(),
       this.getOpenCodexRolloutPaths(),
@@ -171,7 +236,15 @@ export class CodexAdapter implements HarnessAdapter {
       agentRole: state.agentRole,
       status: this.reconcilePersistedStatus(state, openRolloutPaths),
       pinned: state.pinned,
+      automationStop: state.automationStop,
     }]));
+  }
+
+  async getNativeAutomationMetadata(id: string): Promise<CodexNativeAutomationMetadata> {
+    const state = (await this.getSessionStates()).get(id);
+    if (!state?.filePath) return {};
+    const tail = await this.readSessionTail(state.filePath);
+    return tail.automationStop ? { automationStop: tail.automationStop } : {};
   }
 
   async findNativeNamedThreads(name: string, cwd: string): Promise<Array<{ id: string; name: string; cwd: string }>> {
@@ -507,6 +580,7 @@ export class CodexAdapter implements HarnessAdapter {
             // tail context wins when a later turn explicitly changed it.
             model: tail.model || this.extractLatestTurnModel(header),
             status: tail.status,
+            automationStop: tail.automationStop,
             ...this.extractLineage(header),
             updatedAtMs: tail.updatedAtMs,
           };
@@ -572,16 +646,17 @@ export class CodexAdapter implements HarnessAdapter {
         // Probe only the newest native rollouts for lifecycle markers. Twenty
         // covers the visible concurrent Desktop set while keeping startup
         // bounded; older rows remain cheap directory entries from SQLite.
-        const liveCandidates = [...result.values()]
-          .filter((state) => state.updatedAtMs > 0 && Date.now() - state.updatedAtMs <= 48 * 60 * 60 * 1_000 && existsSync(state.filePath))
-          .sort((left, right) => right.updatedAtMs - left.updatedAtMs)
+        const liveCandidates = [...result.entries()]
+          .filter(([, state]) => state.updatedAtMs > 0 && Date.now() - state.updatedAtMs <= 48 * 60 * 60 * 1_000 && existsSync(state.filePath))
+          .sort((left, right) => right[1].updatedAtMs - left[1].updatedAtMs)
           .slice(0, 20);
-        for (const state of liveCandidates) {
+        for (const [id, state] of liveCandidates) {
           await new Promise<void>((resolve) => setImmediate(resolve));
           const tail = await this.readSessionTail(state.filePath);
           state.lastMessage = tail.lastMessage || state.lastMessage;
           state.model = tail.model || state.model;
           state.status = tail.status;
+          state.automationStop = tail.automationStop;
           state.updatedAtMs = tail.updatedAtMs;
         }
         return result;
@@ -623,9 +698,7 @@ export class CodexAdapter implements HarnessAdapter {
     }
   }
 
-  private async readSessionTail(
-    filePath: string
-  ): Promise<{ lastMessage?: string; model?: string; status?: "running" | "idle"; updatedAtMs: number }> {
+  private async readSessionTail(filePath: string): Promise<CodexRolloutTail> {
     const file = await open(filePath, "r");
     try {
       const fileStat = await stat(filePath);
@@ -637,6 +710,7 @@ export class CodexAdapter implements HarnessAdapter {
       let lastMessage: string | undefined;
       let model: string | undefined;
       let status: "running" | "idle" | undefined;
+      let nativeSignals = nativeAutomationMetadataFromLines(lines);
       for (const line of lines) {
         if (!lastMessage) {
           const message = this.extractTranscriptMessage(line)[0];
@@ -644,13 +718,16 @@ export class CodexAdapter implements HarnessAdapter {
         }
         if (!model) model = this.extractTurnModel(line);
         if (!status) status = this.extractLifecycleStatus(line);
-        if (lastMessage && model && status) break;
+        if (lastMessage && model && status && nativeSignals.automationStop) break;
       }
-      if (!status && Date.now() - fileStat.mtimeMs <= 48 * 60 * 60 * 1_000 && bytesToRead < Math.min(fileSize, 4 * 1024 * 1024)) {
+      if (!status
+        && Date.now() - fileStat.mtimeMs <= 48 * 60 * 60 * 1_000
+        && bytesToRead < Math.min(fileSize, 4 * 1024 * 1024)) {
         bytesToRead = Math.min(fileSize, 4 * 1024 * 1024);
         buffer = Buffer.alloc(bytesToRead);
         read = await file.read(buffer, 0, bytesToRead, fileSize - bytesToRead);
         lines = buffer.subarray(0, read.bytesRead).toString("utf-8").split("\n").reverse();
+        nativeSignals = nativeAutomationMetadataFromLines(lines);
         for (const line of lines) {
           status = this.extractLifecycleStatus(line);
           if (status) break;
@@ -658,7 +735,7 @@ export class CodexAdapter implements HarnessAdapter {
       }
       const activeWindowMs = Number(process.env.AGENT_HERDER_ACTIVE_WINDOW_MS || 5 * 60 * 1_000);
       if (status === "running" && Date.now() - fileStat.mtimeMs > activeWindowMs) status = "idle";
-      return { lastMessage, model, status, updatedAtMs: fileStat.mtimeMs };
+      return { lastMessage, model, status, ...nativeSignals, updatedAtMs: fileStat.mtimeMs };
     } finally {
       await file.close();
     }
