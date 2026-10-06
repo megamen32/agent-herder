@@ -164,7 +164,10 @@ export function LaunchPolicySettings() {
   const optionsForSelect = policy.allowedHarnesses.length > 0 ? policy.allowedHarnesses : displayedHarnesses;
   const valid = (policy.allowedHarnesses.length === 0 || policy.allowedHarnesses.includes(policy.preferredHarness))
     && policy.preferredHarness.length > 0
-    && policy.allowedHarnesses.every((harness) => Boolean(policy.models[harness]?.trim()));
+    && policy.allowedHarnesses.every((harness) => {
+      const model = policy.models[harness];
+      return Boolean(model?.trim()) && model.length <= 256 && !/[\u0000-\u001f\u007f]/u.test(model);
+    });
 
   const save = async () => {
     if (!valid || saving || loading || Boolean(loadError)) return;
@@ -186,10 +189,10 @@ export function LaunchPolicySettings() {
 
   return <section className="global-autopilot-card launch-policy-settings" aria-label="Запуск новых сессий">
     <div className="global-autopilot-head">
-      <div><span className="eyebrow">НОВЫЕ СЕССИИ</span><h3>Запуск новых сессий</h3><p>Выберите, где Herder может создавать новые сессии и какой вариант предпочитать. Это не меняет текущие сессии и автопродолжение.</p></div>
+      <div><span className="eyebrow">НОВЫЕ СЕССИИ</span><h3>Запуск новых сессий</h3><p>Выберите, где Herder может автоматически создавать новые сессии и какой вариант предпочитать. Это не меняет текущие сессии и автопродолжение.</p></div>
     </div>
     {loading ? <p className="settings-loading" role="status">Загружаем настройки запуска…</p> : <>
-      {needsSetup && <p className="launch-policy-notice" role="status">Настройки запуска ещё не сохранены. До сохранения Herder не будет создавать новые сессии.</p>}
+      {needsSetup && <p className="launch-policy-notice" role="status">Настройки запуска ещё не сохранены. До сохранения автоматический запуск новых сессий запрещён.</p>}
       {loadError && <p className="autopilot-error" role="alert">Не удалось загрузить настройки запуска: {loadError}. Обновите страницу и повторите.</p>}
       <fieldset className="settings-group" disabled={saving || Boolean(loadError)}>
         <legend>Разрешённые среды</legend>
@@ -208,13 +211,13 @@ export function LaunchPolicySettings() {
         }}>{optionsForSelect.map((harness) => <option value={harness} key={harness}>{labelFor(harness, [...known.values()])}</option>)}</select></label>}
         {policy.allowedHarnesses.map((harness) => <label className="launch-policy-field" key={harness}>
           <span>Модель · {labelFor(harness, [...known.values()])}</span>
-          <input type="text" list={inputId(harness)} value={policy.models[harness] ?? ""} placeholder="Укажите модель" onChange={(event) => {
+          <input type="text" maxLength={256} list={inputId(harness)} value={policy.models[harness] ?? ""} placeholder="Укажите модель" onChange={(event) => {
             setPolicy((current) => ({ ...current, models: { ...current.models, [harness]: event.target.value } }));
             setSaved(false);
           }} />
           <datalist id={inputId(harness)}>{(modelOptions[harness] ?? []).map((model) => <option value={model} key={model} />)}</datalist>
         </label>)}
-        {policy.allowedHarnesses.length === 0 && <p className="settings-help">Новые сессии отключены. Основной вариант сохранён и будет доступен после выбора разрешённой среды.</p>}
+        {policy.allowedHarnesses.length === 0 && <p className="settings-help">Автоматический запуск новых сессий отключён. Основной вариант сохранён и будет доступен после выбора разрешённой среды.</p>}
       </fieldset>
       {saveError && <p className="autopilot-error" role="alert">Не удалось сохранить настройки: {saveError}</p>}
       <div className="settings-save-row"><span>{saved ? <span className="settings-saved" role="status">Настройки сохранены</span> : needsSetup ? "Сохраните выбор, чтобы разрешить создание сессий." : "Изменения применятся только к новым сессиям."}</span>

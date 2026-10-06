@@ -70,3 +70,69 @@ Native grant proof and final deployed identity still pending. The supported name
 MCP creation targets in this task are Codex, ZCode and OpenCode; no promise about
 other optional harness permission APIs is made. Original automation settings must
 remain disabled/off as observed; this task is not permission to wake all work.
+
+## Accepted launch-policy and link integration
+
+The user requires a web-owned initial-launch policy, separate from continuation.
+Canonical GET/PUT /api/automation/launch-policy returns version1, allowedHarnesses,
+preferredHarness and models per harness. b61dc5b stores it separately under the
+existing state directory, rejects missing/corrupt policy with503, and validates
+writes before an atomic0600 replacement. 000105c adds separate web controls.
+5dbd7e5 rejects native model control characters and accepts at most256 characters
+consistently with the named-launch HTTP boundary. Current explicit operator
+selection: Codex/ZCode, preferredCodex, models gpt-5.6-sol and
+account:zai-individual-coding-plan/GLM-5.3-Flash$high. No service defaults, model
+fallbacks or continuation toggles may override it. Empty allowlist disables
+initial automated launch. The operator configuration must be saved explicitly
+at rollout; a missing policy is never execution authority.
+
+Neighbor Codex chat01a10bc5-6c86-7011-9962-e1bbd2285921 owns Notice Place producer
+and client/tests. It acknowledged dynamic policy reads before each diagnosis,
+planner, remediation and quota recovery, with visible URL in message body as
+well as button. Its reviewed/pushed0cffab5 adds legacy URL compatibility and
+preserves historical deep-link selection when absent from the quick active list;
+root verified16/16 UI tests. Actual user notification5607 points to
+inc_d5a3cd1ee5864096916519c8352bf114 and historical OpenCode session
+ses_eeff33290ffelR252khDht84ma; preserving that old link does not authorize new
+OpenCode jobs. New automatic selection follows the centralized web policy.
+
+## Native grants and inspection proof
+
+Existing shared Codex daemon4019392 remained running. New isolated canary
+01a1101a-6609-7ec3-b41f-ba0fe2c878dc was created through committed Herder named
+creation. A fresh client before its first prompt reported native approvalPolicy
+never and sandbox.type dangerFullAccess. No business session was prompted.
+Inspection exposed native model:null before first prompt;3e095cb omits unknown
+models from public serialization rather than inventing one;29/29 adapter tests.
+
+Initial isolated ZCode probe returned collaboration mode build. That field is
+not the permission grant: native settings.permission.mode is separate.3578d65
+uses supported setMode yolo when necessary and rejects unconfirmed full access.
+44/44 adapter tests. The corrected isolated native canary
+sess_1ccff967-7088-4dcd-8eb1-cb0c0120bdad returned collaborationMode build,
+permissionMode yolo and needsPermission false. The older empty diagnostic
+sess_3d1cbe31-03e7-4eb9-b3c3-e4889a490690 was not found by fresh raw native read;
+no business-session durability claim is inferred from an empty test session.
+Native evidence is in /tmp/agent-herder-native-grants-0wjeuxjg/evidence.json;
+root owns bounded fixtures and cleanup. Final live Herder/policy/web/Notice Place
+acceptance still pending; do not claim rollout from these source-native probes.
+
+## Final source checks and publication
+
+Final affected10-file run passed275/276; the only failure was a UI test matching
+old wording that falsely implied manual creations were blocked too. Root made
+the wording explicitly automatic and updated that content assertion; focused
+UI file then passed5/5. All nine other files were green. Independent review
+cleared the external Notice Place consumer after verifying its current source
+reads latest policy/model before each automatic stage and fails closed without
+fallback. Root's earlier eight-file regression pass was276/276; separate
+historical-link UI16/16, currentpolicy4/4, launcher156/156, ZCode44/44 and native
+Codex29/29 passed. No entire-repository test-suite success is claimed.
+
+The backend worker accidentally ran76 files despite its intended filter. Three
+unrelated failures were readonlyCodex descriptor status, concurrent Stop hook
+(child exited null), and cross-process named find/create (child exited null).
+Current focused/affected Codex and named suites passed afterward; the exact
+readonly case also passed4/4 independently. Root checks the remaining exact
+concurrency case separately under the shared guard rather than repeating the
+broad run or treating process termination as a proven product defect.

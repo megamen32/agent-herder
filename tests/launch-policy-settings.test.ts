@@ -47,8 +47,8 @@ describe("new session launch policy settings", () => {
     expect(component).toContain(".filter((item) => item.active)");
     expect(component).toContain("/api/models?harness=");
     expect(component).toContain("Настройки запуска ещё не сохранены");
-    expect(component).toContain("До сохранения Herder не будет создавать новые сессии.");
-    expect(component).toContain("Новые сессии отключены.");
+    expect(component).toContain("До сохранения автоматический запуск новых сессий запрещён.");
+    expect(component).toContain("Автоматический запуск новых сессий отключён.");
     expect(component).toContain('disabled={!valid || saving || loading || Boolean(loadError)}');
     expect(component).not.toContain("/api/sessions");
   });

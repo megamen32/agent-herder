@@ -285,6 +285,14 @@ production planner also returned a validated small plan after the numeric
 confidence contract was clarified. Global input packing and coverage validation
 remain enforced.
 
+New automated sessions have a separate web setting, **Запуск новых сессий**,
+and `GET/PUT /api/automation/launch-policy`. Its persisted allowlist, preferred
+harness and per-harness models control each automated launch. Missing or invalid
+policy fails closed; an empty allowlist disables launch. The current operator
+selection is Codex/ZCode, preferred Codex, using the selected native models.
+This policy does not change existing-session continuation toggles or switch a
+running chat to another harness.
+
 Restart continuation settings are available at `GET/PUT
 /api/session-autostart` and `GET/PUT/DELETE
 /api/session-autostart/sessions/{harness}/{sessionId}`. `PUT
