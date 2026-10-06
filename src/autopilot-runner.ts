@@ -21,6 +21,7 @@ import { AutopilotSessionStore, type AutopilotHarness } from "./autopilot/sessio
 import { acquireLock } from "./autopilot-hook.js";
 import { SessionAutostartStore } from "./autopilot/unfinished-session-launcher.js";
 import { AgentResumeClient } from "./resume-transport.js";
+import { getHumanStopStore } from "./human-stop-store.js";
 
 type Command = "on" | "off" | "status" | "stop";
 
@@ -40,6 +41,11 @@ const stateDir = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR || join(homedir(),
 
 export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<Record<string, unknown>> {
   const command = input.command ?? "on";
+  const humanStops = getHumanStopStore();
+  const held = () => humanStops.isHeld(input.harness, input.sessionId);
+  if (command === "on" && await held()) {
+    return { ok: true, command, harness: input.harness, session_id: input.sessionId, enabled: false, human_stop_held: true };
+  }
   const store = new AutopilotSessionStore(join(stateDir, "sessions.json"));
   const policyStore = new AutopilotPolicyStore(resolveAutopilotPolicyStorePath(stateDir));
   if (command === "status") {
@@ -48,7 +54,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
     const policyEnabled = effectivePolicyAllowsTarget(effectivePolicy, { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) });
     const sessionEnabled = record?.enabled === true && (effectivePolicy.source !== "persisted" || effectivePolicy.policy.enabled);
     const enabled = record?.enabled === false ? false : sessionEnabled || policyEnabled;
-    return { ok: true, command, harness: input.harness, session_id: input.sessionId, enabled, source: record ? "session" : effectivePolicy.source };
+    return { ok: true, command, harness: input.harness, session_id: input.sessionId, enabled, human_stop_held: await held(), source: record ? "session" : effectivePolicy.source };
   }
   if (command === "on" || command === "off") {
     const record = await store.set({ harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) }, command === "on");
@@ -61,6 +67,9 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
   const policyEnabled = effectivePolicyAllowsTarget(effectivePolicy, { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) });
   const sessionEnabled = record?.enabled === true && (effectivePolicy.source !== "persisted" || effectivePolicy.policy.enabled);
   const enabled = record?.enabled === false ? false : sessionEnabled || policyEnabled;
+  if (await held()) {
+    return { ok: true, command, harness: input.harness, session_id: input.sessionId, enabled, decision: "human-stop-held" };
+  }
   if (!enabled) {
     return { ok: true, command, harness: input.harness, session_id: input.sessionId, enabled: false, decision: "disabled" };
   }
@@ -100,8 +109,12 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
     });
     const result = await core.handleStop(hook);
     await persistReceiptStore(receiptPath, receipts);
+    if (await held()) {
+      return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "human-stop-held" };
+    }
     if ("decision" in result && result.decision === "block") {
       const nextGoal = result.reason;
+      if (await held()) return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "human-stop-held" };
       if (input.harness === "codex" || input.harness === "claude" || input.harness === "zcode") {
         return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "continue", next_goal: nextGoal };
       }
@@ -109,6 +122,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
         return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "continue", next_goal: nextGoal, resume_status: "local-inject" };
       }
       const resultRef = randomUUID();
+      if (await held()) return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "human-stop-held" };
       const receipt = await new AgentResumeClient().resume({
         target: { agent: "opencode", session_id: input.sessionId, cwd: resolve(input.cwd) },
         goal: nextGoal,

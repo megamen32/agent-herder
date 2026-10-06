@@ -9,21 +9,30 @@ process.stdin.setEncoding("utf8");
 for await (const chunk of process.stdin) raw += chunk;
 try {
   const input = raw.trim() ? JSON.parse(raw) : {};
-  const sessionId = typeof input.session_id === "string" ? input.session_id : input.sessionId;
-  const prompt = typeof input.prompt === "string" ? input.prompt : null;
-  if (sessionId && prompt) {
-    const stateDir = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR || resolve(homedir(), ".local/state/agent-herder/autopilot-live");
-    const path = resolve(stateDir, "zcode-user-prompts.json");
-    let file = { version: 1, sessions: {} };
-    try { file = JSON.parse(await readFile(path, "utf8")); } catch {}
-    file.sessions ||= {};
-    const nativeTurnId = nonEmptyString(input.turn_id) ?? nonEmptyString(input.turnId);
-    file.sessions[sessionId] = {
-      text: prompt.slice(0, 12_000),
-      cwd: input.cwd,
-      turnId: nativeTurnId ?? `zcode-user-${randomUUID()}`,
-      updatedAt: new Date().toISOString(),
-    };
+    const sessionId = typeof input.session_id === "string" ? input.session_id : input.sessionId;
+    const prompt = typeof input.prompt === "string" ? input.prompt : null;
+    if (sessionId && prompt) {
+      const stateDir = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR || resolve(homedir(), ".local/state/agent-herder/autopilot-live");
+      const path = resolve(stateDir, "zcode-user-prompts.json");
+      let file = { version: 1, sessions: {} };
+      try { file = JSON.parse(await readFile(path, "utf8")); } catch {}
+      file.sessions ||= {};
+      const inputId = nonEmptyString(input.input_id) ?? nonEmptyString(input.inputId) ?? nonEmptyString(input.metadata?.inputId);
+      const nativeTurnId = nonEmptyString(input.turn_id) ?? nonEmptyString(input.turnId);
+      const promptId = nonEmptyString(input.prompt_id) ?? nonEmptyString(input.promptId) ?? inputId ?? nativeTurnId ?? `zcode-prompt-${randomUUID()}`;
+      const automated = Boolean(inputId?.startsWith("agent-herder:auto:"));
+      const at = new Date().toISOString();
+      file.sessions[sessionId] = {
+        text: prompt.slice(0, 12_000),
+        cwd: input.cwd,
+        turnId: nativeTurnId ?? `zcode-user-${randomUUID()}`,
+        promptId,
+        at,
+        origin: automated ? "automation" : "real_user",
+        ...(inputId ? { inputId } : {}),
+        ...(automated ? { automated: true } : {}),
+        updatedAt: at,
+      };
     await mkdir(dirname(path), { recursive: true });
     const temporary = `${path}.${process.pid}.tmp`;
     await writeFile(temporary, `${JSON.stringify(file)}\n`, "utf8");

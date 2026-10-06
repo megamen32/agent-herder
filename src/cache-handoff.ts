@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "./types/index.js";
 import type { CacheHandoffAdmissionCheckpoint, LineageRecord, LineageStore } from "./lineage-store.js";
+import type { HumanStopStore } from "./human-stop-store.js";
 import { spawnIsolatedWorkload } from "./workload-launcher.js";
 
 const MAX_SOURCE_CHARS = 120_000;
@@ -16,7 +17,7 @@ export interface CacheWindow {
 }
 
 export interface CacheHandoffResult {
-  kind: "fresh" | "unknown" | "rolled_over" | "admitted_failed";
+  kind: "fresh" | "unknown" | "held" | "rolled_over" | "admitted_failed";
   session?: AgentSession;
   deliveryPending?: boolean;
   admittedFailure?: string;
@@ -152,14 +153,16 @@ export class CacheHandoffService {
     private readonly summarizer: SessionSummarizer,
     private readonly lineage?: LineageStore,
     private readonly env: NodeJS.ProcessEnv = process.env,
+    private readonly humanStopStore?: HumanStopStore,
   ) {}
 
   async maybeRollover(session: AgentSession, now = new Date(), options: { movePinned?: boolean } = {}): Promise<CacheHandoffResult> {
     const sourceKey = `${session.harness}:${session.id}`;
-    const admitted = this.admittedResults.get(sourceKey);
-    if (admitted) return admitted;
     const ageMs = Math.max(0, now.getTime() - Date.parse(session.lastActivity));
     const cache = cacheWindowFor(session, this.env);
+    if (this.humanStopStore && await this.humanStopStore.observe(session)) return { kind: "held", ageMs, cache };
+    const admitted = this.admittedResults.get(sourceKey);
+    if (admitted) return admitted;
     if (!cache.ttlMs) return { kind: "unknown", ageMs, cache };
     if (ageMs < cache.ttlMs) return { kind: "fresh", ageMs, cache };
     const adapter = this.adapters.get(session.harness);
@@ -185,6 +188,7 @@ export class CacheHandoffService {
       const summary = (await this.summarizer.summarize(source)).trim().slice(0, MAX_SUMMARY_CHARS);
       if (!summary) throw new Error("MiniMax вернул пустой handoff");
       const continuationModel = continuationModelFor(session);
+      if (this.humanStopStore && await this.humanStopStore.isHeld(session.harness, session.id)) return { kind: "held", ageMs, cache };
       created = await adapter.createSession({
         name: `${session.title.slice(0, 180)} · продолжение`, cwd: session.cwd, model: continuationModel,
         fullAccess: true,
@@ -212,6 +216,7 @@ export class CacheHandoffService {
       // the same replacement, while an admitted one is never duplicated.
       await this.lineage?.record(admissionRecord);
     }
+    if (this.humanStopStore && await this.humanStopStore.isHeld(session.harness, session.id)) return { kind: "held", ageMs, cache };
     const sent = await adapter.sendMessage(created.id, { message: prompt, queue: false, inputId: operationId });
     if (!sent.ok && !(sent.admitted && sent.nonRetryable)) throw new Error(sent.error || "новая сессия не приняла handoff");
     const result: CacheHandoffResult = sent.admitted && sent.nonRetryable

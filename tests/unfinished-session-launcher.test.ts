@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   completionEvidence,
@@ -19,6 +19,7 @@ import {
 } from "../src/autopilot/unfinished-session-launcher.js";
 import { CacheHandoffService } from "../src/cache-handoff.js";
 import { LineageStore } from "../src/lineage-store.js";
+import { getHumanStopStore } from "../src/human-stop-store.js";
 import type { AgentSession, HarnessAdapter, HarnessEvent, SessionMessageView } from "../src/types/index.js";
 
 function fixtureSession(status: AgentSession["status"] = "idle", harness: "codex" | "zcode" = "zcode"): AgentSession {
@@ -76,6 +77,32 @@ function fixtureAdapter(session: AgentSession, calls: { resumes: number; message
 }
 
 describe("unfinished session launcher", () => {
+  it("does not assess, arm, or send a durably human-stopped session", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-launcher-human-stop-"));
+    const session = fixtureSession("idle", "codex");
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    const humanStops = getHumanStopStore({ AGENT_HERDER_HUMAN_STOP_STORE: join(root, "human-stops.json") });
+    await humanStops.hold({ harness: session.harness, id: session.id, cwd: session.cwd, title: session.title }, {
+      id: "human-stop-event", at: new Date().toISOString(), reason: "interrupted", turnId: "human-stop-turn",
+    });
+    const plan = vi.fn(async () => ({ groups: [] }));
+    const launcher = new UnfinishedSessionLauncher({
+      humanStopStore: humanStops,
+      adapters: new Map([["codex", adapter]]),
+      store: new UnfinishedSessionStore(join(root, "unfinished.json")),
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      discoveryIdleMs: 1,
+      judge: { async decide() { throw new Error("individual fallback must not run"); }, plan },
+    });
+
+    await expect(launcher.armSession(session)).resolves.toBe(false);
+    await launcher.recoverPending();
+    expect(plan).not.toHaveBeenCalled();
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await humanStops.isHeld(session.harness, session.id)).toBe(true);
+  });
+
   it("always gives MiniMax the first user goal, latest request, and latest model answer", () => {
     const evidence = completionEvidence([
       { id: "u-old", role: "user", text: "старый запрос", parts: [{ type: "text", text: "старый запрос" }] },

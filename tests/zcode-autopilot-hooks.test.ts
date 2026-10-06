@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
 
 const root = resolve(import.meta.dirname, "..");
@@ -28,7 +29,14 @@ describe("ZCode Agent Herder hooks", () => {
     const fakeRoot = join(sandbox, "fake-root");
     const capturePath = join(sandbox, "launcher-inputs.jsonl");
     const launcherPath = join(fakeRoot, "scripts", "autopilot-command-launcher.sh");
+    const server = createServer((request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(request.url?.includes("/api/coordination/context") ? JSON.stringify({ humanStopHeld: false }) : "{}");
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
     try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("test server has no TCP address");
       await mkdir(resolve(fakeRoot, "scripts"), { recursive: true });
       await writeFile(launcherPath, [
         "#!/usr/bin/env bash",
@@ -45,6 +53,7 @@ describe("ZCode Agent Herder hooks", () => {
         AGENT_HERDER_AUTOPILOT_STATE_DIR: stateDir,
         AGENT_HERDER_ROOT: fakeRoot,
         AGENT_HERDER_TEST_CAPTURE: capturePath,
+        AGENT_HERDER_URL: `http://127.0.0.1:${address.port}`,
       };
       const sessionId = "sess-zcode-hook-test";
       await runNode(userPromptHook, { session_id: sessionId, prompt: "first request" }, env);
@@ -89,6 +98,35 @@ describe("ZCode Agent Herder hooks", () => {
       expect(nextTurnStop.turnId).toBe(second.sessions[sessionId].turnId);
     } finally {
       await rm(sandbox, { force: true, recursive: true });
+      await new Promise<void>((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()));
+    }
+  });
+
+  it("does not arm or invoke autopilot when the native session has a durable human stop", async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), "agent-herder-zcode-held-"));
+    const fakeRoot = join(sandbox, "fake-root");
+    const capturePath = join(sandbox, "launcher-inputs.jsonl");
+    const server = createServer((request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ humanStopHeld: true }));
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("test server has no TCP address");
+      await mkdir(resolve(fakeRoot, "scripts"), { recursive: true });
+      await writeFile(join(fakeRoot, "scripts", "autopilot-command-launcher.sh"), "#!/usr/bin/env bash\nprintf called >> \"$AGENT_HERDER_TEST_CAPTURE\"\necho '{}'\n", { mode: 0o755 });
+      const output = await runNode(stopHook, { session_id: "stopped-session", cwd: sandbox }, {
+        ...process.env,
+        AGENT_HERDER_ROOT: fakeRoot,
+        AGENT_HERDER_TEST_CAPTURE: capturePath,
+        AGENT_HERDER_URL: `http://127.0.0.1:${address.port}`,
+      });
+      expect(JSON.parse(output)).toEqual({});
+      await expect(readFile(capturePath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(sandbox, { force: true, recursive: true });
+      await new Promise<void>((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()));
     }
   });
 });

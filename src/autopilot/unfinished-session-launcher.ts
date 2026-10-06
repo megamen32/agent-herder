@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
 
 import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessType, SendMessageResult, SessionMessageView } from "../types/index.js";
+import type { HumanStopStore } from "../human-stop-store.js";
 import { cacheWindowFor, continuationModelFor, movePinnedContinuation, semanticTranscript, unfinishedProbeDelayMs, type CacheHandoffService } from "../cache-handoff.js";
 import { deferredMessages, isBusyCodexWriter, type DeferredMessageStore } from "../deferred-messages.js";
 
@@ -828,6 +829,8 @@ export interface UnfinishedSessionLauncherOptions {
   deferredStore?: Pick<DeferredMessageStore, "add" | "list">;
   /** Replaces a stale provider-cache session with a compact same-harness continuation. */
   cacheHandoff?: Pick<CacheHandoffService, "maybeRollover">;
+  /** Independent durable fence for sessions explicitly stopped by a human. */
+  humanStopStore?: HumanStopStore;
   /** Stable only for one Agent Herder process; tests may inject it. */
   generationId?: string;
 }
@@ -913,6 +916,7 @@ export class UnfinishedSessionLauncher {
       // Keep it eligible for semantic re-evaluation after the quiet window.
       const adapter = this.options.adapters.get(provider);
       const session = await adapter?.getSession(event.sessionId);
+      if (await this.suppressIfHumanStopped(provider, event.sessionId, session?.cwd, session)) return;
       const key = session ? sessionSourceKey(session) : sessionKey(provider, event.sessionId);
       this.watchdogObservations.delete(key);
       this.completedSessions.delete(key);
@@ -935,6 +939,7 @@ export class UnfinishedSessionLauncher {
     if (event.kind !== "turn.started") return;
     const adapter = this.options.adapters.get(provider);
     const session = await adapter?.getSession(event.sessionId);
+    if (await this.suppressIfHumanStopped(provider, event.sessionId, session?.cwd, session)) return;
     if (session && await this.isEnabled(session.harness, session.id, session.cwd)) {
       this.watchdogObservations.delete(sessionSourceKey(session));
       const progressed = await this.options.store.markAdmissionInProgress(
@@ -958,6 +963,7 @@ export class UnfinishedSessionLauncher {
 
   async armSession(session: AgentSession, deliveryPending = false, admittedFailure?: string): Promise<boolean> {
     if (!isAutocontinueInventoryHarness(session.harness)) return false;
+    if (await this.suppressIfHumanStopped(session.harness, session.id, session.cwd, session)) return false;
     const adapter = this.options.adapters.get(session.harness);
     if (!adapter?.resumeSession) return false;
     if (!await this.isEnabled(session.harness, session.id, session.cwd)) return false;
@@ -972,6 +978,21 @@ export class UnfinishedSessionLauncher {
     if (!isSupportedHarness(harness)) return;
     this.completedSessions.add(sessionKey(harness, sessionId));
     await this.options.store.remove(harness, sessionId);
+  }
+
+  private async suppressIfHumanStopped(harness: string, sessionId: string, cwd?: string, session?: AgentSession | null): Promise<boolean> {
+    const fences = this.options.humanStopStore;
+    if (!fences) return false;
+    const held = session ? await fences.observe(session) : await fences.isHeld(harness, sessionId);
+    if (!held) return false;
+    this.completedSessions.add(sessionKey(harnessType(harness), sessionId));
+    const base = sessionKey(harnessType(harness), sessionId);
+    const urgentKeys = new Set([...this.urgentSessions, ...this.urgentSessionVersions.keys()]);
+    for (const key of urgentKeys) {
+      if (key === base || key.startsWith(`${base}:`)) this.clearUrgentSession(key);
+    }
+    await this.options.store.remove(harness, sessionId, session ? sessionWorkspaceIdentity(session) : cwd);
+    return true;
   }
 
   /** Start process-lifetime recovery without delaying the HTTP/MCP control plane. */
@@ -1089,12 +1110,14 @@ export class UnfinishedSessionLauncher {
         .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
       let urgent = false;
       for (const record of targets) {
+        if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.cwd)) continue;
         if (!await this.isEnabled(record.harness, record.sessionId, record.cwd)) continue;
         const adapter = this.options.adapters.get(record.harness);
         if (!adapter?.resumeSession) continue;
         const key = sessionKey(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
         let session: AgentSession | null = null;
         try { session = await adapter.getSession(record.sessionId); } catch { /* counted as a miss below */ }
+        if (session && await this.suppressIfHumanStopped(record.harness, record.sessionId, session.cwd, session)) continue;
         if (!session) {
           const previous = this.watchdogObservations.get(key);
           const misses = (previous?.misses ?? 0) + 1;
@@ -1243,6 +1266,7 @@ export class UnfinishedSessionLauncher {
       if (!isAutocontinueInventoryHarness(record.harness)) continue;
       const recordKey = unfinishedRecordKey(record);
       if (this.continuedThisRecovery.has(recordKey)) continue;
+      if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)) continue;
       if (!await this.isEnabled(record.harness, record.sessionId, record.cwd)) {
         await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
         continue;
@@ -1263,6 +1287,7 @@ export class UnfinishedSessionLauncher {
         await this.fail(record, errorText(error));
         continue;
       }
+      if (session && await this.suppressIfHumanStopped(record.harness, record.sessionId, session.cwd, session)) continue;
       const urgent = this.urgentSessions.has(recordKey) || this.urgentSessions.has(sessionKey(record.harness, record.sessionId));
       if (record.nonRetryableAdmission) {
         // The exact prompt crossed the native idempotency boundary and its turn
@@ -1358,10 +1383,15 @@ export class UnfinishedSessionLauncher {
         await this.options.store.cancelAttempt(attempt);
         return;
       }
+      if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd, session ?? undefined)) return;
       if (runtimeSettings.rolloverExpiredCache && session && this.options.cacheHandoff) {
         const handoff = await this.options.cacheHandoff.maybeRollover(session, new Date(), {
           movePinned: runtimeSettings.movePinnedOnRollover,
         });
+        if (handoff.kind === "held") {
+          await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd, session);
+          return;
+        }
         if ((handoff.kind === "rolled_over" || handoff.kind === "admitted_failed") && handoff.session) {
           const handoffFailure = handoff.kind === "admitted_failed"
             ? handoff.admittedFailure || "Native cache handoff turn failed after admission"
@@ -1400,6 +1430,7 @@ export class UnfinishedSessionLauncher {
         await this.options.store.cancelAttempt(attempt);
         return;
       }
+      if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)) return;
       const resumed = adapter.resumeSession ? await adapter.resumeSession(record.sessionId) : { ok: true };
       if (!resumed.ok) throw new Error(resumed.error || "возобновление отклонено");
       if (!this.lifecycleActive(lifecycleEpoch)) {
@@ -1411,6 +1442,7 @@ export class UnfinishedSessionLauncher {
         await this.options.store.cancelAttempt(attempt);
         return;
       }
+      if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)) return;
       const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true });
       const terminalAdmission = admittedNonRetryableFailure(sent);
       if (terminalAdmission) {
@@ -1504,10 +1536,11 @@ export class UnfinishedSessionLauncher {
       if (receipt?.exhaustive === true) exhaustiveHarnesses.add(provider);
       for (const session of sessions) {
         const lastActivity = Date.parse(session.lastActivity);
-        if (!Number.isFinite(lastActivity) || Date.now() - lastActivity > inventoryWindowMs) continue;
-        const sourceKey = sessionSourceKey(session);
-        observedSourceKeys.add(sourceKey);
-        listedCandidates.push({ adapter, session });
+      if (!Number.isFinite(lastActivity) || Date.now() - lastActivity > inventoryWindowMs) continue;
+      const sourceKey = sessionSourceKey(session);
+      observedSourceKeys.add(sourceKey);
+      if (await this.suppressIfHumanStopped(session.harness, session.id, session.cwd, session)) continue;
+      listedCandidates.push({ adapter, session });
       }
     }
     // Migration and dedupe must finish in one store transaction before known
@@ -1816,6 +1849,13 @@ export class UnfinishedSessionLauncher {
     for (const group of groups) {
       if (!this.lifecycleActive(lifecycleEpoch)) return;
       const sources = group.sourceSessionIds.map((id) => byId.get(id)!);
+      let humanStoppedSource = false;
+      for (const source of sources) {
+        if (await this.suppressIfHumanStopped(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session), source.session)) {
+          humanStoppedSource = true;
+        }
+      }
+      if (humanStoppedSource) continue;
       const plannedPrimary = byId.get(group.primarySessionId)!;
       const humanGatedSources = sources.filter(({ session }) => session.status === "needs_input" || session.needsPermission);
       const exhaustedAcceptedSources = group.verdict === "unfinished"
@@ -1962,6 +2002,7 @@ export class UnfinishedSessionLauncher {
 
       const handoff = batchContinuationPrompt(group, sources);
       if (running) {
+        if (await this.suppressIfHumanStopped(running.session.harness, running.session.id, sessionWorkspaceIdentity(running.session), running.session)) continue;
         if (!this.lifecycleActive(lifecycleEpoch)) return;
         await this.pinActiveSession(running.adapter, running.session.id, runtimeSettings);
         if (!this.lifecycleActive(lifecycleEpoch)) return;
@@ -1969,9 +2010,11 @@ export class UnfinishedSessionLauncher {
           const inbox = this.options.deferredStore ?? deferredMessages;
           const pending = await inbox.list(running.session.id);
           if (!this.lifecycleActive(lifecycleEpoch)) return;
+          if (await this.suppressIfHumanStopped(running.session.harness, running.session.id, sessionWorkspaceIdentity(running.session))) continue;
           if (!pending.some((message) => isAutocontinueRequest(message.message))) await inbox.add(running.session.id, handoff);
           if (!this.lifecycleActive(lifecycleEpoch)) return;
         }
+        if (await this.suppressIfHumanStopped(running.session.harness, running.session.id, sessionWorkspaceIdentity(running.session))) continue;
         await this.options.store.markStarted(running.session, this.generationId);
         for (const source of sources) {
           if (source.sourceKey === running.sourceKey) pushInventory(source);
@@ -2007,11 +2050,19 @@ export class UnfinishedSessionLauncher {
         launched += 1;
         try {
           if (!this.lifecycleActive(lifecycleEpoch)) return;
+          if (await this.suppressIfHumanStopped(primary.session.harness, primary.session.id, sessionWorkspaceIdentity(primary.session))) {
+            launched = Math.max(0, launched - 1);
+            continue;
+          }
           const resumed = await primary.adapter.resumeSession(primary.session.id);
           if (!resumed.ok) throw new Error(resumed.error || "возобновление исходной сессии отклонено");
           if (!this.lifecycleActive(lifecycleEpoch)) return;
           await this.pinActiveSession(primary.adapter, primary.session.id, runtimeSettings);
           if (!this.lifecycleActive(lifecycleEpoch)) return;
+          if (await this.suppressIfHumanStopped(primary.session.harness, primary.session.id, sessionWorkspaceIdentity(primary.session))) {
+            launched = Math.max(0, launched - 1);
+            continue;
+          }
           const sent = await primary.adapter.sendMessage(primary.session.id, { message: handoff, queue: true });
           const terminalAdmission = admittedNonRetryableFailure(sent);
           if (terminalAdmission) {
@@ -2092,6 +2143,10 @@ export class UnfinishedSessionLauncher {
         launched += 1;
         const continuationModel = continuationModelFor(primary.session);
         if (!this.lifecycleActive(lifecycleEpoch)) return;
+        if (await this.suppressIfHumanStopped(primary.session.harness, primary.session.id, sessionWorkspaceIdentity(primary.session))) {
+          launched = Math.max(0, launched - 1);
+          continue;
+        }
         const created = await primary.adapter.createSession({
           name: continuationTitle(group.topic),
           cwd: primary.session.cwd,
@@ -2105,6 +2160,10 @@ export class UnfinishedSessionLauncher {
           const selected = await primary.adapter.changeModel(created.id, continuationModel);
           if (!selected.ok) throw new Error(selected.error || `не удалось выбрать модель ${continuationModel}`);
           if (!this.lifecycleActive(lifecycleEpoch)) return;
+        }
+        if (await this.suppressIfHumanStopped(primary.session.harness, primary.session.id, sessionWorkspaceIdentity(primary.session))) {
+          launched = Math.max(0, launched - 1);
+          continue;
         }
         const sent = await primary.adapter.sendMessage(created.id, { message: handoff, queue: true });
         const terminalAdmission = admittedNonRetryableFailure(sent);

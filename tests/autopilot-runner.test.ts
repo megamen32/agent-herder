@@ -7,6 +7,7 @@ describe("autopilot runner", () => {
   beforeEach(async () => {
     vi.resetModules();
     process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR = await mkdtemp(join(tmpdir(), "agent-herder-runner-"));
+    process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR, "human-stops.json");
   });
 
   it("defaults slash invocation to on and persists exact current-session status", async () => {
@@ -63,5 +64,23 @@ describe("autopilot runner", () => {
 
     await expect(runAutopilotCommand({ ...target, command: "status" })).resolves.toMatchObject({ enabled: false, source: "session" });
     await expect(runAutopilotCommand({ ...target, command: "stop", turnId: "turn-1" })).resolves.toMatchObject({ enabled: false, decision: "disabled" });
+  });
+
+  it("does not enable or judge a human-stopped session until explicit release", async () => {
+    const { getHumanStopStore } = await import("../src/human-stop-store.js");
+    const { runAutopilotCommand } = await import("../src/autopilot-runner.js");
+    const target = { harness: "codex" as const, sessionId: "human-stopped", cwd: "/workspace/app" };
+    await getHumanStopStore().hold({ harness: target.harness, id: target.sessionId, cwd: target.cwd }, {
+      id: "stop-event", at: new Date().toISOString(), reason: "human interruption", turnId: "turn-stop",
+    });
+
+    await expect(runAutopilotCommand({ ...target, command: "on" })).resolves.toMatchObject({
+      enabled: false,
+      human_stop_held: true,
+    });
+    await expect(runAutopilotCommand({ ...target, command: "stop", turnId: "turn-after-stop" })).resolves.toMatchObject({
+      decision: "human-stop-held",
+    });
+    await expect(getHumanStopStore().isHeld("codex", target.sessionId)).resolves.toBe(true);
   });
 });

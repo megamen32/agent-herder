@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { randomUUID } from "node:crypto";
+
 const endpoint = process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787";
 let raw = "";
 for await (const chunk of process.stdin) raw += chunk;
@@ -63,7 +65,24 @@ function normalizePaths(paths) {
   return [...new Set(result)].slice(0, 32);
 }
 try {
-  if (event === "SessionStart" || event === "UserPromptSubmit") {
+  if (event === "SessionStart") {
+    const q = new URLSearchParams({ harness, sessionId, cwd, touch: "1", consume: "1" });
+    const data = await fetchJson(`${endpoint}/api/coordination/context?${q}`);
+    output(event, data.context || undefined);
+  } else if (event === "UserPromptSubmit") {
+    const inputId = typeof input.input_id === "string" ? input.input_id
+      : typeof input.inputId === "string" ? input.inputId
+        : typeof input.metadata?.inputId === "string" ? input.metadata.inputId : undefined;
+    const nativeTurnId = typeof input.turn_id === "string" ? input.turn_id
+      : typeof input.turnId === "string" ? input.turnId : undefined;
+    const promptId = typeof input.prompt_id === "string" ? input.prompt_id
+      : typeof input.promptId === "string" ? input.promptId
+        : inputId || nativeTurnId || `user-prompt-${randomUUID()}`;
+    await fetchJson(`${endpoint}/api/coordination/lifecycle`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ harness, sessionId, cwd, event: "user-prompt", promptId, ...(nativeTurnId ? { turnId: nativeTurnId } : {}), at: new Date().toISOString(), ...(inputId ? { inputId } : {}) }),
+    });
     const q = new URLSearchParams({ harness, sessionId, cwd, touch: "1", consume: "1" });
     const data = await fetchJson(`${endpoint}/api/coordination/context?${q}`);
     output(event, data.context || undefined);

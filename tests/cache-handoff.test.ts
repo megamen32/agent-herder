@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AnthropicMiniMaxSummarizer, CacheHandoffService, cacheWindowFor, continuationModelFor, movePinnedContinuation, semanticTranscript, unfinishedProbeDelayMs } from "../src/cache-handoff.js";
 import { LineageStore } from "../src/lineage-store.js";
+import { getHumanStopStore } from "../src/human-stop-store.js";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "../src/types/index.js";
 
 const oldSession: AgentSession = {
@@ -85,6 +86,41 @@ describe("cache-aware session handoff", () => {
     expect(result).toMatchObject({ kind: "rolled_over", session: { id: "new", model: "gpt-5.6-sol", cwd: "/repo" } });
     expect(fixture.createSession).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-5.6-sol", cwd: "/repo" }));
     expect(fixture.sendMessage).toHaveBeenCalledWith("new", expect.objectContaining({ message: expect.stringContaining("Цель: доделать") }));
+  });
+
+  it("does not create or send a cache replacement for a durably human-stopped source", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-cache-human-stop-"));
+    try {
+      const fixture = adapter([{ id: "u", role: "user", text: "synthetic task", parts: [{ type: "text", text: "synthetic task" }] }]);
+      const stops = getHumanStopStore({ AGENT_HERDER_HUMAN_STOP_STORE: join(root, "human-stops.json") });
+      await stops.hold(oldSession, {
+        id: "interrupt-1", at: "2026-10-03T10:30:00.000Z", reason: "interrupted", turnId: "turn-1",
+      });
+      const summarizer = { summarize: vi.fn(async () => "should not run") };
+      const service = new CacheHandoffService(new Map([["codex", fixture.value]]), summarizer, undefined, process.env, stops);
+
+      await expect(service.maybeRollover(oldSession, new Date("2026-10-03T10:31:00.000Z"))).resolves.toMatchObject({ kind: "held" });
+      expect(summarizer.summarize).not.toHaveBeenCalled();
+      expect(fixture.createSession).not.toHaveBeenCalled();
+      expect(fixture.sendMessage).not.toHaveBeenCalled();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("rechecks the stop fence after summarization and before replacement creation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-cache-stop-race-"));
+    try {
+      const fixture = adapter([{ id: "u", role: "user", text: "synthetic task", parts: [{ type: "text", text: "synthetic task" }] }]);
+      const stops = getHumanStopStore({ AGENT_HERDER_HUMAN_STOP_STORE: join(root, "human-stops.json") });
+      const summarizer = { summarize: vi.fn(async () => {
+        await stops.hold(oldSession, { id: "interrupt-2", at: "2026-10-03T10:30:30.000Z", reason: "interrupted", turnId: "turn-2" });
+        return "summary";
+      }) };
+      const service = new CacheHandoffService(new Map([["codex", fixture.value]]), summarizer, undefined, process.env, stops);
+
+      await expect(service.maybeRollover(oldSession, new Date("2026-10-03T10:31:00.000Z"))).resolves.toMatchObject({ kind: "held" });
+      expect(fixture.createSession).not.toHaveBeenCalled();
+      expect(fixture.sendMessage).not.toHaveBeenCalled();
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 
   it("does not create or send a second cache handoff after native admission failed", async () => {

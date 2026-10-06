@@ -51,25 +51,43 @@ async function selectedGoal(requestId) {
   }
 }
 
-async function waitForChoice(requestId) {
+async function waitForChoice(requestId, sessionId, cwd) {
   // The running Stop hook is the continuation transport. Telegram only marks
   // the durable selection; no second ZCode client is ever launched.
   const until = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  let lastFenceCheck = 0;
   while (Date.now() < until) {
+    if (Date.now() - lastFenceCheck >= 5_000) {
+      if (await humanStopHeld(sessionId, cwd)) return null;
+      lastFenceCheck = Date.now();
+    }
     const goal = await selectedGoal(requestId);
-    if (goal) return goal;
+    if (goal) return await humanStopHeld(sessionId, cwd) ? null : goal;
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 1000));
   }
   return null;
 }
 
-try {
+async function humanStopHeld(sessionId, cwd) {
+  const query = new URLSearchParams({ harness: "zcode", sessionId, cwd, touch: "0", consume: "0" });
+  const response = await fetch(`${process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787"}/api/coordination/context?${query}`, {
+    signal: AbortSignal.timeout(1200),
+  });
+  if (!response.ok) throw new Error(`human-stop status unavailable (${response.status})`);
+  const status = await response.json();
+  return status.humanStopHeld === true;
+}
+
+async function main() {
   const raw = await readStdin();
   const input = raw.trim() ? JSON.parse(raw) : {};
   const sessionId = typeof input.session_id === "string" ? input.session_id : input.sessionId;
   const cwd = typeof input.cwd === "string" && input.cwd ? input.cwd : process.env.ZCODE_PROJECT_DIR || process.cwd();
   if (!sessionId) throw new Error("ZCode Stop hook did not provide session_id");
   const root = agentHerderRoot();
+  let held = false;
+  try { held = await humanStopHeld(sessionId, cwd); } catch { held = true; }
+  if (held) return writeEmpty();
   const userContext = await lastUserContext(sessionId);
   // The turn just ended: record the lifecycle boundary before judging, so
   // the coordination boards see this session as idle, not running.
@@ -81,6 +99,10 @@ try {
       signal: AbortSignal.timeout(1200),
     });
   } catch {}
+  // Recheck immediately before the automatic per-session opt-in: ZCode's
+  // Stop hook runs `on` for every stop event, but that toggle never clears a
+  // durable human stop.
+  if (await humanStopHeld(sessionId, cwd)) return writeEmpty();
   // ZCode has no slash-command callback with a session id. Arm the exact
   // session from its authoritative Stop payload before judging it.
   await invoke(root, { command: "on", harness: "zcode", sessionId, cwd });
@@ -102,9 +124,10 @@ try {
     stopHookActive: input.stop_hook_active === true,
   });
   const nextGoal = result?.decision === "continue" ? result.next_goal
-    : result?.decision === "choice" && typeof result.request_id === "string" ? await waitForChoice(result.request_id)
+    : result?.decision === "choice" && typeof result.request_id === "string" ? await waitForChoice(result.request_id, sessionId, cwd)
       : null;
   if (typeof nextGoal === "string" && nextGoal.trim()) {
+    if (await humanStopHeld(sessionId, cwd)) return writeEmpty();
     // ZCode handles this natively: it retains the current session and starts
     // its next turn with this additional context. No app-server or relay client.
     process.stdout.write(JSON.stringify({ continue: true, reason: nextGoal, additionalContext: nextGoal }));
@@ -122,10 +145,14 @@ try {
       });
     } catch {}
   }
-} catch (error) {
+}
+
+function writeEmpty() { process.stdout.write("{}"); }
+
+void main().catch((error) => {
   process.stderr.write(`[agent-herder-zcode] ${(error instanceof Error ? error.message : String(error))}\n`);
   process.stdout.write("{}");
-}
+});
 
 async function lastUserContext(sessionId) {
   try {

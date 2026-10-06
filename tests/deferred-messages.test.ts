@@ -48,11 +48,14 @@ describe("durable cross-agent inbox", () => {
   });
 
   it("continues a busy Codex thread with inbox context at its Stop boundary", async () => {
-    let requestedUrl = "";
+    const requestedUrls: string[] = [];
     const server = createServer((request, response) => {
-      requestedUrl = request.url || "";
+      const requestedUrl = request.url || "";
+      requestedUrls.push(requestedUrl);
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ inboxContext: "<agent-herder-inbox>coordinate now</agent-herder-inbox>", inboxCount: 1 }));
+      response.end(JSON.stringify(requestedUrl.includes("consume=1")
+        ? { humanStopHeld: false, inboxContext: "<agent-herder-inbox>coordinate now</agent-herder-inbox>", inboxCount: 1 }
+        : { humanStopHeld: false }));
     });
     await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
     try {
@@ -62,8 +65,10 @@ describe("durable cross-agent inbox", () => {
         hook_event_name: "Stop", session_id: "codex-busy", cwd: projectRoot,
       }, { AGENT_HERDER_URL: `http://127.0.0.1:${address.port}`, PLUGIN_ROOT: projectRoot }));
       expect(output).toEqual({ decision: "block", reason: "<agent-herder-inbox>coordinate now</agent-herder-inbox>" });
-      expect(requestedUrl).toContain("consume=1");
-      expect(requestedUrl).toContain("sessionId=codex-busy");
+      expect(requestedUrls.some((url) => url.includes("consume=0"))).toBe(true);
+      const consumingUrl = requestedUrls.find((url) => url.includes("consume=1"));
+      expect(consumingUrl).toContain("consume=1");
+      expect(consumingUrl).toContain("sessionId=codex-busy");
     } finally {
       await new Promise<void>((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()));
     }

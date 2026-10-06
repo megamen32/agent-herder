@@ -19,6 +19,7 @@ import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopil
 import { resolveEffectivePolicy } from "./autopilot/policy.js";
 import { AutopilotSessionStore } from "./autopilot/session-store.js";
 import { SessionAutostartStore } from "./autopilot/unfinished-session-launcher.js";
+import { getHumanStopStore, type HumanStopStore } from "./human-stop-store.js";
 
 const DEFAULT_LOCK_WAIT_MS = 2_000;
 const DEFAULT_LOCK_RETRY_INTERVAL_MS = 25;
@@ -40,14 +41,19 @@ export type AutopilotHookDeps = {
   notification?: Parameters<typeof createAutopilotCore>[0]["notification"];
   choiceRegistry?: ChoiceRegistry;
   effectivePolicy?: Parameters<typeof createAutopilotCore>[0]["effectivePolicy"];
+  humanStopStore?: HumanStopStore;
 };
 
 export async function runAutopilotStopHook(
   input: StopHookInput,
   deps: AutopilotHookDeps,
 ) {
+  const humanStops = deps.humanStopStore;
+  if (humanStops && await humanStops.isHeld(input.harness ?? "codex", input.session_id)) return {};
   const core = createAutopilotCore(deps);
-  return core.handleStop(input);
+  const result = await core.handleStop(input);
+  if (humanStops && await humanStops.isHeld(input.harness ?? "codex", input.session_id)) return {};
+  return result;
 }
 
 /** Load the effective policy from the same configured store path used by the web service. */
@@ -144,6 +150,7 @@ async function main(): Promise<void> {
         kind: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_KIND ?? "notification",
       },
       choiceRegistry: new ChoiceRegistry(join(stateDir, "choices.json")),
+      humanStopStore: getHumanStopStore(),
     });
     const receiptRelease = await acquireLock(join(stateDir, "state.lock"), {
       waitMs: 5_000,
