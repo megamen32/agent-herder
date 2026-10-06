@@ -218,4 +218,19 @@ describe("unfinished session crash recovery", () => {
         expect(calls.resumes).toBe(1);
         expect(calls.messages).toHaveLength(1);
     });
+    it("retires completed-turn race fences after operations settle", async () => {
+        const root = await mkdtemp(join(tmpdir(), "fence-retirement-"));
+        const calls = { resumes: 0, messages: [] as string[] };
+        const current = fixture();
+        const launcher = new UnfinishedSessionLauncher({ adapters: new Map([["codex", fakeAdapter(() => current, calls)]]), store: new UnfinishedSessionStore(join(root, "state.json")), settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) });
+        for (let turn = 0; turn < 200; turn++) {
+            await launcher.handleEvent("codex", { kind: "turn.completed", harness: "codex", sessionId: current.id, data: { turnId: `completed-${turn}` } });
+        }
+        const fences = launcher as unknown as { turnGenerations: Map<string, number>; eagerCompletions: Set<string>; fenceUsers: number };
+        expect(fences.fenceUsers).toBe(0);
+        expect(fences.turnGenerations.size).toBe(0);
+        expect(fences.eagerCompletions.size).toBe(0);
+        expect(calls).toEqual({ resumes: 0, messages: [] });
+    });
+
 });

@@ -1025,6 +1025,16 @@ export class UnfinishedSessionLauncher {
   private readonly activeNativeTurns = new Map<string, { turnId?: string; inputId?: string }>();
   private eventOperation: Promise<unknown> = Promise.resolve();
   private readonly turnGenerations = new Map<string, number>();
+  /** Fences are retained only while event/recovery operations can hold a stale snapshot. */
+  private fenceUsers = 0;
+
+  private releaseTurnFences(): void {
+    this.fenceUsers -= 1;
+    if (this.fenceUsers === 0) {
+      this.turnGenerations.clear();
+      this.eagerCompletions.clear();
+    }
+  }
   private readonly eagerCompletions = new Set<string>();
   private readonly urgentSessions = new Set<string>();
   private readonly urgentSessionVersions = new Map<string, number>();
@@ -1069,6 +1079,7 @@ export class UnfinishedSessionLauncher {
   }
 
   async handleEvent(provider: string, event: HarnessEvent): Promise<void> {
+    this.fenceUsers += 1;
     const eventIdentity = nativeRecoveryIdentity(event);
     const generationKey = event.sessionId && isAutocontinueInventoryHarness(provider)
       ? nativeTurnFenceKey(provider, event.sessionId, eventIdentity) : undefined;
@@ -1084,6 +1095,7 @@ export class UnfinishedSessionLauncher {
     try {
       await this.handleEventSerialized(provider, event, eventGeneration);
     } finally {
+      this.releaseTurnFences();
       release();
     }
   }
@@ -1093,6 +1105,14 @@ export class UnfinishedSessionLauncher {
     const eventKey = sessionKey(provider, event.sessionId);
     const identity = nativeRecoveryIdentity(event);
     if (event.kind === "session.deleted") {
+      const prefix = `${eventKey}:`;
+      for (const key of this.turnGenerations.keys()) {
+        if (key.startsWith(prefix)) {
+          this.turnGenerations.set(key, (this.turnGenerations.get(key) ?? 0) + 1);
+          this.eagerCompletions.add(key);
+        }
+      }
+      this.activeNativeTurns.delete(eventKey);
       this.completedSessions.add(sessionKey(provider, event.sessionId));
       this.clearUrgentSession(sessionKey(provider, event.sessionId));
       await this.options.store.remove(provider, event.sessionId);
@@ -1237,6 +1257,8 @@ export class UnfinishedSessionLauncher {
 
   stop(): void {
     this.lifecycleEpoch += 1;
+    this.turnGenerations.clear();
+    this.eagerCompletions.clear();
     this.started = false;
     this.stopped = true;
     if (this.retryTimer) clearTimeout(this.retryTimer);
@@ -1491,6 +1513,15 @@ export class UnfinishedSessionLauncher {
   }
 
   private async runRecovery(): Promise<void> {
+    this.fenceUsers += 1;
+    try {
+      await this.runRecoveryWithFences();
+    } finally {
+      this.releaseTurnFences();
+    }
+  }
+
+  private async runRecoveryWithFences(): Promise<void> {
     const lifecycleEpoch = this.lifecycleEpoch;
     this.continuedThisRecovery.clear();
     const runtimeSettings = await this.options.settingsStore.getSettings();
@@ -1516,6 +1547,7 @@ export class UnfinishedSessionLauncher {
       const recordKey = unfinishedRecordKey(record);
       const recoveryFence = nativeTurnFenceKey(record.harness, record.sessionId, { turnId: record.recoveryTurnId, inputId: record.recoveryInputId });
       const observedTurnGeneration = recoveryFence ? this.turnGenerations.get(recoveryFence) ?? 0 : 0;
+      if (recoveryFence) this.turnGenerations.set(recoveryFence, observedTurnGeneration);
       if (this.continuedThisRecovery.has(recordKey)) continue;
       if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)) continue;
       if (!await this.isEnabled(record.harness, record.sessionId, record.cwd)) {

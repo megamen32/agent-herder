@@ -366,3 +366,29 @@ Live cbce504 deployment and newly exposed blockers:
   final build will recompile. Restored20 pure tests into explicit audit file;
   recovery-specific suite replaces obsolete semantic-send/new-chat expectations.
   Shared global+project flock, RAM1/2GiB, swap0, CPU2, Tasks128, timeout120s.
+- Coherent9e819776 source published/fetched clean, built successfully and
+  deployed PID1641128/NRestarts0. Actual GET returns failure=true,
+  disconnect=true, watchdog=false; new frontend asset index-XmeqdUZ6.js served.
+  Root temporary session override deleted, effective inheritance restored.
+- Live readonly registry after deployment: one active native record, zero
+  semantic-only legacy records, zero crash-qualified records, zero native
+  children; incident child01a111a9 is absent. No crash induced in production
+  and no business/native prompt sent for this settings acceptance.
+- Independent final source review SHIP, then found/owned fence retention growth.
+  Reference-counted event/recovery operations now retain race fences only until
+  all stale snapshots are settled; final release clears maps, stop invalidates
+  the lifecycle and clears them, deletion invalidates matching reserved keys.
+  Added200 unique terminal-turn retirement regression. Source re-critique SHIP;
+  corrective test/build waits the owned browser Save/reload capture END.
+- Real headed settings acceptance on9e819776/PID1641128 passed: false/false
+  reason flags saved then persisted across reload and GET; unsaved watchdog
+  toggle enabled10s/2min inputs, then discarded; true/true restored and verified
+  through Save/reload/DOM/GET. Globalenabled=true/watchdog=false, all other
+  fields/overrides identical; Autopilot masterfalse/revision unchanged and peer
+  canary held/off preserved. Native sends0. Owner browser/controller closed,
+  both heavy locks released and private .tmp controller moved out of Git.
+  Evidence: peer crash-panel-final-proof.json and inspected screenshots in
+  /home/roomhacker/.codex/visualizations/2026/10/06/01a1106f-30c3-79f0-9260-ca4810dc1f2a.
+- Corrective delta: launcher+audit36/36 passed in1.64s, final tsc/Vite build
+  green with identical frontend index-XmeqdUZ6.js. No UI action replay needed:
+  correction only retires backend race fences and preserves the accepted UI.
