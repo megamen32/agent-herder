@@ -309,10 +309,16 @@ export class SessionSupervisor {
     return sessionGroups.flat();
   }
 
-  async getSession(harness: string, id: string): Promise<AgentSession | null> {
+  async getSession(harness: string, id: string, expectedCwd?: string): Promise<AgentSession | null> {
+    const read = async (adapter: HarnessAdapter): Promise<AgentSession | null> => {
+      if (!expectedCwd) return adapter.getSession(id);
+      const cwd = resolve(expectedCwd);
+      const sessions = await adapter.listSessions({ cwd });
+      return sessions.find((session) => session.id === id && session.harness === harness && resolve(session.cwd) === cwd) ?? null;
+    };
     const direct = this.adapters.get(harness);
     if (direct) {
-      const session = await direct.getSession(id);
+      const session = await read(direct);
       const humanStopHeld = session && (harness === "codex" || harness === "zcode") ? await this.humanStops.observe(session) : false;
       const modelOptions = direct.listModels ? await direct.listModels() : [];
       return session
@@ -321,7 +327,7 @@ export class SessionSupervisor {
     }
     for (const adapter of this.adapters.values()) {
       if (adapter.type !== harness) continue;
-      const session = await adapter.getSession(id);
+      const session = await read(adapter);
       if (session) {
         const modelOptions = adapter.listModels ? await adapter.listModels() : [];
         return { ...session, meta: { ...session.meta, provider: harness, controlCapabilities: getHarnessCapabilities(adapter), modelOptions } };

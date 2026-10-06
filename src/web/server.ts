@@ -106,15 +106,25 @@ function localHookTimeoutReceipt(choice: PendingChoice): ResumeReceipt {
 
 /** Route Codex and ZCode through Herder's process-owned native writers so an
  * accepted human-gate delivery also arms durable Autocontinue tracking. */
-async function resumeSelectedTarget(request: ResumeTransportRequest, supervisor: SessionSupervisor): Promise<ResumeReceipt> {
+async function resumeSelectedTarget(request: ResumeTransportRequest, supervisor: SessionSupervisor, origin: "human" | "automation" = "automation"): Promise<ResumeReceipt> {
   if (request.target.agent !== "codex" && request.target.agent !== "zcode") return new AgentResumeClient().resume(request);
   const harness = request.target.agent;
   const prompt = request.prompt ?? request.goal ?? `Human Request resolved: ${request.result_ref}`;
   try {
+    const current = await supervisor.getSession(harness, request.target.session_id, harness === "zcode" ? request.target.cwd : undefined);
+    if (!liveAutopilotTargetMatchesChoice({ harness, sessionId: request.target.session_id, cwd: request.target.cwd }, current)) {
+      return {
+        status: "failed",
+        target: request.target,
+        result_ref: request.result_ref,
+        reason: `${harness} target no longer matches the saved native session and working directory`,
+        ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
+      };
+    }
     const result = await supervisor.sendMessage(
       harness,
       request.target.session_id,
-      { message: prompt, queue: false },
+      { message: prompt, queue: false, origin },
       harness === "zcode" ? request.target.cwd : undefined,
     );
     if (!result.ok) {
@@ -468,10 +478,11 @@ export function createWebServer(dependencies: WebDependencies): Server {
     ? dependencies.herderEvents.subscribe((event) => { mcpHttp.notify.resourceUpdated(event.uri); })
     : undefined;
   const mcpAuthToken = dependencies.mcpAuthToken?.trim() || undefined;
-  const selectedResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor));
+  const selectedResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor, "automation"));
+  const manualChoiceResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor, "human"));
   const server = createServer(async (request, response) => {
     try {
-      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents);
+      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents);
     } catch (err) {
       if (err instanceof SessionNotFoundError) {
         sendJson(response, 404, { error: "Session not found" });
@@ -490,16 +501,16 @@ export function createWebServer(dependencies: WebDependencies): Server {
       choiceRegistry: dependencies.choiceRegistry!,
       policyStore: dependencies.autopilotPolicyStore!,
       sessionStore: dependencies.autopilotSessionStore,
-      targetAvailable: async (choice) => choice.harness === "hermes" || choice.harness === "zcode" || liveAutopilotTargetMatchesChoice(
+      targetAvailable: async (choice) => choice.harness === "hermes" || liveAutopilotTargetMatchesChoice(
         choice,
-        await supervisor.getSession(choice.harness ?? "codex", choice.sessionId),
+        await supervisor.getSession(choice.harness ?? "codex", choice.sessionId, choice.harness === "zcode" ? choice.cwd : undefined),
       ),
       resume: async (choice) => {
-        if (choice.harness === "hermes" || choice.harness === "zcode") return localHookTimeoutReceipt(choice);
+        if (choice.harness === "hermes") return localHookTimeoutReceipt(choice);
         return selectedResume(buildTimeoutResumeRequest(choice));
       },
       query: async (choice) => {
-        if (choice.harness === "hermes" || choice.harness === "zcode") return localHookTimeoutReceipt(choice);
+        if (choice.harness === "hermes") return localHookTimeoutReceipt(choice);
         return new AgentResumeClient().queryReceipt(buildTimeoutResumeRequest(choice));
       },
     }).catch((error) => console.error(`[agent-herder] autopilot sweep failed: ${(error as Error).message}`));
@@ -534,7 +545,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (url.pathname.startsWith("/api/quota-lens") && request.method === "GET") {
     const body = await handleQuotaLensRequest(url.pathname, url.searchParams);
@@ -852,8 +863,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (pending.sessionId.length === 0 || !pending.nextGoal) return sendJson(response, 409, { error: "choice has no resumable goal" });
     const resumeRequest = buildChoiceResumeRequest(pending);
     try {
-      const client = new AgentResumeClient();
-      const receipt = await (choiceResume ?? ((input) => client.resume(input)))(resumeRequest);
+      const receipt = await (choiceManualResume ?? ((input) => resumeSelectedTarget(input, supervisor, "human")))(resumeRequest);
       return completeManualChoiceResume(response, choiceRegistry, pending, receipt, false);
     } catch (error) {
       return sendJson(response, 502, { request_id: pending.requestId, status: pending.status, choice_id: pending.choiceId, session_id: pending.sessionId, resumed: false, error: `Agent Resume invocation failed: ${(error as Error).message}` });
