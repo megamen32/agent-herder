@@ -34,6 +34,7 @@
     "scripts/autopilot-command-launcher.sh",
     "scripts/codex-stop-hook.mjs",
     "scripts/install-zcode-autopilot.sh",
+    "scripts/install-codex-coordination-hook.mjs",
     "hooks/hooks.json",
     "scripts/claude-autopilot-hook-launcher.sh",
     "skills/autopilot/SKILL.md",

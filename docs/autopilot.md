@@ -133,6 +133,23 @@ npm link
 
 Merge [`codex-hooks.json`](./codex-hooks.json) into the existing Codex hook
 configuration. This is a merge, not a replacement: retain all existing hooks.
+
+If `hooks/list` or `/hooks` does not list the enabled plugin's Codex
+`UserPromptSubmit` callback, install that callback through the supported user
+hook configuration:
+
+```bash
+node scripts/install-codex-coordination-hook.mjs
+```
+
+This preserves existing handlers, hook trust and Stop settings. Review and
+trust only the added callback in Codex `/hooks`; the installer never grants
+trust automatically. The callback runs in a bounded user systemd scope on
+Linux (128/256 MiB memory, no swap, one CPU, 32 tasks, five seconds). It handles
+new native prompts so an explicit human continuation can release a previous
+manual-stop hold. A plugin-cache refresh alone does not prove that this native
+callback runs. Check the real original chat after installation.
+
 The command is:
 
 ```text
