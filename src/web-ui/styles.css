@@ -109,6 +109,13 @@ h1 { font-size: 19px; } h2 { font-size: 16px; }
 .autopilot-state-banner strong { font-size: 12px; }.autopilot-state-banner span { color: var(--muted); font-size: 10px; line-height: 1.45; }
 .settings-group { display: grid; gap: 12px; margin: 0; padding: 0 0 18px; border: 0; border-bottom: 1px solid var(--border); }
 .settings-group legend { margin-bottom: 11px; color: var(--text); font-size: 13px; font-weight: 600; }
+.launch-policy-notice { margin: 0; padding: 10px 12px; border: 1px solid #625138; border-radius: 8px; background: #211d16; color: #ead7b1; font-size: 12px; line-height: 1.5; }
+.launch-runtime-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.launch-runtime-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 8px; background: #171719; cursor: pointer; }
+.launch-runtime-option span { display: grid; gap: 3px; min-width: 0; }.launch-runtime-option strong { color: var(--text); font-size: 12px; }.launch-runtime-option small { color: var(--muted); font-size: 10px; }
+.launch-runtime-option input { width: 18px; height: 18px; flex: 0 0 auto; accent-color: var(--accent); }
+.launch-policy-field { display: grid; grid-template-columns: minmax(125px, 1fr) minmax(180px, 1.2fr); align-items: center; gap: 10px 18px; color: var(--text); font-size: 12px; }
+.launch-policy-field input, .launch-policy-field select { width: 100%; min-width: 0; padding: 8px 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-raised); color: var(--text); }
 .advanced-settings summary { padding: 3px 0 10px; color: var(--text); font-size: 12px; font-weight: 650; cursor: pointer; }
 .advanced-settings[open] summary { margin-bottom: 4px; }
 .harness-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -141,7 +148,7 @@ h1 { font-size: 19px; } h2 { font-size: 16px; }
   .message-column { padding: 22px 15px; } .message { margin-bottom: 25px; } .message.user { max-width: 92%; } .message p { margin-bottom: 14px; font-size: 14px; line-height: 1.72; }
   .composer-stack { width: calc(100% - 18px); margin: 0 auto 9px; }.composer { padding: 9px; } .composer-hint { display: none; } .composer textarea { font-size: 16px; }
   .chat-menu { top: 82px; right: 9px; } .scroll-latest { right: 12px; bottom: 118px; } .scroll-latest span { display: none; }
-  .autopilot-settings-overlay { inset: 86px 0 0; padding: 10px; }.global-autopilot-card { padding: 18px 14px; border-radius: 12px; }.global-autopilot-head { padding-right: 34px; }.global-autopilot-head h3 { font-size: 18px; }.harness-grid { grid-template-columns: 1fr; }
+  .autopilot-settings-overlay { inset: 86px 0 0; padding: 10px; }.global-autopilot-card { padding: 18px 14px; border-radius: 12px; }.global-autopilot-head { padding-right: 34px; }.global-autopilot-head h3 { font-size: 18px; }.harness-grid, .launch-runtime-list { grid-template-columns: 1fr; }.launch-policy-field { grid-template-columns: 1fr; gap: 6px; }
   .global-autopilot-head p, .autopilot-state-banner span, .harness-option small, .settings-help, .timeout-setting small, .runtime-settings-grid label small, .autopilot-control small, .settings-save-row > span { color: #c2bdc7; font-size: 12px; line-height: 1.5; }
   .technical-note { color: #c2bdc7; font-size: 12px; }
 }
