@@ -31,5 +31,37 @@ Green: hook/choice HTTP 16 tests; native adapter/human-stop integration 66 tests
 Test budget: one worker/CPU, 768 MiB soft/1 GiB hard RAM, 128 MiB swap,
 64 tasks, IOWeight20, bounded 30–50 second scopes. Typecheck separately bounded.
 
-Pending: coordinated Herder build/restart, real post-change same-ID choice and
-queued prompt proof, strict held rejection proof and final owned-canary cleanup.
+First final-runtime proof on0a4f846/PID113237: own same-ID native queue replied
+ОЧЕРЕДЬ ПРОШЛА while a durable color choice was pending. Session-level off stayed
+off after actual human resume/completion; automatic message while held was
+rejected, no replacement. Color timeout receipt15deb485 resumed once in the
+same nativeID and got a final red confirmation; this was timeout, not a human
+button click. Current canary is explicitly stopped/heldtrue with autopilot off.
+
+Acceptance exposed repeated same-turn terminal choices: native turn8ca1e242
+created15deb485 ande9e5d09c; turnf60461cb createdbce38566 and57ee5698. The latter
+judged generated coordination board notes as the user's task. Root released
+onlysrc/autopilot/index.ts andtests/autopilot-core.test.ts for the correction.
+Root cause: persisted choice receipts were discarded on reload; terminal
+receipts and in-process locks also keyed only by changing evidence hash.
+
+Correction preserves choice reload and per-native-turn terminal/active guard;
+continue may still re-evaluate new evidence, and a pending terminal notice
+retries its exact old payload/key. A failed choice card keeps one registry
+request and durable notice. Judge/card projections remove only complete
+canonical leading board+exact generated caption before truncation. Bounded
+4MiB transcript projection preserves trailing real requests before final16KiB
+judge evidence limit; original native prompt/cache/evidence/digest/ancestry
+remain unchanged. Literal/incomplete tags are retained.
+
+Independent root review PASS; root absolute Node core28/28 in3.43s and
+related6files45/45 in6.84s. Own smaller64-task/single-CPU50s runner failed to
+finish startup; no broad suite/budget escalation by this agent. Root ran one
+approved shared-budget2CPU/2GiB120s scope. Typecheck green. Foreign root
+tracker/obsolete surface assertion and status owner's commits preserved.
+
+Pending: root's ONE coherent build/restart, then fresh same-ID signed human
+selection/duplicate/no-noise proof, strict final hold and original settings
+restoration. No new sessions or vendor-source changes.
+Evidence: Codex visualizations zcode-queue/pre-terminal-fix.json and inspected
+browser screenshots (including expired blank page before any cleanup).

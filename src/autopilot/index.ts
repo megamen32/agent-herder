@@ -298,7 +298,7 @@ export function createAutopilotCore(options: {
   onDecision?: (decision: AutopilotDecision, metadata?: { choiceRequestId?: string }) => void;
 }): { handleStop(input: StopHookInput): Promise<AutopilotHookResult> } {
   const continuationCounts = new Map<string, number>();
-  const activeReceiptKeys = new Set<string>();
+  const activeTurnKeys = new Set<string>();
   const notification = options.notification ?? DEFAULT_NOTIFICATION;
   const maxContinuations = Math.max(
     0,
@@ -332,23 +332,28 @@ export function createAutopilotCore(options: {
         input.last_assistant_message,
       );
       const receiptKey = receiptKeyFor(input, evidence);
-      const existingReceipt = options.receiptStore.get(receiptKey);
+      const turnPrefix = `${encodeURIComponent(input.session_id)}:${encodeURIComponent(input.turn_id)}:`;
+      if (activeTurnKeys.has(turnPrefix)) return {};
+      const turnReceipts = [...options.receiptStore].filter(([key]) => key.startsWith(turnPrefix));
+      const pending = turnReceipts.find(([, receipt]) => receipt.pendingNotice);
+      const terminal = turnReceipts.find(([, receipt]) => receipt.kind !== "continue");
+      const existingKey = pending?.[0] ?? terminal?.[0] ?? receiptKey;
+      const existingReceipt = options.receiptStore.get(existingKey);
       if (existingReceipt?.pendingNotice) {
-        if (activeReceiptKeys.has(receiptKey)) return {};
-        activeReceiptKeys.add(receiptKey);
+        activeTurnKeys.add(turnPrefix);
         try {
           await options.notify.send(existingReceipt.pendingNotice);
-          options.receiptStore.set(receiptKey, { kind: existingReceipt.kind });
+          options.receiptStore.set(existingKey, { kind: existingReceipt.kind });
         } catch {
           // The terminal decision is already durable. Keep the exact notice in
           // the receipt outbox so a later Stop can retry without re-judging or
           // continuing a task that MiniMax already declared complete.
         } finally {
-          activeReceiptKeys.delete(receiptKey);
+          activeTurnKeys.delete(turnPrefix);
         }
         return {};
       }
-      if (existingReceipt || activeReceiptKeys.has(receiptKey)) {
+      if (existingReceipt) {
         return {};
       }
 
@@ -358,12 +363,12 @@ export function createAutopilotCore(options: {
         countPersistedContinuations(options.receiptStore, input.session_id, input.turn_id);
       const remainingContinuations = Math.max(0, maxContinuations - currentCount);
 
-      activeReceiptKeys.add(receiptKey);
+      activeTurnKeys.add(turnPrefix);
       try {
         const decision = normalizeDecision(
           await options.judge.decide({
             hook: sanitizeHookForJudge(input),
-            evidence,
+            evidence: await readBoundedEvidence(input.transcript_path, input.last_assistant_message, true),
             remainingContinuations,
           }),
         );
@@ -433,19 +438,23 @@ export function createAutopilotCore(options: {
                 }
               : {}),
           });
-          await options.notify.send(
-            createNoticePlacePayload({
-              title: `Agent Herder: выбор следующего шага по ${projectLabel(input.cwd)}`,
-              body: buildChoiceNotificationBody(input, decision.choices, lastUserMessage, includeContext, options.harness ?? "codex"),
-              severity: "medium",
-              dedupKey: `agent-herder:choice:${pending.requestId}`,
-              correlationId: `${input.session_id}/${input.turn_id}`,
-              choices: decision.choices.map((choice) => ({ choice_id: choice.choiceId, label: choice.label })),
-              choice_request_id: pending.requestId,
-              ...notification,
-            }),
-          );
-          options.receiptStore.set(receiptKey, { kind: decision.kind });
+          const pendingNotice = createNoticePlacePayload({
+            title: `Agent Herder: выбор следующего шага по ${projectLabel(input.cwd)}`,
+            body: buildChoiceNotificationBody(input, decision.choices, lastUserMessage, includeContext, options.harness ?? "codex"),
+            severity: "medium",
+            dedupKey: `agent-herder:choice:${pending.requestId}`,
+            correlationId: `${input.session_id}/${input.turn_id}`,
+            choices: decision.choices.map((choice) => ({ choice_id: choice.choiceId, label: choice.label })),
+            choice_request_id: pending.requestId,
+            ...notification,
+          });
+          options.receiptStore.set(receiptKey, { kind: decision.kind, pendingNotice });
+          try {
+            await options.notify.send(pendingNotice);
+            options.receiptStore.set(receiptKey, { kind: decision.kind });
+          } catch {
+            // Preserve the same choice and notification key for a later retry.
+          }
           options.onDecision?.(decision, { choiceRequestId: pending.requestId });
           return {};
         } else if (decision.kind === "human") {
@@ -488,7 +497,7 @@ export function createAutopilotCore(options: {
         options.receiptStore.set(receiptKey, { kind: decision.kind });
         return {};
       } finally {
-        activeReceiptKeys.delete(receiptKey);
+        activeTurnKeys.delete(turnPrefix);
       }
     },
   };
@@ -604,6 +613,7 @@ function shortSessionId(sessionId: string): string {
 export async function readBoundedEvidence(
   transcriptPath: string | null,
   lastAssistantMessage: string | null,
+  projectForJudge = false,
 ): Promise<string> {
   const hasLastAssistantMessage = lastAssistantMessage !== null;
   const lastPrefix = hasLastAssistantMessage ? LAST_ASSISTANT_PREFIX : "";
@@ -614,10 +624,12 @@ export async function readBoundedEvidence(
       byteLength(lastPrefix),
   );
   const transcript = transcriptPath
-    ? await readTail(transcriptPath, transcriptBudget).catch(() => "")
+    ? await readTail(transcriptPath, projectForJudge ? MAX_CHOICE_TRANSCRIPT_SCAN_BYTES : transcriptBudget).catch(() => "")
     : "";
   const boundedTranscript = boundedUtf8(
-    redactSecrets(transcript),
+    projectForJudge
+      ? Buffer.from(redactSecrets(evidenceForJudge(transcript))).subarray(-transcriptBudget).toString("utf8")
+      : redactSecrets(transcript),
     transcriptBudget,
   );
   const lastMessage = hasLastAssistantMessage
@@ -642,7 +654,36 @@ function sanitizeHookForJudge(input: StopHookInput): StopHookInput {
 
 function sanitizeChoiceContext(value: string | null | undefined): string | null | undefined {
   if (value === null || value === undefined) return value;
-  return boundedUtf8(redactSecrets(value).trim(), MAX_CHOICE_LAST_MESSAGE_BYTES) || null;
+  return boundedUtf8(redactSecrets(withoutCoordinationPrefix(value)).trim(), MAX_CHOICE_LAST_MESSAGE_BYTES) || null;
+}
+
+// Judge/card projection only: native input and receipt fingerprints stay intact.
+function withoutCoordinationPrefix(value: string): string {
+  let remaining = value;
+  for (;;) {
+    const opening = remaining.match(/^\s*<agent-herder-coordination board="([^"\r\n]+)">\r?\n/);
+    if (!opening) return remaining;
+    const caption = `Active coordination notes from other agents in this workspace (${opening[1]}). Respect path ownership. If a note conflicts with your task, use Agent Herder send_message to contact its author before editing.`;
+    if (!remaining.slice(opening[0].length).startsWith(caption + "\n") && !remaining.slice(opening[0].length).startsWith(caption + "\r\n")) return remaining;
+    const closing = remaining.indexOf("</agent-herder-coordination>", opening[0].length + caption.length);
+    if (closing < 0) return remaining;
+    remaining = remaining.slice(closing + "</agent-herder-coordination>".length).trimStart();
+  }
+}
+
+function evidenceForJudge(evidence: string): string {
+  // Transcript JSONL can contain escaped board text inside message fields.
+  const project = (value: unknown): unknown => {
+    if (typeof value === "string") return withoutCoordinationPrefix(value);
+    if (Array.isArray(value)) return value.map(project);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, project(item)]));
+    }
+    return value;
+  };
+  return withoutCoordinationPrefix(evidence.split("\n").map((line) => {
+    try { return JSON.stringify(project(JSON.parse(line))); } catch { return line; }
+  }).join("\n"));
 }
 
 function redactSecrets(value: string): string {
@@ -883,7 +924,7 @@ export async function loadReceiptStore(path: string): Promise<ReceiptStore> {
       value &&
       typeof value === "object" &&
       (value as Record<string, unknown>).kind &&
-      ["continue", "done", "human"].includes(
+      ["continue", "done", "human", "choice"].includes(
         String((value as Record<string, unknown>).kind),
       )
     ) {

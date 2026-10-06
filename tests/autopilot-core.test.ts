@@ -14,6 +14,7 @@ import {
   type AutopilotDecision,
   type StopHookInput,
 } from "../src/autopilot/index.js";
+import { ChoiceRegistry } from "../src/autopilot/choice-registry.js";
 import { acquireLock, isAllSessionsOptIn } from "../src/autopilot-hook.js";
 
 const baseInput: StopHookInput = {
@@ -31,6 +32,103 @@ afterEach(() => {
 });
 
 describe("autopilot core", () => {
+  it("retries a failed choice card after reload with the same registry request and payload", async () => {
+    const root = await mkdtemp(join(tmpdir(), "autopilot-choice-retry-"));
+    try {
+      const registry = new ChoiceRegistry(join(root, "choices.json"));
+      const judge = { decide: vi.fn(async () => ({ kind: "choice", choices: [
+        { choiceId: "red", label: "Красный", nextGoal: "Confirm red" },
+        { choiceId: "blue", label: "Синий", nextGoal: "Confirm blue" },
+      ] } satisfies AutopilotDecision)) };
+      const sink = { send: vi.fn(async () => { if (sink.send.mock.calls.length === 1) throw new Error("offline"); }) };
+      const options = { judge, notify: sink, allowSessions: new Set(["session-1"]), choiceRegistry: registry, maxContinuationsPerSession: 3 };
+      const receipts = new Map();
+      await createAutopilotCore({ ...options, receiptStore: receipts }).handleStop(baseInput);
+      const path = join(root, "receipts.json");
+      await persistReceiptStore(path, receipts);
+      await createAutopilotCore({ ...options, receiptStore: await loadReceiptStore(path) }).handleStop({ ...baseInput, last_assistant_message: "Different preview" });
+      expect(judge.decide).toHaveBeenCalledTimes(1);
+      expect(sink.send).toHaveBeenCalledTimes(2);
+      expect(sink.send.mock.calls[1]).toEqual(sink.send.mock.calls[0]);
+      expect(await registry.list()).toHaveLength(1);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("keeps a terminal choice across disk reload and changed Stop evidence", async () => {
+    const root = await mkdtemp(join(tmpdir(), "autopilot-choice-reload-"));
+    try {
+      const path = join(root, "receipts.json");
+      const registry = new ChoiceRegistry(join(root, "choices.json"));
+      const judge = { decide: vi.fn(async () => ({ kind: "choice", choices: [
+        { choiceId: "red", label: "Красный", nextGoal: "Confirm red" },
+        { choiceId: "blue", label: "Синий", nextGoal: "Confirm blue" },
+      ] } satisfies AutopilotDecision)) };
+      const sink = { send: vi.fn(async () => undefined) };
+      const options = { judge, notify: sink, allowSessions: new Set(["session-1"]), choiceRegistry: registry, maxContinuationsPerSession: 3 };
+      const receipts = new Map();
+      await createAutopilotCore({ ...options, receiptStore: receipts }).handleStop(baseInput);
+      await persistReceiptStore(path, receipts);
+      const reloaded = await loadReceiptStore(path);
+      expect([...reloaded.values()]).toEqual([{ kind: "choice" }]);
+      await createAutopilotCore({ ...options, receiptStore: reloaded }).handleStop({ ...baseInput, last_assistant_message: "Different final preview" });
+      expect(judge.decide).toHaveBeenCalledTimes(1);
+      expect(sink.send).toHaveBeenCalledTimes(1);
+      expect(await registry.list()).toHaveLength(1);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("retries the original terminal notice after changed evidence without another judge call", async () => {
+    const judge = { decide: vi.fn(async () => ({ kind: "done", summary: "finished", notify: true } satisfies AutopilotDecision)) };
+    const sink = { send: vi.fn(async () => { if (sink.send.mock.calls.length === 1) throw new Error("offline"); }) };
+    const core = createAutopilotCore({ judge, notify: sink, receiptStore: new Map(), allowSessions: new Set(["session-1"]), maxContinuationsPerSession: 3 });
+    await core.handleStop(baseInput);
+    await core.handleStop({ ...baseInput, last_assistant_message: "new preview", stop_hook_active: true });
+    expect(judge.decide).toHaveBeenCalledTimes(1);
+    expect(sink.send).toHaveBeenCalledTimes(2);
+    expect(sink.send.mock.calls[1]).toEqual(sink.send.mock.calls[0]);
+  });
+
+  it("serializes overlapping different-evidence Stop calls for one turn", async () => {
+    let release!: (value: unknown) => void;
+    const judge = { decide: vi.fn(() => new Promise(resolve => { release = resolve; })) };
+    const core = createAutopilotCore({ judge, notify: { send: vi.fn(async () => undefined) }, receiptStore: new Map(), allowSessions: new Set(["session-1"]), maxContinuationsPerSession: 3 });
+    const first = core.handleStop(baseInput);
+    await vi.waitFor(() => expect(judge.decide).toHaveBeenCalledTimes(1));
+    await expect(core.handleStop({ ...baseInput, last_assistant_message: "changed" })).resolves.toEqual({});
+    release({ kind: "done", summary: "complete", notify: false });
+    await first;
+    expect(judge.decide).toHaveBeenCalledTimes(1);
+  });
+
+  it("filters generated boards before context truncation in judge and JSONL evidence only", async () => {
+    const root = await mkdtemp(join(tmpdir(), "autopilot-board-"));
+    try {
+      const board = '<agent-herder-coordination board="test">\nActive coordination notes from other agents in this workspace (test). Respect path ownership. If a note conflicts with your task, use Agent Herder send_message to contact its author before editing.\n' + "FOREIGN_WORK ".repeat(1500) + "</agent-herder-coordination>\n\n";
+      const prompt = board + "Ответь ОЧЕРЕДЬ ПРОШЛА и заверши. Уведомление не требуется.";
+      const path = join(root, "transcript.jsonl");
+      await writeFile(path, JSON.stringify({ payload: { type: "user_message", message: prompt } }));
+      const input = { ...baseInput, last_user_message: prompt, transcript_path: path };
+      const judge = { decide: vi.fn(async () => ({ kind: "done", summary: "finished", notify: false } satisfies AutopilotDecision)) };
+      const core = createAutopilotCore({ judge, notify: { send: vi.fn(async () => undefined) }, receiptStore: new Map(), allowSessions: new Set(["session-1"]), maxContinuationsPerSession: 3 });
+      await core.handleStop(input);
+      const projection = (judge.decide.mock.calls[0] as unknown as [{ hook: StopHookInput; evidence: string }])[0];
+      expect(projection.hook.last_user_message).toBe("Ответь ОЧЕРЕДЬ ПРОШЛА и заверши. Уведомление не требуется.");
+      expect(projection.evidence).not.toContain("FOREIGN_WORK");
+      expect(projection.evidence).toContain("ОЧЕРЕДЬ ПРОШЛА");
+      expect(input.last_user_message).toBe(prompt);
+      expect(await readBoundedEvidence(path, baseInput.last_assistant_message)).toContain("FOREIGN_WORK");
+      for (const [index, literal] of [
+        '<agent-herder-coordination board="test">Literal task</agent-herder-coordination>',
+        'Explain this code: <agent-herder-coordination board="test">literal</agent-herder-coordination>',
+        board.slice(0, 500),
+      ].entries()) {
+        await core.handleStop({ ...baseInput, turn_id: `literal-${index}`, last_user_message: literal });
+        const last = judge.decide.mock.calls.at(-1) as unknown as [{ hook: StopHookInput }];
+        expect(last[0].hook.last_user_message).toBe(literal);
+      }
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("re-judges each new Stop iteration in one Codex turn and deduplicates an exact replay", async () => {
     const decisions: AutopilotDecision[] = [
       { kind: "continue", nextGoal: "Find the failing endpoint" },
