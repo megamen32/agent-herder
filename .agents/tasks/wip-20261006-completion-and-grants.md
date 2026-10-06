@@ -179,8 +179,33 @@ successfully. Both outside marker file contents were independently checked.
 Root removed only those exact verified marker files and their empty owned
 directory after recording the proof; native session workspaces remain intact.
 
-Final real Notice Place diagnosis/planner notification and exact-chat browser
-acceptance are owned by peer01a10bc5-6c86-7011-9962-e1bbd2285921 and still pending.
-The earlier external MiniMax bulk-plan capacity boundary is not declared fixed
-from local repairs or these native canaries; no reliable bulk completion totals
-or whole-repository-suite success are claimed.
+Peer-owned real Notice Place chain passed: inc_ee4ade42399b4a39bf91c1f7c8673512,
+Hub72c67c6642dfd803a059b8ffb64522cd completed with3plans. Diagnosis
+01a1103b-3efd-71f3-91cc-61621bd2565a and planner
+01a1103b-803f-7d60-9748-bff6fe3cdc62 used Codex/gpt-5.6-sol; Telegram5638/5639
+contained readable canonical URL text, and5639's button had the identical target.
+The peer actually read both message bodies through the authorized secondary
+receiver; no phone proof was necessary. Initial incident message5637. Both new
+links arrived before ACK; the previous actual5604 proved delivery after ACK.
+Do not mislabel the new fast chain as an after-ACK test.
+
+Root inspected launch-policy-saved-controls.png: Codex/ZCode checked,
+preferredCodex, exact operator models, Russian settings-saved confirmation.
+Peer GET200 confirmed unchanged values after browser Save. Asset bytes match
+the final build. Notice sourcecf476f4 is clean/pushed/live per its owner,
+111suite plus64focused green. Legacy actual5607 exact-chat browser proof exists;
+final native exact-chat browser after9a7299a passed. Root inspected
+native-planner-exact-chat.png: Codex/gpt-5.6-sol, idle, and all3plans in the
+settled transcript. Exact selected planner ID was verified by the owning peer.
+The peer published scoped Herder acceptance tracker5725bdb, reviewed/fetched
+with HEAD=origin/main. Its browser was closed. No further runtime build is needed.
+
+Independent current-state audit found no persisted assessment failures/backoff
+and several fresh individual verdicts. One explicitly authorized live production
+judge.plan probe then returned a valid normalized plan covering exactly2
+synthetic fixture sessions in about1.8s, current MiniMax route/model,
+max_tokens1024/concurrency1, bounded by the shared guard. No business transcript,
+adapter, store, native action, settings write or retry; temp script removed.
+This confirms current small-request capacity. The210-session bulk boundary
+remains unproven; no reliable bulk completion totals or whole-suite success
+are claimed. Global continuation/watchdog remain off as found.
