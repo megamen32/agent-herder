@@ -41,33 +41,6 @@ function stateDirectory() {
   return process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR || resolve(homedir(), ".local/state/agent-herder/autopilot-live");
 }
 
-async function selectedGoal(requestId) {
-  try {
-    const file = JSON.parse(await readFile(resolve(stateDirectory(), "choices.json"), "utf8"));
-    const record = Array.isArray(file.requests) ? file.requests.find((item) => item?.requestId === requestId) : undefined;
-    return (record?.status === "claimed" || record?.status === "resumed") && typeof record.nextGoal === "string" ? record.nextGoal : null;
-  } catch {
-    return null;
-  }
-}
-
-async function waitForChoice(requestId, sessionId, cwd) {
-  // The running Stop hook is the continuation transport. Telegram only marks
-  // the durable selection; no second ZCode client is ever launched.
-  const until = Date.now() + 7 * 24 * 60 * 60 * 1000;
-  let lastFenceCheck = 0;
-  while (Date.now() < until) {
-    if (Date.now() - lastFenceCheck >= 5_000) {
-      if (await humanStopHeld(sessionId, cwd)) return null;
-      lastFenceCheck = Date.now();
-    }
-    const goal = await selectedGoal(requestId);
-    if (goal) return await humanStopHeld(sessionId, cwd) ? null : goal;
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 1000));
-  }
-  return null;
-}
-
 async function humanStopHeld(sessionId, cwd) {
   const query = new URLSearchParams({ harness: "zcode", sessionId, cwd, touch: "0", consume: "0" });
   const response = await fetch(`${process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787"}/api/coordination/context?${query}`, {
@@ -100,13 +73,9 @@ async function main() {
       signal: AbortSignal.timeout(1200),
     });
   } catch {}
-  // Recheck immediately before the automatic per-session opt-in: ZCode's
-  // Stop hook runs `on` for every stop event, but that toggle never clears a
-  // durable human stop.
+  // Evaluate the existing session/global policy. A Stop event must never
+  // re-enable a session explicitly switched off by its user.
   if (await humanStopHeld(sessionId, cwd)) return writeEmpty();
-  // ZCode has no slash-command callback with a session id. Arm the exact
-  // session from its authoritative Stop payload before judging it.
-  await invoke(root, { command: "on", harness: "zcode", sessionId, cwd });
   const result = await invoke(root, {
     command: "stop",
     harness: "zcode",
@@ -124,9 +93,10 @@ async function main() {
     transcriptPath: typeof input.transcript_path === "string" ? input.transcript_path : undefined,
     stopHookActive: input.stop_hook_active === true,
   });
-  const nextGoal = result?.decision === "continue" ? result.next_goal
-    : result?.decision === "choice" && typeof result.request_id === "string" ? await waitForChoice(result.request_id, sessionId, cwd)
-      : null;
+  // A choice is durable, but waiting for it here holds ZCode's native turn
+  // open and prevents its queued user messages from starting. Release the
+  // turn; a later selection resumes this exact session through Agent Resume.
+  const nextGoal = result?.decision === "continue" ? result.next_goal : null;
   if (typeof nextGoal === "string" && nextGoal.trim()) {
     if (await humanStopHeld(sessionId, cwd)) return writeEmpty();
     // ZCode handles this natively: it retains the current session and starts

@@ -5,10 +5,12 @@ Herder judge and returns `{ "continue": true }` to ZCode when a next goal is
 safe. ZCode therefore continues the same `session_id`; the plugin does not
 start `zcode app-server` and does not connect to the Z.AI web relay.
 
-For a human choice, the current Stop hook waits on Agent Herder's durable
-choice registry. A Telegram/NoticePlace click marks the selected goal there;
-the still-running native Stop hook then returns it to the same desktop turn.
-No headless ZCode process is launched.
+For a human choice, the Stop hook saves the choice and releases the completed
+native turn so queued user messages can start. A Telegram/NoticePlace selection
+uses Herder's existing native writer to continue the exact same session, with
+a durable receipt preventing duplicate delivery. No replacement session is
+created. Stop evaluates the existing policy and respects a session switched off
+by its user.
 
 ## Install
 

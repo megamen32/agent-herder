@@ -162,7 +162,7 @@ describe("autopilot choice callback HTTP seam", () => {
     expect(sent).toEqual([{ id: "codex-native-session", message: "Продолжи ту же задачу." }]);
   });
 
-  it("hands a selected ZCode choice back to its waiting native Stop hook", async () => {
+  it("resumes a released ZCode choice in its exact native session once", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-choice-http-zcode-"));
     const registry = new ChoiceRegistry(join(root, "choices.json"));
     const pending = await registry.create({
@@ -175,9 +175,15 @@ describe("autopilot choice callback HTTP seam", () => {
         { choiceId: "retry", label: "Повторить", nextGoal: "Повтори проверку." },
       ],
     });
-    const resume = vi.fn();
+    const sent: Array<{ id: string; message: string }> = [];
+    const adapter: HarnessAdapter = {
+      type: "zcode", name: "Native ZCode fixture", async init() {}, async listSessions() { return [{ id: "sess-zcode-42", harness: "zcode", status: "idle", title: "Existing", cwd: "/workspace/zcode", lastActivity: new Date().toISOString(), needsPermission: false }]; },
+      async getSession(id) { return { id, harness: "zcode", status: "idle", title: "Existing", cwd: "/workspace/zcode", lastActivity: new Date().toISOString(), needsPermission: false }; },
+      async sendMessage(id, input) { sent.push({ id, message: input.message }); return { ok: true }; },
+      async stopSession() { return { ok: true }; }, async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+    };
     const server = createWebServer({
-      adapters: new Map(), converter: { async convert() { throw new Error("unused"); } }, choiceRegistry: registry, choiceResume: resume,
+      adapters: new Map([["zcode", adapter]]), converter: { async convert() { throw new Error("unused"); } }, choiceRegistry: registry,
     });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -186,10 +192,16 @@ describe("autopilot choice callback HTTP seam", () => {
     const response = await fetch(`http://127.0.0.1:${address.port}/api/autopilot/choices/select`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: pending.requestId, choice_id: "inspect" }),
     });
+    const selected = await response.json();
+    expect(selected, JSON.stringify(selected)).toMatchObject({ status: "resumed", resumed: true, session_id: "sess-zcode-42" });
     expect(response.status).toBe(202);
-    expect(await response.json()).toMatchObject({ status: "claimed", resumed: false, delivery: "waiting-for-zcode-stop-hook", transport: "zcode-stop-hook" });
-    expect(resume).not.toHaveBeenCalled();
-    await expect(registry.get(pending.requestId)).resolves.toMatchObject({ status: "claimed", nextGoal: "Проверь результат." });
+    await expect(registry.get(pending.requestId)).resolves.toMatchObject({ status: "resumed", nextGoal: "Проверь результат.", resumeReceipt: { status: "accepted" } });
+    const duplicate = await fetch(`http://127.0.0.1:${address.port}/api/autopilot/choices/select`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: pending.requestId, choice_id: "inspect" }),
+    });
+    expect(duplicate.status).toBe(202);
+    expect(await duplicate.json()).toMatchObject({ duplicate: true, resumed: false });
+    expect(sent).toEqual([{ id: "sess-zcode-42", message: "Проверь результат." }]);
   });
 
   it("resumes a Claude Code-bound choice through agent-resume", async () => {

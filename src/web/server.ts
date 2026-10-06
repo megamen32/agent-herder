@@ -813,21 +813,6 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!isUuid(body.request_id) || typeof body.choice_id !== "string" || body.choice_id.trim() === "") return sendJson(response, 400, { error: "request_id and choice_id are required" });
     const claimed = await choiceRegistry.claimForResume(body.request_id, body.choice_id);
     const pending = claimed.record;
-    if (pending.harness === "zcode" && pending.choiceId === body.choice_id) {
-      // The live Stop hook owns the actual continuation. Keep the durable
-      // claim until it reads the goal, so a hook/runtime restart cannot turn a
-      // Telegram click into a lost continuation.
-      return sendJson(response, 202, {
-        request_id: pending.requestId,
-        status: pending.status,
-        choice_id: pending.choiceId,
-        session_id: pending.sessionId,
-        resumed: false,
-        delivery: "waiting-for-zcode-stop-hook",
-        duplicate: !claimed.claimed,
-        transport: "zcode-stop-hook",
-      });
-    }
     if (pending.harness === "hermes" && pending.choiceId === body.choice_id) {
       if (pending.status === "claimed") {
         const resumed = await choiceRegistry.markResumed(pending.requestId, pending.choiceId);
