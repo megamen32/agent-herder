@@ -575,6 +575,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
     const paths = Array.isArray(body.paths) ? body.paths.filter((value): value is string => typeof value === "string") : [];
     if (!harness || !sessionId || !cwd) return sendJson(response, 400, { error: "harness, sessionId, and cwd are required" });
+    // Tool activity means a turn is executing: refresh the observed running
+    // state so listings keep reporting "running" through long turns even when
+    // neither the tasks-index row nor the native session DB has been written.
+    markLifecycleEvent(harness, sessionId, "turn-start", cwd, events);
     const ttlSeconds = typeof body.ttlSeconds === "number" ? body.ttlSeconds : undefined;
     // Attribute each edited path to the git repo that owns it: a session
     // working across several repos reserves on several boards at once.

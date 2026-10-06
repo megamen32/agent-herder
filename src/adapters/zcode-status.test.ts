@@ -79,6 +79,30 @@ describe("resolvePersistedZcodeStatus", () => {
     expect(status).toBe("idle");
   });
 
+  it("keeps a long turn running through a fresh tool-activity heartbeat", () => {
+    const now = 1_000_000_000_000;
+    // The native DB read and the tasks-index row are both starved (e.g. one
+    // long quiet stretch), but Pre/PostToolUse activity keeps refreshing the
+    // observed running mark.
+    const status = resolvePersistedZcodeStatus(input({
+      tasksUpdatedAt: now - 40 * 60 * 1000,
+      nativeUpdatedAt: now - 40 * 60 * 1000,
+      lifecycle: { state: "running", at: now - 60_000 },
+      now,
+    }));
+    expect(status).toBe("running");
+  });
+
+  it("decays a running heartbeat to idle once it is older than the window", () => {
+    const now = 1_000_000_000_000;
+    const status = resolvePersistedZcodeStatus(input({
+      tasksUpdatedAt: now - 10 * WINDOW,
+      lifecycle: { state: "running", at: now - 6 * WINDOW },
+      now,
+    }));
+    expect(status).toBe("idle");
+  });
+
   it("keeps waiting and error task states authoritative", () => {
     const now = 1_000_000_000_000;
     expect(resolvePersistedZcodeStatus(input({ rawStatus: "waiting", tasksUpdatedAt: now - 60_000, now }))).toBe("needs_input");

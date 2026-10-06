@@ -654,7 +654,11 @@ export function resolvePersistedZcodeStatus(input: PersistedZcodeStatusInput): A
   if (raw === "waiting" || raw === "needs_input") return "needs_input";
   const native = typeof input.nativeUpdatedAt === "number" && input.nativeUpdatedAt > 0 ? input.nativeUpdatedAt : undefined;
   if (input.lifecycle && input.lifecycle.at + 1000 >= (native ?? 0)) {
-    return input.lifecycle.state === "ended" ? "stopped" : input.lifecycle.state;
+    if (input.lifecycle.state === "ended") return "stopped";
+    if (input.lifecycle.state === "idle") return "idle";
+    // A running observation is a heartbeat, not a latch: trust it only while
+    // fresh, so a crashed turn decays to idle instead of running for a day.
+    if (input.now - input.lifecycle.at < input.activeWindowMs) return "running";
   }
   const lastActive = Math.max(input.tasksUpdatedAt, native ?? 0);
   const recentlyActive = lastActive > 0 && input.now - lastActive < input.activeWindowMs;
