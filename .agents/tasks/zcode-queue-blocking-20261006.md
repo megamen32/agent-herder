@@ -189,3 +189,10 @@ Root's later map-retirement correction is source-only during this capture;
 no intentional runtime restart occurred before END. Root owns its proportional
 checks, publication and final corrective runtime, without another UI-semantic
 change or new native canary by this agent.
+
+Final corrective root receipt a239aa27d6171d5eaee8b9ffd26ba796b69b84d1
+is published/clean HEADorigin, includes this consumer proof29bc170. Root
+launcher/audit36checks and build PASS; independent read-only runtime check
+PID1703323 active/NRestarts0, all baseline fields unchanged, reasonstrue/true,
+watchdogfalse, global Autopilotfalse, own heldtrue/sessionoff. Asset unchanged;
+no browser/native repeat after corrective release. Window fully END.
