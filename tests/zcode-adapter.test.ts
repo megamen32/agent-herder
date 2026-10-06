@@ -464,7 +464,10 @@ describe("ZCode adapter", () => {
         data: expect.objectContaining({ nativeType: "turn.completed", turnId: "turn-1", nativeResultType: "cancelled", nativeEventSeq: 3, automationStop: { id: "zcode-stop-1", at: new Date(1_700_000_020_000).toISOString(), reason: "cancelled", turnId: "turn-1" } }),
       }),
       expect.objectContaining({ kind: "turn.completed", sessionId: "session-1", nativeType: "turn.completed", data: expect.not.objectContaining({ automationStop: expect.anything() }) }),
-      expect.objectContaining({ kind: "turn.failed", sessionId: "session-1", nativeType: "turn.failed", status: "error" }),
+      expect.objectContaining({
+        kind: "turn.failed", sessionId: "session-1", nativeType: "turn.failed", status: "error",
+        data: expect.objectContaining({ nativeErrorCode: "provider_error", nativeErrorMessage: "failed" }),
+      }),
       expect.objectContaining({ kind: "message.updated", sessionId: "session-1", nativeType: "message.upserted" }),
     ]));
     stop();
@@ -1329,7 +1332,13 @@ describe("ZCode adapter", () => {
           this.calls.push({ channel, method, args });
           return [
             { type: "turn.started", payload: { inputId: "handoff-operation-failed" } },
-            { type: "turn.failed", payload: { inputId: "handoff-operation-failed" } },
+            {
+              type: "turn.failed",
+              payload: {
+                inputId: "handoff-operation-failed",
+                error: { code: 1113, message: "Provider rejected the request" },
+              },
+            },
           ];
         }
         return super.call(channel, method, args);
@@ -1339,7 +1348,10 @@ describe("ZCode adapter", () => {
     await adapter.init();
 
     await expect(adapter.getMessageAdmission("session-1", "handoff-operation-failed"))
-      .resolves.toEqual({ state: "failed", error: "ZCode native turn failed after admission" });
+      .resolves.toEqual({
+        state: "failed",
+        error: "ZCode принял запрос для session-1, но выполнение завершилось ошибкой. Native failure: [1113] Provider rejected the request",
+      });
 
     await adapter.dispose();
   });
@@ -1372,6 +1384,67 @@ describe("ZCode adapter", () => {
     const result = await adapter.sendMessage("session-1", { message: "continue", queue: true });
     expect(client.listeners).toHaveLength(1);
     expect(result).toEqual({ ok: true });
+    expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(0);
+
+    await adapter.dispose();
+  });
+
+  it("surfaces a redacted native failure from replay when event history rejects a newer field", async () => {
+    const secret = "top-secret-bearer-value";
+    const jsonApiSecret = "json-api-secret";
+    const jsonPasswordSecret = "json-password-secret";
+    class ReplayFailureClient extends FakeClient {
+      override listen(channel: string, event: string, arg: unknown, handler: (payload: unknown) => void): () => void {
+        const unsubscribe = super.listen(channel, event, arg, handler);
+        queueMicrotask(() => {
+          const accepted = [...this.calls].reverse().find((call) => call.method === "sendPrompt");
+          const inputId = (accepted?.args[0] as { inputId?: string } | undefined)?.inputId;
+          handler({
+            type: "session.event",
+            event: {
+              type: "turn.failed",
+              eventId: "failure-after-schema-reject",
+              sessionId: "session-1",
+              turnId: "turn-failed",
+              seq: 3,
+              timestamp: Date.now(),
+              payload: {
+                inputId,
+                executionStartedAt: Date.now(),
+                error: {
+                  type: "provider_error",
+                  message: `Provider rejected Authorization: Bearer ${secret} {"api_key":"${jsonApiSecret}","password":"${jsonPasswordSecret}"} ${"x".repeat(500)}`,
+                },
+              },
+            },
+          });
+        });
+        return unsubscribe;
+      }
+
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSessionEvents") {
+          this.calls.push({ channel, method, args });
+          throw new Error('Unrecognized key: "executionStartedAt"');
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const client = new ReplayFailureClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client, turnStartTimeoutMs: 100 });
+    await adapter.init();
+
+    const result = await adapter.sendMessage("session-1", { message: "continue", queue: true });
+    expect(result).toMatchObject({ ok: false, admitted: true, nonRetryable: true });
+    expect(result.error).toContain("ZCode принял запрос для session-1, но выполнение завершилось ошибкой.");
+    expect(result.error).toContain("Native failure: [provider_error] Provider rejected Authorization: Bearer [redacted]");
+    expect(result.error).toContain('{"api_key":"[redacted]","password":"[redacted]"}');
+    expect(result.error).not.toContain(secret);
+    expect(result.error).not.toContain(jsonApiSecret);
+    expect(result.error).not.toContain(jsonPasswordSecret);
+    expect(result.error!.length).toBeLessThan(520);
+    expect(client.calls.filter((call) => call.method === "sendPrompt")).toHaveLength(1);
     expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(0);
 
     await adapter.dispose();
@@ -1411,7 +1484,10 @@ describe("ZCode adapter", () => {
           this.calls.push({ channel, method, args });
           const accepted = [...this.calls].reverse().find((call) => call.method === "sendPrompt");
           const inputId = (accepted?.args[0] as { inputId?: string } | undefined)?.inputId;
-          return [{ type: "turn.failed", payload: { inputId } }];
+          return [{
+            type: "turn.failed",
+            payload: { inputId, error: { type: "provider_error", message: "Native provider failed" } },
+          }];
         }
         return super.call(channel, method, args);
       }
@@ -1424,7 +1500,7 @@ describe("ZCode adapter", () => {
       ok: false,
       admitted: true,
       nonRetryable: true,
-      error: expect.stringMatching(/native turn failed/i),
+      error: "ZCode принял запрос для session-1, но выполнение завершилось ошибкой. Native failure: [provider_error] Native provider failed",
     });
     expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(0);
 

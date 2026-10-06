@@ -295,6 +295,137 @@ describe("unfinished session launcher", () => {
     expect(requestBody.output_config).toEqual({ effort: "low" });
   });
 
+  it("treats a requested plans_ready JSON artifact as complete without resuming the native session", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-requested-plan-artifact-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = {
+      ...fixtureSession("idle", "codex"),
+      title: "Подготовить три плана восстановления",
+      lastActivity: new Date(Date.now() - 10 * 60_000).toISOString(),
+    };
+    const request = "Return exactly one JSON object with status=plans_ready and exactly three plans in order: observe, repair, verify. Do not execute the plans.";
+    const artifact = JSON.stringify({
+      status: "plans_ready",
+      plans: [
+        { plan_id: "observe", title: "Наблюдение", summary: "Собрать состояние", step: "Проверить сигналы" },
+        { plan_id: "repair", title: "Исправление", summary: "Подготовить восстановление", step: "Применить обратимую правку" },
+        { plan_id: "verify", title: "Проверка", summary: "Подтвердить результат", step: "Запустить canary" },
+      ],
+    });
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    adapter.getSessionMessages = async () => [
+      { id: "goal", role: "user", text: request, parts: [{ type: "text", text: request }] },
+      { id: "result", role: "assistant", text: artifact, parts: [{ type: "text", text: artifact }] },
+    ];
+    const judge = createAnthropicCompatibleSessionCompletionJudge({
+      baseUrl: "https://api.minimax.io/anthropic/",
+      model: "MiniMax-M3.1-Flash-Preview",
+      token: "test-token",
+      fetchImpl: async (_url, init) => {
+        const body = JSON.parse(String(init?.body)) as {
+          system: Array<{ text: string }>;
+          messages: Array<{ content: string }>;
+        };
+        const system = body.system[0]!.text;
+        expect(system).toContain("валидный финальный артефакт означает completed");
+        expect(system).toContain("Если пользователь просил выполнить эти шаги");
+        const payload = JSON.parse(body.messages[0]!.content) as {
+          sessions: Array<{ session_ref: string; semantic_context: string }>;
+        };
+        expect(payload.sessions[0]?.semantic_context).toContain(request);
+        expect(payload.sessions[0]?.semantic_context).toContain(artifact);
+        const result = JSON.stringify({ groups: [{
+          source_session_ids: ["S1"], primary_session_id: "S1", verdict: "completed",
+          reason: "Запрошенный JSON с тремя планами сформирован", confidence: 1,
+          topic: "Планы восстановления готовы", handoff: "",
+        }] });
+        const stream = [
+          `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: result } })}`,
+          "data: [DONE]",
+          "",
+        ].join("\n\n");
+        return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+      },
+    });
+
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]),
+      store,
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+      discoveryIdleMs: 1,
+      judge,
+    }).recoverPending();
+
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await store.list()).toEqual([]);
+    expect(await store.listInventory()).toMatchObject([{
+      sessionId: session.id,
+      verdict: { verdict: "completed", confidence: 1 },
+    }]);
+  });
+
+  it("rejudges a persisted unfinished planning-artifact verdict after autocontinue is re-enabled", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-stale-plan-verdict-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    const session = {
+      ...fixtureSession("idle", "codex"),
+      title: "Подготовить три плана восстановления",
+      lastActivity: new Date(Date.now() - 10 * 60_000).toISOString(),
+    };
+    const request = "Return exactly one JSON object with status=plans_ready and exactly three plans. Do not execute the plans.";
+    const artifact = '{"status":"plans_ready","plans":[{"plan_id":"observe"},{"plan_id":"repair"},{"plan_id":"verify"}]}';
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(session, calls);
+    adapter.getSessionMessages = async () => [
+      { id: "goal", role: "user", text: request, parts: [{ type: "text", text: request }] },
+      { id: "result", role: "assistant", text: artifact, parts: [{ type: "text", text: artifact }] },
+    ];
+
+    await settingsStore.setGlobal(false);
+    let oldPlans = 0;
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store, settingsStore, discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("individual fallback must not run"); },
+        async plan() {
+          oldPlans += 1;
+          return { groups: [{
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "unfinished" as const,
+            reason: "Legacy classifier treated the requested plan as pending execution", confidence: 1,
+            topic: session.title, handoff: "Execute the three proposed plans.",
+          }] };
+        },
+      },
+    }).recoverPending();
+    expect(oldPlans).toBe(1);
+    expect((await store.listInventory())[0]?.verdict?.verdict).toBe("unfinished");
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+
+    await settingsStore.setGlobal(true);
+    let correctedPlans = 0;
+    await new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store, settingsStore, discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("individual fallback must not run"); },
+        async plan() {
+          correctedPlans += 1;
+          return { groups: [{
+            sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed" as const,
+            reason: "The requested plans_ready artifact is complete", confidence: 1,
+            topic: session.title, handoff: "",
+          }] };
+        },
+      },
+    }).recoverPending();
+
+    expect(correctedPlans).toBe(1);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+    expect(await store.list()).toEqual([]);
+    expect((await store.listInventory())[0]?.verdict?.verdict).toBe("completed");
+  });
+
   it("adapts planner chunk and wire budgets while keeping the numeric confidence contract", async () => {
     const previousTokens = process.env.AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS;
     const previousConcurrency = process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY;

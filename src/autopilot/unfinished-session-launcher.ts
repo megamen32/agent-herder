@@ -30,6 +30,11 @@ const CURRENT_EVIDENCE_VERSION = 2;
 // Increment only when semantic planning/packing changes make persisted
 // assessment failures obsolete. Successful verdict evidence is unaffected.
 const CURRENT_ASSESSMENT_PIPELINE_VERSION = 2;
+const REQUESTED_ARTIFACT_COMPLETION_RULE = [
+  "Сначала сопоставь финальный ответ с исходной пользовательской целью.",
+  "Если пользователь просил только подготовить план, отчёт, черновик или JSON-артефакт, валидный финальный артефакт означает completed; будущие шаги внутри него — содержимое результата, а не оставшиеся действия агента.",
+  "Если пользователь просил выполнить эти шаги, один лишь план, отчёт о намерении или черновик означает unfinished.",
+].join(" ");
 
 class BatchPlanValidationError extends Error {
   override name = "BatchPlanValidationError";
@@ -3692,7 +3697,8 @@ function batchPlannerPrompt(): string {
     "Для группы выбери primary_session_id из session_ref: работающую сессию, иначе самую новую и содержательную.",
     "verdict: completed, unfinished или needs_human. Если хотя бы одна сессия группы ещё реально выполняется, verdict=unfinished.",
     "confidence — обязательное JSON-число от 0 до 1 включительно (например 0.95), не процент и не строка; reason, topic и handoff — строки.",
-    "completed допустим только когда исходная пользовательская цель явно достигнута и финальный ответ содержит проверяемый результат; план, обещание продолжить, незавершённые пункты или ошибки инструментов означают unfinished.",
+    "completed допустим только когда исходная пользовательская цель явно достигнута и финальный ответ содержит проверяемый результат; обещание продолжить, незавершённые пункты или ошибки инструментов означают unfinished.",
+    REQUESTED_ARTIFACT_COMPLETION_RULE,
     "topic — понятная русская тема из 3-8 слов без UUID, Auto Continue и технического мусора.",
     "handoff для unfinished — единая краткая сводка всех сессий группы: цель, уже сделано, решения, файлы/проверки, осталось, риски, следующий шаг.",
     "Не выполняй задачи и не добавляй факты. Верни только JSON {groups:[{source_session_ids,primary_session_id,verdict,reason,confidence,topic,handoff}]}",
@@ -4010,6 +4016,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
                 "Ты классификатор незавершённых Codex и ZCode задач Agent Herder.",
                 "Верни только JSON: {verdict:completed|unfinished|needs_human,reason:string,confidence:number}.",
                 "completed — цель явно выполнена; unfinished — работа оборвана, идёт или остались конкретные действия; needs_human — нужен выбор, секрет или содержательный ответ человека.",
+                REQUESTED_ARTIFACT_COMPLETION_RULE,
                 "Статус БД — только слабый сигнал. Главный источник — первый пользовательский запрос и свежий смысловой хвост. При сомнении не выбирай completed.",
                 "reason — одно короткое русское предложение, confidence — число от 0 до 1.",
               ].join(" "),
@@ -4143,6 +4150,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
               "Ты классификатор незавершённых Codex и ZCode задач Agent Herder.",
               "Верни только JSON: {verdict:completed|unfinished|needs_human,reason:string,confidence:number}.",
               "completed — цель явно выполнена; unfinished — работа оборвана, идёт или остались конкретные действия; needs_human — нужен выбор, секрет или содержательный ответ человека.",
+              REQUESTED_ARTIFACT_COMPLETION_RULE,
               "Статус БД — только слабый сигнал. Главный источник — первый пользовательский запрос и максимально полный свежий смысловой хвост. При сомнении не выбирай completed.",
               "reason — одно короткое русское предложение, confidence — число от 0 до 1.",
             ].join(" "),

@@ -126,6 +126,11 @@ interface TurnStartResult {
   turnId?: string;
 }
 
+interface NativeTurnFailure {
+  code?: string;
+  message?: string;
+}
+
 interface ZcodeCommand {
   command: string;
   args: string[];
@@ -345,6 +350,66 @@ function nativeSessionEvent(value: unknown): Record<string, unknown> | undefined
   const root = record(value);
   if (root.type === "session.event" && root.event && typeof root.event === "object") return record(root.event);
   return typeof root.type === "string" && typeof root.eventId === "string" ? root : undefined;
+}
+
+function safeNativeFailureField(value: unknown, maxLength: number): string | undefined {
+  const raw = nonEmptyString(value);
+  if (!raw) return undefined;
+  const redacted = raw
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted-private-key]")
+    .replace(/(authorization\s*:\s*bearer\s+)[^\s,;]+/gi, "$1[redacted]")
+    .replace(/(bearer\s+)[^\s,;]+/gi, "$1[redacted]")
+    .replace(/\b(?:sk|ghp|glpat|xox[baprs])-[-A-Za-z0-9_]{12,}\b/gi, "[redacted-secret]")
+    .replace(/(["'])(api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|credential)\1\s*:\s*(["'])[^"'\r\n]*\3/gi, "$1$2$1:$3[redacted]$3")
+    .replace(/\b(api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|credential)\s*[:=]\s*([^\s,;]+)/gi, "$1=[redacted]")
+    .replace(/([?&](?:token|key|secret|password|signature)=)[^&\s]+/gi, "$1[redacted]")
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!redacted) return undefined;
+  return redacted.length > maxLength ? `${redacted.slice(0, Math.max(0, maxLength - 3))}...` : redacted;
+}
+
+function nativeFailureCode(value: unknown): string | undefined {
+  if (typeof value === "number" && Number.isSafeInteger(value)) return String(value);
+  return nonEmptyString(value);
+}
+
+function nativeTurnFailure(value: unknown): NativeTurnFailure | undefined {
+  const envelope = record(value);
+  const root = nativeSessionEvent(value) || envelope;
+  const payload = record(root.payload);
+  const errorValue = payload.error ?? root.error ?? envelope.error;
+  const error = record(errorValue);
+  const code = safeNativeFailureField(
+    nativeFailureCode(error.code)
+      || nativeFailureCode(error.type)
+      || nativeFailureCode(error.name)
+      || nativeFailureCode(payload.errorCode)
+      || nativeFailureCode(root.errorCode),
+    96,
+  );
+  const message = safeNativeFailureField(
+    typeof errorValue === "string"
+      ? errorValue
+      : nonEmptyString(error.message)
+        || nonEmptyString(payload.errorMessage)
+        || nonEmptyString(root.errorMessage),
+    384,
+  );
+  return code || message ? { ...(code ? { code } : {}), ...(message ? { message } : {}) } : undefined;
+}
+
+function nativeTurnFailureDetail(value: unknown): string | undefined {
+  const failure = nativeTurnFailure(value);
+  if (!failure) return undefined;
+  if (failure.code && failure.message) return `[${failure.code}] ${failure.message}`;
+  return failure.message || `[${failure.code}]`;
+}
+
+function admittedNativeTurnFailure(sessionId: string, value: unknown): string {
+  const detail = nativeTurnFailureDetail(value);
+  return `ZCode принял запрос для ${sessionId}, но выполнение завершилось ошибкой.${detail ? ` Native failure: ${detail}` : ""}`;
 }
 
 function automationStopFromEvent(value: unknown): (AutomationStopMarker & { seq?: number }) | undefined {
@@ -590,6 +655,7 @@ function normalizeZcodeTaskEvent(sessionId: string, payload: unknown): HarnessEv
   else if (/session.*(closed|deleted)/.test(lower)) kind = "session.deleted";
   else kind = "session.updated";
   const payloadData = record(root.payload);
+  const failure = kind === "turn.failed" ? nativeTurnFailure(payload) : undefined;
   const inputId = nonEmptyString(root.inputId) || nonEmptyString(payloadData.inputId) || nonEmptyString(envelope.inputId);
   const resultType = nonEmptyString(payloadData.resultType) || nonEmptyString(envelope.stopReason);
   const exactStop = rawNativeEvent ? automationStopFromEvent({ type: "session.event", event: rawNativeEvent }) : undefined;
@@ -622,6 +688,8 @@ function normalizeZcodeTaskEvent(sessionId: string, payload: unknown): HarnessEv
       ...(automationStop ? { automationStop } : {}),
       ...(nonEmptyString(payloadData.inputSource) ? { inputSource: nonEmptyString(payloadData.inputSource) } : {}),
       ...(nonEmptyString(payloadData.messageId) ? { messageId: nonEmptyString(payloadData.messageId) } : {}),
+      ...(failure?.code ? { nativeErrorCode: failure.code } : {}),
+      ...(failure?.message ? { nativeErrorMessage: failure.message } : {}),
     },
   };
 }
@@ -1410,7 +1478,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       if (nativeInputId !== inputId && nativeInputId !== zcodeInputId(inputId, "automation")) continue;
       const type = nonEmptyString(event.type);
       if (type === "turn.failed") {
-        return { state: "failed", error: "ZCode native turn failed after admission" };
+        return { state: "failed", error: admittedNativeTurnFailure(id, event) };
       }
       if (type === "turn.completed" || type === "turn.started") admitted = true;
     }
@@ -1773,7 +1841,14 @@ export class ZcodeAdapter implements HarnessAdapter {
               if (waiter && (event.kind === "turn.started" || event.kind === "turn.completed" || event.kind === "turn.failed")) {
                 this.turnStartWaiters.delete(waiterKey);
                 waiter(event.kind === "turn.failed"
-                  ? { ok: false, error: `ZCode accepted prompt for ${sessionId}, but the native turn failed before confirmation completed` }
+                  ? { ok: false, error: admittedNativeTurnFailure(sessionId, {
+                    payload: {
+                      error: {
+                        code: nonEmptyString(record(event.data).nativeErrorCode),
+                        message: nonEmptyString(record(event.data).nativeErrorMessage),
+                      },
+                    },
+                  }) }
                   : { ok: true, turnId: nonEmptyString(record(event.data).turnId) });
               }
             }
@@ -1864,7 +1939,7 @@ export class ZcodeAdapter implements HarnessAdapter {
                 return { ok: true, turnId: nonEmptyString(event.turnId) || nonEmptyString(payload.turnId) };
               }
               if (type === "turn.failed") {
-                return { ok: false, error: `ZCode accepted prompt for ${sessionId}, but the native turn failed before confirmation completed` };
+                return { ok: false, error: admittedNativeTurnFailure(sessionId, event) };
               }
             }
             lastReadError = undefined;

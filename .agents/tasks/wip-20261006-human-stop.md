@@ -289,3 +289,41 @@ Corrective source review/checkpoint (14:38UTC):
   signed human click. No signed-click claim is made from that receipt. Its
   test session remains stopped/held=true/Autopilot off; fresh actual selection,
   duplicate suppression and final no-noise proof await the corrective build.
+
+Live cbce504 deployment and newly exposed blockers:
+- One bounded combined build passed and root restarted only Herder to713377.
+  PolicyGET200 preserved exact Codex/ZCode models; consume=0 returned strict
+  held=true for both original root canaries and peer sess5af9. Archived01a110fb
+  /details returned200, matching exact ID and3 messages. Status owner verified
+  its own active ZCode session has running/fresh native-session-db lastActivity;
+  its published slice is released. No blanket all-session execution claim.
+- Peer real cold ZCode resume failed: no new native message after13:53;
+  screenshot final-resume-pending.png was captured/inspected before cleanup.
+  Native sendPrompt was admitted then turn.failed; readSessionEvents separately
+  rejects newer executionStartedAt payload. Existing adapter discarded failure
+  detail. No replay: peer Stop200 restored hold, Autopilot off, browser closed.
+- Bounded native failure observability repair now preserves safe numeric/code
+  and message detail through subscription/poll/admission, with quoted JSON,
+  Bearer/key/password redaction and limits. Neutral Russian wording does not
+  invent failure timing; admitted/nonRetryable and no-retry semantics unchanged.
+  Independent critique passed and full ZCode adapter file53/53 passed. Original
+  underlying native cause remains unproven until one controlled fresh diagnostic.
+- Health planner01a111a7 supplied exact native proof: requested only one JSON
+  with three plans; final plans_ready at14:39:00.597Z, then false continuation
+  at17:41:49 and17:45:23MSK. This is a separate unfinished-launcher classifier
+  defect: its prompt unconditionally treated every plan as unfinished.
+- Root temporarily disabled ONLY global /api/session-autostart enabled after
+  GET showedtrue, and readback isfalse. Original full settings snapshot0600 is
+  in human-stop-evidence/autostart-before-terminal-containment.json. Preserve
+  all other settings; restore this prior value after corrected live assessment.
+  No native mutation of the reporting controller and no fake human-stop hold.
+- All three semantic judge paths now assess the requested artifact against its
+  original goal. Requested plan/report/draft/JSON completion differs from merely
+  planning requested execution. Full launcher file160/160 passed, including
+  re-enabled persisted unfinished→completed with zero native resume/send.
+  No evidence-version bump: unchanged completed/needs_human remain settled;
+  idle unfinished is already replanned after enabled=true before recovery.
+- Separate UI draft-loss fix is delegated only to peer sendMessage function:
+  clear the captured composer after successful POST, preserve on failure and
+  preserve a newer draft. Earlier discarded-resume-text claim was withdrawn
+  after checking isResumeMode; no runAction/isResumeMode change is authorized.
