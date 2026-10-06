@@ -136,3 +136,51 @@ Current focused/affected Codex and named suites passed afterward; the exact
 readonly case also passed4/4 independently. Root checks the remaining exact
 concurrency case separately under the shared guard rather than repeating the
 broad run or treating process termination as a proven product defect.
+
+## Live rollout and additional zero-turn continuity repair
+
+cf2d982 was built and deployed at07:53:43UTC. The initially absent launch policy
+returned503; explicit operator PUT saved the exact requested Codex/ZCode policy,
+then GET returned200. The peer reports saving those same values through the UI
+and a matching API read. Initial-launch policy stays separate from existing
+continuation; global continuation/watchdog/rollover/pin transfer remainfalse,
+with zero enabled overrides. No business sessions were activated.
+
+The real named Codex write unexpectedly created a second task-owned canary:
+native thread/list omits zero-turn threads after the process cache expires.
+9a7299a adds parameterized read-only native SQLite name/CWD lookup, excludes
+archived rows and confirms hidden IDs through thread/read. Independent review
+CLEAR; Codex plus named-session suites49/49 and bounded full build passed.
+9a7299a was pushed/fetched clean and deployed at08:08:00UTC, HerderPID1051892,
+active/NRestarts0. Shared native Codex daemon4019392 remained alive throughout.
+The frontend bytes remain index-DDzVHon6.js/index-DK8SxC-O.css.
+
+Live MCP agent_info on old zero-turn01a1101a now succeeds without model field;
+native unknown model is not fabricated. Root archived ONLY that own empty probe
+after thread/read proved exact fixture CWD and zero turns, preserving its grant
+evidence above. The task-owned writing session01a11036-e2e7-72a2-9d01-323e2990f4b7
+created codex.txt outside its CWD with exact HERDER_CODEX_FULL_ACCESS_OK_20261006.
+After the final restart, the same named HTTPnew-or-resume returnedcreatedfalse
+and that identical ID/modelgpt-5.6-sol; native assistant replied exactly
+HERDER_CODEX_SAME_ID_OK_20261006. No permission request was required.
+
+The actual deployed ZCode canarysess_eb89671b-ba76-41fc-ae75-20727bdfcdf7
+created zcode.txt outside its CWD with exact HERDER_ZCODE_FULL_ACCESS_OK_20261006.
+Herder reported permissionModeyolo, needsPermissionfalse, no pending request IDs.
+Its selected route was the explicit GLM-5.3-Flash$high policy model. Stopped status
+after a finished bounded write is not alone evidence of interruption.
+
+Independent read-only native verification confirms Codex approval_modenever,
+sandbox_policy disabled, two task_started/task_complete pairs and persisted
+marker replies. ZCode native task row is completed, permissionyolo, and its
+transcript contains the matching user plus assistant response; the adapter maps
+that persisted completed task to stopped. Thus this short control turn finished
+successfully. Both outside marker file contents were independently checked.
+Root removed only those exact verified marker files and their empty owned
+directory after recording the proof; native session workspaces remain intact.
+
+Final real Notice Place diagnosis/planner notification and exact-chat browser
+acceptance are owned by peer01a10bc5-6c86-7011-9962-e1bbd2285921 and still pending.
+The earlier external MiniMax bulk-plan capacity boundary is not declared fixed
+from local repairs or these native canaries; no reliable bulk completion totals
+or whole-repository-suite success are claimed.
