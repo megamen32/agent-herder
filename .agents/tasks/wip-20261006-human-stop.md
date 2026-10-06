@@ -327,3 +327,42 @@ Live cbce504 deployment and newly exposed blockers:
   clear the captured composer after successful POST, preserve on failure and
   preserve a newer draft. Earlier discarded-resume-text claim was withdrawn
   after checking isResumeMode; no runAction/isResumeMode change is authorized.
+
+### User-selected crash-only recovery boundary (2026-10-06)
+
+- The user replaced semantic unfinished-task Autocontinue with restoration of
+  interrupted native turns. Autopilot remains responsible for deciding to keep
+  working toward a goal. Recovery may not create a replacement chat.
+- New persisted failure/disconnect toggles are exposed in the existing settings
+  panel/API. Watchdog is a separate opt-in timeout, default off; current live
+  settings already had it off. Existing saved values/overrides are preserved.
+- Source-only WIP consumes durable observed native identity and correlated
+  failure/disconnect evidence; normal completion supersedes it. Completed,
+  running, waiting-human/permission, human-held and native Codex subagent
+  sessions are excluded. Legacy semantic records cannot trigger sends/notices.
+  The supervisor delegates to one recovery owner rather than a second retry.
+- Native adapters now carry exact turn identity. Actual ZCode transport exit
+  reports only observed active turns; intentional disposal does not qualify.
+  Native last-turn metadata is projected from existing read-only turn history
+  to reject stale recovery after lost terminal events. Unknown metadata must
+  not clear a known running turn or invent completion.
+- Older semantic-send/cache-replacement launcher tests conflict with this new
+  user contract and are being replaced with crash recovery cases; pure judge,
+  packing, settings and store tests remain. No compatibility fallback/skip.
+  Do not deploy until focused suite and independent critique pass.
+- Root temporarily disabled ONLY its own session Autocontinue to stop repeated
+  synthetic handoffs during editing. Prior effective source was global/true;
+  snapshot root-autocontainment-crash-only.json is private. Restore inheritance
+  after corrected deployment. Global Autopilot was already disabled by another
+  operator; root has not enabled it to manufacture a signed-choice test.
+- Peer final evidence on 5c1bdcb/PID1253511: same-ID controlled cold diagnostic
+  succeeded; intercepted UI502 retains draft and mocked200 clears it, zero
+  native deliveries. Final held/off/browser closed. Signed Stop-choice remains
+  unproven while global Autopilot master is off; no manual substitute created.
+- Final guarded checks: 10 affected files /164 tests passed in30.67s, including
+  per-turn cancellation during reservation, unmatched completion preserving
+  crash recovery, durable disconnect evidence while transport is unavailable,
+  subagent zero-effects and normal completion after restart. Prior tsc passed;
+  final build will recompile. Restored20 pure tests into explicit audit file;
+  recovery-specific suite replaces obsolete semantic-send/new-chat expectations.
+  Shared global+project flock, RAM1/2GiB, swap0, CPU2, Tasks128, timeout120s.

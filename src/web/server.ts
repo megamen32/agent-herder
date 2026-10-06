@@ -736,9 +736,12 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!sessionAutostartStore) return sendJson(response, 503, { error: "Session autostart settings are disabled" });
     if (request.method === "GET") return sendJson(response, 200, await sessionAutostartStore.getSettings());
     const body = await readJson(request);
-    if (body.pinActiveSessions !== undefined || body.rolloverExpiredCache !== undefined || body.movePinnedOnRollover !== undefined || body.inventoryWindowHours !== undefined || body.evidenceMessageCount !== undefined || body.watchdogEnabled !== undefined || body.watchdogIntervalSeconds !== undefined || body.stalledTurnMinutes !== undefined || body.judgeModel !== undefined || body.autopilotJudgeModel !== undefined) {
+    if (body.pinActiveSessions !== undefined || body.rolloverExpiredCache !== undefined || body.movePinnedOnRollover !== undefined || body.inventoryWindowHours !== undefined || body.evidenceMessageCount !== undefined || body.watchdogEnabled !== undefined || body.watchdogIntervalSeconds !== undefined || body.stalledTurnMinutes !== undefined || body.judgeModel !== undefined || body.autopilotJudgeModel !== undefined || body.recoverOnFailure !== undefined || body.recoverOnDisconnect !== undefined) {
       if (typeof body.enabled !== "boolean" || typeof body.pinActiveSessions !== "boolean" || typeof body.rolloverExpiredCache !== "boolean" || typeof body.movePinnedOnRollover !== "boolean" || typeof body.inventoryWindowHours !== "number" || typeof body.evidenceMessageCount !== "number" || typeof body.watchdogEnabled !== "boolean" || typeof body.watchdogIntervalSeconds !== "number" || typeof body.stalledTurnMinutes !== "number" || typeof body.judgeModel !== "string" || typeof body.autopilotJudgeModel !== "string") {
         return sendJson(response, 400, { error: "all autocontinue runtime settings are required" });
+      }
+      if ((body.recoverOnFailure !== undefined && typeof body.recoverOnFailure !== "boolean") || (body.recoverOnDisconnect !== undefined && typeof body.recoverOnDisconnect !== "boolean")) {
+        return sendJson(response, 400, { error: "autocontinue recovery settings must be boolean" });
       }
       try {
         return sendJson(response, 200, { ...await sessionAutostartStore.setRuntimeSettings({
@@ -753,6 +756,8 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
           stalledTurnMinutes: body.stalledTurnMinutes,
           judgeModel: body.judgeModel,
           autopilotJudgeModel: body.autopilotJudgeModel,
+          recoverOnFailure: body.recoverOnFailure,
+          recoverOnDisconnect: body.recoverOnDisconnect,
         }), source: "persisted" });
       } catch (error) {
         return sendJson(response, 400, { error: (error as Error).message });

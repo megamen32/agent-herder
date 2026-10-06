@@ -79,8 +79,28 @@ ZCode uses the native plugin under
 `integrations/zcode/agent-herder-autopilot/`. Its `Stop` hook returns ZCode's
 native continuation output for automatic next goals; it never starts an
 app-server or connects to the Z.AI web relay. For a Telegram/NoticePlace
-choice, the active Stop hook waits on the durable selection and then continues
-that same desktop turn.
+choice, the Stop hook exits immediately after persisting the question. An
+explicit selection resumes the same native session through the existing
+choice consumer; the hook does not hold the native turn open.
+
+## Crash recovery (Autocontinue)
+
+Autocontinue restores an interrupted native turn in the same session. It does
+not judge whether a normally completed answer has finished the user's task;
+that decision belongs to Autopilot. Semantic inventory does not authorize a
+recovery, and recovery never rolls over to a replacement session.
+
+The web settings expose `recoverOnFailure` and `recoverOnDisconnect` (both
+enabled by default), plus a separate `watchdogEnabled` timeout option (off by
+default). A timeout is an explicit heuristic for a turn with no observed
+progress, not proof that every long model call has failed. Existing explicit
+watchdog settings are preserved.
+
+Recovery requires observed native turn identity and durable failure evidence.
+Normal completion supersedes that evidence. Running sessions, pending human
+input or approvals, human-stop holds, non-retryable admissions, and native
+Codex subagent threads are excluded. The supervisor delegates recovery to this
+single owner, so a second retry loop cannot bypass these settings.
 
 ## Agent Plugin package
 

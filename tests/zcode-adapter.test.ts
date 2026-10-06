@@ -729,6 +729,38 @@ describe("ZCode adapter", () => {
     }
   });
 
+  it("scopes transport death to an observed active native turn and excludes completed turns", async () => {
+    class DisconnectClient extends FakeClient {
+      disconnected?: (error: Error) => void;
+      onDisconnect(handler: (error: Error) => void) { this.disconnected = handler; return () => { this.disconnected = undefined; }; }
+    }
+    const client = new DisconnectClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    const events: Array<{ kind: string; sessionId?: string; data?: Record<string, unknown> }> = [];
+    const stop = adapter.subscribeEvents((event) => events.push(event));
+    try {
+      await adapter.init();
+      await adapter.getSession("session-1");
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const emit = async (type: string, turnId: string) => {
+        client.listeners[0]!.handler({ type: "session.event", event: { type, sessionId: "session-1", turnId, eventId: `${type}-${turnId}`, timestamp: Date.now(), seq: 5, payload: { inputId: "input-1" } } });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      };
+      await emit("turn.started", "native-1");
+      await emit("turn.completed", "stale-different-turn"); // Reused inputId must not erase the newer live turn.
+      client.disconnected?.(new Error("transport died"));
+      expect(events).toContainEqual(expect.objectContaining({ kind: "process.disconnected", sessionId: "session-1", data: expect.objectContaining({ turnId: "native-1", inputId: "input-1" }) }));
+      events.length = 0;
+      await adapter.init();
+      await adapter.getSession("session-1");
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await emit("turn.started", "native-2");
+      await emit("turn.completed", "native-2");
+      client.disconnected?.(new Error("transport died after completion"));
+      expect(events.filter((event) => event.kind === "process.disconnected" && event.sessionId)).toEqual([]);
+    } finally { stop(); await adapter.dispose(); }
+  });
+
   it("ignores native callbacks invoked after the event subscription is disposed", async () => {
     const client = new FakeClient();
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });

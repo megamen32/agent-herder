@@ -204,35 +204,32 @@ The common switches are:
 | `AGENT_HERDER_COORDINATION_NOTES` | `~/.local/state/agent-herder/coordination-notes.json` | Shared coordination board store |
 | `AGENT_HERDER_INJECTION_RESHOW_MS` | `2700000` | Re-inject unchanged rosters after this staleness window |
 | `AGENT_HERDER_AUTO_TTL_SECONDS` | `60` | Auto-reserved file-activity lease TTL |
-| `AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS` | `60000` | Cheap local observer cadence; MiniMax is called only when a session reaches its TTL-aware broken-session deadline |
+| `AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS` | `60000` | Local reconciliation interval for proven interrupted turns; recovery does not invoke MiniMax |
 | `AGENT_HERDER_UNFINISHED_UNKNOWN_TTL_CHECK_MS` | `240000` | Candidate delay when the provider/model cache TTL is unknown |
 | `AGENT_HERDER_UNFINISHED_MAX_TTL_CHECK_MS` | `600000` | Maximum candidate delay for documented long-TTL models such as current Codex GPT-5.6+ |
 | `AGENT_HERDER_UNFINISHED_CACHE_MARGIN_MS` | `60000` | Safety margin subtracted from short cache TTLs before classification |
 | `AGENT_HERDER_UNFINISHED_RESUMES_PER_CYCLE` | `8` | Bounded parallel continuation admissions per cycle; all resumed workloads still share the server-100 user-slice budget |
-| `AGENT_HERDER_UNFINISHED_INVENTORY_HOURS` | `48` | Default lookback; the Web UI persists a runtime override without a restart |
+| `AGENT_HERDER_UNFINISHED_INVENTORY_HOURS` | `48` | Inventory window for explicit audit; does not authorize native recovery |
 | `AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES` | `200` | Maximum recent semantic messages read per session before fair shared-budget packing; the first user goal and latest user/model tail are always retained |
 | `AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS` | `16384` | Per-request output ceiling for planning and reconciliation; chunk size scales with this budget (32 sessions at the default, 16 at 8192) |
 | `AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY` | `3` | Maximum simultaneous planner calls, capped at three; managed server-100 uses one to preserve shared provider capacity |
 | `CODEX_APP_SERVER_SOCKET` | — | Join the existing managed Codex daemon through its Unix WebSocket endpoint so Desktop and Herder share native thread/turn control |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Direct MiniMax Anthropic-compatible classifier endpoint; avoids an extra gateway hop |
 | `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash-Preview` | Default classifier model; the Web UI runtime selection overrides it and reads `MINIMAX_API_KEY` from the protected service environment |
-| `AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS` | `600000` | Maximum time for each MiniMax batch; a failed planning pass never falls back to ungrouped launches |
-| `AGENT_HERDER_UNFINISHED_JUDGE_ENABLED` | `true` | Disable only the MiniMax unfinished-session classifier |
+| `AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS` | `600000` | Timeout for explicit semantic audit; its result cannot authorize recovery |
+| `AGENT_HERDER_UNFINISHED_JUDGE_ENABLED` | `true` | Enable MiniMax for explicit semantic audit only, not crash recovery |
 | `AGENT_HERDER_CODEX_STATE_CACHE_MS` | `60000` | Share one persisted Codex rollout scan across dashboard, observation, and recovery callers |
 | `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | Make cache handoff available; replacement also requires the persisted `rolloverExpiredCache` opt-in, which defaults off |
 | `AGENT_HERDER_HANDOFF_MODEL` | `MiniMax-M3.1-Flash-Preview` | Direct MiniMax model used only to summarize stale sessions; Fast Agent is the fallback when `MINIMAX_API_KEY` is absent |
 | `AGENT_HERDER_CACHE_TTL_MINUTES` | `{}` | JSON exact overrides such as `{"zcode:provider/model":30}`; unknown provider TTLs are never guessed |
-| `AGENT_HERDER_UNFINISHED_DISCOVERY_IDLE_MS` | `60000` | Wait one quiet minute before classification, so a 10-minute sweep catches work interrupted just after the previous sweep |
+| `AGENT_HERDER_UNFINISHED_DISCOVERY_IDLE_MS` | `60000` | Explicit inventory audit delay; crash recovery does not scan unfinished tasks |
 | `AGENT_HERDER_WEB_PORT` | — | Serve the web UI + MCP over HTTP (singleton daemon mode) |
 | `AGENT_HERDER_HTTP_TOKEN` | — | Required when the web host is non-loopback |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_DIR` | `.agent-herder/transcripts` | Relative archive path inside the MCP process CWD |
 
-Every observer pass scans only local Codex and ZCode status metadata inside the configured window. A non-running session becomes actionable after a model-aware delay: 10 minutes for documented 30-minute Codex caches, 4 minutes for conservative 5-minute or unknown caches, with exact overrides available through `AGENT_HERDER_CACHE_TTL_MINUTES`. MiniMax receives one global request only when new, changed, unclassified, unfinished, or legacy-evidence candidates are due. The planner keeps the first user goal plus the freshest semantic tail from up to 200 messages per session, then fairly packs every candidate under the shared 480,000-token input ceiling. Completed unchanged sessions with current evidence stay out of the request; a session-level Autocontinue opt-out blocks launch but never blocks changed-session auditing.
+Autocontinue restores only interrupted native turns in the same session. Its loop consumes durable, correlated failure evidence; it does not call the semantic MiniMax planner or start replacement chats. An explicit inventory audit may classify tasks without authorizing recovery. Autopilot owns decisions about unfinished work.
 
-Cache-aware restart uses 30 minutes for documented GPT-5.6+ cache retention,
-and a conservative 5-minute boundary for GLM-5.3 and MiniMax M3/M3.1. Z.ai's
-public docs do not promise a fixed TTL, while MiniMax explicitly describes its
-passive expiry as load-adjusted; the source is retained in each policy result.
+Web settings expose failure and disconnect recovery independently, plus a separate opt-in stalled-turn timeout. Normal completion, running sessions, human input/approval, human stops, non-retryable admissions and native Codex subagent threads block recovery. See [crash recovery](docs/autopilot.md#crash-recovery-autocontinue) for details.
 
 ## Develop locally
 
@@ -296,9 +293,10 @@ running chat to another harness.
 Restart continuation settings are available at `GET/PUT
 /api/session-autostart` and `GET/PUT/DELETE
 /api/session-autostart/sessions/{harness}/{sessionId}`. `PUT
-/api/session-autostart` persists `rolloverExpiredCache`: fresh sessions always
-resume in place; expired sessions use a new summarized handoff only when that
-switch is explicitly enabled (default off). Herder-created Codex, ZCode, and
+/api/session-autostart` persists `recoverOnFailure`, `recoverOnDisconnect`,
+`watchdogEnabled` and timeout controls. Omitted recovery flags preserve existing
+settings for older clients. Stored cache-rollover preferences are preserved but
+cannot authorize a replacement chat from crash recovery. Herder-created Codex, ZCode, and
 OpenCode sessions receive native full access before their first task. Existing
 manual sessions retain their permission policy; outstanding requests still wait
 for the user. Completed assessments remain closed while semantic evidence is

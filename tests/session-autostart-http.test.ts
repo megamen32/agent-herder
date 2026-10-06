@@ -28,14 +28,28 @@ describe("session autostart settings HTTP", () => {
     if (!address || typeof address === "string") throw new Error("server did not bind");
     const origin = `http://127.0.0.1:${address.port}`;
 
-    await expect((await fetch(`${origin}/api/session-autostart`)).json()).resolves.toMatchObject({ version: 7, enabled: true, pinActiveSessions: true, rolloverExpiredCache: false, movePinnedOnRollover: false, inventoryWindowHours: 48, evidenceMessageCount: 200, watchdogEnabled: true, watchdogIntervalSeconds: 10, stalledTurnMinutes: 2, source: "default" });
+    await expect((await fetch(`${origin}/api/session-autostart`)).json()).resolves.toMatchObject({ version: 7, enabled: true, pinActiveSessions: true, rolloverExpiredCache: false, movePinnedOnRollover: false, inventoryWindowHours: 48, evidenceMessageCount: 200, recoverOnFailure: true, recoverOnDisconnect: true, watchdogEnabled: false, watchdogIntervalSeconds: 10, stalledTurnMinutes: 2, source: "default" });
+    const runtimeBody = { enabled: false, pinActiveSessions: false, rolloverExpiredCache: false, movePinnedOnRollover: false, inventoryWindowHours: 72, evidenceMessageCount: 4, watchdogEnabled: false, watchdogIntervalSeconds: 30, stalledTurnMinutes: 5, judgeModel: "MiniMax-M3", autopilotJudgeModel: "gpt-test" };
     const runtimeSaved = await fetch(`${origin}/api/session-autostart`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ enabled: false, pinActiveSessions: false, rolloverExpiredCache: false, movePinnedOnRollover: false, inventoryWindowHours: 72, evidenceMessageCount: 4, watchdogEnabled: false, watchdogIntervalSeconds: 30, stalledTurnMinutes: 5, judgeModel: "MiniMax-M3", autopilotJudgeModel: "gpt-test" }),
+      body: JSON.stringify(runtimeBody),
     });
-    await expect(runtimeSaved.json()).resolves.toMatchObject({ version: 7, enabled: false, pinActiveSessions: false, rolloverExpiredCache: false, movePinnedOnRollover: false, inventoryWindowHours: 72, evidenceMessageCount: 4, watchdogEnabled: false, watchdogIntervalSeconds: 30, stalledTurnMinutes: 5, judgeModel: "MiniMax-M3", autopilotJudgeModel: "gpt-test", source: "persisted" });
-    await expect((await fetch(`${origin}/api/session-autostart`)).json()).resolves.toMatchObject({ enabled: false, rolloverExpiredCache: false, source: "persisted" });
+    await expect(runtimeSaved.json()).resolves.toMatchObject({ version: 7, enabled: false, pinActiveSessions: false, rolloverExpiredCache: false, movePinnedOnRollover: false, inventoryWindowHours: 72, evidenceMessageCount: 4, recoverOnFailure: true, recoverOnDisconnect: true, watchdogEnabled: false, watchdogIntervalSeconds: 30, stalledTurnMinutes: 5, judgeModel: "MiniMax-M3", autopilotJudgeModel: "gpt-test", source: "persisted" });
+    await expect((await fetch(`${origin}/api/session-autostart`)).json()).resolves.toMatchObject({ enabled: false, rolloverExpiredCache: false, recoverOnFailure: true, recoverOnDisconnect: true, source: "persisted" });
+    const recoverySaved = await fetch(`${origin}/api/session-autostart`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...runtimeBody, recoverOnFailure: false, recoverOnDisconnect: false }),
+    });
+    await expect(recoverySaved.json()).resolves.toMatchObject({ recoverOnFailure: false, recoverOnDisconnect: false, source: "persisted" });
+    const invalidRecovery = await fetch(`${origin}/api/session-autostart`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...runtimeBody, recoverOnFailure: "yes" }),
+    });
+    expect(invalidRecovery.status).toBe(400);
+    await expect(invalidRecovery.json()).resolves.toMatchObject({ error: "autocontinue recovery settings must be boolean" });
     const zcodeHarness = `${origin}/api/session-autostart/harnesses/zcode`;
     await expect((await fetch(zcodeHarness)).json()).resolves.toMatchObject({ harness: "zcode", enabled: false, source: "global" });
     await fetch(zcodeHarness, {

@@ -62,6 +62,45 @@ function sessionInventoryProgressFingerprint(session: AgentSession): string {
   ].join("|");
 }
 
+function nativeRecoveryIdentity(event: HarnessEvent): { turnId?: string; inputId?: string } {
+  const data = event.data ?? {};
+  const turnId = nonEmptyText(data.turnId) || nonEmptyText(data.nativeTurnId);
+  const inputId = nonEmptyText(data.inputId) || nonEmptyText(data.promptId) || nonEmptyText(event.messageId);
+  return { ...(turnId ? { turnId } : {}), ...(inputId ? { inputId } : {}) };
+}
+
+function sameNativeRecoveryIdentity(
+  active: { turnId?: string; inputId?: string },
+  observed: { turnId?: string; inputId?: string },
+): boolean {
+  if (active.turnId && observed.turnId) return active.turnId === observed.turnId;
+  if (active.inputId && observed.inputId) return active.inputId === observed.inputId;
+  return false;
+}
+
+function nativeTurnFenceKey(harness: string, sessionId: string, identity: { turnId?: string; inputId?: string }): string | undefined {
+  if (identity.turnId) return `${sessionKey(harnessType(harness), sessionId)}:turn:${encodeURIComponent(identity.turnId)}`;
+  if (identity.inputId) return `${sessionKey(harnessType(harness), sessionId)}:input:${encodeURIComponent(identity.inputId)}`;
+  return undefined;
+}
+
+function nonEmptyText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isSubagentSession(session: AgentSession | null | undefined): boolean {
+  return session?.meta?.threadSource === "subagent";
+}
+
+function nativeLastTurn(session: AgentSession | null | undefined): { turnId?: string; status?: string } | undefined {
+  const value = session?.meta?.nativeLastTurn;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const turnId = nonEmptyText(record.turnId);
+  const status = nonEmptyText(record.status);
+  return turnId || status ? { ...(turnId ? { turnId } : {}), ...(status ? { status } : {}) } : undefined;
+}
+
 function admittedNonRetryableFailure(result: SendMessageResult): string | undefined {
   return !result.ok && result.admitted === true && result.nonRetryable === true
     ? result.error || "Native harness admitted the prompt, then failed the exact turn"
@@ -95,6 +134,8 @@ export type SessionAutostartFile = {
   movePinnedOnRollover: boolean;
   inventoryWindowHours: number;
   evidenceMessageCount: number;
+  recoverOnFailure: boolean;
+  recoverOnDisconnect: boolean;
   watchdogEnabled: boolean;
   watchdogIntervalSeconds: number;
   stalledTurnMinutes: number;
@@ -135,7 +176,7 @@ export class SessionAutostartStore {
     return this.mutate((file) => { file.enabled = enabled; return cloneAutostartFile(file); });
   }
 
-  async setRuntimeSettings(input: { enabled?: boolean; pinActiveSessions?: boolean; inventoryWindowHours: number; evidenceMessageCount: number; judgeModel: string; autopilotJudgeModel: string; rolloverExpiredCache?: boolean; movePinnedOnRollover?: boolean; watchdogEnabled?: boolean; watchdogIntervalSeconds?: number; stalledTurnMinutes?: number }): Promise<SessionAutostartFile> {
+  async setRuntimeSettings(input: { enabled?: boolean; pinActiveSessions?: boolean; inventoryWindowHours: number; evidenceMessageCount: number; judgeModel: string; autopilotJudgeModel: string; rolloverExpiredCache?: boolean; movePinnedOnRollover?: boolean; recoverOnFailure?: boolean; recoverOnDisconnect?: boolean; watchdogEnabled?: boolean; watchdogIntervalSeconds?: number; stalledTurnMinutes?: number }): Promise<SessionAutostartFile> {
     const inventoryWindowHours = positiveInteger(input.inventoryWindowHours, -1);
     if (inventoryWindowHours < 1 || inventoryWindowHours > 24 * 90) throw new Error("inventoryWindowHours must be an integer from 1 to 2160");
     const evidenceMessageCount = positiveInteger(input.evidenceMessageCount, -1);
@@ -147,6 +188,8 @@ export class SessionAutostartStore {
     if (input.pinActiveSessions !== undefined && typeof input.pinActiveSessions !== "boolean") throw new Error("pinActiveSessions must be a boolean");
     if (input.rolloverExpiredCache !== undefined && typeof input.rolloverExpiredCache !== "boolean") throw new Error("rolloverExpiredCache must be a boolean");
     if (input.movePinnedOnRollover !== undefined && typeof input.movePinnedOnRollover !== "boolean") throw new Error("movePinnedOnRollover must be a boolean");
+    if (input.recoverOnFailure !== undefined && typeof input.recoverOnFailure !== "boolean") throw new Error("recoverOnFailure must be a boolean");
+    if (input.recoverOnDisconnect !== undefined && typeof input.recoverOnDisconnect !== "boolean") throw new Error("recoverOnDisconnect must be a boolean");
     if (input.watchdogEnabled !== undefined && typeof input.watchdogEnabled !== "boolean") throw new Error("watchdogEnabled must be a boolean");
     const watchdogIntervalSeconds = boundedInteger(input.watchdogIntervalSeconds ?? 10, 5, 300, "watchdogIntervalSeconds");
     const stalledTurnMinutes = boundedInteger(input.stalledTurnMinutes ?? 2, 1, 120, "stalledTurnMinutes");
@@ -159,6 +202,8 @@ export class SessionAutostartStore {
       file.autopilotJudgeModel = autopilotJudgeModel;
       if (input.rolloverExpiredCache !== undefined) file.rolloverExpiredCache = input.rolloverExpiredCache;
       if (input.movePinnedOnRollover !== undefined) file.movePinnedOnRollover = input.movePinnedOnRollover;
+      if (input.recoverOnFailure !== undefined) file.recoverOnFailure = input.recoverOnFailure;
+      if (input.recoverOnDisconnect !== undefined) file.recoverOnDisconnect = input.recoverOnDisconnect;
       if (input.watchdogEnabled !== undefined) file.watchdogEnabled = input.watchdogEnabled;
       file.watchdogIntervalSeconds = watchdogIntervalSeconds;
       file.stalledTurnMinutes = stalledTurnMinutes;
@@ -283,6 +328,7 @@ export interface UnfinishedSessionRecord {
   workspaceIdentity?: string;
   model?: string;
   title?: string;
+  threadSource?: string;
   startedAt: string;
   updatedAt: string;
   /** Stable boundary for the most recent prompt accepted by the native harness. */
@@ -308,6 +354,14 @@ export interface UnfinishedSessionRecord {
   terminalRetryCount?: number;
   /** Native admission crossed the idempotency boundary and then failed terminally. */
   nonRetryableAdmission?: boolean;
+  /** Native proof authorizing same-session crash recovery. Semantic verdicts never set this. */
+  recoveryCause?: "turn.failed" | "process.disconnected" | "stalled";
+  recoveryObservedAt?: string;
+  recoveryTurnId?: string;
+  recoveryInputId?: string;
+  activeTurnStartedAt?: string;
+  activeTurnId?: string;
+  activeInputId?: string;
   generationId: string;
   attempts: number;
   state: UnfinishedSessionState;
@@ -471,6 +525,13 @@ export class UnfinishedSessionStore {
     }, (removed) => removed > 0);
   }
 
+  async excludeSession(harness: string, sessionId: string): Promise<void> {
+    await this.mutate((file) => {
+      file.sessions = file.sessions.filter((record) => record.harness !== harness || record.sessionId !== sessionId);
+      if (file.inventory) file.inventory = file.inventory.filter((record) => record.harness !== harness || record.sessionId !== sessionId);
+    });
+  }
+
   /** Atomically migrate legacy cwd-only keys before recovery can observe both identities. */
   async migrateWorkspaceIdentities(sessions: AgentSession[]): Promise<{ sessions: number; inventory: number }> {
     if (sessions.length === 0) return { sessions: 0, inventory: 0 };
@@ -543,6 +604,7 @@ export class UnfinishedSessionStore {
       cwd: session.cwd,
       model: session.model,
       title: session.title,
+      threadSource: nonEmptyText(session.meta?.threadSource),
     });
     return this.mutate((file) => {
       const workspaceIdentity = sessionWorkspaceIdentity(session);
@@ -561,6 +623,17 @@ export class UnfinishedSessionStore {
         generationId: bounded(generationId, "generationId"),
         attempts: reset || resetAttempts ? 0 : existing?.attempts ?? 0,
         state: "active",
+        ...(existing?.recoveryCause ? {
+          recoveryCause: existing.recoveryCause,
+          ...(existing.recoveryObservedAt ? { recoveryObservedAt: existing.recoveryObservedAt } : {}),
+          ...(existing.recoveryTurnId ? { recoveryTurnId: existing.recoveryTurnId } : {}),
+          ...(existing.recoveryInputId ? { recoveryInputId: existing.recoveryInputId } : {}),
+        } : {}),
+        ...(existing?.activeTurnStartedAt ? {
+          activeTurnStartedAt: existing.activeTurnStartedAt,
+          ...(existing.activeTurnId ? { activeTurnId: existing.activeTurnId } : {}),
+          ...(existing.activeInputId ? { activeInputId: existing.activeInputId } : {}),
+        } : {}),
         ...(acceptedDelivery
           ? {
               acceptedAt: now.toISOString(),
@@ -599,6 +672,89 @@ export class UnfinishedSessionStore {
       sortRecords(file.sessions);
       return { ...record };
     });
+  }
+
+  async markRecoveryEligible(
+    session: AgentSession,
+    cause: NonNullable<UnfinishedSessionRecord["recoveryCause"]>,
+    identity: { turnId?: string; inputId?: string },
+    generationId = "native-recovery",
+    now = new Date(),
+  ): Promise<UnfinishedSessionRecord> {
+    await this.markStarted(session, generationId, now, true);
+    return this.mutate((file) => {
+      const record = findUnfinishedRecord(file.sessions, harnessType(session.harness), session.id, sessionWorkspaceIdentity(session));
+      if (!record) throw new Error("native recovery record disappeared");
+      record.recoveryCause = cause;
+      record.recoveryObservedAt = now.toISOString();
+      if (identity.turnId) record.recoveryTurnId = bounded(identity.turnId, "recoveryTurnId");
+      if (identity.inputId) record.recoveryInputId = bounded(identity.inputId, "recoveryInputId");
+      delete record.activeTurnStartedAt;
+      delete record.activeTurnId;
+      delete record.activeInputId;
+      record.updatedAt = now.toISOString();
+      return { ...record };
+    });
+  }
+
+  async markNativeTurnStarted(
+    session: AgentSession,
+    identity: { turnId?: string; inputId?: string },
+    generationId = "native-turn",
+    now = new Date(),
+  ): Promise<UnfinishedSessionRecord> {
+    await this.markStarted(session, generationId, now);
+    return this.mutate((file) => {
+      const record = findUnfinishedRecord(file.sessions, harnessType(session.harness), session.id, sessionWorkspaceIdentity(session));
+      if (!record) throw new Error("active native turn record disappeared");
+      record.activeTurnStartedAt = now.toISOString();
+      if (identity.turnId) record.activeTurnId = bounded(identity.turnId, "activeTurnId");
+      if (identity.inputId) record.activeInputId = bounded(identity.inputId, "activeInputId");
+      record.updatedAt = now.toISOString();
+      return { ...record };
+    });
+  }
+
+  async activeNativeTurn(harness: string, sessionId: string, cwd?: string): Promise<{ turnId?: string; inputId?: string } | undefined> {
+    const records = await this.list();
+    const matches = records.filter((record) => record.harness === harness && record.sessionId === sessionId
+      && (!cwd || (record.workspaceIdentity || record.cwd) === normalize(cwd)));
+    const record = matches.sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0];
+    if (!record?.activeTurnId && !record?.activeInputId) return undefined;
+    return { ...(record.activeTurnId ? { turnId: record.activeTurnId } : {}), ...(record.activeInputId ? { inputId: record.activeInputId } : {}) };
+  }
+
+  async recoveryNativeTurn(harness: string, sessionId: string): Promise<{ turnId?: string; inputId?: string } | undefined> {
+    const record = (await this.list())
+      .filter((candidate) => candidate.harness === harness && candidate.sessionId === sessionId && candidate.recoveryCause)
+      .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0];
+    if (!record?.recoveryTurnId && !record?.recoveryInputId) return undefined;
+    return { ...(record.recoveryTurnId ? { turnId: record.recoveryTurnId } : {}), ...(record.recoveryInputId ? { inputId: record.recoveryInputId } : {}) };
+  }
+
+  async markPersistedActiveTurnFailed(
+    harness: string,
+    sessionId: string,
+    cause: "turn.failed" | "process.disconnected",
+    identity: { turnId?: string; inputId?: string },
+    now = new Date(),
+  ): Promise<UnfinishedSessionRecord | null> {
+    return this.mutate((file) => {
+      const record = file.sessions.find((candidate) => candidate.harness === harness && candidate.sessionId === sessionId
+        && sameNativeRecoveryIdentity({ turnId: candidate.activeTurnId, inputId: candidate.activeInputId }, identity));
+      if (!record || record.threadSource === "subagent") return null;
+      record.recoveryCause = cause;
+      record.recoveryObservedAt = now.toISOString();
+      if (identity.turnId) record.recoveryTurnId = identity.turnId;
+      if (identity.inputId) record.recoveryInputId = identity.inputId;
+      delete record.activeTurnStartedAt;
+      delete record.activeTurnId;
+      delete record.activeInputId;
+      record.updatedAt = now.toISOString();
+      record.attempts = 0;
+      record.state = "active";
+      return { ...record };
+    }, (record) => record !== null);
   }
 
   async observeAcceptedProgress(
@@ -866,6 +1022,10 @@ export class UnfinishedSessionLauncher {
   /** Invalidates recovery work that was already awaiting I/O when stop/restart happens. */
   private lifecycleEpoch = 0;
   private readonly completedSessions = new Set<string>();
+  private readonly activeNativeTurns = new Map<string, { turnId?: string; inputId?: string }>();
+  private eventOperation: Promise<unknown> = Promise.resolve();
+  private readonly turnGenerations = new Map<string, number>();
+  private readonly eagerCompletions = new Set<string>();
   private readonly urgentSessions = new Set<string>();
   private readonly urgentSessionVersions = new Map<string, number>();
   private urgentSessionVersion = 0;
@@ -909,43 +1069,95 @@ export class UnfinishedSessionLauncher {
   }
 
   async handleEvent(provider: string, event: HarnessEvent): Promise<void> {
+    const eventIdentity = nativeRecoveryIdentity(event);
+    const generationKey = event.sessionId && isAutocontinueInventoryHarness(provider)
+      ? nativeTurnFenceKey(provider, event.sessionId, eventIdentity) : undefined;
+    if (generationKey && event.kind === "turn.completed") {
+      this.turnGenerations.set(generationKey, (this.turnGenerations.get(generationKey) ?? 0) + 1);
+      this.eagerCompletions.add(generationKey);
+    }
+    const eventGeneration = generationKey ? this.turnGenerations.get(generationKey) ?? 0 : 0;
+    const previous = this.eventOperation;
+    let release!: () => void;
+    this.eventOperation = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try {
+      await this.handleEventSerialized(provider, event, eventGeneration);
+    } finally {
+      release();
+    }
+  }
+
+  private async handleEventSerialized(provider: string, event: HarnessEvent, eventGeneration: number): Promise<void> {
     if (!event.sessionId || !isAutocontinueInventoryHarness(provider)) return;
+    const eventKey = sessionKey(provider, event.sessionId);
+    const identity = nativeRecoveryIdentity(event);
     if (event.kind === "session.deleted") {
       this.completedSessions.add(sessionKey(provider, event.sessionId));
       this.clearUrgentSession(sessionKey(provider, event.sessionId));
       await this.options.store.remove(provider, event.sessionId);
       return;
     }
-    if (event.kind === "turn.completed" || event.kind === "turn.failed") {
-      // A finished model turn is not proof that the user's task is complete.
-      // Keep it eligible for semantic re-evaluation after the quiet window.
+    if (event.kind === "turn.completed") {
+      const activeIdentity = this.activeNativeTurns.get(eventKey)
+        ?? await this.options.store.activeNativeTurn(provider, event.sessionId)
+        ?? await this.options.store.recoveryNativeTurn(provider, event.sessionId);
+      if (!activeIdentity || !sameNativeRecoveryIdentity(activeIdentity, identity)) return;
+      this.activeNativeTurns.delete(eventKey);
+      this.clearUrgentSession(eventKey);
+      await this.options.store.remove(provider, event.sessionId);
+      return;
+    }
+    if (event.kind === "turn.failed" || event.kind === "process.disconnected") {
+      const eventFence = nativeTurnFenceKey(provider, event.sessionId, identity);
+      if (eventFence && (this.turnGenerations.get(eventFence) ?? 0) !== eventGeneration) return;
+      const activeIdentity = this.activeNativeTurns.get(eventKey)
+        ?? await this.options.store.activeNativeTurn(provider, event.sessionId);
+      this.activeNativeTurns.delete(eventKey);
+      if (!activeIdentity || (event.kind === "turn.failed" && !sameNativeRecoveryIdentity(activeIdentity, identity))) return;
+      const settings = await this.options.settingsStore.getSettings();
+      if ((event.kind === "turn.failed" && !settings.recoverOnFailure)
+        || (event.kind === "process.disconnected" && !settings.recoverOnDisconnect)) return;
       const adapter = this.options.adapters.get(provider);
-      const session = await adapter?.getSession(event.sessionId);
-      if (await this.suppressIfHumanStopped(provider, event.sessionId, session?.cwd, session)) return;
-      const key = session ? sessionSourceKey(session) : sessionKey(provider, event.sessionId);
-      this.watchdogObservations.delete(key);
-      this.completedSessions.delete(key);
-      this.queueUrgentSession(key);
-      if (session && await this.isEnabled(session.harness, session.id, session.cwd)) {
-        const terminal = await this.options.store.markAdmissionTerminal(
-          session.harness,
-          session.id,
-          sessionWorkspaceIdentity(session),
-          event.kind,
-          sessionProgressFingerprint(session),
-        );
-        if (!terminal) {
-          await this.options.store.markStarted({ ...session, status: "idle" }, this.generationId);
-        }
+      let session: AgentSession | null | undefined;
+      try { session = await adapter?.getSession(event.sessionId); } catch { session = undefined; }
+      if (isSubagentSession(session)) {
+        await this.options.store.excludeSession(provider, event.sessionId);
+        return;
       }
+      if (await this.suppressIfHumanStopped(provider, event.sessionId, session?.cwd, session)) return;
+      if (!session) {
+        await this.options.store.markPersistedActiveTurnFailed(provider, event.sessionId, event.kind, activeIdentity);
+        this.queueUrgentSession(eventKey);
+        this.scheduleUrgentRecovery();
+        return;
+      }
+      if (session.status === "needs_input" || session.needsPermission || !await this.isEnabled(session.harness, session.id, session.cwd)) return;
+      await this.options.store.markRecoveryEligible(
+        { ...session, status: event.kind === "turn.failed" ? "error" : "idle" },
+        event.kind,
+        activeIdentity,
+        this.generationId,
+      );
+      const key = sessionSourceKey(session);
+      this.queueUrgentSession(key);
       this.scheduleUrgentRecovery();
       return;
     }
     if (event.kind !== "turn.started") return;
     const adapter = this.options.adapters.get(provider);
     const session = await adapter?.getSession(event.sessionId);
+    if (isSubagentSession(session)) {
+      await this.options.store.excludeSession(provider, event.sessionId);
+      return;
+    }
     if (await this.suppressIfHumanStopped(provider, event.sessionId, session?.cwd, session)) return;
     if (session && await this.isEnabled(session.harness, session.id, session.cwd)) {
+      if (!identity.turnId && !identity.inputId) return;
+      const startedFence = nativeTurnFenceKey(provider, event.sessionId, identity);
+      if (startedFence) this.eagerCompletions.delete(startedFence);
+      this.activeNativeTurns.set(eventKey, identity);
+      await this.options.store.markNativeTurnStarted(session, identity, this.generationId);
       this.watchdogObservations.delete(sessionSourceKey(session));
       const progressed = await this.options.store.markAdmissionInProgress(
         session.harness,
@@ -954,20 +1166,22 @@ export class UnfinishedSessionLauncher {
         sessionProgressFingerprint(session),
       );
       if (!progressed) {
-        // A native turn.started event can belong to the user's original task,
-        // not to a prompt admitted by Agent Herder. Only sendMessage/armSession
-        // may mark delivery accepted; treating every native start as our own
-        // admission would strand a task after a process restart.
+        // Record only the active native identity in memory. A normal user turn
+        // is not unfinished-session recovery work unless failure/disconnect is
+        // later observed for this exact turn.
         this.completedSessions.delete(sessionSourceKey(session));
         this.clearUrgentSession(sessionSourceKey(session));
         await this.pinActiveSession(adapter!, session.id);
-        await this.options.store.markStarted(session, this.generationId);
       }
     }
   }
 
   async armSession(session: AgentSession, deliveryPending = false, admittedFailure?: string): Promise<boolean> {
     if (!isAutocontinueInventoryHarness(session.harness)) return false;
+    if (isSubagentSession(session)) {
+      await this.options.store.excludeSession(session.harness, session.id);
+      return false;
+    }
     if (await this.suppressIfHumanStopped(session.harness, session.id, session.cwd, session)) return false;
     const adapter = this.options.adapters.get(session.harness);
     if (!adapter?.resumeSession) return false;
@@ -1131,6 +1345,10 @@ export class UnfinishedSessionLauncher {
         const key = sessionKey(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
         let session: AgentSession | null = null;
         try { session = await adapter.getSession(record.sessionId); } catch { /* counted as a miss below */ }
+        if (isSubagentSession(session)) {
+          await this.options.store.excludeSession(record.harness, record.sessionId);
+          continue;
+        }
         if (session && await this.suppressIfHumanStopped(record.harness, record.sessionId, session.cwd, session)) continue;
         if (!session) {
           const previous = this.watchdogObservations.get(key);
@@ -1207,7 +1425,19 @@ export class UnfinishedSessionLauncher {
         if (session.status !== "error" && session.status !== "stopped" && !stalled) continue;
         if (observation.urgentFingerprint === fingerprint) continue;
         this.watchdogObservations.set(key, { ...observation, urgentFingerprint: fingerprint });
-        await this.options.store.markStarted({ ...session, status: session.status === "running" ? "error" : session.status }, this.generationId);
+        if (stalled) {
+          const activeIdentity = this.activeNativeTurns.get(sessionKey(record.harness, record.sessionId))
+            ?? await this.options.store.activeNativeTurn(record.harness, record.sessionId, sessionWorkspaceIdentity(session));
+          if (!activeIdentity) continue;
+          await this.options.store.markRecoveryEligible(
+            { ...session, status: "error" },
+            "stalled",
+            activeIdentity,
+            this.generationId,
+          );
+        } else {
+          continue;
+        }
         this.queueUrgentSession(key);
         urgent = true;
         const reason = stalled
@@ -1228,6 +1458,11 @@ export class UnfinishedSessionLauncher {
       if (this.started) void this.scheduleNextRecovery();
     });
     return this.recovering;
+  }
+
+  async auditInventory(): Promise<void> {
+    const outcome = await this.discoverUnfinishedSessions(this.lifecycleEpoch);
+    if (outcome === "blocked") throw new Error("semantic inventory audit was blocked");
   }
 
   private async scheduleNextRecovery(): Promise<void> {
@@ -1267,8 +1502,8 @@ export class UnfinishedSessionLauncher {
     if (pruned.sessions > 0 || pruned.inventory > 0) {
       console.error(`[agent-herder] очищен реестр автопродолжения: ${pruned.sessions} чужих turn-записей, ${pruned.inventory} записей вне окна`);
     }
-    const discovery = await this.discoverUnfinishedSessions(lifecycleEpoch);
-    if (!this.lifecycleActive(lifecycleEpoch) || discovery === "blocked") return;
+    // Crash recovery consumes only durable native evidence. Semantic inventory
+    // has a separate explicit audit path and is never scanned from this loop.
     // Deliberately sequential: a restart must not multiply the host's agent workload.
     let resumedThisCycle = 0;
     const launches: Array<Promise<void>> = [];
@@ -1279,34 +1514,75 @@ export class UnfinishedSessionLauncher {
       if (!this.lifecycleActive(lifecycleEpoch)) break;
       if (!isAutocontinueInventoryHarness(record.harness)) continue;
       const recordKey = unfinishedRecordKey(record);
+      const recoveryFence = nativeTurnFenceKey(record.harness, record.sessionId, { turnId: record.recoveryTurnId, inputId: record.recoveryInputId });
+      const observedTurnGeneration = recoveryFence ? this.turnGenerations.get(recoveryFence) ?? 0 : 0;
       if (this.continuedThisRecovery.has(recordKey)) continue;
       if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)) continue;
       if (!await this.isEnabled(record.harness, record.sessionId, record.cwd)) {
         await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
         continue;
       }
-      if (record.state === "exhausted") {
-        await this.notifyExhausted(record);
+      if (!record.recoveryCause) {
+        if (record.activeTurnStartedAt && (record.activeTurnId || record.activeInputId)) continue;
+        await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
+        continue;
+      }
+      if (record.threadSource === "subagent") {
+        await this.options.store.excludeSession(record.harness, record.sessionId);
+        continue;
+      }
+      if (recoveryFence && this.eagerCompletions.has(recoveryFence)) {
+        await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
+        continue;
+      }
+      if ((record.recoveryCause === "turn.failed" && !runtimeSettings.recoverOnFailure)
+        || (record.recoveryCause === "process.disconnected" && !runtimeSettings.recoverOnDisconnect)
+        || (record.recoveryCause === "stalled" && !runtimeSettings.watchdogEnabled)) {
+        await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
         continue;
       }
       const adapter = this.options.adapters.get(record.harness);
       if (!adapter?.resumeSession) {
-        await this.fail(record, `${displayHarness(record.harness)} не поддерживает возобновление сессии`);
         continue;
       }
       let session: AgentSession | null = null;
       try {
         session = await adapter.getSession(record.sessionId);
-      } catch (error) {
-        await this.fail(record, errorText(error));
+      } catch {
         continue;
       }
+      if (!session) continue;
       if (session && await this.suppressIfHumanStopped(record.harness, record.sessionId, session.cwd, session)) continue;
+      if (isSubagentSession(session)) {
+        await this.options.store.excludeSession(record.harness, record.sessionId);
+        continue;
+      }
+      const lastTurn = nativeLastTurn(session);
+      if (record.recoveryTurnId && lastTurn?.turnId) {
+        const terminal = lastTurn.status?.toLowerCase();
+        if (lastTurn.turnId !== record.recoveryTurnId
+          || terminal === "completed" || terminal === "succeeded" || terminal === "success" || terminal === "interrupted" || terminal === "cancelled") {
+          await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
+          continue;
+        }
+      }
+      if (record.state === "exhausted") {
+        await this.notifyExhausted(record);
+        continue;
+      }
       const urgent = this.urgentSessions.has(recordKey) || this.urgentSessions.has(sessionKey(record.harness, record.sessionId));
       if (record.nonRetryableAdmission) {
         // The exact prompt crossed the native idempotency boundary and its turn
         // failed terminally. Keep ownership/diagnostics durable, but never
         // submit that prompt again from watchdog or reconciliation.
+        await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
+        continue;
+      }
+      if (!session || session.status === "needs_input" || session.needsPermission) {
+        await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
+        continue;
+      }
+      if (session.status === "running" && record.recoveryCause !== "stalled") {
         await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
         continue;
       }
@@ -1361,8 +1637,12 @@ export class UnfinishedSessionLauncher {
         break;
       }
       if (!attempt) continue;
+      if (recoveryFence && (this.turnGenerations.get(recoveryFence) ?? 0) !== observedTurnGeneration) {
+        await this.options.store.cancelAttempt(attempt);
+        continue;
+      }
       resumedThisCycle += 1;
-      launches.push(this.launchContinuation(adapter, record, attempt, session, lifecycleEpoch));
+      launches.push(this.launchContinuation(adapter, record, attempt, session, lifecycleEpoch, recoveryFence, observedTurnGeneration));
     }
     await Promise.all(launches);
   }
@@ -1373,6 +1653,8 @@ export class UnfinishedSessionLauncher {
     attempt: UnfinishedSessionRecord,
     session: AgentSession | null,
     lifecycleEpoch: number,
+    recoveryFence: string | undefined,
+    turnGeneration: number,
   ): Promise<void> {
     const trackedSession = session ?? {
       id: record.sessionId,
@@ -1392,13 +1674,21 @@ export class UnfinishedSessionLauncher {
         await this.options.store.cancelAttempt(attempt);
         return;
       }
+      if (recoveryFence && (this.turnGenerations.get(recoveryFence) ?? 0) !== turnGeneration) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
       const runtimeSettings = await this.options.settingsStore.getSettings();
       if (!this.lifecycleActive(lifecycleEpoch)) {
         await this.options.store.cancelAttempt(attempt);
         return;
       }
       if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd, session ?? undefined)) return;
-      if (runtimeSettings.rolloverExpiredCache && session && this.options.cacheHandoff) {
+      if (recoveryFence && (this.turnGenerations.get(recoveryFence) ?? 0) !== turnGeneration) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
+      if (!record.recoveryCause && runtimeSettings.rolloverExpiredCache && session && this.options.cacheHandoff) {
         const handoff = await this.options.cacheHandoff.maybeRollover(session, new Date(), {
           movePinned: runtimeSettings.movePinnedOnRollover,
         });
@@ -1445,9 +1735,26 @@ export class UnfinishedSessionLauncher {
         return;
       }
       if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)) return;
+      const admissionSettings = await this.options.settingsStore.getSettings();
+      if (!await this.isEnabled(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)
+        || (record.recoveryCause === "turn.failed" && !admissionSettings.recoverOnFailure)
+        || (record.recoveryCause === "process.disconnected" && !admissionSettings.recoverOnDisconnect)
+        || (record.recoveryCause === "stalled" && !admissionSettings.watchdogEnabled)) {
+        await this.options.store.cancelAttempt(attempt);
+        await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
+        return;
+      }
+      if (recoveryFence && (this.turnGenerations.get(recoveryFence) ?? 0) !== turnGeneration) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
       const resumed = adapter.resumeSession ? await adapter.resumeSession(record.sessionId) : { ok: true };
       if (!resumed.ok) throw new Error(resumed.error || "возобновление отклонено");
       if (!this.lifecycleActive(lifecycleEpoch)) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
+      if (recoveryFence && (this.turnGenerations.get(recoveryFence) ?? 0) !== turnGeneration) {
         await this.options.store.cancelAttempt(attempt);
         return;
       }
@@ -1457,6 +1764,10 @@ export class UnfinishedSessionLauncher {
         return;
       }
       if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)) return;
+      if (recoveryFence && (this.turnGenerations.get(recoveryFence) ?? 0) !== turnGeneration) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
       const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true });
       const terminalAdmission = admittedNonRetryableFailure(sent);
       if (terminalAdmission) {
@@ -1552,6 +1863,10 @@ export class UnfinishedSessionLauncher {
         const lastActivity = Date.parse(session.lastActivity);
       if (!Number.isFinite(lastActivity) || Date.now() - lastActivity > inventoryWindowMs) continue;
       const sourceKey = sessionSourceKey(session);
+      if (isSubagentSession(session)) {
+        await this.options.store.excludeSession(session.harness, session.id);
+        continue;
+      }
       observedSourceKeys.add(sourceKey);
       if (await this.suppressIfHumanStopped(session.harness, session.id, session.cwd, session)) continue;
       listedCandidates.push({ adapter, session });
@@ -1681,6 +1996,7 @@ export class UnfinishedSessionLauncher {
         if (previous?.verdict?.verdict === "completed"
           && previous.verdict.confidence > 0
           && evidenceIsCurrent(previous)
+          && !durableAdmission?.recoveryCause
           && !durableAdmission?.acceptedAt
           && !durableAdmission?.deliveryPending) {
           const cached = cohortEvidence.get(sourceKey);
@@ -1769,7 +2085,7 @@ export class UnfinishedSessionLauncher {
           return "blocked";
         }
         if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
-        await this.applyBatchPlan(plan, assessed, lifecycleEpoch);
+        await this.recordBatchAudit(plan, assessed);
         return "ready";
       }
       // Empty fresh inventory is not an unsafe planner failure. Persisted
@@ -1837,16 +2153,36 @@ export class UnfinishedSessionLauncher {
       };
       inventoryBatch.push(inventory);
       if (verdict?.verdict !== "unfinished") {
-        if (verdict) await this.options.store.remove(harness, session.id, sessionWorkspaceIdentity(session));
+        if (verdict && !durableBySourceKey.get(key)?.recoveryCause) {
+          await this.options.store.remove(harness, session.id, sessionWorkspaceIdentity(session));
+        }
         known.delete(key);
         continue;
       }
-      if (known.has(key) || !await this.isEnabled(harness, session.id, session.cwd)) continue;
-      await this.options.store.markStarted(session, `judged-${this.generationId}`);
-      known.add(key);
+      // Semantic unfinishedness is Autopilot's concern. Keep the verdict in
+      // the read-only inventory, but never create a recovery record from it.
     }
     await this.options.store.upsertInventoryBatch(inventoryBatch);
     return "ready";
+  }
+
+  private async recordBatchAudit(plan: SessionBatchPlan, assessed: AssessedSession[]): Promise<void> {
+    const byId = new Map(assessed.map((candidate) => [candidate.sourceKey, candidate]));
+    plan = canonicalizePlanSourceKeys(plan, assessed);
+    assertBatchPlanCoverage(plan, assessed);
+    plan = enforcePlanWorkspaceBoundaries(plan, byId);
+    const now = new Date();
+    const records: UnfinishedSessionInventoryRecord[] = [];
+    for (const group of plan.groups) {
+      const verdict = {
+        verdict: group.verdict,
+        reason: group.reason,
+        confidence: group.confidence,
+        judgedAt: now.toISOString(),
+      } satisfies SessionInventoryVerdict;
+      for (const sourceKey of group.sourceSessionIds) records.push(inventoryFromAssessment(byId.get(sourceKey)!, verdict, now));
+    }
+    await this.options.store.upsertInventoryBatch(records);
   }
 
   private async applyBatchPlan(plan: SessionBatchPlan, assessed: AssessedSession[], lifecycleEpoch: number): Promise<void> {
@@ -2564,8 +2900,8 @@ export class UnfinishedSessionLauncher {
     if (!this.options.notify || record.notifiedAt) return;
     const harness = displayHarness(record.harness);
     await this.options.notify({
-      title: "Agent Herder не смог продолжить задачу",
-      body: `${harness}: незавершённая сессия не запущена после ${record.attempts} попыток. Работа остановлена; откройте сессию и запустите продолжение вручную.`,
+      title: "Agent Herder не смог восстановить аварийно завершённый ход",
+      body: `${harness}: подтверждённый сбой нативного хода не восстановлен после ${record.attempts} попыток. Автовосстановление остановлено; откройте исходную сессию и проверьте её состояние.`,
       dedupKey: `agent-herder:unfinished-session:${unfinishedRecordKey(record)}`,
       correlationId: `unfinished-${unfinishedRecordKey(record)}-${record.startedAt}`,
       sourceId: "agent-herder-autostart",
@@ -2594,6 +2930,8 @@ function parseAutostartFile(value: unknown, env: NodeJS.ProcessEnv = process.env
     movePinnedOnRollover: object.version === 5 || object.version === 6 || object.version === 7 ? booleanSetting(object.movePinnedOnRollover, "movePinnedOnRollover") : defaults.movePinnedOnRollover,
     inventoryWindowHours: object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 || object.version === 7 ? runtimeHours(object.inventoryWindowHours) : defaults.inventoryWindowHours,
     evidenceMessageCount: (object.version === 6 || object.version === 7) && object.evidenceMessageCount !== undefined ? evidenceCount(object.evidenceMessageCount) : defaults.evidenceMessageCount,
+    recoverOnFailure: object.recoverOnFailure === undefined ? defaults.recoverOnFailure : booleanSetting(object.recoverOnFailure, "recoverOnFailure"),
+    recoverOnDisconnect: object.recoverOnDisconnect === undefined ? defaults.recoverOnDisconnect : booleanSetting(object.recoverOnDisconnect, "recoverOnDisconnect"),
     watchdogEnabled: (object.version === 6 || object.version === 7) && object.watchdogEnabled !== undefined ? booleanSetting(object.watchdogEnabled, "watchdogEnabled") : defaults.watchdogEnabled,
     watchdogIntervalSeconds: (object.version === 6 || object.version === 7) && object.watchdogIntervalSeconds !== undefined ? boundedInteger(object.watchdogIntervalSeconds, 5, 300, "watchdogIntervalSeconds") : defaults.watchdogIntervalSeconds,
     stalledTurnMinutes: (object.version === 6 || object.version === 7) && object.stalledTurnMinutes !== undefined ? boundedInteger(object.stalledTurnMinutes, 1, 120, "stalledTurnMinutes") : defaults.stalledTurnMinutes,
@@ -2633,7 +2971,9 @@ function defaultAutostartFile(env: NodeJS.ProcessEnv): SessionAutostartFile {
     movePinnedOnRollover: false,
     inventoryWindowHours: positiveInteger(Number(env.AGENT_HERDER_UNFINISHED_INVENTORY_HOURS || 48), 48),
     evidenceMessageCount: evidenceCount(Number(env.AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES || DEFAULT_EVIDENCE_MESSAGE_COUNT)),
-    watchdogEnabled: env.AGENT_HERDER_UNFINISHED_WATCHDOG !== "false",
+    recoverOnFailure: env.AGENT_HERDER_UNFINISHED_RECOVER_ON_FAILURE !== "false",
+    recoverOnDisconnect: env.AGENT_HERDER_UNFINISHED_RECOVER_ON_DISCONNECT !== "false",
+    watchdogEnabled: env.AGENT_HERDER_UNFINISHED_WATCHDOG === "true",
     watchdogIntervalSeconds: boundedInteger(Number(env.AGENT_HERDER_UNFINISHED_WATCHDOG_INTERVAL_SECONDS || 10), 5, 300, "watchdogIntervalSeconds"),
     stalledTurnMinutes: boundedInteger(Number(env.AGENT_HERDER_UNFINISHED_STALLED_TURN_MINUTES || 2), 1, 120, "stalledTurnMinutes"),
     judgeModel: env.AGENT_HERDER_UNFINISHED_JUDGE_MODEL?.trim() || "MiniMax-M3.1-Flash-Preview",
@@ -2989,6 +3329,7 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
     cwd: bounded(record.cwd, "cwd"),
     model: optionalBounded(record.model, "model"),
     title: optionalBounded(record.title, "title"),
+    threadSource: optionalBounded(record.threadSource, "threadSource"),
   });
   const state = record.state;
   if (state !== "active" && state !== "recovering" && state !== "exhausted") throw new Error("invalid unfinished session state");
@@ -3013,6 +3354,14 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
     ...(record.terminalRetryCount === undefined ? {} : { terminalRetryCount: nonNegativeInteger(record.terminalRetryCount, 0) }),
     ...(record.terminalAssistantObserved === true ? { terminalAssistantObserved: true } : {}),
     ...(record.nonRetryableAdmission === true ? { nonRetryableAdmission: true } : {}),
+    ...(record.recoveryCause === "turn.failed" || record.recoveryCause === "process.disconnected" || record.recoveryCause === "stalled"
+      ? { recoveryCause: record.recoveryCause } : {}),
+    ...(record.recoveryObservedAt ? { recoveryObservedAt: isoDate(record.recoveryObservedAt, "recoveryObservedAt") } : {}),
+    ...(record.recoveryTurnId ? { recoveryTurnId: bounded(record.recoveryTurnId, "recoveryTurnId") } : {}),
+    ...(record.recoveryInputId ? { recoveryInputId: bounded(record.recoveryInputId, "recoveryInputId") } : {}),
+    ...(record.activeTurnStartedAt ? { activeTurnStartedAt: isoDate(record.activeTurnStartedAt, "activeTurnStartedAt") } : {}),
+    ...(record.activeTurnId ? { activeTurnId: bounded(record.activeTurnId, "activeTurnId") } : {}),
+    ...(record.activeInputId ? { activeInputId: bounded(record.activeInputId, "activeInputId") } : {}),
     generationId: record.generationId === undefined ? "legacy" : bounded(record.generationId, "generationId"),
     attempts,
     state,
@@ -3022,13 +3371,14 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
   };
 }
 
-function normalizeRecordTarget(input: { harness: HarnessType; sessionId: string; cwd: string; model?: string; title?: string }) {
+function normalizeRecordTarget(input: { harness: HarnessType; sessionId: string; cwd: string; model?: string; title?: string; threadSource?: string }) {
   return {
     harness: input.harness,
     sessionId: bounded(input.sessionId, "sessionId"),
     cwd: normalize(bounded(input.cwd, "cwd")),
     ...(input.model ? { model: bounded(input.model, "model") } : {}),
     ...(input.title ? { title: bounded(input.title, "title") } : {}),
+    ...(input.threadSource ? { threadSource: bounded(input.threadSource, "threadSource") } : {}),
   };
 }
 

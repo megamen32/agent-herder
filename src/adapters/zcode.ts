@@ -798,6 +798,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
   private readonly sessionEventUnsubscribers = new Map<string, () => void>();
   private readonly sessionEventTasks = new Set<Promise<void>>();
+  private readonly observedActiveTurns = new Map<string, { turnId?: string; inputId?: string }>();
   private sessionSnapshotReceipt: SessionSnapshotReceipt = {
     exhaustive: false,
     observedAt: new Date(0).toISOString(),
@@ -835,6 +836,16 @@ export class ZcodeAdapter implements HarnessAdapter {
         env: { ZCODE_SERVICE_AUTHORITY_MODE: "standalone-server" },
       });
     }
+    this.client.onDisconnect?.(() => {
+      this.initialized = false;
+      for (const [sessionId, identity] of this.observedActiveTurns) {
+        this.emitEvent({ kind: "process.disconnected", harness: "zcode", sessionId, nativeType: "transport-exit", data: { transport: "app-server-events", ...identity } });
+      }
+      this.observedActiveTurns.clear();
+      for (const unsubscribe of this.sessionEventUnsubscribers.values()) { try { unsubscribe(); } catch { /* already disconnected */ } }
+      this.sessionEventUnsubscribers.clear();
+      this.emitEvent({ kind: "process.disconnected", harness: "zcode", nativeType: "transport-exit", data: { transport: "app-server-events" } });
+    });
   }
 
   async init(): Promise<void> {
@@ -871,6 +882,7 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   async dispose(): Promise<void> {
     this.initialized = false;
+    this.observedActiveTurns.clear();
     for (const timer of this.titlePersistenceTimers.values()) clearTimeout(timer);
     this.titlePersistenceTimers.clear();
     for (const timer of this.queuedPromptTimers.values()) clearTimeout(timer);
@@ -1180,6 +1192,12 @@ export class ZcodeAdapter implements HarnessAdapter {
         const eventSeq = snapshot.runtime?.eventSeq ?? 0;
         this.sessionEventCursors.set(id, eventSeq);
         const mapped = mapSession(snapshot, workspace.workspacePath, undefined, nativeEvents, nativeEventHistoryAvailable);
+        const lastTurn = [...nativeEvents].reverse().find((event) =>
+          (event.type === "turn.started" || event.type === "turn.completed" || event.type === "turn.failed") && nonEmptyString(event.turnId));
+        if (lastTurn) mapped.meta = { ...mapped.meta, nativeLastTurn: {
+          turnId: lastTurn.turnId,
+          status: lastTurn.type === "turn.started" ? "inProgress" : lastTurn.type === "turn.failed" ? "failed" : "completed",
+        } };
         this.ensureSessionEventSubscription(id, workspace, eventSeq);
         return mapped;
       } catch {
@@ -1835,6 +1853,17 @@ export class ZcodeAdapter implements HarnessAdapter {
               }
             }
             if (!active) return;
+            if (event.kind === "turn.started") {
+              const turnId = nonEmptyString(record(event.data).turnId);
+              if (turnId || inputId) this.observedActiveTurns.set(sessionId, { ...(turnId ? { turnId } : {}), ...(inputId ? { inputId } : {}) });
+            } else if (event.kind === "turn.completed" || event.kind === "turn.failed" || event.kind === "session.deleted") {
+              const observed = this.observedActiveTurns.get(sessionId);
+              const turnId = nonEmptyString(record(event.data).turnId);
+              const matches = observed?.turnId && turnId
+                ? observed.turnId === turnId
+                : !!observed?.inputId && !!inputId && observed.inputId === inputId;
+              if (!observed || matches) this.observedActiveTurns.delete(sessionId);
+            }
             if (inputId) {
               const waiterKey = `${sessionId}:${inputId}`;
               const waiter = this.turnStartWaiters.get(waiterKey);

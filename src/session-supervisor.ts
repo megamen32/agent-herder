@@ -518,6 +518,7 @@ export class SessionSupervisor {
     signal?.addEventListener("abort", onAbort, { once: true });
     let result: ControlResult;
     try {
+      throwIfAborted(signal); // A stop may arrive while the persistent human gate is read.
       result = await (adapter.recover
         ? adapter.recover(id, message, signal)
         : Promise.resolve({ ok: false, error: `${adapter.name} does not expose native recovery` }));
@@ -802,7 +803,14 @@ export class SessionSupervisor {
     }
     this.events.publish({ kind: "adapters", uri: "herder://adapters", action: "changed", id: provider, source: `native:${provider}` });
     this.events.publish({ kind: "adapters", uri: adapterResourceUri(provider), action: "changed", id: provider, source: `native:${provider}` });
-    if (!event.sessionId) return;
+    if (!event.sessionId) {
+      if (event.kind === "process.disconnected") {
+        void this.unfinishedSessions?.handleEvent(provider, event).catch((error) => {
+          console.error(`[agent-herder] не удалось проверить оборванные ходы: ${String(error)}`);
+        });
+      }
+      return;
+    }
 
     const stop = event.data?.automationStop;
     if (stop && typeof stop === "object" && !Array.isArray(stop)) {
@@ -828,7 +836,9 @@ export class SessionSupervisor {
       console.error(`[agent-herder] не удалось обновить реестр незавершённых сессий: ${error instanceof Error ? error.message : String(error)}`);
     });
 
-    if (event.kind === "turn.failed") {
+    // The configurable crash-recovery launcher is the sole recovery owner.
+    // A second retry loop would bypass its eligibility, settings and child guards.
+    if (event.kind === "turn.failed" && !this.unfinishedSessions) {
       this.scheduleAutomaticResume(provider, event.sessionId);
     } else if (event.kind === "turn.started" || event.kind === "turn.completed" || event.kind === "session.deleted") {
       this.clearAutomaticResume(provider, event.sessionId);

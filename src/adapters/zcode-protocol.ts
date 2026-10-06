@@ -24,6 +24,7 @@ export interface ZcodeClientLike {
   start(): Promise<void>;
   call(channel: string, method: string, args: unknown[]): Promise<unknown>;
   listen?(channel: string, event: string, arg: unknown, handler: (payload: unknown) => void): () => void;
+  onDisconnect?(handler: (error: Error) => void): () => void;
   close(): Promise<void>;
 }
 
@@ -197,6 +198,12 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
   private nextRequestId = 1;
   private readonly pending = new Map<number, PendingRequest>();
   private readonly subscriptions = new Map<number, EventSubscription>();
+  private readonly disconnectListeners = new Set<(error: Error) => void>();
+
+  onDisconnect(handler: (error: Error) => void): () => void {
+    this.disconnectListeners.add(handler);
+    return () => { this.disconnectListeners.delete(handler); };
+  }
 
   constructor(options: ZcodeAppServerClientOptions) {
     this.command = options.command;
@@ -253,12 +260,15 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
       this.rejectPending(error);
     });
     child.on("exit", (code, signal) => {
+      if (this.child !== child) return; // Intentional close or an obsolete process.
       const error = new Error(`ZCode app-server exited before ready: ${code ?? signal ?? "unknown"}`);
       this.ready = false;
       this.handshakeDone = false;
       this.serverReadyError?.(error);
       this.rejectPending(error);
       if (this.child === child) this.child = undefined;
+      this.subscriptions.clear();
+      for (const handler of this.disconnectListeners) handler(error);
     });
 
     try {

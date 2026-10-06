@@ -37,21 +37,19 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('/api/session-autostart/sessions/');
     expect(main).toContain('/api/session-autostart/harnesses/codex');
     expect(main).toContain('/api/session-autostart/harnesses/zcode');
-    expect(main).toContain('aria-label={`Autocontinue unfinished session ${activeSession.id}`}');
-    expect(main).toContain('Умное автопродолжение каждые 10 минут');
-    expect(main).toContain('работает независимо от автопилота');
+    expect(main).toContain('aria-label={`Autocontinue recovery for ${activeSession.id}`}');
+    expect(main).toContain('Где разрешено восстановление');
+    expect(main).toContain('Автопилот отдельно решает, что делать с незавершённой задачей');
     expect(main).toContain('aria-label="Глобальное автопродолжение"');
-    expect(main).toContain('Продолжить задачу в новой сессии');
-    expect(main).toContain('Переносить закрепление на продолжение');
-    expect(main).toContain('сначала закрепит новую сессию Codex или ZCode, затем снимет закрепление со старых');
-    expect(main).toContain('provider-cache TTL');
+    expect(main).toContain('Восстановление после сбоя');
+    expect(main).toContain('После ошибки хода');
+    expect(main).toContain('После разрыва соединения');
+    expect(main).toContain('recoverOnFailure');
+    expect(main).toContain('recoverOnDisconnect');
+    expect(main).toContain('явно остановленные человеком');
     expect(main).toContain('className="settings-group session-autocontinue-setting"');
-    expect(main).toContain('Искать сессии за последние часы');
-    expect(main).toContain('Сколько сообщений читать на сессию');
-    expect(main).toContain('потолок 512 тыс.');
-    expect(main).toContain('Срочно будить остановившиеся и зависшие сессии');
-    expect(main).toContain('Фоновая проверка отдельно следит за процессом и текущим ответом');
-    expect(main).toContain('Модель автопродолжения');
+    expect(main).toContain('Восстанавливать зависшие ходы по таймауту');
+    expect(main).toContain('только после заданного времени без прогресса');
     expect(main).toContain('Модель автопилота');
     expect(main).toContain('/api/models?harness=');
     expect(main).toContain('/api/autopilot/policy');
@@ -115,8 +113,8 @@ describe("mobile chat and session controls", () => {
   it("uses plain Russian for user-facing automation settings", () => {
     expect(main).toContain("Это общий переключатель");
     expect(main).toContain("Herder не снимает закрепление после завершения");
-    expect(main).toContain("краткое описание текущего состояния");
-    expect(main).toContain("Фоновая проверка отдельно следит за процессом и текущим ответом");
+    expect(main).toContain("после подтверждённого сбоя");
+    expect(main).toContain("ожидание ответа или разрешения человека");
     expect(main).toContain("Автопилот решает");
     expect(main).toContain("первый рекомендованный автопилотом вариант");
     for (const jargon of ["глобальный master", "этот pin", "Judge решает", "рекомендованный Judge вариант", "native process/turn", "Наследуется от harness policy", "Наследовать policy"]) {
@@ -149,6 +147,23 @@ describe("mobile chat and session controls", () => {
     expect(autocontinue).toContain("pinActiveSessions");
     expect(autocontinue).toContain("Herder не снимает закрепление после завершения");
     expect(main.slice(main.indexOf("const saveRuntimeSettings = async"))).toContain("pinActiveSessions: runtimeSettingsDraft.pinActiveSessions ?? true");
+  });
+
+  it("limits autocontinue to same-session crash recovery and preserves hidden legacy values", () => {
+    const autocontinue = main.slice(main.indexOf('if (section === "autocontinue")'), main.indexOf("if (!draft)"));
+    const runtimeSave = main.slice(main.indexOf("const saveRuntimeSettings = async"), main.indexOf("const loadCreateModels"));
+
+    expect(autocontinue).toContain("recoverOnFailure: event.target.checked");
+    expect(autocontinue).toContain("recoverOnDisconnect: event.target.checked");
+    expect(autocontinue).toContain("runtimeDraft.watchdogEnabled ?? false");
+    expect(autocontinue).toContain("Завершённые и работающие сессии");
+    expect(autocontinue).not.toContain("Продолжить задачу в новой сессии");
+    expect(autocontinue).not.toContain("MiniMax проверяет оборванные задачи");
+    expect(autocontinue).not.toContain("Модель автопродолжения");
+    expect(runtimeSave).toContain("recoverOnFailure: runtimeSettingsDraft.recoverOnFailure ?? true");
+    expect(runtimeSave).toContain("recoverOnDisconnect: runtimeSettingsDraft.recoverOnDisconnect ?? true");
+    expect(runtimeSave).toContain("rolloverExpiredCache: runtimeSettingsDraft.rolloverExpiredCache ?? false");
+    expect(runtimeSave).toContain("movePinnedOnRollover: runtimeSettingsDraft.movePinnedOnRollover ?? false");
   });
 
   it("loads autocontinue independently when the autopilot policy endpoint fails", () => {

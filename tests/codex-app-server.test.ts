@@ -204,15 +204,15 @@ describe("Codex app-server adapter", () => {
       expect(events.slice(terminalEventsStart)).toEqual([
         expect.objectContaining({
           kind: "turn.completed",
-          data: { automationStop: {
+          data: { turnId: "turn-external-interrupted", automationStop: {
             id: "turn-external-interrupted",
             at: "2026-10-06T12:34:56.000Z",
             reason: "interrupted",
             turnId: "turn-external-interrupted",
           } },
         }),
-        expect.objectContaining({ kind: "turn.completed", data: undefined }),
-        expect.objectContaining({ kind: "turn.failed", data: undefined }),
+        expect.objectContaining({ kind: "turn.completed", data: { turnId: "turn-normal-completed" } }),
+        expect.objectContaining({ kind: "turn.failed", data: { turnId: "turn-normal-failed" } }),
       ]);
       expect(methods).toEqual(expect.arrayContaining([
         "initialize",
@@ -787,7 +787,7 @@ describe("Codex app-server adapter", () => {
       for (let i = 0; i < 20 && !nativeEvents.some((event) => event.kind === "turn.started"); i++) await new Promise((resolve) => setTimeout(resolve, 10));
       expect(nativeEvents).toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: "process.connected" }),
-        expect.objectContaining({ kind: "turn.started", sessionId: "thread-1" }),
+        expect.objectContaining({ kind: "turn.started", sessionId: "thread-1", data: { turnId: "turn-1" } }),
       ]));
       expect(await adapter.cancelTurn("thread-1")).toEqual({ ok: true });
       expect(await adapter.resumeSession("thread-1")).toEqual({ ok: true });
@@ -927,7 +927,7 @@ describe("Codex app-server adapter", () => {
 
       await expect(adapter.getSession("thread-1")).resolves.toMatchObject({ id: "thread-1", status: "idle" });
       expect(events).toEqual(expect.arrayContaining([
-        expect.objectContaining({ kind: "turn.failed", sessionId: "thread-1" }),
+        expect.objectContaining({ kind: "process.disconnected", sessionId: "thread-1", data: expect.objectContaining({ turnId: "turn-1" }) }),
         expect.objectContaining({ kind: "process.disconnected" }),
       ]));
 
