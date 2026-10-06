@@ -80,6 +80,7 @@ interface ZcodeSnapshot {
       current?: ZcodeModelRef;
       available?: Array<ZcodeModelRef | string>;
     };
+    permission?: { mode?: string; rulesRevision?: number };
   };
   runtime?: { eventSeq?: number; stateRevision?: number; pendingRequestIds?: string[] };
   messages?: ZcodeMessage[];
@@ -108,6 +109,10 @@ export interface ZcodeAdapterOptions {
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function nativePermissionMode(snapshot: unknown): string | undefined {
+  return nonEmptyString(record(record(record(snapshot).settings).permission).mode);
 }
 
 function nonEmptyString(value: unknown): string | undefined {
@@ -313,6 +318,10 @@ function mapSession(payload: unknown, fallbackCwd: string, fallbackTitle?: strin
   const meta: Record<string, unknown> = {
     sessionKind: session.sessionKind,
     mode: session.mode,
+    permissionMode: nonEmptyString(record(record(root.settings).permission).mode),
+    permissionRulesRevision: typeof record(record(root.settings).permission).rulesRevision === "number"
+      ? record(record(root.settings).permission).rulesRevision
+      : undefined,
     traceId: session.traceId,
     parentSessionId: session.parentSessionId,
     workspaceIdentity: nonEmptyString(workspace.workspaceIdentity),
@@ -871,13 +880,13 @@ export class ZcodeAdapter implements HarnessAdapter {
     const healthTools = options.name.startsWith("health_")
       ? { toolAllowlist: [...HEALTH_SESSION_TOOL_ALLOWLIST] }
       : {};
-    const snapshot = await this.callAgent("createSession", {
+    let snapshot = await this.callAgent("createSession", {
       ...workspace,
       sessionTraceId: randomUUID(),
       // mode must be a concrete session mode ("build"): omitting it or
       // passing non-session values crashes this zcode-server build with an
-      // NPE while resolving workspace defaults. Headless permission handling
-      // is done via respond_permission approvals instead.
+      // NPE while resolving workspace defaults. Full-access creation is
+      // confirmed separately through the native setMode response below.
       mode: options.fullAccess ? "yolo" : options.mode || "build",
       persistence: "immediate",
       ...(initialModel ? { model: initialModel } : {}),
@@ -886,6 +895,13 @@ export class ZcodeAdapter implements HarnessAdapter {
     });
     const info = sessionInfoFromPayload(snapshot);
     if (!info) throw new Error("ZCode createSession returned no sessionId");
+    if (options.fullAccess && nativePermissionMode(snapshot) !== "yolo") {
+      snapshot = await this.callAgent("setMode", { ...workspace, sessionId: info.sessionId, mode: "yolo" });
+      const updatedInfo = sessionInfoFromPayload(snapshot);
+      if (updatedInfo?.sessionId !== info.sessionId || nativePermissionMode(snapshot) !== "yolo") {
+        throw new Error("ZCode did not confirm full-access permission mode for the new session");
+      }
+    }
     this.sessionWorkspaces.set(info.sessionId, workspace);
     this.desiredSessionTitles.set(info.sessionId, options.name);
     this.ensureSessionEventSubscription(info.sessionId, workspace);

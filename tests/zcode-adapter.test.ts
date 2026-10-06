@@ -76,6 +76,11 @@ class FakeClient implements ZcodeClientLike {
     if (channel === "zcode-agent" && method === "readWorkspaceState") return { settings: { model: { current: session.model, available: [{ ref: session.model, label: "GLM-4.5" }] } } };
     if (channel === "zcode-agent" && method === "resumeSession") return snapshot;
     if (channel === "zcode-agent" && method === "createSession") return { ...snapshot, session: { ...session, sessionId: "created-1", title: "New task", parentSessionId: undefined, sessionKind: "interactive" } };
+    if (channel === "zcode-agent" && method === "setMode") return {
+      ...snapshot,
+      session: { ...session, sessionId: (args[0] as { sessionId: string }).sessionId, mode: "yolo", parentSessionId: undefined, sessionKind: "interactive" },
+      settings: { ...snapshot.settings, permission: { mode: (args[0] as { mode: string }).mode, rulesRevision: 1 } },
+    };
     if (channel === "zcode-agent" && method === "sendPrompt") return { accepted: true };
     if (channel === "zcode-agent" && method === "setModel") return snapshot;
     if (channel === "zcode-agent" && method === "closeSession") return { closed: true };
@@ -482,6 +487,65 @@ describe("ZCode adapter", () => {
 
     const create = client.calls.find((call) => call.method === "createSession");
     expect(create?.args[0]).toMatchObject({ mode: "yolo" });
+  });
+
+  it("confirms the native permission mode for full-access creation", async () => {
+    const client = new FakeClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    const created = await adapter.createSession({ name: "unattended-confirmed", cwd: "/workspace", fullAccess: true });
+
+    const createIndex = client.calls.findIndex((call) => call.method === "createSession");
+    const setModeIndex = client.calls.findIndex((call) => call.method === "setMode");
+    expect(createIndex).toBeGreaterThan(-1);
+    expect(setModeIndex).toBeGreaterThan(createIndex);
+    expect(client.calls[setModeIndex]?.args[0]).toMatchObject({ sessionId: "created-1", mode: "yolo" });
+    expect(created.meta).toMatchObject({ permissionMode: "yolo", permissionRulesRevision: 1 });
+
+    await adapter.dispose();
+  });
+
+  it("uses a native yolo permission mode already returned by createSession", async () => {
+    class AlreadyYoloClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "createSession") {
+          this.calls.push({ channel, method, args });
+          return {
+            ...snapshot,
+            session: { ...session, sessionId: "created-1", parentSessionId: undefined, sessionKind: "interactive" },
+            settings: { ...snapshot.settings, permission: { mode: "yolo", rulesRevision: 2 } },
+          };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const client = new AlreadyYoloClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+    const created = await adapter.createSession({ name: "unattended-native-yolo", cwd: "/workspace", fullAccess: true });
+    expect(client.calls.some((call) => call.method === "setMode")).toBe(false);
+    expect(created.meta).toMatchObject({ permissionMode: "yolo", permissionRulesRevision: 2 });
+    await adapter.dispose();
+  });
+
+  it("fails closed if ZCode does not confirm full-access permission mode", async () => {
+    class RefusedModeClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "setMode") {
+          this.calls.push({ channel, method, args });
+          return { ...snapshot, session: { ...session, sessionId: "created-1" }, settings: { ...snapshot.settings, permission: { mode: "build" } } };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new RefusedModeClient() });
+    await adapter.init();
+    await expect(adapter.createSession({ name: "unattended-unconfirmed", cwd: "/workspace", fullAccess: true }))
+      .rejects.toThrow("ZCode did not confirm full-access permission mode");
+    await adapter.dispose();
   });
 
   it("persists the requested session name after ZCode derives a prompt title", async () => {
