@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolvePersistedZcodeStatus } from "./zcode.js";
+import { pickNativeLastTurn, resolvePersistedZcodeStatus, type NativeTurnUsageRow } from "./zcode.js";
 import { lifecycleEntryFor, markLifecycleEvent } from "../session-lifecycle.js";
 
 const WINDOW = 5 * 60 * 1000;
@@ -120,5 +120,58 @@ describe("resolvePersistedZcodeStatus", () => {
     expect(lifecycleEntryFor("zcode", "sess_status_probe")).toMatchObject({ state: "running" });
     markLifecycleEvent("zcode", "sess_status_probe", "turn-end", "/tmp/probe");
     expect(lifecycleEntryFor("zcode", "sess_status_probe")).toMatchObject({ state: "idle" });
+  });
+});
+
+describe("pickNativeLastTurn", () => {
+  const row = (overrides: Partial<NativeTurnUsageRow> = {}): NativeTurnUsageRow => ({
+    sessionId: "sess_probe",
+    turnId: "turn_a",
+    status: "completed",
+    startedAt: 1_000,
+    completedAt: 2_000,
+    userMessageId: "msg_1",
+    ...overrides,
+  });
+
+  it("returns the newest turn by startedAt", () => {
+    const summary = pickNativeLastTurn([row({ turnId: "turn_old", startedAt: 500 }), row({ turnId: "turn_new", startedAt: 1_500 })]);
+    expect(summary).toMatchObject({ turnId: "turn_new", startedAt: 1_500, status: "completed", userMessageId: "msg_1" });
+  });
+
+  it("breaks startedAt ties deterministically by completedAt then input order", () => {
+    const first = row({ turnId: "turn_first", startedAt: 1_000, completedAt: 1_500 });
+    const second = row({ turnId: "turn_second", startedAt: 1_000, completedAt: 1_800 });
+    expect(pickNativeLastTurn([first, second])).toMatchObject({ turnId: "turn_second" });
+    const a = row({ turnId: "turn_a", startedAt: 1_000, completedAt: 1_500 });
+    const b = row({ turnId: "turn_b", startedAt: 1_000, completedAt: 1_500 });
+    expect(pickNativeLastTurn([a, b])).toMatchObject({ turnId: "turn_b" });
+  });
+
+  it("excludes the summary when a newer user input has not been consumed", () => {
+    const rows = [row({ startedAt: 1_000, completedAt: 2_000 })];
+    expect(pickNativeLastTurn(rows, 3_500)).toBeUndefined();
+    expect(pickNativeLastTurn(rows, 2_500)).toBeUndefined();
+    expect(pickNativeLastTurn(rows, 2_251)).toBeUndefined();
+  });
+
+  it("keeps the summary when the newest input is inside the turn boundary or stale slack", () => {
+    const rows = [row({ startedAt: 1_000, completedAt: 2_000 })];
+    expect(pickNativeLastTurn(rows, 2_000)).toBeDefined();
+    expect(pickNativeLastTurn(rows, 2_250)).toBeDefined();
+    expect(pickNativeLastTurn(rows)).toBeDefined();
+  });
+
+  it("maps native integer flags into booleans only when set", () => {
+    const summary = pickNativeLastTurn([row({ status: "error", retryable: 1, errorType: "unknown_error", errorCode: "UNKNOWN_ERROR" })]);
+    expect(summary).toMatchObject({ status: "error", retryable: true, errorType: "unknown_error", errorCode: "UNKNOWN_ERROR" });
+    expect(summary!.cancelledByUser).toBeUndefined();
+    const humanStopped = pickNativeLastTurn([row({ status: "cancelled", cancelledByUser: 1, contextExceeded: 1 })]);
+    expect(humanStopped).toMatchObject({ status: "cancelled", cancelledByUser: true, contextExceeded: true });
+    expect(humanStopped!.retryable).toBeUndefined();
+  });
+
+  it("returns undefined for empty rows", () => {
+    expect(pickNativeLastTurn([])).toBeUndefined();
   });
 });

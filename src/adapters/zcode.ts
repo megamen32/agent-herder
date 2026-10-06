@@ -698,6 +698,78 @@ function unsupported(operation: string): ControlResult {
   return { ok: false, error: `ZCode Protocol operation '${operation}' is not supported by the native app-server` };
 }
 
+export interface NativeTurnUsageRow {
+  sessionId: string;
+  turnId?: string;
+  userMessageId?: string | null;
+  status?: string;
+  startedAt?: number;
+  firstModelStartAt?: number | null;
+  firstTokenAt?: number | null;
+  completedAt?: number | null;
+  durationMs?: number | null;
+  toolCallCount?: number | null;
+  retryable?: number | null;
+  cancelledByUser?: number | null;
+  contextExceeded?: number | null;
+  errorType?: string | null;
+  errorCode?: string | null;
+}
+
+export interface NativeLastTurn {
+  turnId?: string;
+  status?: string;
+  userMessageId?: string;
+  startedAt?: number;
+  completedAt?: number;
+  firstModelStartAt?: number;
+  firstTokenAt?: number;
+  durationMs?: number;
+  toolCallCount?: number;
+  retryable?: boolean;
+  cancelledByUser?: boolean;
+  contextExceeded?: boolean;
+  errorType?: string;
+  errorCode?: string;
+}
+
+/** Latest durable turn for one session, or undefined when the rows are stale
+ * against a newer unconsumed user input. Deterministic on (startedAt,
+ * completedAt, input order) so duplicate timestamps cannot flip the winner.
+ * Pure: the launcher must be able to reason about this without the DB. */
+export function pickNativeLastTurn(rows: NativeTurnUsageRow[], lastInputAt?: number): NativeLastTurn | undefined {
+  if (rows.length === 0) return undefined;
+  let latest = rows[0]!;
+  for (const row of rows.slice(1)) {
+    const rank = (candidate: NativeTurnUsageRow): Array<number> => [
+      candidate.startedAt ?? 0,
+      candidate.completedAt ?? 0,
+      rows.indexOf(candidate),
+    ];
+    const [cl, cc, ci] = rank(latest);
+    const [rl, rc, ri] = rank(row);
+    if (rl > cl || (rl === cl && (rc > cc || (rc === cc && ri > ci)))) latest = row;
+  }
+  const boundary = Math.max(latest.startedAt ?? 0, latest.completedAt ?? 0);
+  if (typeof lastInputAt === "number" && lastInputAt > boundary + 250) return undefined;
+  return {
+    ...(latest.turnId ? { turnId: latest.turnId } : {}),
+    ...(latest.status ? { status: latest.status } : {}),
+    ...(latest.userMessageId ? { userMessageId: latest.userMessageId } : {}),
+    ...(typeof latest.startedAt === "number" && latest.startedAt > 0 ? { startedAt: latest.startedAt } : {}),
+    ...(typeof latest.completedAt === "number" && latest.completedAt > 0 ? { completedAt: latest.completedAt } : {}),
+    ...(typeof latest.firstModelStartAt === "number" && latest.firstModelStartAt > 0 ? { firstModelStartAt: latest.firstModelStartAt } : {}),
+    ...(typeof latest.firstTokenAt === "number" && latest.firstTokenAt > 0 ? { firstTokenAt: latest.firstTokenAt } : {}),
+    ...(typeof latest.durationMs === "number" && latest.durationMs > 0 ? { durationMs: latest.durationMs } : {}),
+    ...(typeof latest.toolCallCount === "number" && latest.toolCallCount > 0 ? { toolCallCount: latest.toolCallCount } : {}),
+    ...(latest.retryable === 1 ? { retryable: true } : {}),
+    ...(latest.cancelledByUser === 1 ? { cancelledByUser: true } : {}),
+    ...(latest.contextExceeded === 1 ? { contextExceeded: true } : {}),
+    ...(latest.errorType ? { errorType: latest.errorType } : {}),
+    ...(latest.errorCode ? { errorCode: latest.errorCode } : {}),
+  };
+}
+
 export interface PersistedZcodeStatusInput {
   rawStatus?: string;
   /** tasks-index updated_at in epoch ms. */
@@ -1038,14 +1110,23 @@ export class ZcodeAdapter implements HarnessAdapter {
           throw error;
         }
 
-        interface NativeTurnSummary {
+        interface NativeLastTurnSummary {
           turnId?: string;
           status?: string;
+          userMessageId?: string;
           startedAt?: number;
           completedAt?: number;
-          userMessageId?: string;
+          firstModelStartAt?: number;
+          firstTokenAt?: number;
+          durationMs?: number;
+          toolCallCount?: number;
+          retryable?: boolean;
+          cancelledByUser?: boolean;
+          contextExceeded?: boolean;
+          errorType?: string;
+          errorCode?: string;
         }
-        const nativeSessions = new Map<string, { directory?: string; workspaceIdentity?: string; timeUpdated?: number; lastTurn?: NativeTurnSummary }>();
+        const nativeSessions = new Map<string, { directory?: string; workspaceIdentity?: string; timeUpdated?: number; lastTurn?: NativeLastTurnSummary }>();
         let nativeCanonicalizationError: string | undefined;
         if (existsSync(this.localDbPath)) {
           try {
@@ -1070,34 +1151,82 @@ export class ZcodeAdapter implements HarnessAdapter {
                   });
                 }
                 // Readonly recovery evidence for the autocontinue launcher:
-                // the newest durable turn per session (turn_usage is small and
-                // local). A completed task row whose last turn ended in
-                // error/cancelled — or whose started turn never completed —
-                // is the interrupted signal the tasks-index flattens away.
+                // the newest durable turn per session from turn_usage
+                // (completed/cancelled alone is not interruption;
+                // cancelled_by_user is a strict human stop) plus the newest
+                // session_input timestamp, so a turn record that is stale
+                // against a newer unconsumed user prompt is excluded.
                 const nativeTableNames = new Set((nativeDb.prepare("select name from sqlite_master where type = 'table'").all() as Array<{ name?: string }>).map((table) => table.name));
+                const nativeTurnRowsBySession = new Map<string, NativeTurnUsageRow[]>();
                 if (nativeTableNames.has("turn_usage")) {
                   const turnColumns = new Set((nativeDb.prepare("pragma table_info(turn_usage)").all() as Array<{ name?: string }>).map((column) => column.name));
-                  if (["session_id", "turn_id", "status", "started_at"].every((column) => turnColumns.has(column))) {
-                    const nativeTurns = nativeDb.prepare(`
-                      select t.session_id as session_id, t.turn_id as turn_id, t.status as status,
-                             t.started_at as started_at, t.completed_at as completed_at,
-                             t.user_message_id as user_message_id
-                      from turn_usage t
-                      join (select session_id, max(started_at) as ms from turn_usage group by session_id) latest
-                        on latest.session_id = t.session_id and latest.ms = t.started_at
-                    `).all() as Array<{ session_id: string; turn_id?: string; status?: string; started_at?: number; completed_at?: number | null; user_message_id?: string | null }>;
-                    for (const turn of nativeTurns) {
-                      const entry = nativeSessions.get(turn.session_id);
-                      if (!entry) continue;
-                      entry.lastTurn = {
-                        ...(turn.turn_id ? { turnId: turn.turn_id } : {}),
-                        ...(turn.status ? { status: turn.status } : {}),
-                        ...(typeof turn.started_at === "number" && turn.started_at > 0 ? { startedAt: turn.started_at } : {}),
-                        ...(typeof turn.completed_at === "number" && turn.completed_at > 0 ? { completedAt: turn.completed_at } : {}),
-                        ...(turn.user_message_id ? { userMessageId: turn.user_message_id } : {}),
-                      };
+                  const requiredTurnColumns = ["session_id", "turn_id", "status", "started_at"];
+                  const optionalTurnColumn = (column: string, alias: string, type: "number" | "string") => {
+                    if (!turnColumns.has(column)) return `null as ${alias}`;
+                    return type === "number"
+                      ? `cast(${column} as integer) as ${alias}`
+                      : `cast(${column} as text) as ${alias}`;
+                  };
+                  if (requiredTurnColumns.every((column) => turnColumns.has(column))) {
+                    const nativeTurnRows = nativeDb.prepare(`
+                      select session_id as session_id, turn_id as turn_id, user_message_id as user_message_id,
+                             status as status,
+                             cast(started_at as integer) as started_at,
+                             ${optionalTurnColumn("first_model_start_at", "first_model_start_at", "number")},
+                             ${optionalTurnColumn("first_token_at", "first_token_at", "number")},
+                             ${optionalTurnColumn("completed_at", "completed_at", "number")},
+                             ${optionalTurnColumn("duration_ms", "duration_ms", "number")},
+                             ${optionalTurnColumn("tool_call_count", "tool_call_count", "number")},
+                             ${optionalTurnColumn("retryable", "retryable", "number")},
+                             ${optionalTurnColumn("cancelled_by_user", "cancelled_by_user", "number")},
+                             ${optionalTurnColumn("context_exceeded", "context_exceeded", "number")},
+                             ${optionalTurnColumn("error_type", "error_type", "string")},
+                             ${optionalTurnColumn("error_code", "error_code", "string")}
+                      from turn_usage
+                    `).all() as Array<Record<string, unknown>>;
+                    for (const row of nativeTurnRows) {
+                      const sessionId = typeof row.session_id === "string" ? row.session_id : "";
+                      if (!sessionId) continue;
+                      const group = nativeTurnRowsBySession.get(sessionId) ?? [];
+                      group.push({
+                        sessionId,
+                        turnId: typeof row.turn_id === "string" ? row.turn_id : undefined,
+                        userMessageId: typeof row.user_message_id === "string" ? row.user_message_id : null,
+                        status: typeof row.status === "string" ? row.status : undefined,
+                        startedAt: typeof row.started_at === "number" ? row.started_at : undefined,
+                        firstModelStartAt: typeof row.first_model_start_at === "number" ? row.first_model_start_at : null,
+                        firstTokenAt: typeof row.first_token_at === "number" ? row.first_token_at : null,
+                        completedAt: typeof row.completed_at === "number" ? row.completed_at : null,
+                        durationMs: typeof row.duration_ms === "number" ? row.duration_ms : null,
+                        toolCallCount: typeof row.tool_call_count === "number" ? row.tool_call_count : null,
+                        retryable: typeof row.retryable === "number" ? row.retryable : null,
+                        cancelledByUser: typeof row.cancelled_by_user === "number" ? row.cancelled_by_user : null,
+                        contextExceeded: typeof row.context_exceeded === "number" ? row.context_exceeded : null,
+                        errorType: typeof row.error_type === "string" ? row.error_type : null,
+                        errorCode: typeof row.error_code === "string" ? row.error_code : null,
+                      });
+                      nativeTurnRowsBySession.set(sessionId, group);
                     }
                   }
+                }
+                const nativeLastInputBySession = new Map<string, number>();
+                if (nativeTableNames.has("session_input")) {
+                  const inputColumns = new Set((nativeDb.prepare("pragma table_info(session_input)").all() as Array<{ name?: string }>).map((column) => column.name));
+                  if (inputColumns.has("session_id") && inputColumns.has("time_created")) {
+                    const inputRows = nativeDb.prepare(`
+                      select session_id as session_id, max(cast(time_created as integer)) as last_input_at
+                      from session_input group by session_id
+                    `).all() as Array<{ session_id?: string; last_input_at?: number | null }>;
+                    for (const row of inputRows) {
+                      if (typeof row.session_id === "string" && typeof row.last_input_at === "number" && row.last_input_at > 0) {
+                        nativeLastInputBySession.set(row.session_id, row.last_input_at);
+                      }
+                    }
+                  }
+                }
+                for (const [sessionId, entry] of nativeSessions) {
+                  const lastTurn = pickNativeLastTurn(nativeTurnRowsBySession.get(sessionId) ?? [], nativeLastInputBySession.get(sessionId));
+                  if (lastTurn) entry.lastTurn = lastTurn;
                 }
               } else {
                 nativeCanonicalizationError = "native_session_schema_missing";
@@ -1178,7 +1307,7 @@ export class ZcodeAdapter implements HarnessAdapter {
               workspaceIdentity,
               duplicateTaskRows: duplicateRows.length,
               ...(nativeTimeUpdated ? { nativeTimeUpdated } : {}),
-              ...(native?.lastTurn ? { lastNativeTurn: native.lastTurn } : {}),
+              ...(native?.lastTurn ? { nativeLastTurn: native.lastTurn } : {}),
               ...(nativeTimeUpdated && nativeTimeUpdated > updatedAt ? { lastActivitySource: "native-session-db" } : {}),
               ...(duplicateRows.length > 1 ? {
                 taskIndexWorkspacePaths: duplicateRows.map((candidate) => candidate.workspace_path).filter(Boolean),
