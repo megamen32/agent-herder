@@ -13,6 +13,7 @@ import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { AutopilotSessionStore } from "./autopilot/session-store.js";
+import { AutomationLaunchPolicyStore } from "./automation-launch-policy.js";
 import { createAnthropicCompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
 import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore } from "./autopilot/index.js";
 import { acquireLock } from "./autopilot-hook.js";
@@ -95,6 +96,7 @@ const unfinishedSessionStore = new UnfinishedSessionStore(
 const sessionAutostartStore = new SessionAutostartStore(
   process.env.AGENT_HERDER_SESSION_AUTOSTART_SETTINGS || join(autopilotStateDir, "session-autostart.json"),
 );
+const automationLaunchPolicyStore = new AutomationLaunchPolicyStore(join(autopilotStateDir, "automation-launch-policy.json"));
 const lineageStore = new LineageStore(join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "agent-herder", "lineage.json"));
 const browserWakeService = createConfiguredBrowserWakeService(process.env);
 const adapterFactories = new Map<string, AdapterFactory>();
@@ -654,6 +656,7 @@ async function main() {
       autopilotPolicyStore,
       autopilotSessionStore,
       sessionAutostartStore,
+      automationLaunchPolicyStore,
       autopilotSweepIntervalMs: Number(process.env.AGENT_HERDER_AUTOPILOT_SWEEP_INTERVAL_MS || 30_000),
     });
     webServer.listen(Number(webPort), host, () => {

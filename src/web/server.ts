@@ -19,6 +19,7 @@ import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../a
 import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import type { SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
+import { AutomationLaunchPolicyStore } from "../automation-launch-policy.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
 import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
@@ -46,6 +47,7 @@ export interface WebDependencies {
   autopilotPolicyStore?: AutopilotPolicyStore;
   autopilotSessionStore?: AutopilotSessionStore;
   sessionAutostartStore?: SessionAutostartStore;
+  automationLaunchPolicyStore?: AutomationLaunchPolicyStore;
   autopilotSweepIntervalMs?: number;
   sessionVisualizer?: (details: SessionDetails) => Promise<string>;
   sessionObservationIntervalMs?: number;
@@ -469,7 +471,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const selectedResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor));
   const server = createServer(async (request, response) => {
     try {
-      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents);
+      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents);
     } catch (err) {
       if (err instanceof SessionNotFoundError) {
         sendJson(response, 404, { error: "Session not found" });
@@ -532,7 +534,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (url.pathname.startsWith("/api/quota-lens") && request.method === "GET") {
     const body = await handleQuotaLensRequest(url.pathname, url.searchParams);
@@ -678,6 +680,20 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     try {
       const record = await autopilotSessionStore.set({ harness, sessionId, cwd: body.cwd }, body.enabled);
       return sendJson(response, 200, { ...record, source: "session" });
+    } catch (error) {
+      return sendJson(response, 400, { error: (error as Error).message });
+    }
+  }
+  if (url.pathname === "/api/automation/launch-policy" && (request.method === "GET" || request.method === "PUT")) {
+    if (!automationLaunchPolicyStore) return sendJson(response, 503, { error: "Launch policy is not configured" });
+    if (request.method === "GET") {
+      const loaded = await automationLaunchPolicyStore.load();
+      if (loaded.kind === "valid") return sendJson(response, 200, loaded.policy);
+      if (loaded.kind === "absent") return sendJson(response, 503, { error: "Launch policy is not configured" });
+      return sendJson(response, 503, { error: "Launch policy is invalid", detail: loaded.error });
+    }
+    try {
+      return sendJson(response, 200, await automationLaunchPolicyStore.replace(await readJson(request)));
     } catch (error) {
       return sendJson(response, 400, { error: (error as Error).message });
     }
