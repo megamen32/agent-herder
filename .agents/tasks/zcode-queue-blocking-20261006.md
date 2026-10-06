@@ -60,7 +60,7 @@ finish startup; no broad suite/budget escalation by this agent. Root ran one
 approved shared-budget2CPU/2GiB120s scope. Typecheck green. Foreign root
 tracker/obsolete surface assertion and status owner's commits preserved.
 
-Pending: root's ONE coherent build/restart, then fresh same-ID signed human
+At that stage pending: root's ONE coherent build/restart, then fresh same-ID signed human
 selection/duplicate/no-noise proof, strict final hold and original settings
 restoration. No new sessions or vendor-source changes.
 Evidence: Codex visualizations zcode-queue/pre-terminal-fix.json and inspected
@@ -93,3 +93,57 @@ claim was withdrawn: nonempty composer already routes to message submission.
 No runAction change. Runtime proof after root's coherent build will intercept
 502 only on the owned canary endpoint (no native retry), verify draft retained,
 then intercept200 and verify unchanged draft cleared. No broad/mirror suite.
+
+
+Final acceptance window closed, 2026-10-06 16:08 UTC
+--------------------------------------------------
+Runtime 5c1bdcbe1edcdf3d7903acb4c8f3e5585abb09ae / PID1253511 included
+published UI376bc383285b5ed64326b59e46e6fe04ba893f25. Root's bounded
+launcher160 and Zadapter53 checks, build/typecheck and actual configured-model
+planning-only versus execution-goal assessment passed. Those are root receipts;
+no additional build, global-policy change or broad suite by this owner.
+
+One authorized HTTP same-ID diagnostic at15:44UTC returned200 and actual
+native assistant ПРОВЕРКА ПОЛУЧЕНА (15:44:29.104Z), with no tools/files/new
+session. The earlier native error was not reproduced; its underlying cause
+is not claimed repaired. The diagnostic was not repeated.
+
+Owned headed-browser sendMessage acceptance passed on the exact canary
+endpoint: intercepted502 retained the complete submitted composer; intercepted
+200 cleared that same draft. Both screenshots were captured and inspected.
+These two POST responses were browser-local fixtures, zero native submissions;
+original fetch was restored before further actual input. Request body and
+explicit-human/source/hold semantics remained unchanged.
+
+A final real question at15:58UTC produced actual native assistant:
+Какой цвет выбираете — красный или синий? No signed choice was produced,
+because GET policy reports persisted GLOBAL master enabled=false, coverage=none,
+revision r1-3f0f3d25-a245-4eb2-94a8-2b7075d4399d. Per-session on cannot
+bypass that master. Signed human-selection and duplicate live acceptance are
+therefore NOT proven. No old expired card or manual fixture was clicked.
+Root01a10b3f explicitly directed preserving actual policy and closing the
+window, without global enable or additional fixture; the new crash-only
+integration remains root-owned. Smallest future action, if authorized by that
+policy's owner: a fresh same-ID signed choice and duplicate receipt through
+the supported selection path. Do not repeat this diagnostic or silently
+change global policy for testing.
+
+Final read-only capture16:08:38UTC: exact own sess5af9 humanStopHeld=true,
+session Autopilot=false, global master=false. Own headed browser closed;
+CAPTURE END sent to root, no remaining browser/test/build from this owner.
+Other agents' shared source WIP is preserved, excluded from this scoped docs
+commit, and prevents claiming the whole Herder checkout clean.
+
+Evidence directory:
+/home/roomhacker/.codex/visualizations/2026/10/06/01a1106f-30c3-79f0-9260-ca4810dc1f2a/zcode-queue/
+- cold-native-diagnostic.json and cold-native-diagnostic-readback.json
+- draft-intercept-proof.json, draft-502-retained.png, draft-200-cleared.png
+- inspected master-off-no-choice.png and final-policy-blocked-state.json
+
+Notice/fleet notification acceptance and original-message/composite-MD
+receipts are published separately in Notice's notification-noise tracker.
+The requested four isolated database cases passed4/4 in1.141s under the shared
+lock and a bounded scope; lock released15:33:18UTC. No rerun is needed.
+TelegramAuto notifier publication/runtime ownership is entirely handed to
+ZCode sess_e6d8e941-5787-4c51-a3a1-c578e7825245; no further Codex operations
+on that project. No new calls, incidents or business actions in this window.
