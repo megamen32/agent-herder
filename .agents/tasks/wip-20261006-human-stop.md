@@ -121,3 +121,36 @@ Corrective callback/concurrency gate:
 - 4 focused files/35 checks and TypeScript passed. Supported official Codex
   plugin reinstall refreshed its cached scripts and compiled store/MCP code;
   five source/cache byte comparisons matched. Native daemon2262581 preserved.
+
+Final live480750a checkpoint (Herder3125891, native daemon2262581):
+- Codex/ZCode owned native holds survived the Herder restart; automatic resume
+  was rejected. Browser owner01a10bc5 verified an explicit Resume in the exact
+  original Codex chat, then a bounded sleep turn and actual visible Stop click.
+  Final consume=0 returned strict humanStopHeld=true. Browser screenshots and
+  controlled action receipts are in .tmp/ui-timings-20261006/stop-resume.
+- Notice source guard independently rejected launch from that held native
+  source before POST. Its manual card5822 passed real recipient observation;
+  quiet card5824 exposed dropped terminal notify_user fields in the Notice
+  adapter. The Notice owner is publishing/reloading the correction; quiet live
+  delivery is not yet accepted. No phone actions or calls.
+- A controlled direct native turn/start to the original owned Codex ID got
+  NATIVE_PROMPT_HOOK_OK_20261006 at11:42:57UTC, but the human hold stayed true.
+  Native hooks/list shows no Agent Herder plugin hooks despite plugin/list
+  installed/enabled=true; the existing user Stop is disabled and no Herder
+  UserPromptSubmit handler is registered. Plugin-cache byte parity alone is
+  not a native callback acceptance proof. Preserve the hold and investigate
+  supported hook discovery/trust, without restarting the native daemon or
+  guessing that every recently observed native prompt is human.
+- Sender attribution is declared metadata checked against an existing native
+  session, not caller authentication. Missing/unavailable/ambiguous sources
+  remain explicitly unknown. No ancestry-as-author inference. The Russian
+  sender header and reply route precede final generated-prompt registration.
+
+UserIO owning-root handoff verified11:31/11:41UTC: deployed3849f83 contains
+f02410f. Selected Telegram chat conv_cedf4b78f9cfa282b3713505 has12 proposed
+drafts,12 enabled Send/Edit controls and enabled Suggest Reply. No draft action
+was clicked or sent. Cause: late generic refresh response overwrote the selected
+account/chat; latest-request-wins fixes the race. First documented complaint
+Oct5 07:49UTC predates today's performance work; initial failure time is unknown.
+Source main99e0ae is clean per owning-root handoff; deployment of later message
+edit support remains separately owned, not part of the restored-button claim.
