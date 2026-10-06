@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { Server } from "node:http";
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, stat, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +8,7 @@ import { AutomationLaunchPolicyStore, validateAutomationLaunchPolicy } from "../
 import { createWebServer } from "../src/web/server.js";
 
 const servers: Server[] = [];
+const directories: string[] = [];
 const policy = {
   version: 1,
   allowedHarnesses: ["codex", "zcode"],
@@ -17,6 +18,7 @@ const policy = {
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+  await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
 describe("automation launch policy", () => {
@@ -40,8 +42,16 @@ describe("automation launch policy", () => {
       .toThrow("Unknown model harness");
   });
 
+  it("accepts the full model budget and rejects hidden control characters", () => {
+    expect(validateAutomationLaunchPolicy({ ...policy, models: { ...policy.models, codex: "c".repeat(256) } }).models.codex).toHaveLength(256);
+    for (const control of [String.fromCharCode(0), "\r", "\n"]) {
+      expect(() => validateAutomationLaunchPolicy({ ...policy, models: { ...policy.models, codex: `gpt${control}-route` } })).toThrow("control characters");
+    }
+  });
+
   it("atomically persists validated policy with private file permissions", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-launch-policy-"));
+    directories.push(root);
     const path = join(root, "nested", "automation-launch-policy.json");
     const store = new AutomationLaunchPolicyStore(path);
     await expect(store.load()).resolves.toEqual({ kind: "absent" });
@@ -54,6 +64,7 @@ describe("automation launch policy", () => {
 
   it("fails closed when absent and validates HTTP writes before persistence", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-launch-policy-http-"));
+    directories.push(root);
     const store = new AutomationLaunchPolicyStore(join(root, "automation-launch-policy.json"));
     const server = createWebServer({
       adapters: new Map(),

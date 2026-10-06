@@ -17,7 +17,7 @@ export type AutomationLaunchPolicyLoad =
   | { kind: "invalid"; error: string };
 
 const HARNESSES: readonly HarnessType[] = ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
-const MAX_MODEL_LENGTH = 256;
+export const MAX_MODEL_LENGTH = 256;
 
 export function validateAutomationLaunchPolicy(value: unknown): AutomationLaunchPolicy {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Launch policy must be an object");
@@ -42,6 +42,9 @@ export function validateAutomationLaunchPolicy(value: unknown): AutomationLaunch
     if (!isHarness(harness)) throw new Error(`Unknown model harness '${harness}'`);
     if (typeof model !== "string" || model.trim().length === 0 || model.length > MAX_MODEL_LENGTH) {
       throw new Error(`Model for '${harness}' must be a nonempty string of at most ${MAX_MODEL_LENGTH} characters`);
+    }
+    if (/[\u0000-\u001f\u007f]/u.test(model)) {
+      throw new Error(`Model for '${harness}' must not contain control characters`);
     }
     models[harness] = model.trim();
   }

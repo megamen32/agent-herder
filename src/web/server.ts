@@ -19,7 +19,7 @@ import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../a
 import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import type { SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
-import { AutomationLaunchPolicyStore } from "../automation-launch-policy.js";
+import { AutomationLaunchPolicyStore, MAX_MODEL_LENGTH } from "../automation-launch-policy.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
 import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
@@ -1119,7 +1119,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (typeof body.harness !== "string" || typeof body.name !== "string" || typeof body.cwd !== "string") {
       return sendJson(response, 400, { error: "harness, name, and cwd are required" });
     }
-    if (body.model !== undefined && (typeof body.model !== "string" || body.model.length > 128)) return sendJson(response, 400, { error: "model must be a bounded string" });
+    if (body.model !== undefined && (typeof body.model !== "string" || body.model.length > MAX_MODEL_LENGTH)) return sendJson(response, 400, { error: "model must be a bounded string" });
     const result = await supervisor.createNamedSession({ harness: body.harness, name: body.name, cwd: body.cwd, model: typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined });
     return sendNamedSessionResult(response, result);
   }
@@ -1131,7 +1131,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (body.mode !== undefined && body.mode !== "queue" && body.mode !== "sync") {
       return sendJson(response, 400, { error: "mode must be queue or sync" });
     }
-    if (body.model !== undefined && (typeof body.model !== "string" || body.model.trim().length === 0 || body.model.length > 128)) {
+    if (body.model !== undefined && (typeof body.model !== "string" || body.model.trim().length === 0 || body.model.length > MAX_MODEL_LENGTH)) {
       return sendJson(response, 400, { error: "model must be a bounded non-empty string" });
     }
     const result = await supervisor.newOrResumeNamedSession({
