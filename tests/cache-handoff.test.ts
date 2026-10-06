@@ -106,6 +106,26 @@ describe("cache-aware session handoff", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it("refreshes native stop evidence before a cache rollover from a stale snapshot", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-cache-fresh-stop-"));
+    try {
+      const fixture = adapter([{ id: "u", role: "user", text: "synthetic task", parts: [{ type: "text", text: "synthetic task" }] }]);
+      fixture.value.getSession = async () => ({
+        ...oldSession,
+        meta: { automationStop: { id: "cache-native-stop", at: "2026-10-03T10:30:00.000Z", reason: "interrupted", turnId: "cache-stop-turn" } },
+      });
+      const stops = getHumanStopStore({ AGENT_HERDER_HUMAN_STOP_STORE: join(root, "human-stops.json") });
+      const summarizer = { summarize: vi.fn(async () => "should not run") };
+      const service = new CacheHandoffService(new Map([["codex", fixture.value]]), summarizer, undefined, process.env, stops);
+
+      await expect(service.maybeRollover(oldSession, new Date("2026-10-03T10:31:00.000Z"))).resolves.toMatchObject({ kind: "held" });
+      expect(summarizer.summarize).not.toHaveBeenCalled();
+      expect(fixture.createSession).not.toHaveBeenCalled();
+      expect(fixture.sendMessage).not.toHaveBeenCalled();
+      expect(await stops.isHeld("codex", oldSession.id)).toBe(true);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("rechecks the stop fence after summarization and before replacement creation", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-cache-stop-race-"));
     try {

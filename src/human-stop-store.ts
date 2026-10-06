@@ -147,6 +147,17 @@ export class HumanStopStore {
     return file.sessions.find((record) => sessionKey(record.harness, record.id) === sessionKey(harness, id))?.active === true;
   }
 
+  /** Check an ancestor plus its immediate source from one persisted snapshot. */
+  async anyHeld(sources: Array<{ harness: string; sessionId: string }>): Promise<boolean> {
+    if (!Array.isArray(sources) || sources.length > 32) throw new Error("sources must contain at most 32 sessions");
+    const keys = new Set(sources.map(({ harness, sessionId }) => sessionKey(
+      normalizeHarness(harness),
+      bounded(sessionId, "sessionId", MAX_ID_LENGTH),
+    )));
+    const file = await this.read();
+    return file.sessions.some((record) => record.active && keys.has(sessionKey(record.harness, record.id)));
+  }
+
   /** Record a Herder-issued native interrupt without overriding a human hold. */
   async ignoreNativeStop(harness: string, id: string, evidence: HumanStopEvidence): Promise<void> {
     const targetHarness = bounded(harness, "harness", MAX_ID_LENGTH);

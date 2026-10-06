@@ -32,6 +32,24 @@ describe("HumanStopStore", () => {
     expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
 
+  it("checks an ancestor and its immediate native source against one held-session set", async () => {
+    const { store } = await fixtureStore();
+    await store.hold({ harness: "codex", id: "paused-ancestor" }, {
+      id: "ancestor-stop", at: new Date().toISOString(), reason: "interrupted", turnId: "ancestor-turn",
+    });
+
+    await expect(store.anyHeld([
+      { harness: "codex", sessionId: "paused-ancestor" },
+      { harness: "zcode", sessionId: "running-immediate-source" },
+    ])).resolves.toBe(true);
+    await expect(store.anyHeld([
+      { harness: "codex", sessionId: "other-ancestor" },
+      { harness: "zcode", sessionId: "running-immediate-source" },
+    ])).resolves.toBe(false);
+    await expect(store.anyHeld(Array.from({ length: 33 }, (_, index) => ({ harness: "codex", sessionId: `source-${index}` }))))
+      .rejects.toThrow(/at most 32/);
+  });
+
   it("ignores replayed stop IDs after explicit release and accepts a newer stop", async () => {
     const { store } = await fixtureStore();
     const target = { harness: "zcode", id: "session-a", cwd: "/tmp/project", title: "Task" };

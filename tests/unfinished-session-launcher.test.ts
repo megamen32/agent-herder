@@ -103,6 +103,30 @@ describe("unfinished session launcher", () => {
     expect(await humanStops.isHeld(session.harness, session.id)).toBe(true);
   });
 
+  it("refreshes native stop evidence before arming a session from a stale listing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-launcher-fresh-stop-"));
+    const listed = fixtureSession("idle", "codex");
+    const fresh = {
+      ...listed,
+      meta: { automationStop: { id: "fresh-native-stop", at: new Date().toISOString(), reason: "interrupted", turnId: "fresh-stop-turn" } },
+    };
+    const calls = { resumes: 0, messages: [] as string[] };
+    const adapter = fixtureAdapter(listed, calls);
+    adapter.listSessions = async () => [{ ...listed }];
+    adapter.getSession = async () => ({ ...fresh });
+    const humanStops = getHumanStopStore({ AGENT_HERDER_HUMAN_STOP_STORE: join(root, "human-stops.json") });
+    const launcher = new UnfinishedSessionLauncher({
+      humanStopStore: humanStops,
+      adapters: new Map([["codex", adapter]]),
+      store: new UnfinishedSessionStore(join(root, "unfinished.json")),
+      settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+    });
+
+    await expect(launcher.armSession(listed)).resolves.toBe(false);
+    expect(await humanStops.isHeld("codex", listed.id)).toBe(true);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+  });
+
   it("always gives MiniMax the first user goal, latest request, and latest model answer", () => {
     const evidence = completionEvidence([
       { id: "u-old", role: "user", text: "старый запрос", parts: [{ type: "text", text: "старый запрос" }] },

@@ -983,7 +983,16 @@ export class UnfinishedSessionLauncher {
   private async suppressIfHumanStopped(harness: string, sessionId: string, cwd?: string, session?: AgentSession | null): Promise<boolean> {
     const fences = this.options.humanStopStore;
     if (!fences) return false;
-    const held = session ? await fences.observe(session) : await fences.isHeld(harness, sessionId);
+    const adapter = this.options.adapters.get(harness);
+    let freshSession: AgentSession | null | undefined;
+    try {
+      freshSession = await adapter?.getSession?.(sessionId);
+    } catch {
+      // Snapshot failure supplies no new stop evidence; an existing durable fence still blocks below.
+    }
+    const held = freshSession
+      ? await fences.observe(freshSession)
+      : await fences.isHeld(harness, sessionId);
     if (!held) return false;
     this.completedSessions.add(sessionKey(harnessType(harness), sessionId));
     const base = sessionKey(harnessType(harness), sessionId);
@@ -991,7 +1000,7 @@ export class UnfinishedSessionLauncher {
     for (const key of urgentKeys) {
       if (key === base || key.startsWith(`${base}:`)) this.clearUrgentSession(key);
     }
-    await this.options.store.remove(harness, sessionId, session ? sessionWorkspaceIdentity(session) : cwd);
+    await this.options.store.remove(harness, sessionId, freshSession ? sessionWorkspaceIdentity(freshSession) : cwd ?? session?.cwd);
     return true;
   }
 

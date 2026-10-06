@@ -160,12 +160,20 @@ export class CacheHandoffService {
     const sourceKey = `${session.harness}:${session.id}`;
     const ageMs = Math.max(0, now.getTime() - Date.parse(session.lastActivity));
     const cache = cacheWindowFor(session, this.env);
-    if (this.humanStopStore && await this.humanStopStore.observe(session)) return { kind: "held", ageMs, cache };
+    const adapter = this.adapters.get(session.harness);
+    const humanStopHeld = async () => {
+      if (!this.humanStopStore) return false;
+      let freshSession: AgentSession | null | undefined;
+      try { freshSession = await adapter?.getSession?.(session.id); } catch { /* persisted fence remains authoritative */ }
+      return freshSession
+        ? this.humanStopStore.observe(freshSession)
+        : this.humanStopStore.isHeld(session.harness, session.id);
+    };
+    if (await humanStopHeld()) return { kind: "held", ageMs, cache };
     const admitted = this.admittedResults.get(sourceKey);
     if (admitted) return admitted;
     if (!cache.ttlMs) return { kind: "unknown", ageMs, cache };
     if (ageMs < cache.ttlMs) return { kind: "fresh", ageMs, cache };
-    const adapter = this.adapters.get(session.harness);
     if (!adapter?.getSessionMessages || !adapter.createSession) throw new Error(`${session.harness} не умеет создать cache handoff`);
     const durableAdmission = await this.restoreDurableAdmission(sourceKey, ageMs, cache, adapter);
     if (durableAdmission?.kind === "result") {
@@ -188,7 +196,7 @@ export class CacheHandoffService {
       const summary = (await this.summarizer.summarize(source)).trim().slice(0, MAX_SUMMARY_CHARS);
       if (!summary) throw new Error("MiniMax вернул пустой handoff");
       const continuationModel = continuationModelFor(session);
-      if (this.humanStopStore && await this.humanStopStore.isHeld(session.harness, session.id)) return { kind: "held", ageMs, cache };
+      if (await humanStopHeld()) return { kind: "held", ageMs, cache };
       created = await adapter.createSession({
         name: `${session.title.slice(0, 180)} · продолжение`, cwd: session.cwd, model: continuationModel,
         fullAccess: true,
@@ -216,7 +224,7 @@ export class CacheHandoffService {
       // the same replacement, while an admitted one is never duplicated.
       await this.lineage?.record(admissionRecord);
     }
-    if (this.humanStopStore && await this.humanStopStore.isHeld(session.harness, session.id)) return { kind: "held", ageMs, cache };
+    if (await humanStopHeld()) return { kind: "held", ageMs, cache };
     const sent = await adapter.sendMessage(created.id, { message: prompt, queue: false, inputId: operationId });
     if (!sent.ok && !(sent.admitted && sent.nonRetryable)) throw new Error(sent.error || "новая сессия не приняла handoff");
     const result: CacheHandoffResult = sent.admitted && sent.nonRetryable
