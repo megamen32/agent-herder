@@ -841,4 +841,52 @@ describe("Codex app-server adapter", () => {
     }
   });
 
+  it("creates and resumes full-access threads with native approval and sandbox settings", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-full-access-"));
+    const logPath = join(codexDir, "app-server.jsonl");
+    const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
+    const previousPersistedThread = process.env.CODEX_APP_SERVER_FULL_ACCESS_THREAD;
+    process.env.CODEX_APP_SERVER_LOG = logPath;
+    let adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      await adapter.init();
+      const created = await adapter.createSession({ name: "unattended task", cwd: "/tmp/codex-fixture", fullAccess: true });
+      expect(await adapter.resumeSession(created.id)).toEqual({ ok: true });
+      await adapter.dispose();
+
+      process.env.CODEX_APP_SERVER_FULL_ACCESS_THREAD = created.id;
+      adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+      await adapter.init();
+      expect(await adapter.resumeSession(created.id)).toEqual({ ok: true });
+      expect(await adapter.resumeSession(created.id)).toEqual({ ok: true });
+
+      const requests = (await readFile(logPath, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { kind: string; method?: string; params?: Record<string, unknown> })
+        .filter((entry) => entry.kind === "request");
+      expect(requests.find((entry) => entry.method === "thread/start")?.params).toMatchObject({
+        approvalPolicy: "never",
+        sandbox: "danger-full-access",
+      });
+      expect(requests.find((entry) => entry.method === "thread/resume")?.params).toMatchObject({
+        threadId: created.id,
+        approvalPolicy: "never",
+        sandbox: "danger-full-access",
+      });
+      expect(requests.filter((entry) => entry.method === "thread/resume").at(-1)?.params).toMatchObject({
+        threadId: created.id,
+        approvalPolicy: "never",
+        sandbox: "danger-full-access",
+      });
+    } finally {
+      await adapter.dispose();
+      if (previousLogPath === undefined) delete process.env.CODEX_APP_SERVER_LOG;
+      else process.env.CODEX_APP_SERVER_LOG = previousLogPath;
+      if (previousPersistedThread === undefined) delete process.env.CODEX_APP_SERVER_FULL_ACCESS_THREAD;
+      else process.env.CODEX_APP_SERVER_FULL_ACCESS_THREAD = previousPersistedThread;
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
 });

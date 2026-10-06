@@ -173,6 +173,38 @@ describe("OpenCode native recovery controls", () => {
     expect(JSON.parse(createBody)).toEqual({ title: "repair_100" });
   });
 
+  it("stores full access as a session-scoped OpenCode permission rule", async () => {
+    let createBody = "";
+    server = createServer((request, response) => {
+      response.setHeader("content-type", "application/json");
+      if (request.url === "/session?directory=%2Ftmp%2Fautomated" && request.method === "POST") {
+        request.setEncoding("utf8");
+        request.on("data", (chunk) => { createBody += chunk; });
+        request.on("end", () => response.end(JSON.stringify({
+          id: "created-full-access",
+          title: "unattended task",
+          directory: "/tmp/automated",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+          time: { created: 1, updated: 1 },
+        })));
+        return;
+      }
+      response.statusCode = 404;
+      response.end(JSON.stringify({ error: "not found" }));
+    }).listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
+    port = (server.address() as { port: number }).port;
+
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const created = await adapter.createSession({ name: "unattended task", cwd: "/tmp/automated", fullAccess: true });
+
+    expect(created.id).toBe("created-full-access");
+    expect(JSON.parse(createBody)).toEqual({
+      title: "unattended task",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    });
+  });
+
   it("selects a provider model through the v2 per-session endpoint", async () => {
     let selectedBody = "";
     server = createServer((request, response) => {

@@ -28,6 +28,7 @@ const logPath = process.env.CODEX_APP_SERVER_LOG;
 const forcedStartedTurnId = process.env.CODEX_APP_SERVER_TURN_STARTED_ID;
 const forcedCompletedTurnId = process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID;
 const externalRunningThread = process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD;
+const persistedFullAccessThread = process.env.CODEX_APP_SERVER_FULL_ACCESS_THREAD;
 const numericTimestamps = process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS === "1";
 const failListCursor = process.env.CODEX_APP_SERVER_FAIL_LIST_CURSOR;
 
@@ -71,6 +72,7 @@ rl.on("line", (line) => {
     return reply(request.id, { data, nextCursor: nextOffset < threads.length ? String(nextOffset) : null });
   }
   if (request.method === "thread/start") {
+    const fullAccess = request.params?.approvalPolicy === "never" && request.params?.sandbox === "danger-full-access";
     const created = thread(`thread-created-${threads.length}`, {
       cwd: request.params.cwd || "/tmp/codex-fixture",
       path: request.params.cwd || "/tmp/codex-fixture",
@@ -78,11 +80,11 @@ rl.on("line", (line) => {
     });
     threads.push(created);
     return reply(request.id, {
-      approvalPolicy: "never",
+      approvalPolicy: request.params?.approvalPolicy || "never",
       cwd: created.cwd,
       model: "gpt-test",
       modelProvider: "openai",
-      sandbox: "workspace-write",
+      sandbox: fullAccess ? { type: "dangerFullAccess" } : "workspace-write",
       thread: created,
     });
   }
@@ -91,14 +93,18 @@ rl.on("line", (line) => {
     if (target) target.name = request.params.name;
     return reply(request.id, {});
   }
-  if (request.method === "thread/resume") return reply(request.id, {
-    approvalPolicy: "never",
-    cwd: "/tmp/codex-fixture",
-    model: request.params.model || "gpt-test",
-    modelProvider: "openai",
-    sandbox: "workspace-write",
-    thread: thread(request.params.threadId),
-  });
+  if (request.method === "thread/resume") {
+    const fullAccess = (request.params?.approvalPolicy === "never" && request.params?.sandbox === "danger-full-access")
+      || request.params?.threadId === persistedFullAccessThread;
+    return reply(request.id, {
+      approvalPolicy: request.params?.approvalPolicy || "never",
+      cwd: "/tmp/codex-fixture",
+      model: request.params.model || "gpt-test",
+      modelProvider: "openai",
+      sandbox: fullAccess ? { type: "dangerFullAccess" } : "workspace-write",
+      thread: thread(request.params.threadId),
+    });
+  }
   if (request.method === "thread/resume-with-request") {
     notify(serverRequest.method, serverRequest.params);
     return reply(request.id, {

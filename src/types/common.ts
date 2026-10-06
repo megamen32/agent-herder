@@ -185,7 +185,9 @@ export interface CreateSessionOptions {
   cwd: string;
   /** Optional model selected when creating the session. */
   model?: string;
-  /** Optional native permission mode for an explicitly automated continuation. */
+  /** Enable full native tool access for explicitly unattended, Agent Herder-created sessions. */
+  fullAccess?: boolean;
+  /** Optional native session mode for harnesses that distinguish modes from permissions. */
   mode?: string;
 }
 

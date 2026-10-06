@@ -264,7 +264,13 @@ export class OpenCodeAdapter implements HarnessAdapter {
     } : undefined;
     const session = await this.fetchJson<OpenCodeSessionPayload>(`/session?${query.toString()}`, {
       method: "POST",
-      body: JSON.stringify({ title: options.name, ...(requestedModel ? { model: requestedModel } : {}) }),
+      body: JSON.stringify({
+        title: options.name,
+        ...(requestedModel ? { model: requestedModel } : {}),
+        ...(options.fullAccess ? {
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } : {}),
+      }),
     });
     return this.toSession(session);
   }

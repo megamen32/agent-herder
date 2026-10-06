@@ -36,6 +36,15 @@ interface CodexThread {
   updatedAt?: string | number;
 }
 
+interface CodexThreadPermissionState {
+  approvalPolicy?: unknown;
+  sandbox?: { type?: unknown };
+}
+
+function hasCodexFullAccess(state: CodexThreadPermissionState): boolean {
+  return state.approvalPolicy === "never" && state.sandbox?.type === "dangerFullAccess";
+}
+
 function threadTimestamp(value: string | number | undefined): string | undefined {
   if (typeof value === "string") {
     const parsed = Date.parse(value);
@@ -102,6 +111,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private nextRequestId = 1;
   private readonly pending = new Map<number, PendingRequest>();
   private readonly threads = new Map<string, CodexThread>();
+  private readonly fullAccessThreads = new Set<string>();
   private readonly activeTurns = new Map<string, string>();
   private readonly completions = new Map<string, TurnCompletion>();
   private readonly transportCleanups = new WeakMap<ChildProcessWithoutNullStreams, () => void>();
@@ -313,9 +323,17 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
     await this.ensureReady();
-    const result = await this.request("thread/start", { cwd: options.cwd, ...(options.model ? { model: options.model } : {}) }) as { thread?: CodexThread };
+    const result = await this.request("thread/start", {
+      cwd: options.cwd,
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.fullAccess ? { approvalPolicy: "never", sandbox: "danger-full-access" } : {}),
+    }) as { thread?: CodexThread } & CodexThreadPermissionState;
     const thread = result.thread;
     if (!thread?.id) throw new Error("Codex thread/start did not return a thread id");
+    if (options.fullAccess) {
+      if (!hasCodexFullAccess(result)) throw new Error("Codex app-server did not confirm the requested full-access thread settings");
+      this.fullAccessThreads.add(thread.id);
+    }
     await this.request("thread/name/set", { threadId: thread.id, name: options.name });
     thread.name = options.name;
     thread.cwd = thread.cwd || options.cwd;
@@ -410,9 +428,16 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   async resumeSession(id: string): Promise<ControlResult> {
     try {
       await this.ensureReady();
-      const result = await this.request("thread/resume", { threadId: id }) as { thread?: CodexThread };
+      const result = await this.request("thread/resume", {
+        threadId: id,
+        ...(this.fullAccessThreads.has(id) ? { approvalPolicy: "never", sandbox: "danger-full-access" } : {}),
+      }) as { thread?: CodexThread } & CodexThreadPermissionState;
       if (!result.thread?.id) throw new Error("Codex thread/resume did not return a thread id");
       if (result.thread.id !== id) throw new Error(`Codex thread/resume returned a different thread id (${result.thread.id})`);
+      if (hasCodexFullAccess(result)) this.fullAccessThreads.add(id);
+      if (this.fullAccessThreads.has(id) && !hasCodexFullAccess(result)) {
+        throw new Error("Codex app-server did not preserve the full-access thread settings on resume");
+      }
       this.threads.set(id, result.thread);
       return { ok: true };
     } catch (error) {
@@ -450,7 +475,15 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (!sessionId) return { ok: false, error: "Codex model changes require a session id with app-server" };
     try {
       await this.ensureReady();
-      const result = await this.request("thread/resume", { threadId: sessionId, model }) as { thread?: CodexThread };
+      const result = await this.request("thread/resume", {
+        threadId: sessionId,
+        model,
+        ...(this.fullAccessThreads.has(sessionId) ? { approvalPolicy: "never", sandbox: "danger-full-access" } : {}),
+      }) as { thread?: CodexThread } & CodexThreadPermissionState;
+      if (hasCodexFullAccess(result)) this.fullAccessThreads.add(sessionId);
+      if (this.fullAccessThreads.has(sessionId) && !hasCodexFullAccess(result)) {
+        throw new Error("Codex app-server did not preserve the full-access thread settings on model switch");
+      }
       const thread = result.thread || this.threads.get(sessionId);
       if (thread) {
         thread.model = model;

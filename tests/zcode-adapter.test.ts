@@ -473,6 +473,17 @@ describe("ZCode adapter", () => {
     expect(create?.args[0]).toMatchObject({ mode: "yolo" });
   });
 
+  it("maps explicit full access to ZCode yolo mode", async () => {
+    const client = new FakeClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    await adapter.createSession({ name: "unattended", cwd: "/workspace", fullAccess: true });
+
+    const create = client.calls.find((call) => call.method === "createSession");
+    expect(create?.args[0]).toMatchObject({ mode: "yolo" });
+  });
+
   it("persists the requested session name after ZCode derives a prompt title", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-title-"));
     const dbPath = join(root, "tasks-index.sqlite");

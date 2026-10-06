@@ -878,7 +878,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       // passing non-session values crashes this zcode-server build with an
       // NPE while resolving workspace defaults. Headless permission handling
       // is done via respond_permission approvals instead.
-      mode: options.mode || "build",
+      mode: options.fullAccess ? "yolo" : options.mode || "build",
       persistence: "immediate",
       ...(initialModel ? { model: initialModel } : {}),
       ...(initialModel?.options?.reasoningLevel ? { thoughtLevel: initialModel.options.reasoningLevel } : {}),
