@@ -147,3 +147,45 @@ lock and a bounded scope; lock released15:33:18UTC. No rerun is needed.
 TelegramAuto notifier publication/runtime ownership is entirely handed to
 ZCode sess_e6d8e941-5787-4c51-a3a1-c578e7825245; no further Codex operations
 on that project. No new calls, incidents or business actions in this window.
+
+
+Crash-only panel consumer acceptance, 2026-10-06 16:28 UTC
+---------------------------------------------------------
+Root release9e8197763649737caa5e6dc7f7e6c89cf96818c8 / PID1641128,
+actual headed browser assetindex-XmeqdUZ6.js. Opened the visible Chat menu
+at narrow viewport and selected Автопродолжение. Initial sidebar filter was
+not a dialog, and a hidden desktop-only action was covered: both failed
+locator attempts were captured and inspected before proceeding through the
+visible menu. No source UI defect is claimed from those locator choices.
+
+Actual checkbox changes recoverOnFailure=false / recoverOnDisconnect=false,
+Save and reload passed: both false values persisted in GET and UI. General
+recovery enabled stayedtrue. Root explicitly allowed watchdog opt-in only as
+UNSAVED UI: enabling it made10-second interval /2-minute no-progress controls
+available; unchecked it before Save, never persisted watchdogtrue. Restored
+both reason flags true/true, Save/reload/actualDOM/GET passed. All preserved
+settings, including enabled, harness and session overrides, pinning, model,
+interval and stall values, equal the initial saved baseline.
+
+Global Autopilot master=false at its unchanged revision; own sess5af9
+Autopilot=false and humanStopHeld=true. Zero native actions/messages/choices.
+This proves settings usability/persistence and does not claim a real crash
+was caused or recovered during the UI check. Signed choice remains unproven
+under the unchanged master-off policy.
+
+One bounded headed controller held BOTH global and Herder heavy locks:
+RAM1/2GiB soft/hard, swap128MiB, CPU2cores, tasks256, IO20, deadline600s;
+no concurrent suite/build or dependency install. Own browser/controller closed,
+both locks released and nonblocking availability checked. Task helper moved
+from the temporary repository folder into private visualizations; only empty
+own directories removed, foreign source/test/root-tracker WIP preserved.
+CAPTURE END and corrective-build window release sent to root.
+
+Evidence in the same private session visualizations directory:
+crash-panel-baseline.json, crash-panel-disabled-reasons.json,
+crash-panel-restored.json, crash-panel-final-proof.json,
+inspected crash-panel-timeout-unsaved.png and crash-panel-restored.png.
+Root's later map-retirement correction is source-only during this capture;
+no intentional runtime restart occurred before END. Root owns its proportional
+checks, publication and final corrective runtime, without another UI-semantic
+change or new native canary by this agent.
