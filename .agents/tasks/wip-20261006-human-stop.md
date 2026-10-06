@@ -195,3 +195,97 @@ Mac-native log acceptance remains externally blocked:
   affected Mac interface. A text availability question is pending; elapsed
   time is not an answer. Server/native-ID/browser stop acceptance is separate
   from this unverified Mac interface claim.
+
+Final combined deployment checkpoint (2026-10-06 13:44UTC):
+- Source/runtime 0a4f8469b5319bb115dc73026a684ba3099e1e07, Herder PID113237,
+  active and NRestarts=0; main clean and HEAD=origin/main. Bounded build,
+  TypeScript and 5 focused files/54 tests passed. The final cold-ZCode binding
+  delta passed 3 files/28 checks; these overlapping subsets are not additive.
+- Native Codex archive reads now refresh only the exact stale rollout path
+  from authoritative SQLite on ENOENT, retry once, and preserve unknown-stop
+  failures. Original root archived01a11036 and peer archived01a110fb both
+  returned exact-ID details200 after this deployment. No archive replay.
+- Explicit signed human choice uses same-ID human-origin resume; automatic
+  timeout uses automation-origin resume and cannot clear a hold. Cold ZCode
+  target resolution binds the verified native ID to its supplied CWD before
+  dispatch. Codex/ZCode original root holds remain strict true after restart.
+- Launch policy GET200 preserves independent initial-launch settings:
+  Codex/ZCode allowed, preferred Codex, exact existing model routes unchanged.
+- Notice final real quiet result was independently accepted: d236108,
+  inc_8748be7099304b029397d58e3521b9a6, durable notify_user=false,
+  Telegram cancelled, no sent Telegram/calls and no planner. Its native
+  diagnosis completed in the original admitted Codex session.
+- Peer01a1106f owns the remaining actual same-ID ZCode choice/queue browser
+  acceptance after the coordinated Notice attachment upgrade. No root
+  Herder/native restart or native canary mutation is planned during it.
+- Native user UserPromptSubmit callback is trusted and proven above. The
+  disabled legacy Stop hook stays disabled; plugin hook discovery still did
+  not register Herder handlers. Do not extrapolate this callback proof into
+  blanket native Autopilot acceptance for every Codex session.
+- UserIO owner final no-send acceptance on ddb92cd/core3820661 confirms all
+  12 existing proposed drafts and enabled Edit/Send controls in the exact
+  selected chat. The first documented complaint remains Oct5 07:49UTC;
+  exact first failure time is unknown. Source text/attachments are a separate
+  owner-coordinated extension, not part of the button restoration claim.
+
+Peer live ZCode interim proof received after Notice upgrade (13:49UTC):
+- On Herder PID113237, automatic input into held sess_5af9 was rejected
+  nonRetryable. Explicit browser Resume reused that exact ID and cleared its
+  hold; previously disabled Autopilot stayed disabled and its response ended.
+- With Autopilot enabled only for the controlled canary, the question created
+  a choice and released native Stop. A new composer input appeared in the
+  same native history and received the completed answer “ОЧЕРЕДЬ ПРОШЛА”.
+  Signed choice/duplicate proof and final canary hold restoration remain
+  pending the owner's final receipt; do not extrapolate this interim result.
+- Owner's readonly Codex planner01a110fc archive returned200, followed by
+  immediate exact-ID details200 with3 messages. This closes the real first-read
+  archive path regression without repeating the earlier uncertain archive.
+
+Adjacent live duplicate-choice defect now owned (13:54UTC):
+- Peer observed two pending choices for the same native color turn8ca1 and
+  two more for completed queue turnf604. Cached last user context included
+  generated leading coordination notes; the judge treated that service block
+  as unfinished user work. Existing receipt hash changes with evidence and
+  stopHookActive, permitting another terminal decision in the same native turn.
+- Released only src/autopilot/index.ts and tests/autopilot-core.test.ts to
+  peer01a1106f for a judge-view-only envelope filter plus turn-wide terminal
+  receipt guard. Preserve raw native prompt, generated digest, cached evidence,
+  ancestry and all human-stop gates. Continue decisions may reevaluate;
+  durable pending completion notice retry must keep its original key.
+- Final noise/signed-choice acceptance is pending this coherent correction.
+  Root owns bounded review/integration and a necessary combined build only
+  after the peer releases its current canary window. No other runtime edits.
+
+Corrective source review/checkpoint (14:38UTC):
+- Cheap independent review found and then cleared three sanitizer defects:
+  arbitrary literal tag removal, missing canonical envelope recognition, and
+  bounding before projection. Final judge view strips only complete leading
+  canonical generated boards before truncation; literal/incomplete markup and
+  actual trailing user goals survive. Transcript projection uses the existing
+  4MiB scan bound and final16KiB judge budget. Raw prompt/cache/receipt evidence
+  is unchanged. All generated-input fingerprints and human-stop gates remain.
+- The receipt loader previously discarded persisted kind=choice. Corrected
+  loading plus session/turn-wide terminal suppression retains changed-hash
+  pending notice retry with its original payload/key, while changed evidence
+  after continue and later native turns can still be judged.
+- Root shared-budget absolute-Node run passed core28/28 in3.43s; six related
+  files passed45/45 in6.84s. No broad-suite success is claimed. The packaging
+  failure was a stale static test assertion: supported readContext(true) still
+  consumes inbox context and the packaged script was present. Only that
+  obsolete assertion was aligned with the existing helper call.
+- Status owner published171f0fa/1addfe6: qualified native user-prompt marks
+  turn-start; activity refreshes a bounded running heartbeat; Stop records
+  turn-end even when held; persisted status considers observed lifecycle and
+  native session time_updated in milliseconds. Automated input early return
+  and releaseHumanStop were preserved. Independent source critique and the
+  affected HTTP/hooks/status/human-stop checks passed.
+- During integration the user-service manager changed independently of this
+  task; one scope launch failed before tests with D-Bus connection refused.
+  Live user manager666051 and Herder666185 subsequently became active. Root
+  did not request that reset. The controlled rerun started after bus recovery
+  and passed. dist/autopilot/index.js still has16:22:29MSK build time (0a4 code);
+  do not equate new source HEAD with deployed compiled behavior yet.
+- Peer verified old color selection was an automatic timeout receipt, not a
+  signed human click. No signed-click claim is made from that receipt. Its
+  test session remains stopped/held=true/Autopilot off; fresh actual selection,
+  duplicate suppression and final no-noise proof await the corrective build.

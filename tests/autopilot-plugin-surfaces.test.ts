@@ -34,7 +34,7 @@ describe("/autopilot plugin surfaces", () => {
       "integrations/zcode/agent-herder-autopilot/hooks/stop.mjs",
     ]));
     expect(codexStop).toContain('decision: "block"');
-    expect(codexStop).toContain('consume: "1"');
+    expect(codexStop).toContain('payload = await readContext(true)');
     expect(webUi).toContain('["codex", "opencode", "claude", "hermes", "zcode"]');
     expect(opencode).toContain('command !== "autopilot"');
     expect(opencode).toContain("config.command.autopilot");
