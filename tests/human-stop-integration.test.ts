@@ -61,6 +61,17 @@ function fixture(harness: "codex" | "zcode") {
 }
 
 describe.each(["codex", "zcode"] as const)("%s explicit stop delivery boundary", (harness) => {
+  it("accepts an explicit stop of an already idle chat and persists the fence without interrupting a nonexistent turn", async () => {
+    const f = fixture(harness);
+    f.current.status = "idle";
+    const stopRpc = vi.fn(async () => ({ ok: false, error: "No active native turn" }));
+    f.adapters.get(harness)!.stopSession = stopRpc;
+    await expect(f.supervisor().stopSession(harness, f.current.id)).resolves.toEqual({ ok: true });
+    expect(stopRpc).not.toHaveBeenCalled();
+    expect(await getHumanStopStore().isHeld(harness, f.current.id)).toBe(true);
+    await expect(f.supervisor().sendMessage(harness, f.current.id, { message: "automatic wake" })).resolves.toMatchObject({ ok: false });
+    expect(f.sendMessage).not.toHaveBeenCalled();
+  });
   it("blocks replacement when an earlier ancestor stops while another source is being inspected", async () => {
     const f = fixture(harness);
     const adapter = f.adapters.get(harness)!;

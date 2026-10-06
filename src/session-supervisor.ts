@@ -438,7 +438,10 @@ export class SessionSupervisor {
 
   async stopSession(harness: string, id: string): Promise<{ ok: boolean; error?: string }> {
     await this.holdExplicitStop(harness, id);
-    const result = await this.requireAdapter(harness).stopSession(id);
+    const adapter = this.requireAdapter(harness);
+    const session = (harness === "codex" || harness === "zcode") ? await adapter.getSession(id) : null;
+    const alreadyStopped = session && !session.needsPermission && (session.status === "idle" || session.status === "stopped");
+    const result = alreadyStopped ? { ok: true } : await adapter.stopSession(id);
     if (result.ok) {
       await this.unfinishedSessions?.forget(harness, id);
       this.publishSessionChanged(harness, id, "changed");

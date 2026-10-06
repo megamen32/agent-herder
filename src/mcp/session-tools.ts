@@ -4,6 +4,13 @@ import type { HarnessAdapter } from "../types/index.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import {
+  SendMessageSchema,
+  CreateSessionSchema,
+  NewOrResumeSchema,
+  DeliverSchema,
+  ResumeAgentSchema,
+} from "../mcp-tools/definitions.js";
+import {
   listAgentsResult,
   formatListAgentsResult,
   agentInfoResult,
@@ -77,26 +84,26 @@ export function registerSessionTools(server: McpServer, deps: {
     return handleExportTranscript(adapters, args, undefined, signal);
   }, args.ownerSessionId));
 
-  server.registerTool("send_message", { description: "Send a message to an agent. Active coordination notes for the target workspace are injected automatically before delivery. Modes: sync (wait), queue (fire-and-forget), steer (redirect).", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), message: z.string(), mode: z.enum(["queue", "steer", "sync"]).optional().default("sync") }) }, async (args) => {
+  server.registerTool("send_message", { description: "Send a message to an agent. Active coordination notes for the target workspace are injected automatically before delivery. Modes: sync (wait), queue (fire-and-forget), steer (redirect).", inputSchema: SendMessageSchema }, async (args) => {
     const result = await handleSendMessage(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("create_session", { description: "Create one named OpenCode, Codex, or ZCode session in an absolute canonical working directory.", inputSchema: z.object({ harness: z.enum(["opencode", "codex", "zcode"]), name: z.string().min(1).max(128), cwd: z.string().min(1) }) }, async (args) => {
+  server.registerTool("create_session", { description: "Create one named OpenCode, Codex, or ZCode session in an absolute canonical working directory.", inputSchema: CreateSessionSchema }, async (args) => {
     const result = await handleCreateSession(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("new_or_resume", { description: "Reuse the exact named session for harness+CWD or create it, then deliver one message.", inputSchema: z.object({ harness: z.enum(["opencode", "codex", "zcode"]), name: z.string().min(1).max(128), cwd: z.string().min(1), message: z.string().min(1), mode: z.enum(["queue", "sync"]).optional().default("sync"), model: z.string().min(1).max(128).optional() }) }, async (args) => {
+  server.registerTool("new_or_resume", { description: "Reuse the exact named session for harness+CWD or create it, then deliver one message.", inputSchema: NewOrResumeSchema }, async (args) => {
     const result = await handleNewOrResume(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("deliver", { description: "Deliver a message to an agent. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start the agent; if_running delivers only while currently running and otherwise returns skipped_inactive; defer stores the message for the next Agent Herder-delivered turn without waking an inactive agent. Do not call list_agents first just to check activity; Agent Herder evaluates the policy at delivery time.", inputSchema: z.object({ sessionId:z.string().optional(), harness:harnessSchema.optional(), name:z.string().min(1).max(128).optional(), cwd:z.string().min(1).optional(), message:z.string().min(1), create:z.enum(["if_missing","never"]).optional().default("if_missing"), activation:z.enum(["always","if_running","defer"]).optional().default("always"), mode:z.enum(["queue","sync"]).optional().default("queue"), model:z.string().min(1).max(128).optional() }).superRefine((v,ctx)=>{ const named=Boolean(v.harness&&v.name&&v.cwd); if(!v.sessionId&&!named)ctx.addIssue({code:z.ZodIssueCode.custom,message:"Provide sessionId or harness+name+cwd"}); if(v.sessionId&&(v.name||v.cwd))ctx.addIssue({code:z.ZodIssueCode.custom,message:"Use either sessionId or named target fields, not both"}); }) }, async(args)=>{ const result=await handleDeliver(adapters,args); publishSessionsChanged(); return {content:[{type:"text" as const,text:result}]}; });
+  server.registerTool("deliver", { description: "Deliver a message to an agent. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start the agent; if_running delivers only while currently running and otherwise returns skipped_inactive; defer stores the message for the next Agent Herder-delivered turn without waking an inactive agent. Do not call list_agents first just to check activity; Agent Herder evaluates the policy at delivery time.", inputSchema: DeliverSchema }, async(args)=>{ const result=await handleDeliver(adapters,args); publishSessionsChanged(); return {content:[{type:"text" as const,text:result}]}; });
   server.registerTool("stop_agent", { description: "Stop / abort a running agent session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }) }, async (args) => {
     const result = await handleStopAgent(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("respond_permission", { description: "Respond to a pending permission request (allow/deny). OpenCode, Claude SDK, and ZCode support this.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), permissionId: z.string(), response: z.enum(["allow", "deny"]), remember: z.boolean().optional() }) }, async (args) => ({ content: [{ type: "text" as const, text: await handleRespondPermission(adapters, args) }] }));
   server.registerTool("set_permissions", { description: "Set permissions for an agent. Claude/Codex set these at launch time.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), allowedTools: z.string().optional(), mode: z.string().optional() }) }, async (args) => ({ content: [{ type: "text" as const, text: await handleSetPermissions(adapters, args) }] }));
-  server.registerTool("resume_agent", { description: "Resume a stopped agent session. Optionally provide a message.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), message: z.string().optional() }) }, async (args) => {
+  server.registerTool("resume_agent", { description: "Resume a stopped agent session. Optionally provide a message.", inputSchema: ResumeAgentSchema }, async (args) => {
     const result = await handleResumeAgent(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });

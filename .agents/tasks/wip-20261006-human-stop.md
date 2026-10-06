@@ -74,3 +74,34 @@ Source verification before rollout:
 Remaining: coherent pushed clean main, one combined build, Herder-only rollout,
 owned native/API/browser stop/resume and archive acceptance, durable hook-cache
 refresh proof. No Notice deploy until exact API-ready SHA/PID is announced.
+
+Live eec043e checkpoint (Herder2712270; native daemon2262581 preserved):
+- Existing owned Codex01a11036-e2e7-72a2-9d01-323e2990f4b7 and
+  ZCode sess_eb89671b-ba76-41fc-ae75-20727bdfcdf7 received bounded sleep
+  prompts, were actually running, and accepted Stop200 with held=true.
+- Automatic message/resume/fork and differently named source-based replacement
+  were rejected for both (8 live checks); no replacement was created.
+- Explicit human messages released both holds and produced matching unique
+  SAME_ID_RESUME replies in those same native IDs. Evidence is outside Git
+  in the thread visualization human-stop-evidence directory.
+- The first synchronous Codex HTTP call and initial ZCode call timed out at
+  the client while native admission still occurred. No duplicate prompt was
+  sent; inspected the original native IDs before stopping. Subsequent queued
+  explicit-resume calls returned200 and actual replies were inspected.
+- Live repeat-Stop on already-idle Codex exposed No active turn502 although
+  hold was persisted. Fixed idempotent Stop for idle/stopped native sessions
+  without pending permission. 2 affected test files/14 checks pass.
+- Public MCP registration had duplicated old schemas dropping humanRequested,
+  sourceSessions and sender fields. Reused canonical schemas; real MCP
+  InMemoryTransport consumer checks passed (2 tests), including blocked source
+  creation, deliberate held resume and 200-character model acceptance.
+- Peer66c4417 fixes the additional background loading-strip transcript jump;
+  include in the corrective build justified by these newly exposed defects.
+
+Separate infrastructure failure recorded without changing archival policy:
+codex-session-retention.service failed226/NAMESPACE due its LogNamespace
+application drop-in at2026-10-06 04:31:27MSK. Native daemon is healthy and this
+30-day maintenance run is unrelated to short native turns. Its next step is
+owner review of the supported user-unit logging namespace and archival scope;
+do not silently rerun broad30-day session archival as a diagnosis/planner
+cleanup canary. This does not block the Herder human-stop API.
