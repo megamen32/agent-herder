@@ -447,3 +447,9 @@ Live cbce504 deployment and newly exposed blockers:
 - Updated the project-local ignored knowledge map with the verified cold-error
   producer/launcher path and failure shield; no source implementation is stored
   outside the reviewed tracked files.
+- Independent ZCode owner consumer readback PASS: PID3799934/NRestarts0,
+  658 API sessions, API and native DB agree on latest cancelledByUser=true /
+  retryable=false/rootSession=true/pendingInput=false. No recoveryCause or
+  recovery send; newest20:30 input bypassed session_input in the old process.
+  Source remains3a649149; subsequent tracker-only commits need no restart.
+  Final task-owned checkout is clean and synchronized with remote main.
