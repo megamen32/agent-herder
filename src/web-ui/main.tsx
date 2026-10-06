@@ -99,18 +99,108 @@ const formatSessionAge = (value: string, now = Date.now()) => {
   const minute = 60_000;
   const hour = 60 * minute;
   const day = 24 * hour;
-  if (ageMs < minute) return "now";
-  if (ageMs < hour) return `${Math.floor(ageMs / minute)}m`;
-  if (ageMs < day) return `${Math.floor(ageMs / hour)}h`;
-  return `${Math.floor(ageMs / day)}d`;
+  if (ageMs < minute) return "только что";
+  if (ageMs < hour) return `${Math.floor(ageMs / minute)} мин`;
+  if (ageMs < day) return `${Math.floor(ageMs / hour)} ч`;
+  if (ageMs < 2 * day) return "вчера";
+  return `${Math.max(1, Math.floor(ageMs / (30 * day)))} мес`;
 };
-const displayStatus = (status: string) => status.replace("needs_input", "needs input");
+const statusLabel = (status: string) => {
+  switch (status) {
+    case "running": return "Работает";
+    case "needs_input": return "Ждёт ответа";
+    case "waiting": return "Ожидает выбора";
+    case "error": return "Ошибка";
+    case "idle": return "Простой";
+    case "stopped":
+    case "completed": return "Остановлена";
+    case "archived": return "В архиве";
+    default: return status;
+  }
+};
+const statusClass = (status: string) => {
+  switch (status) {
+    case "running": return "running";
+    case "waiting":
+    case "needs_input": return "waiting";
+    case "error": return "error";
+    case "idle": return "idle";
+    default: return "stopped";
+  }
+};
+const jobStateLabel = (state: HerderJobState) => ({
+  queued: "В очереди",
+  running: "Выполняется",
+  waiting: "Ожидание",
+  cancelling: "Отмена",
+  completed: "Завершена",
+  failed: "Ошибка",
+  cancelled: "Отменена",
+  interrupted: "Прервана",
+}[state] ?? state);
+const SHOW_DEBUG_TIMINGS = new URLSearchParams(window.location.search).has("debug");
+
+const stripServiceMarkers = (raw: string): { text: string; attachments: number } => {
+  let text = raw;
+  let attachments = 0;
+  const requestMatch = text.match(/##\s*My\s+request:\s*/i);
+  if (requestMatch && requestMatch.index !== undefined) text = text.slice(requestMatch.index + requestMatch[0].length);
+  const filesMatch = text.match(/#\s*Files\s+(?:mentioned|pasted)\s+by\s+the\s+user[^\n]*\n?/i);
+  if (filesMatch && filesMatch.index !== undefined) {
+    const after = text.slice(filesMatch.index + filesMatch[0].length);
+    const listBlock = after.match(/^[ \t]*[-*][ \t]+[^\n]*\n?/m);
+    if (listBlock) {
+      const listEnd = after.indexOf(listBlock[0]) + (after.slice(after.indexOf(listBlock[0])).match(/^(?:[ \t]*[-*][ \t]+[^\n]*\n?)+/)?.[0].length ?? listBlock[0].length);
+      attachments = (after.slice(after.indexOf(listBlock[0]), listEnd).match(/[-*]/g) || []).length;
+      text = text.slice(0, filesMatch.index) + after.slice(listEnd);
+    } else text = text.slice(0, filesMatch.index) + after;
+  }
+  text = text
+    .replace(/##\s*codex-clipboard-\S*/gi, "")
+    .replace(/Image\s+attachment:\s*(?:true|false)/gi, "")
+    .replace(/Distinguish\s+instructions\s+in\s+attached\s+documents[^\n]*/gi, "");
+  text = text.replace(/^#{1,6}[ \t]*/gm, "").replace(/<agent-herder-[^>]*>/g, " ");
+  return { text, attachments };
+};
+const cleanSessionTitle = (raw?: string): string => {
+  if (!raw) return "";
+  const { text, attachments } = stripServiceMarkers(raw);
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const chosen = lines.find((line) => !/^[-*+]\s/.test(line) && !/^</.test(line)) || lines[0] || "";
+  const clean = chosen.replace(/^[-*+]\s*/, "").trim();
+  return `${attachments > 0 ? `📎 ${attachments} ф. ` : ""}${clean}`.trim();
+};
+const cleanPreview = (raw?: string): string => {
+  if (!raw) return "";
+  const { text } = stripServiceMarkers(raw);
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > 120 ? `${flat.slice(0, 120)}…` : flat;
+};
+const lastSegment = (value?: string) => {
+  if (!value) return "";
+  const parts = value.split("/").filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : value;
+};
+const shortModel = (value?: string) => (value ? value.split("/").pop() || value : "");
+
+const SERVICE_NOTE_PATTERNS: Array<[RegExp, string]> = [
+  [/^<agent-herder-coordination/, "Заметка координации"],
+  [/^<agent-herder-deferred/, "Отложенные сообщения"],
+  [/^<oai-mem-citation/, "Цитата памяти"],
+  [/^<system-reminder/, "Системное напоминание"],
+  [/^<context_/, "Служебный контекст"],
+];
+const serviceNoteLabel = (message: SessionMessage): string | undefined => {
+  const text = (message.parts.find((part) => part.type === "text")?.text || message.text || "").trimStart();
+  return SERVICE_NOTE_PATTERNS.find(([pattern]) => pattern.test(text))?.[1];
+};
+
 const formatDuration = (seconds?: number) => {
   if (!Number.isFinite(seconds)) return "—";
   const total = Math.max(0, Math.round(seconds as number));
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
-  return hours ? `${hours}h ${minutes}m` : `${minutes}m ${total % 60}s`;
+  return hours ? `${hours} ч ${minutes} мин` : `${minutes} мин ${total % 60} с`;
 };
 const metaNumber = (session: HerderSession, keys: string[]) => {
   for (const key of keys) {
@@ -122,9 +212,9 @@ const metaNumber = (session: HerderSession, keys: string[]) => {
 
 const formatStatDuration = (seconds: number) => {
   if (!Number.isFinite(seconds)) return "—";
-  if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`;
-  if (seconds < 3600) return `${(seconds / 60).toFixed(seconds < 600 ? 1 : 0)}m`;
-  return `${(seconds / 3600).toFixed(1)}h`;
+  if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)} с`;
+  if (seconds < 3600) return `${(seconds / 60).toFixed(seconds < 600 ? 1 : 0)} мин`;
+  return `${(seconds / 3600).toFixed(1)} ч`;
 };
 const formatStatCount = (value: number) => new Intl.NumberFormat(undefined, { notation: value >= 10_000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(value);
 const formatPercent = (value: number) => `${value.toFixed(value >= 10 ? 0 : 1)}%`;
@@ -133,8 +223,8 @@ const coverageFor = (distribution: StatisticsDistribution, seconds: number) => d
 function StatisticsView({ statistics, loading, error, days, onDays, onRefresh }: {
   statistics?: AgentActivityStatistics; loading: boolean; error?: string; days: number; onDays: (days: number) => void; onRefresh: () => void;
 }) {
-  if (loading && !statistics) return <div className="statistics-loading"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Analyzing agent activity…</strong><small>Scanning recent Codex transcripts once; results are cached on disk for an hour.</small></div>;
-  if (!statistics) return <div className="statistics-loading"><strong>Statistics unavailable</strong><small>{error || "No activity data yet."}</small><button className="quiet-button" onClick={onRefresh}>Retry</button></div>;
+  if (loading && !statistics) return <div className="statistics-loading"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Анализирую активность агентов…</strong><small>Свежие транскрипты Codex сканируются один раз; результаты кэшируются на диске на час.</small></div>;
+  if (!statistics) return <div className="statistics-loading"><strong>Статистика недоступна</strong><small>{error || "Данных об активности пока нет."}</small><button className="quiet-button" onClick={onRefresh}>Повторить</button></div>;
   const thresholds = [30, 60, 120, 180, 300];
   const maxHistogram = Math.max(1, ...statistics.sameFileRevisits.histogram.map((item) => item.percent));
   const p = statistics.sameFileRevisits.percentilesSec;
@@ -146,62 +236,62 @@ function StatisticsView({ statistics, loading, error, days, onDays, onRefresh }:
   const dayMax = Math.max(1, ...(deep.sessionsByDay || []).map((item) => item.count));
   return <div className="statistics-scroll"><div className="statistics-page">
     <div className="statistics-hero">
-      <div><span className="eyebrow">AGENT ACTIVITY</span><h2>Statistics</h2><p>Measured from real coding sessions, not synthetic benchmarks. Current high-confidence write signal: explicit Codex <code>apply_patch</code> paths.</p></div>
-      <div className="statistics-controls"><div className="statistics-range">{[7, 30, 90].map((value) => <button className={days === value ? "active" : ""} key={value} onClick={() => onDays(value)}>{value}d</button>)}</div><button className="quiet-button" disabled={loading} onClick={onRefresh}>{loading ? "Refreshing…" : "Refresh"}</button></div>
+      <div><span className="eyebrow">АКТИВНОСТЬ АГЕНТОВ</span><h2>Статистика</h2><p>Замеры по реальным рабочим сессиям, а не синтетическим бенчмаркам. Текущий надёжный сигнал записи — явные пути <code>apply_patch</code> в Codex.</p></div>
+      <div className="statistics-controls"><div className="statistics-range">{[7, 30, 90].map((value) => <button className={days === value ? "active" : ""} key={value} onClick={() => onDays(value)}>{value} дн.</button>)}</div><button className="quiet-button" disabled={loading} onClick={onRefresh}>{loading ? "Обновляю…" : "Обновить"}</button></div>
     </div>
-    {error && <div className="statistics-warning">Last refresh failed: {error}</div>}
+    {error && <div className="statistics-warning">Последнее обновление не удалось: {error}</div>}
     <div className="statistics-cards">
-      <article><span>Sessions sampled</span><strong>{formatStatCount(statistics.sample.sessionFiles)}</strong><small>{formatStatCount(statistics.sample.sessionsWithPatches)} with patches · {statistics.windowDays} days</small></article>
-      <article><span>Write events</span><strong>{formatStatCount(statistics.sample.pathWriteEvents)}</strong><small>{formatStatCount(statistics.sample.patchCalls)} apply_patch calls</small></article>
-      <article><span>Same-file revisits</span><strong>{formatStatCount(statistics.sameFileRevisits.count)}</strong><small>median {formatStatDuration(p.p50)} · p95 {formatStatDuration(p.p95)}</small></article>
-      <article className="recommendation"><span>Suggested inactivity lease</span><strong>~{formatStatDuration(statistics.recommendation.inactivityLeaseSec)}</strong><small>tool-activity p95 {formatStatDuration(ap.p95)} · renewed while session stays active</small></article>
+      <article><span>Выборка сессий</span><strong>{formatStatCount(statistics.sample.sessionFiles)}</strong><small>{formatStatCount(statistics.sample.sessionsWithPatches)} с патчами · {statistics.windowDays} дн.</small></article>
+      <article><span>События записи</span><strong>{formatStatCount(statistics.sample.pathWriteEvents)}</strong><small>{formatStatCount(statistics.sample.patchCalls)} вызовов apply_patch</small></article>
+      <article><span>Возвраты к тому же файлу</span><strong>{formatStatCount(statistics.sameFileRevisits.count)}</strong><small>медиана {formatStatDuration(p.p50)} · p95 {formatStatDuration(p.p95)}</small></article>
+      <article className="recommendation"><span>Рекомендуемый таймаут неактивности</span><strong>~{formatStatDuration(statistics.recommendation.inactivityLeaseSec)}</strong><small>p95 активности инструментов {formatStatDuration(ap.p95)} · продлевается, пока сессия активна</small></article>
     </div>
 
     {portfolio && <div className="statistics-grid landscape-grid">
       <section className="statistics-panel">
-        <div className="statistics-panel-head"><div><span className="eyebrow">HARNESS MIX</span><h3>What actually gets used</h3></div><small>{formatStatCount(portfolio.observedSessions)} sessions active in this window</small></div>
+        <div className="statistics-panel-head"><div><span className="eyebrow">СМЕСЬ АГЕНТОВ</span><h3>Что реально используется</h3></div><small>{formatStatCount(portfolio.observedSessions)} сессий активны в этом окне</small></div>
         <div className="ranked-bars">{portfolio.harnesses.map((item) => <div className="ranked-row" key={item.name}><b>{item.name}</b><div><span style={{ width: `${item.count / topHarnessMax * 100}%` }} /></div><em>{item.count} · {formatPercent(item.percent)}</em></div>)}</div>
       </section>
       <section className="statistics-panel">
-        <div className="statistics-panel-head"><div><span className="eyebrow">MODEL MIX</span><h3>Most-used models</h3></div><small>known for {formatPercent(portfolio.modelCoveragePercent)} of recent sessions</small></div>
+        <div className="statistics-panel-head"><div><span className="eyebrow">ПОПУЛЯРНЫЕ МОДЕЛИ</span><h3>Самые используемые модели</h3></div><small>известны для {formatPercent(portfolio.modelCoveragePercent)} недавних сессий</small></div>
         <div className="ranked-bars model-bars">{portfolio.models.slice(0, 8).map((item) => <div className="ranked-row" key={item.name}><b title={item.name}>{item.name}</b><div><span style={{ width: `${item.count / topModelMax * 100}%` }} /></div><em>{item.count}</em></div>)}</div>
       </section>
     </div>}
 
     <div className="statistics-cards session-metric-cards">
-      <article><span>Codex session span</span><strong>{formatStatDuration(deep.durationSec.median)}</strong><small>median · mean {formatStatDuration(deep.durationSec.mean)} · p95 {formatStatDuration(deep.durationSec.p95)}</small></article>
-      <article><span>Codex tokens / session</span><strong>{formatStatCount(deep.tokens.median)}</strong><small>median · mean {formatStatCount(deep.tokens.mean)} · p95 {formatStatCount(deep.tokens.p95)}</small></article>
-      <article><span>Token coverage</span><strong>{formatPercent(deep.tokenCoveragePercent)}</strong><small>{formatStatCount(deep.tokens.count)} of {formatStatCount(deep.sessions)} Codex sessions expose cumulative usage</small></article>
-      <article><span>Portfolio token coverage</span><strong>{formatPercent(portfolio?.tokenCoveragePercent || 0)}</strong><small>all harnesses · sparse fields are excluded from averages</small></article>
+      <article><span>Длительность сессии Codex</span><strong>{formatStatDuration(deep.durationSec.median)}</strong><small>медиана · среднее {formatStatDuration(deep.durationSec.mean)} · p95 {formatStatDuration(deep.durationSec.p95)}</small></article>
+      <article><span>Токены Codex за сессию</span><strong>{formatStatCount(deep.tokens.median)}</strong><small>медиана · среднее {formatStatCount(deep.tokens.mean)} · p95 {formatStatCount(deep.tokens.p95)}</small></article>
+      <article><span>Покрытие токенами</span><strong>{formatPercent(deep.tokenCoveragePercent)}</strong><small>{formatStatCount(deep.tokens.count)} из {formatStatCount(deep.sessions)} сессий Codex отдают накопленное usage</small></article>
+      <article><span>Покрытие токенами по портфелю</span><strong>{formatPercent(portfolio?.tokenCoveragePercent || 0)}</strong><small>все агенты · пустые поля исключены из средних</small></article>
     </div>
 
     <section className="statistics-panel">
-      <div className="statistics-panel-head"><div><span className="eyebrow">SESSION VOLUME</span><h3>Codex sessions by day</h3></div><small>{statistics.windowDays}-day deep sample</small></div>
-      <div className="daily-chart">{deep.sessionsByDay.map((item) => <div className="daily-column" key={item.day} title={`${item.day}: ${item.count} sessions`}><span style={{ height: `${Math.max(3, item.count / dayMax * 100)}%` }} /><b>{item.day.slice(5)}</b></div>)}</div>
+      <div className="statistics-panel-head"><div><span className="eyebrow">ОБЪЁМ СЕССИЙ</span><h3>Сессии Codex по дням</h3></div><small>глубокая выборка за {statistics.windowDays} дн.</small></div>
+      <div className="daily-chart">{deep.sessionsByDay.map((item) => <div className="daily-column" key={item.day} title={`${item.day}: ${item.count} сессий`}><span style={{ height: `${Math.max(3, item.count / dayMax * 100)}%` }} /><b>{item.day.slice(5)}</b></div>)}</div>
     </section>
 
     <section className="statistics-panel">
-      <div className="statistics-panel-head"><div><span className="eyebrow">LEASE COVERAGE</span><h3>What different TTLs actually cover</h3></div><small>Activity gap = next tool action. File revisit = next write to the same path.</small></div>
-      <div className="coverage-legend"><span><i className="activity" />Next agent activity</span><span><i className="revisit" />Same-file revisit</span></div>
+      <div className="statistics-panel-head"><div><span className="eyebrow">ПОКРЫТИЕ ТАЙМАУТА</span><h3>Что реально покрывают разные таймауты</h3></div><small>Разрыв активности = следующее действие инструмента. Возврат к файлу = следующая запись в тот же путь.</small></div>
+      <div className="coverage-legend"><span><i className="activity" />Следующая активность агента</span><span><i className="revisit" />Возврат к тому же файлу</span></div>
       <div className="coverage-chart">{thresholds.map((seconds) => { const activity = coverageFor(statistics.activityGaps, seconds); const revisit = coverageFor(statistics.sameFileRevisits, seconds); return <div className="coverage-row" key={seconds}><b>{formatStatDuration(seconds)}</b><div className="coverage-bars"><div className="coverage-bar activity" style={{ width: `${activity}%` }}><span>{activity.toFixed(1)}%</span></div><div className="coverage-bar revisit" style={{ width: `${revisit}%` }}><span>{revisit.toFixed(1)}%</span></div></div></div>; })}</div>
-      <p className="statistics-explainer">A short lease can still be correct even though agents often return to the same file much later: reservations should stay alive from <em>session activity heartbeats</em>, not only from repeated writes to that file.</p>
+      <p className="statistics-explainer">Короткий таймаут может быть корректен, даже если агенты часто возвращаются к тому же файлу гораздо позже: резервации должны жить на сигналах активности сессии, а не только на повторных записях в этот файл.</p>
     </section>
 
     <div className="statistics-grid">
       <section className="statistics-panel">
-        <div className="statistics-panel-head"><div><span className="eyebrow">SAME FILE</span><h3>Write revisit distribution</h3></div><small>{formatStatCount(statistics.sameFileRevisits.count)} intervals</small></div>
+        <div className="statistics-panel-head"><div><span className="eyebrow">ТОТ ЖЕ ФАЙЛ</span><h3>Распределение возвратов к записи</h3></div><small>{formatStatCount(statistics.sameFileRevisits.count)} интервалов</small></div>
         <div className="histogram">{statistics.sameFileRevisits.histogram.map((item) => <div className="histogram-column" key={item.label}><div className="histogram-value">{item.percent.toFixed(1)}%</div><div className="histogram-track"><span style={{ height: `${Math.max(3, item.percent / maxHistogram * 100)}%` }} /></div><b>{item.label}</b></div>)}</div>
       </section>
       <section className="statistics-panel">
-        <div className="statistics-panel-head"><div><span className="eyebrow">PERCENTILES</span><h3>How long gaps get</h3></div></div>
-        <div className="percentile-table"><div className="percentile-head"><span>Percentile</span><span>Any activity</span><span>Same file</span></div>{(["p50","p75","p90","p95","p99"] as const).map((key) => <div className="percentile-row" key={key}><b>{key.toUpperCase()}</b><span>{formatStatDuration(ap[key])}</span><span>{formatStatDuration(p[key])}</span></div>)}</div>
+        <div className="statistics-panel-head"><div><span className="eyebrow">ПЕРЦЕНТИЛИ</span><h3>Насколько длинными бывают паузы</h3></div></div>
+        <div className="percentile-table"><div className="percentile-head"><span>Перцентиль</span><span>Любая активность</span><span>Тот же файл</span></div>{(["p50","p75","p90","p95","p99"] as const).map((key) => <div className="percentile-row" key={key}><b>{key.toUpperCase()}</b><span>{formatStatDuration(ap[key])}</span><span>{formatStatDuration(p[key])}</span></div>)}</div>
       </section>
     </div>
 
     <section className="statistics-panel statistics-method">
-      <div><span className="eyebrow">METHOD</span><h3>What is being measured</h3></div>
+      <div><span className="eyebrow">МЕТОДИКА</span><h3>Что именно измеряется</h3></div>
       <p>{statistics.source.caveat} {portfolio?.caveat || ""}</p>
-      <div className="method-facts"><span><b>{formatStatCount(statistics.sample.toolCalls)}</b> tool calls</span><span><b>{formatStatCount(statistics.activityGaps.count)}</b> activity intervals</span><span><b>{formatStatCount(statistics.sample.repeatedFileSeries)}</b> repeatedly edited files</span><span><b>{new Date(statistics.generatedAt).toLocaleTimeString()}</b> generated</span></div>
+      <div className="method-facts"><span><b>{formatStatCount(statistics.sample.toolCalls)}</b> вызовов инструментов</span><span><b>{formatStatCount(statistics.activityGaps.count)}</b> интервалов активности</span><span><b>{formatStatCount(statistics.sample.repeatedFileSeries)}</b> многократно правленных файлов</span><span><b>{new Date(statistics.generatedAt).toLocaleTimeString()}</b> сформировано</span></div>
     </section>
   </div></div>;
 }
@@ -213,23 +303,23 @@ function JobsView({ jobs, loading, error, cancellingJobId, onRefresh, onCancel }
   const failed = jobs.filter((job) => job.state === "failed" || job.state === "interrupted").length;
   return <div className="jobs-scroll"><div className="jobs-page">
     <div className="jobs-hero">
-      <div><span className="eyebrow">CONTROL PLANE</span><h2>Jobs</h2><p>Long-running Agent Herder operations survive MCP reconnects. Completed history is persisted across service restarts.</p></div>
-      <div className="jobs-summary"><span><b>{active}</b> active</span><span><b>{jobs.length}</b> retained</span>{failed > 0 && <span className="jobs-failed-count"><b>{failed}</b> failed/interrupted</span>}<button className="quiet-button" disabled={loading} onClick={onRefresh}>{loading ? "Refreshing…" : "Refresh"}</button></div>
+      <div><span className="eyebrow">УПРАВЛЕНИЕ</span><h2>Задачи</h2><p>Долгие операции Agent Herder переживают переподключение MCP. История завершённых задач сохраняется между перезапусками сервиса.</p></div>
+      <div className="jobs-summary"><span><b>{active}</b> активных</span><span><b>{jobs.length}</b> в истории</span>{failed > 0 && <span className="jobs-failed-count"><b>{failed}</b> с ошибками</span>}<button className="quiet-button" disabled={loading} onClick={onRefresh}>{loading ? "Обновляю…" : "Обновить"}</button></div>
     </div>
-    {error && <div className="statistics-warning">Jobs refresh failed: {error}</div>}
-    {loading && jobs.length === 0 && <div className="statistics-loading"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Loading jobs…</strong></div>}
-    {!loading && jobs.length === 0 && <div className="jobs-empty">No jobs yet. Background exports, conversions, browser work and reconciliation will appear here.</div>}
+    {error && <div className="statistics-warning">Не удалось обновить задачи: {error}</div>}
+    {loading && jobs.length === 0 && <div className="statistics-loading"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Загружаю задачи…</strong></div>}
+    {!loading && jobs.length === 0 && <div className="jobs-empty">Задач пока нет. Здесь появятся фоновые экспорты, конвертации, браузерная работа и сверка.</div>}
     <div className="jobs-list">{jobs.map((job) => {
       const cancellable = job.state === "queued" || job.state === "running" || job.state === "waiting";
       const progress = Math.max(0, Math.min(1, job.progress ?? (job.state === "completed" ? 1 : 0)));
       return <article className={`job-card job-${job.state}`} key={job.id}>
-        <div className="job-head"><div><span className={`job-state job-state-${job.state}`}>{job.state}</span><strong>{job.kind}</strong></div><time title={new Date(job.updatedAt).toLocaleString()}>{formatSessionAge(job.updatedAt)}</time></div>
+        <div className="job-head"><div><span className={`job-state job-state-${job.state}`}>{jobStateLabel(job.state)}</span><strong>{job.kind}</strong></div><time title={new Date(job.updatedAt).toLocaleString()}>{formatSessionAge(job.updatedAt)}</time></div>
         <div className="job-progress"><span style={{ width: `${progress * 100}%` }} /></div>
-        <div className="job-meta"><code>{job.id}</code>{job.ownerSessionId && <span>owner · <code>{job.ownerSessionId}</code></span>}<span>updated · {new Date(job.updatedAt).toLocaleString()}</span></div>
+        <div className="job-meta"><code>{job.id}</code>{job.ownerSessionId && <span>владелец · <code>{job.ownerSessionId}</code></span>}<span>обновлено · {new Date(job.updatedAt).toLocaleString()}</span></div>
         {job.statusMessage && <p className="job-status-message">{job.statusMessage}</p>}
         {job.error && <div className="job-error">{job.error}</div>}
-        {job.result !== undefined && <details className="job-result"><summary>Result</summary><pre>{JSON.stringify(job.result, null, 2)}</pre></details>}
-        <div className="job-actions"><code>{job.resultRef}</code>{cancellable && <button className="danger-button" disabled={cancellingJobId === job.id} onClick={() => onCancel(job.id)}>{cancellingJobId === job.id ? "Cancelling…" : "Cancel"}</button>}</div>
+        {job.result !== undefined && <details className="job-result"><summary>Результат</summary><pre>{JSON.stringify(job.result, null, 2)}</pre></details>}
+        <div className="job-actions"><code>{job.resultRef}</code>{cancellable && <button className="danger-button" disabled={cancellingJobId === job.id} onClick={() => onCancel(job.id)}>{cancellingJobId === job.id ? "Отменяю…" : "Отмена"}</button>}</div>
       </article>;
     })}</div>
   </div></div>;
@@ -239,15 +329,45 @@ function Markdown({ children }: { children: string }) {
   return <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>;
 }
 
+const SYSTEM_BLOCK_PATTERN = /<(system-reminder|context_guidance|agent-herder-repo-peers|agent-herder-coordination|agent-herder-deferred|oai-mem-citation)>([\s\S]*?)<\/\1>/g;
+const SYSTEM_BLOCK_LABELS: Record<string, string> = {
+  "system-reminder": "Системное напоминание",
+  "context_guidance": "Служебный контекст",
+  "agent-herder-repo-peers": "Соседи по репозиторию",
+  "agent-herder-coordination": "Заметка координации",
+  "agent-herder-deferred": "Отложенные сообщения",
+  "oai-mem-citation": "Цитата памяти",
+};
+
+function splitSystemBlocks(text: string): { text: string; blocks: Array<{ label: string; body: string }> } {
+  const blocks: Array<{ label: string; body: string }> = [];
+  const stripped = text.replace(SYSTEM_BLOCK_PATTERN, (_match, tag: string, body: string) => {
+    blocks.push({ label: SYSTEM_BLOCK_LABELS[tag] || "Служебный блок", body: body.trim() });
+    return "";
+  });
+  return { text: stripped.replace(/^\s+|\s+$/g, ""), blocks };
+}
+
 function MessageParts({ message, showReasoning, showTools }: { message: SessionMessage; showReasoning: boolean; showTools: boolean }) {
   const parts = message.parts.length > 0 ? message.parts : message.text ? [{ type: "text" as const, text: message.text }] : [];
   return <>
     {parts.map((part, index) => {
       const partKey = `${message.id}:${index}`;
-      if (part.type === "text") return <div className="markdown-content" key={partKey}><Markdown>{part.text || ""}</Markdown></div>;
-      if (part.type === "thinking") return showReasoning ? <details className="oc-disclosure" key={partKey}><summary>Reasoning</summary><pre>{part.text}</pre></details> : null;
+      if (part.type === "text") {
+        const { text, blocks } = splitSystemBlocks(part.text || "");
+        return <div className="markdown-content" key={partKey}>
+          {text && <Markdown>{text}</Markdown>}
+          {blocks.map((block, blockIndex) => (
+            <details className="service-note part-service-note" key={`${partKey}:sys:${blockIndex}`}>
+              <summary className="service-note-head"><span className="service-note-label">{block.label}</span></summary>
+              <pre className="service-note-body">{block.body.slice(0, 4000)}</pre>
+            </details>
+          ))}
+        </div>;
+      }
+      if (part.type === "thinking") return showReasoning ? <details className="oc-disclosure" key={partKey}><summary>Размышления</summary><pre>{part.text}</pre></details> : null;
       if (!showTools) return null;
-      return <details className="oc-disclosure tool" key={partKey}><summary>{part.name || (part.type === "tool_call" ? "Tool call" : "Tool result")}</summary><pre>{part.output || (part.input ? JSON.stringify(part.input, null, 2) : "")}</pre></details>;
+      return <details className="oc-disclosure tool" key={partKey}><summary>{part.name || (part.type === "tool_call" ? "Вызов инструмента" : "Результат инструмента")}</summary><pre>{part.output || (part.input ? JSON.stringify(part.input, null, 2) : "")}</pre></details>;
     })}
   </>;
 }
@@ -257,6 +377,30 @@ function hasVisibleMessage(message: SessionMessage, showReasoning: boolean, show
   return parts.some((part) => part.type === "text" && Boolean(part.text?.trim())
     || part.type === "thinking" && showReasoning && Boolean(part.text?.trim())
     || (part.type === "tool_call" || part.type === "tool_result") && showTools);
+}
+
+function CollapsibleMessage({ message, showReasoning, showTools, forceExpanded }: { message: SessionMessage; showReasoning: boolean; showTools: boolean; forceExpanded?: boolean }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const bodyText = (message.parts.length > 0 ? message.parts : message.text ? [{ type: "text" as const, text: message.text }] : [])
+    .map((part) => [part.text, part.output].filter((value): value is string => Boolean(value)).join("\n")).join("\n");
+  const lineCount = bodyText.split("\n").length;
+  const isLong = lineCount > 24 || bodyText.length > 1500;
+  const collapsed = isLong && !expanded && !forceExpanded;
+  return <div className={`message-body ${collapsed ? "message-collapsed" : ""}`}>
+    <MessageParts message={message} showReasoning={showReasoning} showTools={showTools} />
+    {collapsed && <button type="button" className="message-expand" onClick={() => setExpanded(true)}>Показать полностью</button>}
+    {!collapsed && isLong && !forceExpanded && <button type="button" className="message-expand" onClick={() => setExpanded(false)}>Свернуть</button>}
+  </div>;
+}
+
+function ServiceNote({ label, message }: { label: string; message: SessionMessage }) {
+  const [open, setOpen] = React.useState(false);
+  const text = (message.parts.find((part) => part.type === "text")?.text || message.text || "").replace(/\s+/g, " ").trim();
+  const preview = text.length > 140 ? `${text.slice(0, 140)}…` : text;
+  return <div className={`service-note ${open ? "service-note-open" : ""}`}>
+    <button type="button" className="service-note-head" aria-expanded={open} onClick={() => setOpen((value) => !value)}><span className="service-note-label">{label}</span><small>{preview}</small></button>
+    {open && <div className="service-note-body"><pre>{text}</pre></div>}
+  </div>;
 }
 
 function AutomationSettings({ section, state, draft, saving, error, saved, continuation, continuationSaving, continuationError, activeSession, sessionAutostart, sessionAutostartSaving, sessionAutostartError, runtimeDraft, runtimeSaving, runtimeSaved, runtimeError, modelOptions, onChange, onSave, onGlobalContinuationToggle, onContinuationToggle, onSessionAutostartToggle, onSessionAutostartInherit, onRuntimeChange, onRuntimeSave }: {
@@ -302,7 +446,7 @@ function AutomationSettings({ section, state, draft, saving, error, saved, conti
       })}
     </div><p className="settings-help">Автопродолжение восстанавливает аварийно прерванный ход. Автопилот отдельно решает, что делать с незавершённой задачей.</p>{continuationError && <small className="autopilot-error">{continuationError}</small>}</fieldset>
 
-    {activeSession && sessionAutostart && <fieldset className="settings-group session-autocontinue-setting"><legend>Активная сессия</legend><div className="autopilot-control"><div><span className="eyebrow">{activeSession.harness}</span><strong>{sessionAutostart.enabled ? "Автопродолжение включено" : "Автопродолжение выключено"}</strong><small>{sessionAutostart.source === "session" ? "Отдельная настройка этой сессии" : sessionAutostart.source === "harness" ? `Используется общая настройка для ${activeSession.harness}` : sessionAutostart.source === "global" ? "Используется общий переключатель" : "Значение по умолчанию"}</small>{sessionAutostart.source === "session" && <button className="inherit-button" disabled={sessionAutostartSaving} onClick={onSessionAutostartInherit}>Использовать общую настройку {activeSession.harness}</button>}</div><button className={`switch-control ${sessionAutostart.enabled ? "enabled" : ""}`} role="switch" aria-checked={sessionAutostart.enabled} aria-label={`Autocontinue recovery for ${activeSession.id}`} disabled={sessionAutostartSaving} onClick={onSessionAutostartToggle}><span /></button></div>{sessionAutostartError && <small className="autopilot-error">{sessionAutostartError}</small>}</fieldset>}
+    {activeSession && sessionAutostart && <fieldset className="settings-group session-autocontinue-setting"><legend>Активная сессия</legend><div className="autopilot-control"><div><span className="eyebrow">{activeSession.harness}</span><strong>{sessionAutostart.enabled ? "Автопродолжение включено" : "Автопродолжение выключено"}</strong><small>{sessionAutostart.source === "session" ? "Отдельная настройка этой сессии" : sessionAutostart.source === "harness" ? `Используется общая настройка для ${activeSession.harness}` : sessionAutostart.source === "global" ? "Используется общий переключатель" : "Значение по умолчанию"}</small>{sessionAutostart.source === "session" && <button className="inherit-button" disabled={sessionAutostartSaving} onClick={onSessionAutostartInherit}>Использовать общую настройку {activeSession.harness}</button>}</div><button className={`switch-control ${sessionAutostart.enabled ? "enabled" : ""}`} role="switch" aria-checked={sessionAutostart.enabled} aria-label={`Автопродолжение для сессии ${activeSession.id}`} disabled={sessionAutostartSaving} onClick={onSessionAutostartToggle}><span /></button></div>{sessionAutostartError && <small className="autopilot-error">{sessionAutostartError}</small>}</fieldset>}
 
     {runtimeDraft && <><fieldset className="settings-group"><legend>Восстановление после сбоя</legend><label className="runtime-toggle-setting timeout-setting"><span><strong>После ошибки хода</strong><small>Herder повторно запускает работу только в той же сессии после подтверждённой ошибки.</small></span><input type="checkbox" checked={runtimeDraft.recoverOnFailure ?? true} onChange={(event) => onRuntimeChange({ ...runtimeDraft, recoverOnFailure: event.target.checked })} /></label><label className="runtime-toggle-setting timeout-setting"><span><strong>После разрыва соединения</strong><small>Herder восстанавливает ту же сессию, если связь с её процессом аварийно оборвалась.</small></span><input type="checkbox" checked={runtimeDraft.recoverOnDisconnect ?? true} onChange={(event) => onRuntimeChange({ ...runtimeDraft, recoverOnDisconnect: event.target.checked })} /></label><p className="settings-help">Завершённые и работающие сессии, ожидание ответа или разрешения человека и сессии, явно остановленные человеком, исключены. Незавершённые задачи разбирает автопилот.</p></fieldset><fieldset className="settings-group"><legend>Контроль зависания</legend><label className="runtime-toggle-setting timeout-setting"><span><strong>Восстанавливать зависшие ходы по таймауту</strong><small>Дополнительная проверка включается отдельно и продолжает ту же сессию только после заданного времени без прогресса.</small></span><input type="checkbox" checked={runtimeDraft.watchdogEnabled ?? false} onChange={(event) => onRuntimeChange({ ...runtimeDraft, watchdogEnabled: event.target.checked })} /></label><div className="context-options runtime-settings-grid"><label><span><strong>Интервал проверки, секунд</strong></span><input type="number" min="5" max="300" disabled={!(runtimeDraft.watchdogEnabled ?? false)} value={runtimeDraft.watchdogIntervalSeconds ?? 10} onChange={(event) => onRuntimeChange({ ...runtimeDraft, watchdogIntervalSeconds: Math.min(300, Math.max(5, Number(event.target.value) || 10)) })} /></label><label><span><strong>Без прогресса, минут</strong></span><input type="number" min="1" max="120" disabled={!(runtimeDraft.watchdogEnabled ?? false)} value={runtimeDraft.stalledTurnMinutes ?? 2} onChange={(event) => onRuntimeChange({ ...runtimeDraft, stalledTurnMinutes: Math.min(120, Math.max(1, Number(event.target.value) || 2)) })} /></label></div></fieldset><div className="settings-save-row"><span>{runtimeError ? <small className="autopilot-error">{runtimeError}</small> : runtimeSaved ? <small className="settings-saved">Настройки автопродолжения сохранены</small> : <small>Изменения применятся после сохранения</small>}</span><button className="primary-button" disabled={runtimeSaving || !runtimeDraft.judgeModel.trim()} onClick={onRuntimeSave}>{runtimeSaving ? "Сохраняю…" : "Сохранить автопродолжение"}</button></div></>}
   </section>;
@@ -364,38 +508,41 @@ function SessionList({ entries, activeKey, loading, refreshing, settings, settin
   onSelect: (key: string) => void;
   onChoose: (requestId: string, choiceId: string) => void;
 }) {
-  return <nav className="sessions-pane" aria-label="Sessions">
-    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Sessions {refreshing && <span className="inline-loading-dot" role="status" aria-label="Refreshing sessions" />}</h1></div><div className="sessions-heading-actions"><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Search sessions" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Session settings" aria-expanded={settingsOpen} onClick={onSettingsToggle}>⚙</button></div></div>
-    {searchOpen && <div className="session-search"><input autoFocus value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search title, harness, CWD…" aria-label="Search session text" /></div>}
-    {settingsOpen && <div className="session-settings" aria-label="Session list settings">
-      <label>CWD<select value={settings.cwd} onChange={(event) => onSettingsChange({ cwd: event.target.value })}><option value="">All CWDs</option>{options.cwds.map((cwd) => <option value={cwd} key={cwd}>{cwd}</option>)}</select></label>
-      <label>Project<select value={settings.project} onChange={(event) => onSettingsChange({ project: event.target.value })}><option value="">All projects</option>{options.projects.map((project) => <option value={project} key={project}>{project}</option>)}</select></label>
-      <label>Harness<select value={settings.harness} onChange={(event) => onSettingsChange({ harness: event.target.value })}><option value="">All harnesses</option>{options.harnesses.map((harness) => <option value={harness} key={harness}>{harness}</option>)}</select></label>
-      <label>Sort by<select value={settings.sort} onChange={(event) => onSettingsChange({ sort: event.target.value as SessionListSort })}><option value="activity">Recent activity</option><option value="status">Status</option><option value="harness">Harness</option><option value="title">Title</option><option value="cwd">CWD</option></select></label>
-      <label className="session-toggle"><input type="checkbox" aria-label="Show all sessions" checked={settings.showAll} onChange={(event) => onSettingsChange({ showAll: event.target.checked })} /> Show completed sessions</label>
+  return <nav className="sessions-pane" aria-label="Сессии">
+    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Сессии {refreshing && <span className="inline-loading-dot" role="status" aria-label="Обновление сессий" />}</h1></div><div className="sessions-heading-actions"><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Поиск сессий" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Настройки списка" aria-expanded={settingsOpen} onClick={onSettingsToggle}>⚙</button></div></div>
+    {searchOpen && <div className="session-search"><input autoFocus value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Поиск: название, агент, проект…" aria-label="Поиск по сессиям" /></div>}
+    {settingsOpen && <div className="session-settings" aria-label="Настройки списка сессий">
+      <label>Папка<select value={settings.cwd} onChange={(event) => onSettingsChange({ cwd: event.target.value })}><option value="">Все папки</option>{options.cwds.map((cwd) => <option value={cwd} key={cwd}>{cwd}</option>)}</select></label>
+      <label>Проект<select value={settings.project} onChange={(event) => onSettingsChange({ project: event.target.value })}><option value="">Все проекты</option>{options.projects.map((project) => <option value={project} key={project}>{project}</option>)}</select></label>
+      <label>Агент<select value={settings.harness} onChange={(event) => onSettingsChange({ harness: event.target.value })}><option value="">Все агенты</option>{options.harnesses.map((harness) => <option value={harness} key={harness}>{harness}</option>)}</select></label>
+      <label>Сортировка<select value={settings.sort} onChange={(event) => onSettingsChange({ sort: event.target.value as SessionListSort })}><option value="activity">По активности</option><option value="status">По статусу</option><option value="harness">По агенту</option><option value="title">По названию</option><option value="cwd">По папке</option></select></label>
+      <label className="session-toggle"><input type="checkbox" aria-label="Показывать все сессии" checked={settings.showAll} onChange={(event) => onSettingsChange({ showAll: event.target.checked })} /> Показывать завершённые сессии</label>
     </div>}
-    <div className="session-list" role="list" aria-label="Sessions">
+    <div className="session-list" role="list" aria-label="Сессии">
       {entries.map(({ session, depth, hasChildren }) => {
         const key = keyOf(session);
         const decision = choicesBySession.get(key);
-        return <div className="session-row-wrap" role="listitem" style={{ marginLeft: `${depth * 14}px` }} key={key}>
-          {hasChildren ? <button className="session-fold" aria-label={`Toggle child sessions for ${session.title || session.id}`} onClick={() => onToggleChildren(key)}>{collapsedChildren.has(key) ? "›" : "⌄"}</button> : <span className="session-fold-placeholder" />}
+        const title = cleanSessionTitle(session.title) || session.title || session.id;
+        const label = decision ? "Ожидает выбора" : statusLabel(session.status);
+        const statusClassValue = decision ? "waiting" : statusClass(session.status);
+        return <div className="session-row-wrap" role="listitem" style={{ "--depth": depth } as React.CSSProperties} key={key}>
+          {hasChildren ? <button className="session-fold" aria-label={`Дочерние сессии: ${title}`} onClick={() => onToggleChildren(key)}>{collapsedChildren.has(key) ? "›" : "⌄"}</button> : <span className="session-fold-placeholder" />}
           <div className="session-card">
-            <button className={`session-row ${key === activeKey ? "selected" : ""}`} onClick={() => onSelect(key)}>
-              <span className={`status-dot ${decision ? "status-needs_input" : `status-${session.status}`}`} aria-hidden="true" />
-              <span className="session-copy"><strong title={session.title || session.id}>{session.title || session.id}</strong><small>{session.harness} · {decision ? "нужен выбор" : displayStatus(session.status)}</small><small className="session-preview">{session.lastMessage || session.cwd}</small></span>
+            <button className={`session-row ${key === activeKey ? "selected" : ""}`} aria-label={`${title}, ${session.harness}, ${label}`} onClick={() => onSelect(key)}>
+              <span className={`status-dot status-${statusClassValue}`} aria-hidden="true" />
+              <span className="session-copy"><strong title={session.title || session.id}>{title}</strong><small>{session.harness} · <span className={`status-label status-${statusClassValue}`}>{label}</span></small><small className="session-preview">{cleanPreview(session.lastMessage) || session.cwd}</small></span>
               <time title={new Date(session.lastActivity).toLocaleString()}>{formatSessionAge(session.lastActivity)}</time>
             </button>
-            {decision && <div className="choice-card" aria-label={`Autopilot choices for ${session.title || session.id}`}>
+            {decision && <div className="choice-card" aria-label={`Варианты автопилота для ${title}`}>
               <strong>Что делать дальше?</strong>
-              {decision.choices.map((choice) => <button className="choice-button" aria-label={`Choose ${choice.label}`} disabled={choosingRequestId === decision.requestId} key={choice.choiceId} onClick={() => onChoose(decision.requestId, choice.choiceId)}>{choice.label}</button>)}
+              {decision.choices.map((choice) => <button className="choice-button" aria-label={`Выбрать: ${choice.label}`} disabled={choosingRequestId === decision.requestId} key={choice.choiceId} onClick={() => onChoose(decision.requestId, choice.choiceId)}>{choice.label}</button>)}
               {choiceError?.requestId === decision.requestId && <small className="choice-error">{choiceError.message}</small>}
             </div>}
           </div>
         </div>;
       })}
-      {loading && entries.length === 0 && <div className="session-skeletons" aria-label="Loading sessions">{Array.from({ length: 8 }, (_, index) => <div className="session-skeleton" key={index}><span /><div><b /><i /><i /></div></div>)}</div>}
-      {!loading && entries.length === 0 && <div className="empty-list">No sessions match these settings.</div>}
+      {loading && entries.length === 0 && <div className="session-skeletons" aria-label="Загрузка сессий">{Array.from({ length: 8 }, (_, index) => <div className="session-skeleton" key={index}><span /><div><b /><i /><i /></div></div>)}</div>}
+      {!loading && entries.length === 0 && <div className="empty-list">Нет сессий по этим настройкам.</div>}
     </div>
   </nav>;
 }
@@ -493,7 +640,7 @@ function App() {
       .map((choice) => ({
         id: choice.sessionId,
         harness: choice.harness,
-        title: `Autopilot · ${choice.sessionId.slice(0, 12)}`,
+        title: `Автопилот · ${choice.sessionId.slice(0, 12)}`,
         cwd: choice.cwd,
         status: "needs_input",
         lastActivity: choice.createdAt,
@@ -1051,6 +1198,7 @@ function App() {
     await loadDetails(activeKey);
   };
   const isResumeMode = !composer.trim() && (activeSession?.status === "stopped" || activeSession?.status === "error" || activeSession?.meta?.humanStopHeld === true);
+  const activeJobsCount = jobs.filter((job) => job.state === "queued" || job.state === "running" || job.state === "waiting" || job.state === "cancelling").length;
   const readOnlySession = activeSession?.meta?.readOnly === true;
   const visualizationUrl = activeSession
     ? `/api/sessions/${encodeURIComponent(activeSession.harness)}/${encodeURIComponent(activeSession.id)}/visualization`
@@ -1058,13 +1206,13 @@ function App() {
   const latestMessage = details?.messages[details.messages.length - 1];
   const latestToolPart = [...(latestMessage?.parts || [])].reverse().find((part) => part.type === "tool_call" || part.type === "tool_result");
   const sessionActivity = sending
-    ? { kind: "thinking", label: "Сообщение отправлено — ИИ начинает работу…" }
+    ? { kind: "thinking", label: "Сообщение отправлено — начинаю работу…" }
     : activeSession?.status === "running" && latestToolPart
-      ? { kind: "tool", label: latestToolPart.name ? `ИИ использует инструмент: ${latestToolPart.name}` : "ИИ использует инструмент…" }
+      ? { kind: "tool", label: latestToolPart.name ? `Использую инструмент: ${latestToolPart.name}` : "Работаю с инструментом…" }
       : activeSession?.status === "running"
-        ? { kind: "thinking", label: "ИИ думает…" }
+        ? { kind: "thinking", label: "Думает…" }
         : activeSession?.status === "needs_input"
-          ? { kind: "waiting", label: "ИИ ждёт вашего ответа" }
+          ? { kind: "waiting", label: "Ждёт вашего ответа" }
           : detailsLoading && activeSession
             ? { kind: "loading", label: "Обновляю состояние сессии…" }
             : undefined;
@@ -1094,51 +1242,71 @@ function App() {
     shouldFollowRef.current = following;
     setShowScrollToLatest(!following && element.scrollHeight > element.clientHeight);
   };
+  React.useEffect(() => {
+    if (!chatMenuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setChatMenuOpen(false); };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (!target.closest(".chat-menu") && !target.closest(".desktop-chat-menu") && !target.closest(".mobile-automation-button")) setChatMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [chatMenuOpen]);
 
   return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"} ${(!showInspector || showStatistics || showJobs || showQuota || automationSettings) ? "no-inspector" : ""}`}>
     <SessionList entries={visibleSessionEntries} activeKey={activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { shouldFollowRef.current = true; setShowScrollToLatest(false); setShowStatistics(false); setShowJobs(false); selectSession(key); setMobileView("chat"); }} />
     <section className="chat-pane">
       <header className="chat-header">
-        <button className="mobile-back" onClick={() => setMobileView("sessions")} aria-label="Back to sessions">← <span>Sessions</span></button>
-        <div className="chat-heading">{showJobs ? <><span className="eyebrow">AGENT HERDER</span><h2>Jobs</h2><small>Persistent background work and progress</small></> : showStatistics ? <><span className="eyebrow">AGENT HERDER</span><h2>Statistics</h2><small>Real activity patterns from recent coding sessions</small></> : showQuota ? <><span className="eyebrow">AGENT HERDER</span><h2>Quota</h2><small>Codex окна, расход моделей, потребители</small></> : <><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2>{activeSession?.title || (loading ? "Loading sessions…" : "Select a session")}{(detailsLoading || detailsHydrating) && <span className="inline-loading-dot chat-loading-dot" role="status" aria-label="Loading session" />}</h2><small>{activeSession?.cwd || ""}</small><div className="load-timings" role="status" aria-label="Browser load timings"><span title="Page → session list ready">sessions <b>{formatLoadTiming(sessionsTimingMs)}</b></span>{activeKey && <><span title="Newest turns request">latest <b>{detailsLoading ? "…" : formatLoadTiming(latestTimingMs)}</b></span><span title="Background history + metrics request">hydrate <b>{detailsHydrating ? "…" : formatLoadTiming(hydrateTimingMs)}</b></span></>}</div></>}</div>
-        <div className="header-actions"><button className={`quiet-button ${showJobs ? "selected-icon" : ""}`} onClick={() => { setShowJobs((value) => !value); setShowStatistics(false); setAutomationSettings(undefined); setShowQuota(false); }}>Jobs{jobs.some((job) => job.state === "queued" || job.state === "running" || job.state === "waiting" || job.state === "cancelling") ? ` · ${jobs.filter((job) => job.state === "queued" || job.state === "running" || job.state === "waiting" || job.state === "cancelling").length}` : ""}</button><button className={`quiet-button ${showStatistics ? "selected-icon" : ""}`} onClick={() => { setShowJobs(false); setShowQuota(false); showStatistics ? setShowStatistics(false) : openStatistics(); }}>Statistics</button><button className={`quiet-button ${showQuota ? "selected-icon" : ""}`} onClick={() => { setShowJobs(false); setShowStatistics(false); setAutomationSettings(undefined); setShowQuota((value) => !value); }}>Quota</button>{!showStatistics && !showJobs && !showQuota && <><button className={`quiet-button automation-setting-button ${automationSettings === "autocontinue" ? "selected-icon" : ""}`} aria-label="Открыть настройки автопродолжения" onClick={() => { setAutomationSettings((value) => value === "autocontinue" ? undefined : "autocontinue"); setChatMenuOpen(false); }}>{`Автопродолжение · ${runtimeSettingsDraft?.enabled ? "вкл." : "выкл."}`}</button><button className={`quiet-button automation-setting-button ${automationSettings === "autopilot" ? "selected-icon" : ""}`} aria-label="Открыть настройки автопилота" onClick={() => { setAutomationSettings((value) => value === "autopilot" ? undefined : "autopilot"); setChatMenuOpen(false); }}>{`Автопилот · ${autopilotPolicyDraft?.enabled ? "вкл." : "выкл."}`}</button><button className={`quiet-button automation-setting-button ${automationSettings === "launch-policy" ? "selected-icon" : ""}`} aria-label="Настройки запуска новых сессий" onClick={() => { setAutomationSettings((value) => value === "launch-policy" ? undefined : "launch-policy"); setChatMenuOpen(false); }}>Запуск новых сессий</button><button className="quiet-button" onClick={() => setShowInspector((value) => !value)}>{showInspector ? "Hide" : "Info"}</button></>}<button className={`quiet-button mobile-automation-button ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Открыть настройки автоматизации" onClick={() => setChatMenuOpen((value) => !value)}>Автоматизация</button><button className={`icon-button desktop-chat-menu ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Chat menu" aria-expanded={chatMenuOpen} onClick={() => setChatMenuOpen((value) => !value)}>···</button></div>
-        {chatMenuOpen && <div className="chat-menu" role="menu"><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label><button className="quiet-button" onClick={() => { setAutomationSettings("autocontinue"); setChatMenuOpen(false); }}>{`Автопродолжение: ${runtimeSettingsDraft?.enabled ? "включено" : "выключено"}`}</button><button className="quiet-button" onClick={() => { setAutomationSettings("autopilot"); setChatMenuOpen(false); }}>{`Автопилот: ${(autopilotSession?.enabled ?? autopilotPolicyDraft?.enabled) ? "включён" : "выключен"}`}</button><button className="quiet-button" onClick={() => { setAutomationSettings("launch-policy"); setChatMenuOpen(false); }}>Запуск новых сессий</button><button className="quiet-button" onClick={() => { setShowInspector(true); setChatMenuOpen(false); }}>Session info</button><button className="quiet-button" onClick={() => { setShowJobs(true); setShowStatistics(false); setChatMenuOpen(false); }}>Jobs</button><button className="quiet-button" onClick={() => { setShowJobs(false); openStatistics(); }}>Statistics</button></div>}
+        <button className="mobile-back" onClick={() => setMobileView("sessions")} aria-label="К списку сессий">← <span>Сессии</span></button>
+        <div className="chat-heading">{showJobs ? <><span className="eyebrow">AGENT HERDER</span><h2>Задачи</h2><small>Фоновые задачи и их прогресс</small></> : showStatistics ? <><span className="eyebrow">AGENT HERDER</span><h2>Статистика</h2><small>Реальные паттерны активности недавних сессий</small></> : showQuota ? <><span className="eyebrow">AGENT HERDER</span><h2>Квота</h2><small>Окна Codex, расход моделей, потребители</small></> : <><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2>{activeSession ? (cleanSessionTitle(activeSession.title) || activeSession.id) : loading ? "Загрузка сессий…" : "Выберите сессию"}{(detailsLoading || detailsHydrating) && <span className="inline-loading-dot chat-loading-dot" role="status" aria-label="Загрузка сессии" />}</h2><small>{activeSession?.cwd || ""}</small>{SHOW_DEBUG_TIMINGS && <div className="load-timings" role="status" aria-label="Тайминги загрузки в браузере"><span title="Страница → список сессий готов">sessions <b>{formatLoadTiming(sessionsTimingMs)}</b></span>{activeKey && <><span title="Запрос свежих ходов">latest <b>{detailsLoading ? "…" : formatLoadTiming(latestTimingMs)}</b></span><span title="Фоновая история и метрики">hydrate <b>{detailsHydrating ? "…" : formatLoadTiming(hydrateTimingMs)}</b></span></>}</div>}</>}</div>
+        <div className="header-actions"><button className={`quiet-button ${showJobs ? "selected-icon" : ""}`} aria-pressed={showJobs} aria-label={activeJobsCount > 0 ? `Задачи, активных: ${activeJobsCount}` : "Задачи"} title={activeJobsCount > 0 ? `Активных задач: ${activeJobsCount}` : undefined} onClick={() => { setShowJobs((value) => !value); setShowStatistics(false); setAutomationSettings(undefined); setShowQuota(false); }}>Задачи</button><button className={`quiet-button ${showStatistics ? "selected-icon" : ""}`} aria-pressed={showStatistics} onClick={() => { setShowJobs(false); setShowQuota(false); showStatistics ? setShowStatistics(false) : openStatistics(); }}>Статистика</button>{!showStatistics && !showJobs && !showQuota && <><button className={`quiet-button automation-setting-button ${automationSettings === "autopilot" ? "selected-icon" : ""}`} aria-label={`Автопилот ${autopilotPolicyDraft?.enabled ? "включён" : "выключен"} — открыть настройки`} aria-pressed={automationSettings === "autopilot"} title={`Автопилот ${autopilotPolicyDraft?.enabled ? "включён" : "выключен"}`} onClick={() => { setAutomationSettings((value) => value === "autopilot" ? undefined : "autopilot"); setChatMenuOpen(false); }}>Автопилот<span className={`toggle-dot ${autopilotPolicyDraft?.enabled ? "on" : "off"}`} aria-hidden="true" /></button><button className={`quiet-button automation-setting-button ${automationSettings === "launch-policy" ? "selected-icon" : ""}`} aria-label="Новая сессия" title="Новая сессия" onClick={() => { setAutomationSettings((value) => value === "launch-policy" ? undefined : "launch-policy"); setChatMenuOpen(false); }}>+</button><button className="quiet-button" aria-label="Информация о сессии" title="Информация о сессии" aria-pressed={showInspector} onClick={() => setShowInspector((value) => !value)}>Инфо</button></>}<button className={`quiet-button mobile-automation-button ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Открыть настройки автоматизации" aria-expanded={chatMenuOpen} onClick={() => setChatMenuOpen((value) => !value)}>Автоматизация</button><button className={`icon-button desktop-chat-menu ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Меню чата" aria-expanded={chatMenuOpen} onClick={() => setChatMenuOpen((value) => !value)}>···</button></div>
+        {chatMenuOpen && <div className="chat-menu" aria-label="Меню чата"><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Размышления</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Инструменты</label><button className="quiet-button" onClick={() => { setAutomationSettings("autocontinue"); setChatMenuOpen(false); }}>{`Автопродолжение: ${runtimeSettingsDraft?.enabled ? "включено" : "выключено"}`}</button><button className="quiet-button" onClick={() => { setAutomationSettings("autopilot"); setChatMenuOpen(false); }}>{`Автопилот: ${(autopilotSession?.enabled ?? autopilotPolicyDraft?.enabled) ? "включён" : "выключен"}`}</button><button className="quiet-button" onClick={() => { setAutomationSettings("launch-policy"); setChatMenuOpen(false); }}>Запуск новых сессий</button><button className="quiet-button" onClick={() => { setShowInspector(true); setChatMenuOpen(false); }}>Инфо о сессии</button><button className="quiet-button" onClick={() => { setShowJobs(true); setShowStatistics(false); setChatMenuOpen(false); }}>Задачи</button><button className="quiet-button" onClick={() => { setShowJobs(false); openStatistics(); }}>Статистика</button><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setAutomationSettings(undefined); setShowQuota(true); setChatMenuOpen(false); }}>Квота</button></div>}
       </header>
       {showJobs && <JobsView jobs={jobs} loading={jobsLoading} error={jobsError} cancellingJobId={cancellingJobId} onRefresh={() => void loadJobs()} onCancel={(jobId) => void cancelJob(jobId)} />}
       {showQuota && <QuotaPanel />}
       {showStatistics && <StatisticsView statistics={statistics} loading={statisticsLoading} error={statisticsError} days={statisticsDays} onDays={changeStatisticsDays} onRefresh={() => void loadStatistics(statisticsDays, true)} />}
       {!showStatistics && !showJobs && !showQuota && automationSettings && <div className="autopilot-settings-overlay"><div className="autopilot-settings-shell"><button className="settings-close" aria-label={`Закрыть настройки ${automationSettings === "launch-policy" ? "запуска новых сессий" : automationSettings === "autocontinue" ? "автопродолжения" : "автопилота"}`} onClick={() => setAutomationSettings(undefined)}>×</button>{automationSettings === "launch-policy" ? <LaunchPolicySettings /> : <AutomationSettings section={automationSettings} state={autopilotPolicy} draft={autopilotPolicyDraft} saving={autopilotPolicySaving} error={autopilotPolicyError} saved={autopilotPolicySaved} continuation={continuationHarnesses} continuationSaving={continuationHarnessSaving} continuationError={continuationHarnessError} activeSession={activeSession} sessionAutostart={sessionAutostart} sessionAutostartSaving={sessionAutostartSaving} sessionAutostartError={sessionAutostartError} runtimeDraft={runtimeSettingsDraft} runtimeSaving={runtimeSettingsSaving} runtimeSaved={runtimeSettingsSaved} runtimeError={runtimeSettingsError} modelOptions={runtimeModelOptions} onChange={(next) => { setAutopilotPolicyDraft(next); setAutopilotPolicySaved(false); }} onSave={() => void saveAutopilotPolicy()} onGlobalContinuationToggle={() => void toggleGlobalContinuation()} onContinuationToggle={(harness) => void toggleContinuationHarness(harness)} onSessionAutostartToggle={() => void toggleSessionAutostart()} onSessionAutostartInherit={() => void inheritSessionAutostart()} onRuntimeChange={(next) => { setRuntimeSettingsDraft(next); setRuntimeSettingsSaved(false); }} onRuntimeSave={() => void saveRuntimeSettings()} />}</div></div>}
-      {!showStatistics && !showJobs && !showQuota && !!details?.children?.length && <details className="subagents-panel"><summary>Subagents <span>{details.children.length}</span></summary><div className="subagents-list">{details.children.map((child) => <button className="subagent-row" key={keyOf(child)} onClick={() => { selectSession(keyOf(child)); setMobileView("chat"); }}><span className={`status-dot status-${child.status}`} /><span><strong>{child.title || child.id}</strong><small>{typeof child.meta?.agentRole === "string" ? child.meta.agentRole : child.status} · {child.id}</small></span></button>)}</div></details>}
+      {!showStatistics && !showJobs && !showQuota && !!details?.children?.length && <details className="subagents-panel"><summary>Субагенты <span>{details.children.length}</span></summary><div className="subagents-list">{details.children.map((child) => <button className="subagent-row" key={keyOf(child)} onClick={() => { selectSession(keyOf(child)); setMobileView("chat"); }}><span className={`status-dot status-${statusClass(child.status)}`} /><span><strong>{child.title || child.id}</strong><small>{typeof child.meta?.agentRole === "string" ? child.meta.agentRole : statusLabel(child.status)} · {child.id}</small></span></button>)}</div></details>}
       {!showStatistics && !showJobs && !showQuota && <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}>
         <div className="message-column">
-          {detailsLoading && !details && <div className="session-loading-chat" aria-live="polite"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Loading latest activity</strong><small>Starting from the newest turns. You can keep using the rest of Agent Herder.</small></div>}
-          {!detailsLoading && !details && <div className="empty-chat">{detailsError || "Choose a session to open its conversation."}</div>}
-          {detailsHydrating && details && <div className="history-loading-banner"><span className="inline-loading-dot" /> Latest {formatLoadTiming(latestTimingMs)} · loading older history and metrics…</div>}
-          {details?.messages.map((message) => hasVisibleMessage(message, showReasoning, showTools) && <article className={`message ${message.role}`} key={message.id}><div className="message-meta"><span>{message.role === "user" ? "You" : message.role === "tool" ? "Tool" : "Agent"}</span><time>{formatTime(message.timestamp || "")}</time></div><MessageParts message={message} showReasoning={showReasoning} showTools={showTools} /></article>)}
+          {detailsLoading && !details && <div className="session-loading-chat" aria-live="polite"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Загружаю свежие сообщения</strong><small>Начинаем с последних ходов; остальным Agent Herder можно пользоваться дальше.</small></div>}
+          {!detailsLoading && !details && <div className="empty-chat">{detailsError || "Выберите сессию, чтобы открыть переписку."}</div>}
+          {detailsHydrating && details && <div className="history-loading-banner"><span className="inline-loading-dot" /> Последние {formatLoadTiming(latestTimingMs)} · подгружаю историю и метрики…</div>}
+          {details?.messages.map((message, index) => {
+            if (!hasVisibleMessage(message, showReasoning, showTools)) return null;
+            const noteLabel = serviceNoteLabel(message);
+            const isLastAssistant = message.role === "assistant" && index === details.messages.length - 1;
+            return <article className={`message ${message.role}`} key={message.id}><div className="message-meta"><span>{message.role === "user" ? "Вы" : message.role === "tool" ? "Инструмент" : "Агент"}</span><time>{formatTime(message.timestamp || "")}</time></div>{noteLabel ? <ServiceNote label={noteLabel} message={message} /> : <CollapsibleMessage message={message} showReasoning={showReasoning} showTools={showTools} forceExpanded={isLastAssistant} />}</article>;
+          })}
         </div>
       </div>}
-      {!showStatistics && !showJobs && !showQuota && showScrollToLatest && <button className="scroll-latest" aria-label="Scroll to latest" onClick={scrollToBottom}>↓</button>}
+      {!showStatistics && !showJobs && !showQuota && showScrollToLatest && <button className="scroll-latest" aria-label="Прокрутить к последним" onClick={scrollToBottom}>↓</button>}
       {!showStatistics && !showJobs && !showQuota && <div className="composer-stack">
-      {sessionActivity && <div className={`agent-activity-strip activity-${sessionActivity.kind}`} role="status" aria-live="polite"><span className="agent-activity-dot" /><strong>{sessionActivity.label}</strong></div>}
+      {sessionActivity && <div className={`activity-line activity-${sessionActivity.kind}`} role="status" aria-live="polite"><span className="pulse-dot" aria-hidden="true" /><span>{sessionActivity.label}</span></div>}
       <form className="composer" onSubmit={(event) => { event.preventDefault(); if (isResumeMode) void runAction("resume"); else void sendMessage(); }}>
         {showCreateSession && <div className="composer-create-panel">
           <div className="composer-create-row">
-            <label>Harness<select value={createHarness} onChange={(event) => { const harness = event.target.value; setCreateHarness(harness); setCreateModel(""); setCreateModels([]); void loadCreateModels(harness); }}>{(createAdapters.length ? createAdapters : [{ id: "fast-agent", name: "Fast Agent", active: true, ready: true, status: "active" }]).map((adapter) => <option key={adapter.id} value={adapter.id} disabled={!adapter.active}>{adapter.name}{adapter.active ? "" : ` · ${adapter.status}`}</option>)}</select></label>
-            <label className="cwd-picker">CWD<input value={createCwd} onChange={(event) => { const value = event.target.value; setCreateCwd(value); void loadCwdSuggestions(value); }} onFocus={() => void loadCwdSuggestions(createCwd.endsWith("/") ? createCwd : `${createCwd}/`)} onBlur={() => window.setTimeout(() => setCwdSuggestionsOpen(false), 120)} placeholder="/home/roomhacker/project" autoComplete="off" />{cwdSuggestionsOpen && cwdSuggestions.length > 0 && <div className="cwd-suggestions">{cwdSuggestions.map((item) => <button type="button" key={item.path} onMouseDown={(event) => event.preventDefault()} onClick={() => { setCreateCwd(`${item.path}/`); void loadCwdSuggestions(`${item.path}/`); }}><span className="cwd-folder">▱</span><span>{item.name}</span><small>{item.path}</small></button>)}</div>}</label>
-            <label>Model{createModels.length > 0 ? <select value={createModel} onChange={(event) => setCreateModel(event.target.value)}>{createModels.map((model) => <option key={model} value={model}>{model}</option>)}</select> : createModelsRefreshing ? <select disabled><option>loading models…</option></select> : <input value={createModel} onChange={(event) => setCreateModel(event.target.value)} placeholder="model (cache empty)" />}</label>
-            <button type="button" className="primary-button composer-create-submit" disabled={creatingSession || !createCwd.trim()} onClick={() => void createNewSession()}>{creatingSession ? "…" : "Create"}</button>
+            <label>Агент<select value={createHarness} onChange={(event) => { const harness = event.target.value; setCreateHarness(harness); setCreateModel(""); setCreateModels([]); void loadCreateModels(harness); }}>{(createAdapters.length ? createAdapters : [{ id: "fast-agent", name: "Fast Agent", active: true, ready: true, status: "active" }]).map((adapter) => <option key={adapter.id} value={adapter.id} disabled={!adapter.active}>{adapter.name}{adapter.active ? "" : ` · ${adapter.status}`}</option>)}</select></label>
+            <label className="cwd-picker">Папка<input value={createCwd} onChange={(event) => { const value = event.target.value; setCreateCwd(value); void loadCwdSuggestions(value); }} onFocus={() => void loadCwdSuggestions(createCwd.endsWith("/") ? createCwd : `${createCwd}/`)} onBlur={() => window.setTimeout(() => setCwdSuggestionsOpen(false), 120)} placeholder="/home/roomhacker/project" autoComplete="off" />{cwdSuggestionsOpen && cwdSuggestions.length > 0 && <div className="cwd-suggestions">{cwdSuggestions.map((item) => <button type="button" key={item.path} onMouseDown={(event) => event.preventDefault()} onClick={() => { setCreateCwd(`${item.path}/`); void loadCwdSuggestions(`${item.path}/`); }}><span className="cwd-folder">▱</span><span>{item.name}</span><small>{item.path}</small></button>)}</div>}</label>
+            <label>Модель{createModels.length > 0 ? <select value={createModel} onChange={(event) => setCreateModel(event.target.value)}>{createModels.map((model) => <option key={model} value={model}>{model}</option>)}</select> : createModelsRefreshing ? <select disabled><option>загрузка моделей…</option></select> : <input value={createModel} onChange={(event) => setCreateModel(event.target.value)} placeholder="модель (кэш пуст)" />}</label>
+            <button type="button" className="primary-button composer-create-submit" disabled={creatingSession || !createCwd.trim()} onClick={() => void createNewSession()}>{creatingSession ? "…" : "Создать"}</button>
           </div>
           {createSessionError && <div className="create-session-error">{createSessionError}</div>}
         </div>}
-        <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="New session" title="New Fast Agent / ZCode session" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>
+        <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="Новая сессия" title="Новая сессия агента" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>
         {readOnlySession ? <div className="composer-readonly"><strong>Архивная сессия</strong><span>Здесь доступен только просмотр. Продолжение запускается через Fast Agent.</span></div> : <>
-          <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Новое сообщение или продолжение задачи…" : activeKey ? "Message the agent…" : "Choose a session first"} disabled={!activeKey || sending || readOnlySession} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && composer.trim()) { event.preventDefault(); void sendMessage(); } }} />
-          <span className="composer-hint">{sending ? "Waiting for agent…" : isResumeMode ? "Resume this session" : "Enter to send · Shift+Enter for a new line"}</span>
-          <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || sending || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Resume session" : "Send message"}>{isResumeMode ? "▶" : "↑"}</button>
+          <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Новое сообщение или продолжение задачи…" : activeKey ? "Написать агенту…" : "Сначала выберите сессию"} disabled={!activeKey || sending || readOnlySession} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && composer.trim()) { event.preventDefault(); void sendMessage(); } }} />
+          <span className="composer-hint">{sending ? "Жду ответа агента…" : isResumeMode ? "Продолжить" : "Enter — отправить · Shift+Enter — новая строка"}</span>
+          <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || sending || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}>{isResumeMode ? "▶" : "↑"}</button>
         </>}
       </form></div>}
     </section>
-    {showInspector && !showStatistics && !showJobs && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">SESSION</span><button className="icon-button" onClick={() => setShowInspector(false)} aria-label="Close inspector">×</button></div>{activeSession ? <><div className="inspector-title">{activeSession.title}</div><div className="inspector-status"><span className={`status-dot status-${activeSession.status}`} />{activeSession.meta?.humanStopHeld === true ? "Явная остановка — автоматика приостановлена" : displayStatus(activeSession.status)}</div>{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">AUTOPILOT</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Отдельная настройка этой сессии" : autopilotSession.source === "policy" ? "Используется общая настройка автопилота" : autopilotSession.source === "plugin-default" ? "Настройка по умолчанию для этой среды" : "По умолчанию выключен"}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Использовать общую настройку</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label={`Autopilot for ${activeSession.id}`} disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}<dl><dt>Harness</dt><dd>{activeSession.harness}</dd><dt>Working directory</dt><dd>{activeSession.cwd}</dd>{activeSession.model && <><dt>Model</dt><dd>{activeSession.model}</dd></>}{activeSession.messageCount !== undefined && <><dt>Messages</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Duration</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.costUsd !== undefined && <><dt>Cost</dt><dd title={activeSession.meta?.pricing_source === "models.dev" ? `Estimated from models.dev · ${String(activeSession.meta?.pricing_provider || "")}/${String(activeSession.meta?.pricing_model || "")}` : undefined}>{`${activeSession.meta?.pricing_kind === "estimate" ? "~" : ""}$${activeSession.costUsd.toFixed(4)}`}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Tokens</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}<dt>Subagents</dt><dd>{details?.children?.length || 0}</dd></dl>{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">No turns yet. Send a message or Resume to start this session.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer">Visualize</a>}{activeSession.status === "running" && <button className="danger-button" onClick={() => void runAction("stop")}>Stop</button>}{(activeSession.status === "stopped" || activeSession.status === "error" || activeSession.meta?.humanStopHeld === true) && <button className="primary-button" onClick={() => void runAction("resume")}>Resume</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Recover</button>}</div><div className="settings-block"><span className="eyebrow">VIEW</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Reasoning</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Tools</label></div></> : <div className="empty-inspector">No session selected.</div>}</aside>}
+    {showInspector && !showStatistics && !showJobs && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">СЕССИЯ</span><button className="icon-button" onClick={() => setShowInspector(false)} aria-label="Закрыть">×</button></div>{activeSession ? <><div className="inspector-title">{cleanSessionTitle(activeSession.title) || activeSession.title || activeSession.id}</div><div className="inspector-status"><span className={`status-dot status-${statusClass(activeSession.status)}`} /><span className={`status-label status-${statusClass(activeSession.status)}`}>{activeSession.meta?.humanStopHeld === true ? "Явная остановка — автоматика приостановлена" : statusLabel(activeSession.status)}</span></div>{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">АВТОПИЛОТ</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Отдельная настройка этой сессии" : autopilotSession.source === "policy" ? "Используется общая настройка автопилота" : autopilotSession.source === "plugin-default" ? "Настройка по умолчанию для этой среды" : "По умолчанию выключен"}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Использовать общую настройку</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label={`Автопилот для сессии ${activeSession.id}`} disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}<dl><dt>Агент</dt><dd>{activeSession.harness}</dd><dt>Папка</dt><dd title={activeSession.cwd}>{lastSegment(activeSession.cwd)}</dd>{activeSession.model && <><dt>Модель</dt><dd title={activeSession.model}>{shortModel(activeSession.model)}</dd></>}{activeSession.messageCount !== undefined && <><dt>Сообщения</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Длительность</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.costUsd !== undefined && <><dt>Стоимость</dt><dd title={activeSession.meta?.pricing_source === "models.dev" ? `Оценка по models.dev · ${String(activeSession.meta?.pricing_provider || "")}/${String(activeSession.meta?.pricing_model || "")}` : undefined}>{`${activeSession.meta?.pricing_kind === "estimate" ? "~" : ""}$${activeSession.costUsd.toFixed(4)}`}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Токены</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}{(details?.children?.length || 0) > 0 && <><dt>Субагенты</dt><dd>{details?.children?.length}</dd></>}</dl>{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">Пока нет сообщений. Отправьте сообщение или продолжите сессию.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer">Визуализация</a>}{activeSession.status === "running" && <button className="stop-button" onClick={() => void runAction("stop")}>Остановить</button>}{(activeSession.status === "stopped" || activeSession.status === "error" || activeSession.meta?.humanStopHeld === true) && <button className="primary-button" onClick={() => void runAction("resume")}>Продолжить</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Восстановить</button>}</div><div className="settings-block"><span className="eyebrow">ВИД</span><small className="settings-hint">Что показывать в переписке</small><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Размышления</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Инструменты</label></div></> : <div className="empty-inspector">Сессия не выбрана.</div>}</aside>}
   </main>;
 }
 

@@ -1,5 +1,44 @@
 export type SessionListSort = "activity" | "status" | "harness" | "title" | "cwd";
 
+const STATUS_RU: Record<string, string> = {
+  running: "Работает",
+  needs_input: "Ждёт ответа",
+  error: "Ошибка",
+  idle: "Простой",
+  stopped: "Остановлена",
+  completed: "Остановлена",
+};
+
+const MONTHS_RU = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+
+/** Человекочитаемый статус сессии по-русски. */
+export function statusRu(status: string): string {
+  return STATUS_RU[status] ?? status;
+}
+
+/** Относительное время по-русски: «только что», «5 мин», «3 ч», «вчера», «6 окт». */
+export function relativeTimeRu(iso: string): string {
+  const time = Date.parse(iso);
+  if (!Number.isFinite(time)) return "";
+  const deltaMinutes = Math.round((Date.now() - time) / 60_000);
+  const absolute = Math.abs(deltaMinutes);
+  if (absolute < 1) return "только что";
+  if (absolute < 60) return deltaMinutes > 0 ? `${deltaMinutes} мин` : `через ${-deltaMinutes} мин`;
+  const hours = Math.floor(absolute / 60);
+  if (hours < 24) return deltaMinutes > 0 ? `${hours} ч` : `через ${hours} ч`;
+  if (hours < 48) return deltaMinutes > 0 ? "вчера" : "завтра";
+  const date = new Date(time);
+  const year = date.getFullYear() === new Date().getFullYear() ? "" : ` ${date.getFullYear()}`;
+  return `${date.getDate()} ${MONTHS_RU[date.getMonth()] ?? ""}${year}`;
+}
+
+/** Однострочное превью сообщения: пробелы схлопнуты, обрезка до max символов с многоточием. */
+export function truncatePreview(text: string, max = 120): string {
+  const normalized = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, Math.max(1, max - 1)).trimEnd()}…`;
+}
+
 export type SessionListSession = {
   id: string;
   harness: string;
@@ -64,7 +103,7 @@ export function projectFor(session: SessionListSession, byKey: Map<string, Sessi
     if (!parent) break;
     current = parent;
   }
-  return current.cwd || "(unknown cwd)";
+  return current.cwd || "(папка не указана)";
 }
 
 const statusOrder = new Map([["running", 0], ["needs_input", 1], ["error", 2], ["idle", 3], ["stopped", 4]]);

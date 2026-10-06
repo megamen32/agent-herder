@@ -759,10 +759,13 @@ export class ZcodeAdapter implements HarnessAdapter {
   readonly name = "ZCode";
   readonly lazyStart = true;
   // Sessions live in workspace-scoped app-server storage that is readable
-  // without starting a run; discovery must not wait for lazyStart.
-  // Passive discovery must never spawn the stdio app-server. Explicit control
-  // actions may still initialize the adapter on demand.
-  readonly lazyDiscovery = false;
+  // without starting a run; discovery must not wait for lazyStart. The
+  // persisted listing reads the tasks-index/native DB directly and never
+  // spawns the stdio app-server, so listings stay available even while the
+  // lazy transport is not initialized (e.g. after a daemon restart with
+  // autocontinue disabled — verified 2026-10-06: 656 sessions served while
+  // isReady() was false). Explicit control actions still initialize on demand.
+  readonly lazyDiscovery = true;
   readonly controlCapabilities: HarnessCapabilities = {
     cancelTurn: true,
     detach: true,

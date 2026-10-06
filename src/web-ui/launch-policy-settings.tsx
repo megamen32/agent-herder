@@ -87,7 +87,10 @@ function errorForPerson(error: unknown): string {
 }
 
 function labelFor(harness: string, runtimes: LaunchRuntimeOption[]): string {
-  return runtimes.find((runtime) => runtime.id === harness)?.name ?? FALLBACK_LABELS[harness] ?? harness;
+  const label = runtimes.find((runtime) => runtime.id === harness)?.name ?? FALLBACK_LABELS[harness];
+  if (label) return label;
+  const humanized = harness.replace(/[-_]+/g, " ").trim();
+  return humanized ? humanized[0]!.toUpperCase() + humanized.slice(1) : harness;
 }
 
 function inputId(harness: string): string {
@@ -189,7 +192,7 @@ export function LaunchPolicySettings() {
 
   return <section className="global-autopilot-card launch-policy-settings" aria-label="Запуск новых сессий">
     <div className="global-autopilot-head">
-      <div><span className="eyebrow">НОВЫЕ СЕССИИ</span><h3>Запуск новых сессий</h3><p>Выберите, где Herder может автоматически создавать новые сессии и какой вариант предпочитать. Это не меняет текущие сессии и автопродолжение.</p></div>
+      <div><span className="eyebrow">НОВЫЕ СЕССИИ</span><h3>Запуск новых сессий</h3><p>Выберите, где Herder может создавать новые сессии и какая среда основная. Текущие сессии и автопродолжение это не затрагивает.</p></div>
     </div>
     {loading ? <p className="settings-loading" role="status">Загружаем настройки запуска…</p> : <>
       {needsSetup && <p className="launch-policy-notice" role="status">Настройки запуска ещё не сохранены. До сохранения автоматический запуск новых сессий запрещён.</p>}
@@ -198,20 +201,27 @@ export function LaunchPolicySettings() {
         <legend>Разрешённые среды</legend>
         {displayedHarnesses.length === 0
           ? <p className="settings-help">Нет доступных сред запуска.</p>
-          : <div className="launch-runtime-list">{displayedHarnesses.map((harness) => <label className="launch-runtime-option" key={harness}>
-            <span><strong>{labelFor(harness, [...known.values()])}</strong></span>
-            <input type="checkbox" checked={policy.allowedHarnesses.includes(harness)} onChange={(event) => {
+          : <div className="launch-runtime-list">{displayedHarnesses.map((harness) => {
+            const harnessLabel = labelFor(harness, [...known.values()]);
+            const allowed = policy.allowedHarnesses.includes(harness);
+            return <label className="launch-runtime-option" key={harness} title={harness === harnessLabel ? undefined : harness}>
+              <span>
+                <strong>{harnessLabel}</strong>
+                <small aria-hidden="true">{allowed ? "вкл" : "выкл"}</small>
+              </span>
+              <input type="checkbox" checked={allowed} aria-label={`${harnessLabel}: ${allowed ? "вкл" : "выкл"}`} onChange={(event) => {
               setPolicy((current) => updateAllowedHarness(current, harness, event.target.checked));
               setSaved(false);
             }} />
-          </label>)}</div>}
-        {policy.allowedHarnesses.length > 0 && <label className="launch-policy-field"><span>Основная среда</span><select value={policy.preferredHarness} onChange={(event) => {
+            </label>;
+          })}</div>}
+        {policy.allowedHarnesses.length > 0 && <label className="launch-policy-field"><span>Основная среда</span><select value={policy.preferredHarness} aria-label="Основная среда запуска" onChange={(event) => {
           setPolicy((current) => updatePreferredHarness(current, event.target.value));
           setSaved(false);
         }}>{optionsForSelect.map((harness) => <option value={harness} key={harness}>{labelFor(harness, [...known.values()])}</option>)}</select></label>}
         {policy.allowedHarnesses.map((harness) => <label className="launch-policy-field" key={harness}>
           <span>Модель · {labelFor(harness, [...known.values()])}</span>
-          <input type="text" maxLength={256} list={inputId(harness)} value={policy.models[harness] ?? ""} placeholder="Укажите модель" onChange={(event) => {
+          <input type="text" maxLength={256} list={inputId(harness)} value={policy.models[harness] ?? ""} placeholder="Укажите модель" aria-label={`Модель для среды ${labelFor(harness, [...known.values()])}`} onChange={(event) => {
             setPolicy((current) => ({ ...current, models: { ...current.models, [harness]: event.target.value } }));
             setSaved(false);
           }} />
@@ -221,7 +231,7 @@ export function LaunchPolicySettings() {
       </fieldset>
       {saveError && <p className="autopilot-error" role="alert">Не удалось сохранить настройки: {saveError}</p>}
       <div className="settings-save-row"><span>{saved ? <span className="settings-saved" role="status">Настройки сохранены</span> : needsSetup ? "Сохраните выбор, чтобы разрешить создание сессий." : "Изменения применятся только к новым сессиям."}</span>
-        <button className="primary-button" disabled={!valid || saving || loading || Boolean(loadError)} onClick={() => void save()}>{saving ? "Сохраняем…" : "Сохранить"}</button></div>
+        <button className="primary-button" aria-label="Сохранить настройки запуска" disabled={!valid || saving || loading || Boolean(loadError)} onClick={() => void save()}>{saving ? "Сохраняем…" : "Сохранить"}</button></div>
     </>}
   </section>;
 }
