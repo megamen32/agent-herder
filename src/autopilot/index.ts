@@ -461,11 +461,11 @@ export function createAutopilotCore(options: {
             }),
           );
         } else {
-          // Completion notices are part of the operator contract, not a
-          // judge-controlled preference. Keep accepting the legacy `notify`
-          // field for compatibility, but never let it suppress the durable
-          // Notice Place event (and its configured Telegram fan-out).
           options.onDecision?.(decision);
+          if (decision.notify === false) {
+            options.receiptStore.set(receiptKey, { kind: "done" });
+            return {};
+          }
           const pendingNotice = createNoticePlacePayload({
             title: "Agent Herder завершил работу",
             body: decision.summary,

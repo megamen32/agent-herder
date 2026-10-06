@@ -35,7 +35,7 @@ describe("autopilot core", () => {
     const decisions: AutopilotDecision[] = [
       { kind: "continue", nextGoal: "Find the failing endpoint" },
       { kind: "continue", nextGoal: "Verify the repaired endpoint" },
-      { kind: "done", summary: "The endpoint is repaired", notify: false },
+      { kind: "done", summary: "The endpoint is repaired", notify: true },
     ];
     const judge = { decide: vi.fn(async () => decisions.shift()!) };
     const sink = { send: vi.fn(async () => undefined) };
@@ -322,26 +322,30 @@ describe("autopilot core", () => {
     await expect(core.handleStop(baseInput)).resolves.toEqual({});
   });
 
-  it("always emits a completion notice even when the judge opts out", async () => {
+  it("records a quiet completion without notifying or re-judging it", async () => {
     const sink = { send: vi.fn(async () => undefined) };
+    const judge = { decide: vi.fn(async () => ({ kind: "done", summary: "finished", notify: false } satisfies AutopilotDecision)) };
+    const receipts = new Map();
+    const onDecision = vi.fn();
     const core = createAutopilotCore({
-      judge: { decide: vi.fn(async () => ({ kind: "done", summary: "finished", notify: false } satisfies AutopilotDecision)) },
+      judge,
       notify: sink,
       allowSessions: new Set(["session-1"]),
-      receiptStore: new Map(),
+      receiptStore: receipts,
+      onDecision,
       maxContinuationsPerSession: 1,
     });
 
     await expect(core.handleStop(baseInput)).resolves.toEqual({});
-    expect(sink.send).toHaveBeenCalledWith(expect.objectContaining({
-      title: "Agent Herder завершил работу",
-      body: "finished",
-      dedup_key: "agent-herder:done:session-1:turn-7",
-    }));
+    await expect(core.handleStop(baseInput)).resolves.toEqual({});
+    expect(sink.send).not.toHaveBeenCalled();
+    expect(judge.decide).toHaveBeenCalledTimes(1);
+    expect(onDecision).toHaveBeenCalledWith({ kind: "done", summary: "finished", notify: false });
+    expect([...receipts.values()]).toEqual([{ kind: "done" }]);
   });
 
   it("keeps a failed completion notice durable and retries it without re-judging", async () => {
-    const judge = { decide: vi.fn(async () => ({ kind: "done", summary: "finished", notify: false } satisfies AutopilotDecision)) };
+    const judge = { decide: vi.fn(async () => ({ kind: "done", summary: "finished", notify: true } satisfies AutopilotDecision)) };
     const sink = { send: vi.fn(async () => {
       if (sink.send.mock.calls.length === 1) throw new Error("Notice Place unavailable");
     }) };
