@@ -92,13 +92,69 @@ function isSubagentSession(session: AgentSession | null | undefined): boolean {
   return session?.meta?.threadSource === "subagent";
 }
 
-function nativeLastTurn(session: AgentSession | null | undefined): { turnId?: string; status?: string } | undefined {
+type NativeLastTurn = {
+  turnId?: string;
+  status?: string;
+  startedAt?: string;
+  completedAt?: string;
+  userMessageId?: string;
+  rootSession?: boolean;
+  cancelledByUser?: boolean;
+  retryable?: boolean;
+  userMessageMatchesLatest?: boolean;
+  assistantSucceeded?: boolean;
+  progressedAfterFailure?: boolean;
+  pendingInput?: boolean;
+  requiresHuman?: boolean;
+  blockedReason?: string;
+  errorType?: string;
+  errorCode?: string;
+};
+
+function nativeTimestamp(value: unknown): string | undefined {
+  const timestamp = typeof value === "number" ? value : typeof value === "string" ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(timestamp) && timestamp > 0 && timestamp <= 8_640_000_000_000_000
+    ? new Date(timestamp).toISOString() : undefined;
+}
+
+function nativeLastTurn(session: AgentSession | null | undefined): NativeLastTurn | undefined {
   const value = session?.meta?.nativeLastTurn;
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
   const turnId = nonEmptyText(record.turnId);
   const status = nonEmptyText(record.status);
-  return turnId || status ? { ...(turnId ? { turnId } : {}), ...(status ? { status } : {}) } : undefined;
+  const startedAt = nativeTimestamp(record.startedAt);
+  const completedAt = nativeTimestamp(record.completedAt);
+  const userMessageId = nonEmptyText(record.userMessageId);
+  const errorType = nonEmptyText(record.errorType);
+  const errorCode = nonEmptyText(record.errorCode);
+  const blockedReason = nonEmptyText(record.blockedReason);
+  return turnId || status ? {
+    ...(turnId ? { turnId } : {}), ...(status ? { status } : {}),
+    ...(startedAt ? { startedAt } : {}), ...(completedAt ? { completedAt } : {}),
+    ...(userMessageId ? { userMessageId } : {}),
+    ...(typeof record.rootSession === "boolean" ? { rootSession: record.rootSession } : {}),
+    ...(typeof record.cancelledByUser === "boolean" ? { cancelledByUser: record.cancelledByUser } : {}),
+    ...(typeof record.retryable === "boolean" ? { retryable: record.retryable } : {}),
+    ...(typeof record.userMessageMatchesLatest === "boolean" ? { userMessageMatchesLatest: record.userMessageMatchesLatest } : {}),
+    ...(typeof record.assistantSucceeded === "boolean" ? { assistantSucceeded: record.assistantSucceeded } : {}),
+    ...(typeof record.progressedAfterFailure === "boolean" ? { progressedAfterFailure: record.progressedAfterFailure } : {}),
+    ...(typeof record.pendingInput === "boolean" ? { pendingInput: record.pendingInput } : {}),
+    ...(typeof record.requiresHuman === "boolean" ? { requiresHuman: record.requiresHuman } : {}),
+    ...(blockedReason ? { blockedReason } : {}),
+    ...(errorType ? { errorType } : {}), ...(errorCode ? { errorCode } : {}),
+  } : undefined;
+}
+
+function coldFailureBlockReason(turn: NativeLastTurn): string | undefined {
+  const diagnostic = `${turn.errorType ?? ""} ${turn.errorCode ?? ""}`.trim();
+  if (turn.requiresHuman === true || /captcha|human|required.?action|action.?required|interaction.?required|permission|authentication|reauth|login.?required|consent/i.test(diagnostic)) {
+    return `Сбой требует действия человека${turn.blockedReason || diagnostic ? `: ${turn.blockedReason || diagnostic}` : ""}`;
+  }
+  if (turn.retryable !== true) return turn.retryable === false
+    ? "Нативный сбой не допускает автоматический повтор"
+    : "Нативный сбой не содержит подтверждённого разрешения на повтор";
+  return undefined;
 }
 
 function admittedNonRetryableFailure(result: SendMessageResult): string | undefined {
@@ -356,6 +412,8 @@ export interface UnfinishedSessionRecord {
   nonRetryableAdmission?: boolean;
   /** Native proof authorizing same-session crash recovery. Semantic verdicts never set this. */
   recoveryCause?: "turn.failed" | "process.disconnected" | "stalled";
+  /** Native receipt proves this turn must remain visible but must never be replayed automatically. */
+  recoveryBlockedReason?: string;
   recoveryObservedAt?: string;
   recoveryTurnId?: string;
   recoveryInputId?: string;
@@ -693,6 +751,62 @@ export class UnfinishedSessionStore {
       delete record.activeTurnId;
       delete record.activeInputId;
       record.updatedAt = now.toISOString();
+      return { ...record };
+    });
+  }
+
+  async ingestColdFailure(
+    session: AgentSession,
+    turn: { turnId: string; completedAt: string; userMessageId: string },
+    blockedReason?: string,
+    now = new Date(),
+  ): Promise<UnfinishedSessionRecord> {
+    const harness = harnessType(session.harness);
+    const workspaceIdentity = sessionWorkspaceIdentity(session);
+    const normalized = normalizeRecordTarget({
+      harness,
+      sessionId: session.id,
+      cwd: session.cwd,
+      model: session.model,
+      title: session.title,
+      threadSource: nonEmptyText(session.meta?.threadSource),
+    });
+    return this.mutate((file) => {
+      const key = sessionKey(harness, session.id, workspaceIdentity);
+      const index = file.sessions.findIndex((record) => unfinishedRecordKey(record) === key);
+      const existing = index >= 0 ? file.sessions[index] : undefined;
+      if (existing?.recoveryTurnId === turn.turnId) {
+        if (blockedReason && !existing.recoveryBlockedReason) {
+          existing.recoveryBlockedReason = bounded(blockedReason, "recoveryBlockedReason");
+          existing.lastError = bounded(blockedReason, "lastError");
+          existing.updatedAt = now.toISOString();
+        }
+        return { ...existing };
+      }
+      if (existing && (existing.acceptedAt || existing.deliveryPending || existing.admissionPhase
+        || existing.nonRetryableAdmission || existing.activeTurnStartedAt || existing.activeTurnId || existing.activeInputId)) {
+        return { ...existing };
+      }
+      const record: UnfinishedSessionRecord = {
+        ...normalized,
+        workspaceIdentity,
+        startedAt: turn.completedAt,
+        updatedAt: now.toISOString(),
+        generationId: "cold-native-failure",
+        attempts: 0,
+        state: "active",
+        recoveryCause: "turn.failed",
+        recoveryObservedAt: turn.completedAt,
+        recoveryTurnId: bounded(turn.turnId, "recoveryTurnId"),
+        recoveryInputId: bounded(turn.userMessageId, "recoveryInputId"),
+        ...(blockedReason ? {
+          recoveryBlockedReason: bounded(blockedReason, "recoveryBlockedReason"),
+          lastError: bounded(blockedReason, "lastError"),
+        } : {}),
+      };
+      if (index < 0) file.sessions.push(record);
+      else file.sessions[index] = record;
+      sortRecords(file.sessions);
       return { ...record };
     });
   }
@@ -1533,6 +1647,8 @@ export class UnfinishedSessionLauncher {
     if (pruned.sessions > 0 || pruned.inventory > 0) {
       console.error(`[agent-herder] очищен реестр автопродолжения: ${pruned.sessions} чужих turn-записей, ${pruned.inventory} записей вне окна`);
     }
+    await this.ingestColdZcodeFailures(runtimeSettings, lifecycleEpoch);
+    if (!this.lifecycleActive(lifecycleEpoch)) return;
     // Crash recovery consumes only durable native evidence. Semantic inventory
     // has a separate explicit audit path and is never scanned from this loop.
     // Deliberately sequential: a restart must not multiply the host's agent workload.
@@ -1549,13 +1665,13 @@ export class UnfinishedSessionLauncher {
       const observedTurnGeneration = recoveryFence ? this.turnGenerations.get(recoveryFence) ?? 0 : 0;
       if (recoveryFence) this.turnGenerations.set(recoveryFence, observedTurnGeneration);
       if (this.continuedThisRecovery.has(recordKey)) continue;
-      if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)) continue;
       if (!await this.isEnabled(record.harness, record.sessionId, record.cwd)) {
         await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
         continue;
       }
       if (!record.recoveryCause) {
-        if (record.activeTurnStartedAt && (record.activeTurnId || record.activeInputId)) continue;
+        if ((record.activeTurnStartedAt && (record.activeTurnId || record.activeInputId))
+          || record.acceptedAt || record.deliveryPending || record.admissionPhase || record.nonRetryableAdmission) continue;
         await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
         continue;
       }
@@ -1573,6 +1689,8 @@ export class UnfinishedSessionLauncher {
         await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
         continue;
       }
+      if (record.recoveryBlockedReason) continue;
+      if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)) continue;
       const adapter = this.options.adapters.get(record.harness);
       if (!adapter?.resumeSession) {
         continue;
@@ -1677,6 +1795,42 @@ export class UnfinishedSessionLauncher {
       launches.push(this.launchContinuation(adapter, record, attempt, session, lifecycleEpoch, recoveryFence, observedTurnGeneration));
     }
     await Promise.all(launches);
+  }
+
+  private async ingestColdZcodeFailures(runtimeSettings: SessionAutostartFile, lifecycleEpoch: number): Promise<void> {
+    if (!runtimeSettings.recoverOnFailure) return;
+    const adapter = this.options.adapters.get("zcode");
+    if (!adapter) return;
+    let sessions: AgentSession[];
+    try {
+      // ZCode listSessions reads the local native indexes. Cold discovery must
+      // never initialize an app-server merely to manufacture recovery proof.
+      sessions = await adapter.listSessions();
+    } catch {
+      return;
+    }
+    const now = Date.now();
+    const cutoff = now - 48 * 60 * 60 * 1_000;
+    for (const session of sessions) {
+      if (!this.lifecycleActive(lifecycleEpoch)) return;
+      const turn = nativeLastTurn(session);
+      if (session.harness !== "zcode" || isSubagentSession(session) || turn?.rootSession !== true) continue;
+      if (session.status === "running" || session.status === "needs_input" || session.needsPermission || hasPendingNativePermission(session)) continue;
+      if (!turn.turnId || turn.status?.toLowerCase() !== "error" || !turn.startedAt || !turn.completedAt || !turn.userMessageId) continue;
+      const startedAt = Date.parse(turn.startedAt);
+      const completedAt = Date.parse(turn.completedAt);
+      if (!Number.isFinite(startedAt) || !Number.isFinite(completedAt)
+        || startedAt > completedAt || completedAt < cutoff || completedAt > now) continue;
+      if (turn.cancelledByUser !== false || turn.userMessageMatchesLatest !== true
+        || turn.assistantSucceeded !== false || turn.progressedAfterFailure !== false || turn.pendingInput !== false) continue;
+      if (!await this.isEnabled("zcode", session.id, session.cwd)) continue;
+      if (this.options.humanStopStore && await this.options.humanStopStore.isHeld("zcode", session.id)) continue;
+      await this.options.store.ingestColdFailure(session, {
+        turnId: turn.turnId,
+        completedAt: turn.completedAt,
+        userMessageId: turn.userMessageId,
+      }, coldFailureBlockReason(turn));
+    }
   }
 
   private async launchContinuation(
@@ -3388,6 +3542,7 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
     ...(record.nonRetryableAdmission === true ? { nonRetryableAdmission: true } : {}),
     ...(record.recoveryCause === "turn.failed" || record.recoveryCause === "process.disconnected" || record.recoveryCause === "stalled"
       ? { recoveryCause: record.recoveryCause } : {}),
+    ...(record.recoveryBlockedReason ? { recoveryBlockedReason: bounded(record.recoveryBlockedReason, "recoveryBlockedReason") } : {}),
     ...(record.recoveryObservedAt ? { recoveryObservedAt: isoDate(record.recoveryObservedAt, "recoveryObservedAt") } : {}),
     ...(record.recoveryTurnId ? { recoveryTurnId: bounded(record.recoveryTurnId, "recoveryTurnId") } : {}),
     ...(record.recoveryInputId ? { recoveryInputId: bounded(record.recoveryInputId, "recoveryInputId") } : {}),

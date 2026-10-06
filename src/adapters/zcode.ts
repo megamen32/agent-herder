@@ -731,27 +731,29 @@ export interface NativeLastTurn {
   contextExceeded?: boolean;
   errorType?: string;
   errorCode?: string;
+  rootSession?: boolean;
+  pendingInput?: boolean;
+  userMessageMatchesLatest?: boolean;
+  assistantSucceeded?: boolean;
+  progressedAfterFailure?: boolean;
+  requiresHuman?: boolean;
+  blockedReason?: string;
 }
 
 /** Latest durable turn for one session, or undefined when the rows are stale
  * against a newer unconsumed user input. Deterministic on (startedAt,
- * completedAt, input order) so duplicate timestamps cannot flip the winner.
+ * completedAt, turnId) so duplicate timestamps cannot flip the winner.
  * Pure: the launcher must be able to reason about this without the DB. */
 export function pickNativeLastTurn(rows: NativeTurnUsageRow[], lastInputAt?: number): NativeLastTurn | undefined {
   if (rows.length === 0) return undefined;
   let latest = rows[0]!;
   for (const row of rows.slice(1)) {
-    const rank = (candidate: NativeTurnUsageRow): Array<number> => [
-      candidate.startedAt ?? 0,
-      candidate.completedAt ?? 0,
-      rows.indexOf(candidate),
-    ];
-    const [cl, cc, ci] = rank(latest);
-    const [rl, rc, ri] = rank(row);
-    if (rl > cl || (rl === cl && (rc > cc || (rc === cc && ri > ci)))) latest = row;
+    const cl = latest.startedAt ?? 0, cc = latest.completedAt ?? 0;
+    const rl = row.startedAt ?? 0, rc = row.completedAt ?? 0;
+    if (rl > cl || (rl === cl && (rc > cc || (rc === cc && (row.turnId ?? "") > (latest.turnId ?? ""))))) latest = row;
   }
   const boundary = Math.max(latest.startedAt ?? 0, latest.completedAt ?? 0);
-  if (typeof lastInputAt === "number" && lastInputAt > boundary + 250) return undefined;
+  if (typeof lastInputAt === "number" && lastInputAt > boundary) return undefined;
   return {
     ...(latest.turnId ? { turnId: latest.turnId } : {}),
     ...(latest.status ? { status: latest.status } : {}),
@@ -762,9 +764,9 @@ export function pickNativeLastTurn(rows: NativeTurnUsageRow[], lastInputAt?: num
     ...(typeof latest.firstTokenAt === "number" && latest.firstTokenAt > 0 ? { firstTokenAt: latest.firstTokenAt } : {}),
     ...(typeof latest.durationMs === "number" && latest.durationMs > 0 ? { durationMs: latest.durationMs } : {}),
     ...(typeof latest.toolCallCount === "number" && latest.toolCallCount > 0 ? { toolCallCount: latest.toolCallCount } : {}),
-    ...(latest.retryable === 1 ? { retryable: true } : {}),
-    ...(latest.cancelledByUser === 1 ? { cancelledByUser: true } : {}),
-    ...(latest.contextExceeded === 1 ? { contextExceeded: true } : {}),
+    ...(latest.retryable === 0 || latest.retryable === 1 ? { retryable: latest.retryable === 1 } : {}),
+    ...(latest.cancelledByUser === 0 || latest.cancelledByUser === 1 ? { cancelledByUser: latest.cancelledByUser === 1 } : {}),
+    ...(latest.contextExceeded === 0 || latest.contextExceeded === 1 ? { contextExceeded: latest.contextExceeded === 1 } : {}),
     ...(latest.errorType ? { errorType: latest.errorType } : {}),
     ...(latest.errorCode ? { errorCode: latest.errorCode } : {}),
   };
@@ -1110,41 +1112,30 @@ export class ZcodeAdapter implements HarnessAdapter {
           throw error;
         }
 
-        interface NativeLastTurnSummary {
-          turnId?: string;
-          status?: string;
-          userMessageId?: string;
-          startedAt?: number;
-          completedAt?: number;
-          firstModelStartAt?: number;
-          firstTokenAt?: number;
-          durationMs?: number;
-          toolCallCount?: number;
-          retryable?: boolean;
-          cancelledByUser?: boolean;
-          contextExceeded?: boolean;
-          errorType?: string;
-          errorCode?: string;
-        }
-        const nativeSessions = new Map<string, { directory?: string; workspaceIdentity?: string; timeUpdated?: number; lastTurn?: NativeLastTurnSummary }>();
+        const nativeSessions = new Map<string, { directory?: string; workspaceIdentity?: string; timeUpdated?: number; parentId?: string | null; rootKnown: boolean; lastTurn?: NativeLastTurn }>();
         let nativeCanonicalizationError: string | undefined;
         if (existsSync(this.localDbPath)) {
           try {
             const nativeDb = new DatabaseSync(this.localDbPath, { readOnly: true });
             try {
+              nativeDb.exec("begin");
               const nativeColumns = nativeDb.prepare("pragma table_info(session)").all() as Array<{ name?: string }>;
               const names = new Set(nativeColumns.map((column) => column.name));
               if (names.has("id") && names.has("directory")) {
                 const workspaceIdentity = names.has("workspace_id") ? "workspace_id" : "null as workspace_id";
                 const timeUpdatedExpr = names.has("time_updated") ? "time_updated" : "null as time_updated";
-                const nativeRows = nativeDb.prepare(`select id, directory, ${workspaceIdentity}, ${timeUpdatedExpr} from session`).all() as Array<{
+                const parentIdExpr = names.has("parent_id") ? "parent_id" : "null as parent_id";
+                const nativeRows = nativeDb.prepare(`select id, directory, ${workspaceIdentity}, ${timeUpdatedExpr}, ${parentIdExpr} from session`).all() as Array<{
                   id: string;
                   directory?: string;
                   workspace_id?: string | null;
                   time_updated?: number | null;
+                  parent_id?: string | null;
                 }>;
                 for (const row of nativeRows) {
                   nativeSessions.set(row.id, {
+                    rootKnown: names.has("parent_id"),
+                    parentId: row.parent_id,
                     directory: nonEmptyString(row.directory),
                     workspaceIdentity: nonEmptyString(row.workspace_id),
                     timeUpdated: typeof row.time_updated === "number" && row.time_updated > 0 ? row.time_updated : undefined,
@@ -1168,8 +1159,9 @@ export class ZcodeAdapter implements HarnessAdapter {
                       : `cast(${column} as text) as ${alias}`;
                   };
                   if (requiredTurnColumns.every((column) => turnColumns.has(column))) {
-                    const nativeTurnRows = nativeDb.prepare(`
-                      select session_id as session_id, turn_id as turn_id, user_message_id as user_message_id,
+                    const nativeTurnStatement = nativeDb.prepare(`
+                      select session_id as session_id, turn_id as turn_id,
+                             ${optionalTurnColumn("user_message_id", "user_message_id", "string")},
                              status as status,
                              cast(started_at as integer) as started_at,
                              ${optionalTurnColumn("first_model_start_at", "first_model_start_at", "number")},
@@ -1183,7 +1175,18 @@ export class ZcodeAdapter implements HarnessAdapter {
                              ${optionalTurnColumn("error_type", "error_type", "string")},
                              ${optionalTurnColumn("error_code", "error_code", "string")}
                       from turn_usage
-                    `).all() as Array<Record<string, unknown>>;
+                      where (session_id, turn_id) in (
+                        select value, (select turn_id from turn_usage
+                          where session_id = target.value
+                          order by started_at desc, ${turnColumns.has("completed_at") ? "completed_at" : "0+0"} desc, turn_id desc limit 1)
+                        from json_each(?) as target
+                      )
+                    `);
+                    const taskIds = [...new Set(rows.map((task) => task.task_id))];
+                    const nativeTurnRows: Array<Record<string, unknown>> = [];
+                    for (let offset = 0; offset < taskIds.length; offset += 200) {
+                      nativeTurnRows.push(...nativeTurnStatement.all(JSON.stringify(taskIds.slice(offset, offset + 200))) as Array<Record<string, unknown>>);
+                    }
                     for (const row of nativeTurnRows) {
                       const sessionId = typeof row.session_id === "string" ? row.session_id : "";
                       if (!sessionId) continue;
@@ -1210,28 +1213,64 @@ export class ZcodeAdapter implements HarnessAdapter {
                   }
                 }
                 const nativeLastInputBySession = new Map<string, number>();
+                const nativePendingInputs = new Set<string>();
+                let pendingInputsKnown = false;
                 if (nativeTableNames.has("session_input")) {
                   const inputColumns = new Set((nativeDb.prepare("pragma table_info(session_input)").all() as Array<{ name?: string }>).map((column) => column.name));
+                  pendingInputsKnown = inputColumns.has("session_id") && inputColumns.has("status");
                   if (inputColumns.has("session_id") && inputColumns.has("time_created")) {
                     const inputRows = nativeDb.prepare(`
-                      select session_id as session_id, max(cast(time_created as integer)) as last_input_at
-                      from session_input group by session_id
-                    `).all() as Array<{ session_id?: string; last_input_at?: number | null }>;
-                    for (const row of inputRows) {
-                      if (typeof row.session_id === "string" && typeof row.last_input_at === "number" && row.last_input_at > 0) {
-                        nativeLastInputBySession.set(row.session_id, row.last_input_at);
+                      select session_id, max(cast(time_created as integer)) as last_input_at
+                      ${pendingInputsKnown ? ", max(case when status in ('promoted','cancelled','discarded') then 0 else 1 end) as pending" : ""}
+                      from session_input where session_id in (select value from json_each(?)) group by session_id
+                    `);
+                    const taskIds = [...new Set(rows.map((task) => task.task_id))];
+                    for (let offset = 0; offset < taskIds.length; offset += 200) {
+                      for (const row of inputRows.all(JSON.stringify(taskIds.slice(offset, offset + 200))) as Array<{session_id: string; last_input_at?: number; pending?: number}>) {
+                        if (typeof row.last_input_at === "number" && row.last_input_at > 0) nativeLastInputBySession.set(row.session_id, row.last_input_at);
+                        if (row.pending === 1) nativePendingInputs.add(row.session_id);
                       }
                     }
-                  }
+                  } else pendingInputsKnown = false;
                 }
+                const messageColumns = nativeTableNames.has("message")
+                  ? new Set((nativeDb.prepare("pragma table_info(message)").all() as Array<{ name?: string }>).map((column) => column.name)) : new Set();
+                const canReadMessages = ["id", "session_id", "data", "sequence", "time_updated"].every((column) => messageColumns.has(column));
+                const latestMessage = canReadMessages ? nativeDb.prepare("select id, data, time_updated, sequence from message where session_id = ? order by sequence desc limit 1") : undefined;
+                const latestUser = canReadMessages ? nativeDb.prepare("select id, sequence from message where session_id = ? and json_valid(data) and json_extract(data, '$.role') = 'user' order by sequence desc limit 1") : undefined;
                 for (const [sessionId, entry] of nativeSessions) {
                   const lastTurn = pickNativeLastTurn(nativeTurnRowsBySession.get(sessionId) ?? [], nativeLastInputBySession.get(sessionId));
-                  if (lastTurn) entry.lastTurn = lastTurn;
+                  if (!lastTurn) continue;
+                  lastTurn.rootSession = entry.rootKnown && !entry.parentId;
+                  if (pendingInputsKnown) lastTurn.pendingInput = nativePendingInputs.has(sessionId);
+                  if (lastTurn.status === "error" && lastTurn.userMessageId && latestMessage && latestUser) {
+                    try {
+                      const user = latestUser.get(sessionId) as { id?: string; sequence?: number } | undefined;
+                      const tail = latestMessage.get(sessionId) as { id?: string; data?: string; time_updated?: number; sequence?: number } | undefined;
+                      const info = tail?.data ? record(JSON.parse(tail.data)) : {};
+                      const outcomeKnown = !!user?.id && !!tail?.id && typeof user.sequence === "number" && typeof tail.sequence === "number" && (info.role === "user" || info.role === "assistant");
+                      if (outcomeKnown) {
+                        lastTurn.userMessageMatchesLatest = user!.id === lastTurn.userMessageId;
+                        const parentId = nonEmptyString(info.parentID);
+                        const error = record(info.error);
+                        lastTurn.assistantSucceeded = info.role === "assistant" && parentId === lastTurn.userMessageId
+                          && !info.error && (info.finish === "stop" || info.finish === "length");
+                        lastTurn.progressedAfterFailure = typeof tail?.time_updated !== "number" || typeof lastTurn.completedAt !== "number"
+                          || tail.time_updated > lastTurn.completedAt
+                          || (info.role === "assistant" && parentId !== lastTurn.userMessageId);
+                        const errorText = String(record(error.data).message ?? "");
+                        lastTurn.requiresHuman = /captcha|verification required|authentication required/i.test(errorText);
+                        if (lastTurn.requiresHuman) lastTurn.blockedReason = "Провайдер требует подтверждения в своём интерфейсе; автоматические повторы остановлены.";
+                      }
+                    } catch { /* Unknown/partial transcript never qualifies cold recovery. */ }
+                  }
+                  entry.lastTurn = lastTurn;
                 }
               } else {
                 nativeCanonicalizationError = "native_session_schema_missing";
               }
             } finally {
+              if (nativeDb.isTransaction) nativeDb.exec("rollback");
               nativeDb.close();
             }
           } catch (error) {
@@ -1272,7 +1311,7 @@ export class ZcodeAdapter implements HarnessAdapter {
           const updatedAt = Number(row.updated_at || row.created_at || 0);
           const rawStatus = row.task_status?.toLowerCase();
           const nativeTimeUpdated = native?.timeUpdated;
-          const status: AgentSession["status"] = resolvePersistedZcodeStatus({
+          let status: AgentSession["status"] = resolvePersistedZcodeStatus({
             rawStatus,
             tasksUpdatedAt: updatedAt,
             nativeUpdatedAt: nativeTimeUpdated,
@@ -1280,6 +1319,16 @@ export class ZcodeAdapter implements HarnessAdapter {
             now: Date.now(),
             activeWindowMs,
           });
+          const turn = native?.lastTurn;
+          // The task index can flatten a failed native turn to completed. Only
+          // exact current transcript evidence may overlay that historical row;
+          // a running lifecycle or pending human request always wins.
+          if (status !== "running" && status !== "needs_input" && turn?.status === "error"
+            && turn.cancelledByUser === false && turn.pendingInput === false
+            && turn.userMessageMatchesLatest === true && turn.assistantSucceeded === false
+            && turn.progressedAfterFailure === false && typeof turn.startedAt === "number"
+            && typeof turn.completedAt === "number" && turn.startedAt <= turn.completedAt
+            && turn.completedAt <= Date.now()) status = "error";
           const lastActivityMs = Math.max(updatedAt, nativeTimeUpdated ?? 0);
           const cwd = nativeDirectory || resolve(row.workspace_path || this.cwd);
           if (requestedCwd && cwd !== requestedCwd) continue;

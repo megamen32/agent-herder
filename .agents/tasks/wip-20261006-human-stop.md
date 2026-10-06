@@ -392,3 +392,38 @@ Live cbce504 deployment and newly exposed blockers:
 - Corrective delta: launcher+audit36/36 passed in1.64s, final tsc/Vite build
   green with identical frontend index-XmeqdUZ6.js. No UI action replay needed:
   correction only retires backend race fences and preserves the accepted UI.
+
+## Cold ZCode durable-error recovery — 2026-10-06 20:28 UTC
+
+- New defect: local discovery kept sessions visible but did not ingest native
+  failures missed before transport subscription. Task-index completed labels
+  can flatten native errors. Added cold recovery from canonical nativeLastTurn
+  receipts, preserving the existing crash-only settings and same-session ID.
+- Producer uses one readonly SQLite transaction, current task IDs in chunks
+  of 200 and deterministic newest-turn selection. Optional schema is guarded;
+  retryable/cancelledByUser use explicit true/false/unknown semantics. Admission
+  requires root ancestry, exact latest user ID, terminal error, no pending
+  input, no successful answer or later progress, and no human cancellation.
+  Known live-running/permission status still wins over historical error data.
+- Same-turn receipts preserve attempts/admission regardless of failure cause;
+  lagging different-turn receipts cannot replace an already admitted recovery.
+  Nonretryable/unknown/CAPTCHA failures persist a Russian blocked reason before
+  any native RPC, pin, retry or notification. No vendor source or Mac transport
+  patched; no replacement session, native business prompt or CAPTCHA bypass.
+- Peer corrected the proposed Mac-disconnect narrative: native server turns
+  survived all four supplied proxy disconnect windows. Timestamp coincidence
+  and running/incomplete turns are deliberately not crash eligibility.
+- Real CAPTCHA session sess_487200eb-6096-47ac-9027-b563caa65736 has seven error
+  turns with retryable=0. External blocker: human must finish verification in
+  the provider interface. User was asked to report completion; no automated
+  repeat is authorized or performed while that remains unresolved.
+- Independent final source-only critique: no HIGH blockers. Guarded relevant
+  suites: five files /128 tests PASS, final tsc+Vite build PASS. Budget RAM1/2GiB,
+  swap0, CPU2, Tasks128, IOWeight10, global+project flock, timeout120s.
+- Compiled consumer proof read actual live databases (658 sessions), then ran
+  two recovery passes into a private isolated store: exactly one CAPTCHA
+  blocked record, attempts0, no acceptedAt, zero transport starts/RPC/get/resume/
+  send/notices. Native databases and production registry were not modified.
+  Evidence: /home/roomhacker/.codex/visualizations/2026/10/06/
+  01a10b3f-b648-74d0-8265-023d1ae85312/cold-recovery-readonly-proof.json.
+- Deployment/production readback pending one coordinated Herder restart.

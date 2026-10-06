@@ -102,6 +102,16 @@ input or approvals, human-stop holds, non-retryable admissions, and native
 Codex subagent threads are excluded. The supervisor delegates recovery to this
 single owner, so a second retry loop cannot bypass these settings.
 
+After a restart, ZCode recovery also reads the newest durable native error
+receipt without starting its transport. It must belong to a root session and
+the exact latest user message, with no newer progress, successful answer,
+pending input, or user cancellation. A flattened task-index `completed` label
+does not override this evidence; a confirmed current error is shown as an error.
+Missing schema or ambiguous evidence never authorizes a retry. Native
+`retryable=false`, unknown retryability, and human-verification failures remain
+blocked with a durable reason and no native send. A client SSH disconnect alone
+is not evidence that a server-side turn crashed.
+
 ## Agent Plugin package
 
 Agent Herder ships an [Agent Plugins 1.0](https://agent-plugins.org/) package.

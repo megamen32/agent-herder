@@ -14,6 +14,10 @@ function fakeAdapter(current: () => AgentSession, calls: {
 }): HarnessAdapter {
     return { type: current().harness, name: "fixture", async init() { }, async listSessions() { return [{ ...current() }]; }, async getSession(id) { return id === current().id ? { ...current() } : null; }, async getSessionMessages() { return [{ id: "u", role: "user", text: "work", parts: [{ type: "text", text: "work" }] }]; }, async resumeSession(id) { expect(id).toBe(current().id); calls.resumes += 1; return { ok: true }; }, async sendMessage(id, input) { expect(id).toBe(current().id); calls.messages.push(input.message); return { ok: true }; }, async stopSession() { return { ok: true }; }, async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; } };
 }
+function coldFailureSession(overrides: Record<string, unknown> = {}): AgentSession {
+    const completedAt = Date.now() - 60000;
+    return { ...fixture("stopped", "zcode"), meta: { nativeLastTurn: { turnId: "native-turn-1", status: "error", startedAt: completedAt - 10000, completedAt, userMessageId: "user-message-1", rootSession: true, cancelledByUser: false, retryable: true, userMessageMatchesLatest: true, assistantSucceeded: false, progressedAfterFailure: false, pendingInput: false, errorType: "provider_error", errorCode: "E_RETRY", ...overrides } } };
+}
 async function waitUntil(predicate: () => boolean | Promise<boolean>, timeoutMs = 1000): Promise<void> { const end = Date.now() + timeoutMs; while (!await predicate()) {
     if (Date.now() >= end)
         throw new Error("timed out");
@@ -231,6 +235,120 @@ describe("unfinished session crash recovery", () => {
         expect(fences.turnGenerations.size).toBe(0);
         expect(fences.eagerCompletions.size).toBe(0);
         expect(calls).toEqual({ resumes: 0, messages: [] });
+    });
+
+    it("ingests one exact cold ZCode failure and preserves its admission across restart", async () => {
+        const root = await mkdtemp(join(tmpdir(), "cold-failure-"));
+        const path = join(root, "state.json");
+        const current = coldFailureSession();
+        const calls = { init: 0, gets: 0, resumes: 0, messages: [] as string[] };
+        const adapter = fakeAdapter(() => current, calls);
+        adapter.init = async () => { calls.init += 1; };
+        adapter.getSession = async () => { calls.gets += 1; return current; };
+        const settings = new SessionAutostartStore(join(root, "settings.json"), {});
+        const state = new UnfinishedSessionStore(path);
+        await new UnfinishedSessionLauncher({ adapters: new Map([["zcode", adapter]]), store: state, settingsStore: settings, discoveryIdleMs: 1 }).recoverPending();
+        const admitted = (await state.list())[0]!;
+        await new UnfinishedSessionLauncher({ adapters: new Map([["zcode", adapter]]), store: new UnfinishedSessionStore(path), settingsStore: settings, discoveryIdleMs: 1 }).recoverPending();
+        expect(calls.init).toBe(0);
+        expect(calls.resumes).toBe(1);
+        expect(calls.messages).toHaveLength(1);
+        expect((await new UnfinishedSessionStore(path).list())[0]).toMatchObject({ recoveryTurnId: "native-turn-1", recoveryInputId: "user-message-1", attempts: admitted.attempts, acceptedAt: admitted.acceptedAt, admissionPhase: "accepted_pending" });
+    });
+
+    it("keeps non-retryable, unknown, and human-required cold failures blocked without native RPC", async () => {
+        for (const [name, overrides] of [
+            ["nonretryable", { retryable: false }],
+            ["unknown", { retryable: undefined }],
+            ["captcha", { retryable: true, errorType: "CAPTCHA_REQUIRED" }],
+            ["canonical-human", { retryable: false, errorType: "UNKNOWN_ERROR", errorCode: "UNKNOWN", requiresHuman: true, blockedReason: "CAPTCHA challenge" }],
+        ] as const) {
+            const root = await mkdtemp(join(tmpdir(), `cold-blocked-${name}-`));
+            const current = coldFailureSession(overrides);
+            const calls = { init: 0, gets: 0, resumes: 0, messages: [] as string[] };
+            const adapter = fakeAdapter(() => current, calls);
+            adapter.init = async () => { calls.init += 1; };
+            adapter.getSession = async () => { calls.gets += 1; return current; };
+            const state = new UnfinishedSessionStore(join(root, "state.json"));
+            await new UnfinishedSessionLauncher({ adapters: new Map([["zcode", adapter]]), store: state, settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) }).recoverPending();
+            expect(calls).toEqual({ init: 0, gets: 0, resumes: 0, messages: [] });
+            expect((await state.list())[0]).toMatchObject({ recoveryTurnId: "native-turn-1", attempts: 0, state: "active" });
+            expect((await state.list())[0]?.recoveryBlockedReason).toBeTruthy();
+            expect((await state.list())[0]?.acceptedAt).toBeUndefined();
+        }
+    });
+
+    it("does not ingest a cold failure while the same root session is human-held", async () => {
+        const root = await mkdtemp(join(tmpdir(), "cold-human-held-"));
+        const current = coldFailureSession();
+        const calls = { init: 0, gets: 0, resumes: 0, messages: [] as string[] };
+        const adapter = fakeAdapter(() => current, calls);
+        adapter.init = async () => { calls.init += 1; };
+        adapter.getSession = async () => { calls.gets += 1; return current; };
+        const stops = getHumanStopStore({ AGENT_HERDER_HUMAN_STOP_STORE: join(root, "stops.json") });
+        await stops.hold(current, { id: "cold-stop", at: new Date().toISOString(), reason: "user stop", turnId: "native-turn-1" });
+        const state = new UnfinishedSessionStore(join(root, "state.json"));
+        await new UnfinishedSessionLauncher({ humanStopStore: stops, adapters: new Map([["zcode", adapter]]), store: state, settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) }).recoverPending();
+        expect(calls).toEqual({ init: 0, gets: 0, resumes: 0, messages: [] });
+        expect(await state.list()).toEqual([]);
+    });
+
+    it("does not replace a different accepted native admission with a lagging cold failure", async () => {
+        const root = await mkdtemp(join(tmpdir(), "cold-existing-admission-"));
+        const current = coldFailureSession();
+        const state = new UnfinishedSessionStore(join(root, "state.json"));
+        await state.markStarted(current, "already-admitted", new Date(), true, true, true);
+        const before = (await state.list())[0]!;
+        const calls = { resumes: 0, messages: [] as string[] };
+        await new UnfinishedSessionLauncher({ adapters: new Map([["zcode", fakeAdapter(() => current, calls)]]), store: state, settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) }).recoverPending();
+        expect(calls).toEqual({ resumes: 0, messages: [] });
+        expect((await state.list())[0]).toEqual(before);
+    });
+
+    it("preserves a same-turn disconnect admission when cold failure evidence arrives after restart", async () => {
+        const root = await mkdtemp(join(tmpdir(), "cold-same-turn-disconnect-"));
+        const current = coldFailureSession();
+        const state = new UnfinishedSessionStore(join(root, "state.json"));
+        await state.markRecoveryEligible(current, "process.disconnected", { turnId: "native-turn-1" });
+        await state.markStarted(current, "already-admitted", new Date(), false, true, true);
+        const before = (await state.list())[0]!;
+        const calls = { resumes: 0, messages: [] as string[] };
+        await new UnfinishedSessionLauncher({ adapters: new Map([["zcode", fakeAdapter(() => current, calls)]]), store: state, settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) }).recoverPending();
+        expect(calls).toEqual({ resumes: 0, messages: [] });
+        expect((await state.list())[0]).toEqual(before);
+    });
+
+    it("requires enabled recovery and a fresh exact root failure receipt", async () => {
+        const rejected = [
+            { rootSession: false },
+            { status: "completed" },
+            { cancelledByUser: true },
+            { userMessageMatchesLatest: false },
+            { assistantSucceeded: true },
+            { progressedAfterFailure: true },
+            { pendingInput: true },
+            { pendingInput: undefined },
+            { completedAt: Date.now() - 49 * 60 * 60 * 1000 },
+            { completedAt: Number.MAX_SAFE_INTEGER },
+        ];
+        for (const overrides of rejected) {
+            const root = await mkdtemp(join(tmpdir(), "cold-rejected-"));
+            const current = coldFailureSession(overrides);
+            const calls = { resumes: 0, messages: [] as string[] };
+            const state = new UnfinishedSessionStore(join(root, "state.json"));
+            await new UnfinishedSessionLauncher({ adapters: new Map([["zcode", fakeAdapter(() => current, calls)]]), store: state, settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) }).recoverPending();
+            expect(calls).toEqual({ resumes: 0, messages: [] });
+            expect(await state.list()).toEqual([]);
+        }
+        const root = await mkdtemp(join(tmpdir(), "cold-disabled-"));
+        const settings = new SessionAutostartStore(join(root, "settings.json"), {});
+        const config = await settings.getSettings();
+        await settings.setRuntimeSettings({ inventoryWindowHours: config.inventoryWindowHours, evidenceMessageCount: config.evidenceMessageCount, judgeModel: config.judgeModel, autopilotJudgeModel: config.autopilotJudgeModel, recoverOnFailure: false });
+        const state = new UnfinishedSessionStore(join(root, "state.json"));
+        const calls = { resumes: 0, messages: [] as string[] };
+        await new UnfinishedSessionLauncher({ adapters: new Map([["zcode", fakeAdapter(() => coldFailureSession(), calls)]]), store: state, settingsStore: settings }).recoverPending();
+        expect(calls).toEqual({ resumes: 0, messages: [] });
+        expect(await state.list()).toEqual([]);
     });
 
 });

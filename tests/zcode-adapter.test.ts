@@ -306,6 +306,52 @@ describe("ZCode adapter", () => {
     }
   });
 
+  it("reads exact cold failure evidence without waking the transport or confusing human stops", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-cold-native-"));
+    const tasksPath = join(root, "tasks.sqlite");
+    const nativePath = join(root, "native.sqlite");
+    const tasks = new DatabaseSync(tasksPath);
+    tasks.exec("create table tasks(task_id text, workspace_path text, title text, task_status text, model text, created_at integer, updated_at integer, deleted integer default 0, archived integer default 0)");
+    const native = new DatabaseSync(nativePath);
+    native.exec(`create table session(id text primary key, directory text, parent_id text, time_updated integer);
+      create table turn_usage(session_id text,turn_id text,user_message_id text,status text,started_at integer,completed_at integer,retryable integer,cancelled_by_user integer,error_type text,error_code text,primary key(session_id,turn_id));
+      create table message(id text primary key,session_id text,data text,sequence integer,time_updated integer);
+      create index message_session_sequence_idx on message(session_id,sequence);
+      create table session_input(id text,session_id text,status text,time_created integer);
+    `);
+    const now = Date.now();
+    const cases = ["retry", "captcha", "cancelled", "completed", "running", "child", "new-user", "progress", "succeeded", "pending"];
+    for (const id of cases) {
+      tasks.prepare("insert into tasks values(?,?,?,?,?,?,?,?,?)").run(id,root,id,"completed",null,now-10000,now-2000,0,0);
+      native.prepare("insert into session values(?,?,?,?)").run(id,root,id==="child"?"parent":null,now-2000);
+      const status = id === "cancelled" ? "cancelled" : id === "completed" ? "completed" : id === "running" ? "running" : "error";
+      native.prepare("insert into turn_usage values(?,?,?,?,?,?,?,?,?,?)").run(id,"turn-"+id,"user-"+id,status,now-10000,id==="running"?null:now-2000,id==="captcha"?0:1,id==="cancelled"?1:0,"transport_error","CONNECTION_RESET");
+      native.prepare("insert into message values(?,?,?,?,?)").run("user-"+id,id,JSON.stringify({role:"user"}),1,now-10000);
+      native.prepare("insert into message values(?,?,?,?,?)").run("assistant-"+id,id,JSON.stringify({role:"assistant",parentID:"user-"+id,...(id==="succeeded"?{finish:"stop"}: {error:{name:"NativeError",data:{message:id==="captcha"?"Captcha verification request timed out":"connection lost"}}})}),2,id==="progress"?now-1000:now-2001);
+      if (id==="pending") native.prepare("insert into session_input values(?,?,?,?)").run("pending-input",id,"admitted",now-5000);
+      if (id==="new-user") native.prepare("insert into message values(?,?,?,?,?)").run("new-user-input",id,JSON.stringify({role:"user"}),3,now-1000);
+    }
+    tasks.close();native.close();
+    const client = new FakeClient();
+    try {
+      const adapter = new ZcodeAdapter({client,tasksIndexDbPath:tasksPath,localDbPath:nativePath});
+      const rows = await adapter.listSessions();
+      const meta = (id:string) => rows.find((x)=>x.id===id)!.meta!.nativeLastTurn as Record<string,unknown>;
+      expect(meta("retry")).toMatchObject({turnId:"turn-retry",status:"error",rootSession:true,pendingInput:false,userMessageMatchesLatest:true,assistantSucceeded:false,progressedAfterFailure:false,retryable:true,cancelledByUser:false});
+      expect(rows.find((x)=>x.id==="retry")?.status).toBe("error");
+      expect(rows.find((x)=>x.id==="captcha")?.status).toBe("error");
+      expect(meta("captcha")).toMatchObject({retryable:false,cancelledByUser:false,requiresHuman:true});
+      expect(meta("cancelled")).toMatchObject({status:"cancelled",cancelledByUser:true});
+      expect(meta("child").rootSession).toBe(false);
+      expect(meta("new-user").userMessageMatchesLatest).toBe(false);
+      expect(meta("progress").progressedAfterFailure).toBe(true);
+      expect(meta("succeeded").assistantSucceeded).toBe(true);
+      expect(meta("running").status).toBe("running");
+      expect(meta("pending").pendingInput).toBe(true);
+      expect(client.started).toBe(false);expect(client.calls).toEqual([]);
+    } finally { await rm(root,{recursive:true,force:true}); }
+  });
+
   it("deduplicates ghost task rows using the native session workspace identity", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-duplicate-index-"));
     const taskDbPath = join(root, "tasks-index.sqlite");

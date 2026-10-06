@@ -139,13 +139,14 @@ describe("pickNativeLastTurn", () => {
     expect(summary).toMatchObject({ turnId: "turn_new", startedAt: 1_500, status: "completed", userMessageId: "msg_1" });
   });
 
-  it("breaks startedAt ties deterministically by completedAt then input order", () => {
+  it("breaks startedAt ties deterministically by completedAt then turn identity", () => {
     const first = row({ turnId: "turn_first", startedAt: 1_000, completedAt: 1_500 });
     const second = row({ turnId: "turn_second", startedAt: 1_000, completedAt: 1_800 });
     expect(pickNativeLastTurn([first, second])).toMatchObject({ turnId: "turn_second" });
     const a = row({ turnId: "turn_a", startedAt: 1_000, completedAt: 1_500 });
     const b = row({ turnId: "turn_b", startedAt: 1_000, completedAt: 1_500 });
     expect(pickNativeLastTurn([a, b])).toMatchObject({ turnId: "turn_b" });
+    expect(pickNativeLastTurn([b, a])).toMatchObject({ turnId: "turn_b" });
   });
 
   it("excludes the summary when a newer user input has not been consumed", () => {
@@ -155,20 +156,21 @@ describe("pickNativeLastTurn", () => {
     expect(pickNativeLastTurn(rows, 2_251)).toBeUndefined();
   });
 
-  it("keeps the summary when the newest input is inside the turn boundary or stale slack", () => {
+  it("keeps the summary when the newest input is inside the turn boundary", () => {
     const rows = [row({ startedAt: 1_000, completedAt: 2_000 })];
     expect(pickNativeLastTurn(rows, 2_000)).toBeDefined();
-    expect(pickNativeLastTurn(rows, 2_250)).toBeDefined();
+    expect(pickNativeLastTurn(rows, 2_001)).toBeUndefined();
     expect(pickNativeLastTurn(rows)).toBeDefined();
   });
 
-  it("maps native integer flags into booleans only when set", () => {
+  it("distinguishes native false flags from unavailable flags", () => {
     const summary = pickNativeLastTurn([row({ status: "error", retryable: 1, errorType: "unknown_error", errorCode: "UNKNOWN_ERROR" })]);
     expect(summary).toMatchObject({ status: "error", retryable: true, errorType: "unknown_error", errorCode: "UNKNOWN_ERROR" });
     expect(summary!.cancelledByUser).toBeUndefined();
     const humanStopped = pickNativeLastTurn([row({ status: "cancelled", cancelledByUser: 1, contextExceeded: 1 })]);
     expect(humanStopped).toMatchObject({ status: "cancelled", cancelledByUser: true, contextExceeded: true });
     expect(humanStopped!.retryable).toBeUndefined();
+    expect(pickNativeLastTurn([row({ retryable: 0, cancelledByUser: 0 })])).toMatchObject({ retryable: false, cancelledByUser: false });
   });
 
   it("returns undefined for empty rows", () => {
