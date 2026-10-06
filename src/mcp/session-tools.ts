@@ -84,7 +84,7 @@ export function registerSessionTools(server: McpServer, deps: {
     return handleExportTranscript(adapters, args, undefined, signal);
   }, args.ownerSessionId));
 
-  server.registerTool("send_message", { description: "Send a message to an agent. Active coordination notes for the target workspace are injected automatically before delivery. Modes: sync (wait), queue (fire-and-forget), steer (redirect).", inputSchema: SendMessageSchema }, async (args) => {
+  server.registerTool("send_message", { description: "Send a message to an agent. Active coordination notes for the target workspace are injected automatically before delivery. fromSessionId/fromHarness add verified reply attribution from that existing session; these fields describe the sender and do not authenticate the caller. Modes: sync (wait), queue (fire-and-forget), steer (redirect).", inputSchema: SendMessageSchema }, async (args) => {
     const result = await handleSendMessage(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });

@@ -19,6 +19,7 @@ import {
 } from "./definitions.js";
 import { throwIfAborted } from "../abort-utils.js";
 import { automaticDeliveryHeld, holdManualStop, HUMAN_STOP_MESSAGE } from "../human-stop-actions.js";
+import { buildMessageProvenanceHeader } from "../message-provenance.js";
 import { createNamedSession, newOrResumeNamedSession, deliverNamedSession } from "../named-session.js";
 import { homedir } from "node:os";
 import { relative, resolve, sep } from "node:path";
@@ -432,12 +433,8 @@ export async function handleSendMessage(
   if (!found) return `Session '${parsed.sessionId}' not found.`;
   if (await automaticDeliveryHeld(found.session, parsed.humanRequested, found.adapter)) return HUMAN_STOP_MESSAGE;
 
-  // Reply header: the target must know who sent the message and how to
-  // answer without hunting for session ids.
-  const replyHeader = parsed.fromSessionId
-    ? `[Agent Herder delivery] От: ${parsed.fromHarness ?? "agent"}:${parsed.fromSessionId}.\nЧтобы ответить: send_message { sessionId: "${parsed.fromSessionId}", harness: "${parsed.fromHarness ?? "zcode"}", mode: "queue" }.`
-    : "";
-  const baseMessage = replyHeader ? `${replyHeader}\n\n${parsed.message}` : parsed.message;
+  const provenanceHeader = await buildMessageProvenanceHeader(adapters, parsed, found.session);
+  const baseMessage = `${provenanceHeader}\n\n${parsed.message}`;
   const pending = await withDeferred(parsed.sessionId, baseMessage);
   const injectedMessage = await coordinationNotes.inject(found.session, pending.message);
   if (await automaticDeliveryHeld(found.session, false, found.adapter)) return HUMAN_STOP_MESSAGE;

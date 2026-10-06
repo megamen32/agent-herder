@@ -71,8 +71,8 @@ export const SendMessageSchema = z.object({
   sessionId: z.string().describe("Target session ID."),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Harness (optional if ID is unique)."),
   message: z.string().describe("Message to send to the agent."),
-  fromSessionId: z.string().optional().describe("Sender session ID — when provided, the delivery is wrapped with a reply header so the target knows whom to answer."),
-  fromHarness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Sender harness."),
+  fromSessionId: z.string().optional().describe("Supply your full native sender session ID for AI messages. Herder checks that session for reply attribution; this does not authenticate the caller. Omitted/unverified sources are labelled unknown."),
+  fromHarness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Declared sender harness for checked reply attribution, not caller authentication."),
   mode: z.enum(["queue", "steer", "sync"]).optional().default("sync").describe(
     "queue = fire-and-forget, steer = redirect agent, sync = wait for response"
   ),
@@ -328,8 +328,8 @@ export const toolDefinitions: Tool[] = [
         sessionId: { type: "string", description: "Target session ID" },
         harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
         message: { type: "string", description: "Message to send" },
-        fromSessionId: { type: "string", description: "Sender session ID — adds a reply header so the target knows whom to answer" },
-        fromHarness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Sender harness (optional)" },
+        fromSessionId: { type: "string", description: "Supply your full native sender session ID for AI messages. Herder checks that session for reply attribution; this does not authenticate the caller. Omitted/unverified sources are labelled unknown." },
+        fromHarness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Declared sender harness for checked reply attribution, not caller authentication (optional)" },
         mode: { type: "string", enum: ["queue", "steer", "sync"], default: "sync", description: "Delivery mode" },
       },
       required: ["sessionId", "message"],
