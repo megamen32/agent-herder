@@ -242,10 +242,8 @@ export class CodexAdapter implements HarnessAdapter {
   }
 
   async getNativeAutomationMetadata(id: string): Promise<CodexNativeAutomationMetadata> {
-    const state = (await this.getSessionStates()).get(id);
-    if (!state?.filePath) return {};
-    const tail = await this.readSessionTail(state.filePath);
-    return tail.automationStop ? { automationStop: tail.automationStop } : {};
+    const tail = await this.withCurrentSessionState(id, (state) => this.readSessionTail(state.filePath));
+    return tail?.automationStop ? { automationStop: tail.automationStop } : {};
   }
 
   async findNativeNamedThreads(name: string, cwd: string): Promise<Array<{ id: string; name: string; cwd: string }>> {
@@ -391,67 +389,67 @@ export class CodexAdapter implements HarnessAdapter {
   }
 
   async getSessionMessages(id: string, limit = 12): Promise<SessionMessageView[] | null> {
-    const state = (await this.getSessionStates()).get(id);
-    if (!state) return null;
-    const file = await open(state.filePath, "r");
-    try {
-      const fileStat = await file.stat();
-      const target = Math.max(1, Math.min(limit, 50));
-      let bytesToRead = Math.min(fileStat.size, 256 * 1024);
-      let bestMessages: SessionMessageView[] = [];
-      while (bytesToRead <= Math.min(fileStat.size, 4 * 1024 * 1024)) {
-        const buffer = Buffer.alloc(bytesToRead);
-        const { bytesRead } = await file.read(buffer, 0, bytesToRead, fileStat.size - bytesToRead);
-        const text = buffer.subarray(0, bytesRead).toString("utf8");
-        const lines = text.slice(bytesToRead === fileStat.size ? 0 : Math.max(0, text.indexOf("\n") + 1)).split("\n");
-        const messages: SessionMessageView[] = [];
-        for (let index = 0; index < lines.length; index++) {
-          try {
-            const item = JSON.parse(lines[index]) as CodexTranscriptItem & { timestamp?: string };
-            const message = mapCodexMessage(id, item, index, "tail");
-            if (message) messages.push(message);
-          } catch { /* partial or non-message line */ }
+    const messages = await this.withCurrentSessionState(id, async (state) => {
+      const file = await open(state.filePath, "r");
+      try {
+        const fileStat = await file.stat();
+        const target = Math.max(1, Math.min(limit, 50));
+        let bytesToRead = Math.min(fileStat.size, 256 * 1024);
+        let bestMessages: SessionMessageView[] = [];
+        while (bytesToRead <= Math.min(fileStat.size, 4 * 1024 * 1024)) {
+          const buffer = Buffer.alloc(bytesToRead);
+          const { bytesRead } = await file.read(buffer, 0, bytesToRead, fileStat.size - bytesToRead);
+          const text = buffer.subarray(0, bytesRead).toString("utf8");
+          const lines = text.slice(bytesToRead === fileStat.size ? 0 : Math.max(0, text.indexOf("\n") + 1)).split("\n");
+          const currentMessages: SessionMessageView[] = [];
+          for (let index = 0; index < lines.length; index++) {
+            try {
+              const item = JSON.parse(lines[index]) as CodexTranscriptItem & { timestamp?: string };
+              const message = mapCodexMessage(id, item, index, "tail");
+              if (message) currentMessages.push(message);
+            } catch { /* partial or non-message line */ }
+          }
+          bestMessages = currentMessages;
+          if (currentMessages.length >= target || bytesToRead === fileStat.size) return currentMessages.slice(-target);
+          const next = Math.min(fileStat.size, bytesToRead * 2);
+          if (next === bytesToRead) return currentMessages.slice(-target);
+          bytesToRead = next;
         }
-        bestMessages = messages;
-        if (messages.length >= target || bytesToRead === fileStat.size) return messages.slice(-target);
-        const next = Math.min(fileStat.size, bytesToRead * 2);
-        if (next === bytesToRead) return messages.slice(-target);
-        bytesToRead = next;
+        return bestMessages.slice(-target);
+      } finally {
+        await file.close();
       }
-      return bestMessages.slice(-target);
-    } finally {
-      await file.close();
-    }
+    });
+    return messages ?? null;
   }
 
   async getFirstUserMessage(id: string): Promise<SessionMessageView | null> {
-    const state = (await this.getSessionStates()).get(id);
-    if (!state) return null;
-    const stream = createReadStream(state.filePath, { encoding: "utf8" });
-    const lines = createInterface({ input: stream, crlfDelay: Infinity });
-    let index = 0;
-    try {
-      for await (const line of lines) {
-        try {
-          const item = JSON.parse(line) as CodexTranscriptItem & { timestamp?: string };
-          const message = mapCodexMessage(id, item, index, "first");
-          if (message?.role === "user") return message;
-        } catch { /* malformed/non-message line */ }
-        index += 1;
+    const message = await this.withCurrentSessionState(id, async (state) => {
+      const stream = createReadStream(state.filePath, { encoding: "utf8" });
+      const lines = createInterface({ input: stream, crlfDelay: Infinity });
+      let index = 0;
+      try {
+        for await (const line of lines) {
+          try {
+            const item = JSON.parse(line) as CodexTranscriptItem & { timestamp?: string };
+            const currentMessage = mapCodexMessage(id, item, index, "first");
+            if (currentMessage?.role === "user") return currentMessage;
+          } catch { /* malformed/non-message line */ }
+          index += 1;
+        }
+        return null;
+      } finally {
+        lines.close();
+        stream.destroy();
       }
-      return null;
-    } finally {
-      lines.close();
-      stream.destroy();
-    }
+    });
+    return message ?? null;
   }
 
   async getTranscript(id: string): Promise<string | null> {
-    const state = this.sessionStatesCache?.get(id) || (await this.readSessionStates()).get(id);
-    if (!state) return null;
-
     try {
-      const content = await readFile(state.filePath, "utf-8");
+      const content = await this.withCurrentSessionState(id, (state) => readFile(state.filePath, "utf-8"));
+      if (content === undefined) return null;
       const messages = content.split("\n").flatMap((line) => this.extractTranscriptMessage(line));
       return messages.join("\n\n") || null;
     } catch {
@@ -460,15 +458,14 @@ export class CodexAdapter implements HarnessAdapter {
   }
 
   async getRawTranscript(id: string, signal?: AbortSignal): Promise<RawTranscriptExport | null> {
-    const state = this.sessionStatesCache?.get(id) || (await this.readSessionStates()).get(id);
-    if (!state) return null;
     try {
-      return {
+      const result = await this.withCurrentSessionState<RawTranscriptExport>(id, async (state) => ({
         bytes: await readFile(state.filePath, { signal }),
         complete: true,
         source: { kind: "native-file", location: state.filePath, format: "jsonl" },
         timestampCoverage: "native",
-      };
+      }));
+      return result ?? null;
     } catch {
       return null;
     }
@@ -678,6 +675,71 @@ export class CodexAdapter implements HarnessAdapter {
       }
     } catch {
       return null;
+    }
+  }
+
+  /** Refresh one exact native ID after an archive moved its rollout behind our TTL cache. */
+  private async readSessionStateFromDatabase(id: string): Promise<CodexSessionState | null> {
+    const databasePath = join(this.codexDir, "state_5.sqlite");
+    if (!existsSync(databasePath)) return null;
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      db.exec("pragma busy_timeout=5000");
+      const columns = new Set((db.prepare("pragma table_info(threads)").all() as Array<{ name?: string }>)
+        .map((column) => column.name)
+        .filter((name): name is string => typeof name === "string"));
+      if (!columns.has("id") || !columns.has("rollout_path")) return null;
+      const optional = (column: string, alias = column) => columns.has(column) ? column : `null as ${alias}`;
+      const row = db.prepare(`select id, rollout_path, ${optional("cwd")}, ${optional("model")}, ${optional("preview")}, ${optional("updated_at_ms")}, ${optional("thread_source")}, ${optional("agent_role")}, ${optional("is_pinned", "is_pinned")} from threads where id = ? limit 1`)
+        .get(id) as {
+          id?: unknown; rollout_path?: unknown; cwd?: unknown; model?: unknown; preview?: unknown;
+          updated_at_ms?: unknown; thread_source?: unknown; agent_role?: unknown; is_pinned?: unknown;
+        } | undefined;
+      if (!row || row.id !== id || typeof row.rollout_path !== "string" || !row.rollout_path) return null;
+      let parentThreadId: string | undefined;
+      if (existsSync(databasePath)) {
+        const edgeColumns = new Set((db.prepare("pragma table_info(thread_spawn_edges)").all() as Array<{ name?: string }>)
+          .map((column) => column.name)
+          .filter((name): name is string => typeof name === "string"));
+        if (edgeColumns.has("child_thread_id") && edgeColumns.has("parent_thread_id")) {
+          const edge = db.prepare("select parent_thread_id from thread_spawn_edges where child_thread_id = ? limit 1")
+            .get(id) as { parent_thread_id?: unknown } | undefined;
+          if (typeof edge?.parent_thread_id === "string" && edge.parent_thread_id !== id) parentThreadId = edge.parent_thread_id;
+        }
+      }
+      return {
+        filePath: row.rollout_path,
+        ...(typeof row.cwd === "string" ? { cwd: row.cwd } : {}),
+        ...(typeof row.model === "string" ? { model: row.model } : {}),
+        ...(typeof row.preview === "string" ? { lastMessage: row.preview } : {}),
+        ...(typeof row.thread_source === "string" ? { threadSource: row.thread_source } : {}),
+        ...(typeof row.agent_role === "string" ? { agentRole: row.agent_role } : {}),
+        ...(parentThreadId ? { parentThreadId } : {}),
+        pinned: row.is_pinned === 1,
+        updatedAtMs: normalizeEpochMs(typeof row.updated_at_ms === "number" ? row.updated_at_ms : undefined),
+      };
+    } finally {
+      db.close();
+    }
+  }
+
+  /** Retry one exact-ID operation once if its cached native rollout was moved. */
+  private async withCurrentSessionState<T>(
+    id: string,
+    operation: (state: CodexSessionState) => Promise<T>,
+  ): Promise<T | undefined> {
+    const states = await this.getSessionStates();
+    const state = states.get(id);
+    if (!state) return undefined;
+    try {
+      return await operation(state);
+    } catch (error) {
+      if (!isFileNotFound(error)) throw error;
+      const current = await this.readSessionStateFromDatabase(id);
+      if (!current || current.filePath === state.filePath) throw error;
+      states.set(id, current);
+      return operation(current);
     }
   }
 
@@ -956,4 +1018,8 @@ function normalizeEpochMs(value: number | undefined): number {
   while (normalized > 10_000_000_000_000) normalized /= 1_000;
   if (normalized < 10_000_000_000) normalized *= 1_000;
   return normalized;
+}
+
+function isFileNotFound(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
 }

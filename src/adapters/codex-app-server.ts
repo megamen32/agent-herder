@@ -352,8 +352,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       base = cached ? this.toSession(cached) : null;
     }
     if (!base && this.isReady()) base = (await this.listSessions()).find((session) => session.id === id) || null;
-    const raw = await this.rawTranscriptAdapter.getSession(id);
     const nativeAutomation = this.externalAutomationMetadata(id, await this.rawTranscriptAdapter.getNativeAutomationMetadata(id));
+    const raw = await this.rawTranscriptAdapter.getSession(id);
     if (!base) {
       if (!raw) return null;
       const normalized = withKnownModel({ ...raw, meta: mergeAutomationMetadata(raw.meta, nativeAutomation) }, raw.model);
