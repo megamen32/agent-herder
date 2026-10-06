@@ -545,14 +545,17 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const sessionId = url.searchParams.get("sessionId")?.trim();
     const cwd = url.searchParams.get("cwd")?.trim();
     if (!harness || !sessionId || !cwd) return sendJson(response, 400, { error: "harness, sessionId, and cwd are required" });
+    let humanStopHeld = await supervisor.isAutomationHeld(harness, sessionId);
     if (url.searchParams.get("touch") === "1") await coordinationNotes.heartbeatSession({ sessionId, cwd });
     const coordinationContext = await coordinationNotes.renderForSession({ harness, id: sessionId, cwd });
-    const inboxMessages = url.searchParams.get("consume") === "1"
+    if (response.destroyed) return;
+    humanStopHeld = humanStopHeld || await supervisor.isAutomationHeld(harness, sessionId);
+    const inboxMessages = !humanStopHeld && url.searchParams.get("consume") === "1"
       ? await deferredMessages.take(sessionId)
       : await deferredMessages.list(sessionId);
-    const inboxContext = renderDeferredMessages(inboxMessages);
+    const inboxContext = humanStopHeld ? null : renderDeferredMessages(inboxMessages);
     const context = [inboxContext, coordinationContext].filter(Boolean).join("\n\n") || null;
-    return sendJson(response, 200, { context, inboxContext, inboxCount: inboxMessages.length, active: Boolean(context) });
+    return sendJson(response, 200, { context, inboxContext, inboxCount: inboxMessages.length, active: Boolean(context), humanStopHeld });
   }
   if (url.pathname === "/api/coordination/activity" && request.method === "POST") {
     const body = await readJson(request);
@@ -617,6 +620,18 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const harness = typeof body.harness === "string" ? body.harness.trim() : "";
     const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
     const event = typeof body.event === "string" ? body.event.trim() : "";
+    if (harness && sessionId && event === "user-prompt") {
+      const inputId = typeof body.inputId === "string" ? body.inputId : "";
+      if (inputId.startsWith("agent-herder:auto:")) return sendJson(response, 200, { ok: true, released: false });
+      const id = typeof body.promptId === "string" ? body.promptId : inputId || (typeof body.turnId === "string" ? body.turnId : "");
+      const at = typeof body.at === "string" ? body.at : "";
+      if (!id || !Number.isFinite(Date.parse(at))) return sendJson(response, 400, { error: "user-prompt requires promptId/inputId/turnId and valid at" });
+      const released = await supervisor.releaseHumanStop(harness, sessionId, {
+        id, at, ...(typeof body.turnId === "string" ? { turnId: body.turnId } : {}),
+        ...(typeof body.text === "string" ? { text: body.text } : {}),
+      });
+      return sendJson(response, 200, { ok: true, released });
+    }
     const allowed: SessionLifecycleEvent[] = ["start", "turn-start", "turn-end", "end"];
     if (!harness || !sessionId || !allowed.includes(event as SessionLifecycleEvent)) {
       return sendJson(response, 400, { error: "harness, sessionId, and event (start|turn-start|turn-end|end) are required" });
@@ -1083,6 +1098,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       typeof body.message !== "string" || body.message.trim().length === 0 || body.message.length > 32_000) {
       return sendJson(response, 400, { error: "health remediation requires bounded name, absolute cwd, and message" });
     }
+    if (!validSourceSessionFields(body) || !validSourceSessions(body.sourceSessions)) {
+      return sendJson(response, 400, { error: "health remediation source session references are invalid" });
+    }
     let execution;
     try {
       execution = normalizeHealthExecution(body.execution);
@@ -1111,28 +1129,38 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       message,
       mode: "queue",
       model,
+      sourceSessionId: typeof body.sourceSessionId === "string" ? body.sourceSessionId : undefined,
+      sourceHarness: typeof body.sourceHarness === "string" ? body.sourceHarness : undefined,
+      sourceSessions: body.sourceSessions as Array<{ harness: string; sessionId: string }> | undefined,
     });
     return sendJson(response, result.ok ? 200 : 502, { ...result, incident_id: incidentId, plan_id: planId, execution, model });
   }
   if (request.method === "POST" && url.pathname === "/api/sessions") {
     const body = await readJson(request);
+    if (!validSourceSessionFields(body) || !validSourceSessions(body.sourceSessions)) return sendJson(response, 400, { error: "source session references are invalid" });
     if (typeof body.harness !== "string" || typeof body.name !== "string" || typeof body.cwd !== "string") {
       return sendJson(response, 400, { error: "harness, name, and cwd are required" });
     }
-    if (body.model !== undefined && (typeof body.model !== "string" || body.model.length > MAX_MODEL_LENGTH)) return sendJson(response, 400, { error: "model must be a bounded string" });
-    const result = await supervisor.createNamedSession({ harness: body.harness, name: body.name, cwd: body.cwd, model: typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined });
+    if (body.model !== undefined && (typeof body.model !== "string" || body.model.length > MAX_MODEL_LENGTH || hasControlCharacters(body.model))) return sendJson(response, 400, { error: "model must be a bounded string without control characters" });
+    const result = await supervisor.createNamedSession({ harness: body.harness, name: body.name, cwd: body.cwd, model: typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined,
+      sourceSessionId: typeof body.sourceSessionId === "string" ? body.sourceSessionId : undefined,
+      sourceHarness: typeof body.sourceHarness === "string" ? body.sourceHarness : undefined,
+      sourceSessions: body.sourceSessions as Array<{ harness: string; sessionId: string }> | undefined,
+    });
     return sendNamedSessionResult(response, result);
   }
   if (request.method === "POST" && url.pathname === "/api/sessions/new-or-resume") {
     const body = await readJson(request);
+    if (!validSourceSessionFields(body) || !validSourceSessions(body.sourceSessions)) return sendJson(response, 400, { error: "source session references are invalid" });
+    if (body.humanRequested !== undefined && typeof body.humanRequested !== "boolean") return sendJson(response, 400, { error: "humanRequested must be boolean" });
     if (typeof body.harness !== "string" || typeof body.name !== "string" || typeof body.cwd !== "string" || typeof body.message !== "string") {
       return sendJson(response, 400, { error: "harness, name, cwd, and message are required" });
     }
     if (body.mode !== undefined && body.mode !== "queue" && body.mode !== "sync") {
       return sendJson(response, 400, { error: "mode must be queue or sync" });
     }
-    if (body.model !== undefined && (typeof body.model !== "string" || body.model.trim().length === 0 || body.model.length > MAX_MODEL_LENGTH)) {
-      return sendJson(response, 400, { error: "model must be a bounded non-empty string" });
+    if (body.model !== undefined && (typeof body.model !== "string" || body.model.trim().length === 0 || body.model.length > MAX_MODEL_LENGTH || hasControlCharacters(body.model))) {
+      return sendJson(response, 400, { error: "model must be a bounded non-empty string without control characters" });
     }
     const result = await supervisor.newOrResumeNamedSession({
       harness: body.harness,
@@ -1141,6 +1169,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       message: body.message,
       mode: body.mode as "queue" | "sync" | undefined,
       model: body.model as string | undefined,
+      humanRequested: body.humanRequested === true,
+      sourceSessionId: typeof body.sourceSessionId === "string" ? body.sourceSessionId : undefined,
+      sourceHarness: typeof body.sourceHarness === "string" ? body.sourceHarness : undefined,
+      sourceSessions: body.sourceSessions as Array<{ harness: string; sessionId: string }> | undefined,
     });
     return sendNamedSessionResult(response, result);
   }
@@ -1185,14 +1217,15 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     );
     return sendJson(response, 200, buildSessionProgress(details, Number.isFinite(limitValue) ? limitValue : 5));
   }
-  const actionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/(resume|message|stop|terminate|cancel|recover|fork|model|permissions\/([^/]+))$/);
+  const actionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/(resume|message|stop|terminate|cancel|recover|fork|archive|model|permissions\/([^/]+))$/);
   if (actionMatch && request.method === "POST") {
     const body = await readJson(request);
     const harness = decodeURIComponent(actionMatch[1]);
     const id = decodeURIComponent(actionMatch[2]);
     const action = actionMatch[3];
+    if (body.humanRequested !== undefined && typeof body.humanRequested !== "boolean") return sendJson(response, 400, { error: "humanRequested must be boolean" });
     if (action === "resume") {
-      return sendOperationResult(response, await supervisor.resumeSession(harness, id, optionalString(body.message)));
+      return sendOperationResult(response, await supervisor.resumeSession(harness, id, optionalString(body.message), body.humanRequested === true));
     }
     if (action === "stop") {
       return sendOperationResult(response, await supervisor.stopSession(harness, id));
@@ -1203,15 +1236,18 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (action === "cancel") {
       return sendOperationResult(response, await supervisor.cancelTurn(harness, id));
     }
+    if (action === "archive") {
+      return sendOperationResult(response, await supervisor.archiveSession(harness, id));
+    }
     if (action === "recover") {
-      if (!jobs) return sendOperationResult(response, await supervisor.recoverSession(harness, id, optionalString(body.message)));
+      if (!jobs) return sendOperationResult(response, await supervisor.recoverSession(harness, id, optionalString(body.message), undefined, body.humanRequested === true));
       const job = jobs.start({
         kind: "session-recover",
         ownerSessionId: id,
         run: async ({ signal, progress }) => {
           progress(0.1, `Recovering ${harness}:${id}`);
           if (signal.aborted) throw new Error("cancelled");
-          const result = await supervisor.recoverSession(harness, id, optionalString(body.message), signal);
+          const result = await supervisor.recoverSession(harness, id, optionalString(body.message), signal, body.humanRequested === true);
           if (!result.ok) throw new Error(result.error || "session recovery failed");
           return result;
         },
@@ -1219,7 +1255,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 202, { job });
     }
     if (action === "fork") {
-      return sendOperationResult(response, await supervisor.forkSession(harness, id, optionalString(body.message)));
+      return sendOperationResult(response, await supervisor.forkSession(harness, id, optionalString(body.message), body.humanRequested === true));
     }
     if (action === "model") {
       if (typeof body.model !== "string" || body.model.trim().length === 0) {
@@ -1244,6 +1280,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     return sendOperationResult(response, await supervisor.sendMessage(harness, id, {
       message: body.message,
+      origin: body.humanRequested === true ? "human" : "automation",
       queue: body.mode === "queue",
       steer: body.mode === "steer",
     }));
@@ -1288,6 +1325,22 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
 
   sendJson(response, 404, { error: "Not found" });
+}
+
+function validSourceSessions(value: unknown): boolean {
+  return value === undefined || (Array.isArray(value) && value.length <= 32 && value.every((ref) => ref && typeof ref === "object" && !Array.isArray(ref)
+    && ["codex", "zcode", "opencode"].includes(ref.harness) && typeof ref.sessionId === "string" && ref.sessionId.trim().length > 0 && ref.sessionId.length <= 512 && !hasControlCharacters(ref.sessionId)));
+}
+
+function validSourceSessionFields(value: Record<string, unknown>): boolean {
+  const sourceSessionId = value.sourceSessionId;
+  const sourceHarness = value.sourceHarness;
+  return (sourceSessionId === undefined || (typeof sourceSessionId === "string" && sourceSessionId.trim().length > 0 && sourceSessionId.length <= 512 && !hasControlCharacters(sourceSessionId)))
+    && (sourceHarness === undefined || (typeof sourceHarness === "string" && ["codex", "zcode", "opencode"].includes(sourceHarness)));
+}
+
+function hasControlCharacters(value: string): boolean {
+  return /[\u0000-\u001f\u007f]/u.test(value);
 }
 
 function isAutopilotHarness(value: string): value is AutopilotHarness {

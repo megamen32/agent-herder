@@ -81,7 +81,7 @@ try {
     await fetchJson(`${endpoint}/api/coordination/lifecycle`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ harness, sessionId, cwd, event: "user-prompt", promptId, ...(nativeTurnId ? { turnId: nativeTurnId } : {}), at: new Date().toISOString(), ...(inputId ? { inputId } : {}) }),
+      body: JSON.stringify({ harness, sessionId, cwd, event: "user-prompt", promptId, ...(nativeTurnId ? { turnId: nativeTurnId } : {}), ...(typeof input.prompt === "string" ? { text: input.prompt } : {}), at: new Date().toISOString(), ...(inputId ? { inputId } : {}) }),
     });
     const q = new URLSearchParams({ harness, sessionId, cwd, touch: "1", consume: "1" });
     const data = await fetchJson(`${endpoint}/api/coordination/context?${q}`);

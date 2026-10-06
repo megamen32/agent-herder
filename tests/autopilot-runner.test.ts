@@ -83,4 +83,31 @@ describe("autopilot runner", () => {
     });
     await expect(getHumanStopStore().isHeld("codex", target.sessionId)).resolves.toBe(true);
   });
+
+  it("records the exact Codex stop-hook continuation for generated-input provenance", async () => {
+    const { runAutopilotStopHook } = await import("../src/autopilot-hook.js");
+    const { getHumanStopStore } = await import("../src/human-stop-store.js");
+    const sessionId = "generated-codex-continuation";
+    const nextGoal = "<agent-herder-inbox>verify the exact task</agent-herder-inbox>";
+    const result = await runAutopilotStopHook({
+      hook_event_name: "Stop",
+      session_id: sessionId,
+      cwd: "/workspace/app",
+      turn_id: "current-turn",
+      last_assistant_message: "Still working.",
+      transcript_path: null,
+      stop_hook_active: false,
+      harness: "codex",
+    }, {
+      judge: { async decide() { return { kind: "continue", nextGoal }; } },
+      notify: { async send() {} },
+      allowSessions: new Set([sessionId]),
+      receiptStore: new Map(),
+      maxContinuationsPerSession: 2,
+      humanStopStore: getHumanStopStore(),
+    });
+
+    expect(result).toEqual({ decision: "block", reason: nextGoal });
+    await expect(getHumanStopStore().isGeneratedPrompt("codex", sessionId, { text: nextGoal })).resolves.toBe(true);
+  });
 });

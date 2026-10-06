@@ -18,6 +18,7 @@ import {
   AuditWorktreesSchema,
 } from "./definitions.js";
 import { throwIfAborted } from "../abort-utils.js";
+import { automaticDeliveryHeld, holdManualStop, HUMAN_STOP_MESSAGE } from "../human-stop-actions.js";
 import { createNamedSession, newOrResumeNamedSession, deliverNamedSession } from "../named-session.js";
 import { homedir } from "node:os";
 import { relative, resolve, sep } from "node:path";
@@ -429,6 +430,7 @@ export async function handleSendMessage(
   const parsed = SendMessageSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
+  if (await automaticDeliveryHeld(found.session, parsed.humanRequested, found.adapter)) return HUMAN_STOP_MESSAGE;
 
   // Reply header: the target must know who sent the message and how to
   // answer without hunting for session ids.
@@ -438,7 +440,9 @@ export async function handleSendMessage(
   const baseMessage = replyHeader ? `${replyHeader}\n\n${parsed.message}` : parsed.message;
   const pending = await withDeferred(parsed.sessionId, baseMessage);
   const injectedMessage = await coordinationNotes.inject(found.session, pending.message);
+  if (await automaticDeliveryHeld(found.session, false, found.adapter)) return HUMAN_STOP_MESSAGE;
   const result = await found.adapter.sendMessage(parsed.sessionId, {
+    origin: parsed.humanRequested ? "human" : "automation",
     message: injectedMessage,
     queue: parsed.mode === "queue",
     steer: parsed.mode === "steer",
@@ -493,10 +497,12 @@ export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args:
     const found = await findSession(adapters, parsed.sessionId, parsed.harness);
     if (!found) return JSON.stringify({ ok:false, delivery:"not_found", activated:false, error:`Session '${parsed.sessionId}' not found.` });
     const fresh = (await found.adapter.getSession(parsed.sessionId)) || found.session;
+    if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
     if (parsed.activation === "if_running" && fresh.status !== "running") return JSON.stringify({ ok:true, sessionId:fresh.id, harness:fresh.harness, sessionStatus:fresh.status, delivery:"skipped_inactive", activated:false });
     if (parsed.activation === "defer" && fresh.status !== "running") { await deferredMessages.add(fresh.id, parsed.message); return JSON.stringify({ ok:true, sessionId:fresh.id, harness:fresh.harness, sessionStatus:fresh.status, delivery:"deferred", activated:false }); }
     const pending = await withDeferred(fresh.id, parsed.message);
     const injected = await coordinationNotes.inject(fresh, pending.message);
+    if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
     const sent = await found.adapter.sendMessage(fresh.id,{message:injected,queue:parsed.mode==="queue"});
     if ((sent.ok || sent.admitted) && pending.ids.length) {
       try { await deferredMessages.remove(pending.ids); }
@@ -515,7 +521,7 @@ export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args:
         : {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:parsed.mode==="queue"?"accepted":"completed",activated:true}
       : {ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"failed",activated:false,error:sent.error||"Message delivery failed"});
   }
-  return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:parsed.message,create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model}));
+  return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:parsed.message,create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model,sourceSessionId:parsed.sourceSessionId,sourceHarness:parsed.sourceHarness,sourceSessions:parsed.sourceSessions}));
 }
 
 export async function handleStopAgent(
@@ -525,6 +531,8 @@ export async function handleStopAgent(
   const parsed = StopAgentSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
+
+  await holdManualStop(found.session);
 
   const result = await found.adapter.stopSession(parsed.sessionId);
   if (result.ok) {
@@ -580,6 +588,7 @@ export async function handleResumeAgent(
   const parsed = ResumeAgentSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
+  if (await automaticDeliveryHeld(found.session, parsed.humanRequested, found.adapter)) return HUMAN_STOP_MESSAGE;
 
   if (found.adapter.resumeSession) {
     const resumed = await found.adapter.resumeSession(parsed.sessionId);
@@ -588,9 +597,11 @@ export async function handleResumeAgent(
 
   if (parsed.message) {
     const injectedMessage = await coordinationNotes.inject(found.session, parsed.message);
+    if (await automaticDeliveryHeld(found.session, false, found.adapter)) return HUMAN_STOP_MESSAGE;
     const result = await found.adapter.sendMessage(parsed.sessionId, {
       message: injectedMessage,
       queue: false,
+      origin: parsed.humanRequested ? "human" : "automation",
     });
     if (result.admitted && result.nonRetryable) {
       return `Failed to resume: the message was admitted by [${found.session.harness}] ${parsed.sessionId}, but its native turn failed and will not be retried: ${result.error || "unknown native failure"}`;

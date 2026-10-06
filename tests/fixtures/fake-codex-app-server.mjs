@@ -66,10 +66,25 @@ rl.on("line", (line) => {
     if (failListCursor !== undefined && cursor === failListCursor) return replyError(request.id, `forced thread/list failure at ${cursor || "first"}`);
     const offset = cursor ? Number(cursor) : 0;
     const limit = Math.max(1, Number(request.params?.limit || 200));
-    const data = threads.slice(offset, offset + limit)
+    const visibleThreads = threads.filter((item) => request.params?.archived ? item.archived === true : item.archived !== true);
+    const data = visibleThreads.slice(offset, offset + limit)
       .map((item) => item.id === externalRunningThread ? thread(item.id, { ...item, status: "active" }) : item);
     const nextOffset = offset + data.length;
-    return reply(request.id, { data, nextCursor: nextOffset < threads.length ? String(nextOffset) : null });
+    return reply(request.id, { data, nextCursor: nextOffset < visibleThreads.length ? String(nextOffset) : null });
+  }
+  if (request.method === "thread/read") {
+    const found = threads.find((item) => item.id === request.params?.threadId);
+    const status = process.env.CODEX_APP_SERVER_THREAD_STATUS;
+    const statusValue = status
+      ? { type: status, ...(process.env.CODEX_APP_SERVER_PERMISSION_WAIT === "1" ? { activeFlags: ["waitingOnApproval"] } : {}) }
+      : found?.status;
+    return reply(request.id, found ? { thread: { ...found, ...(statusValue ? { status: statusValue } : {}) } } : {});
+  }
+  if (request.method === "thread/archive") {
+    const target = threads.find((item) => item.id === request.params?.threadId);
+    if (!target) return replyError(request.id, "thread not found");
+    target.archived = true;
+    return reply(request.id, {});
   }
   if (request.method === "thread/start") {
     const fullAccess = request.params?.approvalPolicy === "never" && request.params?.sandbox === "danger-full-access";

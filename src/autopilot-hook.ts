@@ -52,6 +52,9 @@ export async function runAutopilotStopHook(
   if (humanStops && await humanStops.isHeld(input.harness ?? "codex", input.session_id)) return {};
   const core = createAutopilotCore(deps);
   const result = await core.handleStop(input);
+  if (humanStops && "decision" in result && result.decision === "block") {
+    await humanStops.rememberGeneratedPrompt(input.harness ?? "codex", input.session_id, result.reason);
+  }
   if (humanStops && await humanStops.isHeld(input.harness ?? "codex", input.session_id)) return {};
   return result;
 }

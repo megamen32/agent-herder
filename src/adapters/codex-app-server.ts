@@ -413,6 +413,15 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (!resumed.ok) return resumed;
 
     const completion = options.queue ? undefined : this.waitForCompletion(id);
+    const generatedPrompt = options.origin !== "human";
+    if (generatedPrompt) {
+      try {
+        await getHumanStopStore().rememberGeneratedPrompt("codex", id, options.message);
+      } catch (error) {
+        if (completion) this.clearCompletion(id);
+        return { ok: false, error: `Could not register the generated Codex prompt: ${error instanceof Error ? error.message : String(error)}` };
+      }
+    }
     try {
       const result = await this.request("turn/start", {
         threadId: id,
@@ -420,6 +429,20 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         model: session.model || null,
       }) as { turn?: { id?: string; status?: string } };
       const turnId = result.turn?.id;
+      if (generatedPrompt && turnId) {
+        try {
+          await getHumanStopStore().rememberGeneratedPrompt("codex", id, options.message, turnId);
+        } catch (error) {
+          if (turnId && result.turn?.status === "inProgress") this.activeTurns.set(id, turnId);
+          if (completion) this.clearCompletion(id);
+          return {
+            ok: false,
+            admitted: true,
+            nonRetryable: true,
+            error: `Codex admitted the prompt, but its turn ID could not be registered: ${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
+      }
       if (completion) {
         const pending = this.completions.get(id);
         if (pending) {
@@ -520,6 +543,28 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   async stopSession(id: string): Promise<ControlResult> {
     return this.cancelTurn(id);
+  }
+
+  async archiveSession(id: string): Promise<ControlResult> {
+    try {
+      await this.ensureReady();
+      const read = await this.request("thread/read", { threadId: id, includeTurns: false }) as { thread?: CodexThread };
+      const thread = read.thread;
+      if (!thread || thread.id !== id) return { ok: false, error: "Codex thread was not found" };
+      const status = this.threadStatusTag(thread.status);
+      const activeFlags = this.threadActiveFlags(thread.status);
+      if (this.activeTurns.has(id) || activeFlags.includes("waitingOnApproval") || activeFlags.includes("waitingOnUserInput")
+        || !["idle", "stopped", "completed", "interrupted", "notLoaded"].includes(status || "")) {
+        return { ok: false, error: "Only an idle or stopped Codex thread without a pending permission can be archived" };
+      }
+      await this.request("thread/archive", { threadId: id });
+      this.threads.delete(id);
+      this.activeTurns.delete(id);
+      this.emitEvent({ kind: "session.updated", harness: "codex", sessionId: id, nativeType: "thread/archive" });
+      return { ok: true, sessionId: id };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   async resumeSession(id: string): Promise<ControlResult> {

@@ -7,6 +7,7 @@ import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
 import { spawnDetachedWorkload } from "../workload-launcher.js";
+import { getHumanStopStore } from "../human-stop-store.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -310,6 +311,18 @@ export class CodexAdapter implements HarnessAdapter {
     if (session.model) args.push("--model", session.model);
     args.push(id, options.message);
 
+    try {
+      const stopStore = getHumanStopStore();
+      if (await stopStore.observe(session)) {
+        return { ok: false, error: `Codex session ${id} is held by a manual stop; prompt was dropped` };
+      }
+      if (options.origin !== "human") {
+        await stopStore.rememberGeneratedPrompt("codex", id, options.message);
+      }
+      if (await stopStore.isHeld("codex", id)) return { ok: false, error: `Codex session ${id} is held by a manual stop; prompt was dropped` };
+    } catch (error) {
+      return { ok: false, error: `Codex prompt preflight failed: ${error instanceof Error ? error.message : String(error)}` };
+    }
     if (options.queue) {
       spawnDetachedWorkload(this.codexBin, args, { label: "codex-queue", cwd: session.cwd, stdio: "ignore" });
       return { ok: true };

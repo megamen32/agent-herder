@@ -21,6 +21,7 @@ import {
 } from "../types/index.js";
 import { ZcodeAppServerClient, type ZcodeClientLike } from "./zcode-protocol.js";
 import { lifecycleStateFor } from "../session-lifecycle.js";
+import { getHumanStopStore } from "../human-stop-store.js";
 
 interface ZcodeWorkspaceRef {
   workspacePath: string;
@@ -98,6 +99,11 @@ interface LatestUserPrompt {
   id: string;
   at: string;
   turnId?: string;
+  text?: string;
+}
+
+interface UserPromptCandidate extends LatestUserPrompt {
+  seq?: number;
 }
 
 interface ZcodeSnapshot {
@@ -111,6 +117,13 @@ interface ZcodeSnapshot {
   };
   runtime?: { eventSeq?: number; stateRevision?: number; pendingRequestIds?: string[] };
   messages?: ZcodeMessage[];
+}
+
+interface TurnStartResult {
+  ok: boolean;
+  error?: string;
+  pending?: boolean;
+  turnId?: string;
 }
 
 interface ZcodeCommand {
@@ -165,6 +178,7 @@ function exactTimestamp(value: unknown): string | undefined {
 }
 
 const AGENT_HERDER_AUTOMATION_INPUT_PREFIX = "agent-herder:auto:";
+const MAX_LATEST_USER_PROMPT_TEXT_LENGTH = 100_000;
 
 function zcodeInputId(inputId: string, origin: "human" | "automation"): string {
   if (origin === "human" || inputId.startsWith(AGENT_HERDER_AUTOMATION_INPUT_PREFIX)) return inputId;
@@ -345,36 +359,54 @@ function automationStopFromEvent(value: unknown): (AutomationStopMarker & { seq?
   return { id, at, reason: "cancelled", ...(turnId ? { turnId } : {}), ...(seq !== undefined ? { seq } : {}) };
 }
 
-function latestExplicitUserPrompt(messages: ZcodeMessage[], events: Array<Record<string, unknown>>): (LatestUserPrompt & { seq?: number }) | undefined {
+function userPromptCandidate(message: ZcodeMessage, events: Array<Record<string, unknown>>): UserPromptCandidate | undefined {
+  const info = record(message.info);
+  const semantics = record(info.semantics);
+  const metadata = record(info.metadata);
+  const inputId = nonEmptyString(metadata.inputId);
+  const id = nonEmptyString(info.messageId);
+  const start = id ? events.map(nativeSessionEvent).find((event) => {
+    const payload = record(event?.payload);
+    return event?.type === "turn.started" && nonEmptyString(payload.messageId) === id;
+  }) : undefined;
+  const startPayload = record(start?.payload);
+  const originMeta = record(startPayload.originMeta);
+  if (info.role !== "user"
+    || semantics.origin !== "real_user"
+    || semantics.kind !== "user_prompt"
+    || info.synthetic === true
+    || info.visibility === "model-only"
+    || nonEmptyString(info.source)
+    || nonEmptyString(metadata.automationId)
+    || nonEmptyString(metadata.offPeakTaskId)
+    || nonEmptyString(startPayload.inputSource)
+    || nonEmptyString(originMeta.automationId)
+    || nonEmptyString(originMeta.offPeakTaskId)
+    || (inputId && inputId.startsWith(AGENT_HERDER_AUTOMATION_INPUT_PREFIX))) return undefined;
+  const at = exactTimestamp(record(info.time).created);
+  if (!id || !at) return undefined;
+  const seq = typeof start?.seq === "number" && Number.isInteger(start.seq) && start.seq >= 0 ? start.seq : undefined;
+  const turnId = nonEmptyString(start?.turnId) || nonEmptyString(metadata.turnId);
+  const text = textFromMessage(message);
+  return {
+    id,
+    at,
+    ...(turnId ? { turnId } : {}),
+    ...(text.length <= MAX_LATEST_USER_PROMPT_TEXT_LENGTH ? { text } : {}),
+    ...(seq !== undefined ? { seq } : {}),
+  };
+}
+
+function latestExplicitUserPrompt(
+  messages: ZcodeMessage[],
+  events: Array<Record<string, unknown>>,
+  generatedMessageIds: ReadonlySet<string> = new Set(),
+): (LatestUserPrompt & { seq?: number }) | undefined {
   for (const message of [...messages].reverse()) {
-    const info = record(message.info);
-    const semantics = record(info.semantics);
-    const metadata = record(info.metadata);
-    const inputId = nonEmptyString(metadata.inputId);
-    const id = nonEmptyString(info.messageId);
-    const start = id ? events.map(nativeSessionEvent).find((event) => {
-      const payload = record(event?.payload);
-      return event?.type === "turn.started" && nonEmptyString(payload.messageId) === id;
-    }) : undefined;
-    const startPayload = record(start?.payload);
-    const originMeta = record(startPayload.originMeta);
-    if (info.role !== "user"
-      || semantics.origin !== "real_user"
-      || semantics.kind !== "user_prompt"
-      || info.synthetic === true
-      || info.visibility === "model-only"
-      || nonEmptyString(info.source)
-      || nonEmptyString(metadata.automationId)
-      || nonEmptyString(metadata.offPeakTaskId)
-      || nonEmptyString(startPayload.inputSource)
-      || nonEmptyString(originMeta.automationId)
-      || nonEmptyString(originMeta.offPeakTaskId)
-      || (inputId && inputId.startsWith(AGENT_HERDER_AUTOMATION_INPUT_PREFIX))) continue;
-    const at = exactTimestamp(record(info.time).created);
-    if (!id || !at) continue;
-    const seq = typeof start?.seq === "number" && Number.isInteger(start.seq) && start.seq >= 0 ? start.seq : undefined;
-    const turnId = nonEmptyString(start?.turnId) || nonEmptyString(metadata.turnId);
-    return { id, at, ...(turnId ? { turnId } : {}), ...(seq !== undefined ? { seq } : {}) };
+    const candidate = userPromptCandidate(message, events);
+    if (candidate && !generatedMessageIds.has(candidate.id)) {
+      return candidate;
+    }
   }
   return undefined;
 }
@@ -456,7 +488,12 @@ function mapSession(
     automationStop,
     automationStopSequence: typeof automationStopSequence === "number" ? automationStopSequence : undefined,
     automationStopHistoryAvailable: nativeEventHistoryAvailable,
-    latestUserPrompt: latestUserPrompt ? { id: latestUserPrompt.id, at: latestUserPrompt.at, ...(latestUserPrompt.turnId ? { turnId: latestUserPrompt.turnId } : {}) } : undefined,
+    latestUserPrompt: latestUserPrompt ? {
+      id: latestUserPrompt.id,
+      at: latestUserPrompt.at,
+      ...(latestUserPrompt.turnId ? { turnId: latestUserPrompt.turnId } : {}),
+      ...(latestUserPrompt.text !== undefined ? { text: latestUserPrompt.text } : {}),
+    } : undefined,
     latestUserPromptSequence: latestUserPrompt?.seq,
   };
   const rawStatus = mapStatus(session.status);
@@ -643,10 +680,10 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly persistedSessionIds = new Set<string>();
   private readonly desiredSessionTitles = new Map<string, string>();
   private readonly titlePersistenceTimers = new Map<string, NodeJS.Timeout>();
-  private readonly queuedPrompts = new Map<string, string[]>();
+  private readonly queuedPrompts = new Map<string, Array<{ message: string; origin: "human" | "automation" }>>();
   private readonly queuedPromptTimers = new Map<string, NodeJS.Timeout>();
   private readonly queuedPromptFlushes = new Set<string>();
-  private readonly turnStartWaiters = new Map<string, (result: { ok: boolean; error?: string }) => void>();
+  private readonly turnStartWaiters = new Map<string, (result: TurnStartResult) => void>();
   private reportedEmptyTasksIndex = false;
   private readonly sessionWorkspaces = new Map<string, ZcodeWorkspaceRef>();
   private readonly sessionEventCursors = new Map<string, number>();
@@ -655,6 +692,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly createdSessions = new Map<string, AgentSession>();
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
   private readonly sessionEventUnsubscribers = new Map<string, () => void>();
+  private readonly sessionEventTasks = new Set<Promise<void>>();
   private sessionSnapshotReceipt: SessionSnapshotReceipt = {
     exhaustive: false,
     observedAt: new Date(0).toISOString(),
@@ -738,6 +776,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.turnStartWaiters.clear();
     for (const unsubscribe of this.sessionEventUnsubscribers.values()) { try { unsubscribe(); } catch { /* best effort */ } }
     this.sessionEventUnsubscribers.clear();
+    await Promise.allSettled([...this.sessionEventTasks]);
     await this.client.close();
     this.emitEvent({ kind: "process.disconnected", harness: "zcode", data: { transport: "app-server-events" } });
   }
@@ -1114,6 +1153,10 @@ export class ZcodeAdapter implements HarnessAdapter {
       if (permissionError) return { ok: false, error: permissionError };
       const inputId = zcodeInputId(options.inputId || randomUUID(), origin);
       try {
+        const stopStore = getHumanStopStore();
+        if (await stopStore.isHeld("zcode", id)) return { ok: false, error: "Чат явно остановлен; автоматическая отправка запрещена." };
+        if (origin !== "human") await stopStore.rememberGeneratedPrompt("zcode", id, options.message);
+        if (await stopStore.isHeld("zcode", id)) return { ok: false, error: "Чат явно остановлен; автоматическая отправка запрещена." };
         const workspace = this.sessionWorkspaces.get(id) || this.workspace();
         const ack = record(await this.callAgent("sendPrompt", {
           ...workspace,
@@ -1125,6 +1168,11 @@ export class ZcodeAdapter implements HarnessAdapter {
         const ackSessionId = nonEmptyString(ack.sessionId);
         if (ackSessionId && ackSessionId !== id) {
           throw new Error(`ZCode sendPrompt acknowledged a different session: ${ackSessionId}`);
+        }
+        const ackTurnId = nonEmptyString(ack.turnId) || nonEmptyString(record(ack.turn).id);
+        if (origin !== "human" && ackTurnId) {
+          try { await stopStore.rememberGeneratedPrompt("zcode", id, options.message, ackTurnId); }
+          catch (error) { console.error(`[agent-herder] admitted ZCode prompt turn could not be registered: ${error instanceof Error ? error.message : String(error)}`); }
         }
         return {
           ok: true,
@@ -1140,7 +1188,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     if (!result.ok) {
       if (options.queue && /prompt is already running/i.test(result.error ?? "")) {
         const queue = this.queuedPrompts.get(id) ?? [];
-        if (!queue.includes(options.message)) queue.push(options.message);
+        if (!queue.some((item) => item.message === options.message && item.origin === origin)) queue.push({ message: options.message, origin });
         this.queuedPrompts.set(id, queue);
         this.scheduleQueuedPromptFlush(id);
         return { ok: true };
@@ -1650,31 +1698,47 @@ export class ZcodeAdapter implements HarnessAdapter {
         afterSeq,
         includeSnapshot: true,
       }, (payload) => {
-        const event = normalizeZcodeTaskEvent(sessionId, payload);
-        if (event) {
-          const inputId = nonEmptyString(record(event.data).inputId);
-          const nativeResultType = nonEmptyString(record(event.data).nativeResultType);
-          const cancelled = nativeResultType === "cancelled";
-          if (cancelled) this.clearQueuedPrompts(sessionId);
-          if (cancelled && this.isRecentHerderCancellation(sessionId, nonEmptyString(record(record(event.data).automationStop).turnId))) {
-            if (event.data) {
-              delete event.data.automationStop;
-              event.data.herderCancellation = true;
+        if (!active) return;
+        const task = (async () => {
+          if (!active) return;
+          const event = normalizeZcodeTaskEvent(sessionId, payload);
+          if (event) {
+            const inputId = nonEmptyString(record(event.data).inputId);
+            const nativeResultType = nonEmptyString(record(event.data).nativeResultType);
+            const cancelled = nativeResultType === "cancelled";
+            if (cancelled) this.clearQueuedPrompts(sessionId);
+            if (cancelled && this.isRecentHerderCancellation(sessionId, nonEmptyString(record(record(event.data).automationStop).turnId))) {
+              if (event.data) {
+                const marker = record(event.data.automationStop) as unknown as AutomationStopMarker;
+                try {
+                  await getHumanStopStore().ignoreNativeStop("zcode", sessionId, marker);
+                  if (!active) return;
+                  delete event.data.automationStop;
+                  event.data.herderCancellation = true;
+                } catch (error) {
+                  console.error(`[agent-herder] failed to persist internal ZCode cancellation evidence: ${error instanceof Error ? error.message : String(error)}`);
+                }
+              }
             }
-          }
-          if (inputId) {
-            const waiterKey = `${sessionId}:${inputId}`;
-            const waiter = this.turnStartWaiters.get(waiterKey);
-            if (waiter && (event.kind === "turn.started" || event.kind === "turn.completed" || event.kind === "turn.failed")) {
-              this.turnStartWaiters.delete(waiterKey);
-              waiter(event.kind === "turn.failed"
-                ? { ok: false, error: `ZCode accepted prompt for ${sessionId}, but the native turn failed before confirmation completed` }
-                : { ok: true });
+            if (!active) return;
+            if (inputId) {
+              const waiterKey = `${sessionId}:${inputId}`;
+              const waiter = this.turnStartWaiters.get(waiterKey);
+              if (waiter && (event.kind === "turn.started" || event.kind === "turn.completed" || event.kind === "turn.failed")) {
+                this.turnStartWaiters.delete(waiterKey);
+                waiter(event.kind === "turn.failed"
+                  ? { ok: false, error: `ZCode accepted prompt for ${sessionId}, but the native turn failed before confirmation completed` }
+                  : { ok: true, turnId: nonEmptyString(record(event.data).turnId) });
+              }
             }
+            this.emitEvent(event);
+            if (!cancelled && (event.kind === "turn.completed" || event.kind === "turn.failed")) this.scheduleQueuedPromptFlush(sessionId, 0);
           }
-          this.emitEvent(event);
-          if (!cancelled && (event.kind === "turn.completed" || event.kind === "turn.failed")) this.scheduleQueuedPromptFlush(sessionId, 0);
-        }
+        })().catch((error) => {
+          console.error(`[agent-herder] ZCode event handling failed for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+        });
+        this.sessionEventTasks.add(task);
+        void task.finally(() => this.sessionEventTasks.delete(task));
       });
       this.sessionEventUnsubscribers.set(sessionId, () => { active = false; unsubscribe(); });
       this.emitEvent({ kind: "process.connected", harness: "zcode", nativeType: "event-subscription-ready", data: { transport: "app-server-events" } });
@@ -1726,10 +1790,10 @@ export class ZcodeAdapter implements HarnessAdapter {
     message: string,
     baseline: ZcodeSnapshot | undefined,
     acceptedStateRevision: number | undefined,
-  ): Promise<{ ok: boolean; error?: string; pending?: boolean }> {
+  ): Promise<TurnStartResult> {
     const waiterKey = `${sessionId}:${inputId}`;
-    let resolveEvent!: (result: { ok: boolean; error?: string }) => void;
-    const eventResult = new Promise<{ ok: boolean; error?: string }>((resolve) => { resolveEvent = resolve; });
+    let resolveEvent!: (result: TurnStartResult) => void;
+    const eventResult = new Promise<TurnStartResult>((resolve) => { resolveEvent = resolve; });
     this.turnStartWaiters.set(waiterKey, resolveEvent);
     this.ensureSessionEventSubscription(sessionId, workspace);
     const deadline = Date.now() + this.turnStartTimeoutMs;
@@ -1750,7 +1814,9 @@ export class ZcodeAdapter implements HarnessAdapter {
               const payload = record(event.payload);
               if (nonEmptyString(payload.inputId) !== inputId) continue;
               const type = nonEmptyString(event.type);
-              if (type === "turn.started" || type === "turn.completed") return { ok: true };
+              if (type === "turn.started" || type === "turn.completed") {
+                return { ok: true, turnId: nonEmptyString(event.turnId) || nonEmptyString(payload.turnId) };
+              }
               if (type === "turn.failed") {
                 return { ok: false, error: `ZCode accepted prompt for ${sessionId}, but the native turn failed before confirmation completed` };
               }
@@ -1794,7 +1860,8 @@ export class ZcodeAdapter implements HarnessAdapter {
     if (this.queuedPromptFlushes.has(sessionId)) return;
     const queue = this.queuedPrompts.get(sessionId);
     if (!queue?.length) return;
-    const queuedMessage = queue[0];
+    const queuedPrompt = queue[0];
+    const queuedMessage = queuedPrompt.message;
     let nextDelayMs = 0;
     this.queuedPromptFlushes.add(sessionId);
     try {
@@ -1805,11 +1872,28 @@ export class ZcodeAdapter implements HarnessAdapter {
         nextDelayMs = 60_000;
         return;
       }
+      if (await this.queuedPromptHeld(sessionId)) {
+        this.queuedPrompts.delete(sessionId);
+        return;
+      }
       let workspace = this.sessionWorkspaces.get(sessionId) || this.workspace();
       let acceptedInputId: string | undefined;
       let acceptedStateRevision: number | undefined;
+      const rememberQueuedGeneratedPrompt = async (turnId?: string): Promise<void> => {
+        if (queuedPrompt.origin === "human") return;
+        await getHumanStopStore().rememberGeneratedPrompt("zcode", sessionId, queuedMessage, turnId);
+      };
+      const bindQueuedGeneratedPromptTurn = async (turnId: string | undefined): Promise<void> => {
+        if (!turnId || queuedPrompt.origin === "human") return;
+        try {
+          await rememberQueuedGeneratedPrompt(turnId);
+        } catch (error) {
+          console.error(`[agent-herder] failed to bind queued ZCode prompt turn for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      };
       try {
-        const inputId = zcodeInputId(randomUUID(), "automation");
+        await rememberQueuedGeneratedPrompt();
+        const inputId = zcodeInputId(randomUUID(), queuedPrompt.origin);
         const ack = record(await this.callAgent("sendPrompt", {
           ...workspace,
           sessionId,
@@ -1819,6 +1903,8 @@ export class ZcodeAdapter implements HarnessAdapter {
         if (ack.accepted !== true) throw new Error("ZCode sendPrompt did not acknowledge prompt admission");
         acceptedInputId = inputId;
         acceptedStateRevision = typeof ack.stateRevision === "number" ? ack.stateRevision : undefined;
+        const ackTurnId = nonEmptyString(ack.turnId) || nonEmptyString(record(ack.turn).id);
+        await bindQueuedGeneratedPromptTurn(ackTurnId);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (/prompt is already running/i.test(message)) {
@@ -1836,8 +1922,13 @@ export class ZcodeAdapter implements HarnessAdapter {
                 nextDelayMs = 60_000;
                 return;
               }
+              if (await this.queuedPromptHeld(sessionId)) {
+                this.queuedPrompts.delete(sessionId);
+                return;
+              }
               workspace = this.sessionWorkspaces.get(sessionId) || workspace;
-              const inputId = zcodeInputId(randomUUID(), "automation");
+              await rememberQueuedGeneratedPrompt();
+              const inputId = zcodeInputId(randomUUID(), queuedPrompt.origin);
               const ack = record(await this.callAgent("sendPrompt", {
                 ...workspace,
                 sessionId,
@@ -1847,6 +1938,8 @@ export class ZcodeAdapter implements HarnessAdapter {
               if (ack.accepted !== true) throw new Error("ZCode sendPrompt did not acknowledge prompt admission");
               acceptedInputId = inputId;
               acceptedStateRevision = typeof ack.stateRevision === "number" ? ack.stateRevision : undefined;
+              const ackTurnId = nonEmptyString(ack.turnId) || nonEmptyString(record(ack.turn).id);
+              await bindQueuedGeneratedPromptTurn(ackTurnId);
             } catch (retryError) {
               const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
               if (/prompt is already running/i.test(retryMessage)) {
@@ -1882,14 +1975,24 @@ export class ZcodeAdapter implements HarnessAdapter {
       queue.shift();
       if (queue.length === 0) this.queuedPrompts.delete(sessionId);
       const started = await this.waitForTurnStart(sessionId, workspace, acceptedInputId, queuedMessage, baseline, acceptedStateRevision);
+      if (started.ok) await bindQueuedGeneratedPromptTurn(started.turnId);
       if (!started.ok) {
         console.error(`[agent-herder] queued ZCode prompt admission was not followed by a turn for ${sessionId}: ${started.error || "unknown error"}`);
       }
       await this.persistDesiredSessionTitle(sessionId);
+    } catch (error) {
+      nextDelayMs = 5_000;
+      console.error(`[agent-herder] queued ZCode prompt preflight failed for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       this.queuedPromptFlushes.delete(sessionId);
       if (this.queuedPrompts.get(sessionId)?.length) this.scheduleQueuedPromptFlush(sessionId, nextDelayMs);
     }
+  }
+
+  private async queuedPromptHeld(sessionId: string): Promise<boolean> {
+    const fresh = await this.getSession(sessionId);
+    if (fresh) return getHumanStopStore().observe(fresh);
+    return getHumanStopStore().isHeld("zcode", sessionId);
   }
 
   private async callAgent(method: string, ...args: unknown[]): Promise<unknown> {

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -23,6 +23,27 @@ async function runHook(script: string, input: unknown, env: NodeJS.ProcessEnv): 
 }
 
 describe("durable cross-agent inbox", () => {
+  it.each([undefined, "false"])("does not consume inbox or continue without a valid stop flag: %s", async (humanStopHeld) => {
+    const requestedUrls: string[] = [];
+    const server = createServer((request, response) => {
+      requestedUrls.push(request.url || "");
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ humanStopHeld, inboxContext: "must not deliver" }));
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("test server has no TCP address");
+      const output = await runHook("scripts/codex-stop-hook.mjs", {
+        hook_event_name: "Stop", session_id: "codex-invalid-fence", cwd: projectRoot,
+      }, { AGENT_HERDER_URL: `http://127.0.0.1:${address.port}` });
+      expect(JSON.parse(output)).toEqual({});
+      expect(requestedUrls).toHaveLength(1);
+      expect(requestedUrls[0]).toContain("consume=0");
+    } finally {
+      await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+    }
+  });
   it("atomically consumes only the target session messages", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-inbox-"));
     try {
@@ -49,6 +70,17 @@ describe("durable cross-agent inbox", () => {
 
   it("continues a busy Codex thread with inbox context at its Stop boundary", async () => {
     const requestedUrls: string[] = [];
+    const pluginRoot = await mkdtemp(join(tmpdir(), "agent-herder-codex-stop-plugin-"));
+    const capturePath = join(pluginRoot, "generated-input.jsonl");
+    await mkdir(join(pluginRoot, "dist"), { recursive: true });
+    await writeFile(join(pluginRoot, "dist", "human-stop-store.js"), [
+      "export function getHumanStopStore() {",
+      " return { async rememberGeneratedPrompt(harness, id, text) {",
+      "  const fs = await import('node:fs/promises');",
+      "  await fs.appendFile(process.env.AGENT_HERDER_TEST_CAPTURE, JSON.stringify({ harness, id, text }) + '\\n');",
+      " } };",
+      "}",
+    ].join("\n"));
     const server = createServer((request, response) => {
       const requestedUrl = request.url || "";
       requestedUrls.push(requestedUrl);
@@ -63,14 +95,22 @@ describe("durable cross-agent inbox", () => {
       if (!address || typeof address === "string") throw new Error("test server has no TCP address");
       const output = JSON.parse(await runHook("scripts/codex-stop-hook.mjs", {
         hook_event_name: "Stop", session_id: "codex-busy", cwd: projectRoot,
-      }, { AGENT_HERDER_URL: `http://127.0.0.1:${address.port}`, PLUGIN_ROOT: projectRoot }));
+      }, {
+        AGENT_HERDER_URL: `http://127.0.0.1:${address.port}`,
+        PLUGIN_ROOT: pluginRoot,
+        AGENT_HERDER_TEST_CAPTURE: capturePath,
+      }));
       expect(output).toEqual({ decision: "block", reason: "<agent-herder-inbox>coordinate now</agent-herder-inbox>" });
+      expect(JSON.parse((await readFile(capturePath, "utf8")).trim())).toEqual({
+        harness: "codex", id: "codex-busy", text: "<agent-herder-inbox>coordinate now</agent-herder-inbox>",
+      });
       expect(requestedUrls.some((url) => url.includes("consume=0"))).toBe(true);
       const consumingUrl = requestedUrls.find((url) => url.includes("consume=1"));
       expect(consumingUrl).toContain("consume=1");
       expect(consumingUrl).toContain("sessionId=codex-busy");
     } finally {
       await new Promise<void>((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()));
+      await rm(pluginRoot, { recursive: true, force: true });
     }
   });
 });

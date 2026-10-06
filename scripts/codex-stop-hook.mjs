@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 let raw = "";
 for await (const chunk of process.stdin) raw += chunk;
@@ -12,6 +12,9 @@ try { input = JSON.parse(raw || "{}"); } catch { /* autopilot hook reports inval
 const sessionId = typeof input.session_id === "string" ? input.session_id : "";
 const cwd = typeof input.cwd === "string" && input.cwd ? input.cwd : process.cwd();
 const endpoint = process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787";
+const pluginRoot = process.env.PLUGIN_ROOT?.trim()
+  ? resolve(process.env.PLUGIN_ROOT)
+  : resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 if (!sessionId) {
   process.stdout.write("{}");
@@ -22,12 +25,25 @@ async function readContext(consume) {
   const query = new URLSearchParams({ harness: "codex", sessionId, cwd, consume: consume ? "1" : "0" });
   const response = await fetch(`${endpoint}/api/coordination/context?${query}`, { signal: AbortSignal.timeout(1500) });
   if (!response.ok) throw new Error(`human-stop status unavailable (${response.status})`);
-  return response.json();
+  const context = await response.json();
+  if (typeof context.humanStopHeld !== "boolean") throw new Error("human-stop status is invalid");
+  return context;
 }
 
 async function humanStopHeld() {
   const context = await readContext(false);
   return context.humanStopHeld === true;
+}
+
+async function rememberGeneratedPrompt(text) {
+  try {
+    const moduleUrl = pathToFileURL(resolve(pluginRoot, "dist/human-stop-store.js")).href;
+    const { getHumanStopStore } = await import(moduleUrl);
+    await getHumanStopStore().rememberGeneratedPrompt("codex", sessionId, text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function exitWithoutContinuation() {
@@ -39,11 +55,12 @@ if (sessionId) {
   let payload;
   try {
     if (await humanStopHeld()) await exitWithoutContinuation();
-    // The consuming read checks the durable stop fence atomically before it
-    // drains the coordination inbox.
+    // The consuming read rechecks the durable stop fence before draining the inbox.
     payload = await readContext(true);
     if (payload.humanStopHeld === true) await exitWithoutContinuation();
     if (typeof payload.inboxContext === "string" && payload.inboxContext.trim()) {
+      if (await humanStopHeld()) await exitWithoutContinuation();
+      if (!await rememberGeneratedPrompt(payload.inboxContext)) await exitWithoutContinuation();
       if (await humanStopHeld()) await exitWithoutContinuation();
       process.stdout.write(JSON.stringify({ decision: "block", reason: payload.inboxContext }));
       process.exit(0);
@@ -54,9 +71,6 @@ if (sessionId) {
   }
 }
 
-const pluginRoot = process.env.PLUGIN_ROOT?.trim()
-  ? resolve(process.env.PLUGIN_ROOT)
-  : resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const child = spawn("bash", [resolve(pluginRoot, "scripts/autopilot-hook-launcher.sh")], {
   env: process.env,
   stdio: ["pipe", "pipe", "inherit"],

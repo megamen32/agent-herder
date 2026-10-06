@@ -6,10 +6,15 @@ import lockfile from "proper-lockfile";
 import type { AgentSession, HarnessAdapter } from "./types/index.js";
 import { coordinationNotes } from "./coordination-notes.js";
 import { deferredMessages, isBusyCodexWriter, withDeferred } from "./deferred-messages.js";
+import { getHumanStopStore } from "./human-stop-store.js";
+import { automaticDeliveryHeld, HUMAN_STOP_MESSAGE } from "./human-stop-actions.js";
 
 export type NamedSessionMode = "queue" | "sync";
 
 export interface NamedSessionRequest {
+  sourceSessions?: Array<{ harness: string; sessionId: string }>;
+  sourceSessionId?: string;
+  sourceHarness?: string;
   harness: string;
   name: string;
   cwd: string;
@@ -17,6 +22,7 @@ export interface NamedSessionRequest {
 }
 
 export interface NewOrResumeNamedSessionRequest extends NamedSessionRequest {
+  humanRequested?: boolean;
   message: string;
   mode?: NamedSessionMode;
   model?: string;
@@ -41,6 +47,7 @@ type NamedSessionResolution =
   | { kind: "error"; result: NamedSessionResult }
   | { kind: "resolved"; adapter: HarnessAdapter; target: AgentSession; created: boolean; normalized: NamedSessionRequest };
 
+const canonicalSources = new WeakMap<NamedSessionRequest, Array<{ harness: string; sessionId: string }>>();
 const queues = new Map<string, Promise<void>>();
 const recentNamedSessions = new Map<string, { session: AgentSession; seenAt: number }>();
 const recentNamedDeliveries = new Map<string, { result: NamedSessionResult; seenAt: number }>();
@@ -51,6 +58,8 @@ export async function createNamedSession(
   request: NamedSessionRequest,
 ): Promise<NamedSessionResult> {
   return withNamedSessionLock(request, async (normalized) => {
+    const sourceError = await namedAutomationError(adapters, request, normalized);
+    if (sourceError) return failed(normalized, sourceError, "not_attempted");
     const adapter = adapters.get(normalized.harness);
     if (!adapter) return failed(normalized, `Harness '${normalized.harness}' is not configured`);
     if (!adapter.createSession) return failed(normalized, `${adapter.name} does not support session creation`);
@@ -64,6 +73,7 @@ export async function createNamedSession(
       return failed(normalized, `Named session '${normalized.name}' already exists for ${normalized.harness}:${normalized.cwd}`);
     }
     try {
+      if (await sourceHeldNow(request)) return failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted");
       const session = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, fullAccess: true });
       rememberNamedSession(normalized, session);
       return { ok: true, created: true, sessionId: session.id, model: request.model, ...normalized };
@@ -78,6 +88,8 @@ export async function newOrResumeNamedSession(
   request: NewOrResumeNamedSessionRequest,
 ): Promise<NamedSessionResult> {
   const resolved = await withNamedSessionLock<NamedSessionResolution>(request, async (normalized) => {
+    const sourceError = await namedAutomationError(adapters, request, normalized);
+    if (sourceError) return { kind: "error", result: failed(normalized, sourceError, "not_attempted") };
     const adapter = adapters.get(normalized.harness);
     if (!adapter) return { kind: "error", result: failed(normalized, `Harness '${normalized.harness}' is not configured`, "not_attempted") };
     if (!adapter.createSession) return { kind: "error", result: failed(normalized, `${adapter.name} does not support session creation`, "not_attempted") };
@@ -93,9 +105,12 @@ export async function newOrResumeNamedSession(
     }
 
     let target = matches[0];
+    if (target && await automaticDeliveryHeld(target, request.humanRequested, adapter)) return { kind: "error", result: failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted") };
     let created = false;
     if (!target) {
+      if (await getHumanStopStore().findHeldNamed(normalized.harness, normalized.name, normalized.cwd)) return { kind: "error", result: failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted") };
       try {
+        if (await sourceHeldNow(request)) return { kind: "error", result: failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted") };
         target = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, fullAccess: true });
         rememberNamedSession(normalized, target);
         created = true;
@@ -109,7 +124,7 @@ export async function newOrResumeNamedSession(
 
   const deliveryIdentity = namedDeliveryIdentity(resolved.normalized, request.message);
   const priorDelivery = recentNamedDelivery(deliveryIdentity);
-  if (priorDelivery) return priorDelivery;
+  if (priorDelivery && !request.humanRequested) return priorDelivery;
 
   const mode = request.mode || "sync";
   // A create request may accept a model option without the native service
@@ -140,7 +155,9 @@ export async function newOrResumeNamedSession(
   }
   const pending = await withDeferred(resolved.target.id, request.message);
   const injectedMessage = await coordinationNotes.inject(resolved.target, pending.message);
+  if (await sourceHeldNow(request) || await automaticDeliveryHeld(resolved.target, false, resolved.adapter)) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created };
   const delivery = await resolved.adapter.sendMessage(resolved.target.id, {
+      origin: request.humanRequested ? "human" : "automation",
       message: injectedMessage,
       queue: mode === "queue",
   });
@@ -275,6 +292,35 @@ async function acquireFileLock(key: string): Promise<() => Promise<void>> {
   });
 }
 
+function launchSources(request: NamedSessionRequest) {
+  const refs = [...(request.sourceSessions ?? []), ...(request.sourceSessionId ? [{ harness: request.sourceHarness || request.harness, sessionId: request.sourceSessionId }] : [])];
+  return [...new Map(refs.map((ref) => [`${ref.harness}:${ref.sessionId}`, ref])).values()];
+}
+async function sourceHeldNow(request: NamedSessionRequest): Promise<boolean> {
+  return getHumanStopStore().anyHeld(canonicalSources.get(request) ?? launchSources(request));
+}
+
+async function namedAutomationError(adapters: Map<string, HarnessAdapter>, request: NamedSessionRequest, normalized: NamedSessionRequest): Promise<string | undefined> {
+  const store = getHumanStopStore();
+  const refs = launchSources(request);
+  if (refs.length > 32) return "Слишком много исходных чатов; автоматическое создание запрещено.";
+  const canonical: Array<{ harness: string; sessionId: string }> = [];
+  for (const ref of refs) {
+    const source = await adapters.get(ref.harness)?.getSession(ref.sessionId);
+    if (source) {
+      if (await store.observe(source)) return HUMAN_STOP_MESSAGE;
+      canonical.push({ harness: source.harness, sessionId: source.id });
+    } else {
+      if (await store.isHeld(ref.harness, ref.sessionId)) return HUMAN_STOP_MESSAGE;
+      return "Исходный чат недоступен; автоматически создавать замену запрещено.";
+    }
+  }
+  canonicalSources.set(request, canonical);
+  if (await store.anyHeld(canonical)) return HUMAN_STOP_MESSAGE;
+  if ("humanRequested" in request && request.humanRequested === true) return undefined;
+  return await store.findHeldNamed(normalized.harness, normalized.name, normalized.cwd) ? HUMAN_STOP_MESSAGE : undefined;
+}
+
 function failed(
   request: NamedSessionRequest,
   error: string,
@@ -290,6 +336,8 @@ export type DeliverResult = Omit<NamedSessionResult, "delivery"> & { sessionStat
 
 export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, request: DeliverNamedRequest): Promise<DeliverResult> {
   return withNamedSessionLock(request, async normalized => {
+    const sourceError = await namedAutomationError(adapters, request, normalized);
+    if (sourceError) return { ...failed(normalized, sourceError, "not_attempted"), activated: false };
     const deliveryIdentity = namedDeliveryIdentity(normalized, request.message);
     const priorDelivery = recentNamedDelivery(deliveryIdentity);
     if (priorDelivery) return {...priorDelivery,activated:false};
@@ -298,15 +346,18 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     let matches:AgentSession[]; try { matches=await exactMatches(adapter,normalized.name,normalized.cwd); } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
     if (matches.length>1) return {...failed(normalized,`Ambiguous named session '${normalized.name}' for ${normalized.harness}:${normalized.cwd}`,"not_attempted"),activated:false};
     let target=matches[0], created=false;
+    if (target && await automaticDeliveryHeld(target, false, adapter)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: target.id, activated: false };
     if (!target) {
       if ((request.create||"if_missing")==="never") return {ok:false,created:false,harness:normalized.harness,name:normalized.name,cwd:normalized.cwd,delivery:"not_found",activated:false,error:"Named session not found"};
       if (!adapter.createSession) return {...failed(normalized,`${adapter.name} does not support session creation`,"not_attempted"),activated:false};
-      try { target=await adapter.createSession({name:normalized.name,cwd:normalized.cwd,model:request.model,fullAccess:true}); rememberNamedSession(normalized,target); created=true; } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
+      try { if (await sourceHeldNow(request)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), activated: false }; target=await adapter.createSession({name:normalized.name,cwd:normalized.cwd,model:request.model,fullAccess:true}); rememberNamedSession(normalized,target); created=true; } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
     }
     const fresh=(await adapter.getSession(target.id)) || target; const activation=request.activation||"always";
+    if (await sourceHeldNow(request) || await automaticDeliveryHeld(fresh, false, adapter)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: fresh.id, activated: false };
     if (activation==="if_running" && fresh.status!=="running") return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"skipped_inactive",activated:false,...normalized};
     if (activation==="defer" && fresh.status!=="running") { await deferredMessages.add(fresh.id,request.message); return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"deferred",activated:false,...normalized}; }
     const pending=await withDeferred(fresh.id,request.message); const injected=await coordinationNotes.inject(fresh,pending.message);
+    if (await sourceHeldNow(request) || await automaticDeliveryHeld(fresh, false, adapter)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: fresh.id, activated: false };
     const sent=await adapter.sendMessage(fresh.id,{message:injected,queue:(request.mode||"queue")==="queue"});
     if (!sent.ok && sent.admitted && sent.nonRetryable) {
       const result: DeliverResult = {ok:false,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"accepted_failed",activated:false,admitted:true,nonRetryable:true,error:sent.error||"Native turn failed after prompt admission",...normalized};

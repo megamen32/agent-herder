@@ -75,6 +75,7 @@ async function humanStopHeld(sessionId, cwd) {
   });
   if (!response.ok) throw new Error(`human-stop status unavailable (${response.status})`);
   const status = await response.json();
+  if (typeof status.humanStopHeld !== "boolean") throw new Error("human-stop status is invalid");
   return status.humanStopHeld === true;
 }
 

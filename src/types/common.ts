@@ -163,6 +163,8 @@ export interface PermissionRequest {
 }
 
 export interface SendMessageOptions {
+  /** Explicit human input may release a manual stop; generated delivery must not. */
+  origin?: "human" | "automation";
   /** The message text to send */
   message: string;
   /** If true, queue the message without waiting (fire-and-forget) */
@@ -286,6 +288,9 @@ export interface HarnessAdapter {
 
   /** Terminate the native session or its owning process. */
   terminate?(id: string): Promise<ControlResult>;
+
+  /** Archive a completed native session while preserving its history. */
+  archiveSession?(id: string): Promise<ControlResult>;
 
   /** Reconnect/resume a failed transport and optionally recover with a prompt. */
   recover?(id: string, message?: string, signal?: AbortSignal): Promise<ControlResult>;

@@ -1,5 +1,6 @@
 import { Tool } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { MAX_MODEL_LENGTH } from "../automation-launch-policy.js";
 
 // ===== Schemas for tool inputs =====
 
@@ -66,6 +67,7 @@ export const ExportTranscriptSchema = z.object({
 });
 
 export const SendMessageSchema = z.object({
+  humanRequested: z.boolean().optional().describe("Set true only when a human explicitly asked to resume/send to this stopped chat. Automatic work must omit it."),
   sessionId: z.string().describe("Target session ID."),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Harness (optional if ID is unique)."),
   message: z.string().describe("Message to send to the agent."),
@@ -77,6 +79,9 @@ export const SendMessageSchema = z.object({
 });
 
 const NamedSessionBaseSchema = z.object({
+  sourceSessions: z.array(z.object({ harness: z.enum(["codex", "zcode", "opencode"]), sessionId: z.string().min(1).max(512) })).max(32).optional().describe("All verified native source/ancestor receipts for an automatic continuation. Any stopped source prohibits launch."),
+  sourceSessionId: z.string().min(1).optional().describe("Original session ID when this creation is a continuation/replacement; a stopped source prohibits automatic creation."),
+  sourceHarness: z.enum(["codex", "zcode", "opencode"]).optional(),
   harness: z.enum(["opencode", "codex", "zcode"]).describe("Harness that owns the named session."),
   name: z.string().trim().min(1).max(128).describe("Stable session name, for example repair_100."),
   cwd: z.string().min(1).describe("Absolute working directory. It is canonicalized before identity matching."),
@@ -85,14 +90,18 @@ const NamedSessionBaseSchema = z.object({
 export const CreateSessionSchema = NamedSessionBaseSchema;
 
 export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
+  humanRequested: z.boolean().optional().describe("True only for an explicit human continuation request; never inferred by an automated planner."),
   message: z.string().trim().min(1).describe("Message delivered to the created or reused session."),
   mode: z.enum(["queue", "sync"]).optional().default("sync").describe(
     "queue returns after native acceptance; sync waits for the adapter's completed response."
   ),
-  model: z.string().trim().min(1).max(128).optional().describe("Optional model selected before the first message is delivered."),
+  model: z.string().trim().min(1).max(MAX_MODEL_LENGTH).regex(/^[^\u0000-\u001f\u007f]*$/).optional().describe("Optional model selected before the first message is delivered."),
 });
 
 export const DeliverSchema = z.object({
+  sourceSessions: z.array(z.object({ harness: z.enum(["codex", "zcode", "opencode"]), sessionId: z.string().min(1).max(512) })).max(32).optional(),
+  sourceSessionId: z.string().min(1).max(512).optional().describe("Original native ID for an automatic continuation/replacement; stopped sources prohibit it."),
+  sourceHarness: z.enum(["codex", "zcode", "opencode"]).optional(),
   sessionId: z.string().optional().describe("Exact target session ID. Use either sessionId or harness+name+cwd."),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional(),
   name: z.string().trim().min(1).max(128).optional(),
@@ -101,7 +110,7 @@ export const DeliverSchema = z.object({
   create: z.enum(["if_missing", "never"]).optional().default("if_missing").describe("Named targets only: create the session if it does not exist, or fail with never."),
   activation: z.enum(["always", "if_running", "defer"]).optional().default("always").describe("always wakes/runs; if_running delivers only during an active turn; defer stores for the next Herder-delivered turn without waking an inactive agent."),
   mode: z.enum(["queue", "sync"]).optional().default("queue"),
-  model: z.string().trim().min(1).max(128).optional(),
+  model: z.string().trim().min(1).max(MAX_MODEL_LENGTH).regex(/^[^\u0000-\u001f\u007f]*$/).optional(),
 }).superRefine((v,ctx)=>{
   const named=Boolean(v.harness && v.name && v.cwd);
   if (!v.sessionId && !named) ctx.addIssue({code:z.ZodIssueCode.custom,message:"Provide sessionId or harness+name+cwd"});
@@ -129,6 +138,7 @@ export const SetPermissionsSchema = z.object({
 });
 
 export const ResumeAgentSchema = z.object({
+  humanRequested: z.boolean().optional().describe("Required true to release an explicit stop, only when the human explicitly requested it. Automatic recovery must omit it."),
   sessionId: z.string().describe("Session ID to resume."),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional(),
   message: z.string().optional().describe("Optional message to send when resuming."),

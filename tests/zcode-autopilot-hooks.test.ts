@@ -102,13 +102,13 @@ describe("ZCode Agent Herder hooks", () => {
     }
   });
 
-  it("does not arm or invoke autopilot when the native session has a durable human stop", async () => {
+  it.each([true, undefined, "false"])("does not invoke autopilot for a held or invalid stop flag: %s", async (humanStopHeld) => {
     const sandbox = await mkdtemp(join(tmpdir(), "agent-herder-zcode-held-"));
     const fakeRoot = join(sandbox, "fake-root");
     const capturePath = join(sandbox, "launcher-inputs.jsonl");
     const server = createServer((request, response) => {
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ humanStopHeld: true }));
+      response.end(JSON.stringify({ humanStopHeld }));
     });
     await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
     try {

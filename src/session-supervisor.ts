@@ -1,5 +1,7 @@
 import type { ContentPart, Conversation, ConversionResult, HarnessType, Message } from "session-convert";
 import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { getHumanStopStore, type HumanStopStore } from "./human-stop-store.js";
 import type {
   AgentSession,
   ControlResult,
@@ -52,6 +54,7 @@ export interface SpawnRecordInput {
 }
 
 export interface SessionSupervisorOptions {
+  humanStopStore?: HumanStopStore;
   /** How long a snapshot may be served before a background refresh starts. */
   sessionCacheTtlMs?: number;
   /** Domain event sink used by MCP resources, Web UI and other observers. */
@@ -112,6 +115,8 @@ export class SessionSupervisor {
   private readonly autoResumeMaxAttempts: number;
   private readonly autoResumeDelayMs: number;
   private readonly automaticResumes = new Map<string, AutomaticResumeState>();
+  private readonly humanStops: HumanStopStore;
+  private readonly immediateStops = new Set<string>();
   private readonly unfinishedSessions?: Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget">;
 
   constructor(
@@ -130,6 +135,40 @@ export class SessionSupervisor {
     this.autoResumeDelayMs = Math.max(0, options.autoResumeDelayMs
       ?? Number(process.env.AGENT_HERDER_AUTO_RESUME_DELAY_MS || 2_000));
     this.unfinishedSessions = options.unfinishedSessions;
+    this.humanStops = options.humanStopStore ?? getHumanStopStore();
+  }
+
+  async isAutomationHeld(harness: string, id: string): Promise<boolean> {
+    if (harness !== "codex" && harness !== "zcode") return false;
+    const session = await this.adapters.get(harness)?.getSession(id);
+    const held = session ? await this.humanStops.observe(session) : await this.humanStops.isHeld(harness, id);
+    if (!held) this.immediateStops.delete(sessionKey(harness, id));
+    return held;
+  }
+
+  async releaseHumanStop(harness: string, id: string, prompt?: { id: string; at: string; turnId?: string; text?: string }): Promise<boolean> {
+    if (harness !== "codex" && harness !== "zcode") return false;
+    if (prompt && await this.humanStops.isGeneratedPrompt(harness, id, prompt)) return false;
+    const session = await this.adapters.get(harness)?.getSession(id);
+    if (session) await this.humanStops.observe(session);
+    const released = await this.humanStops.release(harness, id, prompt);
+    if (released || !await this.humanStops.isHeld(harness, id)) this.immediateStops.delete(sessionKey(harness, id));
+    return released;
+  }
+
+  private async holdExplicitStop(harness: string, id: string): Promise<void> {
+    if (harness !== "codex" && harness !== "zcode") return;
+    this.immediateStops.add(sessionKey(harness, id));
+    this.clearAutomaticResume(harness, id);
+    const evidence = { id: `explicit-stop:${randomUUID()}`, at: new Date().toISOString(), reason: "explicit-stop" };
+    await this.humanStops.hold({ harness, id }, evidence);
+    const session = await this.adapters.get(harness)?.getSession(id).catch(() => null);
+    const turnId = typeof session?.meta?.activeTurnId === "string" ? session.meta.activeTurnId
+      : typeof session?.meta?.nativeTurnId === "string" ? session.meta.nativeTurnId : undefined;
+    await this.humanStops.hold(session ?? { harness, id }, {
+      ...evidence, ...(turnId ? { turnId } : {}),
+    });
+    await this.unfinishedSessions?.forget(harness, id);
   }
 
   async createNamedSession(request: NamedSessionRequest): Promise<NamedSessionResult> {
@@ -244,6 +283,7 @@ export class SessionSupervisor {
     const sessionGroups = await Promise.all(adapters.map(async ([provider, adapter]) => {
       const sessions = await adapter.listSessions();
       return Promise.all(sessions.map(async (session) => {
+        const humanStopHeld = (provider === "codex" || provider === "zcode") ? await this.humanStops.observe(session) : false;
         const record = await this.lineage.get(sessionKey(provider, nativeSessionId(session)));
         const nativeParentId = typeof session.meta?.parentThreadId === "string" && session.meta.parentThreadId !== nativeSessionId(session) ? session.meta.parentThreadId : undefined;
         const nativeRole = typeof session.meta?.agentRole === "string" ? session.meta.agentRole : undefined;
@@ -252,6 +292,7 @@ export class SessionSupervisor {
           ...session,
           meta: {
             ...session.meta,
+            humanStopHeld,
             provider,
             controlCapabilities: getHarnessCapabilities(adapter),
             lineage: parentKey
@@ -269,9 +310,10 @@ export class SessionSupervisor {
     const direct = this.adapters.get(harness);
     if (direct) {
       const session = await direct.getSession(id);
+      const humanStopHeld = session && (harness === "codex" || harness === "zcode") ? await this.humanStops.observe(session) : false;
       const modelOptions = direct.listModels ? await direct.listModels() : [];
       return session
-        ? { ...session, meta: { ...session.meta, provider: harness, controlCapabilities: getHarnessCapabilities(direct), modelOptions } }
+        ? { ...session, meta: { ...session.meta, humanStopHeld, provider: harness, controlCapabilities: getHarnessCapabilities(direct), modelOptions } }
         : null;
     }
     for (const adapter of this.adapters.values()) {
@@ -363,7 +405,12 @@ export class SessionSupervisor {
     } else {
       session = await adapter.getSession(id);
     }
+    if (options.origin === "human") await this.releaseHumanStop(harness, id);
+    else if ((harness === "codex" || harness === "zcode") && ((session && await this.humanStops.observe(session)) || await this.isAutomationHeld(harness, id))) {
+      return { ok: false, nonRetryable: true, error: "Чат явно остановлен. Автопродолжение заблокировано; требуется новое сообщение человека или явное продолжение." };
+    }
     const message = session ? await coordinationNotes.inject(session, options.message) : options.message;
+    if (await this.isAutomationHeld(harness, id)) return { ok: false, nonRetryable: true, error: "Чат явно остановлен. Требуется новое сообщение человека или явное продолжение." };
     const result = await adapter.sendMessage(id, { ...options, message });
     if (!result.ok && isBusyCodexWriter(harness, result.error)) {
       await deferredMessages.add(id, options.message);
@@ -390,6 +437,7 @@ export class SessionSupervisor {
   }
 
   async stopSession(harness: string, id: string): Promise<{ ok: boolean; error?: string }> {
+    await this.holdExplicitStop(harness, id);
     const result = await this.requireAdapter(harness).stopSession(id);
     if (result.ok) {
       await this.unfinishedSessions?.forget(harness, id);
@@ -399,6 +447,7 @@ export class SessionSupervisor {
   }
 
   async terminateSession(harness: string, id: string): Promise<{ ok: boolean; error?: string }> {
+    await this.holdExplicitStop(harness, id);
     const adapter = this.requireAdapter(harness);
     const result = adapter.terminate
       ? await adapter.terminate(id)
@@ -411,6 +460,7 @@ export class SessionSupervisor {
   }
 
   async cancelTurn(harness: string, id: string): Promise<{ ok: boolean; error?: string }> {
+    await this.holdExplicitStop(harness, id);
     const adapter = this.requireAdapter(harness);
     const result = adapter.cancelTurn
       ? await adapter.cancelTurn(id)
@@ -422,8 +472,27 @@ export class SessionSupervisor {
     return result;
   }
 
-  async recoverSession(harness: string, id: string, message?: string, signal?: AbortSignal): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
+  async archiveSession(harness: string, id: string): Promise<{ ok: boolean; error?: string }> {
+    const adapter = this.adapters.get(harness);
+    if (!adapter?.archiveSession) return { ok: false, error: `${adapter?.name || harness} does not expose session archiving` };
+    const session = await adapter.getSession(id);
+    if (!session) return { ok: false, error: "Session not found" };
+    if (session.status !== "idle" && session.status !== "stopped") {
+      return { ok: false, error: "Only idle or stopped sessions can be archived" };
+    }
+    if (session.needsPermission) return { ok: false, error: "Sessions with pending permissions cannot be archived" };
+    const result = await adapter.archiveSession(id);
+    if (result.ok) {
+      await this.unfinishedSessions?.forget(harness, id);
+      this.publishSessionChanged(harness, id, "changed");
+    }
+    return result;
+  }
+
+  async recoverSession(harness: string, id: string, message?: string, signal?: AbortSignal, humanRequested = false): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
     throwIfAborted(signal);
+    if (humanRequested) await this.releaseHumanStop(harness, id);
+    else if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат явно остановлен; автоматическое восстановление запрещено." };
     const adapter = this.requireAdapter(harness);
     let cancelling = false;
     const cancelNative = async (sessionId: string) => {
@@ -476,7 +545,9 @@ export class SessionSupervisor {
     return result;
   }
 
-  async forkSession(harness: string, id: string, message?: string): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
+  async forkSession(harness: string, id: string, message?: string, humanRequested = false): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
+    if (humanRequested) await this.releaseHumanStop(harness, id);
+    else if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат явно остановлен; автоматическое создание копии запрещено." };
     const adapter = this.requireAdapter(harness);
     const result: Promise<ControlResult> = adapter.forkSession
       ? adapter.forkSession(id, message)
@@ -509,7 +580,9 @@ export class SessionSupervisor {
     return result;
   }
 
-  async resumeSession(harness: string, id: string, message?: string): Promise<{ ok: boolean; error?: string }> {
+  async resumeSession(harness: string, id: string, message?: string, humanRequested = false): Promise<{ ok: boolean; error?: string }> {
+    if (humanRequested) await this.releaseHumanStop(harness, id);
+    else if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат явно остановлен; автоматическое продолжение запрещено." };
     const adapter = this.requireAdapter(harness);
     if (adapter.resumeSession) {
       const resumed = await adapter.resumeSession(id);
@@ -521,7 +594,8 @@ export class SessionSupervisor {
     if (!message) return { ok: false, error: `${adapter.name} does not expose a native resume operation` };
     const session = await adapter.getSession(id);
     const injected = session ? await coordinationNotes.inject(session, message) : message;
-    const result = await adapter.sendMessage(id, { message: injected });
+    if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат снова остановлен; автоматическое продолжение запрещено." };
+    const result = await adapter.sendMessage(id, { message: injected, origin: humanRequested ? "human" : "automation" });
     if (result.ok || result.admitted === true) {
       if (session) await this.unfinishedSessions?.armSession(
         session,
@@ -718,6 +792,26 @@ export class SessionSupervisor {
     this.events.publish({ kind: "adapters", uri: adapterResourceUri(provider), action: "changed", id: provider, source: `native:${provider}` });
     if (!event.sessionId) return;
 
+    const stop = event.data?.automationStop;
+    if (stop && typeof stop === "object" && !Array.isArray(stop)) {
+      const evidence = stop as { id?: unknown; at?: unknown; reason?: unknown; turnId?: unknown };
+      if (typeof evidence.id === "string" && typeof evidence.at === "string" && typeof evidence.reason === "string") {
+        this.immediateStops.add(sessionKey(provider, event.sessionId));
+        this.clearAutomaticResume(provider, event.sessionId);
+        void this.humanStops.hold({ harness: event.harness, id: event.sessionId }, {
+          id: evidence.id, at: evidence.at, reason: evidence.reason,
+          ...(typeof evidence.turnId === "string" ? { turnId: evidence.turnId } : {}),
+        }).then(async () => {
+          if (await this.humanStops.isHeld(provider, event.sessionId!)) await this.unfinishedSessions?.forget(provider, event.sessionId!);
+          else this.immediateStops.delete(sessionKey(provider, event.sessionId!));
+        }).catch((error) => {
+          console.error(`[agent-herder] не удалось сохранить явную остановку: ${String(error)}`);
+        });
+        this.publishSessionChanged(provider, event.sessionId, "changed");
+        return;
+      }
+    }
+
     void this.unfinishedSessions?.handleEvent(provider, event).catch((error) => {
       console.error(`[agent-herder] не удалось обновить реестр незавершённых сессий: ${error instanceof Error ? error.message : String(error)}`);
     });
@@ -740,6 +834,7 @@ export class SessionSupervisor {
   }
 
   private scheduleAutomaticResume(provider: string, sessionId: string): void {
+    if (this.immediateStops.has(sessionKey(provider, sessionId))) return;
     if (!this.autoResumeFailedSessions) return;
     const adapter = this.adapters.get(provider);
     if (!adapter?.resumeSession) return;
@@ -767,6 +862,10 @@ export class SessionSupervisor {
     state.attempts += 1;
     let result: ControlResult;
     try {
+      if (await this.isAutomationHeld(provider, sessionId) || this.automaticResumes.get(key) !== state) {
+        this.clearAutomaticResume(provider, sessionId);
+        return;
+      }
       // Native resume preserves the session identity and its persisted model;
       // automatic recovery must never fork or silently switch providers.
       result = await adapter.resumeSession!(sessionId);

@@ -50,6 +50,57 @@ describe("HumanStopStore", () => {
       .rejects.toThrow(/at most 32/);
   });
 
+  it("does not let a late generated prompt clear a human stop and stores only a digest", async () => {
+    const { path, store } = await fixtureStore();
+    const target = { harness: "codex", id: "generated-provenance" };
+    await store.hold(target, {
+      id: "human-stop", at: new Date(Date.now() - 5_000).toISOString(), reason: "interrupted", turnId: "stopped-turn",
+    });
+    const generatedText = "<agent-herder-inbox>continue the child task</agent-herder-inbox>";
+    await store.rememberGeneratedPrompt("codex", target.id, generatedText);
+    expect(await store.isGeneratedPrompt("codex", target.id, { text: generatedText })).toBe(true);
+    expect(await store.isGeneratedPrompt("codex", target.id, { text: "a human asked for new work" })).toBe(false);
+
+    await expect(store.release("codex", target.id, {
+      id: "late-hook", at: new Date().toISOString(), turnId: "generated-turn", origin: "real_user", text: generatedText,
+    })).resolves.toBe(false);
+    await expect(store.isHeld("codex", target.id)).resolves.toBe(true);
+
+    const persisted = await readFile(path, "utf8");
+    expect(persisted).not.toContain(generatedText);
+    const file = JSON.parse(persisted) as { generatedInputs?: Array<{ digest: string; turnId?: string; expiresAt: string }> };
+    expect(file.generatedInputs).toHaveLength(1);
+    expect(file.generatedInputs?.[0]).toMatchObject({ digest: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect(Date.parse(file.generatedInputs![0]!.expiresAt)).toBeGreaterThan(Date.now());
+
+    await expect(store.release("codex", target.id, {
+      id: "genuine-human-prompt", at: new Date(Date.now() + 1_000).toISOString(), turnId: "new-human-turn",
+      origin: "real_user", text: "please continue with this different task",
+    })).resolves.toBe(true);
+  });
+
+  it("matches completed generated prompts by known native turn ID", async () => {
+    const { store } = await fixtureStore();
+    await store.rememberGeneratedPrompt("zcode", "known-turn-session", "new goal", "known-native-turn");
+    await expect(store.isGeneratedPrompt("zcode", "known-turn-session", { turnId: "known-native-turn" })).resolves.toBe(true);
+    await expect(store.isGeneratedPrompt("zcode", "known-turn-session", { text: "new goal", turnId: "other-turn" })).resolves.toBe(false);
+  });
+
+  it("protects a callback without a turn ID while accepting a distinct human turn with identical text", async () => {
+    const { store } = await fixtureStore();
+    const text = "continue with the requested change";
+    await store.rememberGeneratedPrompt("codex", "promoted-turn", text);
+    await store.rememberGeneratedPrompt("codex", "promoted-turn", text, "generated-native-turn");
+
+    await expect(store.isGeneratedPrompt("codex", "promoted-turn", { text })).resolves.toBe(true);
+    await expect(store.isGeneratedPrompt("codex", "promoted-turn", { text, turnId: "generated-native-turn" })).resolves.toBe(true);
+    await expect(store.isGeneratedPrompt("codex", "promoted-turn", { text, turnId: "later-human-turn" })).resolves.toBe(false);
+    await store.hold({ harness: "codex", id: "promoted-turn" }, {
+      id: "human-stop-after-admission", at: new Date(Date.now() - 1_000).toISOString(), reason: "explicit-stop",
+    });
+    await expect(store.release("codex", "promoted-turn", { id: "late-hook", at: new Date().toISOString(), text })).resolves.toBe(false);
+  });
+
   it("ignores replayed stop IDs after explicit release and accepts a newer stop", async () => {
     const { store } = await fixtureStore();
     const target = { harness: "zcode", id: "session-a", cwd: "/tmp/project", title: "Task" };

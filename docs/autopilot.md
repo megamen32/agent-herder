@@ -32,6 +32,42 @@ immediately visible to `/autopilot status` and to the next Codex Stop hook,
 Claude Code Stop hook, OpenCode idle event, or Hermes completion hook for that
 exact session.
 
+## Explicit stops in Codex and ZCode
+
+A stop through Herder persists a fence for that native session before the
+transport is interrupted. Native Codex interrupted turns and ZCode cancelled
+turns also pause automation; a plain completed/stopped status is not sufficient
+evidence. Codex does not identify the interrupting actor, so an external native
+interruption is treated conservatively. Herder's own transport interruptions
+are recorded separately and cannot erase an existing human stop.
+
+The fence survives restarts and blocks automatic delivery, retries, watchdogs,
+handoffs and replacement sessions. Creating a related session accepts
+`sourceSessions` (at most 32 verified native receipts); all supplied ancestors
+are checked. Unknown sources fail closed. There is no automatic ancestry
+inference for a new request that supplies no source receipts.
+
+Only an explicit human resume/new request can clear the fence. API and MCP
+message/resume requests default to automation and must set `humanRequested`
+only for an actual human instruction. Native UserPromptSubmit callbacks include
+prompt evidence; generated prompts are registered before native admission and
+cannot clear a stop. Native callback release requires the supported hook to be
+installed and loaded in that session; editing hook configuration alone does not
+prove that an existing process reloaded it.
+
+`GET /api/coordination/context?consume=0` exposes the boolean `humanStopHeld`
+without draining the inbox. Stop-hook callers suppress continuation if this
+field is missing, invalid or unavailable.
+
+Codex supports `POST /api/sessions/codex/:id/archive` through the native
+`thread/archive` operation. Active sessions and pending approvals/input are
+rejected. Archiving preserves exact-ID history and the human-stop fence; it
+does not resume, delete, or migrate the session. Other adapters return an
+explicit unsupported error until they implement this optional operation.
+An automatic cleanup caller must independently verify the completed readonly
+controller receipt, resolved incident and absence of active jobs before using
+this endpoint; the endpoint does not infer those facts from a session title.
+
 Install the Claude Code surface through its supported plugin control plane:
 
 ```bash

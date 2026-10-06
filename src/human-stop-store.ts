@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -9,6 +9,9 @@ const MAX_ID_LENGTH = 512;
 const MAX_TITLE_LENGTH = 500;
 const MAX_REASON_LENGTH = 1000;
 const MAX_IGNORED_STOP_IDS = 128;
+const MAX_GENERATED_PROMPTS = 128;
+const GENERATED_PROMPT_TTL_MS = 5 * 60_000;
+const MAX_PROMPT_TEXT_LENGTH = 100_000;
 
 export type HumanStopTarget = Pick<AgentSession, "harness" | "id"> & Partial<Pick<AgentSession, "cwd" | "title">>;
 
@@ -28,6 +31,7 @@ export type HumanPromptEvidence = {
   inputId?: string;
   automated?: boolean;
   synthetic?: boolean;
+  text?: string;
 };
 
 export type HumanStopRecord = {
@@ -42,7 +46,8 @@ export type HumanStopRecord = {
   title?: string;
 };
 
-type HumanStopFile = { version: 1; sessions: HumanStopRecord[] };
+type GeneratedPromptRecord = { harness: string; id: string; digest: string; turnId?: string; expiresAt: string };
+type HumanStopFile = { version: 1; sessions: HumanStopRecord[]; generatedInputs?: GeneratedPromptRecord[] };
 const stores = new Map<string, HumanStopStore>();
 
 /** Durable fence for explicit human interruptions; independent from automation opt-ins. */
@@ -125,7 +130,10 @@ export class HumanStopStore {
           changed = true;
         }
       }
-      if (record?.active && prompt && isStrictlyNewerPrompt(prompt, record.stop)) {
+      if (record?.active && prompt && !isGeneratedPromptInFile(file, target.harness, target.id, {
+        digest: prompt.text === undefined ? undefined : promptDigest(prompt.text),
+        turnId: prompt.turnId,
+      }, Date.now()) && isStrictlyNewerPrompt(prompt, record.stop)) {
         const ignoredStopIds = boundIgnoredIds([...new Set([...record.ignoredStopIds, record.stop.id])]);
         record = {
           ...record,
@@ -158,6 +166,42 @@ export class HumanStopStore {
     return file.sessions.some((record) => record.active && keys.has(sessionKey(record.harness, record.id)));
   }
 
+  /** Store only a digest for a Herder-generated native prompt, never its text. */
+  async rememberGeneratedPrompt(harness: string, id: string, text: string, turnId?: string): Promise<void> {
+    const targetHarness = normalizeHarness(harness);
+    const targetId = bounded(id, "sessionId", MAX_ID_LENGTH);
+    if (typeof text !== "string" || !text.trim() || text.length > MAX_PROMPT_TEXT_LENGTH) throw new Error("invalid promptText");
+    const record: GeneratedPromptRecord = {
+      harness: targetHarness,
+      id: targetId,
+      digest: promptDigest(text),
+      ...(turnId ? { turnId: bounded(turnId, "turnId", MAX_ID_LENGTH) } : {}),
+      expiresAt: new Date(Date.now() + GENERATED_PROMPT_TTL_MS).toISOString(),
+    };
+    await this.mutate((file) => {
+      const now = Date.now();
+      const retained = (file.generatedInputs ?? []).filter((entry) => Date.parse(entry.expiresAt) > now
+        && !(entry.harness === record.harness && entry.id === record.id
+          && (record.turnId
+            ? entry.digest === record.digest && (!entry.turnId || entry.turnId === record.turnId)
+            : entry.digest === record.digest)));
+      file.generatedInputs = [...retained, record].slice(-MAX_GENERATED_PROMPTS);
+      return true;
+    });
+  }
+
+  /** Match a native prompt to a recently issued automated input by known turn or digest. */
+  async isGeneratedPrompt(harness: string, id: string, input: { text?: string; turnId?: string }): Promise<boolean> {
+    const targetHarness = normalizeHarness(harness);
+    const targetId = bounded(id, "sessionId", MAX_ID_LENGTH);
+    const turnId = input.turnId ? bounded(input.turnId, "turnId", MAX_ID_LENGTH) : undefined;
+    const digest = typeof input.text === "string" && input.text.length <= MAX_PROMPT_TEXT_LENGTH
+      ? promptDigest(input.text)
+      : undefined;
+    const file = await this.read();
+    return isGeneratedPromptInFile(file, targetHarness, targetId, { digest, turnId }, Date.now());
+  }
+
   /** Record a Herder-issued native interrupt without overriding a human hold. */
   async ignoreNativeStop(harness: string, id: string, evidence: HumanStopEvidence): Promise<void> {
     const targetHarness = bounded(harness, "harness", MAX_ID_LENGTH);
@@ -187,6 +231,10 @@ export class HumanStopStore {
       if (index < 0) return false;
       const record = file.sessions[index]!;
       if (!record.active) return false;
+      if (normalizedPrompt && isGeneratedPromptInFile(file, targetHarness, targetId, {
+        digest: normalizedPrompt.text === undefined ? undefined : promptDigest(normalizedPrompt.text),
+        turnId: normalizedPrompt.turnId,
+      }, Date.now())) return false;
       if (normalizedPrompt && !isStrictlyNewerPrompt(normalizedPrompt, record.stop)) return false;
       file.sessions[index] = {
         ...record,
@@ -289,7 +337,10 @@ function parseHumanStopFile(value: unknown): HumanStopFile {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid human stop store");
   const input = value as Record<string, unknown>;
   if (input.version !== 1 || !Array.isArray(input.sessions)) throw new Error("invalid human stop store");
-  return { version: 1, sessions: input.sessions.map(parseRecord) };
+  const generatedInputs = input.generatedInputs === undefined
+    ? undefined
+    : Array.isArray(input.generatedInputs) ? input.generatedInputs.slice(-MAX_GENERATED_PROMPTS).map(parseGeneratedPromptRecord) : (() => { throw new Error("invalid generated inputs"); })();
+  return { version: 1, sessions: input.sessions.map(parseRecord), ...(generatedInputs ? { generatedInputs } : {}) };
 }
 
 function parseRecord(value: unknown): HumanStopRecord {
@@ -310,6 +361,19 @@ function parseRecord(value: unknown): HumanStopRecord {
   };
   if (record.active && record.ignoredStopIds.includes(record.stop.id)) throw new Error("active human stop is already cleared");
   return record;
+}
+
+function parseGeneratedPromptRecord(value: unknown): GeneratedPromptRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid generated prompt record");
+  const input = value as Record<string, unknown>;
+  if (typeof input.digest !== "string" || !/^[a-f0-9]{64}$/.test(input.digest)) throw new Error("invalid generated prompt digest");
+  return {
+    harness: normalizeHarness(input.harness),
+    id: bounded(input.id, "sessionId", MAX_ID_LENGTH),
+    digest: input.digest,
+    ...(typeof input.turnId === "string" && input.turnId ? { turnId: bounded(input.turnId, "turnId", MAX_ID_LENGTH) } : {}),
+    expiresAt: isoTimestamp(input.expiresAt, "generatedPromptExpiry"),
+  };
 }
 
 function normalizeTarget(session: HumanStopTarget): HumanStopTarget {
@@ -348,6 +412,7 @@ function normalizePromptEvidence(value: unknown): HumanPromptEvidence {
     ...(typeof input.inputId === "string" ? { inputId: input.inputId } : {}),
     ...(typeof input.automated === "boolean" ? { automated: input.automated } : {}),
     ...(typeof input.synthetic === "boolean" ? { synthetic: input.synthetic } : {}),
+    ...(typeof input.text === "string" && input.text.length <= MAX_PROMPT_TEXT_LENGTH ? { text: input.text } : {}),
   };
   if (!isRealUserPrompt(prompt)) throw new Error("prompt evidence is not a real human prompt");
   return prompt;
@@ -370,6 +435,24 @@ function isRealUserPrompt(prompt: HumanPromptEvidence): boolean {
 function isStrictlyNewerPrompt(prompt: HumanPromptEvidence, stop: HumanStopEvidence): boolean {
   if (!isRealUserPrompt(prompt) || prompt.id === stop.id || (prompt.turnId && prompt.turnId === stop.turnId)) return false;
   return Date.parse(prompt.at) > Date.parse(stop.at);
+}
+
+function promptDigest(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+function isGeneratedPromptInFile(
+  file: HumanStopFile,
+  harness: string,
+  id: string,
+  input: { digest?: string; turnId?: string },
+  now: number,
+): boolean {
+  return (file.generatedInputs ?? []).some((record) => {
+    if (record.harness !== harness || record.id !== id || Date.parse(record.expiresAt) <= now) return false;
+    if (record.turnId && input.turnId) return input.turnId === record.turnId;
+    return Boolean(input.digest && input.digest === record.digest);
+  });
 }
 
 function isStaleClearedStop(record: HumanStopRecord, evidence: HumanStopEvidence): boolean {

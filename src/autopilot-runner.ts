@@ -114,6 +114,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
     }
     if ("decision" in result && result.decision === "block") {
       const nextGoal = result.reason;
+      await humanStops.rememberGeneratedPrompt(input.harness, input.sessionId, nextGoal);
       if (await held()) return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "human-stop-held" };
       if (input.harness === "codex" || input.harness === "claude" || input.harness === "zcode") {
         return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "continue", next_goal: nextGoal };

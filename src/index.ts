@@ -19,6 +19,7 @@ import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, l
 import { acquireLock } from "./autopilot-hook.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
 import { SessionSupervisor } from "./session-supervisor.js";
+import { getHumanStopStore } from "./human-stop-store.js";
 import { LineageStore } from "./lineage-store.js";
 import { AnthropicMiniMaxSummarizer, CacheHandoffService, FastAgentMiniMaxSummarizer } from "./cache-handoff.js";
 import { acquireAgentHerderSingleton } from "./singleton.js";
@@ -97,6 +98,7 @@ const sessionAutostartStore = new SessionAutostartStore(
   process.env.AGENT_HERDER_SESSION_AUTOSTART_SETTINGS || join(autopilotStateDir, "session-autostart.json"),
 );
 const automationLaunchPolicyStore = new AutomationLaunchPolicyStore(join(autopilotStateDir, "automation-launch-policy.json"));
+const humanStopStore = getHumanStopStore();
 const lineageStore = new LineageStore(join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "agent-herder", "lineage.json"));
 const browserWakeService = createConfiguredBrowserWakeService(process.env);
 const adapterFactories = new Map<string, AdapterFactory>();
@@ -594,7 +596,7 @@ async function main() {
     : new FastAgentMiniMaxSummarizer();
   const cacheHandoff = process.env.AGENT_HERDER_CACHE_HANDOFF_ENABLED === "false"
     ? undefined
-    : new CacheHandoffService(adapters, handoffSummarizer, lineageStore);
+    : new CacheHandoffService(adapters, handoffSummarizer, lineageStore, process.env, humanStopStore);
   const unfinishedJudgeToken = process.env.AGENT_HERDER_UNFINISHED_JUDGE_TOKEN || process.env.MINIMAX_API_KEY;
   const unfinishedJudgeClients = new Map<string, ReturnType<typeof createAnthropicCompatibleSessionCompletionJudge>>();
   const getUnfinishedJudgeClient = async () => {
@@ -614,6 +616,7 @@ async function main() {
     ? undefined
     : createDynamicSessionCompletionJudge(getUnfinishedJudgeClient);
   const unfinishedSessionLauncher = new UnfinishedSessionLauncher({
+    humanStopStore,
     adapters,
     store: unfinishedSessionStore,
     settingsStore: sessionAutostartStore,
@@ -622,6 +625,7 @@ async function main() {
     judge: unfinishedJudge,
   });
   const processSupervisor = new SessionSupervisor(adapters, processSessionConverter, lineageStore, {
+    humanStopStore,
     events: herderEvents,
     unfinishedSessions: unfinishedSessionLauncher,
   });

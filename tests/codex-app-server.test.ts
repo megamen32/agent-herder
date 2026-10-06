@@ -397,6 +397,72 @@ describe("Codex app-server adapter", () => {
     }
   });
 
+  it("archives an idle Codex thread from the active list while retaining exact-ID transcript history", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-archive-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "06");
+    const rollout = join(sessionDir, "rollout-thread-1.jsonl");
+    await mkdir(sessionDir, { recursive: true });
+    const message = (role: "user" | "assistant", text: string) => JSON.stringify({
+      timestamp: new Date().toISOString(),
+      type: "response_item",
+      payload: { type: "message", role, content: [{ type: role === "user" ? "input_text" : "output_text", text }] },
+    });
+    await writeFile(rollout, [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-1", cwd: "/tmp/codex-fixture" } }),
+      message("user", "preserve this exact session history"),
+      message("assistant", "the completed result"),
+      "",
+    ].join("\n"));
+    await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-1", updated_at: new Date().toISOString() }) + "\n");
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      await adapter.init();
+      await expect(adapter.listSessions()).resolves.toMatchObject([{ id: "thread-1", status: "idle" }]);
+      await expect(adapter.archiveSession("thread-1")).resolves.toMatchObject({ ok: true, sessionId: "thread-1" });
+      await expect(adapter.listSessions()).resolves.toEqual([]);
+      await expect(adapter.getSessionMessages("thread-1", 10)).resolves.toMatchObject([
+        { role: "user", text: "preserve this exact session history" },
+        { role: "assistant", text: "the completed result" },
+      ]);
+    } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ["running", false],
+    ["error", false],
+    ["unrecognized", false],
+    ["active", true],
+  ] as const)("refuses native Codex archive for status %s (permission pending: %s)", async (status, permissionPending) => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-archive-guard-"));
+    const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
+    const previousStatus = process.env.CODEX_APP_SERVER_THREAD_STATUS;
+    const previousPermissionWait = process.env.CODEX_APP_SERVER_PERMISSION_WAIT;
+    const logPath = join(codexDir, "app-server.log");
+    process.env.CODEX_APP_SERVER_LOG = logPath;
+    process.env.CODEX_APP_SERVER_THREAD_STATUS = status;
+    if (permissionPending) process.env.CODEX_APP_SERVER_PERMISSION_WAIT = "1";
+    else delete process.env.CODEX_APP_SERVER_PERMISSION_WAIT;
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    try {
+      await adapter.init();
+      await expect(adapter.archiveSession("thread-1")).resolves.toMatchObject({ ok: false });
+      const requests = (await readFile(logPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { kind: string; method: string });
+      expect(requests.some((entry) => entry.kind === "request" && entry.method === "thread/archive")).toBe(false);
+    } finally {
+      await adapter.dispose();
+      if (previousLogPath === undefined) delete process.env.CODEX_APP_SERVER_LOG;
+      else process.env.CODEX_APP_SERVER_LOG = previousLogPath;
+      if (previousStatus === undefined) delete process.env.CODEX_APP_SERVER_THREAD_STATUS;
+      else process.env.CODEX_APP_SERVER_THREAD_STATUS = previousStatus;
+      if (previousPermissionWait === undefined) delete process.env.CODEX_APP_SERVER_PERMISSION_WAIT;
+      else process.env.CODEX_APP_SERVER_PERMISSION_WAIT = previousPermissionWait;
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
   it("uses the native state database instead of scanning every archived rollout", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-state-db-"));
     const sessionDir = join(codexDir, "sessions", "2026", "10", "03");
@@ -680,6 +746,7 @@ describe("Codex app-server adapter", () => {
 
   it("keeps a native thread, interrupts turns, resumes, and forks", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-app-"));
+    const previousHumanStopStore = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
     const sessionDir = join(codexDir, "sessions", "2026", "07", "30");
     const rawPath = join(sessionDir, "rollout-thread-1.jsonl");
     await mkdir(sessionDir, { recursive: true });
@@ -763,6 +830,39 @@ describe("Codex app-server adapter", () => {
       if (previousLogPath === undefined) delete process.env.CODEX_APP_SERVER_LOG;
       else process.env.CODEX_APP_SERVER_LOG = previousLogPath;
       await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("registers automated Codex input before start and prevents a late hook from clearing a stop", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-generated-prompt-"));
+    const previousHumanStopStore = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+    process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(codexDir, "human-stops.json");
+    const store = getHumanStopStore();
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const message = "generated continuation text";
+    try {
+      await store.hold({ harness: "codex", id: "thread-1" }, {
+        id: "explicit-stop:test", at: new Date(Date.now() - 60_000).toISOString(), reason: "interrupted", turnId: "prior-turn",
+      });
+      await expect(adapter.sendMessage("thread-1", { message, queue: true, origin: "automation" })).resolves.toEqual({ ok: true });
+
+      const nativePrompt = {
+        id: "codex-turn-1", at: new Date(Date.now() + 1_000).toISOString(), origin: "human", kind: "user_prompt",
+        turnId: "turn-1", text: message,
+      };
+      await expect(store.isGeneratedPrompt("codex", "thread-1", nativePrompt)).resolves.toBe(true);
+      await expect(store.release("codex", "thread-1", nativePrompt)).resolves.toBe(false);
+      await expect(store.isHeld("codex", "thread-1")).resolves.toBe(true);
+
+      const laterHumanPrompt = { ...nativePrompt, id: "codex-turn-2", turnId: "turn-2" };
+      await expect(store.isGeneratedPrompt("codex", "thread-1", laterHumanPrompt)).resolves.toBe(false);
+      await expect(store.release("codex", "thread-1", laterHumanPrompt)).resolves.toBe(true);
+      await expect(store.isHeld("codex", "thread-1")).resolves.toBe(false);
+    } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+      if (previousHumanStopStore === undefined) delete process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+      else process.env.AGENT_HERDER_HUMAN_STOP_STORE = previousHumanStopStore;
     }
   });
 

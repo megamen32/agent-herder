@@ -165,4 +165,51 @@ describe("health remediation route harness guard", () => {
     expect(response.status).toBe(200);
     expect(hermes.createCalls).toBe(1);
   });
+
+  it("preserves health source receipts and rejects malformed sources or control characters in session models", async () => {
+    const zcode = trackedNamedAdapter("zcode");
+    const server = createWebServer({
+      adapters: new Map([["zcode", zcode.adapter]]),
+      converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const base = `http://127.0.0.1:${address.port}`;
+    const healthBody = {
+      incident_id: "inc-health-source-1",
+      plan_id: "repair",
+      harness: "zcode",
+      name: "health_repair_inc-health-source-1",
+      cwd: "/tmp",
+      message: "Repair the selected health incident.",
+      execution: { runtime: "zcode", provider: "account:zai-individual-coding-plan", model: "GLM-5.3-Flash", reasoning: "high", topic: "health" },
+      sourceSessionId: "missing-source-session",
+      sourceHarness: "zcode",
+    };
+    const blockedHealth = await fetch(`${base}/api/health/remediation`, { method: "POST", body: JSON.stringify(healthBody) });
+    expect(blockedHealth.status).toBe(502);
+    expect(await blockedHealth.json()).toMatchObject({ ok: false, error: expect.stringContaining("Исходный чат недоступен") });
+    expect(zcode.createCalls).toBe(0);
+
+    const malformedSource = await fetch(`${base}/api/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "zcode", name: "invalid-source", cwd: "/tmp", sourceHarness: "claude", sourceSessionId: "source" }),
+    });
+    expect(malformedSource.status).toBe(400);
+
+    const badCreateModel = await fetch(`${base}/api/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "zcode", name: "invalid-model", cwd: "/tmp", model: "bad\u0001model" }),
+    });
+    expect(badCreateModel.status).toBe(400);
+
+    const badResumeModel = await fetch(`${base}/api/sessions/new-or-resume`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "zcode", name: "invalid-resume-model", cwd: "/tmp", message: "continue", model: "bad\u0001model" }),
+    });
+    expect(badResumeModel.status).toBe(400);
+    expect(zcode.createCalls).toBe(0);
+  });
 });
