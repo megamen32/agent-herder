@@ -1038,7 +1038,14 @@ export class ZcodeAdapter implements HarnessAdapter {
           throw error;
         }
 
-        const nativeSessions = new Map<string, { directory?: string; workspaceIdentity?: string; timeUpdated?: number }>();
+        interface NativeTurnSummary {
+          turnId?: string;
+          status?: string;
+          startedAt?: number;
+          completedAt?: number;
+          userMessageId?: string;
+        }
+        const nativeSessions = new Map<string, { directory?: string; workspaceIdentity?: string; timeUpdated?: number; lastTurn?: NativeTurnSummary }>();
         let nativeCanonicalizationError: string | undefined;
         if (existsSync(this.localDbPath)) {
           try {
@@ -1061,6 +1068,36 @@ export class ZcodeAdapter implements HarnessAdapter {
                     workspaceIdentity: nonEmptyString(row.workspace_id),
                     timeUpdated: typeof row.time_updated === "number" && row.time_updated > 0 ? row.time_updated : undefined,
                   });
+                }
+                // Readonly recovery evidence for the autocontinue launcher:
+                // the newest durable turn per session (turn_usage is small and
+                // local). A completed task row whose last turn ended in
+                // error/cancelled — or whose started turn never completed —
+                // is the interrupted signal the tasks-index flattens away.
+                const nativeTableNames = new Set((nativeDb.prepare("select name from sqlite_master where type = 'table'").all() as Array<{ name?: string }>).map((table) => table.name));
+                if (nativeTableNames.has("turn_usage")) {
+                  const turnColumns = new Set((nativeDb.prepare("pragma table_info(turn_usage)").all() as Array<{ name?: string }>).map((column) => column.name));
+                  if (["session_id", "turn_id", "status", "started_at"].every((column) => turnColumns.has(column))) {
+                    const nativeTurns = nativeDb.prepare(`
+                      select t.session_id as session_id, t.turn_id as turn_id, t.status as status,
+                             t.started_at as started_at, t.completed_at as completed_at,
+                             t.user_message_id as user_message_id
+                      from turn_usage t
+                      join (select session_id, max(started_at) as ms from turn_usage group by session_id) latest
+                        on latest.session_id = t.session_id and latest.ms = t.started_at
+                    `).all() as Array<{ session_id: string; turn_id?: string; status?: string; started_at?: number; completed_at?: number | null; user_message_id?: string | null }>;
+                    for (const turn of nativeTurns) {
+                      const entry = nativeSessions.get(turn.session_id);
+                      if (!entry) continue;
+                      entry.lastTurn = {
+                        ...(turn.turn_id ? { turnId: turn.turn_id } : {}),
+                        ...(turn.status ? { status: turn.status } : {}),
+                        ...(typeof turn.started_at === "number" && turn.started_at > 0 ? { startedAt: turn.started_at } : {}),
+                        ...(typeof turn.completed_at === "number" && turn.completed_at > 0 ? { completedAt: turn.completed_at } : {}),
+                        ...(turn.user_message_id ? { userMessageId: turn.user_message_id } : {}),
+                      };
+                    }
+                  }
                 }
               } else {
                 nativeCanonicalizationError = "native_session_schema_missing";
@@ -1140,6 +1177,8 @@ export class ZcodeAdapter implements HarnessAdapter {
               pinned: row.pinned === 1,
               workspaceIdentity,
               duplicateTaskRows: duplicateRows.length,
+              ...(nativeTimeUpdated ? { nativeTimeUpdated } : {}),
+              ...(native?.lastTurn ? { lastNativeTurn: native.lastTurn } : {}),
               ...(nativeTimeUpdated && nativeTimeUpdated > updatedAt ? { lastActivitySource: "native-session-db" } : {}),
               ...(duplicateRows.length > 1 ? {
                 taskIndexWorkspacePaths: duplicateRows.map((candidate) => candidate.workspace_path).filter(Boolean),
