@@ -56,3 +56,18 @@ export function lifecycleStateFor(harness: string, sessionId: string): SessionLi
   prune();
   return registry.get(key(harness, sessionId))?.state;
 }
+
+export interface SessionLifecycleSnapshot {
+  state: SessionLifecycleState;
+  at: number;
+  cwd?: string;
+}
+
+/** Full registry entry so callers can compare observed state against fresher
+ * durable signals (e.g. native session DB time_updated) instead of trusting a
+ * "running" mark that predates a crash. */
+export function lifecycleEntryFor(harness: string, sessionId: string): SessionLifecycleSnapshot | undefined {
+  prune();
+  const entry = registry.get(key(harness, sessionId));
+  return entry ? { state: entry.state, at: entry.at, ...(entry.cwd ? { cwd: entry.cwd } : {}) } : undefined;
+}

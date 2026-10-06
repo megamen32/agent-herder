@@ -1,0 +1,100 @@
+import { describe, expect, it } from "vitest";
+import { resolvePersistedZcodeStatus } from "./zcode.js";
+import { lifecycleEntryFor, markLifecycleEvent } from "../session-lifecycle.js";
+
+const WINDOW = 5 * 60 * 1000;
+
+function input(overrides: Partial<Parameters<typeof resolvePersistedZcodeStatus>[0]> = {}) {
+  return {
+    rawStatus: "running",
+    tasksUpdatedAt: 0,
+    now: 1_000_000_000_000,
+    activeWindowMs: WINDOW,
+    ...overrides,
+  };
+}
+
+describe("resolvePersistedZcodeStatus", () => {
+  it("reports running from fresh native time_updated while the tasks-index row froze at prompt time", () => {
+    const now = 1_000_000_000_000;
+    // Reproduces the reported bug: a 40-minute turn, tasks-index stuck at the
+    // prompt submit, no lifecycle entry (daemon restarted mid-turn).
+    const status = resolvePersistedZcodeStatus(input({
+      tasksUpdatedAt: now - 40 * 60 * 1000,
+      nativeUpdatedAt: now - 2_000,
+      now,
+    }));
+    expect(status).toBe("running");
+  });
+
+  it("keeps the legacy tasks-index recency path when no native signal exists", () => {
+    const now = 1_000_000_000_000;
+    expect(resolvePersistedZcodeStatus(input({ tasksUpdatedAt: now - 60_000, now }))).toBe("running");
+    expect(resolvePersistedZcodeStatus(input({ tasksUpdatedAt: now - WINDOW - 1, now }))).toBe("idle");
+  });
+
+  it("prefers an observed turn-end over recency so a finished turn is idle immediately", () => {
+    const now = 1_000_000_000_000;
+    const status = resolvePersistedZcodeStatus(input({
+      tasksUpdatedAt: now - 60_000,
+      nativeUpdatedAt: now - 30_000,
+      lifecycle: { state: "idle", at: now - 20_000 },
+      now,
+    }));
+    expect(status).toBe("idle");
+  });
+
+  it("maps an observed session end to stopped", () => {
+    const now = 1_000_000_000_000;
+    const status = resolvePersistedZcodeStatus(input({
+      tasksUpdatedAt: now - 60_000,
+      lifecycle: { state: "ended", at: now - 10_000 },
+      now,
+    }));
+    expect(status).toBe("stopped");
+  });
+
+  it("lets a fresh turn-start win over an older completed task status", () => {
+    const now = 1_000_000_000_000;
+    const status = resolvePersistedZcodeStatus(input({
+      rawStatus: "completed",
+      tasksUpdatedAt: now - 60_000,
+      lifecycle: { state: "running", at: now - 5_000 },
+      now,
+    }));
+    expect(status).toBe("running");
+  });
+
+  it("ignores a stale lifecycle running mark when native writes stopped long ago", () => {
+    const now = 1_000_000_000_000;
+    // Turn started (hook marked running) but the runtime kept writing for a
+    // while after that mark and then died: the fresher native timestamp must
+    // demote the stale hook observation.
+    const status = resolvePersistedZcodeStatus(input({
+      tasksUpdatedAt: now - 2 * WINDOW,
+      nativeUpdatedAt: now - WINDOW - 1,
+      lifecycle: { state: "running", at: now - 3 * WINDOW },
+      now,
+    }));
+    expect(status).toBe("idle");
+  });
+
+  it("keeps waiting and error task states authoritative", () => {
+    const now = 1_000_000_000_000;
+    expect(resolvePersistedZcodeStatus(input({ rawStatus: "waiting", tasksUpdatedAt: now - 60_000, now }))).toBe("needs_input");
+    expect(resolvePersistedZcodeStatus(input({ rawStatus: "needs_input", tasksUpdatedAt: now - 60_000, now }))).toBe("needs_input");
+    expect(resolvePersistedZcodeStatus(input({ rawStatus: "error", tasksUpdatedAt: now - 60_000, now }))).toBe("error");
+  });
+
+  it("maps completed to stopped once nothing is recent", () => {
+    const now = 1_000_000_000_000;
+    expect(resolvePersistedZcodeStatus(input({ rawStatus: "completed", tasksUpdatedAt: now - WINDOW - 1, now }))).toBe("stopped");
+  });
+
+  it("marks lifecycle entries observable through the registry", () => {
+    markLifecycleEvent("zcode", "sess_status_probe", "turn-start", "/tmp/probe");
+    expect(lifecycleEntryFor("zcode", "sess_status_probe")).toMatchObject({ state: "running" });
+    markLifecycleEvent("zcode", "sess_status_probe", "turn-end", "/tmp/probe");
+    expect(lifecycleEntryFor("zcode", "sess_status_probe")).toMatchObject({ state: "idle" });
+  });
+});

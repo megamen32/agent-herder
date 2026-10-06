@@ -20,7 +20,7 @@ import {
   type SetPermissionsOptions,
 } from "../types/index.js";
 import { ZcodeAppServerClient, type ZcodeClientLike } from "./zcode-protocol.js";
-import { lifecycleStateFor } from "../session-lifecycle.js";
+import { lifecycleEntryFor, lifecycleStateFor, type SessionLifecycleSnapshot } from "../session-lifecycle.js";
 import { getHumanStopStore } from "../human-stop-store.js";
 
 interface ZcodeWorkspaceRef {
@@ -630,6 +630,39 @@ function unsupported(operation: string): ControlResult {
   return { ok: false, error: `ZCode Protocol operation '${operation}' is not supported by the native app-server` };
 }
 
+export interface PersistedZcodeStatusInput {
+  rawStatus?: string;
+  /** tasks-index updated_at in epoch ms. */
+  tasksUpdatedAt: number;
+  /** Native session DB time_updated in epoch ms; refreshed on every runtime
+   * write, so a running turn keeps it current even when the tasks-index row
+   * froze at prompt-submit time. */
+  nativeUpdatedAt?: number;
+  /** Hook-fed observed lifecycle, when the daemon has seen an event for this session. */
+  lifecycle?: SessionLifecycleSnapshot;
+  now: number;
+  activeWindowMs: number;
+}
+
+/** Status for tasks-index-discovered sessions. Precedence: runtime error and
+ * waiting states first, then hook-observed lifecycle while it is at least as
+ * fresh as the last native write, then native/tasks recency ("writing right
+ * now"), then the persisted task status. */
+export function resolvePersistedZcodeStatus(input: PersistedZcodeStatusInput): AgentSession["status"] {
+  const raw = input.rawStatus?.toLowerCase();
+  if (raw === "error") return "error";
+  if (raw === "waiting" || raw === "needs_input") return "needs_input";
+  const native = typeof input.nativeUpdatedAt === "number" && input.nativeUpdatedAt > 0 ? input.nativeUpdatedAt : undefined;
+  if (input.lifecycle && input.lifecycle.at + 1000 >= (native ?? 0)) {
+    return input.lifecycle.state === "ended" ? "stopped" : input.lifecycle.state;
+  }
+  const lastActive = Math.max(input.tasksUpdatedAt, native ?? 0);
+  const recentlyActive = lastActive > 0 && input.now - lastActive < input.activeWindowMs;
+  if (recentlyActive && raw !== "completed") return "running";
+  if (raw === "completed") return "stopped";
+  return "idle";
+}
+
 function defaultCommand(): ZcodeCommand {
   const runtimeRoot = process.env.ZCODE_SERVER_RUNTIME_ROOT || join(homedir(), ".zcode", "server");
   const serverNode = process.env.ZCODE_SERVER_NODE || join(runtimeRoot, "node");
@@ -918,7 +951,7 @@ export class ZcodeAdapter implements HarnessAdapter {
           throw error;
         }
 
-        const nativeSessions = new Map<string, { directory?: string; workspaceIdentity?: string }>();
+        const nativeSessions = new Map<string, { directory?: string; workspaceIdentity?: string; timeUpdated?: number }>();
         let nativeCanonicalizationError: string | undefined;
         if (existsSync(this.localDbPath)) {
           try {
@@ -928,15 +961,18 @@ export class ZcodeAdapter implements HarnessAdapter {
               const names = new Set(nativeColumns.map((column) => column.name));
               if (names.has("id") && names.has("directory")) {
                 const workspaceIdentity = names.has("workspace_id") ? "workspace_id" : "null as workspace_id";
-                const nativeRows = nativeDb.prepare(`select id, directory, ${workspaceIdentity} from session`).all() as Array<{
+                const timeUpdatedExpr = names.has("time_updated") ? "time_updated" : "null as time_updated";
+                const nativeRows = nativeDb.prepare(`select id, directory, ${workspaceIdentity}, ${timeUpdatedExpr} from session`).all() as Array<{
                   id: string;
                   directory?: string;
                   workspace_id?: string | null;
+                  time_updated?: number | null;
                 }>;
                 for (const row of nativeRows) {
                   nativeSessions.set(row.id, {
                     directory: nonEmptyString(row.directory),
                     workspaceIdentity: nonEmptyString(row.workspace_id),
+                    timeUpdated: typeof row.time_updated === "number" && row.time_updated > 0 ? row.time_updated : undefined,
                   });
                 }
               } else {
@@ -982,11 +1018,16 @@ export class ZcodeAdapter implements HarnessAdapter {
           const row = ranked[0]!;
           const updatedAt = Number(row.updated_at || row.created_at || 0);
           const rawStatus = row.task_status?.toLowerCase();
-          const recentlyActive = Number.isFinite(updatedAt) && updatedAt > 0 && Date.now() - updatedAt < activeWindowMs;
-          const status: AgentSession["status"] = rawStatus === "error" ? "error"
-            : rawStatus === "completed" ? "stopped"
-              : rawStatus === "waiting" || rawStatus === "needs_input" ? "needs_input"
-                : rawStatus === "running" && recentlyActive ? "running" : "idle";
+          const nativeTimeUpdated = native?.timeUpdated;
+          const status: AgentSession["status"] = resolvePersistedZcodeStatus({
+            rawStatus,
+            tasksUpdatedAt: updatedAt,
+            nativeUpdatedAt: nativeTimeUpdated,
+            lifecycle: lifecycleEntryFor("zcode", sessionId),
+            now: Date.now(),
+            activeWindowMs,
+          });
+          const lastActivityMs = Math.max(updatedAt, nativeTimeUpdated ?? 0);
           const cwd = nativeDirectory || resolve(row.workspace_path || this.cwd);
           if (requestedCwd && cwd !== requestedCwd) continue;
           const workspaceIdentity = native?.workspaceIdentity || nonEmptyString(row.workspace_identity) || cwd;
@@ -1003,7 +1044,7 @@ export class ZcodeAdapter implements HarnessAdapter {
             status,
             title: row.title || "Untitled ZCode session",
             cwd,
-            lastActivity: timestamp(updatedAt),
+            lastActivity: timestamp(lastActivityMs),
             model: nonEmptyString(row.model),
             needsPermission: status === "needs_input",
             meta: {
@@ -1012,6 +1053,7 @@ export class ZcodeAdapter implements HarnessAdapter {
               pinned: row.pinned === 1,
               workspaceIdentity,
               duplicateTaskRows: duplicateRows.length,
+              ...(nativeTimeUpdated && nativeTimeUpdated > updatedAt ? { lastActivitySource: "native-session-db" } : {}),
               ...(duplicateRows.length > 1 ? {
                 taskIndexWorkspacePaths: duplicateRows.map((candidate) => candidate.workspace_path).filter(Boolean),
               } : {}),

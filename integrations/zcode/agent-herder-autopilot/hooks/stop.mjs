@@ -59,12 +59,9 @@ async function main() {
   const cwd = typeof input.cwd === "string" && input.cwd ? input.cwd : process.env.ZCODE_PROJECT_DIR || process.cwd();
   if (!sessionId) throw new Error("ZCode Stop hook did not provide session_id");
   const root = agentHerderRoot();
-  let held = false;
-  try { held = await humanStopHeld(sessionId, cwd); } catch { held = true; }
-  if (held) return writeEmpty();
-  const userContext = await lastUserContext(sessionId);
-  // The turn just ended: record the lifecycle boundary before judging, so
-  // the coordination boards see this session as idle, not running.
+  // The turn just ended: record the lifecycle boundary before any gating, so
+  // the daemon reports this session as idle, not running — a human-stopped
+  // turn has ended just the same.
   try {
     await fetch(`${process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787"}/api/coordination/lifecycle`, {
       method: "POST",
@@ -73,6 +70,10 @@ async function main() {
       signal: AbortSignal.timeout(1200),
     });
   } catch {}
+  let held = false;
+  try { held = await humanStopHeld(sessionId, cwd); } catch { held = true; }
+  if (held) return writeEmpty();
+  const userContext = await lastUserContext(sessionId);
   // Evaluate the existing session/global policy. A Stop event must never
   // re-enable a session explicitly switched off by its user.
   if (await humanStopHeld(sessionId, cwd)) return writeEmpty();

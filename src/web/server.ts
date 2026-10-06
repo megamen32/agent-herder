@@ -637,6 +637,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       const id = typeof body.promptId === "string" ? body.promptId : inputId || (typeof body.turnId === "string" ? body.turnId : "");
       const at = typeof body.at === "string" ? body.at : "";
       if (!id || !Number.isFinite(Date.parse(at))) return sendJson(response, 400, { error: "user-prompt requires promptId/inputId/turnId and valid at" });
+      // A submitted user prompt starts a turn: mark it before anything else so
+      // session listings report "running" for the whole turn, not only until
+      // the tasks-index recency window expires.
+      markLifecycleEvent(harness, sessionId, "turn-start", typeof body.cwd === "string" ? body.cwd : undefined, events);
       const released = await supervisor.releaseHumanStop(harness, sessionId, {
         id, at, ...(typeof body.turnId === "string" ? { turnId: body.turnId } : {}),
         ...(typeof body.text === "string" ? { text: body.text } : {}),
