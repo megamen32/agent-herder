@@ -689,6 +689,33 @@ export class UnfinishedSessionStore {
     }, (changed) => changed);
   }
 
+  /**
+   * Drop only the same nonaccepted row that was observed before an async
+   * completion-evidence read. A newer native event or accepted delivery must
+   * survive that read and keep its urgency for the next recovery pass.
+   */
+  async discardUnchangedNonaccepted(
+    expected: UnfinishedSessionRecord | undefined,
+    harness: string,
+    sessionId: string,
+    cwd: string,
+    stillCurrent: () => boolean,
+  ): Promise<boolean> {
+    return this.mutate((file) => {
+      if (!stillCurrent()) return false;
+      const key = sessionKey(harnessType(harness), bounded(sessionId, "sessionId"), cwd);
+      const index = file.sessions.findIndex((record) => unfinishedRecordKey(record) === key);
+      if (!expected) return index < 0;
+      if (expected.acceptedAt || expected.deliveryPending || expected.admissionPhase) return false;
+      if (unfinishedRecordKey(expected) !== key || index < 0) return false;
+      const current = file.sessions[index]!;
+      if (current.acceptedAt || current.deliveryPending || current.admissionPhase
+        || JSON.stringify(current) !== JSON.stringify(expected)) return false;
+      file.sessions.splice(index, 1);
+      return true;
+    }, (unchanged) => unchanged && expected !== undefined);
+  }
+
   async beginAttempt(
     harness: HarnessType,
     sessionId: string,
@@ -1609,16 +1636,22 @@ export class UnfinishedSessionLauncher {
           && evidenceIsCurrent(previous)
           && !durableAdmission?.acceptedAt
           && !durableAdmission?.deliveryPending) {
-          const signalKeys = [sourceKey, sessionKey(session.harness, session.id)];
-          const signalVersions = new Map(signalKeys.map((key) => [key, this.urgentSessionVersions.get(key) ?? 0] as const));
           const cached = cohortEvidence.get(sourceKey);
           previouslyCompletedMessages = cached?.messages
             ?? await sessionEvidenceMessages(adapter, session.id, runtimeSettings.evidenceMessageCount);
           const currentTranscriptTail = cached?.transcriptTail
             ?? completionEvidence(previouslyCompletedMessages, runtimeSettings.evidenceMessageCount);
           if (previouslyCompletedMessages.length === 0 || currentTranscriptTail === previous.transcriptTail) {
-            await this.options.store.remove(session.harness, session.id, sessionWorkspaceIdentity(session));
-            for (const [key, assessedVersion] of signalVersions) {
+            const unchanged = await this.options.store.discardUnchangedNonaccepted(
+              durableAdmission,
+              session.harness,
+              session.id,
+              sessionWorkspaceIdentity(session),
+              () => [...urgentSignalVersions].every(([key, assessedVersion]) =>
+                (this.urgentSessionVersions.get(key) ?? 0) === assessedVersion),
+            );
+            if (!unchanged) continue;
+            for (const [key, assessedVersion] of urgentSignalVersions) {
               if ((this.urgentSessionVersions.get(key) ?? 0) === assessedVersion) this.clearUrgentSession(key);
             }
             continue;

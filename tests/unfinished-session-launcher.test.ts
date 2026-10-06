@@ -28,7 +28,8 @@ function fixtureSession(status: AgentSession["status"] = "idle", harness: "codex
     status,
     title: "Незавершённая проверка",
     cwd: "/tmp/autostart-canary",
-    lastActivity: "2026-10-03T12:00:00.000Z",
+    // Keep the shared fixture inside the launcher's 48-hour discovery window.
+    lastActivity: new Date(Date.now() - 10 * 60_000).toISOString(),
     model: "account:zai-individual-coding-plan/GLM-5.3-Flash$high",
     needsPermission: status === "needs_input",
     messageCount: 2,
@@ -1587,6 +1588,72 @@ describe("unfinished session launcher", () => {
     expect(calls.messages[0]).toContain("Run the new export request.");
   });
 
+  it("preserves a new accepted admission that arrives during completed-task evidence loading", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-completed-admission-race-"));
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const session = {
+      ...fixtureSession("idle", "codex"),
+      id: "completed-admission-race",
+      lastActivity: new Date(Date.now() - 5 * 60_000).toISOString(),
+    };
+    const messages: SessionMessageView[] = [
+      { id: "goal", role: "user", text: "Finish the export", parts: [{ type: "text", text: "Finish the export" }] },
+      { id: "result", role: "assistant", text: "Export saved and checked", parts: [{ type: "text", text: "Export saved and checked" }] },
+    ];
+    const calls = { resumes: 0, messages: [] as string[] };
+    const settingsStore = new SessionAutostartStore(join(root, "settings.json"), {});
+    await settingsStore.setSession({ harness: "codex", sessionId: session.id, cwd: session.cwd }, true);
+    const adapter = fixtureAdapter(session, calls);
+    let blockEvidence = false;
+    let evidenceStarted!: () => void;
+    let releaseEvidence!: () => void;
+    const enteredEvidence = new Promise<void>((resolve) => { evidenceStarted = resolve; });
+    const evidenceGate = new Promise<void>((resolve) => { releaseEvidence = resolve; });
+    adapter.getSessionMessages = async () => {
+      if (blockEvidence) {
+        blockEvidence = false;
+        evidenceStarted();
+        await evidenceGate;
+      }
+      return messages;
+    };
+    let plans = 0;
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["codex", adapter]]), store,
+      settingsStore, discoveryIdleMs: 1,
+      judge: {
+        async decide() { throw new Error("fallback should not run"); },
+        async plan({ sessions: batch }) {
+          plans += 1;
+          return { groups: batch.map(({ session: candidate }) => ({
+            sourceSessionIds: [candidate.id], primarySessionId: candidate.id, verdict: "completed" as const,
+            reason: "The export is complete", confidence: 1, topic: "Export", handoff: "",
+          })) };
+        },
+      },
+    });
+
+    await launcher.recoverPending();
+    expect(plans).toBe(1);
+    await store.markStarted(session, "native-completed-event");
+    blockEvidence = true;
+    const recovery = launcher.recoverPending();
+    await enteredEvidence;
+    await launcher.handleEvent("codex", { kind: "turn.completed", harness: "codex", sessionId: session.id });
+    const acceptedAt = new Date();
+    await store.markStarted(session, "new-accepted-delivery", acceptedAt, true, true, false);
+    releaseEvidence();
+    await recovery;
+
+    expect(plans).toBe(1);
+    expect(await store.list()).toMatchObject([{
+      sessionId: session.id,
+      acceptedAt: acceptedAt.toISOString(),
+      admissionPhase: "accepted_pending",
+    }]);
+    expect(calls).toEqual({ resumes: 0, messages: [] });
+  });
+
   it("preserves same-pipeline backoff across restart but wakes an obsolete pipeline failure once", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-assessment-pipeline-version-"));
     const statePath = join(root, "unfinished.json");
@@ -3095,10 +3162,13 @@ describe("unfinished session launcher", () => {
       { ...fixtureSession("idle", "codex"), id: "changed", title: "Changed", lastActivity: oldActivity },
       { ...fixtureSession("idle", "codex"), id: "same-timestamp", title: "Same timestamp", lastActivity: oldActivity, lastMessage: "old reply", messageCount: 2 },
     ];
+    const transcripts = new Map<string, SessionMessageView[]>(sessions.map((session) => [session.id, [
+      { id: `${session.id}-u`, role: "user", text: `Original request for ${session.id}`, parts: [{ type: "text", text: `Original request for ${session.id}` }] },
+    ]]));
     const batches: string[][] = [];
     const adapter = fixtureAdapter(sessions[0]!, { resumes: 0, messages: [] });
     adapter.listSessions = async () => sessions;
-    adapter.getSessionMessages = async (id) => [{ id: `${id}-u`, role: "user", text: id, parts: [{ type: "text", text: id }] }];
+    adapter.getSessionMessages = async (id) => transcripts.get(id) ?? [];
     const launcher = new UnfinishedSessionLauncher({
       adapters: new Map([["codex", adapter]]), store,
       settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
@@ -3123,6 +3193,12 @@ describe("unfinished session launcher", () => {
       { ...fixtureSession("idle", "codex"), id: "new", title: "New", lastActivity: oldActivity },
       { ...fixtureSession("running", "codex"), id: "healthy-running", title: "Running", lastActivity: new Date().toISOString() },
     ];
+    for (const id of ["changed", "same-timestamp"]) {
+      transcripts.set(id, [
+        ...(transcripts.get(id) ?? []),
+        { id: `${id}-new-u`, role: "user", text: `New request for ${id}`, parts: [{ type: "text", text: `New request for ${id}` }] },
+      ]);
+    }
     await launcher.recoverPending();
 
     expect(batches).toEqual([["settled", "changed", "same-timestamp"], ["changed", "same-timestamp", "new"]]);
@@ -4111,9 +4187,14 @@ describe("unfinished session launcher", () => {
     };
     await settingsStore.setSession({ harness: "codex", sessionId: session.id, cwd: session.cwd }, true);
     const calls = { resumes: 0, messages: [] as string[] };
+    let transcript: SessionMessageView[] = [
+      { id: "original-request", role: "user", text: "Complete the control canary", parts: [{ type: "text", text: "Complete the control canary" }] },
+    ];
+    const adapter = fixtureAdapter(session, calls);
+    adapter.getSessionMessages = async () => transcript;
     let plans = 0;
     const launcher = new UnfinishedSessionLauncher({
-      adapters: new Map([["codex", fixtureAdapter(session, calls)]]),
+      adapters: new Map([["codex", adapter]]),
       store,
       settingsStore,
       reconcileIntervalMs: 60_000,
@@ -4143,6 +4224,10 @@ describe("unfinished session launcher", () => {
     session.status = "stopped";
     session.lastMessage = "New user request at the same timestamp";
     session.messageCount = 3;
+    transcript = [...transcript, {
+      id: "new-user-request", role: "user", text: "New user request at the same timestamp",
+      parts: [{ type: "text", text: "New user request at the same timestamp" }],
+    }];
     await waitUntil(() => calls.messages.length > 0);
     await waitUntil(async () => (await store.listInventory()).some((record) =>
       record.sessionId === session.id && record.verdict?.verdict === "unfinished"));
@@ -4568,7 +4653,7 @@ describe("unfinished session launcher", () => {
   it("rolls a stale session into a new cache handoff instead of resuming the expensive history", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-handoff-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
-    const old = fixtureSession("idle", "codex");
+    const old = { ...fixtureSession("idle", "codex"), lastActivity: "2026-10-03T12:00:00.000Z" };
     await store.markStarted(old);
     const calls = { resumes: 0, messages: [] as string[] };
     const oldAdapter = fixtureAdapter(old, calls);
@@ -4602,7 +4687,7 @@ describe("unfinished session launcher", () => {
   it("does not repeat a cache handoff whose replacement turn failed after admission", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-handoff-admitted-failure-"));
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
-    const old = fixtureSession("idle", "codex");
+    const old = { ...fixtureSession("idle", "codex"), lastActivity: "2026-10-03T12:00:00.000Z" };
     await store.markStarted(old, "previous-process");
     const calls = { resumes: 0, messages: [] as string[] };
     const adapter = fixtureAdapter(old, calls);
@@ -4650,7 +4735,7 @@ describe("unfinished session launcher", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-handoff-crash-window-"));
     const lineagePath = join(root, "lineage.json");
     const storePath = join(root, "unfinished.json");
-    const old = fixtureSession("idle", "codex");
+    const old = { ...fixtureSession("idle", "codex"), lastActivity: "2026-10-03T12:00:00.000Z" };
     const replacement = { ...old, id: "session-2", status: "error" as const, lastActivity: new Date().toISOString() };
     const firstCalls = { resumes: 0, messages: [] as string[] };
     const firstAdapter = fixtureAdapter(old, firstCalls);
@@ -4723,7 +4808,7 @@ describe("unfinished session launcher", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-handoff-before-send-crash-"));
     const lineagePath = join(root, "lineage.json");
     const storePath = join(root, "unfinished.json");
-    const old = fixtureSession("idle", "codex");
+    const old = { ...fixtureSession("idle", "codex"), lastActivity: "2026-10-03T12:00:00.000Z" };
     const replacement = { ...old, id: "session-2", status: "idle" as const, lastActivity: new Date().toISOString() };
     const firstAdapter = fixtureAdapter(old, { resumes: 0, messages: [] });
     let firstCreates = 0;
