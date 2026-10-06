@@ -35,6 +35,7 @@ function session(id: string, title: string, cwd: string, harness: "opencode" | "
 function fakeAdapter(harness: "opencode" | "codex", initial: AgentSession[] = []) {
   const sessions = [...initial];
   const deliveries: Array<{ id: string; options: SendMessageOptions }> = [];
+  const creationOptions: CreateSessionOptions[] = [];
   let creates = 0;
   let failDelivery = false;
   const adapter: HarnessAdapter = {
@@ -45,6 +46,7 @@ function fakeAdapter(harness: "opencode" | "codex", initial: AgentSession[] = []
     async getSession(id) { return sessions.find((item) => item.id === id) || null; },
     async createSession(options: CreateSessionOptions) {
       creates += 1;
+      creationOptions.push(options);
       await new Promise((resolve) => setTimeout(resolve, 5));
       const created = session(`${harness}-${creates}`, options.name, options.cwd, harness);
       sessions.push(created);
@@ -62,6 +64,7 @@ function fakeAdapter(harness: "opencode" | "codex", initial: AgentSession[] = []
     adapter,
     sessions,
     deliveries,
+    creationOptions,
     creates: () => creates,
     failNextDelivery: () => { failDelivery = true; },
   };
@@ -115,6 +118,19 @@ describe("named session creation and reuse", () => {
     }));
     expect(created).toMatchObject({ ok: true, created: true, sessionId: "opencode-1" });
     expect(resumed).toMatchObject({ ok: true, created: false, sessionId: "opencode-1", delivery: "accepted" });
+  });
+
+  it("requests full native access on every unattended named creation path", async () => {
+    const cwd = await workspace();
+    const fake = fakeAdapter("opencode");
+    const adapters = new Map([["opencode", fake.adapter]]);
+    await createNamedSession(adapters, { harness: "opencode", name: "created", cwd });
+    await newOrResumeNamedSession(adapters, { harness: "opencode", name: "resumed", cwd, message: "task" });
+    await deliverNamedSession(adapters, { harness: "opencode", name: "delivered", cwd, message: "task" });
+    expect(fake.creationOptions).toHaveLength(3);
+    expect(fake.creationOptions.every((options) => options.fullAccess === true)).toBe(true);
+    await newOrResumeNamedSession(adapters, { harness: "opencode", name: "created", cwd, message: "new task" });
+    expect(fake.creationOptions).toHaveLength(3);
   });
 
   it("rejects a relative CWD before adapter work", async () => {

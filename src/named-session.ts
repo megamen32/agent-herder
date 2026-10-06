@@ -64,7 +64,7 @@ export async function createNamedSession(
       return failed(normalized, `Named session '${normalized.name}' already exists for ${normalized.harness}:${normalized.cwd}`);
     }
     try {
-      const session = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model });
+      const session = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, fullAccess: true });
       rememberNamedSession(normalized, session);
       return { ok: true, created: true, sessionId: session.id, model: request.model, ...normalized };
     } catch (error) {
@@ -96,7 +96,7 @@ export async function newOrResumeNamedSession(
     let created = false;
     if (!target) {
       try {
-        target = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model });
+        target = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, fullAccess: true });
         rememberNamedSession(normalized, target);
         created = true;
       } catch (error) {
@@ -301,7 +301,7 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     if (!target) {
       if ((request.create||"if_missing")==="never") return {ok:false,created:false,harness:normalized.harness,name:normalized.name,cwd:normalized.cwd,delivery:"not_found",activated:false,error:"Named session not found"};
       if (!adapter.createSession) return {...failed(normalized,`${adapter.name} does not support session creation`,"not_attempted"),activated:false};
-      try { target=await adapter.createSession({name:normalized.name,cwd:normalized.cwd,model:request.model}); rememberNamedSession(normalized,target); created=true; } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
+      try { target=await adapter.createSession({name:normalized.name,cwd:normalized.cwd,model:request.model,fullAccess:true}); rememberNamedSession(normalized,target); created=true; } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
     }
     const fresh=(await adapter.getSession(target.id)) || target; const activation=request.activation||"always";
     if (activation==="if_running" && fresh.status!=="running") return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"skipped_inactive",activated:false,...normalized};

@@ -186,7 +186,7 @@ describe("cache-aware session handoff", () => {
     expect((await service.maybeRollover(session, new Date("2026-10-03T10:06:00Z"))).kind).toBe("rolled_over");
     expect(fixture.createSession).toHaveBeenCalledWith(expect.objectContaining({
       model: "account:zai-individual-coding-plan/GLM-5.3-Flash$high",
-      mode: "yolo",
+      fullAccess: true,
     }));
   });
 
