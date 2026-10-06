@@ -413,7 +413,8 @@ Live cbce504 deployment and newly exposed blockers:
 - Peer corrected the proposed Mac-disconnect narrative: native server turns
   survived all four supplied proxy disconnect windows. Timestamp coincidence
   and running/incomplete turns are deliberately not crash eligibility.
-- Real CAPTCHA session sess_487200eb-6096-47ac-9027-b563caa65736 has seven error
+- Original peer snapshot of CAPTCHA session
+  sess_487200eb-6096-47ac-9027-b563caa65736 showed seven error
   turns with retryable=0. External blocker: human must finish verification in
   the provider interface. User was asked to report completion; no automated
   repeat is authorized or performed while that remains unresolved.
@@ -426,4 +427,23 @@ Live cbce504 deployment and newly exposed blockers:
   send/notices. Native databases and production registry were not modified.
   Evidence: /home/roomhacker/.codex/visualizations/2026/10/06/
   01a10b3f-b648-74d0-8265-023d1ae85312/cold-recovery-readonly-proof.json.
-- Deployment/production readback pending one coordinated Herder restart.
+- Scoped source/docs 3a649149 published, fetched clean HEAD=origin/main. One
+  coordinated restart deployed the compiled source: PID3799934 active,
+  NRestarts0. First immediate settings probe hit its20s startup timeout; after
+  startup the same API returned200 and all658 ZCode sessions were present.
+- Live state changed after the isolated proof: new native input20:30:02 UTC
+  was admitted by the old daemon (generation3429774, markStarted20:30:07),
+  before this deployment. Its last native turn is now cancelled_by_user=1;
+  the native assistant records protocol connection closed. The prior CAPTCHA
+  receipt is no longer current. The deployed consumer correctly excludes
+  stale/new-input/cancelled evidence; existing record has no recoveryCause.
+  Do not claim the old CAPTCHA receipt became a production blocked record,
+  or attribute that new input to this root's readonly proof.
+- Production readback verifies exact settings and Autopilot policy unchanged,
+  human-stop file hash unchanged, no actionable recovery for that cancellation.
+  Evidence: same private directory/cold-production-readback.json. CAPTCHA itself
+  is not resolved or retried by root; no further native action is required for
+  acceptance of this cold-recovery repair.
+- Updated the project-local ignored knowledge map with the verified cold-error
+  producer/launcher path and failure shield; no source implementation is stored
+  outside the reviewed tracked files.
