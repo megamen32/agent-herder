@@ -1,3 +1,5 @@
+import { deferredMessages } from "../src/deferred-messages.js";
+import { vi } from "vitest";
 import { SessionSupervisor } from "../src/session-supervisor.js";
 import type { HarnessAdapter } from "../src/types/index.js";
 import { mkdtemp, writeFile } from "node:fs/promises";
@@ -52,6 +54,55 @@ describe("fleet admission authority", () => {
     const gate = createFleetRecoveryAdmissionGate(path, () => now);
     expect(await gate(session as never, operation)).toEqual({ allowed: false, reason: "Fleet authority permits existing-session recovery only" });
     expect(await gate(session as never, "resume")).toEqual({ allowed: true });
+  });
+  it.each(["paused-unfinished", "error", "resource-denied"])("holds automatic APIs for %s before native initialization", async (kind) => {
+    const snapshot = kind === "resource-denied" ? { ...state(), heavy: { admission: "DENIED" } } : state(kind);
+    let native = 0;
+    const adapter = { type: "codex", async getSession() { native++; return null; }, async listSessions() { native++; return []; },
+      async resumeSession() { native++; return { ok: true }; }, async sendMessage() { native++; return { ok: true }; },
+      async recover() { native++; return { ok: true }; }, async forkSession() { native++; return { ok: true }; } } as HarnessAdapter;
+    const deferred = vi.spyOn(deferredMessages, "add").mockImplementation(async () => ({ id: "stub", sessionId: "owned", message: "", createdAt: "" }));
+    const supervisor = new SessionSupervisor(new Map([["codex", adapter]]), {} as never, undefined,
+      { humanStopStore: { async isHeld() { return false; }, async observe() { return false; } } as never,
+        admissionGate: async (target, operation) => operation === "create" ? { allowed: false, reason: "existing identities only" } : evaluateFleetAdmission(snapshot, target, now) });
+    try {
+      expect((await supervisor.resumeSession("codex", "owned", "continue")).ok).toBe(false);
+      expect((await supervisor.sendMessage("codex", "owned", { message: "continue", origin: "automation" }, "/owned")).ok).toBe(false);
+      expect((await supervisor.recoverSession("codex", "owned")).ok).toBe(false);
+      expect((await supervisor.forkSession("codex", "owned")).ok).toBe(false);
+      expect(native).toBe(0);
+      expect(deferred).not.toHaveBeenCalled();
+    } finally { deferred.mockRestore(); }
+  });
+  it.each(["resume", "send"] as const)("rechecks automatic %s at the native boundary and preserves explicit human controls", async (operation) => {
+    let resumes = 0, sends = 0, checks = 0;
+    const adapter = { type: "codex", async getSession() { return null; },
+      async resumeSession() { resumes++; return { ok: true }; }, async sendMessage() { sends++; return { ok: true }; } } as HarnessAdapter;
+    const supervisor = new SessionSupervisor(new Map([["codex", adapter]]), {} as never, undefined,
+      { humanStopStore: { async isHeld() { return false; }, async observe() { return false; }, async release() { return true; } } as never,
+        admissionGate: async () => ++checks >= 2 ? { allowed: false, reason: "new authority hold" } : { allowed: true } });
+    const result = operation === "resume" ? await supervisor.resumeSession("codex", "owned")
+      : await supervisor.sendMessage("codex", "owned", { message: "continue" });
+    expect(result.ok).toBe(false);
+    expect(resumes + sends).toBe(0);
+    if (operation === "resume") expect((await supervisor.resumeSession("codex", "owned", undefined, true)).ok).toBe(true);
+    else expect((await supervisor.sendMessage("codex", "owned", { message: "human", origin: "human" })).ok).toBe(true);
+    expect(resumes + sends).toBe(1);
+    expect(checks).toBe(2);
+  });
+  it("holds deferred automatic insertion when admission changes after native busy response", async () => {
+    let checks = 0;
+    const adapter = { type: "codex", async getSession() { return null; },
+      async sendMessage() { return { ok: false, error: "already has an active writer" }; } } as HarnessAdapter;
+    const deferred = vi.spyOn(deferredMessages, "add").mockImplementation(async () => ({ id: "stub", sessionId: "owned", message: "", createdAt: "" }));
+    const supervisor = new SessionSupervisor(new Map([["codex", adapter]]), {} as never, undefined,
+      { humanStopStore: { async isHeld() { return false; }, async observe() { return false; } } as never,
+        admissionGate: async () => ++checks >= 3 ? { allowed: false, reason: "new hold" } : { allowed: true } });
+    try {
+      expect((await supervisor.sendMessage("codex", "owned", { message: "continue" })).ok).toBe(false);
+      expect(checks).toBe(3);
+      expect(deferred).not.toHaveBeenCalled();
+    } finally { deferred.mockRestore(); }
   });
   it("rereads authoritative holds at the next boundary", async () => {
     const root = await mkdtemp(join(tmpdir(), "fleet-admission-"));

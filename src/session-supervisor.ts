@@ -406,6 +406,7 @@ export class SessionSupervisor {
 
   async sendMessage(harness: string, id: string, options: SendMessageOptions, expectedCwd?: string): Promise<SendMessageResult & { sessionId?: string; delivery?: "deferred" }> {
     const adapter = this.requireAdapter(harness);
+    if (options.origin !== "human" && !await this.automaticNativeAdmissionAllowed(adapter, id, "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic delivery" };
     let session: AgentSession | null;
     if (expectedCwd) {
       const canonicalCwd = resolve(expectedCwd);
@@ -425,8 +426,10 @@ export class SessionSupervisor {
     }
     const message = session ? await coordinationNotes.inject(session, options.message) : options.message;
     if (await this.isAutomationHeld(harness, id)) return { ok: false, nonRetryable: true, error: "Чат явно остановлен. Требуется новое сообщение человека или явное продолжение." };
+    if (options.origin !== "human" && !await this.automaticNativeAdmissionAllowed(adapter, id, "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic delivery" };
     const result = await adapter.sendMessage(id, { ...options, message });
     if (!result.ok && isBusyCodexWriter(harness, result.error)) {
+      if (options.origin !== "human" && !await this.automaticNativeAdmissionAllowed(adapter, id, "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic deferred delivery" };
       await deferredMessages.add(id, options.message);
       return { ok: true, sessionId: id, delivery: "deferred" };
     }
@@ -508,9 +511,10 @@ export class SessionSupervisor {
 
   async recoverSession(harness: string, id: string, message?: string, signal?: AbortSignal, humanRequested = false): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
     throwIfAborted(signal);
+    const adapter = this.requireAdapter(harness);
+    if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "create")) return { ok: false, error: "Fleet admission holds automatic native work" };
     if (humanRequested) await this.releaseHumanStop(harness, id);
     else if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат явно остановлен; автоматическое восстановление запрещено." };
-    const adapter = this.requireAdapter(harness);
     let cancelling = false;
     const cancelNative = async (sessionId: string) => {
       if (adapter.cancelTurn) await adapter.cancelTurn(sessionId);
@@ -524,6 +528,7 @@ export class SessionSupervisor {
     let result: ControlResult;
     try {
       throwIfAborted(signal); // A stop may arrive while the persistent human gate is read.
+      if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "create")) return { ok: false, error: "Fleet admission holds automatic recovery replacement" };
       result = await (adapter.recover
         ? adapter.recover(id, message, signal)
         : Promise.resolve({ ok: false, error: `${adapter.name} does not expose native recovery` }));
@@ -564,9 +569,11 @@ export class SessionSupervisor {
   }
 
   async forkSession(harness: string, id: string, message?: string, humanRequested = false): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
+    const adapter = this.requireAdapter(harness);
+    if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "create")) return { ok: false, error: "Fleet admission holds automatic native work" };
     if (humanRequested) await this.releaseHumanStop(harness, id);
     else if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат явно остановлен; автоматическое создание копии запрещено." };
-    const adapter = this.requireAdapter(harness);
+    if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "create")) return { ok: false, error: "Fleet admission holds automatic fork" };
     const result: Promise<ControlResult> = adapter.forkSession
       ? adapter.forkSession(id, message)
       : Promise.resolve({ ok: false, error: `${adapter.name} does not expose native session forking` });
@@ -599,9 +606,10 @@ export class SessionSupervisor {
   }
 
   async resumeSession(harness: string, id: string, message?: string, humanRequested = false): Promise<{ ok: boolean; error?: string }> {
+    const adapter = this.requireAdapter(harness);
+    if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "resume")) return { ok: false, error: "Fleet admission holds automatic native work" };
     if (humanRequested) await this.releaseHumanStop(harness, id);
     else if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат явно остановлен; автоматическое продолжение запрещено." };
-    const adapter = this.requireAdapter(harness);
     // Explicit no-message resume may enroll an externally started active Codex
     // turn. It must never start another turn or interrupt the existing writer.
     if (!message && humanRequested && harness === "codex") {
@@ -616,6 +624,7 @@ export class SessionSupervisor {
       }
     }
     if (adapter.resumeSession) {
+      if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "resume")) return { ok: false, error: "Fleet admission holds automatic resume" };
       const resumed = await adapter.resumeSession(id);
       if (!resumed.ok || !message) {
         if (resumed.ok) this.publishSessionChanged(harness, id, "changed");
@@ -623,9 +632,11 @@ export class SessionSupervisor {
       }
     }
     if (!message) return { ok: false, error: `${adapter.name} does not expose a native resume operation` };
+    if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "send")) return { ok: false, error: "Fleet admission holds automatic delivery" };
     const session = await adapter.getSession(id);
     const injected = session ? await coordinationNotes.inject(session, message) : message;
     if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат снова остановлен; автоматическое продолжение запрещено." };
+    if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "send")) return { ok: false, error: "Fleet admission holds automatic delivery" };
     const result = await adapter.sendMessage(id, { message: injected, origin: humanRequested ? "human" : "automation" });
     if (result.ok || result.admitted === true) {
       if (session) await this.unfinishedSessions?.armSession(
@@ -898,7 +909,7 @@ export class SessionSupervisor {
   ): Promise<void> {
     const key = sessionKey(provider, sessionId);
     if (this.automaticResumes.get(key) !== state || state.inFlight) return;
-    if (!await this.automaticResumeAdmissionAllowed(adapter, sessionId)) {
+    if (!await this.automaticNativeAdmissionAllowed(adapter, sessionId, "resume")) {
       this.clearAutomaticResume(provider, sessionId);
       return;
     }
@@ -913,7 +924,7 @@ export class SessionSupervisor {
       }
       // Native resume preserves the session identity and its persisted model;
       // automatic recovery must never fork or silently switch providers.
-      if (!await this.automaticResumeAdmissionAllowed(adapter, sessionId)) {
+      if (!await this.automaticNativeAdmissionAllowed(adapter, sessionId, "resume")) {
         state.attempts = Math.max(0, state.attempts - 1);
         this.clearAutomaticResume(provider, sessionId);
         return;
@@ -936,11 +947,11 @@ export class SessionSupervisor {
     this.scheduleAutomaticResume(provider, sessionId);
   }
 
-  private async automaticResumeAdmissionAllowed(adapter: HarnessAdapter, sessionId: string): Promise<boolean> {
+  private async automaticNativeAdmissionAllowed(adapter: HarnessAdapter, sessionId: string, operation: "resume" | "send" | "create"): Promise<boolean> {
     if (!this.admissionGate) return true;
     try {
       return (await this.admissionGate({ id: sessionId, harness: adapter.type,
-        cwd: "", title: "", status: "error", lastActivity: new Date().toISOString(), needsPermission: false }, "resume")).allowed;
+        cwd: "", title: "", status: "error", lastActivity: new Date().toISOString(), needsPermission: false }, operation)).allowed;
     } catch { return false; }
   }
 
