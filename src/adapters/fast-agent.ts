@@ -34,8 +34,10 @@ type PersistedSession = {
     title?: unknown;
     label?: unknown;
     first_user_preview?: unknown;
+    archived?: boolean;
     extras?: Record<string, unknown>;
   };
+  archived?: boolean;
   execution?: { status?: unknown } | null;
   continuation?: { cwd?: string; active_agent?: string; agents?: Record<string, { model?: unknown }> };
   analysis?: { usage_summary?: { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown } };
@@ -143,7 +145,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       "from pathlib import Path",
       "from fast_agent.session.session_manager import SessionManager",
       "home,cwd,name,model,recovery=sys.argv[1:]",
-      "session=SessionManager(cwd=Path(cwd),home_override=home).create_session(name=name,metadata={'model':model,'cwd':cwd,'healthRecovery':recovery=='true'})",
+      "session=SessionManager(cwd=Path(cwd),home_override=home).create_session(name=name,metadata={'model':model,'cwd':cwd,'healthRecovery':recovery=='true','herderManaged':True})",
       "print(json.dumps({'id':session.info.name}))",
     ].join("\n");
     const { stdout } = await promisify(execFile)(python, ["-c", script, this.home, cwd, options.name, options.model || "", String(options.healthRecovery === true)], { timeout: 15_000, maxBuffer: 8192, env: { ...process.env, FAST_AGENT_HOME: this.home } });
@@ -156,6 +158,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
   async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
     const session = await this.getSession(id);
     if (!session) return { ok: false, error: `Fast Agent session '${id}' not found` };
+    if (session.meta?.readOnly === true) return { ok: false, error: READ_ONLY_ERROR };
     const nativeId = stringValue(session.meta?.nativeSessionId);
     if (!nativeId) return { ok: false, error: `Fast Agent session '${id}' has no native session id` };
     const args = [
@@ -163,9 +166,10 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       "--resume", nativeId, "--message", options.message, "--quiet",
     ];
     const recovery = session.meta?.healthRecovery === true;
-    if (recovery) args.push("--shell", "--timeout", "300");
-    const resourceProperties = recovery ? ["CPUQuota=100%", "MemoryHigh=384M", "MemoryMax=768M", "MemorySwapMax=0", "TasksMax=64", "IOWeight=25"] : [];
     const directMiniMax = session.model?.startsWith("anthropic.MiniMax-") === true;
+    const boundedDirectSession = recovery || (directMiniMax && session.meta?.herderManaged === true);
+    if (boundedDirectSession) args.push("--shell", "--timeout", "300");
+    const resourceProperties = boundedDirectSession ? ["CPUQuota=100%", "MemoryHigh=384M", "MemoryMax=768M", "MemorySwapMax=0", "TasksMax=64", "IOWeight=25"] : [];
     const config = process.env.FAST_AGENT_MINIMAX_CONFIG || join(homedir(), ".config/agent-herder/fast-agent-minimax.yaml");
     if (directMiniMax) {
       await stat(config);
@@ -377,6 +381,9 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       || stringValue(Object.values(record.snapshot.continuation?.agents || {}).find((agent) => agent.model)?.model)
       || stringValue(record.snapshot.metadata?.extras?.model)
       || stringValue((record.snapshot.metadata as Record<string, unknown> | undefined)?.model);
+    const extras = record.snapshot.metadata?.extras || {};
+    const herderManaged = extras.herderManaged === true || typeof extras.healthRecovery === "boolean";
+    const archived = record.snapshot.archived === true || record.snapshot.metadata?.archived === true || extras.archived === true || relative(this.sessionsRoot, record.directory).split(/[\\/]/).some((part) => ["archive", "archived", ".archive", ".archived"].includes(part));
     const requestedModel = stringValue(record.snapshot.metadata?.extras?.model);
     const canonicalModel = requestedModel?.startsWith("anthropic.MiniMax-") && snapshotModel === requestedModel.slice("anthropic.".length) ? requestedModel : snapshotModel;
     const model = canonicalModel || (record.usage.model
@@ -399,7 +406,9 @@ export class FastAgentFileAdapter implements HarnessAdapter {
         source: "fast-agent-persisted-home",
         lastError: record.launchError,
         healthRecovery: record.snapshot.metadata?.extras?.healthRecovery === true || (record.snapshot.metadata as Record<string, unknown> | undefined)?.healthRecovery === true,
-        readOnly: true,
+        herderManaged,
+        archived,
+        readOnly: archived || !herderManaged,
         home: this.home,
         sessionDirectory: relative(this.home, record.directory),
         nativeSessionId: nativeId,

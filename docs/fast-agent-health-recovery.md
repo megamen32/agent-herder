@@ -27,3 +27,7 @@ Queued execution writes a bounded, redacted mode0600 herder-execution.json recei
 The exact Flash model's published output ceiling is 524288 tokens, including reasoning; this is not its 1M context window. See https://platform.minimax.io/docs/api-reference/text-chat-openai and https://platform.minimax.io/docs/api-reference/text-anthropic-api. Thinking stays enabled with the provider default max effort.
 
 The explicit card uses unique agent name herder_minimax and CLI --name herder_minimax. This avoids a collision with the pre-existing home card dev.md while preserving ordinary home agents. Native card merge/selection is validated offline before provider dispatch.
+
+## New managed MiniMax conversations
+
+New writable Herder-owned direct MiniMax conversations use the same measured server-100 worker budget as recovery: CPU100%, RAM high/max384/768MiB, Swap0, Tasks64, IOWeight25 and native timeout300 seconds. The successful native Flash shell canary peaked at176680960 bytes (168.5MiB), leaving headroom within this starter budget. The direct card enables no MCP servers. A heavier coding/build workload needs an owning-project budget review before increasing limits; imported/generic conversations keep their existing policy.

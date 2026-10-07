@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import * as workloadLauncher from "../src/workload-launcher.js";
 import { FastAgentFileAdapter } from "../src/adapters/fast-agent.js";
 
 const cleanups: string[] = [];
 
 afterEach(async () => {
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
   await Promise.all(cleanups.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -18,7 +20,7 @@ describe("Fast Agent persisted observer", () => {
     cleanups.push(home);
     const directory = join(home, "sessions", "direct");
     await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, "session.json"), JSON.stringify({ session_id: "direct", continuation: { cwd: home, active_agent: "herder_minimax", agents: { dev: { model: "unrelated" }, herder_minimax: { model: "MiniMax-M3.1-Flash-Preview" } } }, metadata: { extras: { model: "anthropic.MiniMax-M3.1-Flash-Preview", healthRecovery: true } } }));
+    await writeFile(join(directory, "session.json"), JSON.stringify({ session_id: "direct", continuation: { cwd: home, active_agent: "herder_minimax", agents: { dev: { model: "unrelated" }, herder_minimax: { model: "MiniMax-M3.1-Flash-Preview" } } }, metadata: { extras: { model: "anthropic.MiniMax-M3.1-Flash-Preview", herderManaged: true, healthRecovery: false } } }));
     const config = join(home, "direct.yaml");
     await writeFile(config, "anthropic:\n  base_url: https://api.minimax.io/anthropic\n");
     const bin = join(home, "capture.sh");
@@ -31,7 +33,10 @@ describe("Fast Agent persisted observer", () => {
     vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "unrelated-payg-token");
     vi.stubEnv("ANTHROPIC_BASE_URL", "https://unrelated.example");
     const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: bin });
+    const launch = vi.spyOn(workloadLauncher, "spawnIsolatedWorkload");
     expect(await adapter.sendMessage("fast-agent:direct", { message: "diagnose only" })).toEqual({ ok: true });
+    expect(launch.mock.calls[0][2].resourceProperties).toEqual(["CPUQuota=100%", "MemoryHigh=384M", "MemoryMax=768M", "MemorySwapMax=0", "TasksMax=64", "IOWeight=25"]);
+
     const args = (await readFile(argsPath, "utf8")).split("\n");
     expect(args).toEqual(expect.arrayContaining(["--name", "herder_minimax", "--config-path", config, "--agent-cards", "--model", "anthropic.MiniMax-M3.1-Flash-Preview", "--shell", "--timeout", "300"]));
     expect(args.join(" ")).not.toContain("test-private-token");
@@ -41,6 +46,29 @@ describe("Fast Agent persisted observer", () => {
 
 
 
+
+
+  it("allows only managed unarchived native conversations to accept replies", async () => {
+    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-writable-"));
+    cleanups.push(home);
+    for (const [id, metadata] of [
+      ["managed", { extras: { herderManaged: true, healthRecovery: false } }],
+      ["legacy-managed", { extras: { healthRecovery: true } }],
+      ["foreign", { extras: {} }],
+      ["archived", { archived: true, extras: { herderManaged: true, healthRecovery: true } }],
+    ] as const) {
+      const directory = join(home, "sessions", id);
+      await mkdir(directory, { recursive: true });
+      await writeFile(join(directory, "session.json"), JSON.stringify({ session_id: id, metadata }));
+    }
+    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/bin/true" });
+    expect(await adapter.getSession("fast-agent:managed")).toMatchObject({ meta: { readOnly: false, herderManaged: true } });
+    expect(await adapter.getSession("fast-agent:legacy-managed")).toMatchObject({ meta: { readOnly: false } });
+    expect(await adapter.getSession("fast-agent:foreign")).toMatchObject({ meta: { readOnly: true } });
+    expect(await adapter.getSession("fast-agent:archived")).toMatchObject({ meta: { readOnly: true, archived: true } });
+    expect(await adapter.sendMessage("fast-agent:managed", { message: "user reply", origin: "human" })).toEqual({ ok: true });
+    expect(await adapter.sendMessage("fast-agent:archived", { message: "user reply", origin: "human" })).toMatchObject({ ok: false });
+  });
 
   it("keeps the verified direct provider prefix after native persistence strips it", async () => {
     const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-provider-identity-"));
@@ -88,7 +116,7 @@ describe("Fast Agent persisted observer", () => {
     cleanups.push(home);
     const directory = join(home, "sessions", "queue-error");
     await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, "session.json"), JSON.stringify({ session_id: "queue-error", continuation: { cwd: home } }));
+    await writeFile(join(directory, "session.json"), JSON.stringify({ session_id: "queue-error", continuation: { cwd: home }, metadata: { extras: { herderManaged: true } } }));
     const bin = join(home, "fail.sh");
     await writeFile(bin, "#!/bin/sh\nprintf 'Provider Error: test-private-token denied\n' >&2\nexit 1\n");
     await chmod(bin, 0o755);
@@ -198,7 +226,7 @@ describe("Fast Agent persisted observer", () => {
       lastMessage: "I inspected it.",
     });
     expect(await adapter.getSessionMessages("fast-agent:session-1", 1)).toMatchObject([{ text: "I inspected it." }]);
-    expect(await adapter.sendMessage("fast-agent:session-1", { message: "continue work" })).toEqual({ ok: true });
-    expect(await adapter.sendMessage("fast-agent:session-1", { message: "continue in background", queue: true })).toEqual({ ok: true });
+    expect(await adapter.sendMessage("fast-agent:session-1", { message: "continue work" })).toMatchObject({ ok: false, error: expect.stringContaining("read-only") });
+    expect(await adapter.sendMessage("fast-agent:session-1", { message: "continue in background", queue: true })).toMatchObject({ ok: false });
   });
 });
