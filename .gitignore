@@ -26,3 +26,6 @@ trash/
 # Scoped local browser evidence for stable timing layout (2026-10-06)
 .tmp/b/
 .tmp/ui-timings-20261006/
+
+# Finder view metadata; preserve locally without treating it as source work
+.DS_Store
