@@ -12,6 +12,7 @@ import { automaticDeliveryHeld, HUMAN_STOP_MESSAGE } from "./human-stop-actions.
 export type NamedSessionMode = "queue" | "sync";
 
 export interface NamedSessionRequest {
+  healthRecovery?: boolean;
   sourceSessions?: Array<{ harness: string; sessionId: string }>;
   sourceSessionId?: string;
   sourceHarness?: string;
@@ -74,7 +75,7 @@ export async function createNamedSession(
     }
     try {
       if (await sourceHeldNow(request)) return failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted");
-      const session = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, fullAccess: true });
+      const session = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, fullAccess: true, healthRecovery: request.healthRecovery });
       rememberNamedSession(normalized, session);
       return { ok: true, created: true, sessionId: session.id, model: request.model, ...normalized };
     } catch (error) {
@@ -111,7 +112,7 @@ export async function newOrResumeNamedSession(
       if (await getHumanStopStore().findHeldNamed(normalized.harness, normalized.name, normalized.cwd)) return { kind: "error", result: failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted") };
       try {
         if (await sourceHeldNow(request)) return { kind: "error", result: failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted") };
-        target = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, fullAccess: true });
+        target = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, fullAccess: true, healthRecovery: request.healthRecovery });
         rememberNamedSession(normalized, target);
         created = true;
       } catch (error) {
@@ -121,6 +122,8 @@ export async function newOrResumeNamedSession(
     return { kind: "resolved", adapter, target, created, normalized };
   });
   if (resolved.kind === "error") return resolved.result;
+
+  if (request.healthRecovery && resolved.target.meta?.healthRecovery !== true) return { ...failed(resolved.normalized, "Health recovery requires a dedicated bounded session", "not_attempted"), sessionId: resolved.target.id };
 
   const deliveryIdentity = namedDeliveryIdentity(resolved.normalized, request.message);
   const priorDelivery = recentNamedDelivery(deliveryIdentity);

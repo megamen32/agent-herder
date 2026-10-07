@@ -10,6 +10,22 @@ afterEach(async () => {
 });
 
 describe("Fast Agent persisted observer", () => {
+
+  it("observes an empty native session before first delivery with its actual workspace and model", async () => {
+    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-empty-"));
+    cleanups.push(home);
+    const sessionDir = join(home, "sessions", "native-empty");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, "session.json"), JSON.stringify({
+      session_id: "native-empty", metadata: { title: "Independent recovery", extras: { model: "generic.minimax/MiniMax-M3.1-Flash-Preview", healthRecovery: true } },
+      continuation: { cwd: "/actual/workspace", agents: {} },
+    }));
+    const adapter = new FastAgentFileAdapter({ home, cwd: "/fallback", fastAgentBin: "/bin/true" });
+    expect(await adapter.getSession("fast-agent:native-empty")).toMatchObject({
+      cwd: "/actual/workspace", model: "generic.minimax/MiniMax-M3.1-Flash-Preview", messageCount: 0, meta: { healthRecovery: true },
+    });
+  });
+
   it("does not revive a completed session when a stale shell PID was reused", async () => {
     const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-live-"));
     cleanups.push(home);

@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
-import { type ChildProcessWithoutNullStreams } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { execFile, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { promisify } from "node:util";
 import { basename, join, relative, resolve } from "node:path";
 import { spawnDetachedWorkload, spawnIsolatedWorkload } from "../workload-launcher.js";
 import type {
@@ -33,7 +33,7 @@ type PersistedSession = {
     extras?: Record<string, unknown>;
   };
   execution?: { status?: unknown } | null;
-  continuation?: { agents?: Record<string, { model?: unknown }> };
+  continuation?: { cwd?: string; agents?: Record<string, { model?: unknown }> };
   analysis?: { usage_summary?: { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown } };
   model?: unknown;
 };
@@ -50,7 +50,7 @@ type SessionRecord = {
 };
 
 export interface FastAgentFileAdapterOptions {
-  /** Existing fast-agent home. This adapter never starts a process. */
+  /** Existing Fast Agent home used for observation and explicit native launches. */
   home: string;
   /** Workspace shown for sessions whose persisted metadata has no cwd. */
   cwd?: string;
@@ -127,26 +127,23 @@ export class FastAgentFileAdapter implements HarnessAdapter {
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
     await this.init();
-    const id = `fast-agent:launch:${randomUUID()}`;
     const cwd = resolve(options.cwd);
-    const args = [
-      "go",
-      "--name", options.name,
-      "--home", this.home,
-      "--workspace", cwd,
-      "--message", "Session initialized from Agent Herder. Wait for the user's task.",
-      "--quiet",
-    ];
-    if (options.model) args.push("--model", options.model);
-    spawnDetachedWorkload(this.fastAgentBin, args, {
-      label: "fast-agent-session", cwd, stdio: "ignore",
-      env: { ...process.env, FAST_AGENT_HOME: this.home },
-    });
-    return {
-      id, harness: this.type, status: "running", title: options.name, cwd,
-      lastActivity: new Date().toISOString(), model: options.model, needsPermission: false, messageCount: 0,
-      meta: { transientLaunch: true, readOnly: false },
-    };
+    const shebang = (await readFile(this.fastAgentBin, "utf8")).split("\n", 1)[0];
+    if (!shebang.startsWith("#!/") || shebang.includes(" ")) throw new Error("Fast Agent requires its installed Python entrypoint");
+    const python = shebang.slice(2);
+    const script = [
+      "import json,sys",
+      "from pathlib import Path",
+      "from fast_agent.session.session_manager import SessionManager",
+      "home,cwd,name,model,recovery=sys.argv[1:]",
+      "session=SessionManager(cwd=Path(cwd),home_override=home).create_session(name=name,metadata={'model':model,'cwd':cwd,'healthRecovery':recovery=='true'})",
+      "print(json.dumps({'id':session.info.name}))",
+    ].join("\n");
+    const { stdout } = await promisify(execFile)(python, ["-c", script, this.home, cwd, options.name, options.model || "", String(options.healthRecovery === true)], { timeout: 15_000, maxBuffer: 8192, env: { ...process.env, FAST_AGENT_HOME: this.home } });
+    const nativeId = (JSON.parse(stdout.trim()) as { id: string }).id;
+    const session = await this.getSession(this.externalId(nativeId));
+    if (!session) throw new Error("Fast Agent did not persist the created native session");
+    return session;
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
@@ -158,10 +155,14 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       "go", "--home", this.home, "--workspace", session.cwd,
       "--resume", nativeId, "--message", options.message, "--quiet",
     ];
+    const recovery = session.meta?.healthRecovery === true;
+    if (recovery) args.push("--shell", "--timeout", "300");
+    const resourceProperties = recovery ? ["CPUQuota=100%", "MemoryHigh=384M", "MemoryMax=768M", "MemorySwapMax=0", "TasksMax=64", "IOWeight=25"] : [];
+    if (session.model) args.push("--model", session.model);
     if (options.queue) {
       try {
         spawnDetachedWorkload(this.fastAgentBin, args, {
-          label: "fast-agent-queue", cwd: session.cwd, stdio: "ignore",
+          label: "fast-agent-queue", cwd: session.cwd, stdio: "ignore", resourceProperties,
           env: { ...process.env, FAST_AGENT_HOME: this.home },
         });
         return { ok: true };
@@ -171,7 +172,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     }
     return await new Promise((resolveResult) => {
       const child = spawnIsolatedWorkload(this.fastAgentBin, args, {
-        label: "fast-agent-message",
+        label: "fast-agent-message", resourceProperties,
         cwd: session.cwd, stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, FAST_AGENT_HOME: this.home },
       }) as ChildProcessWithoutNullStreams;
@@ -277,12 +278,11 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       const nativeId = stringValue(snapshot.session_id);
       if (!nativeId) return null;
       const historyPath = await latestHistoryPath(directory);
-      if (!historyPath) return null;
-      const history = JSON.parse(await readFile(historyPath, "utf8")) as { messages?: unknown };
+      const history = historyPath ? JSON.parse(await readFile(historyPath, "utf8")) as { messages?: unknown } : { messages: [] };
       const messages = Array.isArray(history.messages)
         ? history.messages.map((message) => messageView(message)).filter((message): message is SessionMessageView => message !== null)
         : [];
-      return { directory, snapshot, historyPath, messages, usage: extractFastAgentUsage(history), liveProcess: hasLiveFastAgentProcess(history) };
+      return { directory, snapshot, historyPath: historyPath || join(directory, "history.json"), messages, usage: extractFastAgentUsage(history), liveProcess: hasLiveFastAgentProcess(history) };
     } catch {
       return null;
     }
@@ -307,7 +307,8 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     const completionTokens = typeof usage?.completion_tokens === "number" ? usage.completion_tokens : undefined;
     const totalTokens = typeof usage?.total_tokens === "number" ? usage.total_tokens : undefined;
     const snapshotModel = stringValue((record.snapshot as Record<string, unknown>).model)
-      || stringValue(record.snapshot.continuation?.agents?.dev?.model)
+      || stringValue(Object.values(record.snapshot.continuation?.agents || {}).find((agent) => agent.model)?.model)
+      || stringValue(record.snapshot.metadata?.extras?.model)
       || stringValue((record.snapshot.metadata as Record<string, unknown> | undefined)?.model);
     const model = snapshotModel || (record.usage.model
       ? record.usage.provider === "generic" ? `generic.${record.usage.model}`
@@ -319,7 +320,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       harness: this.type,
       status,
       title: title.slice(0, 240),
-      cwd: this.fallbackCwd,
+      cwd: stringValue(record.snapshot.continuation?.cwd) || stringValue((record.snapshot.metadata as Record<string, unknown> | undefined)?.cwd) || this.fallbackCwd,
       lastActivity,
       model,
       needsPermission: status === "needs_input",
@@ -327,6 +328,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       lastMessage: preview?.slice(0, 300),
       meta: {
         source: "fast-agent-persisted-home",
+        healthRecovery: record.snapshot.metadata?.extras?.healthRecovery === true || (record.snapshot.metadata as Record<string, unknown> | undefined)?.healthRecovery === true,
         readOnly: true,
         home: this.home,
         sessionDirectory: relative(this.home, record.directory),

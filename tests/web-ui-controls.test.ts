@@ -33,14 +33,14 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('meta: { decisionOnly: true }');
     expect(main).toContain('role="switch"');
     expect(main).toContain('/api/autopilot/sessions/');
-    expect(main).toContain('aria-label={`Автопилот для сессии ${activeSession.id}`}');
+    expect(main).toContain('aria-label="Автопилот для текущей сессии"');
     expect(main).toContain('/api/session-autostart/sessions/');
     expect(main).toContain('/api/session-autostart/harnesses/codex');
     expect(main).toContain('/api/session-autostart/harnesses/zcode');
-    expect(main).toContain('aria-label={`Автопродолжение для сессии ${activeSession.id}`}');
+    expect(main).toContain('aria-label="Автопродолжение для текущей сессии"');
     expect(main).toContain('Где разрешено восстановление');
     expect(main).toContain('Если автопилот выключен, восстановление после сбоя всё равно работает');
-    expect(main).toContain('aria-label="Глобальное автопродолжение"');
+    expect(main).toContain('aria-label="Общее автопродолжение"');
     expect(main).toContain('Восстановление после сбоя');
     expect(main).toContain('После ошибки выполнения');
     expect(main).toContain('После разрыва соединения');
@@ -56,7 +56,7 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('new EventSource(`/api/events/stream?after=${cursor}`)');
     expect(main).toContain('agent-herder.event-cursor');
     expect(main).toContain('30_000');
-    expect(main).toContain('Глобальный автопилот');
+    expect(main).toContain('Общий автопилот');
     expect(main).toContain('{timeoutMinutes} минут без ответа');
     expect(main).toContain('Последний запрос пользователя');
     expect(main).toContain('Последний ответ агента');
@@ -105,8 +105,9 @@ describe("mobile chat and session controls", () => {
     const inspector = main.slice(inspectorStart);
 
     expect(inspector).toContain("autopilotSession && <div");
-    expect(inspector).toContain('aria-label={`Автопилот для сессии ${activeSession.id}`}');
-    expect(inspector).toContain('aria-label={`Автопродолжение для сессии ${activeSession.id}`}');
+    expect(inspector).toContain('aria-label="Автопилот для текущей сессии"');
+    expect(inspector).toContain('aria-label="Автопродолжение для текущей сессии"');
+    expect(inspector).not.toContain('aria-label={`Автопилот для сессии ${activeSession.id}`}');
     expect(inspector).not.toContain("autopilot-policy-disabled");
   });
 
@@ -119,7 +120,7 @@ describe("mobile chat and session controls", () => {
     expect(styles).toContain('.header-actions .mobile-automation-button { display: inline-flex;');
     expect(styles).toContain('.header-actions .desktop-chat-menu { display: none; }');
     expect(styles).toContain('@media (max-width: 900px)');
-    expect(styles).toContain('.inspector-pane { display: flex; position: fixed; inset: 0; z-index: 45;');
+    expect(styles).toContain('.inspector-pane { display: flex; flex-direction: column; position: fixed; inset: 0; z-index: 45;');
   });
 
   it("addresses focus-group ambiguity around scope, saving, and the active timeout", () => {
@@ -137,6 +138,26 @@ describe("mobile chat and session controls", () => {
     expect(main).not.toContain("Доступно моделей:");
     expect(main).not.toContain("Сохранить модель");
     expect(main).not.toContain("30 минут без ответа (сейчас");
+  });
+
+  it("keeps automation dialogs and long settings usable", () => {
+    expect(main).toContain('role="dialog" aria-modal="true" aria-label="Настройки автоматизации"');
+    expect(main).toContain('const trapFocus = (event: KeyboardEvent) => {');
+    expect(main).toContain('summary, [href]');
+    expect(main).toContain('element.getClientRects().length > 0');
+    expect(main).toContain('openSessionInspector(automationSettings === "autocontinue" ? "autocontinue" : "autopilot")');
+    expect(main).toContain('if (sessionSettingsReturn) setAutomationSettings(sessionSettingsReturn)');
+    expect(main).toContain('className="settings-save-row settings-footer"');
+    expect(main).toContain('className="settings-advanced"');
+    expect(styles).toContain('.settings-footer { position: sticky;');
+  });
+
+  it("opens automation from every top-level view and explains harness capability limits", () => {
+    expect(main).toContain('setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings("autopilot")');
+    expect(main).toContain('Автопродолжение после сбоя для ${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} пока недоступно');
+    expect(main).toContain('<span className="chat-menu-section">Вид переписки</span>');
+    expect(main).toContain('<span className="chat-menu-section">Автоматизация</span>');
+    expect(main).toContain('<span className="chat-menu-section">Разделы</span>');
   });
 
   it("gives the mobile session title its own full-width row", () => {

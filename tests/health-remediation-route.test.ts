@@ -9,7 +9,7 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
 });
 
-function trackedNamedAdapter(harness: "opencode" | "hermes" | "zcode") {
+function trackedNamedAdapter(harness: "opencode" | "hermes" | "zcode" | "fast-agent") {
   const sessions: AgentSession[] = [];
   let createCalls = 0;
   const adapter: HarnessAdapter = {
@@ -32,6 +32,7 @@ function trackedNamedAdapter(harness: "opencode" | "hermes" | "zcode") {
         cwd: options.cwd,
         lastActivity: new Date().toISOString(),
         needsPermission: false,
+        meta: { healthRecovery: options.healthRecovery === true },
       };
       sessions.push(session);
       return session;
@@ -136,6 +137,30 @@ describe("health remediation route harness guard", () => {
 
     expect(response.status).toBe(200);
     expect(zcode.createCalls).toBe(1);
+  });
+
+
+  it("accepts independent Fast Agent MiniMax remediation", async () => {
+    const tracked = trackedNamedAdapter("fast-agent");
+    const server = createWebServer({
+      adapters: new Map([["fast-agent", tracked.adapter]]),
+      converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/health/remediation`, {
+      method: "POST",
+      body: JSON.stringify({
+        incident_id: "inc-fast-agent-minimax", plan_id: "repair", harness: "fast-agent",
+        name: "health_fast_agent", cwd: "/tmp", message: "Read-only diagnostic canary.",
+        execution: { runtime: "fast-agent", provider: "minimax", model: "MiniMax-M3.1-Flash-Preview", reasoning: "default", topic: "health" },
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, model: "generic.minimax/MiniMax-M3.1-Flash-Preview" });
+    expect(tracked.createCalls).toBe(1);
   });
 
   it("accepts the canonical Hermes health remediation request", async () => {

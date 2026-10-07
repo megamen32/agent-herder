@@ -1,0 +1,66 @@
+/* Shared agent workspace, matched to the supplied Codex reference. */
+:root {
+  --bg: #272932;
+  --surface-1: #2a2c35;
+  --surface-2: #32343e;
+  --surface-3: #3b3d47;
+  --border: #40424c;
+  --border-2: #4b4d58;
+  --text: #f0f0f3;
+  --text-2: #ceced3;
+  --muted: #9b9ba3;
+  --accent: #ececf0;
+  --accent-soft: #ffffff12;
+  --header-h: 68px;
+}
+.oc-app { grid-template-columns: 64px 300px minmax(0, 1fr) 260px; }
+.oc-app.no-inspector { grid-template-columns: 64px 300px minmax(0, 1fr); }
+.codex-navigation { display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 16px 8px; background: #30323c; border-right: 1px solid var(--border); }
+.codex-navigation-items { display: grid; gap: 14px; }
+.codex-navigation button { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: transparent; color: var(--muted); }
+.codex-navigation button:hover, .codex-navigation button.active { background: #ffffff10; color: var(--text); }
+.codex-navigation svg { width: 24px; height: 24px; }
+.codex-navigation-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #9861b1; color: white; font-size: 11px; }
+.sessions-heading { border-bottom: 0; padding: 22px 20px 16px; }
+.sessions-heading .eyebrow { display: none; }
+.sessions-heading h1 { font-size: 21px; }
+.session-list { padding: 8px 12px; }
+.session-row { padding: 12px 10px; }
+.session-row.selected { background: #ffffff0c; box-shadow: none; }
+.session-row strong { font-size: 14px; font-weight: 450; }
+.session-row small { line-height: 1.5; }
+.chat-header { background: #292b34; padding: 12px 24px; }
+.chat-heading h2 { font-size: 17px; font-weight: 500; }
+.chat-heading .eyebrow { letter-spacing: .05em; font-size: 10px; }
+.message-column { width: min(900px, 100%); padding: 38px 32px; }
+.message { margin-bottom: 30px; }
+.message.user { max-width: min(660px, 85%); padding: 18px 22px; border-radius: 24px; background: #32343e; }
+.message-body { max-width: 100%; }
+.message p, .message ul, .message ol { font-size: 16px; line-height: 1.65; }
+.message.user .message-meta { color: #b0b0b8; }
+.message pre, .tool-card, .service-note { background: #2d2f38; }
+.composer-stack { width: min(836px, calc(100% - 48px)); margin-bottom: 24px; }
+.composer { padding: 17px; border-radius: 25px; background: #41434e; border-color: #50525d; box-shadow: none; align-items: flex-end; }
+.composer textarea { min-height: 55px; font-size: 16px; }
+.composer-plus { width: 34px; height: 34px; border-radius: 50%; background: #ffffff09; }
+.send-button { width: 36px; height: 36px; border-radius: 50%; }
+.send-button:not(:disabled) { background: #f4f4f5; color: #272932; border-color: #f4f4f5; }
+.composer-hint { color: #bebec5; }
+@media (min-width: 901px) and (max-width: 1180px) {
+  .oc-app, .oc-app.no-inspector { grid-template-columns: 58px 260px minmax(0, 1fr); }
+  .inspector-pane { display: none; }
+  .header-actions { gap: 1px; }
+  .quiet-button { padding-inline: 7px; }
+}
+@media (max-width: 900px) {
+  .codex-navigation { display: none; }
+  .oc-app, .oc-app.no-inspector { display: block; }
+  .chat-header { padding: 8px 12px; }
+  .message-column { padding: 22px 16px; }
+  .message.user { max-width: 92%; padding: 14px 16px; border-radius: 20px; }
+  .composer-stack { width: calc(100% - 20px); margin-bottom: 0; }
+  .composer { padding: 12px; border-radius: 21px; }
+  .composer textarea { min-height: 38px; }
+  .composer-create-panel { max-height: 65dvh; overflow-y: auto; overscroll-behavior: contain; }
+  .cwd-suggestions { position: static; max-height: 120px; margin-top: 5px; box-shadow: none; }
+}

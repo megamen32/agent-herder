@@ -9,7 +9,7 @@ describe("Codex session visualization", () => {
     expect(reactSource).toContain("/visualization`");
     expect(reactSource).toContain("const visualizationUrl = activeSession");
     expect(reactSource).toContain('target="_blank"');
-    expect(reactSource).toContain(">Визуализация</a>");
+    expect(reactSource).toContain(">Визуализация ↗</a>");
   });
 });
 

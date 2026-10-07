@@ -181,6 +181,8 @@ export interface MessageAdmissionResult {
 }
 
 export interface CreateSessionOptions {
+  /** Dedicated bounded health recovery worker, never a general chat. */
+  healthRecovery?: boolean;
   /** Stable human-readable identity within a harness and canonical CWD. */
   name: string;
   /** Absolute, canonical working directory. */

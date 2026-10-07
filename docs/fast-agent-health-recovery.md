@@ -1,0 +1,17 @@
+# Fast Agent health recovery
+
+Agent Herder observes existing Fast Agent conversations from `/home/roomhacker/.fast-agent`. Health recovery uses a newly created native persisted session, never a manually stopped general conversation. Native creation uses the installed Fast Agent Python SessionManager before the first prompt, so the returned ID is resumable and visible.
+
+POST the local REST endpoint `http://127.0.0.1:18787/api/health/remediation` with the usual incident/plan/name/cwd/message fields and:
+
+```json
+{"harness":"fast-agent","execution":{"runtime":"fast-agent","provider":"minimax","model":"MiniMax-M3.1-Flash-Preview","reasoning":"default","topic":"health"}}
+```
+
+The model maps to `generic.minimax/MiniMax-M3.1-Flash-Preview`. This dedicated profile uses the native shell tool and selects no MCP servers. Existing general Fast Agent chats retain their existing workload contract. Responses must be checked through the returned native conversation details; accepted queue delivery is not proof of completed repair.
+
+## Reviewed recovery budget
+
+On server-100 on 2026-10-07 the Fast Agent MCP startup working set measured 134–151 MiB, Herder approximately 352 MiB, and the shared user slice was near its soft memory limit with swap pressure. The reviewed conservative recovery budget is one worker, CPU quota 100%, RAM high/max 384/768 MiB, swap 0, tasks 64, IO weight 25, native one-shot timeout 300 seconds. The worker remains inside the outer fleet safety boundary. Do not run a broad build or test suite from recovery. If a valid diagnostic reaches this cap, split the job before considering a measured budget change.
+
+Put recovery artifacts under the canonical administration checkout's ignored `.tmp/`; producers must bound and rotate diagnostic output. Notice Place owns incident notifications. A recovery worker must verify the shortest real connection/thread consumer canary before reporting restoration and must not automatically resume manually stopped chats.

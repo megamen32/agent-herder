@@ -1098,8 +1098,8 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 400, { error: (error as Error).message });
     }
     const harness = body.harness === undefined ? "zcode" : body.harness;
-    if (harness !== "opencode" && harness !== "codex" && harness !== "hermes" && harness !== "zcode") {
-      return sendJson(response, 400, { error: "health remediation harness must be opencode, codex, hermes, or zcode" });
+    if (harness !== "opencode" && harness !== "codex" && harness !== "hermes" && harness !== "zcode" && harness !== "fast-agent") {
+      return sendJson(response, 400, { error: "health remediation harness must be opencode, codex, hermes, zcode, or fast-agent" });
     }
     if (typeof body.name !== "string" || body.name.trim().length === 0 || body.name.length > 128 ||
       typeof body.cwd !== "string" || !body.cwd.startsWith("/") ||
@@ -1132,6 +1132,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     ].join("\n\n");
     const result = await supervisor.newOrResumeNamedSession({
       harness,
+      healthRecovery: harness === "fast-agent",
       name: body.name,
       cwd: body.cwd,
       message,

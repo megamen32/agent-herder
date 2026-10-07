@@ -1,12 +1,13 @@
 export interface HealthExecutionProfile {
-  runtime: "zcode" | "hermes";
-  provider: "account:zai-individual-coding-plan" | "openai-codex";
-  model: "GLM-5.3-Flash" | "gpt-5.6-luna";
-  reasoning: "high";
+  runtime: "zcode" | "hermes" | "fast-agent";
+  provider: "account:zai-individual-coding-plan" | "openai-codex" | "minimax";
+  model: "GLM-5.3-Flash" | "gpt-5.6-luna" | "MiniMax-M3.1-Flash-Preview";
+  reasoning: "high" | "default";
   topic: "health";
 }
 
 const CANONICAL_PROFILES: Record<HealthExecutionProfile["runtime"], HealthExecutionProfile> = {
+  "fast-agent": { runtime: "fast-agent", provider: "minimax", model: "MiniMax-M3.1-Flash-Preview", reasoning: "default", topic: "health" },
   zcode: {
     runtime: "zcode",
     provider: "account:zai-individual-coding-plan",
@@ -43,8 +44,8 @@ export function normalizeHealthExecution(value: unknown): HealthExecutionProfile
     reasoning: bounded(raw.reasoning, "reasoning", 16),
     topic: bounded(raw.topic, "topic"),
   };
-  if (profile.runtime !== "zcode" && profile.runtime !== "hermes") {
-    throw new Error("health execution runtime must be zcode or hermes");
+  if (profile.runtime !== "zcode" && profile.runtime !== "hermes" && profile.runtime !== "fast-agent") {
+    throw new Error("health execution runtime must be zcode, hermes, or fast-agent");
   }
   const canonical = CANONICAL_PROFILES[profile.runtime];
   for (const [field, expected] of Object.entries(canonical)) {
@@ -57,6 +58,7 @@ export function normalizeHealthExecution(value: unknown): HealthExecutionProfile
 
 /** Translate the provider/model contract to the selected coding harness. */
 export function healthModelForHarness(harness: string, execution: HealthExecutionProfile): string {
+  if (harness === "fast-agent") return `generic.${execution.provider}/${execution.model}`;
   if (harness === "zcode") return `${execution.provider}/${execution.model}$${execution.reasoning}`;
   return harness === "opencode" ? `${execution.provider}/${execution.model}` : execution.model;
 }
