@@ -1,15 +1,40 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { FastAgentFileAdapter } from "../src/adapters/fast-agent.js";
 
 const cleanups: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(cleanups.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
 describe("Fast Agent persisted observer", () => {
+
+
+  it("routes a direct MiniMax session through only the scoped config and inherited private token", async () => {
+    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-direct-"));
+    cleanups.push(home);
+    const directory = join(home, "sessions", "direct");
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, "session.json"), JSON.stringify({ session_id: "direct", continuation: { cwd: home }, metadata: { extras: { model: "anthropic.MiniMax-M3.1-Flash-Preview", healthRecovery: true } } }));
+    const config = join(home, "direct.yaml");
+    await writeFile(config, "anthropic:\n  base_url: https://api.minimax.io/anthropic\n");
+    const bin = join(home, "capture.sh");
+    const argsPath = join(home, "arguments.txt");
+    const envPath = join(home, "environment.txt");
+    await writeFile(bin, `#!/bin/sh\nprintf '%s\n' "$@" > '${argsPath}'\nprintf '%s' "$ANTHROPIC_API_KEY" > '${envPath}'\n`);
+    await chmod(bin, 0o755);
+    vi.stubEnv("FAST_AGENT_MINIMAX_CONFIG", config);
+    vi.stubEnv("MINIMAX_API_KEY", "test-private-token");
+    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: bin });
+    expect(await adapter.sendMessage("fast-agent:direct", { message: "diagnose only" })).toEqual({ ok: true });
+    const args = (await readFile(argsPath, "utf8")).split("\n");
+    expect(args).toEqual(expect.arrayContaining(["--config-path", config, "--model", "anthropic.MiniMax-M3.1-Flash-Preview", "--shell", "--timeout", "300"]));
+    expect(args.join(" ")).not.toContain("test-private-token");
+    expect(await readFile(envPath, "utf8")).toBe("test-private-token");
+  });
 
   it("observes an empty native session before first delivery with its actual workspace and model", async () => {
     const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-empty-"));
@@ -17,12 +42,12 @@ describe("Fast Agent persisted observer", () => {
     const sessionDir = join(home, "sessions", "native-empty");
     await mkdir(sessionDir, { recursive: true });
     await writeFile(join(sessionDir, "session.json"), JSON.stringify({
-      session_id: "native-empty", metadata: { title: "Independent recovery", extras: { model: "generic.minimax/MiniMax-M3.1-Flash-Preview", healthRecovery: true } },
+      session_id: "native-empty", metadata: { title: "Independent recovery", extras: { model: "anthropic.MiniMax-M3.1-Flash-Preview", healthRecovery: true } },
       continuation: { cwd: "/actual/workspace", agents: {} },
     }));
     const adapter = new FastAgentFileAdapter({ home, cwd: "/fallback", fastAgentBin: "/bin/true" });
     expect(await adapter.getSession("fast-agent:native-empty")).toMatchObject({
-      cwd: "/actual/workspace", model: "generic.minimax/MiniMax-M3.1-Flash-Preview", messageCount: 0, meta: { healthRecovery: true },
+      cwd: "/actual/workspace", model: "anthropic.MiniMax-M3.1-Flash-Preview", messageCount: 0, meta: { healthRecovery: true },
     });
   });
 

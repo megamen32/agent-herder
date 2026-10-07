@@ -45,7 +45,7 @@ describe("health remediation execution profile", () => {
   });
   it("pins independent Fast Agent remediation to MiniMax", () => {
     const execution = normalizeHealthExecution({ runtime: "fast-agent", provider: "minimax", model: "MiniMax-M3.1-Flash-Preview", reasoning: "default", topic: "health" });
-    expect(healthModelForHarness("fast-agent", execution)).toBe("generic.minimax/MiniMax-M3.1-Flash-Preview");
+    expect(healthModelForHarness("fast-agent", execution)).toBe("anthropic.MiniMax-M3.1-Flash-Preview");
     expect(() => normalizeHealthExecution({ ...execution, provider: "openai-codex" })).toThrow(/provider/);
   });
 

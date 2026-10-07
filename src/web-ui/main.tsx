@@ -625,7 +625,7 @@ function App() {
   const [createCwd, setCreateCwd] = React.useState("/home/roomhacker");
   const [cwdSuggestions, setCwdSuggestions] = React.useState<Array<{ name: string; path: string }>>([]);
   const [cwdSuggestionsOpen, setCwdSuggestionsOpen] = React.useState(false);
-  const [createModel, setCreateModel] = React.useState("generic.MiniMax-M3");
+  const [createModel, setCreateModel] = React.useState("anthropic.MiniMax-M3.1-Flash-Preview");
   const [createModels, setCreateModels] = React.useState<string[]>([]);
   const [createModelsRefreshing, setCreateModelsRefreshing] = React.useState(false);
   const createModelRequestRef = React.useRef(0);
@@ -1111,7 +1111,8 @@ function App() {
       const models = Array.isArray(result.models) ? result.models : [];
       setCreateModels(models);
       setCreateModelsRefreshing(Boolean(result.refreshing));
-      setCreateModel((current) => preferCurrent && current && models.includes(current) ? current : (models[0] || ""));
+      const preferredModel = harness === "fast-agent" && models.includes("anthropic.MiniMax-M3.1-Flash-Preview") ? "anthropic.MiniMax-M3.1-Flash-Preview" : (models[0] || "");
+      setCreateModel((current) => preferCurrent && current && models.includes(current) ? current : preferredModel);
       if (result.refreshing && pollAttempt < 5) {
         window.setTimeout(() => {
           if (requestId === createModelRequestRef.current) void loadCreateModels(harness, true, pollAttempt + 1);
@@ -1346,7 +1347,7 @@ function App() {
           <div className="composer-create-row">
             <label>Агент<select value={createHarness} onChange={(event) => { const harness = event.target.value; setCreateHarness(harness); setCreateModel(""); setCreateModels([]); void loadCreateModels(harness); }}>{(createAdapters.length ? createAdapters : [{ id: "fast-agent", name: "Fast Agent", active: true, ready: true, status: "active" }]).map((adapter) => <option key={adapter.id} value={adapter.id} disabled={!adapter.active}>{adapter.name}{adapter.active ? "" : ` · ${adapter.status}`}</option>)}</select></label>
             <label className="cwd-picker">Папка<input value={createCwd} onChange={(event) => { const value = event.target.value; setCreateCwd(value); void loadCwdSuggestions(value); }} onFocus={() => void loadCwdSuggestions(createCwd.endsWith("/") ? createCwd : `${createCwd}/`)} onBlur={() => window.setTimeout(() => setCwdSuggestionsOpen(false), 120)} placeholder="/home/roomhacker/project" autoComplete="off" />{cwdSuggestionsOpen && cwdSuggestions.length > 0 && <div className="cwd-suggestions">{cwdSuggestions.map((item) => <button type="button" key={item.path} onMouseDown={(event) => event.preventDefault()} onClick={() => { setCreateCwd(`${item.path}/`); void loadCwdSuggestions(`${item.path}/`); }}><span className="cwd-folder">▱</span><span>{item.name}</span><small>{item.path}</small></button>)}</div>}</label>
-            <label>Модель{createModels.length > 0 ? <select value={createModel} onChange={(event) => setCreateModel(event.target.value)}>{createModels.map((model) => <option key={model} value={model}>{model}</option>)}</select> : createModelsRefreshing ? <select disabled><option>загрузка моделей…</option></select> : <input value={createModel} onChange={(event) => setCreateModel(event.target.value)} placeholder="модель (кэш пуст)" />}</label>
+            <label>Модель{createModels.length > 0 ? <select value={createModel} onChange={(event) => setCreateModel(event.target.value)}>{createModels.map((model) => <option key={model} value={model}>{model === "anthropic.MiniMax-M3.1-Flash-Preview" ? "MiniMax M3.1 Flash" : model}</option>)}</select> : createModelsRefreshing ? <select disabled><option>загрузка моделей…</option></select> : <input value={createModel} onChange={(event) => setCreateModel(event.target.value)} placeholder="модель (кэш пуст)" />}</label>
             <button type="button" className="primary-button composer-create-submit" disabled={creatingSession || !createCwd.trim()} onClick={() => void createNewSession()}>{creatingSession ? "…" : "Создать"}</button>
           </div>
           {createSessionError && <div className="create-session-error">{createSessionError}</div>}

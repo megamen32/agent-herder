@@ -159,7 +159,7 @@ describe("health remediation route harness guard", () => {
       }),
     });
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ ok: true, model: "generic.minimax/MiniMax-M3.1-Flash-Preview" });
+    expect(await response.json()).toMatchObject({ ok: true, model: "anthropic.MiniMax-M3.1-Flash-Preview" });
     expect(tracked.createCalls).toBe(1);
   });
 

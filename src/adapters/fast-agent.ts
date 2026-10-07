@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { execFile, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { promisify } from "node:util";
+import { homedir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
 import { spawnDetachedWorkload, spawnIsolatedWorkload } from "../workload-launcher.js";
 import type {
@@ -158,12 +159,20 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     const recovery = session.meta?.healthRecovery === true;
     if (recovery) args.push("--shell", "--timeout", "300");
     const resourceProperties = recovery ? ["CPUQuota=100%", "MemoryHigh=384M", "MemoryMax=768M", "MemorySwapMax=0", "TasksMax=64", "IOWeight=25"] : [];
+    const directMiniMax = session.model?.startsWith("anthropic.MiniMax-") === true;
+    const config = process.env.FAST_AGENT_MINIMAX_CONFIG || join(homedir(), ".config/agent-herder/fast-agent-minimax.yaml");
+    if (directMiniMax) {
+      await stat(config);
+      if (!process.env.MINIMAX_API_KEY) return { ok: false, error: "Direct MiniMax recovery credential is not configured" };
+      args.push("--config-path", config);
+    }
+    const childEnv = { ...process.env, FAST_AGENT_HOME: this.home, ...(directMiniMax ? { ANTHROPIC_API_KEY: process.env.MINIMAX_API_KEY } : {}) };
     if (session.model) args.push("--model", session.model);
     if (options.queue) {
       try {
         spawnDetachedWorkload(this.fastAgentBin, args, {
           label: "fast-agent-queue", cwd: session.cwd, stdio: "ignore", resourceProperties,
-          env: { ...process.env, FAST_AGENT_HOME: this.home },
+          env: childEnv,
         });
         return { ok: true };
       } catch (error) {
@@ -174,7 +183,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       const child = spawnIsolatedWorkload(this.fastAgentBin, args, {
         label: "fast-agent-message", resourceProperties,
         cwd: session.cwd, stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, FAST_AGENT_HOME: this.home },
+        env: childEnv,
       }) as ChildProcessWithoutNullStreams;
       let stderr = "";
       child.stderr?.setEncoding("utf8");
@@ -225,7 +234,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
   }
 
   async listModels(): Promise<string[]> {
-    const models: string[] = [];
+    const models: string[] = ["anthropic.MiniMax-M3.1-Flash-Preview"];
     const add = (value: unknown) => {
       if (typeof value !== "string") return;
       const model = value.trim().replace(/^['"]|['"]$/g, "");
