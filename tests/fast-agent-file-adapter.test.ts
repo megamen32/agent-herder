@@ -2,15 +2,81 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { FastAgentFileAdapter } from "../src/adapters/fast-agent.js";
+import * as workloadLauncher from "../src/workload-launcher.js";
+import { handleCreateSession, handleNewOrResume } from "../src/mcp-tools/handlers.js";
 
 const cleanups: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   await Promise.all(cleanups.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
 describe("Fast Agent persisted observer", () => {
+  it("persists a bounded named creation and reuses it through a fresh native observer", async () => {
+    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-create-"));
+    cleanups.push(home);
+    const moduleDir = join(home, "fast_agent", "session");
+    await mkdir(moduleDir, { recursive: true });
+    await writeFile(join(home, "fast_agent", "__init__.py"), "");
+    await writeFile(join(moduleDir, "__init__.py"), "");
+    // Minimal native persistence fixture; execute the adapter's actual Python script.
+    await writeFile(join(moduleDir, "session_manager.py"), [
+      "import json",
+      "from pathlib import Path",
+      "from types import SimpleNamespace",
+      "class SessionManager:",
+      "    def __init__(self,cwd,home_override): self.cwd=cwd; self.home=Path(home_override)",
+      "    def create_session(self,name,metadata):",
+      "        directory=self.home/'sessions'/name",
+      "        directory.mkdir(parents=True,exist_ok=True)",
+      "        (directory/'session.json').write_text(json.dumps({'session_id':name,'metadata':{'title':metadata.pop('title',None),'extras':metadata},'continuation':{'cwd':metadata.pop('cwd')}}))",
+      "        return SimpleNamespace(info=SimpleNamespace(name=name))",
+    ].join("\n"));
+    const bin = join(home, "fast-agent");
+    await writeFile(bin, "#!/usr/bin/python3\n");
+    vi.stubEnv("PYTHONPATH", home);
+    const isolated = vi.spyOn(workloadLauncher, "spawnIsolatedWorkload");
+    const adapter = new FastAgentFileAdapter({ home, cwd: "/fallback", fastAgentBin: bin });
+    const model = "generic.MiniMax-M3";
+    const created = JSON.parse(await handleCreateSession(new Map([["fast-agent", adapter]]), {
+      harness: "fast-agent", name: "stable-worker", cwd: home, model,
+    }));
+    expect(created).toMatchObject({ ok: true, created: true, sessionId: "fast-agent:stable-worker", model });
+    expect(isolated.mock.calls[0]?.[2]).toMatchObject({
+      label: "fast-agent-create", timeout: 15000,
+      resourceProperties: ["CPUQuota=100%", "MemoryHigh=384M", "MemoryMax=768M", "MemorySwapMax=0", "TasksMax=64", "IOWeight=25"],
+    });
+    const observer = new FastAgentFileAdapter({ home, cwd: "/fallback", fastAgentBin: "/usr/bin/true" });
+    expect(await observer.getSession(created.sessionId)).toMatchObject({ title: "stable-worker", cwd: home, model });
+    const reused = JSON.parse(await handleNewOrResume(new Map([["fast-agent", observer]]), {
+      harness: "fast-agent", name: "stable-worker", cwd: home, model, message: "continue", mode: "sync",
+    }));
+    expect(reused).toMatchObject({ ok: true, created: false, sessionId: created.sessionId, delivery: "completed" });
+    expect(await observer.listSessions()).toHaveLength(1);
+  });
+
+  it.each([false, true])("bounds ordinary and recovery send jobs (recovery=%s)", async (recovery) => {
+    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-budget-"));
+    cleanups.push(home);
+    const directory = join(home, "sessions", "bounded");
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, "session.json"), JSON.stringify({
+      session_id: "bounded", continuation: { cwd: home }, metadata: { extras: { healthRecovery: recovery } },
+    }));
+    const isolated = vi.spyOn(workloadLauncher, "spawnIsolatedWorkload");
+    const adapter = new FastAgentFileAdapter({ home, fastAgentBin: "/usr/bin/true" });
+    expect(await adapter.sendMessage("fast-agent:bounded", { message: "sync" })).toEqual({ ok: true });
+    expect(await adapter.sendMessage("fast-agent:bounded", { message: "queued", queue: true })).toEqual({ ok: true, admitted: true, pending: true });
+    const properties = ["CPUQuota=100%", "MemoryHigh=384M", "MemoryMax=768M", "MemorySwapMax=0", "TasksMax=64", "IOWeight=25"];
+    expect(isolated.mock.calls[0]?.[2].resourceProperties).toEqual(properties);
+    expect(isolated.mock.calls[1]?.[2].resourceProperties).toEqual(properties);
+    const args = isolated.mock.calls[1]?.[1] ?? [];
+    expect(args.includes("--shell")).toBe(recovery);
+    expect(args.includes("300")).toBe(recovery);
+  });
+
 
 
   it("routes a direct MiniMax session through only the scoped config and inherited private token", async () => {
@@ -94,7 +160,7 @@ describe("Fast Agent persisted observer", () => {
     await chmod(bin, 0o755);
     vi.stubEnv("MINIMAX_API_KEY", "test-private-token");
     const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: bin });
-    expect(await adapter.sendMessage("fast-agent:queue-error", { message: "check", queue: true })).toEqual({ ok: true });
+    expect(await adapter.sendMessage("fast-agent:queue-error", { message: "check", queue: true })).toEqual({ ok: true, admitted: true, pending: true });
     let receipt: { running?: boolean; error?: string } = {};
     for (let i = 0; i < 40; i += 1) {
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -127,7 +193,7 @@ describe("Fast Agent persisted observer", () => {
       session_id: "native-empty", metadata: { title: "Independent recovery", extras: { model: "anthropic.MiniMax-M3.1-Flash-Preview", healthRecovery: true } },
       continuation: { cwd: "/actual/workspace", agents: {} },
     }));
-    const adapter = new FastAgentFileAdapter({ home, cwd: "/fallback", fastAgentBin: "/bin/true" });
+    const adapter = new FastAgentFileAdapter({ home, cwd: "/fallback", fastAgentBin: "/usr/bin/true" });
     expect(await adapter.getSession("fast-agent:native-empty")).toMatchObject({
       cwd: "/actual/workspace", model: "anthropic.MiniMax-M3.1-Flash-Preview", messageCount: 0, meta: { healthRecovery: true },
     });
@@ -144,7 +210,7 @@ describe("Fast Agent persisted observer", () => {
         "fast-agent-shell-process-metadata": { process_status: "running", os_process_id: process.pid }
       }) }]
     }] }));
-    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/bin/true" });
+    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/usr/bin/true" });
     const [session] = await adapter.listSessions();
     expect(session.status).toBe("stopped");
   });
@@ -158,7 +224,7 @@ describe("Fast Agent persisted observer", () => {
     await writeFile(join(sessionDir, "history_dev.json"), JSON.stringify({ messages: [{
       role: "assistant", timestamp: new Date().toISOString(), content: [{ type: "text", text: "<think>internal plan</think>\n\nГотово." }]
     }] }));
-    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/bin/true" });
+    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/usr/bin/true" });
     const messages = await adapter.getSessionMessages("fast-agent:session-think", 1);
     expect(messages?.[0].parts).toEqual([
       { type: "thinking", text: "internal plan" },
@@ -184,7 +250,7 @@ describe("Fast Agent persisted observer", () => {
       { role: "assistant", timestamp: "2026-08-18T10:01:00.000Z", content: [{ type: "text", text: "I inspected it." }] },
     ] }));
 
-    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/bin/true" });
+    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/usr/bin/true" });
     await adapter.init();
     const sessions = await adapter.listSessions();
     expect(sessions).toHaveLength(1);
@@ -199,6 +265,6 @@ describe("Fast Agent persisted observer", () => {
     });
     expect(await adapter.getSessionMessages("fast-agent:session-1", 1)).toMatchObject([{ text: "I inspected it." }]);
     expect(await adapter.sendMessage("fast-agent:session-1", { message: "continue work" })).toEqual({ ok: true });
-    expect(await adapter.sendMessage("fast-agent:session-1", { message: "continue in background", queue: true })).toEqual({ ok: true });
+    expect(await adapter.sendMessage("fast-agent:session-1", { message: "continue in background", queue: true })).toEqual({ ok: true, admitted: true, pending: true });
   });
 });

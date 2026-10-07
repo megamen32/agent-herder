@@ -17,6 +17,17 @@ function harnessEnum(toolName: string): string[] {
 }
 
 describe("canonical MCP harness definitions", () => {
+  it("accepts Fast Agent named creation and resume with an explicit model", () => {
+    const input = { harness: "fast-agent", name: "api-worker", cwd: "/workspace", model: "generic.MiniMax-M3" };
+    for (const name of ["create_session", "new_or_resume"]) {
+      expect(harnessEnum(name), name).toContain("fast-agent");
+      expect(toolDefinitions.find((tool) => tool.name === name)?.inputSchema.properties?.model).toMatchObject({ type: "string" });
+    }
+    expect(CreateSessionSchema.parse(input)).toEqual(input);
+    expect(NewOrResumeSchema.parse({ ...input, message: "hello" })).toMatchObject({ ...input, mode: "sync" });
+    expect(() => CreateSessionSchema.parse({ ...input, model: "bad\nmodel" })).toThrow();
+  });
+
   it("pins the browser wake tool to the BrowserClaw allowlist and opaque request schema", () => {
     expect(toolDefinitions.find((definition) => definition.name === "browser_wake")?.inputSchema).toMatchObject({
       properties: {

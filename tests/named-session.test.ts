@@ -20,7 +20,7 @@ async function workspace(): Promise<string> {
   return realpath(path);
 }
 
-function session(id: string, title: string, cwd: string, harness: "opencode" | "codex" = "opencode"): AgentSession {
+function session(id: string, title: string, cwd: string, harness: "opencode" | "codex" | "fast-agent" = "opencode"): AgentSession {
   return {
     id,
     harness,
@@ -32,7 +32,7 @@ function session(id: string, title: string, cwd: string, harness: "opencode" | "
   };
 }
 
-function fakeAdapter(harness: "opencode" | "codex", initial: AgentSession[] = []) {
+function fakeAdapter(harness: "opencode" | "codex" | "fast-agent", initial: AgentSession[] = []) {
   const sessions = [...initial];
   const deliveries: Array<{ id: string; options: SendMessageOptions }> = [];
   const creationOptions: CreateSessionOptions[] = [];
@@ -71,6 +71,22 @@ function fakeAdapter(harness: "opencode" | "codex", initial: AgentSession[] = []
 }
 
 describe("named session creation and reuse", () => {
+  it("creates and reuses the exact Fast Agent named session through MCP handlers", async () => {
+    const cwd = await workspace();
+    const fake = fakeAdapter("fast-agent");
+    const adapters = new Map([["fast-agent", fake.adapter]]);
+    const created = JSON.parse(await handleNewOrResume(adapters, {
+      harness: "fast-agent", name: "api-worker", cwd, message: "first", mode: "queue",
+    }));
+    const resumed = JSON.parse(await handleNewOrResume(adapters, {
+      harness: "fast-agent", name: "api-worker", cwd, message: "second", mode: "sync",
+    }));
+    expect(created).toMatchObject({ ok: true, created: true, sessionId: "fast-agent-1", delivery: "accepted" });
+    expect(resumed).toMatchObject({ ok: true, created: false, sessionId: "fast-agent-1", delivery: "completed" });
+    expect(fake.creates()).toBe(1);
+    expect(fake.deliveries.map(({ id, options }) => [id, options.queue])).toEqual([["fast-agent-1", true], ["fast-agent-1", false]]);
+  });
+
   it("serializes find-or-create across two Agent Herder processes", async () => {
     const cwd = await workspace();
     const storePath = join(cwd, "sessions.json");
