@@ -256,7 +256,12 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     });
   }
 
-  async resumeSession(_id: string): Promise<{ ok: boolean; error?: string }> {
+  async resumeSession(id: string): Promise<{ ok: boolean; error?: string }> {
+    const session = await this.getSession(id);
+    if (!session) return { ok: false, error: `Fast Agent session '${id}' not found` };
+    if (session.meta?.readOnly === true) return { ok: false, error: READ_ONLY_ERROR };
+    // The native CLI restores this context when the supervisor delivers the
+    // explicit continuation message; resume must not bypass write permissions.
     return { ok: true };
   }
 

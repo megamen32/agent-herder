@@ -1198,17 +1198,22 @@ function App() {
   const changeStatisticsDays = (days: number) => { setStatisticsDays(days); void loadStatistics(days); };
 
   const runAction = async (action: "resume" | "stop" | "recover") => {
-    if (!activeKey) return;
+    if (!activeKey || (action === "resume" && sending)) return;
+    if (action === "resume") setSending(true);
     const { harness, id } = splitKey(activeKey);
-    const result = await api<{ job?: HerderJob }>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ humanRequested: action !== "stop", ...(action === "resume" && (harness === "codex" || harness === "zcode") ? { message: "Продолжи текущую задачу в этой же сессии. Если задача уже завершена, кратко сообщи результат." } : {}) }) });
-    if (action === "recover" && result.job) {
-      setShowJobs(true);
-      setShowStatistics(false);
-      await loadJobs();
-      return;
+    try {
+      const result = await api<{ job?: HerderJob }>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ humanRequested: action !== "stop", ...(action === "resume" && (harness === "codex" || harness === "zcode" || harness === "fast-agent") ? { message: "Продолжи текущую задачу в этой же сессии. Если задача уже завершена, кратко сообщи результат." } : {}) }) });
+      if (action === "recover" && result.job) {
+        setShowJobs(true);
+        setShowStatistics(false);
+        await loadJobs();
+        return;
+      }
+      await loadSessions();
+      await loadDetails(activeKey);
+    } finally {
+      if (action === "resume") setSending(false);
     }
-    await loadSessions();
-    await loadDetails(activeKey);
   };
   const isResumeMode = !composer.trim() && (activeSession?.status === "stopped" || activeSession?.status === "error" || activeSession?.meta?.humanStopHeld === true);
   const activeJobsCount = jobs.filter((job) => job.state === "queued" || job.state === "running" || job.state === "waiting" || job.state === "cancelling").length;

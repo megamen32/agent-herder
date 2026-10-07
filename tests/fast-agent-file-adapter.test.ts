@@ -96,10 +96,13 @@ describe("Fast Agent persisted observer", () => {
     const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/usr/bin/true" });
     for (const id of ["managed", "legacy-recovery", "legacy-ordinary"]) {
       expect(await adapter.getSession(`fast-agent:${id}`)).toMatchObject({ meta: { readOnly: false, herderManaged: true } });
+      expect(await adapter.resumeSession(`fast-agent:${id}`)).toEqual({ ok: true });
       expect(await adapter.sendMessage(`fast-agent:${id}`, { message: "user reply", origin: "human" })).toEqual({ ok: true });
     }
     expect(await adapter.getSession("fast-agent:foreign")).toMatchObject({ meta: { readOnly: true, herderManaged: false } });
     const admittedCount = isolated.mock.calls.length;
+    expect(await adapter.resumeSession("fast-agent:foreign")).toMatchObject({ ok: false, error: expect.stringContaining("read-only") });
+    expect(await adapter.resumeSession("fast-agent:missing")).toMatchObject({ ok: false, error: expect.stringContaining("not found") });
     for (const queue of [false, true]) {
       expect(await adapter.sendMessage("fast-agent:foreign", { message: "user reply", queue })).toMatchObject({ ok: false, error: expect.stringContaining("read-only") });
     }
@@ -123,6 +126,7 @@ describe("Fast Agent persisted observer", () => {
     const isolated = vi.spyOn(workloadLauncher, "spawnIsolatedWorkload");
     const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/usr/bin/true" });
     expect(await adapter.getSession("fast-agent:managed")).toMatchObject({ meta: { readOnly: true, herderManaged: true, archived: true } });
+    expect(await adapter.resumeSession("fast-agent:managed")).toMatchObject({ ok: false, error: expect.stringContaining("read-only") });
     for (const queue of [false, true]) {
       expect(await adapter.sendMessage("fast-agent:managed", { message: "user reply", queue })).toMatchObject({ ok: false, error: expect.stringContaining("read-only") });
     }
