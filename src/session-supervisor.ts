@@ -1,3 +1,4 @@
+import type { RecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
 import type { ContentPart, Conversation, ConversionResult, HarnessType, Message } from "session-convert";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -63,6 +64,8 @@ export interface SessionSupervisorOptions {
   eventHealth?: HarnessEventHealthRegistry;
   /** Resume the same native session after a failed turn. Enabled by default. */
   autoResumeFailedSessions?: boolean;
+  /** Same owning admission authority as durable restart recovery. */
+  admissionGate?: RecoveryAdmissionGate;
   /** Maximum native resume attempts for one failure burst. */
   autoResumeMaxAttempts?: number;
   /** Initial retry delay; subsequent failed resumes use exponential backoff. */
@@ -112,6 +115,7 @@ export class SessionSupervisor {
   private readonly nativeEventUnsubscribers = new Map<string, () => void>();
   private readonly recentNativeEvents = new Map<string, number>();
   private readonly autoResumeFailedSessions: boolean;
+  private readonly admissionGate?: RecoveryAdmissionGate;
   private readonly autoResumeMaxAttempts: number;
   private readonly autoResumeDelayMs: number;
   private readonly automaticResumes = new Map<string, AutomaticResumeState>();
@@ -135,6 +139,7 @@ export class SessionSupervisor {
     this.autoResumeDelayMs = Math.max(0, options.autoResumeDelayMs
       ?? Number(process.env.AGENT_HERDER_AUTO_RESUME_DELAY_MS || 2_000));
     this.unfinishedSessions = options.unfinishedSessions;
+    this.admissionGate = options.admissionGate;
     this.humanStops = options.humanStopStore ?? getHumanStopStore();
   }
 
@@ -893,6 +898,11 @@ export class SessionSupervisor {
   ): Promise<void> {
     const key = sessionKey(provider, sessionId);
     if (this.automaticResumes.get(key) !== state || state.inFlight) return;
+    if (!await this.automaticResumeAdmissionAllowed(adapter, sessionId)) {
+      this.clearAutomaticResume(provider, sessionId);
+      return;
+    }
+    if (this.automaticResumes.get(key) !== state || state.inFlight) return;
     state.inFlight = true;
     state.attempts += 1;
     let result: ControlResult;
@@ -903,6 +913,12 @@ export class SessionSupervisor {
       }
       // Native resume preserves the session identity and its persisted model;
       // automatic recovery must never fork or silently switch providers.
+      if (!await this.automaticResumeAdmissionAllowed(adapter, sessionId)) {
+        state.attempts = Math.max(0, state.attempts - 1);
+        this.clearAutomaticResume(provider, sessionId);
+        return;
+      }
+      if (this.automaticResumes.get(key) !== state) return;
       result = await adapter.resumeSession!(sessionId);
     } catch (error) {
       result = { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -918,6 +934,14 @@ export class SessionSupervisor {
     }
     console.error(`[agent-herder] auto-resume ${state.attempts}/${this.autoResumeMaxAttempts} failed for ${provider}:${sessionId}: ${result.error || "unknown error"}`);
     this.scheduleAutomaticResume(provider, sessionId);
+  }
+
+  private async automaticResumeAdmissionAllowed(adapter: HarnessAdapter, sessionId: string): Promise<boolean> {
+    if (!this.admissionGate) return true;
+    try {
+      return (await this.admissionGate({ id: sessionId, harness: adapter.type,
+        cwd: "", title: "", status: "error", lastActivity: new Date().toISOString(), needsPermission: false }, "resume")).allowed;
+    } catch { return false; }
   }
 
   private clearAutomaticResume(provider: string, sessionId: string): void {

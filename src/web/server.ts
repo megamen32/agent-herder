@@ -1,3 +1,4 @@
+import { projectSessionInventory } from "./session-inventory.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { execFile } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
@@ -1078,10 +1079,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     };
     if (url.searchParams.get("quick") === "1") {
       const snapshot = supervisor.listSessionsFast(filters);
-      return sendJson(response, 200, snapshot);
+      return sendJson(response, 200, url.searchParams.get("inventory") === "1"
+        ? { sessions: projectSessionInventory(snapshot.sessions), warming: snapshot.warming } : snapshot);
     }
     const sessions = await supervisor.listSessions(filters);
-    sendJson(response, 200, { sessions, warming: false });
+    sendJson(response, 200, { sessions: url.searchParams.get("inventory") === "1" ? projectSessionInventory(sessions) : sessions, warming: false });
     return;
   }
   if (request.method === "GET" && url.pathname === "/api/health/remediation") {

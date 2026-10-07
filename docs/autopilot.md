@@ -325,3 +325,32 @@ again even though Codex intentionally retains the same `turn_id`. The
 continuation budget applies to that user turn; after the budget is exhausted,
 the judge may still declare `done` or ask the user, but another silent
 continuation is not admitted.
+
+
+## Fleet recovery admission
+
+The production launcher and the supervisor's independent failed-turn retry use
+one admission reader for the existing canonical fleet monitor registry. Override
+its location with `AGENT_HERDER_FLEET_MONITOR_STATE`. A registered task must be
+`active`; paused tasks, completed components awaiting integration, retained
+blockers, unknown sessions and unverifiable or older-than-30-minute snapshots
+hold automatic work. The existing shared `heavy.admission=DENIED` authority
+also holds fresh active tasks without interrupting their active turns. This
+reader never clears or copies the owning blocker. Automatic create and rollover
+hold because this registry authorizes recovery of existing identities only.
+Explicit human-requested controls and active no-message adoption retain their
+existing semantics. Holds consume no recovery retry and do not manufacture a
+native failure. Every combined planner source must pass the same gate.
+
+`GET /api/sessions?harness=zcode&quick=1&inventory=1` projects all matching
+identities, cwd, activity state/timestamps and available native blocker flags.
+It omits titles, messages, raw metadata and blocker prose. Missing native flags
+stay unknown; a completed native turn or idle directory entry is not task
+completion. The default API response remains unchanged.
+
+Focused admission/inventory verification uses the existing UID safety boundary
+with a stricter job scope: RAM192/256MiB soft/hard, swap0, CPU1, Tasks128,
+IOWeight10, runtime60s, one Vitest worker, Node heap128MiB, no build or dependency
+install. Cache/temp stays under ignored project `.tmp/`, capped16MiB. Measured
+focused checks including supervisor bypass coverage used about216MiB RSS with zero swaps. These test-job limits do
+not change service or host ceilings and do not authorize a heavy build.

@@ -281,6 +281,36 @@ describe("unfinished session crash recovery", () => {
             watchdog.started = false;
         }
     });
+    it.each(["attempt", "resume", "send"])("defers fleet admission at %s without consuming a recovery retry", async (heldOperation) => {
+        const root = await mkdtemp(join(tmpdir(), "fleet-admission-recovery-"));
+        const current = fixture("error", "zcode");
+        const calls = { resumes: 0, messages: [] as string[] };
+        const state = new UnfinishedSessionStore(join(root, "state.json"));
+        await state.markRecoveryEligible(current, "turn.failed", { turnId: "failed" });
+        const settings = new SessionAutostartStore(join(root, "settings.json"), {});
+        const cfg = await settings.getSettings();
+        await settings.setRuntimeSettings({ ...cfg, enabled: true });
+        await settings.setSession({ harness: current.harness, sessionId: current.id, cwd: current.cwd }, true);
+        const gate = async (_session: AgentSession, operation: string) => operation === heldOperation
+            ? { allowed: false as const, reason: "existing owner resource hold" } : { allowed: true as const };
+        const adapter = fakeAdapter(() => current, calls);
+        let nativeReads = 0;
+        adapter.getSession = async () => { nativeReads += 1; return current; };
+        const makeLauncher = () => new UnfinishedSessionLauncher({ adapters: new Map([["zcode", adapter]]), store: state, settingsStore: settings, admissionGate: gate, discoveryIdleMs: 1 });
+        await makeLauncher().recoverPending();
+        const [held] = await state.list();
+        expect(held.attempts).toBe(0);
+        expect(held.recoveryCause).toBe("turn.failed");
+        expect(held.lastError).toBeUndefined();
+        expect(calls.messages).toEqual([]);
+        expect(calls.resumes).toBe(heldOperation === "send" ? 1 : 0);
+        if (heldOperation === "attempt") {
+            expect(nativeReads).toBe(0);
+            await makeLauncher().recoverPending();
+            expect((await state.list())[0].attempts).toBe(0);
+            expect(calls).toEqual({ resumes: 0, messages: [] });
+        }
+    });
     it("recovers a proven stalled active turn only with watchdog opt-in", async () => {
         const root = await mkdtemp(join(tmpdir(), "stalled-watchdog-"));
         let current = { ...fixture("running", "zcode"), lastActivity: new Date(Date.now() - 60000).toISOString() };

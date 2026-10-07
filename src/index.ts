@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createFleetRecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
 
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { McpServer } from "@modelcontextprotocol/server";
@@ -640,7 +641,9 @@ async function main() {
   const unfinishedJudge = process.env.AGENT_HERDER_UNFINISHED_JUDGE_ENABLED === "false" || !unfinishedJudgeToken
     ? undefined
     : createDynamicSessionCompletionJudge(getUnfinishedJudgeClient);
+  const recoveryAdmissionGate = createFleetRecoveryAdmissionGate(process.env.AGENT_HERDER_FLEET_MONITOR_STATE);
   const unfinishedSessionLauncher = new UnfinishedSessionLauncher({
+    admissionGate: recoveryAdmissionGate,
     humanStopStore,
     adapters,
     store: unfinishedSessionStore,
@@ -655,6 +658,7 @@ async function main() {
     humanStopStore,
     events: herderEvents,
     unfinishedSessions: unfinishedSessionLauncher,
+    admissionGate: recoveryAdmissionGate,
   });
   const stopProcessObservation = processSupervisor.startObservation(Number(process.env.AGENT_HERDER_SESSION_OBSERVATION_INTERVAL_MS || 5_000));
   process.once("exit", stopProcessObservation);

@@ -1,3 +1,4 @@
+import type { RecoveryAdmissionGate, RecoveryOperation } from "./recovery-admission.js";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
@@ -1092,6 +1093,8 @@ export interface UnfinishedSessionLauncherOptions {
   adapters: Map<string, HarnessAdapter>;
   store: UnfinishedSessionStore;
   settingsStore: SessionAutostartStore;
+  /** Rechecks owning fleet authorization before any automatic native work. */
+  admissionGate?: RecoveryAdmissionGate;
   maxAttempts?: number;
   retryDelayMs?: number;
   reconcileIntervalMs?: number;
@@ -1726,6 +1729,12 @@ export class UnfinishedSessionLauncher {
         continue;
       }
       if (record.recoveryBlockedReason) continue;
+      // Check durable owner authority before an adapter read can initialize a
+      // workspace runtime during startup reconciliation.
+      const admissionTarget: AgentSession = { id: record.sessionId, harness: record.harness,
+        cwd: record.cwd, title: record.title, status: "idle", lastActivity: record.updatedAt, needsPermission: false };
+      if (!await this.admissionAllowed(admissionTarget, "attempt")) continue;
+      if (!this.lifecycleActive(lifecycleEpoch)) break;
       if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)) continue;
       const adapter = this.options.adapters.get(record.harness);
       if (!adapter?.resumeSession) {
@@ -1810,6 +1819,8 @@ export class UnfinishedSessionLauncher {
         continue;
       }
       if (resumedThisCycle >= this.maxResumesPerCycle) continue;
+      if (!this.lifecycleActive(lifecycleEpoch)) break;
+      if (!await this.admissionAllowed(session, "attempt")) continue;
       if (!this.lifecycleActive(lifecycleEpoch)) break;
       const attempt = await this.options.store.beginAttempt(
         record.harness,
@@ -1923,6 +1934,10 @@ export class UnfinishedSessionLauncher {
         return;
       }
       if (!record.recoveryCause && runtimeSettings.rolloverExpiredCache && session && this.options.cacheHandoff) {
+        if (!await this.admissionAllowed(session, "rollover")) {
+          await this.options.store.cancelAttempt(attempt);
+          return;
+        }
         const handoff = await this.options.cacheHandoff.maybeRollover(session, new Date(), {
           movePinned: runtimeSettings.movePinnedOnRollover,
         });
@@ -1982,6 +1997,14 @@ export class UnfinishedSessionLauncher {
         await this.options.store.cancelAttempt(attempt);
         return;
       }
+      if (!await this.admissionAllowed(trackedSession, "resume")) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
+      if (!this.lifecycleActive(lifecycleEpoch) || (recoveryFence && (this.turnGenerations.get(recoveryFence) ?? 0) !== turnGeneration)) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
       const resumed = adapter.resumeSession ? await adapter.resumeSession(record.sessionId) : { ok: true };
       if (!resumed.ok) throw new Error(resumed.error || "возобновление отклонено");
       if (!this.lifecycleActive(lifecycleEpoch)) {
@@ -1999,6 +2022,14 @@ export class UnfinishedSessionLauncher {
       }
       if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)) return;
       if (recoveryFence && (this.turnGenerations.get(recoveryFence) ?? 0) !== turnGeneration) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
+      if (!await this.admissionAllowed(trackedSession, "send")) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
+      if (!this.lifecycleActive(lifecycleEpoch) || (recoveryFence && (this.turnGenerations.get(recoveryFence) ?? 0) !== turnGeneration)) {
         await this.options.store.cancelAttempt(attempt);
         return;
       }
@@ -2048,6 +2079,11 @@ export class UnfinishedSessionLauncher {
         }
         let deferredAccepted = pending.some((message) => isAutocontinueRequest(message.message));
         if (!deferredAccepted) {
+          if (!await this.admissionAllowed(trackedSession, "send")) {
+            await this.options.store.cancelAttempt(attempt);
+            return;
+          }
+          if (!this.lifecycleActive(lifecycleEpoch)) { await this.options.store.cancelAttempt(attempt); return; }
           await inbox.add(record.sessionId, this.continuationMessage);
           deferredAccepted = true;
         }
@@ -2451,6 +2487,14 @@ export class UnfinishedSessionLauncher {
     for (const group of groups) {
       if (!this.lifecycleActive(lifecycleEpoch)) return;
       const sources = group.sourceSessionIds.map((id) => byId.get(id)!);
+      // A plan may combine sessions; every source keeps its own authority.
+      // Holding one source must not move its work into an admitted neighbor.
+      let admissionHeld = false;
+      for (const source of sources) {
+        if (!await this.admissionAllowed(source.session, "attempt")) { admissionHeld = true; break; }
+      }
+      if (!this.lifecycleActive(lifecycleEpoch)) return;
+      if (admissionHeld) continue;
       let humanStoppedSource = false;
       for (const source of sources) {
         if (await this.suppressIfHumanStopped(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session), source.session)) {
@@ -2613,7 +2657,11 @@ export class UnfinishedSessionLauncher {
           const pending = await inbox.list(running.session.id);
           if (!this.lifecycleActive(lifecycleEpoch)) return;
           if (await this.suppressIfHumanStopped(running.session.harness, running.session.id, sessionWorkspaceIdentity(running.session))) continue;
-          if (!pending.some((message) => isAutocontinueRequest(message.message))) await inbox.add(running.session.id, handoff);
+          if (!pending.some((message) => isAutocontinueRequest(message.message))) {
+            if (!await this.groupAdmissionAllowed(sources.map((source) => source.session), "send")) continue;
+            if (!this.lifecycleActive(lifecycleEpoch)) return;
+            await inbox.add(running.session.id, handoff);
+          }
           if (!this.lifecycleActive(lifecycleEpoch)) return;
         }
         if (await this.suppressIfHumanStopped(running.session.harness, running.session.id, sessionWorkspaceIdentity(running.session))) continue;
@@ -2656,6 +2704,8 @@ export class UnfinishedSessionLauncher {
             launched = Math.max(0, launched - 1);
             continue;
           }
+          if (!await this.groupAdmissionAllowed(sources.map((source) => source.session), "resume")) { launched -= 1; continue; }
+          if (!this.lifecycleActive(lifecycleEpoch)) return;
           const resumed = await primary.adapter.resumeSession(primary.session.id);
           if (!resumed.ok) throw new Error(resumed.error || "возобновление исходной сессии отклонено");
           if (!this.lifecycleActive(lifecycleEpoch)) return;
@@ -2665,6 +2715,8 @@ export class UnfinishedSessionLauncher {
             launched = Math.max(0, launched - 1);
             continue;
           }
+          if (!await this.groupAdmissionAllowed(sources.map((source) => source.session), "send")) { launched -= 1; continue; }
+          if (!this.lifecycleActive(lifecycleEpoch)) return;
           const sent = await primary.adapter.sendMessage(primary.session.id, { message: handoff, queue: true });
           const terminalAdmission = admittedNonRetryableFailure(sent);
           if (terminalAdmission) {
@@ -2749,6 +2801,8 @@ export class UnfinishedSessionLauncher {
           launched = Math.max(0, launched - 1);
           continue;
         }
+        if (!await this.groupAdmissionAllowed(sources.map((source) => source.session), "create")) { launched -= 1; continue; }
+        if (!this.lifecycleActive(lifecycleEpoch)) return;
         const created = await primary.adapter.createSession({
           name: continuationTitle(group.topic),
           cwd: primary.session.cwd,
@@ -2767,6 +2821,14 @@ export class UnfinishedSessionLauncher {
           launched = Math.max(0, launched - 1);
           continue;
         }
+        if (!await this.groupAdmissionAllowed(sources.map((source) => source.session), "send")) {
+          // The newly created native identity remains owned and visible, but
+          // no handoff is sent while its source authority is held.
+          await this.options.settingsStore.setSession({ harness: created.harness, sessionId: created.id, cwd: created.cwd }, false);
+          launched -= 1;
+          continue;
+        }
+        if (!this.lifecycleActive(lifecycleEpoch)) return;
         const sent = await primary.adapter.sendMessage(created.id, { message: handoff, queue: true });
         const terminalAdmission = admittedNonRetryableFailure(sent);
         if (terminalAdmission) {
@@ -3181,6 +3243,21 @@ export class UnfinishedSessionLauncher {
       signalType: "unfinished-session-autostart-failed",
     });
     await this.options.store.markNotified(record.harness, record.sessionId, new Date(), record.workspaceIdentity || record.cwd);
+  }
+
+  private async groupAdmissionAllowed(sessions: AgentSession[], operation: RecoveryOperation): Promise<boolean> {
+    for (const session of sessions) if (!await this.admissionAllowed(session, operation)) return false;
+    return true;
+  }
+
+  private async admissionAllowed(session: AgentSession, operation: RecoveryOperation): Promise<boolean> {
+    if (!this.options.admissionGate) return true;
+    try {
+      return (await this.options.admissionGate(session, operation)).allowed;
+    } catch {
+      // Gate failure is a deferral, never a native failure or consumed retry.
+      return false;
+    }
   }
 
   private async isEnabled(harness: HarnessType, sessionId: string, cwd: string): Promise<boolean> {
