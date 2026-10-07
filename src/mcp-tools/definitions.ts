@@ -79,12 +79,13 @@ export const SendMessageSchema = z.object({
 });
 
 const NamedSessionBaseSchema = z.object({
-  sourceSessions: z.array(z.object({ harness: z.enum(["codex", "zcode", "opencode"]), sessionId: z.string().min(1).max(512) })).max(32).optional().describe("All verified native source/ancestor receipts for an automatic continuation. Any stopped source prohibits launch."),
+  sourceSessions: z.array(z.object({ harness: z.enum(["codex", "zcode", "opencode", "fast-agent"]), sessionId: z.string().min(1).max(512) })).max(32).optional().describe("All verified native source/ancestor receipts for an automatic continuation. Any stopped source prohibits launch."),
   sourceSessionId: z.string().min(1).optional().describe("Original session ID when this creation is a continuation/replacement; a stopped source prohibits automatic creation."),
-  sourceHarness: z.enum(["codex", "zcode", "opencode"]).optional(),
-  harness: z.enum(["opencode", "codex", "zcode"]).describe("Harness that owns the named session."),
+  sourceHarness: z.enum(["codex", "zcode", "opencode", "fast-agent"]).optional(),
+  harness: z.enum(["opencode", "codex", "zcode", "fast-agent"]).describe("Harness that owns the named session."),
   name: z.string().trim().min(1).max(128).describe("Stable session name, for example repair_100."),
   cwd: z.string().min(1).describe("Absolute working directory. It is canonicalized before identity matching."),
+  model: z.string().trim().min(1).max(MAX_MODEL_LENGTH).regex(/^[^\u0000-\u001f\u007f]*$/).optional().describe("Optional model selected before the first message is delivered."),
 });
 
 export const CreateSessionSchema = NamedSessionBaseSchema;
@@ -93,15 +94,14 @@ export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
   humanRequested: z.boolean().optional().describe("True only for an explicit human continuation request; never inferred by an automated planner."),
   message: z.string().trim().min(1).describe("Message delivered to the created or reused session."),
   mode: z.enum(["queue", "sync"]).optional().default("sync").describe(
-    "queue returns after native acceptance; sync waits for the adapter's completed response."
+    "queue returns after a bounded launcher handoff and may be accepted_unconfirmed; sync waits for the adapter's completed response."
   ),
-  model: z.string().trim().min(1).max(MAX_MODEL_LENGTH).regex(/^[^\u0000-\u001f\u007f]*$/).optional().describe("Optional model selected before the first message is delivered."),
 });
 
 export const DeliverSchema = z.object({
-  sourceSessions: z.array(z.object({ harness: z.enum(["codex", "zcode", "opencode"]), sessionId: z.string().min(1).max(512) })).max(32).optional(),
+  sourceSessions: z.array(z.object({ harness: z.enum(["codex", "zcode", "opencode", "fast-agent"]), sessionId: z.string().min(1).max(512) })).max(32).optional(),
   sourceSessionId: z.string().min(1).max(512).optional().describe("Original native ID for an automatic continuation/replacement; stopped sources prohibit it."),
-  sourceHarness: z.enum(["codex", "zcode", "opencode"]).optional(),
+  sourceHarness: z.enum(["codex", "zcode", "opencode", "fast-agent"]).optional(),
   sessionId: z.string().optional().describe("Exact target session ID. Use either sessionId or harness+name+cwd."),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional(),
   name: z.string().trim().min(1).max(128).optional(),
@@ -231,13 +231,14 @@ export const toolDefinitions: Tool[] = [
   },
   {
     name: "create_session",
-    description: "Create one named OpenCode or Codex session in an absolute canonical working directory.",
+    description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        harness: { type: "string", enum: ["opencode", "codex", "zcode"], description: "Target harness" },
+        harness: { type: "string", enum: ["opencode", "codex", "zcode", "fast-agent"], description: "Target harness" },
         name: { type: "string", description: "Stable session name, for example repair_100" },
         cwd: { type: "string", description: "Absolute working directory" },
+        model: { type: "string", maxLength: MAX_MODEL_LENGTH, description: "Optional model selected before first delivery" },
       },
       required: ["harness", "name", "cwd"],
     },
@@ -248,11 +249,12 @@ export const toolDefinitions: Tool[] = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        harness: { type: "string", enum: ["opencode", "codex", "zcode"], description: "Target harness" },
+        harness: { type: "string", enum: ["opencode", "codex", "zcode", "fast-agent"], description: "Target harness" },
         name: { type: "string", description: "Stable session name, for example repair_100" },
         cwd: { type: "string", description: "Absolute working directory" },
         message: { type: "string", description: "Message to deliver" },
         mode: { type: "string", enum: ["queue", "sync"], default: "sync", description: "Delivery mode" },
+        model: { type: "string", maxLength: MAX_MODEL_LENGTH, description: "Optional model selected before first delivery" },
       },
       required: ["harness", "name", "cwd", "message"],
     },

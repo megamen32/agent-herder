@@ -6,6 +6,7 @@ import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import type { HarnessEventHealthRegistry } from "../harness-event-health.js";
 import { handleListAgents } from "../mcp-tools/handlers.js";
+import { decodeResourceComponent } from "../herder-resource-uris.js";
 
 function resourceMeta(events: HerderEventBus, uri: string): Record<string, unknown> {
   return {
@@ -32,10 +33,10 @@ export function registerHerderResources(server: McpServer, deps: {
     contents: [{ uri: uri.href, text: await handleListAgents(adapters, { harness: "all", status: "all", limit: 100, includeLastMessage: true }), _meta: resourceMeta(events, uri.href) }],
   }));
   server.registerResource("session", new ResourceTemplate("herder://sessions/{harness}/{sessionId}", { list: undefined, complete: { harness: () => [...adapters.keys()] } }), { title: "Agent session", mimeType: "application/json" }, async (uri, variables) =>
-    jsonContent(events, uri, await adapters.get(String(variables.harness))?.getSession(String(variables.sessionId)) ?? null));
+    jsonContent(events, uri, await adapters.get(decodeResourceComponent(variables.harness))?.getSession(decodeResourceComponent(variables.sessionId)) ?? null));
   server.registerResource("session-messages", new ResourceTemplate("herder://sessions/{harness}/{sessionId}/messages", { list: undefined, complete: { harness: () => [...adapters.keys()] } }), { title: "Agent session messages", mimeType: "application/json" }, async (uri, variables) => {
-    const adapter = adapters.get(String(variables.harness));
-    return jsonContent(events, uri, adapter?.getSessionMessages ? await adapter.getSessionMessages(String(variables.sessionId), 100) : []);
+    const adapter = adapters.get(decodeResourceComponent(variables.harness));
+    return jsonContent(events, uri, adapter?.getSessionMessages ? await adapter.getSessionMessages(decodeResourceComponent(variables.sessionId), 100) : []);
   });
 
   server.registerResource("coordination", "herder://coordination", { title: "Active coordination notes", mimeType: "application/json" }, async (uri) => jsonContent(events, uri, await coordination.list()));

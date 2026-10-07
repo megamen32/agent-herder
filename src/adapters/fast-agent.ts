@@ -1,6 +1,5 @@
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { execFile, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { promisify } from "node:util";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { homedir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
 import { spawnIsolatedWorkload } from "../workload-launcher.js";
@@ -11,6 +10,7 @@ import type {
   HarnessCapabilities,
   ListSessionsOptions,
   RawTranscriptExport,
+  SendMessageResult,
   SendMessageOptions,
   SessionMessagePart,
   SessionMessageView,
@@ -68,6 +68,8 @@ export interface FastAgentFileAdapterOptions {
 }
 
 const READ_ONLY_ERROR = "Fast Agent is connected read-only from its persisted home; start/control remains with fast-agent.";
+// Shared by ordinary and recovery jobs; never launch an unbounded API worker.
+const FAST_AGENT_RESOURCE_PROPERTIES = ["CPUQuota=100%", "MemoryHigh=384M", "MemoryMax=768M", "MemorySwapMax=0", "TasksMax=64", "IOWeight=25"];
 
 /**
  * Observes an already-running or previously persisted fast-agent home.
@@ -145,17 +147,34 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       "from pathlib import Path",
       "from fast_agent.session.session_manager import SessionManager",
       "home,cwd,name,model,recovery=sys.argv[1:]",
-      "session=SessionManager(cwd=Path(cwd),home_override=home).create_session(name=name,metadata={'model':model,'cwd':cwd,'healthRecovery':recovery=='true','herderManaged':True})",
+      "session=SessionManager(cwd=Path(cwd),home_override=home).create_session(name=name,metadata={'title':name,'model':model,'cwd':cwd,'healthRecovery':recovery=='true','herderManaged':True})",
       "print(json.dumps({'id':session.info.name}))",
     ].join("\n");
-    const { stdout } = await promisify(execFile)(python, ["-c", script, this.home, cwd, options.name, options.model || "", String(options.healthRecovery === true)], { timeout: 15_000, maxBuffer: 8192, env: { ...process.env, FAST_AGENT_HOME: this.home } });
+    const stdout = await new Promise<string>((resolveOutput, reject) => {
+      const child = spawnIsolatedWorkload(python, ["-c", script, this.home, cwd, options.name, options.model || "", String(options.healthRecovery === true)], {
+        label: "fast-agent-create", resourceProperties: [...FAST_AGENT_RESOURCE_PROPERTIES], cwd,
+        timeout: 15_000, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FAST_AGENT_HOME: this.home },
+      }) as ChildProcessWithoutNullStreams;
+      let output = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8").on("data", (chunk) => {
+        output += String(chunk);
+        if (Buffer.byteLength(output) > 8192) {
+          child.kill();
+          reject(new Error("Fast Agent creation output exceeded 8192 bytes"));
+        }
+      });
+      child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr = (stderr + String(chunk)).slice(-8192); });
+      child.once("error", reject);
+      child.once("close", (code) => code === 0 ? resolveOutput(output) : reject(new Error(stderr.trim() || `Fast Agent creation exited with code ${code}`)));
+    });
     const nativeId = (JSON.parse(stdout.trim()) as { id: string }).id;
     const session = await this.getSession(this.externalId(nativeId));
     if (!session) throw new Error("Fast Agent did not persist the created native session");
     return session;
   }
 
-  async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
+  async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     const session = await this.getSession(id);
     if (!session) return { ok: false, error: `Fast Agent session '${id}' not found` };
     if (session.meta?.readOnly === true) return { ok: false, error: READ_ONLY_ERROR };
@@ -169,7 +188,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     const directMiniMax = session.model?.startsWith("anthropic.MiniMax-") === true;
     const boundedDirectSession = recovery || (directMiniMax && session.meta?.herderManaged === true);
     if (boundedDirectSession) args.push("--shell", "--timeout", "300");
-    const resourceProperties = boundedDirectSession ? ["CPUQuota=100%", "MemoryHigh=384M", "MemoryMax=768M", "MemorySwapMax=0", "TasksMax=64", "IOWeight=25"] : [];
+    const resourceProperties = [...FAST_AGENT_RESOURCE_PROPERTIES];
     const config = process.env.FAST_AGENT_MINIMAX_CONFIG || join(homedir(), ".config/agent-herder/fast-agent-minimax.yaml");
     if (directMiniMax) {
       await stat(config);
@@ -215,7 +234,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
         child.once("close", (code) => { void finish(code).catch(() => undefined); });
         child.unref();
         await startedReceipt;
-        return { ok: true };
+        return { ok: true, admitted: true, pending: true };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
@@ -227,6 +246,9 @@ export class FastAgentFileAdapter implements HarnessAdapter {
         env: childEnv,
       }) as ChildProcessWithoutNullStreams;
       let stderr = "";
+      // The durable transcript is the result source. Drain CLI stdout so a
+      // verbose model response cannot fill the pipe and deadlock completion.
+      child.stdout?.resume();
       child.stderr?.setEncoding("utf8");
       child.stderr?.on("data", (chunk) => { stderr += String(chunk); if (stderr.length > 4000) stderr = stderr.slice(-4000); });
       child.once("error", (error) => resolveResult({ ok: false, error: error.message }));

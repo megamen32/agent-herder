@@ -1338,14 +1338,14 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
 
 function validSourceSessions(value: unknown): boolean {
   return value === undefined || (Array.isArray(value) && value.length <= 32 && value.every((ref) => ref && typeof ref === "object" && !Array.isArray(ref)
-    && ["codex", "zcode", "opencode"].includes(ref.harness) && typeof ref.sessionId === "string" && ref.sessionId.trim().length > 0 && ref.sessionId.length <= 512 && !hasControlCharacters(ref.sessionId)));
+    && ["codex", "zcode", "opencode", "fast-agent"].includes(ref.harness) && typeof ref.sessionId === "string" && ref.sessionId.trim().length > 0 && ref.sessionId.length <= 512 && !hasControlCharacters(ref.sessionId)));
 }
 
 function validSourceSessionFields(value: Record<string, unknown>): boolean {
   const sourceSessionId = value.sourceSessionId;
   const sourceHarness = value.sourceHarness;
   return (sourceSessionId === undefined || (typeof sourceSessionId === "string" && sourceSessionId.trim().length > 0 && sourceSessionId.length <= 512 && !hasControlCharacters(sourceSessionId)))
-    && (sourceHarness === undefined || (typeof sourceHarness === "string" && ["codex", "zcode", "opencode"].includes(sourceHarness)));
+    && (sourceHarness === undefined || (typeof sourceHarness === "string" && ["codex", "zcode", "opencode", "fast-agent"].includes(sourceHarness)));
 }
 
 function hasControlCharacters(value: string): boolean {

@@ -2,6 +2,14 @@ export function sessionResourceUri(harness: string, sessionId: string): string {
   return `herder://sessions/${encodeURIComponent(harness)}/${encodeURIComponent(sessionId)}`;
 }
 
+export function decodeResourceComponent(value: unknown): string {
+  try {
+    return decodeURIComponent(String(value));
+  } catch {
+    throw new TypeError("Invalid percent-encoded Herder resource component");
+  }
+}
+
 export function sessionMessagesResourceUri(harness: string, sessionId: string): string {
   return `${sessionResourceUri(harness, sessionId)}/messages`;
 }

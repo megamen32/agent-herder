@@ -8,7 +8,15 @@ POST the local REST endpoint `http://127.0.0.1:18787/api/health/remediation` wit
 {"harness":"fast-agent","execution":{"runtime":"fast-agent","provider":"minimax","model":"MiniMax-M3.1-Flash-Preview","reasoning":"default","topic":"health"}}
 ```
 
-The model maps to `anthropic.MiniMax-M3.1-Flash-Preview`. This dedicated profile uses the native shell tool and selects no MCP servers. Existing general Fast Agent chats retain their existing workload contract. Responses must be checked through the returned native conversation details; accepted queue delivery is not proof of completed repair.
+The model maps to `anthropic.MiniMax-M3.1-Flash-Preview`. This dedicated profile uses the native shell tool and selects no MCP servers. Responses must be checked through the returned native conversation details; accepted queue delivery is not proof of completed repair.
+
+## Named sessions and ordinary jobs
+
+Fast Agent supports MCP `create_session` and `new_or_resume` with `harness: "fast-agent"`, a stable `name`, an absolute `cwd`, and an optional native `model`. The name is persisted as the native session title, so later requests reuse the exact name and canonical workspace. `new_or_resume` accepts `mode: "queue"` or `"sync"`; queue acceptance requires checking the returned session for completion. Changing the model on an existing session is unsupported and is rejected before delivery rather than silently selecting a different model.
+
+All Fast Agent creation, synchronous send, and detached queue jobs receive the same explicit systemd budget as recovery: CPUQuota=100%, MemoryHigh=384M, MemoryMax=768M, MemorySwapMax=0, TasksMax=64, IOWeight=25. Recovery additionally retains its shell and 300-second one-shot timeout. The ordinary jobs are API-heavy; on server-100 at approximately 18:50 MSK on 2026-10-07, the existing Fast Agent MCP process used 163,516 KiB RSS, three threads, and 1.1% CPU. The RAM high/max limits provide approximately 2.4/4.8 times that observed steady working set; no measurement justifies adding swap. These are conservative ceilings, not measured peak guarantees. If a valid job reaches a limit, split it and measure its peak before requesting a reviewed increase.
+
+Run one heavy workload at a time per agent. Workers stay under the server-100 outer user safety boundary (36/44 GiB RAM high/max, 4 GiB swap) documented by `megamen32/ServersAdministartion/templates/server100-resource-guard/README.md`; they never move out of it. Use ignored project `.tmp/` for diagnostics, cap captured creation output at 8 KiB and synchronous stderr at 4,000 characters, and bound/rotate artifacts produced by shell tools. No GPU allowance is required. Detached jobs capture only a bounded redacted tail of stdout/stderr in the execution receipt. macOS and tests do not enforce Linux systemd properties; production verification must inspect the real worker scope on server-100.
 
 ## Reviewed recovery budget
 
@@ -31,3 +39,7 @@ The explicit card uses unique agent name herder_minimax and CLI --name herder_mi
 ## New managed MiniMax conversations
 
 New writable Herder-owned direct MiniMax conversations use the same measured server-100 worker budget as recovery: CPU100%, RAM high/max384/768MiB, Swap0, Tasks64, IOWeight25 and native timeout300 seconds. The successful native Flash shell canary peaked at176680960 bytes (168.5MiB), leaving headroom within this starter budget. The direct card enables no MCP servers. A heavier coding/build workload needs an owning-project budget review before increasing limits; imported/generic conversations keep their existing policy.
+
+## Conversation write permissions
+
+Herder-created native sessions persist `herderManaged: true`. Sessions created before that marker are recognized by the boolean `healthRecovery` metadata flag. Only these managed sessions accept synchronous or queued replies. Imported sessions stay read-only; archival markers in the snapshot, metadata, extras, or archive directory always block delivery before creating an execution receipt. The UI distinguishes archived history from other read-only sessions.

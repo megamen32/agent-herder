@@ -88,7 +88,7 @@ export function registerSessionTools(server: McpServer, deps: {
     const result = await handleSendMessage(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("create_session", { description: "Create one named OpenCode, Codex, or ZCode session in an absolute canonical working directory.", inputSchema: CreateSessionSchema }, async (args) => {
+  server.registerTool("create_session", { description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory.", inputSchema: CreateSessionSchema }, async (args) => {
     const result = await handleCreateSession(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });

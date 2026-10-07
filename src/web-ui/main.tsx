@@ -1213,6 +1213,7 @@ function App() {
   const isResumeMode = !composer.trim() && (activeSession?.status === "stopped" || activeSession?.status === "error" || activeSession?.meta?.humanStopHeld === true);
   const activeJobsCount = jobs.filter((job) => job.state === "queued" || job.state === "running" || job.state === "waiting" || job.state === "cancelling").length;
   const readOnlySession = activeSession?.meta?.readOnly === true;
+  const archivedSession = activeSession?.status === "archived" || activeSession?.meta?.archived === true;
   const visualizationUrl = activeSession
     ? `/api/sessions/${encodeURIComponent(activeSession.harness)}/${encodeURIComponent(activeSession.id)}/visualization`
     : undefined;
@@ -1353,7 +1354,7 @@ function App() {
           {createSessionError && <div className="create-session-error">{createSessionError}</div>}
         </div>}
         <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="Новая сессия" title="Новая сессия агента" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>
-        {readOnlySession ? <div className="composer-readonly"><strong>{activeSession?.status === "archived" ? "Архивная сессия" : "Только просмотр"}</strong><span>{activeSession?.status === "archived" ? "Сохранённая история сессии доступна для просмотра." : "Эта сессия пока не поддерживает отправку сообщений."}</span></div> : <>
+        {readOnlySession ? <div className="composer-readonly"><strong>{archivedSession ? "Архивная сессия" : "Только просмотр"}</strong><span>{archivedSession ? "Сохранённая история сессии доступна для просмотра." : "Эта сессия пока не поддерживает отправку сообщений."}</span></div> : <>
           <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Новое сообщение или продолжение задачи…" : activeKey ? "Написать агенту…" : "Сначала выберите сессию"} disabled={!activeKey || sending || readOnlySession} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && composer.trim()) { event.preventDefault(); void sendMessage(); } }} />
           <span className="composer-hint">{sending ? "Жду ответа агента…" : isResumeMode ? "Продолжить" : "Enter — отправить · Shift+Enter — новая строка"}</span>
           <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || sending || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}>{isResumeMode ? "▶" : "↑"}</button>
