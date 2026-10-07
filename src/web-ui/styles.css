@@ -262,7 +262,6 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .runtime-settings-grid label { justify-content: space-between; gap: 18px; padding: 10px 0; }.runtime-settings-grid label > span { display: grid; gap: 3px; }.runtime-settings-grid label small { color: var(--muted); font-size: var(--text-xs); line-height: 1.4; }.runtime-settings-grid input { width: min(310px, 48%); padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface-2); color: var(--text); }
 .runtime-settings-grid .runtime-toggle-setting input[type="checkbox"] { width: 18px; height: 18px; padding: 0; accent-color: var(--accent); }
 .technical-note { margin-top: -2px; color: var(--muted); font-size: var(--text-xs); line-height: 1.45; }.technical-note summary { cursor: pointer; color: var(--text-2); }.technical-note small { display: block; margin-top: var(--space-2); }
-.session-autocontinue-setting .autopilot-control { margin-top: 0; }
 .settings-save-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }.settings-save-row > span { color: var(--muted); font-size: var(--text-xs); }.settings-saved { color: var(--status-done); }.settings-loading { color: var(--muted); font-size: var(--text-sm); }
 .mobile-automation-button { display: none; }
 .empty-chat, .empty-list, .empty-inspector, .oc-loading { color: var(--muted); font-size: var(--text-md); } .empty-chat { padding: 18vh 0; text-align: center; } .oc-loading { display: grid; height: 100%; place-items: center; }
