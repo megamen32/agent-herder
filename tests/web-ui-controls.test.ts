@@ -42,13 +42,13 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('Автопилот отдельно решает, что делать с незавершённой задачей');
     expect(main).toContain('aria-label="Глобальное автопродолжение"');
     expect(main).toContain('Восстановление после сбоя');
-    expect(main).toContain('После ошибки хода');
+    expect(main).toContain('После ошибки выполнения');
     expect(main).toContain('После разрыва соединения');
     expect(main).toContain('recoverOnFailure');
     expect(main).toContain('recoverOnDisconnect');
     expect(main).toContain('явно остановленные человеком');
     expect(main).toContain('className="autopilot-control session-autostart-control"');
-    expect(main).toContain('Восстанавливать зависшие ходы по таймауту');
+    expect(main).toContain('Восстанавливать зависшую работу по таймауту');
     expect(main).toContain('только после заданного времени без прогресса');
     expect(main).toContain('Модель автопилота');
     expect(main).toContain('/api/models?harness=');
@@ -57,7 +57,7 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('agent-herder.event-cursor');
     expect(main).toContain('30_000');
     expect(main).toContain('Глобальный автопилот');
-    expect(main).toContain('30 минут без ответа');
+    expect(main).toContain('{timeoutMinutes} минут без ответа');
     expect(main).toContain('Последний запрос пользователя');
     expect(main).toContain('Последний ответ агента');
     expect(main).toContain('Почему нужен выбор');
@@ -117,6 +117,19 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('Автопилот: ${activeAutopilotEnabled ? "включён" : "выключен"}');
     expect(styles).toContain('.header-actions .mobile-automation-button { display: inline-flex;');
     expect(styles).toContain('.header-actions .desktop-chat-menu { display: none; }');
+    expect(styles).toContain('@media (max-width: 900px)');
+  });
+
+  it("addresses focus-group ambiguity around scope, saving, and the active timeout", () => {
+    expect(main).toContain("Настроить текущую сессию");
+    expect(main).toContain("переопределяет общую только для этой сессии");
+    expect(main).toContain("Нажатие создаст исключение только для этой сессии и применится сразу");
+    expect(main).toContain("Модель сохранится общей кнопкой");
+    expect(main).toContain("Сохранить настройки автопилота");
+    expect(main).toContain("Текущие настройки загружены");
+    expect(main).not.toContain("Доступно моделей:");
+    expect(main).not.toContain("Сохранить модель");
+    expect(main).not.toContain("30 минут без ответа (сейчас");
   });
 
   it("gives the mobile session title its own full-width row", () => {
@@ -136,7 +149,7 @@ describe("mobile chat and session controls", () => {
   it("uses plain Russian for user-facing automation settings", () => {
     expect(main).toContain("Это общий переключатель");
     expect(main).toContain("Herder не снимает закрепление после завершения");
-    expect(main).toContain("после подтверждённого сбоя");
+    expect(main).toContain("после подтверждённой ошибки");
     expect(main).toContain("ожидание ответа или разрешения человека");
     expect(main).toContain("Автопилот решает");
     expect(main).toContain("первый рекомендованный автопилотом вариант");
