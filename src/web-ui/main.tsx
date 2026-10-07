@@ -561,7 +561,7 @@ function App() {
   const [mobileView, setMobileView] = React.useState<"sessions" | "chat">(() => readSessionFromHash() ? "chat" : "sessions");
   const [showReasoning, setShowReasoning] = React.useState(false);
   const [showTools, setShowTools] = React.useState(false);
-  const [showInspector, setShowInspector] = React.useState(true);
+  const [showInspector, setShowInspector] = React.useState(() => window.innerWidth > 900);
   const [showStatistics, setShowStatistics] = React.useState(false);
   const [showJobs, setShowJobs] = React.useState(false);
   const [showQuota, setShowQuota] = React.useState(false);

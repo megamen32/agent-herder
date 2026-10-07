@@ -111,6 +111,7 @@ describe("mobile chat and session controls", () => {
   });
 
   it("keeps automation modes discoverable on mobile with their current state", () => {
+    expect(main).toContain('React.useState(() => window.innerWidth > 900)');
     expect(main).toContain('aria-label="Открыть настройки автоматизации"');
     expect(main).toContain('>Автоматизация</button>');
     expect(main).toContain('Автопродолжение · восстановление после сбоев: ${activeAutocontinueEnabled ? "включено" : "выключено"}');
