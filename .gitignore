@@ -12,6 +12,7 @@ graphify-out/
 .agent-herder/
 .serena/
 .tmpbin/
+.tmp/
 .worktrees/
 .agents/last-human-commit/
 .agents/shared-session/time/
