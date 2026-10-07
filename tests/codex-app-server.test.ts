@@ -84,7 +84,7 @@ describe("Codex app-server adapter", () => {
         const request = JSON.parse(data.toString()) as {
           id?: number;
           method?: string;
-          params?: { threadId?: string; turnId?: string; input?: Array<{ text?: string }> };
+          params?: { threadId?: string; turnId?: string; expectedTurnId?: string; input?: Array<{ text?: string }> };
         };
         if (!request.method) return;
         methods.push(request.method);
@@ -100,6 +100,10 @@ describe("Codex app-server adapter", () => {
           nextCursor: null,
           backwardsCursor: null,
         });
+        if (request.method === "turn/steer") {
+          expect(request.params?.expectedTurnId).toBe(activeTurnId);
+          return reply({ turnId: activeTurnId });
+        }
         if (request.method === "turn/start") {
           activeTurnId = `turn-unix-${++turnSequence}`;
           socket.send(JSON.stringify({
@@ -154,6 +158,20 @@ describe("Codex app-server adapter", () => {
       await expect(adapter.getSession("thread-unix")).resolves.toMatchObject({
         id: "thread-unix", meta: { activeTurnId: "turn-unix-1" },
       });
+      const beforeSteer = methods.length;
+      await expect(adapter.sendMessage("thread-unix", { message: "automated coordination", origin: "automation" })).resolves.toEqual({ ok: true });
+      expect(methods.slice(beforeSteer)).toContain("turn/steer");
+      expect(methods.slice(beforeSteer)).not.toContain("turn/start");
+      expect(methods.slice(beforeSteer)).not.toContain("thread/resume");
+      expect(activeTurnId).toBe("turn-unix-1");
+      const beforeExplicitSteer = methods.length;
+      await expect(adapter.sendMessage("thread-unix", { message: "explicit steer", steer: true, origin: "human" })).resolves.toEqual({ ok: true });
+      expect(methods.slice(beforeExplicitSteer)).toContain("turn/steer");
+      threadReadStatus = { type: "active", activeFlags: ["waitingOnUserInput"] };
+      const beforeNeedsInput = methods.length;
+      await expect(adapter.sendMessage("thread-unix", { message: "do not answer", origin: "automation" })).resolves.toMatchObject({ ok: false, nonRetryable: true });
+      expect(methods.slice(beforeNeedsInput)).not.toContain("turn/steer");
+      expect(methods.slice(beforeNeedsInput)).not.toContain("turn/start");
       threadReadStatus = { type: "idle" };
       activeTurnId = undefined;
       await expect(adapter.getSession("thread-unix")).resolves.toMatchObject({

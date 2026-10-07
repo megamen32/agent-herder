@@ -411,6 +411,33 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     await this.ensureReady();
     const session = await this.getSession(id);
     if (!session) return { ok: false, error: `Session ${id} not found` };
+    // Coordination belongs to the existing turn. Explicit queue requests retain
+    // their previous delivery behavior; human input does not release a prompt.
+    const steerActive = options.steer === true || (!options.queue && options.origin !== "human");
+    if (steerActive && session.status === "needs_input") {
+      return { ok: false, nonRetryable: true, error: "Codex is waiting for approval or user input; coordination was not delivered" };
+    }
+    if (steerActive && session.status === "running") {
+      const expectedTurnId = this.activeTurns.get(id);
+      if (!expectedTurnId) return { ok: false, nonRetryable: true, error: "Active Codex turn ID could not be verified; coordination was not delivered" };
+      try {
+        if (options.origin !== "human") {
+          await getHumanStopStore().rememberGeneratedPrompt("codex", id, options.message, expectedTurnId);
+        }
+        const result = await this.request("turn/steer", {
+          threadId: id,
+          expectedTurnId,
+          input: [{ type: "text", text: options.message }],
+        }) as { turnId?: string };
+        if (result.turnId !== expectedTurnId) {
+          return { ok: false, admitted: true, nonRetryable: true, error: "Codex steer receipt did not match the verified active turn; do not retry" };
+        }
+        return { ok: true };
+      } catch (error) {
+        // Do not turn an uncertain or raced steer into a second turn/queue item.
+        return { ok: false, nonRetryable: true, error: (error as Error).message };
+      }
+    }
     const resumed = await this.resumeSession(id);
     if (!resumed.ok) return resumed;
 
