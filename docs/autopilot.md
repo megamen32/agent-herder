@@ -356,3 +356,33 @@ IOWeight10, runtime60s, one Vitest worker, Node heap128MiB, no build or dependen
 install. Cache/temp stays under ignored project `.tmp/`, capped16MiB. Measured
 focused checks including supervisor bypass coverage used up to243MiB RSS with zero swaps. These test-job limits do
 not change service or host ceilings and do not authorize a heavy build.
+
+## Existing ZCode runtime observation
+
+The adapter's observeExistingRuntime(sessionId, cwd) source seam reads a known
+session through callIfReady and SDK runtimePolicy=existing-only; it never calls
+transport start or initialization. Cold, disconnected, unsupported or malformed
+responses remain unavailable. The projection excludes dialogues.
+
+The installed SDK snapshot has activeTurnId, pendingRequestIds, eventSeq and
+stateRevision, but does not enumerate all loaded identities or queued/admitted
+not-started input. Those counts remain unknown and idleProof is always false.
+Permission request counts are not input queue counts. No HTTP endpoint or live
+rollout is implied. Safe owner restart requires a reviewed native/SDK contract
+for complete loaded-session/generation/queue coverage at a current revision and
+an existing supported live controller channel. Directory entries, cached status
+and admission receipts cannot prove runtime idle.
+
+The missing SDK/native diagnostic contract must enumerate only already-owned
+workspace clients and their actual loaded session IDs; read each live native
+controller's current active generation IDs, queued input count, admitted inputs
+awaiting generation, pending runtime commands and background work. Include the
+SDK process/runtime identity and monotonic revision before and after collection.
+If any owned runtime is unavailable, changes during collection, or cannot report
+one of those counts, coverage is incomplete and restart admission stays held.
+Implement enumeration in the SDK process manager's ownedProcesses/existing
+client maps, never its getClient/start path; native loaded state must come from
+the native controller rather than session/list storage. The current installed
+SDK does not offer this contract, and its stdio-only live controller lacks an
+independent supported diagnostic route. Replacing it requires owner review and
+a safe handoff/idle window; this source seam does not remove that dependency.

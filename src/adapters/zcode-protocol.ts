@@ -23,6 +23,8 @@ export interface ZcodeAppServerClientOptions {
 export interface ZcodeClientLike {
   start(): Promise<void>;
   call(channel: string, method: string, args: unknown[]): Promise<unknown>;
+  /** Uses only an already-ready transport; never starts a process or reconnects. */
+  callIfReady?(channel: string, method: string, args: unknown[]): Promise<unknown>;
   listen?(channel: string, event: string, arg: unknown, handler: (payload: unknown) => void): () => void;
   onDisconnect?(handler: (error: Error) => void): () => void;
   close(): Promise<void>;
@@ -363,6 +365,10 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
 
   async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
     await this.start();
+    return this.callIfReady(channel, method, args);
+  }
+
+  async callIfReady(channel: string, method: string, args: unknown[]): Promise<unknown> {
     const child = this.child;
     if (!child || !this.ready) throw new Error("ZCode app-server is not ready");
     const requestId = this.nextRequestId++;

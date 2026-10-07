@@ -20,6 +20,7 @@ import {
   type SetPermissionsOptions,
 } from "../types/index.js";
 import { ZcodeAppServerClient, type ZcodeClientLike } from "./zcode-protocol.js";
+import { readExistingZcodeRuntimeObservation } from "./zcode-runtime-observation.js";
 import { lifecycleEntryFor, lifecycleStateFor, type SessionLifecycleSnapshot } from "../session-lifecycle.js";
 import { getHumanStopStore } from "../human-stop-store.js";
 
@@ -948,6 +949,11 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   isReady(): boolean { return this.initialized; }
+
+  /** Partial native observation: does not start transport or workspace runtime. */
+  async observeExistingRuntime(sessionId: string, cwd: string) {
+    return readExistingZcodeRuntimeObservation(this.client, this.workspace(cwd), sessionId);
+  }
 
   getSessionSnapshotReceipt(): SessionSnapshotReceipt {
     return { ...this.sessionSnapshotReceipt };
