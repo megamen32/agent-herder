@@ -43,3 +43,9 @@ At 2026-10-07T17:19:12.400648+00:00, recovery worker changes are now visible as 
 ## Source-only publication slice
 
 Lightweight Node v22.22.3 native TypeScript syntax checks (`--max-old-space-size=64 --experimental-strip-types --check`) passed for src/adapters/fast-agent.ts, tests/fast-agent-file-adapter.test.ts and src/web/server.ts; git diff --check passed. These are syntax/diff checks, not semantic targeted tests or runtime acceptance. Reviewed integrated source and handoff are being committed/pushed before any dependent deployment. The recovery worker's two guard files and independent test remain untouched and outside this slice. Heavy verification, build and canary remain blocked; publication is not completion.
+
+## Published source receipt
+
+Integrated merge `1787dc5763a22a5fc232573eaf3c3497286b547c` is pushed and after fetch HEAD equals origin/main. Parents are f11fd4b9e490fa9cff456b825789f708c45aca53 and7543b1bf50219780a72c4fac188a7c363cc86ebf. All twelve reviewed integration paths plus this handoff were included; recovery guard paths/test were excluded and preserved. UserIO owner was sent the exact SHA and explicitly told their deep live canary is not ready.
+
+Latest resource observation 2026-10-07T17:24:03.246896+00:00: {"memory.current": 37846757376, "memory.high": 38654705664, "memory.max": 47244640256, "memory.swap.current": 4294922240, "memory.swap.max": 4294967296}. No permitted heavy verification window has been obtained. Safe independent reads/changes and source publication are finished; focused semantic tests, agreed Herder build/deployment and same-session second-turn browser acceptance remain blocked. Mac identity mismatch additionally blocks synchronization. Do not describe this task as complete or restart any native daemon/bridge to try to unblock it.
