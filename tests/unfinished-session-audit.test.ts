@@ -2,7 +2,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { completionEvidence, createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, enforcePlanWorkspaceBoundaries, estimateBatchPlannerInputTokens, estimateContextTokens, fitBatchContext, fitBatchContextForSerializedRequest, SessionAutostartStore, UnfinishedSessionStore, } from "../src/autopilot/unfinished-session-launcher.js";
+import { batchPlanChunkSize, completionEvidence, createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, enforcePlanWorkspaceBoundaries, estimateBatchPlannerInputTokens, estimateContextTokens, fitBatchContext, fitBatchContextForSerializedRequest, SessionAutostartStore, UnfinishedSessionStore, } from "../src/autopilot/unfinished-session-launcher.js";
 import type { AgentSession, SessionMessageView } from "../src/types/index.js";
 function fixtureSession(status: AgentSession["status"] = "idle", harness: "codex" | "zcode" = "zcode"): AgentSession {
     return {
@@ -19,6 +19,19 @@ function fixtureSession(status: AgentSession["status"] = "idle", harness: "codex
     };
 }
 describe("explicit unfinished inventory pure contracts", () => {
+    it("caps planner batch width independently from the output allowance", () => {
+        const previous = process.env.AGENT_HERDER_UNFINISHED_BATCH_SESSIONS_PER_REQUEST;
+        process.env.AGENT_HERDER_UNFINISHED_BATCH_SESSIONS_PER_REQUEST = "2";
+        try {
+            expect(batchPlanChunkSize(4096)).toBe(2);
+        }
+        finally {
+            if (previous === undefined)
+                delete process.env.AGENT_HERDER_UNFINISHED_BATCH_SESSIONS_PER_REQUEST;
+            else
+                process.env.AGENT_HERDER_UNFINISHED_BATCH_SESSIONS_PER_REQUEST = previous;
+        }
+    });
     it("always gives MiniMax the first user goal, latest request, and latest model answer", () => {
         const evidence = completionEvidence([
             { id: "u-old", role: "user", text: "старый запрос", parts: [{ type: "text", text: "старый запрос" }] },

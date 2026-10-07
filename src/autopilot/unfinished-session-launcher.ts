@@ -4109,8 +4109,16 @@ function configuredBatchOutputTokens(): number {
   );
 }
 
-function batchPlanChunkSize(outputTokens = configuredBatchOutputTokens()): number {
-  return Math.max(1, Math.min(MAX_BATCH_PLAN_SESSIONS_PER_REQUEST, Math.floor(outputTokens / 512)));
+export function batchPlanChunkSize(outputTokens = configuredBatchOutputTokens()): number {
+  const configuredSessionCap = positiveInteger(
+    Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_SESSIONS_PER_REQUEST || MAX_BATCH_PLAN_SESSIONS_PER_REQUEST),
+    MAX_BATCH_PLAN_SESSIONS_PER_REQUEST,
+  );
+  return Math.max(1, Math.min(
+    MAX_BATCH_PLAN_SESSIONS_PER_REQUEST,
+    configuredSessionCap,
+    Math.floor(outputTokens / 512),
+  ));
 }
 
 /** Conservative common envelope used only to reserve the shared wire-input budget. */
