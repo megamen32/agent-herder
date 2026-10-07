@@ -6,6 +6,7 @@ import { z } from "zod";
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
 
 import { HarnessAdapter } from "./types/index.js";
 import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, ChatGptAdapter } from "./adapters/index.js";
@@ -14,7 +15,7 @@ import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { AutopilotSessionStore } from "./autopilot/session-store.js";
 import { AutomationLaunchPolicyStore } from "./automation-launch-policy.js";
-import { createAnthropicCompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
+import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
 import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore } from "./autopilot/index.js";
 import { acquireLock } from "./autopilot-hook.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
@@ -81,6 +82,14 @@ export function createDynamicSessionCompletionJudge(
       return reconcile(input);
     },
   };
+}
+
+/** Read an operator-selected credential file without placing its value in config or argv. */
+export async function readCredentialFile(path: string | undefined): Promise<string | undefined> {
+  if (!path?.trim()) return undefined;
+  const value = (await readFile(path.trim(), "utf8")).trim();
+  if (!value) throw new Error(`Credential file is empty: ${path.trim()}`);
+  return value;
 }
 
 // ===== Create adapters =====
@@ -597,18 +606,26 @@ async function main() {
   const cacheHandoff = process.env.AGENT_HERDER_CACHE_HANDOFF_ENABLED === "false"
     ? undefined
     : new CacheHandoffService(adapters, handoffSummarizer, lineageStore, process.env, humanStopStore);
-  const unfinishedJudgeToken = process.env.AGENT_HERDER_UNFINISHED_JUDGE_TOKEN || process.env.MINIMAX_API_KEY;
-  const unfinishedJudgeClients = new Map<string, ReturnType<typeof createAnthropicCompatibleSessionCompletionJudge>>();
+  const unfinishedJudgeProtocol = process.env.AGENT_HERDER_UNFINISHED_JUDGE_PROTOCOL?.trim().toLowerCase() === "openai"
+    ? "openai" as const
+    : "anthropic" as const;
+  const unfinishedJudgeToken = process.env.AGENT_HERDER_UNFINISHED_JUDGE_TOKEN
+    || await readCredentialFile(process.env.AGENT_HERDER_UNFINISHED_JUDGE_TOKEN_FILE)
+    || process.env.MINIMAX_API_KEY;
+  const unfinishedJudgeBaseUrl = process.env.AGENT_HERDER_UNFINISHED_JUDGE_BASE_URL
+    || (unfinishedJudgeProtocol === "openai"
+      ? "https://api.z.ai/api/paas/v4"
+      : process.env.AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL || "https://api.minimax.io/anthropic");
+  const unfinishedJudgeClients = new Map<string, SessionCompletionJudge>();
   const getUnfinishedJudgeClient = async () => {
     const model = (await sessionAutostartStore.getSettings()).judgeModel;
-    let client = unfinishedJudgeClients.get(model);
+    const cacheKey = `${unfinishedJudgeProtocol}:${unfinishedJudgeBaseUrl}:${model}`;
+    let client = unfinishedJudgeClients.get(cacheKey);
     if (!client) {
-      client = createAnthropicCompatibleSessionCompletionJudge({
-        baseUrl: process.env.AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL || "https://api.minimax.io/anthropic",
-        model,
-        token: unfinishedJudgeToken!,
-      });
-      unfinishedJudgeClients.set(model, client);
+      client = unfinishedJudgeProtocol === "openai"
+        ? createOpenAICompatibleSessionCompletionJudge({ baseUrl: unfinishedJudgeBaseUrl, model, token: unfinishedJudgeToken })
+        : createAnthropicCompatibleSessionCompletionJudge({ baseUrl: unfinishedJudgeBaseUrl, model, token: unfinishedJudgeToken! });
+      unfinishedJudgeClients.set(cacheKey, client);
     }
     return client;
   };
@@ -620,6 +637,8 @@ async function main() {
     adapters,
     store: unfinishedSessionStore,
     settingsStore: sessionAutostartStore,
+    autopilotPolicyStore,
+    autopilotSessionStore,
     notify: createUnfinishedSessionNotifier(),
     cacheHandoff,
     judge: unfinishedJudge,

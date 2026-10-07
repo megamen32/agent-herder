@@ -6,6 +6,9 @@ import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessType, SendMessa
 import type { HumanStopStore } from "../human-stop-store.js";
 import { cacheWindowFor, continuationModelFor, movePinnedContinuation, semanticTranscript, unfinishedProbeDelayMs, type CacheHandoffService } from "../cache-handoff.js";
 import { deferredMessages, isBusyCodexWriter, type DeferredMessageStore } from "../deferred-messages.js";
+import { effectivePolicyAllowsTarget, type EffectivePolicy } from "./policy.js";
+import type { AutopilotPolicyStore } from "./policy-store.js";
+import type { AutopilotSessionStore } from "./session-store.js";
 
 const SUPPORTED_HARNESSES: readonly HarnessType[] = ["codex", "opencode", "claude", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
 const DEFAULT_CONTINUATION = "Продолжи незавершённую задачу с того места, где выполнение было прервано. Сначала проверь текущее состояние и не повторяй уже завершённые действия.";
@@ -109,6 +112,7 @@ type NativeLastTurn = {
   blockedReason?: string;
   errorType?: string;
   errorCode?: string;
+  transportLost?: boolean;
 };
 
 function nativeTimestamp(value: unknown): string | undefined {
@@ -141,6 +145,7 @@ function nativeLastTurn(session: AgentSession | null | undefined): NativeLastTur
     ...(typeof record.progressedAfterFailure === "boolean" ? { progressedAfterFailure: record.progressedAfterFailure } : {}),
     ...(typeof record.pendingInput === "boolean" ? { pendingInput: record.pendingInput } : {}),
     ...(typeof record.requiresHuman === "boolean" ? { requiresHuman: record.requiresHuman } : {}),
+    ...(typeof record.transportLost === "boolean" ? { transportLost: record.transportLost } : {}),
     ...(blockedReason ? { blockedReason } : {}),
     ...(errorType ? { errorType } : {}), ...(errorCode ? { errorCode } : {}),
   } : undefined;
@@ -151,6 +156,7 @@ function coldFailureBlockReason(turn: NativeLastTurn): string | undefined {
   if (turn.requiresHuman === true || /captcha|human|required.?action|action.?required|interaction.?required|permission|authentication|reauth|login.?required|consent/i.test(diagnostic)) {
     return `Сбой требует действия человека${turn.blockedReason || diagnostic ? `: ${turn.blockedReason || diagnostic}` : ""}`;
   }
+  if (turn.transportLost === true) return undefined;
   if (turn.retryable !== true) return turn.retryable === false
     ? "Нативный сбой не допускает автоматический повтор"
     : "Нативный сбой не содержит подтверждённого разрешения на повтор";
@@ -1106,6 +1112,10 @@ export interface UnfinishedSessionLauncherOptions {
   cacheHandoff?: Pick<CacheHandoffService, "maybeRollover">;
   /** Independent durable fence for sessions explicitly stopped by a human. */
   humanStopStore?: HumanStopStore;
+  /** Durable Autopilot master policy; semantic backlog work stays opt-in. */
+  autopilotPolicyStore?: Pick<AutopilotPolicyStore, "readEffective">;
+  /** Per-session Autopilot switches override the enabled harness policy. */
+  autopilotSessionStore?: Pick<AutopilotSessionStore, "get">;
   /** Stable only for one Agent Herder process; tests may inject it. */
   generationId?: string;
 }
@@ -1711,7 +1721,8 @@ export class UnfinishedSessionLauncher {
       if (record.recoveryTurnId && lastTurn?.turnId) {
         const terminal = lastTurn.status?.toLowerCase();
         if (lastTurn.turnId !== record.recoveryTurnId
-          || terminal === "completed" || terminal === "succeeded" || terminal === "success" || terminal === "interrupted" || terminal === "cancelled") {
+          || terminal === "completed" || terminal === "succeeded" || terminal === "success" || terminal === "interrupted"
+          || (terminal === "cancelled" && lastTurn.transportLost !== true)) {
           await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
           continue;
         }
@@ -1795,6 +1806,14 @@ export class UnfinishedSessionLauncher {
       launches.push(this.launchContinuation(adapter, record, attempt, session, lifecycleEpoch, recoveryFence, observedTurnGeneration));
     }
     await Promise.all(launches);
+    if (!this.lifecycleActive(lifecycleEpoch)) return;
+    const semanticAutopilot = await this.semanticAutopilotPolicy();
+    if (semanticAutopilot) {
+      const outcome = await this.discoverUnfinishedSessions(lifecycleEpoch, semanticAutopilot);
+      if (outcome === "blocked") {
+        console.error("[agent-herder] LLM-автопилот не построил безопасный план; повтор будет выполнен по backoff");
+      }
+    }
   }
 
   private async ingestColdZcodeFailures(runtimeSettings: SessionAutostartFile, lifecycleEpoch: number): Promise<void> {
@@ -1816,13 +1835,16 @@ export class UnfinishedSessionLauncher {
       const turn = nativeLastTurn(session);
       if (session.harness !== "zcode" || isSubagentSession(session) || turn?.rootSession !== true) continue;
       if (session.status === "running" || session.status === "needs_input" || session.needsPermission || hasPendingNativePermission(session)) continue;
-      if (!turn.turnId || turn.status?.toLowerCase() !== "error" || !turn.startedAt || !turn.completedAt || !turn.userMessageId) continue;
+      const terminalStatus = turn.status?.toLowerCase();
+      const transportLost = terminalStatus === "cancelled" && turn.transportLost === true;
+      if (!turn.turnId || (terminalStatus !== "error" && !transportLost) || !turn.startedAt || !turn.completedAt || !turn.userMessageId) continue;
       const startedAt = Date.parse(turn.startedAt);
       const completedAt = Date.parse(turn.completedAt);
       if (!Number.isFinite(startedAt) || !Number.isFinite(completedAt)
         || startedAt > completedAt || completedAt < cutoff || completedAt > now) continue;
-      if (turn.cancelledByUser !== false || turn.userMessageMatchesLatest !== true
-        || turn.assistantSucceeded !== false || turn.progressedAfterFailure !== false || turn.pendingInput !== false) continue;
+      if (turn.pendingInput !== false) continue;
+      if (!transportLost && (turn.cancelledByUser !== false || turn.userMessageMatchesLatest !== true
+        || turn.assistantSucceeded !== false || turn.progressedAfterFailure !== false)) continue;
       if (!await this.isEnabled("zcode", session.id, session.cwd)) continue;
       if (this.options.humanStopStore && await this.options.humanStopStore.isHeld("zcode", session.id)) continue;
       await this.options.store.ingestColdFailure(session, {
@@ -2018,7 +2040,7 @@ export class UnfinishedSessionLauncher {
     }
   }
 
-  private async discoverUnfinishedSessions(lifecycleEpoch: number): Promise<DiscoveryOutcome> {
+  private async discoverUnfinishedSessions(lifecycleEpoch: number, semanticAutopilot?: EffectivePolicy): Promise<DiscoveryOutcome> {
     const runtimeSettings = await this.options.settingsStore.getSettings();
     const inventoryWindowMs = this.options.inventoryWindowMs
       ?? runtimeSettings.inventoryWindowHours * 60 * 60 * 1_000;
@@ -2028,6 +2050,7 @@ export class UnfinishedSessionLauncher {
     const observedSourceKeys = new Set<string>();
     for (const [provider, adapter] of this.options.adapters) {
       if (!isAutocontinueInventoryHarness(provider) || !adapter.resumeSession) continue;
+      if (semanticAutopilot && !semanticAutopilot.policy.harnesses.includes(provider)) continue;
       if ((provider === "codex" || provider === "zcode") && adapter.isReady && !adapter.isReady()) {
         try {
           await adapter.init();
@@ -2132,7 +2155,13 @@ export class UnfinishedSessionLauncher {
       for (const { adapter, session } of candidates) {
         await new Promise<void>((resolve) => setImmediate(resolve));
         if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
-        const autoResumeEnabled = await this.isEnabled(session.harness, session.id, session.cwd);
+        const nativeTurn = nativeLastTurn(session);
+        const nativeHumanGate = nativeTurn?.cancelledByUser === true
+          || nativeTurn?.requiresHuman === true
+          || nativeTurn?.pendingInput === true;
+        const autoResumeEnabled = await this.isEnabled(session.harness, session.id, session.cwd)
+          && !nativeHumanGate
+          && (!semanticAutopilot || await this.semanticAutopilotAllows(session, semanticAutopilot));
         const sourceKey = sessionSourceKey(session);
         let urgent = this.urgentSessions.has(sourceKey) || this.urgentSessions.has(sessionKey(session.harness, session.id));
         const urgentSignalVersions = new Map([sourceKey, sessionKey(session.harness, session.id)]
@@ -2271,7 +2300,8 @@ export class UnfinishedSessionLauncher {
           return "blocked";
         }
         if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
-        await this.recordBatchAudit(plan, assessed);
+        if (semanticAutopilot) await this.applyBatchPlan(plan, assessed, lifecycleEpoch);
+        else await this.recordBatchAudit(plan, assessed);
         return "ready";
       }
       // Empty fresh inventory is not an unsafe planner failure. Persisted
@@ -2378,6 +2408,16 @@ export class UnfinishedSessionLauncher {
     plan = canonicalizePlanSourceKeys(plan, assessed);
     assertBatchPlanCoverage(plan, assessed);
     plan = enforcePlanWorkspaceBoundaries(plan, byId);
+    // A global backlog sweep must finish each native chat in place. Splitting
+    // planner clusters prevents one primary session from absorbing and
+    // disabling other ZCode chats which still have their own user-visible IDs.
+    plan = {
+      groups: plan.groups.flatMap((group) => group.sourceSessionIds.map((sourceSessionId) => ({
+        ...group,
+        sourceSessionIds: [sourceSessionId],
+        primarySessionId: sourceSessionId,
+      }))),
+    };
     const latestActivity = (group: SessionBatchPlanGroup): number => Math.max(...group.sourceSessionIds.map((id) => Date.parse(byId.get(id)!.session.lastActivity)));
     const groups = [...plan.groups].sort((left, right) => latestActivity(right) - latestActivity(left));
     const inventoryBatch: UnfinishedSessionInventoryRecord[] = [];
@@ -2753,6 +2793,27 @@ export class UnfinishedSessionLauncher {
       }
     }
     if (this.lifecycleActive(lifecycleEpoch)) await this.options.store.upsertInventoryBatch(inventoryBatch);
+  }
+
+  private async semanticAutopilotPolicy(): Promise<EffectivePolicy | null> {
+    if (!this.options.judge?.plan || !this.options.autopilotPolicyStore) return null;
+    const effective = await this.options.autopilotPolicyStore.readEffective();
+    if (effective.source === "error" || !effective.policy.enabled) return null;
+    return effective.policy.harnesses.some((harness) => harness === "codex" || harness === "zcode")
+      ? effective
+      : null;
+  }
+
+  private async semanticAutopilotAllows(session: AgentSession, effective: EffectivePolicy): Promise<boolean> {
+    if (session.harness !== "codex" && session.harness !== "zcode") return false;
+    if (!effective.policy.enabled) return false;
+    const override = await this.options.autopilotSessionStore?.get(session.harness, session.id);
+    if (override) return override.enabled;
+    return effectivePolicyAllowsTarget(effective, {
+      harness: session.harness,
+      sessionId: session.id,
+      cwd: session.cwd,
+    });
   }
 
   private async planAssessedSessions(assessed: AssessedSession[]): Promise<SessionBatchPlan> {

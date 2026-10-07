@@ -140,7 +140,10 @@ describe("OpenCode native recovery controls", () => {
     });
 
     expect(result).toContain("Message sent to [opencode] direct-parent (queued).");
-    expect(JSON.parse(sentBody)).toEqual({ parts: [{ type: "text", text: "reply to parent" }] });
+    expect(JSON.parse(sentBody)).toEqual({ parts: [{
+      type: "text",
+      text: "🤖 Сообщение от AI-сессии\nОтправитель неизвестен: сессия не указана.\n\nreply to parent",
+    }] });
   });
 
   it("creates a named session with the requested directory", async () => {

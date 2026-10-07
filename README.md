@@ -215,6 +215,7 @@ The common switches are:
 | `AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY` | `3` | Maximum simultaneous planner calls, capped at three; managed server-100 uses one to preserve shared provider capacity |
 | `CODEX_APP_SERVER_SOCKET` | — | Join the existing managed Codex daemon through its Unix WebSocket endpoint so Desktop and Herder share native thread/turn control |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Direct MiniMax Anthropic-compatible classifier endpoint; avoids an extra gateway hop |
+| `AGENT_HERDER_UNFINISHED_JUDGE_PROTOCOL` / `AGENT_HERDER_UNFINISHED_JUDGE_BASE_URL` / `AGENT_HERDER_UNFINISHED_JUDGE_TOKEN_FILE` | `anthropic` / provider default / — | Select an OpenAI-compatible direct judge and load its credential from an operator-owned file without copying it into tracked configuration |
 | `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash-Preview` | Default classifier model; the Web UI runtime selection overrides it and reads `MINIMAX_API_KEY` from the protected service environment |
 | `AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS` | `600000` | Timeout for explicit semantic audit; its result cannot authorize recovery |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ENABLED` | `true` | Enable MiniMax for explicit semantic audit only, not crash recovery |
@@ -227,9 +228,11 @@ The common switches are:
 | `AGENT_HERDER_HTTP_TOKEN` | — | Required when the web host is non-loopback |
 | `AGENT_HERDER_TRANSCRIPT_ARCHIVE_DIR` | `.agent-herder/transcripts` | Relative archive path inside the MCP process CWD |
 
-Autocontinue restores only interrupted native turns in the same session. Its loop consumes durable, correlated failure evidence; it does not call the semantic MiniMax planner or start replacement chats. An explicit inventory audit may classify tasks without authorizing recovery. Autopilot owns decisions about unfinished work.
+Autocontinue restores only interrupted native turns in the same session. Its crash-recovery path consumes durable, correlated failure evidence and never starts replacement chats. When the durable Autopilot policy enables Codex or ZCode, its 48-hour LLM inventory also becomes a background, same-ID backlog sweep for only those harnesses; each unfinished chat resumes separately. With Autopilot disabled, explicit inventory audit remains read-only.
 
 Web settings expose failure and disconnect recovery independently, plus a separate opt-in stalled-turn timeout. Normal completion, running sessions, human input/approval, human stops, non-retryable admissions and native Codex subagent threads block recovery. See [crash recovery](docs/autopilot.md#crash-recovery-autocontinue) for details.
+
+For remote ZCode sessions, Autocontinue also recognizes the durable SSH-loss tuple: the remote task index still says `running`, while the newest root turn ended as `cancelled` and no explicit human-stop receipt exists. This remains a same-ID recovery and does not invoke the LLM. Autopilot separately judges normally completed work and the 48-hour backlog.
 
 ## Develop locally
 

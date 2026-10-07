@@ -10,6 +10,7 @@ describe("/autopilot plugin surfaces", () => {
     const claudeManifest = readFileSync(resolve(root, ".claude-plugin/plugin.json"), "utf8");
     const claudeHooks = readFileSync(resolve(root, "hooks/hooks.json"), "utf8");
     const commandLauncher = readFileSync(resolve(root, "skills/autopilot/scripts/run.sh"), "utf8");
+    const sharedCommandLauncher = readFileSync(resolve(root, "scripts/autopilot-command-launcher.sh"), "utf8");
     const opencode = readFileSync(resolve(root, "integrations/opencode/agent-herder-autopilot.js"), "utf8");
     const hermes = readFileSync(resolve(root, "integrations/hermes/agent-herder-autopilot/__init__.py"), "utf8");
     const zcodeHooks = readFileSync(resolve(root, "integrations/zcode/agent-herder-autopilot/hooks/hooks.json"), "utf8");
@@ -26,6 +27,8 @@ describe("/autopilot plugin surfaces", () => {
     expect(claudeHooks).toContain("${CLAUDE_PLUGIN_ROOT}/scripts/claude-autopilot-hook-launcher.sh");
     expect(commandLauncher).toContain("CLAUDE_CODE_SESSION_ID");
     expect(commandLauncher).toContain("harness=claude");
+    expect(sharedCommandLauncher).toContain(".config/agent-herder/autopilot.env");
+    expect(sharedCommandLauncher).toContain("AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN_FILE");
     expect(packageJson.files).toEqual(expect.arrayContaining([
       ".claude-plugin/plugin.json",
       "hooks/hooks.json",

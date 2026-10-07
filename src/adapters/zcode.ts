@@ -738,6 +738,8 @@ export interface NativeLastTurn {
   progressedAfterFailure?: boolean;
   requiresHuman?: boolean;
   blockedReason?: string;
+  /** A remote SSH task still expected to run, but its exact latest turn was cancelled without a durable human-stop receipt. */
+  transportLost?: boolean;
 }
 
 /** Latest durable turn for one session, or undefined when the rows are stale
@@ -1243,7 +1245,7 @@ export class ZcodeAdapter implements HarnessAdapter {
                   if (!lastTurn) continue;
                   lastTurn.rootSession = entry.rootKnown && !entry.parentId;
                   if (pendingInputsKnown) lastTurn.pendingInput = nativePendingInputs.has(sessionId);
-                  if (lastTurn.status === "error" && lastTurn.userMessageId && latestMessage && latestUser) {
+                  if ((lastTurn.status === "error" || lastTurn.status === "cancelled") && lastTurn.userMessageId && latestMessage && latestUser) {
                     try {
                       const user = latestUser.get(sessionId) as { id?: string; sequence?: number } | undefined;
                       const tail = latestMessage.get(sessionId) as { id?: string; data?: string; time_updated?: number; sequence?: number } | undefined;
@@ -1319,7 +1321,7 @@ export class ZcodeAdapter implements HarnessAdapter {
             now: Date.now(),
             activeWindowMs,
           });
-          const turn = native?.lastTurn;
+          const turn = native?.lastTurn ? { ...native.lastTurn } : undefined;
           // The task index can flatten a failed native turn to completed. Only
           // exact current transcript evidence may overlay that historical row;
           // a running lifecycle or pending human request always wins.
@@ -1334,6 +1336,21 @@ export class ZcodeAdapter implements HarnessAdapter {
           if (requestedCwd && cwd !== requestedCwd) continue;
           const workspaceIdentity = native?.workspaceIdentity || nonEmptyString(row.workspace_identity) || cwd;
           const workspaceKey = nonEmptyString(row.workspace_key) || cwd;
+          // A detached SSH client can abort its ZCode process while the task
+          // index still says this exact root task is running. ZCode records
+          // that transport abort as cancelled_by_user=1, so the flag alone is
+          // not human-stop proof. The durable HumanStopStore remains the
+          // authority; mark this readonly tuple for cold same-ID recovery.
+          if (turn?.status === "cancelled"
+            && turn.cancelledByUser === true
+            && rawStatus === "running"
+            && workspaceIdentity.startsWith("remote:ssh:")
+            && turn.rootSession === true
+            && turn.pendingInput === false
+            && turn.requiresHuman !== true) {
+            turn.transportLost = true;
+            if (status !== "needs_input") status = "error";
+          }
           this.persistedSessionIds.add(row.task_id);
           this.sessionWorkspaces.set(row.task_id, {
             workspacePath: cwd,
@@ -1356,7 +1373,7 @@ export class ZcodeAdapter implements HarnessAdapter {
               workspaceIdentity,
               duplicateTaskRows: duplicateRows.length,
               ...(nativeTimeUpdated ? { nativeTimeUpdated } : {}),
-              ...(native?.lastTurn ? { nativeLastTurn: native.lastTurn } : {}),
+              ...(turn ? { nativeLastTurn: turn } : {}),
               ...(nativeTimeUpdated && nativeTimeUpdated > updatedAt ? { lastActivitySource: "native-session-db" } : {}),
               ...(duplicateRows.length > 1 ? {
                 taskIndexWorkspacePaths: duplicateRows.map((candidate) => candidate.workspace_path).filter(Boolean),

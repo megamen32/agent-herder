@@ -112,6 +112,23 @@ Missing schema or ambiguous evidence never authorizes a retry. Native
 blocked with a durable reason and no native send. A client SSH disconnect alone
 is not evidence that a server-side turn crashed.
 
+Remote ZCode has one narrower cold-recovery exception: if a
+`remote:ssh:` task index still says the root task is running while its newest
+durable turn was cancelled, the transport has gone away without a normal
+terminal event. ZCode labels that abort `cancelled_by_user` even when the SSH
+client died, so the native bit is not treated as a human-stop receipt. In this
+tuple Autocontinue resumes the same session once; a durable HumanStopStore
+receipt, pending input, or a human-verification gate still blocks it.
+
+When the durable Autopilot policy enables `zcode` or `codex`, the background
+48-hour semantic inventory becomes an active Autopilot backlog sweep for only
+those enabled harnesses. The LLM classifies each chat, then resumes every
+unfinished native session under its original session ID. Planner clusters are
+split before dispatch so one chat cannot absorb or disable another. Session
+overrides, explicit human-stop fences, cancellations, pending input/permission,
+and human-verification gates still block delivery. With Autopilot disabled the
+same inventory remains a read-only explicit audit.
+
 ## Agent Plugin package
 
 Agent Herder ships an [Agent Plugins 1.0](https://agent-plugins.org/) package.
@@ -212,6 +229,12 @@ AGENT_HERDER_AUTOPILOT_JUDGE_BASE_URL=https://judge.example/v1
 AGENT_HERDER_AUTOPILOT_JUDGE_MODEL=model-name
 AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN=...
 ```
+
+For a direct provider credential already stored on disk, set
+`AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN_FILE` instead of copying the secret into
+the environment file. Both launchers load public endpoint/model settings from
+`~/.config/agent-herder/autopilot.env` and read only the first line of that
+credential file inside the hook process.
 
 ## All-session mode
 

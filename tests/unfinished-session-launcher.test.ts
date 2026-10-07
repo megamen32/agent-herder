@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { completionEvidence, createAnthropicCompatibleSessionCompletionJudge, fitBatchContext, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type UnfinishedSessionNotice } from "../src/autopilot/unfinished-session-launcher.js";
+import { AutopilotPolicyStore } from "../src/autopilot/policy-store.js";
+import { AutopilotSessionStore } from "../src/autopilot/session-store.js";
 import { getHumanStopStore } from "../src/human-stop-store.js";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "../src/types/index.js";
 function fixture(status: AgentSession["status"] = "idle", harness: "codex" | "zcode" = "codex", id = "session-1"): AgentSession {
@@ -83,6 +85,47 @@ describe("unfinished session crash recovery", () => {
         const launcher = new UnfinishedSessionLauncher({ adapters: new Map([["codex", fakeAdapter(() => current, calls)]]), store: new UnfinishedSessionStore(join(root, "state.json")), settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), judge: { async decide() { return { verdict: "unfinished", reason: "semantic", confidence: 1 }; }, async plan() { plans += 1; return { groups: [] }; } } });
         await launcher.recoverPending();
         await launcher.recoverPending();
+        await launcher.recoverPending();
+        expect(plans).toBe(0);
+        expect(calls).toEqual({ resumes: 0, messages: [] });
+    });
+    it("runs a ZCode-only semantic backlog through enabled Autopilot and preserves each session id", async () => {
+        const root = await mkdtemp(join(tmpdir(), "semantic-zcode-autopilot-"));
+        const sessions = [fixture("idle", "zcode", "zcode-1"), fixture("idle", "zcode", "zcode-2")];
+        const calls = { resumes: [] as string[], messages: [] as Array<{ id: string; message: string }> };
+        const adapter: HarnessAdapter = {
+            type: "zcode", name: "fixture", async init() { }, async listSessions() { return sessions.map((session) => ({ ...session })); },
+            async getSession(id) { return sessions.find((session) => session.id === id) ?? null; },
+            async getSessionMessages(id) { return [{ id: `${id}-u`, role: "user", text: `finish ${id}`, parts: [{ type: "text", text: `finish ${id}` }] }]; },
+            async resumeSession(id) { calls.resumes.push(id); return { ok: true }; },
+            async sendMessage(id, input) { calls.messages.push({ id, message: input.message }); return { ok: true }; },
+            async stopSession() { return { ok: true }; }, async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+        };
+        const policyStore = new AutopilotPolicyStore(join(root, "autopilot-policy.json"));
+        await policyStore.replacePolicy({ schemaVersion: 1, enabled: true, harnesses: ["zcode"], scope: { mode: "all_ingress" }, maxContinuationsPerSession: 10, timeout: { mode: "auto_continue", delayMs: 1000 }, card: { includeUserMessage: true, includeAssistantMessage: true, includeReason: true } }, null);
+        const launcher = new UnfinishedSessionLauncher({
+            adapters: new Map([["zcode", adapter]]), store: new UnfinishedSessionStore(join(root, "state.json")),
+            settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), autopilotPolicyStore: policyStore,
+            autopilotSessionStore: new AutopilotSessionStore(join(root, "sessions.json")), discoveryIdleMs: 1,
+            judge: { async decide() { return { verdict: "unfinished", reason: "work remains", confidence: 1 }; }, async plan({ sessions: candidates }) { return { groups: [{ sourceSessionIds: candidates.map(({ session }) => session.id), primarySessionId: candidates[0]!.session.id, verdict: "unfinished", reason: "work remains", confidence: 1, topic: "shared topic", handoff: "finish the task" }] }; } },
+        });
+        await launcher.recoverPending();
+        expect(calls.resumes.sort()).toEqual(["zcode-1", "zcode-2"]);
+        expect(calls.messages.map(({ id }) => id).sort()).toEqual(["zcode-1", "zcode-2"]);
+    });
+    it("does not inventory or resume Codex when the durable Autopilot policy selects only ZCode", async () => {
+        const root = await mkdtemp(join(tmpdir(), "semantic-zcode-only-"));
+        const current = fixture("idle", "codex", "codex-1");
+        const calls = { resumes: 0, messages: [] as string[] };
+        let plans = 0;
+        const policyStore = new AutopilotPolicyStore(join(root, "autopilot-policy.json"));
+        await policyStore.replacePolicy({ schemaVersion: 1, enabled: true, harnesses: ["zcode"], scope: { mode: "all_ingress" }, maxContinuationsPerSession: 10, timeout: { mode: "auto_continue", delayMs: 1000 }, card: { includeUserMessage: true, includeAssistantMessage: true, includeReason: true } }, null);
+        const launcher = new UnfinishedSessionLauncher({
+            adapters: new Map([["codex", fakeAdapter(() => current, calls)]]), store: new UnfinishedSessionStore(join(root, "state.json")),
+            settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), autopilotPolicyStore: policyStore,
+            autopilotSessionStore: new AutopilotSessionStore(join(root, "sessions.json")), discoveryIdleMs: 1,
+            judge: { async decide() { return { verdict: "unfinished", reason: "work remains", confidence: 1 }; }, async plan() { plans += 1; return { groups: [] }; } },
+        });
         await launcher.recoverPending();
         expect(plans).toBe(0);
         expect(calls).toEqual({ resumes: 0, messages: [] });
@@ -276,6 +319,17 @@ describe("unfinished session crash recovery", () => {
             expect((await state.list())[0]?.recoveryBlockedReason).toBeTruthy();
             expect((await state.list())[0]?.acceptedAt).toBeUndefined();
         }
+    });
+
+    it("recovers one exact remote SSH cancellation as transport loss in the same ZCode session", async () => {
+        const root = await mkdtemp(join(tmpdir(), "cold-ssh-transport-loss-"));
+        const current = { ...coldFailureSession({ status: "cancelled", retryable: false, cancelledByUser: true, transportLost: true }), meta: { ...coldFailureSession().meta, persistedTaskStatus: "running", workspaceIdentity: "remote:ssh:example.test:22:user:/workspace", nativeLastTurn: { ...(coldFailureSession().meta!.nativeLastTurn as Record<string, unknown>), status: "cancelled", retryable: false, cancelledByUser: true, transportLost: true, userMessageMatchesLatest: false, progressedAfterFailure: true } } };
+        const calls = { resumes: 0, messages: [] as string[] };
+        const state = new UnfinishedSessionStore(join(root, "state.json"));
+        await new UnfinishedSessionLauncher({ adapters: new Map([["zcode", fakeAdapter(() => current, calls)]]), store: state, settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) }).recoverPending();
+        expect(calls.resumes).toBe(1);
+        expect(calls.messages).toHaveLength(1);
+        expect((await state.list())[0]).toMatchObject({ sessionId: current.id, recoveryTurnId: "native-turn-1", admissionPhase: "accepted_pending" });
     });
 
     it("does not ingest a cold failure while the same root session is human-held", async () => {

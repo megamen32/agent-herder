@@ -1,10 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createDynamicSessionCompletionJudge } from "../src/index.js";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { createDynamicSessionCompletionJudge, readCredentialFile } from "../src/index.js";
 import type { SessionCompletionJudge } from "../src/autopilot/unfinished-session-launcher.js";
 import type { AgentSession } from "../src/types/index.js";
 
 describe("production dynamic unfinished-session judge", () => {
+  it("loads a credential from an operator-selected file", async () => {
+    const root = await mkdtemp("/tmp/agent-herder-credential-");
+    const path = `${root}/token`;
+    await writeFile(path, "secret-from-file\n", { mode: 0o600 });
+    await expect(readCredentialFile(path)).resolves.toBe("secret-from-file");
+  });
   it("forwards decide, plan, and compact reconciliation to the selected client", async () => {
     const decide = vi.fn(async () => ({ verdict: "completed" as const, reason: "done", confidence: 1 }));
     const plan = vi.fn(async () => ({ groups: [] }));
