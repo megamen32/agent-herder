@@ -68,7 +68,7 @@ export interface SessionSupervisorOptions {
   /** Initial retry delay; subsequent failed resumes use exponential backoff. */
   autoResumeDelayMs?: number;
   /** Durable restart launcher for unfinished turns; independent from autopilot. */
-  unfinishedSessions?: Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget">;
+  unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession">>);
 }
 
 interface AutomaticResumeState {
@@ -117,7 +117,7 @@ export class SessionSupervisor {
   private readonly automaticResumes = new Map<string, AutomaticResumeState>();
   private readonly humanStops: HumanStopStore;
   private readonly immediateStops = new Set<string>();
-  private readonly unfinishedSessions?: Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget">;
+  private readonly unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession">>);
 
   constructor(
     private readonly adapters: Map<string, HarnessAdapter>,
@@ -597,6 +597,19 @@ export class SessionSupervisor {
     if (humanRequested) await this.releaseHumanStop(harness, id);
     else if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат явно остановлен; автоматическое продолжение запрещено." };
     const adapter = this.requireAdapter(harness);
+    // Explicit no-message resume may enroll an externally started active Codex
+    // turn. It must never start another turn or interrupt the existing writer.
+    if (!message && humanRequested && harness === "codex") {
+      const current = await adapter.getSession(id);
+      if (current?.status === "running") {
+        const adopt = this.unfinishedSessions?.adoptActiveSession;
+        if (!adopt) return { ok: false, error: "Active-session recovery adoption is unavailable" };
+        const adopted = await adopt.call(this.unfinishedSessions, current);
+        if (!adopted) return { ok: false, error: "Active session requires explicit matching recovery and autopilot settings" };
+        this.publishSessionChanged(harness, id, "changed");
+        return { ok: true };
+      }
+    }
     if (adapter.resumeSession) {
       const resumed = await adapter.resumeSession(id);
       if (!resumed.ok || !message) {

@@ -1320,6 +1320,36 @@ export class UnfinishedSessionLauncher {
     }
   }
 
+  /**
+   * Adopt a native turn already running outside Herder, without delivering any
+   * prompt. Both exact-session switches and workspace identity must agree.
+   */
+  async adoptActiveSession(session: AgentSession): Promise<boolean> {
+    if (session.harness !== "codex" || session.status !== "running" || session.needsPermission) return false;
+    const turnId = nonEmptyText(session.meta?.activeTurnId);
+    if (!turnId || !session.cwd.startsWith("/")) return false;
+    const settings = await this.options.settingsStore.getEffective(session.harness, session.id, session.cwd);
+    const autopilot = await this.options.autopilotSessionStore?.get("codex", session.id);
+    if (!settings.enabled || settings.source !== "session" || !autopilot?.enabled
+      || normalize(autopilot.cwd) !== normalize(session.cwd)) return false;
+    const adapter = this.options.adapters.get("codex");
+    const fresh = await adapter?.getSession(session.id);
+    if (!fresh || fresh.id !== session.id || fresh.harness !== "codex"
+      || fresh.status !== "running" || fresh.needsPermission
+      || normalize(fresh.cwd) !== normalize(session.cwd)
+      || nonEmptyText(fresh.meta?.activeTurnId) !== turnId) return false;
+    const existing = await this.options.store.activeNativeTurn("codex", session.id);
+    if (existing?.turnId === turnId && this.activeNativeTurns.get(sessionKey("codex", session.id))?.turnId === turnId) return true;
+    if (!await this.armSession(fresh)) return false;
+    // This replays a freshly observed native fact, not a synthetic failure or
+    // a new user turn. The ordinary event path persists its recovery identity.
+    await this.handleEvent("codex", {
+      kind: "turn.started", harness: "codex", sessionId: fresh.id,
+      data: { turnId, source: "active-session-adoption" },
+    });
+    return (await this.options.store.activeNativeTurn("codex", session.id))?.turnId === turnId;
+  }
+
   async armSession(session: AgentSession, deliveryPending = false, admittedFailure?: string): Promise<boolean> {
     if (!isAutocontinueInventoryHarness(session.harness)) return false;
     if (isSubagentSession(session)) {
