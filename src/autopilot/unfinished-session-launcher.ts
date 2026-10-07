@@ -4588,6 +4588,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
   baseUrl: string;
   model: string;
   token?: string;
+  reasoningEffort?: "low" | "high" | "max";
   fetchImpl?: typeof fetch;
 }): SessionCompletionJudge {
   const fetchImpl = config.fetchImpl ?? fetch;
@@ -4604,6 +4605,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
         body: JSON.stringify({
           model: config.model,
           max_tokens: 512,
+          ...(config.reasoningEffort ? { reasoning_effort: config.reasoningEffort } : {}),
           temperature: 0,
           stream: false,
           response_format: { type: "json_object" },
@@ -4656,6 +4658,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       const buildRequest = (packedSessions: SessionBatchCandidate[]) => ({
         model: config.model,
         max_tokens: maxTokens,
+        ...(config.reasoningEffort ? { reasoning_effort: config.reasoningEffort } : {}),
         temperature: 0,
         stream: false,
         response_format: { type: "json_object" },
@@ -4693,6 +4696,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
         body: JSON.stringify({
           model: config.model,
           max_tokens: configuredBatchOutputTokens(),
+          ...(config.reasoningEffort ? { reasoning_effort: config.reasoningEffort } : {}),
           temperature: 0,
           stream: false,
           response_format: { type: "json_object" },

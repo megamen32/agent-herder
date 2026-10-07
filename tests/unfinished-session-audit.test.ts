@@ -116,6 +116,29 @@ describe("explicit unfinished inventory pure contracts", () => {
         expect(body.model).toBe("MiniMax-M3");
         expect(body.system[0]?.cache_control).toEqual({ type: "ephemeral" });
     });
+    it("passes an explicit reasoning effort to an OpenAI-compatible batch planner", async () => {
+        let requestUrl = "";
+        let requestBody: Record<string, unknown> = {};
+        const judge = createOpenAICompatibleSessionCompletionJudge({
+            baseUrl: "https://api.z.ai/api/coding/paas/v4/",
+            model: "glm-5.3-flash",
+            token: "test-token",
+            reasoningEffort: "low",
+            fetchImpl: async (url, init) => {
+                requestUrl = String(url);
+                requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+                return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ groups: [{
+                    source_session_ids: ["S1"], primary_session_id: "S1", verdict: "completed",
+                    reason: "Задача завершена", confidence: 0.99, topic: "Проверка ZCode", handoff: "",
+                }] }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
+            },
+        });
+        await expect(judge.plan?.({ sessions: [{ session: fixtureSession("idle", "zcode"), transcriptTail: "Работа завершена" }] }))
+            .resolves.toMatchObject({ groups: [{ verdict: "completed", confidence: 0.99 }] });
+        expect(requestUrl).toBe("https://api.z.ai/api/coding/paas/v4/chat/completions");
+        expect(requestBody.reasoning_effort).toBe("low");
+        expect(requestBody.response_format).toEqual({ type: "json_object" });
+    });
     it("sends one direct Anthropic batch request with every full session evidence block", async () => {
         let requestBody: Record<string, unknown> = {};
         const judge = createAnthropicCompatibleSessionCompletionJudge({

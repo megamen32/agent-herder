@@ -218,6 +218,7 @@ The common switches are:
 | `AGENT_HERDER_UNFINISHED_JUDGE_PROTOCOL` / `AGENT_HERDER_UNFINISHED_JUDGE_BASE_URL` / `AGENT_HERDER_UNFINISHED_JUDGE_TOKEN_FILE` | `anthropic` / provider default / — | Select an OpenAI-compatible direct judge and load its credential from an operator-owned file without copying it into tracked configuration |
 | `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash-Preview` | Default classifier model; the Web UI runtime selection overrides it and reads `MINIMAX_API_KEY` from the protected service environment |
 | `AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS` | `600000` | Timeout for explicit semantic audit; its result cannot authorize recovery |
+| `AGENT_HERDER_UNFINISHED_JUDGE_REASONING_EFFORT` | provider default | Optional OpenAI-compatible reasoning effort (`low`, `high`, or `max`); use `low` for bounded JSON classification on forced-thinking GLM models |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ENABLED` | `true` | Enable MiniMax for explicit semantic audit only, not crash recovery |
 | `AGENT_HERDER_CODEX_STATE_CACHE_MS` | `60000` | Share one persisted Codex rollout scan across dashboard, observation, and recovery callers |
 | `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | Make cache handoff available; replacement also requires the persisted `rolloverExpiredCache` opt-in, which defaults off |

@@ -92,6 +92,13 @@ export async function readCredentialFile(path: string | undefined): Promise<stri
   return value;
 }
 
+function parseReasoningEffort(value: string | undefined): "low" | "high" | "max" | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized === "low" || normalized === "high" || normalized === "max") return normalized;
+  throw new Error("AGENT_HERDER_UNFINISHED_JUDGE_REASONING_EFFORT must be low, high, or max");
+}
+
 // ===== Create adapters =====
 
 const adapters = new Map<string, HarnessAdapter>();
@@ -616,14 +623,15 @@ async function main() {
     || (unfinishedJudgeProtocol === "openai"
       ? "https://api.z.ai/api/paas/v4"
       : process.env.AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL || "https://api.minimax.io/anthropic");
+  const unfinishedJudgeReasoningEffort = parseReasoningEffort(process.env.AGENT_HERDER_UNFINISHED_JUDGE_REASONING_EFFORT);
   const unfinishedJudgeClients = new Map<string, SessionCompletionJudge>();
   const getUnfinishedJudgeClient = async () => {
     const model = (await sessionAutostartStore.getSettings()).judgeModel;
-    const cacheKey = `${unfinishedJudgeProtocol}:${unfinishedJudgeBaseUrl}:${model}`;
+    const cacheKey = `${unfinishedJudgeProtocol}:${unfinishedJudgeBaseUrl}:${model}:${unfinishedJudgeReasoningEffort || "default"}`;
     let client = unfinishedJudgeClients.get(cacheKey);
     if (!client) {
       client = unfinishedJudgeProtocol === "openai"
-        ? createOpenAICompatibleSessionCompletionJudge({ baseUrl: unfinishedJudgeBaseUrl, model, token: unfinishedJudgeToken })
+        ? createOpenAICompatibleSessionCompletionJudge({ baseUrl: unfinishedJudgeBaseUrl, model, token: unfinishedJudgeToken, reasoningEffort: unfinishedJudgeReasoningEffort })
         : createAnthropicCompatibleSessionCompletionJudge({ baseUrl: unfinishedJudgeBaseUrl, model, token: unfinishedJudgeToken! });
       unfinishedJudgeClients.set(cacheKey, client);
     }
