@@ -39,7 +39,7 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('/api/session-autostart/harnesses/zcode');
     expect(main).toContain('aria-label={`Автопродолжение для сессии ${activeSession.id}`}');
     expect(main).toContain('Где разрешено восстановление');
-    expect(main).toContain('Автопилот отдельно решает, что делать с незавершённой задачей');
+    expect(main).toContain('Если автопилот выключен, восстановление после сбоя всё равно работает');
     expect(main).toContain('aria-label="Глобальное автопродолжение"');
     expect(main).toContain('Восстановление после сбоя');
     expect(main).toContain('После ошибки выполнения');
@@ -81,8 +81,8 @@ describe("mobile chat and session controls", () => {
     expect(header).toContain('>Автопилот<span className={`toggle-dot');
     expect(header).toContain("activeAutocontinueEnabled");
     expect(header).toContain('activeAutopilotEnabled');
-    expect(menu).toContain('Автопродолжение: ${activeAutocontinueEnabled ? "включено" : "выключено"}');
-    expect(menu).toContain('Автопилот: ${activeAutopilotEnabled ? "включён" : "выключен"}');
+    expect(menu).toContain('Автопродолжение · восстановление после сбоев: ${activeAutocontinueEnabled ? "включено" : "выключено"}');
+    expect(menu).toContain('Автопилот · завершение задач: ${activeAutopilotEnabled ? "включён" : "выключен"}');
   });
 
   it("puts live agent activity immediately above the composer and session automation in the inspector", () => {
@@ -113,11 +113,12 @@ describe("mobile chat and session controls", () => {
   it("keeps automation modes discoverable on mobile with their current state", () => {
     expect(main).toContain('aria-label="Открыть настройки автоматизации"');
     expect(main).toContain('>Автоматизация</button>');
-    expect(main).toContain('Автопродолжение: ${activeAutocontinueEnabled ? "включено" : "выключено"}');
-    expect(main).toContain('Автопилот: ${activeAutopilotEnabled ? "включён" : "выключен"}');
+    expect(main).toContain('Автопродолжение · восстановление после сбоев: ${activeAutocontinueEnabled ? "включено" : "выключено"}');
+    expect(main).toContain('Автопилот · завершение задач: ${activeAutopilotEnabled ? "включён" : "выключен"}');
     expect(styles).toContain('.header-actions .mobile-automation-button { display: inline-flex;');
     expect(styles).toContain('.header-actions .desktop-chat-menu { display: none; }');
     expect(styles).toContain('@media (max-width: 900px)');
+    expect(styles).toContain('.inspector-pane { display: flex; position: fixed; inset: 0; z-index: 45;');
   });
 
   it("addresses focus-group ambiguity around scope, saving, and the active timeout", () => {
@@ -127,6 +128,11 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain("Модель сохранится общей кнопкой");
     expect(main).toContain("Сохранить настройки автопилота");
     expect(main).toContain("Текущие настройки загружены");
+    expect(main).toContain("Приоритет: отдельная настройка сессии");
+    expect(main).toContain("Если автопилот выключен, восстановление после сбоя всё равно работает");
+    expect(main).toContain("Карточка заранее покажет варианты и рекомендацию");
+    expect(main).toContain("выключен в общих настройках сред");
+    expect(main).toContain("Закрытие оставит их в форме до сохранения или перезагрузки страницы");
     expect(main).not.toContain("Доступно моделей:");
     expect(main).not.toContain("Сохранить модель");
     expect(main).not.toContain("30 минут без ответа (сейчас");
@@ -152,7 +158,7 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain("после подтверждённой ошибки");
     expect(main).toContain("ожидание ответа или разрешения человека");
     expect(main).toContain("Автопилот решает");
-    expect(main).toContain("первый рекомендованный автопилотом вариант");
+    expect(main).toContain("первый рекомендованный вариант");
     for (const jargon of ["глобальный master", "этот pin", "Judge решает", "рекомендованный Judge вариант", "native process/turn", "Наследуется от harness policy", "Наследовать policy"]) {
       expect(main).not.toContain(jargon);
     }
