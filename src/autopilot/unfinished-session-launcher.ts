@@ -1520,7 +1520,13 @@ export class UnfinishedSessionLauncher {
         if (!adapter?.resumeSession) continue;
         const key = sessionKey(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
         let session: AgentSession | null = null;
-        try { session = await adapter.getSession(record.sessionId); } catch { /* counted as a miss below */ }
+        try { session = await adapter.getSession(record.sessionId); } catch {
+          // A transport/index failure is not evidence that the native session
+          // disappeared. Preserve its durable recovery state and require fresh
+          // successful reads before counting absence.
+          this.watchdogObservations.delete(key);
+          continue;
+        }
         if (isSubagentSession(session)) {
           await this.options.store.excludeSession(record.harness, record.sessionId);
           continue;
@@ -1530,22 +1536,12 @@ export class UnfinishedSessionLauncher {
           const previous = this.watchdogObservations.get(key);
           const misses = (previous?.misses ?? 0) + 1;
           this.watchdogObservations.set(key, { fingerprint: "missing", unchangedSince: previous?.unchangedSince ?? Date.now(), misses });
-          // Native indexes can disappear briefly while a harness persists a
-          // turn. Require three consecutive observations and enqueue exactly
-          // once; the recovery retry loop owns subsequent attempts.
-          if (misses !== 3) continue;
-          await this.options.store.markStarted({
-            id: record.sessionId,
-            harness: record.harness,
-            status: "error",
-            title: "Сессия исчезла из native state",
-            cwd: record.cwd,
-            lastActivity: record.updatedAt,
-            needsPermission: false,
-          }, this.generationId);
-          this.queueUrgentSession(key);
-          urgent = true;
-          console.error(`[agent-herder] watchdog: ${key} исчезла из native state; запускаю срочное возобновление`);
+          // Even repeated successful null reads establish inventory absence,
+          // not process death. Native failure/disconnect events own recovery
+          // eligibility; leave the durable record unchanged until that proof.
+          if (misses === 3) {
+            console.error(`[agent-herder] watchdog: ${key} отсутствует в native inventory; ожидаю подтверждённое событие сбоя`);
+          }
           continue;
         }
         const priorAssessment = inventory.get(sessionSourceKey(session));

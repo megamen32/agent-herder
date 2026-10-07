@@ -250,6 +250,37 @@ describe("unfinished session crash recovery", () => {
         expect(await state.listInventory()).toEqual([]);
         expect(notices).toEqual([]);
     });
+    it.each(["transport failure", "native absence"])("preserves durable state during watchdog %s", async (outcome) => {
+        const root = await mkdtemp(join(tmpdir(), "watchdog-unavailable-"));
+        const current = fixture("running", "zcode");
+        const calls = { resumes: 0, messages: [] as string[] };
+        const adapter = fakeAdapter(() => current, calls);
+        let reads = 0;
+        adapter.getSession = async () => {
+            reads += 1;
+            if (outcome === "transport failure") throw new Error("native transport unavailable");
+            return null;
+        };
+        const state = new UnfinishedSessionStore(join(root, "state.json"));
+        await state.markStarted(current, "existing-owner");
+        const before = await state.list();
+        const settings = new SessionAutostartStore(join(root, "settings.json"), {});
+        const cfg = await settings.getSettings();
+        await settings.setRuntimeSettings({ ...cfg, enabled: true, watchdogEnabled: true });
+        await settings.setSession({ harness: current.harness, sessionId: current.id, cwd: current.cwd }, true);
+        const launcher = new UnfinishedSessionLauncher({ adapters: new Map([["zcode", adapter]]), store: state, settingsStore: settings });
+        const watchdog = launcher as unknown as { started: boolean; runWatchdog(): Promise<void>; urgentSessions: Set<string> };
+        watchdog.started = true;
+        try {
+            for (let pass = 0; pass < 4; pass++) await watchdog.runWatchdog();
+            expect(reads).toBe(4);
+            expect(await state.list()).toEqual(before);
+            expect(watchdog.urgentSessions.size).toBe(0);
+            expect(calls).toEqual({ resumes: 0, messages: [] });
+        } finally {
+            watchdog.started = false;
+        }
+    });
     it("recovers a proven stalled active turn only with watchdog opt-in", async () => {
         const root = await mkdtemp(join(tmpdir(), "stalled-watchdog-"));
         let current = { ...fixture("running", "zcode"), lastActivity: new Date(Date.now() - 60000).toISOString() };
