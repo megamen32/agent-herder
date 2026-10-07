@@ -21,6 +21,9 @@ type PersistedMessage = {
   role?: unknown;
   timestamp?: unknown;
   content?: unknown;
+  tool_calls?: Record<string, unknown>;
+  tool_results?: Record<string, unknown>;
+  channels?: Record<string, unknown>;
 };
 
 type PersistedSession = {
@@ -325,8 +328,16 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       if (!nativeId) return null;
       const historyPath = await latestHistoryPath(directory);
       const history = historyPath ? JSON.parse(await readFile(historyPath, "utf8")) as { messages?: unknown } : { messages: [] };
+      const toolNames = new Map<string, string>();
+      if (Array.isArray(history.messages)) for (const message of history.messages) {
+        const calls = (message as PersistedMessage)?.tool_calls || {};
+        for (const [id, call] of Object.entries(calls)) {
+          const name = (call as { params?: { name?: string } })?.params?.name;
+          if (name) toolNames.set(id, name);
+        }
+      }
       const messages = Array.isArray(history.messages)
-        ? history.messages.map((message) => messageView(message)).filter((message): message is SessionMessageView => message !== null)
+        ? history.messages.map((message) => messageView(message, toolNames)).filter((message): message is SessionMessageView => message !== null)
         : [];
       let receipt: { error?: string; endedAt?: string; running?: boolean; pid?: number } = {};
       try { receipt = JSON.parse(await readFile(join(directory, "herder-execution.json"), "utf8")); } catch { /* Native sessions need no Herder receipt. */ }
@@ -447,11 +458,26 @@ async function isDirectory(path: string): Promise<boolean> {
   }
 }
 
-function messageView(value: unknown): SessionMessageView | null {
+function messageView(value: unknown, toolNames = new Map<string, string>()): SessionMessageView | null {
   if (!value || typeof value !== "object") return null;
   const message = value as PersistedMessage;
-  const role = message.role === "assistant" || message.role === "user" || message.role === "tool" || message.role === "system" ? message.role : "system";
+  const nativeRole = message.tool_results && Object.keys(message.tool_results).length ? "tool" : message.role;
+  const role = nativeRole === "assistant" || nativeRole === "user" || nativeRole === "tool" || nativeRole === "system" ? nativeRole : "system";
   const parts = contentParts(message.content);
+  for (const call of Object.values(message.tool_calls || {})) {
+    if (!call || typeof call !== "object") continue;
+    const params = (call as { params?: { name?: string; arguments?: unknown } }).params;
+    if (params?.name) parts.push({ type: "tool_call", name: params.name, input: params.arguments });
+  }
+  for (const [id, result] of Object.entries(message.tool_results || {})) {
+    if (!result || typeof result !== "object") continue;
+    const item = result as { content?: unknown; isError?: boolean; name?: string };
+    parts.push({ type: "tool_result", name: item.name || toolNames.get(id), output: contentParts(item.content).map(partText).filter(Boolean).join("\n"), error: item.isError === true });
+  }
+  if (!parts.some((part) => part.type === "thinking")) {
+    parts.unshift(...contentParts(message.channels?.reasoning).filter((part) => partText(part)).map((part): SessionMessagePart => ({ type: "thinking", text: partText(part) })));
+  }
+
   return {
     id: `${String(message.timestamp || "message")}-${role}`,
     role,

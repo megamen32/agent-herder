@@ -40,6 +40,27 @@ describe("Fast Agent persisted observer", () => {
 
 
 
+
+  it("exposes native Anthropic Fast Agent tool maps and reasoning channels", async () => {
+    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-native-tools-"));
+    cleanups.push(home);
+    const directory = join(home, "sessions", "native-tools");
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, "session.json"), JSON.stringify({ session_id: "native-tools" }));
+    await writeFile(join(directory, "history_herder_minimax.json"), JSON.stringify({ messages: [
+      { role: "assistant", content: [], tool_calls: { call_1: { method: "tools/call", params: { name: "bash", arguments: { command: "watchdog.py --check" } } } } },
+      { role: "user", content: [], tool_results: { call_1: { content: [{ type: "text", text: '{"healthy":true}' }], isError: false } } },
+      { role: "assistant", content: [{ type: "text", text: "Проверка прошла." }], channels: { reasoning: [{ type: "text", text: "Оценка результата." }] } },
+    ] }));
+    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/bin/true" });
+    const messages = await adapter.getSessionMessages("fast-agent:native-tools", 3);
+    expect(messages).toMatchObject([
+      { role: "assistant", parts: [{ type: "tool_call", name: "bash", input: { command: "watchdog.py --check" } }] },
+      { role: "tool", parts: [{ type: "tool_result", name: "bash", output: '{"healthy":true}', error: false }] },
+      { role: "assistant", parts: [{ type: "thinking", text: "Оценка результата." }, { type: "text", text: "Проверка прошла." }] },
+    ]);
+  });
+
   it("records an actual queued child failure with a bounded redacted provider explanation", async () => {
     const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-queue-error-"));
     cleanups.push(home);
