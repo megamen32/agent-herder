@@ -9,7 +9,7 @@ describe("Codex session visualization", () => {
     expect(reactSource).toContain("/visualization`");
     expect(reactSource).toContain("const visualizationUrl = activeSession");
     expect(reactSource).toContain('target="_blank"');
-    expect(reactSource).toContain(">Visualize</a>");
+    expect(reactSource).toContain(">Визуализация</a>");
   });
 });
 
@@ -94,8 +94,8 @@ describe("session tree project groups", () => {
 describe("non-blocking session loading", () => {
   it("shows loading state while the newest turns arrive, then hydrates older history", () => {
     expect(reactSource).toContain("session-skeletons");
-    expect(reactSource).toContain("Loading latest activity");
-    expect(reactSource).toContain("loading older history and metrics");
+    expect(reactSource).toContain("Загружаю свежие сообщения");
+    expect(reactSource).toContain("подгружаю историю и метрики");
     expect(reactSource).toContain("?limit=12&quick=1");
     expect(reactSource).toContain("?limit=50");
   });
@@ -109,7 +109,7 @@ describe("non-blocking session loading", () => {
 
 describe("browser load timings", () => {
   it("shows sessions, latest, and hydrate timings in the chat header", () => {
-    expect(reactSource).toContain("Browser load timings");
+    expect(reactSource).toContain("Тайминги загрузки в браузере");
     expect(reactSource).toContain("formatLoadTiming(sessionsTimingMs)");
     expect(reactSource).toContain("formatLoadTiming(latestTimingMs)");
     expect(reactSource).toContain("formatLoadTiming(hydrateTimingMs)");
@@ -119,13 +119,13 @@ describe("browser load timings", () => {
 describe("activity statistics dashboard", () => {
   it("renders a dedicated statistics view with coverage, histogram, and refresh controls", () => {
     expect(reactSource).toContain("function StatisticsView");
-    expect(reactSource).toContain("What different TTLs actually cover");
-    expect(reactSource).toContain("Write revisit distribution");
+    expect(reactSource).toContain("Что реально покрывают разные таймауты");
+    expect(reactSource).toContain("Распределение возвратов к записи");
     expect(reactSource).toContain("/api/statistics/activity?days=");
-    expect(reactSource).toContain("Suggested inactivity lease");
-    expect(reactSource).toContain("What actually gets used");
-    expect(reactSource).toContain("Most-used models");
-    expect(reactSource).toContain("Codex tokens / session");
-    expect(reactSource).toContain("Codex sessions by day");
+    expect(reactSource).toContain("Рекомендуемый таймаут неактивности");
+    expect(reactSource).toContain("Что реально используется");
+    expect(reactSource).toContain("Самые используемые модели");
+    expect(reactSource).toContain("Токены Codex за сессию");
+    expect(reactSource).toContain("Сессии Codex по дням");
   });
 });

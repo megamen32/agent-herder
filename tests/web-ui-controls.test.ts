@@ -14,30 +14,30 @@ describe("mobile chat and session controls", () => {
   });
 
   it("exposes the required mobile controls", () => {
-    expect(main).toContain('aria-label="Search sessions"');
-    expect(main).toContain('aria-label="Chat menu"');
-    expect(main).toContain('aria-label="Scroll to latest"');
+    expect(main).toContain('aria-label="Поиск сессий"');
+    expect(main).toContain('aria-label="Меню чата"');
+    expect(main).toContain('aria-label="Прокрутить к последним"');
     expect(main).toContain("scrollToBottom");
     expect(main).toContain("chatMenuOpen");
     expect(main).toContain("subagents-panel");
     expect(main).toContain("details.children.length");
     expect(main).toContain("setSessions(nextSessions);");
-    expect(main).toContain('aria-label="Scroll to latest"');
-    expect(main).toContain('aria-label={isResumeMode ? "Resume session" : "Send message"}');
+    expect(main).toContain('aria-label="Прокрутить к последним"');
+    expect(main).toContain('aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}');
     expect(main).toContain('{isResumeMode ? "▶" : "↑"}');
     expect(main).toContain("details?.children?.length");
-    expect(main).toContain('aria-label="Show all sessions"');
-    expect(main).toContain('aria-label={`Choose ${choice.label}`}');
+    expect(main).toContain('aria-label="Показывать все сессии"');
+    expect(main).toContain('aria-label={`Выбрать: ${choice.label}`}');
     expect(main).toContain('/api/autopilot/choices?status=pending');
     expect(main).toContain('/api/autopilot/choices/select');
     expect(main).toContain('meta: { decisionOnly: true }');
     expect(main).toContain('role="switch"');
     expect(main).toContain('/api/autopilot/sessions/');
-    expect(main).toContain('aria-label={`Autopilot for ${activeSession.id}`}');
+    expect(main).toContain('aria-label={`Автопилот для сессии ${activeSession.id}`}');
     expect(main).toContain('/api/session-autostart/sessions/');
     expect(main).toContain('/api/session-autostart/harnesses/codex');
     expect(main).toContain('/api/session-autostart/harnesses/zcode');
-    expect(main).toContain('aria-label={`Autocontinue recovery for ${activeSession.id}`}');
+    expect(main).toContain('aria-label={`Автопродолжение для сессии ${activeSession.id}`}');
     expect(main).toContain('Где разрешено восстановление');
     expect(main).toContain('Автопилот отдельно решает, что делать с незавершённой задачей');
     expect(main).toContain('aria-label="Глобальное автопродолжение"');
@@ -64,19 +64,23 @@ describe("mobile chat and session controls", () => {
     for (const harness of ["Codex", "Claude Code", "OpenCode", "Hermes"]) expect(main).toContain(harness);
   });
 
-  it("exposes autocontinue and autopilot as separate top-level settings", () => {
+  it("exposes autopilot top-level and autocontinue in the chat menu as separate settings", () => {
     const headerStart = main.indexOf('<div className="header-actions">');
     const headerEnd = main.indexOf("</header>", headerStart);
     const header = main.slice(headerStart, headerEnd);
+    const menuStart = main.indexOf('<div className="chat-menu"');
+    const menuEnd = main.indexOf("</div>", main.indexOf("Квота</button>"));
+    const menu = main.slice(menuStart, menuEnd);
 
     expect(headerStart).toBeGreaterThan(-1);
-    expect(header).toContain('aria-label="Открыть настройки автопродолжения"');
-    expect(header).toContain('aria-label="Открыть настройки автопилота"');
-    expect(header.indexOf("Открыть настройки автопродолжения")).toBeLessThan(header.indexOf("Открыть настройки автопилота"));
+    expect(menuStart).toBeGreaterThan(-1);
+    expect(header).toContain('>Автопилот<span className={`toggle-dot');
+    expect(menu).toContain('Автопродолжение: ${runtimeSettingsDraft?.enabled ? "включено" : "выключено"}');
+    expect(menu).toContain('Автопилот: ${(autopilotSession?.enabled ?? autopilotPolicyDraft?.enabled) ? "включён" : "выключен"}');
   });
 
   it("puts live agent activity immediately above the composer and never leaves autocontinue below it", () => {
-    const activityStart = main.indexOf('<div className={`agent-activity-strip');
+    const activityStart = main.indexOf('className={`activity-line activity-');
     const composerStart = main.indexOf('<form className="composer"', activityStart);
 
     expect(activityStart).toBeGreaterThan(-1);
@@ -124,7 +128,7 @@ describe("mobile chat and session controls", () => {
 
   it("keeps mobile settings descriptions readable", () => {
     expect(styles).toContain('.global-autopilot-head p, .autopilot-state-banner span, .harness-option small, .settings-help, .timeout-setting small, .runtime-settings-grid label small, .autopilot-control small, .settings-save-row > span');
-    expect(styles).toContain('color: #c2bdc7; font-size: 12px; line-height: 1.5;');
+    expect(styles).toContain('color: var(--text-2); font-size: var(--text-sm); line-height: 1.5;');
   });
 
   it("keeps autocontinue and autopilot mutations on separate endpoints and state", () => {
