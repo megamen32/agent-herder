@@ -37,7 +37,7 @@ type PersistedSession = {
     extras?: Record<string, unknown>;
   };
   execution?: { status?: unknown } | null;
-  continuation?: { cwd?: string; agents?: Record<string, { model?: unknown }> };
+  continuation?: { cwd?: string; active_agent?: string; agents?: Record<string, { model?: unknown }> };
   analysis?: { usage_summary?: { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown } };
   model?: unknown;
 };
@@ -373,10 +373,13 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     const completionTokens = typeof usage?.completion_tokens === "number" ? usage.completion_tokens : undefined;
     const totalTokens = typeof usage?.total_tokens === "number" ? usage.total_tokens : undefined;
     const snapshotModel = stringValue((record.snapshot as Record<string, unknown>).model)
+      || stringValue(record.snapshot.continuation?.active_agent ? record.snapshot.continuation?.agents?.[record.snapshot.continuation.active_agent]?.model : undefined)
       || stringValue(Object.values(record.snapshot.continuation?.agents || {}).find((agent) => agent.model)?.model)
       || stringValue(record.snapshot.metadata?.extras?.model)
       || stringValue((record.snapshot.metadata as Record<string, unknown> | undefined)?.model);
-    const model = snapshotModel || (record.usage.model
+    const requestedModel = stringValue(record.snapshot.metadata?.extras?.model);
+    const canonicalModel = requestedModel?.startsWith("anthropic.MiniMax-") && snapshotModel === requestedModel.slice("anthropic.".length) ? requestedModel : snapshotModel;
+    const model = canonicalModel || (record.usage.model
       ? record.usage.provider === "generic" ? `generic.${record.usage.model}`
         : record.usage.provider === "codexresponses" ? `codexresponses.${record.usage.model}`
           : record.usage.model

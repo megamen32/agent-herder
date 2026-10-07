@@ -18,7 +18,7 @@ describe("Fast Agent persisted observer", () => {
     cleanups.push(home);
     const directory = join(home, "sessions", "direct");
     await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, "session.json"), JSON.stringify({ session_id: "direct", continuation: { cwd: home }, metadata: { extras: { model: "anthropic.MiniMax-M3.1-Flash-Preview", healthRecovery: true } } }));
+    await writeFile(join(directory, "session.json"), JSON.stringify({ session_id: "direct", continuation: { cwd: home, active_agent: "herder_minimax", agents: { dev: { model: "unrelated" }, herder_minimax: { model: "MiniMax-M3.1-Flash-Preview" } } }, metadata: { extras: { model: "anthropic.MiniMax-M3.1-Flash-Preview", healthRecovery: true } } }));
     const config = join(home, "direct.yaml");
     await writeFile(config, "anthropic:\n  base_url: https://api.minimax.io/anthropic\n");
     const bin = join(home, "capture.sh");
@@ -40,6 +40,28 @@ describe("Fast Agent persisted observer", () => {
 
 
 
+
+
+  it("keeps the verified direct provider prefix after native persistence strips it", async () => {
+    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-provider-identity-"));
+    cleanups.push(home);
+    const directory = join(home, "sessions", "direct-identity");
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, "session.json"), JSON.stringify({
+      session_id: "direct-identity",
+      metadata: { extras: { model: "anthropic.MiniMax-M3.1-Flash-Preview", healthRecovery: true } },
+      continuation: { active_agent: "herder_minimax", agents: { dev: { model: "different-model" }, herder_minimax: { model: "MiniMax-M3.1-Flash-Preview" } } },
+    }));
+    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/bin/true" });
+    expect(await adapter.getSession("fast-agent:direct-identity")).toMatchObject({ model: "anthropic.MiniMax-M3.1-Flash-Preview" });
+    await writeFile(join(directory, "session.json"), JSON.stringify({
+      session_id: "direct-identity",
+      metadata: { extras: { model: "anthropic.MiniMax-M3.1-Flash-Preview" } },
+      continuation: { active_agent: "herder_minimax", agents: { dev: { model: "old-model" }, herder_minimax: { model: "MiniMax-M3" } } },
+    }));
+    expect(await adapter.getSession("fast-agent:direct-identity")).toMatchObject({ model: "MiniMax-M3" });
+
+  });
 
   it("exposes native Anthropic Fast Agent tool maps and reasoning channels", async () => {
     const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-native-tools-"));
