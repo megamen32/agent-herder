@@ -167,7 +167,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     if (directMiniMax) {
       await stat(config);
       if (!process.env.MINIMAX_API_KEY) return { ok: false, error: "Direct MiniMax recovery credential is not configured" };
-      args.push("--config-path", config, "--agent-cards", process.env.FAST_AGENT_MINIMAX_CARD || join(homedir(), ".config/agent-herder/fast-agent-minimax-card.yaml"));
+      args.push("--name", "herder_minimax", "--config-path", config, "--agent-cards", process.env.FAST_AGENT_MINIMAX_CARD || join(homedir(), ".config/agent-herder/fast-agent-minimax-card.yaml"));
     }
     const childEnv = { ...process.env, FAST_AGENT_HOME: this.home, ...(directMiniMax ? { ANTHROPIC_API_KEY: process.env.MINIMAX_API_KEY, ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_BASE_URL: "https://api.minimax.io/anthropic" } : {}) };
     if (session.model) args.push("--model", session.model);
@@ -199,6 +199,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
             let clean = output.replace(/\x1b\[[0-9;]*m/g, "").replace(/\s+/g, " ");
             for (const [key, value] of Object.entries(childEnv)) if (/key|token|password|secret/i.test(key) && value) clean = clean.split(value).join("<redacted>");
             const providerError = clean.match(/Provider Error: (.{1,350}?)(?:[⟳▲]|$)/)?.[1];
+            if (!providerError && clean.trim()) error += ` Диагностика: ${clean.trim().slice(-600)}`;
             if (providerError) error += ` Ошибка провайдера: ${providerError.trim()}`;
           }
           await writeFile(receiptPath, JSON.stringify({ startedAt, endedAt: new Date().toISOString(), running: false, exitCode: code, error }), { mode: 0o600 });

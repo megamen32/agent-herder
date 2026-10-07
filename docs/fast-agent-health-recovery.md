@@ -25,3 +25,5 @@ The matching deploy/fast-agent-minimax-card.yaml installs mode0600 at the same c
 Queued execution writes a bounded, redacted mode0600 herder-execution.json receipt inside the native session directory. A nonzero exit or a completed process without a new native assistant answer becomes an error visible in the Herder conversation.
 
 The exact Flash model's published output ceiling is 524288 tokens, including reasoning; this is not its 1M context window. See https://platform.minimax.io/docs/api-reference/text-chat-openai and https://platform.minimax.io/docs/api-reference/text-anthropic-api. Thinking stays enabled with the provider default max effort.
+
+The explicit card uses unique agent name herder_minimax and CLI --name herder_minimax. This avoids a collision with the pre-existing home card dev.md while preserving ordinary home agents. Native card merge/selection is validated offline before provider dispatch.

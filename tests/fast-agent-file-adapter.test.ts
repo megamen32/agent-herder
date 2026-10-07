@@ -33,7 +33,7 @@ describe("Fast Agent persisted observer", () => {
     const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: bin });
     expect(await adapter.sendMessage("fast-agent:direct", { message: "diagnose only" })).toEqual({ ok: true });
     const args = (await readFile(argsPath, "utf8")).split("\n");
-    expect(args).toEqual(expect.arrayContaining(["--config-path", config, "--agent-cards", "--model", "anthropic.MiniMax-M3.1-Flash-Preview", "--shell", "--timeout", "300"]));
+    expect(args).toEqual(expect.arrayContaining(["--name", "herder_minimax", "--config-path", config, "--agent-cards", "--model", "anthropic.MiniMax-M3.1-Flash-Preview", "--shell", "--timeout", "300"]));
     expect(args.join(" ")).not.toContain("test-private-token");
     expect(await readFile(envPath, "utf8")).toBe("test-private-token\n\nhttps://api.minimax.io/anthropic");
   });
