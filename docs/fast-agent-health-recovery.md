@@ -19,3 +19,9 @@ Put recovery artifacts under the canonical administration checkout's ignored `.t
 ## Direct MiniMax channel
 
 The dedicated deploy/fast-agent-minimax.yaml template installs at /home/roomhacker/.config/agent-herder/fast-agent-minimax.yaml (mode 0600). Direct native models anthropic.MiniMax-* select this config; the child receives ANTHROPIC_API_KEY from existing protected MINIMAX_API_KEY. Ordinary generic sessions retain their gateway settings. No credential is stored in Git. The direct Anthropic endpoint returned HTTP 200 for exact MiniMax-M3.1-Flash-Preview on 2026-10-07; the local generic gateway rejected that model because its catalog is incomplete.
+
+The matching deploy/fast-agent-minimax-card.yaml installs mode0600 at the same configuration directory. Its native request_params.max_tokens=524288 supplies the Anthropic SDK mandatory field for this custom model. Child-only ANTHROPIC_BASE_URL is fixed to the subscription endpoint and ANTHROPIC_AUTH_TOKEN is cleared. The canonical credential was privately proven equal to OpenCode provider minimax-coding-plan; no PAYG fallback is allowed.
+
+Queued execution writes a bounded, redacted mode0600 herder-execution.json receipt inside the native session directory. A nonzero exit or a completed process without a new native assistant answer becomes an error visible in the Herder conversation.
+
+The exact Flash model's published output ceiling is 524288 tokens, including reasoning; this is not its 1M context window. See https://platform.minimax.io/docs/api-reference/text-chat-openai and https://platform.minimax.io/docs/api-reference/text-anthropic-api. Thinking stays enabled with the provider default max effort.

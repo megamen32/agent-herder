@@ -1,0 +1,8 @@
+type: agent
+name: dev
+default: true
+model: anthropic.MiniMax-M3.1-Flash-Preview
+instruction: Follow the user task and the workspace instructions. Verify changes through the real consumer.
+servers: []
+request_params:
+  max_tokens: 524288

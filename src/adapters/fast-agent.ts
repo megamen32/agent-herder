@@ -1,9 +1,9 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { execFile, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
-import { spawnDetachedWorkload, spawnIsolatedWorkload } from "../workload-launcher.js";
+import { spawnIsolatedWorkload } from "../workload-launcher.js";
 import type {
   AgentSession,
   CreateSessionOptions,
@@ -48,6 +48,9 @@ type SessionRecord = {
   messages: SessionMessageView[];
   usage: FastAgentUsage;
   liveProcess: boolean;
+  launchError?: string;
+  launchEndedAt?: string;
+  launchRunning?: boolean;
 };
 
 export interface FastAgentFileAdapterOptions {
@@ -164,16 +167,46 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     if (directMiniMax) {
       await stat(config);
       if (!process.env.MINIMAX_API_KEY) return { ok: false, error: "Direct MiniMax recovery credential is not configured" };
-      args.push("--config-path", config);
+      args.push("--config-path", config, "--agent-cards", process.env.FAST_AGENT_MINIMAX_CARD || join(homedir(), ".config/agent-herder/fast-agent-minimax-card.yaml"));
     }
-    const childEnv = { ...process.env, FAST_AGENT_HOME: this.home, ...(directMiniMax ? { ANTHROPIC_API_KEY: process.env.MINIMAX_API_KEY } : {}) };
+    const childEnv = { ...process.env, FAST_AGENT_HOME: this.home, ...(directMiniMax ? { ANTHROPIC_API_KEY: process.env.MINIMAX_API_KEY, ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_BASE_URL: "https://api.minimax.io/anthropic" } : {}) };
     if (session.model) args.push("--model", session.model);
     if (options.queue) {
       try {
-        spawnDetachedWorkload(this.fastAgentBin, args, {
-          label: "fast-agent-queue", cwd: session.cwd, stdio: "ignore", resourceProperties,
+        const record = await this.findRecord(id);
+        if (!record) return { ok: false, error: "Native Fast Agent session is missing" };
+        const receiptPath = join(record.directory, "herder-execution.json");
+        const startedAt = new Date().toISOString();
+        await writeFile(receiptPath, JSON.stringify({ startedAt, running: true }), { mode: 0o600 });
+        const child = spawnIsolatedWorkload(this.fastAgentBin, args, {
+          label: "fast-agent-queue", cwd: session.cwd, stdio: ["ignore", "pipe", "pipe"], resourceProperties,
           env: childEnv,
         });
+        const startedReceipt = writeFile(receiptPath, JSON.stringify({ startedAt, running: true, pid: child.pid }), { mode: 0o600 });
+        let output = "";
+        const capture = (chunk: Buffer | string) => { output = (output + String(chunk)).slice(-8192); };
+        child.stdout?.on("data", capture);
+        child.stderr?.on("data", capture);
+        let recorded = false;
+        const finish = async (code: number | null, failure?: string) => {
+          if (recorded) return;
+          recorded = true;
+          await startedReceipt;
+          const current = await this.findRecord(id);
+          const newReply = current && current.messages.filter((message) => message.role === "assistant").length > record.messages.filter((message) => message.role === "assistant").length;
+          let error = failure || (code !== 0 ? `Fast Agent завершился с кодом ${code}.` : !newReply ? "Fast Agent завершился без нового ответа." : undefined);
+          if (error) {
+            let clean = output.replace(/\x1b\[[0-9;]*m/g, "").replace(/\s+/g, " ");
+            for (const [key, value] of Object.entries(childEnv)) if (/key|token|password|secret/i.test(key) && value) clean = clean.split(value).join("<redacted>");
+            const providerError = clean.match(/Provider Error: (.{1,350}?)(?:[⟳▲]|$)/)?.[1];
+            if (providerError) error += ` Ошибка провайдера: ${providerError.trim()}`;
+          }
+          await writeFile(receiptPath, JSON.stringify({ startedAt, endedAt: new Date().toISOString(), running: false, exitCode: code, error }), { mode: 0o600 });
+        };
+        child.once("error", (error) => { void finish(null, error.message).catch(() => undefined); });
+        child.once("close", (code) => { void finish(code).catch(() => undefined); });
+        child.unref();
+        await startedReceipt;
         return { ok: true };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -230,7 +263,10 @@ export class FastAgentFileAdapter implements HarnessAdapter {
 
   async getSessionMessages(id: string, limit = 3): Promise<SessionMessageView[] | null> {
     const record = await this.findRecord(id);
-    return record ? record.messages.slice(-Math.max(1, limit)) : null;
+    if (!record) return null;
+    const messages = [...record.messages];
+    if (record.launchError) messages.push({ id: "herder-launch-error", role: "assistant", text: record.launchError, timestamp: record.launchEndedAt || new Date().toISOString(), parts: [{ type: "text", text: record.launchError }] });
+    return messages.slice(-Math.max(1, limit));
   }
 
   async listModels(): Promise<string[]> {
@@ -291,7 +327,16 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       const messages = Array.isArray(history.messages)
         ? history.messages.map((message) => messageView(message)).filter((message): message is SessionMessageView => message !== null)
         : [];
-      return { directory, snapshot, historyPath: historyPath || join(directory, "history.json"), messages, usage: extractFastAgentUsage(history), liveProcess: hasLiveFastAgentProcess(history) };
+      let receipt: { error?: string; endedAt?: string; running?: boolean; pid?: number } = {};
+      try { receipt = JSON.parse(await readFile(join(directory, "herder-execution.json"), "utf8")); } catch { /* Native sessions need no Herder receipt. */ }
+      let launchRunning = false;
+      if (receipt.running && receipt.pid) {
+        try {
+          process.kill(receipt.pid, 0);
+          launchRunning = process.platform !== "linux" || (await readFile(`/proc/${receipt.pid}/cmdline`, "utf8")).split("\0").includes(nativeId);
+        } catch { /* Completed worker or reused process id. */ }
+      }
+      return { directory, snapshot, historyPath: historyPath || join(directory, "history.json"), messages, usage: extractFastAgentUsage(history), liveProcess: hasLiveFastAgentProcess(history), launchError: receipt.error, launchEndedAt: receipt.endedAt, launchRunning };
     } catch {
       return null;
     }
@@ -327,7 +372,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     return {
       id: this.externalId(nativeId),
       harness: this.type,
-      status,
+      status: record.launchError ? "error" : record.launchRunning ? "running" : status,
       title: title.slice(0, 240),
       cwd: stringValue(record.snapshot.continuation?.cwd) || stringValue((record.snapshot.metadata as Record<string, unknown> | undefined)?.cwd) || this.fallbackCwd,
       lastActivity,
@@ -337,6 +382,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       lastMessage: preview?.slice(0, 300),
       meta: {
         source: "fast-agent-persisted-home",
+        lastError: record.launchError,
         healthRecovery: record.snapshot.metadata?.extras?.healthRecovery === true || (record.snapshot.metadata as Record<string, unknown> | undefined)?.healthRecovery === true,
         readOnly: true,
         home: this.home,

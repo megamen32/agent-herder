@@ -24,16 +24,55 @@ describe("Fast Agent persisted observer", () => {
     const bin = join(home, "capture.sh");
     const argsPath = join(home, "arguments.txt");
     const envPath = join(home, "environment.txt");
-    await writeFile(bin, `#!/bin/sh\nprintf '%s\n' "$@" > '${argsPath}'\nprintf '%s' "$ANTHROPIC_API_KEY" > '${envPath}'\n`);
+    await writeFile(bin, `#!/bin/sh\nprintf '%s\n' "$@" > '${argsPath}'\nprintf '%s\n%s\n%s' "$ANTHROPIC_API_KEY" "$ANTHROPIC_AUTH_TOKEN" "$ANTHROPIC_BASE_URL" > '${envPath}'\n`);
     await chmod(bin, 0o755);
     vi.stubEnv("FAST_AGENT_MINIMAX_CONFIG", config);
     vi.stubEnv("MINIMAX_API_KEY", "test-private-token");
+    vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "unrelated-payg-token");
+    vi.stubEnv("ANTHROPIC_BASE_URL", "https://unrelated.example");
     const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: bin });
     expect(await adapter.sendMessage("fast-agent:direct", { message: "diagnose only" })).toEqual({ ok: true });
     const args = (await readFile(argsPath, "utf8")).split("\n");
-    expect(args).toEqual(expect.arrayContaining(["--config-path", config, "--model", "anthropic.MiniMax-M3.1-Flash-Preview", "--shell", "--timeout", "300"]));
+    expect(args).toEqual(expect.arrayContaining(["--config-path", config, "--agent-cards", "--model", "anthropic.MiniMax-M3.1-Flash-Preview", "--shell", "--timeout", "300"]));
     expect(args.join(" ")).not.toContain("test-private-token");
-    expect(await readFile(envPath, "utf8")).toBe("test-private-token");
+    expect(await readFile(envPath, "utf8")).toBe("test-private-token\n\nhttps://api.minimax.io/anthropic");
+  });
+
+
+
+  it("records an actual queued child failure with a bounded redacted provider explanation", async () => {
+    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-queue-error-"));
+    cleanups.push(home);
+    const directory = join(home, "sessions", "queue-error");
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, "session.json"), JSON.stringify({ session_id: "queue-error", continuation: { cwd: home } }));
+    const bin = join(home, "fail.sh");
+    await writeFile(bin, "#!/bin/sh\nprintf 'Provider Error: test-private-token denied\n' >&2\nexit 1\n");
+    await chmod(bin, 0o755);
+    vi.stubEnv("MINIMAX_API_KEY", "test-private-token");
+    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: bin });
+    expect(await adapter.sendMessage("fast-agent:queue-error", { message: "check", queue: true })).toEqual({ ok: true });
+    let receipt: { running?: boolean; error?: string } = {};
+    for (let i = 0; i < 40; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      receipt = JSON.parse(await readFile(join(directory, "herder-execution.json"), "utf8"));
+      if (!receipt.running) break;
+    }
+    expect(receipt.error).toContain("<redacted> denied");
+    expect(receipt.error).not.toContain("test-private-token");
+    expect(await adapter.getSession("fast-agent:queue-error")).toMatchObject({ status: "error" });
+  });
+
+  it("shows a queued provider failure instead of a silently empty conversation", async () => {
+    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-failure-"));
+    cleanups.push(home);
+    const directory = join(home, "sessions", "failed");
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, "session.json"), JSON.stringify({ session_id: "failed", execution: { status: "completed" } }));
+    await writeFile(join(directory, "herder-execution.json"), JSON.stringify({ error: "Fast Agent завершился без нового ответа.", endedAt: "2026-10-07T18:40:00Z" }));
+    const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/bin/true" });
+    expect(await adapter.getSession("fast-agent:failed")).toMatchObject({ status: "error", meta: { lastError: expect.stringContaining("без нового ответа") } });
+    expect(await adapter.getSessionMessages("fast-agent:failed", 1)).toMatchObject([{ role: "assistant", text: expect.stringContaining("без нового ответа") }]);
   });
 
   it("observes an empty native session before first delivery with its actual workspace and model", async () => {
