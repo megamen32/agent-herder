@@ -64,7 +64,7 @@ describe("mobile chat and session controls", () => {
     for (const harness of ["Codex", "Claude Code", "OpenCode", "Hermes"]) expect(main).toContain(harness);
   });
 
-  it("shows autocontinue for Codex and autopilot for ZCode as separate contextual settings", () => {
+  it("shows every automation control supported by the active harness", () => {
     const headerStart = main.indexOf('<div className="header-actions">');
     const headerEnd = main.indexOf("</header>", headerStart);
     const header = main.slice(headerStart, headerEnd);
@@ -74,11 +74,14 @@ describe("mobile chat and session controls", () => {
 
     expect(headerStart).toBeGreaterThan(-1);
     expect(menuStart).toBeGreaterThan(-1);
-    expect(header).toContain('activeSession?.harness === "codex"');
+    expect(main).toContain('const AUTOCONTINUE_HARNESSES = new Set(["codex", "zcode"])');
+    expect(header).toContain("activeHarnessSupportsAutocontinue");
+    expect(header).toContain("activeHarnessSupportsAutopilot");
     expect(header).toContain('>Автопродолжение<span className={`toggle-dot');
     expect(header).toContain('>Автопилот<span className={`toggle-dot');
+    expect(header).toContain("activeAutocontinueEnabled");
     expect(header).toContain('activeAutopilotEnabled');
-    expect(menu).toContain('Автопродолжение: ${runtimeSettingsDraft?.enabled ? "включено" : "выключено"}');
+    expect(menu).toContain('Автопродолжение: ${activeAutocontinueEnabled ? "включено" : "выключено"}');
     expect(menu).toContain('Автопилот: ${activeAutopilotEnabled ? "включён" : "выключен"}');
   });
 
@@ -97,20 +100,20 @@ describe("mobile chat and session controls", () => {
     expect(styles).toContain('.composer-stack { position: relative; width: min(860px, calc(100% - 40px)); margin: 0 auto 22px;');
   });
 
-  it("does not offer a per-session autopilot switch outside the selected harness policy", () => {
+  it("keeps per-session switches available for every supported capability", () => {
     const inspectorStart = main.indexOf('<aside className="inspector-pane"');
     const inspector = main.slice(inspectorStart);
 
-    expect(main).toContain("activeAutopilotHarnessEnabled");
-    expect(inspector).toContain("autopilotSession && activeAutopilotHarnessEnabled");
-    expect(inspector).toContain("Для Codex остаётся автопродолжение после сбоев. Незавершённые задачи завершает ZCode.");
-    expect(inspector).toContain('className="autopilot-control autopilot-policy-disabled"');
+    expect(inspector).toContain("autopilotSession && <div");
+    expect(inspector).toContain('aria-label={`Автопилот для сессии ${activeSession.id}`}');
+    expect(inspector).toContain('aria-label={`Автопродолжение для сессии ${activeSession.id}`}');
+    expect(inspector).not.toContain("autopilot-policy-disabled");
   });
 
   it("keeps automation modes discoverable on mobile with their current state", () => {
     expect(main).toContain('aria-label="Открыть настройки автоматизации"');
     expect(main).toContain('>Автоматизация</button>');
-    expect(main).toContain('Автопродолжение: ${runtimeSettingsDraft?.enabled ? "включено" : "выключено"}');
+    expect(main).toContain('Автопродолжение: ${activeAutocontinueEnabled ? "включено" : "выключено"}');
     expect(main).toContain('Автопилот: ${activeAutopilotEnabled ? "включён" : "выключен"}');
     expect(styles).toContain('.header-actions .mobile-automation-button { display: inline-flex;');
     expect(styles).toContain('.header-actions .desktop-chat-menu { display: none; }');

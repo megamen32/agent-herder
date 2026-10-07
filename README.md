@@ -234,7 +234,7 @@ Autocontinue restores only interrupted native turns in the same session. Its cra
 
 Web settings expose failure and disconnect recovery independently, plus a separate opt-in stalled-turn timeout. Normal completion, running sessions, human input/approval, human stops, non-retryable admissions and native Codex subagent threads block recovery. See [crash recovery](docs/autopilot.md#crash-recovery-autocontinue) for details.
 
-The chat toolbar is contextual: Codex sessions show Autocontinue, while ZCode sessions show Autopilot. Both global settings remain available from the automation menu, and exact-session switches live in the session inspector. A harness excluded by the Autopilot policy is shown as disabled and cannot be enabled accidentally from its session card.
+The chat toolbar is capability-aware: every supported harness shows Autopilot, and harnesses with proven same-session crash recovery also show Autocontinue. Codex and ZCode therefore expose both independent controls. Both global settings remain available from the automation menu, and exact-session switches live in the session inspector.
 
 For remote ZCode sessions, Autocontinue also recognizes the durable SSH-loss tuple: the remote task index still says `running`, while the newest root turn ended as `cancelled` and no explicit human-stop receipt exists. This remains a same-ID recovery and does not invoke the LLM. Autopilot separately judges normally completed work and the 48-hour backlog.
 
