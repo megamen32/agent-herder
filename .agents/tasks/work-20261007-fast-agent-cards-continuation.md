@@ -4,14 +4,15 @@ Owner: Codex `01a11747-c694-7340-be48-f973e3c4e568`, continuing original Mac `01
 
 Acceptance: preserve Codex-style UI, real native bash/result/reasoning cards, and obtain a second human-requested reply through the UI in native session `2610071904-5rlge7`; archived/imported sessions remain read-only. Publish reviewed work on clean synchronized `main` before deployment; verify the exact running source afterward.
 
-## Current authoritative state (updated 2026-10-07 17:52UTC)
+## Current authoritative state (updated 2026-10-07 18:53UTC)
 
-- Source integration1787dc5 +031e216 recovery guard is published. Both Herder checkouts were clean and synchronized at39f8c843e63fc85e44e47adbc93b0ab6084987af; Mac dirty bytes preserved before exact-content fast-forward. Canonical Mac identity confirmed; no hostname blocker.
-- Recovery's production TypeScript build and six adoption tests reused per user instruction. Running Herder PID477264 exposes writable native demo2610071904-5rlge7 and its original bash/result/reasoning cards. No Codex/GrepMesh daemon restart by this task.
-- Six-minute foreground admission waiter exited75 WITHOUT starting Vitest: last reserve4.42GiB, UID full avg10/avg60=19.96/24.98%, HOST memory full avg10=1.55%, HOST IO full avg10=0.06%, shared heavy lock held. Required UID<1/<3 and hostfull<1, plus both locks. No own background job/scope remains, no model second prompt sent.
-- Remaining:11critical adapter cases -> justified Vite-only static update (16:17 output predates source archive-meta fix) -> final UI/human second turn in SAME isolated native demo -> captured response/readback -> post-canary scoped commit and clean exact-SHA sync. Reuse existing TS/adoption results; never broaden suite or lower guard.
-- mac_control owns codex-app-server.ts + its tests; preserve their pending work and coordinate intentional Herder restart before starting final Fast Agent canary. Own Fast Agent paths and031e216 guard unchanged.
-- Existing Mac Chrome MCP is paused chrome_connection_changed; no retries/reconnect/restart. If using a new server100 browser instead, first record a finite one-page budget, acquire the same global/project lock and corrected reserve, use existing Chrome binary only, keep own browser/controller in the bounded cgroup, capture screenshot before any error retry, and close only own session. No installer/new global MCP/profile migration.
+- Integrated source1787dc5 and the blank-Continue/permission repair7d75ded are published on main; primary checkout clean at fa9ed1b9fa39396a1635f1ee672cbec6c1498d0e before this status-only update. Preserve independently owned031e216 recovery guards and239fa47 Codex steer adapter/tests.
+- Root's production TypeScript build/six adoption tests and239fa47 targeted checks/deploy are reused. Maintenance FINISH received. Running Herder PID763536 started20:57:05MSK; no shared Codex/GrepMesh daemon restarted by this task. Fast adapter dist20:24:48MSK and static UI19:17:05MSK predate7d75ded; that repair is NOT deployed.
+- Read-only native consumer proof18:53:16UTC: SAME native2610071904-5rlge7, stopped, managed=true, readOnly=false, archived=false, four original records with bash tool_call/tool_result and thinking/text. No second prompt/response or visual acceptance claimed. Secret-safe receipt: ignored .tmp/fast-agent-cards-continuation/native-readback-current.json.
+- Admission remains closed18:53:01UTC: UID headroom1854795776 bytes (1.727GiB), full avg10/avg60=26.89/24.44%; HOST memory full avg10=19.12%, IO full=0.18%; UID swap4292939776 bytes; shared heavy lock held by peer, project lock free at sample. Exact receipt: ignored .tmp/fast-agent-cards-continuation/current-gate.json. Required >=2GiB, UID full<1/<3, HOST memory/IO full<1 and BOTH locks. No own test/build/browser/provider workload or background waiter is active.
+- Mac last-proven clean39f8c843e63fc85e44e47adbc93b0ab6084987af; its three original dirty source bytes are preserved. Latest source not synchronized: fresh canonical2222 Connection refused; earlier recovery LAN No route and Tailscale offline. Knownkey/LocalHostName/hardware/arm64 identity contract accepts DNS aliasMBP-User.lan; alias is NOT blocker. Mac authsync/GrepMesh work untouched. Infra Root owns single bridge recovery; UserIO handoff delivery confirmed, Root44 message timed out without receipt and is not retried.
+- Remaining admitted sequence:11critical adapter cases -> ONLY changed Fast Agent module transpile + Vite-only static update -> coordinated Herder-only restart -> final UI blank Continue ONCE in SAME isolated demo -> capture NEW native answer and screenshot -> post-canary scoped commit/push and clean exact-SHA Mac fast-forward. Never repeat full TS/adoption build/tests without new reason.
+- Existing Mac Chrome MCP remains paused chrome_connection_changed. A new server100 one-page browser needs a documented finite budget, corrected reserve and both locks; no browser/download/controller restart has been started.
 
 
 ## Preserved and integrated state
@@ -28,13 +29,13 @@ Existing project verification budget: RAM soft/hard1/2GiB, swap0, CPU2, Tasks128
 
 ## Current blocker and smallest next action
 
-At 17:13:06 UTC UID memory.current38654074880 was effectively at memory.high38654705664; memory.swap.current4294897664 of4294967296; memory PSI full avg10=7.60%. Both workload locks are free. This does not prove spare capacity. Per current explicit user instruction, no heavy test/build/browser/provider dispatch until fresh reserve proof.
+Current exact resource and transport blockers are in the authoritative state above. The six-minute admission waiter already exited75 without launching Vitest. Reattempt its11selected critical cases only after fresh corrected reserve proof and acquisition of both locks, under RAM512MiB/1GiB, swap0, CPU1, Tasks64, IOWeight10, one fork, ROLLDOWN_WORKER_THREADS=2 and timeout120s. No limit increase, new remote workload or peer cancellation is authorized by lock availability alone.
 
-Next: after UID has at least2GiB headroom below MemoryHigh and pressure subsides, hold the existing two locks and run focused adapter/named-session/resource-URI/UI checks, then review/commit/push the inherited merge. Build/restart ONLY Herder after publication and fresh reserve proof, then run the final real UI second-turn canary in the same native session. Do not restart Codex daemon/GrepMesh or touch fleet-codex-watch. Report exact SHA to UserIO owner before their deep live canary. Mac synchronization must preserve remaining dirty work and use the canonical reverse SSH identity route.
+Restore the canonical Mac reverse route through its infrastructure owner, then verify existing key plus LocalHostNameMacBook-Pro-User/hw.modelMacBookPro18,2/arm64 before clean ff-only synchronization. No other Mac checkout is owned here. Continue all admitted steps above without an additional permission request; do not restart Codex/GrepMesh or edit fleet-codex-watch.
 
 ## Completion
 
-Not complete. Merge source resolved and staged; checks, commit/push, deployment, second-turn/UI proof and checkout synchronization remain.
+OPEN. Reviewed task source is committed and pushed, but own semantic checks, deployment of7d75ded, real UI second-turn proof and latest Mac synchronization remain. Sections below are historical evidence; their earlier staged/hostname/maintenance blockers do not supersede the current state above.
 
 ## Coordinated recovery handoff (2026-10-07T17:15:05.861197+00:00)
 
