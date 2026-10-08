@@ -492,7 +492,7 @@ function AutomationSettings({ section, state, draft, saving, error, saved, conti
   </section>;
 }
 
-function SessionList({ entries, activeKey, loading, refreshing, settings, settingsOpen, searchOpen, searchQuery, options, choicesBySession, choosingRequestId, choiceError, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect, onChoose }: {
+function SessionList({ entries, activeKey, loading, refreshing, settings, settingsOpen, searchOpen, searchQuery, options, choicesBySession, choosingRequestId, choiceError, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect, onChoose, onNewSession }: {
   entries: SessionListEntry[];
   activeKey?: string;
   loading: boolean;
@@ -513,9 +513,10 @@ function SessionList({ entries, activeKey, loading, refreshing, settings, settin
   onToggleChildren: (key: string) => void;
   onSelect: (key: string) => void;
   onChoose: (requestId: string, choiceId: string) => void;
+  onNewSession: () => void;
 }) {
   return <nav className="sessions-pane" aria-label="Сессии">
-    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Сессии {refreshing && <span className="inline-loading-dot" role="status" aria-label="Обновление сессий" />}</h1></div><div className="sessions-heading-actions"><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Поиск сессий" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Настройки списка" aria-expanded={settingsOpen} onClick={onSettingsToggle}>⚙</button></div></div>
+    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Сессии {refreshing && <span className="inline-loading-dot" role="status" aria-label="Обновление сессий" />}</h1></div><div className="sessions-heading-actions"><button type="button" className="icon-button" aria-label="Новая сессия" title="Новая сессия" onClick={onNewSession}>+</button><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Поиск сессий" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Настройки списка" aria-expanded={settingsOpen} onClick={onSettingsToggle}>⚙</button></div></div>
     {searchOpen && <div className="session-search"><input autoFocus value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Поиск: название, агент, проект…" aria-label="Поиск по сессиям" /></div>}
     {settingsOpen && <div className="session-settings" aria-label="Настройки списка сессий">
       <label>Папка<select value={settings.cwd} onChange={(event) => onSettingsChange({ cwd: event.target.value })}><option value="">Все папки</option>{options.cwds.map((cwd) => <option value={cwd} key={cwd}>{cwd}</option>)}</select></label>
@@ -1151,30 +1152,39 @@ function App() {
       setCwdSuggestions([]);
     }
   };
-  const openCreateSession = async () => {
+  const openCreateSession = () => {
     const cwd = listSettings.cwd || activeSession?.cwd || "/home/roomhacker";
     setCreateCwd(cwd);
     setCreateSessionError(undefined);
-    await loadCreateAdapters();
-    await loadCreateModels(createHarness);
+    setShowJobs(false);
+    setShowStatistics(false);
+    setShowQuota(false);
+    setAutomationSettings(undefined);
+    setMobileView("chat");
     setShowCreateSession(true);
+    void loadCreateAdapters();
+    void loadCreateModels(createHarness);
     void loadCwdSuggestions(cwd.endsWith("/") ? cwd : `${cwd}/`);
   };
   const createNewSession = async () => {
     if (!createCwd.trim() || creatingSession) return;
     setCreatingSession(true);
     setCreateSessionError(undefined);
-    const generatedName = `${createHarness.replace(/[^a-z0-9-]/gi, "-")}-${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 12)}`;
+    const generatedName = `${createHarness.replace(/[^a-z0-9-]/gi, "-")}-${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14)}-${crypto.randomUUID().slice(0, 8)}`;
     try {
-      await api("/api/sessions", {
+      const created = await api<{ sessionId?: string }>("/api/sessions", {
         method: "POST",
         body: JSON.stringify({ harness: createHarness, name: generatedName, cwd: createCwd.trim(), model: createModel.trim() || undefined }),
       });
+      if (!created.sessionId) throw new Error("Сервер не вернул созданную сессию");
       setShowCreateSession(false);
       await new Promise((resolve) => window.setTimeout(resolve, createHarness === "fast-agent" || createHarness === "claude" ? 1400 : 350));
       await loadSessions();
       setListSettings((current) => ({ ...current, harness: createHarness, cwd: "", sort: "activity", showAll: true }));
-      setMobileView("sessions");
+      const key = `${createHarness}:${created.sessionId}`;
+      selectSession(key);
+      setMobileView("chat");
+      await loadDetails(key);
     } catch (error) { setCreateSessionError((error as Error).message); }
     finally { setCreatingSession(false); }
   };
@@ -1319,7 +1329,7 @@ function App() {
 
   return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"} ${(!showInspector || showStatistics || showJobs || showQuota || automationSettings) ? "no-inspector" : ""}`}>
     <CodexNavigation active={showJobs ? "jobs" : showStatistics ? "statistics" : "chat"} onChat={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); }} onNew={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); void openCreateSession(); }} onJobs={() => { setShowJobs(true); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); }} onStatistics={() => { setShowJobs(false); setShowQuota(false); setAutomationSettings(undefined); openStatistics(); }} />
-    <SessionList entries={visibleSessionEntries} activeKey={activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { shouldFollowRef.current = true; setShowScrollToLatest(false); setShowStatistics(false); setShowJobs(false); selectSession(key); setMobileView("chat"); }} />
+    <SessionList onNewSession={openCreateSession} entries={visibleSessionEntries} activeKey={activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { shouldFollowRef.current = true; setShowScrollToLatest(false); setShowStatistics(false); setShowJobs(false); selectSession(key); setMobileView("chat"); }} />
     <section className="chat-pane">
       <header className="chat-header">
         <button className="mobile-back" onClick={() => setMobileView("sessions")} aria-label="К списку сессий">← <span>Сессии</span></button>
