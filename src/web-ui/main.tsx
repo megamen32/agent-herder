@@ -8,6 +8,7 @@ import { LaunchPolicySettings } from "./launch-policy-settings.js";
 import "./styles.css";
 import "./codex-theme.css";
 import { CodexNavigation } from "./codex-navigation.js";
+import { creationModels } from "./creation-models.js";
 
 type HerderSession = SessionListSession & {
   lastMessage?: string;
@@ -66,7 +67,10 @@ const AUTOCONTINUE_HARNESSES = new Set(["codex", "zcode"]);
 
 const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, { ...init, headers: { "content-type": "application/json", ...(init?.headers || {}) } });
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  if (!response.ok) {
+    const failure = await response.json().catch(() => undefined) as { error?: string } | undefined;
+    throw new Error(failure?.error || `${response.status} ${response.statusText}`);
+  }
   return response.json() as Promise<T>;
 };
 const keyOf = sessionKey;
@@ -1109,7 +1113,7 @@ function App() {
     try {
       const result = await api<{ models?: string[]; refreshing?: boolean }>(`/api/models?harness=${encodeURIComponent(harness)}`);
       if (requestId !== createModelRequestRef.current) return;
-      const models = Array.isArray(result.models) ? result.models : [];
+      const models = creationModels(harness, Array.isArray(result.models) ? result.models : []);
       setCreateModels(models);
       setCreateModelsRefreshing(Boolean(result.refreshing));
       const preferredModel = harness === "fast-agent" && models.includes("anthropic.MiniMax-M3.1-Flash-Preview") ? "anthropic.MiniMax-M3.1-Flash-Preview" : (models[0] || "");
