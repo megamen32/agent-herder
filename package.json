@@ -1,6 +1,6 @@
 {
   "name": "agent-herder",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Coordinate and supervise parent/child sessions across Claude, Codex, OpenCode, ZCode, Fast Agent, Hermes, and Qoder with MCP messaging, TTL coordination notes, session inspection, and autopilot.",
   "type": "module",
   "main": "dist/index.js",
@@ -58,7 +58,8 @@
     "package.json",
     "scripts/coordination-hook.mjs",
     "integrations/fast-agent/coordination_hooks.py",
-    "integrations/zcode/agent-herder-autopilot/hooks/coordination.mjs"
+    "integrations/zcode/agent-herder-autopilot/hooks/coordination.mjs",
+    "skills/chat-triage"
   ],
   "publishConfig": {
     "access": "public"

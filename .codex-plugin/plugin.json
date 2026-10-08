@@ -1,6 +1,6 @@
 {
   "name": "agent-herder",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Coordinate and supervise parent/child sessions across Claude, Codex, OpenCode, ZCode, Fast Agent, Hermes, and Qoder with MCP messaging, TTL coordination notes, session inspection, and autopilot.",
   "author": {
     "name": "Agent Herder contributors"
@@ -18,7 +18,7 @@
   "interface": {
     "displayName": "Agent Herder",
     "shortDescription": "Coordinate and supervise coding-agent sessions",
-    "longDescription": "Agent Herder monitors coding-agent sessions, lets agents message each other through MCP, injects TTL coordination notes for shared workspaces, resumes or steers sessions, and provides optional autopilot supervision.",
+    "longDescription": "Agent Herder monitors coding-agent sessions, lets agents message each other through MCP, injects TTL coordination notes for shared workspaces, resumes or steers sessions, and provides optional autopilot supervision. Its chat-triage skill organizes current Codex and ZCode chats while preserving unfinished tasks and history.",
     "developerName": "Agent Herder contributors",
     "category": "Developer Tools",
     "capabilities": [

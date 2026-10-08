@@ -238,6 +238,22 @@ The chat toolbar is capability-aware: every supported harness shows Autopilot, a
 
 For remote ZCode sessions, Autocontinue also recognizes the durable SSH-loss tuple: the remote task index still says `running`, while the newest root turn ended as `cancelled` and no explicit human-stop receipt exists. This remains a same-ID recovery and does not invoke the LLM. Autopilot separately judges normally completed work and the 48-hour backlog.
 
+## Organize current chats
+
+The bundled [chat-triage skill](skills/chat-triage/SKILL.md) keeps current Codex
+and ZCode tasks visible and removes only proven completed or superseded pins.
+It joins explicit owning parents, children, and replacement aliases rather
+than deduplicating titles. A bounded Python planner holds unknown, active,
+queued, or incomplete scope and requires replacement pin readback before
+removing an original pin. Cleanup preserves conversations and does not start
+or stop sessions.
+
+Codex plugin installations discover the skill automatically. For a source
+installation, run `python3 skills/chat-triage/scripts/install.py` to add the
+Codex skill and ZCode `/chat-triage` command without changing autopilot hooks.
+Native pin capabilities vary; the skill documents supported desktop/adapter
+routes and reports a precise blocker when a route is unavailable.
+
 ## Develop locally
 
 ```bash
