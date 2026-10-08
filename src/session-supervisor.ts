@@ -605,7 +605,7 @@ export class SessionSupervisor {
     return result;
   }
 
-  async resumeSession(harness: string, id: string, message?: string, humanRequested = false): Promise<{ ok: boolean; error?: string }> {
+  async resumeSession(harness: string, id: string, message?: string, humanRequested = false, inputId?: string): Promise<ControlResult> {
     const adapter = this.requireAdapter(harness);
     if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "resume")) return { ok: false, error: "Fleet admission holds automatic native work" };
     if (humanRequested) await this.releaseHumanStop(harness, id);
@@ -637,7 +637,8 @@ export class SessionSupervisor {
     const injected = session ? await coordinationNotes.inject(session, message) : message;
     if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат снова остановлен; автоматическое продолжение запрещено." };
     if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "send")) return { ok: false, error: "Fleet admission holds automatic delivery" };
-    const result = await adapter.sendMessage(id, { message: injected, origin: humanRequested ? "human" : "automation" });
+    // Control APIs acknowledge native admission; they must not wait for task completion.
+    const result = await adapter.sendMessage(id, { message: injected, origin: humanRequested ? "human" : "automation", queue: true, ...(inputId ? { inputId } : {}) });
     if (result.ok || result.admitted === true) {
       if (session) await this.unfinishedSessions?.armSession(
         session,

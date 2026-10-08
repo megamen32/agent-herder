@@ -431,3 +431,19 @@ use `glm-5.3-flash`, OpenAI-compatible protocol, through
 `https://api.z.ai/api/coding/paas/v4`. Persisted settings are in the configured
 `autopilot-live/session-autostart.json`. A future MiniMax route is a separate
 planned configuration change; this repair does not select it.
+
+## Resume API admission receipts
+
+A resume request with a message returns after native admission rather than
+waiting for the generation to finish. Codex receipts include the exact native
+`turnId`, `admitted: true`, and the caller's `inputId` when supplied; these
+fields do not indicate task completion.
+
+Actors may supply a stable `inputId` to `POST /api/sessions/codex/{id}/resume`.
+Retrying that same operation uses the existing durable delivery receipt and
+does not repeat native admission. A distinct continuation after a new failure
+uses a distinct operation ID, even when its message text is identical.
+No implicit 24-hour message-hash dedupe is introduced for legacy requests.
+A timeout, disconnect, or unverifiable turn ID returns
+`admissionUnknown/nonRetryable`: reconcile native state and hold rather than
+blindly submitting the message again.

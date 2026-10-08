@@ -1236,7 +1236,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const action = actionMatch[3];
     if (body.humanRequested !== undefined && typeof body.humanRequested !== "boolean") return sendJson(response, 400, { error: "humanRequested must be boolean" });
     if (action === "resume") {
-      return sendOperationResult(response, await supervisor.resumeSession(harness, id, optionalString(body.message), body.humanRequested === true));
+      if (body.inputId !== undefined && (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512)) {
+        return sendJson(response, 400, { error: "inputId must be a non-empty string of at most 512 characters" });
+      }
+      return sendOperationResult(response, await supervisor.resumeSession(harness, id, optionalString(body.message), body.humanRequested === true, optionalString(body.inputId)));
     }
     if (action === "stop") {
       return sendOperationResult(response, await supervisor.stopSession(harness, id));

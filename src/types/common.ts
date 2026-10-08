@@ -96,6 +96,10 @@ export interface HarnessCapabilities {
 
 export interface SendMessageResult {
   ok: boolean;
+  /** Exact native turn identity returned by admission, not task completion. */
+  turnId?: string;
+  /** Caller-supplied stable operation identity; distinct attempts need distinct IDs. */
+  inputId?: string;
   error?: string;
   /** The native harness accepted this exact prompt, so callers must not submit it again. */
   admitted?: boolean;

@@ -460,7 +460,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         if (result.turnId !== expectedTurnId) {
           return { ok: false, admitted: true, nonRetryable: true, error: "Codex steer receipt did not match the verified active turn; do not retry" };
         }
-        return { ok: true };
+        return { ok: true, admitted: true, turnId: expectedTurnId, ...(options.inputId ? { inputId: options.inputId } : {}) };
       } catch (error) {
         // Only an explicit native pre-admission rejection permits refresh.
         // A timeout/disconnect may follow acceptance and must never be replayed.
@@ -503,6 +503,12 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         model: session.model || null,
       }) as { turn?: { id?: string; status?: string } };
       const turnId = result.turn?.id;
+      if (typeof turnId !== "string" || !turnId.trim()) {
+        if (completion) this.clearCompletion(id);
+        return { ok: false, admitted: true, admissionUnknown: true, nonRetryable: true,
+          error: "Codex accepted turn/start without a verifiable turn ID; do not replay",
+          ...(options.inputId ? { inputId: options.inputId } : {}) };
+      }
       if (generatedPrompt && turnId) {
         try {
           await getHumanStopStore().rememberGeneratedPrompt("codex", id, options.message, turnId);
@@ -526,7 +532,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       }
       if (turnId && result.turn?.status === "inProgress") this.activeTurns.set(id, turnId);
       release(); // Waiting for a sync reply must not block another current-turn steer.
-      if (!completion) return { ok: true };
+      if (!completion) return { ok: true, admitted: true, turnId, ...(options.inputId ? { inputId: options.inputId } : {}) };
       return await completion;
     } catch (error) {
       if (completion) this.clearCompletion(id);
