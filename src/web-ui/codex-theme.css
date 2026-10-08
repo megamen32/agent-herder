@@ -36,6 +36,9 @@
 .message { margin-bottom: 30px; }
 .message.user { max-width: min(660px, 85%); padding: 18px 22px; border-radius: 24px; background: #32343e; }
 .message-body { max-width: 100%; }
+.message > .message-body + .message-body,
+.message > .service-note + .message-body,
+.message > .message-body + .service-note { margin-top: var(--space-3); }
 .message p, .message ul, .message ol { font-size: 16px; line-height: 1.65; }
 .message.user .message-meta { color: #b0b0b8; }
 .message pre, .tool-card, .service-note { background: #2d2f38; }

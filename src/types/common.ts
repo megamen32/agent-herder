@@ -30,6 +30,9 @@ export interface SessionMessagePart {
 export interface SessionMessageView {
   id: string;
   role: "user" | "assistant" | "tool" | "system";
+  /** Native turn identity; absent when the transcript does not prove it. */
+  turnId?: string;
+  phase?: string;
   timestamp?: string;
   text?: string;
   parts: SessionMessagePart[];

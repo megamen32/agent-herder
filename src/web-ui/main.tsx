@@ -9,6 +9,8 @@ import "./styles.css";
 import "./codex-theme.css";
 import { CodexNavigation } from "./codex-navigation.js";
 import { creationModels } from "./creation-models.js";
+import { groupSessionMessages } from "./message-groups.js";
+import type { SessionMessageView } from "../types/index.js";
 
 type HerderSession = SessionListSession & {
   lastMessage?: string;
@@ -18,8 +20,7 @@ type HerderSession = SessionListSession & {
   durationSec?: number;
   costUsd?: number;
 };
-type SessionPart = { type: "text" | "thinking" | "tool_call" | "tool_result"; text?: string; name?: string; input?: unknown; output?: string; error?: boolean };
-type SessionMessage = { id: string; role: "user" | "assistant" | "tool" | "system"; timestamp?: string; text?: string; parts: SessionPart[] };
+type SessionMessage = SessionMessageView;
 type SessionDetails = { session: HerderSession; lineage?: { kind?: string; parentId?: string; role?: string; task?: string }; children?: HerderSession[]; messages: SessionMessage[] };
 type StatisticsDistribution = { count: number; percentilesSec: { p50: number; p75: number; p90: number; p95: number; p99: number }; coverage: Array<{ seconds: number; count: number; percent: number }>; histogram: Array<{ label: string; minSec: number; maxSec?: number; count: number; percent: number }> };
 type NumericSummary = { count: number; mean: number; median: number; p75: number; p90: number; p95: number; p99: number; min: number; max: number };
@@ -1351,11 +1352,14 @@ function App() {
           {detailsLoading && !details && <div className="session-loading-chat" aria-live="polite"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Загружаю свежие сообщения</strong><small>Начинаем с последних ходов; остальным Agent Herder можно пользоваться дальше.</small></div>}
           {!detailsLoading && !details && <div className="empty-chat">{detailsError || "Выберите сессию, чтобы открыть переписку."}</div>}
           {detailsHydrating && details && <div className="history-loading-banner"><span className="inline-loading-dot" /> Последние {formatLoadTiming(latestTimingMs)} · подгружаю историю и метрики…</div>}
-          {details?.messages.map((message, index) => {
-            if (!hasVisibleMessage(message, showReasoning, showTools)) return null;
-            const noteLabel = serviceNoteLabel(message);
-            const isLastAssistant = message.role === "assistant" && index === details.messages.length - 1;
-            return <article className={`message ${message.role}`} key={message.id}><div className="message-meta"><span>{message.role === "user" ? "Вы" : message.role === "tool" ? "Инструмент" : "Агент"}</span><time>{formatTime(message.timestamp || "")}</time></div>{noteLabel ? <ServiceNote label={noteLabel} message={message} /> : <CollapsibleMessage message={message} showReasoning={showReasoning} showTools={showTools} forceExpanded={isLastAssistant} />}</article>;
+          {groupSessionMessages(details?.messages || []).map((group, groupIndex, groups) => {
+            const visible = group.messages.filter((message) => hasVisibleMessage(message, showReasoning, showTools));
+            if (visible.length === 0) return null;
+            const isLastAssistant = group.role === "assistant" && groupIndex === groups.length - 1;
+            return <article className={`message ${group.role}`} key={group.id}><div className="message-meta"><span>{group.role === "user" ? "Вы" : group.role === "tool" ? "Инструмент" : "Агент"}</span><time>{formatTime(group.timestamp || "")}</time></div>{visible.map((message, index) => {
+              const noteLabel = serviceNoteLabel(message);
+              return noteLabel ? <ServiceNote key={message.id} label={noteLabel} message={message} /> : <CollapsibleMessage key={message.id} message={message} showReasoning={showReasoning} showTools={showTools} forceExpanded={isLastAssistant && index === visible.length - 1} />;
+            })}</article>;
           })}
         </div>
       </div>}

@@ -5,7 +5,6 @@ import { createReadStream, existsSync } from "node:fs";
 import { open, readFile, readdir, readlink, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
-import { createInterface } from "node:readline";
 import { spawnDetachedWorkload } from "../workload-launcher.js";
 import { getHumanStopStore } from "../human-stop-store.js";
 
@@ -47,7 +46,10 @@ interface CodexTranscriptItem {
   timestamp?: string | number;
   payload?: {
     type?: string;
+    id?: string;
     role?: string;
+    phase?: string;
+    internal_chat_message_metadata_passthrough?: { turn_id?: string };
     model?: string;
     turn_id?: string;
     reason?: string;
@@ -104,7 +106,7 @@ function nativeAutomationMetadataFromLines(lines: string[]): CodexNativeAutomati
   return automationStop ? { automationStop } : {};
 }
 
-function mapCodexMessage(id: string, item: CodexTranscriptItem & { timestamp?: string }, index: number, scope: "first" | "tail"): SessionMessageView | null {
+function mapCodexMessage(id: string, item: CodexTranscriptItem & { timestamp?: string }, recordOffset: number, contextTurnId?: string): SessionMessageView | null {
   if (item.type !== "response_item" || item.payload?.type !== "message") return null;
   if (item.payload.role !== "user" && item.payload.role !== "assistant") return null;
   const parts = (item.payload.content || [])
@@ -113,9 +115,12 @@ function mapCodexMessage(id: string, item: CodexTranscriptItem & { timestamp?: s
     .filter((part) => part.text.trim().length > 0);
   const messageText = parts.map((part) => part.text).join("\n").trim();
   if (!messageText) return null;
+  const turnId = item.payload.internal_chat_message_metadata_passthrough?.turn_id || item.payload.turn_id || contextTurnId;
   return {
-    id: `${id}:${scope}:${index}:${item.timestamp || ""}`,
+    id: item.payload.id || `${id}:record:${recordOffset}`,
     role: item.payload.role,
+    ...(turnId ? { turnId } : {}),
+    ...(item.payload.phase ? { phase: item.payload.phase } : {}),
     timestamp: item.timestamp,
     text: messageText,
     parts,
@@ -399,15 +404,22 @@ export class CodexAdapter implements HarnessAdapter {
         while (bytesToRead <= Math.min(fileStat.size, 4 * 1024 * 1024)) {
           const buffer = Buffer.alloc(bytesToRead);
           const { bytesRead } = await file.read(buffer, 0, bytesToRead, fileStat.size - bytesToRead);
-          const text = buffer.subarray(0, bytesRead).toString("utf8");
-          const lines = text.slice(bytesToRead === fileStat.size ? 0 : Math.max(0, text.indexOf("\n") + 1)).split("\n");
+          const startByte = bytesToRead === fileStat.size ? 0 : Math.max(0, buffer.subarray(0, bytesRead).indexOf(10) + 1);
+          const lines = buffer.subarray(startByte, bytesRead).toString("utf8").split("\n");
           const currentMessages: SessionMessageView[] = [];
+          let contextTurnId: string | undefined;
+          let recordOffset = fileStat.size - bytesToRead + startByte;
           for (let index = 0; index < lines.length; index++) {
             try {
               const item = JSON.parse(lines[index]) as CodexTranscriptItem & { timestamp?: string };
-              const message = mapCodexMessage(id, item, index, "tail");
+              if (item.type === "turn_context" || item.type === "event_msg" && item.payload?.type === "task_started") {
+                contextTurnId = item.payload?.turn_id || undefined;
+              }
+              const message = mapCodexMessage(id, item, recordOffset, contextTurnId);
               if (message) currentMessages.push(message);
+              if (item.type === "event_msg" && ["task_complete", "turn_aborted"].includes(item.payload?.type || "")) contextTurnId = undefined;
             } catch { /* partial or non-message line */ }
+            recordOffset += Buffer.byteLength(lines[index], "utf8") + 1;
           }
           bestMessages = currentMessages;
           if (currentMessages.length >= target || bytesToRead === fileStat.size) return currentMessages.slice(-target);
@@ -426,20 +438,29 @@ export class CodexAdapter implements HarnessAdapter {
   async getFirstUserMessage(id: string): Promise<SessionMessageView | null> {
     const message = await this.withCurrentSessionState(id, async (state) => {
       const stream = createReadStream(state.filePath, { encoding: "utf8" });
-      const lines = createInterface({ input: stream, crlfDelay: Infinity });
-      let index = 0;
+      let pending = "";
+      let recordOffset = 0;
+      const firstUser = (line: string): SessionMessageView | null => {
+        try {
+          const item = JSON.parse(line) as CodexTranscriptItem & { timestamp?: string };
+          const message = mapCodexMessage(id, item, recordOffset);
+          return message?.role === "user" ? message : null;
+        } catch { return null; }
+      };
       try {
-        for await (const line of lines) {
-          try {
-            const item = JSON.parse(line) as CodexTranscriptItem & { timestamp?: string };
-            const currentMessage = mapCodexMessage(id, item, index, "first");
-            if (currentMessage?.role === "user") return currentMessage;
-          } catch { /* malformed/non-message line */ }
-          index += 1;
+        for await (const chunk of stream) {
+          pending += chunk;
+          let newline: number;
+          while ((newline = pending.indexOf("\n")) >= 0) {
+            const line = pending.slice(0, newline);
+            const message = firstUser(line);
+            if (message) return message;
+            recordOffset += Buffer.byteLength(line, "utf8") + 1;
+            pending = pending.slice(newline + 1);
+          }
         }
-        return null;
+        return pending ? firstUser(pending) : null;
       } finally {
-        lines.close();
         stream.destroy();
       }
     });

@@ -94,11 +94,11 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 
 /* статусы */
 .status-dot { display: inline-block; width: 8px; height: 8px; margin-top: 5px; flex: 0 0 8px; border-radius: 50%; background: var(--status-idle); }
-.status-running { background: var(--status-running); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-running) 15%, transparent); }
-.status-waiting, .status-needs_input { background: var(--status-waiting); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-waiting) 15%, transparent); }
-.status-idle { background: var(--status-idle); }
-.status-stopped { background: var(--status-stopped); }
-.status-error { background: var(--status-error); }
+.status-dot.status-running { background: var(--status-running); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-running) 15%, transparent); }
+.status-dot.status-waiting, .status-dot.status-needs_input { background: var(--status-waiting); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-waiting) 15%, transparent); }
+.status-dot.status-idle { background: var(--status-idle); }
+.status-dot.status-stopped { background: var(--status-stopped); }
+.status-dot.status-error { background: var(--status-error); }
 .status-label { font-size: var(--text-xs); color: var(--muted); }
 .status-label.status-running { color: var(--status-running); }
 .status-label.status-waiting, .status-label.status-needs_input { color: var(--status-waiting); }
