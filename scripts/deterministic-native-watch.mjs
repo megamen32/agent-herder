@@ -75,7 +75,16 @@ async function nativeReader(socketPath, manualControl = false) {
       const value = JSON.parse(bytes.toString());
       if (value.method || !pending.has(value.id)) return; // Ignore all broadcasts, dialogue and server requests.
       const request = pending.get(value.id); pending.delete(value.id); clearTimeout(request.timer);
-      if (value.error) request.reject(new Error("native RPC rejected")); else request.resolve(value.result);
+      if (value.error) {
+        const failure = new Error("native RPC rejected");
+        failure.nativeRpcRejected = true; failure.code = value.error.code;
+        const message = String(value.error.message ?? "").toLowerCase();
+        failure.reasonTag = /already.*active writer/.test(message) ? "active_writer_owned_elsewhere"
+          : /invalid.*param|missing.*field|expected.*field/.test(message) ? "invalid_parameters"
+          : /model.*(unknown|invalid|unsupported)|unknown.*model/.test(message) ? "unsupported_model"
+          : /thread.*not found|not found.*thread/.test(message) ? "thread_not_found" : "native_rejected";
+        request.reject(failure);
+      } else request.resolve(value.result);
     } catch {}
   });
   const fail = () => { for (const request of pending.values()) { clearTimeout(request.timer); request.reject(new Error("native socket unavailable")); } pending.clear(); };
@@ -114,8 +123,9 @@ async function nativeReader(socketPath, manualControl = false) {
 /** A finite manual canary, not an automatic recovery proof or heavy-workload grant. */
 export async function continueManualSession(adapter, options, hooks) {
   const base = { sessionId: options.sessionId, inputId: options.inputId, humanRequested: true, automaticRecoveryProven: false };
+  let admissionPhase = "before-intent", turnStartAttempted = false;
   const done = async (status, reason, extra = {}) => {
-    const result = { ...base, status, reason, ...extra }; await hooks.persistResult(result); return result;
+    const result = { ...base, status, reason, admissionPhase, turnStartAttempted, ...extra }; await hooks.persistResult(result); return result;
   };
   const grant = () => options.humanRequested === true && options.sourceOnly === true
     && options.model === "gpt-6.1-sol" && Number.isFinite(options.grantExpiresAt) && options.grantExpiresAt > Date.now()
@@ -136,21 +146,29 @@ export async function continueManualSession(adapter, options, hooks) {
   if (reason) return done("hold", reason);
   if (!await hooks.persistIntent(base)) return done("hold", "operation intent already exists; do not replay");
   try {
+    admissionPhase = "before-resume";
     reason = await verify("before-resume");
     if (reason) return done("hold", reason);
+    admissionPhase = "resume";
     const resumed = await adapter.resumeSession(options.sessionId, options.model);
     if (resumed?.threadId !== options.sessionId) return done("admission_unknown", "native resume identity unconfirmed; do not replay");
+    admissionPhase = "before-start";
     reason = await verify("before-start");
     if (reason) return done("hold", reason);
+    admissionPhase = "start"; turnStartAttempted = true;
     const accepted = await adapter.startTurn(options.sessionId, options.message, options.model);
     if (typeof accepted?.turnId !== "string" || !accepted.turnId.trim()) return done("admission_unknown", "native start accepted without exact turn identity; do not replay");
+    admissionPhase = "readback";
     const fresh = await adapter.getSession(options.sessionId);
     if (fresh?.meta?.activeTurnId === accepted.turnId && fresh.status === "running") {
       return done("started", "exact native inProgress readback", { turnId: accepted.turnId });
     }
     return done("admitted_unconfirmed", "exact start receipt; running readback still required; do not replay", { turnId: accepted.turnId });
-  } catch {
-    return done("admission_unknown", "native mutation or readback response unavailable; do not replay");
+  } catch (error) {
+    const definitive = error?.nativeRpcRejected === true && [-32600, -32602].includes(error.code) && ["resume", "start"].includes(admissionPhase);
+    if (definitive) return done("rejected", "definitive native validation rejection; no automatic retry", {
+      rpcCode: error.code, reasonTag: error.reasonTag ?? "native_rejected", nativeAdmissionPossible: false });
+    return done("admission_unknown", "native mutation or readback response unavailable; do not replay", { nativeAdmissionPossible: true });
   }
 }
 

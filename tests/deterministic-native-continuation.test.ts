@@ -42,6 +42,14 @@ describe("finite explicit manual Codex continuation", () => {
     const b = harness(); b.startTurn.mockRejectedValue(new Error("socket timeout after possible acceptance"));
     expect((await continueManualSession(b, options(), hooks())).status).toBe("admission_unknown"); expect(b.startTurn).toHaveBeenCalledTimes(1);
   });
+  it("separates definitive native rejection from ambiguous transport loss", async () => {
+    const a = harness();
+    a.resumeSession.mockRejectedValue(Object.assign(new Error("native refused"), { nativeRpcRejected: true, code: -32600, reasonTag: "active_writer_owned_elsewhere" }));
+    expect(await continueManualSession(a, options(), hooks())).toMatchObject({ status: "rejected", admissionPhase: "resume", rpcCode: -32600, reasonTag: "active_writer_owned_elsewhere", nativeAdmissionPossible: false });
+    expect(a.startTurn).not.toHaveBeenCalled();
+    const b = harness(); b.startTurn.mockRejectedValue(new Error("closed without response"));
+    expect(await continueManualSession(b, options(), hooks())).toMatchObject({ status: "admission_unknown", admissionPhase: "start", nativeAdmissionPossible: true });
+  });
   it("requires exact resume/start receipts and native readback identity", async () => {
     const a = harness(); a.resumeSession.mockResolvedValue({ threadId: "foreign" });
     expect((await continueManualSession(a, options(), hooks())).status).toBe("admission_unknown"); expect(a.startTurn).not.toHaveBeenCalled();

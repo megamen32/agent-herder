@@ -78,3 +78,11 @@ turn and fresh inProgress readback are distinct from task completion.
 Seven failing-first focused control tests then passed, alongside three observer
 tests. This manual path is not proof of automatic process-death recovery and
 does not grant any PostgreSQL, build, push or external business action.
+
+Manual canary diagnostics preserve the exact resume/start/readback phase, whether
+turn/start was attempted, a safe native rejection tag and RPC code. Explicit
+validation errors -32600/-32602 are recorded as rejected; transport loss and
+missing identities remain admission_unknown. Neither result automatically replays.
+This distinction has a failing-first regression and 11 focused control/observer
+tests passed. A prior receipt that discarded the native error cannot be promoted
+to definitive rejection from timing or idle inventory alone.
