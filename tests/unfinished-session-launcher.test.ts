@@ -109,7 +109,7 @@ describe("unfinished session crash recovery", () => {
             autopilotSessionStore: new AutopilotSessionStore(join(root, "sessions.json")), discoveryIdleMs: 1,
             judge: { async decide() { return { verdict: "unfinished", reason: "work remains", confidence: 1 }; }, async plan({ sessions: candidates }) { return { groups: [{ sourceSessionIds: candidates.map(({ session }) => session.id), primarySessionId: candidates[0]!.session.id, verdict: "unfinished", reason: "work remains", confidence: 1, topic: "shared topic", handoff: "finish the task" }] }; } },
         });
-        await launcher.recoverPending();
+        await launcher.runAutopilotCycle();
         expect(calls.resumes.sort()).toEqual(["zcode-1", "zcode-2"]);
         expect(calls.messages.map(({ id }) => id).sort()).toEqual(["zcode-1", "zcode-2"]);
     });
@@ -126,7 +126,7 @@ describe("unfinished session crash recovery", () => {
             autopilotSessionStore: new AutopilotSessionStore(join(root, "sessions.json")), discoveryIdleMs: 1,
             judge: { async decide() { return { verdict: "unfinished", reason: "work remains", confidence: 1 }; }, async plan() { plans += 1; return { groups: [] }; } },
         });
-        await launcher.recoverPending();
+        await launcher.runAutopilotCycle();
         expect(plans).toBe(0);
         expect(calls).toEqual({ resumes: 0, messages: [] });
     });

@@ -792,7 +792,29 @@ export class UnfinishedSessionStore {
         return { ...existing };
       }
       if (existing && (existing.acceptedAt || existing.deliveryPending || existing.admissionPhase
-        || existing.nonRetryableAdmission || existing.activeTurnStartedAt || existing.activeTurnId || existing.activeInputId)) {
+        || existing.nonRetryableAdmission)) return { ...existing };
+      if (existing && (existing.activeTurnStartedAt || existing.activeTurnId || existing.activeInputId)) {
+        // After controller death no live failure event remains. Exact native
+        // terminal proof for the persisted active turn closes that gap; a
+        // lagging failure for another turn must preserve the newer identity.
+        if (!sameNativeRecoveryIdentity(
+          { turnId: existing.activeTurnId, inputId: existing.activeInputId },
+          { turnId: turn.turnId, inputId: turn.userMessageId },
+        )) return { ...existing };
+        existing.recoveryCause = "turn.failed";
+        existing.recoveryObservedAt = turn.completedAt;
+        existing.recoveryTurnId = bounded(turn.turnId, "recoveryTurnId");
+        existing.recoveryInputId = bounded(turn.userMessageId, "recoveryInputId");
+        existing.updatedAt = now.toISOString();
+        existing.attempts = 0;
+        existing.state = "active";
+        delete existing.activeTurnStartedAt;
+        delete existing.activeTurnId;
+        delete existing.activeInputId;
+        if (blockedReason) {
+          existing.recoveryBlockedReason = bounded(blockedReason, "recoveryBlockedReason");
+          existing.lastError = bounded(blockedReason, "lastError");
+        }
         return { ...existing };
       }
       const record: UnfinishedSessionRecord = {
@@ -1139,6 +1161,7 @@ export class UnfinishedSessionLauncher {
   private readonly stalledTurnOverrideMs?: number;
   private readonly acceptedAdmissionTimeoutMs: number;
   private recovering: Promise<void> | null = null;
+  private autopiloting: Promise<void> | null = null;
   private retryTimer?: NodeJS.Timeout;
   private watchdogTimer?: NodeJS.Timeout;
   private urgentTimer?: NodeJS.Timeout;
@@ -1151,6 +1174,7 @@ export class UnfinishedSessionLauncher {
   private lifecycleEpoch = 0;
   private readonly completedSessions = new Set<string>();
   private readonly activeNativeTurns = new Map<string, { turnId?: string; inputId?: string }>();
+  private readonly providerTurnGenerations = new Map<string, number>();
   private eventOperation: Promise<unknown> = Promise.resolve();
   private readonly turnGenerations = new Map<string, number>();
   /** Fences are retained only while event/recovery operations can hold a stale snapshot. */
@@ -1208,6 +1232,11 @@ export class UnfinishedSessionLauncher {
 
   async handleEvent(provider: string, event: HarnessEvent): Promise<void> {
     this.fenceUsers += 1;
+    event = { ...event, at: event.at ?? new Date().toISOString() };
+    if (event.kind === "turn.started" && event.sessionId) {
+      this.providerTurnGenerations.set(provider, (this.providerTurnGenerations.get(provider) ?? 0) + 1);
+    }
+    const providerGeneration = this.providerTurnGenerations.get(provider) ?? 0;
     const eventIdentity = nativeRecoveryIdentity(event);
     const generationKey = event.sessionId && isAutocontinueInventoryHarness(provider)
       ? nativeTurnFenceKey(provider, event.sessionId, eventIdentity) : undefined;
@@ -1221,15 +1250,44 @@ export class UnfinishedSessionLauncher {
     this.eventOperation = new Promise<void>((resolve) => { release = resolve; });
     await previous;
     try {
-      await this.handleEventSerialized(provider, event, eventGeneration);
+      await this.handleEventSerialized(provider, event, eventGeneration, providerGeneration);
     } finally {
       this.releaseTurnFences();
       release();
     }
   }
 
-  private async handleEventSerialized(provider: string, event: HarnessEvent, eventGeneration: number): Promise<void> {
-    if (!event.sessionId || !isAutocontinueInventoryHarness(provider)) return;
+  private async handleEventSerialized(provider: string, event: HarnessEvent, eventGeneration: number, providerGeneration = this.providerTurnGenerations.get(provider) ?? 0): Promise<void> {
+    if (!isAutocontinueInventoryHarness(provider)) return;
+    if (!event.sessionId) {
+      // A controller-wide transport exit can arrive after its per-session
+      // event cache was lost. Use only already persisted active identities;
+      // inventory idle/stopped rows and subscription access errors are not
+      // failure evidence. The normal recovery path still re-reads native
+      // state and owner admission before any resume or prompt.
+      if (event.kind !== "process.disconnected" || event.nativeType === "event-subscription-error") return;
+      const settings = await this.options.settingsStore.getSettings();
+      if (!settings.recoverOnDisconnect) return;
+      const disconnectedAt = Date.parse(event.at || "");
+      if (!Number.isFinite(disconnectedAt)) return;
+      for (const record of await this.options.store.list()) {
+        // A turn-start received while this global event waited for I/O fences
+        // the whole fanout. Never assign an obsolete transport event to the
+        // currently observed native generation.
+        if ((this.providerTurnGenerations.get(provider) ?? 0) !== providerGeneration) return;
+        if (record.harness !== provider || record.threadSource === "subagent"
+          || (!record.activeTurnId && !record.activeInputId)
+          || !record.activeTurnStartedAt || !Number.isFinite(Date.parse(record.activeTurnStartedAt))
+          || Date.parse(record.activeTurnStartedAt) > disconnectedAt) continue;
+        const identity = { turnId: record.activeTurnId, inputId: record.activeInputId };
+        const fence = nativeTurnFenceKey(provider, record.sessionId, identity);
+        await this.handleEventSerialized(provider, {
+          ...event, sessionId: record.sessionId,
+          data: { ...event.data, ...identity },
+        }, fence ? this.turnGenerations.get(fence) ?? 0 : 0);
+      }
+      return;
+    }
     const eventKey = sessionKey(provider, event.sessionId);
     const identity = nativeRecoveryIdentity(event);
     if (event.kind === "session.deleted") {
@@ -1409,6 +1467,7 @@ export class UnfinishedSessionLauncher {
     void this.recoverPending().catch((error) => {
       console.error(`[agent-herder] автозапуск незавершённых сессий завершился ошибкой: ${errorText(error)}`);
     });
+    this.scheduleAutopilotCycle();
     void this.scheduleWatchdog(0);
     return () => this.stop();
   }
@@ -1662,6 +1721,7 @@ export class UnfinishedSessionLauncher {
       void this.recoverPending().catch((error) => {
         console.error(`[agent-herder] повторный автозапуск завершился ошибкой: ${errorText(error)}`);
       });
+      this.scheduleAutopilotCycle();
     }, delay);
     this.retryTimer.unref?.();
   }
@@ -1757,7 +1817,8 @@ export class UnfinishedSessionLauncher {
       if (record.recoveryTurnId && lastTurn?.turnId) {
         const terminal = lastTurn.status?.toLowerCase();
         if (lastTurn.turnId !== record.recoveryTurnId
-          || terminal === "completed" || terminal === "succeeded" || terminal === "success" || terminal === "interrupted"
+          || terminal === "completed" || terminal === "succeeded" || terminal === "success"
+          || (terminal === "interrupted" && record.recoveryCause !== "process.disconnected")
           || (terminal === "cancelled" && lastTurn.transportLost !== true)) {
           await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
           continue;
@@ -1845,13 +1906,31 @@ export class UnfinishedSessionLauncher {
     }
     await Promise.all(launches);
     if (!this.lifecycleActive(lifecycleEpoch)) return;
-    const semanticAutopilot = await this.semanticAutopilotPolicy();
-    if (semanticAutopilot) {
-      const outcome = await this.discoverUnfinishedSessions(lifecycleEpoch, semanticAutopilot);
+  }
+
+  /** LLM task planning is a separate owner from deterministic crash recovery. */
+  runAutopilotCycle(): Promise<void> {
+    if (this.autopiloting) return this.autopiloting;
+    const lifecycleEpoch = this.lifecycleEpoch;
+    this.autopiloting = (async () => {
+      if (!this.lifecycleActive(lifecycleEpoch)) return;
+      const policy = await this.semanticAutopilotPolicy();
+      if (!policy || !this.lifecycleActive(lifecycleEpoch)) return;
+      const outcome = await this.discoverUnfinishedSessions(lifecycleEpoch, policy);
       if (outcome === "blocked") {
         console.error("[agent-herder] LLM-автопилот не построил безопасный план; повтор будет выполнен по backoff");
       }
-    }
+    })().finally(() => { this.autopiloting = null; });
+    return this.autopiloting;
+  }
+
+  private scheduleAutopilotCycle(): void {
+    if (!this.started) return;
+    // Reuse the existing lifecycle clock, but never await the provider from
+    // the recovery promise. A hung/offline LLM cannot hold native retries.
+    void this.runAutopilotCycle().catch((error) => {
+      console.error(`[agent-herder] LLM-автопилот завершился ошибкой: ${errorText(error)}`);
+    });
   }
 
   private async ingestColdZcodeFailures(runtimeSettings: SessionAutostartFile, lifecycleEpoch: number): Promise<void> {
@@ -1891,6 +1970,35 @@ export class UnfinishedSessionLauncher {
         userMessageId: turn.userMessageId,
       }, coldFailureBlockReason(turn));
     }
+  }
+
+  private async recoveryNativeStateStillEligible(adapter: HarnessAdapter, record: UnfinishedSessionRecord): Promise<boolean> {
+    const key = sessionKey(record.harness, record.sessionId);
+    if (this.completedSessions.has(key) || this.completedSessions.has(unfinishedRecordKey(record))) return false;
+    let current: AgentSession | null;
+    try { current = await adapter.getSession(record.sessionId); } catch { return false; }
+    if (this.completedSessions.has(key) || this.completedSessions.has(unfinishedRecordKey(record))) return false;
+    if (!current || current.id !== record.sessionId || current.harness !== record.harness
+      || sessionWorkspaceIdentity(current) !== (record.workspaceIdentity || normalize(record.cwd))
+      || current.status === "needs_input" || current.needsPermission || hasPendingNativePermission(current)
+      || isSubagentSession(current)) return false;
+    // The fresh read can reveal a human stop after the earlier owner checks.
+    // Persisted stop fences are authoritative; standalone recovery without a
+    // configured stop store conservatively holds native stop metadata too.
+    if (this.options.humanStopStore) {
+      if (await this.options.humanStopStore.observe(current)) return false;
+    } else if (current.meta?.automationStop) return false;
+    if (record.recoveryCause !== "stalled"
+      && (current.status === "running" || nonEmptyText(current.meta?.activeTurnId))) return false;
+    const last = nativeLastTurn(current);
+    if (record.recoveryTurnId && last?.turnId) {
+      const status = last.status?.toLowerCase();
+      if (last.turnId !== record.recoveryTurnId
+        || status === "completed" || status === "succeeded" || status === "success"
+        || (status === "interrupted" && record.recoveryCause !== "process.disconnected")
+        || (status === "cancelled" && last.transportLost !== true)) return false;
+    }
+    return !this.completedSessions.has(key) && !this.completedSessions.has(unfinishedRecordKey(record));
   }
 
   private async launchContinuation(
@@ -2006,6 +2114,10 @@ export class UnfinishedSessionLauncher {
         await this.options.store.cancelAttempt(attempt);
         return;
       }
+      if (!await this.recoveryNativeStateStillEligible(adapter, record)) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
       const resumed = adapter.resumeSession ? await adapter.resumeSession(record.sessionId) : { ok: true };
       if (!resumed.ok) throw new Error(resumed.error || "возобновление отклонено");
       if (!this.lifecycleActive(lifecycleEpoch)) {
@@ -2031,6 +2143,10 @@ export class UnfinishedSessionLauncher {
         return;
       }
       if (!this.lifecycleActive(lifecycleEpoch) || (recoveryFence && (this.turnGenerations.get(recoveryFence) ?? 0) !== turnGeneration)) {
+        await this.options.store.cancelAttempt(attempt);
+        return;
+      }
+      if (!await this.recoveryNativeStateStillEligible(adapter, record)) {
         await this.options.store.cancelAttempt(attempt);
         return;
       }
@@ -2392,7 +2508,7 @@ export class UnfinishedSessionLauncher {
       // Session aliases and lifecycle exclusion are delivery controls, not
       // evidence that the original user's task reached its consumer result.
       let verdict = unchanged ? previous?.verdict : undefined;
-      if (this.completedSessions.has(key)) {
+      if (this.completedSessions.has(key) || this.completedSessions.has(sessionKey(harness, session.id))) {
         verdict = { verdict: "needs_human", reason: "Session is paused, deleted or explicitly forgotten; task completion is unverified", confidence: 1, judgedAt: new Date().toISOString() };
       } else if (!verdict && Date.now() - Date.parse(session.lastActivity) < this.discoveryIdleMs && session.status !== "running") {
         // Keep it visible in inventory, but do not classify a session which may
