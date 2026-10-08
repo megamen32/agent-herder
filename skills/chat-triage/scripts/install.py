@@ -14,7 +14,7 @@ def install(skill, home):
     # Inspect both targets before any mutation, preserving unrelated extensions.
     for target, source in targets:
         if target.exists() or target.is_symlink():
-            if not target.is_symlink() or target.resolve() != source:
+            if target.resolve() != source:
                 raise ValueError("existing Codex skill belongs to another source")
     marker = "<!-- agent-herder:chat-triage -->"
     text = (f"---\ndescription: Tidy current Codex and ZCode chats and pins with Agent Herder.\n---\n\n"
@@ -27,7 +27,7 @@ def install(skill, home):
         raise ValueError("existing ZCode command belongs to another source")
     for target, source in targets:
         target.parent.mkdir(parents=True, exist_ok=True)
-        if not target.is_symlink():
+        if not target.exists() and not target.is_symlink():
             target.symlink_to(source, target_is_directory=True)
     command.parent.mkdir(parents=True, exist_ok=True)
     temporary = command.with_name(command.name + f".{os.getpid()}.tmp")

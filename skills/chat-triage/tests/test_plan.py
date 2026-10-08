@@ -137,6 +137,15 @@ class InstallerTests(unittest.TestCase):
             text=(home/".zcode/commands/chat-triage.md").read_text()
             self.assertIn(str(ROOT/"SKILL.md"),text)
             self.assertFalse((home/".zcode/cli/config.json").exists())
+    def test_install_from_existing_codex_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home=Path(tmp)
+            source=home/".codex/skills/chat-triage"
+            source.mkdir(parents=True)
+            (source/"SKILL.md").write_text("Existing reviewed skill")
+            installer.install(source,home)
+            self.assertEqual((source/"SKILL.md").read_text(),"Existing reviewed skill")
+            self.assertTrue((home/".zcode/commands/chat-triage.md").is_file())
     def test_foreign_command_is_preserved_before_any_install(self):
         with tempfile.TemporaryDirectory() as tmp:
             home=Path(tmp)

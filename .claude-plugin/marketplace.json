@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "Local development marketplace for Agent Herder",
-    "version": "0.2.1"
+    "version": "0.2.2"
   },
   "plugins": [
     {
       "name": "agent-herder",
       "description": "Coordinate and supervise coding-agent sessions with MCP messaging, TTL notes, and autopilot.",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "source": "./"
     }
   ]

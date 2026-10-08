@@ -1,6 +1,6 @@
 {
   "name": "agent-herder",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Coordinate and supervise parent/child sessions across Claude, Codex, OpenCode, ZCode, Fast Agent, Hermes, and Qoder with MCP messaging, TTL coordination notes, session inspection, and autopilot.",
   "author": {
     "name": "Agent Herder contributors"
