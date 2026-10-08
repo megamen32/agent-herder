@@ -1183,13 +1183,13 @@ function App() {
       });
       if (!created.sessionId) throw new Error("Сервер не вернул созданную сессию");
       setShowCreateSession(false);
-      await new Promise((resolve) => window.setTimeout(resolve, createHarness === "fast-agent" || createHarness === "claude" ? 1400 : 350));
-      await loadSessions();
       setListSettings((current) => ({ ...current, harness: createHarness, cwd: "", sort: "activity", showAll: true }));
       const key = `${createHarness}:${created.sessionId}`;
       selectSession(key);
       setMobileView("chat");
-      await loadDetails(key);
+      // The active-key effect loads this exact chat while the list refreshes.
+      // A slow unrelated adapter must not leave the user in the old chat.
+      void loadSessions();
     } catch (error) { setCreateSessionError((error as Error).message); }
     finally { setCreatingSession(false); }
   };

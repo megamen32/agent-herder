@@ -26,3 +26,5 @@ Screenshot владельца показывает закрашенный ста
 Failure shield: цветные фоны состояний должны быть ограничены элементом индикатора, поскольку один `status-*` используется и индикатором, и текстом. Повторный симптом — слово заменено прямоугольником того же цвета. Сначала проверять CSS-cascade `status-dot`/`status-label`, а не искать скрытые native ID.
 
 Root integration:45 focused UI/creation/grouping/reader checks passed; full TypeScript candidate compile and Vite production static build passed. Publication and atomic static-only deploy follow; desktop390px/browser computed-style screenshots remain the closing acceptance. Shared native services remain untouched.
+
+Приёмка закрыта для статусов: source bd9dc84 опубликован на main, Vite assets+index обновлены атомарно через существующий serving route; backend PID763536 не менялся. Настоящий headed server browser проверил desktop и390px mobile: подписи «Работает» читаются, background rgba(0,0,0,0), box-shadow none; все доступные status-label прошли проверку. Скриншоты .tmp/new-session-fix/status-desktop.png и status-mobile.png просмотрены root. Own browser закрыт; native/user browser не затронуты.
