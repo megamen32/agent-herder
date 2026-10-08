@@ -60,3 +60,21 @@ Fresh UID soft/hard spare were 88,111,931,392/98,849,349,632 bytes; host availab
 35,853,639,680 bytes; memory PSI some/full zero. These numbers are observations,
 not case admission. The native watcher has run; the cached controller recovery
 module has not been hot-loaded. Real deterministic recovery is still unproven.
+
+## Finite explicit manual delivery canary
+
+The default watcher remains read-only. The separate --manual-delivery entrypoint
+accepts a bounded checkpoint on stdin only for delivery
+01a11b29-cb7a-73f1-b64b-39a7688c0f9f under an unexpired explicit source-only grant.
+It checks the same interrupted native identity, empty native/deferred queues, no
+human-stop fence and fresh reserves before intent, resume and start. The local
+inputId is an operation receipt identity, not a native RPC deduplication field.
+An exclusive, fsynced intent precedes mutation; duplicate/uncertain intent holds.
+Only thread/resume and turn/start are enabled for this manual path; no stop,
+fork, new chat, shared store writer, ZCode SDK, LLM judge or daemon is loaded.
+Missing/mismatched receipts and timeout/disconnect forbid replay. Exact accepted
+turn and fresh inProgress readback are distinct from task completion.
+
+Seven failing-first focused control tests then passed, alongside three observer
+tests. This manual path is not proof of automatic process-death recovery and
+does not grant any PostgreSQL, build, push or external business action.

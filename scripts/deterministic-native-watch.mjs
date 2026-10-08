@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// A finite observer only: no prompts, native resumes, LLM, shared ledger writes or daemon.
-import { readFile, stat, mkdir, writeFile, rename } from "node:fs/promises";
+// Default: finite observer. Explicit manual delivery canary is separately gated; no LLM judge/shared ledger/daemon.
+import { readFile, stat, mkdir, writeFile, rename, open } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -65,7 +66,7 @@ export function compactNativeSnapshot(id, thread, turns) {
     meta: { activeTurnId: active?.id, nativeLastTurn: typeof latest?.id === "string" && typeof latest.status === "string"
       ? { turnId: latest.id, status: latest.status } : undefined } };
 }
-async function nativeReader(socketPath) {
+async function nativeReader(socketPath, manualControl = false) {
   const { default: WebSocket } = await import("ws");
   const socket = new WebSocket(`ws+unix:${socketPath}:/rpc`, { perMessageDeflate: false, handshakeTimeout: 1500, maxPayload: 1024 * 1024 });
   const pending = new Map(); let nextId = 1;
@@ -74,14 +75,14 @@ async function nativeReader(socketPath) {
       const value = JSON.parse(bytes.toString());
       if (value.method || !pending.has(value.id)) return; // Ignore all broadcasts, dialogue and server requests.
       const request = pending.get(value.id); pending.delete(value.id); clearTimeout(request.timer);
-      if (value.error) request.reject(new Error("native read rejected")); else request.resolve(value.result);
+      if (value.error) request.reject(new Error("native RPC rejected")); else request.resolve(value.result);
     } catch {}
   });
   const fail = () => { for (const request of pending.values()) { clearTimeout(request.timer); request.reject(new Error("native socket unavailable")); } pending.clear(); };
   socket.on("error", fail); socket.on("close", fail);
   await new Promise((resolve, reject) => { socket.once("open", resolve); socket.once("error", reject); socket.once("close", () => reject(new Error("native socket closed"))); });
   const request = (method, params) => {
-    if (!["initialize", "thread/read", "thread/turns/list"].includes(method)) throw new Error("read-only method gate");
+    if (!["initialize", "thread/read", "thread/turns/list", "thread/queue/list", ...(manualControl ? ["thread/resume", "turn/start"] : [])].includes(method)) throw new Error("native method gate");
     const id = nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { pending.delete(id); reject(new Error("native read timed out")); }, 1500);
@@ -99,8 +100,117 @@ async function nativeReader(socketPath) {
       const turns = await request("thread/turns/list", { threadId: id, limit: 1, sortDirection: "desc", itemsView: "notLoaded" });
       return compactNativeSnapshot(id, snapshot?.thread, turns);
     },
+    async getQueueMetadata(id) {
+      const queue = await request("thread/queue/list", { threadId: id, limit: 20 });
+      return { clear: Array.isArray(queue?.data) && queue.data.length === 0 && !queue.nextCursor };
+    },
+    async resumeSession(id, model) { const result = await request("thread/resume", { threadId: id, model }); return { threadId: result?.thread?.id }; },
+    async startTurn(id, message, model) { const result = await request("turn/start", { threadId: id, input: [{ type: "text", text: message }], model }); return { turnId: result?.turn?.id }; },
     async dispose() { fail(); socket.close(); },
   };
+}
+
+
+/** A finite manual canary, not an automatic recovery proof or heavy-workload grant. */
+export async function continueManualSession(adapter, options, hooks) {
+  const base = { sessionId: options.sessionId, inputId: options.inputId, humanRequested: true, automaticRecoveryProven: false };
+  const done = async (status, reason, extra = {}) => {
+    const result = { ...base, status, reason, ...extra }; await hooks.persistResult(result); return result;
+  };
+  const grant = () => options.humanRequested === true && options.sourceOnly === true
+    && options.model === "gpt-6.1-sol" && Number.isFinite(options.grantExpiresAt) && options.grantExpiresAt > Date.now()
+    && typeof options.inputId === "string" && options.inputId.length > 0 && options.inputId.length <= 512
+    && typeof options.message === "string" && options.message.length > 0 && options.message.length <= 4096;
+  if (!grant()) return done("hold", "explicit finite source-only manual grant missing or expired");
+  const verify = async phase => {
+    if (!grant()) return "manual grant expired";
+    const session = await adapter.getSession(options.sessionId);
+    if (!session || session.id !== options.sessionId) return "native access unavailable";
+    if (session.status !== "idle" || session.meta?.activeTurnId || session.needsPermission) return "native target is active or requires input";
+    const last = session.meta?.nativeLastTurn;
+    if (last?.turnId !== options.expectedLastTurnId || last?.status !== "interrupted") return "expected interrupted native identity changed";
+    return await hooks.guard({ phase, session, options });
+  };
+  let reason;
+  try { reason = await verify("before-intent"); } catch { return done("hold", "fresh native or owner gate unavailable"); }
+  if (reason) return done("hold", reason);
+  if (!await hooks.persistIntent(base)) return done("hold", "operation intent already exists; do not replay");
+  try {
+    reason = await verify("before-resume");
+    if (reason) return done("hold", reason);
+    const resumed = await adapter.resumeSession(options.sessionId, options.model);
+    if (resumed?.threadId !== options.sessionId) return done("admission_unknown", "native resume identity unconfirmed; do not replay");
+    reason = await verify("before-start");
+    if (reason) return done("hold", reason);
+    const accepted = await adapter.startTurn(options.sessionId, options.message, options.model);
+    if (typeof accepted?.turnId !== "string" || !accepted.turnId.trim()) return done("admission_unknown", "native start accepted without exact turn identity; do not replay");
+    const fresh = await adapter.getSession(options.sessionId);
+    if (fresh?.meta?.activeTurnId === accepted.turnId && fresh.status === "running") {
+      return done("started", "exact native inProgress readback", { turnId: accepted.turnId });
+    }
+    return done("admitted_unconfirmed", "exact start receipt; running readback still required; do not replay", { turnId: accepted.turnId });
+  } catch {
+    return done("admission_unknown", "native mutation or readback response unavailable; do not replay");
+  }
+}
+
+async function compactLocalQuiet(id) {
+  for (const [path, field, isPending] of [
+    ["/home/roomhacker/.local/state/agent-herder/human-stops.json", "sessions", row => row.harness === "codex" && row.id === id && row.active === true],
+    ["/home/roomhacker/.local/state/agent-herder/deferred-messages.json", "messages", row => row.sessionId === id],
+  ]) {
+    try {
+      const value = JSON.parse(await text(path, 1024 * 1024));
+      if (!Array.isArray(value[field])) return false;
+      if (value[field].some(isPending)) return false;
+    } catch (error) { if (error?.code !== "ENOENT") return false; }
+  }
+  return true;
+}
+async function runManualContinuation(options) {
+  if (options.sessionId !== "01a11b29-cb7a-73f1-b64b-39a7688c0f9f") throw new Error("only exact authorized delivery canary permitted");
+  const root = resolve(new URL("..", import.meta.url).pathname);
+  const dir = resolve(root, ".tmp/broken-session-continuator");
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const key = createHash("sha256").update(options.sessionId + "\0" + options.inputId).digest("hex");
+  const receiptPath = resolve(dir, "manual-" + key + ".json"), intentPath = resolve(dir, "manual-" + key + ".intent");
+  const adapter = await nativeReader(SOCKET, true);
+  const receipt = { version: 1, startedAt: new Date().toISOString(), sessionId: options.sessionId,
+    inputId: options.inputId, expectedLastTurnId: options.expectedLastTurnId, model: options.model, humanRequested: true,
+    scope: "explicit source-only turn continuation", automaticRecoveryProven: false, llmJudgeCalls: 0,
+    sharedLedgerWrites: 0, messageSha256: createHash("sha256").update(options.message).digest("hex"), maxRssBytes: process.memoryUsage().rss };
+  try {
+    await continueManualSession(adapter, options, {
+      async guard() {
+        const rss = process.memoryUsage().rss; receipt.maxRssBytes = Math.max(receipt.maxRssBytes, rss);
+        if (rss > 128 * 1024 * 1024) return "finite controller RSS guard reached";
+        const queue = await adapter.getQueueMetadata(options.sessionId);
+        if (!queue.clear || !await compactLocalQuiet(options.sessionId)) return "pending native/deferred queue or human stop";
+        const measured = await resources(); receipt.resources = measured;
+        if (!["observedAt", "psiSome", "psiFull", "hostAvailable", "uidEffectiveSpare"].every(k => Number.isFinite(measured[k]))
+          || Date.now() - measured.observedAt > 5000 || measured.psiSome > 0 || measured.psiFull > 0
+          || measured.hostAvailable < 20 * GIB || measured.uidEffectiveSpare < 2.5 * GIB) return "fresh reserve/PSI hold";
+        return null;
+      },
+      async persistIntent() {
+        try {
+          const file = await open(intentPath, "wx", 0o600);
+          try { await file.writeFile(JSON.stringify({ at: new Date().toISOString(), sessionId: options.sessionId, inputId: options.inputId, status: "uncertain", automaticRecoveryProven: false })); await file.sync(); }
+          finally { await file.close(); }
+          return true;
+        } catch (error) { if (error?.code === "EEXIST") return false; throw error; }
+      },
+      async persistResult(result) { Object.assign(receipt, result); await atomicReceipt(receiptPath, receipt); },
+    });
+  } finally {
+    await adapter.dispose(); receipt.finishedAt = new Date().toISOString(); receipt.maxRssBytes = Math.max(receipt.maxRssBytes, process.memoryUsage().rss);
+    await atomicReceipt(receiptPath, receipt); console.log(JSON.stringify({ receiptPath, ...receipt }));
+  }
+}
+async function boundedManualInput() {
+  let value = "";
+  for await (const chunk of process.stdin) { value += chunk; if (Buffer.byteLength(value) > 8192) throw new Error("manual checkpoint input budget exceeded"); }
+  return JSON.parse(value);
 }
 
 export async function runNativeWatch(args) {
@@ -150,5 +260,6 @@ export async function runNativeWatch(args) {
   }
 }
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  runNativeWatch(process.argv.slice(2)).catch(() => { console.error("finite native watcher failed; inspect compact receipt"); process.exitCode = 1; });
+  const run = process.argv[2] === "--manual-delivery" ? boundedManualInput().then(runManualContinuation) : runNativeWatch(process.argv.slice(2));
+  run.catch(() => { console.error("finite native watcher/control failed; inspect compact receipt and do not replay"); process.exitCode = 1; });
 }
