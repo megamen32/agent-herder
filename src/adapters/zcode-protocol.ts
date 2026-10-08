@@ -228,6 +228,7 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
   private async startInternal(): Promise<void> {
     const child = spawnIsolatedWorkload(this.command, this.args, {
       label: "zcode-app-server",
+      resourceGuard: process.platform === "linux" ? "zcode-shared" : undefined,
       cwd: this.cwd,
       env: this.env ? { ...process.env, ...this.env } : process.env,
       stdio: ["pipe", "pipe", "pipe"],

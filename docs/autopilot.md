@@ -386,3 +386,28 @@ the native controller rather than session/list storage. The current installed
 SDK does not offer this contract, and its stdio-only live controller lacks an
 independent supported diagnostic route. Replacing it requires owner review and
 a safe handoff/idle window; this source seam does not remove that dependency.
+
+## Shared ZCode native resource budget
+
+The Linux ZCode app-server launch uses the existing transient scope naming and
+lifecycle with a mandatory shared SDK/native/MCP descendant budget:
+memory high 30 GiB, hard maximum 34 GiB, CPU quota 16 cores, and 4096 tasks.
+Swap maximum is temporarily 2 GiB pending the separate reviewed host swapoff
+rollout. This supersedes the initial 18/20 GiB candidate.
+
+The 2026-10-08 same-generation measurement recorded 23.87 GiB resident memory,
+28.04 GiB lifetime resident peak, 1.047 GiB swap and 2121 tasks. These
+measurements describe the whole shared native tree, which is excluded from
+the smaller Herder supervisor budget.
+
+Before executing the SDK payload, the scope-local guard reads actual
+memory.high, memory.max, memory.swap.max, pids.max and cpu.max. Missing or
+mismatched memory/task caps, unlimited or excessive CPU quota, and disabled
+Linux isolation refuse launch. The guarded profile rejects caller overrides;
+unsupported systemd resource properties cannot fall back to an unbounded
+native process. Other adapters retain their existing launch behavior.
+
+Finite scope caps and source validation do not grant workload admission or
+prove host reserves. Current-generation live limits are managed separately;
+publishing this source does not restart, replace, or resize an existing scope.
+A future SDK launch still needs native consumer acceptance of this guard.

@@ -6,6 +6,8 @@ export interface DetachedWorkloadOptions extends SpawnOptions {
   label: string;
   /** Optional systemd scope limits for a bounded child workload. */
   resourceProperties?: string[];
+  /** Mandatory Linux guard for the shared ZCode SDK/native descendant tree. */
+  resourceGuard?: "zcode-shared";
 }
 
 export interface IsolatedWorkloadCommand {
@@ -15,6 +17,36 @@ export interface IsolatedWorkloadCommand {
   unitName?: string;
   isolated: boolean;
 }
+
+
+/** Reviewed shared native-tree budget; swap is temporary until the host swapoff rollout. */
+export const ZCODE_SHARED_RESOURCE_PROPERTIES = [
+  "MemoryHigh=32212254720", "MemoryMax=36507222016", "MemorySwapMax=2147483648",
+  "CPUQuota=1600%", "TasksMax=4096",
+];
+
+/** Runs inside the requested scope, before any SDK/native payload is executed. */
+export const ZCODE_SHARED_RESOURCE_CHECK = `
+fail() { printf '%s\\n' 'ZCode resource guard unavailable or mismatched' >&2; exit 75; }
+group=
+while IFS=: read -r hierarchy controllers candidate; do
+  if [ "$hierarchy" = 0 ] && [ -z "$controllers" ]; then group=$candidate; fi
+done < /proc/self/cgroup
+case "$group" in /*) ;; *) fail ;; esac
+case "$group" in *..*) fail ;; esac
+base=/sys/fs/cgroup$group
+read -r high < "$base/memory.high" || fail
+read -r maximum < "$base/memory.max" || fail
+read -r swap < "$base/memory.swap.max" || fail
+read -r tasks < "$base/pids.max" || fail
+read -r quota period < "$base/cpu.max" || fail
+[ "$high" = 32212254720 ] && [ "$maximum" = 36507222016 ] &&
+[ "$swap" = 2147483648 ] && [ "$tasks" = 4096 ] || fail
+case "$quota:$period" in *[!0-9:]*|:*|*:) fail ;; esac
+[ "$period" -gt 0 ] && [ "$quota" -gt 0 ] &&
+[ "$quota" -le "$((period * 16))" ] || fail
+exec "$@"
+`;
 
 function runtimeBusEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
@@ -36,8 +68,14 @@ export function buildDetachedWorkloadCommand(
   args: string[],
   options: DetachedWorkloadOptions,
 ): IsolatedWorkloadCommand {
-  const { label, env, resourceProperties = [], ...spawnOptions } = options;
+  const { label, env, resourceProperties = [], resourceGuard, ...spawnOptions } = options;
   const isolationDisabled = process.env.AGENT_HERDER_WORKLOAD_ISOLATION === "off" || process.env.VITEST === "true";
+  if (resourceGuard && (isolationDisabled || process.platform !== "linux")) {
+    throw new Error("ZCode shared resource guard requires Linux systemd isolation");
+  }
+  if (resourceGuard && resourceProperties.length) {
+    throw new Error("ZCode shared resource guard does not accept budget overrides");
+  }
   if (isolationDisabled || process.platform !== "linux") {
     return {
       command,
@@ -56,9 +94,11 @@ export function buildDetachedWorkloadCommand(
       "--quiet",
       "--collect",
       `--unit=${unitName}`,
-      ...resourceProperties.flatMap((property) => ["--property", property]),
-      command,
-      ...args,
+      ...(resourceGuard ? ZCODE_SHARED_RESOURCE_PROPERTIES : resourceProperties)
+        .flatMap((property) => ["--property", property]),
+      ...(resourceGuard
+        ? ["/bin/sh", "-c", ZCODE_SHARED_RESOURCE_CHECK, "zcode-resource-guard", command, ...args]
+        : [command, ...args]),
     ],
     options: {
       ...spawnOptions,
