@@ -1,6 +1,6 @@
 # Herder idle-steer acknowledgement
 
-Status: confirmed defect; repair awaits the critical GPTAdmin routing cycle and the existing Herder integration owner. No accepted message is replayed. This ledger records admission separately from task completion.
+Status: confirmed acknowledgement defect; repair awaits the existing Herder integration owner and a measured test/deployment slot. GPTAdmin routing is deployed and passes the real native exact-owner canary. No accepted message is replayed. This ledger records admission separately from task completion.
 
 ## Exact native evidence
 
@@ -23,3 +23,9 @@ Canonical infrastructure card `ServersAdministartion/docs/inventory/sites/agent.
 The existing Herder build contract permits Node heap1024MiB and one Vitest worker in an existing guarded session, one project heavy workload. Live service memory current667570176B, high1073741824B, max2147483648B, swapmax536870912B, CPU4cores,11/512tasks are observed service metadata, not a test budget grant. Dynamic host/project admission and current source ownership must be refreshed before any tests/build/restart. No heavy job or service restart is performed for this ledger.
 
 Smallest next action: after the GPTAdmin owner provides its meaningful repair outcome, refresh exact Herder owner status/turn, deliver this source boundary once through native steer, and have the existing publisher integrate the accepted-receipt fix with the preserved composer history under the documented measured budget. Capture focused checks, published same SHA, deployed artifact and the native idle-steer acknowledgement canary. Until then this defect remains open; no false failed response authorizes a repeat delivery.
+
+## Post-routing owner checkpoint — 2026-10-09
+
+GPTAdmin source 1a4eec89, exact Node c18aecd/v1009, cloud run 37840649368 and artifact 11577248404 pass. Existing Hub PID 3406917 runs that candidate with finite 3/10 GiB RAM, swap 0, CPU 2, Tasks 512. Native long-shell job 424463a6c7e5aa7cb16950a16593b3db exits 0; hinted/no-hint/repeated completed receipts agree. This satisfies the prerequisite routing outcome.
+
+Fresh Herder metadata reports coordinator 01a11b24-233f-76e0-b368-a6a8655bfad3 idle/completed turn 01a11bee-8118-76e0-917c-e04c29408284 and publisher 01a11b54-d261-7bb3-ac0f-634926280766 idle/completed turn 01a11d31-4656-7e01-8964-d6f456be4d8d. Neither has an active turn. Canonical HEAD cae6fd2 includes this diagnostic ledger; all listed foreign composer source/tests remain uncommitted and owned. An idle session does not release those file boundaries. No Herder repair dispatch, source edit, test, build or restart occurs here. The next integration action is one deduplicated native steer to the existing publisher after fresh status/admission, preserving the composer WIP and validating the accepted-receipt contract.
