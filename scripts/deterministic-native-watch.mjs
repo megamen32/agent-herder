@@ -51,14 +51,65 @@ async function atomicReceipt(path, receipt) {
   await writeFile(pending, bytes, { mode: 0o600 });
   await rename(pending, path);
 }
+// The established app-server Unix WS read protocol, without raw-index/ORM imports.
+export function compactNativeSnapshot(id, thread, turns) {
+  if (thread?.id !== id || !Array.isArray(turns?.data)) return undefined;
+  const raw = typeof thread.status === "object" ? thread.status?.type : thread.status;
+  const flags = typeof thread.status === "object" ? thread.status?.activeFlags ?? [] : [];
+  const latest = turns.data[0];
+  const active = turns.data.find(turn => turn.status === "inProgress" && typeof turn.id === "string");
+  const recognized = ["active", "inProgress", "running", "error", "failed", "systemError", "idle", "notLoaded", "interrupted", "completed"];
+  if (!recognized.includes(raw)) return undefined;
+  return { id, status: active || ["active", "inProgress", "running"].includes(raw) ? "running" : "idle",
+    needsPermission: flags.includes("waitingOnApproval"),
+    meta: { activeTurnId: active?.id, nativeLastTurn: typeof latest?.id === "string" && typeof latest.status === "string"
+      ? { turnId: latest.id, status: latest.status } : undefined } };
+}
+async function nativeReader(socketPath) {
+  const { default: WebSocket } = await import("ws");
+  const socket = new WebSocket(`ws+unix:${socketPath}:/rpc`, { perMessageDeflate: false, handshakeTimeout: 1500, maxPayload: 1024 * 1024 });
+  const pending = new Map(); let nextId = 1;
+  socket.on("message", bytes => {
+    try {
+      const value = JSON.parse(bytes.toString());
+      if (value.method || !pending.has(value.id)) return; // Ignore all broadcasts, dialogue and server requests.
+      const request = pending.get(value.id); pending.delete(value.id); clearTimeout(request.timer);
+      if (value.error) request.reject(new Error("native read rejected")); else request.resolve(value.result);
+    } catch {}
+  });
+  const fail = () => { for (const request of pending.values()) { clearTimeout(request.timer); request.reject(new Error("native socket unavailable")); } pending.clear(); };
+  socket.on("error", fail); socket.on("close", fail);
+  await new Promise((resolve, reject) => { socket.once("open", resolve); socket.once("error", reject); socket.once("close", () => reject(new Error("native socket closed"))); });
+  const request = (method, params) => {
+    if (!["initialize", "thread/read", "thread/turns/list"].includes(method)) throw new Error("read-only method gate");
+    const id = nextId++;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { pending.delete(id); reject(new Error("native read timed out")); }, 1500);
+      pending.set(id, { resolve, reject, timer });
+      socket.send(JSON.stringify({ id, method, params }), error => { if (error) { clearTimeout(timer); pending.delete(id); reject(error); } });
+    });
+  };
+  try {
+    await request("initialize", { clientInfo: { name: "agent-herder-native-observer", title: "Finite native observer", version: "0.1.0" }, capabilities: { experimentalApi: true } });
+    socket.send(JSON.stringify({ method: "initialized", params: {} }));
+  } catch (error) { socket.close(); throw error; }
+  return {
+    async getSession(id) {
+      const snapshot = await request("thread/read", { threadId: id, includeTurns: false });
+      const turns = await request("thread/turns/list", { threadId: id, limit: 1, sortDirection: "desc", itemsView: "notLoaded" });
+      return compactNativeSnapshot(id, snapshot?.thread, turns);
+    },
+    async dispose() { fail(); socket.close(); },
+  };
+}
+
 export async function runNativeWatch(args) {
   const targets = args.filter(arg => /^[0-9a-f]{8}-[0-9a-f-]{27}$/.test(arg));
   if (targets.length < 1 || targets.length > 2 || new Set(targets).size !== targets.length) throw new Error("one or two explicit existing thread IDs required");
   if (!(await stat(SOCKET)).isSocket()) throw new Error("existing native Unix socket unavailable");
   const root = resolve(new URL("..", import.meta.url).pathname);
   const receiptPath = resolve(root, ".tmp/broken-session-continuator/native-watch.json");
-  const { CodexAppServerAdapter } = await import(pathToFileURL(resolve(root, "dist/adapters/codex-app-server.js")).href);
-  const adapter = new CodexAppServerAdapter({ socketPath: SOCKET, cwd: root, requestTimeoutMs: 1500 });
+  const adapter = await nativeReader(SOCKET);
   const started = Date.now(), deadline = started + 40000;
   const receipt = { version: 1, startedAt: new Date(started).toISOString(), readOnly: true, llmCalls: 0,
     nativeControls: 0, sharedLedgerWrites: 0, checks: 0, targets: {}, maxRssBytes: 0, runtimeState: "observing" };
