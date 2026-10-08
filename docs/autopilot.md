@@ -411,3 +411,23 @@ Finite scope caps and source validation do not grant workload admission or
 prove host reserves. Current-generation live limits are managed separately;
 publishing this source does not restart, replace, or resize an existing scope.
 A future SDK launch still needs native consumer acceptance of this guard.
+
+## Original task completion after migration
+
+A newer session with the same harness, cwd and title does not complete an
+original task. Each original and replacement keeps its own semantic evidence;
+the owning task contract must include the requested consumer result and any
+remaining checkpoint or blocker. Native turn completion, idle status, queued
+or ADMITTED receipts, deletion and explicit forgetting are lifecycle signals,
+not evidence of task completion. Paused or forgotten sessions remain
+unverified and receive no automatic native action from inventory assessment.
+
+Evidence version 3 refreshes persisted verdicts that could have been derived
+from title matching or lifecycle exclusion. This source change does not
+activate or widen recovery authority.
+
+The verified 2026-10-08 installed stop-hook and unfinished-session judges both
+use `glm-5.3-flash`, OpenAI-compatible protocol, through
+`https://api.z.ai/api/coding/paas/v4`. Persisted settings are in the configured
+`autopilot-live/session-autostart.json`. A future MiniMax route is a separate
+planned configuration change; this repair does not select it.

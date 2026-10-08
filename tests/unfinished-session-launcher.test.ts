@@ -467,3 +467,46 @@ describe("unfinished session crash recovery", () => {
     });
 
 });
+
+describe("original task completion evidence", () => {
+    it("assesses same-title original and replacement independently without native actions", async () => {
+        const root = await mkdtemp(join(tmpdir(), "original-completion-"));
+        const original = fixture("idle", "codex", "original");
+        const replacement = { ...fixture("idle", "codex", "replacement"), lastActivity: new Date(Date.now() - 30000).toISOString() };
+        const calls = { resumes: 0, messages: [] as string[] };
+        const adapter = fakeAdapter(() => original, calls);
+        adapter.listSessions = async () => [replacement, original];
+        adapter.getSession = async (id) => id === original.id ? original : replacement;
+        const assessed: string[] = [];
+        const store = new UnfinishedSessionStore(join(root, "state.json"));
+        const launcher = new UnfinishedSessionLauncher({
+            adapters: new Map([["codex", adapter]]), store,
+            settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+            discoveryIdleMs: 1,
+            judge: { async decide({ session }) {
+                assessed.push(session.id);
+                return { verdict: "unfinished", reason: "consumer acceptance is pending", confidence: 1 };
+            } },
+        });
+        await launcher.auditInventory();
+        expect(assessed.sort()).toEqual(["original", "replacement"]);
+        expect((await store.listInventory()).map((record) => record.verdict?.verdict)).toEqual(["unfinished", "unfinished"]);
+        expect(calls).toEqual({ resumes: 0, messages: [] });
+    });
+
+    it("keeps forgotten-session completion unverified instead of claiming the task done", async () => {
+        const root = await mkdtemp(join(tmpdir(), "forgotten-completion-"));
+        const current = fixture();
+        const calls = { resumes: 0, messages: [] as string[] };
+        const store = new UnfinishedSessionStore(join(root, "state.json"));
+        const launcher = new UnfinishedSessionLauncher({
+            adapters: new Map([["codex", fakeAdapter(() => current, calls)]]), store,
+            settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+            discoveryIdleMs: 1,
+        });
+        await launcher.forget("codex", current.id);
+        await launcher.auditInventory();
+        expect((await store.listInventory())[0]?.verdict?.verdict).toBe("needs_human");
+        expect(calls).toEqual({ resumes: 0, messages: [] });
+    });
+});

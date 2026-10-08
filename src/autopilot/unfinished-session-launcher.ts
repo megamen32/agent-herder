@@ -27,10 +27,9 @@ const MAX_REPAIRED_CHUNKS = 6;
 const MAX_OMISSION_DECISION_CONCURRENCY = 4;
 const MAX_PERSISTENT_OMISSION_DECISIONS = 4;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
-// Version 2 invalidates verdicts produced before complete, globally reconciled
-// batch planning. Native transcripts stay intact; only their semantic audit is
-// refreshed once under the corrected planner.
-const CURRENT_EVIDENCE_VERSION = 2;
+// Version 3 invalidates completion inferred from matching titles or lifecycle
+// exclusion. Original task evidence must be assessed independently.
+const CURRENT_EVIDENCE_VERSION = 3;
 // Increment only when semantic planning/packing changes make persisted
 // assessment failures obsolete. Successful verdict evidence is unaffected.
 const CURRENT_ASSESSMENT_PIPELINE_VERSION = 2;
@@ -38,6 +37,8 @@ const REQUESTED_ARTIFACT_COMPLETION_RULE = [
   "Сначала сопоставь финальный ответ с исходной пользовательской целью.",
   "Если пользователь просил только подготовить план, отчёт, черновик или JSON-артефакт, валидный финальный артефакт означает completed; будущие шаги внутри него — содержимое результата, а не оставшиеся действия агента.",
   "Если пользователь просил выполнить эти шаги, один лишь план, отчёт о намерении или черновик означает unfinished.",
+  "Завершение turn, idle/stopped, queued/start/ADMITTED, перенос, replacement или совпадение названия с новой сессией сами по себе не доказывают completed исходной задачи.",
+  "При запросе выполнения до результата проверяй фактический consumer и сохранённые checkpoint/blocker; незавершённый consumer или неустранённый blocker сохраняет задачу unfinished либо needs_human, без повторения внешних действий.",
 ].join(" ");
 
 class BatchPlanValidationError extends Error {
@@ -2372,7 +2373,6 @@ export class UnfinishedSessionLauncher {
       if (assessed.length === 0) return "idle";
     }
     let judgements = 0;
-    const equivalentSessions = new Map<string, string>();
     for (const { adapter, session } of candidates) {
       // SQLite transcript reads and JSON parsing are local, but a large
       // 48-hour inventory must still yield so the control-plane HTTP server
@@ -2389,14 +2389,11 @@ export class UnfinishedSessionLauncher {
         && previous.progressFingerprint === sessionInventoryProgressFingerprint(session)
         && previous.transcriptTail === transcriptTail
         && evidenceIsCurrent(previous);
-      const equivalentKey = `${harness}:${normalize(session.cwd)}:${session.title.trim().toLowerCase()}`;
-      const newerEquivalent = equivalentSessions.get(equivalentKey);
-      equivalentSessions.set(equivalentKey, newerEquivalent || session.id);
-      let verdict = newerEquivalent
-        ? { verdict: "completed" as const, reason: `Заменена более новой сессией с той же задачей: ${newerEquivalent}`, confidence: 0.95, judgedAt: new Date().toISOString() }
-        : unchanged ? previous?.verdict : undefined;
-      if (!newerEquivalent && this.completedSessions.has(key)) {
-        verdict = { verdict: "completed", reason: "Session was deleted or explicitly forgotten", confidence: 1, judgedAt: new Date().toISOString() };
+      // Session aliases and lifecycle exclusion are delivery controls, not
+      // evidence that the original user's task reached its consumer result.
+      let verdict = unchanged ? previous?.verdict : undefined;
+      if (this.completedSessions.has(key)) {
+        verdict = { verdict: "needs_human", reason: "Session is paused, deleted or explicitly forgotten; task completion is unverified", confidence: 1, judgedAt: new Date().toISOString() };
       } else if (!verdict && Date.now() - Date.parse(session.lastActivity) < this.discoveryIdleMs && session.status !== "running") {
         // Keep it visible in inventory, but do not classify a session which may
         // still be receiving events from another harness process.
