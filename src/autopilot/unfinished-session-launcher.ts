@@ -1732,7 +1732,7 @@ export class UnfinishedSessionLauncher {
       // Check durable owner authority before an adapter read can initialize a
       // workspace runtime during startup reconciliation.
       const admissionTarget: AgentSession = { id: record.sessionId, harness: record.harness,
-        cwd: record.cwd, title: record.title, status: "idle", lastActivity: record.updatedAt, needsPermission: false };
+        cwd: record.cwd, title: record.title ?? record.sessionId, status: "idle", lastActivity: record.updatedAt, needsPermission: false };
       if (!await this.admissionAllowed(admissionTarget, "attempt")) continue;
       if (!this.lifecycleActive(lifecycleEpoch)) break;
       if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)) continue;

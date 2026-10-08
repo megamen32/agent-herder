@@ -22,6 +22,7 @@ import { automaticDeliveryHeld, holdManualStop, HUMAN_STOP_MESSAGE } from "../hu
 import { buildMessageProvenanceHeader } from "../message-provenance.js";
 import { createNamedSession, newOrResumeNamedSession, deliverNamedSession } from "../named-session.js";
 import { homedir } from "node:os";
+import { createHash } from "node:crypto";
 import { relative, resolve, sep } from "node:path";
 import { realpath } from "node:fs/promises";
 import { auditWorktrees } from "../worktree-audit.js";
@@ -440,6 +441,7 @@ export async function handleSendMessage(
   if (await automaticDeliveryHeld(found.session, false, found.adapter)) return HUMAN_STOP_MESSAGE;
   const result = await found.adapter.sendMessage(parsed.sessionId, {
     origin: parsed.humanRequested ? "human" : "automation",
+    inputId: parsed.inputId ?? (parsed.humanRequested ? undefined : createHash("sha256").update(baseMessage).digest("hex")),
     message: injectedMessage,
     queue: parsed.mode === "queue",
     steer: parsed.mode === "steer",
@@ -456,14 +458,14 @@ export async function handleSendMessage(
     const modeLabel = parsed.mode === "queue" ? " (queued)" : parsed.mode === "steer" ? " (steering)" : " (sync)";
     return `Message sent to [${found.session.harness}] ${parsed.sessionId}${modeLabel}.\nMessage: ${parsed.message}`;
   }
-  if (result.admitted && result.nonRetryable) {
+  if ((result.admitted || result.admissionUnknown) && result.nonRetryable) {
     if (pending.ids.length) {
       try { await deferredMessages.remove(pending.ids); }
       catch (error) { console.error(`[agent-herder] admitted-failure cleanup failed for ${parsed.sessionId}: ${error instanceof Error ? error.message : String(error)}`); }
     }
-    return `Message was accepted by [${found.session.harness}] ${parsed.sessionId}, but its native turn failed and will not be retried: ${result.error || "unknown native failure"}`;
+    return `Native delivery to [${found.session.harness}] ${parsed.sessionId} cannot be replayed safely (${result.admitted ? "accepted" : "receipt unknown"}): ${result.error || "unknown native failure"}`;
   }
-  if (isBusyCodexWriter(found.session.harness, result.error)) {
+  if (!result.nonRetryable && isBusyCodexWriter(found.session.harness, result.error)) {
     await deferredMessages.add(parsed.sessionId, baseMessage);
     return `Message deferred for [${found.session.harness}] ${parsed.sessionId}; the native hook will inject it at the next safe turn boundary.\nMessage: ${parsed.message}`;
   }
@@ -500,15 +502,15 @@ export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args:
     const pending = await withDeferred(fresh.id, parsed.message);
     const injected = await coordinationNotes.inject(fresh, pending.message);
     if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
-    const sent = await found.adapter.sendMessage(fresh.id,{message:injected,queue:parsed.mode==="queue"});
-    if ((sent.ok || sent.admitted) && pending.ids.length) {
+    const sent = await found.adapter.sendMessage(fresh.id,{message:injected,queue:parsed.mode==="queue",inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),origin:"automation"});
+    if ((sent.ok || sent.admitted || (sent.admissionUnknown && sent.nonRetryable)) && pending.ids.length) {
       try { await deferredMessages.remove(pending.ids); }
       catch (error) { console.error(`[agent-herder] accepted delivery cleanup failed for ${fresh.id}: ${error instanceof Error ? error.message : String(error)}`); }
     }
     if (!sent.ok && sent.admitted && sent.nonRetryable) {
       return JSON.stringify({ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"accepted_failed",activated:false,admitted:true,nonRetryable:true,error:sent.error||"Native turn failed after prompt admission"});
     }
-    if (!sent.ok && isBusyCodexWriter(fresh.harness, sent.error)) {
+    if (!sent.ok && !sent.nonRetryable && isBusyCodexWriter(fresh.harness, sent.error)) {
       await deferredMessages.add(fresh.id, parsed.message);
       return JSON.stringify({ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"deferred",activated:false});
     }
@@ -516,9 +518,9 @@ export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args:
       ? sent.pending
         ? {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"accepted_unconfirmed",activated:false}
         : {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:parsed.mode==="queue"?"accepted":"completed",activated:true}
-      : {ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"failed",activated:false,error:sent.error||"Message delivery failed"});
+      : {ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"failed",activated:false,...(sent.nonRetryable?{nonRetryable:true}:{}),error:sent.error||"Message delivery failed"});
   }
-  return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:parsed.message,create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model,sourceSessionId:parsed.sourceSessionId,sourceHarness:parsed.sourceHarness,sourceSessions:parsed.sourceSessions}));
+  return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:parsed.message,inputId:parsed.inputId,create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model,sourceSessionId:parsed.sourceSessionId,sourceHarness:parsed.sourceHarness,sourceSessions:parsed.sourceSessions}));
 }
 
 export async function handleStopAgent(

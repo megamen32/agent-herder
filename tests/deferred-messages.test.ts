@@ -49,6 +49,7 @@ describe("durable cross-agent inbox", () => {
     try {
       const store = new DeferredMessageStore(join(root, "messages.json"));
       await store.add("codex-a", "message one");
+      await store.add("codex-a", "message one");
       await store.add("codex-a", "message two");
       await store.add("zcode-b", "other session");
 

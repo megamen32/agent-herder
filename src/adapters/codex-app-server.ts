@@ -1,5 +1,6 @@
 import { type ChildProcessWithoutNullStreams } from "node:child_process";
 import { isAbsolute } from "node:path";
+import { CodexDeliveryReceipts } from "./codex-delivery-receipts.js";
 import WebSocket from "ws";
 import { getHumanStopStore } from "../human-stop-store.js";
 import { CodexAdapter, type CodexAutomationStop, type CodexNativeAutomationMetadata } from "./codex.js";
@@ -23,6 +24,10 @@ interface RpcResponse {
   emittedAtMs?: number;
   result?: unknown;
   error?: { message?: string; code?: number };
+}
+
+class CodexRpcError extends Error {
+  constructor(message: string, readonly code?: number) { super(message); }
 }
 
 interface CodexThread {
@@ -120,6 +125,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly modelIds: string[];
   private readonly rawTranscriptAdapter: CodexAdapter;
   private readonly requestTimeoutMs: number;
+  private readonly deliveryReceipts: CodexDeliveryReceipts;
+  private readonly deliveryTails = new Map<string, Promise<void>>();
   private child?: ChildProcessWithoutNullStreams;
   private socket?: WebSocket;
   private initialized = false;
@@ -164,6 +171,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     this.modelIds = config.modelIds || ["o4-mini", "o3", "o3-mini", "gpt-4.1", "gpt-4o"];
     this.requestTimeoutMs = config.requestTimeoutMs || 30_000;
+    this.deliveryReceipts = new CodexDeliveryReceipts(config.codexDir);
     this.rawTranscriptAdapter = new CodexAdapter({ codexBin: this.codexBin, codexDir: config.codexDir });
   }
 
@@ -408,22 +416,42 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<ControlResult> {
+    const operation = async () => {
+      const previous = this.deliveryTails.get(id) ?? Promise.resolve();
+      let release!: () => void;
+      const admission = new Promise<void>(resolve => { release = resolve; });
+      const tail = previous.then(() => admission);
+      this.deliveryTails.set(id, tail);
+      await previous;
+      try { return await this.sendNativeMessage(id, options, release); }
+      finally {
+        release();
+        if (this.deliveryTails.get(id) === tail) this.deliveryTails.delete(id);
+      }
+    };
+    if (!options.inputId) return operation();
+    return this.deliveryReceipts.once(id, options.inputId, operation);
+  }
+
+  private async sendNativeMessage(id: string, options: SendMessageOptions, release: () => void, startRaceRetries = 1): Promise<ControlResult> {
     await this.ensureReady();
-    const session = await this.getSession(id);
+    let session = await this.getSession(id);
     if (!session) return { ok: false, error: `Session ${id} not found` };
-    // Coordination belongs to the existing turn. Explicit queue requests retain
-    // their previous delivery behavior; human input does not release a prompt.
-    const steerActive = options.steer === true || (!options.queue && options.origin !== "human");
+    // Queue controls whether the caller waits. It never queues coordination
+    // behind an active native turn or starts a competing writer.
+    const steerActive = options.steer === true || options.origin !== "human";
     if (steerActive && session.status === "needs_input") {
       return { ok: false, nonRetryable: true, error: "Codex is waiting for approval or user input; coordination was not delivered" };
     }
-    if (steerActive && session.status === "running") {
+    for (let attempt = 0; steerActive && session.status === "running" && attempt < 2; attempt++) {
       const expectedTurnId = this.activeTurns.get(id);
       if (!expectedTurnId) return { ok: false, nonRetryable: true, error: "Active Codex turn ID could not be verified; coordination was not delivered" };
+      let deliveryAttempted = false;
       try {
         if (options.origin !== "human") {
           await getHumanStopStore().rememberGeneratedPrompt("codex", id, options.message, expectedTurnId);
         }
+        deliveryAttempted = true;
         const result = await this.request("turn/steer", {
           threadId: id,
           expectedTurnId,
@@ -434,12 +462,29 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         }
         return { ok: true };
       } catch (error) {
-        // Do not turn an uncertain or raced steer into a second turn/queue item.
-        return { ok: false, nonRetryable: true, error: (error as Error).message };
+        // Only an explicit native pre-admission rejection permits refresh.
+        // A timeout/disconnect may follow acceptance and must never be replayed.
+        if (attempt === 0 && error instanceof CodexRpcError && error.code === -32600
+          && /expected active turn id .*but found|expected.*turn.*(?:match|mismatch)|no active turn/i.test(error.message)) {
+          const fresh = await this.getSession(id);
+          if (!fresh) return { ok: false, nonRetryable: true, error: "Codex thread disappeared during steer refresh" };
+          session = fresh;
+          if (session.status === "needs_input") return { ok: false, nonRetryable: true, error: "Codex now requires human input" };
+          if (session.status !== "running" && session.status !== "idle") return { ok: false, nonRetryable: true, error: "Codex turn refresh did not verify an active or idle thread" };
+          continue;
+        }
+        return { ok: false, admissionUnknown: deliveryAttempted && !(error instanceof CodexRpcError && error.code === -32600), nonRetryable: true, error: (error as Error).message };
       }
     }
     const resumed = await this.resumeSession(id);
-    if (!resumed.ok) return resumed;
+    if (!resumed.ok) {
+      if (steerActive && startRaceRetries > 0 && /already has an active writer/i.test(resumed.error ?? "")) {
+        const fresh = await this.getSession(id);
+        if (fresh?.status === "running") return this.sendNativeMessage(id, { ...options, steer: true }, release, 0);
+        return { ...resumed, nonRetryable: true };
+      }
+      return resumed;
+    }
 
     const completion = options.queue ? undefined : this.waitForCompletion(id);
     const generatedPrompt = options.origin !== "human";
@@ -480,11 +525,17 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         }
       }
       if (turnId && result.turn?.status === "inProgress") this.activeTurns.set(id, turnId);
+      release(); // Waiting for a sync reply must not block another current-turn steer.
       if (!completion) return { ok: true };
       return await completion;
     } catch (error) {
       if (completion) this.clearCompletion(id);
-      return { ok: false, error: (error as Error).message };
+      if (steerActive && startRaceRetries > 0 && error instanceof CodexRpcError && error.code === -32600
+        && /already has an active writer/i.test(error.message)) {
+        const fresh = await this.getSession(id);
+        if (fresh?.status === "running") return this.sendNativeMessage(id, { ...options, steer: true }, release, 0);
+      }
+      return { ok: false, admissionUnknown: !(error instanceof CodexRpcError && error.code === -32600), nonRetryable: true, error: (error as Error).message };
     }
   }
 
@@ -939,7 +990,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       if (!pending) return;
       this.pending.delete(message.id);
       clearTimeout(pending.timer);
-      if (message.error) pending.reject(new Error(message.error.message || `Codex RPC error ${message.error.code || "unknown"}`));
+      if (message.error) pending.reject(new CodexRpcError(message.error.message || `Codex RPC error ${message.error.code || "unknown"}`, message.error.code));
       else pending.resolve(message.result);
       return;
     }

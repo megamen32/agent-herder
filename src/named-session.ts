@@ -23,6 +23,7 @@ export interface NamedSessionRequest {
 }
 
 export interface NewOrResumeNamedSessionRequest extends NamedSessionRequest {
+  inputId?: string;
   humanRequested?: boolean;
   message: string;
   mode?: NamedSessionMode;
@@ -161,6 +162,7 @@ export async function newOrResumeNamedSession(
   if (await sourceHeldNow(request) || await automaticDeliveryHeld(resolved.target, false, resolved.adapter)) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created };
   const delivery = await resolved.adapter.sendMessage(resolved.target.id, {
       origin: request.humanRequested ? "human" : "automation",
+      inputId: request.inputId ?? (request.humanRequested ? undefined : createHash("sha256").update(request.message).digest("hex")),
       message: injectedMessage,
       queue: mode === "queue",
   });
@@ -177,7 +179,7 @@ export async function newOrResumeNamedSession(
       ...resolved.normalized,
     };
     if (delivery.admitted) rememberNamedDelivery(deliveryIdentity, result);
-    if (delivery.admitted && pending.ids.length) await deferredMessages.remove(pending.ids);
+    if ((delivery.admitted || (delivery.admissionUnknown && delivery.nonRetryable)) && pending.ids.length) await deferredMessages.remove(pending.ids);
     return result;
   }
   const result: NamedSessionResult = {
@@ -220,8 +222,8 @@ function namedIdentity(harness: string, name: string, cwd: string): string {
   return `${harness}\u0000${cwd}\u0000${name}`;
 }
 
-function namedDeliveryIdentity(request: NamedSessionRequest, message: string): string {
-  return `${namedIdentity(request.harness, request.name, request.cwd)}\0${createHash("sha256").update(message).digest("hex")}`;
+function namedDeliveryIdentity(request: NamedSessionRequest & {inputId?: string}, message: string): string {
+  return `${namedIdentity(request.harness, request.name, request.cwd)}\0${request.inputId ?? createHash("sha256").update(message).digest("hex")}`;
 }
 
 function recentNamedDelivery(identity: string): NamedSessionResult | undefined {
@@ -361,14 +363,15 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     if (activation==="defer" && fresh.status!=="running") { await deferredMessages.add(fresh.id,request.message); return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"deferred",activated:false,...normalized}; }
     const pending=await withDeferred(fresh.id,request.message); const injected=await coordinationNotes.inject(fresh,pending.message);
     if (await sourceHeldNow(request) || await automaticDeliveryHeld(fresh, false, adapter)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: fresh.id, activated: false };
-    const sent=await adapter.sendMessage(fresh.id,{message:injected,queue:(request.mode||"queue")==="queue"});
+    const sent=await adapter.sendMessage(fresh.id,{message:injected,queue:(request.mode||"queue")==="queue",inputId:request.inputId ?? createHash("sha256").update(request.message).digest("hex"),origin:"automation"});
+    if (!sent.ok && sent.admissionUnknown && sent.nonRetryable && pending.ids.length) await deferredMessages.remove(pending.ids);
     if (!sent.ok && sent.admitted && sent.nonRetryable) {
       const result: DeliverResult = {ok:false,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"accepted_failed",activated:false,admitted:true,nonRetryable:true,error:sent.error||"Native turn failed after prompt admission",...normalized};
       rememberNamedDelivery(deliveryIdentity, result);
       if (pending.ids.length) await deferredMessages.remove(pending.ids);
       return result;
     }
-    if (!sent.ok && isBusyCodexWriter(fresh.harness, sent.error)) {
+    if (!sent.ok && !sent.nonRetryable && isBusyCodexWriter(fresh.harness, sent.error)) {
       await deferredMessages.add(fresh.id, request.message);
       return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"deferred",activated:false,...normalized};
     }

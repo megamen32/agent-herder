@@ -67,6 +67,7 @@ export const ExportTranscriptSchema = z.object({
 });
 
 export const SendMessageSchema = z.object({
+  inputId: z.string().min(1).max(256).optional().describe("Stable delivery ID. Retry with the same ID; Codex deduplicates native admission for 24 hours."),
   humanRequested: z.boolean().optional().describe("Set true only when a human explicitly asked to resume/send to this stopped chat. Automatic work must omit it."),
   sessionId: z.string().describe("Target session ID."),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Harness (optional if ID is unique)."),
@@ -91,6 +92,7 @@ const NamedSessionBaseSchema = z.object({
 export const CreateSessionSchema = NamedSessionBaseSchema;
 
 export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
+  inputId: z.string().min(1).max(256).optional(),
   humanRequested: z.boolean().optional().describe("True only for an explicit human continuation request; never inferred by an automated planner."),
   message: z.string().trim().min(1).describe("Message delivered to the created or reused session."),
   mode: z.enum(["queue", "sync"]).optional().default("sync").describe(
@@ -99,6 +101,7 @@ export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
 });
 
 export const DeliverSchema = z.object({
+  inputId: z.string().min(1).max(256).optional().describe("Stable delivery ID. Retry with the same ID; Codex deduplicates native admission for 24 hours."),
   sourceSessions: z.array(z.object({ harness: z.enum(["codex", "zcode", "opencode", "fast-agent"]), sessionId: z.string().min(1).max(512) })).max(32).optional(),
   sourceSessionId: z.string().min(1).max(512).optional().describe("Original native ID for an automatic continuation/replacement; stopped sources prohibit it."),
   sourceHarness: z.enum(["codex", "zcode", "opencode", "fast-agent"]).optional(),
@@ -328,6 +331,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Target session ID" },
+        inputId: { type: "string", description: "Stable idempotent delivery ID (Codex: 24 hour retry window)" },
         harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
         message: { type: "string", description: "Message to send" },
         fromSessionId: { type: "string", description: "Supply your full native sender session ID for AI messages. Herder checks that session for reply attribution; this does not authenticate the caller. Omitted/unverified sources are labelled unknown." },
@@ -345,6 +349,7 @@ export const toolDefinitions: Tool[] = [
       properties: {
         sessionId: { type: "string" }, harness: { type: "string", enum: ["opencode","claude","codex","qoder","hermes","zcode","fast-agent", "chatgpt"] },
         name: { type: "string" }, cwd: { type: "string" }, message: { type: "string" },
+        inputId: { type: "string", description: "Stable idempotent delivery ID (Codex: 24 hour retry window)" },
         create: { type: "string", enum: ["if_missing","never"], default: "if_missing" },
         activation: { type: "string", enum: ["always","if_running","defer"], default: "always" },
         mode: { type: "string", enum: ["queue","sync"], default: "queue" }, model: { type: "string" },

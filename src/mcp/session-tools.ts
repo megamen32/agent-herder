@@ -84,7 +84,7 @@ export function registerSessionTools(server: McpServer, deps: {
     return handleExportTranscript(adapters, args, undefined, signal);
   }, args.ownerSessionId));
 
-  server.registerTool("send_message", { description: "Send a message to an agent. Active coordination notes for the target workspace are injected automatically before delivery. fromSessionId/fromHarness add verified reply attribution from that existing session; these fields describe the sender and do not authenticate the caller. Modes: sync (wait), queue (fire-and-forget), steer (redirect).", inputSchema: SendMessageSchema }, async (args) => {
+  server.registerTool("send_message", { description: "Send a message to an agent. Codex coordination is steered into its active native turn even in queue mode; idle delivery starts one turn. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, not caller authentication. Modes: sync (wait), queue (fire-and-forget), steer (redirect).", inputSchema: SendMessageSchema }, async (args) => {
     const result = await handleSendMessage(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
@@ -96,7 +96,7 @@ export function registerSessionTools(server: McpServer, deps: {
     const result = await handleNewOrResume(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("deliver", { description: "Deliver a message to an agent. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start the agent; if_running delivers only while currently running and otherwise returns skipped_inactive; defer stores the message for the next Agent Herder-delivered turn without waking an inactive agent. Do not call list_agents first just to check activity; Agent Herder evaluates the policy at delivery time.", inputSchema: DeliverSchema }, async(args)=>{ const result=await handleDeliver(adapters,args); publishSessionsChanged(); return {content:[{type:"text" as const,text:result}]}; });
+  server.registerTool("deliver", { description: "Deliver a message to an agent. Codex active threads receive current-turn steer, including queue mode; idle threads start one turn. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed.", inputSchema: DeliverSchema }, async(args)=>{ const result=await handleDeliver(adapters,args); publishSessionsChanged(); return {content:[{type:"text" as const,text:result}]}; });
   server.registerTool("stop_agent", { description: "Stop / abort a running agent session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }) }, async (args) => {
     const result = await handleStopAgent(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
