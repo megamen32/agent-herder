@@ -20,3 +20,19 @@ stdio shutdown makes a controller restart unsafe without native ownership proof.
 Do not mutate the shared unfinished ledger from a parallel one-shot runner.
 Root performs separately authorized manual recoveries; exact owner admission,
 fresh resource/stdio gates and same native turn readback remain mandatory.
+
+Published core: `30dcb974c989ac1d31eec3a379103bea657d3f95`.
+Published finite observer: `98cb8aa3a93b8640699b7ca8a0478cd4abacf1fe`.
+Three observer tests PASS. Actual UnixWS read-only canary completed six checks
+in 26.04s, measured peak RSS 99,584KiB; zero controls/LLM/shared-ledger writes.
+Cabinet and delivery latest native turns are interrupted/idle with no exact
+durable recovery cause: HOLD. Receipt is
+`.tmp/broken-session-continuator/native-watch.json`.
+
+Full goal remains unfinished. Smallest next action: bind verified OOMd death of
+session-71098.scope to each exact owning native turn/generation, then fresh
+owner/case and reserve admission, activate the published recovery entrypoint
+without disposing shared SDK sessions, and read back the recovered native turn.
+Global OOMd death and idle inventory alone cannot supply per-turn evidence.
+Current fresh memory observation no longer has the prior numeric UID deficit;
+this does not bypass any case, lifecycle, stdio or explicit human-stop gate.
