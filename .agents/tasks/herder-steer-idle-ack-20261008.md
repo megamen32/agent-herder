@@ -29,3 +29,41 @@ Smallest next action: after the GPTAdmin owner provides its meaningful repair ou
 GPTAdmin source 1a4eec89, exact Node c18aecd/v1009, cloud run 37840649368 and artifact 11577248404 pass. Existing Hub PID 3406917 runs that candidate with finite 3/10 GiB RAM, swap 0, CPU 2, Tasks 512. Native long-shell job 424463a6c7e5aa7cb16950a16593b3db exits 0; hinted/no-hint/repeated completed receipts agree. This satisfies the prerequisite routing outcome.
 
 Fresh Herder metadata reports coordinator 01a11b24-233f-76e0-b368-a6a8655bfad3 idle/completed turn 01a11bee-8118-76e0-917c-e04c29408284 and publisher 01a11b54-d261-7bb3-ac0f-634926280766 idle/completed turn 01a11d31-4656-7e01-8964-d6f456be4d8d. Neither has an active turn. Canonical HEAD cae6fd2 includes this diagnostic ledger; all listed foreign composer source/tests remain uncommitted and owned. An idle session does not release those file boundaries. No Herder repair dispatch, source edit, test, build or restart occurs here. The next integration action is one deduplicated native steer to the existing publisher after fresh status/admission, preserving the composer WIP and validating the accepted-receipt contract.
+
+
+## Fresh native owner handoff — 2026-10-09
+
+Confirmed source still creates completion for every !queue idle delivery;
+main/origin1f086ba has no accepted-steer repair. The listed13foreign composer
+paths remain preserved. A fresh real Herder details request reports publisher
+idle; existing native Unix-control thread/read verifies completed turn
+01a11d8c-1b14-70b2-8cf7-d3f7f8e7e0e2, no active turn, CWD AutoFindClient.
+The source-owner request explicitly preserves that thread CWD and its work.
+Native Codex wait_threads(timeout0) metadata fetch does not settle in this
+contour; the read-only call is cancelled without repeat or runtime mutation.
+
+Exactly one meaningful request reaches existing publisher01a11b54-d261-7bb3-
+ac0f-634926280766 through the already-running shared native control socket.
+Marker/inputIdherder-idle-steer-ack-owner-handoff-20261009-mini-v1 is checked
+against existing native input before delivery and a private receipt guards
+operator replay. Fresh native status is idle, so supported turn/start starts
+one turn in that existing session; no new thread/daemon/queue is created.
+Native admission turn01a11db3-f90d-7222-a18b-4cc50a9d4d85 is followed by one
+matching userMessage item01a11db3-ff8b-7040-b783-fb300de0c5cf inProgress.
+Receipt `.tmp/mac-mini-ack-handoff-20261009.json` stays private/outsideGit.
+This proves source repair handoff, not completion of the acknowledgement fix.
+
+The publisher receives exact adapter/handler/receipt boundaries and idle/active/
+deduplicated/sync checks, preserves foreign WIP and the current AutoFindClient
+context, and performs only light source/metadata work while Telegram language53
+owns the shared heavy consumer. No source fix/test/build/deployment/service
+restart is performed by this observer. Existing graph query lacks a specific
+steer vocabulary and ranks unrelated adapter sendMessage nodes; current source
+and real native evidence therefore remain authoritative.
+
+Next action: existing publisher integrates the admitted-receipt source repair,
+then after explicit resource handoff uses the owning bounded admission/checks,
+publishes reviewed complete source, follows the supported sharedZCode deployment
+handoff and records a genuine idle native acknowledgement without completion
+waiting. No second repair message is sent after accepted admission. The defect
+remains open until source and actual deployed native consumer are verified.
