@@ -60,7 +60,8 @@ rollout для metadata. Остальные харнесы явно unavailable 
 
 Control подключается только к существующему documented Unix-WebSocket
 `CODEX_APP_SERVER_SOCKET`; никогда не запускает, перемещает или убивает writer.
-Нужны independent native running proof, bounded latest-turn metadata и
+Нужны independent native identity, fresh loaded membership/runtime status
+на существующем shared owner, bounded latest-turn metadata и
 `turn/steer(expectedTurnId)`. Idle/unknown ownership закрывается отказом.
 Настроенный путь без business proof не объявляется поддержанной capability.
 

@@ -57,3 +57,19 @@ Bundle/manifest пересобраны:1,015,163bytes,10exactsourceinputs, allha
 runtime ещёнепродвигался. ExistingnativeGPTAdminconsumer/config88 пока
 не найден (.config/gptadmin/.credentials отсутствуют); owner55 получил
 точнуюзависимость —approvedconsumer+profileentrypoint, безсекретов/corechanges.
+
+21:34МСК: long-active-tail regression получилred, исправленfresh existing
+shared authority: exactnativeidentity+runtimeactive+loadedmembership≤256+
+latestturn1/expectedTurnId; privatecachedmetadata неauthority. 10affected
+shared/socketchecksGREEN; noEmitGREEN. Независимыйnarrowreview noHIGH,
+2новыхdiscriminating casesGREEN0.60s. Первый18fbd25 не зависитотtailguard
+на100: localmeshrouteиспользуетexisting singleton/native adapter.
+
+Owner55 подтвердилlive approvednativeconsumer88: OpenCode1.18.28,
+/usr/local/bin/opencode (Fleet wrapper), existingconfig
+/home/roomhacker/.config/opencode/opencode.jsonc, enabled remoteGPTAdmin
+http://192.168.2.100:9001/mcp, whoami200 client_id claude-code-manual,
+full/adminfalse. Profilebinding отсутствует (legacy full), это открытое
+ограничение, не grepmesh-fleet. Конфиг/headers/token не менять и не печатать.
+Canary должен выполнятьсам nativeOpenCodeactor88 черезexistingconfig;
+whoamiсам по себе не native acceptance.

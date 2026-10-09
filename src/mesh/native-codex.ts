@@ -16,7 +16,7 @@ export class NativeCodexClient {
   try{await this.initializing;}finally{this.initializing=undefined;}
  }
  private async initialize():Promise<void>{
-  const socket=new WebSocket(`ws+unix://${this.socketPath}:/`);this.socket=socket;
+  const socket=new WebSocket(`ws+unix://${this.socketPath}:/`,{maxPayload:512*1024});this.socket=socket;
   socket.on("message",data=>{try{const r=JSON.parse(data.toString()),p=this.pending.get(r.id);if(p){clearTimeout(p.timer);this.pending.delete(r.id);r.error?p.reject(new Error(r.error.message||"native RPC failed")):p.resolve(r.result);}}catch{/* native notification */}});
   socket.once("close",()=>this.fail(socket));socket.on("error",()=>this.fail(socket));
   try{

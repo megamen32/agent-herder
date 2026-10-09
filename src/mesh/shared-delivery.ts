@@ -13,11 +13,16 @@ export async function deliverSharedCodex(request:MeshDelivery,deps:{client:Rpc;l
   const stops=deps.stopStore??getHumanStopStore();
   if(await stops.isHeld("codex",request.target.nativeSessionId))return rejected("human_stopped_native_session");
   const observation=await deps.observe(request.target.nativeSessionId);
-  if(!observation||observation.nativeSessionId!==request.target.nativeSessionId||observation.status!=="running")return rejected("independent_native_writer_unknown");
+  if(!observation||observation.nativeSessionId!==request.target.nativeSessionId)return rejected("independent_native_identity_unknown");
   try{await deps.client.connect();}catch{return rejected("native_shared_transport_unavailable");}
   let thread:any;
   try{thread=(await deps.client.request("thread/read",{threadId:request.target.nativeSessionId,includeTurns:false})).thread;}catch{return rejected("native_session_not_found");}
   if(thread?.id!==request.target.nativeSessionId)return rejected("native_session_identity_mismatch");
+  // A long active rollout can contain no start record in its bounded tail.
+  // Fresh loaded membership and runtime status on the existing shared authority
+  // distinguish that case from private cached/persisted metadata.
+  const loaded=await deps.client.request("thread/loaded/list",{});
+  if(!Array.isArray(loaded.data)||loaded.data.length>256||!loaded.data.includes(request.target.nativeSessionId)||thread.status?.type!=="active")return rejected("native_shared_writer_authority_unproven");
   const turns=await deps.client.request("thread/turns/list",{threadId:request.target.nativeSessionId,limit:1,sortDirection:"desc",itemsView:"notLoaded"});
   if(!Array.isArray(turns.data))return rejected("native_writer_status_unknown");
   if(turns.data[0]?.status==="interrupted")return rejected("human_stopped_native_session");
