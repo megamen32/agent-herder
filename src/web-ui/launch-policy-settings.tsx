@@ -212,8 +212,9 @@ export function LaunchPolicySettings() {
           <select aria-label="Модель для инцидентов" value={policy.incidentExecution ? `${policy.incidentExecution.provider}/${policy.incidentExecution.model}` : ""}
             onChange={() => { setPolicy((current) => ({ ...current, incidentExecution: { ...INCIDENT_EXECUTION } })); setSaved(false); }}>
             <option value="" disabled>Выберите доступную модель</option>
-            {(modelOptions.opencode ?? []).filter((model) => model === "minimax-coding-plan/MiniMax-M3.1-Flash-Preview").map((model) =>
-              <option value={model} key={model}>MiniMax-M3.1-Flash-Preview · MiniMax по подписке</option>)}
+            <option value="minimax-coding-plan/MiniMax-M3.1-Flash-Preview" disabled={!(modelOptions.opencode ?? []).includes("minimax-coding-plan/MiniMax-M3.1-Flash-Preview")}>
+              {`MiniMax-M3.1-Flash-Preview · MiniMax по подписке${(modelOptions.opencode ?? []).includes("minimax-coding-plan/MiniMax-M3.1-Flash-Preview") ? "" : " · доступность не подтверждена"}`}
+            </option>
           </select>
         </label>
         <small>Провайдер: minimax-coding-plan. При отказе запуск сохраняет причину и не меняет провайдера.</small>
