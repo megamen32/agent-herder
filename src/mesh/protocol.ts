@@ -2,7 +2,7 @@
 export interface MeshAddress { hostId: string; harness: string; nativeSessionId: string }
 export interface ProjectObservation { launchCwd: string | null; currentCwd: string | null; source: string }
 export interface MeshSession { address: MeshAddress; project: ProjectObservation; status: string; title: string; lastActivity: string; model?: string }
-export interface NativeReceipt { state: "admitted" | "not_attempted" | "unknown"; inputId: string; turnId?: string; retryable: boolean }
+export interface NativeReceipt { state: "admitted" | "not_attempted" | "unknown"; inputId: string; turnId?: string; retryable: boolean; reason?:string; retryAfterMs?:number }
 type SessionInput = { id: string; harness: string; cwd: string; status: string; title: string; lastActivity: string; model?: string; meta?: Record<string, unknown> };
 export function addressKey(address: MeshAddress): string {
   for (const value of [address.hostId,address.harness,address.nativeSessionId]) if (!value || value.length>512 || /[\x00-\x1f\x7f]/.test(value)) throw new Error("Invalid native mesh address");
@@ -45,10 +45,14 @@ export function parseNativeReceipt(value:unknown,inputId:string): NativeReceipt 
     for(const block of r.content) {
       const text=typeof block?.text==="string" ? block.text : "";
       const match=text.match(/Native admission receipt:\s*(\{[^\n]*\})/);
+      if(/^Session '[^\n]+' not found\.$/.test(text))return {state:"not_attempted",inputId,retryable:true,reason:"native_session_not_found"};
       try {if(match){r=JSON.parse(match[1]!);break;} if(text.startsWith("{")) {r=JSON.parse(text);break;}} catch { /* no trustworthy receipt */ }
     }
   }
   if(r.admitted===true && r.inputId===inputId && typeof r.turnId==="string" && r.turnId) return {state:"admitted",inputId,turnId:r.turnId,retryable:false};
+  if(r.admissionUnknown===true||r.nonRetryable===true||r.state==="unknown"||r.delivery==="admission_unknown")return {state:"unknown",inputId,retryable:false};
+  if(r.admitted===false&&r.inputId===inputId&&r.admissionUnknown!==true&&r.nonRetryable!==true&&r.delivery!=="admission_unknown"&&r.state!=="unknown")return {state:"not_attempted",inputId,retryable:true,reason:"native_admission_rejected"};
+  if(r.ok===false&&r.delivery==="rate_limited"&&r.activated===false)return {state:"not_attempted",inputId,retryable:true,reason:"rate_limited",...(typeof r.retryAfterMs==="number"?{retryAfterMs:r.retryAfterMs}:{})};
   if(r.delivery==="not_attempted" || r.delivery==="not_found" || r.delivery==="skipped_inactive") return {state:"not_attempted",inputId,retryable:true};
   return {state:"unknown",inputId,retryable:false};
 }

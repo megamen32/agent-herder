@@ -89,3 +89,35 @@ proof, не delivery. Bundle1.61MB, толькоnewrelay+protocol/ledger+SDK, б
 ExistingOpenCode88PID3660 server4097 требует HTTPBasic401; самruntime/config
 не менять, дляофициальногоattachCLI использоватьегоexistingauth environment
 защищённо, безсекретоввargv/output. NativeGPTAdminauth ужепроверенowner55.
+
+22:16МСК: owner55 native protocol repair выполнен: source72c61ba,
+artifact1016/fd2efcd, Hub2140794; existingOpenCode88PID3660 connected.
+Не повторять accepted connect. Remote88 reader опубликован и зарегистрирован
+черезsupportedmcp_manage→status→mcp_tools→mcp_call: bundle384885f hashmatch,
+реальныеnativeIDs88, partial/currentCwdnull честно. NodeUID1000/sudo-H,
+AShard2GiB/oldSpace256MiB/CPU60s/fd128/file16MiB/V8pool1/UV2;
+metadata no child spawning, perread rollout128KiB×12; measuredRSS~43MiB/
+VmPeak~709MiB/threads4 beforeFS pool. Нет cgroup/foreignservice изменений.
+
+Nativeconsumer88 metadata actor prepared **одинраз**:
+ses_eddec07d4ffeOUPK01uklelf9e, workspace/home/roomhacker, existingPID3660.
+Protectedactor receipt ~/.local/state/agent-herder/harness-mesh-canary-20261009/actor.json.
+Первый mutableinput ещёне отправлялся; pinned ONEactor для100relay.
+Root разрешил targetмоейACTIVE100nativeсессии01a121d1-1aaf-71b2-8d0e-fbba3d8866ca.
+
+Thin568 scopedrepair: nativehost/PID/entry/startTicks+exactIPv4ssendpoint,
+mandatoryverifier, provenownerpreflight notreplayUNKNOWN, nofakeprovenance,
+upstreamsenderenum gate, ONEsender/stricter6target explicit. Sourceproper
+meshSender seam ownership definitions.ts/handlers.ts+focusedtest передано
+Root **после firstinterim**, нерасширятьэтотcriticalslice. Customdirect-native
+alternativewithdrawnнеpublished; oldcallers будут сохраненывproperAPI.
+Parser exactpreflightcasesRED→GREEN; reviewer2remainingHIGH получилиRED,
+исправленыglobalUNKNOWNguard иendpoint-familyproof. Sourcecommit дальше,
+mainintegrationRoot→100registration→realnative88tooltrace/admission.
+
+22:18МСК: finalindependentdelta noHIGH.14affectedtestsGREEN1.03s,
+noEmitGREEN; pinnedliveownerreadprobehostname100/nativeID returnedpartial,
+sameendpoint/pid/startTickverified; bundle+8inputsallhashmatch.
+Remote88readerrealMCPsnapshot proof captured tooljob91ee3ad5ebf515f1166f19d308a21e9f.
+Native targetcanaryможетбытьсобственнаяACTIVE100сессия (Rootexplicit09.10),
+stableinputещёне был submitted/admitted. Firstmutableafterpublishedthinrepair.

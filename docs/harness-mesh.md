@@ -84,6 +84,31 @@ main candidate после owner integration. Existing singleton server-100
 их текущему native owner. Он не импортирует или создаёт adapter/controller,
 не запускает inference при snapshot и не выкатывает старый `dist`.
 
+Первый relay ограничен доказанным server-100: approved registration задаёт
+`HARNESS_MESH_OWNER_HOST_ID`, `HARNESS_MESH_OWNER_PID`,
+`HARNESS_MESH_OWNER_ENTRY`, `HARNESS_MESH_OWNER_START_TICKS`.
+До MCP bootstrap/read/send проверяются реальный hostname/Linux и один
+IPv4-listener строки `ss` на **том же loopback адресе/порту**, PID, entry и
+время рождения процесса. Mac forward не проходит эту проверку. Legitimate
+PID change требует новой owner pin; до него новый input — proven
+`not_attempted`, а сохранённый admitted/UNKNOWN возвращается без повторного
+native чтения/вызова.
+
+`HARNESS_MESH_ALLOWED_SENDER` закрепляет один проверочный native actor88.
+Без него mutable capability закрыта. Live старый owner не имеет отдельного
+mesh budget/native-attribution seam: relay не посылает fake native ID,
+не меняет human origin/harness и явно оставляет native attribution unavailable.
+Старый unknown-sender bucket даёт более строгие **6 сообщений на цель/минуту**.
+Правильный optional structured meshSender API отдельно разрешён в owning
+definitions/handlers, source-only после первого slice; activate только при
+следующем согласованном owner release. Interim не означает полную сеть.
+
+Exact live preflight `rate_limited` JSON и `Session 'id' not found.` остаются
+retryable `not_attempted`; явный matching-ID admitted:false без uncertain
+flags также. `admissionUnknown`/`nonRetryable` mixed flags и lost/ambiguous
+failure остаются UNKNOWN/no replay. Legacy textual HUMAN_STOP_MESSAGE пока
+консервативно UNKNOWN: native-attributed structured seam — следующий release.
+
 ## Первая приёмка и продолжение
 
 Первый slice: настоящие IDs server-100/server-88 и положительная доставка
