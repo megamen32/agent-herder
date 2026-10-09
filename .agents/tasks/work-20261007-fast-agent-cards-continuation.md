@@ -45,6 +45,16 @@ UserIO reported PyPI fast-agent-mcp0.10.43; this owner independently confirms on
 
 The resource owner’s working contract now contains herder-fastagent100 with exactly the requested512MiB/1GiB/CPU1/tasks64/wall120/temp64MiB/files2048 budget and shared81106 current50CPU/128GB policy. Canonical guard contract/helper still have that owner’s uncommitted candidate changes; profile presence is NOT published source or fresh Rootonce admission. This replaces “missing profile” as the next-step blocker: finish narrow reviewed registration publication, issue fresh once receipt and explicit language53 resource handoff, then execute the immutable case once. No repeated generic attempt or waiter while those conditions are missing.
 
+## Actual native producer attempts — 2026-10-09
+
+Root accepted sourcee528d51/authority2 and published the exact existing-helper packet at Admin .tmp/project-case-registration/fastagent11-case-current.json (45 pins). Its explicit Root direction removed the old language53 manual hold. Fresh once mint/lifecycle remains code-enforced; no additional user permission is required.
+
+Two instructed native producers wrote O_EXCL0600 actual helper.identity(pid) records, without inherited RLIMIT_AS/CPU changes: PID413830/start66371081/ready1 and PID464656/start66399779/ready2, both in actual shared81106. Each waited its bounded90s and ended75 because the same unused admission path was absent. Receipt/claim/payload/log/native generation remain0; these are issuer orchestration refusals, NOT failed Vitest cases and NOT passed tests. Actual receipts are own .tmp/fastagent11-producer-result-20261009.json and fastagent11-producer-attempt2-result-20261009.json; original Root ready records are preserved. Both producer processes finished; never mint against their dead identities.
+
+Observed issuer refusals were actual host unused hard-capacity reserve unavailable, followed by another finite issuer's LEGACY_HELD/bounded SH wait expired. Host MemAvailable20281132KiB was below the exact case's minimum21GiB; later22067695616B remained below that minimum. Both failures were delivered once to active issuer owner01a11b2c as actionable defects: reconcile current compatible capacity/SH and finite orchestration in code within lasting authorization, not another short LLM permission/producer loop. Do not bypass native bounds or interrupt foreign work.
+
+Shared SDK maintenance clarification: this real FastAgent turn has not begun and the test packet uses fake SDK fixtures, not the shared UV installation. My broad freeze for the entire unfinished task is withdrawn. UserIO may perform its previously authorized coordinated upgrade/rollback/version proof after checking other live consumers; no provider/model/output524288 change or daemon restart is authorized here. This owner will read actual install FINISH before its single final provider continuation. No install occurred by this owner.
+
 ## Completion
 
 OPEN. Exact11checks, deployment of7d75ded and real second response remain unproven. Current helper refusal is captured; no waiter/background payload or replacement conversation. Historical sections below do not supersede this fresh state.
