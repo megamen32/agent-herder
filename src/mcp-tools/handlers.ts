@@ -440,10 +440,11 @@ export async function handleExportTranscript(
 
 export async function handleSendMessage(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
   const parsed = SendMessageSchema.parse(args);
+  if (parsed.meshSender && parsed.humanRequested) throw new Error("Automatic mesh sender cannot claim humanRequested");
   if (parsed.humanRequested) return sendMessageOnce(adapters, parsed);
   return deliveryBudgetFor(adapters).run({
     target: `${parsed.harness || "auto"}:${parsed.sessionId}`,
-    sender: `${parsed.fromHarness || "auto"}:${parsed.fromSessionId || "unknown"}`,
+    sender: parsed.meshSender ? `mesh:${JSON.stringify([parsed.meshSender.hostId,parsed.meshSender.harness,parsed.meshSender.nativeSessionId])}` : `${parsed.fromHarness || "auto"}:${parsed.fromSessionId || "unknown"}`,
     inputId: parsed.inputId, message: parsed.message,
   }, () => sendMessageOnce(adapters, parsed));
 }
@@ -457,7 +458,9 @@ async function sendMessageOnce(
   if (!found) return `Session '${parsed.sessionId}' not found.`;
   if (await automaticDeliveryHeld(found.session, parsed.humanRequested, found.adapter)) return HUMAN_STOP_MESSAGE;
 
-  const provenanceHeader = await buildMessageProvenanceHeader(adapters, parsed, found.session);
+  const provenanceHeader = parsed.meshSender
+    ? `🤖 Сообщение от AI-сессии\nОбъявленный источник: ${parsed.meshSender.hostId} / ${parsed.meshSender.harness} / ${parsed.meshSender.nativeSessionId}.\nАтрибуция объявлена; личность отправителя не подтверждена.`
+    : await buildMessageProvenanceHeader(adapters, parsed, found.session);
   const baseMessage = `${provenanceHeader}\n\n${parsed.message}`;
   const pending = await withDeferred(parsed.sessionId, baseMessage);
   const injectedMessage = await coordinationNotes.inject(found.session, pending.message);

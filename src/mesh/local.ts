@@ -59,7 +59,7 @@ export class LocalHarnessMesh {
    const session=await adapter.getSession(sessionId);
    if(!session)return reject("native_session_not_found");
    if(compactSession(this.hostId,session).address.nativeSessionId!==request.target.nativeSessionId)return reject("native_session_identity_mismatch");
-   const args={sessionId,harness:request.target.harness,inputId:request.inputId,mode:"queue",fromHarness:request.sender.harness,fromSessionId:`mesh:${addressKey(request.sender)}`,message:`Источник: ${request.sender.hostId} / ${request.sender.harness} / ${request.sender.nativeSessionId}.\n${request.message}`};
+   const args={sessionId,harness:request.target.harness,inputId:request.inputId,mode:"queue",meshSender:request.sender,message:request.message};
    const raw=this.deps.send?await this.deps.send(args):await handleSendMessage(this.deps.adapters,args);
    return parseNativeReceipt(typeof raw==="string"?{content:[{type:"text",text:raw}]}:raw,request.inputId);
   });
