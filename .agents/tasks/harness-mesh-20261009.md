@@ -121,3 +121,46 @@ sameendpoint/pid/startTickverified; bundle+8inputsallhashmatch.
 Remote88readerrealMCPsnapshot proof captured tooljob91ee3ad5ebf515f1166f19d308a21e9f.
 Native targetcanaryможетбытьсобственнаяACTIVE100сессия (Rootexplicit09.10),
 stableinputещёне был submitted/admitted. Firstmutableafterpublishedthinrepair.
+
+22:36МСК: published main61fe332 deployed только как два owned leaf bundles,
+manifest/source hashes verified against immutable main. Registered100 negative
+Root schema62be221a сохранён: Node executable /usr/bin/node оказался12.22.9,
+после заменына existing/usr/local/bin/node22.22.2 exact startup обнаружил
+Undici Wasm AS2GiB allocation failure. Штатный --disable-wasm-trap-handler
+устранилошибкупри прежних finitebounds, no foreignrestart. Actual GPTAdmin
+mcp_tools db357aa443eccb71b662799b79875e0b, schema ec844757a66fc788733e953573349236,
+snapshot9d81778131497199c194f508d0aa9806 completed. Snapshot: real100 native
+ownID01a121d1, running/current worktree authoritative, completefalse.
+
+22:38МСК: actual88 actor accepted first native usermsg
+msg_1222bfb64001r4w6dcS6Oul1eF; defaultomniroute/orchestrator rejected401
+InvalidAPIkey before MCPtoolcalls0, assistantmsg_1222bfc7b001w3k3zyqysR1ovm,
+correlation0fc9526d-e736-4ce5-bcda-d1439090e745. This is NOT meshUNKNOWN:
+meshstableID harness-mesh-88-to-100-20261009-01 never submitted. Failedprompt
+notreplayed. Native provider inventory confirms directminimax-coding-plan
+registered/connected. Explicit session-only model MiniMax-M3-512k selected
+for a short continuation via documented native prompt_async; no globalconfig,
+keycopy, tokenrotation, fallback or serverrestart. Existing sameactor reused;
+protected continuationintent and native tooltrace retained. Awaitactualreceipt,
+unit/runtime metadata GREEN alone is not consumercompletion.
+
+22:59МСК: Root compactness findings owned/fixed. Inline repairPlan исключены
+из singleton/local/native snapshots; missing limited window => not_observed,
+explicitnativeerror => unavailable. GPTAdmin external capabilities и session
+rows projected whitelist; displaycaps, rejectmalformed identity/cwd безсмысловой
+подмены; unknown/drop/enum/overflow => partial, peer rowoverflow => limited.
+Four cheapestRED cases + oversized identity/cwd RED + reviewer2defects RED +
+3isolatedsinglehost partialRED.28 affected checksGREEN2.32s; noEmit checked
+втойжеordinarydeadline; independentRoot и ownreview noHIGH/noMEDIUM,
+безповтораoldchecks. Runtime пока published61, candidate no fullclaim.
+
+Auth88 fourfailedproviders receipts сохранены: OmniRoute401, MiniMax missingkey,
+OpenCodeGo403 inactive subscription, ZAI429 no balance/package; nativeMCPcalls0.
+Root explicit остановилprovider probes, подготовленныйpublicscriptНЕзапускался.
+Existing infra coordinator01a11b43-e667-7c61-aaf5-4a26e12623a1 владеетauthrepair.
+19:56:41UTC supportednativePUT/auth/minimax-coding-plan200true, protected
+target-keyreadback matches100, mode0600,3oldentries preserved,backup retained,
+PID3660healthyunchanged,no restart/configpatch. SAMEactor explicitMiniMax-M3
+model-before-tools inputaccepted204; awaitingactualresponse, meshstableIDstill
+never submitted. После scopedpublish/rebuildownedleaves иnative modelsuccess —
+один actual88 GPTAdmintooljourney→100mesh input; no replay/admittedunknown.

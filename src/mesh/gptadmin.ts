@@ -1,6 +1,7 @@
 import {createHash} from "node:crypto";
 import {CoordinationDeliveryBudget} from "../coordination-delivery-budget.js";
 import {addressKey,unwrapResult,type MeshAddress,type MeshSession,type NativeReceipt} from "./protocol.js";
+import {inventoryHarnesses} from "./inventory.js";
 
 /** Supplied by the authenticated consumer; mesh does not mint tokens or bypass profiles. */
 export interface GptAdminTransport {
@@ -13,6 +14,33 @@ export interface MeshHostReceipt {hostId:string;target?:string;state:"available"
 export interface MeshDiscovery {sessions:MeshSession[];hosts:MeshHostReceipt[];complete:boolean;limited:boolean}
 type DeliveryReceipt=NativeReceipt & {reason?:string};
 type Route={target:string;nativeIds:Set<string>};
+const shortReason=(value:string)=>value.slice(0,192).replace(/[\x00-\x1f\x7f]/g,"").slice(0,96);
+const display=(value:unknown,limit:number,fallback="")=>typeof value==="string"?value.slice(0,limit*2).replace(/[\x00-\x1f\x7f]/g,"").slice(0,limit):fallback;
+function projectPeerSession(raw:unknown,hostId:string):MeshSession|null{
+  if(!raw||typeof raw!=="object")return null;
+  const s=raw as Record<string,unknown>,a=s.address as Record<string,unknown>|undefined,p=s.project as Record<string,unknown>|undefined;
+  if(!a||!p||a.hostId!==hostId||typeof a.harness!=="string"||a.harness.length>64||!inventoryHarnesses.includes(a.harness)||typeof a.nativeSessionId!=="string")return null;
+  const address={hostId,harness:a.harness,nativeSessionId:a.nativeSessionId};
+  try{addressKey(address);}catch{return null;}
+  // Paths and identity are evidence, not display text: reject, never truncate.
+  for(const cwd of [p.launchCwd,p.currentCwd])if(cwd!==null&&(typeof cwd!=="string"||!cwd||cwd.length>4096||/[\x00-\x1f\x7f]/.test(cwd)||!(/^(\/|[A-Za-z]:[\\/]|\\\\)/.test(cwd))))return null;
+  const model=display(s.model,128);
+  return {address,project:{launchCwd:p.launchCwd as string|null,currentCwd:p.currentCwd as string|null,source:display(p.source,64,"unverified")||"unverified"},status:display(s.status,32,"unknown")||"unknown",title:display(s.title,160),lastActivity:display(s.lastActivity,64),...(model?{model}:{})};
+}
+function compactHarnesses(rows:unknown[]):{rows:unknown[];partial:boolean}{
+  const result:unknown[]=[];const seen=new Set<string>();let partial=rows.length>32;
+  for(const row of rows.slice(0,32)){
+    if(!row||typeof row!=="object"){partial=true;continue;}
+    const h=row as Record<string,unknown>;
+    if(typeof h.harness!=="string"||!inventoryHarnesses.includes(h.harness)||seen.has(h.harness)){partial=true;continue;}
+    seen.add(h.harness);
+    const discovery=typeof h.discovery==="string"&&["available","unavailable","not_observed"].includes(h.discovery)?h.discovery:"not_observed";
+    const delivery=typeof h.delivery==="string"&&["available","unsupported","unverified"].includes(h.delivery)?h.delivery:"unverified";
+    if(discovery!==h.discovery||delivery!==h.delivery)partial=true;
+    result.push({harness:h.harness,discovery,delivery,...(typeof h.reason==="string"?{reason:shortReason(h.reason)}:{})});
+  }
+  return {rows:result,partial};
+}
 
 export class GptAdminMesh {
   private routes=new Map<string,Route>();
@@ -34,7 +62,7 @@ export class GptAdminMesh {
     const selected=new Map<string,typeof candidates[number]>();
     for(const s of candidates){const host=s.server_id.slice(10,s.server_id.lastIndexOf(":"));const prior=selected.get(host);if(!prior||/mesh/i.test(s.server_id))selected.set(host,s);}
     const hosts:MeshHostReceipt[]=shells.map(s=>({hostId:s.server_id.slice(6),state:"unavailable",reason:s.status!=="online"?"host_offline":"mesh_child_not_registered"}));
-    const sessions:MeshSession[]=[];
+    const sessions:MeshSession[]=[];let peerLimited=false;
     const freshRoutes=new Map<string,Route>();
     const peers=[...selected.entries()].slice(0,12);
     // Bounded fan-out: three schema/snapshot reads at a time; no LLM or transcripts.
@@ -48,20 +76,25 @@ export class GptAdminMesh {
         const snapshot=unwrapResult(await this.bounded(this.hub.call(peer.server_id,"mesh_snapshot",{limit})));
         if(snapshot.hostId!==hostId)throw new Error("native_host_identity_mismatch");
         if(!Array.isArray(snapshot.sessions)||!Array.isArray(snapshot.harnesses))throw new Error("invalid_mesh_snapshot");
+        const truncated=snapshot.sessions.length>limit||snapshot.limited===true;
+        if(truncated)peerLimited=true;
         const nativeIds=new Set<string>();
+        const projected:MeshSession[]=[];let invalidSession=false;
         for(const raw of snapshot.sessions.slice(0,limit)){
-          const s=raw as MeshSession;if(s.address?.hostId!==hostId)throw new Error("native_session_host_mismatch");
-          nativeIds.add(addressKey(s.address));
+          const s=projectPeerSession(raw,hostId);
+          if(!s){invalidSession=true;continue;}
+          nativeIds.add(addressKey(s.address));projected.push(s);
         }
-        sessions.push(...snapshot.sessions.slice(0,limit) as MeshSession[]);
+        sessions.push(...projected);
         if(tools.some(t=>t.name==="mesh_deliver"))freshRoutes.set(hostId,{target:peer.server_id,nativeIds});
-        receipt={hostId,target:peer.server_id,state:"available",complete:snapshot.complete===true,harnesses:snapshot.harnesses};
-      }catch(error){receipt.reason=error instanceof Error?error.message:"mesh_read_failed";}
+        const capabilities=compactHarnesses(snapshot.harnesses);
+        receipt={hostId,target:peer.server_id,state:"available",complete:snapshot.complete===true&&!invalidSession&&!capabilities.partial&&!truncated,harnesses:capabilities.rows,...(invalidSession?{reason:"invalid_peer_session"}:capabilities.partial?{reason:"peer_capabilities_incomplete"}:{})};
+      }catch(error){receipt.reason=error instanceof Error?shortReason(error.message):"mesh_read_failed";}
       const idx=hosts.findIndex(h=>h.hostId===hostId);if(idx>=0)hosts[idx]=receipt;else hosts.push(receipt);
     }));
     this.routes=freshRoutes;
     const limited=selected.size>12;
-    const outputLimited=limited||sessions.length>limit;
+    const outputLimited=limited||peerLimited||sessions.length>limit;
     return {sessions:sessions.sort((a,b)=>addressKey(a.address).localeCompare(addressKey(b.address))).slice(0,limit),hosts:hosts.sort((a,b)=>a.hostId.localeCompare(b.hostId)),complete:!outputLimited&&hosts.every(h=>h.state==="available"&&h.complete),limited:outputLimited};
   }
   async deliver(request:MeshDelivery):Promise<DeliveryReceipt>{

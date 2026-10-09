@@ -21,7 +21,8 @@ describe("local mesh capabilities (focused integration; expected 5s, maximum 30s
   const m=new LocalHarnessMesh({hostId:"host",adapters:new Map([['codex',active],['zcode',disconnected]]) as any});
   const r=await m.snapshot(3);expect(active.listSessions).toHaveBeenCalledWith({limit:3});expect(disconnected.listSessions).not.toHaveBeenCalled();
   expect(r.sessions[0]?.project.currentCwd).toBe("/actual");
-  expect(r.harnesses).toContainEqual(expect.objectContaining({harness:"minimax-code",delivery:"unsupported",repairPlan:expect.any(String)}));
+  expect(r.harnesses).toContainEqual(expect.objectContaining({harness:"minimax-code",delivery:"unsupported",reason:"adapter_not_registered"}));
+  expect(JSON.stringify(r)).not.toContain("repairPlan");
  });
  it("bounds a hung native read and discards late rows without changing later snapshots",async()=>{
   let resolve!:(r:any[])=>void;const adapter={type:"codex",listSessions:vi.fn(()=>new Promise<any[]>(r=>resolve=r)),isReady:()=>true};

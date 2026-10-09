@@ -42,6 +42,17 @@ consumer. Он не читает/выдаёт/подменяет токены. �
   2s, remote read deadline 5s; недоступность/timeout возвращается как partial.
   Поздний результат чтения не меняет уже возвращённое состояние mesh.
 - Snapshot не запускает LLM, ленивый native writer или экспорт транскрипта.
+- Обычный snapshot содержит capability и короткий reason без повторяемых
+  repairPlan. Отсутствие harness в limited singleton-окне означает
+  `not_observed/outside_snapshot_window`; подтверждённая native ошибка —
+  `unavailable`. Incomplete read без limited даёт `native_discovery_incomplete`.
+- Внешний peer: явные MeshSession fields и известные harness capabilities,
+  ≤32 входных capability rows/9 разных harnesses. title≤160/model≤128,
+  status≤32/lastActivity≤64/project.source≤64/reason≤96. Identity и cwd не
+  обрезаются: неверный тип, control chars, identity>512/harness>64/cwd>4096 или
+  относительный cwd отклоняются с `invalid_peer_session` и incomplete.
+  Фильтрация unknown/duplicate capability, invalid enum и overflow тоже partial;
+  peer rows сверх limit дают limited/incomplete даже при upstream complete:true.
 - Автоматические сообщения: максимум 6 на пару и 12 на цель за минуту.
   Receiver ledger сохраняет эти границы между MCP client reconnects.
 - `harness-mesh-receipts.json`: максимум 2048 сохранённых intent/receipts;
@@ -77,6 +88,16 @@ child — через supported `mcp_manage upsert` на точном target host
 `status → mcp_tools → mcp_call mesh_snapshot`. Публиковать только проверенный
 main candidate после owner integration. Existing singleton server-100
 подключает Root-owned `registerHarnessMeshTools(server,{adapters})`.
+
+Перед регистрацией проверить **точный executable** Node: на100 `/usr/bin/node`
+оказался12.22.9 и не разбирал bundle, рабочий `/usr/local/bin/node` —22.22.2;
+на88 `/usr/bin/node` —22.23.1. Для singleton HTTP-клиента под AS2GiB нужен
+`--disable-wasm-trap-handler`, иначе Undici не может зарезервировать Wasm memory.
+Остальные bounds: old-space256MiB, V8pool1/UV2, CPU60s, fd128, file16MiB.
+Если supervisor запускает child через sudo, сохранить только явно перечисленные
+несекретные owner/sender/UV env через `--preserve-env`; чужие services не менять.
+Discovery `online` означает наличие route/config, а не successful tools/list;
+при EOF сохранить startup stderr и исправить собственную child definition.
 
 До controlled singleton reload использовать `singleton-peer.ts`: stdio leaf
 инициализирует MCP Client к **существующему** `127.0.0.1:18787/mcp`, проверяет

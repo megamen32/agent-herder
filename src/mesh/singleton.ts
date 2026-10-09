@@ -16,7 +16,8 @@ export class SingletonHarnessMesh {
   const unavailable=Array.isArray(data.unavailable)?data.unavailable as Array<{harness:string}>:[];
   const harnesses=inventoryHarnesses.map(harness=>{
    const observed=sessions.some(s=>s.address.harness===harness),failed=unavailable.some(s=>s.harness===harness);
-   return {harness,discovery:observed&&!failed?"available":"unavailable",delivery:harness==="codex"&&this.deps.canDeliver===true&&Boolean(this.deps.allowedSender)&&observed?"available":"unsupported",...(observed&&!failed?{}:{reason:failed?"singleton_native_discovery_failed":"no_native_session_in_bounded_snapshot",repairPlan:harness==="minimax-code"?"Verify the official mcode ACP launcher and same Desktop ID; enum or empty connector tools are not native availability.":"Use an exact native ID or focused harness metadata read via the existing singleton; enable only after native admission proof."})};
+   const unobserved=!observed&&!failed&&(data.limited===true||data.complete!==true);
+   return {harness,discovery:failed?"unavailable":observed?"available":unobserved?"not_observed":"unavailable",delivery:harness==="codex"&&this.deps.canDeliver===true&&Boolean(this.deps.allowedSender)&&observed?"available":harness==="codex"&&unobserved?"unverified":"unsupported",...(observed&&!failed?{}:{reason:failed?"singleton_native_discovery_failed":unobserved?(data.limited===true?"outside_snapshot_window":"native_discovery_incomplete"):"no_native_sessions"})};
   });
   return {hostId:this.deps.hostId,sessions,harnesses,complete:data.complete===true&&data.limited!==true&&harnesses.every(h=>h.discovery==="available")};
  }
