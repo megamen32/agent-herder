@@ -16,7 +16,7 @@ type DeliveryReceipt=NativeReceipt & {reason?:string};
 type Route={target:string;nativeIds:Set<string>};
 const shortReason=(value:string)=>value.slice(0,192).replace(/[\x00-\x1f\x7f]/g,"").slice(0,96);
 const display=(value:unknown,limit:number,fallback="")=>typeof value==="string"?value.slice(0,limit*2).replace(/[\x00-\x1f\x7f]/g,"").slice(0,limit):fallback;
-function projectPeerSession(raw:unknown,hostId:string):MeshSession|null{
+export function projectPeerSession(raw:unknown,hostId:string):MeshSession|null{
   if(!raw||typeof raw!=="object")return null;
   const s=raw as Record<string,unknown>,a=s.address as Record<string,unknown>|undefined,p=s.project as Record<string,unknown>|undefined;
   if(!a||!p||a.hostId!==hostId||typeof a.harness!=="string"||a.harness.length>64||!inventoryHarnesses.includes(a.harness)||typeof a.nativeSessionId!=="string")return null;

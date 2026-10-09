@@ -249,3 +249,14 @@ Minimaxsource no nativeLookup/nofakeID, legacyonlycallers +STOP+UNKNOWN preserve
 Sharedruntime/ownedleaf4f не rebuilt/promoted/restarted; activate толькоследующий
 allowedownerrelease, ONEactor/stricter6targetinterim остаётся. Independentreview
 запрошен по этойдельте; firstacceptedinputs не повторялись.
+
+## 2026-10-10 fleet cabinet continuation
+
+- Executor: this native working session owns new mesh/backend and `src/web-ui/fleet/*`; integration and all runtime delivery are solely owner55. Canonical existing main/server/index hooks and current OpenCode fixes belong to55; existing UI bytes preserved.
+- Goal: individual local Herder/native sessions on100/44/88/Mini/M1 plus a common host filter and host+harness creation. Reuse GPTAdmin registry/relay and GrepMesh freshness/partial semantics; no search coupling, new registry or core fork.
+- First executable slice:100→88 cabinet list/create, actual native host/user proof, bounded compact state, durable creation intents and full native address keys. New exports documented in `docs/harness-mesh.md`. Port18789 loopback; M118787 forward100 preserved.
+- Cheapest RED: fleet service import absent; minimal read implementation now focused GREEN. Independent review found reload intent loss, refresh resetting88→100, and wrong-harness native receipt relabel; all owned repairs applied with durable browser intent/initial-only default/receipt fence. Final independent delta review: no remaining HIGH/MEDIUM. Additional verified repairs: immutable journal auth scope, canonical browser scope/digest, exact JSON-RPC receipt ID, header-provider deadline and individual host expiry; discriminating regressions retained.
+- Deployment/acceptance pending: owner55 provides supported protected service profile transport/auth wiring, hooks main/server/index, fresh published source build and controlled local node/ingress deployment. No runtime started here. After integration prove real100→88 list/create and external node UI; old accepted canary/input remains untouched.
+- Timing: inventory/reuse proof complete; minimal backend/UI source ~15min so far; next review/integration/live acceptance is separate evidence, no unit-only completion claim.
+
+- Source release gate:23 focused tests across4 suites +noEmit+diff-check PASS in16.57s, peak508388KiB, ordinary180s deadline respected. New UI production bundle builds in219ms (9.25KiB JS/0.88KiB CSS); this is source/build evidence, not live acceptance. Both global fair window and selected-host filter are retained. Owner55 verified tenant facade transport/protected ZCode pointer and assumes SSO18991/check binding; no credentials copied to remote nodes. New4 ingress routes use100 for authenticated fleet APIs and their actual local node for native APIs/UI.
