@@ -37,6 +37,7 @@ import { registerControlPlaneTools } from "./mcp/control-plane-tools.js";
 import { registerHumanRequestTools } from "./mcp/human-request-tools.js";
 import { registerCdpTools } from "./mcp/cdp-tools.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
+import { registerHarnessMeshTools } from "./mesh/register-tools.js";
 import { registerBackgroundTools } from "./mcp/background-tools.js";
 import { loadCdpChatDriver } from "./cdp-chat-mcp.js";
 import type { CdpChatCapabilities, CdpChatDriver } from "./cdp-chat.js";
@@ -484,6 +485,7 @@ function registerTools(
   registerHumanRequestTools(server, humanRequests);
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
   registerSessionTools(server, { adapters, jobs, events });
+  registerHarnessMeshTools(server, { adapters });
 }
 
 // ===== Main =====
