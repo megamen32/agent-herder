@@ -1127,6 +1127,15 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 409, { error: `health remediation harness must match execution runtime (${execution.runtime})` });
     }
     const model = healthModelForHarness(harness, execution);
+    if (harness === "opencode") {
+      if (execution.provider !== "minimax-coding-plan" || model !== "minimax-coding-plan/MiniMax-M3.1-Flash-Preview") {
+        return sendJson(response, 409, { error: "Noticeplace incidents require OpenCode / MiniMax по подписке; no provider fallback" });
+      }
+      const catalog = await supervisor.getModels("opencode");
+      if (catalog.stale || !catalog.models.includes(model)) {
+        return sendJson(response, 409, { error: `OpenCode subscription model unavailable: ${model}; no provider fallback` });
+      }
+    }
     const message = [
       `Health remediation incident=${incidentId} plan=${planId}`,
       `Execution profile: runtime=${execution.runtime} provider=${execution.provider} model=${execution.model} reasoning=${execution.reasoning} topic=${execution.topic}`,
