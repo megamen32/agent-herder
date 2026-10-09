@@ -1,12 +1,13 @@
 export interface HealthExecutionProfile {
-  runtime: "zcode" | "hermes" | "fast-agent";
-  provider: "account:zai-individual-coding-plan" | "openai-codex" | "minimax";
+  runtime: "zcode" | "hermes" | "fast-agent" | "opencode";
+  provider: "account:zai-individual-coding-plan" | "openai-codex" | "minimax" | "minimax-coding-plan";
   model: "GLM-5.3-Flash" | "gpt-5.6-luna" | "MiniMax-M3.1-Flash-Preview";
   reasoning: "high" | "default";
   topic: "health";
 }
 
 const CANONICAL_PROFILES: Record<HealthExecutionProfile["runtime"], HealthExecutionProfile> = {
+  opencode: { runtime: "opencode", provider: "minimax-coding-plan", model: "MiniMax-M3.1-Flash-Preview", reasoning: "default", topic: "health" },
   "fast-agent": { runtime: "fast-agent", provider: "minimax", model: "MiniMax-M3.1-Flash-Preview", reasoning: "default", topic: "health" },
   zcode: {
     runtime: "zcode",
@@ -44,8 +45,8 @@ export function normalizeHealthExecution(value: unknown): HealthExecutionProfile
     reasoning: bounded(raw.reasoning, "reasoning", 16),
     topic: bounded(raw.topic, "topic"),
   };
-  if (profile.runtime !== "zcode" && profile.runtime !== "hermes" && profile.runtime !== "fast-agent") {
-    throw new Error("health execution runtime must be zcode, hermes, or fast-agent");
+  if (profile.runtime !== "zcode" && profile.runtime !== "hermes" && profile.runtime !== "fast-agent" && profile.runtime !== "opencode") {
+    throw new Error("health execution runtime must be opencode, zcode, hermes, or fast-agent");
   }
   const canonical = CANONICAL_PROFILES[profile.runtime];
   for (const [field, expected] of Object.entries(canonical)) {
@@ -61,4 +62,12 @@ export function healthModelForHarness(harness: string, execution: HealthExecutio
   if (harness === "fast-agent") return `anthropic.${execution.model}`;
   if (harness === "zcode") return `${execution.provider}/${execution.model}$${execution.reasoning}`;
   return harness === "opencode" ? `${execution.provider}/${execution.model}` : execution.model;
+}
+
+/** Separate incident policy: no global model or provider fallback. */
+export const INCIDENT_EXECUTION: HealthExecutionProfile = { ...CANONICAL_PROFILES.opencode };
+export function normalizeIncidentExecution(value: unknown): HealthExecutionProfile {
+  const profile = normalizeHealthExecution(value);
+  if (profile.runtime !== "opencode") throw new Error("Incident execution must use OpenCode / MiniMax по подписке; no provider fallback");
+  return profile;
 }

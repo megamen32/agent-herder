@@ -1,3 +1,4 @@
+import { INCIDENT_EXECUTION, normalizeIncidentExecution, type HealthExecutionProfile } from "../health-remediation.js";
 import * as React from "react";
 
 export type LaunchPolicy = {
@@ -5,6 +6,7 @@ export type LaunchPolicy = {
   allowedHarnesses: string[];
   preferredHarness: string;
   models: Record<string, string>;
+  incidentExecution?: HealthExecutionProfile;
 };
 
 export type LaunchRuntimeOption = { id: string; name: string; active: boolean };
@@ -60,6 +62,7 @@ function parseLaunchPolicy(value: unknown): LaunchPolicy {
     allowedHarnesses: [...new Set(candidate.allowedHarnesses as string[])],
     preferredHarness: candidate.preferredHarness,
     models,
+    ...(candidate.incidentExecution === undefined ? {} : { incidentExecution: normalizeIncidentExecution(candidate.incidentExecution) }),
   };
   if (policy.allowedHarnesses.length > 0 && !policy.allowedHarnesses.includes(policy.preferredHarness)) {
     throw new Error("Основная среда должна входить в разрешённые варианты");
@@ -197,6 +200,27 @@ export function LaunchPolicySettings() {
     {loading ? <p className="settings-loading" role="status">Загружаем настройки запуска…</p> : <>
       {needsSetup && <p className="launch-policy-notice" role="status">Настройки запуска ещё не сохранены. До сохранения автоматический запуск новых сессий запрещён.</p>}
       {loadError && <p className="autopilot-error" role="alert">Не удалось загрузить настройки запуска: {loadError}. Обновите страницу и повторите.</p>}
+      <fieldset className="settings-group" disabled={saving || Boolean(loadError)}>
+        <legend>Диагностика и исправление инцидентов Noticeplace</legend>
+        <p>MiniMax по подписке. Этот выбор сохраняется отдельно для новых расследований и исправлений.</p>
+        <label className="launch-policy-field"><span>Среда исполнения инцидентов</span>
+          <select aria-label="Среда исполнения инцидентов" value={policy.incidentExecution?.runtime ?? ""} onChange={() => {
+            setPolicy((current) => ({ ...current, incidentExecution: { ...INCIDENT_EXECUTION } })); setSaved(false);
+          }}><option value="" disabled>Выберите среду</option><option value="opencode">OpenCode · MiniMax по подписке</option></select>
+        </label>
+        <label className="launch-policy-field"><span>Модель для инцидентов · MiniMax по подписке</span>
+          <select aria-label="Модель для инцидентов" value={policy.incidentExecution ? `${policy.incidentExecution.provider}/${policy.incidentExecution.model}` : ""}
+            onChange={() => { setPolicy((current) => ({ ...current, incidentExecution: { ...INCIDENT_EXECUTION } })); setSaved(false); }}>
+            <option value="" disabled>Выберите доступную модель</option>
+            {(modelOptions.opencode ?? []).filter((model) => model === "minimax-coding-plan/MiniMax-M3.1-Flash-Preview").map((model) =>
+              <option value={model} key={model}>MiniMax-M3.1-Flash-Preview · MiniMax по подписке</option>)}
+          </select>
+        </label>
+        <small>Провайдер: minimax-coding-plan. При отказе запуск сохраняет причину и не меняет провайдера.</small>
+        {!policy.incidentExecution && <p role="status">Маршрут инцидентов ещё не сохранён.</p>}
+        {policy.incidentExecution && !(modelOptions.opencode ?? []).includes("minimax-coding-plan/MiniMax-M3.1-Flash-Preview") &&
+          <p role="alert">Подписочная модель пока не подтверждена OpenCode. Запуск будет отклонён без смены провайдера.</p>}
+      </fieldset>
       <fieldset className="settings-group" disabled={saving || Boolean(loadError)}>
         <legend>Разрешённые среды</legend>
         {displayedHarnesses.length === 0

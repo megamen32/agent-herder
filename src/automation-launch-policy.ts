@@ -1,3 +1,4 @@
+import { normalizeIncidentExecution, type HealthExecutionProfile } from "./health-remediation.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink, writeFile, chmod } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -9,6 +10,7 @@ export interface AutomationLaunchPolicy {
   allowedHarnesses: HarnessType[];
   preferredHarness: HarnessType;
   models: Partial<Record<HarnessType, string>>;
+  incidentExecution?: HealthExecutionProfile;
 }
 
 export type AutomationLaunchPolicyLoad =
@@ -22,7 +24,7 @@ export const MAX_MODEL_LENGTH = 256;
 export function validateAutomationLaunchPolicy(value: unknown): AutomationLaunchPolicy {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Launch policy must be an object");
   const input = value as Record<string, unknown>;
-  const keys = new Set(["version", "allowedHarnesses", "preferredHarness", "models"]);
+  const keys = new Set(["version", "allowedHarnesses", "preferredHarness", "models", "incidentExecution"]);
   for (const key of Object.keys(input)) if (!keys.has(key)) throw new Error(`Unknown launch policy field '${key}'`);
   if (input.version !== 1) throw new Error("Launch policy version must be 1");
   if (!Array.isArray(input.allowedHarnesses)) throw new Error("allowedHarnesses must be an array");
@@ -51,7 +53,8 @@ export function validateAutomationLaunchPolicy(value: unknown): AutomationLaunch
   for (const harness of allowedHarnesses) {
     if (!models[harness]) throw new Error(`A model is required for allowed harness '${harness}'`);
   }
-  return { version: 1, allowedHarnesses, preferredHarness: input.preferredHarness, models };
+  return { version: 1, allowedHarnesses, preferredHarness: input.preferredHarness, models,
+    ...(input.incidentExecution === undefined ? {} : { incidentExecution: normalizeIncidentExecution(input.incidentExecution) }) };
 }
 
 /** Independent durable policy for authorizing newly created automated sessions. */
