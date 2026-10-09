@@ -14,6 +14,7 @@ import {
   type RawTranscriptExport,
   type SendMessageResult,
   type SendMessageOptions,
+  type MessageAdmissionResult,
   type SessionSnapshotReceipt,
   type SessionMessagePart,
   type SessionMessageView,
@@ -1515,6 +1516,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
+    if (options.steer || options.queue) return this.sendConversationInput(id, options);
     const origin = options.origin === "human" ? "human" : "automation";
     const send = async (): Promise<{
       ok: boolean;
@@ -1596,6 +1598,59 @@ export class ZcodeAdapter implements HarnessAdapter {
     }
     await this.persistDesiredSessionTitle(id);
     return { ok: true };
+  }
+
+  /** Native V4 owns guide/queue admission and command deduplication. Never
+   * replace its receipt with our old RAM queue or retry through session/send. */
+  private async sendConversationInput(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
+    const origin = options.origin === "human" ? "human" : "automation";
+    const inputId = options.inputId || randomUUID();
+    const commandId = zcodeInputId(inputId, origin);
+    const requestedDelivery = options.steer ? "guide" : "queue";
+    let attempted = false;
+    try {
+      const baseline = await this.readCurrentSnapshot(id);
+      const permissionError = this.pendingPermissionError(baseline);
+      if (permissionError) return { ok: false, inputId, error: permissionError };
+      const stopStore = getHumanStopStore();
+      if (await stopStore.isHeld("zcode", id)) return { ok: false, inputId, error: "Чат явно остановлен; автоматическая отправка запрещена." };
+      if (origin !== "human") await stopStore.rememberGeneratedPrompt("zcode", id, options.message);
+      if (await stopStore.isHeld("zcode", id)) return { ok: false, inputId, error: "Чат явно остановлен; автоматическая отправка запрещена." };
+      const workspace = this.sessionWorkspaces.get(id) || this.workspace();
+      attempted = true;
+      // Pinned installed zcode-server.cjs exposes this exact service method.
+      // requestedDelivery=guide injects at the next supported native boundary;
+      // queue remains a native input intent, not a Herder timer/new inputId.
+      const ack = record(await this.callAgent("sendConversationCommandV4", {
+        ...workspace,
+        envelope: {
+          commandId, clientId: "agent-herder", sessionId: id, type: "sendText",
+          payload: { text: options.message, requestedDelivery }, issuedAt: Date.now(),
+        },
+      }));
+      if (ack.commandId !== commandId) throw new Error("ZCode вернул подтверждение другой команды; доставка не установлена.");
+      const nativeInput = record(ack.result);
+      if (ack.status !== "accepted" && ack.status !== "duplicate") {
+        return { ok: false, admitted: false, inputId, nonRetryable: true,
+          error: `ZCode не принял ${requestedDelivery === "guide" ? "доставку в текущий ход" : "сообщение в очередь"}: ${String(ack.reasonCode || ack.status || "invalid_receipt")}${ack.message ? ` (${String(ack.message)})` : ""}` };
+      }
+      if (nativeInput.type !== "inputAccepted" || !nonEmptyString(nativeInput.inputId)
+        || !["guide", "queue", "startNow"].includes(String(nativeInput.delivery))) {
+        throw new Error("ZCode подтвердил команду без подтверждения приёма сообщения; повторная отправка запрещена.");
+      }
+      if ((requestedDelivery === "guide" && nativeInput.delivery === "queue")
+        || (requestedDelivery === "queue" && nativeInput.delivery === "guide")) {
+        return { ok: false, admitted: true, inputId, nonRetryable: true,
+          error: `ZCode принял сообщение в другом режиме (${String(nativeInput.delivery)}); повторная отправка запрещена.` };
+      }
+      this.ensureSessionEventSubscription(id, workspace);
+      // Admission is sufficient. Do not wait for a new turn: a guided input
+      // belongs to the already active turn, and a queued input has not begun.
+      return { ok: true, admitted: true, inputId, ...(nativeInput.delivery === "queue" ? { pending: true } : {}) };
+    } catch (error) {
+      return { ok: false, inputId, ...(attempted ? { admissionUnknown: true, nonRetryable: true } : {}),
+        error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   private async persistDesiredSessionTitle(id: string, attempt = 0): Promise<void> {
@@ -1711,7 +1766,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     return this.sendMessage(id, { message, queue: true });
   }
 
-  async getMessageAdmission(id: string, inputId: string, cwd?: string): Promise<import("../types/index.js").MessageAdmissionResult> {
+  async getMessageAdmission(id: string, inputId: string, cwd?: string): Promise<MessageAdmissionResult> {
     const workspace = this.sessionWorkspaces.get(id) || this.workspace(cwd);
     const read = async () => sessionEventsFromPayload(await this.callAgent("readSessionEvents", {
       ...workspace,
@@ -1733,17 +1788,41 @@ export class ZcodeAdapter implements HarnessAdapter {
         return { state: "unknown", error: retryError instanceof Error ? retryError.message : String(retryError) };
       }
     }
-    let admitted = false;
+    const identities = new Set([inputId, zcodeInputId(inputId, "automation")]);
+    const matches = (value: unknown) => typeof value === "string" && identities.has(value);
+    const addIdentity = (value: unknown) => { const id = nonEmptyString(value); if (id) identities.add(id); };
+    const inputs = (payload: Record<string, unknown>) => [payload, ...(Array.isArray(payload.drainedInputs) ? payload.drainedInputs.map(record) : [])];
+    const belongs = (input: Record<string, unknown>) => [input.inputId, input.pendingInputId, input.sourceCommandId, record(input.intent).sourceCommandId].some(matches);
+    // First recover canonical command-to-native input attribution; strict
+    // turn.failed carries only native inputId, and history order can vary.
     for (const event of events) {
-      const nativeInputId = nonEmptyString(record(event.payload).inputId);
-      if (nativeInputId !== inputId && nativeInputId !== zcodeInputId(inputId, "automation")) continue;
-      const type = nonEmptyString(event.type);
-      if (type === "turn.failed") {
-        return { state: "failed", error: admittedNativeTurnFailure(id, event) };
+      for (const input of inputs(record(event.payload))) {
+        if (!belongs(input)) continue;
+        addIdentity(input.inputId); addIdentity(input.pendingInputId);
       }
-      if (type === "turn.completed" || type === "turn.started") admitted = true;
     }
-    return admitted ? { state: "admitted" } : { state: "not_found" };
+    let messageAdmitted = false;
+    let messageReadError: string | undefined;
+    try {
+      const messages = snapshotMessages(await this.callAgent("readSessionMessages", { ...workspace, sessionId: id, limit: 200 }));
+      for (const message of messages) {
+        const info = record(message.info);
+        const metadata = record(info.metadata);
+        if (info.role !== "user" || ![info.sourceCommandId, metadata.sourceCommandId, metadata.inputId].some(matches)) continue;
+        messageAdmitted = true;
+        addIdentity(metadata.inputId);
+      }
+    } catch (error) {
+      messageReadError = error instanceof Error ? error.message : String(error);
+    }
+    let admitted = messageAdmitted;
+    for (const event of events) {
+      if (!inputs(record(event.payload)).some(belongs)) continue;
+      const type = nonEmptyString(event.type);
+      if (type === "turn.failed") return { state: "failed", error: admittedNativeTurnFailure(id, event) };
+      if (["turn.completed", "turn.started", "turn.steerQueued", "turn.steerDrained"].includes(type || "")) admitted = true;
+    }
+    return admitted ? { state: "admitted" } : { state: "unknown", error: messageReadError || "В доступной истории ZCode нет подтверждения этого сообщения; повторная отправка запрещена." };
   }
 
   async forkSession(_id: string, _message?: string): Promise<ControlResult> {
