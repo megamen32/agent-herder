@@ -81,3 +81,11 @@ Focusedlocalcase воспроизведён, веткараннегоотказ�
 HTTPsingleton (list_agents/send_message), безadapter/controller/privatewriter.
 Следующийsource slice: этотleaf+runtime-shapedtests, затемmainpublication,
 remote100/88childregistration иnativeOpenCodeconsumer88.
+
+21:45МСК: thin singleton relay3focusedtestsGREEN/noEmitGREEN. Liveowned
+read-only SDK probe черезnewstdioleaf→existing100HTTP ответилhostname100,
+тотжеnativeID, authoritative launch/currentcwd, completefalse. Это read
+proof, не delivery. Bundle1.61MB, толькоnewrelay+protocol/ledger+SDK, безcore.
+ExistingOpenCode88PID3660 server4097 требует HTTPBasic401; самruntime/config
+не менять, дляофициальногоattachCLI использоватьегоexistingauth environment
+защищённо, безсекретоввargv/output. NativeGPTAdminauth ужепроверенowner55.

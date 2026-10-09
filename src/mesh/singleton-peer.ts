@@ -1,0 +1,25 @@
+#!/usr/bin/env node
+import {Client,StreamableHTTPClientTransport} from "@modelcontextprotocol/client";
+import {McpServer} from "@modelcontextprotocol/server";
+import {serveStdio} from "@modelcontextprotocol/server/stdio";
+import {z} from "zod";
+import {hostname,homedir} from "node:os";
+import {join} from "node:path";
+import {SingletonHarnessMesh} from "./singleton.js";
+const url=new URL(process.env.AGENT_HERDER_HTTP_URL||"http://127.0.0.1:18787/mcp");
+if(url.hostname!=="127.0.0.1"||url.protocol!=="http:")throw new Error("Singleton mesh relay requires the verified existing loopback owner");
+const client=new Client({name:"agent-herder-harness-mesh-singleton-relay",version:"1"},{versionNegotiation:{mode:"auto"}});
+const transport=new StreamableHTTPClientTransport(url,process.env.AGENT_HERDER_HTTP_TOKEN?{authProvider:{token:async()=>process.env.AGENT_HERDER_HTTP_TOKEN!}}:{});
+await client.connect(transport,{timeout:5000});
+const tools=(await client.listTools()).tools;
+if(!tools.some(t=>t.name==="list_agents"))throw new Error("Existing singleton has no session metadata capability");
+const send=tools.find(t=>t.name==="send_message");
+const mesh=new SingletonHarnessMesh({hostId:hostname(),ledgerPath:join(homedir(),".local/state/agent-herder/harness-mesh-receipts.json"),canDeliver:Boolean(send?.inputSchema?.properties?.inputId),call:(name,args)=>client.callTool({name,arguments:args},{timeout:5000})});
+const server=new McpServer({name:"agent-herder-harness-mesh-singleton-relay",version:"1"});
+const output=(v:unknown)=>({content:[{type:"text" as const,text:JSON.stringify(v)}]});
+const address=z.object({hostId:z.string().min(1).max(512),harness:z.string().min(1).max(64),nativeSessionId:z.string().min(1).max(512)});
+server.registerTool("mesh_snapshot",{description:"Read compact native sessions/current project from the existing singleton. No new adapter/controller/writer or LLM.",inputSchema:z.object({limit:z.number().int().min(1).max(12).default(12)})},async args=>output(await mesh.snapshot(args.limit)));
+server.registerTool("mesh_deliver",{description:"Address one exact native session through the existing singleton/native owner. Durable input intent, no UNKNOWN replay, pair6/target12.",inputSchema:z.object({target:address,sender:address,inputId:z.string().min(1).max(256),message:z.string().min(1).max(4000)})},async args=>output(await mesh.deliver(args)));
+process.stdin.once("end",()=>void client.close());
+process.once("SIGTERM",()=>{void client.close().finally(()=>process.exit(0));});
+await serveStdio(()=>server);
