@@ -9,6 +9,13 @@ async function fixture(run:(mesh:SingletonHarnessMesh,call:ReturnType<typeof vi.
  await run(new SingletonHarnessMesh({hostId:"100",call,ledgerPath:join(dir,"ledger.json"),verifyOwner:async()=>{},canDeliver:true,allowedSender:{hostId:"88",harness:"opencode",nativeSessionId:"source"}}),call);
 }finally{await rm(dir,{recursive:true,force:true});}}
 describe("thin existing singleton relay (focused integration; expected 3s, maximum 30s)",()=>{
+ it("treats absent harnesses in limit1/limited:true as unobserved, keeps proven errors distinct and omits repair prose",async()=>fixture(async(mesh,call)=>{
+  let r=await mesh.snapshot(1);
+  expect(r.harnesses).toContainEqual({harness:"hermes",discovery:"not_observed",delivery:"unsupported",reason:"outside_snapshot_window"});
+  expect(JSON.stringify(r)).not.toContain("repairPlan");expect(r.complete).toBe(false);
+  call.mockResolvedValueOnce({structuredContent:{complete:false,limited:true,sessions:[session],unavailable:[{harness:"hermes",error:"transport unavailable"}]}});
+  r=await mesh.snapshot(1);expect(r.harnesses).toContainEqual({harness:"hermes",discovery:"unavailable",delivery:"unsupported",reason:"singleton_native_discovery_failed"});
+ }));
  it("preserves singleton actual native ID/project projection without starting an adapter",async()=>fixture(async(mesh,call)=>{
   const r=await mesh.snapshot(1);expect(call.mock.calls[0]).toEqual(["list_agents",{harness:"all",limit:1,includeLastMessage:false}]);
   expect(r.sessions[0]?.address).toEqual({hostId:"100",harness:"codex",nativeSessionId:"native"});expect(r.sessions[0]?.project.currentCwd).toBe("/work");expect(r.complete).toBe(false);

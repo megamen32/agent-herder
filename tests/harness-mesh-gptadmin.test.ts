@@ -3,6 +3,37 @@ import { GptAdminMesh } from "../src/mesh/gptadmin.js";
 const a={hostId:"100",harness:"codex",nativeSessionId:"native"};
 function hub(){return {discover:vi.fn(async()=>({servers:[{server_id:"mcp:shell:100:Herder",kind:"child_mcp",status:"online"},{server_id:"shell:mac",kind:"virtual_shell",status:"online"}]})),schema:vi.fn(async()=>({tools:[{name:"mesh_snapshot"},{name:"mesh_deliver"}]})),call:vi.fn(async(_target:string,name:string,args:Record<string,unknown>)=>name==="mesh_snapshot"?{hostId:"100",sessions:[{address:a,project:{launchCwd:"/launch",currentCwd:"/actual",source:"native"},status:"running",title:"test",lastActivity:"now"}],harnesses:[],complete:true}:{state:"admitted",inputId:args.inputId,turnId:"turn",retryable:false})};}
 describe("GPTAdmin native mesh (focused integration; expected 5s, maximum 30s)",()=>{
+ it("projects oversized external capability diagnostics into known bounded fields",async()=>{
+  const h=hub();
+  const project={launchCwd:"/launch",currentCwd:null,source:"unverified"};
+  const row={address:a,project,status:"unknown",lastActivity:"now",title:"t".repeat(2000),model:"m".repeat(1000),transcript:"private",extra:"y".repeat(20000)};
+  h.call.mockResolvedValue({hostId:"100",sessions:[row,{...row,address:{...a,nativeSessionId:"id".repeat(300)}},{...row,project:{...project,currentCwd:"/".repeat(5000)}},{...row,project:{...project,launchCwd:"/bad\npath"}}],complete:true,harnesses:[
+   {harness:"codex",discovery:"available",delivery:"available",reason:"x\n".repeat(1000),repairPlan:"full external repair prose".repeat(1000),transcript:"private",extra:{huge:"y".repeat(20000)}},
+   {harness:"codex",discovery:"available",delivery:"available",reason:"duplicate"},
+   {harness:"foreign-harness",discovery:"available",delivery:"available",reason:"unsupported input"},
+   {harness:"hermes",discovery:"invented".repeat(1000),delivery:"invented".repeat(1000)},
+   {harness:"claude",discovery:["available"],delivery:["available"]}
+  ]} as any);
+  const r=await new GptAdminMesh(h).discover();const caps=r.hosts.find(x=>x.hostId==="100")!.harnesses as any[];
+  expect(caps).toHaveLength(3);expect(caps[0]).toEqual({harness:"codex",discovery:"available",delivery:"available",reason:"x".repeat(96)});
+  expect(caps[1]).toEqual({harness:"hermes",discovery:"not_observed",delivery:"unverified"});
+  expect(caps[2]).toEqual({harness:"claude",discovery:"not_observed",delivery:"unverified"});
+  expect(r.sessions).toEqual([{address:a,project,status:"unknown",lastActivity:"now",title:"t".repeat(160),model:"m".repeat(128)}]);
+  expect(r.hosts.find(x=>x.hostId==="100")).toMatchObject({state:"available",complete:false,reason:"invalid_peer_session"});expect(r.complete).toBe(false);
+  expect(JSON.stringify(r)).not.toMatch(/repairPlan|transcript|private|extra/);expect(JSON.stringify(r).length).toBeLessThan(1500);
+ });
+ it("marks an oversized peer session window limited even when the peer claims complete",async()=>{
+  const h=hub();h.discover.mockResolvedValue({servers:[{server_id:"mcp:shell:100:Herder",kind:"child_mcp",status:"online"}]} as any);
+  h.call.mockResolvedValue({hostId:"100",sessions:["one","two"].map(nativeSessionId=>({address:{...a,nativeSessionId},project:{launchCwd:"/x",currentCwd:null,source:"unverified"},status:"unknown",title:"t",lastActivity:"now"})),harnesses:[],complete:true} as any);
+  const r=await new GptAdminMesh(h).discover(1);expect(r.sessions).toHaveLength(1);expect(r.limited).toBe(true);expect(r.complete).toBe(false);expect(r.hosts[0]?.complete).toBe(false);
+ });
+ it.each(["bad_enum","unknown_harness","capability_overflow"])("reports %s projection loss as partial on an isolated complete peer",async kind=>{
+  const h=hub();h.discover.mockResolvedValue({servers:[{server_id:"mcp:shell:100:Herder",kind:"child_mcp",status:"online"}]} as any);
+  const good={harness:"codex",discovery:"available",delivery:"available"};
+  const harnesses=kind==="bad_enum"?[{...good,discovery:["available"]}]:kind==="unknown_harness"?[good,{...good,harness:"foreign"}]:Array.from({length:33},()=>good);
+  h.call.mockResolvedValue({hostId:"100",sessions:[{address:a,project:{launchCwd:"/x",currentCwd:null,source:"unverified"},status:"unknown",title:"t",lastActivity:"now"}],harnesses,complete:true} as any);
+  const r=await new GptAdminMesh(h).discover();expect(r.sessions[0]?.address).toEqual(a);expect(r.hosts[0]?.complete).toBe(false);expect(r.complete).toBe(false);
+ });
  it("unwraps the real GPTAdmin mcp_call envelope containing MCP JSON text",async()=>{
   const h=hub(),original=h.call.getMockImplementation()!;
   h.call.mockImplementation(async(...args)=>({structuredContent:{status:"completed",result:{structuredContent:{ref:"Herder",name:args[1],result:{content:[{type:"text",text:JSON.stringify(await original(...args))}]}}}}}) as any);

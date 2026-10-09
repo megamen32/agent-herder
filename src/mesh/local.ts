@@ -7,7 +7,7 @@ import type {MeshDelivery} from "./gptadmin.js";
 import {MeshDeliveryLedger} from "./delivery-ledger.js";
 import {inventoryHarnesses} from "./inventory.js";
 import {coordinationNotes,type CoordinationNoteStore} from "../coordination-notes.js";
-export interface HarnessMeshCapability {harness:string;discovery:"available"|"unavailable";delivery:"available"|"unsupported";reason?:string;repairPlan?:string}
+export interface HarnessMeshCapability {harness:string;discovery:"available"|"unavailable";delivery:"available"|"unsupported";reason?:string}
 type Dependencies={hostId?:string;adapters:Map<string,HarnessAdapter>;send?:(args:Record<string,unknown>)=>Promise<unknown>;ledgerPath?:string;readDeadlineMs?:number;projectStore?:Pick<CoordinationNoteStore,"activeWorkspaceForSession">};
 export class LocalHarnessMesh {
  readonly hostId:string;
@@ -23,7 +23,7 @@ export class LocalHarnessMesh {
    const adapter=this.deps.adapters.get(harness);
    if(!adapter || (adapter.lazyStart&&adapter.isReady&&!adapter.isReady())){
     complete=false;
-    harnesses.push({harness,discovery:"unavailable",delivery:"unsupported",reason:!adapter?"adapter_not_registered":"native_transport_disconnected",repairPlan:harness==="minimax-code"?"Verify official mcode acp session/list and session/load against the installed Desktop native ID; repair the official CLI launcher without changing core; do not use guessed RPC or empty connector tools.":"Register the supported local adapter/plugin and verify native session discovery and admission before enabling control."});return;
+    harnesses.push({harness,discovery:"unavailable",delivery:"unsupported",reason:!adapter?"adapter_not_registered":"native_transport_disconnected"});return;
    }
    try{
     const remaining=deadline-Date.now();if(remaining<=0)throw new Error("mesh_read_deadline");
@@ -37,8 +37,8 @@ export class LocalHarnessMesh {
      const session=compactSession(this.hostId,projected);sessions.push(session);freshIds.set(addressKey(session.address),row.id);
     }
     // Existing API implementations do not all provide native admission proof.
-    harnesses.push({harness,discovery:"available",delivery:harness==="codex"?"available":"unsupported",...(harness!=="codex"?{reason:"native_admission_receipt_unverified",repairPlan:"Verify this adapter's native input receipt and no-replay contract through its existing supported transport."}:{})});
-   }catch{complete=false;harnesses.push({harness,discovery:"unavailable",delivery:"unsupported",reason:"native_discovery_failed",repairPlan:"Restore the registered native adapter transport; no automatic alternative runtime."});}
+    harnesses.push({harness,discovery:"available",delivery:harness==="codex"?"available":"unsupported",...(harness!=="codex"?{reason:"native_admission_receipt_unverified"}:{})});
+   }catch{complete=false;harnesses.push({harness,discovery:"unavailable",delivery:"unsupported",reason:"native_discovery_failed"});}
   };
   let next=0;await Promise.all(Array.from({length:3},async()=>{for(;;){const harness=inventoryHarnesses[next++];if(!harness)return;await inspect(harness);}}));
   this.ids.clear();for(const [key,value]of freshIds)this.ids.set(key,value);
