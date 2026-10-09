@@ -22,6 +22,7 @@ export class LocalHarnessMesh {
   const inspect=async(harness:string)=>{
    const adapter=this.deps.adapters.get(harness);
    if(!adapter || (adapter.lazyStart&&adapter.isReady&&!adapter.isReady())){
+    complete=false;
     harnesses.push({harness,discovery:"unavailable",delivery:"unsupported",reason:!adapter?"adapter_not_registered":"native_transport_disconnected",repairPlan:harness==="minimax-code"?"Verify official mcode acp session/list and session/load against the installed Desktop native ID; repair the official CLI launcher without changing core; do not use guessed RPC or empty connector tools.":"Register the supported local adapter/plugin and verify native session discovery and admission before enabling control."});return;
    }
    try{

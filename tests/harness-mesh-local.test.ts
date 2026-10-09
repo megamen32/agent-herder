@@ -9,6 +9,12 @@ import {coordinationNotes} from "../src/coordination-notes.js";
 import {randomUUID} from "node:crypto";
 const base={id:"n",harness:"codex",status:"running",cwd:"/launch",title:"t",lastActivity:new Date().toISOString(),needsPermission:false,meta:{activeCwd:"/actual",launchCwd:"/launch",projectSource:"native"}};
 describe("local mesh capabilities (focused integration; expected 5s, maximum 30s)",()=>{
+ it("marks an empty/disconnected adapter registry partial instead of complete",async()=>{
+  const empty=new LocalHarnessMesh({hostId:"h",adapters:new Map()});expect((await empty.snapshot(1)).complete).toBe(false);
+  const disconnected={type:"codex",lazyStart:true,isReady:()=>false,listSessions:vi.fn()};
+  const r=await new LocalHarnessMesh({hostId:"h",adapters:new Map([['codex',disconnected]]) as any}).snapshot(1);
+  expect(r.complete).toBe(false);expect(disconnected.listSessions).not.toHaveBeenCalled();
+ });
  it("uses bounded discovery and does not activate a disconnected lazy native adapter",async()=>{
   const active={type:"codex",listSessions:vi.fn(async()=>[base]),getSession:vi.fn(async()=>base),isReady:()=>true};
   const disconnected={type:"zcode",lazyStart:true,isReady:()=>false,listSessions:vi.fn()};
