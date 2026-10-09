@@ -192,6 +192,25 @@ describe.each(["codex", "zcode"] as const)("%s explicit stop delivery boundary",
 
 
 describe("MCP native admission acknowledgement", () => {
+  it("keeps native input admission without a turn ID for ZCode guide and queue", async () => {
+    for (const mode of ["steer", "queue"] as const) {
+      const f = fixture("zcode");
+      const send = vi.fn(async () => ({
+        ok: true, admitted: true, inputId: "verified-native-input",
+        ...(mode === "queue" ? { pending: true } : {}),
+      }));
+      f.adapters.get("zcode")!.sendMessage = send;
+      const acknowledgement = await handleSendMessage(f.adapters, {
+        harness: "zcode", sessionId: f.current.id, message: "one harmless fixture input",
+        mode, humanRequested: true, inputId: "verified-native-input",
+      });
+      expect(acknowledgement).toContain('Native admission receipt: {"admitted":true,"inputId":"verified-native-input"}');
+      expect(acknowledgement).not.toContain('"turnId"');
+      expect(acknowledgement).not.toContain("Failed to send");
+      if (mode === "queue") expect(acknowledgement).toContain("native turn start is still being verified");
+      expect(send).toHaveBeenCalledOnce();
+    }
+  });
   it("returns verified turn and input identity for explicit steer", async () => {
     const f = fixture("codex");
     f.current.status = "idle";

@@ -452,13 +452,14 @@ export async function handleSendMessage(
       try { await deferredMessages.remove(pending.ids); }
       catch (error) { console.error(`[agent-herder] accepted delivery cleanup failed for ${parsed.sessionId}: ${error instanceof Error ? error.message : String(error)}`); }
     }
+    const receipt = result.admitted && (result.turnId || result.inputId)
+      ? `\nNative admission receipt: ${JSON.stringify({ admitted: true,
+        ...(result.turnId ? { turnId: result.turnId } : {}),
+        ...(result.inputId ? { inputId: result.inputId } : {}) })}` : "";
     if (result.pending) {
-      return `Message accepted by [${found.session.harness}] ${parsed.sessionId}; native turn start is still being verified.\nMessage: ${parsed.message}`;
+      return `Message accepted by [${found.session.harness}] ${parsed.sessionId}; native turn start is still being verified.${receipt}\nMessage: ${parsed.message}`;
     }
     const modeLabel = parsed.mode === "queue" ? " (queued)" : parsed.mode === "steer" ? " (steering)" : " (sync)";
-    const receipt = result.admitted && result.turnId
-      ? `\nNative admission receipt: ${JSON.stringify({ admitted: true, turnId: result.turnId,
-        ...(result.inputId ? { inputId: result.inputId } : {}) })}` : "";
     return `Message sent to [${found.session.harness}] ${parsed.sessionId}${modeLabel}.${receipt}\nMessage: ${parsed.message}`;
   }
   if ((result.admitted || result.admissionUnknown) && result.nonRetryable) {
