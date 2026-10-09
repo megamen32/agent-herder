@@ -68,7 +68,10 @@ def _coordination_pre_llm(session_id: str = "", **_: Any) -> dict[str, str] | No
         query = urllib.parse.urlencode({"harness": "hermes", "sessionId": current_session, "cwd": os.getcwd(), "touch": "1", "consume": "1"})
         data = _coordination_api(f"/api/coordination/context?{query}")
         context = data.get("context")
-        return {"context": str(context)} if context else None
+        result = {"context": str(context)} if context else None
+        if result and data.get("inboxIds"):
+            _coordination_api("/api/coordination/inbox-ack", {"sessionId": current_session, "ids": data["inboxIds"]})
+        return result
     except Exception:
         return None
 

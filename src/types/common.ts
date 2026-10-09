@@ -207,6 +207,8 @@ export interface CreateSessionOptions {
 }
 
 export interface ListSessionsOptions {
+  /** Bounded interactive discovery; omitted means exhaustive enumeration. */
+  limit?: number;
   /** Restrict native discovery to this working directory when supported. */
   cwd?: string;
 }
@@ -272,7 +274,7 @@ export interface HarnessAdapter {
   findNamedSessions?(name: string, cwd: string): Promise<AgentSession[]>;
 
   /** Get detailed info about a specific session */
-  getSession(id: string): Promise<AgentSession | null>;
+  getSession(id: string, options?: { includeMetrics?: boolean }): Promise<AgentSession | null>;
 
   /** Create a new named native session when supported by the harness. */
   createSession?(options: CreateSessionOptions): Promise<AgentSession>;

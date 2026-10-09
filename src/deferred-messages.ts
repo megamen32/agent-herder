@@ -23,8 +23,8 @@ export function renderDeferredMessages(messages: DeferredMessage[]): string | nu
   if (!messages.length) return null;
   return [
     "<agent-herder-inbox>",
-    "Новые сообщения от других агентов. Учти их до следующего действия и ответь через Agent Herder, если указан отправитель.",
-    ...messages.map(m=>`- ${m.createdAt} :: ${m.message}`),
+    "Новые сообщения от агентов. Учти стабильный ID: повтор уже обработанного ID не запускает действие снова. Ответ только для решения, ошибки или результата; без ACK.",
+    ...messages.map(m=>`- id=${m.id} :: ${m.message}`),
     "</agent-herder-inbox>",
   ].join("\n");
 }
@@ -36,6 +36,6 @@ export function isBusyCodexWriter(harness: string, error?: string): boolean {
 export async function withDeferred(sessionId:string, message:string):Promise<{message:string; ids:string[]}> {
   const pending=await deferredMessages.list(sessionId);
   if (!pending.length) return {message,ids:[]};
-  const prefix=["<agent-herder-deferred>",...pending.map(m=>`- ${m.createdAt} :: ${m.message}`),"</agent-herder-deferred>"].join("\n");
+  const prefix=["<agent-herder-deferred>",...pending.map(m=>`- id=${m.id} :: ${m.message}`),"</agent-herder-deferred>"].join("\n");
   return {message:`${prefix}\n\n${message}`,ids:pending.map(m=>m.id)};
 }

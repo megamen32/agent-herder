@@ -55,8 +55,9 @@ export function registerSessionTools(server: McpServer, deps: {
   server.registerTool("list_agents", { description: "List all coding agent sessions, including ZCode. Filter by harness, status, age (maxAge seconds), or folder (CWD prefix like ~/apps). Can show last message preview.", inputSchema: z.object({
     harness: z.enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().default("all"),
     status: z.enum(["all", "running", "idle", "needs_input", "stopped", "error"]).optional().default("all"),
-    limit: z.number().int().min(1).max(100).optional().default(50), maxAge: z.number().int().min(0).optional(), folder: z.string().optional(), includeLastMessage: z.boolean().optional().default(false),
+    limit: z.number().int().min(1).max(100).optional().default(20), maxAge: z.number().int().min(0).optional(), folder: z.string().optional(), includeLastMessage: z.boolean().optional().default(false),
   }), outputSchema: z.object({
+    complete: z.boolean(), unavailable: z.array(z.object({harness:z.string(),error:z.string()})),
     sessions: z.array(sessionSchema), total: z.number().int().min(0), limited: z.boolean(),
     filters: z.object({ harness: z.string(), status: z.string(), maxAge: z.number().optional(), folder: z.string().optional(), includeLastMessage: z.boolean() }),
   }) }, async (args) => {
@@ -84,7 +85,7 @@ export function registerSessionTools(server: McpServer, deps: {
     return handleExportTranscript(adapters, args, undefined, signal);
   }, args.ownerSessionId));
 
-  server.registerTool("send_message", { description: "Send a message to an agent. Codex coordination is steered into its active native turn even in queue mode; idle delivery starts one turn. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, not caller authentication. Modes: sync (wait), queue (fire-and-forget), steer (redirect).", inputSchema: SendMessageSchema }, async (args) => {
+  server.registerTool("send_message", { description: "Send a message to an agent. Codex coordination is steered into its active native turn even in queue mode; idle delivery starts one turn. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. Modes: sync (wait), queue (fire-and-forget), steer (redirect).", inputSchema: SendMessageSchema }, async (args) => {
     const result = await handleSendMessage(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });

@@ -26,6 +26,9 @@ const add = (event, hook) => {
   }
 };
 add("UserPromptSubmit", { type: "process", command: "node", args: [path.join(plugin, "hooks/user-prompt.mjs")], enabled: true, timeoutMs: 5000 });
+for (const event of ["UserPromptSubmit", "SessionStart", "PreToolUse", "PostToolUse", "SessionEnd"]) {
+  add(event, {type:"process",command:"node",args:[path.join(plugin,"hooks/coordination.mjs")],enabled:true,timeoutMs:3000});
+}
 add("Stop", { type: "process", command: "node", args: [path.join(plugin, "hooks/stop.mjs")], enabled: true, timeoutMs: 604800000, statusMessage: "Agent Herder: evaluating the next step…" });
 fs.mkdirSync(path.dirname(configPath), { recursive: true });
 const temporary = `${configPath}.${process.pid}.tmp`;

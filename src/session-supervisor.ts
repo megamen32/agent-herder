@@ -314,9 +314,9 @@ export class SessionSupervisor {
     return sessionGroups.flat();
   }
 
-  async getSession(harness: string, id: string, expectedCwd?: string): Promise<AgentSession | null> {
+  async getSession(harness: string, id: string, expectedCwd?: string, options?: {includeMetrics?:boolean}): Promise<AgentSession | null> {
     const read = async (adapter: HarnessAdapter): Promise<AgentSession | null> => {
-      if (!expectedCwd) return adapter.getSession(id);
+      if (!expectedCwd) return adapter.getSession(id, options);
       const cwd = resolve(expectedCwd);
       const sessions = await adapter.listSessions({ cwd });
       return sessions.find((session) => session.id === id && session.harness === harness && resolve(session.cwd) === cwd) ?? null;
@@ -682,7 +682,7 @@ export class SessionSupervisor {
     // lets the UI paint the latest messages first while rich metrics hydrate later.
     const rawSession = options.quick
       ? cachedSession || await this.getSession(provider, id)
-      : await this.getSession(provider, id) || cachedSession;
+      : await this.getSession(provider, id, undefined, {includeMetrics:true}) || cachedSession;
     if (!rawSession) throw new SessionNotFoundError(provider, id);
     const session = options.quick ? rawSession : await this.pricing.enrich(rawSession);
     const limit = Math.max(1, Math.min(options.limit || 3, 50));

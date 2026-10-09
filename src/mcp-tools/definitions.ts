@@ -15,7 +15,7 @@ export const ListAgentsSchema = z.object({
     .optional()
     .default("all")
     .describe("Filter by agent status."),
-  limit: z.number().int().min(1).max(100).optional().default(50).describe("Max sessions to return."),
+  limit: z.number().int().min(1).max(100).optional().default(20).describe("Max sessions to return."),
   maxAge: z.number().int().min(0).optional().describe(
     "Maximum session age in seconds. Only return sessions active within this window. " +
     "Examples: 3600 = last hour, 86400 = last 24h, 604800 = last week. 0 or omit = no limit."
@@ -211,7 +211,7 @@ export const toolDefinitions: Tool[] = [
       properties: {
         harness: { type: "string", enum: ["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], default: "all", description: "Filter by harness" },
         status: { type: "string", enum: ["all", "running", "idle", "needs_input", "stopped", "error"], default: "all", description: "Filter by status" },
-        limit: { type: "number", default: 50, description: "Max sessions to return" },
+        limit: { type: "number", default: 20, description: "Max sessions to return" },
         maxAge: { type: "number", description: "Max session age in seconds (e.g. 3600 for 1h, 86400 for 24h)" },
         folder: { type: "string", description: "Filter by CWD prefix (e.g. '~/apps' for sessions in that tree)" },
         includeLastMessage: { type: "boolean", default: false, description: "Include last message preview" },

@@ -44,6 +44,8 @@ describe("Codex coordination hook installer", () => {
     expect(installed.hooks.enabled).toBe(false);
     expect(installed.hooks.SessionStart).toEqual(original.hooks.SessionStart);
     expect(installed.hooks.Stop).toEqual(original.hooks.Stop);
+    expect((installed.hooks as any).PreToolUse).toHaveLength(1);
+    expect((installed.hooks as any).PostToolUse).toHaveLength(1);
     expect(installed.hooks.UserPromptSubmit).toHaveLength(2);
     expect(installed.hooks.UserPromptSubmit[0]).toEqual(original.hooks.UserPromptSubmit[0]);
     const callback = installed.hooks.UserPromptSubmit[1]!.hooks[0]!;

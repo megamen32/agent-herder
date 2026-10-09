@@ -100,14 +100,15 @@ async function main() {
   const scriptPath = resolve(dirname(fileURLToPath(import.meta.url)), "coordination-hook.mjs");
   const { config, mode, exists } = await readConfig(hooksPath);
   const command = coordinationHookCommand(scriptPath);
-  const registrations = config.hooks.UserPromptSubmit;
-  const alreadyInstalled = registrations.some((entry) => entry.hooks.some((hook) => hook.command === command));
-  if (!alreadyInstalled) {
-    registrations.push({ hooks: [{ type: "command", command, timeout: 3 }] });
-    await writeAtomic(hooksPath, `${JSON.stringify(config, null, 2)}\n`, mode);
-  } else if (!exists) {
-    throw new Error("Internal error: absent config cannot already contain the coordination hook");
+  let changed = false;
+  for (const event of ["UserPromptSubmit", "PreToolUse", "PostToolUse"]) {
+    const registrations = config.hooks[event] ||= [];
+    if (!registrations.some(entry=>entry.hooks.some(hook=>hook.command === command))) {
+      registrations.push({hooks:[{type:"command",command,timeout:3}]}); changed=true;
+    }
   }
+  if (changed) await writeAtomic(hooksPath, `${JSON.stringify(config,null,2)}\n`, mode);
+
   process.stdout.write(`Installed Agent Herder UserPromptSubmit callback in ${hooksPath}.\n/hooks review only this callback\n`);
 }
 

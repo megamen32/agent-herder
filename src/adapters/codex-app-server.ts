@@ -1,5 +1,6 @@
 import { type ChildProcessWithoutNullStreams } from "node:child_process";
 import { isAbsolute } from "node:path";
+import { realpath } from "node:fs/promises";
 import { CodexDeliveryReceipts } from "./codex-delivery-receipts.js";
 import WebSocket from "ws";
 import { getHumanStopStore } from "../human-stop-store.js";
@@ -214,7 +215,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
   }
 
-  async listSessions(): Promise<AgentSession[]> {
+  async listSessions(options: {limit?: number} = {}): Promise<AgentSession[]> {
     this.sessionSnapshotReceipt = {
       exhaustive: false,
       observedAt: new Date().toISOString(),
@@ -228,7 +229,13 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     try {
       await this.ensureReady();
-      const sessions = await this.listAllThreads();
+      let bounded = false;
+      let sessions: CodexThread[];
+      if (options.limit) {
+        const page = await this.request("thread/list", {limit:Math.min(options.limit,100), archived:false, sortKey:"updated_at", sortDirection:"desc"}) as {data?:CodexThread[];nextCursor?:string|null};
+        sessions = page.data || [];
+        bounded = Boolean(page.nextCursor);
+      } else sessions = await this.listAllThreads();
       for (const thread of sessions) {
         if (this.socketPath) this.activeTurns.delete(thread.id);
         this.threads.set(thread.id, thread);
@@ -249,9 +256,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         };
       });
       this.sessionSnapshotReceipt = {
-        exhaustive: true,
+        exhaustive: !bounded,
         observedAt: new Date().toISOString(),
         source: "codex-app-server",
+        ...(bounded ? {reason:"bounded_native_page"} : {}),
       };
       return result;
     } catch (error) {
@@ -302,54 +310,47 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {
     await this.ensureReady();
-    const [listedThreads, nativeThreads] = await Promise.all([
-      this.listAllThreads(),
-      this.rawTranscriptAdapter.findNativeNamedThreads(name, cwd),
-    ]);
-    const threads = new Map(listedThreads.map((thread) => [thread.id, thread]));
-    const nativeById = new Map(nativeThreads.map((thread) => [thread.id, thread]));
-    for (const nativeThread of nativeThreads) {
-      if (threads.has(nativeThread.id)) continue;
-      try {
+    const nativeThreads = await this.rawTranscriptAdapter.findNativeNamedThreads(name, cwd);
+    const threads: CodexThread[] = [];
+    if (nativeThreads !== null) {
+      for (const nativeThread of nativeThreads) {
         const result = await this.request("thread/read", { threadId: nativeThread.id, includeTurns: false }) as { thread?: CodexThread };
-        if (result.thread?.id === nativeThread.id) {
-          threads.set(nativeThread.id, {
-            ...result.thread,
-            name: nativeThread.name,
-            cwd: nativeThread.cwd,
-          });
-        }
-      } catch {
-        // A stale SQLite row cannot be reused unless the native server can still read its thread.
+        // An unreadable indexed match is uncertain, not proof that a new named
+        // session should be created. Preserve the error instead of duplicating it.
+        if (result.thread?.id !== nativeThread.id) throw new Error(`Codex could not verify indexed named thread ${nativeThread.id}`);
+        threads.push({ ...result.thread, name: result.thread.name || nativeThread.name, cwd: result.thread.cwd || nativeThread.cwd });
       }
+    } else {
+      // Older Codex installations have no usable exact name index.
+      threads.push(...await this.listAllThreads());
     }
-    return [...threads.values()]
-      .filter((thread) => {
-        const nativeThread = nativeById.get(thread.id);
-        return (nativeThread?.name || thread.name) === name && (nativeThread?.cwd || thread.cwd) === cwd;
-      })
-      .map((thread) => {
-        const nativeThread = nativeById.get(thread.id);
-        const matched = nativeThread
-          ? { ...thread, name: nativeThread.name, cwd: nativeThread.cwd }
-          : thread;
-        this.threads.set(matched.id, matched);
-        return this.toSession(matched);
-      });
+    const canonicalCwd = await realpath(cwd).catch(() => cwd);
+    const matches: AgentSession[] = [];
+    for (const thread of threads) {
+      if (thread.name !== name || !thread.cwd) continue;
+      if (thread.cwd !== cwd && await realpath(thread.cwd).catch(() => thread.cwd) !== canonicalCwd) continue;
+      this.threads.set(thread.id, thread);
+      matches.push(this.toSession(thread));
+    }
+    return matches;
   }
 
-  async getSession(id: string): Promise<AgentSession | null> {
-    if (!this.socketPath && this.isReady()) await this.refreshActiveTurnId(id);
+  async getSession(id: string, options: { includeMetrics?: boolean } = {}): Promise<AgentSession | null> {
     let base: AgentSession | null = null;
-    if (this.socketPath) {
+    if (this.socketPath || this.isReady()) {
       await this.ensureReady();
+      // Shared-socket observations must reverify the active ID. The owned
+      // stdio transport may retain its turn/started receipt when an older
+      // server cannot expose turn metadata; a supported empty list clears it.
+      if (this.socketPath) this.activeTurns.delete(id);
       try {
         const result = await this.request("thread/read", { threadId: id, includeTurns: false }) as { thread?: CodexThread };
         if (result.thread?.id === id) {
-          this.activeTurns.delete(id);
           await this.refreshActiveTurnId(id);
-          this.threads.set(id, result.thread);
-          base = this.toSession(result.thread);
+          const cached = this.threads.get(id);
+          const thread = { ...result.thread, name: result.thread.name ?? cached?.name, cwd: result.thread.cwd ?? cached?.cwd };
+          this.threads.set(id, thread);
+          base = this.toSession(thread);
         } else {
           this.threads.delete(id);
         }
@@ -357,16 +358,18 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         this.threads.delete(id);
       }
     }
-    if (!base) {
-      const cached = this.threads.get(id);
-      base = cached ? this.toSession(cached) : null;
-    }
-    if (!base && this.isReady()) base = (await this.listSessions()).find((session) => session.id === id) || null;
-    const nativeAutomation = this.externalAutomationMetadata(id, await this.rawTranscriptAdapter.getNativeAutomationMetadata(id));
-    const raw = await this.rawTranscriptAdapter.getSession(id);
+    const observation = await this.rawTranscriptAdapter.getSessionObservation(id);
+    const raw = options.includeMetrics
+      ? await this.rawTranscriptAdapter.getSession(id)
+      : observation;
+    const automationStop = observation?.meta?.automationStop as CodexAutomationStop | undefined;
+    const nativeAutomation = this.externalAutomationMetadata(id, automationStop ? { automationStop } : {});
     if (!base) {
       if (!raw) return null;
-      const normalized = withKnownModel({ ...raw, meta: mergeAutomationMetadata(raw.meta, nativeAutomation) }, raw.model);
+      // A stopped owned stdio process keeps its historical idle display. The
+      // explicit observation flag prevents admission from trusting that view.
+      const status = !this.socketPath && !this.isReady() ? "idle" : "stopped";
+      const normalized = withKnownModel({ ...raw, status, meta: { ...mergeAutomationMetadata(raw.meta, nativeAutomation), nativeStateObserved: false } }, raw.model);
       return normalized;
     }
     if (!raw) return { ...base, meta: mergeAutomationMetadata(base.meta, nativeAutomation) };
@@ -375,7 +378,6 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     delete rawMeta.automationStop;
     const session: AgentSession = {
       ...base,
-      status: !this.socketPath && raw.status === "running" ? "running" : base.status,
       messageCount: raw.messageCount,
       durationSec: raw.durationSec,
       costUsd: raw.costUsd,
@@ -435,8 +437,13 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   private async sendNativeMessage(id: string, options: SendMessageOptions, release: () => void, startRaceRetries = 1): Promise<ControlResult> {
     await this.ensureReady();
-    let session = await this.getSession(id);
+    let session: AgentSession | null;
+    try { session = await this.getSession(id); }
+    catch (error) {
+      return { ok: false, admitted: false, error: `Codex session preflight failed: ${(error as Error).message}` };
+    }
     if (!session) return { ok: false, error: `Session ${id} not found` };
+    if (session.meta?.nativeStateObserved === false) return { ok: false, nonRetryable: true, error: "Codex native thread state could not be verified; prompt was not delivered" };
     // Queue controls whether the caller waits. It never queues coordination
     // behind an active native turn or starts a competing writer.
     const steerActive = options.steer === true || options.origin !== "human";

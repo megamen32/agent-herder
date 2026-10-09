@@ -131,14 +131,18 @@ rl.on("line", (line) => {
       thread: thread(request.params.threadId),
     });
   }
-  if (request.method === "thread/fork") return reply(request.id, {
+  if (request.method === "thread/fork") {
+    const forked = thread("thread-fork-1");
+    threads.push(forked);
+    return reply(request.id, {
     approvalPolicy: "never",
     cwd: "/tmp/codex-fixture",
     model: "gpt-test",
     modelProvider: "openai",
     sandbox: "workspace-write",
-    thread: thread("thread-fork-1"),
+    thread: forked,
   });
+  }
   if (request.method === "turn/interrupt") {
     activeTurnId = null;
     notify("turn/completed", { threadId: request.params.threadId, turn: { id: request.params.turnId, status: "interrupted" } });

@@ -27,6 +27,7 @@ import { relative, resolve, sep } from "node:path";
 import { realpath } from "node:fs/promises";
 import { auditWorktrees } from "../worktree-audit.js";
 import { BrowserWakeService } from "../browser-wake.js";
+import { deliveryBudgetFor } from "../coordination-delivery-budget.js";
 import { coordinationNotes } from "../coordination-notes.js";
 import { deferredMessages, isBusyCodexWriter, withDeferred } from "../deferred-messages.js";
 import {
@@ -218,6 +219,8 @@ export interface ListAgentsResult {
   total: number;
   limited: boolean;
   filters: { harness: string; status: string; maxAge?: number; folder?: string; includeLastMessage: boolean };
+  complete: boolean;
+  unavailable: Array<{ harness: string; error: string }>;
 }
 
 export async function listAgentsResult(
@@ -232,23 +235,27 @@ export async function listAgentsResult(
       ? [...adapters.values()]
       : [adapters.get(parsed.harness)].filter(Boolean) as HarnessAdapter[];
 
-  for (const adapter of targets) {
-    if (adapter.lazyStart && !adapter.lazyDiscovery && adapter.isReady && !adapter.isReady()) continue;
+  const unavailable: Array<{harness: string; error: string}> = [];
+  let discoveryLimited = false;
+  await Promise.all(targets.map(async adapter => {
+    if (adapter.lazyStart && !adapter.lazyDiscovery && adapter.isReady && !adapter.isReady()) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const sessions = await adapter.listSessions();
-      allSessions.push(...sessions);
-    } catch (err) {
-      allSessions.push({
-        id: "error",
-        harness: adapter.type,
-        status: "error",
-        title: `Failed to list sessions: ${(err as Error).message}`,
-        cwd: "",
-        lastActivity: new Date().toISOString(),
-        needsPermission: false,
-      });
-    }
-  }
+      const sessions = await Promise.race([
+        adapter.listSessions({limit:parsed.limit,...(adapter.type === "opencode" && parsed.folder ? {cwd:expandPath(parsed.folder)} : {})}),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Discovery exceeded 3 seconds")), 3000); }),
+      ]);
+      allSessions.push(...sessions.map(session => {
+        const activeCwd = coordinationNotes.activeWorkspaceForSession(session.id);
+        return activeCwd ? {...session, cwd:activeCwd, meta:{...session.meta,launchCwd:session.cwd,activeCwd,projectSource:"coordination_activity"}} : session;
+      }));
+      const receipt = adapter.getSessionSnapshotReceipt?.();
+      if (receipt?.reason === "bounded_native_page") discoveryLimited = true;
+      else if (receipt && !receipt.exhaustive) unavailable.push({harness:adapter.type,error:receipt.reason || "Incomplete native discovery"});
+    } catch (error) {
+      unavailable.push({harness:adapter.type,error:error instanceof Error ? error.message : String(error)});
+    } finally { if (timer) clearTimeout(timer); }
+  }));
 
   // Filter by status
   let filtered = allSessions;
@@ -270,7 +277,7 @@ export async function listAgentsResult(
     const normalizedFolder = expandPath(parsed.folder);
     filtered = filtered.filter((s) => {
       const normalizedCwd = expandPath(s.cwd);
-      return normalizedCwd.startsWith(normalizedFolder);
+      return normalizedCwd === normalizedFolder || normalizedCwd.startsWith(normalizedFolder.replace(/\/$/, "") + "/");
     });
   }
 
@@ -280,9 +287,13 @@ export async function listAgentsResult(
   const limited = filtered.slice(0, parsed.limit);
 
   return {
-    sessions: limited,
+    complete: unavailable.length === 0 && !discoveryLimited, unavailable,
+    sessions: limited.map((session,index) => {
+      const {lastMessage, ...rest} = session;
+      return {...rest, ...(parsed.includeLastMessage && index < 5 && lastMessage ? {lastMessage:lastMessage.slice(0,160)} : {})};
+    }),
     total: filtered.length,
-    limited: filtered.length > parsed.limit,
+    limited: filtered.length > parsed.limit || discoveryLimited,
     filters: { harness: parsed.harness, status: parsed.status, ...(parsed.maxAge !== undefined ? { maxAge: parsed.maxAge } : {}), ...(parsed.folder ? { folder: parsed.folder } : {}), includeLastMessage: parsed.includeLastMessage },
   };
 }
@@ -296,14 +307,15 @@ export function formatListAgentsResult(result: ListAgentsResult): string {
     if (parsed.maxAge) filters.push(`maxAge=${parsed.maxAge}s`);
     if (parsed.folder) filters.push(`folder=${parsed.folder}`);
     const filterStr = filters.length > 0 ? ` with filters: ${filters.join(", ")}` : "";
-    return `No agent sessions found${filterStr}.`;
+    return `${result.complete ? "No agent sessions found" : "Discovery incomplete; no matching sessions confirmed"}${filterStr}.${result.unavailable.map(x=>` ${x.harness}: ${x.error}`).join("")}`;
   }
   return [
     `Found ${result.total} session(s)${parsed.harness !== "all" ? ` on ${parsed.harness}` : ""}${parsed.status !== "all" ? ` with status '${parsed.status}'` : ""}${parsed.maxAge ? ` from last ${formatDuration(parsed.maxAge)}` : ""}${parsed.folder ? ` under ${parsed.folder}` : ""}:`,
     "",
-    ...result.sessions.map((session) => formatSession(session, parsed.includeLastMessage)),
+    ...result.sessions.map((session, index) => `[${session.harness}] ${session.id} | ${session.status} | ${session.title.slice(0,100)} | ${session.cwd}${parsed.includeLastMessage && index < 5 && session.lastMessage ? ` | ${session.lastMessage.slice(0,160)}` : ""}`),
+    ...result.unavailable.map(x => `Incomplete: ${x.harness}: ${x.error}`),
     "",
-    result.limited ? `... and ${result.total - result.sessions.length} more (use limit to see more)` : "",
+    result.limited ? `More sessions may exist; increase limit or use an exact session ID` : "",
   ].join("\n");
 }
 
@@ -344,7 +356,8 @@ export async function handleAuditWorktrees(args: unknown): Promise<string> {
 
 export async function agentInfoResult(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<AgentSession | null> {
   const parsed = AgentInfoSchema.parse(args);
-  return (await findSession(adapters, parsed.sessionId, parsed.harness))?.session ?? null;
+  const found = await findSession(adapters, parsed.sessionId, parsed.harness);
+  return found ? found.adapter.getSession(found.session.id, {includeMetrics:true}) : null;
 }
 
 export async function handleAgentInfo(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
@@ -425,7 +438,17 @@ export async function handleExportTranscript(
   }
 }
 
-export async function handleSendMessage(
+export async function handleSendMessage(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
+  const parsed = SendMessageSchema.parse(args);
+  if (parsed.humanRequested) return sendMessageOnce(adapters, parsed);
+  return deliveryBudgetFor(adapters).run({
+    target: `${parsed.harness || "auto"}:${parsed.sessionId}`,
+    sender: `${parsed.fromHarness || "auto"}:${parsed.fromSessionId || "unknown"}`,
+    inputId: parsed.inputId, message: parsed.message,
+  }, () => sendMessageOnce(adapters, parsed));
+}
+
+async function sendMessageOnce(
   adapters: Map<string, HarnessAdapter>,
   args: unknown
 ): Promise<string> {
@@ -457,10 +480,10 @@ export async function handleSendMessage(
         ...(result.turnId ? { turnId: result.turnId } : {}),
         ...(result.inputId ? { inputId: result.inputId } : {}) })}` : "";
     if (result.pending) {
-      return `Message accepted by [${found.session.harness}] ${parsed.sessionId}; native turn start is still being verified.${receipt}\nMessage: ${parsed.message}`;
+      return `Message accepted by [${found.session.harness}] ${parsed.sessionId}; native turn start is still being verified.${receipt}`;
     }
     const modeLabel = parsed.mode === "queue" ? " (queued)" : parsed.mode === "steer" ? " (steering)" : " (sync)";
-    return `Message sent to [${found.session.harness}] ${parsed.sessionId}${modeLabel}.${receipt}\nMessage: ${parsed.message}`;
+    return `Message sent to [${found.session.harness}] ${parsed.sessionId}${modeLabel}.${receipt}`;
   }
   if ((result.admitted || result.admissionUnknown) && result.nonRetryable) {
     if (pending.ids.length) {
@@ -471,7 +494,7 @@ export async function handleSendMessage(
   }
   if (!result.nonRetryable && isBusyCodexWriter(found.session.harness, result.error)) {
     await deferredMessages.add(parsed.sessionId, baseMessage);
-    return `Message deferred for [${found.session.harness}] ${parsed.sessionId}; the native hook will inject it at the next safe turn boundary.\nMessage: ${parsed.message}`;
+    return `Message deferred for [${found.session.harness}] ${parsed.sessionId}; the native hook will inject it at the next safe turn boundary.`;
   }
   return `Failed to send message: ${result.error}`;
 }
@@ -496,6 +519,12 @@ export async function handleNewOrResume(
 
 export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
   const parsed = DeliverSchema.parse(args);
+  return deliveryBudgetFor(adapters).run({target: `${parsed.harness || "auto"}:${parsed.sessionId || `${parsed.name}:${parsed.cwd}`}`,
+    inputId: parsed.inputId, message: parsed.message}, () => deliverOnce(adapters, parsed));
+}
+
+async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
+  const parsed = DeliverSchema.parse(args);
   if (parsed.sessionId) {
     const found = await findSession(adapters, parsed.sessionId, parsed.harness);
     if (!found) return JSON.stringify({ ok:false, delivery:"not_found", activated:false, error:`Session '${parsed.sessionId}' not found.` });
@@ -518,11 +547,17 @@ export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args:
       await deferredMessages.add(fresh.id, parsed.message);
       return JSON.stringify({ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"deferred",activated:false});
     }
-    return JSON.stringify(sent.ok
+    const receipt = {
+      ...(sent.admitted !== undefined ? {admitted:sent.admitted} : {}),
+      ...(sent.inputId ? {inputId:sent.inputId} : {}),
+      ...(sent.turnId ? {turnId:sent.turnId} : {}),
+      ...(sent.admissionUnknown ? {admissionUnknown:true,nonRetryable:true} : {}),
+    };
+    return JSON.stringify({...receipt,...(sent.ok
       ? sent.pending
         ? {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"accepted_unconfirmed",activated:false}
         : {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:parsed.mode==="queue"?"accepted":"completed",activated:true}
-      : {ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"failed",activated:false,...(sent.nonRetryable?{nonRetryable:true}:{}),error:sent.error||"Message delivery failed"});
+      : {ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"failed",activated:false,...(sent.nonRetryable?{nonRetryable:true}:{}),error:sent.error||"Message delivery failed"})});
   }
   return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:parsed.message,inputId:parsed.inputId,create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model,sourceSessionId:parsed.sourceSessionId,sourceHarness:parsed.sourceHarness,sourceSessions:parsed.sourceSessions}));
 }

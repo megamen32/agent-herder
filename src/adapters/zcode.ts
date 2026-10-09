@@ -1411,9 +1411,10 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
-    for (const workspace of await this.workspaceCandidates(this.sessionWorkspaces.get(id)?.workspacePath)) {
+    for (const workspace of this.sessionWorkspaces.has(id) ? [this.sessionWorkspaces.get(id)!] : await this.workspaceCandidates()) {
       try {
         const snapshot = await this.readSnapshot(id, workspace);
+        if (sessionInfoFromPayload(snapshot)?.sessionId !== id) throw new Error("Native session identity mismatch");
         let nativeEvents: Array<Record<string, unknown>> = [];
         let nativeEventHistoryAvailable = false;
         try {
@@ -1443,6 +1444,7 @@ export class ZcodeAdapter implements HarnessAdapter {
           status: lastTurn.type === "turn.started" ? "inProgress" : lastTurn.type === "turn.failed" ? "failed" : "completed",
         } };
         this.ensureSessionEventSubscription(id, workspace, eventSeq);
+        mapped.meta = {...mapped.meta,nativeLoaded:true};
         return mapped;
       } catch {
         continue;
@@ -1455,7 +1457,8 @@ export class ZcodeAdapter implements HarnessAdapter {
     // listSessions still returns those sessions — fall back to discovery.
     try {
       const sessions = await this.listSessions();
-      return sessions.find((session) => session.id === id) ?? null;
+      const historical = sessions.find((session) => session.id === id);
+      return historical ? {...historical,meta:{...historical.meta,nativeLoaded:false}} : null;
     } catch {
       return null;
     }
@@ -1609,7 +1612,8 @@ export class ZcodeAdapter implements HarnessAdapter {
     const requestedDelivery = options.steer ? "guide" : "queue";
     let attempted = false;
     try {
-      const baseline = await this.readCurrentSnapshot(id);
+      if (await getHumanStopStore().isHeld("zcode", id)) return {ok:false,inputId,error:"Чат явно остановлен; автоматическая отправка запрещена."};
+      const baseline = await this.readConversationBaseline(id);
       const permissionError = this.pendingPermissionError(baseline);
       if (permissionError) return { ok: false, inputId, error: permissionError };
       const stopStore = getHumanStopStore();
@@ -2015,7 +2019,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       const workspace = this.sessionWorkspaces.get(id) || this.workspace();
       const snapshot = await this.callAgent("resumeSession", { ...workspace, sessionId: id });
       this.sessionWorkspaces.set(id, workspace);
-      if (!sessionInfoFromPayload(snapshot)) throw new Error("ZCode resumeSession returned no sessionId");
+      if (sessionInfoFromPayload(snapshot)?.sessionId !== id) throw new Error("ZCode resumeSession returned a different or missing sessionId");
       const eventSeq = record(record(snapshot).runtime).eventSeq;
       if (typeof eventSeq === "number") this.sessionEventCursors.set(id, eventSeq);
       this.ensureSessionEventSubscription(id, workspace, typeof eventSeq === "number" ? eventSeq : undefined);
@@ -2108,9 +2112,41 @@ export class ZcodeAdapter implements HarnessAdapter {
   private async readSnapshot(id: string, workspace: ZcodeWorkspaceRef, messageLimit?: number): Promise<ZcodeSnapshot> {
     return await this.callAgent("readSession", {
       ...workspace,
+      runtimePolicy:"existing-only",
       sessionId: id,
       ...(messageLimit !== undefined ? { messageLimit } : {}),
     }) as ZcodeSnapshot;
+  }
+
+  private conversationLoads = new Map<string, Promise<ZcodeSnapshot>>();
+
+  private async readConversationBaseline(id: string): Promise<ZcodeSnapshot> {
+    const workspace = this.sessionWorkspaces.get(id) || this.workspace();
+    try {
+      const snapshot = await this.readSnapshot(id, workspace);
+      if (sessionInfoFromPayload(snapshot)?.sessionId !== id) throw new Error("Native read returned a different sessionId");
+      return snapshot;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Only explicit absence permits a prompt-free same-ID load. A read
+      // timeout/disconnect is unknown, and must never trigger send/replay.
+      if (record(error).code !== "proto.sessionNotFound" && !/\bSession not found\b|proto\.sessionNotFound/.test(message)) throw error;
+      let loading = this.conversationLoads.get(id);
+      if (!loading) {
+        loading = (async () => {
+          if (await getHumanStopStore().isHeld("zcode", id)) throw new Error("Чат явно остановлен; загрузка запрещена.");
+          this.sessionWorkspaces.set(id, workspace);
+          const result = await this.resumeSession(id);
+          if (!result.ok) throw new Error(result.error || "Same-ID native load failed");
+          const snapshot = await this.readSnapshot(id, workspace);
+          if (sessionInfoFromPayload(snapshot)?.sessionId !== id) throw new Error("Loaded native session identity mismatch");
+          return snapshot;
+        })();
+        this.conversationLoads.set(id, loading);
+        void loading.finally(() => {this.conversationLoads.delete(id);}).catch(() => {});
+      }
+      return loading;
+    }
   }
 
   private async readCurrentSnapshot(sessionId: string): Promise<ZcodeSnapshot | undefined> {

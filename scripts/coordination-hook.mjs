@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import { randomUUID } from "node:crypto";
+import { resolve, isAbsolute } from "node:path";
 
 const endpoint = process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787";
 let raw = "";
 for await (const chunk of process.stdin) raw += chunk;
 let input;
 try { input = JSON.parse(raw || "{}"); } catch { process.exit(0); }
-const event = input.hook_event_name || "";
-const sessionId = String(input.session_id || "");
+const event = input.hook_event_name || input.hookEventName || "";
+const sessionId = String(input.session_id || input.sessionId || "");
 const cwd = String(input.cwd || process.cwd());
 const harness = process.env.AGENT_HERDER_HARNESS || "codex";
 const output = (name, context) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: name, ...(context ? { additionalContext: context } : {}) } }));
@@ -15,7 +16,7 @@ const fetchJson = async (url, options) => { const r = await fetch(url, { ...opti
 function stringCommand(value) {
   if (typeof value === "string") return value;
   if (value && typeof value === "object") {
-    for (const key of ["command", "cmd", "script"]) if (typeof value[key] === "string") return value[key];
+    for (const key of ["command", "cmd", "script", "code"]) if (typeof value[key] === "string") return value[key];
   }
   return "";
 }
@@ -44,22 +45,16 @@ function collectPaths(value, out = new Set()) {
     for (const [key, item] of Object.entries(value)) {
       if (/^(path|file|file_path|filepath|filename)$/i.test(key) && typeof item === "string") out.add(item);
       else if (/^(paths|files)$/i.test(key) && Array.isArray(item)) for (const p of item) if (typeof p === "string") out.add(p);
-      collectPaths(item, out);
+      if (!/^(cwd|workdir|directory)$/i.test(key)) collectPaths(item, out);
     }
   }
   return out;
 }
-function normalizePaths(paths) {
+function normalizePaths(paths, workdir = cwd) {
   const result = [];
   for (let p of paths) {
     p = p.trim(); if (!p) continue;
-    if (p.startsWith('/')) {
-      if (p === cwd) p = '.';
-      else if (p.startsWith(cwd.replace(/\/$/, '') + '/')) p = p.slice(cwd.replace(/\/$/, '').length + 1);
-      else continue;
-    }
-    if (p.startsWith('./')) p = p.slice(2);
-    if (!p || p === '.' || p.startsWith('../')) continue;
+    p = resolve(workdir, p);
     result.push(p);
   }
   return [...new Set(result)].slice(0, 32);
@@ -69,6 +64,7 @@ try {
     const q = new URLSearchParams({ harness, sessionId, cwd, touch: "1", consume: "1" });
     const data = await fetchJson(`${endpoint}/api/coordination/context?${q}`);
     output(event, data.context || undefined);
+    if (data.inboxIds?.length) await fetchJson(`${endpoint}/api/coordination/inbox-ack`, {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId,ids:data.inboxIds})});
   } else if (event === "UserPromptSubmit") {
     const inputId = typeof input.input_id === "string" ? input.input_id
       : typeof input.inputId === "string" ? input.inputId
@@ -86,9 +82,18 @@ try {
     const q = new URLSearchParams({ harness, sessionId, cwd, touch: "1", consume: "1" });
     const data = await fetchJson(`${endpoint}/api/coordination/context?${q}`);
     output(event, data.context || undefined);
+    if (data.inboxIds?.length) await fetchJson(`${endpoint}/api/coordination/inbox-ack`, {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId,ids:data.inboxIds})});
   } else if (event === "PreToolUse" || event === "PostToolUse") {
-    const paths = isWriteActivity(input.tool_name, input.tool_input) ? normalizePaths(collectPaths(input.tool_input)) : [];
-    const data = await fetchJson(`${endpoint}/api/coordination/activity`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ harness, sessionId, cwd, paths }) });
+    input.tool_input ??= input.toolInput;
+    input.tool_name ??= input.toolName;
+    const declaredWorkdir = input.tool_input && typeof input.tool_input === "object"
+      ? input.tool_input.workdir || input.tool_input.cwd || input.tool_input.directory : undefined;
+    const literalWorkdir = stringCommand(input.tool_input).match(/(?:workdir|cwd|directory)["']?\s*:\s*(["'])(\/[^"'\n]+)\1/)?.[2];
+    const observedWorkdir = declaredWorkdir || literalWorkdir;
+    const workdir = typeof observedWorkdir === "string" && isAbsolute(observedWorkdir) ? resolve(observedWorkdir) : cwd;
+    const paths = isWriteActivity(input.tool_name, input.tool_input) ? normalizePaths(collectPaths(input.tool_input), workdir) : [];
+    const data = await fetchJson(`${endpoint}/api/coordination/activity`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ harness, sessionId, cwd: workdir, launchCwd: cwd, paths }) });
     output(event, data.context || undefined);
+    if (data.inboxIds?.length) await fetchJson(`${endpoint}/api/coordination/inbox-ack`, {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId,ids:data.inboxIds})});
   }
 } catch { process.exit(0); }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
@@ -17,7 +18,7 @@ afterEach(() => vi.restoreAllMocks());
 describe("registered Codex communication delivery", () => {
   it("steers queued active delivery, refreshes a rejected turn ID, deduplicates retries and starts idle once", async () => {
     await mkdir(".tmp", { recursive: true });
-    const root = await mkdtemp(join(process.cwd(), ".tmp/registered-codex-"));
+    const root = await mkdtemp(join(tmpdir(), "rc-"));
     const previous = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
     process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(root, "stops.json");
     const listInbox = vi.spyOn(deferredMessages, "list").mockResolvedValue([]);

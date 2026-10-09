@@ -93,6 +93,8 @@ async def before_llm_call(ctx: Any) -> None:
         message = getattr(ctx, "message", None)
         if context and message is not None and context not in str(getattr(message, "all_text", lambda: "")()):
             message.add_text(str(context))
+            if data.get("inboxIds"):
+                await asyncio.to_thread(_api, "/api/coordination/inbox-ack", {"sessionId": session_id, "ids": data["inboxIds"]})
     except Exception:
         return
 

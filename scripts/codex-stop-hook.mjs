@@ -63,6 +63,7 @@ if (sessionId) {
       if (!await rememberGeneratedPrompt(payload.inboxContext)) await exitWithoutContinuation();
       if (await humanStopHeld()) await exitWithoutContinuation();
       process.stdout.write(JSON.stringify({ decision: "block", reason: payload.inboxContext }));
+      if (payload.inboxIds?.length) await fetch(`${endpoint}/api/coordination/inbox-ack`, {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId,ids:payload.inboxIds}),signal:AbortSignal.timeout(1200)}).catch(()=>{});
       process.exit(0);
     }
   } catch {

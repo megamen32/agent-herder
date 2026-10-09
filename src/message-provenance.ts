@@ -51,21 +51,7 @@ export async function buildMessageProvenanceHeader(
 
   const sender = result.matches[0]!;
   const chatUrl = `https://agent.bezrabotnyi.com/#/session/${encodeURIComponent(`${sender.harness}:${sender.id}`)}`;
-  const targetLabel = readableHarness(target.harness);
-  const replyArgs = {
-    sessionId: sender.id,
-    harness: sender.harness,
-    mode: "queue",
-    fromSessionId: target.id,
-    fromHarness: target.harness,
-  };
-  return [
-    "🤖 Сообщение от AI-сессии",
-    `От: AI-сессия ${readableHarness(sender.harness)} · ${sender.id}`,
-    `Чат: ${chatUrl}`,
-    `Чтобы ответить от ${targetLabel}, добавь поле message с текстом ответа и вызови send_message:`,
-    JSON.stringify(replyArgs),
-  ].join("\n");
+  return `🤖 ${readableHarness(sender.harness)} ${sender.id} · ${chatUrl}\nОтвет нужен только для решения, ошибки или результата. send_message(sessionId="${sender.id}", harness="${sender.harness}", fromSessionId="${target.id}", fromHarness="${target.harness}"); без ACK.`;
 }
 
 function readableHarness(harness: string): string {

@@ -65,7 +65,10 @@ export default async function AgentHerderAutopilot({ directory, $ }) {
       try {
         const q = new URLSearchParams({ harness: "opencode", sessionId: sessionID, cwd: directory, touch: "1", consume: "1" })
         const data = await coordinationFetch(`/api/coordination/context?${q}`)
-        if (data?.context) output.system.push(data.context)
+        if (data?.context) {
+          output.system.push(data.context)
+          if (data.inboxIds?.length) await coordinationFetch("/api/coordination/inbox-ack", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId:sessionID,ids:data.inboxIds})})
+        }
       } catch {}
     },
     "tool.execute.before": async ({ sessionID, tool }, output) => {

@@ -67,21 +67,11 @@ describe("send_message sender provenance", () => {
 
     const expectedUrl = `https://agent.bezrabotnyi.com/#/session/${encodeURIComponent(`codex:${sender.id}`)}`;
     expect(received[0]?.id).toBe(target.id);
-    expect(received[0]?.options.message).toBe([
-      "🤖 Сообщение от AI-сессии",
-      `От: AI-сессия Codex · ${sender.id}`,
-      `Чат: ${expectedUrl}`,
-      "Чтобы ответить от ZCode, добавь поле message с текстом ответа и вызови send_message:",
-      JSON.stringify({
-        sessionId: sender.id,
-        harness: "codex",
-        mode: "queue",
-        fromSessionId: target.id,
-        fromHarness: "zcode",
-      }),
-      "",
-      "Please inspect this.",
-    ].join("\n"));
+    expect(received[0]?.options.message).toContain(`Codex ${sender.id}`);
+    expect(received[0]?.options.message).toContain(expectedUrl);
+    expect(received[0]?.options.message).toContain("без ACK");
+    expect(received[0]?.options.message).toContain("Please inspect this.");
+    expect(received[0]?.options.message!.length).toBeLessThan(550);
 
     await client.callTool({ name: "send_message", arguments: {
       harness: "zcode", sessionId: target.id, message: "Continue without a known sender.", mode: "queue",

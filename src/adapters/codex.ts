@@ -1,8 +1,8 @@
 import { HarnessAdapter, AgentSession, ControlResult, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessageView, SessionSnapshotReceipt } from "../types/index.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createReadStream, existsSync } from "node:fs";
-import { open, readFile, readdir, readlink, stat, writeFile } from "node:fs/promises";
+import { createReadStream, existsSync, realpathSync } from "node:fs";
+import { open, readFile, readdir, readlink, realpath, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { spawnDetachedWorkload } from "../workload-launcher.js";
@@ -28,6 +28,7 @@ export interface CodexNativeAutomationMetadata {
 }
 
 interface CodexSessionState {
+  title?: string;
   cwd?: string;
   filePath: string;
   lastMessage?: string;
@@ -247,13 +248,63 @@ export class CodexAdapter implements HarnessAdapter {
   }
 
   async getNativeAutomationMetadata(id: string): Promise<CodexNativeAutomationMetadata> {
-    const tail = await this.withCurrentSessionState(id, (state) => this.readSessionTail(state.filePath));
-    return tail?.automationStop ? { automationStop: tail.automationStop } : {};
+    const session = await this.getSessionObservation(id);
+    const automationStop = session?.meta?.automationStop as CodexAutomationStop | undefined;
+    return automationStop ? { automationStop } : {};
   }
 
-  async findNativeNamedThreads(name: string, cwd: string): Promise<Array<{ id: string; name: string; cwd: string }>> {
+  /** Exact persisted metadata and a fresh bounded tail; no global discovery or full metrics. */
+  async getSessionObservation(id: string): Promise<AgentSession | null> {
+    const databaseAvailable = existsSync(join(this.codexDir, "state_5.sqlite"));
+    let state = await this.readSessionStateFromDatabase(id);
+    if (!state && !databaseAvailable) {
+      state = this.sessionStatesCache?.get(id) ?? null;
+      if (!state) {
+        // Legacy installations have no native path index. Inspect only rollout
+        // filenames for this ID, never parse the entire session corpus.
+        const paths = await this.findJsonlFiles(join(this.codexDir, "sessions"));
+        for (const path of paths.filter(path => basename(path).includes(id))) {
+          const header = await this.readSessionHeader(path);
+          if (this.getHeaderSessionId(header) !== id) continue;
+          state = { filePath: path, cwd: this.getHeaderString(header, "cwd"), model: this.extractLatestTurnModel(header), ...this.extractLineage(header), updatedAtMs: 0 };
+          break;
+        }
+      }
+    }
+    if (!state) return null;
+    let tail: CodexRolloutTail;
+    try { tail = await this.readSessionTail(state.filePath); }
+    catch (error) {
+      if (!isFileNotFound(error)) throw error;
+      // Archiving can move the rollout between exact lookup and open. Refresh
+      // this ID once, preserving failure if fresh stop evidence is unavailable.
+      const current = await this.readSessionStateFromDatabase(id);
+      if (!current || current.filePath === state.filePath) throw error;
+      state = current;
+      tail = await this.readSessionTail(current.filePath);
+    }
+    return {
+      id, harness: "codex", title: state.title || "Untitled session",
+      cwd: state.cwd || process.cwd(), model: tail?.model || state.model,
+      // Persisted lifecycle is metadata, not a live native turn observation.
+      status: "stopped", needsPermission: false,
+      lastActivity: new Date(tail?.updatedAtMs || state.updatedAtMs || 0).toISOString(),
+      lastMessage: tail?.lastMessage || state.lastMessage,
+      meta: {
+        sessionIndexPath: join(this.codexDir, "session_index.jsonl"),
+        sessionFilePath: state.filePath,
+        ...(state.parentThreadId ? { parentThreadId: state.parentThreadId } : {}),
+        ...(state.threadSource ? { threadSource: state.threadSource } : {}),
+        ...(state.agentRole ? { agentRole: state.agentRole } : {}),
+        ...(tail?.automationStop ? { automationStop: tail.automationStop } : {}),
+        pinned: state.pinned ?? false,
+      },
+    };
+  }
+
+  async findNativeNamedThreads(name: string, cwd: string): Promise<Array<{ id: string; name: string; cwd: string }> | null> {
     const databasePath = join(this.codexDir, "state_5.sqlite");
-    if (!existsSync(databasePath)) return [];
+    if (!existsSync(databasePath)) return null;
     try {
       const { DatabaseSync } = await import("node:sqlite");
       const db = new DatabaseSync(databasePath, { readOnly: true });
@@ -262,20 +313,25 @@ export class CodexAdapter implements HarnessAdapter {
         const columns = new Set((db.prepare("pragma table_info(threads)").all() as Array<{ name?: string }>)
           .map((column) => column.name)
           .filter((column): column is string => typeof column === "string"));
-        if (!["id", "name", "cwd"].every((column) => columns.has(column))) return [];
+        if (!["id", "name", "cwd"].every((column) => columns.has(column))) return null;
         const archiveFilter = columns.has("archived")
           ? " and (archived = 0 or archived is null)"
           : columns.has("archived_at") ? " and archived_at is null" : "";
-        const rows = db.prepare(`select id, name, cwd from threads where name = ? and cwd = ?${archiveFilter}`)
-          .all(name, cwd) as Array<{ id?: unknown; name?: unknown; cwd?: unknown }>;
-        return rows.flatMap((row) => typeof row.id === "string" && typeof row.name === "string" && typeof row.cwd === "string"
-          ? [{ id: row.id, name: row.name, cwd: row.cwd }]
-          : []);
+        const rows = db.prepare(`select id, name, cwd from threads where name = ?${archiveFilter}`)
+          .all(name) as Array<{ id?: unknown; name?: unknown; cwd?: unknown }>;
+        const canonicalCwd = await realpath(cwd).catch(() => cwd);
+        const matches: Array<{ id: string; name: string; cwd: string }> = [];
+        for (const row of rows) {
+          if (typeof row.id !== "string" || typeof row.name !== "string" || typeof row.cwd !== "string") continue;
+          if (row.cwd !== cwd && await realpath(row.cwd).catch(() => row.cwd) !== canonicalCwd) continue;
+          matches.push({ id: row.id, name: row.name, cwd: row.cwd });
+        }
+        return matches;
       } finally {
         db.close();
       }
     } catch {
-      return [];
+      return null;
     }
   }
 
@@ -712,9 +768,9 @@ export class CodexAdapter implements HarnessAdapter {
         .filter((name): name is string => typeof name === "string"));
       if (!columns.has("id") || !columns.has("rollout_path")) return null;
       const optional = (column: string, alias = column) => columns.has(column) ? column : `null as ${alias}`;
-      const row = db.prepare(`select id, rollout_path, ${optional("cwd")}, ${optional("model")}, ${optional("preview")}, ${optional("updated_at_ms")}, ${optional("thread_source")}, ${optional("agent_role")}, ${optional("is_pinned", "is_pinned")} from threads where id = ? limit 1`)
+      const row = db.prepare(`select id, rollout_path, ${optional("name")}, ${optional("cwd")}, ${optional("model")}, ${optional("preview")}, ${optional("updated_at_ms")}, ${optional("thread_source")}, ${optional("agent_role")}, ${optional("is_pinned", "is_pinned")} from threads where id = ? limit 1`)
         .get(id) as {
-          id?: unknown; rollout_path?: unknown; cwd?: unknown; model?: unknown; preview?: unknown;
+          id?: unknown; rollout_path?: unknown; name?: unknown; cwd?: unknown; model?: unknown; preview?: unknown;
           updated_at_ms?: unknown; thread_source?: unknown; agent_role?: unknown; is_pinned?: unknown;
         } | undefined;
       if (!row || row.id !== id || typeof row.rollout_path !== "string" || !row.rollout_path) return null;
@@ -731,6 +787,7 @@ export class CodexAdapter implements HarnessAdapter {
       }
       return {
         filePath: row.rollout_path,
+        ...(typeof row.name === "string" ? { title: row.name } : {}),
         ...(typeof row.cwd === "string" ? { cwd: row.cwd } : {}),
         ...(typeof row.model === "string" ? { model: row.model } : {}),
         ...(typeof row.preview === "string" ? { lastMessage: row.preview } : {}),
@@ -952,7 +1009,8 @@ export class CodexAdapter implements HarnessAdapter {
     openRolloutPaths: Set<string> | null,
   ): CodexSessionState["status"] {
     if (state?.status !== "running" || openRolloutPaths === null || !state.filePath) return state?.status;
-    return openRolloutPaths.has(state.filePath) ? "running" : "idle";
+    const filePath = existsSync(state.filePath) ? realpathSync(state.filePath) : state.filePath;
+    return openRolloutPaths.has(filePath) ? "running" : "idle";
   }
 
   /**
@@ -990,6 +1048,8 @@ export class CodexAdapter implements HarnessAdapter {
     }
 
     const result = new Set<string>();
+    const sessionRoot = join(this.codexDir, "sessions");
+    const canonicalSessionRoot = existsSync(sessionRoot) ? realpathSync(sessionRoot) : sessionRoot;
     let relevantComplete = true;
     await Promise.all(descriptors.map(async (descriptor) => {
       let target: string;
@@ -999,7 +1059,7 @@ export class CodexAdapter implements HarnessAdapter {
         // Volatile sockets and unrelated descriptors routinely disappear.
         return;
       }
-      if (!target.startsWith(`${join(this.codexDir, "sessions")}/`) || !target.endsWith(".jsonl")) return;
+      if (!target.startsWith(`${canonicalSessionRoot}/`) || !target.endsWith(".jsonl")) return;
       try {
         const fdInfo = await readFile(`/proc/${pid}/fdinfo/${descriptor}`, "utf8");
         const flags = fdInfo.match(/^flags:\s*([0-7]+)$/m)?.[1];

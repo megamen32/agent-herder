@@ -23,7 +23,7 @@ import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAl
 import type { SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
 import { AutomationLaunchPolicyStore, MAX_MODEL_LENGTH } from "../automation-launch-policy.js";
 import { renderSessionGraph } from "../session-visualization.js";
-import { coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
+import { boundedCoordinationContext, coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
 import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
 import { getAgentActivityStatistics, withSessionPortfolioStatistics } from "../session-statistics.js";
 import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
@@ -561,16 +561,24 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const cwd = url.searchParams.get("cwd")?.trim();
     if (!harness || !sessionId || !cwd) return sendJson(response, 400, { error: "harness, sessionId, and cwd are required" });
     let humanStopHeld = await supervisor.isAutomationHeld(harness, sessionId);
-    if (url.searchParams.get("touch") === "1") await coordinationNotes.heartbeatSession({ sessionId, cwd });
+    if (url.searchParams.get("touch") === "1" && !coordinationNotes.activeWorkspaceForSession(sessionId)) await coordinationNotes.heartbeatSession({ sessionId, cwd });
     const coordinationContext = await coordinationNotes.renderForSession({ harness, id: sessionId, cwd });
     if (response.destroyed) return;
     humanStopHeld = humanStopHeld || await supervisor.isAutomationHeld(harness, sessionId);
-    const inboxMessages = !humanStopHeld && url.searchParams.get("consume") === "1"
-      ? await deferredMessages.take(sessionId)
-      : await deferredMessages.list(sessionId);
+    const inboxMessages = humanStopHeld ? [] : await deferredMessages.list(sessionId);
     const inboxContext = humanStopHeld ? null : renderDeferredMessages(inboxMessages);
     const context = [inboxContext, coordinationContext].filter(Boolean).join("\n\n") || null;
-    return sendJson(response, 200, { context, inboxContext, inboxCount: inboxMessages.length, active: Boolean(context), humanStopHeld });
+    return sendJson(response, 200, { context, inboxContext, inboxCount: inboxMessages.length, inboxIds:inboxMessages.map(message=>message.id), active: Boolean(context), humanStopHeld });
+  }
+  if (url.pathname === "/api/coordination/inbox-ack" && request.method === "POST") {
+    const body = await readJson(request);
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+    if (!sessionId || !Array.isArray(body.ids)) return sendJson(response,400,{error:"sessionId and ids required"});
+    const requested = new Set(body.ids.filter((id):id is string=>typeof id === "string"));
+    const pending = await deferredMessages.list(sessionId);
+    const acknowledged = pending.filter(message=>requested.has(message.id)).map(message=>message.id);
+    await deferredMessages.remove(acknowledged);
+    return sendJson(response,200,{acknowledged:acknowledged.length});
   }
   if (url.pathname === "/api/coordination/activity" && request.method === "POST") {
     const body = await readJson(request);
@@ -623,7 +631,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       const peersBlock = await coordinationNotes.renderWorkspacePeers({ harness, id: sessionId, cwd: board }).catch(() => null);
       if (peersBlock) blocks.push(peersBlock);
     }
-    const context = blocks.length > 0 ? blocks.join("\n\n") : null;
+    const context = blocks.length > 0 ? boundedCoordinationContext(blocks.join("\n\n")) : null;
     return sendJson(response, 200, { reservations, conflicts, context });
   }
   if (url.pathname === "/api/coordination/session-end" && request.method === "POST") {

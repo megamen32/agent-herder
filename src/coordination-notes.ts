@@ -49,7 +49,7 @@ export class CoordinationNoteStore {
    * All injection channels share these slots so the same information never
    * enters a session twice — only material changes re-inject. Keyed per
    * board because different boards carry different information. */
-  private injectionState = new Map<string, { signature: string; at: number }>();
+  private injectionState = new Map<string, { signature: string; at: number; notes?: Set<string> }>();
   /** sessionId -> board cwd -> last activity ms. Tracks every workspace a
    * session has actually touched, so turn-start awareness covers all of
    * them, not just the launch directory. */
@@ -110,6 +110,7 @@ export class CoordinationNoteStore {
         expiresAt: new Date(now.getTime() + ttl * 1000).toISOString(),
       };
       file.notes.push(note);
+      if (note.kind === "working") this.touchPresence(note.authorSessionId, cwd);
       await this.write(file);
       this.publishNote(note, "created");
       this.publishPresence(note.authorSessionId, note.cwd);
@@ -251,7 +252,7 @@ export class CoordinationNoteStore {
       const block = await this.renderBoard(session, board, "agent-herder-coordination");
       if (block) blocks.push(block);
     }
-    return blocks.length > 0 ? blocks.join("\n\n") : null;
+    return blocks.length > 0 ? boundedCoordinationContext(blocks.join("\n\n")) : null;
   }
 
   /**
@@ -271,8 +272,24 @@ export class CoordinationNoteStore {
     tag: string,
   ): Promise<string | null> {
     const notes = (await this.list({ cwd: board })).filter((note) => note.authorSessionId !== session.id);
-    if (notes.length === 0) return null;
-    if (!this.shouldInject(`${session.id}#${board}`, this.noteSignature(notes))) return null;
+    if (notes.length === 0) {
+      const key = `${session.id}#${board}`;
+      const previous = this.injectionState.get(key);
+      if (!previous?.notes?.size) return null;
+      this.injectionState.set(key, {signature:"", at:Date.now(), notes:new Set()});
+      return `<${tag} board="${basename(board)}">Ownership released: ${[...previous.notes].map(value=>`${value.split("|")[0]}:${value.split("|").at(-1)}`).join(",").slice(0,1000)}</${tag}>`;
+    }
+    const key = `${session.id}#${board}`;
+    const previous = this.injectionState.get(key);
+    // Auto file activity is coalesced; explicit manual ownership/decisions
+    // remain immediate. Conflicts use their independent activity response.
+    if (previous && Date.now() - previous.at < 60_000 && notes.every(note=>note.source === "hook")) return null;
+    if (!this.shouldInject(key, this.noteSignature(notes))) return null;
+    const fingerprint = (note: CoordinationNote) => this.noteSignature([note]);
+    const reshow = !previous || Date.now() - previous.at >= injectionReshowMs();
+    const changed = reshow ? notes : notes.filter(note => !previous.notes?.has(fingerprint(note)));
+    const removed = previous?.notes ? [...previous.notes].filter(value => !notes.some(note => fingerprint(note) === value)).length : 0;
+    this.injectionState.get(key)!.notes = new Set(notes.map(fingerprint));
     const byAuthor = new Map<string, { harness: string; paths: string[] }>();
     for (const note of notes) {
       const entry = byAuthor.get(note.authorSessionId) ?? { harness: note.authorHarness || "agent", paths: [] };
@@ -288,25 +305,26 @@ export class CoordinationNoteStore {
       ? []
       : ["You have not declared your own task yet — do it now with one note (Agent Herder coordination_note_create: kind=\"working\", message=<one line: what you are doing>, paths=<files you own>) and update it when your goal changes."];
     if (tag === "agent-herder-repo-peers") {
-      return [
+      return boundedCoordinationContext([
         `<agent-herder-repo-peers board="${basename(board)}">`,
-        "Other agents recently active in this repo. Before overlapping work, contact them via Agent Herder send_message with sessionId:",
+        "Other agents recently active in this repo. Contact via send_message only for conflicting ownership or a necessary decision; do not acknowledge routine messages.",
         ...declaration,
-        ...peers,
+        ...peers.map(line => line.slice(0, 220)),
         "</agent-herder-repo-peers>",
-      ].join("\n");
+      ].join("\n"));
     }
-    return [
+    return boundedCoordinationContext([
       `<agent-herder-coordination board="${basename(board)}">`,
-      `Active coordination notes from other agents in this workspace (${basename(board)}). Respect path ownership. If a note conflicts with your task, use Agent Herder send_message to contact its author before editing.`,
+      `Coordination changes in ${basename(board)}. Respect ownership. Use send_message only for necessary decisions, conflicts or verified results; no routine ACK replies. Details: ${coordinationWorkspaceResourceUri(board)}`,
       ...declaration,
-      ...notes.map((note) => {
-        const paths = note.paths.length ? ` paths=${note.paths.join(",")}` : "";
+      ...(removed ? [`- ${removed} prior note(s) changed or expired.`] : []),
+      ...changed.map((note) => {
+        const paths = note.paths.length ? ` paths=${note.paths.slice(0, 4).join(",").slice(0, 90)}` : "";
         const author = `${note.authorHarness || "agent"}:${note.authorSessionId}`;
-        return `- [${note.kind}] note=${note.id} author=${author} until=${note.expiresAt}${paths} :: ${note.message}`;
+        return `- [${note.kind}] author=${author}${paths} :: ${note.message.slice(0, Math.max(40, Math.min(100, Math.floor(1600 / Math.max(1,changed.length)))))}`;
       }),
       "</agent-herder-coordination>",
-    ].join("\n");
+    ].join("\n"));
   }
 
   /**
@@ -334,7 +352,16 @@ export class CoordinationNoteStore {
     });
   }
 
+  activeWorkspaceForSession(sessionId: string): string | undefined {
+    return this.presenceForSession(sessionId)?.boards[0]?.cwd;
+  }
+
   presenceSnapshot(): Array<{ sessionId: string; boards: Array<{ cwd: string; lastSeenAt: string }> }> {
+    const now = Date.now();
+    for (const [sessionId, boards] of this.presence) {
+      for (const [board, seen] of boards) if (now - seen > 5 * 60 * 1000) boards.delete(board);
+      if (!boards.size) this.presence.delete(sessionId);
+    }
     return [...this.presence.entries()].map(([sessionId, boards]) => ({
       sessionId,
       boards: [...boards.entries()]
@@ -359,7 +386,7 @@ export class CoordinationNoteStore {
   private shouldInject(sessionId: string, signature: string): boolean {
     const previous = this.injectionState.get(sessionId);
     const now = Date.now();
-    const reshowMs = Number(process.env.AGENT_HERDER_INJECTION_RESHOW_MS || 45 * 60 * 1000);
+    const reshowMs = injectionReshowMs();
     if (previous && previous.signature === signature && now - previous.at < reshowMs) return false;
     this.injectionState.set(sessionId, { signature, at: now });
     return true;
@@ -375,8 +402,8 @@ export class CoordinationNoteStore {
   }
 
   async inject(session: { id: string; harness: string; cwd: string }, message: string): Promise<string> {
-    await this.heartbeatSession({ sessionId: session.id, cwd: session.cwd });
-    if (message.includes("<agent-herder-coordination>")) return message;
+    if (!this.activeWorkspaceForSession(session.id)) await this.heartbeatSession({ sessionId: session.id, cwd: session.cwd });
+    if (/<agent-herder-(?:coordination|repo-peers)(?:\s|>)/.test(message)) return message;
     const context = await this.renderForSession(session);
     return context ? `${context}\n\n${message}` : message;
   }
@@ -478,9 +505,9 @@ function normalizePathsForCwd(paths: string[], cwd: string): string[] {
   });
 }
 function sameWorkspace(a: string, b: string): boolean {
-  const relAB = relative(a, b); const relBA = relative(b, a);
-  return relAB === "" || (!relAB.startsWith(`..${sep}`) && relAB !== "..") || (!relBA.startsWith(`..${sep}`) && relBA !== "..");
+  return resolve(a) === resolve(b);
 }
+
 function pathMatches(candidate: string, target: string): boolean {
   const c = candidate.replace(/^\.\//, ""); const t = target.replace(/^\.\//, "");
   return t === c || t.startsWith(`${c}/`) || c.startsWith(`${t}/`);
@@ -497,4 +524,20 @@ function dedupeConflicts(conflicts: CoordinationConflict[]): CoordinationConflic
     seen.add(key);
     return true;
   });
+}
+
+function injectionReshowMs(): number {
+  const value = Number(process.env.AGENT_HERDER_INJECTION_RESHOW_MS || 45 * 60 * 1000);
+  return Number.isFinite(value) && value >= 60_000 ? value : 45 * 60 * 1000;
+}
+export function boundedCoordinationContext(value: string): string {
+  if (value.length <= 4000) return value;
+  const lines = value.split("\n");
+  const closing = lines.at(-1)?.startsWith("</") ? lines.pop()! : "";
+  let result = "";
+  for (const line of lines) {
+    if (result.length + line.length + closing.length + 160 > 4000) break;
+    result += line + "\n";
+  }
+  return result + "Context incomplete: additional owners or conflicts may exist. Read the workspace resource before editing an unlisted path.\n" + closing;
 }
