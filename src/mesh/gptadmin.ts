@@ -80,7 +80,7 @@ export class GptAdminMesh {
         const reply=unwrapResult(await this.bounded(this.hub.call(route.target,"mesh_deliver",{...request},createHash("sha256").update(key).digest("hex"))));
         if(reply.inputId!==request.inputId||!["admitted","not_attempted","unknown"].includes(String(reply.state)))return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
         if(reply.state==="admitted"&&typeof reply.turnId!=="string")return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
-        return JSON.stringify({state:reply.state,...(reply.state==="not_attempted"&&reply.retryable===true?{delivery:"not_attempted"}:{}),inputId:request.inputId,...(typeof reply.turnId==="string"?{turnId:reply.turnId}:{}),retryable:reply.state==="not_attempted"&&reply.retryable===true,...(typeof reply.reason==="string"?{reason:reply.reason}:{})});
+        return JSON.stringify({state:reply.state,...(reply.state==="not_attempted"&&reply.retryable===true?{delivery:"not_attempted"}:{}),inputId:request.inputId,...(typeof reply.turnId==="string"?{turnId:reply.turnId}:{}),retryable:reply.state==="not_attempted"&&reply.retryable===true,...(typeof reply.reason==="string"?{reason:reply.reason}:{}),...(typeof reply.retryAfterMs==="number"?{retryAfterMs:reply.retryAfterMs}:{})});
       }catch{return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});}
     }).then(text=>{const r=JSON.parse(text);return r.state?r:{state:"not_attempted",inputId:request.inputId,retryable:true,reason:r.delivery};});
     this.inputs.set(key,{digest,result});

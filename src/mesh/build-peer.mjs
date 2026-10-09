@@ -8,7 +8,7 @@ const output=resolve(process.argv[2]||".tmp/harness-mesh/native-peer.mjs");
 await mkdir(dirname(output),{recursive:true});
 const entry=process.argv[3]==="singleton"?"src/mesh/singleton-peer.ts":"src/mesh/native-peer.ts";
 await build({input:entry,external:id=>id.startsWith("node:"),platform:"node",output:{file:output,format:"esm"}});
-const files=entry.endsWith("singleton-peer.ts")?["src/mesh/build-peer.mjs","src/mesh/singleton-peer.ts","src/mesh/singleton.ts","src/mesh/delivery-ledger.ts","src/mesh/protocol.ts","src/mesh/inventory.ts","package-lock.json"]:["src/mesh/build-peer.mjs","src/mesh/native-peer.ts","src/mesh/native-observer.ts","src/mesh/native-codex.ts","src/mesh/shared-delivery.ts","src/mesh/delivery-ledger.ts","src/mesh/protocol.ts","src/mesh/inventory.ts","src/human-stop-store.ts","package-lock.json"];
+const files=entry.endsWith("singleton-peer.ts")?["src/mesh/build-peer.mjs","src/mesh/singleton-peer.ts","src/mesh/singleton.ts","src/mesh/owner-proof.ts","src/mesh/delivery-ledger.ts","src/mesh/protocol.ts","src/mesh/inventory.ts","package-lock.json"]:["src/mesh/build-peer.mjs","src/mesh/native-peer.ts","src/mesh/native-observer.ts","src/mesh/native-codex.ts","src/mesh/shared-delivery.ts","src/mesh/delivery-ledger.ts","src/mesh/protocol.ts","src/mesh/inventory.ts","src/human-stop-store.ts","package-lock.json"];
 const sourceHashes={};for(const file of files)sourceHashes[file]=createHash("sha256").update(await readFile(file)).digest("hex");
 const manifest={version:1,entry,revision:execFileSync("git",["rev-parse","HEAD"],{encoding:"utf8"}).trim(),bundleSha256:createHash("sha256").update(await readFile(output)).digest("hex"),sourceHashes};
 await writeFile(output+".manifest.json",JSON.stringify(manifest,null,2)+"\n");
