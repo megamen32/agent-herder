@@ -164,3 +164,76 @@ PID3660healthyunchanged,no restart/configpatch. SAMEactor explicitMiniMax-M3
 model-before-tools inputaccepted204; awaitingactualresponse, meshstableIDstill
 never submitted. После scopedpublish/rebuildownedleaves иnative modelsuccess —
 один actual88 GPTAdmintooljourney→100mesh input; no replay/admittedunknown.
+
+23:00МСК: sameactor model-before-tools AFTERauthPUT stillProviderAuthError
+AnthropicAPIkeymissing, msg_1223f9306001zLfoKvVo9r9oeo, parentmsg_1223f92410011AKlW4g3YiLYUR,
+toolCount0/responseempty2.1s. Authowner independentreadback подтвердил diskkey
+присутствует, warmed/provider?directory=/home/roomhacker key_presentfalse;
+онowns supported scopedcache-refresh и проверкуforeignactiveactors.
+Не выполнятьparallelrepair/новыеproviderprobe, исходныйacceptedinput сохранить.
+Compactness scopedcommit8a8579f reviewed noHIGH/MEDIUM; ожидаетсяRootmainpublish,
+потом толькоownedleafpromotion100/88/runtimebytecount+sameIDs readproof.
+
+23:07МСК: authoritative published4f55db7 promoted только как owned100/88leaf.
+Exactsource closure hashes+bundlemanifest match main; nativebundleSHAaf9b3b2e,
+singletonSHA5fe11458. Registeredtools/list100 job30d01ddd/88 job1bcdd716 GREEN.
+RealMCPsnapshot100 b124d32e:3393→2383UTF8bytes;88 b4b9e1f7:3580→2307.
+Repair prose отсутствует; completefalse обоих. Targetownnative100ID сохранён,
+100boundedwindow менялся с активностью и не объявлен identicalfullsnapshot;
+на88 все3nativeIDs identical, actualcwdnull/unverified, controlunsupported.
+SourceCore/UI/sharedHerderPID untouched, no foreignrestart.
+
+Authowner one scopedinstance-cache dispose ONLYidle/home/roomhacker completed;
+samePID+nativeactors/messages сохранены. РеальныйnativeMiniMax-M3 reply
+msg_1224367ef001GsIGoj6nWjPFdD, parentmsg_1224366f2001dgh4rcsNW8wXE2,
+finishstop/errornull/MESH88_MODEL_READY/toolCount0; независимыйsame-IDreadback
+подтверждён. AuthrepairclosedAdminpublished52cef9f3; noFallback/purchases.
+
+Nativebusiness continuation accepted SAMEactor, msg_12247db7e001jiF4mVKOgz9706,
+explicitMiniMax-M3, GPTAdmin-onlypermissions; originalmeshstableID unchanged.
+Ownedobserver deadline170s reached withouttools; nativebusy/currentassistant
+msg_12247dc3e001n92JcMcU2tDjs2 hasnoerror/parts yet. GPTAdminconnected;
+receiverledger stillhasno meshintent. Timeout is NOT GREEN or admissionUNKNOWN:
+no send yet, preserveacceptednativeinput, metadata-only observation, no replay.
+Protected88 business-intent/tooltrace retained; stillawaitfirstactualtooljourney.
+
+23:15МСК: FIRST ACTUAL CROSS-HOST INPUT RECEIVED. Native88 completed11
+GPTAdmintoolparts: discover/schema обоих hosts, successful boundeddefault12
+snapshots, then **ONE** mesh_deliver. Jobb8d643fe9a0d4fa5b90ce57ec5493efb,
+toolassistantmsg_1224d2a070017CvPSfn5W3WFcI. Receiverdurableledger admitted,
+inputharness-mesh-88-to-100-20261009-01, turn01a121d2-3430-7231-ba91-336a58de78c6,
+retryablefalse. Native100rollout actualUSER item20:15:22.243UTC contains
+MESH88_NATIVE_CANARY_20261009_01; receivedinthisactive turn, noACK/replay.
+Native88 finalmsg_1224d4a22001p3szwCmjrwL0uU finishstop/errornull/idle;
+documentedpendingpermissions/questions0, pendingtoolparts0. protectedtrace
+business-final-tooltrace.jsonl and business-terminal-proof.json retained;
+localreceiver-native-marker-proof.json/promote-proof4f.json retained.
+
+Acceptance limits: original170s observertimedout, lateractualcompleted input
+is separate liveconsumerproof (~385s), NOT ordinaryreleaseGREEN. Actor called
+discover(full) once thencompact; passed limit as string'3', four read validation
+failures, bounded changed read then succeeded at default12 on eachpeer. Do not
+claim native limit3 succeeded. This typing/token inefficiency is recorded for
+next supported consumer repair; no delivery/provenance widening. Interim ONE
+approved88actor/oldowner6targetperminute/no88control remains; nativeattribution
+stilldeclared/unavailable, actualsource provenby88native tooltrace. Full mutual
+network/allharnesscontrol notcomplete. Root receivedcompactproof once.
+
+## Сохранённый slow-nightly сценарий
+
+| Сценарий | Цель и обнаруженный дефект | Категория | Ожидаемое / максимум |
+| --- | --- | --- | --- |
+| Native OpenCode88 → GPTAdmin → Codex100, same native IDs | Actual source/tooltrace + один admission/USER item; обнаруживает медленный tool-enabled native turn и неправильный строковый numeric limit | slow nightly | 420s / 600s |
+
+Причина переноса: первая попытка observer закончилась timeout170s; отдельный
+поздний consumer proof получен примерно385s.11LLM tools включали4rejects
+строкового limit; native model startup/first tool заняли основное время.
+Новые инструкции: numeric limit либо documented default, один прямой known
+route после schema; не ослаблять integer schema и не использовать discover(full).
+Это сохранённая future coverage, не повтор уже completed input/LLM canary.
+Ordinary source checks остаются отдельными и ≤180s; этот запуск не ordinaryGREEN.
+Nightly использует existing bounded lifecycle/finite host queue. При fresh
+Herder development active/unknown — defer до reservation. Новый job получает
+новый stable input; UNKNOWN/admitted не повторять. По600s retaincheckpoint,
+cleanup толькоowned observer/job/reservation, unfinished вtail; foreignactors,
+services и уже принятые inputs не трогать. Сейчас новый nightly не запускается.
