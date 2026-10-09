@@ -4,14 +4,15 @@ import {projectPeerSession,type GptAdminTransport} from './gptadmin.js';
 import {fleetHarnesses,type FleetHostDefinition,type FleetHost,type FleetScope,type FleetView,type FleetSession,type FleetCreateRequest,type FleetCreateReceipt} from './fleet-contract.js';
 import {FleetCreateJournal} from './fleet-create-journal.js';
 type Context=FleetScope&{hostId:string;credentialGeneration?:string};
-type Cached={host:FleetHost;sessions:FleetSession[];complete:boolean;limited:boolean;target:string};
-export interface FleetDependencies {hosts:readonly FleetHostDefinition[];scope:FleetScope;transportFactory:(context:Context)=>GptAdminTransport;now?:()=>number;ttlMs?:number;readDeadlineMs?:number;createDeadlineMs?:number;journalPath?:string;credentialGeneration?:string}
+type Cached={revision:number;host:FleetHost;sessions:FleetSession[];complete:boolean;limited:boolean;target:string};
+export interface FleetDependencies {hosts:readonly FleetHostDefinition[];scope:FleetScope;transportFactory:(context:Context)=>GptAdminTransport;now?:()=>number;ttlMs?:number;readDeadlineMs?:number;discoveryDeadlineMs?:number;createDeadlineMs?:number;journalPath?:string;credentialGeneration?:string}
 /** Service scope is supplied by authenticated server code, never by request bodies. */
 export class FleetCabinetService {
  private readonly transports=new Map<string,GptAdminTransport>();
  private readonly cache=new Map<string,Cached>();
  private pending?:Promise<FleetView>;
  private lastReadAt:number|null=null;
+ private readRevision=0;
  private readonly journal?:FleetCreateJournal;
  constructor(private readonly deps:FleetDependencies){
   this.deps={...deps,scope:Object.freeze({...deps.scope}),hosts:deps.hosts.map(h=>Object.freeze({...h}))};
@@ -21,7 +22,7 @@ export class FleetCabinetService {
  get browserScopeKey(){return createHash('sha256').update(JSON.stringify([this.deps.scope.profileId,this.deps.scope.userId])).digest('hex');}
  private now(){return (this.deps.now??Date.now)();}
  private transport(hostId:string){let t=this.transports.get(hostId);if(!t){t=this.deps.transportFactory({...this.deps.scope,hostId,...(this.deps.credentialGeneration?{credentialGeneration:this.deps.credentialGeneration}:{})});this.transports.set(hostId,t);}return t;}
- private async bounded<T>(operation:Promise<T>,deadline:number,limitMs=this.deps.readDeadlineMs??3000):Promise<T>{
+ private async bounded<T>(operation:Promise<T>,deadline:number,limitMs=this.deps.readDeadlineMs??5000):Promise<T>{
   let timer:ReturnType<typeof setTimeout>|undefined;
   try{return await Promise.race([operation,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('fleet_read_deadline')),Math.max(1,Math.min(limitMs,deadline-this.now())));})]);}finally{if(timer)clearTimeout(timer);}
  }
@@ -31,7 +32,8 @@ export class FleetCabinetService {
   if(options.hostId&&!this.deps.hosts.some(h=>h.hostId===options.hostId))throw new Error('Unknown fleet host');
   // Sharing only within this immutable profile/user scope. Each request applies its own output window.
   let all:FleetView;
-  if(this.pending)all=await this.pending;
+  if(options.refresh&&options.hostId)all=await this.refresh(options.hostId);
+  else if(this.pending)all=await this.pending;
   else if(!options.refresh&&this.lastReadAt!==null&&this.now()-this.lastReadAt<(this.deps.ttlMs??15000)&&[...this.cache.values()].every(r=>!['ready','metadata_only'].includes(r.host.state)||(r.host.expiresAt??0)>this.now())){
    const entries=this.deps.hosts.map(h=>this.cache.get(h.hostId)!);all={hosts:entries.map(r=>r.host),sessions:entries.flatMap(r=>r.sessions),complete:entries.every(r=>r.complete),limited:entries.some(r=>r.limited)};
   }else{this.pending=this.refresh().finally(()=>{this.pending=undefined;});all=await this.pending;}
@@ -40,19 +42,21 @@ export class FleetCabinetService {
   const limited=all.limited||sessions.length>limit;
   return {hosts,sessions:options.hostId?sessions.slice(0,limit):fairWindow(sessions,hosts.map(h=>h.hostId),limit),limited,complete:!limited&&hosts.every(h=>this.cache.get(h.hostId)?.complete===true&&h.state==='ready')};
  }
- private async refresh():Promise<FleetView>{
-  const deadline=this.now()+10000;let registry:Record<string,unknown>[]=[];let registryFailed=false;
+ private async refresh(selectedHostId?:string):Promise<FleetView>{
+  const revision=++this.readRevision;
+  const deadline=this.now()+(this.deps.discoveryDeadlineMs??30000);let registry:Record<string,unknown>[]=[];let registryFailed=false;
   try{const r=unwrapResult(await this.bounded(this.transport(this.deps.hosts[0]!.hostId).discover(),deadline));if(!Array.isArray(r.servers)||r.servers.length>256)throw new Error('fleet_registry_invalid');registry=r.servers.filter(v=>v&&typeof v==='object');}catch{registryFailed=true;}
   const results=new Map<string,Cached>();let next=0;
-  await Promise.all(Array.from({length:3},async()=>{for(;;){const definition=this.deps.hosts[next++];if(!definition)return;
+  const queried=this.deps.hosts.filter(h=>!selectedHostId||h.hostId===selectedHostId);
+  await Promise.all(Array.from({length:3},async()=>{for(;;){const definition=queried[next++];if(!definition)return;
    const {hostId}=definition;const shell=registry.find(r=>r.server_id===`shell:${hostId}`);
    const peers=registry.filter(r=>r.kind==='child_mcp'&&typeof r.server_id==='string'&&r.server_id.startsWith(`mcp:shell:${hostId}:`));
    const peer=peers.find(r=>/^(AgentHerder|agent-herder)$/i.test(String(r.server_id).split(':').at(-1)!))??peers.find(r=>/HarnessMesh/i.test(String(r.server_id).split(':').at(-1)!));
    const unavailable=(reason:string,state:FleetHost['state']='unavailable'):Cached=>{
     const old=this.cache.get(hostId);
     // Failure/missing peer does not advance freshness or preserve control capability.
-    if(old)return {...old,complete:false,host:{...old.host,state:'stale',createHarnesses:[],reason},sessions:old.sessions};
-    return {host:{...definition,state,fetchedAt:null,expiresAt:null,generation:null,createHarnesses:[],reason},sessions:[],complete:false,limited:false,target:''};
+    if(old)return {...old,revision,complete:false,host:{...old.host,state:'stale',createHarnesses:[],reason},sessions:old.sessions};
+    return {revision,host:{...definition,state,fetchedAt:null,expiresAt:null,generation:null,createHarnesses:[],reason},sessions:[],complete:false,limited:false,target:''};
    };
    if(registryFailed||!peer||peer.status!=='online'){results.set(hostId,unavailable(registryFailed?'registry_read_failed':shell?.status==='offline'?'host_offline':!peer?'local_herder_not_registered':'local_herder_offline',shell?.status==='offline'?'offline':'unavailable'));continue;}
    try{
@@ -71,13 +75,15 @@ export class FleetCabinetService {
     for(const row of raw.sessions.slice(0,12)){const s=projectPeerSession(row,hostId);if(s)sessions.push({...s,key:addressKey(s.address)});else partial=true;}
     const limited=raw.sessions.length>12||raw.limited===true;
     const createHarnesses=full&&tools.some(t=>t.name==='create_session')?fleetHarnesses.filter(h=>Array.isArray(info.createHarnesses)&&info.createHarnesses.includes(h)):[];
-    const at=this.now();results.set(hostId,{target,sessions,limited,complete:full&&raw.complete===true&&!partial&&!limited,host:{...definition,state:full?'ready':'metadata_only',fetchedAt:at,expiresAt:at+(this.deps.ttlMs??15000),generation:Number.isSafeInteger(info.generation)?info.generation as number:null,createHarnesses,...(!full?{reason:'local_control_not_registered'}:partial?{reason:'invalid_peer_session'}:{})}});
+    const at=this.now();results.set(hostId,{revision,target,sessions,limited,complete:full&&raw.complete===true&&!partial&&!limited,host:{...definition,state:full?'ready':'metadata_only',fetchedAt:at,expiresAt:at+(this.deps.ttlMs??15000),generation:Number.isSafeInteger(info.generation)?info.generation as number:null,createHarnesses,...(!full?{reason:'local_control_not_registered'}:partial?{reason:'invalid_peer_session'}:{})}});
    }catch(e){results.set(hostId,unavailable(e instanceof Error?e.message.slice(0,96):'fleet_read_failed'));}
   }}));
   // Atomic publish; timed-out reads have no callback that can mutate the cache.
-  for(const [hostId,result]of results)this.cache.set(hostId,result);
-  this.lastReadAt=this.now();
-  const ordered=this.deps.hosts.map(h=>results.get(h.hostId)!);
+  const expire=(r:Cached):Cached=>['ready','metadata_only'].includes(r.host.state)&&(r.host.expiresAt??0)<=this.now()?{...r,complete:false,host:{...r.host,state:'stale',createHarnesses:[],reason:'metadata_expired'}}:r;
+  for(const [hostId,result]of results){const prior=this.cache.get(hostId);if(!prior||prior.revision<=result.revision)this.cache.set(hostId,expire(result));}
+  for(const [hostId,entry]of this.cache)this.cache.set(hostId,expire(entry));
+  if(!selectedHostId)this.lastReadAt=this.now();
+  const ordered=queried.map(h=>this.cache.get(h.hostId)!);
   return {hosts:ordered.map(r=>r.host),sessions:ordered.flatMap(r=>r.sessions),complete:ordered.every(r=>r.complete),limited:ordered.some(r=>r.limited)};
  }
  async create(request:FleetCreateRequest):Promise<FleetCreateReceipt>{

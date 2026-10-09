@@ -108,3 +108,38 @@ describe('fleet scope and per-host TTL (focused integration; expected 1s, maximu
   now=1120;t.discover.mockClear();t.call.mockImplementation(async(target,tool)=>{const host=target.includes(':100:')?'100':'44';return tool==='fleet_node_info'?{hostId:host,generation:1,createHarnesses:['codex']}:{hostId:host,sessions:[row(host)],complete:true};});await s.snapshot();expect(t.discover).toHaveBeenCalledTimes(1);
  });
 });
+describe('measured registered fleet latency (fast unit fake time; expected 1s, maximum 10s)',()=>{
+ it('keeps discovery finite but accepts a13.8s metadata path with each read below5s',async()=>{
+  vi.useFakeTimers();try{
+   const wait=async(ms:number,value:unknown)=>{await new Promise(resolve=>setTimeout(resolve,ms));return value;};
+   const t={discover:()=>wait(3700,{servers:[{kind:'child_mcp',server_id:'mcp:shell:100:AgentHerder',status:'online'}]}),schema:()=>wait(3200,{tools:[{name:'fleet_node_info'},{name:'mesh_snapshot'},{name:'create_session'}]}),call:(_target:string,tool:string)=>tool==='fleet_node_info'?wait(3100,{hostId:'100',generation:1,createHarnesses:['codex']}):wait(3800,{hostId:'100',sessions:[row('100')],complete:true})};
+   const s=new FleetCabinetService({hosts:hosts.slice(0,1),scope:{profileId:'p',userId:'u'},transportFactory:()=>t});const pending=s.snapshot();await vi.advanceTimersByTimeAsync(14000);const result=await pending;expect(result.hosts[0]?.state).toBe('ready');expect(result.sessions).toHaveLength(1);
+  }finally{vi.useRealTimers();}
+ });
+});
+describe('fleet unrelated slow host isolation (fast unit fake time; expected 1s, maximum 10s)',()=>{
+ it('marks an early peer stale if it expires before full publication, retaining its original timestamps',async()=>{
+  vi.useFakeTimers();vi.setSystemTime(0);try{
+   const t=transport();t.discover.mockResolvedValue({servers:['100','44'].map(h=>({kind:'child_mcp',server_id:`mcp:shell:${h}:AgentHerder`,status:'online'}))} as any);
+   t.call.mockImplementation(async(target,tool)=>{const host=target.includes(':100:')?'100':'44';if(tool==='fleet_node_info')return {hostId:host,generation:1,createHarnesses:['codex']};if(host==='44')await new Promise(resolve=>setTimeout(resolve,20000));return {hostId:host,sessions:[row(host)],complete:true};});
+   const s=new FleetCabinetService({hosts:hosts.slice(0,2),scope:{profileId:'p',userId:'u'},transportFactory:()=>t,readDeadlineMs:25000});const pending=s.snapshot();await vi.advanceTimersByTimeAsync(21000);const result=await pending;expect(result.hosts[0]?.state).toBe('stale');expect(result.hosts[0]?.expiresAt).toBe(15000);expect(result.hosts[0]?.createHarnesses).toEqual([]);expect(result.complete).toBe(false);
+  }finally{vi.useRealTimers();}
+ });
+ it('creation preflight only inspects its selected host, never waiting on an unrelated slow native peer',async()=>{
+  const {mkdtemp,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');const directory=await mkdtemp(join(tmpdir(),'fleet-target-read-'));try{
+   const t=transport();t.discover.mockResolvedValue({servers:['100','44'].map(h=>({kind:'child_mcp',server_id:`mcp:shell:${h}:AgentHerder`,status:'online'}))} as any);
+   const original=t.call.getMockImplementation()!;t.call.mockImplementation(async(target,tool,args)=>{if(target.includes(':44:'))return new Promise(()=>{});return original(target,tool,args);});
+   const s=new FleetCabinetService({hosts,scope:{profileId:'p',userId:'u'},transportFactory:()=>t,journalPath:join(directory,'ledger.json')});expect((await s.create({hostId:'100',harness:'codex',name:'n',cwd:'/work',inputId:'selected'})).state).toBe('created');expect(t.call.mock.calls.some(call=>call[0].includes(':44:'))).toBe(false);
+  }finally{await rm(directory,{recursive:true,force:true});}
+ });
+});
+describe('fleet old-observation publication fence (focused integration; expected 1s, maximum 15s)',()=>{
+ it('does not restore old owner generation or create capability after a newer selected-host proof',async()=>{
+  let now=1000;const t=transport();let info=0,snapshots=0;let releaseOld:(value:any)=>void=()=>{};
+  t.discover.mockResolvedValue({servers:[{kind:'child_mcp',server_id:'mcp:shell:100:AgentHerder',status:'online'}]} as any);
+  t.call.mockImplementation(async(_target,tool)=>{if(tool==='fleet_node_info'){info++;return {hostId:'100',generation:info,createHarnesses:info===1?['codex']:[]};}snapshots++;if(snapshots===1)return new Promise(resolve=>{releaseOld=resolve;});return {hostId:'100',sessions:[row('100')],complete:true};});
+  const s=new FleetCabinetService({hosts:hosts.slice(0,1),scope:{profileId:'p',userId:'u'},transportFactory:()=>t,now:()=>now});const older=s.snapshot();await new Promise(resolve=>setTimeout(resolve,0));now=1010;
+  const newer=await s.snapshot({hostId:'100',refresh:true});expect(newer.hosts[0]?.generation).toBe(2);expect(newer.hosts[0]?.createHarnesses).toEqual([]);now=1020;releaseOld({hostId:'100',sessions:[row('100')],complete:true});
+  const result=await older;expect(result.hosts[0]?.generation).toBe(2);expect(result.hosts[0]?.createHarnesses).toEqual([]);expect((await s.snapshot()).hosts[0]?.generation).toBe(2);
+ });
+});

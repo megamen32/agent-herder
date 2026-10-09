@@ -31,7 +31,7 @@ export class FleetGptAdminTransport implements GptAdminTransport {
    if(envelope.error||!envelope.result||typeof envelope.result!=='object')throw new Error('gptadmin_rpc_failed');
    if(method==='initialize')this.sessionId=response.headers.get('mcp-session-id')??undefined;
    return envelope.result as Record<string,unknown>;
-  }finally{clearTimeout(timer);}
+  }catch(error){if(controller.signal.aborted)throw new Error('gptadmin_deadline');throw error;}finally{clearTimeout(timer);}
  }
  private async connect(deadline:number):Promise<void>{
   // initializing first: an open connection is not an initialized MCP session.
@@ -50,11 +50,11 @@ export class FleetGptAdminTransport implements GptAdminTransport {
   if(['queued','running','waiting','pending'].includes(String(result.status)))throw new Error('gptadmin_job_read_limit');
   return result;
  }
- discover():Promise<unknown>{return this.facade('discover',{detail:'full'},Date.now()+(this.options.readDeadlineMs??3000));}
- schema(target:string):Promise<unknown>{return this.facade('schema',{target},Date.now()+(this.options.readDeadlineMs??3000));}
+ discover():Promise<unknown>{return this.facade('discover',{detail:'full'},Date.now()+(this.options.readDeadlineMs??5000));}
+ schema(target:string):Promise<unknown>{return this.facade('schema',{target},Date.now()+(this.options.readDeadlineMs??5000));}
  call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
   if(idempotencyKey&&idempotencyKey.length>200)throw new Error('gptadmin_idempotency_key_too_long');
-  return this.facade('execute',{target,tool,args,...(idempotencyKey?{idempotency_key:idempotencyKey}:{}),detail:'compact'},Date.now()+(tool==='create_session'?this.options.createDeadlineMs??30000:this.options.readDeadlineMs??3000));
+  return this.facade('execute',{target,tool,args,...(idempotencyKey?{idempotency_key:idempotencyKey}:{}),detail:'compact'},Date.now()+(tool==='create_session'?this.options.createDeadlineMs??30000:this.options.readDeadlineMs??5000));
  }
 }
 

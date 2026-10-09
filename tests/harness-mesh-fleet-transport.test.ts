@@ -39,3 +39,11 @@ describe('facade identity/deadline fences (focused integration; expected 1s, max
   });const t=new FleetGptAdminTransport({endpoint:'https://hub.test/mcp',headersProvider:()=>({}),fetch:fake as any,readDeadlineMs:100});expect(await t.discover()).toEqual({servers:[]});
  });
 });
+describe('measured facade metadata budget (fast unit fake time; expected 1s, maximum 10s)',()=>{
+ it('accepts a 3.2s native metadata response under the finite default5s deadline',async()=>{
+  vi.useFakeTimers();try{
+   const fake=vi.fn(async(_url:any,init:any)=>{const r=JSON.parse(init.body);if(r.method==='notifications/initialized')return new Response(null,{status:202});if(r.method==='tools/call')await new Promise(resolve=>setTimeout(resolve,3200));return new Response(JSON.stringify({id:r.id,result:r.method==='initialize'?{protocolVersion:'2025-11-25'}:{servers:[]}}));});
+   const t=new FleetGptAdminTransport({endpoint:'https://hub.test/mcp',headersProvider:()=>({}),fetch:fake as any});const pending=t.discover();await vi.advanceTimersByTimeAsync(3500);expect(await pending).toEqual({servers:[]});
+  }finally{vi.useRealTimers();}
+ });
+});
