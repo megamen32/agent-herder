@@ -4,6 +4,16 @@ Owner: Codex `01a11747-c694-7340-be48-f973e3c4e568`, continuing original Mac `01
 
 Acceptance: preserve Codex-style UI, real native bash/result/reasoning cards, and obtain a second human-requested reply through the UI in native session `2610071904-5rlge7`; archived/imported sessions remain read-only. Publish reviewed work on clean synchronized `main` before deployment; verify the exact running source afterward.
 
+## Actual FastAgent11 FINISH — 2026-10-09 11:16MSK
+
+The published existing canonical helper cbbc044 executed the enduring authorized case exactly once; no producer handshake, new Root permit, borrowed profile or legacy runner. Case SHA f962291e42453f915e3336494a77d96d08c2f726326d7fc3dfc12ddb0239e0b3,48 exact pins. Current published automation policy e81eb8e adds only the reviewed pure health-remediation import; all three foreign expressly READ-ONLY WIP hashes remain identical. Source-refresh review and enduring task are in ignored .tmp/fast-agent-cards-continuation/authorized-fastagent11/. Neither foreign source nor SDK env was changed.
+
+Actual Vitest:11 ordinary selected PASS,9 filtered skips,1 file PASS,1.98s; rights1/archive7/direct1/named1/native-cards1. Case helper exit0, scope run-u13026/inode50425786/invocation e491110a0df7473984ad14aa06e0a781, peak129908736B,swap0,all own memory/OOM events0,same-generation cleanup true. Raw native result .tmp/bounded-fowqjrby/native-result.json SHA449bba932c7d1dcc852bd62a76130749e31897c41a66525dd8af24b199e245b4; payload.log SHA497c138776535829e3894aab5b646168d4f2358cefb2375eb6ba62784562f847. Completed-case evidence persists and must be reused rather than replayed if exact inputs remain unchanged. Prior producer refusals remain historical; they no longer block this completed case.
+
+Runtime readback remains PID763536/startOct7 20:57:05MSK, old Fast distOct7 20:24 and frontend19:17. No deployment/provider input occurred. Current independent publisher01a11b54/combined executor01a11b43 own reviewed foreign composer/receipt snapshot,85focused/build and safe artifact promotion/restart; our Fast11 proof is available for source-equivalent integration. Preserve Continue7d75ded and active guards031e216. Do not deploy their dirty frontend independently or repeat their accepted checks.
+
+Shared SDK collision independently reported by UserIO:22 live fast-agent MCPs use UV env /home/roomhacker/.local/share/uv/tools/fast-agent-mcp0.10.42 in agent-herder-zcode-app-server-8740a059.scope. Supported shared-MCP maintenance/version+rollback proof requested once from active publisher via native steer; separate UserIO SDK0.10.43/5PASS is not shared install proof. No inplace upgrade/foreign MCP stop. Same demo2610071904-5rlge7 still has no second provider input; one blank Continue in the approved Mac Mini browser follows all intentional source/SDK/deploy changes. Task remains OPEN until real new assistant response/cards and exact-SHA source sync.
+
 ## Current authoritative state (updated 2026-10-09)
 
 - Original FastAgent/ChatGPT cards contract is restored from the exact parent checkpoint and four children. Reuse their accepted UI/tool-card, real subscription MiniMax and six adoption-test proofs; do not repeat provider prompts or full builds. Target remains SAME native2610071904-5rlge7.
@@ -57,7 +67,7 @@ Shared SDK maintenance clarification: this real FastAgent turn has not begun and
 
 ## Completion
 
-OPEN. Exact11checks, deployment of7d75ded and real second response remain unproven. Current helper refusal is captured; no waiter/background payload or replacement conversation. Historical sections below do not supersede this fresh state.
+OPEN. Exact11checks now PASS with actual native cleanup above. Deployment of7d75ded and real second response remain pending shared publisher integration. No waiter/background payload or replacement conversation. Historical refusals do not supersede the actual FINISH.
 
 ## Coordinated recovery handoff (2026-10-07T17:15:05.861197+00:00)
 
