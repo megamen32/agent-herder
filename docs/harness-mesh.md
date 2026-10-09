@@ -69,6 +69,7 @@ Control подключается только к существующему docu
 
 ```sh
 NODE_OPTIONS=--max-old-space-size=768 node src/mesh/build-peer.mjs
+NODE_OPTIONS=--max-old-space-size=768 node src/mesh/build-peer.mjs .tmp/harness-mesh/singleton-peer.mjs singleton
 ```
 
 Bundle и manifest содержат revision и SHA-256 своих source inputs. Регистрация
@@ -76,6 +77,12 @@ child — через supported `mcp_manage upsert` на точном target host
 `status → mcp_tools → mcp_call mesh_snapshot`. Публиковать только проверенный
 main candidate после owner integration. Existing singleton server-100
 подключает Root-owned `registerHarnessMeshTools(server,{adapters})`.
+
+До controlled singleton reload использовать `singleton-peer.ts`: stdio leaf
+инициализирует MCP Client к **существующему** `127.0.0.1:18787/mcp`, проверяет
+реальную `tools/list` схему `list_agents`/`send_message(inputId)` и делегирует
+их текущему native owner. Он не импортирует или создаёт adapter/controller,
+не запускает inference при snapshot и не выкатывает старый `dist`.
 
 ## Первая приёмка и продолжение
 
