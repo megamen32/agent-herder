@@ -7,6 +7,13 @@ import { handleCreateSession, handleNewOrResume } from "../src/mcp-tools/handler
 
 const cleanups: string[] = [];
 
+async function fixtureHome(prefix: string): Promise<string> {
+  // Keep fixtures inside the runner's measured lease; local runs use project .tmp.
+  const root = process.env.TMPDIR || join(process.cwd(), ".tmp");
+  await mkdir(root, { recursive: true });
+  return mkdtemp(join(root, prefix));
+}
+
 afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
@@ -15,7 +22,7 @@ afterEach(async () => {
 
 describe("Fast Agent persisted observer", () => {
   it("persists a bounded named creation and reuses it through a fresh native observer", async () => {
-    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-create-"));
+    const home = await fixtureHome("fast-agent-create-");
     cleanups.push(home);
     const moduleDir = join(home, "fast_agent", "session");
     await mkdir(moduleDir, { recursive: true });
@@ -58,7 +65,7 @@ describe("Fast Agent persisted observer", () => {
   });
 
   it.each([false, true])("bounds ordinary and recovery send jobs (recovery=%s)", async (recovery) => {
-    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-budget-"));
+    const home = await fixtureHome("fast-agent-budget-");
     cleanups.push(home);
     const directory = join(home, "sessions", "bounded");
     await mkdir(directory, { recursive: true });
@@ -80,7 +87,7 @@ describe("Fast Agent persisted observer", () => {
 
 
   it("allows replies only to Herder-managed native sessions", async () => {
-    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-writable-"));
+    const home = await fixtureHome("fast-agent-writable-");
     cleanups.push(home);
     for (const [id, extras] of [
       ["managed", { herderManaged: true }],
@@ -116,7 +123,7 @@ describe("Fast Agent persisted observer", () => {
     { label: "extras marker", parent: "", fields: { metadata: { extras: { archived: true, herderManaged: true } } } },
     ...["archive", "archived", ".archive", ".archived"].map((parent) => ({ label: `${parent} directory`, parent, fields: {} })),
   ])("keeps managed archived sessions read-only ($label)", async ({ parent, fields }) => {
-    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-archived-"));
+    const home = await fixtureHome("fast-agent-archived-");
     cleanups.push(home);
     const directory = join(home, "sessions", parent, "managed");
     await mkdir(directory, { recursive: true });
@@ -135,7 +142,7 @@ describe("Fast Agent persisted observer", () => {
   });
 
   it("routes a direct MiniMax session through only the scoped config and inherited private token", async () => {
-    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-direct-"));
+    const home = await fixtureHome("fast-agent-direct-");
     cleanups.push(home);
     const directory = join(home, "sessions", "direct");
     await mkdir(directory, { recursive: true });
@@ -168,7 +175,7 @@ describe("Fast Agent persisted observer", () => {
 
 
   it("keeps the verified direct provider prefix after native persistence strips it", async () => {
-    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-provider-identity-"));
+    const home = await fixtureHome("fast-agent-provider-identity-");
     cleanups.push(home);
     const directory = join(home, "sessions", "direct-identity");
     await mkdir(directory, { recursive: true });
@@ -189,7 +196,7 @@ describe("Fast Agent persisted observer", () => {
   });
 
   it("exposes native Anthropic Fast Agent tool maps and reasoning channels", async () => {
-    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-native-tools-"));
+    const home = await fixtureHome("fast-agent-native-tools-");
     cleanups.push(home);
     const directory = join(home, "sessions", "native-tools");
     await mkdir(directory, { recursive: true });
@@ -209,7 +216,7 @@ describe("Fast Agent persisted observer", () => {
   });
 
   it("records an actual queued child failure with a bounded redacted provider explanation", async () => {
-    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-queue-error-"));
+    const home = await fixtureHome("fast-agent-queue-error-");
     cleanups.push(home);
     const directory = join(home, "sessions", "queue-error");
     await mkdir(directory, { recursive: true });
@@ -232,7 +239,7 @@ describe("Fast Agent persisted observer", () => {
   });
 
   it("shows a queued provider failure instead of a silently empty conversation", async () => {
-    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-failure-"));
+    const home = await fixtureHome("fast-agent-failure-");
     cleanups.push(home);
     const directory = join(home, "sessions", "failed");
     await mkdir(directory, { recursive: true });
@@ -244,7 +251,7 @@ describe("Fast Agent persisted observer", () => {
   });
 
   it("observes an empty native session before first delivery with its actual workspace and model", async () => {
-    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-empty-"));
+    const home = await fixtureHome("fast-agent-empty-");
     cleanups.push(home);
     const sessionDir = join(home, "sessions", "native-empty");
     await mkdir(sessionDir, { recursive: true });
@@ -259,7 +266,7 @@ describe("Fast Agent persisted observer", () => {
   });
 
   it("does not revive a completed session when a stale shell PID was reused", async () => {
-    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-live-"));
+    const home = await fixtureHome("fast-agent-live-");
     cleanups.push(home);
     const sessionDir = join(home, "sessions", "session-live");
     await mkdir(sessionDir, { recursive: true });
@@ -275,7 +282,7 @@ describe("Fast Agent persisted observer", () => {
   });
 
   it("separates embedded MiniMax reasoning from the visible answer", async () => {
-    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-think-"));
+    const home = await fixtureHome("fast-agent-think-");
     cleanups.push(home);
     const sessionDir = join(home, "sessions", "session-think");
     await mkdir(sessionDir, { recursive: true });
@@ -293,7 +300,7 @@ describe("Fast Agent persisted observer", () => {
   });
 
   it("lists native sessions and exposes recent messages without starting a process", async () => {
-    const home = await mkdtemp(join(process.cwd(), "tests/.tmp-fast-agent-"));
+    const home = await fixtureHome("fast-agent-");
     cleanups.push(home);
     const sessionDir = join(home, "sessions", "session-1");
     await mkdir(sessionDir, { recursive: true });
