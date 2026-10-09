@@ -4,7 +4,9 @@
     "agent-herder": {
       "type": "stdio",
       "command": "node",
-      "args": ["${PLUGIN_ROOT}/dist/index.js"],
+      "args": [
+        "${PLUGIN_ROOT}/dist/http-mcp-stdio.js"
+      ],
       "cwd": "${PLUGIN_ROOT}"
     }
   }

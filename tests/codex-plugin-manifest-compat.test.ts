@@ -5,6 +5,12 @@ import { describe, expect, it } from "vitest";
 const root = resolve(import.meta.dirname, "..");
 
 describe("Codex plugin hook manifest compatibility", () => {
+  it("routes plugin clients to the existing singleton instead of a private controller", () => {
+    for (const filename of [".mcp.json", "mcp.json"]) {
+      const manifest = JSON.parse(readFileSync(resolve(root, filename), "utf8"));
+      expect(manifest.mcpServers["agent-herder"].args).toEqual(["${PLUGIN_ROOT}/dist/http-mcp-stdio.js"]);
+    }
+  });
   it("resolves legacy and portable manifests to the same Codex hook commands", () => {
     const legacy = JSON.parse(readFileSync(resolve(root, ".codex-plugin/plugin.json"), "utf8")) as {
       hooks?: string;

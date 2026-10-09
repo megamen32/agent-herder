@@ -43,3 +43,12 @@ fixtures, native admission, stop/unknown и crossprocess lock: ожидаемо�
 этой delta. Обычный выпуск: релевантные сохранённые результаты + изменённые
 checks + backend build в совокупном180секундном окне. Исходный red/failed
 результат сохранён и не называется GREEN.
+
+Plugin MCP clients use `dist/http-mcp-stdio.js` and connect to the singleton
+HTTP service (`AGENT_HERDER_HTTP_URL`, default loopback18787/mcp). Running
+`dist/index.js` per client creates a private controller and splits live state.
+
+Frontend-only releases must preserve the currently deployed backend. Replacing
+all of `dist` from an older source commit rolls back delivery fixes. Copy only
+`web/index.html` and `web/assets`; compiled `web/*.js` are backend modules.
+Verify the live backend manifest immediately before promotion and preserve it.
