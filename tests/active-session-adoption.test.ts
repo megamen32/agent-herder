@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { SessionSupervisor } from "../src/session-supervisor.js";
 import { SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore } from "../src/autopilot/unfinished-session-launcher.js";
 import { AutopilotSessionStore } from "../src/autopilot/session-store.js";
@@ -10,7 +11,7 @@ import type { AgentSession, HarnessAdapter } from "../src/types/index.js";
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 async function setup() {
-  const base = join(process.cwd(), ".tmp"); await mkdir(base, { recursive: true });
+  const base = tmpdir();
   const root = await mkdtemp(join(base, "active-adoption-")); roots.push(root);
   let current: AgentSession = { id: "owned-active", harness: "codex", cwd: root, title: "fixture", status: "running", needsPermission: false, lastActivity: new Date().toISOString(), model: "gpt-6.1-sol", meta: { activeTurnId: "turn-original" } };
   let resumes = 0, sends = 0;

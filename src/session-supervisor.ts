@@ -420,6 +420,12 @@ export class SessionSupervisor {
     } else {
       session = await adapter.getSession(id);
     }
+    if (options.origin === "human" && options.humanRequestedAt !== undefined) {
+      if (session) await this.humanStops.observe(session);
+      if (await this.humanStops.wasStoppedAfter(harness, id, options.humanRequestedAt)) {
+        return { ok: false, nonRetryable: true, error: "Чат остановлен после постановки сообщения в очередь; старое сообщение не возобновит его автоматически" };
+      }
+    }
     if (options.origin === "human") await this.releaseHumanStop(harness, id);
     else if ((harness === "codex" || harness === "zcode") && ((session && await this.humanStops.observe(session)) || await this.isAutomationHeld(harness, id))) {
       return { ok: false, nonRetryable: true, error: "Чат явно остановлен. Автопродолжение заблокировано; требуется новое сообщение человека или явное продолжение." };
@@ -428,8 +434,9 @@ export class SessionSupervisor {
     if (await this.isAutomationHeld(harness, id)) return { ok: false, nonRetryable: true, error: "Чат явно остановлен. Требуется новое сообщение человека или явное продолжение." };
     if (options.origin !== "human" && !await this.automaticNativeAdmissionAllowed(adapter, id, "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic delivery" };
     const result = await adapter.sendMessage(id, { ...options, message });
-    if (!result.ok && isBusyCodexWriter(harness, result.error)) {
-      if (options.origin !== "human" && !await this.automaticNativeAdmissionAllowed(adapter, id, "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic deferred delivery" };
+    if (!result.ok && options.origin !== "human" && !result.nonRetryable
+      && !result.admitted && !result.admissionUnknown && isBusyCodexWriter(harness, result.error)) {
+      if (!await this.automaticNativeAdmissionAllowed(adapter, id, "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic deferred delivery" };
       await deferredMessages.add(id, options.message);
       return { ok: true, sessionId: id, delivery: "deferred" };
     }

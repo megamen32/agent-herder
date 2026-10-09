@@ -189,3 +189,21 @@ describe.each(["codex", "zcode"] as const)("%s explicit stop delivery boundary",
     await expect(store.isHeld(harness, f.current.id)).resolves.toBe(false);
   });
 });
+
+
+describe("MCP native admission acknowledgement", () => {
+  it("returns verified turn and input identity for explicit steer", async () => {
+    const f = fixture("codex");
+    f.current.status = "idle";
+    const send = vi.fn(async () => ({ ok: true, admitted: true, turnId: "verified-turn", inputId: "verified-input" }));
+    f.adapters.get("codex")!.sendMessage = send;
+    const acknowledgement = await handleSendMessage(f.adapters, {
+      harness: "codex", sessionId: f.current.id, message: "one harmless fixture input",
+      mode: "steer", humanRequested: true, inputId: "verified-input",
+    });
+    expect(acknowledgement).toContain('Native admission receipt: {"admitted":true,"turnId":"verified-turn","inputId":"verified-input"}');
+    expect(acknowledgement).not.toContain("Failed to send");
+    expect(send).toHaveBeenCalledOnce();
+    expect(send.mock.calls[0]).toBeDefined();
+  });
+});

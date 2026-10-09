@@ -476,3 +476,27 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 @media (max-width: 900px) {
   .chat-heading h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 }
+
+/* ---------- 9b. Очередь отправленных и режим доставки ---------- */
+.composer-outbox { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--border-2); border-radius: var(--radius-l); background: color-mix(in srgb, var(--surface-1) 92%, transparent); }
+.composer-outbox-entry { display: grid; gap: 3px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-2); }
+.composer-outbox-entry.status-delivered { border-color: color-mix(in srgb, #6bcb77 40%, var(--border)); }
+.composer-outbox-entry.status-failed { border-color: color-mix(in srgb, #ff6b6b 45%, var(--border)); }
+.composer-outbox-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-xs); }
+.composer-outbox-mode { color: var(--muted); }
+.composer-outbox-status { font-weight: 600; }
+.composer-outbox-entry.status-delivered .composer-outbox-status { color: #7fd68a; }
+.composer-outbox-entry.status-failed .composer-outbox-status { color: #ff8f8f; }
+.composer-outbox-entry.status-unknown .composer-outbox-status, .composer-outbox-entry.status-pending .composer-outbox-status { color: var(--muted); }
+.composer-outbox-text { max-height: 140px; overflow: auto; color: var(--text); font-size: var(--text-sm); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.composer-outbox-error { color: #ff8f8f; font-size: var(--text-xs); line-height: 1.4; }
+.composer-outbox-note { color: var(--muted); font-size: var(--text-xs); line-height: 1.4; }
+.composer-outbox-retry, .composer-outbox-dismiss { height: 24px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-s); background: transparent; color: var(--muted); font-size: var(--text-xs); line-height: 1; }
+.composer-outbox-retry { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--text); }
+.composer-outbox-retry:hover, .composer-outbox-dismiss:hover { background: var(--surface-hover); }
+.composer-mode { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.composer-mode-option { height: 26px; padding: 0 9px; border: 1px solid var(--border); border-radius: var(--radius-s); background: transparent; color: var(--muted); font-size: var(--text-xs); white-space: nowrap; }
+.composer-mode-option.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.composer-mode-pin { display: inline-flex; align-items: center; gap: 5px; padding-left: 4px; color: var(--muted); font-size: var(--text-xs); white-space: nowrap; cursor: pointer; }
+.composer-mode-pin input { accent-color: var(--accent); }
+@media (max-width: 900px) { .composer-mode { order: 8; width: 100%; } .composer-outbox-text { max-height: 110px; } }

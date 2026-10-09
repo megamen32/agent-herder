@@ -486,7 +486,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       return resumed;
     }
 
-    const completion = options.queue ? undefined : this.waitForCompletion(id);
+    const completion = options.queue || options.steer === true ? undefined : this.waitForCompletion(id);
     const generatedPrompt = options.origin !== "human";
     if (generatedPrompt) {
       try {
@@ -519,6 +519,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
             ok: false,
             admitted: true,
             nonRetryable: true,
+            turnId,
+            ...(options.inputId ? { inputId: options.inputId } : {}),
             error: `Codex admitted the prompt, but its turn ID could not be registered: ${error instanceof Error ? error.message : String(error)}`,
           };
         }
@@ -533,7 +535,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       if (turnId && result.turn?.status === "inProgress") this.activeTurns.set(id, turnId);
       release(); // Waiting for a sync reply must not block another current-turn steer.
       if (!completion) return { ok: true, admitted: true, turnId, ...(options.inputId ? { inputId: options.inputId } : {}) };
-      return await completion;
+      const completed = await completion;
+      return { ...completed, admitted: true, turnId, ...(options.inputId ? { inputId: options.inputId } : {}),
+        ...(!completed.ok ? { nonRetryable: true } : {}) };
     } catch (error) {
       if (completion) this.clearCompletion(id);
       if (steerActive && startRaceRetries > 0 && error instanceof CodexRpcError && error.code === -32600

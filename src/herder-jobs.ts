@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -19,6 +19,7 @@ export interface HerderJob<T = unknown> {
   result?: T;
   error?: string;
   resultRef: string;
+  requestFingerprint?: string;
 }
 
 export interface HerderJobContext {
@@ -72,10 +73,19 @@ export class HerderJobRegistry {
   start<T>(input: {
     kind: string;
     ownerSessionId?: string;
+    idempotencyKey?: string;
+    requestFingerprint?: string;
     run: (context: HerderJobContext) => Promise<T>;
   }): HerderJob<T> {
     const now = new Date().toISOString();
-    const id = `job_${randomUUID()}`;
+    const id = input.idempotencyKey
+      ? `job_${createHash("sha256").update(input.idempotencyKey).digest("hex")}`
+      : `job_${randomUUID()}`;
+    const existing = this.get<T>(id);
+    if (existing) {
+      if (existing.requestFingerprint !== input.requestFingerprint) throw new Error("Идентификатор сообщения уже использован для другого текста или режима");
+      return existing;
+    }
     const internal: InternalJob<T> = {
       controller: new AbortController(),
       record: {
@@ -86,11 +96,13 @@ export class HerderJobRegistry {
         updatedAt: now,
         ownerSessionId: input.ownerSessionId,
         resultRef: jobResourceUri(id),
+        ...(input.requestFingerprint ? { requestFingerprint: input.requestFingerprint } : {}),
       },
     };
     this.jobs.set(id, internal);
     this.trim();
-    this.persist();
+    try { this.persist(Boolean(input.idempotencyKey)); }
+    catch (error) { this.jobs.delete(id); throw error; }
     this.publish(internal.record, "created");
     void this.run(internal, input.run);
     return clone(internal.record);
@@ -107,6 +119,12 @@ export class HerderJobRegistry {
     this.persist();
     this.publish(job.record, "updated");
     return clone(job.record);
+  }
+
+  updateCompletedResult<T>(id: string, result: T): void {
+    const job = this.jobs.get(id);
+    if (!job || job.record.state !== "completed") return;
+    this.patch(job.record, { result }, "updated");
   }
 
   private async run<T>(job: InternalJob<T>, runner: (context: HerderJobContext) => Promise<T>): Promise<void> {
@@ -186,7 +204,7 @@ export class HerderJobRegistry {
     }
   }
 
-  private persist(): void {
+  private persist(strict = false): void {
     if (!this.persistencePath) return;
     try {
       mkdirSync(dirname(this.persistencePath), { recursive: true });
@@ -195,6 +213,7 @@ export class HerderJobRegistry {
       writeFileSync(temp, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
       renameSync(temp, this.persistencePath);
     } catch (error) {
+      if (strict) throw error;
       console.error(`[agent-herder] failed to persist job registry: ${error instanceof Error ? error.message : String(error)}`);
     }
   }

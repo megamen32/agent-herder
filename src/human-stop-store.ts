@@ -159,6 +159,12 @@ export class HumanStopStore {
     return file.sessions.find((record) => sessionKey(record.harness, record.id) === sessionKey(harness, id))?.active === true;
   }
 
+  async wasStoppedAfter(harness: string, id: string, requestedAt: number): Promise<boolean> {
+    const file = await this.read();
+    return file.sessions.some(record => (record.active || record.clearedBy !== undefined) && record.harness === harness && record.id === id
+      && Date.parse(record.stop.at) >= requestedAt);
+  }
+
   /** Check an ancestor plus its immediate source from one persisted snapshot. */
   async anyHeld(sources: Array<{ harness: string; sessionId: string }>): Promise<boolean> {
     if (!Array.isArray(sources) || sources.length > 32) throw new Error("sources must contain at most 32 sessions");

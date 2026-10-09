@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, rm, readFile, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -132,9 +132,24 @@ describe("Codex app-server adapter", () => {
 
     const listening = new Promise<void>((resolve) => server.listen(socketPath, resolve));
     let adapter: CodexAppServerAdapter | undefined;
+    const restoreProcessProbes: Array<() => void> = [];
     try {
       await listening;
-      adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", socketPath, codexDir });
+      adapter = new CodexAppServerAdapter({
+        codexBin: "/definitely/not-started", socketPath, codexDir, requestTimeoutMs: 1_000,
+      });
+      // This fixture has no native Codex process: its real socket server and
+      // SQLite/rollout belong to this test. Host-wide pgrep/proc enumeration
+      // is unrelated to the protocol assertions and scales with live tenants.
+      const transcript = (adapter as unknown as {
+        rawTranscriptAdapter: {
+          getRunningCodexPids(): Promise<Map<string, number>>;
+          getOpenCodexRolloutPaths(): Promise<Set<string> | null>;
+        };
+      }).rawTranscriptAdapter;
+      const runningPids = vi.spyOn(transcript, "getRunningCodexPids").mockResolvedValue(new Map());
+      const rolloutWriters = vi.spyOn(transcript, "getOpenCodexRolloutPaths").mockResolvedValue(new Set());
+      restoreProcessProbes.push(() => runningPids.mockRestore(), () => rolloutWriters.mockRestore());
       const unsubscribe = adapter.subscribeEvents((event) => events.push({ kind: event.kind, data: event.data }));
       await adapter.init();
       expect(adapter.isReady()).toBe(true);
@@ -154,18 +169,18 @@ describe("Codex app-server adapter", () => {
       await expect(adapter.getSession("thread-unix")).resolves.toMatchObject({
         id: "thread-unix", status: "idle", needsPermission: false,
       });
-      await expect(adapter.sendMessage("thread-unix", { message: "hold", queue: true })).resolves.toEqual({ ok: true });
+      await expect(adapter.sendMessage("thread-unix", { message: "hold", queue: true })).resolves.toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
       await expect(adapter.getSession("thread-unix")).resolves.toMatchObject({
         id: "thread-unix", meta: { activeTurnId: "turn-unix-1" },
       });
       const beforeSteer = methods.length;
-      await expect(adapter.sendMessage("thread-unix", { message: "automated coordination", origin: "automation" })).resolves.toEqual({ ok: true });
+      await expect(adapter.sendMessage("thread-unix", { message: "automated coordination", origin: "automation" })).resolves.toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
       expect(methods.slice(beforeSteer)).toContain("turn/steer");
       expect(methods.slice(beforeSteer)).not.toContain("turn/start");
       expect(methods.slice(beforeSteer)).not.toContain("thread/resume");
       expect(activeTurnId).toBe("turn-unix-1");
       const beforeExplicitSteer = methods.length;
-      await expect(adapter.sendMessage("thread-unix", { message: "explicit steer", steer: true, origin: "human" })).resolves.toEqual({ ok: true });
+      await expect(adapter.sendMessage("thread-unix", { message: "explicit steer", steer: true, origin: "human" })).resolves.toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
       expect(methods.slice(beforeExplicitSteer)).toContain("turn/steer");
       threadReadStatus = { type: "active", activeFlags: ["waitingOnUserInput"] };
       const beforeNeedsInput = methods.length;
@@ -178,7 +193,7 @@ describe("Codex app-server adapter", () => {
         id: "thread-unix", status: "idle", meta: { activeTurnId: undefined },
       });
       disconnectAfterTurnStart = true;
-      await expect(adapter.sendMessage("thread-unix", { message: "hold after fresh status", queue: true })).resolves.toEqual({ ok: true });
+      await expect(adapter.sendMessage("thread-unix", { message: "hold after fresh status", queue: true })).resolves.toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
       for (let attempt = 0; attempt < 100 && adapter.isReady(); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
       expect(adapter.isReady()).toBe(false);
       expect(events.some((event) => event.kind === "turn.failed")).toBe(false);
@@ -246,6 +261,8 @@ describe("Codex app-server adapter", () => {
       unsubscribe();
     } finally {
       await adapter?.dispose();
+      for (const restore of restoreProcessProbes) restore();
+      for (const client of webSocketServer.clients) client.terminate();
       await new Promise<void>((resolve) => webSocketServer.close(() => resolve()));
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await rm(tempDir, { recursive: true, force: true });
@@ -801,7 +818,7 @@ describe("Codex app-server adapter", () => {
       expect(raw?.bytes.toString("utf8")).toContain('"session_id":"thread-1"');
 
       const queued = await adapter.sendMessage("thread-1", { message: "hold", queue: true });
-      expect(queued).toEqual({ ok: true });
+      expect(queued).toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
       for (let i = 0; i < 20 && !nativeEvents.some((event) => event.kind === "turn.started"); i++) await new Promise((resolve) => setTimeout(resolve, 10));
       expect(nativeEvents).toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: "process.connected" }),
@@ -836,7 +853,7 @@ describe("Codex app-server adapter", () => {
     });
     try {
       const result = await adapter.sendMessage("thread-1", { message: "continue" });
-      expect(result).toEqual({ ok: true });
+      expect(result).toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
       const log = await readFile(logPath, "utf8").catch(() => "");
       expect(log).toContain('"method":"initialize"');
       expect(log).toContain('"method":"thread/resume"');
@@ -862,7 +879,7 @@ describe("Codex app-server adapter", () => {
       await store.hold({ harness: "codex", id: "thread-1" }, {
         id: "explicit-stop:test", at: new Date(Date.now() - 60_000).toISOString(), reason: "interrupted", turnId: "prior-turn",
       });
-      await expect(adapter.sendMessage("thread-1", { message, queue: true, origin: "automation" })).resolves.toEqual({ ok: true });
+      await expect(adapter.sendMessage("thread-1", { message, queue: true, origin: "automation" })).resolves.toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
 
       const nativePrompt = {
         id: "codex-turn-1", at: new Date(Date.now() + 1_000).toISOString(), origin: "human", kind: "user_prompt",
@@ -891,8 +908,8 @@ describe("Codex app-server adapter", () => {
     process.env.CODEX_APP_SERVER_LOG = logPath;
     const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
     try {
-      await expect(adapter.sendMessage("thread-1", { message: "first continuation" })).resolves.toEqual({ ok: true });
-      await expect(adapter.sendMessage("thread-1", { message: "second continuation" })).resolves.toEqual({ ok: true });
+      await expect(adapter.sendMessage("thread-1", { message: "first continuation" })).resolves.toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
+      await expect(adapter.sendMessage("thread-1", { message: "second continuation" })).resolves.toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
 
       const requests = (await readFile(logPath, "utf8"))
         .trim().split("\n").map((line) => JSON.parse(line) as { kind: string; method: string; params?: { threadId?: string } })
@@ -924,7 +941,7 @@ describe("Codex app-server adapter", () => {
     const unsubscribe = adapter.subscribeEvents((event) => events.push(event));
     try {
       await adapter.init();
-      await expect(adapter.sendMessage("thread-1", { message: "hold", queue: true })).resolves.toEqual({ ok: true });
+      await expect(adapter.sendMessage("thread-1", { message: "hold", queue: true })).resolves.toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
       for (let attempt = 0; attempt < 50 && !events.some((event) => event.kind === "turn.started"); attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
@@ -950,7 +967,7 @@ describe("Codex app-server adapter", () => {
       ]));
 
       events.length = 0;
-      await expect(adapter.sendMessage("thread-1", { message: "hold", queue: true })).resolves.toEqual({ ok: true });
+      await expect(adapter.sendMessage("thread-1", { message: "hold", queue: true })).resolves.toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
       for (let attempt = 0; attempt < 100 && !events.some((event) => event.kind === "turn.started"); attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 5));
       }

@@ -26,6 +26,10 @@ export class CodexDeliveryReceipts {
       const prior = await this.serial(async () => {
         const receipts = await this.read();
         if (receipts[key]) return receipts[key]!.result;
+        if (Object.keys(receipts).length >= 2048) {
+          return { ok: false, nonRetryable: true,
+            error: "Native Codex receipt storage is full; no delivery was attempted and no accepted input was evicted" };
+        }
         receipts[key] = { at: Date.now(), result: uncertain };
         await this.write(receipts);
         return undefined;
@@ -55,8 +59,12 @@ export class CodexDeliveryReceipts {
   private async read(): Promise<Record<string, Receipt>> {
     try {
       const data = JSON.parse(await readFile(this.file, "utf8")) as Record<string, Receipt>;
-      // Bounded retry window: one day, at most 2048 receipts, no message bodies.
-      return Object.fromEntries(Object.entries(data).filter(([, r]) => Date.now() - r.at < 86400_000).sort((a, b) => b[1].at - a[1].at).slice(0, 2048));
+      // Accepted/uncertain input IDs are permanent anti-replay evidence. Keep
+      // the existing finite capacity; reject new admission instead of eviction.
+      if (!data || typeof data !== "object" || Array.isArray(data) || Object.keys(data).length > 2048) {
+        throw new Error("Native Codex receipt storage requires review; no delivery attempted");
+      }
+      return data;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
       throw error;

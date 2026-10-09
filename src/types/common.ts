@@ -172,6 +172,8 @@ export interface PermissionRequest {
 }
 
 export interface SendMessageOptions {
+  /** Server admission time of queued human intent; a later manual stop wins. */
+  humanRequestedAt?: number;
   /** Explicit human input may release a manual stop; generated delivery must not. */
   origin?: "human" | "automation";
   /** The message text to send */

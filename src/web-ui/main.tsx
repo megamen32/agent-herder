@@ -10,6 +10,7 @@ import "./codex-theme.css";
 import { CodexNavigation } from "./codex-navigation.js";
 import { creationModels } from "./creation-models.js";
 import { groupSessionMessages } from "./message-groups.js";
+import { MessageAdmissionDispatcher, beginOutboxAttempt, appendOutboxEntry, classifyMessageDelivery, deliveryConnectionFailure, deliveryModeLabel, isOutboxUnfinished, newInputId, outboxStatusLabel, readDefaultDeliveryMode, readDeliveryModePinned, readStoredOutbox, reconcileMessageStatus, removeOutboxEntry, updateOutboxEntry, writeDefaultDeliveryMode, writeDeliveryModePinned, writeStoredOutbox, type DeliveryMode, type OutboxEntry } from "./composer-delivery.js";
 import type { SessionMessageView } from "../types/index.js";
 
 type HerderSession = SessionListSession & {
@@ -562,6 +563,8 @@ function SessionList({ entries, activeKey, loading, refreshing, settings, settin
 function App() {
   const [sessions, setSessions] = React.useState<HerderSession[]>([]);
   const [activeKey, setActiveKey] = React.useState<string | undefined>(() => readSessionFromHash() ?? window.localStorage.getItem("agent-herder.active-session") ?? undefined);
+  const activeKeyRef = React.useRef(activeKey);
+  React.useLayoutEffect(() => { activeKeyRef.current = activeKey; }, [activeKey]);
   // сессия, выбранная через deep link (#/session/...) — не сбрасывается фильтром списка
   const [deepLinkKey, setDeepLinkKey] = React.useState<string | undefined>(() => readSessionFromHash());
   const selectSession = React.useCallback((key: string | undefined) => { setDeepLinkKey(key); setActiveKey(key); }, []);
@@ -624,7 +627,64 @@ function App() {
   const [latestTimingMs, setLatestTimingMs] = React.useState<number>();
   const [hydrateTimingMs, setHydrateTimingMs] = React.useState<number>();
   const initialSessionsStartedRef = React.useRef(performance.now());
-  const [sending, setSending] = React.useState(false);
+  // режим доставки (steer/queue), его закрепление как личного по умолчанию и очередь отправленных сообщений
+  const [deliveryMode, setDeliveryMode] = React.useState<DeliveryMode>(() => readDefaultDeliveryMode(window.localStorage));
+  const [deliveryModePinned, setDeliveryModePinned] = React.useState(() => readDeliveryModePinned(window.localStorage));
+  const [outbox, setOutboxState] = React.useState<OutboxEntry[]>(() => readStoredOutbox(window.localStorage));
+  const outboxRef = React.useRef(outbox);
+  const messageDispatcherRef = React.useRef(new MessageAdmissionDispatcher());
+  const setOutbox = React.useCallback((update: React.SetStateAction<OutboxEntry[]>) => {
+    const next = typeof update === "function" ? update(outboxRef.current) : update;
+    outboxRef.current = next;
+    setOutboxState(next);
+  }, []);
+  const statusMissesRef = React.useRef<Map<string, number>>(new Map());
+  React.useEffect(() => { writeStoredOutbox(window.localStorage, outboxRef.current); }, [outbox]);
+  // bounded-опрос статуса незавершённых сообщений активной сессии: только GET message-status,
+  // повторные POST автоматически не отправляются никогда
+  React.useEffect(() => {
+    if (!activeKey) return;
+    const { harness, id } = splitKey(activeKey);
+    const controller = new AbortController();
+    let polling = false;
+    const pollEntry = async (item: OutboxEntry) => {
+      try {
+        const response = await fetch(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message-status?inputId=${encodeURIComponent(item.inputId)}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]) });
+        if (!response.ok) throw new Error(`status ${response.status}`);
+        const payload: unknown = await response.json().catch(() => undefined);
+        const patch = reconcileMessageStatus(payload, response.ok);
+        statusMissesRef.current.delete(item.inputId);
+        if (patch.status !== item.status || (patch.error !== undefined && patch.error !== item.error) || (patch.note !== undefined && patch.note !== item.note)) {
+          setOutbox((current) => updateOutboxEntry(current, item.inputId, patch));
+        }
+      } catch {
+        if (controller.signal.aborted) return;
+        // 404/502 статус-запроса не доказывает ни доставку, ни безопасность повторной отправки
+        const misses = (statusMissesRef.current.get(item.inputId) || 0) + 1;
+        statusMissesRef.current.set(item.inputId, misses);
+        if (misses >= 3 && item.status !== "unknown") {
+          statusMissesRef.current.delete(item.inputId);
+          setOutbox((current) => updateOutboxEntry(current, item.inputId, { status: "unknown", note: "Сервер не подтверждает состояние этого сообщения. Исход доставки неизвестен — не повторяйте отправку без проверки." }));
+        }
+      }
+    };
+    const poll = async () => {
+      if (polling || controller.signal.aborted) return;
+      polling = true;
+      try {
+        const entries = (outboxRef.current || []).filter((entry) => entry.sessionKey === activeKey && isOutboxUnfinished(entry) && entry.status !== "ready" && entry.status !== "sending" && entry.status !== "unknown");
+        for (const entry of entries) {
+          if (controller.signal.aborted) break;
+          await pollEntry(entry);
+        }
+      } finally { polling = false; }
+    };
+    poll();
+    const timer = window.setInterval(poll, 2000);
+    return () => { window.clearInterval(timer); controller.abort(); };
+  }, [activeKey]);
+  // отдельный флаг полёта для кнопки «Продолжить» (resume), не связанный с очередью отправки
+  const [resumeSending, setResumeSending] = React.useState(false);
   const [showCreateSession, setShowCreateSession] = React.useState(false);
   const [createHarness, setCreateHarness] = React.useState("fast-agent");
   const [createAdapters, setCreateAdapters] = React.useState<Array<{ id: string; name: string; active: boolean; ready: boolean; status: string }>>([]);
@@ -1213,8 +1273,9 @@ function App() {
   const changeStatisticsDays = (days: number) => { setStatisticsDays(days); void loadStatistics(days); };
 
   const runAction = async (action: "resume" | "stop" | "recover") => {
-    if (!activeKey || (action === "resume" && sending)) return;
-    if (action === "resume") setSending(true);
+    if (!activeKey || (action === "resume" && resumeSending)) return;
+    if (action === "resume") setResumeSending(true);
+    if (action === "stop") messageDispatcherRef.current.cancelPending(activeKey);
     const { harness, id } = splitKey(activeKey);
     try {
       const result = await api<{ job?: HerderJob }>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ humanRequested: action !== "stop", ...(action === "resume" && (harness === "codex" || harness === "zcode" || harness === "fast-agent") ? { message: "Продолжи текущую задачу в этой же сессии. Если задача уже завершена, кратко сообщи результат." } : {}) }) });
@@ -1227,7 +1288,7 @@ function App() {
       await loadSessions();
       await loadDetails(activeKey);
     } finally {
-      if (action === "resume") setSending(false);
+      if (action === "resume") setResumeSending(false);
     }
   };
   const isResumeMode = !composer.trim() && (activeSession?.status === "stopped" || activeSession?.status === "error" || activeSession?.meta?.humanStopHeld === true);
@@ -1239,8 +1300,13 @@ function App() {
     : undefined;
   const latestMessage = details?.messages[details.messages.length - 1];
   const latestToolPart = [...(latestMessage?.parts || [])].reverse().find((part) => part.type === "tool_call" || part.type === "tool_result");
+  // очередь отправленных сообщений активной сессии; композер остаётся свободным, пока сообщения в полёте
+  const activeOutbox = activeKey ? outbox.filter((entry) => entry.sessionKey === activeKey) : [];
+  const supportsSteer = activeSession?.harness === "codex";
+  const effectiveDeliveryMode: DeliveryMode = supportsSteer ? deliveryMode : "queue";
+  const sending = activeOutbox.some((entry) => entry.status === "sending");
   const sessionActivity = sending
-    ? { kind: "thinking", label: "Сообщение отправлено — начинаю работу…" }
+    ? { kind: "thinking", label: "Отправляю сообщения…" }
     : activeSession?.status === "running" && latestToolPart
       ? { kind: "tool", label: latestToolPart.name ? `Использую инструмент: ${latestToolPart.name}` : "Работаю с инструментом…" }
       : activeSession?.status === "running"
@@ -1250,17 +1316,72 @@ function App() {
           : detailsLoading && activeSession
             ? { kind: "loading", label: "Обновляю состояние сессии…" }
             : undefined;
+  const selectDeliveryMode = (mode: DeliveryMode) => {
+    setDeliveryMode(mode);
+    if (deliveryModePinned) writeDefaultDeliveryMode(window.localStorage, mode);
+  };
+  const saveDefaultDeliveryMode = (mode: DeliveryMode) => {
+    setDeliveryMode(mode); setDeliveryModePinned(true);
+    writeDefaultDeliveryMode(window.localStorage, mode);
+    writeDeliveryModePinned(window.localStorage, true);
+  };
+  const toggleDeliveryModePinned = (pinned: boolean) => {
+    setDeliveryModePinned(pinned);
+    writeDeliveryModePinned(window.localStorage, pinned);
+    if (pinned) writeDefaultDeliveryMode(window.localStorage, effectiveDeliveryMode);
+  };
+  const submitOutboxEntry = async (sessionKey: string, text: string, mode: DeliveryMode, inputId: string) => {
+    const { harness, id } = splitKey(sessionKey);
+    const next = appendOutboxEntry(outboxRef.current, { inputId, sessionKey, text, mode, createdAt: Date.now(), status: "ready" });
+    outboxRef.current = next;
+    setOutbox(next);
+    if (!writeStoredOutbox(window.localStorage, next)) {
+      setOutbox((current) => updateOutboxEntry(current, inputId, { status: "failed", error: "Не удалось сохранить предпросмотр. Сообщение не отправлено; освободите место в истории отправки." }));
+      return;
+    }
+    shouldFollowRef.current = true; setShowScrollToLatest(false);
+    await messageDispatcherRef.current.run(sessionKey, async () => {
+    const attempted = beginOutboxAttempt(window.localStorage, outboxRef.current, inputId);
+    if (!attempted) {
+      setOutbox((current) => updateOutboxEntry(current, inputId, { status: "ready", note: "Не удалось сохранить состояние отправки. Сообщение не отправлено; повторите после освобождения места." }));
+      return;
+    }
+    setOutbox(attempted);
+    let responded = false;
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message`, { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30_000), body: JSON.stringify({ message: text, mode, humanRequested: true, inputId }) });
+      responded = true;
+      const payload: unknown = await response.json().catch(() => undefined);
+      setOutbox((current) => updateOutboxEntry(current, inputId, classifyMessageDelivery(payload, response.ok)));
+    } catch (error) {
+      setOutbox((current) => updateOutboxEntry(current, inputId, responded
+        ? { status: "failed", error: error instanceof Error ? error.message : String(error) }
+        : deliveryConnectionFailure(error)));
+    }
+    if (responded && activeKeyRef.current === sessionKey) void loadDetails(sessionKey).catch(() => undefined);
+    }, { inputId, onCancelled: () => setOutbox((current) => updateOutboxEntry(current, inputId, { status: "ready", note: "Чат остановлен. Это сообщение не отправлено; отправьте его явно, если хотите продолжить." })) });
+  };
   const sendMessage = async () => {
-    if (!activeKey || readOnlySession || !composer.trim() || sending) return;
-    const { harness, id } = splitKey(activeKey);
+    if (!activeKey || readOnlySession || !composer.trim()) return;
     const draft = composer;
     const text = draft.trim();
-    setSending(true); shouldFollowRef.current = true; setShowScrollToLatest(false);
+    setComposer((current) => current === draft ? "" : current);
+    await submitOutboxEntry(activeKey, text, effectiveDeliveryMode, newInputId());
+  };
+  const retryOutboxEntry = async (inputId: string) => {
+    const entry = outbox.find((item) => item.inputId === inputId);
+    if (!entry || messageDispatcherRef.current.hasPending(inputId) || (entry.status !== "ready" && (entry.status !== "failed" || entry.nonRetryable === true))) return;
+    await submitOutboxEntry(entry.sessionKey, entry.text, entry.mode, entry.inputId);
+  };
+  const dismissOutboxEntry = (inputId: string) => setOutbox((current) => removeOutboxEntry(current, inputId));
+  const checkOutboxEntry = async (entry: OutboxEntry) => {
+    const { harness, id } = splitKey(entry.sessionKey);
     try {
-      await api(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message`, { method: "POST", body: JSON.stringify({ message: text, mode: "queue", humanRequested: true }) });
-      setComposer((current) => current === draft ? "" : current);
-      await loadDetails(activeKey);
-    } finally { setSending(false); }
+      const response = await fetch(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message-status?inputId=${encodeURIComponent(entry.inputId)}`, { signal: AbortSignal.timeout(15_000) });
+      if (!response.ok) return;
+      const patch = reconcileMessageStatus(await response.json(), response.ok);
+      setOutbox((current) => updateOutboxEntry(current, entry.inputId, patch));
+    } catch { /* Keep the known outcome; checking never resubmits input. */ }
   };
   const scrollToBottom = () => {
     const element = chatScrollRef.current;
@@ -1366,6 +1487,21 @@ function App() {
       {!showStatistics && !showJobs && !showQuota && showScrollToLatest && <button className="scroll-latest" aria-label="Прокрутить к последним" onClick={scrollToBottom}>↓</button>}
       {!showStatistics && !showJobs && !showQuota && <div className="composer-stack">
       {sessionActivity && <div className={`activity-line activity-${sessionActivity.kind}`} role="status" aria-live="polite"><span className="pulse-dot" aria-hidden="true" /><span>{sessionActivity.label}</span></div>}
+      {activeOutbox.length > 0 && <div className="composer-outbox" aria-label="Отправленные сообщения и их состояние">
+        {activeOutbox.map((entry) => <div className={`composer-outbox-entry status-${entry.status}`} key={entry.inputId}>
+          <div className="composer-outbox-meta">
+            <span className="composer-outbox-mode">{deliveryModeLabel(entry.mode)}</span>
+            <span className="composer-outbox-status">{outboxStatusLabel(entry.status)}</span>
+            {entry.status === "unknown" && <button type="button" className="composer-outbox-retry" onClick={() => void checkOutboxEntry(entry)}>Проверить доставку</button>}
+            {entry.status === "ready" && <button type="button" className="composer-outbox-retry" disabled={messageDispatcherRef.current.hasPending(entry.inputId)} onClick={() => void retryOutboxEntry(entry.inputId)}>Отправить</button>}
+            {entry.status === "failed" && entry.nonRetryable !== true && <button type="button" className="composer-outbox-retry" onClick={() => void retryOutboxEntry(entry.inputId)} title="Повторить отправку">Повторить</button>}
+            {(entry.status === "delivered" || entry.status === "accepted" || entry.status === "failed" || entry.status === "unknown") && <button type="button" className="composer-outbox-dismiss" aria-label="Убрать сообщение из списка" onClick={() => dismissOutboxEntry(entry.inputId)}>×</button>}
+          </div>
+          <div className="composer-outbox-text">{entry.text}</div>
+          {entry.error && <div className="composer-outbox-error">Детали: {entry.error}</div>}
+          {entry.note && <div className="composer-outbox-note">{entry.note}</div>}
+        </div>)}
+      </div>}
       <form className="composer" onSubmit={(event) => { event.preventDefault(); if (isResumeMode) void runAction("resume"); else void sendMessage(); }}>
         {showCreateSession && <div className="composer-create-panel">
           <div className="composer-create-row">
@@ -1378,13 +1514,18 @@ function App() {
         </div>}
         <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="Новая сессия" title="Новая сессия агента" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>
         {readOnlySession ? <div className="composer-readonly"><strong>{archivedSession ? "Архивная сессия" : "Только просмотр"}</strong><span>{archivedSession ? "Сохранённая история сессии доступна для просмотра." : "Эта сессия пока не поддерживает отправку сообщений."}</span></div> : <>
-          <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Новое сообщение или продолжение задачи…" : activeKey ? "Написать агенту…" : "Сначала выберите сессию"} disabled={!activeKey || sending || readOnlySession} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && composer.trim()) { event.preventDefault(); void sendMessage(); } }} />
-          <span className="composer-hint">{sending ? "Жду ответа агента…" : isResumeMode ? "Продолжить" : "Enter — отправить · Shift+Enter — новая строка"}</span>
-          <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || sending || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}>{isResumeMode ? "▶" : "↑"}</button>
+          <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Новое сообщение или продолжение задачи…" : activeKey ? "Написать агенту…" : "Сначала выберите сессию"} disabled={!activeKey || readOnlySession} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && composer.trim()) { event.preventDefault(); void sendMessage(); } }} />
+          <div className="composer-mode" role="group" aria-label="Режим доставки сообщения">
+            <button type="button" className={`composer-mode-option ${effectiveDeliveryMode === "steer" ? "active" : ""}`} aria-pressed={effectiveDeliveryMode === "steer"} disabled={!supportsSteer} title={supportsSteer ? "Доставить в текущий ход агента" : "Этот агент пока поддерживает отправку после ответа"} onClick={() => selectDeliveryMode("steer")}>В текущий ход</button>
+            <button type="button" className={`composer-mode-option ${effectiveDeliveryMode === "queue" ? "active" : ""}`} aria-pressed={effectiveDeliveryMode === "queue"} title="Дождаться окончания текущего ответа агента и доставить сообщение после него" onClick={() => selectDeliveryMode("queue")}>После ответа</button>
+            <label className="composer-mode-pin" title="Сохранить выбранный режим как ваш режим по умолчанию в этом браузере"><input type="checkbox" checked={deliveryModePinned} onChange={(event) => toggleDeliveryModePinned(event.target.checked)} />Запомнить</label>
+          </div>
+          <span className="composer-hint">{sending ? "Отправляю сообщения…" : isResumeMode ? "Продолжить" : "Enter — отправить · Shift+Enter — новая строка"}</span>
+          <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}>{isResumeMode ? "▶" : "↑"}</button>
         </>}
       </form></div>}
     </section>
-    {showInspector && !showStatistics && !showJobs && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">СЕССИЯ</span><button className="icon-button" onClick={closeSessionInspector} aria-label={sessionSettingsReturn ? "Вернуться к общим настройкам" : "Закрыть настройки сессии"}>×</button></div>{activeSession ? <><div className="inspector-title">{cleanSessionTitle(activeSession.title) || activeSession.title || activeSession.id}</div><div className="inspector-status"><span className={`status-dot status-${statusClass(activeSession.status)}`} /><span className={`status-label status-${statusClass(activeSession.status)}`}>{activeSession.meta?.humanStopHeld === true ? "Явная остановка — автоматика приостановлена" : statusLabel(activeSession.status)}</span></div>{sessionAutostart && <div className="autopilot-control session-autostart-control"><div><span className="eyebrow">АВТОПРОДОЛЖЕНИЕ</span><strong>{sessionAutostart.enabled ? "Включено" : "Выключено"}</strong><small>{sessionAutostart.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : sessionAutostart.source === "harness" ? `Сейчас наследуется общая настройка для ${activeSession.harness}. Нажатие создаст исключение только для этой сессии и применится сразу.` : sessionAutostart.source === "global" ? "Сейчас наследуется общий переключатель. Нажатие создаст исключение только для этой сессии и применится сразу." : "Используется значение по умолчанию. Нажатие создаст отдельную настройку только для этой сессии и применится сразу."}</small>{sessionAutostart.source === "session" && <button className="inherit-button" disabled={sessionAutostartSaving} onClick={() => void inheritSessionAutostart()}>Использовать общую настройку {activeSession.harness}</button>}</div><button className={`switch-control ${sessionAutostart.enabled ? "enabled" : ""}`} role="switch" aria-checked={sessionAutostart.enabled} aria-label="Автопродолжение для текущей сессии" disabled={sessionAutostartSaving} onClick={() => void toggleSessionAutostart()}><span /></button></div>}{sessionAutostartError && <small className="autopilot-error">{sessionAutostartError}</small>}{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">АВТОПИЛОТ</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : autopilotSession.source === "policy" ? (autopilotPolicyDraft?.enabled && !autopilotPolicyDraft.harnesses.includes(activeSession.harness as AutopilotHarness) ? `${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} выключен в общих настройках сред. Нажатие включит автопилот только для этой сессии и применится сразу.` : "Сейчас наследуется общая настройка автопилота. Нажатие создаст исключение только для этой сессии и применится сразу.") : autopilotSession.source === "plugin-default" ? "Сейчас наследуется настройка среды. Нажатие создаст исключение только для этой сессии и применится сразу." : "По умолчанию выключен. Нажатие включит автопилот только для этой сессии и применится сразу."}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Использовать общую настройку</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label="Автопилот для текущей сессии" disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}<dl><dt>Агент</dt><dd>{activeSession.harness}</dd><dt>Папка</dt><dd title={activeSession.cwd}>{lastSegment(activeSession.cwd)}</dd>{activeSession.model && <><dt>Модель</dt><dd title={activeSession.model}>{shortModel(activeSession.model)}</dd></>}{activeSession.messageCount !== undefined && <><dt>Сообщения</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Длительность</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.costUsd !== undefined && <><dt>Стоимость</dt><dd title={activeSession.meta?.pricing_source === "models.dev" ? `Оценка по models.dev · ${String(activeSession.meta?.pricing_provider || "")}/${String(activeSession.meta?.pricing_model || "")}` : undefined}>{`${activeSession.meta?.pricing_kind === "estimate" ? "~" : ""}$${activeSession.costUsd.toFixed(4)}`}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Токены</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}{(details?.children?.length || 0) > 0 && <><dt>Субагенты</dt><dd>{details?.children?.length}</dd></>}</dl>{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">Пока нет сообщений. Отправьте сообщение или продолжите сессию.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer" title="Откроется в новой вкладке">Визуализация ↗</a>}{activeSession.status === "running" && <button className="stop-button" onClick={() => void runAction("stop")}>Остановить</button>}{(activeSession.status === "stopped" || activeSession.status === "error" || activeSession.meta?.humanStopHeld === true) && <button className="primary-button" onClick={() => void runAction("resume")}>Возобновить работу</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Восстановить</button>}</div><div className="settings-block"><span className="eyebrow">ВИД</span><small className="settings-hint">Что показывать в переписке</small><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Размышления</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Инструменты</label></div></> : <div className="empty-inspector">Сессия не выбрана.</div>}</aside>}
+    {showInspector && !showStatistics && !showJobs && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">СЕССИЯ</span><button className="icon-button" onClick={closeSessionInspector} aria-label={sessionSettingsReturn ? "Вернуться к общим настройкам" : "Закрыть настройки сессии"}>×</button></div>{activeSession ? <><div className="inspector-title">{cleanSessionTitle(activeSession.title) || activeSession.title || activeSession.id}</div><div className="inspector-status"><span className={`status-dot status-${statusClass(activeSession.status)}`} /><span className={`status-label status-${statusClass(activeSession.status)}`}>{activeSession.meta?.humanStopHeld === true ? "Явная остановка — автоматика приостановлена" : statusLabel(activeSession.status)}</span></div>{sessionAutostart && <div className="autopilot-control session-autostart-control"><div><span className="eyebrow">АВТОПРОДОЛЖЕНИЕ</span><strong>{sessionAutostart.enabled ? "Включено" : "Выключено"}</strong><small>{sessionAutostart.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : sessionAutostart.source === "harness" ? `Сейчас наследуется общая настройка для ${activeSession.harness}. Нажатие создаст исключение только для этой сессии и применится сразу.` : sessionAutostart.source === "global" ? "Сейчас наследуется общий переключатель. Нажатие создаст исключение только для этой сессии и применится сразу." : "Используется значение по умолчанию. Нажатие создаст отдельную настройку только для этой сессии и применится сразу."}</small>{sessionAutostart.source === "session" && <button className="inherit-button" disabled={sessionAutostartSaving} onClick={() => void inheritSessionAutostart()}>Использовать общую настройку {activeSession.harness}</button>}</div><button className={`switch-control ${sessionAutostart.enabled ? "enabled" : ""}`} role="switch" aria-checked={sessionAutostart.enabled} aria-label="Автопродолжение для текущей сессии" disabled={sessionAutostartSaving} onClick={() => void toggleSessionAutostart()}><span /></button></div>}{sessionAutostartError && <small className="autopilot-error">{sessionAutostartError}</small>}{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">АВТОПИЛОТ</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : autopilotSession.source === "policy" ? (autopilotPolicyDraft?.enabled && !autopilotPolicyDraft.harnesses.includes(activeSession.harness as AutopilotHarness) ? `${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} выключен в общих настройках сред. Нажатие включит автопилот только для этой сессии и применится сразу.` : "Сейчас наследуется общая настройка автопилота. Нажатие создаст исключение только для этой сессии и применится сразу.") : autopilotSession.source === "plugin-default" ? "Сейчас наследуется настройка среды. Нажатие создаст исключение только для этой сессии и применится сразу." : "По умолчанию выключен. Нажатие включит автопилот только для этой сессии и применится сразу."}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Использовать общую настройку</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label="Автопилот для текущей сессии" disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}<dl><dt>Агент</dt><dd>{activeSession.harness}</dd><dt>Папка</dt><dd title={activeSession.cwd}>{lastSegment(activeSession.cwd)}</dd>{activeSession.model && <><dt>Модель</dt><dd title={activeSession.model}>{shortModel(activeSession.model)}</dd></>}{activeSession.messageCount !== undefined && <><dt>Сообщения</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Длительность</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.costUsd !== undefined && <><dt>Стоимость</dt><dd title={activeSession.meta?.pricing_source === "models.dev" ? `Оценка по models.dev · ${String(activeSession.meta?.pricing_provider || "")}/${String(activeSession.meta?.pricing_model || "")}` : undefined}>{`${activeSession.meta?.pricing_kind === "estimate" ? "~" : ""}$${activeSession.costUsd.toFixed(4)}`}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Токены</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}{(details?.children?.length || 0) > 0 && <><dt>Субагенты</dt><dd>{details?.children?.length}</dd></>}</dl>{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">Пока нет сообщений. Отправьте сообщение или продолжите сессию.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer" title="Откроется в новой вкладке">Визуализация ↗</a>}{activeSession.status === "running" && <button className="stop-button" onClick={() => void runAction("stop")}>Остановить</button>}{(activeSession.status === "stopped" || activeSession.status === "error" || activeSession.meta?.humanStopHeld === true) && <button className="primary-button" onClick={() => void runAction("resume")}>Возобновить работу</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Восстановить</button>}</div><div className="settings-block"><span className="eyebrow">ОТПРАВКА</span><label>Режим по умолчанию<select aria-label="Режим отправки по умолчанию" value={readDefaultDeliveryMode(window.localStorage)} onChange={(event) => saveDefaultDeliveryMode(event.target.value as DeliveryMode)}><option value="queue">После ответа</option><option value="steer">В текущий ход (Codex)</option></select></label></div><div className="settings-block"><span className="eyebrow">ВИД</span><small className="settings-hint">Что показывать в переписке</small><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Размышления</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Инструменты</label></div></> : <div className="empty-inspector">Сессия не выбрана.</div>}</aside>}
   </main>;
 }
 

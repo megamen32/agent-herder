@@ -1,4 +1,5 @@
 import { projectSessionInventory } from "./session-inventory.js";
+import { UserMessageDelivery } from "../user-message-delivery.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { execFile } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
@@ -481,9 +482,10 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const mcpAuthToken = dependencies.mcpAuthToken?.trim() || undefined;
   const selectedResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor, "automation"));
   const manualChoiceResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor, "human"));
+  const userMessageDelivery = dependencies.jobs ? new UserMessageDelivery(dependencies.adapters, supervisor, dependencies.jobs) : undefined;
   const server = createServer(async (request, response) => {
     try {
-      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents);
+      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery);
     } catch (err) {
       if (err instanceof SessionNotFoundError) {
         sendJson(response, 404, { error: "Session not found" });
@@ -493,6 +495,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
     }
   });
   server.once("close", () => {
+    userMessageDelivery?.close();
     stopSessionObservation?.();
     unsubscribeMcpEvents?.();
     if (mcpHttp) void mcpHttp.close();
@@ -546,7 +549,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (url.pathname.startsWith("/api/quota-lens") && request.method === "GET") {
     const body = await handleQuotaLensRequest(url.pathname, url.searchParams);
@@ -1197,6 +1200,13 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     return sendNamedSessionResult(response, result);
   }
 
+  const messageStatusMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/message-status$/);
+  if (messageStatusMatch && request.method === "GET") {
+    const inputId = url.searchParams.get("inputId");
+    if (!inputId || inputId.length > 512) return sendJson(response, 400, { error: "inputId is required" });
+    const receipt = await userMessageDelivery?.reconcile(decodeURIComponent(messageStatusMatch[1]), decodeURIComponent(messageStatusMatch[2]), inputId);
+    return sendJson(response, receipt ? 200 : 404, receipt || { error: "Доставка сообщения не найдена; автоматический повтор запрещён" });
+  }
   const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
   if (sessionMatch && request.method === "GET") {
     const session = await supervisor.getSession(decodeURIComponent(sessionMatch[1]), decodeURIComponent(sessionMatch[2]));
@@ -1244,6 +1254,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const id = decodeURIComponent(actionMatch[2]);
     const action = actionMatch[3];
     if (body.humanRequested !== undefined && typeof body.humanRequested !== "boolean") return sendJson(response, 400, { error: "humanRequested must be boolean" });
+    if (["stop", "cancel", "terminate"].includes(action)) userMessageDelivery?.cancelSession(harness, id);
     if (action === "resume") {
       if (body.inputId !== undefined && (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512)) {
         return sendJson(response, 400, { error: "inputId must be a non-empty string of at most 512 characters" });
@@ -1301,11 +1312,23 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (typeof body.message !== "string" || body.message.trim().length === 0) {
       return sendJson(response, 400, { error: "message must be a non-empty string" });
     }
+    if (body.mode !== undefined && (typeof body.mode !== "string" || !["queue", "steer", "sync"].includes(body.mode))) return sendJson(response, 400, { error: "invalid delivery mode" });
+    if (body.inputId !== undefined && (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512)) return sendJson(response, 400, { error: "invalid inputId" });
+    if (body.humanRequested === true && (body.mode === "queue" || body.mode === "steer") && body.inputId !== undefined) {
+      if (!userMessageDelivery) return sendJson(response, 503, { error: "Надёжная очередь сообщений недоступна" });
+      try {
+        const receipt = userMessageDelivery.submit({ harness, sessionId: id, inputId: body.inputId as string, message: body.message, mode: body.mode });
+        return sendJson(response, receipt.pending ? 202 : receipt.ok ? 200 : 502, receipt);
+      } catch (error) {
+        return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
+      }
+    }
     return sendOperationResult(response, await supervisor.sendMessage(harness, id, {
       message: body.message,
       origin: body.humanRequested === true ? "human" : "automation",
       queue: body.mode === "queue",
       steer: body.mode === "steer",
+      inputId: typeof body.inputId === "string" ? body.inputId : undefined,
     }));
   }
 
