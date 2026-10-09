@@ -73,3 +73,11 @@ full/adminfalse. Profilebinding отсутствует (legacy full), это о�
 ограничение, не grepmesh-fleet. Конфиг/headers/token не менять и не печатать.
 Canary должен выполнятьсам nativeOpenCodeactor88 черезexistingconfig;
 whoamiсам по себе не native acceptance.
+
+Rootintegrated18fbd25 какa6bd017 иONLYindexseam готов, покаunpublished.
+RootSDKactualfactory RED: empty/disconnected adapters reportedcomplete=true.
+Focusedlocalcase воспроизведён, веткараннегоотказаисправлена complete=false.
+Дляlive100 безrestart RootразрешилownthinMCPrelaypeer к существующему
+HTTPsingleton (list_agents/send_message), безadapter/controller/privatewriter.
+Следующийsource slice: этотleaf+runtime-shapedtests, затемmainpublication,
+remote100/88childregistration иnativeOpenCodeconsumer88.
