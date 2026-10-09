@@ -4,6 +4,20 @@ Owner: Codex `01a11747-c694-7340-be48-f973e3c4e568`, continuing original Mac `01
 
 Acceptance: preserve Codex-style UI, real native bash/result/reasoning cards, and obtain a second human-requested reply through the UI in native session `2610071904-5rlge7`; archived/imported sessions remain read-only. Publish reviewed work on clean synchronized `main` before deployment; verify the exact running source afterward.
 
+## ACCEPTED — original FastAgent/cards continuation, 2026-10-09
+
+ONE real blank-composer Continue in the existing isolated native fast-agent:2610071904-5rlge7 produced a new user and a new assistant answer. Native history is4→6; the original four messages match the saved SHA exactly. Worker08:59:11.187→08:59:21.977UTC completed exit0 in10.79s. Its new assistant timestamp08:59:21.162798UTC confirms prior context and reports the earlier task already complete, explicitly avoiding a repeat watchdog command. No replacement conversation, API substitute, manual typed provider prompt, marker or second click. Actual marker removal used native focus/Meta+a/Backspace, then DOM and visually inspected screenshot proved zero characters and correct Continue mode.
+
+Real primary Mini browser through the ONE trusted finite reverse18788 fetched promoted index-CicdSq3x.js HTTP200/hash8115d906 and live nativeAPI200 BEFORE the click; cached restored DOM was not used as release proof. Deployed source00c7b9a/livePID1116921/invocation8add6fd85c044b39b05acccaf525d9a6 matches the publisher's exact208-file promotion manifest e35fd238. No service/configuration change was made by this owner during capture. Own11PASS and shared85PASS/ONEtsc+Vite/cleanup proofs are reused; no tests repeated.
+
+Actual old native bash call, its19ms/exit0 tool result and thinking disclosure remain intact, and all are present in the rendered UI. Visually inspected screenshots: .tmp/fast-agent-cards-continuation/fastagent-visible-native-cards-20261009.jpg SHA36d4d26828e64c29d15f2822720f019cd33e520b6c1dda095b4c4b5dfa59f613; new second reply fastagent-second-response-final-20261009.jpg SHA410d66f64974469e0af552b92ed41d4f55986254c9fa191e00854565451a8f1c; empty composer fastagent-before-continue-20261009.jpg SHA24c85597be69fc2cd43c460c0f741e189b9594f163132a0f1996e80a509ad755. Failed offscreen element captures are retained but are not visual acceptance evidence; the successful cards image follows actual nested-container scroll. No new tool call/reasoning is claimed for the short second answer. Full native/result/artifact/cleanup proof is ignored private final-consumer-proof-20261009.json.
+
+The canary used retained SDK0.10.42. UserIO independently installed isolated cold0.10.43 and switched four canonical links only at09:01:36UTC, AFTER our completed provider turn; lstat timestamps and its INSTALL_FINISH receipt establish this boundary. Legacy22-warm-MCP env remains untouched. That separate completed install is adopted for subsequent consumers, not a reason to replay this original input. Model/subscription Anthropic endpoint/output524288/reasoning policy remain unchanged.
+
+Mini QA remained alive below1536MiB:1263780KiB/13processes,47%host memory available, personalChrome34839/36435 alive. Browser screenshots and native receipt were evaluated before cleanup. Only our completed restoredFastt4 target4799C1EFD94CA52446DE5BDC7C7263B4 was closed to free RAM for the next consumer; all other QA tabs/profile/personal browsers remain. Our finite SSH session66166 expired normally at600s/exit124 with no replacement or remaining tunnel. Sole QA lease returned once to fleet-owner01a11f58, with UserIO7bb9's next window identified; no shared browser/MCP/daemon was stopped. Own paths are committed/pushed separately and the Mac clean-FF sync is verified after this final scoped outcome publication. Other owners' new ZCode WIP is preserved and excluded; do not claim the shared checkout wholly clean.
+
+This completes this owning original FastAgent/cards/second-response contract. Historical blockers and OPEN statements below describe prior checkpoints and are superseded; other projects/parent contracts are not marked complete by this outcome.
+
 ## Prepared consumer handoff — 2026-10-09 11:40MSK
 
 Root coordinator01a11b24 assigned SAME shared QA browser recovery under the unchanged1536MiB ceiling to current fleet owner01a11f58-fbdc-7921-b877-b24c134dcf0f. He owns actual restoration and supplies one CDP/lease; do not bootstrap a competing browser or repeat a demo prompt. Prior resource stop and saved profile are preserved evidence, not a reason to raise a cap or use M1 as browser fallback.
@@ -87,7 +101,7 @@ Shared SDK maintenance clarification: this real FastAgent turn has not begun and
 
 ## Completion
 
-OPEN. Exact11checks now PASS with actual native cleanup above. Deployment of7d75ded and real second response remain pending shared publisher integration. No waiter/background payload or replacement conversation. Historical refusals do not supersede the actual FINISH.
+ACCEPTED. Exact11/shared85/build/promotion and ONE real same-native second answer with rendered cards are verified above. No unclaimed provider retry remains. Historical blockers below are retained as evidence, not current conditions.
 
 ## Coordinated recovery handoff (2026-10-07T17:15:05.861197+00:00)
 
