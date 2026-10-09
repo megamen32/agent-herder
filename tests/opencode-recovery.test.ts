@@ -85,7 +85,7 @@ describe("OpenCode native recovery controls", () => {
       }
       if (request.url === "/session/status") return response.end(JSON.stringify({ parent: { status: "idle" } }));
       if (request.url === "/session/parent/message?limit=1") return response.end(JSON.stringify([]));
-      if (request.url === "/session/parent/children") {
+      if ((request.url === "/session/parent/children" || request.url === "/session/parent/children?directory=%2Ftmp%2Fproject")) {
         return response.end(JSON.stringify([{ id: "child", title: "Child", path: "/tmp/project" }]));
       }
       if (request.url === "/session/parent/fork" && request.method === "POST") {
@@ -118,7 +118,7 @@ describe("OpenCode native recovery controls", () => {
       if (request.url === "/session/direct-parent" && request.method === "GET") {
         return response.end(JSON.stringify({ id: "direct-parent", title: "Parent", path: "/tmp/project" }));
       }
-      if (request.url === "/session/direct-parent/prompt_async" && request.method === "POST") {
+      if (request.url === "/session/direct-parent/prompt_async?directory=%2Ftmp%2Fproject" && request.method === "POST") {
         request.setEncoding("utf8");
         request.on("data", (chunk) => { sentBody += chunk; });
         request.on("end", () => response.end(JSON.stringify({ accepted: true })));
@@ -245,13 +245,13 @@ describe("OpenCode native recovery controls", () => {
       if (request.url === "/session?directory=%2Ftmp" && request.method === "POST") {
         return response.end(JSON.stringify({ id: "health-session", title: "health", directory: "/tmp" }));
       }
-      if (request.url === "/api/session/health-session/model" && request.method === "POST") {
+      if (request.url === "/api/session/health-session/model?directory=%2Ftmp" && request.method === "POST") {
         order.push("model");
         response.statusCode = 204;
         response.end();
         return;
       }
-      if (request.url === "/session/health-session/prompt_async" && request.method === "POST") {
+      if (request.url === "/session/health-session/prompt_async?directory=%2Ftmp" && request.method === "POST") {
         order.push("prompt");
         return response.end(JSON.stringify({ accepted: true }));
       }
@@ -284,13 +284,13 @@ describe("OpenCode native recovery controls", () => {
       }
       if (request.url === "/session/status" && request.method === "GET") return response.end(JSON.stringify({}));
       if (request.url === "/session?directory=%2Ftmp" && request.method === "POST") {
-        return response.end(JSON.stringify({ id: "health-session", title: "health", directory: "/tmp" }));
+        return response.end(JSON.stringify({ id: "health-session", title: "health-model-failure", directory: "/tmp" }));
       }
-      if (request.url === "/api/session/health-session/model" && request.method === "POST") {
+      if (request.url === "/api/session/health-session/model?directory=%2Ftmp" && request.method === "POST") {
         response.statusCode = 503;
         return response.end(JSON.stringify({ error: "model unavailable" }));
       }
-      if (request.url === "/session/health-session/prompt_async" && request.method === "POST") {
+      if (request.url === "/session/health-session/prompt_async?directory=%2Ftmp" && request.method === "POST") {
         promptCount += 1;
         return response.end(JSON.stringify({ accepted: true }));
       }
@@ -303,7 +303,7 @@ describe("OpenCode native recovery controls", () => {
     const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
     const result = await newOrResumeNamedSession(new Map([["opencode", adapter]]), {
       harness: "opencode",
-      name: "health",
+      name: "health-model-failure",
       cwd: "/tmp",
       message: "diagnose bounded telemetry",
       mode: "queue",
@@ -371,16 +371,16 @@ describe("OpenCode native recovery controls", () => {
     server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");
       if (request.url === "/global/health") return response.end(JSON.stringify({ healthy: true }));
-      if (request.url === "/session/child" && request.method === "GET") {
+      if ((request.url === "/session/child" || request.url === "/session/child?directory=%2Ftmp%2Fproject") && request.method === "GET") {
         return response.end(JSON.stringify({ id: "child", title: "Child", path: "/tmp/project", parentID: "parent" }));
       }
-      if (request.url === "/session/parent" && request.method === "GET") {
+      if ((request.url === "/session/parent" || request.url === "/session/parent?directory=%2Ftmp%2Fproject") && request.method === "GET") {
         return response.end(JSON.stringify({ id: "parent", title: "Parent", path: "/tmp/project" }));
       }
-      if (request.url === "/session/child" && request.method === "GET") {
+      if ((request.url === "/session/child" || request.url === "/session/child?directory=%2Ftmp%2Fproject") && request.method === "GET") {
         return response.end(JSON.stringify({ id: "child", title: "Child", path: "/tmp/project", parentID: "parent" }));
       }
-      if (request.url === "/session/parent/children" && request.method === "GET") {
+      if ((request.url === "/session/parent/children" || request.url === "/session/parent/children?directory=%2Ftmp%2Fproject") && request.method === "GET") {
         return response.end(JSON.stringify([
           { id: "child", title: "Child", path: "/tmp/project", parentID: "parent" },
           { id: "child-2", title: "Second child", path: "/tmp/project", parentID: "parent" },

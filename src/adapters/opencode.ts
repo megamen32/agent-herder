@@ -24,6 +24,13 @@ interface OpenCodeMessagePayload {
   parts?: Array<Record<string, unknown>>;
 }
 
+interface OpenCodeSessionStatus {
+  status?: string;
+  type?: string;
+  needsPermission?: boolean;
+  permission?: { id: string; type: string; description: string; toolName?: string; details?: string };
+}
+
 interface OpenCodeProviderCatalog {
   all?: Array<{
     id?: string;
@@ -178,6 +185,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
 
   private baseUrl: string;
   private headers: Record<string, string> = {};
+  private sessionDirectories = new Map<string, string>();
 
   constructor(config: { baseUrl?: string; password?: string } = {}) {
     this.baseUrl = config.baseUrl
@@ -207,12 +215,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
     const sessions = await this.fetchJson<OpenCodeSessionPayload[]>(`/session${query}`);
 
     // Get statuses for all sessions
-    let statuses: Record<string, { status?: string; type?: string; needsPermission?: boolean; permission?: { id: string; type: string; description: string; toolName?: string; details?: string } }> = {};
-    try {
-      statuses = await this.fetchJson<Record<string, unknown>>("/session/status") as typeof statuses;
-    } catch {
-      // status endpoint may fail
-    }
+    const statuses = await this.readStatuses(options.cwd);
 
     return sessions.map((s) => {
       const st = statuses[s.id] as typeof statuses[string] | undefined;
@@ -246,13 +249,26 @@ export class OpenCodeAdapter implements HarnessAdapter {
     // OpenCode exposes a direct lookup for sessions that may not be present in
     // the paginated/list response (for example, a parent session opened from a
     // UI link). Prefer it so control tools can address an explicit session ID.
+    let session: OpenCodeSessionPayload;
     try {
-      const session = await this.fetchJson<OpenCodeSessionPayload>(`/session/${encodeURIComponent(id)}`);
-      return this.toSession(session);
+      session = await this.fetchJson<OpenCodeSessionPayload>(`/session/${encodeURIComponent(id)}`);
     } catch {
       const all = await this.listSessions();
       return all.find((s) => s.id === id) || null;
     }
+    const result = this.toSession(session);
+    const statuses = await this.readStatuses(result.cwd);
+    result.status = this.mapStatus(statuses[id]?.status || statuses[id]?.type);
+    const permission = statuses[id]?.permission;
+    result.needsPermission = statuses[id]?.needsPermission === true || !!permission;
+    result.permissionDetails = permission;
+    const last = (await this.getSessionMessages(id, 1))?.at(-1);
+    if (last) {
+      const tool = [...last.parts].reverse().find((part) => part.type === "tool_call" || part.type === "tool_result");
+      result.lastMessage = last.text || (tool ? `Инструмент: ${tool.name || "tool"}` : undefined);
+      if (last.timestamp && last.timestamp > result.lastActivity) result.lastActivity = last.timestamp;
+    }
+    return result;
   }
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
@@ -272,7 +288,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
         } : {}),
       }),
     });
-    return this.toSession(session);
+    return this.toSession({ ...session, directory: session.directory || session.path || options.cwd });
   }
 
   async getParent(id: string): Promise<AgentSession | null> {
@@ -393,7 +409,9 @@ export class OpenCodeAdapter implements HarnessAdapter {
     if (options.mode) {
       updates.permissionMode = options.mode;
     }
-    const res = await this.fetch("/config", {
+    const directory = await this.resolveSessionDirectory(sessionId);
+    const query = directory ? `?${new URLSearchParams({ directory })}` : "";
+    const res = await this.fetch(`/config${query}`, {
       method: "PATCH",
       body: JSON.stringify(updates),
     });
@@ -466,7 +484,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
         return {
           id: message.id || info.id || `${id}:message-${index + 1}`,
           role: role === "user" || role === "assistant" || role === "system" || role === "tool" ? role : "assistant",
-          timestamp: typeof info.time?.created === "number" ? new Date(info.time.created * 1000).toISOString() : undefined,
+          timestamp: typeof info.time?.created === "number" ? new Date(info.time.created).toISOString() : undefined,
           text,
           parts,
         };
@@ -509,7 +527,9 @@ export class OpenCodeAdapter implements HarnessAdapter {
 
   async getRawTranscript(id: string, signal?: AbortSignal): Promise<RawTranscriptExport | null> {
     try {
-      const endpoint = `/session/${encodeURIComponent(id)}/message?limit=200`;
+      const directory = await this.resolveSessionDirectory(id);
+      const query = new URLSearchParams({ limit: "200", ...(directory ? { directory } : {}) });
+      const endpoint = `/session/${encodeURIComponent(id)}/message?${query}`;
       const messages = await this.fetchJson<unknown[]>(endpoint, { signal });
       if (!Array.isArray(messages)) return null;
       return {
@@ -526,8 +546,44 @@ export class OpenCodeAdapter implements HarnessAdapter {
 
   // ---- helpers ----
 
+  private async readStatuses(directory?: string): Promise<Record<string, OpenCodeSessionStatus>> {
+    const query = directory ? `?${new URLSearchParams({ directory })}` : "";
+    const response = await this.fetch(`/session/status${query}`);
+    // Older servers do not expose this endpoint. Other read failures are not
+    // evidence that a working native session became idle.
+    if (response.status === 404) return {};
+    if (!response.ok) throw new Error(`OpenCode status read failed: HTTP ${response.status}`);
+    return response.json();
+  }
+
+  private rememberSession(value: unknown): void {
+    if (!value || typeof value !== "object") return;
+    const session = value as OpenCodeSessionPayload;
+    const directory = session.directory || session.path;
+    if (typeof session.id === "string" && typeof directory === "string" && directory.length > 0) {
+      this.sessionDirectories.set(session.id, directory);
+    }
+  }
+
+  private async resolveSessionDirectory(id: string): Promise<string | undefined> {
+    if (!this.sessionDirectories.has(id)) {
+      // A direct native lookup works across projects and supplies the instance
+      // directory after a Herder restart. It does not resume or create a session.
+      try { await this.fetchJson<OpenCodeSessionPayload>(`/session/${encodeURIComponent(id)}`); } catch { /* older APIs */ }
+    }
+    return this.sessionDirectories.get(id);
+  }
+
   private async fetch(path: string, init?: RequestInit): Promise<Response> {
-    return fetch(`${this.baseUrl}${path}`, {
+    const url = new URL(`${this.baseUrl}${path}`);
+    const match = url.pathname.match(/^\/(?:api\/)?session\/([^/]+)(?:\/|$)/);
+    if (match && match[1] !== "status" && !url.searchParams.has("directory")) {
+      const id = decodeURIComponent(match[1]);
+      const directLookup = url.pathname === `/session/${match[1]}` && (!init?.method || init.method === "GET");
+      const directory = directLookup ? this.sessionDirectories.get(id) : await this.resolveSessionDirectory(id);
+      if (directory) url.searchParams.set("directory", directory);
+    }
+    return fetch(url, {
       ...init,
       headers: {
         "Content-Type": "application/json",
@@ -540,7 +596,10 @@ export class OpenCodeAdapter implements HarnessAdapter {
   private async fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await this.fetch(path, init);
     if (!res.ok) throw new Error(`OpenCode API ${path}: HTTP ${res.status}`);
-    return res.json() as Promise<T>;
+    const value: T = await res.json();
+    if (Array.isArray(value)) value.forEach((item) => this.rememberSession(item));
+    else this.rememberSession(value);
+    return value;
   }
 
   private async consumeEvents(
@@ -590,6 +649,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
   private mapStatus(raw?: string): AgentSession["status"] {
     switch (raw) {
       case "running":
+      case "retry":
       case "busy": return "running";
       case "idle": return "idle";
       case "waiting": return "needs_input";
@@ -598,6 +658,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 
   private toSession(session: OpenCodeSessionPayload): AgentSession {
+    this.rememberSession(session);
     return {
       id: session.id,
       harness: "opencode",
