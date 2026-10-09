@@ -30,7 +30,7 @@ export class CoordinationDeliveryBudget {
     const result = Promise.resolve().then(send).then(value => {
       let delivery: string | undefined;
       try {delivery = JSON.parse(value).delivery;} catch { /* legacy textual receipt */ }
-      if (delivery && ["skipped_inactive", "not_found", "not_attempted"].includes(delivery)) {
+      if ((delivery && ["skipped_inactive", "not_found", "not_attempted"].includes(delivery)) || value.startsWith("Failed to send message:") || /^Session .* not found\.$/.test(value)) {
         this.attempts.delete(key);
         for (const [scope] of limits) {
           const times = this.windows.get(scope) || [];

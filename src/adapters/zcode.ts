@@ -2130,7 +2130,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       const message = error instanceof Error ? error.message : String(error);
       // Only explicit absence permits a prompt-free same-ID load. A read
       // timeout/disconnect is unknown, and must never trigger send/replay.
-      if (record(error).code !== "proto.sessionNotFound" && !/\bSession not found\b|proto\.sessionNotFound/.test(message)) throw error;
+      if (!["proto.sessionNotFound","ZCODE_AGENT_RUNTIME_UNAVAILABLE"].includes(String(record(error).code)) && !/\bSession not found\b|proto\.sessionNotFound|^ZCode Agent runtime is not running\.$/.test(message)) throw error;
       let loading = this.conversationLoads.get(id);
       if (!loading) {
         loading = (async () => {

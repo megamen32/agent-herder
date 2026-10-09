@@ -32,3 +32,5 @@ it('preserves intentional identical messages with different explicit IDs',async(
  await b.run({target:'t',sender:'s',inputId:'second',message:'same'},send);
  expect(send).toHaveBeenCalledTimes(2);
 });
+
+it('permits a proven pre-admission failure to be retried with the original ID',async()=>{const b=new CoordinationDeliveryBudget();const input={target:'t',sender:'s',inputId:'one',message:'decision'};expect(await b.run(input,async()=> 'Failed to send message: ZCode Agent runtime is not running.')).toContain('Failed');const send=vi.fn(async()=> 'accepted');expect(await b.run(input,send)).toBe('accepted');expect(send).toHaveBeenCalledTimes(1)});

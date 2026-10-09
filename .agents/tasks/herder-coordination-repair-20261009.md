@@ -21,3 +21,11 @@ Final backend tsc artifact: .tmp/coordination-repair-20261009/run-temp/bounded-p
 C140 подтвердил safe nativeclient handoff: внешнихunfinished действий нет, всеacceptedreceiptsсохранены; доrestartновыхне начинает. Root scopedrelease толькоHerder.
 
 Внешняя зависимость: GPTAdmin schema childjob8d2755058c7191a3833477ab7a2bdcdc осталсяqueued после~40мин. Предыдущий owner01a11755 уже имелpublished dispatchfix; ровноодинnative continuation емуadmitted19:52MSK сэтимjobбезповторногоschema. Он отвечаетза actualGPTAdmin rollout/consumer; rootmainHerder не ждёт sourceисследованияи продолжаетсвойrelease.
+
+## Первый фактический live результат
+
+main91a2c69 опубликован; exact210-file backend активирован PID1116238. Consumer: Codex list20/maxAge7200=1042ms, all=1179ms; именованный deliver(create=never)=985ms, native admitted true/turnId01a121a4/inputIdstable. Реальные18Codex/23total обнаружены; incomplete/limited явно сохранены.
+
+Same-ID GPTAdmin queued job completed, readback через тотжеjob ID подтвердилresponse: owner55 rollout завершил. Полная GPTAdminмиграция не заявляется и не повторяется.
+
+Новая ZCode postrestart RED доadmission: exact installed runtime existing-only возвращает codeZCODE_AGENT_RUNTIME_UNAVAILABLE / runtime is not running. Native V4 input НЕ attempted. Добавлена безопасная same-ID prompt-free load классификация и удаление provenpre-admissionfailure изprocessbudget cache;25affectedPASS. Retry толькооригинальногоstableIDпослеэтогосourcefix, никакогоaccepted/unknown replay.
