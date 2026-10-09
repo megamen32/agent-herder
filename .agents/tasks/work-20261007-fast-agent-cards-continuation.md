@@ -39,6 +39,12 @@ Three foreign READ inputs are explicitly pinned: handlers.ts, human-stop-store.t
 
 Then run that exact case once, preserving native reservations and project cap. After green results, deploy ONLY the published changed FastAgent module plus necessary tested published frontend with the current composer/receipt owners; no dirty-source deployment. Assess inflight and coordinate any managed Herder-only restart, never daemon/listener/native tasks. Final blank Continue ONCE in SAME demo, capture NEW assistant and real cards/screenshot before any further mutation. Preserve foreign WIP and separately scoped parent autopilot contract.
 
+## Shared SDK and current admission candidate
+
+UserIO reported PyPI fast-agent-mcp0.10.43; this owner independently confirms only installed server-100 shared UV runtime0.10.42, METADATA SHA46709d44a05d076f04dca86b40f84416c36d05bb728ddfa4db49ce3b46c88e81. Proof .tmp/fast-agent-cards-continuation/shared-fastagent-version-before-second-turn-20261009.json. No upgrade/install/rollback occurred and no latest-registry claim is made here. Coordinate a separate measured upgrade/rollback/version proof before UserIO final deep canary, after settling this original second-turn runtime; UserIO adaptive-summary research remains its owner’s separate contract.
+
+The resource owner’s working contract now contains herder-fastagent100 with exactly the requested512MiB/1GiB/CPU1/tasks64/wall120/temp64MiB/files2048 budget and shared81106 current50CPU/128GB policy. Canonical guard contract/helper still have that owner’s uncommitted candidate changes; profile presence is NOT published source or fresh Rootonce admission. This replaces “missing profile” as the next-step blocker: finish narrow reviewed registration publication, issue fresh once receipt and explicit language53 resource handoff, then execute the immutable case once. No repeated generic attempt or waiter while those conditions are missing.
+
 ## Completion
 
 OPEN. Exact11checks, deployment of7d75ded and real second response remain unproven. Current helper refusal is captured; no waiter/background payload or replacement conversation. Historical sections below do not supersede this fresh state.
