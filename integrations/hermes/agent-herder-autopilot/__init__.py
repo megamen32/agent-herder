@@ -70,7 +70,10 @@ def _coordination_pre_llm(session_id: str = "", **_: Any) -> dict[str, str] | No
         context = data.get("context")
         result = {"context": str(context)} if context else None
         if result and data.get("inboxIds"):
-            _coordination_api("/api/coordination/inbox-ack", {"sessionId": current_session, "ids": data["inboxIds"]})
+            try:
+                _coordination_api("/api/coordination/inbox-ack", {"sessionId": current_session, "ids": data["inboxIds"]})
+            except Exception:
+                pass  # Received context remains usable if only the ACK reply is lost.
         return result
     except Exception:
         return None
