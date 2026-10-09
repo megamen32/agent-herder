@@ -218,3 +218,22 @@ next supported consumer repair; no delivery/provenance widening. Interim ONE
 approved88actor/oldowner6targetperminute/no88control remains; nativeattribution
 stilldeclared/unavailable, actualsource provenby88native tooltrace. Full mutual
 network/allharnesscontrol notcomplete. Root receivedcompactproof once.
+
+## Сохранённый slow-nightly сценарий
+
+| Сценарий | Цель и обнаруженный дефект | Категория | Ожидаемое / максимум |
+| --- | --- | --- | --- |
+| Native OpenCode88 → GPTAdmin → Codex100, same native IDs | Actual source/tooltrace + один admission/USER item; обнаруживает медленный tool-enabled native turn и неправильный строковый numeric limit | slow nightly | 420s / 600s |
+
+Причина переноса: первая попытка observer закончилась timeout170s; отдельный
+поздний consumer proof получен примерно385s.11LLM tools включали4rejects
+строкового limit; native model startup/first tool заняли основное время.
+Новые инструкции: numeric limit либо documented default, один прямой known
+route после schema; не ослаблять integer schema и не использовать discover(full).
+Это сохранённая future coverage, не повтор уже completed input/LLM canary.
+Ordinary source checks остаются отдельными и ≤180s; этот запуск не ordinaryGREEN.
+Nightly использует existing bounded lifecycle/finite host queue. При fresh
+Herder development active/unknown — defer до reservation. Новый job получает
+новый stable input; UNKNOWN/admitted не повторять. По600s retaincheckpoint,
+cleanup толькоowned observer/job/reservation, unfinished вtail; foreignactors,
+services и уже принятые inputs не трогать. Сейчас новый nightly не запускается.
