@@ -72,6 +72,8 @@ describe("local mesh capabilities (focused integration; expected 5s, maximum 30s
   const m=new LocalHarnessMesh({hostId:"host",adapters:new Map([['codex',adapter]]) as any,send,ledgerPath:join(dir,"ledger.json")});
   const r=await m.deliver({target:{hostId:"host",harness:"codex",nativeSessionId:"n"},sender:{hostId:"src",harness:"codex",nativeSessionId:"s"},inputId:"i",message:"delta"});
   expect(r.state).toBe("admitted");expect(send.mock.calls[0]?.[0]).toEqual(expect.objectContaining({sessionId:"n",inputId:"i"}));
+  expect(send.mock.calls[0]?.[0]).toMatchObject({meshSender:{hostId:"src",harness:"codex",nativeSessionId:"s"},message:"delta"});
+  expect(send.mock.calls[0]?.[0]).not.toHaveProperty("fromSessionId");expect(send.mock.calls[0]?.[0]).not.toHaveProperty("fromHarness");
   }finally{await rm(dir,{recursive:true,force:true});}
  });
 });

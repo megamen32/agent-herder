@@ -66,6 +66,13 @@ export const ExportTranscriptSchema = z.object({
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Which harness owns the session. If omitted, searches all."),
 });
 
+const meshIdentity = (max:number) => z.string().min(1).max(max).regex(/^[^\x00-\x1f\x7f]*$/);
+export const MeshSenderSchema = z.object({
+  hostId: meshIdentity(512),
+  harness: meshIdentity(64),
+  nativeSessionId: meshIdentity(512),
+}).strict();
+
 export const SendMessageSchema = z.object({
   inputId: z.string().min(1).max(256).optional().describe("Stable delivery ID. Retry with the same ID; Codex deduplicates native admission for 24 hours."),
   humanRequested: z.boolean().optional().describe("Set true only when a human explicitly asked to resume/send to this stopped chat. Automatic work must omit it."),
@@ -74,6 +81,7 @@ export const SendMessageSchema = z.object({
   message: z.string().describe("Message to send to the agent."),
   fromSessionId: z.string().optional().describe("Supply your full native sender session ID for AI messages. Herder checks that session for reply attribution; this does not authenticate the caller. Omitted/unverified sources are labelled unknown."),
   fromHarness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Declared sender harness for checked reply attribution, not caller authentication."),
+  meshSender: MeshSenderSchema.optional().describe("Declared remote mesh sender for the full-address automatic budget and attribution; not authentication. Takes precedence over legacy sender fields without local sender lookup. Cannot claim humanRequested."),
   mode: z.enum(["queue", "steer", "sync"]).optional().default("sync").describe(
     "queue = fire-and-forget, steer = redirect agent, sync = wait for response"
   ),
@@ -336,6 +344,11 @@ export const toolDefinitions: Tool[] = [
         message: { type: "string", description: "Message to send" },
         fromSessionId: { type: "string", description: "Supply your full native sender session ID for AI messages. Herder checks that session for reply attribution; this does not authenticate the caller. Omitted/unverified sources are labelled unknown." },
         fromHarness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Declared sender harness for checked reply attribution, not caller authentication (optional)" },
+        meshSender: { type: "object", additionalProperties: false, properties: {
+          hostId: { type: "string", minLength: 1, maxLength: 512, pattern: "^[^\\x00-\\x1f\\x7f]*$" },
+          harness: { type: "string", minLength: 1, maxLength: 64, pattern: "^[^\\x00-\\x1f\\x7f]*$" },
+          nativeSessionId: { type: "string", minLength: 1, maxLength: 512, pattern: "^[^\\x00-\\x1f\\x7f]*$" },
+        }, required: ["hostId", "harness", "nativeSessionId"], description: "Declared automatic mesh sender; full-address budget, no local lookup, not authentication or human origin. Overrides legacy sender attribution when supplied." },
         mode: { type: "string", enum: ["queue", "steer", "sync"], default: "sync", description: "Delivery mode" },
       },
       required: ["sessionId", "message"],

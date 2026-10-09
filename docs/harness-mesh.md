@@ -124,6 +124,19 @@ mesh budget/native-attribution seam: relay не посылает fake native ID,
 definitions/handlers, source-only после первого slice; activate только при
 следующем согласованном owner release. Interim не означает полную сеть.
 
+### Structured sender API — source only
+
+`send_message.meshSender` необязателен: `{hostId,harness,nativeSessionId}`.
+Пределы512/64/512 символов, без ASCII control chars; это объявленная
+атрибуция и ключ бюджета полного адреса, не authentication или native capability.
+Отправитель, включая `minimax-code`, не ищется через local `getSession`.
+Legacy `fromSessionId/fromHarness` сохраняют прежнюю проверку, когда meshSender
+отсутствует; при meshSender объявленная атрибуция имеет явный приоритет.
+Mesh-сообщение не может заявлять `humanRequested:true`; STOP и UNKNOWN/no replay
+сохраняются. Local mesh больше не создаёт synthetic native sender ID.
+Этот API активируется только следующим разрешённым owner release;
+действующий thin relay продолжает ONEactor/sixTarget, его runtime не менялся.
+
 Exact live preflight `rate_limited` JSON и `Session 'id' not found.` остаются
 retryable `not_attempted`; явный matching-ID admitted:false без uncertain
 flags также. `admissionUnknown`/`nonRetryable` mixed flags и lost/ambiguous

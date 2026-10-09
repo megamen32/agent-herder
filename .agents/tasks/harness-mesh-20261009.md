@@ -237,3 +237,15 @@ Herder development active/unknown — defer до reservation. Новый job п�
 новый stable input; UNKNOWN/admitted не повторять. По600s retaincheckpoint,
 cleanup толькоowned observer/job/reservation, unfinished вtail; foreignactors,
 services и уже принятые inputs не трогать. Сейчас новый nightly не запускается.
+
+23:33МСК: source-only proper meshSender — следующий разрешённый этап.
+Ownership definitions.ts/handlers.ts + focusedtest, local newmesh module/docs
+по прежним границам. Три cheapestRED: общий unknownsender bucket, отсутствие
+declaredsource, identity validation/humanorigin; минимальный scopedfix.
+14affected focusedchecksGREEN2.46s, noEmitGREEN вordinarydeadline≤180s.
+Actual SDK InMemoryTransport→registerSessionTools→send_message публикует и
+передаёт optionalstructuredfield; fullhost+harness+nativeID budget 2×6/target12,
+Minimaxsource no nativeLookup/nofakeID, legacyonlycallers +STOP+UNKNOWN preserved.
+Sharedruntime/ownedleaf4f не rebuilt/promoted/restarted; activate толькоследующий
+allowedownerrelease, ONEactor/stricter6targetinterim остаётся. Independentreview
+запрошен по этойдельте; firstacceptedinputs не повторялись.
