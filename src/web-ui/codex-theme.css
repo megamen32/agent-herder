@@ -303,6 +303,7 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
 .theme-choice button { flex: 1 1 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-s); background: transparent; color: var(--text-2); font-size: var(--text-sm); }
 .theme-choice button:hover { border-color: var(--border-2); color: var(--text); }
 .theme-choice button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.theme-choice button:disabled { opacity: .5; cursor: not-allowed; }
 .switch-control { background: var(--border-2); }
 .switch-control.enabled { background: var(--accent); }
 .switch-control.enabled span { background: var(--on-accent); }

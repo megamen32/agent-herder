@@ -505,27 +505,18 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .composer-outbox-delete { border-color: color-mix(in srgb, var(--status-error) 45%, var(--border)); color: color-mix(in srgb, var(--status-error) 78%, var(--text)); }
 .composer-outbox-retry:disabled, .composer-outbox-delete:disabled { opacity: .55; cursor: default; }
 .composer-outbox-retry:hover, .composer-outbox-dismiss:hover, .composer-outbox-delete:hover { background: var(--surface-hover); }
-.composer-mode { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-.composer-mode-option { height: 26px; padding: 0 9px; border: 1px solid var(--border); border-radius: var(--radius-s); background: transparent; color: var(--muted); font-size: var(--text-xs); white-space: nowrap; }
-.composer-mode-option.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-.composer-mode-hint { flex-basis: 100%; color: var(--muted); font-size: var(--text-sm); line-height: 1.45; }
-.composer-mode-pin { display: inline-flex; align-items: center; gap: 5px; padding-left: 4px; color: var(--muted); font-size: var(--text-xs); white-space: nowrap; cursor: pointer; }
-.composer-mode-pin input { accent-color: var(--accent); }
-@media (max-width: 900px) { .composer-mode { order: 8; width: 100%; } .composer-outbox-text { max-height: 110px; } }
+@media (max-width: 900px) { .composer-outbox-text { max-height: 110px; } }
 
 
 /* ---------- 22. Мобильные тач-таргеты и длинные блоки (аудит 2026-10-09) ---------- */
 @media (max-width: 900px) {
   /* .chat-menu .quiet-button имеет специфичность 0-2-0 и побеждает мобильный .quiet-button */
   .json-message-copy { min-height: 36px; padding: 6px 12px; }
-  .composer-mode-hint { font-size: var(--text-sm); }
   .chat-menu .quiet-button { min-height: 44px; padding: 12px 0; font-size: var(--text-md); }
   .chat-menu label { min-height: 40px; font-size: var(--text-md); }
   .chat-menu .quiet-button:hover, .chat-menu .quiet-button:active { background: var(--surface-hover); }
   .choice-button { padding: 13px 10px; font-size: var(--text-md); }
   .choice-card > strong { font-size: var(--text-sm); }
-  .composer-mode-option { height: 36px; padding: 0 12px; font-size: var(--text-sm); }
-  .composer-mode-pin { min-height: 36px; font-size: var(--text-sm); }
   .message-expand { padding: 10px 0; font-size: var(--text-md); }
   .oc-disclosure summary { min-height: 40px; font-size: var(--text-sm); }
   .json-message-body { max-height: none; }
