@@ -14,7 +14,8 @@ Never inspect /proc, create a native daemon, copy credentials or prune releases.
 Owned child process group: RSS soft256MiB (30s sustained), hard512MiB;
 CPU100% over20s,150% per sample after10s startup;128 threads/16 processes;
 temp128/state64MiB; <=2 release directories/512MiB; host reserve Mini2/M1 4GiB,
-disk2GiB. Poll delay2s plus bounded probes, commands2s, scan1s/30000 entries;
+disk2GiB. Poll delay2s plus bounded probes, commands2s, storage scan1s/30000 entries
+(one deadline-only fresh retry within2s total);
 cleanup global10s (within LaunchAgent ExitTimeOut20s), unknown =>unverified. These are
 Darwin watchdog observations/stops, NOT kernel reservations or swap0 guarantees.
 Detached processes are outside group enforcement; native shared controls remain
@@ -92,20 +93,71 @@ def private_directory(path):
         raise Refused('owned_directory_permissions')
 
 def storage_bytes(root, limit):
-    if root.is_symlink():raise Refused('storage_root_unverified')
-    if not root.exists():return 0
-    deadline=time.monotonic()+1;count=0;total=0;pending=[root]
-    while pending:
-        directory=pending.pop()
-        with os.scandir(directory) as entries:
-            for entry in entries:
+    started=time.monotonic();overall_deadline=started+2;count=0;attempt=0
+    root_class={'releases':'artifact','tmp':'temp','native-codex-tmp':'temp',
+                'fleet-node':'state','fleet-native-codex':'state'}.get(root.name,'other')
+    def refuse(reason,kind):
+        diagnostic={'rootClass':root_class,'kind':kind,'attempt':attempt,'count':count,
+                    'elapsedSeconds':round(time.monotonic()-started,3)}
+        raise Refused(reason+' '+json.dumps(diagnostic,separators=(',',':')))
+    def identity(info):return info.st_uid,info.st_dev,info.st_ino
+    try:initial=root.lstat()
+    except FileNotFoundError:return 0
+    if not stat.S_ISDIR(initial.st_mode) or initial.st_uid!=os.getuid():refuse('storage_root_unverified','root_identity')
+    pinned=identity(initial)
+    def verify_root():
+        try:current=root.lstat()
+        except OSError:refuse('storage_root_unverified','root_generation')
+        if not stat.S_ISDIR(current.st_mode) or identity(current)!=pinned:refuse('storage_root_unverified','root_generation')
+    class Deadline(Exception):pass
+    flags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW
+    for attempt in (1,2):
+        if time.monotonic()>=overall_deadline:refuse('storage_observation_limit','deadline')
+        count=0;total=0;stack=[];deadline=min(time.monotonic()+1,overall_deadline)
+        def push(fd):
+            try:
+                context=os.scandir(fd);entries=context.__enter__()
+            except BaseException:
+                os.close(fd);raise
+            stack.append((fd,context,iter(entries)))
+        def pop():
+            fd,context,_=stack.pop()
+            try:context.__exit__(None,None,None)
+            finally:os.close(fd)
+        try:
+            verify_root()
+            fd=os.open(root,flags)
+            if identity(os.fstat(fd))!=pinned:
+                os.close(fd);refuse('storage_root_unverified','root_generation')
+            push(fd)
+            if time.monotonic()>deadline:raise Deadline()
+            while stack:
+                fd,_,entries=stack[-1]
+                try:entry=next(entries)
+                except StopIteration:
+                    pop();continue
                 count+=1
-                if count>30000 or time.monotonic()>deadline:raise Refused('storage_observation_limit')
+                if count>30000:refuse('storage_observation_limit','file_limit')
                 info=entry.stat(follow_symlinks=False)
-                if stat.S_ISDIR(info.st_mode):pending.append(Path(entry.path))
-                else:total+=info.st_size
-                if total>limit:raise Refused('storage_budget_exceeded')
-    return total
+                if not stat.S_ISDIR(info.st_mode):total+=info.st_size
+                if total>limit:refuse('storage_budget_exceeded','byte_limit')
+                if time.monotonic()>deadline:raise Deadline()
+                if stat.S_ISDIR(info.st_mode):
+                    child=os.open(entry.name,flags,dir_fd=fd)
+                    if identity(os.fstat(child))!=identity(info):
+                        os.close(child);refuse('storage_root_unverified','child_generation')
+                    push(child)
+            verify_root()
+            if time.monotonic()>deadline:raise Deadline()
+            return total
+        except Deadline:
+            verify_root()
+            if attempt==2 or time.monotonic()>=overall_deadline:refuse('storage_observation_limit','deadline')
+            # Discard the partial sum/cursors. Only a deadline admits one fresh
+            # census of the SAME root; hard file/byte failures never retry.
+        except OSError:refuse('storage_root_unverified','io')
+        finally:
+            while stack:pop()
 
 def native_app_server_argv(argv,pointer):
     # Only documented global options before the actual subcommand; no substring search.

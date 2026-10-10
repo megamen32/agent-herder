@@ -206,6 +206,101 @@ class MacWatchdogTests(unittest.TestCase):
             with self.assertRaisesRegex(w.Refused,'storage_root_unverified'):w.storage_bytes(owned/'foreign',2000)
             with self.assertRaises(w.Refused):w.storage_bytes(owned,1)
 
+    def storage_clock_fixture(self,now,on_entry):
+        original=w.os.scandir;attempts=[]
+        @contextlib.contextmanager
+        def scan(directory):
+            attempts.append(directory)
+            with original(directory) as entries:
+                def observed():
+                    for entry in entries:
+                        on_entry(len(attempts),entry)
+                        yield entry
+                yield observed()
+        return patch.object(w.time,'monotonic',side_effect=lambda:now[0]),patch.object(w.os,'scandir',side_effect=scan),attempts
+
+    def test_storage_deadline_gets_one_fresh_census_without_double_counting(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'releases';root.mkdir();(root/'data').write_bytes(b'123')
+            now=[0.0]
+            clock,scan,attempts=self.storage_clock_fixture(now,lambda n,e:now.__setitem__(0,1.01 if n==1 else 1.02))
+            with clock,scan:self.assertEqual(w.storage_bytes(root,10),3)
+            self.assertEqual(len(attempts),2)
+
+    def test_storage_two_deadlines_or_changed_root_refuse_with_safe_diagnostic(self):
+        for changed in (False,True):
+            with self.subTest(changed=changed),tempfile.TemporaryDirectory() as folder:
+                root=Path(folder)/'releases';root.mkdir();(root/'private-filename').write_bytes(b'123')
+                now=[0.0]
+                def entry(n,e):
+                    now[0]=1.01 if n==1 else 2.01
+                    if changed and n==1:
+                        root.rename(Path(folder)/'old');root.mkdir()
+                clock,scan,attempts=self.storage_clock_fixture(now,entry)
+                with clock,scan,self.assertRaises(w.Refused) as caught:w.storage_bytes(root,10)
+                reason,raw=str(caught.exception).split(' ',1);details=json.loads(raw)
+                self.assertEqual(reason,'storage_root_unverified' if changed else 'storage_observation_limit')
+                self.assertEqual(details['rootClass'],'artifact');self.assertEqual(details['count'],1)
+                self.assertGreaterEqual(details['elapsedSeconds'],1)
+                self.assertNotIn(folder,raw);self.assertNotIn('private-filename',raw)
+                self.assertEqual(len(attempts),1 if changed else 2)
+
+    def test_storage_hard_limits_do_not_retry_even_if_deadline_also_expires(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'data').write_bytes(b'123')
+            now=[0.0]
+            clock,scan,attempts=self.storage_clock_fixture(now,lambda n,e:now.__setitem__(0,1.01))
+            with clock,scan,self.assertRaisesRegex(w.Refused,'storage_budget_exceeded'):w.storage_bytes(root,1)
+            self.assertEqual(len(attempts),1)
+            original=w.os.scandir
+            @contextlib.contextmanager
+            def many(directory):
+                with original(directory) as entries:
+                    item=next(entries)
+                    yield iter([item]*30001)
+            with patch.object(w.os,'scandir',side_effect=many) as scan,patch.object(w.time,'monotonic',return_value=0),self.assertRaises(w.Refused) as caught:
+                w.storage_bytes(root,100000)
+            self.assertEqual(scan.call_count,1)
+            details=json.loads(str(caught.exception).split(' ',1)[1])
+            self.assertEqual(details['kind'],'file_limit');self.assertEqual(details['count'],30001)
+
+    def test_storage_retry_rejects_changed_uid_or_device(self):
+        from types import SimpleNamespace
+        for field in ('st_uid','st_dev'):
+            with self.subTest(field=field),tempfile.TemporaryDirectory() as folder:
+                root=Path(folder);(root/'data').write_bytes(b'123');now=[0.0]
+                original=w.Path.lstat
+                def observed(path,*args,**kwargs):
+                    info=original(path,*args,**kwargs)
+                    if path==root and now[0]>0:
+                        values={key:getattr(info,key) for key in ('st_uid','st_dev','st_ino','st_mode')}
+                        values[field]+=1;return SimpleNamespace(**values)
+                    return info
+                clock,scan,attempts=self.storage_clock_fixture(now,lambda n,e:now.__setitem__(0,1.01))
+                with clock,scan,patch.object(w.Path,'lstat',autospec=True,side_effect=observed),self.assertRaisesRegex(w.Refused,'storage_root_unverified'):
+                    w.storage_bytes(root,10)
+                self.assertEqual(len(attempts),1)
+
+    def test_storage_directory_symlink_race_never_follows_or_retries(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);root=base/'owned';root.mkdir();nested=root/'nested';nested.mkdir()
+            foreign=base/'foreign';foreign.mkdir();(foreign/'private').write_bytes(b'x'*100)
+            original=w.os.scandir
+            @contextlib.contextmanager
+            def scan(directory):
+                with original(directory) as entries:
+                    item=next(entries)
+                    def observed(*args,**kwargs):
+                        self.assertFalse(kwargs['follow_symlinks'])
+                        info=item.stat(*args,**kwargs)
+                        nested.rename(base/'old');nested.symlink_to(foreign,target_is_directory=True)
+                        return info
+                    yield iter([SimpleNamespace(name=item.name,stat=observed)])
+            with patch.object(w.os,'scandir',side_effect=scan) as census,self.assertRaisesRegex(w.Refused,'storage_root_unverified'):
+                w.storage_bytes(root,1000)
+            self.assertEqual(census.call_count,1)
+
     def test_missing_codex_socket_has_no_spawn_or_guessed_daemon(self):
         with patch.object(w.subprocess,'Popen') as spawn:
             with self.assertRaisesRegex(w.Refused,'managed_codex_socket_missing'):
