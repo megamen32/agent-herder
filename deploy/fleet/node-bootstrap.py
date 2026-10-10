@@ -66,7 +66,7 @@ if 'zcode' in harnesses:
     env['ZCODE_CWD'] = str(Path.home())
 registry = state / 'adapters.json'
 registry.write_text(json.dumps({'version': 1, 'enabled': {name: name in harnesses for name in ['codex', 'opencode', 'zcode', 'claude', 'qoder', 'hermes', 'fast-agent', 'chatgpt']}}))
-env.update(AGENT_HERDER_ADAPTER_REGISTRY=str(registry), AGENT_HERDER_AUTOPILOT_STATE_DIR=str(state / 'autopilot'),
+env.update(AGENT_HERDER_WEB_PORT=str(config.get('webPort', 18789)), AGENT_HERDER_WEB_HOST='127.0.0.1', AGENT_HERDER_ADAPTER_REGISTRY=str(registry), AGENT_HERDER_AUTOPILOT_STATE_DIR=str(state / 'autopilot'),
            AGENT_HERDER_HUMAN_REQUEST_STORE=str(state / 'human-requests.json'),
            AGENT_HERDER_SINGLETON_LOCK=str(runtime / 'node.lock'), TMPDIR=str(temp))
 if sys.argv[1:] == ['--check']:
@@ -93,5 +93,7 @@ if watch == 0:
                         os.kill(parent, 15)
                         os._exit(75)
     os._exit(0)
-os.chdir(base / 'current')
-os.execve(str(node), [str(node), str(base / 'current/dist/index.js')], env)
+# index.js validates argv against import.meta.url; Node resolves a symlinked main file.
+entry = (base / 'current/dist/index.js').resolve(strict=True)
+os.chdir((base / 'current').resolve(strict=True))
+os.execve(str(node), [str(node), str(entry)], env)
