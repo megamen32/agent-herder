@@ -15,7 +15,7 @@ Owned child process group: RSS soft256MiB (30s sustained), hard512MiB;
 CPU100% over20s,150% per sample after10s startup;128 threads/16 processes;
 temp128/state64MiB; <=2 release directories/512MiB; host reserve Mini2/M1 4GiB,
 disk2GiB. Poll delay2s plus bounded probes, commands2s, storage scan1s/30000 entries
-(one deadline-only fresh retry within2s total);
+(one deadline-only fresh retry within2s total; artifact-only5s, census every30s);
 cleanup global10s (within LaunchAgent ExitTimeOut20s), unknown =>unverified. These are
 Darwin watchdog observations/stops, NOT kernel reservations or swap0 guarantees.
 Detached processes are outside group enforcement; native shared controls remain
@@ -92,8 +92,9 @@ def private_directory(path):
     if not stat.S_ISDIR(info.st_mode) or info.st_uid!=os.getuid() or info.st_mode&0o077:
         raise Refused('owned_directory_permissions')
 
-def storage_bytes(root, limit):
-    started=time.monotonic();overall_deadline=started+2;count=0;attempt=0
+def storage_bytes(root, limit, *, artifact=False):
+    window=5 if artifact else 2;attempt_window=window/2
+    started=time.monotonic();overall_deadline=started+window;count=0;attempt=0
     root_class={'releases':'artifact','tmp':'temp','native-codex-tmp':'temp',
                 'fleet-node':'state','fleet-native-codex':'state'}.get(root.name,'other')
     def refuse(reason,kind):
@@ -113,7 +114,7 @@ def storage_bytes(root, limit):
     flags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW
     for attempt in (1,2):
         if time.monotonic()>=overall_deadline:refuse('storage_observation_limit','deadline')
-        count=0;total=0;stack=[];deadline=min(time.monotonic()+1,overall_deadline)
+        count=0;total=0;stack=[];deadline=min(time.monotonic()+attempt_window,overall_deadline)
         def push(fd):
             try:
                 context=os.scandir(fd);entries=context.__enter__()
@@ -388,15 +389,45 @@ def host_available_kib():
     total=int(command(['/usr/sbin/sysctl','-n','hw.memsize']))//1024
     return total*int(match[1])//100
 
-def release_usage(base):
+def release_closure(base):
     root=base/'releases'
-    if not root.is_dir() or root.is_symlink():raise Refused('release_layout_invalid')
-    releases=[]
-    with os.scandir(root) as entries:
-        for entry in entries:
-            if len(releases)>=2 or not entry.is_dir(follow_symlinks=False):raise Refused('release_budget_exceeded')
-            releases.append(entry.name)
-    return len(releases),storage_bytes(root,512*MIB)
+    def generation(info):return info.st_uid,info.st_dev,info.st_ino,info.st_mtime_ns,info.st_ctime_ns
+    initial=root.lstat()
+    if not stat.S_ISDIR(initial.st_mode) or initial.st_uid!=os.getuid():raise Refused('release_layout_invalid')
+    fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW);releases=[]
+    try:
+        if generation(os.fstat(fd))!=generation(initial):raise Refused('release_generation_changed')
+        with os.scandir(fd) as entries:
+            for entry in entries:
+                if len(releases)>=2:raise Refused('release_budget_exceeded')
+                info=entry.stat(follow_symlinks=False)
+                if not stat.S_ISDIR(info.st_mode) or info.st_uid!=os.getuid():raise Refused('release_layout_invalid')
+                releases.append((entry.name,generation(info)))
+        if generation(root.lstat())!=generation(initial) or generation(os.fstat(fd))!=generation(initial):
+            raise Refused('release_generation_changed')
+    finally:os.close(fd)
+    return generation(initial),tuple(sorted(releases))
+
+class ArtifactCensus:
+    """Process-local, dated accounting of the two immutable release generations.
+    Validate ROOT/release closure each tick; full accounting after30s or on
+    closure change. In-place payload writes are detected by the next full census,
+    not by the shallow closure check. Never describe cached bytes as live bytes.
+    Unknown/failed generations never reuse previous usage; no cross-run cache.
+    """
+    def __init__(self):self.closure=None;self.usage=None;self.completed_at=None
+    def age_seconds(self):
+        return None if self.completed_at is None else round(time.monotonic()-self.completed_at,3)
+    def read(self,base):
+        closure=release_closure(base);now=time.monotonic()
+        if self.closure==closure and self.usage is not None and 0<=now-self.completed_at<30:return self.usage
+        self.closure=self.usage=self.completed_at=None
+        total=storage_bytes(base/'releases',512*MIB,artifact=True)
+        if release_closure(base)!=closure:raise Refused('release_generation_changed')
+        self.closure=closure;self.usage=(len(closure[1]),total);self.completed_at=time.monotonic()
+        return self.usage
+
+def release_usage(base,cache=None):return (cache if cache is not None else ArtifactCensus()).read(base)
 
 def validate_launchagent(path,entrypoint='mac-node-watchdog.py'):
     try:
@@ -452,7 +483,7 @@ def verify_launcher_hashes(base,config,names):
         with path.open('rb') as handle:data=handle.read(MIB+1)
         if len(data)>MIB or hashlib.sha256(data).hexdigest()!=digest:raise Refused('launcher_identity_mismatch')
 
-def prepare(base,config):
+def prepare(base,config,artifact_cache=None):
     if sys.platform!='darwin':raise Refused('darwin_required')
     policy=Policy(command(['/usr/sbin/sysctl','-n','hw.model']).strip())
     if config['hostId']!=socket.gethostname():raise Refused('native_host_identity_mismatch')
@@ -470,7 +501,7 @@ def prepare(base,config):
         if not zentry.is_absolute() or not zentry.is_file():raise Refused('zcode_entry_missing')
         native.update(ZCODE_SERVER_NODE=str(znode),ZCODE_SERVER_ENTRY=str(zentry),ZCODE_CWD=str(Path.home()))
     state=Path.home()/'.local/state/agent-herder/fleet-node';temp=base/'run/tmp'
-    release_usage(base)
+    release_usage(base,artifact_cache)
     if host_available_kib()<policy.host_reserve_kib or shutil.disk_usage(base).free<2*GIB:
         raise Refused('host_reserve_insufficient')
     storage_bytes(temp,128*MIB);storage_bytes(state,64*MIB)
@@ -530,7 +561,8 @@ def main():
         validate_launchagent(Path(sys.argv[2]));print(json.dumps({'plistValid':True,'activated':False}));return 0
     if sys.argv[1:] not in ([],['--check']):raise Refused('unsupported_argument')
     config=json_file(base/'node-config.json')
-    policy,node,entry,state,temp,env=prepare(base,config)
+    artifact_cache=ArtifactCensus()
+    policy,node,entry,state,temp,env=prepare(base,config,artifact_cache)
     if sys.argv[1:]==['--check']:
         print(json.dumps({'hostId':socket.gethostname(),'sourceSha':config['sourceSha'],'harnesses':config['harnesses'],'nativeCodexSocket':'codex' in config['harnesses'],'secretsPrinted':False,'enforcement':'darwin_watchdog'}));return 0
     for path in (state,base/'run',temp):private_directory(path)
@@ -552,10 +584,11 @@ def main():
                 if failed:reason='resource_budget';break
                 current={(r['pid'],r['identity']):r['cpu_seconds'] for r in observed};cpu=cpu_percent(previous_cpu,current,now-previous)
                 cpu_samples.append((previous,now,cpu));cpu_samples=[s for s in cpu_samples if s[1]>now-CPU_WINDOW];previous=now;previous_cpu=current
-                releases,artifact=release_usage(base)
+                releases,artifact=release_usage(base,artifact_cache)
                 sample={'rss_kib':sum(r['rss_kib'] for r in observed),'processes':len(observed),'threads':read_threads(observed),
                     'cpu_percent':cpu,'sustained_cpu_percent':rolling_cpu(cpu_samples,now),'temp_bytes':storage_bytes(temp,128*MIB),
                     'state_bytes':storage_bytes(state,64*MIB),'artifact_bytes':artifact,'releases':releases,
+                    'artifactCensusAgeSeconds':artifact_cache.age_seconds(),
                     'host_available_kib':host_available_kib(),'disk_free_bytes':shutil.disk_usage(base).free}
                 soft=soft_memory_anchor(sample['rss_kib'],elapsed,soft);failed=violations(sample,policy,elapsed,soft)
                 if failed:reason='resource_budget';break
