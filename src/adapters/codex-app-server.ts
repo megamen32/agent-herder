@@ -240,9 +240,13 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         if (this.socketPath) this.activeTurns.delete(thread.id);
         this.threads.set(thread.id, thread);
       }
-      const nativeMetadata = await this.rawTranscriptAdapter.getNativeSessionMetadata();
+      const indexedMetadata = options.limit
+        ? await this.rawTranscriptAdapter.getNativeSessionMetadataForIds(sessions.map(thread => thread.id))
+        : undefined;
+      const nativeMetadata = indexedMetadata?.metadata ?? await this.rawTranscriptAdapter.getNativeSessionMetadata();
       const result = sessions.map((thread) => {
         const session = this.toSession(thread);
+        if (indexedMetadata?.available === false) session.meta = { ...session.meta, nativeIndexMetadata: "unavailable" };
         const nativeMeta = nativeMetadata.get(thread.id);
         if (!nativeMeta) return session;
         const { status: nativeStatus, ...nativeMetadataFields } = nativeMeta;
@@ -256,10 +260,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         };
       });
       this.sessionSnapshotReceipt = {
-        exhaustive: !bounded,
+        exhaustive: !bounded && indexedMetadata?.available !== false,
         observedAt: new Date().toISOString(),
         source: "codex-app-server",
-        ...(bounded ? {reason:"bounded_native_page"} : {}),
+        ...(indexedMetadata?.available === false ? { reason: "native_index_metadata_unavailable" } : bounded ? {reason:"bounded_native_page"} : {}),
       };
       return result;
     } catch (error) {

@@ -248,6 +248,55 @@ export class CodexAdapter implements HarnessAdapter {
     }]));
   }
 
+  /** Optional stable index fields for an authoritative bounded native page.
+   * Never scan unrelated rollouts, inspect writers, or infer persisted status.
+   * Automation/STOP and full enumeration retain their existing observation path.
+   */
+  async getNativeSessionMetadataForIds(ids: readonly string[]): Promise<{ available: boolean; metadata: Map<string, Pick<CodexSessionState, "parentThreadId" | "threadSource" | "agentRole" | "status" | "pinned" | "automationStop">> }> {
+    if (ids.length > 100 || ids.some(id => typeof id !== "string" || !id || id.length > 512 || /[\x00-\x1f\x7f]/.test(id))) {
+      throw new Error("Bounded native metadata IDs must contain at most 100 valid IDs");
+    }
+    const result = new Map<string, Pick<CodexSessionState, "parentThreadId" | "threadSource" | "agentRole" | "status" | "pinned" | "automationStop">>();
+    const selected = [...new Set(ids)];
+    const databasePath = join(this.codexDir, "state_5.sqlite");
+    if (!selected.length) return { available: true, metadata: result };
+    let db: import("node:sqlite").DatabaseSync | undefined;
+    try {
+      if (!existsSync(databasePath)) return { available: false, metadata: result };
+      const { DatabaseSync } = await import("node:sqlite");
+      db = new DatabaseSync(databasePath, { readOnly: true });
+      db.exec("pragma busy_timeout=100");
+      const columns = new Set((db.prepare("pragma table_info(threads)").all() as Array<{ name?: string }>).map(row => row.name));
+      if (!columns.has("id")) return { available: false, metadata: result };
+      const optional = (column: string) => columns.has(column) ? column : `null as ${column}`;
+      const placeholders = selected.map(() => "?").join(",");
+      const rows = db.prepare(`select id, ${optional("thread_source")}, ${optional("agent_role")}, ${optional("is_pinned")} from threads where id in (${placeholders}) limit ?`)
+        .all(...selected, selected.length) as Array<{ id: string; thread_source?: unknown; agent_role?: unknown; is_pinned?: unknown }>;
+      const edgeColumns = new Set((db.prepare("pragma table_info(thread_spawn_edges)").all() as Array<{ name?: string }>).map(row => row.name));
+      const parents = new Map<string, string>();
+      if (edgeColumns.has("child_thread_id") && edgeColumns.has("parent_thread_id")) {
+        const edges = db.prepare(`select child_thread_id, parent_thread_id from thread_spawn_edges where child_thread_id in (${placeholders}) limit ?`)
+          .all(...selected, selected.length) as Array<{ child_thread_id?: unknown; parent_thread_id?: unknown }>;
+        for (const edge of edges) {
+          if (typeof edge.child_thread_id === "string" && typeof edge.parent_thread_id === "string" && edge.parent_thread_id !== edge.child_thread_id) parents.set(edge.child_thread_id, edge.parent_thread_id);
+        }
+      }
+      for (const row of rows) {
+        result.set(row.id, {
+          ...(parents.has(row.id) ? { parentThreadId: parents.get(row.id) } : {}),
+          ...(typeof row.thread_source === "string" ? { threadSource: row.thread_source } : {}),
+          ...(typeof row.agent_role === "string" ? { agentRole: row.agent_role } : {}),
+          ...(typeof row.is_pinned === "number" ? { pinned: row.is_pinned === 1 } : {}),
+        });
+      }
+      return { available: true, metadata: result };
+    } catch {
+      // Optional enrichment cannot invalidate an already observed native page.
+      // No stale cache/global scan substitutes for an unreadable index.
+      return { available: false, metadata: new Map() };
+    } finally { db?.close(); }
+  }
+
   async getNativeAutomationMetadata(id: string): Promise<CodexNativeAutomationMetadata> {
     const session = await this.getSessionObservation(id);
     const automationStop = session?.meta?.automationStop as CodexAutomationStop | undefined;
