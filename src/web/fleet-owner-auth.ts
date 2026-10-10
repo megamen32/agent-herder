@@ -1,11 +1,15 @@
 import { request as httpsRequest, type RequestOptions } from 'node:https';
 import type { ClientRequest, IncomingMessage } from 'node:http';
+import { hostname } from 'node:os';
 
 type RequestBoundary = (options: RequestOptions, response: (message: IncomingMessage) => void) => ClientRequest;
 
 // Dependency injection is limited to the request boundary for isolated units.
 // Public verification always uses the fixed, CA-validated HAOS route below.
 export function createFleetOwnerCookieVerifier(request: RequestBoundary): (cookie: string) => Promise<boolean> {
+  // The mobile M1 is reached by its existing reverse SSH outside the home LAN.
+  // Its verifier uses the same signed owner authority at the normal public TLS URL.
+  const mobile = hostname() === 'MacBook-Pro-User.local';
   return async (cookie: string): Promise<boolean> => {
     if (typeof cookie !== 'string' || Buffer.byteLength(cookie) > 16384 || /[\r\n]/.test(cookie)) return false;
     return new Promise<boolean>(resolve => {
@@ -26,20 +30,20 @@ export function createFleetOwnerCookieVerifier(request: RequestBoundary): (cooki
       const deadline = setTimeout(() => finish(false), 3000);
       try {
         pending = request({
-          hostname: 'auth.bezrabotnyi.com', port: 8443,
+          hostname: 'auth.bezrabotnyi.com', port: mobile ? 443 : 8443,
           servername: 'auth.bezrabotnyi.com', rejectUnauthorized: true,
           // Do not reuse another caller's pooled connection to this TLS name.
           agent: false,
           method: 'GET', path: '/check',
           headers: { Host: 'auth.bezrabotnyi.com', Cookie: cookie },
-          lookup: (_hostname, options, callback) => {
+          ...(mobile ? {} : { lookup: (_hostname, options, callback) => {
             // Match native DNS's asynchronous contract. A synchronous connect
             // refusal on Darwin must wait until TLS/request error handlers exist.
             queueMicrotask(() => {
               if (options.all) callback(null, [{ address: '192.168.2.101', family: 4 }]);
               else callback(null, '192.168.2.101', 4);
             });
-          },
+          } } as Pick<RequestOptions, 'lookup'>),
         }, message => {
           message.on('error', () => finish(false));
           if (settled) { message.destroy(); return; }

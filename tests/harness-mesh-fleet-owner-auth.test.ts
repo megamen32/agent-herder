@@ -2,6 +2,8 @@ import { EventEmitter } from 'node:events';
 import type { ClientRequest, IncomingMessage } from 'node:http';
 import type { RequestOptions } from 'node:https';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { hostname } from 'node:os';
+vi.mock('node:os', () => ({hostname: vi.fn(() => 'roomhacker-server-100')}));
 import { createFleetOwnerCookieVerifier } from '../src/web/fleet-owner-auth.js';
 
 function fixture() {
@@ -24,7 +26,7 @@ function fixture() {
 }
 
 describe('HAOS owner cookie gate (fast unit; expected 1s, maximum 15s)', () => {
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => { vi.useRealTimers(); vi.mocked(hostname).mockReturnValue('roomhacker-server-100'); });
 
   it('pins the physical TLS route, certificate identity and GET without redirect machinery', async () => {
     const f = fixture();
@@ -45,6 +47,16 @@ describe('HAOS owner cookie gate (fast unit; expected 1s, maximum 15s)', () => {
     expect(await pending).toBe(true);
     expect(f.req.end).toHaveBeenCalledOnce();
     expect(f.req.destroy).toHaveBeenCalledOnce(); expect(res.destroy).toHaveBeenCalledOnce();
+  });
+
+  it('the actual mobile M1 uses the same public TLS owner authority outside the home LAN', async () => {
+    vi.mocked(hostname).mockReturnValue('MacBook-Pro-User.local');
+    const f = fixture(); vi.mocked(hostname).mockReturnValue('roomhacker-server-100');
+    const pending = f.verify('session=fixture'); const options = f.request.mock.calls[0][0];
+    expect(options).toMatchObject({hostname:'auth.bezrabotnyi.com',port:443,servername:'auth.bezrabotnyi.com',rejectUnauthorized:true,agent:false});
+    expect(options.lookup).toBeUndefined();
+    const res = f.response(); res.complete = true; res.emit('end');
+    expect(await pending).toBe(true);
   });
 
   it.each([[401, 'roomhacker'], [200, 'roomhacker'], [302, 'roomhacker'],

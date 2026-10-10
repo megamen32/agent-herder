@@ -2,6 +2,8 @@ import {EventEmitter} from 'node:events';
 import type {ClientRequest,IncomingMessage} from 'node:http';
 import type {RequestOptions} from 'node:https';
 import {afterEach,describe,expect,it,vi} from 'vitest';
+import {hostname} from 'node:os';
+vi.mock('node:os',()=>({hostname:vi.fn(()=> 'roomhacker-server-100')}));
 import {FleetOwnerHttpTransport} from '../src/mesh/fleet-owner-http-transport.js';
 
 const target44='mcp:shell:server-44:AgentHerder',target88='mcp:shell:roomhacker-server-88:AgentHerder';
@@ -41,7 +43,7 @@ function fixture(){
  const transport=new FleetOwnerHttpTransport({ownerContext:()=>context},request);
  return {transport,calls,request,respond,setContext:(c:Context|undefined)=>{context=c;},setHandler:(h:typeof handler)=>{handler=h;},hold:()=>{held=true;},release:()=>{held=false;}};
 }
-afterEach(()=>vi.useRealTimers());
+afterEach(()=>{vi.useRealTimers();vi.mocked(hostname).mockReturnValue('roomhacker-server-100');});
 describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=>{
  it('uses only approved TLS aliases/physicalHAOS and required own Origin, with no bearer/pooled socket',async()=>{
   const f=fixture();expect(await f.transport.schema(target44)).toEqual({tools:[{name:'create_session'}]});
@@ -52,6 +54,18 @@ describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=
   const cb=vi.fn();(first.lookup as Function)('agent44.bezrabotnyi.com',{},cb);expect(cb).not.toHaveBeenCalled();await Promise.resolve();expect(cb).toHaveBeenCalledWith(null,'192.168.2.101',4);
   expect(f.calls.every(c=>c.req.destroy.mock.calls.length===1&&c.res.destroy.mock.calls.length===1)).toBe(true);
   const discovery:any=await f.transport.discover();expect(discovery.servers).toHaveLength(10);expect(discovery.servers.every((s:any)=>s.status==='configured')).toBe(true);
+ });
+ it('a mobile M1 caller uses existing public peer TLS aliases without a LAN-only DNS pin',async()=>{
+  vi.mocked(hostname).mockReturnValue('MacBook-Pro-User.local');const f=fixture();
+  vi.mocked(hostname).mockReturnValue('roomhacker-server-100');await f.transport.schema(target44);
+  expect(f.calls[0].options).toMatchObject({hostname:'agent44.bezrabotnyi.com',port:443,servername:'agent44.bezrabotnyi.com',rejectUnauthorized:true,headers:{Host:'agent44.bezrabotnyi.com',Origin:'https://agent44.bezrabotnyi.com'}});
+  expect(f.calls[0].options.lookup).toBeUndefined();
+ });
+ it('LAN callers reach the mobile M1 through its existing public alias and still require exact native identity',async()=>{
+  const f=fixture();f.setHandler(c=>c.body.method==='initialize'?{protocolVersion:'2025-11-25',capabilities:{}}:c.body.method==='tools/list'?{tools:[]}:{structuredContent:{hostId:'MacBook-Pro-User.local',nativeUser:'user'}});
+  await f.transport.schema('mcp:shell:MacBook-Pro-User.local:AgentHerder');
+  expect(f.calls[0].options).toMatchObject({hostname:'agent-mac-m1.bezrabotnyi.com',port:443,servername:'agent-mac-m1.bezrabotnyi.com',rejectUnauthorized:true,headers:{Origin:'https://agent-mac-m1.bezrabotnyi.com'}});
+  expect(f.calls[0].options.lookup).toBeUndefined();
  });
  it('captures cookie before await and isolates sessions by generation and host',async()=>{
   const f=fixture();const first=f.transport.schema(target44);

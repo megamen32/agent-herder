@@ -1,6 +1,7 @@
 import {request as httpsRequest,type RequestOptions} from 'node:https';
 import type {ClientRequest,IncomingMessage,IncomingHttpHeaders} from 'node:http';
 import {randomUUID} from 'node:crypto';
+import {hostname} from 'node:os';
 import {unwrapResult} from './protocol.js';
 import type {GptAdminTransport} from './gptadmin.js';
 
@@ -26,6 +27,7 @@ const record=(value:unknown):Record<string,any>|undefined=>value!==null&&typeof 
 export class FleetOwnerHttpTransport implements GptAdminTransport {
  private readonly connections=new Map<string,Map<string,Connection>>();
  private inflight=0;private sequence=0;
+ private readonly mobileActor=hostname()==='MacBook-Pro-User.local';
  constructor(private readonly options:FleetOwnerHttpOptions,private readonly request:RequestBoundary=httpsRequest){}
  private context():FleetOwnerHttpContext {
   const supplied=this.options.ownerContext();
@@ -72,10 +74,13 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
    const abort=()=>finish(new Error('owner_http_deadline'));
    signal.addEventListener('abort',abort,{once:true});
    try{
-    req=this.request({hostname:state.peer.alias,port:8443,servername:state.peer.alias,rejectUnauthorized:true,agent:false,method,path,
+    // Fixed mobile host/actor only: use existing public ingress and reverse SSH.
+    // Route selection precedes the operation; failed mutations are never retried.
+    const mobile=this.mobileActor||state.peer.hostId==='MacBook-Pro-User.local';
+    req=this.request({hostname:state.peer.alias,port:mobile?443:8443,servername:state.peer.alias,rejectUnauthorized:true,agent:false,method,path,
      headers:{Host:state.peer.alias,Origin:`https://${state.peer.alias}`,Cookie:state.context.cookie,
       Accept:'application/json, text/event-stream',...(method==='POST'?{'Content-Type':'application/json','MCP-Protocol-Version':'2025-11-25',...(state.sessionId?{'Mcp-Session-Id':state.sessionId}:{})}:{} )},
-     lookup:(_hostname,options,callback)=>{queueMicrotask(()=>{if(options.all)callback(null,[{address:'192.168.2.101',family:4}]);else callback(null,'192.168.2.101',4);});},
+     ...(mobile?{}:{lookup:(_hostname,options,callback)=>{queueMicrotask(()=>{if(options.all)callback(null,[{address:'192.168.2.101',family:4}]);else callback(null,'192.168.2.101',4);});}} as Pick<RequestOptions,'lookup'>),
     },message=>{
      message.on('error',()=>finish(new Error('owner_http_response_failed')));
      if(finished){message.destroy();return;}res=message;
