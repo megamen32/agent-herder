@@ -36,6 +36,7 @@ import plistlib
 import os
 from pathlib import Path
 import re
+import select
 import shlex
 import shutil
 import signal
@@ -43,6 +44,7 @@ import socket
 import stat
 import subprocess
 import sys
+import threading
 import time
 from xml.parsers.expat import ExpatError
 
@@ -579,6 +581,71 @@ def stop_owned(child,observed,timeout=10):
 def atomic_json(path,value):
     temporary=path.with_suffix('.tmp');temporary.write_text(json.dumps(value,separators=(',',':'))+'\n');os.chmod(temporary,0o600);os.replace(temporary,path)
 
+class ChildStderrDiagnostic:
+    """One owned nonblocking reader; only fixed diagnostics ever leave RAM."""
+    TAIL_LIMIT=4096
+    SAFE_JS_FILES=('index.js','session-supervisor.js','human-stop-store.js',
+        'web/server.js','web/fleet-wiring.js','web/fleet-owner-auth.js',
+        'mesh/fleet-owner-http-transport.js','mesh/fleet-direct-transport.js',
+        'mesh/fleet-service.js','mesh/fleet-api.js','mesh/fleet-node.js',
+        'mcp-tools/handlers.js','adapters/codex-app-server.js','adapters/codex.js',
+        'adapters/opencode.js','adapters/zcode.js')
+
+    def __init__(self,pipe,dist_root=None):
+        self.pipe=pipe;self._stop=threading.Event();self._tail=b'';self._frames=[]
+        self._summary=('unknown',0,hashlib.sha256().hexdigest(),False,False,())
+        self._frame_pattern=None
+        if dist_root is not None:
+            files=b'|'.join(re.escape(name.encode()) for name in self.SAFE_JS_FILES)
+            prefix=re.escape(os.fsencode(dist_root))
+            self._frame_pattern=re.compile(rb'^\s*at [^\r\n]*?(?:file://)?'+prefix+
+                rb'/(?P<file>'+files+rb'):(?P<line>[0-9]{1,7}):(?P<column>[0-9]{1,7})(?=[)\s]|$)',re.MULTILINE)
+        try:
+            os.set_blocking(pipe.fileno(),False)
+            self._thread=threading.Thread(target=self._read,name='owned-herder-stderr',daemon=True)
+            self._thread.start()
+        except (OSError,ValueError,RuntimeError):
+            pipe.close();raise Refused('stderr_observation_failed') from None
+
+    def _read(self):
+        digest=hashlib.sha256();count=0;kind='unknown';complete=failed=False
+        try:
+            while not self._stop.is_set():
+                if not select.select([self.pipe.fileno()],[],[],.05)[0]:continue
+                try:chunk=os.read(self.pipe.fileno(),4096)
+                except BlockingIOError:continue
+                if not chunk:complete=True;break
+                count+=len(chunk);digest.update(chunk);window=self._tail+chunk
+                lower=window.lower()
+                if b'javascript heap out of memory' in lower:kind='heap_oom'
+                elif b'panicked at' in lower and kind!='heap_oom':kind='panic'
+                if self._frame_pattern:
+                    for match in self._frame_pattern.finditer(window):
+                        frame=(Path(match['file'].decode('ascii')).name,int(match['line']),int(match['column']))
+                        if frame[1]>0 and frame[2]>0 and frame not in self._frames and len(self._frames)<8:self._frames.append(frame)
+                self._tail=window[-self.TAIL_LIMIT:]
+                self._summary=(kind,count,digest.hexdigest(),False,False,tuple(self._frames))
+        except Exception:
+            failed=True # Never print exceptions containing child output/paths.
+        finally:
+            self._tail=b''
+            try:self.pipe.close()
+            except (OSError,ValueError):failed=True
+            self._summary=(kind,count,digest.hexdigest(),complete,failed,tuple(self._frames))
+
+    @property
+    def failed(self):return self._summary[4]
+
+    def close(self,deadline):
+        # Briefly allow EOF after the child exits, but never await an inherited
+        # writer indefinitely. Only the reader closes its fd, avoiding fd reuse.
+        self._thread.join(timeout=min(.1,max(0,deadline-time.monotonic())))
+        self._stop.set();self._thread.join(timeout=max(0,deadline-time.monotonic()))
+        kind,count,digest,complete,failed,frames=self._summary
+        return {'stderrClass':kind,'stderrBytes':count,'stderrSha256':digest,
+            'stderrComplete':complete,'stderrReadFailed':failed,'stderrReaderStopped':not self._thread.is_alive(),
+            'stderrFrames':[{'file':name,'line':line,'column':column} for name,line,column in frames]}
+
 def main():
     os.umask(0o077);base=Path.home()/'.local/share/agent-herder/fleet'
     if len(sys.argv)==3 and sys.argv[1]=='--lint-plist':
@@ -594,12 +661,15 @@ def main():
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:raise Refused('owned_watchdog_already_running') from None
         atomic_json(state/'adapters.json',{'version':1,'enabled':{name:env['ENABLE_'+name.upper().replace('-','_')]=='true' for name in ('codex','zcode','opencode','claude','qoder','hermes','fast-agent','chatgpt')}})
-        child=subprocess.Popen([str(node),str(entry)],cwd=entry.parent.parent,env=env,start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        child=subprocess.Popen([str(node),str(entry)],cwd=entry.parent.parent,env=env,start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
         started=previous=time.monotonic();previous_cpu={};cpu_samples=[];observed=[];sample={};soft=None;reason='node_exit';failed=[]
+        stderr_reader=None
         def interrupted(*_):raise KeyboardInterrupt
         signal.signal(signal.SIGTERM,interrupted);signal.signal(signal.SIGINT,interrupted)
         try:
+            stderr_reader=ChildStderrDiagnostic(child.stderr,entry.parent)
             while child.poll() is None:
+                if stderr_reader.failed:raise Refused('stderr_observation_failed')
                 if 'codex' in config['harnesses']:verify_codex_owner(config)
                 observed=read_processes(child.pid);now=time.monotonic();elapsed=now-started
                 if not observed:raise Refused('owned_group_unobserved')
@@ -621,10 +691,16 @@ def main():
         except (OSError,ValueError,Refused,subprocess.SubprocessError) as error:
             reason='observation_failed';failed=[str(error) if isinstance(error,Refused) else type(error).__name__]
         finally:
-            try:stop_owned(child,observed)
+            cleanup_deadline=time.monotonic()+10
+            try:stop_owned(child,observed,timeout=max(0,cleanup_deadline-time.monotonic()))
             except (OSError,Refused,subprocess.SubprocessError):reason='cleanup_unverified'
+            diagnostic=stderr_reader.close(cleanup_deadline) if stderr_reader else {
+                'stderrClass':'unknown','stderrBytes':0,'stderrSha256':hashlib.sha256().hexdigest(),
+                'stderrComplete':False,'stderrReadFailed':True,'stderrReaderStopped':True,'stderrFrames':[]}
+            if stderr_reader and not diagnostic['stderrReaderStopped']:reason='cleanup_unverified'
             atomic_json(state/'last-run.json',{'reason':reason,'sourceSha':config['sourceSha'],'hostId':config['hostId'],'nodePid':child.pid,
-                'elapsedSeconds':round(time.monotonic()-started,2),'sample':sample,'violations':failed,'enforcement':'darwin_watchdog','swapGuarantee':False})
+                'elapsedSeconds':round(time.monotonic()-started,2),'sample':sample,'violations':failed,'childExitCode':child.poll(),
+                **diagnostic,'enforcement':'darwin_watchdog','swapGuarantee':False})
         return 0 if reason=='operator_stop' or reason=='node_exit' and child.returncode==0 else 78
 
 if __name__=='__main__':

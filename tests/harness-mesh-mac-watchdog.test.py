@@ -529,6 +529,93 @@ class MacWatchdogTests(unittest.TestCase):
             with self.assertRaisesRegex(w.Refused,'owned_cleanup_deadline'):w.stop_owned(child,rows)
             self.assertLessEqual(clock['now'],10);self.assertLess(kill.call_count,16)
 
+    def test_owned_stderr_drains_beyond_pipe_capacity_and_never_exposes_raw_text(self):
+        import sys,time
+        marker=b'JavaScript heap out of memory';secret=b'PRIVATE_FIXTURE_DO_NOT_STORE'
+        payload=b'x'*(4096-12)+marker+secret+b'x'*(1024*1024)
+        script='import os,sys; data='+repr(payload)+';\nfor pos in range(0,len(data),4096):os.write(2,data[pos:pos+4096])\nsys.exit(7)'
+        # Payload is pipe data, never a real native writer/credential. Avoid argv length limits.
+        child=w.subprocess.Popen([sys.executable,'-I','-S','-B','-c','import sys;exec(sys.stdin.read())'],stdin=w.subprocess.PIPE,stdout=w.subprocess.DEVNULL,stderr=w.subprocess.PIPE,start_new_session=True)
+        reader=None
+        try:
+            reader=w.ChildStderrDiagnostic(child.stderr)
+            child.stdin.write(script.encode());child.stdin.close()
+            self.assertEqual(child.wait(timeout=3),7)
+            diagnostic=reader.close(time.monotonic()+1)
+            self.assertEqual(diagnostic['stderrClass'],'heap_oom')
+            self.assertEqual(diagnostic['stderrBytes'],len(payload))
+            self.assertEqual(diagnostic['stderrSha256'],hashlib.sha256(payload).hexdigest())
+            self.assertTrue(diagnostic['stderrComplete']);self.assertTrue(diagnostic['stderrReaderStopped'])
+            self.assertTrue(child.stderr.closed);self.assertLessEqual(reader.TAIL_LIMIT,65536)
+            self.assertNotIn(secret.decode(),json.dumps(diagnostic));self.assertNotIn(marker.decode(),json.dumps(diagnostic))
+        finally:
+            if child.poll() is None:child.kill();child.wait(timeout=1)
+            if reader:reader.close(time.monotonic()+1)
+
+    def test_stderr_fixed_panic_and_unknown_classes(self):
+        import time
+        for data,expected in [(b"thread 'main' panicked at PRIVATE_FILE",'panic'),(b'ordinary private dialogue', 'unknown')]:
+            read,write=os.pipe();pipe=os.fdopen(read,'rb');os.write(write,data);os.close(write)
+            reader=w.ChildStderrDiagnostic(pipe);result=reader.close(time.monotonic()+1)
+            self.assertEqual(result['stderrClass'],expected);self.assertTrue(result['stderrComplete'])
+            self.assertNotIn('PRIVATE_FILE',json.dumps(result));self.assertTrue(pipe.closed)
+
+    def test_stderr_cleanup_does_not_wait_for_unknown_inherited_writer(self):
+        import time
+        read,write=os.pipe();pipe=os.fdopen(read,'rb');reader=w.ChildStderrDiagnostic(pipe)
+        try:
+            began=time.monotonic();result=reader.close(began+.3)
+            self.assertLess(time.monotonic()-began,.4)
+            self.assertTrue(result['stderrReaderStopped']);self.assertFalse(result['stderrComplete']);self.assertTrue(pipe.closed)
+            os.fstat(write) # Closing our reader never closes/adopts the other fd.
+        finally:os.close(write);reader.close(time.monotonic()+1)
+
+    def test_stderr_frames_are_fixed_owned_basenames_and_never_paths_or_dialogue(self):
+        import time
+        root=Path('/fixture/releases/owned/dist')
+        data=(b'Error: PRIVATE_DIALOGUE https://private.invalid/token\n'
+            b'    at Example.run (file:///fixture/releases/owned/dist/mesh/fleet-owner-http-transport.js:12:34)\n'
+            b'    at foreign (file:///foreign/dist/web/server.js:99:22)\n'
+            b'    at credential (file:///fixture/releases/owned/dist/secret-token.js:1:2)\n'
+            b'    at Example.run (file:///fixture/releases/owned/dist/mesh/fleet-owner-http-transport.js:12:34)\n')
+        read,write=os.pipe();pipe=os.fdopen(read,'rb');os.write(write,data);os.close(write)
+        reader=w.ChildStderrDiagnostic(pipe,root);result=reader.close(time.monotonic()+1)
+        self.assertEqual(result['stderrFrames'],[{'file':'fleet-owner-http-transport.js','line':12,'column':34}])
+        for value in ('PRIVATE_DIALOGUE','private.invalid','/fixture','/foreign','secret-token'):self.assertNotIn(value,json.dumps(result))
+
+    def test_stderr_expired_cleanup_is_bounded_and_never_claims_unknown_thread_stopped(self):
+        import time
+        read,write=os.pipe();pipe=os.fdopen(read,'rb');reader=w.ChildStderrDiagnostic(pipe)
+        try:
+            # Deterministic held reader boundary, no foreign thread/process signal.
+            with patch.object(reader._thread,'join') as join,patch.object(reader._thread,'is_alive',return_value=True):
+                result=reader.close(time.monotonic()-1)
+                self.assertFalse(result['stderrReaderStopped']);self.assertFalse(result['stderrComplete'])
+                self.assertTrue(all(call.kwargs['timeout']==0 for call in join.call_args_list))
+        finally:os.close(write);reader.close(time.monotonic()+1)
+
+    def test_main_records_child_exit_code_and_sanitized_stderr_only(self):
+        import sys
+        with tempfile.TemporaryDirectory() as folder:
+            home=Path(folder);base=home/'.local/share/agent-herder/fleet';state=home/'state';temp=base/'run/tmp'
+            config={'sourceSha':'a'*40,'hostId':'fixture','harnesses':['codex']}
+            env={};env.update({'ENABLE_'+name.upper().replace('-','_'):'false' for name in ('codex','zcode','opencode','claude','qoder','hermes','fast-agent','chatgpt')})
+            native_popen=w.subprocess.Popen;children=[]
+            def fake_child(*args,**kwargs):
+                self.assertEqual(kwargs['stderr'],w.subprocess.PIPE)
+                child=native_popen([sys.executable,'-I','-S','-B','-c','import os,sys;os.write(2,b"PRIVATE_FIXTURE");sys.exit(7)'],stdout=w.subprocess.DEVNULL,stderr=w.subprocess.PIPE)
+                original_wait=child.wait
+                # First census sees the actual exited child only after its owned reader starts.
+                child.poll=lambda:original_wait(timeout=2)
+                children.append(child);return child
+            with patch.object(w.Path,'home',return_value=home),patch.object(w.sys,'argv',['watchdog']),patch.object(w,'json_file',return_value=config),patch.object(w,'prepare',return_value=(w.Policy('Macmini6,2'),Path('/fake/node'),base/'index.js',state,temp,env)),patch.object(w.subprocess,'Popen',side_effect=fake_child),patch.object(w.signal,'signal'),patch.object(w,'read_processes',return_value=[]):
+                self.assertEqual(w.main(),78)
+            report=json.loads((state/'last-run.json').read_text())
+            self.assertEqual(report['childExitCode'],7);self.assertEqual(report['reason'],'node_exit')
+            self.assertEqual(report['stderrClass'],'unknown');self.assertEqual(report['stderrBytes'],len(b'PRIVATE_FIXTURE'))
+            self.assertTrue(report['stderrComplete']);self.assertTrue(children[0].stderr.closed)
+            self.assertNotIn('PRIVATE_FIXTURE',(state/'last-run.json').read_text())
+
     def test_launchagent_has_no_restart_loop_or_user_wide_limits(self):
         text=(ROOT/'deploy/fleet/mac-node.plist.in').read_text().replace('__HOME__','/Users/fixture').replace('__PYTHON_BIN__','/usr/bin/python3')
         value=plistlib.loads(text.encode())
