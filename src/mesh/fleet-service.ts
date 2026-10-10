@@ -11,6 +11,7 @@ export class FleetCabinetService {
  private readonly transports=new Map<string,GptAdminTransport>();
  private readonly cache=new Map<string,Cached>();
  private pending?:Promise<FleetView>;
+ private sessionReads=0;
  private lastReadAt:number|null=null;
  private readRevision=0;
  private readonly journal?:FleetCreateJournal;
@@ -18,6 +19,13 @@ export class FleetCabinetService {
   this.deps={...deps,scope:Object.freeze({...deps.scope}),hosts:deps.hosts.map(h=>Object.freeze({...h}))};
   if(!deps.hosts.length||deps.hosts.length>5||new Set(deps.hosts.map(h=>h.hostId)).size!==deps.hosts.length)throw new Error('Expected 1..5 unique fleet hosts');
   if(deps.journalPath)this.journal=new FleetCreateJournal(this.deps.journalPath!,this.deps.scope);
+ }
+ get canReadSession(){return typeof this.transport(this.deps.hosts[0]!.hostId).readSession==='function';}
+ async readSession(address:{hostId:string;harness:string;nativeSessionId:string}):Promise<unknown>{
+  if(!this.deps.hosts.some(h=>h.hostId===address.hostId)||!fleetHarnesses.includes(address.harness as any)||!validText(address.nativeSessionId,512))throw new Error('fleet_session_invalid');
+  const transport=this.transport(address.hostId);if(!transport.readSession||this.sessionReads>=3)throw new Error('fleet_session_read_unavailable');
+  this.sessionReads++;
+  try{return await transport.readSession(`mcp:shell:${address.hostId}:AgentHerder`,address.harness,address.nativeSessionId);}finally{this.sessionReads--;}
  }
  get browserScopeKey(){return createHash('sha256').update(JSON.stringify([this.deps.scope.profileId,this.deps.scope.userId])).digest('hex');}
  private now(){return (this.deps.now??Date.now)();}

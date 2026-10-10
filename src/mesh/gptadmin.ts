@@ -6,6 +6,8 @@ import {inventoryHarnesses} from "./inventory.js";
 /** Supplied by the authenticated consumer; mesh does not mint tokens or bypass profiles. */
 export interface GptAdminTransport {
   discover():Promise<unknown>;
+  /** Optional owner-direct read; no session mutation or token mint. */
+  readSession?(target:string,harness:string,sessionId:string):Promise<unknown>;
   schema(target:string):Promise<unknown>;
   call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>;
 }

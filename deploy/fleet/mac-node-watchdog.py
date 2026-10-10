@@ -534,7 +534,7 @@ def prepare(base,config,artifact_cache=None):
         env['ENABLE_'+name.upper().replace('-','_')]='true' if name in harnesses else 'false'
     env.update(native,NODE_OPTIONS='--max-old-space-size=192',UV_THREADPOOL_SIZE='1',
         AGENT_HERDER_SESSION_OBSERVATION_INTERVAL_MS='30000',
-        AGENT_HERDER_WEB_HOST='127.0.0.1',AGENT_HERDER_WEB_PORT=str(config.get('webPort',18789)),
+        AGENT_HERDER_WEB_HOST='0.0.0.0',AGENT_HERDER_WEB_PORT=str(config.get('webPort',18789)),
         AGENT_HERDER_ADAPTER_REGISTRY=str(state/'adapters.json'),AGENT_HERDER_AUTOPILOT_STATE_DIR=str(state/'autopilot'),
         AGENT_HERDER_HUMAN_REQUEST_STORE=str(state/'human-requests.json'),AGENT_HERDER_SINGLETON_LOCK=str(base/'run/node.lock'),TMPDIR=str(temp))
     port=config.get('webPort',18789)

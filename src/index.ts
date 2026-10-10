@@ -27,7 +27,7 @@ import { AnthropicMiniMaxSummarizer, CacheHandoffService, FastAgentMiniMaxSummar
 import { acquireAgentHerderSingleton } from "./singleton.js";
 import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
 import { createWebServer } from "./web/server.js";
-import { createConfiguredFleetApiHandler } from "./web/fleet-wiring.js";
+import { createConfiguredFleetApiHandler, createManagedFleetHttpGuard, isManagedFleetNode } from "./web/fleet-wiring.js";
 import { registerFleetNodeTools } from "./mesh/fleet-node.js";
 import { createConfiguredBrowserWakeService } from "./browser-wake.js";
 import { coordinationNotes } from "./coordination-notes.js";
@@ -677,7 +677,7 @@ async function main() {
   if (webPort) {
     const host = process.env.AGENT_HERDER_WEB_HOST || "127.0.0.1";
     const httpToken = process.env.AGENT_HERDER_HTTP_TOKEN?.trim();
-    if (!isLoopbackHost(host) && !httpToken) {
+    if (!isLoopbackHost(host) && !httpToken && !isManagedFleetNode()) {
       throw new Error("AGENT_HERDER_HTTP_TOKEN is required when AGENT_HERDER_WEB_HOST is non-local");
     }
     if (isQuotaLensEnabled()) startQuotaLensSampler();
@@ -694,6 +694,7 @@ async function main() {
       sessionObservationManagedExternally: true,
       mcpAuthToken: httpToken,
       fleetApiHandler: createConfiguredFleetApiHandler(),
+      fleetHttpGuard: createManagedFleetHttpGuard(httpToken),
       autopilotPolicyStore,
       autopilotSessionStore,
       sessionAutostartStore,

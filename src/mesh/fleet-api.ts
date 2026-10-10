@@ -7,16 +7,19 @@ const createSchema=z.object({hostId:z.string().min(1).max(512),harness:z.enum(['
 export function createFleetApiHandler(resolve:FleetCabinetService|((request:IncomingMessage)=>FleetCabinetService|Promise<FleetCabinetService>),localHostId=hostname()){
  return async(request:IncomingMessage,response:ServerResponse):Promise<boolean>=>{
   const url=new URL(request.url??'/', 'http://localhost');
-  if(!['/api/fleet/hosts','/api/fleet/sessions','/api/fleet/create'].includes(url.pathname))return false;
+  if(!['/api/fleet/hosts','/api/fleet/sessions','/api/fleet/create','/api/fleet/session'].includes(url.pathname))return false;
   const send=(status:number,value:unknown)=>{response.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify(value));};
   try{
    const service=typeof resolve==='function'?await resolve(request):resolve;
    if(request.method==='GET'&&url.pathname==='/api/fleet/hosts'){
-    const view=await service.snapshot({refresh:url.searchParams.get('refresh')==='1'});send(200,{hosts:view.hosts,complete:view.complete,defaultHostId:localHostId,scopeKey:service.browserScopeKey});return true;
+    const view=await service.snapshot({refresh:url.searchParams.get('refresh')==='1'});send(200,{hosts:view.hosts,complete:view.complete,defaultHostId:localHostId,scopeKey:service.browserScopeKey,sessionReadSupported:service.canReadSession});return true;
    }
    if(request.method==='GET'&&url.pathname==='/api/fleet/sessions'){
     const value=url.searchParams.get('limit');const limit=value===null?12:Number(value);
     const view=await service.snapshot({hostId:url.searchParams.get('hostId')??undefined,limit});send(200,view);return true;
+   }
+   if(request.method==='GET'&&url.pathname==='/api/fleet/session'){
+    send(200,await service.readSession({hostId:url.searchParams.get('hostId')??'',harness:url.searchParams.get('harness')??'',nativeSessionId:url.searchParams.get('sessionId')??''}));return true;
    }
    if(request.method==='POST'&&url.pathname==='/api/fleet/create'){
     const chunks:Buffer[]=[];let bytes=0;let timer:ReturnType<typeof setTimeout>|undefined;

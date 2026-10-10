@@ -5,6 +5,7 @@ import {join} from "node:path";
 import type {IncomingMessage, ServerResponse} from "node:http";
 import {FleetCabinetService} from "../mesh/fleet-service.js";
 import {createFleetApiHandler} from "../mesh/fleet-api.js";
+import {verifyFleetOwnerCookie} from "./fleet-owner-auth.js";
 import {FleetDirectTransport} from "../mesh/fleet-direct-transport.js";
 import {FleetGptAdminTransport} from "../mesh/fleet-gptadmin-transport.js";
 import {unwrapResult} from "../mesh/protocol.js";
@@ -37,7 +38,12 @@ export function createConfiguredFleetApiHandler(options: {
   const configPath = options.clientConfigPath ?? join(homedir(), ".zcode", "cli", "config.json");
   const stateRoot = options.stateRoot ?? join(homedir(), ".local", "state", "agent-herder", "fleet");
   const approvedGeneration = options.approvedCredentialGeneration ?? process.env.AGENT_HERDER_FLEET_CREDENTIAL_PIN;
-  let directService:FleetCabinetService|undefined;
+  const directServices=new Map<string,FleetCabinetService>();
+  const direct=(principal:string,realm:string)=>{
+    const key=realm+':'+principal;let service=directServices.get(key);
+    if(!service){if(directServices.size>=2)throw new Error('fleet_direct_scope_limit');service=new FleetCabinetService({hosts:fleetHosts,scope:{profileId:key,userId:principal},journalPath:realm==='ssh-native-owner'?join(stateRoot,'direct-owner-create.json'):join(stateRoot,'direct-'+createHash('sha256').update(key).digest('hex')+'-create.json'),transportFactory:()=>new FleetDirectTransport()});directServices.set(key,service);}
+    return service;
+  };
   let active: Active | undefined;
   let connecting: Promise<Active> | undefined;
 
@@ -110,8 +116,16 @@ export function createConfiguredFleetApiHandler(options: {
       if (isDirectOwnerRequest(request)) {
         const localUser=userInfo().username;
         if (localUser!==userId) return reject(403,"Локальный владелец не совпадает");
-        directService??=new FleetCabinetService({hosts:fleetHosts,scope:{profileId:'ssh-native-owner:'+localUser,userId:localUser},journalPath:join(stateRoot,'direct-owner-create.json'),transportFactory:()=>new FleetDirectTransport()});
-        return createFleetApiHandler(directService,hostname())(request,response);
+        return createFleetApiHandler(direct(localUser,'ssh-native-owner'),hostname())(request,response);
+      }
+      // Each managed remote cabinet uses its already-authorized owner SSH lanes;
+      // cookie verification stays on independent HAOS, never on a caller-supplied identity header.
+      if(hostname()!=='roomhacker-server-100'&&isManagedPublicHost(request)&&!request.headers.authorization){
+        if(userId!==userInfo().username)return reject(403,"Для этого владельца нет профиля флота");
+        if(!await verifiedPublicOwner(request))return reject(401,"Войдите в кабинет владельца флота");
+        if(!validPublicOrigin(request))return reject(403,"Создание доступно из своего кабинета");
+        if(path==='/api/fleet/access'){if(request.method!=='GET')return reject(405,"Проверка доступа принимает только чтение");response.writeHead(204,{'Cache-Control':'no-store'});response.end();return true;}
+        return createFleetApiHandler(direct('roomhacker','haos-sso-owner'),hostname())(request,response);
       }
       const binding = await readBinding();
       const configuredBearer = Object.entries(binding.headers).find(([key]) => key.toLowerCase() === "authorization")![1];
@@ -161,4 +175,35 @@ export function isDirectOwnerRequest(request:IncomingMessage):boolean{
   try{const origin=new URL(request.headers.origin??'');if(origin.protocol!=='http:'||origin.host!==host.host)return false;}catch{return false;}
  }
  return true;
+}
+
+const publicOwnerChecks=new WeakMap<IncomingMessage,Promise<boolean>>();
+export function isManagedFleetNode():boolean{return fleetHosts.some(h=>h.hostId===hostname()&&h.nativeUser===userInfo().username);}
+export function isManagedPublicHost(request:IncomingMessage):boolean{
+ const definition=fleetHosts.find(h=>h.hostId===hostname());
+ if(!definition?.uiUrl||definition.nativeUser!==userInfo().username)return false;
+ try{return new URL('http://'+request.headers.host).hostname===new URL(definition.uiUrl).hostname;}catch{return false;}
+}
+const validPublicOrigin=(request:IncomingMessage)=>{
+ if(request.method!=='POST')return true;
+ try{const origin=new URL(request.headers.origin??'');return origin.protocol==='https:'&&origin.host===request.headers.host;}catch{return false;}
+};
+function verifiedPublicOwner(request:IncomingMessage):Promise<boolean>{
+ let check=publicOwnerChecks.get(request);
+ if(!check){const cookie=request.headers.cookie;check=typeof cookie==='string'&&!request.headers.authorization?verifyFleetOwnerCookie(cookie):Promise.resolve(false);publicOwnerChecks.set(request,check);}return check;
+}
+/** Public LAN/recovery ingress reuses the signed owner cookie. Loopback native MCP/SSH authority stays local. */
+export function createManagedFleetHttpGuard(mcpToken?:string){
+ return async(request:IncomingMessage,response:ServerResponse):Promise<boolean>=>{
+  const local=['127.0.0.1','::1','::ffff:127.0.0.1'].includes(request.socket.remoteAddress??'');
+  if(local&&(hostname()==='roomhacker-server-100'||!isManagedPublicHost(request)))return false;
+  const path=new URL(request.url??'/', 'http://localhost').pathname;
+  // These exact routes retain their existing downstream credential checks.
+  if(typeof request.headers.authorization==='string'&&path.startsWith('/api/fleet/'))return false;
+  if(path==='/mcp'&&mcpToken&&typeof request.headers.authorization==='string'&&matches(request.headers.authorization,'Bearer '+mcpToken))return false;
+  const own=isManagedPublicHost(request)&&await verifiedPublicOwner(request);
+  const status=!own?401:!validPublicOrigin(request)?403:0;
+  if(!status)return false;
+  response.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify({error:status===401?'Войдите в кабинет владельца флота':'Действие доступно из своего кабинета'}));return true;
+ };
 }

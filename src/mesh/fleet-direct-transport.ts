@@ -12,12 +12,16 @@ export const directFleetPeers:readonly DirectPeer[]=[
  {hostId:'MacBook-Pro-User.local',sshHost:'192.168.2.8',nativeUser:'user',port:18789,python:'/opt/homebrew/bin/python3'},
 ];
 const quote=(s:string)=>"'"+s.replace(/'/g,"'\"'\"'")+"'";
-const bridge=String.raw`import sys,json,socket,pwd,os,time,urllib.request,uuid
+const bridge=String.raw`import sys,json,socket,pwd,os,time,urllib.request,urllib.parse,uuid,signal
 body=sys.stdin.buffer.read(16385)
 if len(body)>16384:raise RuntimeError('request_limit')
 r=json.loads(body)
 if socket.gethostname()!=r['hostId'] or pwd.getpwuid(os.getuid()).pw_name!=r['nativeUser']:raise RuntimeError('native_owner_identity_mismatch')
 deadline=time.monotonic()+r['timeoutMs']/1000
+signal.setitimer(signal.ITIMER_REAL,r['timeoutMs']/1000)
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+ def redirect_request(self,*args,**kwargs):return None
+opener=urllib.request.build_opener(NoRedirect())
 session=None
 url='http://127.0.0.1:'+str(r['port'])+'/mcp'
 def rpc(method,params):
@@ -28,7 +32,7 @@ def rpc(method,params):
  if not method.startswith('notifications/'):data['id']=identity
  remaining=deadline-time.monotonic()
  if remaining<=0:raise RuntimeError('direct_deadline')
- with urllib.request.urlopen(urllib.request.Request(url,json.dumps(data).encode(),headers),timeout=remaining) as response:
+ with opener.open(urllib.request.Request(url,json.dumps(data).encode(),headers),timeout=remaining) as response:
   if method.startswith('notifications/'):return {}
   if method=='initialize':session=response.headers.get('Mcp-Session-Id')
   buf=b''
@@ -38,7 +42,8 @@ def rpc(method,params):
    buf+=chunk
    if len(buf)>1048576:raise RuntimeError('direct_response_limit')
    if 'text/event-stream' in response.headers.get('Content-Type',''):
-    for frame in buf.decode().replace('\r\n','\n').split('\n\n')[:-1]:
+    for raw_frame in buf.replace(b'\r\n',b'\n').split(b'\n\n')[:-1]:
+     frame=raw_frame.decode('utf8')
      text='\n'.join(line[5:].lstrip() for line in frame.split('\n') if line.startswith('data:'))
      try:value=json.loads(text)
      except ValueError:continue
@@ -48,9 +53,20 @@ def rpc(method,params):
   return value
 rpc('initialize',{'protocolVersion':'2025-11-25','capabilities':{},'clientInfo':{'name':'herder-fleet-direct','version':'1'}})
 rpc('notifications/initialized',{})
-value=rpc(r['method'],r['params'])
-if value.get('error'):raise RuntimeError('direct_rpc_failed')
-print(json.dumps(value['result']))
+if r['method']=='session/read':
+ info=rpc('tools/call',{'name':'fleet_node_info','arguments':{}})
+ info=json.loads(info['result']['content'][0]['text'])
+ if info.get('hostId')!=r['hostId'] or info.get('nativeUser')!=r['nativeUser']:raise RuntimeError('native_owner_identity_mismatch')
+ p=r['params'];path='/api/sessions/'+urllib.parse.quote(p['harness'],safe='')+'/'+urllib.parse.quote(p['sessionId'],safe='')+'/details?limit=3&quick=1'
+ with opener.open(url[:-4]+path,timeout=max(.001,deadline-time.monotonic())) as response:body=response.read(1048577)
+ if len(body)>1048576:raise RuntimeError('direct_response_limit')
+ details=json.loads(body);session=details['session']
+ if session.get('id')!=p['sessionId'] or session.get('harness')!=p['harness']:raise RuntimeError('native_session_identity_mismatch')
+ print(json.dumps({'hostId':r['hostId'],'details':details}))
+else:
+ value=rpc(r['method'],r['params'])
+ if value.get('error'):raise RuntimeError('direct_rpc_failed')
+ print(json.dumps(value['result']))
 `;
 export class FleetDirectTransport implements GptAdminTransport {
  constructor(private readonly peers:readonly DirectPeer[]=directFleetPeers,private readonly deadlineMs=10000){
@@ -71,6 +87,10 @@ export class FleetDirectTransport implements GptAdminTransport {
    child.on('close',code=>{clearTimeout(timer);if(failure||code!==0)return reject(failure??new Error('direct_peer_unavailable'));try{resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch{reject(new Error('direct_response_invalid'));}});
    child.stdin.end(request);
   });
+ }
+ readSession(target:string,harness:string,sessionId:string):Promise<unknown>{
+  if(!['codex','zcode','opencode'].includes(harness)||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))throw new Error('direct_session_invalid');
+  return this.rpc(this.peer(target),'session/read',{harness,sessionId},this.deadlineMs);
  }
  schema(target:string):Promise<unknown>{return this.rpc(this.peer(target),'tools/list',{},this.deadlineMs);}
  call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
