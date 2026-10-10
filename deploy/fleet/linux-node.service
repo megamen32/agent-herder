@@ -1,0 +1,31 @@
+[Unit]
+Description=Agent Herder local fleet node
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I -S -B %h/.local/share/agent-herder/fleet/bootstrap.py
+WorkingDirectory=%h/.local/share/agent-herder/fleet/current
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+KillMode=control-group
+RuntimeDirectory=agent-herder-fleet
+Environment=AGENT_HERDER_WEB_HOST=127.0.0.1
+Environment=AGENT_HERDER_WEB_PORT=18789
+Environment=NODE_OPTIONS=--max-old-space-size=512
+Environment=UV_THREADPOOL_SIZE=1
+MemoryHigh=384M
+MemoryMax=768M
+MemorySwapMax=0
+CPUQuota=100%
+TasksMax=128
+IOWeight=10
+LimitNOFILE=4096
+LimitFSIZE=16M
+UMask=0077
+StandardOutput=null
+StandardError=append:%h/.local/state/agent-herder/fleet-node/runtime.log
+
+[Install]
+WantedBy=default.target
