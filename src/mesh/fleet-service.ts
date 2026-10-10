@@ -34,7 +34,7 @@ export class FleetCabinetService {
   let all:FleetView;
   if(options.refresh&&options.hostId)all=await this.refresh(options.hostId);
   else if(this.pending)all=await this.pending;
-  else if(!options.refresh&&this.lastReadAt!==null&&this.now()-this.lastReadAt<(this.deps.ttlMs??15000)&&[...this.cache.values()].every(r=>!['ready','metadata_only'].includes(r.host.state)||(r.host.expiresAt??0)>this.now())){
+  else if(!options.refresh&&this.lastReadAt!==null&&this.now()-this.lastReadAt<(this.deps.ttlMs??60000)&&[...this.cache.values()].every(r=>!['ready','metadata_only'].includes(r.host.state)||(r.host.expiresAt??0)>this.now())){
    const entries=this.deps.hosts.map(h=>this.cache.get(h.hostId)!);all={hosts:entries.map(r=>r.host),sessions:entries.flatMap(r=>r.sessions),complete:entries.every(r=>r.complete),limited:entries.some(r=>r.limited)};
   }else{this.pending=this.refresh().finally(()=>{this.pending=undefined;});all=await this.pending;}
   const hosts=all.hosts.filter(h=>!options.hostId||h.hostId===options.hostId);
@@ -75,7 +75,7 @@ export class FleetCabinetService {
     for(const row of raw.sessions.slice(0,12)){const s=projectPeerSession(row,hostId);if(s)sessions.push({...s,key:addressKey(s.address)});else partial=true;}
     const limited=raw.sessions.length>12||raw.limited===true;
     const createHarnesses=full&&tools.some(t=>t.name==='create_session')?fleetHarnesses.filter(h=>Array.isArray(info.createHarnesses)&&info.createHarnesses.includes(h)):[];
-    const at=this.now();results.set(hostId,{revision,target,sessions,limited,complete:full&&raw.complete===true&&!partial&&!limited,host:{...definition,state:full?'ready':'metadata_only',fetchedAt:at,expiresAt:at+(this.deps.ttlMs??15000),generation:Number.isSafeInteger(info.generation)?info.generation as number:null,createHarnesses,...(!full?{reason:'local_control_not_registered'}:partial?{reason:'invalid_peer_session'}:{})}});
+    const at=this.now();results.set(hostId,{revision,target,sessions,limited,complete:full&&raw.complete===true&&!partial&&!limited,host:{...definition,state:full?'ready':'metadata_only',fetchedAt:at,expiresAt:at+(this.deps.ttlMs??60000),generation:Number.isSafeInteger(info.generation)?info.generation as number:null,createHarnesses,...(!full?{reason:'local_control_not_registered'}:partial?{reason:'invalid_peer_session'}:{})}});
    }catch(e){results.set(hostId,unavailable(e instanceof Error?e.message.slice(0,96):'fleet_read_failed'));}
   }}));
   // Atomic publish; timed-out reads have no callback that can mutate the cache.
