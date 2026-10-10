@@ -235,6 +235,7 @@ def parse_processes(text, pgid, uid):
         if group!=pgid:continue
         fields=line.split(maxsplit=6)
         if len(fields)!=7:refuse('owned_shape',pid,group)
+        fields[6]=fields[6].strip()  # Darwin pads the final ps column.
         if any(not re.fullmatch(r'[0-9]{1,10}',f) for f in fields[2:4]):refuse('owned_numeric',pid,group)
         user,rss=map(int,fields[2:4])
         if user!=uid:refuse('owned_uid',pid,group,'owned_group_identity_lost')

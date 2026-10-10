@@ -105,6 +105,17 @@ class MacWatchdogTests(unittest.TestCase):
                 self.assertEqual([r['pid'] for r in rows],[42])
                 self.assertEqual(rows[0]['identity'],'Sat Oct 10 10:00:00 2026')
 
+    def test_actual_darwin_lstart_column_padding_preserves_generation(self):
+        own='16807 16807 501 1024 00:01.50 S Sat Oct 10 05:40:28 2026'
+        plain=w.parse_processes(own+'\n',16807,501)[0]
+        padded=w.parse_processes(own+'    \n',16807,501)[0]
+        self.assertEqual(padded,plain)
+        self.assertEqual(padded['identity'],'Sat Oct 10 05:40:28 2026')
+        newer=w.parse_processes(own.replace('05:40:28','05:40:29')+'    \n',16807,501)[0]
+        self.assertNotEqual(padded['identity'],newer['identity'])
+        with self.assertRaisesRegex(w.Refused,'owned_start'):
+            w.parse_processes(own+' invalid-private-text    \n',16807,501)
+
     def test_owned_or_unknown_process_rows_fail_with_safe_diagnostics(self):
         cases=[('42 42','owned_shape',42,42,2),
             ('42 42 501 bad 00:01 S Sat Oct 10 10:00:00 2026','owned_numeric',42,42,11),
