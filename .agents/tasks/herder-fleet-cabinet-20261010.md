@@ -329,3 +329,11 @@ Worker eb51d39 интегрирован6aa3ce2: bounded stderr drain и толь
 Root исправил два подтверждённых source дефекта: управляемый HTTP singleton больше не присоединяет STDIO; standalone CLI сохраняет свой transport. Позднее исключение после HTTP headers раньше приводило к ERR_HTTP_HEADERS_SENT/unhandled rejection и завершению процесса (реальный isolated Node RED57da0592). Теперь закрывается только собственный частичный ответ. Шесть выбранных fast units PASS, peak153100288B, swap/OOM0, cleanup eabdffbf; независимые reviews без HIGH/MEDIUM. Эти результаты не устанавливают причину прежних Mini exits.
 
 Следующий шаг55: один backend compiler/package с неизменённым frontend, source-exact controlled install и реальный Mini HTTPS owner-cookie→hosts/SAME44 view. Lease: только CCB59FF20409EAD83DAFD010114F845A/t29/Chrome85575; новые tabs/create/prompts запрещены. M1 offline остаётся отдельным открытым acceptance.
+
+## Реальный Mini TLS callback failure и corrective release
+
+5a8514a installed100/44/88/Mini:274 payloads exact, frontend unchanged, compiler41.824s/peak558997504B/swapOOM0/cleanup b18d9d33;100 apply cleanup2181358b. Mini3985 затем5031/5679 завершались node_exit1 на настоящем owner-cookie запросе. Safe helper5ba3e33 сохранил EHOSTUNREACH/unhandled_error_event и own fleet-owner-auth.js:35; rawstderr/cookie не сохранялись. Изолированный тот же cookie/Node22.22.3 verifier true; это не неправильная cookie.
+
+Pinned custom DNS callback был синхронным: соединение Darwin могло отказать раньше установки TLS error handlers. Root defers lookup через queueMicrotask в auth verifier и owner peer transport; address/family/TLS/auth/no-retry unchanged.44 fast units PASS/peak118059008B/swapOOM0/cleanup22669b2f; независимый readonly review без HIGH/MEDIUM. Это не runtime acceptance.
+
+Next55 ONE source compiler/package, controlled Mini install с нынешним safe helper, реальное повторное readonly hosts/SAME accepted44; если background network остаётся недоступным, зафиксировать отдельную фактическую причину. Chrome85575/ONLYCCB5 lease сохранён; newtab/create/prompts0.

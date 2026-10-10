@@ -49,7 +49,7 @@ describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=
   expect(first).toMatchObject({hostname:'agent44.bezrabotnyi.com',port:8443,servername:'agent44.bezrabotnyi.com',rejectUnauthorized:true,agent:false,path:'/mcp',method:'POST'});
   expect(first.headers).toMatchObject({Host:'agent44.bezrabotnyi.com',Origin:'https://agent44.bezrabotnyi.com',Cookie:'session=owner-a'});
   expect(first.headers).not.toHaveProperty('Authorization');
-  const cb=vi.fn();(first.lookup as Function)('agent44.bezrabotnyi.com',{},cb);expect(cb).toHaveBeenCalledWith(null,'192.168.2.101',4);
+  const cb=vi.fn();(first.lookup as Function)('agent44.bezrabotnyi.com',{},cb);expect(cb).not.toHaveBeenCalled();await Promise.resolve();expect(cb).toHaveBeenCalledWith(null,'192.168.2.101',4);
   expect(f.calls.every(c=>c.req.destroy.mock.calls.length===1&&c.res.destroy.mock.calls.length===1)).toBe(true);
   const discovery:any=await f.transport.discover();expect(discovery.servers).toHaveLength(10);expect(discovery.servers.every((s:any)=>s.status==='configured')).toBe(true);
  });

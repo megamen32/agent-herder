@@ -36,8 +36,10 @@ describe('HAOS owner cookie gate (fast unit; expected 1s, maximum 15s)', () => {
       headers: { Host: 'auth.bezrabotnyi.com', Cookie: 'session=fixture' } });
     const lookup = options.lookup as Function;
     const cb = vi.fn(); lookup('auth.bezrabotnyi.com', {}, cb);
+    expect(cb).not.toHaveBeenCalled(); await Promise.resolve();
     expect(cb).toHaveBeenCalledWith(null, '192.168.2.101', 4);
     const all = vi.fn(); lookup('auth.bezrabotnyi.com', { all: true }, all);
+    expect(all).not.toHaveBeenCalled(); await Promise.resolve();
     expect(all).toHaveBeenCalledWith(null, [{ address: '192.168.2.101', family: 4 }]);
     const res = f.response(); res.complete = true; res.emit('end');
     expect(await pending).toBe(true);

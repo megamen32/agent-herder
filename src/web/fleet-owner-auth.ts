@@ -33,8 +33,12 @@ export function createFleetOwnerCookieVerifier(request: RequestBoundary): (cooki
           method: 'GET', path: '/check',
           headers: { Host: 'auth.bezrabotnyi.com', Cookie: cookie },
           lookup: (_hostname, options, callback) => {
-            if (options.all) callback(null, [{ address: '192.168.2.101', family: 4 }]);
-            else callback(null, '192.168.2.101', 4);
+            // Match native DNS's asynchronous contract. A synchronous connect
+            // refusal on Darwin must wait until TLS/request error handlers exist.
+            queueMicrotask(() => {
+              if (options.all) callback(null, [{ address: '192.168.2.101', family: 4 }]);
+              else callback(null, '192.168.2.101', 4);
+            });
           },
         }, message => {
           message.on('error', () => finish(false));

@@ -75,7 +75,7 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
     req=this.request({hostname:state.peer.alias,port:8443,servername:state.peer.alias,rejectUnauthorized:true,agent:false,method,path,
      headers:{Host:state.peer.alias,Origin:`https://${state.peer.alias}`,Cookie:state.context.cookie,
       Accept:'application/json, text/event-stream',...(method==='POST'?{'Content-Type':'application/json','MCP-Protocol-Version':'2025-11-25',...(state.sessionId?{'Mcp-Session-Id':state.sessionId}:{})}:{} )},
-     lookup:(_hostname,options,callback)=>{if(options.all)callback(null,[{address:'192.168.2.101',family:4}]);else callback(null,'192.168.2.101',4);},
+     lookup:(_hostname,options,callback)=>{queueMicrotask(()=>{if(options.all)callback(null,[{address:'192.168.2.101',family:4}]);else callback(null,'192.168.2.101',4);});},
     },message=>{
      message.on('error',()=>finish(new Error('owner_http_response_failed')));
      if(finished){message.destroy();return;}res=message;
