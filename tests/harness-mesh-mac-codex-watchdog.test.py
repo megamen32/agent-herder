@@ -75,6 +75,21 @@ class NativeManagerTests(unittest.TestCase):
                 stop.assert_called_once_with(child,rows)
             self.assertEqual(json.loads((state/'last-run.json').read_text())['reason'],'native_exit')
 
+    def test_native_child_parallelism_uses_supported_defaults_without_mutating_parent(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as folder:
+            home=Path(folder);base=home/'fleet';pointer=home/'.codex/app-server-control/app-server-control.sock'
+            config={'hostId':'fixture','sourceSha':'a'*40,'codexBin':'/fixture/codex','codexSha256':'b'*64,'codexSocket':str(pointer)}
+            with patch.object(n.sys,'platform','darwin'),patch.object(n.Path,'home',return_value=home),patch.object(n.socket,'gethostname',return_value='fixture'),patch.object(n.w,'command',return_value='MacBookPro18,2'),patch.object(n.w,'verify_launcher_hashes'),patch.object(n.w,'verify_manifest'),patch.object(n,'binary_identity',return_value=Path('/fixture/codex')),patch.object(n,'refuse_existing_socket'),patch.object(n.w,'storage_bytes',return_value=0),patch.object(n.w,'host_available_kib',return_value=5*1024**2),patch.object(n.w.shutil,'disk_usage',return_value=SimpleNamespace(free=3*n.w.GIB)),patch.object(n.subprocess,'Popen') as spawn,patch.dict(n.os.environ,{'TOKIO_WORKER_THREADS':'128','RAYON_NUM_THREADS':'64','CODEX_HOME':str(home/'.codex')}):
+                env=n.prepare(base,config)[-1]
+                self.assertEqual(env['TOKIO_WORKER_THREADS'],'1');self.assertEqual(env['RAYON_NUM_THREADS'],'1')
+                self.assertEqual(n.os.environ['TOKIO_WORKER_THREADS'],'128');self.assertEqual(n.os.environ['RAYON_NUM_THREADS'],'64')
+                self.assertEqual(env['CODEX_HOME'],str(home/'.codex'))
+                self.assertEqual(env['TMPDIR'],str(base/'run/native-codex-tmp'));spawn.assert_not_called()
+            self.assertIn('threads',n.native_violations(self.sample(threads=65),1))
+            self.assertNotIn('threads',n.native_violations(self.sample(threads=64),1))
+            self.assertIn('memory_hard',n.native_violations(self.sample(rss_kib=512*1024+1),1))
+
     def test_occupied_or_unknown_socket_is_never_unlinked_adopted_or_spawned(self):
         with tempfile.TemporaryDirectory() as folder:
             pointer=Path(folder)/'control.sock';pointer.symlink_to(Path(folder)/'missing')
