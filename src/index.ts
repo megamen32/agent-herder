@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createFleetRecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
 
-import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import { startSelectedStdio } from "./mcp/transport-selection.js";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { homedir, hostname } from "node:os";
@@ -706,8 +706,9 @@ async function main() {
     });
   }
 
-  serveStdio(createStdioMcpServer, { onerror: (error) => console.error(`[agent-herder] MCP stdio error: ${error.message}`) });
-  console.error("[agent-herder] MCP v2 server running on stdio (2026-07-28 + legacy fallback)");
+  if (startSelectedStdio(webPort, createStdioMcpServer, (error) => console.error(`[agent-herder] MCP stdio error: ${error.message}`))) {
+    console.error("[agent-herder] MCP v2 server running on stdio (2026-07-28 + legacy fallback)");
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -492,6 +492,12 @@ export function createWebServer(dependencies: WebDependencies): Server {
       if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
       await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery);
     } catch (err) {
+      // A cancelled/streaming response cannot receive a second JSON status.
+      // Re-throwing from this async listener would terminate the singleton.
+      if (request.aborted || response.destroyed || response.writableEnded || response.headersSent) {
+        if (!response.destroyed && !response.writableEnded) response.destroy();
+        return;
+      }
       if (err instanceof SessionNotFoundError) {
         sendJson(response, 404, { error: "Session not found" });
         return;
