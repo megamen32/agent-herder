@@ -4,6 +4,7 @@ Defects detected: duplicate writer, foreign listener, stale generation, bounds.
 import importlib.util
 from pathlib import Path
 import hashlib
+import json
 import plistlib
 import socket
 import tempfile
@@ -47,6 +48,32 @@ class NativeManagerTests(unittest.TestCase):
         self.assertNotIn('cpu_sustained',n.native_violations(self.sample(sustained_cpu_percent=101),10))
         self.assertIn('cpu_sustained',n.native_violations(self.sample(sustained_cpu_percent=101),11))
         self.assertEqual(n.native_violations(self.sample(cpu_percent=200),1),[])
+
+    def test_native_soft320_boundary_preserves_node256_and_hard512(self):
+        measured=286736
+        old=n.w.soft_memory_anchor(measured,0,None)
+        self.assertIn('memory_soft_sustained',n.native_violations(self.sample(rss_kib=measured),30,old))
+        self.assertIsNone(n.native_soft_memory_anchor(measured,0,None))
+        self.assertIsNone(n.native_soft_memory_anchor(320*1024,1,0))
+        self.assertEqual(n.native_soft_memory_anchor(320*1024+1,0,None),0)
+        self.assertEqual(n.native_soft_memory_anchor(320*1024+1,29,0),0)
+        for elapsed,stopped in ((29,False),(30,True)):
+            self.assertEqual('memory_soft_sustained' in n.native_violations(self.sample(rss_kib=320*1024+1),elapsed,0),stopped)
+        self.assertNotIn('memory_hard',n.native_violations(self.sample(rss_kib=512*1024),1))
+        self.assertIn('memory_hard',n.native_violations(self.sample(rss_kib=512*1024+1),1))
+        self.assertEqual(n.w.MEMORY_SOFT_KIB,256*1024)
+
+    def test_monitor_keeps_measured_native_working_set_beyond_old_soft_window(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as folder:
+            state=Path(folder);child=unittest.mock.Mock(pid=42,returncode=0)
+            child.poll.side_effect=[None,None,0]
+            rows=[{'pid':42,'pgid':42,'uid':n.os.getuid(),'identity':'Sat Oct 10 10:00:00 2026','rss_kib':286736,'cpu_seconds':0}]
+            config={'hostId':'fixture','sourceSha':'a'*40,'codexBin':'/fixture/codex'}
+            with patch.object(n.signal,'signal'),patch.object(n.time,'monotonic',side_effect=[0,1,32,33]),patch.object(n.time,'sleep'),patch.object(n.w,'read_processes',return_value=rows),patch.object(n.w,'read_threads',return_value=33),patch.object(n.w,'storage_bytes',return_value=0),patch.object(n.w,'host_available_kib',return_value=19461570),patch.object(n.w.shutil,'disk_usage',return_value=SimpleNamespace(free=3*n.w.GIB)),patch.object(n.os.path,'lexists',return_value=True),patch.object(n,'listener_proof',return_value={'inode':1}),patch.object(n,'verify_socket_generation'),patch.object(n.w,'stop_owned') as stop:
+                self.assertEqual(n.monitor(child,state/'socket',state,state,config),0)
+                stop.assert_called_once_with(child,rows)
+            self.assertEqual(json.loads((state/'last-run.json').read_text())['reason'],'native_exit')
 
     def test_occupied_or_unknown_socket_is_never_unlinked_adopted_or_spawned(self):
         with tempfile.TemporaryDirectory() as folder:

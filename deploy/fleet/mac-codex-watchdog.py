@@ -8,7 +8,7 @@ No install, daemon bootstrap/background updater, remote-control, CODEX_HOME chan
 auth/config/history copy or external helper adoption. Any existing socket/path
 (including stale/unknown) refuses startup; no unlink or forced takeover.
 
-Own group: RSS256 soft30s/512MiB hard; CPU100%20s sustained after10s startup,
+Own group: RSS320 soft30s/512MiB hard; CPU100%20s sustained after10s startup,
 200% peak;64threads/16processes; own temp/state16MiB each, host reserve4GiB,
 disk2GiB. Startup/readiness30s; native CLI remains foreground, KeepAlivefalse.
 Native server itself uses its Unix listener startup lock, plus this wrapper's
@@ -65,6 +65,12 @@ w=importlib.util.module_from_spec(spec);spec.loader.exec_module(w)
 
 class NativePolicy:
     host_reserve_kib=4*1024**2
+    memory_soft_kib=320*1024
+
+def native_soft_memory_anchor(rss,now,previous):
+    # Measured native hot set286736KiB exceeded initial256MiB, below HARD512.
+    # Scope this adjustment to the common native process; HerderNode stays256.
+    return (now if previous is None else previous) if rss>NativePolicy.memory_soft_kib else None
 
 def native_violations(sample,elapsed,soft=None):
     result=w.violations({**sample,'temp_bytes':0,'state_bytes':0,
@@ -155,7 +161,7 @@ def monitor(child,pointer,state,temp,config):
             sample.update(threads=w.read_threads(observed),cpu_percent=cpu,sustained_cpu_percent=w.rolling_cpu(cpu_samples,now),
                 temp_bytes=w.storage_bytes(temp,16*w.MIB),state_bytes=w.storage_bytes(state,16*w.MIB),artifact_bytes=0,releases=0,
                 host_available_kib=w.host_available_kib(),disk_free_bytes=w.shutil.disk_usage(temp).free)
-            soft=w.soft_memory_anchor(sample['rss_kib'],elapsed,soft);failed=native_violations(sample,elapsed,soft)
+            soft=native_soft_memory_anchor(sample['rss_kib'],elapsed,soft);failed=native_violations(sample,elapsed,soft)
             if failed:reason='resource_budget';break
             if proof is None:
                 if os.path.lexists(pointer):

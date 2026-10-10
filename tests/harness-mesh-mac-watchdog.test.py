@@ -70,6 +70,17 @@ class MacWatchdogTests(unittest.TestCase):
         self.assertNotIn('memory_soft_sustained',w.violations(self.sample(rss_kib=270*1024),w.Policy('Macmini6,2'),29,0))
         self.assertIn('memory_soft_sustained',w.violations(self.sample(rss_kib=270*1024),w.Policy('Macmini6,2'),30,0))
 
+    def test_mac_node_bootstrap_uses_30s_observation_without_changing_node_budget(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as folder:
+            home=Path(folder);base=home/'fleet'
+            config={'hostId':'fixture','sourceSha':'a'*40,'nodeBin':'/fixture/node','harnesses':['codex']}
+            with patch.object(w.sys,'platform','darwin'),patch.object(w.Path,'home',return_value=home),patch.object(w,'command',return_value='MacBookPro18,2'),patch.object(w.socket,'gethostname',return_value='fixture'),patch.object(w,'verify_launcher_hashes'),patch.object(w,'verify_manifest',return_value=base/'index.js'),patch.object(w,'executable',return_value=Path('/fixture/node')),patch.object(w,'codex_environment',return_value={'CODEX_APP_SERVER_SOCKET':'/fixture/socket'}),patch.object(w,'release_usage',return_value=(1,1)),patch.object(w,'host_available_kib',return_value=5*1024**2),patch.object(w.shutil,'disk_usage',return_value=SimpleNamespace(free=3*w.GIB)),patch.object(w,'storage_bytes'),patch.object(w.socket,'socket'),patch.dict(w.os.environ,{'AGENT_HERDER_SESSION_OBSERVATION_INTERVAL_MS':'5000'}):
+                env=w.prepare(base,config)[-1]
+            self.assertEqual(env['AGENT_HERDER_SESSION_OBSERVATION_INTERVAL_MS'],'30000')
+            self.assertEqual(env['CODEX_APP_SERVER_SOCKET'],'/fixture/socket')
+            self.assertEqual(w.MEMORY_SOFT_KIB,256*1024);self.assertEqual(w.MEMORY_MAX_KIB,512*1024)
+
     def test_cpu_and_darwin_process_thread_projection(self):
         rows=w.parse_processes('42 42 501 1024 00:01.50 S Sat Oct 10 10:00:00 2026\n99 99 501 900 1:00 S Sat Oct 10 10:00:00 2026\n43 42 501 512 00:00.50 R Sat Oct 10 10:00:01 2026\n',42,501)
         self.assertEqual([r['pid'] for r in rows],[42,43])
