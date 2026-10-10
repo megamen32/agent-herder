@@ -1,6 +1,6 @@
 # Agent Herder fleet deployment
 
-Status: deployment preparation. A published source or metadata-only mesh leaf is not acceptance of a local Herder node or the fleet cabinet.
+Status: Linux100/44/88 deployed. One real cabinet-created Codex session on88 has native same-ID readback and headed HTTPS opening proof. Mac launchers are source-verified; their first real startup exposed a Darwin thread-table parser error and remains unaccepted until repaired and rerun. Whole fleet and the parent shared-MCP migration remain open.
 
 The target is a local native Herder on server100, server44, server88, Mac Mini and Mac M1. The cabinet lists and filters sessions by host and creates a session with an explicit host and harness. Preserve native authentication, existing sessions and reverse SSH.
 
@@ -15,10 +15,10 @@ GrepMesh's existing Rust implementation is in src/gptadmin.rs, src/topology.rs a
 | Node | Verified identity | Current Herder evidence | Proposed public entry |
 |---|---|---|---|
 | 100 | roomhacker-server-100 | Existing local service, loopback18787 | agent.bezrabotnyi.com |
-| 44 | server-44, x86_64 | Full agent-herder.service absent | agent44.bezrabotnyi.com |
-| 88 | roomhacker-server-88, x86_64 | Full service absent; thin mesh/native88 canary separately accepted | agent88.bezrabotnyi.com |
-| Mac Mini | Mac-mini-roomhacker, Macmini6,2 | Local Node/Codex available; full node not deployed | agent-mac-mini.bezrabotnyi.com |
-| Mac M1 | MacBook-Pro-User.local, MacBookPro18,2, arm64 | Local Node/Codex/OpenCode/ZCode available;18787 is an SSH forward to100 | agent-mac-m1.bezrabotnyi.com |
+| 44 | server-44, x86_64 | Own agent-herder-fleet.service, loopback18791, Codex only | agent44.bezrabotnyi.com |
+| 88 | roomhacker-server-88, x86_64 | Own agent-herder-fleet.service, loopback18791; actual cabinet create/read/open accepted | agent88.bezrabotnyi.com |
+| Mac Mini | mac-mini-2012.lan, Macmini6,2 | Existing managed Codex36862 reused; own Herder candidate not runtime-accepted | agent-mac-mini.bezrabotnyi.com |
+| Mac M1 | MacBook-Pro-User.local, MacBookPro18,2, arm64 | 18787 is an SSH forward to100; own bounded native Codex controller and Herder not yet accepted | agent-mac-m1.bezrabotnyi.com |
 
 M1 is reached through its existing reverse SSH2222. Mac Mini is reached through canonical LAN SSH192.168.2.4. Do not label a forwarded100 endpoint as a Mac node.18789 was free on both Macs at the initial probe and is a proposed local-node port, subject to the actual executor's contract and a fresh bind check. Do not replace M1's existing18787 forward.
 
@@ -39,3 +39,15 @@ New ingress ownership is limited to the four new agent44/88/Mac vhosts. Canonica
 For each reachable node, use the actual cabinet to list local sessions, select host+harness, create a harmless native session and read back its native host/session/cwd identity. Validate filtering, identical native IDs on different hosts, and explicit offline M1 behavior without losing cached sessions or claiming live readiness. Unsupported harnesses must be explicit. Retain pending/unknown admission receipts; never automatically resend accepted or unknown inputs when changing hosts.
 
 Whole fleet delivery remains open until those consumer receipts exist. Source units, discovery online, HTTP200 or one88→100 delivery do not close it.
+
+## Current finite node candidates and rollback
+
+Linux44/88: RAM384MiB soft/768MiB hard, CPU1, swap0, Tasks128, NOFILE4096, IOWeight10; own temp128MiB/state64MiB/log16MiB, two immutable releases at most512MiB, host reserve4GiB and disk reserve2GiB. Actual post-upgrade44 memory72884224bytes/tasks9;88 memory106618880bytes/tasks10. SSH ingress tunnel has separate16/64MiB RAM, CPU5%, swap0, Tasks16, IOWeight10 and NOFILE128. Only verified local harnesses are advertised;44 OpenCode service and ZCode server payload were absent. The daemon joins the existing shared Codex socket and88's existing authenticated OpenCode4097; no private Codex writer or copied token.
+
+Darwin Herder candidate: RSS256MiB soft30s/512MiB hard, sustained CPU100%/20s and150% instantaneous after10s grace,128 threads/16processes, own temp128MiB/state64MiB, up to two releases/512MiB, low-priority IO; host reserve Mini2GiB/M1 4GiB, disk2GiB. Darwin watchdog bounds are observations and owned-process cleanup, not kernel reservations or swap0 guarantees. Python wrapper and shared native controllers require separate measurement. KeepAlive=false; do not restart-loop a failed candidate.
+
+M1 explicit common native controller candidate: foreground installed Codex app-server Unix listener; separate256/512MiB RSS, CPU100% sustained/200% peak,64threads/16processes,temp/state16MiB, host reserve4GiB/disk2GiB, startup30s/cleanup10s and KeepAlive=false. Canonical socket must initially be absent; any preexisting or unknown owner refuses startup. Preserve ChatGPT's existing EXEC-SERVER/helper34393 and account/config/history. Mini already has its managed controller and must not start another. A listener proof alone is not a native request or fleet acceptance.
+
+Install packets contain exact source/artifact/payload and launcher hashes. Native plutil lint precedes launchctl. A malformed legacy plist is retained with its SHA/provenance; it is not copied into the new valid label. Before activation refresh host/shared reserves and preserve the existing service/release/config. Roll back only the newly owned labels or current symlink/config to the recorded previous release; never stop a shared/foreign native controller, delete an unknown socket, change global auth or replay an accepted input.
+
+Linux source576bfcd cabinet88 proof: `.tmp/herder-fleet-20261010/ui/accepted88-ui-receipt.json`, same native session01a1234e-69c0-7532-86b9-477c1e209a4f, model-free/messages0; screenshot `ui/fleet88-same-opened.png`. Backup100 `runtime-100/dist-before-empty`;44/88 retain `node-config-before-empty.json` and previous immutable release. This is one verified vertical; further host/harness UI proofs and real Mac readiness are required.

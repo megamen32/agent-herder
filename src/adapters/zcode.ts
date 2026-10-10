@@ -1496,12 +1496,22 @@ export class ZcodeAdapter implements HarnessAdapter {
       }
     }
     this.sessionWorkspaces.set(info.sessionId, workspace);
-    this.desiredSessionTitles.set(info.sessionId, options.name);
     this.sessionEventCursors.set(info.sessionId, record(record(snapshot).runtime).eventSeq as number || 0);
     this.ensureSessionEventSubscription(info.sessionId, workspace, this.sessionEventCursors.get(info.sessionId));
     this.emitEvent({ kind: "session.created", harness: "zcode", sessionId: info.sessionId, status: "idle" });
-    const created = { ...mapSession(snapshot, workspace.workspacePath, options.name, [], true), title: options.name };
+    const created = mapSession(snapshot, workspace.workspacePath, undefined, [], true);
     this.createdSessions.set(created.id, created);
+    // A native draft has no task-index row before its first prompt. The supported
+    // metadata command preserves its name without submitting a prompt. If that
+    // command fails, retain the already-created address and truthful native title.
+    try {
+      await this.callTask("renameTask", { ...workspace, taskId: info.sessionId, title: options.name });
+      this.desiredSessionTitles.set(info.sessionId, options.name);
+      created.title = options.name;
+      created.meta = { ...created.meta, titleRenameConfirmed: true };
+    } catch {
+      created.meta = { ...created.meta, titleRenameConfirmed: false, requestedTitle: options.name, metadataWarning: "title_rename_failed" };
+    }
     return created;
   }
 

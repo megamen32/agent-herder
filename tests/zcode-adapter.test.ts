@@ -87,6 +87,7 @@ class FakeClient implements ZcodeClientLike {
     if (channel === "zcode-agent" && method === "sendPrompt") return { accepted: true };
     if (channel === "zcode-agent" && method === "setModel") return snapshot;
     if (channel === "zcode-agent" && method === "closeSession") return { closed: true };
+    if (channel === "zcode-task" && method === "renameTask") return { title: (args[0] as { title: string }).title };
     if (channel === "zcode-task" && method === "stopGeneration") return undefined;
     if (channel === "zcode-task" && method === "respondPermission") return true;
     throw new Error(`unexpected fake call ${channel}.${method}`);
