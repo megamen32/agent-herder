@@ -185,6 +185,7 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .oc-disclosure { margin-top: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-1); } .oc-disclosure summary { padding: var(--space-2) 10px; cursor: pointer; color: var(--muted); font-size: var(--text-xs); } .oc-disclosure pre { margin: 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; white-space: pre-wrap; }
 
 /* ---------- 8. Строка активности ---------- */
+.activity-slot { min-height: 20px; display: grid; align-items: center; }
 .activity-line { display: flex; align-items: center; gap: var(--space-2); min-height: 20px; color: var(--text-2); font-size: var(--text-md); line-height: 1.4; }
 .pulse-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
 .activity-line.activity-tool .pulse-dot { background: var(--status-running); }
