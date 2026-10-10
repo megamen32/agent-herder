@@ -12,7 +12,7 @@ export const directFleetPeers:readonly DirectPeer[]=[
  {hostId:'MacBook-Pro-User.local',sshHost:'192.168.2.8',nativeUser:'user',port:18789,python:'/opt/homebrew/bin/python3'},
 ];
 const quote=(s:string)=>"'"+s.replace(/'/g,"'\"'\"'")+"'";
-const bridge=String.raw`import sys,json,socket,pwd,os,time,urllib.request,urllib.parse,uuid,signal
+const bridge=String.raw`import sys,json,socket,pwd,os,time,urllib.request,urllib.parse,urllib.error,uuid,signal
 body=sys.stdin.buffer.read(16385)
 if len(body)>16384:raise RuntimeError('request_limit')
 r=json.loads(body)
@@ -58,9 +58,17 @@ if r['method']=='session/read':
  info=json.loads(info['result']['content'][0]['text'])
  if info.get('hostId')!=r['hostId'] or info.get('nativeUser')!=r['nativeUser']:raise RuntimeError('native_owner_identity_mismatch')
  p=r['params'];path='/api/sessions/'+urllib.parse.quote(p['harness'],safe='')+'/'+urllib.parse.quote(p['sessionId'],safe='')+'/details?limit=3&quick=1'
- with opener.open(url[:-4]+path,timeout=max(.001,deadline-time.monotonic())) as response:body=response.read(1048577)
+ history_unavailable=False
+ try:
+  with opener.open(url[:-4]+path,timeout=max(.001,deadline-time.monotonic())) as response:body=response.read(1048577)
+ except urllib.error.HTTPError as error:
+  # A verified native session may have unavailable history. Never label that as empty.
+  if error.code!=502:raise
+  error.close();history_unavailable=True
+  with opener.open(url[:-4]+path.split('/details?')[0],timeout=max(.001,deadline-time.monotonic())) as response:body=response.read(1048577)
  if len(body)>1048576:raise RuntimeError('direct_response_limit')
  details=json.loads(body);session=details['session']
+ if history_unavailable:details['historyUnavailable']=True
  if session.get('id')!=p['sessionId'] or session.get('harness')!=p['harness']:raise RuntimeError('native_session_identity_mismatch')
  print(json.dumps({'hostId':r['hostId'],'details':details}))
 else:

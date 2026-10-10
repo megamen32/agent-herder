@@ -292,3 +292,13 @@ Accepted2dd package установлен44/88/Mini: exactsource+all266payloads, 
 Человеческий restart100 уже выполнен из1b3ed17; native master сохранён, новые buckets работают, очередь не replay. Прежние jobs с явным отказом не считаются доставленными. Отдельный audit записан herder-human-message-queue-20261010.md.
 
 Следующий шаг: ONE source-exact build, install100/44/88/Mini, guarded remote owner-cookie/read session consumer, переключение четырёх собственных nginx vhosts на их native Fleet API. HAOS recovery routes ещё требуют maintained config-only promotion; новый источник не объявляется отказоустойчивым публичным runtime. M1 reverse и recovery LAN недоступны, его rollout OPEN. Браузерная lease R38: ONE OWN t23/7BA1, no create/prompt. Первая readonly snapshot попытка прервана внешним MCP connector transport до получения job receipt; никакие сообщения/сессии не повторяются.
+
+## Реальный дефект списка и истории сессии44
+
+SAME accepted01a1257e native thread/read(metadata)200, но отсутствие BOTH native list/loaded list. Own readonlySQLite has_user_event0/archived0 подтверждает unmaterialized thread; thread/read history refuses missing source rollout. Никаких recreate/prompts/unload от55. Worker24f9be3 интегрирован89831f4: bounded persistent+loaded+exact verified readonly-index candidates; title cap500 устраняет invalidtitle527, который ломал детали из-за другого native thread. 53 affected+15focused sourceunits/review/noEmit accepted, history remains explicitly partial/unavailable.
+
+Rootdirect read: если details502, получает actualmetadata200 с exactID/harness/host, historyUnavailable=true; никогда не выдумывает пустую историю. Три realPython local-logic fixtures различают unavailable/foreignID/auth401. 20 focusedPASS attempt311127db/121507840B/swapOOM0/samegenerationcleanup. Firstguardrefusal75 legacyOFD busy beforepayload retained; normalwait succeeded после освобождения, limits/locks не обходились.
+
+Publicnative88 cabinet with realownerCookie returned200/hosts and actual100/44/88/Mini ready,M1unavailable; session44 missing exposed sourcebug instead of falseacceptance. Browserstock required explicit switching to OWNtab t23 beforeclick; unsupported --tab extraArgs consumed as selectvalues, now removed. All actions were readonly display, no create/input. Existing target7BA1/Chrome26384 preserved.
+
+NextONE sourceexact build/install (new source differs frombab), SAME88→44 headed selection/view; HAOSreserve config-only apply under ownnew4route topology, no imagebuild or authkeys.

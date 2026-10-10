@@ -108,6 +108,32 @@ sys.stdin=io.TextIOWrapper(io.BytesIO(json.dumps(request).encode()))
 exec(compile(source,'owned-http-bridge','exec'))`;
   const stdout=execFileSync('/usr/bin/python3',['-I','-S','-B','-c',fixture],{input:JSON.stringify({program}),encoding:'utf8',timeout:5000,maxBuffer:65536});expect(JSON.parse(stdout).marker).toBe('Я'.repeat(3000));
  });
+ it.each(['history-unavailable','foreign-id','auth-failure'])('actual bridge local logic preserves native metadata/history distinction: %s',async(mode)=>{
+  const {execFileSync}=await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  const program=readFileSync('src/mesh/fleet-direct-transport.ts','utf8').split('const bridge=String.raw`')[1]!.split('`;')[0]!;
+  const fixture=String.raw`import sys,json,io,socket,pwd,os,urllib.request,urllib.error
+packet=json.loads(sys.stdin.read());source=packet['program'];mode=packet['mode']
+class Response:
+ def __init__(self,value):self.headers={'Content-Type':'application/json'};self.body=io.BytesIO(json.dumps(value).encode())
+ def __enter__(self):return self
+ def __exit__(self,*args):return False
+ def read1(self,n):return self.body.read(n)
+ def read(self,n):return self.body.read(n)
+class Opener:
+ def open(self,request,timeout):
+  if isinstance(request,str):
+   if '/details?' in request:raise urllib.error.HTTPError(request,401 if mode=='auth-failure' else 502,'unavailable',{},io.BytesIO())
+   return Response({'session':{'id':'foreign' if mode=='foreign-id' else 'native-id','harness':'codex','title':'verified'}})
+  r=json.loads(request.data);result={'content':[{'text':json.dumps({'hostId':socket.gethostname(),'nativeUser':pwd.getpwuid(os.getuid()).pw_name})}]} if r['method']=='tools/call' else {}
+  return Response({'jsonrpc':'2.0','id':r.get('id'),'result':result})
+urllib.request.build_opener=lambda *args:Opener()
+request={'hostId':socket.gethostname(),'nativeUser':pwd.getpwuid(os.getuid()).pw_name,'port':18791,'timeoutMs':10000,'method':'session/read','params':{'harness':'codex','sessionId':'native-id'}}
+sys.stdin=io.TextIOWrapper(io.BytesIO(json.dumps(request).encode()))
+exec(compile(source,'owned-http-bridge','exec'))`;
+  const execute=()=>execFileSync('/usr/bin/python3',['-I','-S','-B','-c',fixture],{input:JSON.stringify({program,mode}),encoding:'utf8',timeout:5000,maxBuffer:65536,stdio:['pipe','pipe','pipe']});
+  if(mode==='history-unavailable'){const actual=JSON.parse(execute());expect(actual.details.session.id).toBe('native-id');expect(actual.details.historyUnavailable).toBe(true);expect(actual.details.messages).toBeUndefined();}
+  else expect(execute).toThrow(mode==='foreign-id'?'native_session_identity_mismatch':'HTTP Error 401');
+ });
  it('receiver once-record survives client/server factory replacement and preserves unknown without another native create',async()=>{
   let callback:any;const server={registerTool:(name:string,_spec:any,fn:any)=>{if(name==='fleet_create_session')callback=fn;}};const create=vi.fn(async()=>({id:'native-id',cwd:'/home/roomhacker'}));const deps={adapters:new Map([['codex',{createSession:create}]])} as any;
   registerFleetNodeTools(server as any,deps);const args={inputId:'a'.repeat(64),harness:'codex',name:'empty',cwd:'/home/roomhacker'};const first=await callback(args);registerFleetNodeTools(server as any,deps);expect(await callback(args)).toEqual(first);expect(create).toHaveBeenCalledOnce();

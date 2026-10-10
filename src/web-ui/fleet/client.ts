@@ -2,7 +2,7 @@ import type {FleetView,FleetCreateReceipt,FleetCreateRequest,FleetHost} from '..
 export interface FleetClient {
  hosts(signal?:AbortSignal,refresh?:boolean):Promise<{hosts:FleetHost[];complete:boolean;defaultHostId:string;scopeKey:string;sessionReadSupported?:boolean}>;
  sessions(hostId?:string,signal?:AbortSignal):Promise<FleetView>;
- session?(address:{hostId:string;harness:string;nativeSessionId:string},signal?:AbortSignal):Promise<{hostId:string;details:{session:{id:string;harness:string;title?:string;cwd?:string;model?:string};messages?:{text?:string;role?:string;kind?:string}[]}}>;
+ session?(address:{hostId:string;harness:string;nativeSessionId:string},signal?:AbortSignal):Promise<{hostId:string;details:{session:{id:string;harness:string;title?:string;cwd?:string;model?:string};historyUnavailable?:boolean;messages?:{text?:string;role?:string;kind?:string}[]}}>;
  create(request:FleetCreateRequest):Promise<FleetCreateReceipt>;
 }
 export function createFleetClient(base='/api/fleet'):FleetClient{
