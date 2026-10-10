@@ -82,6 +82,34 @@ class MacWatchdogTests(unittest.TestCase):
             self.assertEqual(call.call_args.args[0],['/bin/ps','-M','-p','42,43','-o','pid='])
         with self.assertRaises(w.Refused):w.parse_processes('42 42 999 1024 00:01 Sat Oct 10 10:00:00 2026\n',42,501)
 
+    def test_actual_darwin_thread_table_ignoring_output_selection(self):
+        table=("USER   PID   TT   %CPU STAT PRI     STIME     UTIME COMMAND\n"
+               "user 34393   ?? 0.0 S 31T 0:00.00 0:00.01 /Applic 34393\n"
+               "     34393 0.0 S 31T 0:00.25 0:01.24 34393\n")
+        with patch.object(w,'command',return_value=table):
+            self.assertEqual(w.read_threads([{'pid':34393}]),2)
+        with patch.object(w,'command',return_value=table.replace('??','ttys001')):
+            self.assertEqual(w.read_threads([{'pid':34393}]),2)
+        with patch.object(w,'command',return_value=table.replace('34393','99999')):
+            with self.assertRaisesRegex(w.Refused,'thread_observation_invalid'):w.read_threads([{'pid':34393}])
+        with patch.object(w,'command',return_value=table+'unparsed native row\n'):
+            with self.assertRaisesRegex(w.Refused,'thread_observation_invalid'):w.read_threads([{'pid':34393}])
+        with patch.object(w,'command',return_value='USER PID TT %CPU STAT PRI STIME UTIME COMMAND\n'):
+            with self.assertRaisesRegex(w.Refused,'thread_observation_invalid'):w.read_threads([{'pid':34393}])
+
+    def test_thread_census_confirms_owned_child_exit_with_one_bounded_refresh(self):
+        leader={'pid':42,'pgid':42,'uid':w.os.getuid(),'identity':'leader'}
+        child={'pid':43,'pgid':42,'uid':w.os.getuid(),'identity':'child'}
+        with patch.object(w,'command',side_effect=['42\n','42\n']),patch.object(w,'read_processes',return_value=[leader]) as refresh:
+            self.assertEqual(w.read_threads([leader,child]),1);refresh.assert_called_once_with(42)
+        with patch.object(w,'command',side_effect=['42\n','42\n']),patch.object(w,'read_processes',return_value=[leader,child]):
+            with self.assertRaisesRegex(w.Refused,'thread_observation_invalid'):w.read_threads([leader,child])
+        with patch.object(w,'command',return_value='42\n'),patch.object(w,'read_processes',return_value=[{**leader,'identity':'reused generation'}]):
+            with self.assertRaisesRegex(w.Refused,'thread_observation_invalid'):w.read_threads([leader,child])
+        with patch.object(w,'command',return_value='99999\n'),patch.object(w,'read_processes') as refresh:
+            with self.assertRaisesRegex(w.Refused,'thread_observation_invalid'):w.read_threads([leader,child])
+            refresh.assert_not_called()
+
     def test_storage_does_not_follow_foreign_links_and_is_bounded(self):
         with tempfile.TemporaryDirectory() as folder:
             base=Path(folder);owned=base/'owned';owned.mkdir();foreign=base/'foreign';foreign.mkdir();(foreign/'data').write_bytes(b'x'*1024)
