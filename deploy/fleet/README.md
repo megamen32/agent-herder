@@ -69,3 +69,18 @@ Linux source576bfcd cabinet88 proof: `.tmp/herder-fleet-20261010/ui/accepted88-u
 The M1 native manager22298 and Node54788 stopped with `TimeoutExpired` while their last verified working sets remained142656/129232KiB and native11threads. The failed receipts are retained. Known read-only probes (`ps`, `lsof`, `sysctl`, `memory_pressure`) now get at most one fresh timeout-only retry: each attempt≤2s, common window≤4s, never beyond the existing cleanup deadline. Other commands never retry; repeated failure refuses with safe stage/attempt metadata and no raw argv. RAM/CPU/thread/process/storage/host reserve limits, cleanup10s and KeepAlive=false are unchanged. This does not permit stale samples or report an unobserved host as healthy. Real startup/warm/consumer evidence remains required.
 
 Mini90850 later failed with a5.006s combined timeout after discarding two partial2.5s artifact passes (second count5540). The first complete artifact traversal now may use the existing full5s window. A healthy3–5s tree no longer fails solely because both shorter passes were discarded. The total5s/30000files/512MiB/two-release bounds, dated30s accounting and temp/state1s/2s bounds remain unchanged. The previous failure is retained; this is not a higher IO/time/memory allowance.
+
+### Mini runtime identity (10.10.2026)
+
+The existing Apple `/usr/bin/python3` LaunchAgent context failed HAOS LAN
+connections with EHOSTUNREACH, while the same Node/cookie worked from SSH.
+Mini already had user-approved `org.python.python` local-network permission.
+Use the installed Python.app interpreter resolved from
+`/usr/local/opt/python3/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python`
+for this node's rendered `__PYTHON_BIN__`; preserve the prior plist as rollback,
+run native plutil and helper --check, and await both owned listener and manager
+exit before bootstrap. No privacy database/settings changes are required.
+The actual controlled Mini cookie consumer then returned four ready hosts and
+the same accepted44 metadata through HAOS TLS. This is Mini-specific installed
+runtime evidence, not a default path or permission grant for M1. Process/storage
+bounds and shared native controls remain unchanged.

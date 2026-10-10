@@ -337,3 +337,9 @@ Root исправил два подтверждённых source дефекта:
 Pinned custom DNS callback был синхронным: соединение Darwin могло отказать раньше установки TLS error handlers. Root defers lookup через queueMicrotask в auth verifier и owner peer transport; address/family/TLS/auth/no-retry unchanged.44 fast units PASS/peak118059008B/swapOOM0/cleanup22669b2f; независимый readonly review без HIGH/MEDIUM. Это не runtime acceptance.
 
 Next55 ONE source compiler/package, controlled Mini install с нынешним safe helper, реальное повторное readonly hosts/SAME accepted44; если background network остаётся недоступным, зафиксировать отдельную фактическую причину. Chrome85575/ONLYCCB5 lease сохранён; newtab/create/prompts0.
+
+## Mini owner consumer подтверждён; viewport repair
+
+38d1c3e source-exact274 payloads installed100/44/88/Mini, native/Chrome/caps unchanged; compiler peak559980544B/swapOOM0/cleanupe32bfd2e. Async DNS fixed process crash; old ApplePython context still returned401 on LAN refusal. Existing networkextension permission approved org.python.python; installed Python.app3.14.6 chosen in ONLY own rendered LaunchAgent. Privacy settings unchanged, backup retained. First bootstrap5 rolled back; retry after both owned manager8939/listener cleanup succeeded. Same38 Node now remains live and real Mini-browser cookie→HAOS TLS hosts/defaultMini/SAME44 details PASS:100/44/88/Mini ready, M1 unavailable503, historyUnavailable=true, business0/cookiecopies0.
+
+Actual Mini cabinet opened; stock host selection44/openSAME01a1257e PASS. DOM identified visible overlay804px but view y2399 outside846px viewport. Root owns narrow FleetCabinet view ref/scroll/focus repair, preserving all native IDs/no-replay/create semantics. Next full frontend+backend package, install source-exact release and SAME readonly pixel proof; no new session/prompt/browser.
