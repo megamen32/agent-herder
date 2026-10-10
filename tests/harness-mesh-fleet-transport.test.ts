@@ -40,10 +40,28 @@ describe('facade identity/deadline fences (focused integration; expected 1s, max
  });
 });
 describe('measured facade metadata budget (fast unit fake time; expected 1s, maximum 10s)',()=>{
- it('accepts a 3.2s native metadata response under the finite default5s deadline',async()=>{
+ it('accepts a 3.2s native metadata response under the finite default10s deadline',async()=>{
   vi.useFakeTimers();try{
    const fake=vi.fn(async(_url:any,init:any)=>{const r=JSON.parse(init.body);if(r.method==='notifications/initialized')return new Response(null,{status:202});if(r.method==='tools/call')await new Promise(resolve=>setTimeout(resolve,3200));return new Response(JSON.stringify({id:r.id,result:r.method==='initialize'?{protocolVersion:'2025-11-25'}:{servers:[]}}));});
    const t=new FleetGptAdminTransport({endpoint:'https://hub.test/mcp',headersProvider:()=>({}),fetch:fake as any});const pending=t.discover();await vi.advanceTimersByTimeAsync(3500);expect(await pending).toEqual({servers:[]});
+  }finally{vi.useRealTimers();}
+ });
+});
+
+describe('cold facade metadata budget (fast unit fake time; expected 1s, maximum 10s)',()=>{
+ it.each(['discover','schema','mesh_snapshot'])('accepts a9s %s receipt exactly once under the default10s bound',async(tool)=>{
+  vi.useFakeTimers();try{
+   const fake=vi.fn(async(_url:any,init:any)=>{const r=JSON.parse(init.body);if(r.method==='notifications/initialized')return new Response(null,{status:204});if(r.method==='tools/call')await new Promise<void>((resolve,reject)=>{const timer=setTimeout(resolve,9000);init.signal.addEventListener('abort',()=>{clearTimeout(timer);reject(new Error('aborted'));},{once:true});});return new Response(JSON.stringify({id:r.id,result:r.method==='initialize'?{protocolVersion:'2025-11-25'}:{verified:'metadata'}}));});
+   const t=new FleetGptAdminTransport({endpoint:'https://hub.test/mcp',headersProvider:()=>({}),fetch:fake as any});
+   const operation=tool==='discover'?t.discover():tool==='schema'?t.schema('peer'):t.call('peer',tool,{});const outcome=operation.then(value=>({value}),error=>({error:error.message}));await vi.advanceTimersByTimeAsync(9500);
+   expect(await outcome).toEqual({value:{verified:'metadata'}});expect(fake.mock.calls.filter(c=>JSON.parse(c[1].body).method==='tools/call')).toHaveLength(1);
+  }finally{vi.useRealTimers();}
+ });
+ it('aborts an unresolved read at10s without a read retry or delayed execute',async()=>{
+  vi.useFakeTimers();try{
+   const fake=vi.fn(async(_url:any,init:any)=>{const r=JSON.parse(init.body);if(r.method==='notifications/initialized')return new Response(null,{status:204});if(r.method==='tools/call')return new Promise<Response>((_resolve,reject)=>init.signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true}));return new Response(JSON.stringify({id:r.id,result:{protocolVersion:'2025-11-25'}}));});
+   const t=new FleetGptAdminTransport({endpoint:'https://hub.test/mcp',headersProvider:()=>({}),fetch:fake as any});let error:string|undefined;const pending=t.call('peer','mesh_snapshot',{}).catch(e=>{error=e.message;});await vi.advanceTimersByTimeAsync(9999);expect(error).toBeUndefined();await vi.advanceTimersByTimeAsync(1);await pending;
+   expect(error).toBe('gptadmin_deadline');expect(fake.mock.calls.filter(c=>JSON.parse(c[1].body).method==='tools/call')).toHaveLength(1);
   }finally{vi.useRealTimers();}
  });
 });
