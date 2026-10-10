@@ -139,6 +139,10 @@ def prepare(base,config):
         raise w.Refused('host_reserve_insufficient')
     w.storage_bytes(state,16*w.MIB);w.storage_bytes(temp,16*w.MIB)
     env=os.environ.copy();env['TMPDIR']=str(temp)
+    # Installed0.160.0 uses Tokio1.52.3/Rayon-core1.13 worker defaults.
+    # These supported knobs do NOT cap Tokio's separate blocking pool.
+    # Codex .env can shadow them; owner must verify effective startup settings.
+    env.update(TOKIO_WORKER_THREADS='1',RAYON_NUM_THREADS='1')
     # Do not redirect native global storage to a copied account/profile.
     if env.get('CODEX_HOME') and Path(env['CODEX_HOME']).resolve()!=Path.home()/'.codex':
         raise w.Refused('native_codex_home_unverified')
