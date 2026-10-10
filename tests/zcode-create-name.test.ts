@@ -1,4 +1,8 @@
 import {describe,it,expect} from 'vitest';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {DatabaseSync} from 'node:sqlite';
 import {ZcodeAdapter} from '../src/adapters/zcode.js';
 import type {ZcodeClientLike} from '../src/adapters/zcode-protocol.js';
 class DraftClient implements ZcodeClientLike {
@@ -18,6 +22,23 @@ class DraftClient implements ZcodeClientLike {
  }
 }
 describe('ZCode model-free draft naming',()=>{
+ it('reads the native indexed title across adapter restart only for the exact workspace identity',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'zcode-display-'));const path=join(dir,'tasks.sqlite');
+  const db=new DatabaseSync(path);db.exec('create table tasks(task_id text,title text,workspace_path text,workspace_identity text,updated_at integer)');
+  const insert=db.prepare('insert into tasks values(?,?,?,?,?)');insert.run('own-draft','Foreign project','/different','/different',1);
+  const client=new DraftClient();const adapter=new ZcodeAdapter({client,cwd:'/workspace',tasksIndexDbPath:path});
+  try{
+   expect(await adapter.getSession('own-draft')).toMatchObject({id:'own-draft',title:'Untitled ZCode session'});
+   insert.run('own-draft','Unknown identity title','/workspace',null,2);
+   expect(await adapter.getSession('own-draft')).toMatchObject({id:'own-draft',title:'Untitled ZCode session'});
+   insert.run('own-draft','Persisted draft name','/workspace','/workspace',2);
+   expect(await adapter.getSession('own-draft')).toMatchObject({id:'own-draft',title:'Persisted draft name'});
+   insert.run('own-draft','Ambiguous same scope','/workspace','/workspace',3);
+   expect(await adapter.getSession('own-draft')).toMatchObject({id:'own-draft',title:'Untitled ZCode session'});
+   expect(client.calls.some(x=>/createSession|renameTask|sendPrompt/.test(x.method))).toBe(false);
+  }finally{await adapter.dispose();db.close();await rm(dir,{recursive:true,force:true});}
+ });
+
  it('names the exact newly created native draft before readback without prompt admission',async()=>{
   const client=new DraftClient();const adapter=new ZcodeAdapter({client,cwd:'/workspace'});
   try{const created=await adapter.createSession({name:'Fleet draft',cwd:'/workspace',fullAccess:true});

@@ -1437,6 +1437,10 @@ export class ZcodeAdapter implements HarnessAdapter {
         const eventSeq = snapshot.runtime?.eventSeq ?? 0;
         this.sessionEventCursors.set(id, eventSeq);
         const mapped = mapSession(snapshot, workspace.workspacePath, undefined, nativeEvents, nativeEventHistoryAvailable);
+        // Native renameTask persists the display title in its task metadata even
+        // when an empty V4 snapshot still exposes the old draft title.
+        const displayTitle = await this.readTaskDisplayTitle(id, workspace);
+        if (displayTitle) mapped.title = displayTitle;
         const lastTurn = [...nativeEvents].reverse().find((event) =>
           (event.type === "turn.started" || event.type === "turn.completed" || event.type === "turn.failed") && nonEmptyString(event.turnId));
         if (lastTurn) mapped.meta = { ...mapped.meta, nativeLastTurn: {
@@ -1462,6 +1466,20 @@ export class ZcodeAdapter implements HarnessAdapter {
     } catch {
       return null;
     }
+  }
+
+  private async readTaskDisplayTitle(id: string, workspace: ZcodeWorkspaceRef): Promise<string | undefined> {
+    if (!this.tasksIndexDbPath || !existsSync(this.tasksIndexDbPath)) return undefined;
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(this.tasksIndexDbPath, { readOnly: true });
+      try {
+        const rows = db.prepare("select title from tasks where task_id = ? and workspace_path = ? and workspace_identity = ? order by updated_at desc limit 2")
+          .all(id, workspace.workspacePath, workspace.workspaceIdentity) as Array<{ title?: string }>;
+        const titles = new Set(rows.map(row => nonEmptyString(row.title)).filter(Boolean));
+        return titles.size === 1 ? [...titles][0] : undefined;
+      } finally { db.close(); }
+    } catch { return undefined; }
   }
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
