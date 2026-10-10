@@ -1,6 +1,6 @@
 # Agent Herder: кабинет для всего флота, 10.10.2026
 
-Статус: реализация открыта. Один принятый маршрут 88→100 не означает готовый fleet cabinet.
+Статус: Linux100/44/88 работают; кабинет реально создал одну Codex-сессию на88. Чтение новой пустой сессии исправлено и проверено в source, установка кандидата и открытие того же ID идут сейчас. Mac-узлы ещё не приняты; исходная общая MCP-миграция остаётся открытой.
 
 ## Результат пользователя
 
@@ -136,3 +136,15 @@ Correction по QA: actualSSHprecondition9223-unoccupied отказалдоkicks
 Status-only compiled/api/fleet/access realchecks PASS: forgedprincipal401, invalidcookie403, exactapprovedcaller204, POST405; mutations0, peak52379648bytes/swap0/OOM0/cleanup. Build owner-gate compiledcandidate bounded-qkdgv_s0 peak556711936bytes;83 priorintegratedlogicchecks stillmatch unaffectedmodules. Newremoteingress willauth_request thissameSSOowner gate, preservingexistinglogin/cookie and denying otherusers localowner sessionaccess. Parentmulti-profilebinding notclaimed.
 
 Rootverified actualMiniQA ownerR38 recoveredSAMEprofile/currentChrome14528/9223, installedcbb0257/e84 moderate-only activated, warm30s≤1536MiB, nativecontrolreceipt. Currentlease2aPilot9ONLYROcapture+cleanup validuntilcapturedrelease;55 QAblockeduntilR38 newlease. Exactour oldtarget/session/URL handedR38 forrebind; no newtab/browserrestart/click/create. ContinueindependentfleetLinux/auth/ingress whilewaiting.
+
+## Actual88 create / same-ID readback defect
+
+Headed authorisedMiniUI: selected88+Codex, nameFleet88Codexcheck10.10, cwd/home/roomhacker, modelgpt-6.1-sol; ONEformclick. Durablecreator receipt input85612146-2e99-4f0e-9037-5910784c6857/address88:codex:01a1234e-69c0-7532-86b9-477c1e209a4f/created; no nativeprompt/modelturn. APIjournalcreated persists, browserunknownintent clearedonlyafterconfirmedreceipt. Screenshot ui/fleet88-created.png; stillnotwhole userpathaccepted.
+
+Crosscomponentreadback actualnativeagent_info returnednull. ExactdiagnosticJOIN SAME88socket/read-onlythread/read proved sameID/name/cwd/idle, loadedlistcontainsID, turns/list andthread/read includeTurns=true both0turns. Future rollout_path allocated, filesystemENOENT beforefirstturn; rawtranscriptadapter exception hid authoritative native session in Herder. Fixowned codex-app-server.ts: ignoreENOENT onlywhenmetadatafreshNativeverified; permission/othererrors propagate. Emptyhistory onlyafterexactNativeThreadID + explicitturns[]; missingolderhistorynotfabricated.6narrow fastunits discriminatingRED→GREEN; no recreation/LLM/historywrite. OldsameID required postdeployread/UIopen releasegate.
+
+Canonical runner refused misdeclaredfullcount60 beforepayload (ordinaryselected43). Aligncase with EXISTINGordinaryselection, no suite/policy/caps bypass. Newfixture/localmocks only logicproof, not runtimeacceptance. MiniQAcurrentsolelease55/provenowntarget14F231.../t16; restoredACC48unconfirmedpreserved. R38 currentChrome/watchguard accepted, no restart/pressureProbe/oldInput replay.
+
+## Проверенный кандидат чтения пустой сессии
+
+46 обычных fast units (existingCodex37 + empty6 + hostlink3) PASS, peak188137472 bytes; type/frontendbuild PASS, peak549363712 bytes; swap0/OOM0, nativecleanup завершён. Receipts source-check/attempt-6dd6545f6d8c7efa5900ffce5b946568.json и attempt-4bf040aa126e711fa2c26b7da142db5b.json; candidate bounded-4ddskcug/candidate/dist, source pins сверены. Independent review: HIGH/MEDIUM отсутствуют. Это sourceproof; runtime проверяется на ранее созданном88 ID без нового создания. Ссылка из подтверждённого receipt теперь ведёт на явную машину даже до появления пустой сессии в обычном native списке.

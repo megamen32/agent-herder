@@ -358,9 +358,18 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         this.threads.delete(id);
       }
     }
-    const observation = await this.rawTranscriptAdapter.getSessionObservation(id);
+    const readArchive = async (read: () => Promise<AgentSession | null>) => {
+      try { return await read(); }
+      catch (error) {
+        // Native thread/start can allocate a rollout path before its first turn creates the file.
+        // Preserve only freshly verified native metadata; never hide permission/other archive failures.
+        if (base && (error as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw error;
+      }
+    };
+    const observation = await readArchive(() => this.rawTranscriptAdapter.getSessionObservation(id));
     const raw = options.includeMetrics
-      ? await this.rawTranscriptAdapter.getSession(id)
+      ? await readArchive(() => this.rawTranscriptAdapter.getSession(id))
       : observation;
     const automationStop = observation?.meta?.automationStop as CodexAutomationStop | undefined;
     const nativeAutomation = this.externalAutomationMetadata(id, automationStop ? { automationStop } : {});
@@ -745,7 +754,17 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async getSessionMessages(id: string, limit = 12): Promise<SessionMessageView[] | null> {
-    return this.rawTranscriptAdapter.getSessionMessages(id, limit);
+    try { return await this.rawTranscriptAdapter.getSessionMessages(id, limit); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      await this.ensureReady();
+      const result = await this.request("thread/read", { threadId: id, includeTurns: true }) as {
+        thread?: CodexThread & { turns?: unknown[] };
+      };
+      // An empty native history is authoritative. An unavailable archive of an older thread is not.
+      if (result.thread?.id === id && Array.isArray(result.thread.turns) && result.thread.turns.length === 0) return [];
+      throw error;
+    }
   }
 
   async getFirstUserMessage(id: string): Promise<SessionMessageView | null> {

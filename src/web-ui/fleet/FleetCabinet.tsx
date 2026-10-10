@@ -3,8 +3,8 @@ import type {FleetHost,FleetSession,FleetHarness,FleetCreateReceipt} from '../..
 import {createFleetClient,type FleetClient} from './client.js';
 import './fleet.css';
 import {FleetBrowserIntent} from './intent.js';
+import {fleetSessionLink} from './session-link.js';
 const states={ready:'Доступен',metadata_only:'Только просмотр',offline:'Не в сети',unavailable:'Herder не подключён',stale:'Данные устарели'};
-const nativeLink=(host:FleetHost,session:FleetSession)=>host.uiUrl?host.uiUrl.replace(/\/$/,'')+'/#/session/'+encodeURIComponent(session.address.harness+':'+session.address.nativeSessionId):undefined;
 /** Mount once for one authenticated browser identity. Remote session selection retains its full native address. */
 export function FleetCabinet({defaultHostId,onSelectSession,client:injected}:{defaultHostId?:string;onSelectSession?:(session:FleetSession)=>void;client?:FleetClient}){
  const client=useRef(injected??createFleetClient()).current;
@@ -33,7 +33,7 @@ export function FleetCabinet({defaultHostId,onSelectSession,client:injected}:{de
   <label>Машина <select value={hostId} disabled={sending||receipt?.state==='unknown'} onChange={e=>{setHostId(e.target.value);if(receipt?.state!=='unknown')setReceipt(null);}}><option value="">Все машины</option>{hosts.map(h=><option key={h.hostId} value={h.hostId}>{h.label} · {states[h.state]}</option>)}</select></label>
   <div className="fleet-hosts">{hosts.map(h=><article key={h.hostId}><strong>{h.label}</strong><span>{states[h.state]}</span>{h.uiUrl&&<a href={h.uiUrl}>Открыть кабинет</a>}</article>)}</div>
   {error&&<p role="alert">{error}</p>}{partial&&<p>Показана часть доступных сессий. У некоторых машин нет свежих данных.</p>}
-  <ul className="fleet-sessions">{sessions.map(s=>{const host=hosts.find(h=>h.hostId===s.address.hostId);const link=host&&nativeLink(host,s);return <li key={s.key}><strong>{s.title||s.address.nativeSessionId}</strong><span>{host?.label??s.address.hostId} · {s.address.harness} · {s.status}</span><span>Текущий проект: {s.project.currentCwd??'не подтверждён'}</span>{s.project.launchCwd&&<small>Каталог запуска: {s.project.launchCwd}</small>}{onSelectSession?<button type="button" onClick={()=>onSelectSession(s)}>Открыть сессию</button>:link&&<a href={link}>Открыть сессию</a>}</li>;})}</ul>
+  <ul className="fleet-sessions">{sessions.map(s=>{const host=hosts.find(h=>h.hostId===s.address.hostId);const link=host&&fleetSessionLink(host,s.address);return <li key={s.key}><strong>{s.title||s.address.nativeSessionId}</strong><span>{host?.label??s.address.hostId} · {s.address.harness} · {s.status}</span><span>Текущий проект: {s.project.currentCwd??'не подтверждён'}</span>{s.project.launchCwd&&<small>Каталог запуска: {s.project.launchCwd}</small>}{onSelectSession?<button type="button" onClick={()=>onSelectSession(s)}>Открыть сессию</button>:link&&<a href={link}>Открыть сессию</a>}</li>;})}</ul>
   <form onSubmit={submit}><h3>Новая сессия</h3><p>{selected?selected.label:'Выберите машину'}</p>
    <label>Среда <select value={harness} onChange={e=>setHarness(e.target.value as FleetHarness)} disabled={!allowed.length||sending}>{allowed.map(h=><option key={h}>{h}</option>)}</select></label>
    <label>Название <input required maxLength={128} value={name} onChange={e=>setName(e.target.value)} disabled={sending}/></label>
@@ -41,6 +41,7 @@ export function FleetCabinet({defaultHostId,onSelectSession,client:injected}:{de
    <label>Модель <input placeholder="По умолчанию" maxLength={128} value={model} onChange={e=>setModel(e.target.value)} disabled={sending}/></label>
    <button disabled={sending||!allowed.includes(harness)||selected?.state!=='ready'||receipt?.state==='unknown'}>{sending?'Создаётся…':'Создать на выбранной машине'}</button>
   </form>
+  {receipt?.state==='created'&&receipt.address&&fleetSessionLink(hosts.find(h=>h.hostId===receipt.address!.hostId),receipt.address)&&<a className="fleet-created-link" href={fleetSessionLink(hosts.find(h=>h.hostId===receipt.address!.hostId),receipt.address)}>Открыть созданную сессию</a>}
   {receipt&&<p role="status">{receipt.state==='created'?'Сессия создана на выбранной машине.':receipt.state==='unknown'?'Ответ не получен. Создание могло завершиться; повторная отправка отключена. Проверьте список сессий.':'Сессия не создана. Проверьте доступность машины и среды.'}</p>}
  </section>;
 }
