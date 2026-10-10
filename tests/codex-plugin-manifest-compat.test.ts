@@ -5,10 +5,13 @@ import { describe, expect, it } from "vitest";
 const root = resolve(import.meta.dirname, "..");
 
 describe("Codex plugin hook manifest compatibility", () => {
-  it("routes plugin clients to the existing singleton instead of a private controller", () => {
+  it("connects plugin clients directly to the singleton HTTP endpoint without a subprocess", () => {
     for (const filename of [".mcp.json", "mcp.json"]) {
       const manifest = JSON.parse(readFileSync(resolve(root, filename), "utf8"));
-      expect(manifest.mcpServers["agent-herder"].args).toEqual(["${PLUGIN_ROOT}/dist/http-mcp-stdio.js"]);
+      const server = manifest.mcpServers["agent-herder"];
+      expect(server.url).toBe("http://127.0.0.1:18787/mcp");
+      expect(server.type).toBe(filename === "mcp.json" ? "streamable-http" : "http");
+      for (const field of ["command", "args", "cwd", "env"]) expect(server).not.toHaveProperty(field);
     }
   });
   it("resolves legacy and portable manifests to the same Codex hook commands", () => {

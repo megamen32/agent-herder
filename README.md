@@ -160,9 +160,13 @@ Operationally, the current Mac app is named **BrowserOS neo** (bundle id `com.br
 
 - **Singleton daemon.** One Agent Herder process per host holds the state and
   serves the web UI plus MCP over HTTP (`AGENT_HERDER_WEB_PORT`, default
-  loopback `18787`). Harness processes either run the stdio entrypoint or the
-  bundled `http-mcp-stdio.js` shim / direct HTTP entry that forwards to the
-  singleton.
+  loopback `18787`). Clients connect directly to `/mcp` using Streamable HTTP.
+  The plugin defaults to `http://127.0.0.1:18787/mcp`; it starts no process.
+  Fleet nodes use their own local port `18789`: configure their client or
+  installed plugin URL as `http://127.0.0.1:18789/mcp`. On Macs, `18787` can
+  be an existing forward to100 and must not be used as the local node URL.
+  The stdio bridge remains available only for explicit legacy consumers;
+  it is not the Agent Herder default.
 - **ZCode adapter.** Talks the native ZCode Protocol app-server (length-
   framed channel protocol, `zcode-agent` / `zcode-task` namespaces), and
   attributes every protocol call to the right workspace (`workspaceKey`).
@@ -263,8 +267,9 @@ npm run build
 npm run inspect
 ```
 
-The local stdio entrypoint is `dist/index.js`; the HTTP-forwarding stdio shim
-for harness processes is `dist/http-mcp-stdio.js`.
+The managed singleton entrypoint is `dist/index.js`. Connect harnesses to its
+HTTP `/mcp` endpoint; do not launch it once per client. The legacy
+`dist/http-mcp-stdio.js` shim is optional and is not in the default plugin wiring.
 
 <details>
 <summary>Advanced: web UI and persistent ACP</summary>

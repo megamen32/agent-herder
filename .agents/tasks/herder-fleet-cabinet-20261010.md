@@ -1,6 +1,6 @@
 # Agent Herder: кабинет для всего флота, 10.10.2026
 
-Статус: Linux100/44/88 работают; кабинет реально создал одну Codex-сессию на88. Чтение новой пустой сессии исправлено и проверено в source, установка кандидата и открытие того же ID идут сейчас. Mac-узлы ещё не приняты; исходная общая MCP-миграция остаётся открытой.
+Статус: владелец55 завершает Agent Herder Mesh пяти машин. Четыре создания приняты; M1 исходный intent остаётся UNKNOWN. Текущий общий refresh не принят: четыре read deadline и M1 MCP error. HTTP singleton — обязательный клиентский маршрут; AutoFind ведут другие владельцы.
 
 ## Результат пользователя
 
@@ -246,3 +246,11 @@ New dedicated nativeZCode MCPcanary (notpriorfleetempty): sess52b0403b creation/
 Реальные upstream чтения из Codex и ZCode на100 теперь подтверждены отдельными request/job IDs (см. tracker ZCode). Backend d00 установлен для зависимости AutoFind без перестройки интерфейса; единственный canary исполнитель12054, конечный callback/cleanup ещё ожидается.
 
 Незакрытый остаток: M1 create8e004438 остаётся UNKNOWN и не повторяется; нет авторитетного native ID либо доказательства отсутствия неперсистентного thread. Общий M1 daemon22298 с worker1/1 выдержал48m30s, RSS145360KiB/11threads, genuine native reads и Herder identity PASS; это не доказательство нового create под thread64. Также свежий Fleet refresh периодически даёт fleet_read_deadline для100/M1, хотя прямые зарегистрированные child reads работают. До устранения этого и полного consumer matrix пять машин не объявляются полностью принятыми.
+
+## Прямой scope человека / HTTP default — 11:36 МСК
+
+55 отвечает только за Agent Herder Mesh:100/44/88/Mini/M1, machine+harness selector, чтение/создание native sessions. Разделение проектов доставлено координатору; новых AutoFind задач не выполняю. Существующий long job_a663 в PID3458625 сохраняется до своего finite terminal; это ограничивает только замену этого backend, не source/per-node Mesh.
+
+Плагин переведён с per-client stdio shim на прямой HTTP singleton: portable streamable-http и Codex compatibility http, namespace/hooks сохранены. Базовый100 URL18787; native fleet URL18789 должен быть установлен отдельно, особенно на Macs с историческим18787→100 forward. GlobalGrepMesh stdio workaround и disabled MCP сохраняются. Статический independent review без HIGH/MEDIUM; bounded focused2PASS, peak94445568B, swap/OOM0, same-generation cleanup (attempt690967fb). Это source/plugin proof, не новый native consumer acceptance.
+
+Fresh authenticated Fleet refresh25.93s:100/44/88/Mini fleet_read_deadline, M1 Remote MCP operation failed. Existing source worker121d1 занимается bounded discovery/source repair; runtime/publish остаётся55. M1 native22298 и Node54788 остановлены observation_failed/TimeoutExpired после9298s/6849s; последние RSS142656/129232KiB, native11threads, память/CPU нижеcaps. Canonical socket отсутствует, label native not running; старый unknown8e004 не повторять. Следующий шаг: direct HTTP plugin/config installation с backup/disabled preservation; восстановить own M1 manager/node по штатному пути и authoritative native persistence readback того же intent; исправить реальные read stages и принять пять узлов в кабинете.
