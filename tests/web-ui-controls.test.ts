@@ -1,9 +1,22 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { matchesSessionQuery } from "../src/web-ui/session-list.js";
+import { DEFAULT_THEME, applyTheme, normalizeTheme, readTheme, writeTheme } from "../src/web-ui/theme.js";
+import { currentModelOption, modelSwitchSupported, requestModelChange, shortModelLabel } from "../src/web-ui/model-chip.js";
 
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/web-ui/styles.css", import.meta.url), "utf8");
+const themeCss = readFileSync(new URL("../src/web-ui/codex-theme.css", import.meta.url), "utf8");
+const themeHtml = readFileSync(new URL("../src/web-ui/index.html", import.meta.url), "utf8");
+
+const memoryStorage = () => {
+  const map = new Map<string, string>();
+  return {
+    getItem: (key: string) => map.get(key) ?? null,
+    setItem: (key: string, value: string) => { map.set(key, value); },
+    removeItem: (key: string) => { map.delete(key); },
+  };
+};
 
 describe("mobile chat and session controls", () => {
   it("searches sessions across title, harness, cwd, and preview", () => {
@@ -244,5 +257,110 @@ describe("mobile chat and session controls", () => {
 
     expect(main).toContain("loadDetails(activeKey, false)");
     expect(streamEffect).not.toContain("?limit=50");
+  });
+});
+
+describe("две темы оформления", () => {
+  it("применяет тему до первой отрисовки, чтобы не было вспышки", () => {
+    expect(themeHtml).toContain("agent-herder.theme");
+    expect(themeHtml).toContain("document.documentElement.dataset.theme");
+    expect(themeHtml.indexOf("dataset.theme")).toBeLessThan(themeHtml.indexOf("/main.tsx"));
+  });
+
+  it("по умолчанию тёмная, светлая сохраняется в agent-herder.theme", () => {
+    expect(DEFAULT_THEME).toBe("dark");
+    expect(normalizeTheme("light")).toBe("light");
+    expect(normalizeTheme("dark")).toBe("dark");
+    expect(normalizeTheme(null)).toBe("dark");
+    expect(normalizeTheme("мусор")).toBe("dark");
+    const storage = memoryStorage();
+    expect(readTheme(storage)).toBe("dark");
+    writeTheme(storage, "light");
+    expect(storage.getItem("agent-herder.theme")).toBe("light");
+    expect(readTheme(storage)).toBe("light");
+    // возврат к значению по умолчанию не оставляет мусорный ключ
+    writeTheme(storage, "dark");
+    expect(storage.getItem("agent-herder.theme")).toBeNull();
+  });
+
+  it("переключение меняет только атрибут документа — без перезагрузки и без запроса данных", () => {
+    const root = { dataset: {} as DOMStringMap };
+    applyTheme(root, "light");
+    expect(root.dataset.theme).toBe("light");
+    expect(main).toContain("applyTheme(document.documentElement, next)");
+    expect(main).toContain("writeTheme(window.localStorage, next)");
+  });
+
+  it("держит тёмную палитру Codex по умолчанию и светлую как переопределение", () => {
+    const darkBlock = themeCss.slice(themeCss.indexOf(":root {"), themeCss.indexOf(':root[data-theme="light"]'));
+    const lightBlock = themeCss.slice(themeCss.indexOf(':root[data-theme="light"]'), themeCss.indexOf("body {"));
+    // палитра снята с референса: холст не чёрный, панели светлее, текст светлый
+    expect(darkBlock).toContain("--bg: #282a36");
+    expect(darkBlock).toContain("--surface-1: #2c2c38");
+    expect(darkBlock).toContain("--bubble: #323440");
+    expect(darkBlock).toContain("--text: #f2f2f7");
+    // светлая палитра сохранена как второй вариант
+    expect(lightBlock).toContain("--bg: #ffffff");
+    expect(lightBlock).toContain("--text: #1c1c1e");
+    expect(lightBlock).toContain("--accent: #1f5fd0");
+  });
+
+  it("не оставляет цветов, зашитых мимо переменных, — иначе часть интерфейса не переключится", () => {
+    // цветом темы считается только hex/rgba в правиле, вне комментария и вне строки с переменной
+    const offenders = themeCss.replace(/\/\*[\s\S]*?\*\//g, "").split("\n")
+      .map((line, index) => ({ number: index + 1, line }))
+      .filter(({ line }) => /#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(line))
+      .filter(({ line }) => !line.trimStart().startsWith("--"));
+    expect(offenders.map(({ number, line }) => `${number}: ${line.trim()}`)).toEqual([]);
+    // статусы очереди отправки тоже переведены на переменные темы
+    expect(styles).not.toContain("#ff8f8f");
+    expect(styles).toContain(".composer-outbox-entry.status-delivered .composer-outbox-status { color: var(--status-done); }");
+    expect(main).toContain("className=\"theme-choice\"");
+  });
+});
+
+describe("чип модели в композере", () => {
+  it("подписан коротким именем и помечает отсутствие явного выбора", () => {
+    expect(shortModelLabel("anthropic.MiniMax-M3.1-Flash-Preview")).toBe("MiniMax-M3.1-Flash-Preview");
+    // точка внутри имени модели значима: версия не отбрасывается
+    expect(shortModelLabel("gpt-6.1-sol")).toBe("gpt-6.1-sol");
+    expect(shortModelLabel(undefined)).toBe("Модель по умолчанию");
+    expect(main).toContain("по умолчанию");
+    expect(main).toContain('aria-label="Выбрать модель"');
+  });
+
+  it("прячет чип у харнесса, который не умеет менять модель", () => {
+    const adapters = [
+      { id: "codex", active: true, capabilities: { modelSwitch: true } },
+      { id: "fast-agent", active: true, capabilities: { modelSwitch: false } },
+      { id: "qoder", active: false, capabilities: { modelSwitch: true } },
+    ];
+    expect(modelSwitchSupported(adapters, "codex")).toBe(true);
+    expect(modelSwitchSupported(adapters, "fast-agent")).toBe(false);
+    expect(modelSwitchSupported(adapters, "qoder")).toBe(false);
+    expect(modelSwitchSupported(adapters, undefined)).toBe(false);
+    expect(main).toContain("modelSwitchSupported(harnessAdapters, activeSession.harness)");
+    expect(main).toContain("{modelSwitchHarness && <button type=\"button\" className={`composer-model");
+  });
+
+  it("берёт список моделей харнесса и отмечает текущий выбор", () => {
+    expect(currentModelOption("gpt-6.1-sol", ["gpt-6.1-sol", "o3"])).toBe("gpt-6.1-sol");
+    expect(currentModelOption("нет-в-списке", ["gpt-6.1-sol"])).toBeUndefined();
+    expect(currentModelOption(undefined, ["gpt-6.1-sol"])).toBeUndefined();
+    expect(main).toContain("`/api/models?harness=${encodeURIComponent(harness)}`");
+  });
+
+  it("различает успех, отказ адаптера и сетевой сбой", async () => {
+    const ok = await requestModelChange(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }), "codex", "s1", "o3");
+    expect(ok).toEqual({ ok: true });
+
+    const rejected = await requestModelChange(async () => new Response(JSON.stringify({ ok: false, error: "модель не поддерживается" }), { status: 502 }), "codex", "s1", "o3");
+    expect(rejected.ok).toBe(false);
+    expect(rejected.ok === false && rejected.message).toContain("модель не поддерживается");
+
+    const broken = await requestModelChange(async () => { throw new Error("network down"); }, "codex", "s1", "o3");
+    expect(broken.ok).toBe(false);
+    expect(main).toContain("Не удалось сменить модель:");
+    expect(main).toContain("Не удалось загрузить список моделей:");
   });
 });

@@ -3,9 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#282a36" />
     <title>Agent Herder</title>
     <link rel="icon" type="image/svg+xml" href="/assets/herder-icon.svg" />
+    <script>
+      /* Тема применяется до первой отрисовки, иначе при загрузке вспыхивает светлый холст.
+         Значение читается из того же ключа, которым пользуется переключатель в инспекторе. */
+      (function () {
+        var stored = null;
+        try { stored = window.localStorage.getItem("agent-herder.theme"); } catch (error) { stored = null; }
+        document.documentElement.dataset.theme = stored === "light" ? "light" : "dark";
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

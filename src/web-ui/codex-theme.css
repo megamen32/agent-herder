@@ -1,73 +1,367 @@
-/* Shared agent workspace, matched to the supplied Codex reference. */
+/* Codex-подобный плоский холст в двух темах.
+   Тёмная — по умолчанию. Палитра снята пиксельно с docs/reference/codex-ui-reference-light.png:
+   холст #282a36, левый сайдбар #2c2c38, шапка #31313b, карточки инспектора #3e3e4a,
+   композер #474751, пузырь человека #323440, текст #f2f2f7 / #b9b9c3 / #a2a2aa.
+   Светлая — палитра, собранная ранее: белый холст, #1c1c1e, синий акцент #1f5fd0.
+   Ни одна структура, класс-селектор функционального блока или aria-атрибут здесь не удаляется:
+   файл меняет только вид, обе темы читают один и тот же набор переменных. */
+
 :root {
-  --bg: #272932;
-  --surface-1: #2a2c35;
-  --surface-2: #32343e;
-  --surface-3: #3b3d47;
-  --border: #40424c;
-  --border-2: #4b4d58;
-  --text: #f0f0f3;
-  --text-2: #ceced3;
-  --muted: #9b9ba3;
-  --accent: #ececf0;
-  --accent-soft: #ffffff12;
-  --header-h: 68px;
+  color-scheme: dark;
+  /* фоны: холст не чёрный, панели светлее идут по восходящей */
+  --bg: #282a36;
+  --surface-1: #2c2c38;
+  --surface-2: #31313b;
+  --surface-3: #3e3e4a;
+  --surface-4: #474751;
+  --surface-hover: rgba(255, 255, 255, .06);
+  --panel: var(--surface-3);
+  --panel-strong: var(--surface-4);
+  /* пузырь человека — тот же тёмный холст, но на полтона светлее фона */
+  --bubble: #323440;
+  /* текст: светлый основной, два приглушённых уровня под ним */
+  --text: #f2f2f7;
+  --text-2: #b9b9c3;
+  --muted: #a2a2aa;
+  /* границы тонкие, без тяжёлых рамок */
+  --border: #33333f;
+  --border-2: #3d3d4a;
+  /* акцент читаемый на тёмном */
+  --accent: #bd93f9;
+  --accent-strong: #a97ef0;
+  --accent-soft: rgba(189, 147, 249, .16);
+  --on-accent: #282a36;
+  /* отправка — светлая кнопка, как в Codex */
+  --send-bg: #f4f4f2;
+  --send-fg: #282a36;
+  /* статусы, снятые с цветных пикселей референса */
+  --status-running: #e8c25a;
+  --status-waiting: #d68a5f;
+  --status-error: #e0657c;
+  --status-idle: #8a8a92;
+  --status-stopped: #7d7d89;
+  --status-done: #5fd98c;
+  --shadow-menu: 0 16px 40px rgba(0, 0, 0, .5);
+  --header-h: 56px;
+  --radius-l: 18px;
+  --radius-m: 10px;
 }
-.oc-app { grid-template-columns: 64px 300px minmax(0, 1fr) 260px; }
-.oc-app.no-inspector { grid-template-columns: 64px 300px minmax(0, 1fr); }
-.codex-navigation { display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 16px 8px; background: #30323c; border-right: 1px solid var(--border); }
-.codex-navigation-items { display: grid; gap: 14px; }
-.codex-navigation button { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: transparent; color: var(--muted); }
-.codex-navigation button:hover, .codex-navigation button.active { background: #ffffff10; color: var(--text); }
-.codex-navigation svg { width: 24px; height: 24px; }
-.codex-navigation-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #9861b1; color: white; font-size: 11px; }
-.sessions-heading { border-bottom: 0; padding: 22px 20px 16px; }
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  /* почти белый холст приложения; панели чуть серее фона */
+  --bg: #ffffff;
+  --surface-1: #fbfbfc;
+  --surface-2: #f5f5f7;
+  --surface-3: #ececf0;
+  --surface-4: #ffffff;
+  --surface-hover: rgba(0, 0, 0, .04);
+  --panel: #ffffff;
+  --panel-strong: #ffffff;
+  /* пузырь человека — светло-серый, текст в нём тёмный */
+  --bubble: #f0f0f2;
+  --text: #1c1c1e;
+  --text-2: #4a4a4f;
+  --muted: #6b6b70;
+  --border: #e3e3e6;
+  --border-2: #d3d3d8;
+  /* акцент читаемый на светлом: глубокий синий */
+  --accent: #1f5fd0;
+  --accent-strong: #174aab;
+  --accent-soft: rgba(31, 95, 208, .1);
+  --on-accent: #ffffff;
+  --send-bg: #1f5fd0;
+  --send-fg: #ffffff;
+  --status-running: #3f7fd0;
+  --status-waiting: #b07d2e;
+  --status-error: #c2503f;
+  --status-idle: #8a8a8f;
+  --status-stopped: #75757a;
+  --status-done: #4e8f6d;
+  --shadow-menu: 0 16px 40px rgba(0, 0, 0, .14);
+}
+
+body { font-size: 15px; -webkit-font-smoothing: antialiased; }
+:focus-visible { outline-color: var(--accent); }
+
+/* ---------- 1. Левый рельс ---------- */
+.oc-app { grid-template-columns: 60px 296px minmax(0, 1fr) 264px; }
+.oc-app.no-inspector { grid-template-columns: 60px 296px minmax(0, 1fr); }
+.codex-navigation { background: var(--surface-1); border-right-color: var(--border); padding: 14px 8px; }
+.codex-navigation-items { gap: 10px; }
+.codex-navigation button { width: 40px; height: 40px; border-radius: 10px; }
+.codex-navigation button:hover, .codex-navigation button.active { background: var(--surface-hover); }
+.codex-navigation svg { width: 21px; height: 21px; }
+.codex-navigation-mark { background: var(--surface-3); color: var(--text-2); }
+
+/* ---------- 2. Список сессий: простой текст, без рамок ---------- */
+.sessions-pane { background: var(--surface-1); border-right-color: var(--border); }
+.sessions-heading { padding: 18px 18px 12px; }
 .sessions-heading .eyebrow { display: none; }
-.sessions-heading h1 { font-size: 21px; }
-.session-list { padding: 8px 12px; }
-.session-row { padding: 12px 10px; }
-.session-row.selected { background: #ffffff0c; box-shadow: none; }
-.session-row strong { font-size: 14px; font-weight: 450; }
-.session-row small { line-height: 1.5; }
-.chat-header { background: #292b34; padding: 12px 24px; }
-.chat-heading h2 { font-size: 17px; font-weight: 500; }
-.chat-heading .eyebrow { letter-spacing: .05em; font-size: 10px; }
-.message-column { width: min(900px, 100%); padding: 38px 32px; }
-.message { margin-bottom: 30px; }
-.message.user { max-width: min(660px, 85%); padding: 18px 22px; border-radius: 24px; background: #32343e; }
-.message-body { max-width: 100%; }
-.message > .message-body + .message-body,
-.message > .service-note + .message-body,
-.message > .message-body + .service-note { margin-top: var(--space-3); }
-.message p, .message ul, .message ol { font-size: 16px; line-height: 1.65; }
-.message.user .message-meta { color: #b0b0b8; }
-.message pre, .tool-card, .service-note { background: #2d2f38; }
-.composer-stack { width: min(836px, calc(100% - 48px)); margin-bottom: 24px; }
-.composer { padding: 17px; border-radius: 25px; background: #41434e; border-color: #50525d; box-shadow: none; align-items: flex-end; }
-.composer textarea { min-height: 55px; font-size: 16px; }
-.composer-plus { width: 34px; height: 34px; border-radius: 50%; background: #ffffff09; }
-.send-button { width: 36px; height: 36px; border-radius: 50%; }
-.send-button:not(:disabled) { background: #f4f4f5; color: #272932; border-color: #f4f4f5; }
-.composer-hint { color: #bebec5; }
+.sessions-heading h1 { font-size: 17px; font-weight: 550; letter-spacing: -.01em; }
+.session-search { background: var(--surface-1); border-bottom-color: var(--border); padding: 4px var(--space-3) 10px; }
+.session-search input { background: var(--surface-2); border-color: transparent; border-radius: var(--radius-m); font-size: 14px; }
+.session-search input:focus { border-color: var(--border-2); }
+.session-settings { background: var(--surface-1); border-bottom-color: var(--border); }
+.session-list { padding: 6px 10px; }
+.session-row { padding: 9px 10px; border-radius: var(--radius-m); gap: 9px; }
+.session-row.selected { background: var(--surface-hover); box-shadow: none; }
+.session-copy strong { font-size: 14px; font-weight: 450; line-height: 1.4; color: var(--text); }
+.session-copy small { color: var(--muted); font-size: var(--text-xs); }
+/* точки мелкие и приглушённые, без светящихся колец */
+.status-dot { width: 6px; height: 6px; margin-top: 6px; flex-basis: 6px; }
+.status-dot.status-running, .status-dot.status-waiting, .status-dot.status-needs_input { box-shadow: none; }
+.status-label { font-size: var(--text-xs); }
+.choice-card { border-color: var(--border); background: var(--surface-2); }
+.choice-button { border-color: var(--border); background: var(--surface-3); }
+.choice-button:hover { border-color: var(--border-2); background: var(--surface-hover); }
+.choice-card > strong, .choice-button:hover { color: var(--text); }
+
+/* ---------- 3. Шапка чата: плоская, как в Codex ---------- */
+.chat-header { background: var(--surface-2); border-bottom-color: var(--border); padding: 10px 20px; }
+.chat-heading h2 { font-size: 16px; font-weight: 500; letter-spacing: -.01em; color: var(--text); }
+.chat-heading .eyebrow { color: var(--muted); font-size: 10px; font-weight: 500; letter-spacing: .05em; }
+.chat-heading small { color: var(--muted); font-size: var(--text-xs); }
+.quiet-button { color: var(--text-2); }
+.quiet-button:hover { color: var(--text); }
+.selected-icon { color: var(--text); background: var(--surface-hover); }
+.chat-menu { background: var(--panel); border-color: var(--border-2); box-shadow: var(--shadow-menu); }
+.chat-menu-section { border-top-color: var(--border); color: var(--muted); font-weight: 500; }
+.subagents-panel { border-bottom-color: var(--border); }
+.subagents-panel summary span { background: var(--surface-3); color: var(--text-2); }
+.scroll-latest { background: var(--panel); border-color: var(--border-2); }
+
+/* ---------- 4. Переписка: узкая колонка, текст без пузырей ---------- */
+.message-column { width: min(768px, 100%); padding: 30px var(--space-5) 44px; }
+.message { max-width: 100%; margin: 0 0 30px; }
+.message-meta { margin-bottom: 6px; color: var(--muted); font-size: var(--text-xs); opacity: .55; transition: opacity .15s ease; }
+.message:hover .message-meta { opacity: 1; }
+/* сообщение агента — обычный полноширинный текст, без фона и рамки */
+.message.assistant .message-body { max-width: 100%; }
+.message p { margin: 0 0 14px; color: var(--text-2); font-size: 15px; line-height: 1.68; }
+.message ul, .message ol { color: var(--text-2); line-height: 1.68; }
+.message li { margin: 3px 0; }
+.message a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--border-2); }
+.message blockquote { border-left-color: var(--border-2); color: var(--muted); }
+/* сообщение человека — пузырь на полтона светлее холста */
+.message.user { max-width: min(620px, 86%); margin-left: auto; padding: 13px 17px; border-radius: 16px 16px 5px 16px; background: var(--bubble); }
+.message.user p { color: var(--text); font-size: 15px; }
+.message.user .message-body { max-width: 100%; }
+/* инлайновый код — чип с тонкой границей */
+.message code:not(pre code) { padding: 1px 5px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-2); color: var(--text); font-size: .88em; }
+.message pre { padding: 12px 14px; border-color: var(--border); border-radius: var(--radius-m); background: var(--surface-1); color: var(--text-2); font-size: var(--text-sm); }
+.message-collapsed { max-height: 340px; }
+.message-expand { color: var(--accent); }
+.message-expand:hover { color: var(--text); }
+
+/* служебные заметки и развороты инструментов — плоские строки, не карточки */
+.service-note { padding: 6px 2px; border: 0; border-radius: 0; background: transparent; }
+.service-note-open { background: transparent; }
+.service-note-label { color: var(--muted); font-weight: 500; letter-spacing: .05em; }
+.service-note-head { color: var(--text-2); }
+.service-note-head small { color: var(--muted); }
+.service-note-body pre { border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; }
+.oc-disclosure { margin-top: var(--space-2); border: 0; background: transparent; }
+.oc-disclosure > summary { display: flex; align-items: center; gap: 7px; padding: 3px 0; color: var(--muted); font-size: 13px; list-style: none; }
+.oc-disclosure > summary::-webkit-details-marker { display: none; }
+.oc-disclosure > summary::before { content: "⌘"; color: var(--border-2); font-size: 11px; }
+.oc-disclosure > summary:hover { color: var(--text-2); }
+.oc-disclosure > pre { margin-top: 6px; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: var(--surface-1); padding: 8px 10px; }
+
+/* одна приглушённая строка активности + одна свёрнутая строка действий инструментов */
+.activity-line { min-height: 22px; margin-top: 4px; color: var(--muted); font-size: 13px; }
+.activity-line .pulse-dot { width: 5px; height: 5px; flex-basis: 5px; }
+.activity-detail { color: var(--muted); font-style: normal; }
+.tool-actions { margin: 0 0 10px; }
+.tool-actions > summary { display: flex; align-items: center; gap: 7px; padding: 3px 0; color: var(--muted); font-size: 13px; line-height: 1.5; cursor: pointer; list-style: none; }
+.tool-actions > summary::-webkit-details-marker { display: none; }
+.tool-actions > summary:hover { color: var(--text-2); }
+.tool-actions-icon { display: inline-grid; place-items: center; width: 15px; height: 15px; flex: 0 0 15px; border: 1px solid var(--border-2); border-radius: 4px; color: var(--muted); font-size: 9px; }
+.tool-actions-body { display: grid; gap: 10px; margin-top: 7px; padding-left: 1px; }
+.tool-actions-item { display: grid; gap: 4px; }
+.tool-actions-item > b { color: var(--muted); font-size: var(--text-xs); font-weight: 500; }
+.tool-actions-item pre { margin: 0; padding: 8px 10px; border: 0; border-radius: var(--radius-s); background: var(--surface-2); color: var(--text-2); font: var(--text-sm)/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tool-actions-error { color: var(--status-error); font-size: var(--text-xs); }
+
+/* JSON-ответ агента: спокойный блок с кнопкой «Копировать» */
+.json-message { margin: 0 0 14px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--panel); }
+.json-message-head { display: flex; align-items: center; gap: var(--space-2); padding: 7px 10px; border-bottom: 1px solid var(--border); }
+.json-message-label { color: var(--muted); font: 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .09em; text-transform: uppercase; }
+.json-message-hint { min-width: 0; flex: 1; overflow: hidden; color: var(--muted); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.json-message-copy { padding: 3px 10px; border: 1px solid var(--border-2); border-radius: 999px; background: transparent; color: var(--text-2); font-size: var(--text-xs); }
+.json-message-copy:hover { background: var(--surface-hover); color: var(--text); }
+.json-message-body { max-height: 340px; margin: 0; overflow: auto; padding: 11px 12px; color: var(--text-2); font: var(--text-sm)/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ---------- 5. Композер: крупный скруглённый контейнер ---------- */
+.composer-stack { width: min(768px, calc(100% - 40px)); margin-bottom: 20px; }
+.composer {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "text text text text" "plus hint model send";
+  align-items: center;
+  gap: 4px var(--space-2);
+  padding: 12px 13px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-l);
+  background: var(--panel-strong);
+  box-shadow: none;
+}
+.composer textarea { grid-area: text; width: 100%; min-height: 26px; max-height: 200px; color: var(--text); font-size: 15px; line-height: 1.55; }
+.composer textarea::placeholder { color: var(--muted); }
+.composer-readonly { grid-area: text; }
+.composer-plus { grid-area: plus; align-self: center; width: 30px; height: 30px; border-radius: 50%; background: transparent; font-size: 19px; }
+.composer-plus:hover, .composer-plus.active { background: var(--surface-hover); }
+/* нижняя подсказка — заметно мельче и приглушённее, чтобы не спорить с полем ввода */
+.composer-hint { grid-area: hint; width: auto; margin: 0; color: var(--muted); font-size: 10px; line-height: 1.3; opacity: .7; }
+
+/* чип модели: подпись, пометка «по умолчанию», шеврон */
+.composer-model {
+  grid-area: model;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 230px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 1.3;
+  text-align: left;
+}
+.composer-model:hover, .composer-model.open { background: var(--surface-hover); color: var(--text); }
+.composer-model:disabled { opacity: .6; }
+.composer-model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-model-default { flex: 0 0 auto; color: var(--muted); font-size: 10px; }
+.composer-model-chevron { flex: 0 0 auto; color: var(--muted); font-size: 9px; }
+.composer-model-menu {
+  position: absolute;
+  z-index: 40;
+  bottom: calc(100% - 4px);
+  right: 46px;
+  display: grid;
+  gap: 2px;
+  width: max(260px, 44vw);
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-m);
+  background: var(--panel);
+  box-shadow: var(--shadow-menu);
+  text-align: left;
+}
+.composer-model-menu button {
+  padding: 6px 9px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.composer-model-menu button:hover { background: var(--surface-hover); color: var(--text); }
+.composer-model-menu button.current { color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
+.composer-model-note { padding: 6px 9px; color: var(--muted); font-size: var(--text-xs); }
+.composer-model-note.error { color: var(--status-error); }
+
+.send-button { grid-area: send; align-self: center; width: 34px; height: 34px; border-radius: 50%; border-color: transparent; background: var(--surface-3); color: var(--muted); }
+.send-button:not(:disabled) { border-color: transparent; background: var(--send-bg); color: var(--send-fg); }
+.send-button:not(:disabled):hover { background: var(--accent); color: var(--on-accent); }
+.composer-create-panel { background: var(--panel); border-color: var(--border-2); box-shadow: 0 16px 42px var(--shadow-menu); }
+.cwd-suggestions { background: var(--panel); border-color: var(--border-2); }
+
+/* очередь отправки: плоские строки, кнопки остаются на месте */
+.composer-outbox { padding: 6px; border-color: var(--border); border-radius: var(--radius-m); background: var(--surface-1); }
+.composer-outbox-entry { border-color: transparent; border-radius: var(--radius-s); background: var(--panel); }
+.composer-outbox-entry.status-delivered { border-color: color-mix(in srgb, var(--status-done) 40%, transparent); }
+.composer-outbox-entry.status-failed { border-color: color-mix(in srgb, var(--status-error) 40%, transparent); }
+.composer-outbox-retry, .composer-outbox-dismiss { border-color: var(--border); color: var(--text-2); }
+.composer-outbox-retry { border-color: var(--border-2); }
+
+/* ---------- 6. Инспектор: спокойный список фактов ---------- */
+.inspector-pane { background: var(--surface-1); border-left-color: var(--border); padding: 16px var(--space-4) 40px; }
+.inspector-heading { margin-bottom: 14px; }
+.inspector-title { font-size: 14px; font-weight: 500; color: var(--text); }
+.inspector-status { margin-top: 8px; }
+.inspector-pane dl { margin: 22px 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.inspector-pane dt { margin-top: 12px; color: var(--muted); font-size: 10px; letter-spacing: .07em; }
+.inspector-pane dd { margin-top: 2px; color: var(--text-2); }
+/* переключатели — без тяжёлой карточки */
+.autopilot-control { margin-top: 16px; padding: 10px 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; }
+.autopilot-control strong { font-size: var(--text-sm); font-weight: 500; }
+.inspector-empty-metrics { padding: 9px 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; }
+.settings-block { margin-top: 22px; padding-top: 14px; }
+.settings-block label { color: var(--text-2); }
+.settings-block select { background: var(--surface-4); border-color: var(--border); }
+/* переключатель темы — два равноправных чипа под блоком «ВИД» */
+.theme-choice { display: flex; gap: 6px; margin-top: 8px; }
+.theme-choice button { flex: 1 1 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-s); background: transparent; color: var(--text-2); font-size: var(--text-sm); }
+.theme-choice button:hover { border-color: var(--border-2); color: var(--text); }
+.theme-choice button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.theme-choice button:disabled { opacity: .5; cursor: not-allowed; }
+.switch-control { background: var(--border-2); }
+.switch-control.enabled { background: var(--accent); }
+.switch-control.enabled span { background: var(--on-accent); }
+.primary-button { background: var(--accent); color: var(--on-accent); }
+.primary-button:hover { background: var(--accent-strong); }
+.stop-button { border-color: color-mix(in srgb, var(--status-error) 55%, transparent); }
+
+/* ---------- 7. Оверлей настроек и служебные разделы: меньше карточек ---------- */
+.autopilot-settings-overlay { background: color-mix(in srgb, var(--bg) 82%, transparent); }
+.global-autopilot-card { border-color: var(--border); border-radius: var(--radius-m); background: var(--panel); box-shadow: 0 10px 30px var(--shadow-menu); }
+.global-autopilot-head h3 { font-size: var(--text-lg); font-weight: 550; }
+.autopilot-state-banner { border-color: var(--border); border-radius: var(--radius-s); background: var(--surface-2); color: var(--text-2); }
+.autopilot-state-banner.enabled { border-color: var(--border-2); background: var(--surface-3); color: var(--text); }
+.launch-policy-notice { border-color: color-mix(in srgb, var(--status-waiting) 30%, var(--border)); background: color-mix(in srgb, var(--status-waiting) 7%, var(--panel)); }
+.harness-option, .launch-runtime-option { border-color: var(--border); border-radius: var(--radius-s); background: var(--surface-2); }
+.harness-option.selected { border-color: var(--border-2); background: var(--surface-3); color: var(--text); }
+.settings-advanced, .session-settings-link { border-color: var(--border); background: var(--surface-1); }
+.settings-group legend { font-weight: 550; }
+.settings-footer { background: linear-gradient(to bottom, color-mix(in srgb, var(--panel) 92%, transparent), var(--panel) 28%); }
+
+/* статистика и задачи — тот же плоский холст */
+.statistics-scroll, .jobs-scroll { background: var(--bg); }
+.statistics-cards article { border-color: var(--border); border-radius: var(--radius-m); background: var(--surface-1); box-shadow: none; }
+.statistics-cards article.recommendation { border-color: var(--border-2); background: var(--surface-2); }
+.statistics-cards .recommendation strong { color: var(--text); }
+.coverage-legend i { background: var(--accent); }
+.statistics-panel { border-color: var(--border); border-radius: var(--radius-m); background: var(--surface-1); }
+.statistics-range { border-color: var(--border); background: var(--surface-1); }
+.statistics-range button.active { background: var(--surface-hover); color: var(--text); }
+.percentile-table { border-color: var(--border); }
+.method-facts span { border-color: var(--border); background: var(--surface-2); }
+.eyebrow { color: var(--muted); font-weight: 500; letter-spacing: .1em; }
+.history-loading-banner { border-color: var(--border); background: var(--surface-2); }
+
+/* ---------- 8. Мобильный ---------- */
 @media (min-width: 901px) and (max-width: 1180px) {
-  .oc-app, .oc-app.no-inspector { grid-template-columns: 58px 260px minmax(0, 1fr); }
+  .oc-app, .oc-app.no-inspector { grid-template-columns: 56px 264px minmax(0, 1fr); }
   .inspector-pane { display: none; }
-  .header-actions { gap: 1px; }
-  .quiet-button { padding-inline: 7px; }
 }
 @media (max-width: 900px) {
   .codex-navigation { display: none; }
   .oc-app, .oc-app.no-inspector { display: block; }
   .chat-header { padding: 8px 12px; }
-  .message-column { padding: 22px 16px; }
-  .message.user { max-width: 92%; padding: 14px 16px; border-radius: 20px; }
-  .composer-stack { width: calc(100% - 20px); margin-bottom: 0; }
-  .composer { padding: 12px; border-radius: 21px; }
-  .composer textarea { min-height: 38px; }
-  .composer-create-panel { max-height: 65dvh; overflow-y: auto; overscroll-behavior: contain; }
-  .cwd-suggestions { position: static; max-height: 120px; margin-top: 5px; box-shadow: none; }
+  .message-column { width: min(100%, 768px); padding: 20px 16px 30px; }
+  .message { margin-bottom: 24px; }
+  .message p, .message.user p { font-size: 15px; line-height: 1.65; }
+  .message.user { max-width: 90%; padding: 12px 15px; border-radius: 15px 15px 5px 15px; }
+  .message-meta { opacity: .75; }
+  .composer-stack { width: calc(100% - 18px); margin-bottom: 0; }
+  .composer { padding: 10px 11px; border-radius: 15px; }
+  .composer textarea { min-height: 24px; }
+  .composer-hint { display: none; }
+  .composer { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "text text text" "plus model send"; }
+  .composer-model { max-width: 100%; }
+  .composer-model-menu { right: 12px; width: min(300px, calc(100vw - 40px)); }
+  .scroll-latest { bottom: 132px; }
+  .inspector-pane { background: var(--surface-1); }
 }
-
 
 /* Мобильные размеры композера: 44px вместо 34–36px (аудит 2026-10-09) */
 @media (max-width: 900px) {

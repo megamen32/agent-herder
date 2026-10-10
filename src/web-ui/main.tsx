@@ -13,6 +13,8 @@ import { creationModels } from "./creation-models.js";
 import { groupSessionMessages } from "./message-groups.js";
 import { MessageAdmissionDispatcher, appendOutboxEntry, beginOutboxAttempt, canDeleteOutboxEntry, canSteerOutboxEntry, cancelOutcomeOfJobState, classifyMessageDelivery, deliveryConnectionFailure, deliveryModeLabel, isOutboxUnfinished, isTerminalJobState, newInputId, outboxStatusLabel, readDefaultDeliveryMode, readDeliveryModePinned, readOutboxJobId, readStoredOutbox, reconcileMessageStatus, removeOutboxEntry, updateOutboxEntry, withOutboxJobId, writeDefaultDeliveryMode, writeDeliveryModePinned, writeStoredOutbox, type CancelOutcome, type DeliveryMode, type OutboxEntry } from "./composer-delivery.js";
 import { formatJsonPayload, readJsonRenderingOptOut, splitSystemBlocks, writeJsonRenderingOptOut } from "./json-rendering.js";
+import { applyTheme, readTheme, writeTheme, type HerderTheme } from "./theme.js";
+import { currentModelOption, modelSwitchSupported, requestModelChange, shortModelLabel } from "./model-chip.js";
 import type { SessionMessageView } from "../types/index.js";
 
 type HerderSession = SessionListSession & {
@@ -343,6 +345,62 @@ function Markdown({ children }: { children: string }) {
 
 const SERVICE_BLOCK_BODY_LIMIT = 4000;
 
+const TOOL_ACTION_LABELS: Array<[RegExp, string]> = [
+  [/read|view|cat|open|glob|grep|search|find|list|ls/i, "Прочитал файлы"],
+  [/shell|bash|exec|command|terminal|run/i, "Выполнил команды"],
+  [/patch|edit|apply|write|update|create_file/i, "Изменил файлы"],
+  [/plan|todo/i, "Обновил план"],
+  [/fetch|http|web|browse/i, "Искал в интернете"],
+];
+/** Человекочитаемая строка действия инструмента вместо технического имени. */
+const toolActionLabel = (name?: string) => {
+  if (!name) return "Работа с инструментами";
+  return TOOL_ACTION_LABELS.find(([pattern]) => pattern.test(name))?.[1] || name;
+};
+/** Несколько имён инструментов сворачиваются в одну короткую строку действий. */
+const toolActionsSummary = (names: string[]) => {
+  const labels: string[] = [];
+  for (const name of names) {
+    const label = toolActionLabel(name);
+    if (!labels.includes(label)) labels.push(label);
+  }
+  const head = labels.slice(0, 3).join(" ");
+  return labels.length > 3 ? `${head} и ещё ${labels.length - 3}` : head;
+};
+/** «12 мин 26 с» — длительность без секундной каши. */
+const formatElapsed = (ms: number) => {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return hours ? `${hours} ч ${minutes} мин ${seconds} с` : `${minutes} мин ${seconds} с`;
+};
+/** Момент, с которого сессия работает: из meta сессии, иначе — с момента наблюдения. */
+const runningSinceMs = (session?: HerderSession) => {
+  for (const key of ["running_since", "runningSince", "started_at", "startedAt"]) {
+    const value = session?.meta?.[key];
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) return value > 1e11 ? value : value * 1000;
+    if (typeof value === "string") {
+      const parsed = Date.parse(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+};
+/** Живой счётчик длительности: обновляет только себя, а не всю ленту переписки. */
+function ActivityElapsed({ sinceMs, prefix = "Работает уже " }: { sinceMs?: number; prefix?: string }) {
+  const [now, setNow] = React.useState(() => Date.now());
+  const observedRef = React.useRef<number | undefined>(undefined);
+  React.useEffect(() => {
+    if (sinceMs) observedRef.current = undefined;
+    else if (observedRef.current === undefined) observedRef.current = Date.now();
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [sinceMs]);
+  const start = sinceMs ?? observedRef.current;
+  return <>{prefix}{start === undefined ? "…" : formatElapsed(now - start)}</>;
+}
+
 function JsonMessageBlock({ json }: { json: string }) {
   const [copied, setCopied] = React.useState(false);
   const copy = async () => {
@@ -364,27 +422,53 @@ function JsonMessageBlock({ json }: { json: string }) {
   </div>;
 }
 
+type MessagePartItem = { kind: "single"; part: SessionMessage["parts"][number]; key: string } | { kind: "tools"; parts: SessionMessage["parts"]; key: string };
+
+/** Подряд идущие действия инструментов — одна приглушённая строка с маленькой иконкой;
+    каждый вызов и его вывод остаются внутри, раскрываются по клику. */
+function ToolActionsGroup({ parts, groupKey }: { parts: SessionMessage["parts"]; groupKey: string }) {
+  return <details className="tool-actions" key={groupKey}>
+    <summary><span className="tool-actions-icon" aria-hidden="true">⌘</span><span>{toolActionsSummary(parts.map((part) => part.name || ""))}</span></summary>
+    <div className="tool-actions-body">{parts.map((part, index) => <div className="tool-actions-item" key={`${groupKey}:tool:${index}`}>
+      <b>{part.name || (part.type === "tool_call" ? "Вызов инструмента" : "Результат инструмента")}{part.error === true ? " · ошибка" : ""}</b>
+      <pre>{part.output || (part.input ? JSON.stringify(part.input, null, 2) : "")}</pre>
+    </div>)}</div>
+  </details>;
+}
+
 function MessageParts({ message, showReasoning, showTools, jsonRendering }: { message: SessionMessage; showReasoning: boolean; showTools: boolean; jsonRendering: boolean }) {
-  const parts = message.parts.length > 0 ? message.parts : message.text ? [{ type: "text" as const, text: message.text }] : [];
+  const parts: SessionMessage["parts"] = message.parts.length > 0 ? message.parts : message.text ? [{ type: "text", text: message.text }] : [];
+  const items: MessagePartItem[] = [];
+  parts.forEach((part, index) => {
+    const partKey = `${message.id}:${index}`;
+    if (part.type === "tool_call" || part.type === "tool_result") {
+      if (!showTools) return;
+      const previous = items[items.length - 1];
+      if (previous && previous.kind === "tools") { previous.parts.push(part); return; }
+      items.push({ kind: "tools", parts: [part], key: partKey });
+      return;
+    }
+    if (part.type === "thinking" && !showReasoning) return;
+    items.push({ kind: "single", part, key: partKey });
+  });
   return <>
-    {parts.map((part, index) => {
-      const partKey = `${message.id}:${index}`;
+    {items.map((item) => {
+      if (item.kind === "tools") return <ToolActionsGroup groupKey={item.key} parts={item.parts} />;
+      const part = item.part;
       if (part.type === "text") {
         const { text, blocks } = splitSystemBlocks(part.text || "");
         const jsonText = jsonRendering ? formatJsonPayload(text) : undefined;
-        return <div className="markdown-content" key={partKey}>
+        return <div className="markdown-content" key={item.key}>
           {jsonText ? <JsonMessageBlock json={jsonText} /> : text && <Markdown>{text}</Markdown>}
           {blocks.map((block, blockIndex) => (
-            <details className="service-note part-service-note" key={`${partKey}:sys:${blockIndex}`}>
+            <details className="service-note part-service-note" key={`${item.key}:sys:${blockIndex}`}>
               <summary className="service-note-head"><span className="service-note-label">{block.label}</span></summary>
               <pre className="service-note-body">{block.body.length > SERVICE_BLOCK_BODY_LIMIT ? `${block.body.slice(0, SERVICE_BLOCK_BODY_LIMIT)}\n… ещё ${block.body.length - SERVICE_BLOCK_BODY_LIMIT} символов` : block.body}</pre>
             </details>
           ))}
         </div>;
       }
-      if (part.type === "thinking") return showReasoning ? <details className="oc-disclosure" key={partKey}><summary>Размышления</summary><pre>{part.text}</pre></details> : null;
-      if (!showTools) return null;
-      return <details className="oc-disclosure tool" key={partKey}><summary>{part.name || (part.type === "tool_call" ? "Вызов инструмента" : "Результат инструмента")}</summary><pre>{part.output || (part.input ? JSON.stringify(part.input, null, 2) : "")}</pre></details>;
+      return <details className="oc-disclosure" key={item.key}><summary>Размышления</summary><pre>{part.text}</pre></details>;
     })}
   </>;
 }
@@ -590,13 +674,19 @@ function App() {
   const [showReasoning, setShowReasoning] = React.useState(false);
   const [showTools, setShowTools] = React.useState(false);
   const [jsonRendering, setJsonRendering] = React.useState(() => !readJsonRenderingOptOut(window.localStorage));
+  // Тёмная тема — по умолчанию. Значение уже выставлено инлайн-скриптом в index.html,
+  // здесь только синхронизируем состояние с тем, что реально применено к документу.
+  const [theme, setTheme] = React.useState<HerderTheme>(() => readTheme(window.localStorage));
+  // выбор режима отправки запоминается сам по себе, отдельной галочки нет
+  const [deliveryMode, setDeliveryMode] = React.useState<DeliveryMode>(() => readDefaultDeliveryMode(window.localStorage));
+  const [deliveryModePinned, setDeliveryModePinned] = React.useState(() => readDeliveryModePinned(window.localStorage));
   const [showInspector, setShowInspector] = React.useState(() => window.innerWidth > 900);
   const [sessionSettingsReturn, setSessionSettingsReturn] = React.useState<"autocontinue" | "autopilot">();
   const automationDialogRef = React.useRef<HTMLDivElement>(null);
   const [showStatistics, setShowStatistics] = React.useState(false);
   const [showJobs, setShowJobs] = React.useState(false);
-  const [showFleet, setShowFleet] = React.useState(false);
   const [showQuota, setShowQuota] = React.useState(false);
+  const [showFleet, setShowFleet] = React.useState(false);
   const [jobs, setJobs] = React.useState<HerderJob[]>([]);
   const [jobsLoading, setJobsLoading] = React.useState(false);
   const [jobsError, setJobsError] = React.useState<string>();
@@ -642,9 +732,7 @@ function App() {
   const [latestTimingMs, setLatestTimingMs] = React.useState<number>();
   const [hydrateTimingMs, setHydrateTimingMs] = React.useState<number>();
   const initialSessionsStartedRef = React.useRef(performance.now());
-  // режим доставки (steer/queue), его закрепление как личного по умолчанию и очередь отправленных сообщений
-  const [deliveryMode, setDeliveryMode] = React.useState<DeliveryMode>(() => readDefaultDeliveryMode(window.localStorage));
-  const [deliveryModePinned, setDeliveryModePinned] = React.useState(() => readDeliveryModePinned(window.localStorage));
+  // очередь отправленных сообщений; режим доставки определяется автоматически по харнессу
   const [outbox, setOutboxState] = React.useState<OutboxEntry[]>(() => readStoredOutbox(window.localStorage));
   const outboxRef = React.useRef(outbox);
   const messageDispatcherRef = React.useRef(new MessageAdmissionDispatcher());
@@ -717,6 +805,14 @@ function App() {
   const createModelRequestRef = React.useRef(0);
   const [creatingSession, setCreatingSession] = React.useState(false);
   const [createSessionError, setCreateSessionError] = React.useState<string>();
+  // чип модели в композере: список моделей харнесса и результат смены
+  const [harnessAdapters, setHarnessAdapters] = React.useState<Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean } | null }>>([]);
+  const [modelMenuOpen, setModelMenuOpen] = React.useState(false);
+  const [modelOptions, setModelOptions] = React.useState<string[]>([]);
+  const [modelOptionsLoading, setModelOptionsLoading] = React.useState(false);
+  const [modelOptionsHarness, setModelOptionsHarness] = React.useState<string>();
+  const [modelSwitching, setModelSwitching] = React.useState(false);
+  const [modelSwitchError, setModelSwitchError] = React.useState<string>();
   const [chatMenuOpen, setChatMenuOpen] = React.useState(false);
   const [showScrollToLatest, setShowScrollToLatest] = React.useState(false);
   const chatScrollRef = React.useRef<HTMLDivElement>(null);
@@ -851,11 +947,17 @@ function App() {
     const { harness, id } = splitKey(key);
     const base = `/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/details`;
     setDetailsError(undefined);
-    setDetailsLoading(true);
-    setDetailsHydrating(false);
-    setLatestTimingMs(undefined);
-    setHydrateTimingMs(undefined);
-    setDetails((current) => current && keyOf(current.session) === key ? current : null);
+    // Фоновое обновление по событию (hydrateFull=false) приходит постоянно, пока
+    // активны сессии. Раньше оно гасило details и включало detailsLoading, поэтому
+    // на всё время запроса переписка подменялась заглушкой «Загружаю свежие
+    // сообщения». Полное состояние сбрасываем только при полной загрузке сессии.
+    if (hydrateFull) {
+      setDetailsLoading(true);
+      setDetailsHydrating(false);
+      setLatestTimingMs(undefined);
+      setHydrateTimingMs(undefined);
+      setDetails((current) => current && keyOf(current.session) === key ? current : null);
+    }
     try {
       const latestStartedAt = performance.now();
       const latest = await api<SessionDetails>(`${base}?limit=12&quick=1`);
@@ -1311,6 +1413,58 @@ function App() {
       if (action === "resume") setResumeSending(false);
     }
   };
+  // Тема применяется мгновенно: меняется только атрибут темы у документа, данные не перезапрашиваются.
+  const selectTheme = (next: HerderTheme) => {
+    applyTheme(document.documentElement, next);
+    writeTheme(window.localStorage, next);
+    setTheme(next);
+  };
+  // capabilities.modelSwitch решает, показывать ли чип вообще: неподдерживаемый харнесс прячем.
+  React.useEffect(() => {
+    let cancelled = false;
+    void api<{ adapters?: Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean } | null }> }>("/api/adapters")
+      .then((result) => { if (!cancelled) setHarnessAdapters(Array.isArray(result.adapters) ? result.adapters : []); })
+      .catch(() => { if (!cancelled) setHarnessAdapters([]); });
+    return () => { cancelled = true; };
+  }, []);
+  const modelSwitchHarness = activeSession?.harness && modelSwitchSupported(harnessAdapters, activeSession.harness) ? activeSession.harness : undefined;
+  const loadModelOptions = React.useCallback(async (harness: string) => {
+    setModelOptionsLoading(true);
+    setModelSwitchError(undefined);
+    try {
+      const result = await api<{ models?: string[] }>(`/api/models?harness=${encodeURIComponent(harness)}`);
+      setModelOptions(Array.isArray(result.models) ? result.models : []);
+      setModelOptionsHarness(harness);
+    } catch (error) {
+      setModelOptions([]);
+      setModelSwitchError(`Не удалось загрузить список моделей: ${(error as Error).message}`);
+    } finally {
+      setModelOptionsLoading(false);
+    }
+  }, []);
+  const toggleModelMenu = () => {
+    if (modelMenuOpen) { setModelMenuOpen(false); return; }
+    if (!modelSwitchHarness) return;
+    setModelMenuOpen(true);
+    setModelSwitchError(undefined);
+    void loadModelOptions(modelSwitchHarness);
+  };
+  const changeSessionModel = async (model: string) => {
+    if (!activeKey || !modelSwitchHarness || modelSwitching) return;
+    setModelSwitching(true);
+    setModelSwitchError(undefined);
+    try {
+      const outcome = await requestModelChange(fetch, splitKey(activeKey).harness, splitKey(activeKey).id, model);
+      if (!outcome.ok) { setModelSwitchError(outcome.message); return; }
+      setModelMenuOpen(false);
+      await loadDetails(activeKey);
+    } catch (error) {
+      setModelSwitchError(`Не удалось сменить модель: ${(error as Error).message}`);
+    } finally {
+      setModelSwitching(false);
+    }
+  };
+  React.useEffect(() => { setModelMenuOpen(false); setModelSwitchError(undefined); }, [activeKey]);
   const isResumeMode = !composer.trim() && (activeSession?.status === "stopped" || activeSession?.status === "error" || activeSession?.meta?.humanStopHeld === true);
   const activeJobsCount = jobs.filter((job) => job.state === "queued" || job.state === "running" || job.state === "waiting" || job.state === "cancelling").length;
   const readOnlySession = activeSession?.meta?.readOnly === true;
@@ -1323,33 +1477,33 @@ function App() {
   // очередь отправленных сообщений активной сессии; композер остаётся свободным, пока сообщения в полёте
   const activeOutbox = activeKey ? outbox.filter((entry) => entry.sessionKey === activeKey).slice().sort((left, right) => right.createdAt - left.createdAt) : [];
   const supportsSteer = activeSession?.harness === "codex";
-  const effectiveDeliveryMode: DeliveryMode = supportsSteer ? deliveryMode : "queue";
-  const sending = activeOutbox.some((entry) => entry.status === "sending");
-  const sessionActivity = sending
-    ? { kind: "thinking", label: "Отправляю сообщения…" }
-    : activeSession?.status === "running" && latestToolPart
-      ? { kind: "tool", label: latestToolPart.name ? `Использую инструмент: ${latestToolPart.name}` : "Работаю с инструментом…" }
-      : activeSession?.status === "running"
-        ? { kind: "thinking", label: "Думает…" }
-        : activeSession?.status === "needs_input"
-          ? { kind: "waiting", label: "Ждёт вашего ответа" }
-          : detailsLoading && activeSession
-            ? { kind: "loading", label: "Обновляю состояние сессии…" }
-            : undefined;
+  // пока режим не выбран вручную — steer там, где харнесс его понимает (codex), иначе очередь
+  const effectiveDeliveryMode: DeliveryMode = supportsSteer ? (deliveryModePinned ? deliveryMode : "steer") : "queue";
   const selectDeliveryMode = (mode: DeliveryMode) => {
     setDeliveryMode(mode);
-    if (deliveryModePinned) writeDefaultDeliveryMode(window.localStorage, mode);
-  };
-  const saveDefaultDeliveryMode = (mode: DeliveryMode) => {
-    setDeliveryMode(mode); setDeliveryModePinned(true);
+    setDeliveryModePinned(true);
     writeDefaultDeliveryMode(window.localStorage, mode);
     writeDeliveryModePinned(window.localStorage, true);
   };
-  const toggleDeliveryModePinned = (pinned: boolean) => {
-    setDeliveryModePinned(pinned);
-    writeDeliveryModePinned(window.localStorage, pinned);
-    if (pinned) writeDefaultDeliveryMode(window.localStorage, effectiveDeliveryMode);
-  };
+  // один и тот же переключатель в меню чата и в инспекторе сессии, ровно как переключатель темы
+  const deliveryModeChoice = (
+    <div className="theme-choice" role="group" aria-label="Режим отправки сообщений">
+      <button type="button" className={effectiveDeliveryMode === "steer" ? "active" : ""} aria-pressed={effectiveDeliveryMode === "steer"} disabled={!supportsSteer} title={supportsSteer ? "Вставить сообщение в текущий ход агента" : "Этот харнесс не умеет вставлять сообщения в текущий ход — сообщение уйдёт в очередь"} onClick={() => selectDeliveryMode("steer")}>{deliveryModeLabel("steer")}</button>
+      <button type="button" className={effectiveDeliveryMode === "queue" ? "active" : ""} aria-pressed={effectiveDeliveryMode === "queue"} onClick={() => selectDeliveryMode("queue")}>{deliveryModeLabel("queue")}</button>
+    </div>
+  );
+  const sending = activeOutbox.some((entry) => entry.status === "sending");
+  const runningSince = activeSession?.status === "running" ? runningSinceMs(activeSession) : undefined;
+  const latestToolAction = activeSession?.status === "running" && latestToolPart ? toolActionLabel(latestToolPart.name) : undefined;
+  const sessionActivity = sending
+    ? { kind: "thinking", label: "Отправляю сообщения…" }
+    : activeSession?.status === "running"
+      ? { kind: latestToolAction ? "tool" : "thinking", label: latestToolAction || "" }
+      : activeSession?.status === "needs_input"
+        ? { kind: "waiting", label: "Ждёт вашего ответа" }
+        : detailsLoading && activeSession
+          ? { kind: "loading", label: "Обновляю состояние сессии…" }
+          : undefined;
   const submitOutboxEntry = async (sessionKey: string, text: string, mode: DeliveryMode, inputId: string) => {
     const { harness, id } = splitKey(sessionKey);
     const next = appendOutboxEntry(outboxRef.current, { inputId, sessionKey, text, mode, createdAt: Date.now(), status: "ready" });
@@ -1573,7 +1727,7 @@ function App() {
         <button className="mobile-back" onClick={() => setMobileView("sessions")} aria-label="К списку сессий">← <span>Сессии</span></button>
         <div className="chat-heading">{showJobs ? <><span className="eyebrow">AGENT HERDER</span><h2>Задачи</h2><small>Фоновые задачи и их прогресс</small></> : showStatistics ? <><span className="eyebrow">AGENT HERDER</span><h2>Статистика</h2><small>Реальные паттерны активности недавних сессий</small></> : showQuota ? <><span className="eyebrow">AGENT HERDER</span><h2>Квота</h2><small>Окна Codex, расход моделей, потребители</small></> : <><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2>{activeSession ? (cleanSessionTitle(activeSession.title) || activeSession.id) : loading ? "Загрузка сессий…" : "Выберите сессию"}{(detailsLoading || detailsHydrating) && <span className="inline-loading-dot chat-loading-dot" role="status" aria-label="Загрузка сессии" />}</h2><small>{activeSession?.cwd || ""}</small>{SHOW_DEBUG_TIMINGS && <div className="load-timings" role="status" aria-label="Тайминги загрузки в браузере"><span title="Страница → список сессий готов">sessions <b>{formatLoadTiming(sessionsTimingMs)}</b></span>{activeKey && <><span title="Запрос свежих ходов">latest <b>{detailsLoading ? "…" : formatLoadTiming(latestTimingMs)}</b></span><span title="Фоновая история и метрики">hydrate <b>{detailsHydrating ? "…" : formatLoadTiming(hydrateTimingMs)}</b></span></>}</div>}</>}</div>
         <div className="header-actions"><button className="quiet-button" aria-label="Машины флота" onClick={() => setShowFleet(true)}>Машины</button><button className={`quiet-button ${showJobs ? "selected-icon" : ""}`} aria-pressed={showJobs} aria-label={activeJobsCount > 0 ? `Задачи, активных: ${activeJobsCount}` : "Задачи"} title={activeJobsCount > 0 ? `Активных задач: ${activeJobsCount}` : undefined} onClick={() => { setShowJobs((value) => !value); setShowStatistics(false); setAutomationSettings(undefined); setShowQuota(false); }}>Задачи</button><button className={`quiet-button ${showStatistics ? "selected-icon" : ""}`} aria-pressed={showStatistics} onClick={() => { setShowJobs(false); setShowQuota(false); showStatistics ? setShowStatistics(false) : openStatistics(); }}>Статистика</button>{!showStatistics && !showJobs && !showQuota && <>{activeHarnessSupportsAutocontinue && <button className={`quiet-button automation-setting-button ${automationSettings === "autocontinue" ? "selected-icon" : ""}`} aria-label={`Автопродолжение ${activeAutocontinueEnabled ? "включено" : "выключено"} — открыть настройки`} aria-pressed={automationSettings === "autocontinue"} title={`Автопродолжение ${activeAutocontinueEnabled ? "включено" : "выключено"}`} onClick={() => { setAutomationSettings((value) => value === "autocontinue" ? undefined : "autocontinue"); setChatMenuOpen(false); }}>Автопродолжение<span className={`toggle-dot ${activeAutocontinueEnabled ? "on" : "off"}`} aria-hidden="true" /></button>}{activeHarnessSupportsAutopilot && <button className={`quiet-button automation-setting-button ${automationSettings === "autopilot" ? "selected-icon" : ""}`} aria-label={`Автопилот ${activeAutopilotEnabled ? "включён" : "выключен"} — открыть настройки`} aria-pressed={automationSettings === "autopilot"} title={`Автопилот ${activeAutopilotEnabled ? "включён" : "выключен"}`} onClick={() => { setAutomationSettings((value) => value === "autopilot" ? undefined : "autopilot"); setChatMenuOpen(false); }}>Автопилот<span className={`toggle-dot ${activeAutopilotEnabled ? "on" : "off"}`} aria-hidden="true" /></button>}<button className={`quiet-button automation-setting-button ${automationSettings === "launch-policy" ? "selected-icon" : ""}`} aria-label="Настройки запуска новых сессий" title="Настройки запуска новых сессий" onClick={() => { setAutomationSettings((value) => value === "launch-policy" ? undefined : "launch-policy"); setChatMenuOpen(false); }}>+</button><button className="quiet-button" aria-label="Информация о сессии" title="Информация о сессии" aria-pressed={showInspector} onClick={() => { setSessionSettingsReturn(undefined); setShowInspector((value) => !value); }}>Настройки сессии</button></>}<button className={`quiet-button mobile-automation-button ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Открыть настройки автоматизации" aria-expanded={chatMenuOpen} onClick={() => setChatMenuOpen((value) => !value)}>Автоматизация</button><button className={`icon-button desktop-chat-menu ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Меню чата" aria-expanded={chatMenuOpen} onClick={() => setChatMenuOpen((value) => !value)}>···</button></div>
-        {chatMenuOpen && <div className="chat-menu" aria-label="Меню чата"><span className="chat-menu-section">Вид переписки</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Размышления</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Инструменты</label><label><input type="checkbox" checked={jsonRendering} onChange={(event) => setJsonRendering(event.target.checked)} /> JSON-ответы как JSON</label><span className="chat-menu-section">Автоматизация</span>{activeHarnessSupportsAutocontinue && <button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings("autocontinue"); setChatMenuOpen(false); }}>{`Автопродолжение · восстановление после сбоев: ${activeAutocontinueEnabled ? "включено" : "выключено"}`}</button>}{activeHarnessSupportsAutopilot && <button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings("autopilot"); setChatMenuOpen(false); }}>{`Автопилот · завершение задач: ${activeAutopilotEnabled ? "включён" : "выключен"}`}</button>}<span className="chat-menu-section">Разделы</span><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings("launch-policy"); setChatMenuOpen(false); }}>Настройки запуска новых сессий</button><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); openSessionInspector(); }}>Настройки текущей сессии</button><button className="quiet-button" onClick={() => { setShowJobs(true); setShowStatistics(false); setChatMenuOpen(false); }}>Задачи</button><button className="quiet-button" onClick={() => { setShowJobs(false); openStatistics(); }}>Статистика</button><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setAutomationSettings(undefined); setShowQuota(true); setChatMenuOpen(false); }}>Квота</button></div>}
+        {chatMenuOpen && <div className="chat-menu" aria-label="Меню чата"><span className="chat-menu-section">Вид переписки</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Размышления</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Инструменты</label><label><input type="checkbox" checked={jsonRendering} onChange={(event) => setJsonRendering(event.target.checked)} /> JSON-ответы как JSON</label><span className="chat-menu-section">Тема</span><div className="theme-choice" role="group" aria-label="Тема оформления"><button type="button" className={theme === "dark" ? "active" : ""} aria-pressed={theme === "dark"} onClick={() => selectTheme("dark")}>Тёмная</button><button type="button" className={theme === "light" ? "active" : ""} aria-pressed={theme === "light"} onClick={() => selectTheme("light")}>Светлая</button></div><span className="chat-menu-section">Отправка</span>{deliveryModeChoice}<span className="chat-menu-section">Автоматизация</span>{activeHarnessSupportsAutocontinue && <button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings("autocontinue"); setChatMenuOpen(false); }}>{`Автопродолжение · восстановление после сбоев: ${activeAutocontinueEnabled ? "включено" : "выключено"}`}</button>}{activeHarnessSupportsAutopilot && <button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings("autopilot"); setChatMenuOpen(false); }}>{`Автопилот · завершение задач: ${activeAutopilotEnabled ? "включён" : "выключен"}`}</button>}<span className="chat-menu-section">Разделы</span><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings("launch-policy"); setChatMenuOpen(false); }}>Настройки запуска новых сессий</button><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); openSessionInspector(); }}>Настройки текущей сессии</button><button className="quiet-button" onClick={() => { setShowJobs(true); setShowStatistics(false); setChatMenuOpen(false); }}>Задачи</button><button className="quiet-button" onClick={() => { setShowJobs(false); openStatistics(); }}>Статистика</button><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setAutomationSettings(undefined); setShowQuota(true); setChatMenuOpen(false); }}>Квота</button></div>}
       </header>
       {showFleet && <div className="fleet-overlay" role="dialog" aria-modal="true" aria-label="Машины флота"><div className="fleet-overlay-panel"><button className="fleet-overlay-close quiet-button" aria-label="Закрыть машины флота" onClick={() => setShowFleet(false)}>Закрыть</button><FleetCabinet /></div></div>}
       {showJobs && <JobsView jobs={jobs} loading={jobsLoading} error={jobsError} cancellingJobId={cancellingJobId} onRefresh={() => void loadJobs()} onCancel={(jobId) => void cancelJob(jobId)} />}
@@ -1599,7 +1753,7 @@ function App() {
       </div>}
       {!showStatistics && !showJobs && !showQuota && showScrollToLatest && <button className="scroll-latest" aria-label="Прокрутить к последним" onClick={scrollToBottom}>↓</button>}
       {!showStatistics && !showJobs && !showQuota && <div className="composer-stack">
-      {sessionActivity && <div className={`activity-line activity-${sessionActivity.kind}`} role="status" aria-live="polite"><span className="pulse-dot" aria-hidden="true" /><span>{sessionActivity.label}</span></div>}
+      <div className="activity-slot">{sessionActivity && <div className={`activity-line activity-${sessionActivity.kind}`} role="status" aria-live="polite"><span className="pulse-dot" aria-hidden="true" />{activeSession?.status === "running" && !sending ? <span><ActivityElapsed sinceMs={runningSince} />{sessionActivity.label ? <em className="activity-detail"> · {sessionActivity.label}</em> : null}</span> : <span>{sessionActivity.label}</span>}</div>}</div>
       {activeOutbox.length > 0 && <div className="composer-outbox" aria-label="Отправленные сообщения и их состояние">
         {activeOutbox.map((entry) => <div className={`composer-outbox-entry status-${entry.status}`} key={entry.inputId}>
           <div className="composer-outbox-meta">
@@ -1629,19 +1783,24 @@ function App() {
         </div>}
         <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="Новая сессия" title="Новая сессия агента" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>
         {readOnlySession ? <div className="composer-readonly"><strong>{archivedSession ? "Архивная сессия" : "Только просмотр"}</strong><span>{archivedSession ? "Сохранённая история сессии доступна для просмотра." : "Эта сессия пока не поддерживает отправку сообщений."}</span></div> : <>
-          <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Новое сообщение или продолжение задачи…" : activeKey ? "Написать агенту…" : "Сначала выберите сессию"} disabled={!activeKey || readOnlySession} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && composer.trim()) { event.preventDefault(); void sendMessage(); } }} />
-          <div className="composer-mode" role="group" aria-label="Режим доставки сообщения">
-            <button type="button" className={`composer-mode-option ${effectiveDeliveryMode === "steer" ? "active" : ""}`} aria-pressed={effectiveDeliveryMode === "steer"} disabled={!supportsSteer} title={supportsSteer ? "Доставить в текущий ход агента" : "Этот агент пока поддерживает отправку после ответа"} onClick={() => selectDeliveryMode("steer")}>В текущий ход</button>
-            <button type="button" className={`composer-mode-option ${effectiveDeliveryMode === "queue" ? "active" : ""}`} aria-pressed={effectiveDeliveryMode === "queue"} title="Дождаться окончания текущего ответа агента и доставить сообщение после него" onClick={() => selectDeliveryMode("queue")}>После ответа</button>
-            <small className="composer-mode-hint">{effectiveDeliveryMode === "steer" ? "В текущий ход: сообщение попадёт к агенту сразу, не дожидаясь конца ответа." : "После ответа: сообщение подождёт в очереди, пока агент закончит текущий ответ."}</small>
-            <label className="composer-mode-pin" title="Сохранить выбранный режим как ваш режим по умолчанию в этом браузере"><input type="checkbox" checked={deliveryModePinned} onChange={(event) => toggleDeliveryModePinned(event.target.checked)} />Запомнить</label>
-          </div>
+          <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Продолжите работу…" : activeKey ? "Работайте с агентом" : "Сначала выберите сессию"} disabled={!activeKey || readOnlySession} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && composer.trim()) { event.preventDefault(); void sendMessage(); } }} />
           <span className="composer-hint">{sending ? "Отправляю сообщения…" : isResumeMode ? "Продолжить" : "Enter — отправить · Shift+Enter — новая строка"}</span>
+          {modelSwitchHarness && <button type="button" className={`composer-model ${modelMenuOpen ? "open" : ""}`} aria-label="Выбрать модель" aria-expanded={modelMenuOpen} aria-haspopup="listbox" disabled={modelSwitching} onClick={toggleModelMenu}>
+            <span className="composer-model-name">{shortModelLabel(activeSession?.model)}</span>
+            {!activeSession?.model && <span className="composer-model-default">по умолчанию</span>}
+            <span className="composer-model-chevron" aria-hidden="true">▾</span>
+          </button>}
+          {modelMenuOpen && modelSwitchHarness && <div className="composer-model-menu" role="listbox" aria-label="Модели {modelSwitchHarness}">
+            {modelSwitchError && <div className="composer-model-note error" role="alert">{modelSwitchError}</div>}
+            {modelOptionsLoading && <div className="composer-model-note">Загружаю модели…</div>}
+            {!modelOptionsLoading && modelOptionsHarness === modelSwitchHarness && modelOptions.length === 0 && <div className="composer-model-note">Сервер не вернул моделей для {modelSwitchHarness}.</div>}
+            {modelOptions.map((model) => <button type="button" role="option" aria-selected={model === currentModelOption(activeSession?.model, modelOptions)} className={model === currentModelOption(activeSession?.model, modelOptions) ? "current" : ""} key={model} onClick={() => void changeSessionModel(model)}>{shortModelLabel(model)}</button>)}
+          </div>}
           <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}>{isResumeMode ? "▶" : "↑"}</button>
         </>}
       </form></div>}
     </section>
-    {showInspector && !showStatistics && !showJobs && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">СЕССИЯ</span><button className="icon-button" onClick={closeSessionInspector} aria-label={sessionSettingsReturn ? "Вернуться к общим настройкам" : "Закрыть настройки сессии"}>×</button></div>{activeSession ? <><div className="inspector-title">{cleanSessionTitle(activeSession.title) || activeSession.title || activeSession.id}</div><div className="inspector-status"><span className={`status-dot status-${statusClass(activeSession.status)}`} /><span className={`status-label status-${statusClass(activeSession.status)}`}>{activeSession.meta?.humanStopHeld === true ? "Явная остановка — автоматика приостановлена" : statusLabel(activeSession.status)}</span></div>{sessionAutostart && <div className="autopilot-control session-autostart-control"><div><span className="eyebrow">АВТОПРОДОЛЖЕНИЕ</span><strong>{sessionAutostart.enabled ? "Включено" : "Выключено"}</strong><small>{sessionAutostart.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : sessionAutostart.source === "harness" ? `Сейчас наследуется общая настройка для ${activeSession.harness}. Нажатие создаст исключение только для этой сессии и применится сразу.` : sessionAutostart.source === "global" ? "Сейчас наследуется общий переключатель. Нажатие создаст исключение только для этой сессии и применится сразу." : "Используется значение по умолчанию. Нажатие создаст отдельную настройку только для этой сессии и применится сразу."}</small>{sessionAutostart.source === "session" && <button className="inherit-button" disabled={sessionAutostartSaving} onClick={() => void inheritSessionAutostart()}>Использовать общую настройку {activeSession.harness}</button>}</div><button className={`switch-control ${sessionAutostart.enabled ? "enabled" : ""}`} role="switch" aria-checked={sessionAutostart.enabled} aria-label="Автопродолжение для текущей сессии" disabled={sessionAutostartSaving} onClick={() => void toggleSessionAutostart()}><span /></button></div>}{sessionAutostartError && <small className="autopilot-error">{sessionAutostartError}</small>}{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">АВТОПИЛОТ</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : autopilotSession.source === "policy" ? (autopilotPolicyDraft?.enabled && !autopilotPolicyDraft.harnesses.includes(activeSession.harness as AutopilotHarness) ? `${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} выключен в общих настройках сред. Нажатие включит автопилот только для этой сессии и применится сразу.` : "Сейчас наследуется общая настройка автопилота. Нажатие создаст исключение только для этой сессии и применится сразу.") : autopilotSession.source === "plugin-default" ? "Сейчас наследуется настройка среды. Нажатие создаст исключение только для этой сессии и применится сразу." : "По умолчанию выключен. Нажатие включит автопилот только для этой сессии и применится сразу."}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Использовать общую настройку</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label="Автопилот для текущей сессии" disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}<dl><dt>Агент</dt><dd>{activeSession.harness}</dd><dt>Папка</dt><dd title={activeSession.cwd}>{lastSegment(activeSession.cwd)}</dd>{activeSession.model && <><dt>Модель</dt><dd title={activeSession.model}>{shortModel(activeSession.model)}</dd></>}{activeSession.messageCount !== undefined && <><dt>Сообщения</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Длительность</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.costUsd !== undefined && <><dt>Стоимость</dt><dd title={activeSession.meta?.pricing_source === "models.dev" ? `Оценка по models.dev · ${String(activeSession.meta?.pricing_provider || "")}/${String(activeSession.meta?.pricing_model || "")}` : undefined}>{`${activeSession.meta?.pricing_kind === "estimate" ? "~" : ""}$${activeSession.costUsd.toFixed(4)}`}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Токены</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}{(details?.children?.length || 0) > 0 && <><dt>Субагенты</dt><dd>{details?.children?.length}</dd></>}</dl>{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">Пока нет сообщений. Отправьте сообщение или продолжите сессию.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer" title="Откроется в новой вкладке">Визуализация ↗</a>}{(activeSession.status === "running" || sending) && <button className="stop-button" onClick={() => void runAction("stop")}>Остановить</button>}{(activeSession.status === "stopped" || activeSession.status === "error" || activeSession.meta?.humanStopHeld === true) && <button className="primary-button" onClick={() => void runAction("resume")}>Возобновить работу</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Восстановить</button>}</div><div className="settings-block"><span className="eyebrow">ОТПРАВКА</span><label>Режим по умолчанию<select aria-label="Режим отправки по умолчанию" value={readDefaultDeliveryMode(window.localStorage)} onChange={(event) => saveDefaultDeliveryMode(event.target.value as DeliveryMode)}><option value="queue">После ответа</option><option value="steer">В текущий ход (Codex)</option></select></label></div><div className="settings-block"><span className="eyebrow">ВИД</span><small className="settings-hint">Что показывать в переписке</small><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Размышления</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Инструменты</label><label><input type="checkbox" checked={jsonRendering} onChange={(event) => setJsonRendering(event.target.checked)} /> JSON-ответы как JSON</label></div></> : <div className="empty-inspector">Сессия не выбрана.</div>}</aside>}
+    {showInspector && !showStatistics && !showJobs && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">СЕССИЯ</span><button className="icon-button" onClick={closeSessionInspector} aria-label={sessionSettingsReturn ? "Вернуться к общим настройкам" : "Закрыть настройки сессии"}>×</button></div>{activeSession ? <><div className="inspector-title">{cleanSessionTitle(activeSession.title) || activeSession.title || activeSession.id}</div><div className="inspector-status"><span className={`status-dot status-${statusClass(activeSession.status)}`} /><span className={`status-label status-${statusClass(activeSession.status)}`}>{activeSession.meta?.humanStopHeld === true ? "Явная остановка — автоматика приостановлена" : statusLabel(activeSession.status)}</span></div>{sessionAutostart && <div className="autopilot-control session-autostart-control"><div><span className="eyebrow">АВТОПРОДОЛЖЕНИЕ</span><strong>{sessionAutostart.enabled ? "Включено" : "Выключено"}</strong><small>{sessionAutostart.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : sessionAutostart.source === "harness" ? `Сейчас наследуется общая настройка для ${activeSession.harness}. Нажатие создаст исключение только для этой сессии и применится сразу.` : sessionAutostart.source === "global" ? "Сейчас наследуется общий переключатель. Нажатие создаст исключение только для этой сессии и применится сразу." : "Используется значение по умолчанию. Нажатие создаст отдельную настройку только для этой сессии и применится сразу."}</small>{sessionAutostart.source === "session" && <button className="inherit-button" disabled={sessionAutostartSaving} onClick={() => void inheritSessionAutostart()}>Использовать общую настройку {activeSession.harness}</button>}</div><button className={`switch-control ${sessionAutostart.enabled ? "enabled" : ""}`} role="switch" aria-checked={sessionAutostart.enabled} aria-label="Автопродолжение для текущей сессии" disabled={sessionAutostartSaving} onClick={() => void toggleSessionAutostart()}><span /></button></div>}{sessionAutostartError && <small className="autopilot-error">{sessionAutostartError}</small>}{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">АВТОПИЛОТ</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : autopilotSession.source === "policy" ? (autopilotPolicyDraft?.enabled && !autopilotPolicyDraft.harnesses.includes(activeSession.harness as AutopilotHarness) ? `${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} выключен в общих настройках сред. Нажатие включит автопилот только для этой сессии и применится сразу.` : "Сейчас наследуется общая настройка автопилота. Нажатие создаст исключение только для этой сессии и применится сразу.") : autopilotSession.source === "plugin-default" ? "Сейчас наследуется настройка среды. Нажатие создаст исключение только для этой сессии и применится сразу." : "По умолчанию выключен. Нажатие включит автопилот только для этой сессии и применится сразу."}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Использовать общую настройку</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label="Автопилот для текущей сессии" disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}<dl><dt>Агент</dt><dd>{activeSession.harness}</dd><dt>Папка</dt><dd title={activeSession.cwd}>{lastSegment(activeSession.cwd)}</dd>{activeSession.model && <><dt>Модель</dt><dd title={activeSession.model}>{shortModel(activeSession.model)}</dd></>}{activeSession.messageCount !== undefined && <><dt>Сообщения</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Длительность</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.costUsd !== undefined && <><dt>Стоимость</dt><dd title={activeSession.meta?.pricing_source === "models.dev" ? `Оценка по models.dev · ${String(activeSession.meta?.pricing_provider || "")}/${String(activeSession.meta?.pricing_model || "")}` : undefined}>{`${activeSession.meta?.pricing_kind === "estimate" ? "~" : ""}$${activeSession.costUsd.toFixed(4)}`}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Токены</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}{(details?.children?.length || 0) > 0 && <><dt>Субагенты</dt><dd>{details?.children?.length}</dd></>}</dl>{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">Пока нет сообщений. Отправьте сообщение или продолжите сессию.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer" title="Откроется в новой вкладке">Визуализация ↗</a>}{(activeSession.status === "running" || sending) && <button className="stop-button" onClick={() => void runAction("stop")}>Остановить</button>}{(activeSession.status === "stopped" || activeSession.status === "error" || activeSession.meta?.humanStopHeld === true) && <button className="primary-button" onClick={() => void runAction("resume")}>Возобновить работу</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Восстановить</button>}</div><div className="settings-block"><span className="eyebrow">ВИД</span><small className="settings-hint">Что показывать в переписке</small><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Размышления</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Инструменты</label><label><input type="checkbox" checked={jsonRendering} onChange={(event) => setJsonRendering(event.target.checked)} /> JSON-ответы как JSON</label><span className="eyebrow theme-choice-label">ТЕМА</span><div className="theme-choice" role="group" aria-label="Тема оформления"><button type="button" className={theme === "dark" ? "active" : ""} aria-pressed={theme === "dark"} onClick={() => selectTheme("dark")}>Тёмная</button><button type="button" className={theme === "light" ? "active" : ""} aria-pressed={theme === "light"} onClick={() => selectTheme("light")}>Светлая</button></div><span className="eyebrow theme-choice-label">ОТПРАВКА</span>{deliveryModeChoice}</div></> : <div className="empty-inspector">Сессия не выбрана.</div>}</aside>}
   </main>;
 }
 
