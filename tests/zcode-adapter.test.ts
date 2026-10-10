@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,21 @@ import type { ZcodeClientLike } from "../src/adapters/zcode-protocol.js";
 import { ZcodeAdapter, resolveConfiguredZcodeModel, zcodeConfiguredModels } from "../src/adapters/zcode.js";
 import { markLifecycleEvent } from "../src/session-lifecycle.js";
 import { getHumanStopStore } from "../src/human-stop-store.js";
+
+// Native fixtures must never persist automation/STOP attribution in the live
+// default store when the source runner does not supply a test-specific path.
+let fixtureState: string;
+let previousFixtureStore: string | undefined;
+beforeAll(async () => {
+  fixtureState = await mkdtemp(join(tmpdir(), "agent-herder-zcode-contract-"));
+  previousFixtureStore = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+  process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(fixtureState, "human-stops.json");
+});
+afterAll(async () => {
+  if (previousFixtureStore === undefined) delete process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+  else process.env.AGENT_HERDER_HUMAN_STOP_STORE = previousFixtureStore;
+  await rm(fixtureState, { recursive: true, force: true });
+});
 
 const session = {
   sessionId: "session-1",
@@ -84,6 +99,11 @@ class FakeClient implements ZcodeClientLike {
       session: { ...session, sessionId: (args[0] as { sessionId: string }).sessionId, mode: "yolo", parentSessionId: undefined, sessionKind: "interactive" },
       settings: { ...snapshot.settings, permission: { mode: (args[0] as { mode: string }).mode, rulesRevision: 1 } },
     };
+    if (channel === "zcode-agent" && method === "sendConversationCommandV4") {
+      const { envelope } = args[0] as { envelope: { commandId: string; payload: { requestedDelivery: string } } };
+      return { commandId: envelope.commandId, status: "accepted", revisionAtDecision: 3,
+        result: { type: "inputAccepted", inputId: `native-${envelope.commandId}`, delivery: envelope.payload.requestedDelivery } };
+    }
     if (channel === "zcode-agent" && method === "sendPrompt") return { accepted: true };
     if (channel === "zcode-agent" && method === "setModel") return snapshot;
     if (channel === "zcode-agent" && method === "closeSession") return { closed: true };
@@ -691,47 +711,25 @@ describe("ZCode adapter", () => {
     await adapter.dispose();
   });
 
-  it("discards queued generated prompts when a native stop arrives", async () => {
+  it("holds automation after native queue admission without a Herder timer replay", async () => {
     vi.useFakeTimers();
-    const storeDir = await mkdtemp(join(tmpdir(), "agent-herder-zcode-queued-stop-"));
+    const storeDir = await mkdtemp(join(tmpdir(), "agent-herder-zcode-native-queue-stop-"));
     const previousStopStore = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
     process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(storeDir, "human-stops.json");
-    class BusyQueuedClient extends FakeClient {
-      sendPromptCalls = 0;
-      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
-        if (channel === "zcode-agent" && method === "sendPrompt") {
-          expect(await getHumanStopStore().isGeneratedPrompt("zcode", "session-1", { text: "queued automation" })).toBe(true);
-          this.calls.push({ channel, method, args });
-          this.sendPromptCalls += 1;
-          throw new Error("prompt is already running");
-        }
-        return super.call(channel, method, args);
-      }
-    }
-    const client = new BusyQueuedClient();
+    const client = new FakeClient();
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
-    const unsubscribe = adapter.subscribeEvents(() => undefined);
     try {
       await adapter.init();
-      await adapter.getSession("session-1");
-      await expect(adapter.sendMessage("session-1", { message: "queued automation", queue: true })).resolves.toEqual({ ok: true });
-      await getHumanStopStore().hold({ harness: "zcode", id: "session-1" }, {
-        id: "manual-stop-after-queue", at: new Date().toISOString(), reason: "operator stopped before queued send",
-      });
-      await vi.advanceTimersByTimeAsync(1_000);
-      await vi.waitFor(() => expect((adapter as unknown as { queuedPrompts: Map<string, unknown[]> }).queuedPrompts.has("session-1")).toBe(false));
-      expect(client.sendPromptCalls).toBe(1);
+      await expect(adapter.sendMessage("session-1", { message: "queued automation", queue: true, inputId: "native-stop-queue" })).resolves.toEqual({ ok: true, admitted: true, pending: true, inputId: "native-stop-queue" });
+      await getHumanStopStore().hold({ harness: "zcode", id: "session-1" }, { id: "manual-stop-after-queue", at: new Date().toISOString(), reason: "operator stopped" });
+      await vi.advanceTimersByTimeAsync(10_000);
+      await expect(adapter.sendMessage("session-1", { message: "blocked automation", queue: true, inputId: "blocked-native-queue" })).resolves.toMatchObject({ ok: false, inputId: "blocked-native-queue", error: expect.stringContaining("остановлен") });
+      expect(client.calls.filter(call => call.method === "sendConversationCommandV4")).toHaveLength(1);
+      expect(client.calls.some(call => ["sendPrompt", "resumeSession"].includes(call.method))).toBe(false);
       expect(await getHumanStopStore().isHeld("zcode", "session-1")).toBe(true);
-      // The initial attempted send was registered before RPC, even though it
-      // collided with a busy turn. A late callback must not clear this stop.
-      expect(await getHumanStopStore().release("zcode", "session-1", {
-        id: "late-busy-send-hook", at: new Date(Date.now() + 1_000).toISOString(), text: "queued automation",
-      })).toBe(false);
+      expect(await getHumanStopStore().release("zcode", "session-1", { id: "late-native-hook", at: new Date(Date.now() + 1_000).toISOString(), text: "queued automation" })).toBe(false);
     } finally {
-      unsubscribe();
-      await adapter.dispose();
-      vi.useRealTimers();
-      await rm(storeDir, { recursive: true, force: true });
+      await adapter.dispose(); vi.useRealTimers(); await rm(storeDir, { recursive: true, force: true });
       if (previousStopStore === undefined) delete process.env.AGENT_HERDER_HUMAN_STOP_STORE;
       else process.env.AGENT_HERDER_HUMAN_STOP_STORE = previousStopStore;
     }
@@ -1038,7 +1036,7 @@ describe("ZCode adapter", () => {
       { id: "message-2", role: "assistant", text: "I will inspect the repository." },
     ]);
 
-    expect(await adapter.sendMessage("session-1", { message: "continue", queue: true })).toEqual({ ok: true });
+    expect(await adapter.sendMessage("session-1", { message: "continue" })).toEqual({ ok: true });
     expect(await adapter.cancelTurn?.("session-1")).toEqual({ ok: true });
     expect(await adapter.resumeSession?.("session-1")).toEqual({ ok: true });
     expect(await adapter.terminate?.("session-1")).toEqual({ ok: true });
@@ -1140,7 +1138,7 @@ describe("ZCode adapter", () => {
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     await adapter.init();
 
-    const result = await adapter.sendMessage("session-1", { message: "ping", queue: true });
+    const result = await adapter.sendMessage("session-1", { message: "ping" });
     expect(result).toEqual({ ok: true });
     expect(client.sendPromptCalls).toBe(2);
     const methods = client.calls.map((call) => call.method);
@@ -1168,7 +1166,7 @@ describe("ZCode adapter", () => {
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client, turnStartTimeoutMs: 5 });
     await adapter.init();
 
-    await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({
+    await expect(adapter.sendMessage("session-1", { message: "continue" })).resolves.toEqual({
       ok: true,
       admitted: true,
       pending: true,
@@ -1194,7 +1192,7 @@ describe("ZCode adapter", () => {
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     await adapter.init();
 
-    await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({
+    await expect(adapter.sendMessage("session-1", { message: "continue" })).resolves.toEqual({
       ok: false,
       error: "ZCode ожидает вашего разрешения. Ответьте на запрос в этой сессии, затем продолжите работу.",
     });
@@ -1464,7 +1462,7 @@ describe("ZCode adapter", () => {
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client, turnStartTimeoutMs: 100 });
     await adapter.init();
 
-    const result = await adapter.sendMessage("session-1", { message: "continue", queue: true });
+    const result = await adapter.sendMessage("session-1", { message: "continue" });
     expect(client.listeners).toHaveLength(1);
     expect(result).toEqual({ ok: true });
     expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(0);
@@ -1518,7 +1516,7 @@ describe("ZCode adapter", () => {
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client, turnStartTimeoutMs: 100 });
     await adapter.init();
 
-    const result = await adapter.sendMessage("session-1", { message: "continue", queue: true });
+    const result = await adapter.sendMessage("session-1", { message: "continue" });
     expect(result).toMatchObject({ ok: false, admitted: true, nonRetryable: true });
     expect(result.error).toContain("ZCode принял запрос для session-1, но выполнение завершилось ошибкой.");
     expect(result.error).toContain("Native failure: [provider_error] Provider rejected Authorization: Bearer [redacted]");
@@ -1550,7 +1548,7 @@ describe("ZCode adapter", () => {
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     await adapter.init();
 
-    await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({
+    await expect(adapter.sendMessage("session-1", { message: "continue" })).resolves.toEqual({
       ok: false,
       error: expect.stringMatching(/terminal inactive/i),
     });
@@ -1579,7 +1577,7 @@ describe("ZCode adapter", () => {
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     await adapter.init();
 
-    await expect(adapter.sendMessage("session-1", { message: "continue", queue: true })).resolves.toEqual({
+    await expect(adapter.sendMessage("session-1", { message: "continue" })).resolves.toEqual({
       ok: false,
       admitted: true,
       nonRetryable: true,
@@ -1611,200 +1609,130 @@ describe("ZCode adapter", () => {
     await adapter.dispose();
   });
 
-  it("queues a second prompt while the same ZCode session is still finishing", async () => {
+  // Native command admission fast unit: expected2s/max20s. Detects obsolete
+  // sendPrompt/timer fallback, mode mismatch, missing/lost receipt and preflight bypass.
+  it("queues into the existing native turn without completion wait or legacy replay", async () => {
     vi.useFakeTimers();
-    const storeDir = await mkdtemp(join(tmpdir(), "agent-herder-zcode-turn-binding-"));
-    const previousStopStore = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
-    process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(storeDir, "human-stops.json");
-    class BusyThenAcceptClient extends FakeClient {
-      sendCalls = 0;
-      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
-        if (channel === "zcode-agent" && method === "readSession") {
-          const result = await super.call(channel, method, args) as Record<string, unknown>;
-          const runtime = result.runtime && typeof result.runtime === "object" ? result.runtime as Record<string, unknown> : {};
-          return { ...result, runtime: { ...runtime, activeTurnId: "turn-before-queued-prompt" } };
-        }
-        if (channel === "zcode-agent" && method === "sendPrompt") {
-          this.calls.push({ channel, method, args });
-          this.sendCalls += 1;
-          if (this.sendCalls === 1) throw new Error("A prompt is already running for this session");
-          return { accepted: true };
-        }
-        return super.call(channel, method, args);
-      }
-    }
-    const client = new BusyThenAcceptClient();
-    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    const client = new FakeClient(); const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     try {
       await adapter.init();
-      await expect(adapter.sendMessage("session-1", { message: "second continuation", queue: true })).resolves.toEqual({ ok: true });
-      expect(client.sendCalls).toBe(1);
-      await vi.advanceTimersByTimeAsync(1_000);
-      await vi.waitFor(() => expect(client.sendCalls).toBe(2));
-      await vi.waitFor(() => expect((adapter as unknown as { queuedPromptFlushes: Set<string> }).queuedPromptFlushes.has("session-1")).toBe(false));
-      expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(0);
-      expect(client.calls.filter((call) => call.method === "sendPrompt")[1]?.args[0]).toMatchObject({
-        sessionId: "session-1",
-        content: "second continuation",
-      });
-      const inputId = (client.calls.filter((call) => call.method === "sendPrompt")[1]?.args[0] as { inputId: string }).inputId;
-      await expect(getHumanStopStore().isGeneratedPrompt("zcode", "session-1", { turnId: "turn-before-queued-prompt" })).resolves.toBe(false);
-      await expect(getHumanStopStore().isGeneratedPrompt("zcode", "session-1", { turnId: `turn-${inputId}` })).resolves.toBe(true);
-    } finally {
-      await adapter.dispose();
-      vi.useRealTimers();
-      await rm(storeDir, { recursive: true, force: true });
-      if (previousStopStore === undefined) delete process.env.AGENT_HERDER_HUMAN_STOP_STORE;
-      else process.env.AGENT_HERDER_HUMAN_STOP_STORE = previousStopStore;
-    }
+      await expect(adapter.sendMessage("session-1", { message: "second continuation", queue: true, inputId: "queue-native-1" })).resolves.toEqual({ ok: true, admitted: true, pending: true, inputId: "queue-native-1" });
+      await vi.advanceTimersByTimeAsync(10_000);
+      const commands = client.calls.filter(call => call.method === "sendConversationCommandV4");
+      expect(commands).toHaveLength(1);
+      expect(commands[0]?.args[0]).toMatchObject({ workspacePath: "/workspace", envelope: { commandId: "agent-herder:auto:queue-native-1", clientId: "agent-herder", sessionId: "session-1", type: "sendText", payload: { text: "second continuation", requestedDelivery: "queue" } } });
+      expect(client.calls.some(call => ["sendPrompt", "resumeSession", "readSessionEvents", "stopGeneration"].includes(call.method))).toBe(false);
+    } finally { await adapter.dispose(); vi.useRealTimers(); }
   });
 
-  it("drops a queued prompt when the task stays inactive after native resume", async () => {
-    vi.useFakeTimers();
-    class BusyThenInactiveClient extends FakeClient {
-      sendCalls = 0;
-      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
-        if (channel === "zcode-agent" && method === "sendPrompt") {
-          this.calls.push({ channel, method, args });
-          this.sendCalls += 1;
-          if (this.sendCalls === 1) throw new Error("A prompt is already running for this session");
-          throw new Error("Session is not active: session-1");
-        }
-        return super.call(channel, method, args);
-      }
-    }
-    const client = new BusyThenInactiveClient();
-    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+  it("guides the native active turn with human identity and no invented new turn", async () => {
+    const client = new FakeClient(); const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     try {
-      await adapter.init();
-      await expect(adapter.sendMessage("session-1", { message: "queued continuation", queue: true })).resolves.toEqual({ ok: true });
-      await vi.advanceTimersByTimeAsync(1_000);
-      await vi.waitFor(() => expect(client.sendCalls).toBe(3));
-      expect(client.calls.filter((call) => call.method === "resumeSession")).toHaveLength(1);
-
-      await vi.advanceTimersByTimeAsync(30_000);
-      expect(client.sendCalls).toBe(3);
-    } finally {
-      await adapter.dispose();
-      vi.useRealTimers();
-    }
+      const result = await adapter.sendMessage("session-1", { message: "guide delta", steer: true, origin: "human", inputId: "human-guide-1" });
+      expect(result).toEqual({ ok: true, admitted: true, inputId: "human-guide-1" });
+      expect(result.turnId).toBeUndefined();
+      expect(client.calls.filter(call => call.method === "sendConversationCommandV4")[0]?.args[0]).toMatchObject({ envelope: { commandId: "human-guide-1", payload: { text: "guide delta", requestedDelivery: "guide" } } });
+      expect(client.calls.some(call => ["sendPrompt", "resumeSession", "readSessionEvents", "stopGeneration"].includes(call.method))).toBe(false);
+    } finally { await adapter.dispose(); }
   });
 
-  it("backs off queued sends when fresh stop-fence inspection fails", async () => {
+  it("keeps a native rejected queue receipt non-admitted without resume or timer retry", async () => {
     vi.useFakeTimers();
-    class BusyClient extends FakeClient {
-      sendCalls = 0;
-      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
-        if (channel === "zcode-agent" && method === "sendPrompt") {
-          this.sendCalls += 1;
-          throw new Error("A prompt is already running for this session");
+    class RejectedQueueClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]) {
+        if (method === "sendConversationCommandV4") {
+          this.calls.push({ channel, method, args });
+          const { envelope } = args[0] as { envelope: { commandId: string } };
+          return { commandId: envelope.commandId, status: "rejected", revisionAtDecision: 3 };
         }
         return super.call(channel, method, args);
       }
     }
-    const client = new BusyClient();
-    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
-    let fenceReads = 0;
+    const client = new RejectedQueueClient(); const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     try {
-      await adapter.init();
-      await expect(adapter.sendMessage("session-1", { message: "queued work", queue: true })).resolves.toEqual({ ok: true });
-      adapter.getSession = async () => { fenceReads += 1; throw new Error("stop-fence inspection unavailable"); };
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(fenceReads).toBe(1);
-      await vi.advanceTimersByTimeAsync(4_999);
-      expect(fenceReads).toBe(1);
-      await vi.advanceTimersByTimeAsync(1);
-      expect(fenceReads).toBe(2);
-      expect(client.sendCalls).toBe(1);
-    } finally {
-      await adapter.dispose();
-      vi.useRealTimers();
-    }
+      const result = await adapter.sendMessage("session-1", { message: "native rejection", queue: true, inputId: "native-rejected" });
+      expect(result).toMatchObject({ ok: false, admitted: false, inputId: "native-rejected", nonRetryable: true });
+      expect(result.admissionUnknown).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(client.calls.filter(call => call.method === "sendConversationCommandV4")).toHaveLength(1);
+      expect(client.calls.some(call => ["sendPrompt", "resumeSession"].includes(call.method))).toBe(false);
+    } finally { await adapter.dispose(); vi.useRealTimers(); }
   });
 
-  it("keeps a queued prompt after a transient native resume failure", async () => {
-    vi.useFakeTimers();
-    class TransientResumeClient extends FakeClient {
-      sendCalls = 0;
-      resumeCalls = 0;
-      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
-        if (channel === "zcode-agent" && method === "sendPrompt") {
-          this.calls.push({ channel, method, args });
-          this.sendCalls += 1;
-          if (this.sendCalls === 1) throw new Error("A prompt is already running for this session");
-          throw new Error("Session is not active: session-1");
-        }
-        if (channel === "zcode-agent" && method === "resumeSession") {
-          this.calls.push({ channel, method, args });
-          this.resumeCalls += 1;
-          throw new Error("temporary transport timeout");
-        }
+  it("fails closed on unknown native baseline before V4 queue mutation", async () => {
+    class UnreadableClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]) {
+        if (method === "readSession") { this.calls.push({ channel, method, args }); throw new Error("native observation timeout"); }
         return super.call(channel, method, args);
       }
     }
-    const client = new TransientResumeClient();
-    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    const client = new UnreadableClient(); const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     try {
-      await adapter.init();
-      await expect(adapter.sendMessage("session-1", { message: "queued continuation", queue: true })).resolves.toEqual({ ok: true });
-      await vi.advanceTimersByTimeAsync(1_000);
-      await vi.waitFor(() => expect(client.sendCalls).toBe(2));
-      expect(client.resumeCalls).toBe(1);
-
-      await vi.advanceTimersByTimeAsync(4_999);
-      expect(client.sendCalls).toBe(2);
-      await vi.advanceTimersByTimeAsync(1);
-      await vi.waitFor(() => expect(client.sendCalls).toBe(3));
-      expect(client.resumeCalls).toBe(2);
-    } finally {
-      await adapter.dispose();
-      vi.useRealTimers();
-    }
+      const result = await adapter.sendMessage("session-1", { message: "do not guess", queue: true, inputId: "unobserved-queue" });
+      expect(result).toMatchObject({ ok: false, inputId: "unobserved-queue", error: "native observation timeout" });
+      expect(result.admissionUnknown).toBeUndefined();
+      expect(client.calls.map(call => call.method)).toEqual(["readSession"]);
+    } finally { await adapter.dispose(); }
   });
 
-  it("keeps later queued prompts and wakes after a recovered inactive send", async () => {
+  it("retains UNKNOWN after V4 write loses its receipt and never falls back to legacy", async () => {
     vi.useFakeTimers();
-    class RecoveredQueueClient extends FakeClient {
-      sendCalls = 0;
-      resumeCalls = 0;
-      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
-        if (channel === "zcode-agent" && method === "sendPrompt") {
+    class LostReceiptClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]) {
+        if (method === "sendConversationCommandV4") { this.calls.push({ channel, method, args }); throw new Error("transport disconnected after write"); }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new LostReceiptClient(); const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    try {
+      const result = await adapter.sendMessage("session-1", { message: "single native attempt", queue: true, inputId: "lost-v4-receipt" });
+      expect(result).toMatchObject({ ok: false, admissionUnknown: true, nonRetryable: true, inputId: "lost-v4-receipt" });
+      expect(result.admitted).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(client.calls.filter(call => call.method === "sendConversationCommandV4")).toHaveLength(1);
+      expect(client.calls.some(call => ["sendPrompt", "resumeSession"].includes(call.method))).toBe(false);
+    } finally { await adapter.dispose(); vi.useRealTimers(); }
+  });
+
+  it.each([
+    { name: "accepted envelope without input", ack: (id: string) => ({ commandId: id, status: "accepted", revisionAtDecision: 3 }), unknown: true },
+    { name: "foreign command identity", ack: (_id: string) => ({ commandId: "foreign-command", status: "accepted", result: { type: "inputAccepted", inputId: "native-input", delivery: "queue" } }), unknown: true },
+    { name: "native mode mismatch", ack: (id: string) => ({ commandId: id, status: "accepted", result: { type: "inputAccepted", inputId: "native-input", delivery: "guide" } }), unknown: false },
+  ])("never upgrades $name to successful native queue delivery", async ({ ack, unknown }) => {
+    class ReceiptClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]) {
+        if (method === "sendConversationCommandV4") {
           this.calls.push({ channel, method, args });
-          this.sendCalls += 1;
-          if (this.sendCalls <= 2) throw new Error("A prompt is already running for this session");
-          if (this.sendCalls === 3) throw new Error("Session is not active: session-1");
-          return { accepted: true };
-        }
-        if (channel === "zcode-agent" && method === "resumeSession") {
-          this.calls.push({ channel, method, args });
-          this.resumeCalls += 1;
-          return snapshot;
+          return ack((args[0] as { envelope: { commandId: string } }).envelope.commandId);
         }
         return super.call(channel, method, args);
       }
     }
-    const client = new RecoveredQueueClient();
-    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    const client = new ReceiptClient(); const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     try {
-      await adapter.init();
-      await expect(adapter.sendMessage("session-1", { message: "first", queue: true })).resolves.toEqual({ ok: true });
-      await expect(adapter.sendMessage("session-1", { message: "second", queue: true })).resolves.toEqual({ ok: true });
+      const result = await adapter.sendMessage("session-1", { message: "receipt fence", queue: true, inputId: "receipt-fenced", origin: "human" });
+      expect(result).toMatchObject({ ok: false, nonRetryable: true, inputId: "receipt-fenced" });
+      expect(result.admissionUnknown).toBe(unknown ? true : undefined);
+      expect(result.admitted).toBe(unknown ? undefined : true);
+      expect(client.calls.filter(call => call.method === "sendConversationCommandV4")).toHaveLength(1);
+      expect(client.calls.some(call => ["sendPrompt", "resumeSession", "stopGeneration"].includes(call.method))).toBe(false);
+    } finally { await adapter.dispose(); }
+  });
 
-      await vi.advanceTimersByTimeAsync(1_000);
-      await vi.runOnlyPendingTimersAsync();
-      await vi.waitFor(() => expect(client.sendCalls).toBe(5));
-
-      const acceptedContents = client.calls
-        .filter((call) => call.method === "sendPrompt")
-        .slice(-2)
-        .map((call) => (call.args[0] as { content?: string }).content);
-      expect(acceptedContents).toEqual(["first", "second"]);
-      expect(client.sendCalls).toBe(5);
-      expect(client.resumeCalls).toBe(1);
-    } finally {
-      await adapter.dispose();
-      vi.useRealTimers();
+  it("holds V4 queue before mutation when native permission is pending", async () => {
+    class PermissionClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]) {
+        if (method === "readSession") { this.calls.push({ channel, method, args }); return { ...snapshot, runtime: { ...snapshot.runtime, pendingRequestIds: ["native-permission"] } }; }
+        return super.call(channel, method, args);
+      }
     }
+    const client = new PermissionClient(); const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    try {
+      const result = await adapter.sendMessage("session-1", { message: "must wait", queue: true, inputId: "native-permission-wait" });
+      expect(result).toMatchObject({ ok: false, inputId: "native-permission-wait", error: expect.stringContaining("разрешения") });
+      expect(result.admissionUnknown).toBeUndefined();
+      expect(client.calls.map(call => call.method)).toEqual(["readSession"]);
+    } finally { await adapter.dispose(); }
   });
 
   it("marks an unfinished native tool part as an active tool call", async () => {
