@@ -148,7 +148,15 @@ export class HerderJobRegistry {
       || !argv[7]?.startsWith("/") || argv[8] !== "--plan-sha256" || !/^[a-f0-9]{64}$/.test(argv[9] || "")
       || binding.bindingFingerprint !== argv[9] || typeof binding.cwd !== "string" || !binding.cwd.startsWith("/")
       || !Number.isSafeInteger(binding.deadlineMs) || binding.deadlineMs < 1 || binding.deadlineMs > 2147483647) throw new Error("native_stock_case_binding_invalid");
-    if (createHash("sha256").update(readFileSync(argv[7])).digest("hex") !== argv[9]) throw new Error("native_stock_case_plan_drift_hold");
+    const planBytes = readFileSync(argv[7]);
+    if (createHash("sha256").update(planBytes).digest("hex") !== argv[9]) throw new Error("native_stock_case_plan_drift_hold");
+    const plan = JSON.parse(planBytes.toString("utf8"));
+    let stopUnix: number | undefined;
+    if (plan?.completion_kind === "due261") {
+      if (plan.mode !== "sequential-native-v1" || typeof plan.due_unix !== "number" || !Number.isFinite(plan.due_unix) || plan.due_unix <= 0
+        || typeof plan.stop_unix !== "number" || !Number.isFinite(plan.stop_unix) || plan.stop_unix !== plan.due_unix + 900) throw new Error("native_stock_case_absolute_stop_invalid_hold");
+      stopUnix = plan.stop_unix;
+    }
     const requestFingerprint = createHash("sha256").update(JSON.stringify(binding)).digest("hex");
     const sourceSha256 = createHash("sha256").update(readFileSync(fileURLToPath(import.meta.url))).digest("hex");
     return this.start({
@@ -163,8 +171,13 @@ export class HerderJobRegistry {
           await client.connect();
           if (signal.aborted) throw new NativeStockCaseFailure("native_stock_case_cancelled_before_dispatch", result);
           progress(0.05, "Ожидается результат фиксированного native stock-case; клиент удерживается до callback/cleanup");
+          // Bound the pinned paid due operation to its original absolute stop,
+          // including registration/connect delay. Canary deadlines stay relative.
+          const deadlineMs = stopUnix === undefined ? binding.deadlineMs : Math.min(binding.deadlineMs, Math.floor((stopUnix - Date.now() / 1000) * 1000));
+          if (deadlineMs <= 0) throw new Error("native_stock_case_absolute_stop_expired_hold");
+          Object.assign(result, { effectiveDeadlineMs: deadlineMs, ...(stopUnix === undefined ? {} : { stopUnix }) });
           dispatched = true;
-          const native = await client.request("command/exec", { command: argv, cwd: binding.cwd, timeoutMs: binding.deadlineMs, outputBytesCap: 65536 }, { timeoutMs: binding.deadlineMs });
+          const native = await client.request("command/exec", { command: argv, cwd: binding.cwd, timeoutMs: deadlineMs, outputBytesCap: 65536 }, { timeoutMs: deadlineMs });
           Object.assign(result, { native, nativeOutcome: typeof native?.exitCode === "number" ? "known" : "unknown" });
           if (native?.exitCode !== 0) throw new NativeStockCaseFailure("native_stock_case_did_not_complete_zero; no replay", result);
           return result;

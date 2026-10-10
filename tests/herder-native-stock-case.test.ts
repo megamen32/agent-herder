@@ -14,7 +14,7 @@ import { registerBackgroundTools } from "../src/mcp/background-tools.js";
 import { registerControlPlaneTools } from "../src/mcp/control-plane-tools.js";
 
 const cleanups: Array<() => Promise<void>> = [];
-afterEach(async () => { vi.useRealTimers(); vi.unstubAllEnvs(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
+afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
 
 async function nativeFixture() {
@@ -55,6 +55,63 @@ async function mcp(jobs: HerderJobRegistry) {
 }
 
 describe("named native stock operation (focused integration; expected 3s, maximum 30s)", () => {
+  async function pinnedPlan(f: Awaited<ReturnType<typeof nativeFixture>>, plan: Record<string, unknown>, deadlineMs = 57600000) {
+    const bytes = JSON.stringify(plan), hash = createHash("sha256").update(bytes).digest("hex");
+    await writeFile(f.binding.command[7]!, bytes);
+    f.binding.command[9] = hash; f.binding.bindingFingerprint = hash; f.binding.deadlineMs = deadlineMs;
+    await writeFile(f.casesPath, JSON.stringify({ "zero-proof": f.binding }));
+  }
+
+  it("absolute due deadline caps server and client after delayed connect", async () => {
+    const f = await nativeFixture(); let now = 1900000000000;
+    const due = now / 1000 + 10, stop = due + 900;
+    await pinnedPlan(f, { mode: "sequential-native-v1", completion_kind: "due261", due_unix: due, stop_unix: stop });
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const connect = NativeCodexClient.prototype.connect;
+    vi.spyOn(NativeCodexClient.prototype, "connect").mockImplementation(async function (this: NativeCodexClient) { await connect.call(this); now += 30000; });
+    const request = vi.spyOn(NativeCodexClient.prototype, "request");
+    const job = f.jobs.startNativeStockCase({ caseId: "zero-proof", ownerSessionId: "owner" });
+    await f.dispatch;
+    const remaining = Math.floor((stop - now / 1000) * 1000);
+    expect(f.requests[0].params.timeoutMs).toBe(remaining);
+    expect(request).toHaveBeenCalledWith("command/exec", { command: f.binding.command, cwd: f.binding.cwd, timeoutMs: remaining, outputBytesCap: 65536 }, { timeoutMs: remaining });
+    f.release(); await vi.waitFor(() => expect(f.jobs.get(job.id)?.state).toBe("completed"));
+    expect(f.jobs.get(job.id)?.result).toMatchObject({ effectiveDeadlineMs: remaining, stopUnix: stop });
+  });
+
+  it("absolute due deadline expired during connect holds before native dispatch", async () => {
+    const f = await nativeFixture(); let now = 1900000000000;
+    const due = now / 1000 + 10, stop = due + 900;
+    await pinnedPlan(f, { mode: "sequential-native-v1", completion_kind: "due261", due_unix: due, stop_unix: stop });
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const connect = NativeCodexClient.prototype.connect;
+    vi.spyOn(NativeCodexClient.prototype, "connect").mockImplementation(async function (this: NativeCodexClient) { await connect.call(this); now = stop * 1000 + 1; });
+    const job = f.jobs.startNativeStockCase({ caseId: "zero-proof", ownerSessionId: "owner" });
+    await vi.waitFor(() => expect(f.jobs.get(job.id)?.state).toBe("failed"));
+    expect(f.jobs.get(job.id)?.result).toMatchObject({ nativeOutcome: "not_dispatched", error: "native_stock_case_absolute_stop_expired_hold", replay: "forbidden" });
+    expect(f.requests).toHaveLength(0);
+  });
+
+  it("absolute due deadline rejects malformed or shifted original due plus900", async () => {
+    const f = await nativeFixture(), due = 1900000010;
+    for (const invalid of [{ mode: "wrong", due_unix: due, stop_unix: due + 900 }, { mode: "sequential-native-v1", due_unix: String(due), stop_unix: due + 900 }, { mode: "sequential-native-v1", due_unix: due, stop_unix: due + 901 }, { mode: "sequential-native-v1", due_unix: due, stop_unix: null }]) {
+      await pinnedPlan(f, { completion_kind: "due261", ...invalid });
+      expect(() => f.jobs.startNativeStockCase({ caseId: "zero-proof", ownerSessionId: "owner" })).toThrow("native_stock_case_absolute_stop_invalid_hold");
+    }
+    expect(f.requests).toHaveLength(0); expect(f.jobs.list()).toHaveLength(0);
+  });
+
+  it("absolute due deadline keeps relative canary and smaller registered cap unchanged", async () => {
+    for (const dueCase of [false, true]) {
+      const f = await nativeFixture(), now = 1900000000000;
+      await pinnedPlan(f, dueCase ? { mode: "sequential-native-v1", completion_kind: "due261", due_unix: now / 1000 + 10, stop_unix: now / 1000 + 910 } : { mode: "sequential-native-v1", completion_kind: "zero-application-proof" }, 125000);
+      vi.spyOn(Date, "now").mockReturnValue(now);
+      const job = f.jobs.startNativeStockCase({ caseId: "zero-proof", ownerSessionId: "owner" }); await f.dispatch;
+      expect(f.requests[0].params.timeoutMs).toBe(125000);
+      f.release(); await vi.waitFor(() => expect(f.jobs.get(job.id)?.state).toBe("completed"));
+    }
+  });
+
   it("keeps only command/exec beyond the unchanged metadata deadline", async () => {
     const f = await nativeFixture(), client = new NativeCodexClient(f.socketPath);
     cleanups.push(async () => client.close()); await client.connect();
