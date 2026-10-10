@@ -13,6 +13,11 @@ export function registerBackgroundTools(server: McpServer, deps: {
 }): void {
   const { browserWakeService, jobs, sessionConverter } = deps;
 
+  server.registerTool("native_stock_case_async", {
+    description: "Admit one named frozen Admin stock-controller case as a durable-once Herder job. The service owns the native connection until its finite response/deadline; reconnect with job_get. No caller argv, deadline, shell, thread or permission overrides; unknown outcomes are never replayed.",
+    inputSchema: z.object({ caseId: z.string().min(1).max(128), ownerSessionId: z.string().min(1).max(256) }).strict(),
+  }, async (args) => structuredResult({ job: jobs.startNativeStockCase(args) }));
+
   const browserInput = {
     schema: z.literal("agent-herder.browser-worker.v1"), worker: z.literal("mac-mini-browserclaw"), target: z.literal("E-Frontier"),
     templateId: z.enum(["secretary.inbox.v1", "secretary.browser-canary.v1"]), sourceRefs: z.array(z.string().min(1)).min(1).max(8),

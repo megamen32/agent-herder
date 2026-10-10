@@ -25,10 +25,14 @@ export class NativeCodexClient {
    socket.send(JSON.stringify({jsonrpc:"2.0",method:"initialized",params:{}}));
   }catch(error){socket.close();this.fail(socket);throw error;}
  }
- async request(method:string,params:Record<string,unknown>):Promise<any>{
+ async request(method:string,params:Record<string,unknown>,operation?:{timeoutMs:number}):Promise<any>{
+  // Only the named finite stock operation extends its own pending request.
+  // Initialization and all metadata/delivery requests retain the default 10s.
+  if(operation&&(method!=="command/exec"||!Number.isSafeInteger(operation.timeoutMs)||operation.timeoutMs<1||operation.timeoutMs>2147483647))throw new Error("native_operation_deadline_invalid");
+  const deadline=operation?.timeoutMs??this.timeoutMs;
   const socket=this.socket;if(socket?.readyState!==WebSocket.OPEN)throw new Error("native_transport_disconnected");
   if(this.pending.size>=32)throw new Error("native_pending_capacity");const id=++this.sequence;
-  return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.pending.delete(id);reject(new Error("native_rpc_deadline"));},this.timeoutMs);this.pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({jsonrpc:"2.0",id,method,params}),e=>{if(e){clearTimeout(timer);this.pending.delete(id);reject(e);}});});
+  return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.pending.delete(id);reject(new Error("native_rpc_deadline"));},deadline);this.pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({jsonrpc:"2.0",id,method,params}),e=>{if(e){clearTimeout(timer);this.pending.delete(id);reject(e);}});});
  }
  close():void{const socket=this.socket;socket?.close();if(socket)this.fail(socket);}
  private fail(socket:WebSocket):void{if(this.socket!==socket)return;this.socket=undefined;for(const p of this.pending.values()){clearTimeout(p.timer);p.reject(new Error("native_transport_closed"));}this.pending.clear();}
