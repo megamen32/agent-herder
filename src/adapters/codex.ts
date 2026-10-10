@@ -297,6 +297,28 @@ export class CodexAdapter implements HarnessAdapter {
     } finally { db?.close(); }
   }
 
+  /** A bounded candidate page for allocated threads omitted by persistent
+   * thread/list. These index IDs require fresh native metadata verification;
+   * has_user_event=0 is never proof of readable or empty history.
+   */
+  async getNativeUnmaterializedThreadIds(limit: number): Promise<{ available: boolean; ids: string[]; limited: boolean }> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Bounded native candidate page requires limit 1..100");
+    let db: import("node:sqlite").DatabaseSync | undefined;
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      db = new DatabaseSync(join(this.codexDir, "state_5.sqlite"), { readOnly: true });
+      db.exec("pragma busy_timeout=100");
+      const columns = new Set((db.prepare("pragma table_info(threads)").all() as Array<{ name?: string }>).map(row => row.name));
+      if (!["id", "has_user_event", "archived", "updated_at"].every(column => columns.has(column))) return { available: false, ids: [], limited: false };
+      const rows = db.prepare("select id from threads where has_user_event = 0 and archived = 0 order by updated_at desc, id desc limit ?")
+        .all(limit + 1) as Array<{ id?: unknown }>;
+      if (rows.some(row => typeof row.id !== "string" || !row.id || row.id.length > 512 || /[\x00-\x1f\x7f]/.test(row.id))) return { available: false, ids: [], limited: false };
+      return { available: true, ids: rows.slice(0, limit).map(row => row.id as string), limited: rows.length > limit };
+    } catch {
+      return { available: false, ids: [], limited: false };
+    } finally { db?.close(); }
+  }
+
   async getNativeAutomationMetadata(id: string): Promise<CodexNativeAutomationMetadata> {
     const session = await this.getSessionObservation(id);
     const automationStop = session?.meta?.automationStop as CodexAutomationStop | undefined;

@@ -230,11 +230,41 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     try {
       await this.ensureReady();
       let bounded = false;
+      let candidatePartial: string | undefined;
       let sessions: CodexThread[];
       if (options.limit) {
-        const page = await this.request("thread/list", {limit:Math.min(options.limit,100), archived:false, sortKey:"updated_at", sortDirection:"desc"}) as {data?:CodexThread[];nextCursor?:string|null};
+        const limit = Math.max(1, Math.min(Math.floor(options.limit), 100));
+        const page = await this.request("thread/list", {limit, archived:false, sortKey:"updated_at", sortDirection:"desc"}) as {data?:CodexThread[];nextCursor?:string|null};
         sessions = page.data || [];
         bounded = Boolean(page.nextCursor);
+        const indexed = await this.rawTranscriptAdapter.getNativeUnmaterializedThreadIds(limit);
+        if (!indexed.available) candidatePartial = "native_unmaterialized_index_unavailable";
+        bounded ||= indexed.limited;
+        let loadedIds: string[] = [];
+        try {
+          const loaded = await this.request("thread/loaded/list", {limit}) as {data?:unknown[];nextCursor?:string|null};
+          if (!Array.isArray(loaded.data) || loaded.data.some(id => typeof id !== "string" || !id || id.length > 512 || /[\x00-\x1f\x7f]/.test(id))) throw new Error("invalid loaded IDs");
+          loadedIds = loaded.data as string[];
+          bounded ||= Boolean(loaded.nextCursor) || loadedIds.length > limit;
+        } catch { candidatePartial = "native_loaded_page_unavailable"; }
+        const merged = new Map(sessions.map(thread => [thread.id, thread]));
+        const missing = [...new Set([...indexed.ids, ...loadedIds])].filter(id => !merged.has(id));
+        bounded ||= missing.length > limit;
+        // Only one candidate window. No rollout scan, cached identity or history
+        // hydration substitutes for exact metadata on the current controller.
+        await Promise.all(missing.slice(0, limit).map(async id => {
+          try {
+            const read = await this.request("thread/read", {threadId:id, includeTurns:false}) as {thread?:CodexThread};
+            if (read.thread?.id !== id) throw new Error("native candidate identity mismatch");
+            merged.set(id, read.thread);
+          } catch { candidatePartial = "native_candidate_metadata_unavailable"; }
+        }));
+        const sorted = [...merged.values()].sort((a, b) =>
+          Date.parse(threadTimestamp(b.updatedAt) || threadTimestamp(b.createdAt) || new Date(0).toISOString())
+          - Date.parse(threadTimestamp(a.updatedAt) || threadTimestamp(a.createdAt) || new Date(0).toISOString())
+          || a.id.localeCompare(b.id));
+        bounded ||= sorted.length > limit;
+        sessions = sorted.slice(0, limit);
       } else sessions = await this.listAllThreads();
       for (const thread of sessions) {
         if (this.socketPath) this.activeTurns.delete(thread.id);
@@ -260,10 +290,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         };
       });
       this.sessionSnapshotReceipt = {
-        exhaustive: !bounded && indexedMetadata?.available !== false,
+        exhaustive: !bounded && !candidatePartial && indexedMetadata?.available !== false,
         observedAt: new Date().toISOString(),
         source: "codex-app-server",
-        ...(indexedMetadata?.available === false ? { reason: "native_index_metadata_unavailable" } : bounded ? {reason:"bounded_native_page"} : {}),
+        ...(indexedMetadata?.available === false ? { reason: "native_index_metadata_unavailable" } : candidatePartial ? {reason:candidatePartial} : bounded ? {reason:"bounded_native_page"} : {}),
       };
       return result;
     } catch (error) {
@@ -1187,7 +1217,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       id: thread.id,
       harness: "codex",
       status: this.mapStatus(thread.status, thread.id),
-      title: thread.name || thread.preview || "Untitled session",
+      // Native preview can exceed the strict HumanStopStore title bound. Keep
+      // full preview as lastMessage; display text must not invalidate STOP reads.
+      title: (thread.name?.trim() || thread.preview?.trim() || "Untitled session").slice(0, 500),
       cwd: thread.cwd || thread.path || this.cwd,
       lastActivity: threadTimestamp(thread.updatedAt) || threadTimestamp(thread.createdAt) || new Date(0).toISOString(),
       ...(typeof thread.model === "string" ? { model: thread.model } : {}),
