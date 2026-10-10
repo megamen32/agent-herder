@@ -69,7 +69,10 @@ describe("Codex archived rollout path refresh", () => {
       const unindexedPath = join(codexDir, "unindexed", "rollout-thread-1.jsonl");
       await mkdir(join(codexDir, "unindexed"), { recursive: true });
       await rename(archivedPath, unindexedPath);
-      await expect(adapter.getSession("thread-1")).rejects.toMatchObject({ code: "ENOENT" });
+      // A fresh native thread/read remains authoritative even when the archive
+      // has moved outside the index. This must not invent a raw transcript.
+      await expect(adapter.getSession("thread-1")).resolves.toMatchObject({ id: "thread-1", status: "idle" });
+      await expect(adapter.getRawTranscript("thread-1")).resolves.toBeNull();
     } finally {
       await adapter.dispose();
     }

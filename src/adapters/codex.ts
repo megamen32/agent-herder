@@ -2,6 +2,7 @@ import { HarnessAdapter, AgentSession, ControlResult, RawTranscriptExport, SendM
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createReadStream, existsSync, realpathSync } from "node:fs";
+import { createInterface } from "node:readline";
 import { open, readFile, readdir, readlink, realpath, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
@@ -558,7 +559,12 @@ export class CodexAdapter implements HarnessAdapter {
     cachedInputTokens?: number;
   }> {
     try {
-      const content = await readFile(filePath, "utf-8");
+      // Metrics need one record at a time, not a second in-memory copy of a
+      // potentially hundreds-of-MiB native rollout and its split line array.
+      const stream = createReadStream(filePath, { encoding: "utf8" });
+      const lines = createInterface({ input: stream, crlfDelay: Infinity });
+      let readError: unknown;
+      stream.on("error", (error) => { readError = error; lines.close(); });
       let model: string | undefined;
       let messageCount = 0;
       let firstTimestampMs: number | undefined;
@@ -567,35 +573,41 @@ export class CodexAdapter implements HarnessAdapter {
       let inputTokens: number | undefined;
       let outputTokens: number | undefined;
       let cachedInputTokens: number | undefined;
-      for (const line of content.split("\n")) {
-        if (!line.trim()) continue;
-        try {
-          const item = JSON.parse(line) as {
-            timestamp?: string;
-            type?: string;
-            payload?: {
+      try {
+        for await (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const item = JSON.parse(line) as {
+              timestamp?: string;
               type?: string;
-              role?: string;
-              model?: string;
-              info?: { total_token_usage?: Record<string, unknown> };
+              payload?: {
+                type?: string;
+                role?: string;
+                model?: string;
+                info?: { total_token_usage?: Record<string, unknown> };
+              };
             };
-          };
-          const timestampMs = Date.parse(item.timestamp || "");
-          if (Number.isFinite(timestampMs)) {
-            firstTimestampMs = firstTimestampMs === undefined ? timestampMs : Math.min(firstTimestampMs, timestampMs);
-            lastTimestampMs = lastTimestampMs === undefined ? timestampMs : Math.max(lastTimestampMs, timestampMs);
-          }
-          if (item.type === "turn_context" && typeof item.payload?.model === "string") model = item.payload.model;
-          if (item.type === "response_item" && item.payload?.type === "message" && (item.payload.role === "user" || item.payload.role === "assistant")) messageCount += 1;
-          if (item.type === "event_msg" && item.payload?.type === "token_count") {
-            const usage = item.payload.info?.total_token_usage;
-            const number = (key: string) => typeof usage?.[key] === "number" ? usage[key] as number : undefined;
-            totalTokens = number("total_tokens") ?? totalTokens;
-            inputTokens = number("input_tokens") ?? inputTokens;
-            outputTokens = number("output_tokens") ?? outputTokens;
-            cachedInputTokens = number("cached_input_tokens") ?? cachedInputTokens;
-          }
-        } catch { /* ignore a partial line while Codex is writing */ }
+            const timestampMs = Date.parse(item.timestamp || "");
+            if (Number.isFinite(timestampMs)) {
+              firstTimestampMs = firstTimestampMs === undefined ? timestampMs : Math.min(firstTimestampMs, timestampMs);
+              lastTimestampMs = lastTimestampMs === undefined ? timestampMs : Math.max(lastTimestampMs, timestampMs);
+            }
+            if (item.type === "turn_context" && typeof item.payload?.model === "string") model = item.payload.model;
+            if (item.type === "response_item" && item.payload?.type === "message" && (item.payload.role === "user" || item.payload.role === "assistant")) messageCount += 1;
+            if (item.type === "event_msg" && item.payload?.type === "token_count") {
+              const usage = item.payload.info?.total_token_usage;
+              const number = (key: string) => typeof usage?.[key] === "number" ? usage[key] as number : undefined;
+              totalTokens = number("total_tokens") ?? totalTokens;
+              inputTokens = number("input_tokens") ?? inputTokens;
+              outputTokens = number("output_tokens") ?? outputTokens;
+              cachedInputTokens = number("cached_input_tokens") ?? cachedInputTokens;
+            }
+          } catch { /* ignore a partial line while Codex is writing */ }
+        }
+        if (readError) throw readError;
+      } finally {
+        lines.close();
+        stream.destroy();
       }
       return {
         model,
