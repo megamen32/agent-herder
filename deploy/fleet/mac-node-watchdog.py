@@ -223,11 +223,24 @@ def cpu_seconds(value):
 def parse_processes(text, pgid, uid):
     rows=[]
     for line in text.splitlines():
-        fields=line.split(maxsplit=6)
-        if len(fields)!=7 or not re.fullmatch(r'[A-Za-z][A-Za-z0-9+<>=-]*',fields[5]):raise Refused('process_observation_invalid')
-        pid,group,user,rss=map(int,fields[:4])
+        def refuse(rowclass,pid=None,group=None,reason='process_observation_invalid'):
+            diagnostic={'rowClass':rowclass,'pid':pid,'pgid':group,'fieldCount':len(line.split())}
+            raise Refused(reason+' '+json.dumps(diagnostic,separators=(',',':')))
+        prefix=line.split(maxsplit=2)
+        pid=int(prefix[0]) if prefix and re.fullmatch(r'[0-9]{1,10}',prefix[0]) else None
+        group=int(prefix[1]) if len(prefix)>1 and re.fullmatch(r'[0-9]{1,10}',prefix[1]) else None
+        if pid is None or group is None:refuse('unknown_prefix',pid,group)
+        # ps -ax includes unrelated processes; only a proven foreign PGID can
+        # bypass the remaining columns. Unknown prefix and owned rows stay strict.
         if group!=pgid:continue
-        if user!=uid:raise Refused('owned_group_identity_lost')
+        fields=line.split(maxsplit=6)
+        if len(fields)!=7:refuse('owned_shape',pid,group)
+        if any(not re.fullmatch(r'[0-9]{1,10}',f) for f in fields[2:4]):refuse('owned_numeric',pid,group)
+        user,rss=map(int,fields[2:4])
+        if user!=uid:refuse('owned_uid',pid,group,'owned_group_identity_lost')
+        if not re.fullmatch(r'(?:[0-9]+-)?[0-9]+(?::[0-9]+){0,2}(?:\.[0-9]+)?',fields[4]):refuse('owned_time',pid,group)
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9+<>=-]*',fields[5]):refuse('owned_state',pid,group)
+        if not re.fullmatch(r'(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+[0-9]{1,2}\s+[0-9]{2}:[0-9]{2}:[0-9]{2}\s+[0-9]{4}',fields[6]):refuse('owned_start',pid,group)
         rows.append({'pid':pid,'pgid':group,'uid':user,'rss_kib':rss,
                      'cpu_seconds':cpu_seconds(fields[4]),'stat':fields[5],'identity':fields[6]})
     return rows

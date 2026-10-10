@@ -97,6 +97,33 @@ class MacWatchdogTests(unittest.TestCase):
         with patch.object(w,'command',return_value='USER PID TT %CPU STAT PRI STIME UTIME COMMAND\n'):
             with self.assertRaisesRegex(w.Refused,'thread_observation_invalid'):w.read_threads([{'pid':34393}])
 
+    def test_foreign_process_prefix_is_filtered_before_unrelated_columns(self):
+        own='42 42 501 1024 00:01.50 S Sat Oct 10 10:00:00 2026\n'
+        for foreign in ('99 99\n','99 99 malformed-private-path\n','99 99 bad uid rss time state start\n','0 0\n'):
+            with self.subTest(foreign=foreign):
+                rows=w.parse_processes(foreign+own,42,501)
+                self.assertEqual([r['pid'] for r in rows],[42])
+                self.assertEqual(rows[0]['identity'],'Sat Oct 10 10:00:00 2026')
+
+    def test_owned_or_unknown_process_rows_fail_with_safe_diagnostics(self):
+        cases=[('42 42','owned_shape',42,42,2),
+            ('42 42 501 bad 00:01 S Sat Oct 10 10:00:00 2026','owned_numeric',42,42,11),
+            ('42 42 501 1024 invalid-time S Sat Oct 10 10:00:00 2026','owned_time',42,42,11),
+            ('42 42 501 1024 00:01 ? Sat Oct 10 10:00:00 2026','owned_state',42,42,11),
+            ('42 42 501 1024 00:01 S private-invalid-start','owned_start',42,42,7),
+            ('99 missing-private-group','unknown_prefix',99,None,2),
+            ('bad-private-pid 99','unknown_prefix',None,99,2),
+            ('','unknown_prefix',None,None,0)]
+        for raw,rowclass,pid,pgid,count in cases:
+            with self.subTest(rowclass=rowclass),self.assertRaises(w.Refused) as caught:
+                w.parse_processes(raw+'\n',42,501)
+            reason,details=str(caught.exception).split(' ',1)
+            self.assertEqual(reason,'process_observation_invalid')
+            self.assertEqual(json.loads(details),{'rowClass':rowclass,'pid':pid,'pgid':pgid,'fieldCount':count})
+            self.assertNotIn('private',details)
+        with self.assertRaisesRegex(w.Refused,'owned_group_identity_lost'):
+            w.parse_processes('42 42 999 1024 00:01 S Sat Oct 10 10:00:00 2026\n',42,501)
+
     def test_thread_census_confirms_owned_child_exit_with_one_bounded_refresh(self):
         leader={'pid':42,'pgid':42,'uid':w.os.getuid(),'identity':'leader'}
         child={'pid':43,'pgid':42,'uid':w.os.getuid(),'identity':'child'}
