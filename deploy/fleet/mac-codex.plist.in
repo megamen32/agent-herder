@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.bezrabotnyi.agent-herder-native-codex</string>
+  <key>ProgramArguments</key><array>
+    <string>__PYTHON_BIN__</string><string>-I</string><string>-S</string><string>-B</string>
+    <string>__HOME__/.local/share/agent-herder/fleet/mac-codex-watchdog.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>__HOME__/.local/share/agent-herder/fleet</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><false/>
+  <key>ProcessType</key><string>Background</string>
+  <key>Nice</key><integer>10</integer>
+  <key>LowPriorityIO</key><true/>
+  <key>Umask</key><integer>63</integer>
+  <key>ExitTimeOut</key><integer>20</integer>
+  <key>StandardOutPath</key><string>/dev/null</string>
+  <key>StandardErrorPath</key><string>__HOME__/.local/state/agent-herder/fleet-native-codex/watchdog.log</string>
+</dict></plist>
