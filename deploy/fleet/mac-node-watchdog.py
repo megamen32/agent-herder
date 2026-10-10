@@ -237,12 +237,49 @@ def read_processes(pgid,deadline=None):
     text=command(argv,deadline=deadline) if deadline is not None else command(argv)
     return parse_processes(text,pgid,os.getuid())
 
+def thread_pids(text):
+    pids=[];table=False
+    for line in text.splitlines():
+        fields=line.split()
+        if not fields:continue
+        if fields==['USER','PID','TT','%CPU','STAT','PRI','STIME','UTIME','COMMAND']:
+            table=True;continue
+        try:
+            if len(fields)==1 and not table:pid=int(fields[0])
+            elif table:
+                # Darwin -M may ignore -o: first thread has USER/TT; later
+                # threads omit both. COMMAND is opaque and never interpreted.
+                first=len(fields)>=9 and fields[1].isdigit() and re.fullmatch('[0-9]+(?:\.[0-9]+)?',fields[3])
+                if first:pid=int(fields[1]);metrics=fields[3:8]
+                elif len(fields)>=7 and fields[0].isdigit():pid=int(fields[0]);metrics=fields[1:6]
+                else:raise ValueError()
+                float(metrics[0]);cpu_seconds(metrics[3]);cpu_seconds(metrics[4])
+                if not re.fullmatch('[A-Za-z][A-Za-z0-9+<>=-]*',metrics[1]) or not re.fullmatch('[0-9]+[A-Za-z]*',metrics[2]):raise ValueError()
+            else:raise ValueError()
+        except (ValueError,IndexError):raise Refused('thread_observation_invalid') from None
+        pids.append(pid)
+    return pids
+
 def read_threads(rows):
     if not rows:return 0
-    text=command(['/bin/ps','-M','-p',','.join(str(r['pid']) for r in rows),'-o','pid='])
-    pids=[int(line.strip()) for line in text.splitlines() if line.strip()]
-    if not {r['pid'] for r in rows}.issuperset(pids):raise Refused('thread_observation_invalid')
-    return len(pids)
+    def probe(census):
+        text=command(['/bin/ps','-M','-p',','.join(str(r['pid']) for r in census),'-o','pid='])
+        pids=thread_pids(text)
+        if not pids or not {r['pid'] for r in census}.issuperset(pids):raise Refused('thread_observation_invalid')
+        return pids
+    pids=probe(rows)
+    if set(pids)=={r['pid'] for r in rows}:return len(pids)
+    # One bounded metadata refresh permits a normal owned child exit between ps
+    # samples. A changed known generation is never adopted; no signal/replay.
+    if any('pgid' not in r or 'identity' not in r for r in rows) or len({r['pgid'] for r in rows})!=1:
+        raise Refused('thread_observation_invalid')
+    current=read_processes(rows[0]['pgid'])
+    previous={r['pid']:r for r in rows}
+    if not current or any(r['pid'] in previous and any(r[k]!=previous[r['pid']][k] for k in ('pgid','uid','identity')) for r in current):
+        raise Refused('thread_observation_invalid')
+    fresh=probe(current)
+    if set(fresh)!={r['pid'] for r in current}:raise Refused('thread_observation_invalid')
+    return len(fresh)
 
 def cpu_percent(previous,current,elapsed):
     return sum(max(0,value-previous.get(pid,0)) for pid,value in current.items())/elapsed*100 if elapsed>0 else 0
