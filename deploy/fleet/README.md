@@ -12,15 +12,15 @@ GrepMesh's existing Rust implementation is in src/gptadmin.rs, src/topology.rs a
 
 ## Verified placement and boundaries
 
-| Node | Verified identity | Current Herder evidence | Proposed public entry |
+| Node | Verified identity | Current Herder evidence | Public entry |
 |---|---|---|---|
 | 100 | roomhacker-server-100 | Existing local service, loopback18787 | agent.bezrabotnyi.com |
 | 44 | server-44, x86_64 | Own agent-herder-fleet.service, loopback18791, Codex only | agent44.bezrabotnyi.com |
 | 88 | roomhacker-server-88, x86_64 | Own agent-herder-fleet.service, loopback18791; actual cabinet create/read/open accepted | agent88.bezrabotnyi.com |
-| Mac Mini | mac-mini-2012.lan, Macmini6,2 | Existing managed Codex36862 reused; own Herder candidate not runtime-accepted | agent-mac-mini.bezrabotnyi.com |
-| Mac M1 | MacBook-Pro-User.local, MacBookPro18,2, arm64 | 18787 is an SSH forward to100; own bounded native Codex controller and Herder not yet accepted | agent-mac-m1.bezrabotnyi.com |
+| Mac Mini | mac-mini-2012.lan, Macmini6,2 | Own managed Herder18789 installed ecd603e; shared native Codex preserved; outgoing Mesh authorization repair pending | agent-mac-mini.bezrabotnyi.com |
+| Mac M1 | MacBook-Pro-User.local, MacBookPro18,2, arm64 | Earlier local native controller/Herder proofs retained; currently reverse2222 and recovery LAN unavailable, current rollout not accepted | agent-mac-m1.bezrabotnyi.com |
 
-M1 is reached through its existing reverse SSH2222. Mac Mini is reached through canonical LAN SSH192.168.2.4. Do not label a forwarded100 endpoint as a Mac node.18789 was free on both Macs at the initial probe and is a proposed local-node port, subject to the actual executor's contract and a fresh bind check. Do not replace M1's existing18787 forward.
+M1 operator access uses its existing reverse SSH2222 first. Mac Mini uses canonical LAN SSH192.168.2.4. Do not label a forwarded100 endpoint as a Mac node. Own Herder18789 is installed on Mini and was previously installed on M1; an offline M1 is explicit, not fresh readiness. Preserve M1's historical18787 forward. Installed44/88 singleton ports are18791 and100 is18787.
 
 ## Budgets and admission
 
@@ -39,6 +39,12 @@ New ingress ownership is limited to the four new agent44/88/Mac vhosts. Canonica
 For each reachable node, use the actual cabinet to list local sessions, select host+harness, create a harmless native session and read back its native host/session/cwd identity. Validate filtering, identical native IDs on different hosts, and explicit offline M1 behavior without losing cached sessions or claiming live readiness. Unsupported harnesses must be explicit. Retain pending/unknown admission receipts; never automatically resend accepted or unknown inputs when changing hosts.
 
 Whole fleet delivery remains open until those consumer receipts exist. Source units, discovery online, HTTP200 or one88→100 delivery do not close it.
+
+The four remote public routes now use their native Herder for both UI and Fleet access, with an independent HAOS owner-cookie verifier. Maintained HAOS8443 recovery also routes those aliases directly to the same peer, without rebuilding its app or changing global roles/auth. Real88→SAME44 session metadata and owner-cookie HAOS reads are accepted; missing native history is shown as unavailable. The screenshot crop was uniformly blank, so that artifact is not pixel acceptance. M1's current release and the complete five-node/harness matrix remain open.
+
+Public Mini cannot assume outgoing SSH keys exist. Its approved owner credential must stay inside one immutable HTTP request context, with generation+host-specific MCP state; cookie rotation retains the existing profile journal and UNKNOWN intent identity. Source-only HTTPS transport/wiring work does not itself prove a working Mini consumer. Local SSH-native and public owner-cookie realms remain separate.
+
+Mini ecd603e stopped after an artifact census deadline at5.012s/count14341, not RAM/CPU exhaustion. Recovery retains one active release plus the exact inactive f9b95ea rollback directory under promotion-backups/retained-inactive-<SHA>; moving it back to releases/<SHA> precedes selecting the saved prior config on rollback. No artifact bytes were deleted, limits raised, or shared native/browser restarted. Measured active71682153 plus rollback71682022 bytes remain below the original combined512MiB envelope; active census0.322s and both measurements0.514s. Keep cold rollback storage finite and immutable; do not treat moving arbitrary data outside the observed tree as a resource exemption. See .tmp/herder-fleet-20261010/mini-single-release-census-recovery.json for the exact restoration pointer.
 
 ## Current finite node candidates and rollback
 

@@ -1,4 +1,5 @@
 import {createHash, timingSafeEqual} from "node:crypto";
+import {AsyncLocalStorage} from "node:async_hooks";
 import {open} from "node:fs/promises";
 import {homedir, hostname, userInfo} from "node:os";
 import {join} from "node:path";
@@ -7,6 +8,7 @@ import {FleetCabinetService} from "../mesh/fleet-service.js";
 import {createFleetApiHandler} from "../mesh/fleet-api.js";
 import {verifyFleetOwnerCookie} from "./fleet-owner-auth.js";
 import {FleetDirectTransport} from "../mesh/fleet-direct-transport.js";
+import {FleetOwnerHttpTransport} from "../mesh/fleet-owner-http-transport.js";
 import {FleetGptAdminTransport} from "../mesh/fleet-gptadmin-transport.js";
 import {unwrapResult} from "../mesh/protocol.js";
 import type {FleetHostDefinition} from "../mesh/fleet-contract.js";
@@ -39,9 +41,12 @@ export function createConfiguredFleetApiHandler(options: {
   const stateRoot = options.stateRoot ?? join(homedir(), ".local", "state", "agent-herder", "fleet");
   const approvedGeneration = options.approvedCredentialGeneration ?? process.env.AGENT_HERDER_FLEET_CREDENTIAL_PIN;
   const directServices=new Map<string,FleetCabinetService>();
+  // Verified owner requests retain their own immutable credential generation.
+  // Keep the same profile journal/service across rotation; never share a mutable cookie.
+  const publicOwnerContext=new AsyncLocalStorage<Readonly<{cookie:string;credentialGeneration:string}>>();
   const direct=(principal:string,realm:string)=>{
     const key=realm+':'+principal;let service=directServices.get(key);
-    if(!service){if(directServices.size>=2)throw new Error('fleet_direct_scope_limit');service=new FleetCabinetService({hosts:fleetHosts,scope:{profileId:key,userId:principal},journalPath:realm==='ssh-native-owner'?join(stateRoot,'direct-owner-create.json'):join(stateRoot,'direct-'+createHash('sha256').update(key).digest('hex')+'-create.json'),transportFactory:()=>new FleetDirectTransport()});directServices.set(key,service);}
+    if(!service){if(directServices.size>=2)throw new Error('fleet_direct_scope_limit');service=new FleetCabinetService({hosts:fleetHosts,scope:{profileId:key,userId:principal},journalPath:realm==='ssh-native-owner'?join(stateRoot,'direct-owner-create.json'):join(stateRoot,'direct-'+createHash('sha256').update(key).digest('hex')+'-create.json'),transportFactory:()=>realm==='haos-sso-owner'?new FleetOwnerHttpTransport({ownerContext:()=>publicOwnerContext.getStore()}):new FleetDirectTransport()});directServices.set(key,service);}
     return service;
   };
   let active: Active | undefined;
@@ -118,14 +123,16 @@ export function createConfiguredFleetApiHandler(options: {
         if (localUser!==userId) return reject(403,"Локальный владелец не совпадает");
         return createFleetApiHandler(direct(localUser,'ssh-native-owner'),hostname())(request,response);
       }
-      // Each managed remote cabinet uses its already-authorized owner SSH lanes;
-      // cookie verification stays on independent HAOS, never on a caller-supplied identity header.
+      // Public cabinets reuse the verified cookie over the maintained TLS peer routes.
+      // They need no extra SSH key, central100 relay, or caller-supplied identity header.
       if(hostname()!=='roomhacker-server-100'&&isManagedPublicHost(request)&&!request.headers.authorization){
         if(userId!==userInfo().username)return reject(403,"Для этого владельца нет профиля флота");
         if(!await verifiedPublicOwner(request))return reject(401,"Войдите в кабинет владельца флота");
         if(!validPublicOrigin(request))return reject(403,"Создание доступно из своего кабинета");
         if(path==='/api/fleet/access'){if(request.method!=='GET')return reject(405,"Проверка доступа принимает только чтение");response.writeHead(204,{'Cache-Control':'no-store'});response.end();return true;}
-        return createFleetApiHandler(direct('roomhacker','haos-sso-owner'),hostname())(request,response);
+        const cookie=request.headers.cookie!;
+        const context=Object.freeze({cookie,credentialGeneration:createHash('sha256').update(cookie).digest('hex')});
+        return publicOwnerContext.run(context,()=>createFleetApiHandler(direct('roomhacker','haos-sso-owner'),hostname())(request,response));
       }
       const binding = await readBinding();
       const configuredBearer = Object.entries(binding.headers).find(([key]) => key.toLowerCase() === "authorization")![1];
