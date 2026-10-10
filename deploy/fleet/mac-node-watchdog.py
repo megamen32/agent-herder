@@ -594,6 +594,7 @@ class ChildStderrDiagnostic:
     def __init__(self,pipe,dist_root=None):
         self.pipe=pipe;self._stop=threading.Event();self._tail=b'';self._frames=[]
         self._summary=('unknown',0,hashlib.sha256().hexdigest(),False,False,())
+        self._error_codes=set()
         self._frame_pattern=None
         if dist_root is not None:
             files=b'|'.join(re.escape(name.encode()) for name in self.SAFE_JS_FILES)
@@ -617,6 +618,9 @@ class ChildStderrDiagnostic:
                 if not chunk:complete=True;break
                 count+=len(chunk);digest.update(chunk);window=self._tail+chunk
                 lower=window.lower()
+                # Fixed Node/system codes only; never persist error messages.
+                for code in ('ERR_INVALID_IP_ADDRESS','ERR_INVALID_ARG_TYPE','ERR_INTERNAL_ASSERTION','ERR_HTTP_HEADERS_SENT','ERR_SOCKET_CLOSED','ERR_ASSERTION','ERR_UNHANDLED_ERROR','ECONNRESET','ETIMEDOUT'):
+                    if ('['+code+']').encode() in window:self._error_codes.add(code)
                 if b'javascript heap out of memory' in lower:kind='heap_oom'
                 elif b'panicked at' in lower and kind!='heap_oom':kind='panic'
                 if self._frame_pattern:
@@ -644,7 +648,8 @@ class ChildStderrDiagnostic:
         kind,count,digest,complete,failed,frames=self._summary
         return {'stderrClass':kind,'stderrBytes':count,'stderrSha256':digest,
             'stderrComplete':complete,'stderrReadFailed':failed,'stderrReaderStopped':not self._thread.is_alive(),
-            'stderrFrames':[{'file':name,'line':line,'column':column} for name,line,column in frames]}
+            'stderrFrames':[{'file':name,'line':line,'column':column} for name,line,column in frames],
+            'stderrErrorCodes':sorted(self._error_codes)}
 
 def main():
     os.umask(0o077);base=Path.home()/'.local/share/agent-herder/fleet'

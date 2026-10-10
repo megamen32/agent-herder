@@ -616,6 +616,14 @@ class MacWatchdogTests(unittest.TestCase):
             self.assertTrue(report['stderrComplete']);self.assertTrue(children[0].stderr.closed)
             self.assertNotIn('PRIVATE_FIXTURE',(state/'last-run.json').read_text())
 
+    def test_stderr_codes_are_fixed_not_error_messages(self):
+        import time
+        data=b'Error [ERR_INTERNAL_ASSERTION]: PRIVATE_COOKIE\nError [SECRET_CODE]: PRIVATE_DIALOGUE\n'
+        read,write=os.pipe();pipe=os.fdopen(read,'rb');os.write(write,data);os.close(write)
+        reader=w.ChildStderrDiagnostic(pipe);result=reader.close(time.monotonic()+1)
+        self.assertEqual(result['stderrErrorCodes'],['ERR_INTERNAL_ASSERTION'])
+        for value in ('PRIVATE_COOKIE','PRIVATE_DIALOGUE','SECRET_CODE'):self.assertNotIn(value,json.dumps(result))
+
     def test_launchagent_has_no_restart_loop_or_user_wide_limits(self):
         text=(ROOT/'deploy/fleet/mac-node.plist.in').read_text().replace('__HOME__','/Users/fixture').replace('__PYTHON_BIN__','/usr/bin/python3')
         value=plistlib.loads(text.encode())
