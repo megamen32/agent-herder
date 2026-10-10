@@ -619,8 +619,10 @@ class ChildStderrDiagnostic:
                 count+=len(chunk);digest.update(chunk);window=self._tail+chunk
                 lower=window.lower()
                 # Fixed Node/system codes only; never persist error messages.
-                for code in ('ERR_INVALID_IP_ADDRESS','ERR_INVALID_ARG_TYPE','ERR_INTERNAL_ASSERTION','ERR_HTTP_HEADERS_SENT','ERR_SOCKET_CLOSED','ERR_ASSERTION','ERR_UNHANDLED_ERROR','ECONNRESET','ETIMEDOUT'):
-                    if ('['+code+']').encode() in window:self._error_codes.add(code)
+                for code in ('ERR_INVALID_IP_ADDRESS','ERR_INVALID_ARG_TYPE','ERR_INTERNAL_ASSERTION','ERR_HTTP_HEADERS_SENT','ERR_SOCKET_CLOSED','ERR_ASSERTION','ERR_UNHANDLED_ERROR','ECONNRESET','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ECONNREFUSED','ENOTFOUND','EAI_AGAIN','UNABLE_TO_GET_ISSUER_CERT_LOCALLY','CERT_HAS_EXPIRED','ERR_STREAM_PREMATURE_CLOSE'):
+                    if code.encode() in window:self._error_codes.add(code)
+                if b'callback is not a function' in window:self._error_codes.add('callback_not_function')
+                if b'Unhandled' in window and b'error' in window:self._error_codes.add('unhandled_error_event')
                 if b'javascript heap out of memory' in lower:kind='heap_oom'
                 elif b'panicked at' in lower and kind!='heap_oom':kind='panic'
                 if self._frame_pattern:

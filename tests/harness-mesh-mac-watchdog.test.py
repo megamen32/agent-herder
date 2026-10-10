@@ -618,10 +618,10 @@ class MacWatchdogTests(unittest.TestCase):
 
     def test_stderr_codes_are_fixed_not_error_messages(self):
         import time
-        data=b'Error [ERR_INTERNAL_ASSERTION]: PRIVATE_COOKIE\nError [SECRET_CODE]: PRIVATE_DIALOGUE\n'
+        data=b'Error [ERR_INTERNAL_ASSERTION]: PRIVATE_COOKIE\nError [SECRET_CODE]: PRIVATE_DIALOGUE\n code: ECONNRESET\nTypeError: callback is not a function\n'
         read,write=os.pipe();pipe=os.fdopen(read,'rb');os.write(write,data);os.close(write)
         reader=w.ChildStderrDiagnostic(pipe);result=reader.close(time.monotonic()+1)
-        self.assertEqual(result['stderrErrorCodes'],['ERR_INTERNAL_ASSERTION'])
+        self.assertEqual(result['stderrErrorCodes'],['ECONNRESET','ERR_INTERNAL_ASSERTION','callback_not_function'])
         for value in ('PRIVATE_COOKIE','PRIVATE_DIALOGUE','SECRET_CODE'):self.assertNotIn(value,json.dumps(result))
 
     def test_launchagent_has_no_restart_loop_or_user_wide_limits(self):
