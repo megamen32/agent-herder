@@ -27,6 +27,8 @@ import { AnthropicMiniMaxSummarizer, CacheHandoffService, FastAgentMiniMaxSummar
 import { acquireAgentHerderSingleton } from "./singleton.js";
 import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
 import { createWebServer } from "./web/server.js";
+import { createConfiguredFleetApiHandler } from "./web/fleet-wiring.js";
+import { registerFleetNodeTools } from "./mesh/fleet-node.js";
 import { createConfiguredBrowserWakeService } from "./browser-wake.js";
 import { coordinationNotes } from "./coordination-notes.js";
 import { herderEvents, type HerderEventBus } from "./herder-events.js";
@@ -486,6 +488,7 @@ function registerTools(
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
   registerSessionTools(server, { adapters, jobs, events });
   registerHarnessMeshTools(server, { adapters });
+  registerFleetNodeTools(server, { adapters });
 }
 
 // ===== Main =====
@@ -690,6 +693,7 @@ async function main() {
       supervisor: processSupervisor,
       sessionObservationManagedExternally: true,
       mcpAuthToken: httpToken,
+      fleetApiHandler: createConfiguredFleetApiHandler(),
       autopilotPolicyStore,
       autopilotSessionStore,
       sessionAutostartStore,

@@ -58,6 +58,8 @@ export interface WebDependencies {
   supervisor?: SessionSupervisor;
   /** Disable local observer lifecycle when a process-owned supervisor already manages it. */
   sessionObservationManagedExternally?: boolean;
+  /** Optional profile-scoped fleet API; its handler authenticates each request. */
+  fleetApiHandler?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
 }
 
 export type AutopilotSweepOutcome = {
@@ -485,6 +487,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const userMessageDelivery = dependencies.jobs ? new UserMessageDelivery(dependencies.adapters, supervisor, dependencies.jobs) : undefined;
   const server = createServer(async (request, response) => {
     try {
+      if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
       await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery);
     } catch (err) {
       if (err instanceof SessionNotFoundError) {

@@ -10,6 +10,7 @@ export type OutboxEntry = {
   text: string;
   mode: DeliveryMode;
   createdAt: number;
+  jobId?: string;
   status: OutboxStatus;
   error?: string;
   note?: string;
@@ -160,7 +161,7 @@ const reviveOutboxEntry = (raw: unknown): OutboxEntry | null => {
   if (entry.mode !== "steer" && entry.mode !== "queue") return null;
   if (typeof entry.createdAt !== "number" || !Number.isFinite(entry.createdAt)) return null;
   if (typeof entry.status !== "string" || !STATUS_VALUES.has(entry.status)) return null;
-  const base = { inputId: entry.inputId, sessionKey: entry.sessionKey, text: entry.text, mode: entry.mode, createdAt: entry.createdAt };
+  const base = { inputId: entry.inputId, sessionKey: entry.sessionKey, text: entry.text, mode: entry.mode, createdAt: entry.createdAt, jobId: typeof entry.jobId === "string" && entry.jobId ? entry.jobId : undefined };
   if (entry.status === "sending") {
     // Отправка прервалась перезагрузкой: состояние уточняется у сервера (GET message-status),
     // повторный POST автоматически не отправляется.
@@ -245,6 +246,17 @@ export class MessageAdmissionDispatcher {
     return [...this.operations].some(operation => operation.inputId === inputId && !operation.cancelled);
   }
 
+  /** Отмена одного ещё не начатого сообщения: соседние сообщения той же сессии не трогаются. */
+  cancelInput(sessionKey: string, inputId: string): boolean {
+    let cancelled = false;
+    for (const operation of this.operations) {
+      if (operation.sessionKey !== sessionKey || operation.inputId !== inputId || operation.started || operation.cancelled) continue;
+      operation.cancelled = true;
+      cancelled = true;
+    }
+    return cancelled;
+  }
+
   cancelPending(sessionKey: string): void {
     for (const operation of this.operations) {
       if (operation.sessionKey !== sessionKey || operation.started || operation.cancelled) continue;
@@ -270,3 +282,42 @@ export class MessageAdmissionDispatcher {
     return tail;
   }
 }
+
+// ---- Управление отложенным сообщением: отмена доставки, steer вместо очереди ----
+// jobId хранится в строке очереди, поэтому отмена и «отправить сейчас» переживают
+// перезагрузку страницы и не требуют повторного POST сообщения.
+
+/** Статусы, в которых сообщение ещё не передано агенту: его можно отменить. */
+const DELETEABLE_STATUSES: ReadonlySet<OutboxStatus> = new Set(["ready", "deferred", "pending", "failed"]);
+
+export const canDeleteOutboxEntry = (entry: OutboxEntry): boolean => DELETEABLE_STATUSES.has(entry.status);
+
+/** Steer умеет только codex: остальные адаптеры не принимают вставку в текущий ход. */
+export const canSteerOutboxEntry = (entry: OutboxEntry, harness: string): boolean =>
+  entry.mode === "queue" && canDeleteOutboxEntry(entry) && harness === "codex";
+
+export const withOutboxJobId = (entries: OutboxEntry[], inputId: string, jobId: string | undefined): OutboxEntry[] => {
+  if (!jobId) return entries;
+  let changed = false;
+  const next = entries.map((entry) => {
+    if (entry.inputId !== inputId || entry.jobId === jobId) return entry;
+    changed = true;
+    return { ...entry, jobId };
+  });
+  return changed ? next : entries;
+};
+
+/** job.id из ответа /message и /message-status: нужен для отмены отложенной доставки. */
+export const readOutboxJobId = (payload: unknown): string | undefined => {
+  if (!payload || typeof payload !== "object") return undefined;
+  const job = (payload as { job?: { id?: unknown } }).job;
+  return job && typeof job.id === "string" && job.id ? job.id : undefined;
+};
+
+const TERMINAL_JOB_STATES: ReadonlySet<string> = new Set(["completed", "failed", "cancelled", "interrupted"]);
+export const isTerminalJobState = (state: unknown): boolean => typeof state === "string" && TERMINAL_JOB_STATES.has(state);
+
+/** Отмена сошла успешно только если задача доставки реально остановлена и не доставила сообщение. */
+export type CancelOutcome = "cancelled" | "delivered" | "failed";
+export const cancelOutcomeOfJobState = (state: unknown): CancelOutcome =>
+  state === "cancelled" ? "cancelled" : state === "completed" ? "delivered" : "failed";

@@ -67,3 +67,10 @@
   .composer-create-panel { max-height: 65dvh; overflow-y: auto; overscroll-behavior: contain; }
   .cwd-suggestions { position: static; max-height: 120px; margin-top: 5px; box-shadow: none; }
 }
+
+
+/* Мобильные размеры композера: 44px вместо 34–36px (аудит 2026-10-09) */
+@media (max-width: 900px) {
+  .composer-plus { width: 44px; height: 44px; }
+  .send-button { width: 44px; height: 44px; }
+}
