@@ -64,10 +64,24 @@ class Policy:
         self.host_reserve_kib = (2 if model == 'Macmini6,2' else 4)*1024**2
 
 def command(argv,deadline=None):
-    timeout=min(2,deadline-time.monotonic()) if deadline is not None else 2
-    if timeout<=0:raise Refused('owned_cleanup_deadline')
-    result = subprocess.run(argv, capture_output=True, timeout=timeout, check=False,
-                            env={**os.environ, 'LC_ALL':'C'})
+    # A transient read timeout must not kill both healthy owned controllers.
+    # Retry only known metadata probes, once, with a finite common window.
+    # Cleanup retains its existing caller deadline; no prior output is reused.
+    stages={'/bin/ps':'process','/usr/sbin/lsof':'listener',
+            '/usr/sbin/sysctl':'host_identity','/usr/bin/memory_pressure':'host_memory'}
+    stage=stages.get(argv[0],'other')
+    window=min(time.monotonic()+4,deadline) if deadline is not None else time.monotonic()+4
+    attempts=2 if stage!='other' else 1
+    for attempt in range(1,attempts+1):
+        timeout=min(2,window-time.monotonic())
+        if timeout<=0:raise Refused('owned_cleanup_deadline' if deadline is not None else 'native_observation_deadline')
+        try:
+            result = subprocess.run(argv, capture_output=True, timeout=timeout, check=False,
+                                    env={**os.environ, 'LC_ALL':'C'})
+            break
+        except subprocess.TimeoutExpired:
+            if attempt==attempts or time.monotonic()>=window:
+                raise Refused('native_observation_deadline '+json.dumps({'stage':stage,'attempt':attempt},separators=(',',':'))) from None
     if result.returncode or len(result.stdout)>1024**2:
         raise Refused('native_observation_failed')
     return result.stdout.decode('utf8', errors='strict')
@@ -93,7 +107,11 @@ def private_directory(path):
         raise Refused('owned_directory_permissions')
 
 def storage_bytes(root, limit, *, artifact=False):
-    window=5 if artifact else 2;attempt_window=window/2
+    window=5 if artifact else 2
+    # A complete artifact census may use its existing five-second allowance.
+    # Splitting it into two discarded 2.5s traversals rejects a healthy tree
+    # that takes 3..5s even though it fits the declared total budget.
+    attempt_window=window if artifact else window/2
     started=time.monotonic();overall_deadline=started+window;count=0;attempt=0
     root_class={'releases':'artifact','tmp':'temp','native-codex-tmp':'temp',
                 'fleet-node':'state','fleet-native-codex':'state'}.get(root.name,'other')

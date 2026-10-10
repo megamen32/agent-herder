@@ -2,7 +2,7 @@ import {useEffect,useRef,useState,type FormEvent} from 'react';
 import type {FleetHost,FleetSession,FleetHarness,FleetCreateReceipt} from '../../mesh/fleet-contract.js';
 import {createFleetClient,type FleetClient} from './client.js';
 import './fleet.css';
-import {FleetBrowserIntent} from './intent.js';
+import {FleetBrowserIntent,type FleetIntent} from './intent.js';
 import {fleetSessionLink} from './session-link.js';
 const states={ready:'Доступен',metadata_only:'Только просмотр',offline:'Не в сети',unavailable:'Не отвечает',stale:'Данные устарели'};
 const hostState=(host:FleetHost)=>host.reason==='local_herder_not_registered'?'Herder не подключён':states[host.state];
@@ -13,8 +13,14 @@ export function FleetCabinet({defaultHostId,onSelectSession,client:injected}:{de
  const [loaded,setLoaded]=useState(false),[loading,setLoading]=useState(true),[partial,setPartial]=useState(false),[error,setError]=useState(''),[refresh,setRefresh]=useState(0);
  const [harness,setHarness]=useState<FleetHarness>('codex'),[name,setName]=useState(''),[cwd,setCwd]=useState(''),[model,setModel]=useState('');
  const [sending,setSending]=useState(false),[receipt,setReceipt]=useState<FleetCreateReceipt|null>(null);
+ const [archived,setArchived]=useState<FleetIntent[]>([]);
  const ownMutation=useRef(false), initialized=useRef(false), intentStore=useRef<FleetBrowserIntent|null>(null);
- useEffect(()=>{const abort=new AbortController();setLoading(true);client.hosts(abort.signal,refresh>0).then(r=>{if(abort.signal.aborted)return;setHosts(r.hosts);if(!initialized.current){intentStore.current=new FleetBrowserIntent(localStorage,r.scopeKey);const saved=intentStore.current.load();if(saved){setHostId(saved.request.hostId);setName(saved.request.name);setCwd(saved.request.cwd);setHarness(saved.request.harness);setModel(saved.request.model??'');setReceipt(saved.receipt);}else if(!defaultHostId)setHostId(r.defaultHostId);initialized.current=true;}setLoaded(true);}).catch(()=>{if(!abort.signal.aborted)setError('Не удалось получить список машин');}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});return()=>abort.abort();},[client,defaultHostId,refresh]);
+ const deferUnknown=()=>{
+  if(ownMutation.current||receipt?.state!=='unknown')return;
+  try{intentStore.current!.archiveUnknown();setArchived(intentStore.current!.archivedUnknown());setReceipt(null);setName('');setCwd('');setModel('');setError('Предыдущий запрос сохранён для проверки. Он не отправлялся повторно.');}
+  catch{setError('Не удалось сохранить запрос для проверки. Новое создание остаётся отключено.');}
+ };
+ useEffect(()=>{const abort=new AbortController();setLoading(true);client.hosts(abort.signal,refresh>0).then(r=>{if(abort.signal.aborted)return;setHosts(r.hosts);if(!initialized.current){intentStore.current=new FleetBrowserIntent(localStorage,r.scopeKey);setArchived(intentStore.current.archivedUnknown());const saved=intentStore.current.load();if(saved){setHostId(saved.request.hostId);setName(saved.request.name);setCwd(saved.request.cwd);setHarness(saved.request.harness);setModel(saved.request.model??'');setReceipt(saved.receipt);}else if(!defaultHostId)setHostId(r.defaultHostId);initialized.current=true;}setLoaded(true);}).catch(()=>{if(!abort.signal.aborted)setError('Не удалось получить список машин');}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});return()=>abort.abort();},[client,defaultHostId,refresh]);
  useEffect(()=>{if(!loaded)return;const abort=new AbortController();setSessions([]);client.sessions(hostId||undefined,abort.signal).then(r=>{if(abort.signal.aborted)return;setSessions(r.sessions);setPartial(!r.complete||r.limited);}).catch(()=>{if(!abort.signal.aborted)setError('Не удалось прочитать сессии этой машины');});return()=>abort.abort();},[client,hostId,loaded,refresh]);
  const selected=hosts.find(h=>h.hostId===hostId);
  const allowed=selected?.createHarnesses??[];
@@ -45,5 +51,7 @@ export function FleetCabinet({defaultHostId,onSelectSession,client:injected}:{de
   </form>
   {receipt?.state==='created'&&receipt.address&&fleetSessionLink(hosts.find(h=>h.hostId===receipt.address!.hostId),receipt.address)&&<a className="fleet-created-link" href={fleetSessionLink(hosts.find(h=>h.hostId===receipt.address!.hostId),receipt.address)}>Открыть созданную сессию</a>}
   {receipt&&<p role="status">{receipt.state==='created'?'Сессия создана на выбранной машине.':receipt.state==='unknown'?'Ответ не получен. Создание могло завершиться; повторная отправка отключена. Проверьте список сессий.':'Сессия не создана. Проверьте доступность машины и среды.'}</p>}
+  {receipt?.state==='unknown'&&<div><p>Можно сохранить этот запрос для проверки и начать другой. Исходный запрос повторно не отправляется.</p><button type="button" disabled={sending} onClick={deferUnknown}>Отложить проверку и начать другой запрос</button></div>}
+  {!!archived.length&&<details><summary>Запросы с неизвестным результатом: {archived.length}</summary><ul>{archived.map(v=><li key={v.request.inputId}>{v.request.name} · {hosts.find(h=>h.hostId===v.request.hostId)?.label??v.request.hostId} · {v.request.harness}<button type="button" disabled={sending||loading} onClick={()=>setHostId(v.request.hostId)}>Показать сессии этой машины</button></li>)}</ul></details>}
  </section>;
 }

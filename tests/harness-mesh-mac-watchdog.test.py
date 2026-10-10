@@ -15,6 +15,7 @@ from unittest.mock import patch
 import contextlib
 import os
 import socket
+import subprocess
 @contextlib.contextmanager
 def owned_unix_fixture(folder):
     original=socket.socket
@@ -39,6 +40,38 @@ w = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(w)
 
 class MacWatchdogTests(unittest.TestCase):
+    def test_artifact_census_can_finish_within_its_existing_five_second_window(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'releases';root.mkdir();(root/'a').write_bytes(b'abc');(root/'b').write_bytes(b'de')
+            # One complete traversal takes4s: old two2.5s passes discard it.
+            clock=iter([0,0,0,0,2,4,4])
+            with patch.object(w.time,'monotonic',side_effect=lambda:next(clock,6)):
+                self.assertEqual(w.storage_bytes(root,10,artifact=True),5)
+
+    def test_metadata_timeout_retries_once_without_reusing_output(self):
+        ok=subprocess.CompletedProcess(['/bin/ps'],0,b'fresh\n',b'')
+        with patch.object(w.subprocess,'run',side_effect=[subprocess.TimeoutExpired(['/bin/ps'],2),ok]) as run:
+            self.assertEqual(w.command(['/bin/ps','-axo','pid=']),'fresh\n')
+            self.assertEqual(run.call_count,2)
+            self.assertTrue(all(0<call.kwargs['timeout']<=2 for call in run.call_args_list))
+
+    def test_second_timeout_fails_with_safe_stage_and_no_raw_arguments(self):
+        with patch.object(w.subprocess,'run',side_effect=subprocess.TimeoutExpired(['sensitive-argument'],2)) as run:
+            with self.assertRaises(w.Refused) as error:w.command(['/usr/bin/memory_pressure','sensitive-argument'])
+            self.assertEqual(run.call_count,2)
+            self.assertIn('"stage":"host_memory"',str(error.exception))
+            self.assertNotIn('sensitive-argument',str(error.exception))
+
+    def test_cleanup_deadline_prevents_second_probe(self):
+        with patch.object(w.time,'monotonic',side_effect=[0,0,1]),patch.object(w.subprocess,'run',side_effect=subprocess.TimeoutExpired(['/bin/ps'],.5)) as run:
+            with self.assertRaises(w.Refused):w.command(['/bin/ps'],deadline=.5)
+            self.assertEqual(run.call_count,1)
+
+    def test_non_metadata_command_never_retries(self):
+        with patch.object(w.subprocess,'run',side_effect=subprocess.TimeoutExpired(['/usr/bin/plutil'],2)) as run:
+            with self.assertRaises(w.Refused):w.command(['/usr/bin/plutil','-lint','owned.plist'])
+            self.assertEqual(run.call_count,1)
+
     def sample(self, **changes):
         value = dict(rss_kib=200*1024, processes=2, threads=12, cpu_percent=50,
                      sustained_cpu_percent=50, temp_bytes=0, state_bytes=0,
@@ -304,18 +337,18 @@ class MacWatchdogTests(unittest.TestCase):
                     w.storage_bytes(root,10)
                 self.assertEqual(len(attempts),1)
 
-    def test_artifact_only_storage_window_is_five_seconds_with_one_fresh_retry(self):
+    def test_artifact_full_five_second_window_never_restarts_after_exhaustion(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)/'releases';root.mkdir();(root/'data').write_bytes(b'123');now=[0.0]
-            clock,scan,attempts=self.storage_clock_fixture(now,lambda n,e:now.__setitem__(0,2.51 if n==1 else 4.99))
+            clock,scan,attempts=self.storage_clock_fixture(now,lambda n,e:now.__setitem__(0,4.99))
             with clock,scan:self.assertEqual(w.storage_bytes(root,512*w.MIB,artifact=True),3)
-            self.assertEqual(len(attempts),2)
+            self.assertEqual(len(attempts),1)
             now[0]=0
-            clock,scan,attempts=self.storage_clock_fixture(now,lambda n,e:now.__setitem__(0,2.51 if n==1 else 5.01))
+            clock,scan,attempts=self.storage_clock_fixture(now,lambda n,e:now.__setitem__(0,5.01))
             with clock,scan,self.assertRaisesRegex(w.Refused,'storage_observation_limit') as caught:
                 w.storage_bytes(root,512*w.MIB,artifact=True)
-            self.assertEqual(len(attempts),2)
-            self.assertEqual(json.loads(str(caught.exception).split(' ',1)[1])['attempt'],2)
+            self.assertEqual(len(attempts),1)
+            self.assertEqual(json.loads(str(caught.exception).split(' ',1)[1])['attempt'],1)
 
     def test_artifact_census_cache_requires_known_closure_and_expires_at_thirty_seconds(self):
         with tempfile.TemporaryDirectory() as folder:
