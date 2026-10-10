@@ -24,6 +24,7 @@ import { ZcodeAppServerClient, type ZcodeClientLike } from "./zcode-protocol.js"
 import { readExistingZcodeRuntimeObservation } from "./zcode-runtime-observation.js";
 import { lifecycleEntryFor, lifecycleStateFor, type SessionLifecycleSnapshot } from "../session-lifecycle.js";
 import { getHumanStopStore } from "../human-stop-store.js";
+import { configuredGptAdminMcp } from "./zcode-gptadmin-mcp.js";
 
 interface ZcodeWorkspaceRef {
   workspacePath: string;
@@ -1484,6 +1485,11 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
     const workspace = this.workspace(options.cwd);
+    // The installed native bridge does not implicitly import user MCP config.
+    // Read through its supported resolver before creating the runtime draft.
+    const mcpServers = this.useLocalConfig
+      ? configuredGptAdminMcp(await this.client.call("mcp-sync", "loadMcpFromUserDirectory", [{workspacePath: workspace.workspacePath}]), workspace.workspacePath)
+      : [];
     const initialModel = options.model ? await this.resolveModelRef(options.model) : undefined;
     if (options.model && !initialModel) {
       throw new Error("ZCode model must be provider/model or a model ID with a known current provider");
@@ -1502,6 +1508,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       // Installed V4 persists a deferred draft before admitting its first input.
       // "immediate" skips that initialization and violates session_input's FK.
       persistence: "deferred",
+      ...(mcpServers.length ? {mcpServers} : {}),
       ...(initialModel ? { model: initialModel } : {}),
       ...(initialModel?.options?.reasoningLevel ? { thoughtLevel: initialModel.options.reasoningLevel } : {}),
       ...healthTools,
