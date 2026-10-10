@@ -292,6 +292,61 @@ class MacWatchdogTests(unittest.TestCase):
                     w.storage_bytes(root,10)
                 self.assertEqual(len(attempts),1)
 
+    def test_artifact_only_storage_window_is_five_seconds_with_one_fresh_retry(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'releases';root.mkdir();(root/'data').write_bytes(b'123');now=[0.0]
+            clock,scan,attempts=self.storage_clock_fixture(now,lambda n,e:now.__setitem__(0,2.51 if n==1 else 4.99))
+            with clock,scan:self.assertEqual(w.storage_bytes(root,512*w.MIB,artifact=True),3)
+            self.assertEqual(len(attempts),2)
+            now[0]=0
+            clock,scan,attempts=self.storage_clock_fixture(now,lambda n,e:now.__setitem__(0,2.51 if n==1 else 5.01))
+            with clock,scan,self.assertRaisesRegex(w.Refused,'storage_observation_limit') as caught:
+                w.storage_bytes(root,512*w.MIB,artifact=True)
+            self.assertEqual(len(attempts),2)
+            self.assertEqual(json.loads(str(caught.exception).split(' ',1)[1])['attempt'],2)
+
+    def test_artifact_census_cache_requires_known_closure_and_expires_at_thirty_seconds(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);releases=base/'releases';releases.mkdir();(releases/'one').mkdir()
+            cache=w.ArtifactCensus();now=[0.0]
+            with patch.object(w.time,'monotonic',side_effect=lambda:now[0]),patch.object(w,'storage_bytes',return_value=123) as census:
+                self.assertEqual(w.release_usage(base,cache),(1,123));self.assertEqual(cache.age_seconds(),0)
+                now[0]=29;self.assertEqual(w.release_usage(base,cache),(1,123));self.assertEqual(census.call_count,1)
+                self.assertEqual(cache.age_seconds(),29)
+                now[0]=30;self.assertEqual(w.release_usage(base,cache),(1,123));self.assertEqual(census.call_count,2)
+                census.assert_called_with(releases,512*w.MIB,artifact=True)
+                now[0]=31;(releases/'two').mkdir()
+                self.assertEqual(w.release_usage(base,cache),(2,123));self.assertEqual(census.call_count,3)
+                (releases/'three').mkdir()
+                with self.assertRaisesRegex(w.Refused,'release_budget_exceeded'):w.release_usage(base,cache)
+                self.assertEqual(census.call_count,3)
+
+    def test_artifact_generation_change_requires_fresh_success_never_old_usage(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);releases=base/'releases';releases.mkdir();(releases/'one').mkdir();cache=w.ArtifactCensus()
+            with patch.object(w,'storage_bytes',return_value=123):self.assertEqual(w.release_usage(base,cache),(1,123))
+            (releases/'one').rename(base/'old');(releases/'one').mkdir()
+            with patch.object(w,'storage_bytes',side_effect=w.Refused('storage_budget_exceeded')) as census:
+                with self.assertRaisesRegex(w.Refused,'storage_budget_exceeded'):w.release_usage(base,cache)
+                self.assertEqual(census.call_count,1)
+            with patch.object(w,'storage_bytes',return_value=456) as census:
+                self.assertEqual(w.release_usage(base,cache),(1,456));self.assertEqual(census.call_count,1)
+
+    def test_artifact_payload_changes_have_explicit_dated_lag_until_next_census(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);payload=base/'releases/one/dist/payload';payload.parent.mkdir(parents=True)
+            payload.write_bytes(b'123');cache=w.ArtifactCensus();now=[0.0]
+            with patch.object(w.time,'monotonic',side_effect=lambda:now[0]),patch.object(w,'storage_bytes',wraps=w.storage_bytes) as census:
+                self.assertEqual(w.release_usage(base,cache),(1,3));original=w.release_closure(base)
+                payload.write_bytes(b'123456');self.assertEqual(w.release_closure(base),original)
+                now[0]=29;self.assertEqual(w.release_usage(base,cache),(1,3));self.assertEqual(cache.age_seconds(),29)
+                self.assertEqual(census.call_count,1)
+                now[0]=30;self.assertEqual(w.release_usage(base,cache),(1,6));self.assertEqual(census.call_count,2)
+                now[0]=60
+                with patch.object(w,'storage_bytes',side_effect=w.Refused('storage_budget_exceeded')):
+                    with self.assertRaisesRegex(w.Refused,'storage_budget_exceeded'):w.release_usage(base,cache)
+                    self.assertIsNone(cache.age_seconds())
+
     def test_storage_directory_symlink_race_never_follows_or_retries(self):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as folder:
