@@ -22,7 +22,7 @@ export class FleetCabinetService {
  get browserScopeKey(){return createHash('sha256').update(JSON.stringify([this.deps.scope.profileId,this.deps.scope.userId])).digest('hex');}
  private now(){return (this.deps.now??Date.now)();}
  private transport(hostId:string){let t=this.transports.get(hostId);if(!t){t=this.deps.transportFactory({...this.deps.scope,hostId,...(this.deps.credentialGeneration?{credentialGeneration:this.deps.credentialGeneration}:{})});this.transports.set(hostId,t);}return t;}
- private async bounded<T>(operation:Promise<T>,deadline:number,limitMs=this.deps.readDeadlineMs??5000):Promise<T>{
+ private async bounded<T>(operation:Promise<T>,deadline:number,limitMs=this.deps.readDeadlineMs??10000):Promise<T>{
   let timer:ReturnType<typeof setTimeout>|undefined;
   try{return await Promise.race([operation,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('fleet_read_deadline')),Math.max(1,Math.min(limitMs,deadline-this.now())));})]);}finally{if(timer)clearTimeout(timer);}
  }
@@ -44,7 +44,7 @@ export class FleetCabinetService {
  }
  private async refresh(selectedHostId?:string):Promise<FleetView>{
   const revision=++this.readRevision;
-  const deadline=this.now()+(this.deps.discoveryDeadlineMs??30000);let registry:Record<string,unknown>[]=[];let registryFailed=false;
+  const deadline=this.now()+(this.deps.discoveryDeadlineMs??45000);let registry:Record<string,unknown>[]=[];let registryFailed=false;
   try{const r=unwrapResult(await this.bounded(this.transport(this.deps.hosts[0]!.hostId).discover(),deadline));if(!Array.isArray(r.servers)||r.servers.length>256)throw new Error('fleet_registry_invalid');registry=r.servers.filter(v=>v&&typeof v==='object');}catch{registryFailed=true;}
   const results=new Map<string,Cached>();let next=0;
   const queried=this.deps.hosts.filter(h=>!selectedHostId||h.hostId===selectedHostId);
