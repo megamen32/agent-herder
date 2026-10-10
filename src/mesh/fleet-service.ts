@@ -58,7 +58,12 @@ export class FleetCabinetService {
     if(old)return {...old,revision,complete:false,host:{...old.host,state:'stale',createHarnesses:[],reason},sessions:old.sessions};
     return {revision,host:{...definition,state,fetchedAt:null,expiresAt:null,generation:null,createHarnesses:[],reason},sessions:[],complete:false,limited:false,target:''};
    };
-   if(registryFailed||!peer||peer.status!=='online'){results.set(hostId,unavailable(registryFailed?'registry_read_failed':shell?.status==='offline'?'host_offline':!peer?'local_herder_not_registered':'local_herder_offline',shell?.status==='offline'?'offline':'unavailable'));continue;}
+   // Published child health can lag its online parent by a full heartbeat interval.
+   // Probe only a registered failed/offline child under a proven online parent;
+   // readiness and control still require the bounded native identity/snapshot below.
+   const staleChildProbe=shell?.status==='online'&&['failed','offline'].includes(String(peer?.status));
+   const parentUnavailable=!!shell&&shell.status!=='online';
+   if(registryFailed||!peer||parentUnavailable||peer.status!=='online'&&!staleChildProbe){results.set(hostId,unavailable(registryFailed?'registry_read_failed':shell?.status==='offline'?'host_offline':parentUnavailable?'host_unavailable':!peer?'local_herder_not_registered':'local_herder_offline',shell?.status==='offline'?'offline':'unavailable'));continue;}
    try{
     const target=String(peer.server_id),transport=this.transport(hostId);
     const schema=unwrapResult(await this.bounded(transport.schema(target),deadline));

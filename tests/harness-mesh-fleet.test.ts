@@ -174,3 +174,29 @@ describe('cold registered fleet latency (fast unit fake time; expected 1s, maxim
   }finally{vi.useRealTimers();}
  });
 });
+
+// Fast unit: stale published child health must not override a live enrolled parent.
+// Defect: hourly heartbeat cached failed health hid a working M1. Expected1s/max10s.
+describe('fleet cached child health versus live native proof (fast unit; expected1s, maximum10s)',()=>{
+ it.each(['failed','offline'])('probes registered %s child under an online parent and requires genuine identity/snapshot',async(status)=>{
+  const t=transport();t.discover.mockResolvedValue({servers:[{kind:'virtual_shell',server_id:'shell:100',status:'online'},{kind:'child_mcp',server_id:'mcp:shell:100:AgentHerder',status}]} as any);
+  const r=await new FleetCabinetService({hosts:hosts.slice(0,1),scope:{profileId:'p',userId:'u'},transportFactory:()=>t}).snapshot();
+  expect(r.hosts[0]?.state).toBe('ready');expect(t.schema).toHaveBeenCalledTimes(1);expect(t.call.mock.calls.map(c=>c[1])).toEqual(['fleet_node_info','mesh_snapshot']);
+ });
+ it('retains offline parent fence even with an online child descriptor',async()=>{
+  const t=transport();t.discover.mockResolvedValue({servers:[{kind:'virtual_shell',server_id:'shell:100',status:'offline'},{kind:'child_mcp',server_id:'mcp:shell:100:AgentHerder',status:'online'}]} as any);
+  const r=await new FleetCabinetService({hosts:hosts.slice(0,1),scope:{profileId:'p',userId:'u'},transportFactory:()=>t}).snapshot();
+  expect(r.hosts[0]?.state).toBe('offline');expect(r.hosts[0]?.createHarnesses).toEqual([]);expect(t.schema).not.toHaveBeenCalled();
+ });
+ it('does not probe stale child without an online enrolled parent',async()=>{
+  const t=transport();t.discover.mockResolvedValue({servers:[{kind:'child_mcp',server_id:'mcp:shell:100:AgentHerder',status:'failed'}]} as any);
+  const r=await new FleetCabinetService({hosts:hosts.slice(0,1),scope:{profileId:'p',userId:'u'},transportFactory:()=>t}).snapshot();
+  expect(r.hosts[0]?.state).toBe('unavailable');expect(t.schema).not.toHaveBeenCalled();
+ });
+ it('cached failed health never grants control when actual native identity fails',async()=>{
+  const t=transport();t.discover.mockResolvedValue({servers:[{kind:'virtual_shell',server_id:'shell:100',status:'online'},{kind:'child_mcp',server_id:'mcp:shell:100:AgentHerder',status:'failed'}]} as any);
+  t.call.mockResolvedValue({hostId:'foreign'} as any);
+  const r=await new FleetCabinetService({hosts:hosts.slice(0,1),scope:{profileId:'p',userId:'u'},transportFactory:()=>t}).snapshot();
+  expect(r.hosts[0]?.state).toBe('unavailable');expect(r.hosts[0]?.reason).toBe('native_owner_identity_mismatch');expect(r.hosts[0]?.createHarnesses).toEqual([]);expect(t.call).toHaveBeenCalledTimes(1);
+ });
+});

@@ -202,3 +202,9 @@ Common60791 after525.94s gracefullystopped memory_soft_sustained: nativeRSS28673
 ## Native budget source delivery, 07:20 МСК
 
 Reviewed073db32 integrated with exactREADME budgethunk preservingpublished docs. Integrated39 Macunits PASS51,675,136bytes/swap0/OOM0/cleanup receipt365a1aad4da6a91384b472511ffd116c. Native-only soft320MiB/30s, HARD512/CPU/threads/process/temp/state/hostreserve/disk unchanged; Node256 retained, backgroundobservation30s. Runtimeacceptance pending: promote exacthelpers+seals, ONEownedM1manager then genuineSDKread/NodeJOIN/warm/cabinet. No nativecreate/inputreplay.
+
+## Реальная доставка и stale child health, 07:40 МСК
+
+Exactdf255902/264payload deployedall5, portablec321039... backupbe40 retained. CommonM1 native79404 genuineWSinitialize/loaded-list/thread-list PASS, >5minRSS212096KiB, NodeHTTP200; nativeonlysoft320/hard512, Node256/hard512 unchanged. ONEheaded44create input6a815ede-c620-44c3-b458-8e48a5d44168 accepted01a12411-fc31-76b2-8175-a4516470aa8a/title/cwd/model/messages0 and actualsameHTTPSheadedUI screenshotPASS. SAME100ZCode6466f2f7 headedtitle/composer/alerts0 PASS, no replay.
+
+NewrealM1cabinet defect: approvedZCode tenant parentonline/registeredchild butcachedhealthfailed02:57:30Z => Fleetservice skippedactualschema despitegenuine46tools/readPASS. Narrowregisteredfailed/offlinechildprobe ONLYonlineparent, freshnativeidentity/snapshotrequired; knownnononlineparentfence. Discriminating4RED/37PASS, originalheld41vs36count retained, corrected41affectedunitsPASS162525184bytes/swap0/OOM0/cleanup receiptd519d3ba; independentreview noHIGH/MEDIUM. UI/Macremainingcanaries and deployedrepair stillrequired; sharedMCPparentOPEN.
