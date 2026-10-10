@@ -1499,7 +1499,9 @@ export class ZcodeAdapter implements HarnessAdapter {
       // NPE while resolving workspace defaults. Full-access creation is
       // confirmed separately through the native setMode response below.
       mode: options.fullAccess ? "yolo" : options.mode || "build",
-      persistence: "immediate",
+      // Installed V4 persists a deferred draft before admitting its first input.
+      // "immediate" skips that initialization and violates session_input's FK.
+      persistence: "deferred",
       ...(initialModel ? { model: initialModel } : {}),
       ...(initialModel?.options?.reasoningLevel ? { thoughtLevel: initialModel.options.reasoningLevel } : {}),
       ...healthTools,
