@@ -120,6 +120,14 @@ export function createConfiguredFleetApiHandler(options: {
           if (origin.protocol !== "https:" || origin.host.toLowerCase() !== request.headers.host?.toLowerCase()) return reject(403, "Создание сессии доступно из своего кабинета");
         }
       }
+      // Managed remote cabinets use the same verified owner gate before exposing local sessions.
+      // auth_request receives only a status; no upstream credential or profile data is returned.
+      if (path === "/api/fleet/access") {
+        if (request.method !== "GET") return reject(405, "Проверка доступа принимает только чтение");
+        response.writeHead(204, {"Cache-Control": "no-store"});
+        response.end();
+        return true;
+      }
       const connection = await bind(binding);
       const host = (request.headers.host ?? "").split(":")[0]!.toLowerCase();
       const defaultHostId = fleetHosts.find(node => new URL(node.uiUrl!).hostname === host)?.hostId ?? hostname();

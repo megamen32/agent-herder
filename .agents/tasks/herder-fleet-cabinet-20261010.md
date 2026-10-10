@@ -118,3 +118,21 @@ New44/88 finite candidate: CPU1, RAMhigh384/max768MiB, swap0, tasks128, NOFILE40
 Portable exactd6395ff package SHA a8605de7141c6ee498815b66655dfafa2aca3cf0ced4d8b447777eb6bedbdd86,20,068,744bytes,250 portableJS packages; nativeClaude optionalplatform packages excluded and adapterdisabled. Packagerpeak149770240 bytes, swap0/OOM0/cleanup. Mac native conversion/Claude notclaimed by this archive.
 
 Actual88 install found two concrete delivery issues before acceptance: symlinked main argv didnot match index import.meta realpath, causing exit0 beforemain; ownbootstrap now resolvesentry beforeexec. Existingforeign18789 listener PID308053 preserved; node88 uses explicitfree18790, no same100/foreignthin identity substitute. Startup source wasnotGREEN; firstservice wasinactive and no nativeinputs sent.
+
+## Текущая consumer проверка
+
+Latency repair0fec736 integrated/published e62e6a3; actual100+88 fleetREADY read21.254s, three44/Macs still unregistered at that read.83 relevant fastunits PASS/peak179441664 bytes; stagedbuild555212800 bytes, swap0/OOM0/cleanup, ordinary payload<60s. CurrentportableE62 artifact abbd21b727c713b369af6230b86458241089fa8c3f6456a64617f39e6b1435da. Native44 localHerder started CPU1/RAM384–768MiB/swap0/tasks128, actualserver-44/roomhacker/Codex,steady85950464 bytes/tasks9; OpenCode/ZCode unavailable and not advertised. Registered88 actualchildschema46tools, fleet_node_info same88; registered44 newAgentHerder only, olddisabled/enabledMCP unchanged.
+
+Agent88 publicingress source8f84fab and deployedGitSHA match; strictverifiedHTTPS302. Existingcert didnot covernewname; separateagent88cert HTTP01 issuedunder finite128/256MiB/CPU1/tasks64/swap0/wall120 rootunit, no nginxstop/globalcertmutation. SANagent88/notAfter2027-01-07. Nativeupstream21788 SSH88:18791 checked beforepublish.
+
+HeadedMiniQA actualown t15 targetB324E20F7E8402DB1395D841CDBC3545 openedpublic100(titleAgentHerder) withSSOexistingprofile.14foreigntabs retained, creates0. BeforeFleetclick watchdogstoppedChrome:1719100KiB>1536MiB; CPU73%/hostfree3.9GiB, last-run resource_budget memory. ReportedRoot exactblocker. Freshinstalledwatchdog alreadymatchespublished cbb0257 and hasmoderatepressure loop, oldrunningPID hadnotactivatedit.9223 unoccupied, LaunchAgentnotrunning/no activeleasefilefound. ONEexistingLaunchAgentkickstart usesunchanged reviewedbounds/profile; noforeignpersonalbrowser, no capincrease/newbrowsercopy. On renewedrefusal preserveblocker/no restartloop.
+
+Newremote publiccabinets also requirethe currentverifiedSSOowner gate beforelocal sessionexposure, not merelyanyloggedinuser. Narrow/api/fleet/access status-onlyauth hook prepared; no auth/tokenmanagerfork; existingrealmcookie/login reusable. Type/build/realstatusread requiredbeforedeploy.
+
+Correction по QA: actualSSHprecondition9223-unoccupied отказалдоkickstart, поэтому55 НЕ запускал/перезапускалQAChrome. Root передалактуальнуюcanonicallease owner01a11b2a-750c.../valid_untilcaptured_finish/releaseR38; file .tmp/fleet-capacity-20261009/mini-autofind-lease-handoff.json. RuntimeownerR38 alreadyhandlespublishedguard/currentbrowser. No newMiniQAactionsuntilruntimeFINISH/newlease. ОтсутствиеleaseвprivateMiniпапке неявляетсяreleaseproof; предыдущая запись ONEkickstart былаintent, неresult.
+
+## Owner gate result / current blocker
+
+Status-only compiled/api/fleet/access realchecks PASS: forgedprincipal401, invalidcookie403, exactapprovedcaller204, POST405; mutations0, peak52379648bytes/swap0/OOM0/cleanup. Build owner-gate compiledcandidate bounded-qkdgv_s0 peak556711936bytes;83 priorintegratedlogicchecks stillmatch unaffectedmodules. Newremoteingress willauth_request thissameSSOowner gate, preservingexistinglogin/cookie and denying otherusers localowner sessionaccess. Parentmulti-profilebinding notclaimed.
+
+Rootverified actualMiniQA ownerR38 recoveredSAMEprofile/currentChrome14528/9223, installedcbb0257/e84 moderate-only activated, warm30s≤1536MiB, nativecontrolreceipt. Currentlease2aPilot9ONLYROcapture+cleanup validuntilcapturedrelease;55 QAblockeduntilR38 newlease. Exactour oldtarget/session/URL handedR38 forrebind; no newtab/browserrestart/click/create. ContinueindependentfleetLinux/auth/ingress whilewaiting.
