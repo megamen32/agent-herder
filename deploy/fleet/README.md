@@ -84,3 +84,22 @@ The actual controlled Mini cookie consumer then returned four ready hosts and
 the same accepted44 metadata through HAOS TLS. This is Mini-specific installed
 runtime evidence, not a default path or permission grant for M1. Process/storage
 bounds and shared native controls remain unchanged.
+
+### Узел вне домашней сети
+
+Идентичность `hostId + harness + nativeSessionId` не меняется при переезде;
+маршрут и наблюдаемый проект не заменяют её. Подтверждённый мобильный M1
+использует существующие publicTLS aliases: M1 actor/peer через443, обычнаяCA
+и прежний owner-cookie verifier. Другие approvedLAN пути сохраняют
+HAOS192.168.2.101:8443. M1 public ingress требует reverse tunnel100;
+доступность при loss100 для него не заявляется. Недоступный маршрут остаётся
+explicit stale, наличие config/DNS не обновляет freshness. Registry/relay
+GPTAdmin общий, без отдельного полногоHub или копирования credentials.
+
+Compact mesh snapshot использует Codex metadata page≤3 в прежнем2s budget:
+actual M1 thread/list12 пропускал deadline, page3 читалась. Native cursor,
+adapter overflow и меньший bounded window explicit limited/completefalse.
+Global output≤12, exact-ID/full native list/history и STOP/admission guards
+сохранены. Страница не является полным inventory; currentCwd не подменяется
+каталогом запуска. Нестабильный target transport/history сохраняет отдельный
+отказ, успешная страница не доказывает доступность всей истории.
