@@ -944,11 +944,17 @@ function App() {
     const { harness, id } = splitKey(key);
     const base = `/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/details`;
     setDetailsError(undefined);
-    setDetailsLoading(true);
-    setDetailsHydrating(false);
-    setLatestTimingMs(undefined);
-    setHydrateTimingMs(undefined);
-    setDetails((current) => current && keyOf(current.session) === key ? current : null);
+    // Фоновое обновление по событию (hydrateFull=false) приходит постоянно, пока
+    // активны сессии. Раньше оно гасило details и включало detailsLoading, поэтому
+    // на всё время запроса переписка подменялась заглушкой «Загружаю свежие
+    // сообщения». Полное состояние сбрасываем только при полной загрузке сессии.
+    if (hydrateFull) {
+      setDetailsLoading(true);
+      setDetailsHydrating(false);
+      setLatestTimingMs(undefined);
+      setHydrateTimingMs(undefined);
+      setDetails((current) => current && keyOf(current.session) === key ? current : null);
+    }
     try {
       const latestStartedAt = performance.now();
       const latest = await api<SessionDetails>(`${base}?limit=12&quick=1`);
@@ -1731,7 +1737,7 @@ function App() {
       </div>}
       {!showStatistics && !showJobs && !showQuota && showScrollToLatest && <button className="scroll-latest" aria-label="Прокрутить к последним" onClick={scrollToBottom}>↓</button>}
       {!showStatistics && !showJobs && !showQuota && <div className="composer-stack">
-      {sessionActivity && <div className={`activity-line activity-${sessionActivity.kind}`} role="status" aria-live="polite"><span className="pulse-dot" aria-hidden="true" />{activeSession?.status === "running" && !sending ? <span><ActivityElapsed sinceMs={runningSince} />{sessionActivity.label ? <em className="activity-detail"> · {sessionActivity.label}</em> : null}</span> : <span>{sessionActivity.label}</span>}</div>}
+      <div className="activity-slot">{sessionActivity && <div className={`activity-line activity-${sessionActivity.kind}`} role="status" aria-live="polite"><span className="pulse-dot" aria-hidden="true" />{activeSession?.status === "running" && !sending ? <span><ActivityElapsed sinceMs={runningSince} />{sessionActivity.label ? <em className="activity-detail"> · {sessionActivity.label}</em> : null}</span> : <span>{sessionActivity.label}</span>}</div>}</div>
       {activeOutbox.length > 0 && <div className="composer-outbox" aria-label="Отправленные сообщения и их состояние">
         {activeOutbox.map((entry) => <div className={`composer-outbox-entry status-${entry.status}`} key={entry.inputId}>
           <div className="composer-outbox-meta">
