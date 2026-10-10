@@ -14,9 +14,9 @@ export class LocalHarnessMesh {
  private readonly ids=new Map<string,string>();
  private readonly ledger:MeshDeliveryLedger;
  constructor(private readonly deps:Dependencies){this.hostId=deps.hostId||hostname();this.ledger=new MeshDeliveryLedger(deps.ledgerPath||join(homedir(),".local/state/agent-herder/harness-mesh-receipts.json"));}
- async snapshot(limit=12):Promise<{hostId:string;sessions:MeshSession[];harnesses:HarnessMeshCapability[];complete:boolean}>{
+ async snapshot(limit=12):Promise<{hostId:string;sessions:MeshSession[];harnesses:HarnessMeshCapability[];complete:boolean;limited:boolean}>{
   if(!Number.isInteger(limit)||limit<1||limit>12)throw new Error("Mesh snapshot limit must be 1..12");
-  const sessions:MeshSession[]=[];const harnesses:HarnessMeshCapability[]=[];let complete=true;
+  const sessions:MeshSession[]=[];const harnesses:HarnessMeshCapability[]=[];let complete=true;let limited=false;
   const deadline=Date.now()+(this.deps.readDeadlineMs??2000);
   const freshIds=new Map<string,string>();
   const inspect=async(harness:string)=>{
@@ -28,10 +28,14 @@ export class LocalHarnessMesh {
    try{
     const remaining=deadline-Date.now();if(remaining<=0)throw new Error("mesh_read_deadline");
     let timer:ReturnType<typeof setTimeout>|undefined;
-    const rows=await Promise.race([adapter.listSessions({limit}),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("mesh_read_deadline")),remaining);})]).finally(()=>{if(timer)clearTimeout(timer);});
+    // Native persistent pages may hydrate metadata per row. Keep compact Codex
+    // discovery useful within the existing deadline; exact-ID reads stay separate.
+    const adapterLimit=harness==="codex"?Math.min(limit,3):limit;
+    const rows=await Promise.race([adapter.listSessions({limit:adapterLimit}),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("mesh_read_deadline")),remaining);})]).finally(()=>{if(timer)clearTimeout(timer);});
     const receipt=adapter.getSessionSnapshotReceipt?.();
-    if(receipt?.exhaustive!==true)complete=false;
-    for(const row of rows.slice(0,limit)){
+    if(receipt?.exhaustive!==true||rows.length>adapterLimit||receipt?.reason==="bounded_native_page")complete=false;
+    if(rows.length>adapterLimit||receipt?.reason==="bounded_native_page"||adapterLimit<limit&&receipt?.exhaustive!==true)limited=true;
+    for(const row of rows.slice(0,adapterLimit)){
      const activeCwd=(this.deps.projectStore??coordinationNotes).activeWorkspaceForSession(row.id);
      const projected=activeCwd?{...row,cwd:activeCwd,meta:{...row.meta,launchCwd:row.meta?.launchCwd??row.cwd,activeCwd,projectSource:"coordination_activity"}}:row;
      const session=compactSession(this.hostId,projected);sessions.push(session);freshIds.set(addressKey(session.address),row.id);
@@ -43,8 +47,8 @@ export class LocalHarnessMesh {
   let next=0;await Promise.all(Array.from({length:3},async()=>{for(;;){const harness=inventoryHarnesses[next++];if(!harness)return;await inspect(harness);}}));
   this.ids.clear();for(const [key,value]of freshIds)this.ids.set(key,value);
   const sorted=sessions.sort((a,b)=>b.lastActivity.localeCompare(a.lastActivity)).slice(0,limit);
-  if(sessions.length>limit)complete=false;
-  return {hostId:this.hostId,sessions:sorted,harnesses,complete};
+  if(sessions.length>limit){complete=false;limited=true;}
+  return {hostId:this.hostId,sessions:sorted,harnesses,complete,limited};
  }
  async deliver(request:MeshDelivery):Promise<NativeReceipt&{reason?:string}>{
   addressKey(request.target);addressKey(request.sender);
