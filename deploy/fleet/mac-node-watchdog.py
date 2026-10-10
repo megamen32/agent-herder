@@ -223,17 +223,17 @@ def cpu_seconds(value):
 def parse_processes(text, pgid, uid):
     rows=[]
     for line in text.splitlines():
-        fields=line.split(maxsplit=5)
-        if len(fields)!=6:raise Refused('process_observation_invalid')
+        fields=line.split(maxsplit=6)
+        if len(fields)!=7 or not re.fullmatch(r'[A-Za-z][A-Za-z0-9+<>=-]*',fields[5]):raise Refused('process_observation_invalid')
         pid,group,user,rss=map(int,fields[:4])
         if group!=pgid:continue
         if user!=uid:raise Refused('owned_group_identity_lost')
         rows.append({'pid':pid,'pgid':group,'uid':user,'rss_kib':rss,
-                     'cpu_seconds':cpu_seconds(fields[4]),'identity':fields[5]})
+                     'cpu_seconds':cpu_seconds(fields[4]),'stat':fields[5],'identity':fields[6]})
     return rows
 
 def read_processes(pgid,deadline=None):
-    argv=['/bin/ps','-axo','pid=,pgid=,uid=,rss=,time=,lstart=']
+    argv=['/bin/ps','-axo','pid=,pgid=,uid=,rss=,time=,stat=,lstart=']
     text=command(argv,deadline=deadline) if deadline is not None else command(argv)
     return parse_processes(text,pgid,os.getuid())
 
@@ -249,7 +249,7 @@ def thread_pids(text):
             elif table:
                 # Darwin -M may ignore -o: first thread has USER/TT; later
                 # threads omit both. COMMAND is opaque and never interpreted.
-                first=len(fields)>=9 and fields[1].isdigit() and re.fullmatch('[0-9]+(?:\.[0-9]+)?',fields[3])
+                first=len(fields)>=9 and fields[1].isdigit() and re.fullmatch(r'[0-9]+(?:\.[0-9]+)?',fields[3])
                 if first:pid=int(fields[1]);metrics=fields[3:8]
                 elif len(fields)>=7 and fields[0].isdigit():pid=int(fields[0]);metrics=fields[1:6]
                 else:raise ValueError()
@@ -262,23 +262,37 @@ def thread_pids(text):
 
 def read_threads(rows):
     if not rows:return 0
+    def refuse(stage,census,pids=()):
+        # Travels through both supervisors' existing Refused receipt handling.
+        # No argv, paths, lstart strings, foreign tables or other private data.
+        diagnostic={'stage':stage,'censusCount':len(census),
+            'census':[{'pid':r['pid'],'stat':r.get('stat') if isinstance(r.get('stat'),str) and re.fullmatch(r'[A-Za-z][A-Za-z0-9+<>=-]*',r['stat']) and len(r['stat'])<=16 else 'unknown'} for r in census[:16]],
+            'threadPids':sorted(set(pids))[:16],
+            'missingPids':sorted({r['pid'] for r in census}-set(pids))[:16]}
+        raise Refused('thread_observation_invalid '+json.dumps(diagnostic,separators=(',',':')))
     def probe(census):
         text=command(['/bin/ps','-M','-p',','.join(str(r['pid']) for r in census),'-o','pid='])
-        pids=thread_pids(text)
-        if not pids or not {r['pid'] for r in census}.issuperset(pids):raise Refused('thread_observation_invalid')
+        try:pids=thread_pids(text)
+        except Refused:refuse('malformed',census)
+        if not {r['pid'] for r in census}.issuperset(pids):refuse('foreign_pid',census,pids)
         return pids
     pids=probe(rows)
     if set(pids)=={r['pid'] for r in rows}:return len(pids)
     # One bounded metadata refresh permits a normal owned child exit between ps
     # samples. A changed known generation is never adopted; no signal/replay.
     if any('pgid' not in r or 'identity' not in r for r in rows) or len({r['pgid'] for r in rows})!=1:
-        raise Refused('thread_observation_invalid')
+        refuse('census_unverified',rows,pids)
     current=read_processes(rows[0]['pgid'])
     previous={r['pid']:r for r in rows}
     if not current or any(r['pid'] in previous and any(r[k]!=previous[r['pid']][k] for k in ('pgid','uid','identity')) for r in current):
-        raise Refused('thread_observation_invalid')
+        refuse('generation_changed',current,pids)
     fresh=probe(current)
-    if set(fresh)!={r['pid'] for r in current}:raise Refused('thread_observation_invalid')
+    # Darwin ps -M omits zombies: zero threads requires an independent fresh Z
+    # observation of the same generation. RSS/process counts remain unchanged.
+    if any(r['pid'] not in fresh and r['pid'] not in previous for r in current):
+        refuse('missing_unverified_generation',current,fresh)
+    if any(r['pid'] not in fresh and (not isinstance(r.get('stat'),str) or not re.fullmatch(r'Z[A-Za-z0-9+<>=-]*',r['stat'])) for r in current):
+        refuse('missing_live',current,fresh)
     return len(fresh)
 
 def cpu_percent(previous,current,elapsed):
