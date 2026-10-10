@@ -71,7 +71,7 @@ class MacWatchdogTests(unittest.TestCase):
         self.assertIn('memory_soft_sustained',w.violations(self.sample(rss_kib=270*1024),w.Policy('Macmini6,2'),30,0))
 
     def test_cpu_and_darwin_process_thread_projection(self):
-        rows=w.parse_processes('42 42 501 1024 00:01.50 Sat Oct 10 10:00:00 2026\n99 99 501 900 1:00 Sat Oct 10 10:00:00 2026\n43 42 501 512 00:00.50 Sat Oct 10 10:00:01 2026\n',42,501)
+        rows=w.parse_processes('42 42 501 1024 00:01.50 S Sat Oct 10 10:00:00 2026\n99 99 501 900 1:00 S Sat Oct 10 10:00:00 2026\n43 42 501 512 00:00.50 R Sat Oct 10 10:00:01 2026\n',42,501)
         self.assertEqual([r['pid'] for r in rows],[42,43])
         self.assertEqual(sum(r['rss_kib'] for r in rows),1536)
         self.assertEqual(w.cpu_percent({42:1},{42:1.5,43:0.5},1),100)
@@ -80,7 +80,7 @@ class MacWatchdogTests(unittest.TestCase):
         with patch.object(w,'command',return_value='42\n42\n43\n') as call:
             self.assertEqual(w.read_threads(rows),3)
             self.assertEqual(call.call_args.args[0],['/bin/ps','-M','-p','42,43','-o','pid='])
-        with self.assertRaises(w.Refused):w.parse_processes('42 42 999 1024 00:01 Sat Oct 10 10:00:00 2026\n',42,501)
+        with self.assertRaises(w.Refused):w.parse_processes('42 42 999 1024 00:01 S Sat Oct 10 10:00:00 2026\n',42,501)
 
     def test_actual_darwin_thread_table_ignoring_output_selection(self):
         table=("USER   PID   TT   %CPU STAT PRI     STIME     UTIME COMMAND\n"
@@ -109,6 +109,55 @@ class MacWatchdogTests(unittest.TestCase):
         with patch.object(w,'command',return_value='99999\n'),patch.object(w,'read_processes') as refresh:
             with self.assertRaisesRegex(w.Refused,'thread_observation_invalid'):w.read_threads([leader,child])
             refresh.assert_not_called()
+
+    def test_owned_zombie_has_zero_threads_only_after_positive_fresh_state(self):
+        leader={'pid':42,'pgid':42,'uid':w.os.getuid(),'identity':'leader','stat':'S'}
+        zombie={'pid':43,'pgid':42,'uid':w.os.getuid(),'identity':'child','stat':'Z'}
+        with patch.object(w,'command',side_effect=['42\n','42\n']),patch.object(w,'read_processes',return_value=[leader,zombie]) as refresh:
+            self.assertEqual(w.read_threads([leader,zombie]),1)
+            refresh.assert_called_once_with(42)
+        with patch.object(w,'command',side_effect=['42\n','42\n']),patch.object(w,'read_processes',return_value=[leader,{**zombie,'stat':'Z+'}]):
+            self.assertEqual(w.read_threads([leader,zombie]),1)
+        with patch.object(w,'command',side_effect=['42\n','42\n']),patch.object(w,'read_processes',return_value=[leader,zombie]):
+            self.assertEqual(w.read_threads([leader,{**zombie,'stat':'R'}]),1)
+        header='USER PID TT %CPU STAT PRI STIME UTIME COMMAND\n'
+        with patch.object(w,'command',side_effect=[header,header]),patch.object(w,'read_processes',return_value=[zombie]):
+            self.assertEqual(w.read_threads([zombie]),0)
+        for state in ('S','R','?',None):
+            with self.subTest(state=state),patch.object(w,'command',side_effect=['42\n','42\n']),patch.object(w,'read_processes',return_value=[leader,{**zombie,'stat':state}]):
+                with self.assertRaisesRegex(w.Refused,'thread_observation_invalid'):w.read_threads([leader,zombie])
+        for key,value in (('identity','reused'),('uid',w.os.getuid()+1),('pgid',99)):
+            with self.subTest(key=key),patch.object(w,'command',return_value='42\n'),patch.object(w,'read_processes',return_value=[leader,{**zombie,key:value}]):
+                with self.assertRaisesRegex(w.Refused,'thread_observation_invalid'):w.read_threads([leader,zombie])
+        with patch.object(w,'command',side_effect=['42\n','42\n']),patch.object(w,'read_processes',return_value=[leader,{**zombie,'pid':44}]):
+            with self.assertRaisesRegex(w.Refused,'thread_observation_invalid'):w.read_threads([leader,zombie])
+
+    def test_process_census_keeps_state_rss_and_identity_for_zombie(self):
+        row=w.parse_processes('43 42 501 1024 00:01.50 Z Sat Oct 10 10:00:00 2026\n',42,501)[0]
+        self.assertEqual(row['stat'],'Z');self.assertEqual(row['rss_kib'],1024)
+        self.assertEqual(row['identity'],'Sat Oct 10 10:00:00 2026')
+        with patch.object(w.os,'getuid',return_value=501),patch.object(w,'command',return_value='43 42 501 1024 00:01.50 Z Sat Oct 10 10:00:00 2026\n') as command:
+            self.assertEqual(w.read_processes(42)[0]['stat'],'Z')
+            self.assertIn('stat=',command.call_args.args[0][-1])
+
+    def test_thread_refusal_records_bounded_safe_pid_state_without_command(self):
+        leader={'pid':42,'pgid':42,'uid':w.os.getuid(),'identity':'leader secret','stat':'S'}
+        live={'pid':43,'pgid':42,'uid':w.os.getuid(),'identity':'child secret','stat':'R'}
+        with patch.object(w,'command',side_effect=['42\n','42\n']),patch.object(w,'read_processes',return_value=[leader,live]):
+            with self.assertRaises(w.Refused) as caught:w.read_threads([leader,live])
+        reason,raw=str(caught.exception).split(' ',1);details=json.loads(raw)
+        self.assertEqual(reason,'thread_observation_invalid')
+        self.assertEqual(details['stage'],'missing_live')
+        self.assertEqual(details['missingPids'],[43])
+        self.assertEqual(details['census'],[{'pid':42,'stat':'S'},{'pid':43,'stat':'R'}])
+        self.assertNotIn('secret',raw)
+        rows=[{**live,'pid':100+i,'stat':'R'} for i in range(100)]
+        with patch.object(w,'command',return_value='42\n'),patch.object(w,'read_processes') as refresh:
+            with self.assertRaises(w.Refused) as caught:w.read_threads(rows)
+            refresh.assert_not_called()
+        details=json.loads(str(caught.exception).split(' ',1)[1])
+        self.assertLessEqual(len(details['census']),16);self.assertLessEqual(len(details['missingPids']),16)
+        self.assertEqual(details['censusCount'],100)
 
     def test_storage_does_not_follow_foreign_links_and_is_bounded(self):
         with tempfile.TemporaryDirectory() as folder:
