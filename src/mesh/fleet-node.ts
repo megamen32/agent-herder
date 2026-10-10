@@ -20,7 +20,7 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
    const session=await adapter.createSession({name:request.name,cwd:request.cwd,...(request.model?{model:request.model}:{})});
    return {state:'created',inputId:request.inputId,address:{hostId:hostname(),harness:request.harness,nativeSessionId:session.id},launchCwd:session.cwd,retryable:false};
   });
-  const result=receipt.state==='created'?{ok:true,created:true,harness:receipt.address.harness,sessionId:receipt.address.nativeSessionId,cwd:receipt.launchCwd,inputId:receipt.inputId}:{ok:false,created:false,state:receipt.state,inputId:receipt.inputId};
+  const result=receipt.state==='created'&&receipt.address&&receipt.launchCwd?{ok:true,created:true,harness:receipt.address.harness,sessionId:receipt.address.nativeSessionId,cwd:receipt.launchCwd,inputId:receipt.inputId}:{ok:false,created:false,state:receipt.state,inputId:receipt.inputId};
   return {content:[{type:'text' as const,text:JSON.stringify(result)}]};
  });
  server.registerTool('fleet_node_info',{description:'Read actual local Herder host/user identity and configured session-creation capability, without activating a harness.',inputSchema:z.object({})},async()=>{
