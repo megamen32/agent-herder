@@ -483,6 +483,12 @@ def verify_launcher_hashes(base,config,names):
         with path.open('rb') as handle:data=handle.read(MIB+1)
         if len(data)>MIB or hashlib.sha256(data).hexdigest()!=digest:raise Refused('launcher_identity_mismatch')
 
+def probe_node_port(port):
+    # Reusable TCP bind permits TIME_WAIT, while a live listener still owns it.
+    with socket.socket() as probe:
+        probe.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+        probe.bind(('127.0.0.1',port))
+
 def prepare(base,config,artifact_cache=None):
     if sys.platform!='darwin':raise Refused('darwin_required')
     policy=Policy(command(['/usr/sbin/sysctl','-n','hw.model']).strip())
@@ -515,7 +521,7 @@ def prepare(base,config,artifact_cache=None):
         AGENT_HERDER_HUMAN_REQUEST_STORE=str(state/'human-requests.json'),AGENT_HERDER_SINGLETON_LOCK=str(base/'run/node.lock'),TMPDIR=str(temp))
     port=config.get('webPort',18789)
     if type(port)!=int or not 1024<=port<=65535:raise Refused('node_port_invalid')
-    with socket.socket() as probe:probe.bind(('127.0.0.1',port))
+    probe_node_port(port)
     return policy,node,entry,state,temp,env
 
 def stop_owned(child,observed,timeout=10):

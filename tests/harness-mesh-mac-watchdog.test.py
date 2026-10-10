@@ -81,6 +81,18 @@ class MacWatchdogTests(unittest.TestCase):
             self.assertEqual(env['CODEX_APP_SERVER_SOCKET'],'/fixture/socket')
             self.assertEqual(w.MEMORY_SOFT_KIB,256*1024);self.assertEqual(w.MEMORY_MAX_KIB,512*1024)
 
+    def test_tcp_preflight_accepts_owned_time_wait_but_refuses_listener(self):
+        # Real loopback kernel regression, no app/daemon/harness or private port.
+        # Expected<1s/max3s: closed listener's TIME_WAIT must not block restart.
+        with socket.socket() as server:
+            server.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+            server.bind(('127.0.0.1',0));port=server.getsockname()[1];server.listen(1)
+            with self.assertRaises(OSError):w.probe_node_port(port)
+            with socket.socket() as client:
+                client.settimeout(1);client.connect(('127.0.0.1',port))
+                conn,_=server.accept();conn.close();self.assertEqual(client.recv(1),b'')
+        w.probe_node_port(port)
+
     def test_cpu_and_darwin_process_thread_projection(self):
         rows=w.parse_processes('42 42 501 1024 00:01.50 S Sat Oct 10 10:00:00 2026\n99 99 501 900 1:00 S Sat Oct 10 10:00:00 2026\n43 42 501 512 00:00.50 R Sat Oct 10 10:00:01 2026\n',42,501)
         self.assertEqual([r['pid'] for r in rows],[42,43])
