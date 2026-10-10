@@ -107,6 +107,31 @@ def storage_bytes(root, limit):
                 if total>limit:raise Refused('storage_budget_exceeded')
     return total
 
+def native_app_server_argv(argv,pointer):
+    # Only documented global options before the actual subcommand; no substring search.
+    index=1
+    while index<len(argv) and argv[index]!='app-server':
+        option=argv[index]
+        if option in ('-c','--config','--enable','--disable'):
+            if index+1>=len(argv):return False
+            index+=2
+        elif any(option.startswith(name+'=') for name in ('--config','--enable','--disable')):
+            index+=1
+        else:return False
+    tail=argv[index+1:]
+    if index>=len(argv) or not tail or not tail[0].startswith('-') or tail.count('--listen')!=1:
+        return False
+    listen=tail.index('--listen')+1
+    return listen<len(tail) and tail[listen] in ('unix://','unix://'+str(pointer))
+
+def native_text_identity(pid,claimed):
+    # Darwin argv0 may be relative. Kernel text mappings prove the real executable.
+    fields=command(['/usr/sbin/lsof','-nP','-a','-p',str(pid),'-d','txt','-Fpn']).splitlines()
+    pids={line[1:] for line in fields if line.startswith('p')}
+    names={line[1:] for line in fields if line.startswith('n')}
+    if pids!={str(pid)} or str(claimed) not in names:
+        raise Refused('managed_codex_owner_unverified')
+
 def verify_codex_owner(config):
     pointer=Path(config['codexSocket'])
     if pointer!=Path.home()/'.codex/app-server-control/app-server-control.sock':
@@ -122,12 +147,8 @@ def verify_codex_owner(config):
         if len(row)!=7 or int(row[0])!=os.getuid() or ' '.join(row[1:6])!=' '.join(expected.split()):
             raise Refused('managed_codex_owner_unverified')
         argv=shlex.split(row[6]);claimed=executable(binary).resolve(strict=True)
-        if (len(argv)<2 or not Path(argv[0]).is_absolute() or Path(argv[0]).resolve()!=claimed
-                or argv[1]!='app-server' or '--listen' not in argv):
-            raise Refused('managed_codex_owner_unverified')
-        index=argv.index('--listen')+1
-        if index>=len(argv) or argv[index] not in ('unix://','unix://'+str(pointer)):
-            raise Refused('managed_codex_owner_unverified')
+        if not native_app_server_argv(argv,pointer):raise Refused('managed_codex_owner_unverified')
+        native_text_identity(pid,claimed)
     process_identity()
     pids=command(['/usr/sbin/lsof','-t','-nP','-a','-U',str(physical)]).split()
     if set(pids)!={str(pid)}:raise Refused('managed_codex_owner_unverified')
@@ -145,6 +166,7 @@ def codex_environment(config):
         info=pointer.stat()
         if not stat.S_ISSOCK(info.st_mode) or info.st_uid!=os.getuid():
             raise Refused('managed_codex_socket_missing')
+        verify_codex_owner(config)
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as probe:
             probe.settimeout(1);probe.connect(str(pointer))
     except OSError:raise Refused('managed_codex_socket_missing') from None

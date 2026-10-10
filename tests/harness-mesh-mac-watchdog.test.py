@@ -10,6 +10,29 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+# All socket fixtures stay inside tempfile's admitted TMPDIR, even when long.
+# AF_UNIX bind/connect use short relative names while cwd is the OWN fixture.
+import contextlib
+import os
+import socket
+@contextlib.contextmanager
+def owned_unix_fixture(folder):
+    original=socket.socket
+    root=Path(folder).resolve();previous=os.open('.',os.O_RDONLY)
+    def address(value):
+        if not isinstance(value,str) or not os.path.isabs(value):return value
+        target=Path(value).absolute()
+        if root not in target.parents:raise AssertionError('socket escaped owned fixture')
+        return os.path.relpath(target,root)
+    class RelativeSocket(original):
+        def bind(self,value):return super().bind(address(value))
+        def connect(self,value):return super().connect(address(value))
+    try:
+        os.chdir(root)
+        with patch.object(socket,'socket',RelativeSocket),RelativeSocket(socket.AF_UNIX,socket.SOCK_STREAM) as server:
+            yield server
+    finally:os.fchdir(previous);os.close(previous)
+
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('mac_watchdog', ROOT / 'deploy/fleet/mac-node-watchdog.py')
 w = importlib.util.module_from_spec(SPEC)
@@ -63,7 +86,8 @@ class MacWatchdogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             base=Path(folder);owned=base/'owned';owned.mkdir();foreign=base/'foreign';foreign.mkdir();(foreign/'data').write_bytes(b'x'*1024)
             (owned/'small').write_bytes(b'123');(owned/'foreign').symlink_to(foreign,target_is_directory=True)
-            self.assertLess(w.storage_bytes(owned,100),100)
+            observed=3+(owned/'foreign').lstat().st_size
+            self.assertEqual(w.storage_bytes(owned,observed+1),observed)
             with self.assertRaisesRegex(w.Refused,'storage_root_unverified'):w.storage_bytes(owned/'foreign',2000)
             with self.assertRaises(w.Refused):w.storage_bytes(owned,1)
 
@@ -79,22 +103,33 @@ class MacWatchdogTests(unittest.TestCase):
             home=Path(folder);pointer=home/'.codex/app-server-control/app-server-control.sock';pointer.parent.mkdir(parents=True)
             binary=home/'codex';binary.write_bytes(b'fixture');binary.chmod(0o700)
             config={'codexSocket':str(pointer),'codexBin':str(binary),'codexOwnerPid':42,'codexOwnerBin':str(binary),'codexOwnerStartedAt':'Sat Oct 10 10:00:00 2026'}
-            with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as server:
+            with owned_unix_fixture(folder) as server:
                 server.bind(str(pointer));pointer.chmod(0o600);server.listen(3)
                 def observation(args):
                     if args[0]=='/usr/sbin/lsof':
-                        self.assertIn('-a',args);return '42\n'
+                        self.assertIn('-a',args)
+                        return f'p42\nn{binary}\n' if '-d' in args else '42\n'
                     return f'{w.os.getuid()} Sat Oct 10 10:00:00 2026 /usr/bin/ssh -L remote\n'
                 with patch.object(w.Path,'home',return_value=home),patch.object(w,'command',side_effect=observation):
                     with self.assertRaisesRegex(w.Refused,'managed_codex_owner_unverified'):w.codex_environment(config)
                 def native(args):
                     if args[0]=='/usr/sbin/lsof':
-                        self.assertIn('-a',args);return '42\n'
-                    return f'{w.os.getuid()} Sat Oct 10 10:00:00 2026 {binary} app-server --listen unix://{pointer}\n'
+                        self.assertIn('-a',args)
+                        return f'p42\nn{binary}\n' if '-d' in args else '42\n'
+                    return f'{w.os.getuid()} Sat Oct 10 10:00:00 2026 codex -c features.code_mode_host=true app-server --listen unix://\n'
                 with patch.object(w.Path,'home',return_value=home),patch.object(w,'command',side_effect=native):
                     self.assertEqual(w.codex_environment(config)['CODEX_APP_SERVER_SOCKET'],str(pointer))
+                    with patch.object(w,'command',side_effect=lambda args: 'p42\nn/usr/bin/ssh\n' if '-d' in args else native(args)):
+                        with self.assertRaisesRegex(w.Refused,'managed_codex_owner_unverified'):w.codex_environment(config)
                     config['codexOwnerStartedAt']='different generation'
                     with self.assertRaisesRegex(w.Refused,'managed_codex_owner_unverified'):w.codex_environment(config)
+
+    def test_native_argv_global_options_do_not_accept_proxy_or_fake_subcommands(self):
+        pointer=Path('/Users/fixture/.codex/app-server-control/app-server-control.sock')
+        self.assertTrue(w.native_app_server_argv(['codex','-c','features.code_mode_host=true','app-server','--listen','unix://'],pointer))
+        self.assertTrue(w.native_app_server_argv(['codex','--config=features.x=true','--enable','x','app-server','--listen','unix://'+str(pointer)],pointer))
+        for args in (['codex','--unknown','app-server','--listen','unix://'], ['codex','app-server','proxy','--listen','unix://'], ['codex','-c','app-server','--listen','unix://'], ['ssh','-L','app-server','--listen','unix://']):
+            self.assertFalse(w.native_app_server_argv(args,pointer))
 
     def test_opencode_requires_protected_existing_pointer_and_native_listener(self):
         with self.assertRaisesRegex(w.Refused,'opencode_auth_pointer_missing'):
