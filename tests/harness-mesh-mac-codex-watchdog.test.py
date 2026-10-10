@@ -9,6 +9,29 @@ import socket
 import tempfile
 import unittest
 from unittest.mock import patch,Mock
+# All socket fixtures stay inside tempfile's admitted TMPDIR, even when long.
+# AF_UNIX bind/connect use short relative names while cwd is the OWN fixture.
+import contextlib
+import os
+import socket
+@contextlib.contextmanager
+def owned_unix_fixture(folder):
+    original=socket.socket
+    root=Path(folder).resolve();previous=os.open('.',os.O_RDONLY)
+    def address(value):
+        if not isinstance(value,str) or not os.path.isabs(value):return value
+        target=Path(value).absolute()
+        if root not in target.parents:raise AssertionError('socket escaped owned fixture')
+        return os.path.relpath(target,root)
+    class RelativeSocket(original):
+        def bind(self,value):return super().bind(address(value))
+        def connect(self,value):return super().connect(address(value))
+    try:
+        os.chdir(root)
+        with patch.object(socket,'socket',RelativeSocket),RelativeSocket(socket.AF_UNIX,socket.SOCK_STREAM) as server:
+            yield server
+    finally:os.fchdir(previous);os.close(previous)
+
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('native',ROOT/'deploy/fleet/mac-codex-watchdog.py')
 n=importlib.util.module_from_spec(spec);spec.loader.exec_module(n)
@@ -32,7 +55,7 @@ class NativeManagerTests(unittest.TestCase):
                 with self.assertRaisesRegex(n.w.Refused,'already_owned_or_unknown'):n.refuse_existing_socket(pointer)
                 spawn.assert_not_called();unlink.assert_not_called()
             pointer.unlink()
-            with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as server:
+            with owned_unix_fixture(folder) as server:
                 server.bind(str(pointer));server.listen(1)
                 with self.assertRaises(n.w.Refused):n.refuse_existing_socket(pointer)
 
@@ -45,7 +68,7 @@ class NativeManagerTests(unittest.TestCase):
     def test_listener_is_not_ready_for_another_writer(self):
         with tempfile.TemporaryDirectory() as folder:
             pointer=Path(folder)/'sock'
-            with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as server:
+            with owned_unix_fixture(folder) as server:
                 server.bind(str(pointer));pointer.chmod(0o600);server.listen(1);child=Mock(pid=42);child.poll.return_value=None
                 with patch.object(n.w,'command',return_value='99\n'):
                     with self.assertRaisesRegex(n.w.Refused,'native_listener_identity_mismatch'):n.listener_proof(pointer,child)
@@ -55,7 +78,7 @@ class NativeManagerTests(unittest.TestCase):
     def test_installed_native_rendezvous_symlink_and_generation_are_preserved(self):
         with tempfile.TemporaryDirectory() as folder:
             physical=Path(folder)/'physical.sock';pointer=Path(folder)/'control.sock'
-            with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as server:
+            with owned_unix_fixture(folder) as server:
                 server.bind(str(physical));physical.chmod(0o600);server.listen(2);pointer.symlink_to(physical)
                 child=Mock(pid=42);child.poll.return_value=None
                 with patch.object(n.w,'command',return_value='42\n'):
