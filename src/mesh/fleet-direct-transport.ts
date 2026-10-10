@@ -68,7 +68,7 @@ if r['method']=='session/read':
   with opener.open(url[:-4]+path.split('/details?')[0],timeout=max(.001,deadline-time.monotonic())) as response:body=response.read(1048577)
  if len(body)>1048576:raise RuntimeError('direct_response_limit')
  details=json.loads(body);session=details['session']
- if history_unavailable:details['historyUnavailable']=True
+ if history_unavailable or details.get('history',{}).get('source')=='unavailable':details['historyUnavailable']=True
  if session.get('id')!=p['sessionId'] or session.get('harness')!=p['harness']:raise RuntimeError('native_session_identity_mismatch')
  print(json.dumps({'hostId':r['hostId'],'details':details}))
 else:
