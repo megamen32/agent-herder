@@ -61,9 +61,10 @@ export class FleetCabinetService {
    // Published child health can lag its online parent by a full heartbeat interval.
    // Probe only a registered failed/offline child under a proven online parent;
    // readiness and control still require the bounded native identity/snapshot below.
+   const configuredDirectProbe=shell?.status==='configured'&&peer?.status==='configured';
    const staleChildProbe=shell?.status==='online'&&['failed','offline'].includes(String(peer?.status));
-   const parentUnavailable=!!shell&&shell.status!=='online';
-   if(registryFailed||!peer||parentUnavailable||peer.status!=='online'&&!staleChildProbe){results.set(hostId,unavailable(registryFailed?'registry_read_failed':shell?.status==='offline'?'host_offline':parentUnavailable?'host_unavailable':!peer?'local_herder_not_registered':'local_herder_offline',shell?.status==='offline'?'offline':'unavailable'));continue;}
+   const parentUnavailable=!!shell&&shell.status!=='online'&&!configuredDirectProbe;
+   if(registryFailed||!peer||parentUnavailable||peer.status!=='online'&&!staleChildProbe&&!configuredDirectProbe){results.set(hostId,unavailable(registryFailed?'registry_read_failed':shell?.status==='offline'?'host_offline':parentUnavailable?'host_unavailable':!peer?'local_herder_not_registered':'local_herder_offline',shell?.status==='offline'?'offline':'unavailable'));continue;}
    try{
     const target=String(peer.server_id),transport=this.transport(hostId);
     const schema=unwrapResult(await this.bounded(transport.schema(target),deadline));

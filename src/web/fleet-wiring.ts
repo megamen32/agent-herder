@@ -5,6 +5,7 @@ import {join} from "node:path";
 import type {IncomingMessage, ServerResponse} from "node:http";
 import {FleetCabinetService} from "../mesh/fleet-service.js";
 import {createFleetApiHandler} from "../mesh/fleet-api.js";
+import {FleetDirectTransport} from "../mesh/fleet-direct-transport.js";
 import {FleetGptAdminTransport} from "../mesh/fleet-gptadmin-transport.js";
 import {unwrapResult} from "../mesh/protocol.js";
 import type {FleetHostDefinition} from "../mesh/fleet-contract.js";
@@ -36,6 +37,7 @@ export function createConfiguredFleetApiHandler(options: {
   const configPath = options.clientConfigPath ?? join(homedir(), ".zcode", "cli", "config.json");
   const stateRoot = options.stateRoot ?? join(homedir(), ".local", "state", "agent-herder", "fleet");
   const approvedGeneration = options.approvedCredentialGeneration ?? process.env.AGENT_HERDER_FLEET_CREDENTIAL_PIN;
+  let directService:FleetCabinetService|undefined;
   let active: Active | undefined;
   let connecting: Promise<Active> | undefined;
 
@@ -103,6 +105,14 @@ export function createConfiguredFleetApiHandler(options: {
       return true;
     };
     try {
+      // Owner's local/SSH-forwarded cabinet is independent of the central Hub and SSO.
+      // Public vhosts and authenticated Hub consumers retain their existing authority.
+      if (isDirectOwnerRequest(request)) {
+        const localUser=userInfo().username;
+        if (localUser!==userId) return reject(403,"Локальный владелец не совпадает");
+        directService??=new FleetCabinetService({hosts:fleetHosts,scope:{profileId:'ssh-native-owner:'+localUser,userId:localUser},journalPath:join(stateRoot,'direct-owner-create.json'),transportFactory:()=>new FleetDirectTransport()});
+        return createFleetApiHandler(directService,hostname())(request,response);
+      }
       const binding = await readBinding();
       const configuredBearer = Object.entries(binding.headers).find(([key]) => key.toLowerCase() === "authorization")![1];
       const bearer = request.headers.authorization;
@@ -139,4 +149,16 @@ export function createConfiguredFleetApiHandler(options: {
       return reject(503, "Подключение флота пока недоступно. Повторите чтение позже.");
     }
   };
+}
+
+/** Existing loopback listener reached by owner SSH; never interprets a public Host or Hub credential as local owner. */
+export function isDirectOwnerRequest(request:IncomingMessage):boolean{
+ if(request.headers.authorization||request.headers.cookie)return false;
+ if(!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(request.socket.remoteAddress??''))return false;
+ let host:URL;try{host=new URL('http://'+request.headers.host);}catch{return false;}
+ if(!['127.0.0.1','localhost','[::1]'].includes(host.hostname))return false;
+ if(request.method==='POST'){
+  try{const origin=new URL(request.headers.origin??'');if(origin.protocol!=='http:'||origin.host!==host.host)return false;}catch{return false;}
+ }
+ return true;
 }
