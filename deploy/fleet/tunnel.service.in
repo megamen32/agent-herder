@@ -1,0 +1,19 @@
+[Unit]
+Description=Agent Herder authenticated SSH fleet ingress tunnel
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/ssh -N -o BatchMode=yes -o ConnectTimeout=5 -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -p @SSH_PORT@ -L 127.0.0.1:@LOCAL_PORT@:127.0.0.1:@NODE_PORT@ @SSH_PEER@
+Restart=on-failure
+RestartSec=5
+MemoryHigh=16M
+MemoryMax=64M
+MemorySwapMax=0
+CPUQuota=5%
+TasksMax=16
+IOWeight=10
+LimitNOFILE=128
+UMask=0077
+
+[Install]
+WantedBy=default.target
