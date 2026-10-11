@@ -139,7 +139,9 @@ export async function newOrResumeNamedSession(
   // A create request may accept a model option without the native service
   // actually applying it. Trust only the returned session state; otherwise
   // select the model explicitly before the first prompt.
-  if (request.model !== undefined && resolved.target.model !== request.model) {
+  const selectedModel = resolved.target.harness === "hermes" && typeof resolved.target.meta?.selectedModel === "string"
+    ? resolved.target.meta.selectedModel : resolved.target.model;
+  if (request.model !== undefined && selectedModel !== request.model) {
     if (!resolved.adapter.changeModel) {
       return {
         ok: false,

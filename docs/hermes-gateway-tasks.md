@@ -8,7 +8,7 @@ verified auth/config отказывает до named binding, не запуск�
 
 `HermesAdapter.createSession` создаёт логическую named binding, а не новый native
 chat: session ID Herder — настоящий Gateway **session key**, metadata содержит
-`nativeSessionId`/`sessionId`, `origin` (с thread_id) и actual selected model.
+`nativeSessionId`/`sessionId`, `origin` (с thread_id) и отдельно selected/effective model.
 Native SID в display URL также читается как exact alias **этого** home key;
 доставка и query после lookup используют canonical key. Чужой SID отклоняется.
 `findNamedSessions/getSession` восстанавливают binding через plugin ledger
@@ -26,7 +26,7 @@ Production named runner передаёт `expectedTaskBinding:{name,cwd,generati
 `PluginContext.inject_message(content, session_key=...)`; отправка через
 `messages_send` не используется для Gateway tasks. Existing source plugin
 `agent-resume/hermes_gateway.py` резервирует input до native call, а registered
-`pre_llm_call` подтверждает exact SID/marker/turn/model и задаёт task CWD через
+`pre_llm_call` подтверждает exact SID/marker/turn и modelAtAdmission и задаёт task CWD через
 поддерживаемый terminal override. Вызов не использует `/resume`, не вводит
 сообщение в active CLI и отказывает при active writer/unconfirmed input.
 
@@ -38,7 +38,7 @@ completed:false`: production named runner возвращает `accepted_unconfi
 `getMessageAdmission` того же input ID. Plugin restart не снимает fence.
 Повтор совпадающего input/payload читает receipt, конфликт сохраняет оригинальные
 admission flags. Native model не переключается молча; несовпадение explicit
-request model с actual Gateway model отказывает до отправки.
+request model с selected Gateway intent отказывает до отправки.
 
 Legacy bounded CLI transport доступен только при explicit adapter option
 `gatewayTasks:false`. Home dialogue не выдаётся за dedicated
@@ -51,8 +51,8 @@ Root устанавливает **точный опубликованный** ag
 содержит тот же grant. Live config не совпадает с историческим canonical
 snapshot: installer сохраняет остальные live значения вместо замены файла.
 Read-only binding 12.10.2026: `agent:main:telegram:group:-1004360838692:9` →
-`20260909_220106_70ff6a6b`, persisted model `glm-5.3-flash`/`zai`; его нельзя
-показывать как profile default MiniMax-M3. Root повторяет эту проверку перед
+`20260909_220106_70ff6a6b`, selected override `glm-5.3-flash`/`zai`; actual consumer затем подтвердил
+fallback `MiniMax-M3`/`minimax`. Selected не выдаётся за actual execution. Root повторяет эту проверку перед
 actual consumer canary. Source owner не устанавливает/restart сервисы.
 
 ## Notice display и original incident
@@ -129,3 +129,23 @@ Unused старые copied UI bundles перенесены из **owned** dist �
 services, совместная установка и настоящий Telegram task dialogue/recipient
 acceptance принадлежат Root. Canonical runtime100 не собирался/не перезапускался
 этим владельцем; все builds выполнены только в owned Herder worktree.
+
+## Исправление actual model после native fallback
+
+Gateway session.model показывает только persisted effective runtime core; выбранная
+модель отдельно в meta.selectedModel/selectedProvider. Runtime имеет явный scope
+last-session-runtime. Named runner и changeModel проверяют selected intent,
+не переключают provider из-за effective fallback.
+Receipt.modelAtAdmission — модель prologue, receipt.model неизвестен до exact
+successful native post_api_request. Наблюдение session_id+turn_id сохраняет
+actual model/provider в durable effectiveModel; human follow-up не меняет старую
+receipt. Legacy receipt без такого evidence не backfill из последней сессии.
+Admission-only pending/completed flags не изменены; original accepted native
+input и bootstrap не повторяются. Installer добавляет supported post_api_request
+hook. Root проверяет совместимость после official update, затем устанавливает
+plugin/reloads самостоятельно; source owner runtime не меняет.
+
+| Проверка | Назначение/дефект | Категория | Ожидаемые/max секунды |
+|---|---|---|---|
+| Official post-response producer → original HTTP/DB receipt | Selected GLM vs actual MiniMax fallback, exact turn, restart/legacy/no replay | focused integration | 1/5 |
+| Production named runner → adapter HTTP | Selected intent принимается при другом effective model без provider switch | focused integration | 1/5 |

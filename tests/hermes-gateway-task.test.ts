@@ -8,13 +8,13 @@ import { newOrResumeNamedSession } from "../src/named-session.js";
 const key = "agent:main:telegram:group:-1004360838692:9", nativeId = "20260909_220106_70ff6a6b";
 const closes: (() => Promise<void>)[] = [];
 afterEach(async () => { await Promise.all(closes.splice(0).map(fn => fn())); });
-async function fixture() {
+async function fixture(effectiveModel = "glm-5.3-flash") {
   let session: any, generation=0; const inputs = new Map<string, any>(); const bodies: any[] = [];
   const server = createServer(async (req, res) => {
     expect(req.url).toBe("/v1/agent-resume/task"); expect(req.headers.authorization).toBe("Bearer existing-protected-token");
     let text=""; for await (const part of req) text += part;
     const b=JSON.parse(text); bodies.push(b); let result:any={ok:true};
-    if(b.op==="bind") session={id:key,harness:"hermes",title:b.name,cwd:b.cwd,model:"glm-5.3-flash",status:"idle",lastActivity:"",needsPermission:false,meta:{transport:"hermes-gateway-task",nativeSessionId:nativeId,taskBinding:{name:b.name,cwd:b.cwd,generation:String(++generation)},origin:{platform:"telegram",chat_id:"-1004360838692",thread_id:"9"}}};
+    if(b.op==="bind") session={id:key,harness:"hermes",title:b.name,cwd:b.cwd,model:effectiveModel,status:"idle",lastActivity:"",needsPermission:false,meta:{selectedModel:"glm-5.3-flash",transport:"hermes-gateway-task",nativeSessionId:nativeId,taskBinding:{name:b.name,cwd:b.cwd,generation:String(++generation)},origin:{platform:"telegram",chat_id:"-1004360838692",thread_id:"9"}}};
     if(["bind","find","session","home"].includes(b.op)) result={ok:true,session:session||null};
     if(b.op==="send") {
       if(inputs.has(b.input_id))result=inputs.get(b.input_id);
@@ -88,4 +88,16 @@ it("fences cached A and resolve-A→bind-B races while fresh home follow-ups use
  expect(await f.adapter.sendMessage(key,{message:"Current home follow-up",inputId:"current-home"})).toMatchObject({admitted:true});
  expect(f.bodies.filter(v=>v.op==="send").at(-1).expected_binding).toEqual(b.meta!.taskBinding);
  expect(f.inputs.size).toBe(3);
+});
+
+it("production named runner honors selected intent while displaying actual fallback independently",async()=>{
+ const f=await fixture("MiniMax-M3");
+ const request={harness:"hermes",name:"selected-effective",cwd:"/tmp",message:"Read only",inputId:"model-distinct",mode:"queue" as const,model:"glm-5.3-flash"};
+ const result=await newOrResumeNamedSession(new Map([["hermes",f.adapter]]),request);
+ expect(result).toMatchObject({ok:true,admitted:true});
+ const session=await f.adapter.getSession(key);
+ expect(session?.model).toBe("MiniMax-M3");expect(session?.meta?.selectedModel).toBe("glm-5.3-flash");
+ expect(await f.adapter.changeModel(key,"glm-5.3-flash")).toEqual({ok:true});
+ expect(await f.adapter.changeModel(key,"MiniMax-M3")).toMatchObject({ok:false});
+ expect(f.bodies.filter(v=>v.op==="send")).toHaveLength(1);expect(f.spawnJob).not.toHaveBeenCalled();
 });

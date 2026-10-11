@@ -416,7 +416,7 @@ export class HermesAdapter implements HarnessAdapter {
     const job = this.jobs.get(id);
     if (!job && this.gatewayTasks) {
       const session = await this.getSession(id);
-      return session?.model === model ? { ok: true } : { ok: false, error: "Hermes home session keeps its actual Gateway model; select it explicitly before dispatch" };
+      return (session?.meta?.selectedModel ?? session?.model) === model ? { ok: true } : { ok: false, error: "Hermes home session keeps its selected Gateway model; select it explicitly before dispatch" };
     }
     if (!job) return { ok: false, error: "Hermes public MCP surface does not expose model switching" };
     if (job.status === "running") return { ok: false, error: "Hermes job is already running" };
