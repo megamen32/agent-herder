@@ -15,7 +15,9 @@ import {
   type AutopilotDecision,
 } from "./autopilot/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
+import { HumanRequestRegistry } from "./human-request/index.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
+import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { effectivePolicyAllowsTarget } from "./autopilot/policy.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "./autopilot/session-store.js";
 import { acquireLock } from "./autopilot-hook.js";
@@ -37,9 +39,10 @@ export type AutopilotRunnerInput = {
   stopHookActive?: boolean;
 };
 
-const stateDir = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR || join(homedir(), ".local", "state", "agent-herder", "autopilot-live");
+const stateDir = resolveAutopilotStateDir();
 
 export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<Record<string, unknown>> {
+  await adoptLegacyAutopilotState(stateDir);
   const command = input.command ?? "on";
   const humanStops = getHumanStopStore();
   const held = () => humanStops.isHeld(input.harness, input.sessionId);
@@ -102,6 +105,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
         kind: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_KIND || "notification",
       },
       choiceRegistry: new ChoiceRegistry(join(stateDir, "choices.json")),
+      humanRequests: new HumanRequestRegistry(resolveHumanRequestStorePath(stateDir)),
       harness: input.harness,
       onDecision: (decision, metadata) => {
         observedDecision = { decision, ...(metadata?.choiceRequestId ? { choiceRequestId: metadata.choiceRequestId } : {}) };

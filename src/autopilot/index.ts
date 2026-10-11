@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { ChoiceRegistry, type AutopilotChoice } from "./choice-registry.js";
+import type { HumanRequestRegistry } from "../human-request/registry.js";
 import {
   effectivePolicyAllowsTarget,
   type EffectivePolicy,
@@ -69,6 +70,8 @@ export type NotificationPayload = {
   signal_type?: string;
   choices?: Array<{ choice_id: string; label: string }>;
   choice_request_id?: string;
+  /** Resumable Human Request the card may answer to continue this exact session. */
+  human_request_id?: string;
 };
 
 export type NotificationSink = {
@@ -79,6 +82,8 @@ export type Receipt = {
   kind: AutopilotDecision["kind"];
   /** Durable completion notice retry; its stable idempotency key prevents duplicates. */
   pendingNotice?: NotificationPayload;
+  /** Durable Human Request created for a human decision; a replay reuses it. */
+  humanRequestId?: string;
 };
 export type ReceiptStore = Map<string, Receipt>;
 
@@ -151,6 +156,7 @@ export function createNoticePlacePayload(input: {
   signalType?: string;
   choices?: Array<{ choice_id: string; label: string }>;
   choice_request_id?: string;
+  human_request_id?: string;
 }): NotificationPayload {
   return {
     schema: "notify.event.v1",
@@ -169,6 +175,7 @@ export function createNoticePlacePayload(input: {
     ...(input.signalType ? { signal_type: input.signalType } : {}),
     ...(input.choices ? { choices: input.choices } : {}),
     ...(input.choice_request_id ? { choice_request_id: input.choice_request_id } : {}),
+    ...(input.human_request_id ? { human_request_id: input.human_request_id } : {}),
   };
 }
 
@@ -292,10 +299,15 @@ export function createAutopilotCore(options: {
   maxContinuationsPerSession: number;
   notification?: NotificationConfig;
   choiceRegistry?: ChoiceRegistry;
+  /**
+   * Durable Human Request registry. A human decision binds a resumable request
+   * to the exact native session instead of sending a dead-end notification.
+   */
+  humanRequests?: Pick<HumanRequestRegistry, "create">;
   effectivePolicy?: EffectivePolicy;
   policyBypassSessionId?: string;
   harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode";
-  onDecision?: (decision: AutopilotDecision, metadata?: { choiceRequestId?: string }) => void;
+  onDecision?: (decision: AutopilotDecision, metadata?: { choiceRequestId?: string; humanRequestId?: string }) => void;
 }): { handleStop(input: StopHookInput): Promise<AutopilotHookResult> } {
   const continuationCounts = new Map<string, number>();
   const activeTurnKeys = new Set<string>();
@@ -458,17 +470,35 @@ export function createAutopilotCore(options: {
           options.onDecision?.(decision, { choiceRequestId: pending.requestId });
           return {};
         } else if (decision.kind === "human") {
-          options.onDecision?.(decision);
-          await options.notify.send(
-            createNoticePlacePayload({
-              title: decision.title,
-              body: decision.body,
-              severity: decision.severity,
-              dedupKey: `agent-herder:human:${input.session_id}:${input.turn_id}`,
-              correlationId: `${input.session_id}/${input.turn_id}`,
-              ...notification,
-            }),
-          );
+          // A human decision is a question, not a dead end: bind one resumable
+          // request to the exact native session so the answer continues it once.
+          const humanRequest = await createResumableHumanRequest(options, input, decision, notification);
+          options.onDecision?.(decision, humanRequest ? { humanRequestId: humanRequest.requestId } : undefined);
+          const humanNotice = createNoticePlacePayload({
+            title: decision.title,
+            body: decision.body,
+            severity: decision.severity,
+            dedupKey: `agent-herder:human:${input.session_id}:${input.turn_id}`,
+            correlationId: `${input.session_id}/${input.turn_id}`,
+            ...(humanRequest ? { human_request_id: humanRequest.requestId } : {}),
+            ...notification,
+          });
+          options.receiptStore.set(receiptKey, {
+            kind: decision.kind,
+            pendingNotice: humanNotice,
+            ...(humanRequest ? { humanRequestId: humanRequest.requestId } : {}),
+          });
+          try {
+            await options.notify.send(humanNotice);
+            options.receiptStore.set(receiptKey, {
+              kind: decision.kind,
+              ...(humanRequest ? { humanRequestId: humanRequest.requestId } : {}),
+            });
+          } catch {
+            // Keep the same request and notice key so a later Stop retries the
+            // notification without judging or asking the human twice.
+          }
+          return {};
         } else {
           options.onDecision?.(decision);
           if (decision.notify === false) {
@@ -501,6 +531,33 @@ export function createAutopilotCore(options: {
       }
     },
   };
+}
+
+/** Harness selection for a resumable question; a locator-less Hermes cannot be woken. */
+const RESUMABLE_HUMAN_DECISION_HARNESSES = new Set(["codex", "opencode", "claude", "zcode"]);
+
+async function createResumableHumanRequest(
+  options: { humanRequests?: Pick<HumanRequestRegistry, "create">; harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode" },
+  input: StopHookInput,
+  decision: Extract<AutopilotDecision, { kind: "human" }>,
+  notification: NotificationConfig,
+): Promise<{ requestId: string } | undefined> {
+  if (!options.humanRequests) return undefined;
+  const agent = options.harness ?? input.harness ?? "codex";
+  if (!RESUMABLE_HUMAN_DECISION_HARNESSES.has(agent)) return undefined;
+  const request = await options.humanRequests.create({
+    kind: "user",
+    target: { agent, sessionId: input.session_id, cwd: input.cwd },
+    contextRef: `agent-herder://autopilot/human/${encodeURIComponent(input.session_id)}/${encodeURIComponent(input.turn_id)}`,
+    notify: {
+      project: notification.project,
+      recipient: notification.recipient,
+      kind: notification.kind,
+      severity: decision.severity,
+      title: decision.title,
+    },
+  });
+  return { requestId: request.requestId };
 }
 
 function buildChoiceNotificationBody(

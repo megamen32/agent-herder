@@ -14,6 +14,7 @@ import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, Cod
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
+import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { AutopilotSessionStore } from "./autopilot/session-store.js";
 import { AutomationLaunchPolicyStore } from "./automation-launch-policy.js";
 import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
@@ -107,8 +108,12 @@ function parseReasoningEffort(value: string | undefined): "low" | "high" | "max"
 // ===== Create adapters =====
 
 const adapters = new Map<string, HarnessAdapter>();
-const humanRequests = new HumanRequestRegistry(process.env.AGENT_HERDER_HUMAN_REQUEST_STORE || ".agent-herder/human-requests.json");
-const autopilotStateDir = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR || join(homedir(), ".local", "state", "agent-herder", "autopilot");
+// One Autopilot state seam for the daemon, the Stop hook and the runner. Legacy
+// state is adopted once instead of being reset, so live sessions, pending
+// questions and pending choices survive this unification.
+const autopilotStateDir = resolveAutopilotStateDir();
+const autopilotStateReady = adoptLegacyAutopilotState(autopilotStateDir);
+const humanRequests = new HumanRequestRegistry(resolveHumanRequestStorePath(autopilotStateDir));
 const choiceRegistry = new ChoiceRegistry(process.env.AGENT_HERDER_AUTOPILOT_CHOICE_STORE || join(autopilotStateDir, "choices.json"));
 const autopilotPolicyStore = new AutopilotPolicyStore(resolveAutopilotPolicyStorePath(autopilotStateDir));
 const autopilotSessionStore = new AutopilotSessionStore(join(autopilotStateDir, "sessions.json"));
@@ -570,6 +575,10 @@ async function main() {
   process.once("exit", releaseSingleton);
 
   configureAdapterRegistry();
+  const adoptedState = await autopilotStateReady;
+  if (adoptedState.length > 0) {
+    console.error(`[agent-herder] adopted pre-seam autopilot state: ${adoptedState.length} file(s)`);
+  }
   await adapterRegistry.load();
   await initAdapters();
   let cdpChatDriver: CdpChatDriver | undefined;
@@ -663,6 +672,10 @@ async function main() {
   const recoveryAdmissionGate = createFleetRecoveryAdmissionGate(process.env.AGENT_HERDER_FLEET_MONITOR_STATE);
   const unfinishedSessionLauncher = new UnfinishedSessionLauncher({
     admissionGate: recoveryAdmissionGate,
+    // A pending question or choice is a durable fence: reconcile and Autopilot
+    // must not continue that session past the unanswered human decision.
+    humanRequests,
+    choiceRegistry,
     humanStopStore,
     adapters,
     store: unfinishedSessionStore,

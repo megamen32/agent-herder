@@ -15,6 +15,8 @@ import {
   type StopHookInput,
 } from "./autopilot/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
+import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
+import { HumanRequestRegistry } from "./human-request/index.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { resolveEffectivePolicy } from "./autopilot/policy.js";
 import { AutopilotSessionStore } from "./autopilot/session-store.js";
@@ -40,6 +42,8 @@ export type AutopilotHookDeps = {
   maxContinuationsPerSession: number;
   notification?: Parameters<typeof createAutopilotCore>[0]["notification"];
   choiceRegistry?: ChoiceRegistry;
+  /** Durable Human Request registry that binds a human decision to this exact session. */
+  humanRequests?: Parameters<typeof createAutopilotCore>[0]["humanRequests"];
   effectivePolicy?: Parameters<typeof createAutopilotCore>[0]["effectivePolicy"];
   humanStopStore?: HumanStopStore;
 };
@@ -78,6 +82,7 @@ export async function loadEffectivePolicyForStopHook(
 
 async function main(): Promise<void> {
   const stateDir = defaultStateDir();
+  await adoptLegacyAutopilotState(stateDir);
   const args = process.argv.slice(2);
   if (args[0] === "--help" || args[0] === "-h") {
     writeHelp();
@@ -153,6 +158,7 @@ async function main(): Promise<void> {
         kind: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_KIND ?? "notification",
       },
       choiceRegistry: new ChoiceRegistry(join(stateDir, "choices.json")),
+      humanRequests: new HumanRequestRegistry(resolveHumanRequestStorePath(stateDir)),
       humanStopStore: getHumanStopStore(),
     });
     const receiptRelease = await acquireLock(join(stateDir, "state.lock"), {
@@ -217,10 +223,7 @@ export function resolveNotificationRecipient(env: NodeJS.ProcessEnv = process.en
 }
 
 function defaultStateDir(): string {
-  return (
-    process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR ??
-    join(homedir(), ".local", "state", "agent-herder", "autopilot")
-  );
+  return resolveAutopilotStateDir();
 }
 
 export function isAllSessionsOptIn(env: NodeJS.ProcessEnv = process.env): boolean {

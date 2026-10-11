@@ -1,4 +1,7 @@
 import type { RecoveryAdmissionGate, RecoveryOperation } from "./recovery-admission.js";
+import { PendingQuestionGate } from "./pending-question-gate.js";
+import type { ChoiceRegistry } from "./choice-registry.js";
+import type { HumanRequestRegistry } from "../human-request/registry.js";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
@@ -1138,6 +1141,11 @@ export interface UnfinishedSessionLauncherOptions {
   cacheHandoff?: Pick<CacheHandoffService, "maybeRollover">;
   /** Independent durable fence for sessions explicitly stopped by a human. */
   humanStopStore?: HumanStopStore;
+  /** Pending human questions and choices; a session waiting for an answer is never continued. */
+  humanRequests?: Pick<HumanRequestRegistry, "list">;
+  choiceRegistry?: Pick<ChoiceRegistry, "list">;
+  /** How long the pending-question snapshot is trusted before the registries are read again. */
+  pendingQuestionTtlMs?: number;
   /** Durable Autopilot master policy; semantic backlog work stays opt-in. */
   autopilotPolicyStore?: Pick<AutopilotPolicyStore, "readEffective">;
   /** Per-session Autopilot switches override the enabled harness policy. */
@@ -1160,6 +1168,7 @@ export class UnfinishedSessionLauncher {
   private readonly watchdogIntervalOverrideMs?: number;
   private readonly stalledTurnOverrideMs?: number;
   private readonly acceptedAdmissionTimeoutMs: number;
+  private readonly pendingQuestions?: PendingQuestionGate;
   private recovering: Promise<void> | null = null;
   private autopiloting: Promise<void> | null = null;
   private retryTimer?: NodeJS.Timeout;
@@ -1228,6 +1237,20 @@ export class UnfinishedSessionLauncher {
       options.acceptedAdmissionTimeoutMs ?? Number(process.env.AGENT_HERDER_ACCEPTED_ADMISSION_TIMEOUT_MS || 30 * 60_000),
       30 * 60_000,
     );
+    this.pendingQuestions = options.humanRequests || options.choiceRegistry
+      ? new PendingQuestionGate(
+        {
+          ...(options.humanRequests ? { humanRequests: options.humanRequests } : {}),
+          ...(options.choiceRegistry ? { choices: options.choiceRegistry } : {}),
+        },
+        {
+          ...(options.pendingQuestionTtlMs === undefined ? {} : { ttlMs: options.pendingQuestionTtlMs }),
+          ...(process.env.AGENT_HERDER_PENDING_QUESTION_TTL_MS
+            ? { ttlMs: positiveInteger(Number(process.env.AGENT_HERDER_PENDING_QUESTION_TTL_MS), 15_000) }
+            : {}),
+        },
+      )
+      : undefined;
   }
 
   async handleEvent(provider: string, event: HarnessEvent): Promise<void> {
@@ -3374,7 +3397,11 @@ export class UnfinishedSessionLauncher {
   }
 
   private async isEnabled(harness: HarnessType, sessionId: string, cwd: string): Promise<boolean> {
-    return (await this.options.settingsStore.getEffective(harness, sessionId, cwd)).enabled;
+    if (!(await this.options.settingsStore.getEffective(harness, sessionId, cwd)).enabled) return false;
+    // A session that still owes a human an answer is not continued automatically,
+    // even when the native status no longer reports the question.
+    if (this.pendingQuestions && await this.pendingQuestions.blocks(harness, sessionId, cwd)) return false;
+    return true;
   }
 }
 
