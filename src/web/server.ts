@@ -852,14 +852,15 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         harness,
         sessionId,
         enabled: record?.enabled ?? inheritedEnabled,
-        source: record ? "session" : effective ? "policy" : harness === "codex" ? "plugin-default" : "default",
+        source: record?.enabled !== undefined ? "session" : effective ? "policy" : harness === "codex" ? "plugin-default" : "default",
         ...(record ? { cwd: record.cwd, updatedAt: record.updatedAt } : {}),
       });
     }
     if (request.method === "DELETE") {
       await autopilotSessionStore.delete(harness, sessionId);
+      const retained = await autopilotSessionStore.get(harness, sessionId);
       const effective = autopilotPolicyStore ? await autopilotPolicyStore.readEffective() : undefined;
-      const cwd = url.searchParams.get("cwd") || "/";
+      const cwd = url.searchParams.get("cwd") || retained?.cwd || "/";
       return sendJson(response, 200, {
         harness,
         sessionId,

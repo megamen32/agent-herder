@@ -9,7 +9,8 @@ export type AutopilotSessionOverride = {
   harness: AutopilotHarness;
   sessionId: string;
   cwd: string;
-  enabled: boolean;
+  /** Absent after reset: inherit policy while retaining original incident identity. */
+  enabled?: boolean;
   updatedAt: string;
   noticeIncident?: NoticeIncidentBinding;
 };
@@ -61,9 +62,15 @@ export class AutopilotSessionStore {
   async delete(harness: AutopilotHarness, sessionId: string): Promise<boolean> {
     const key = sessionKey(harness, sessionId);
     return this.mutate(async (file) => {
-      const before = file.sessions.length;
-      file.sessions = file.sessions.filter((item) => sessionKey(item.harness, item.sessionId) !== key);
-      return file.sessions.length !== before;
+      const index = file.sessions.findIndex((item) => sessionKey(item.harness, item.sessionId) === key);
+      if (index < 0) return false;
+      const record = file.sessions[index]!;
+      if (record.noticeIncident) {
+        if (record.enabled === undefined) return false;
+        const { enabled: _override, ...binding } = record;
+        file.sessions[index] = { ...binding, updatedAt: new Date().toISOString() };
+      } else file.sessions.splice(index, 1);
+      return true;
     });
   }
 
@@ -116,12 +123,14 @@ function parseFile(value: unknown): SessionFile {
     sessions: object.sessions.map((item) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("invalid autopilot session entry");
       const record = item as Record<string, unknown>;
-      if (typeof record.enabled !== "boolean" || typeof record.updatedAt !== "string" || Number.isNaN(Date.parse(record.updatedAt))) {
+      if ((record.enabled !== undefined && typeof record.enabled !== "boolean")
+        || (record.enabled === undefined && record.noticeIncident === undefined)
+        || typeof record.updatedAt !== "string" || Number.isNaN(Date.parse(record.updatedAt))) {
         throw new Error("invalid autopilot session entry metadata");
       }
       return {
         ...normalizeTarget({ harness: record.harness as AutopilotHarness, sessionId: record.sessionId as string, cwd: record.cwd as string }),
-        enabled: record.enabled,
+        ...(record.enabled === undefined ? {} : { enabled: record.enabled }),
         updatedAt: new Date(record.updatedAt).toISOString(),
         ...(record.noticeIncident === undefined ? {} : { noticeIncident: parseNoticeIncident(record.noticeIncident) }),
       };

@@ -3041,7 +3041,7 @@ export class UnfinishedSessionLauncher {
     if (session.harness !== "codex" && session.harness !== "zcode") return false;
     if (!effective.policy.enabled) return false;
     const override = await this.options.autopilotSessionStore?.get(session.harness, session.id);
-    if (override) return override.enabled;
+    if (override?.enabled !== undefined) return override.enabled;
     return effectivePolicyAllowsTarget(effective, {
       harness: session.harness,
       sessionId: session.id,

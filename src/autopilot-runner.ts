@@ -75,7 +75,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
     const policyEnabled = effectivePolicyAllowsTarget(effectivePolicy, { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) });
     const sessionEnabled = record?.enabled === true && (effectivePolicy.source !== "persisted" || effectivePolicy.policy.enabled);
     const enabled = record?.enabled === false ? false : sessionEnabled || policyEnabled;
-    return { ok: true, command, harness: input.harness, session_id: input.sessionId, enabled, human_stop_held: await held(), source: record ? "session" : effectivePolicy.source };
+    return { ok: true, command, harness: input.harness, session_id: input.sessionId, enabled, human_stop_held: await held(), source: record?.enabled !== undefined ? "session" : effectivePolicy.source };
   }
   if (command === "on" || command === "off") {
     const record = await store.set({ harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) }, command === "on");
