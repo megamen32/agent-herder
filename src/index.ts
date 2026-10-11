@@ -73,21 +73,23 @@ function parseEnvBool(val: string | undefined, fallback: boolean): boolean {
   return val === "1" || val === "true" || val === "yes";
 }
 
-/** Resolve the currently configured MiniMax client for every batch operation. */
+/** Resolve the currently configured task judge for every batch operation. */
 export function createDynamicSessionCompletionJudge(
-  getClient: () => Promise<SessionCompletionJudge>,
+  getClient: (model?: string) => Promise<SessionCompletionJudge>,
+  getModel?: () => Promise<string>,
 ): SessionCompletionJudge {
+  const currentClient = async () => getClient(getModel ? await getModel() : undefined);
   return {
     async decide(input) {
-      return (await getClient()).decide(input);
+      return (await currentClient()).decide(input);
     },
     async plan(input) {
-      const plan = (await getClient()).plan;
+      const plan = (await currentClient()).plan;
       if (!plan) throw new Error("Configured session judge does not support batch planning");
       return plan(input);
     },
     async reconcile(input) {
-      const reconcile = (await getClient()).reconcile;
+      const reconcile = (await currentClient()).reconcile;
       if (!reconcile) throw new Error("Configured session judge does not support batch reconciliation");
       return reconcile(input);
     },
@@ -703,8 +705,8 @@ async function main() {
       : process.env.AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL || "https://api.minimax.io/anthropic");
   const unfinishedJudgeReasoningEffort = parseReasoningEffort(process.env.AGENT_HERDER_UNFINISHED_JUDGE_REASONING_EFFORT);
   const unfinishedJudgeClients = new Map<string, SessionCompletionJudge>();
-  const getUnfinishedJudgeClient = async () => {
-    const model = (await sessionAutostartStore.getSettings()).judgeModel;
+  const getUnfinishedJudgeClient = async (model?: string) => {
+    model ??= (await sessionAutostartStore.getSettings()).autopilotJudgeModel;
     const cacheKey = `${unfinishedJudgeProtocol}:${unfinishedJudgeBaseUrl}:${model}:${unfinishedJudgeReasoningEffort || "default"}`;
     let client = unfinishedJudgeClients.get(cacheKey);
     if (!client) {
@@ -717,7 +719,7 @@ async function main() {
   };
   const unfinishedJudge = process.env.AGENT_HERDER_UNFINISHED_JUDGE_ENABLED === "false" || !unfinishedJudgeToken
     ? undefined
-    : createDynamicSessionCompletionJudge(getUnfinishedJudgeClient);
+    : createDynamicSessionCompletionJudge(getUnfinishedJudgeClient, async () => (await sessionAutostartStore.getSettings()).autopilotJudgeModel);
   const recoveryAdmissionGate = createFleetRecoveryAdmissionGate(process.env.AGENT_HERDER_FLEET_MONITOR_STATE);
   const unfinishedSessionLauncher = new UnfinishedSessionLauncher({
     admissionGate: recoveryAdmissionGate,

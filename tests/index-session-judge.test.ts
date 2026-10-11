@@ -6,6 +6,22 @@ import type { SessionCompletionJudge } from "../src/autopilot/unfinished-session
 import type { AgentSession } from "../src/types/index.js";
 
 describe("production dynamic unfinished-session judge", () => {
+  it("uses the selected Autopilot model for every semantic operation and refreshes it on change", async () => {
+    let settings = { judgeModel: "legacy-recovery-model", autopilotJudgeModel: "task-model-a" };
+    const getClient = vi.fn(async (_model?: string) => ({
+      decide: async () => ({ verdict: "completed" as const, reason: "done", confidence: 1 }),
+      plan: async () => ({ groups: [] }),
+      reconcile: async () => ({ clusters: [] }),
+    }));
+    const judge = createDynamicSessionCompletionJudge(getClient, async () => settings.autopilotJudgeModel);
+    const session: AgentSession = { id: "native-id", harness: "zcode", status: "idle", title: "Task", cwd: "/workspace", lastActivity: "2026-10-11T00:00:00Z", needsPermission: false };
+    await judge.decide({ session, transcriptTail: "evidence" });
+    settings = { ...settings, autopilotJudgeModel: "task-model-b" };
+    await judge.plan?.({ sessions: [{ session, transcriptTail: "evidence" }] });
+    await judge.reconcile?.({ groups: [] });
+    expect(getClient.mock.calls.map(([model]) => model)).toEqual(["task-model-a", "task-model-b", "task-model-b"]);
+    expect(settings.judgeModel).toBe("legacy-recovery-model");
+  });
   it("loads a credential from an operator-selected file", async () => {
     const root = await mkdtemp("/tmp/agent-herder-credential-");
     const path = `${root}/token`;
