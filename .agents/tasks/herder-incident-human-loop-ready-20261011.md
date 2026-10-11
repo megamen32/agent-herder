@@ -117,8 +117,8 @@ RED: idle callback timeout и отсутствие active steer; evidence сох
 сохранён в red/red2, не считается consumer RED.
 
 Production build + четыре новых checks + пять existing resume fences: 9/9 PASS
-на merge origin/main cf6a890, release command 39.085 секунды, включая setup
-менее 45 секунд. Категория focused integration, expected/max tests 5/10 секунд,
+на merge origin/main cf6a890, release command 39.085 секунды, с case setup и
+runner cleanup 45.510 секунды. Категория focused integration, expected/max tests 5/10 секунд,
 фактически 5.22. Existing bounded runner CPU1/max2GiB/tasks128, pools <=2;
 peak 562274304 bytes, swap/OOM 0, native cleanup PASS. Scoped review PASS:
 production diff только options существующего resumeSelectedTarget; pins без
