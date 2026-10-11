@@ -1141,7 +1141,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const expectedKind = url.pathname.endsWith("sss-completion") ? "secret" : "user";
     const expectedEvent = expectedKind === "secret" ? "sss.secret_input.completed" : "ask.user.completed";
     if (body.event !== expectedEvent || body.event_version !== 1 || body.status !== "completed" ||
-      !isUuid(body.request_id) || !isUuid(body.result_ref)) {
+      !isUuid(body.request_id) || !isOpaqueHumanResultRef(body.result_ref)) {
       return sendJson(response, 400, { error: "invalid opaque human-request completion event" });
     }
     const pending = await humanRequests.get(body.request_id);
@@ -1660,6 +1660,15 @@ function contentTypeFor(path: string): string {
 
 function isUuid(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+/** Notice's historical selection hashes have UUID shape but non-RFC variant bits.
+ * Result references are opaque: validate their exact shape, never rewrite them.
+ * Request identities continue to use the strict UUID check above.
+ */
+function isOpaqueHumanResultRef(value: unknown): value is string {
+  return typeof value === "string" && value.length === 36
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {

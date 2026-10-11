@@ -75,3 +75,20 @@ Focused integration: `tests/human-request-mcp-resolve.test.ts`, 7/7 PASS,
 128 не повторялись. Peak 575393792 bytes, swap/OOM 0, cleanup подтверждён.
 Manifest/команда/source pins/native evidence: `.tmp/incident-mcp-retry-release/`.
 Включён опубликованный Root `origin/main` 7b0f388; main/deploy остаются Root.
+
+## Legacy Notice opaque result ref: consumer compatibility
+
+HTTP completion теперь проверяет `result_ref` как ровно 36 символов hex/hyphens
+формата 8-4-4-4-12, без интерпретации UUID version/variant. Исторический Notice
+selection ref с variant F передаётся без изменения через прежний atomic core.
+`request_id` использует прежнюю строгую UUID проверку; event/version/status,
+kind и наличие request проверяются до admission. Canonical stored ref сохраняется
+при повторе с другим RFC ref; неизвестный native admission не replay.
+
+Focused integration: `human-request-opaque-result-ref` и существующий
+`human-request-completion-admission`, 6/6 PASS (ожидаемые/максимальные checks
+4/10 секунд, фактически 3.32). Production build + checks за 37.813 секунды,
+existing bounded runner; peak 612012032 bytes, swap/OOM 0, native cleanup PASS.
+Evidence: `.tmp/incident-opaque-ref-release/`. RED для legacy HTTP400 сохранён.
+128 baseline checks не повторялись. Существующая live question/outbox не читалась
+и не изменялась; её definitive-400 reconciliation и runtime rollout выполняет Root.
