@@ -87,12 +87,59 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
 /* ---------- 1. Левый рельс ---------- */
 .oc-app { grid-template-columns: 60px 296px minmax(0, 1fr) 264px; }
 .oc-app.no-inspector { grid-template-columns: 60px 296px minmax(0, 1fr); }
-.codex-navigation { background: var(--surface-1); border-right-color: var(--border); padding: 14px 8px; }
-.codex-navigation-items { gap: 10px; }
-.codex-navigation button { width: 40px; height: 40px; border-radius: 10px; }
-.codex-navigation button:hover, .codex-navigation button.active { background: var(--surface-hover); }
-.codex-navigation svg { width: 21px; height: 21px; }
-.codex-navigation-mark { background: var(--surface-3); color: var(--text-2); }
+/* ---------- Рейка: вертикальная иерархия, активный раздел виден, аккаунт внизу ---------- */
+.codex-navigation {
+  background: var(--surface-1);
+  border-right-color: var(--border);
+  padding: 14px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.codex-navigation-items { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.codex-navigation button {
+  width: 40px; height: 40px;
+  border-radius: 11px;
+  display: grid; place-items: center;
+  color: var(--muted);
+  transition: background-color .15s ease, color .15s ease, transform .12s ease;
+}
+.codex-navigation button:hover { background: var(--surface-hover); color: var(--text); }
+.codex-navigation button:active { transform: scale(.94); }
+.codex-navigation button.active {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+.codex-navigation svg { width: 20px; height: 20px; }
+
+/* Аккаунт: круглый аватар, прижат к низу, отделён волосяной линией */
+.codex-navigation-mark {
+  position: relative;
+  margin-top: auto;
+  flex: 0 0 auto;
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: background-color .15s ease, color .15s ease;
+}
+.codex-navigation-mark:hover { background: var(--surface-hover); color: var(--text); }
+.codex-navigation-mark::before {
+  content: "";
+  position: absolute;
+  left: 50%; transform: translateX(-50%);
+  top: -15px;
+  width: 22px; height: 1px;
+  background: var(--border-2);
+}
 
 /* ---------- 2. Список сессий: простой текст, без рамок ---------- */
 .sessions-pane { background: var(--surface-1); border-right-color: var(--border); }
