@@ -191,3 +191,39 @@ question edits to that same message42. No real Telegram action, incident, model
 probe, call, conntrack repair/restart/cleanup or deployment was performed. Root
 owns final main/runtime/actual Debug Telegram and phone acceptance. Original
 admitted Detailed/request/ref/outbox remains untouched.
+
+## Review blocker: UI reset retains original Notice binding
+
+DELETE /api/autopilot/sessions now resets only enabled override on a bound
+session. The same sessions.json row retains native harness/ID/cwd and immutable
+noticeIncident; enabled is absent and policy inheritance is real. Legacy unbound
+rows still delete. Parser accepts binding-only rows, while metadata-only rows
+without a valid incident remain invalid. GET/runner status report policy, not
+session override; DELETE uses retained cwd for Codex allowlist selection. The
+semantic launcher also inherits policy when enabled is absent. PUT on/off remains
+explicit and preserves binding. No UI workaround or new registry.
+
+Focused integration RED/GREEN: real bind PUT -> DELETE -> fresh state read ->
+production runner Stop for OpenCode and Codex allowlist. Old source loses binding
+(OpenCode null row) and cwd (Codex reports inherited false). GREEN retains original
+incident, removes stale disabled override, publishes exactly one original progress,
+repeated Stop has one judge/receipt, generic notify.send==0. Repeated DELETE is
+idempotent; a later global disable is inherited and stops judgement/delivery.
+Category focused integration; expected/max 2/10s. Historical initial fixture schema
+error and the real RED are retained separately; neither is claimed GREEN.
+
+Latest published origin/main 20969f1042fc0e6ba2be4d73e1f84fd988ced29c merged into
+clean owned tree before the final run (includes published review changes beyond
+836344e). Canonical uncommitted ZCode source/tests were never touched. Final tested
+source 23c2fe469c9b917a67b77c0895bcef62c958155a. Scoped self-review PASS: four
+production files plus one regression; prior progress/outbox and native fences unchanged.
+
+Build + five selected files, 14/14 PASS: new reset2, legacy state2/http3/runner6,
+existing coupled Notice1. Notice peer stays frozen2c54bd8; one original message/card
+proof passed. Fast unit and focused integration expected/max combined 6/15s; actual
+tests6.73s. Command39.400s, setup-through-cleanup44.859s. All executed RED/setup/
+GREEN/release checks in this fix including setup79.050s (<180s). Existing CPU1/
+max2GiB/tasks128, one test worker/pools<=2; peak593915904 bytes, swap/OOM0, cleanup
+PASS, source pins unchanged. No broad128/58 rerun, nightly, restart or deployment.
+Manifest/hash/command/native result/log: .tmp/incident-reset-release/. Root integrates
+this ready branch with paired Notice2c54 and owns runtime/live consumer acceptance.
