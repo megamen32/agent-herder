@@ -463,7 +463,11 @@ export class HermesAdapter implements HarnessAdapter {
     endpoint.pathname = "/v1/agent-resume/task"; endpoint.search = ""; endpoint.hash = "";
     const response = await fetch(endpoint, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(3_000), redirect: "error" });
     if (!response.ok) throw new Error("Hermes task ingress rejected request");
-    return await response.json() as JsonObject;
+    const data = await response.json() as JsonObject;
+    // Plugin reports unknown effective model as null; AgentSession/MCP use an optional string.
+    const session = data.session as JsonObject | undefined;
+    if (session?.model === null) delete session.model;
+    return data;
   }
 
   async stopSession(id: string): Promise<ControlResult> {

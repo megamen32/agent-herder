@@ -163,3 +163,13 @@ CPU1/RAM2GiB/tasks128/swap0/OOM0; peak579252224bytes, cleanup PASS. Broad suite
 побайтно неизменны во время checks; официальный updater остаётся runtime owner.
 Published main774eebf действительно merge ancestor, foreign UI diff пуст.
 Final source/dist manifest: `.tmp/hermes-effective-model-final/build-source-manifest.json`.
+
+Final model-schema delta: unknown plugin model:null нормализуется adapter в
+отсутствующее optional AgentSession.model; MCP z.string().optional не получает
+null и selected не подставляется. Адресный regression1/1 PASS (7 других tests
+отфильтрованы, не заявлены заново) + полный production build39.450s executable,
+43.225s с setup. Evidence `.tmp/hermes-effective-schema-delta/`.
+Final cumulative checked coverage9 Vitest +14 Python scenarios; bounded windows
+97.939s +0.1s initial budget refusal, max180s. Peak693080064bytes/swap0/OOM0.
+Final manifest указывает именно последнюю schema-delta compiled closure и
+сохраняет ссылку на исходный failed aggregate. Только own branch dist построен.

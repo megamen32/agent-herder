@@ -8,7 +8,7 @@ import { newOrResumeNamedSession } from "../src/named-session.js";
 const key = "agent:main:telegram:group:-1004360838692:9", nativeId = "20260909_220106_70ff6a6b";
 const closes: (() => Promise<void>)[] = [];
 afterEach(async () => { await Promise.all(closes.splice(0).map(fn => fn())); });
-async function fixture(effectiveModel = "glm-5.3-flash") {
+async function fixture(effectiveModel: string | null = "glm-5.3-flash") {
   let session: any, generation=0; const inputs = new Map<string, any>(); const bodies: any[] = [];
   const server = createServer(async (req, res) => {
     expect(req.url).toBe("/v1/agent-resume/task"); expect(req.headers.authorization).toBe("Bearer existing-protected-token");
@@ -100,4 +100,14 @@ it("production named runner honors selected intent while displaying actual fallb
  expect(await f.adapter.changeModel(key,"glm-5.3-flash")).toEqual({ok:true});
  expect(await f.adapter.changeModel(key,"MiniMax-M3")).toMatchObject({ok:false});
  expect(f.bodies.filter(v=>v.op==="send")).toHaveLength(1);expect(f.spawnJob).not.toHaveBeenCalled();
+});
+
+it("keeps unknown effective model valid for the optional AgentSession/MCP model field",async()=>{
+ const f=await fixture(null);
+ const request={harness:"hermes",name:"unknown-effective",cwd:"/tmp",message:"Read only",inputId:"model-unknown",mode:"queue" as const,model:"glm-5.3-flash"};
+ expect(await newOrResumeNamedSession(new Map([["hermes",f.adapter]]),request)).toMatchObject({ok:true,admitted:true});
+ const session=await f.adapter.getSession(key);
+ expect(session).not.toHaveProperty("model");expect(session?.meta?.selectedModel).toBe("glm-5.3-flash");
+ expect(await f.adapter.findNamedSessions("unknown-effective","/tmp")).toEqual([session]);
+ expect(f.inputs.size).toBe(1);expect(f.spawnJob).not.toHaveBeenCalled();
 });
