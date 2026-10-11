@@ -325,9 +325,13 @@ default launch path. Herder advances down the list only after a definite
 pre-admission failure (`unavailable`, `quota_exhausted`,
 `pre_admission_rejected`). An accepted launch and an unknown admission both stop
 the chain, so a semantic repair failure, a pending human answer or an ambiguous
-admission can never produce a second executor. When the project already has a
-live session, the resolver resumes it by id or returns an explicit `handoff`
-request; it never clones a running session silently.
+admission can never produce a second executor. `POST /api/automation/project-launch` is the single consumer that performs the
+launch: it walks the route, records every attempt with a stable native input id
+in `project-launch-attempts.json`, and reports the selected harness plus a
+human-readable routing reason. When the project already has a live session on
+another harness it returns `mode: "handoff_required"` for the caller to use the
+existing context-preserving handoff; it never clones a running session
+silently.
 
 Restart continuation settings are available at `GET/PUT
 /api/session-autostart` and `GET/PUT/DELETE

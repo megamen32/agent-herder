@@ -28,7 +28,7 @@ describe("native MCP human question and resolve", () => {
       return { status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-resume://opencode/1", idempotency_key: request.idempotency_key };
     };
     const server = new McpServer({ name: "human-request-fixture", version: "1.0.0" });
-    registerHumanRequestTools(server, registry, { humanResume, questionDelivery: { async send() {} } });
+    registerHumanRequestTools(server, registry, { humanResume });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: "human-request-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
@@ -65,7 +65,7 @@ describe("native MCP human question and resolve", () => {
     const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
     const invocations: ResumeTransportRequest[] = [];
     const server = new McpServer({ name: "human-request-hermes-fixture", version: "1.0.0" });
-    registerHumanRequestTools(server, registry, { questionDelivery: { async send() {} }, humanResume: async (request) => {
+    registerHumanRequestTools(server, registry, { humanResume: async (request) => {
       invocations.push(request);
       return { status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-herder://hermes/1", idempotency_key: request.idempotency_key };
     } });
@@ -96,7 +96,7 @@ describe("native MCP human question and resolve", () => {
     cleanups.push(() => rm(root, { recursive: true, force: true }));
     const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
     const server = new McpServer({ name: "human-request-hermes-fixture", version: "1.0.0" });
-    registerHumanRequestTools(server, registry, { questionDelivery: { async send() {} }, humanResume: async (request) => ({ status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-herder://hermes/1", idempotency_key: request.idempotency_key }) });
+    registerHumanRequestTools(server, registry, { humanResume: async (request) => ({ status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-herder://hermes/1", idempotency_key: request.idempotency_key }) });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: "human-request-hermes-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });

@@ -7,7 +7,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { HumanRequestRegistry } from "../src/human-request/index.js";
-import { askHuman, type HumanQuestionDelivery } from "../src/human-request/notice-delivery.js";
+import { askHuman } from "../src/human-request/question-binding.js";
 import { registerHumanRequestTools } from "../src/mcp/human-request-tools.js";
 import { createWebServer } from "../src/web/server.js";
 import type { AgentSession, HarnessAdapter } from "../src/types/index.js";
@@ -30,10 +30,6 @@ async function tempRoot(): Promise<string> {
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   return root;
 }
-
-const questionDelivery: HumanQuestionDelivery = {
-  async send(payload) { notices.push(payload as unknown as Record<string, unknown>); },
-};
 
 const codexSession: AgentSession = {
   id: "thread-incident",
@@ -63,55 +59,60 @@ function codexAdapter(delivered: { inputIds: Set<string> }): HarnessAdapter {
 
 async function askThroughRegistry(root: string): Promise<string> {
   const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
-  const created = await askHuman(registry, questionDelivery, {
+  const binding = await askHuman(registry, {
     kind: "user",
     target: { agent: "codex", sessionId: codexSession.id, cwd: codexSession.cwd },
     message: "Инцидент требует решения человека: продолжить исправление или откатить?",
     choices: [{ choiceId: "continue", label: "Продолжить исправление" }, { choiceId: "rollback", label: "Откатить изменение" }],
-    notify: { project: "agent-herder", recipient: "me", kind: "ask.user", severity: "high", title: "Нужно решение человека" },
   });
-  return created.requestId;
+  return binding.request_id;
 }
 
-describe("asking a human through the delivered-question seam", () => {
-  it("delivers a real card with the request identity and the offered choices", async () => {
-    const root = await tempRoot();
-    const requestId = await askThroughRegistry(root);
-
-    expect(notices).toHaveLength(1);
-    expect(notices[0]).toMatchObject({
-      schema: "notify.event.v1",
-      human_request_id: requestId,
-      dedup_key: `human-request:${requestId}`,
-      idempotency_key: `human-request:${requestId}`,
-      event_type: "ask.user.requested",
-      title: "Нужно решение человека",
-      choices: [
-        { choice_id: "continue", label: "Продолжить исправление" },
-        { choice_id: "rollback", label: "Откатить изменение" },
-      ],
-    });
-    expect(String(notices[0]?.body)).toContain("требует решения человека");
-  });
-
-  it("reports a delivery failure instead of leaving a question nobody received", async () => {
+describe("asking a human through the single question-binding seam", () => {
+  it("returns one binding with the exact native target, message and choices", async () => {
     const root = await tempRoot();
     const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
 
-    await expect(askHuman(registry, { async send() { throw new Error("Notice offline"); } }, {
+    const binding = await askHuman(registry, {
       kind: "user",
       target: { agent: "codex", sessionId: codexSession.id, cwd: codexSession.cwd },
-      message: "Вопрос без доставки",
-      notify: { project: "agent-herder", recipient: "me", kind: "ask.user", severity: "high", title: "Вопрос" },
-    })).rejects.toThrow("Notice offline");
-    // The durable record stays, so a retry reuses the same canonical key.
-    expect(await registry.list("pending")).toHaveLength(1);
-    await expect(askHuman(registry, questionDelivery, {
+      message: "Инцидент требует решения человека: продолжить исправление или откатить?",
+      choices: [{ choiceId: "continue", label: "Продолжить исправление" }, { choiceId: "rollback", label: "Откатить изменение" }],
+      contextRef: "noticeplace://card/42",
+    });
+
+    // Notice creates exactly one Ask card from this binding; Herder sends none.
+    expect(notices).toHaveLength(0);
+    expect(binding).toMatchObject({
+      request_id: binding.record.requestId,
+      dedup_key: `human-request:${binding.record.requestId}`,
+      context_ref: "noticeplace://card/42",
       kind: "user",
-      target: { agent: "codex", sessionId: codexSession.id, cwd: codexSession.cwd },
-      message: "   ",
-      notify: { project: "agent-herder", recipient: "me", kind: "ask.user", severity: "high", title: "Вопрос" },
-    })).rejects.toThrow("message is required");
+      native_target: { harness: "codex", session_id: codexSession.id, cwd: codexSession.cwd },
+      question: {
+        message: "Инцидент требует решения человека: продолжить исправление или откатить?",
+        choices: [
+          { choice_id: "continue", label: "Продолжить исправление" },
+          { choice_id: "rollback", label: "Откатить изменение" },
+        ],
+      },
+      answer: { mcp_tool: "human_request_resolve", completion_path: "/internal/human-requests/ask-user-completion" },
+    });
+    expect(binding.record).toMatchObject({ status: "pending", continuation: "resume" });
+    expect(await registry.get(binding.request_id)).toMatchObject({ status: "pending" });
+  });
+
+  it("rejects an unusable question before any record is created", async () => {
+    const root = await tempRoot();
+    const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
+
+    await expect(askHuman(registry, { kind: "user", target: { agent: "codex", sessionId: codexSession.id, cwd: codexSession.cwd }, message: "   " }))
+      .rejects.toThrow("message is required");
+    await expect(askHuman(registry, {
+      kind: "user", target: { agent: "codex", sessionId: codexSession.id, cwd: codexSession.cwd }, message: "Вопрос",
+      choices: [{ choiceId: "only", label: "Один" }],
+    })).rejects.toThrow("2 to 4 choices");
+    expect(await registry.list()).toHaveLength(0);
   });
 
   it("reconciles a repeated answer through the production callback wiring", async () => {
@@ -125,7 +126,6 @@ describe("asking a human through the delivered-question seam", () => {
       adapters,
       converter: { async convert() { throw new Error("unused"); } },
       humanRequests: registry,
-      questionDelivery,
       sessionObservationManagedExternally: true,
     });
     servers.push(server);
@@ -164,7 +164,6 @@ describe("asking a human through the delivered-question seam", () => {
     // No injected query: the production wiring inside registerHumanRequestTools
     // must reconcile through native admission for a Codex target.
     registerHumanRequestTools(server, registry, {
-      questionDelivery,
       humanResume: async (request) => ({ status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-herder://codex/receipt", idempotency_key: request.idempotency_key }),
       queryReceipt: async (request) => {
         const inputId = `herder-resume-${(await import("node:crypto")).createHash("sha256").update(request.idempotency_key ?? request.result_ref).digest("hex").slice(0, 32)}`;
@@ -198,7 +197,6 @@ describe("asking a human through the delivered-question seam", () => {
       adapters,
       converter: { async convert() { throw new Error("unused"); } },
       humanRequests: new HumanRequestRegistry(join(root, "human-requests.json")),
-      questionDelivery,
       sessionObservationManagedExternally: true,
     });
     servers.push(server);
@@ -206,18 +204,16 @@ describe("asking a human through the delivered-question seam", () => {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("server did not bind");
     const endpoint = `http://127.0.0.1:${address.port}/internal/human-requests`;
-    const notify = { project: "agent-herder", recipient: "me", kind: "ask.user", severity: "high", title: "Нужно решение человека" };
-
     const unknownSession = await fetch(endpoint, {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ kind: "user", harness: "codex", session_id: "thread-missing", message: "Вопрос", notify }),
+      body: JSON.stringify({ kind: "user", harness: "codex", session_id: "thread-missing", message: "Вопрос" }),
     });
     expect(unknownSession.status).toBe(404);
     expect(notices).toHaveLength(0);
 
     const wrongWorkspace = await fetch(endpoint, {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ kind: "user", harness: "codex", session_id: codexSession.id, cwd: resolve("/workspace/other"), message: "Вопрос", notify }),
+      body: JSON.stringify({ kind: "user", harness: "codex", session_id: codexSession.id, cwd: resolve("/workspace/other"), message: "Вопрос" }),
     });
     expect(wrongWorkspace.status).toBe(404);
     expect(notices).toHaveLength(0);
@@ -228,14 +224,18 @@ describe("asking a human through the delivered-question seam", () => {
         kind: "user", harness: "codex", session_id: codexSession.id, cwd: codexSession.cwd,
         message: "Инцидент требует решения человека",
         choices: [{ choiceId: "continue", label: "Продолжить" }, { choiceId: "rollback", label: "Откатить" }],
-        notify,
       }),
     });
     expect(created.status).toBe(201);
-    const body = await created.json() as { request_id: string; human_request_id: string; dedup_key: string };
-    expect(body.human_request_id).toBe(body.request_id);
+    const body = await created.json() as {
+      request_id: string; dedup_key: string; native_target: { harness: string; session_id: string; cwd: string };
+      question: { message: string; choices: Array<{ choice_id: string }> };
+    };
     expect(body.dedup_key).toBe(`human-request:${body.request_id}`);
-    expect(notices).toHaveLength(1);
-    expect(notices[0]).toMatchObject({ human_request_id: body.request_id });
+    expect(body.native_target).toEqual({ harness: "codex", session_id: codexSession.id, cwd: codexSession.cwd });
+    expect(body.question.message).toBe("Инцидент требует решения человека");
+    expect(body.question.choices.map((choice) => choice.choice_id)).toEqual(["continue", "rollback"]);
+    // One binding, no Herder-side card: Notice posts it once to /v1/human-requests.
+    expect(notices).toHaveLength(0);
   });
 });

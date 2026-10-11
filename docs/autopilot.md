@@ -504,29 +504,39 @@ record is appended, with the previous canonical file kept as
 `AGENT_HERDER_LEGACY_AUTOPILOT_STATE_DIR` to merge two populated directories
 explicitly; with only the canonical directory pinned, nothing is adopted.
 
-## Asking a human through the delivered-question seam
+## One question path: Herder binds, Notice shows, Herder resumes
 
-Creating registry metadata is not asking a human. The supported create seam
-records the question durably and delivers its card through the existing
-NoticePlace producer, under the registry's canonical key:
-
-```text
-MCP human_request_create {kind, harness, sessionId, cwd, message, choices?, notify{...}}
-POST /internal/human-requests   {kind, harness, session_id, cwd, message, choices?, notify{...}}
-```
-
-Both return the same `request_id`/`human_request_id`. The internal endpoint
-verifies the exact native session (id plus canonical workspace) before binding
-and answers `404` for a missing or foreign session. The card carries:
+There is exactly one question card. Agent Herder never sends a generic event
+card for a human question: it creates the durable request and returns the
+binding that Notice needs for its own Ask card.
 
 ```text
-human_request_id, dedup_key = human-request:{requestId},
-idempotency_key = human-request:{requestId}, event_type = ask.user.requested
+1. MCP human_request_create {kind, harness, sessionId, cwd?, message, choices?}
+   or POST /internal/human-requests {kind, harness, session_id, cwd, message, choices?}
+2. Notice: POST /v1/human-requests   (once, with the binding below)
+3. Answer -> Herder human_request_resolve, or
+            POST /internal/human-requests/ask-user-completion
 ```
 
-The answer resumes that exact session once, through `human_request_resolve` or
-`POST /internal/human-requests/ask-user-completion`. A card redelivery updates
-the same card instead of creating a second question.
+The binding returned by step 1:
+
+```json
+{
+  "request_id": "…",
+  "native_target": { "harness": "opencode", "session_id": "ses_…", "cwd": "/workspace/incident" },
+  "dedup_key": "human-request:…",
+  "kind": "user",
+  "question": { "message": "…", "choices": [{ "choice_id": "continue", "label": "…" }] },
+  "answer": { "mcp_tool": "human_request_resolve", "completion_path": "/internal/human-requests/ask-user-completion" }
+}
+```
+
+The internal endpoint verifies the exact native session (id plus canonical
+workspace) before binding and answers `404` for a missing or foreign session.
+The source session, the message and the choices therefore land in the same
+Notice question row, and the answer of that row resumes the exact bound session
+once. Calling both create paths for one question is the only way to get two
+cards.
 
 A NoticePlace consumer that launches work for a project reads
 `GET /api/automation/launch-policy` and uses `projectRoutes[project]` when the
@@ -536,14 +546,15 @@ project is configured there:
 { "kind": "launch", "harness": "opencode", "model": "minimax-coding-plan/MiniMax-M3.1-Flash-Preview", "mode": "create" }
 ```
 
-A route may declare the identifiers real cards carry, so the settings match the
-card and not only the checkout path:
+Documented presets (`PROJECT_ROUTE_PRESETS`, applied only when an operator saves
+them) use the verified real roots and the identifiers real cards carry:
 
 ```json
 "/home/roomhacker/PycharmProjects/TelegramAuto": {
   "harnesses": ["opencode", "zcode"],
   "aliases": ["tg-commentator", "autotelegramviews", "canonicalTelegramAuto"]
-}
+},
+"/home/roomhacker/PycharmProjects/AutoFindClient": { "harnesses": ["codex", "zcode", "opencode"] }
 ```
 
 Aliases and canonical paths match case-insensitively. A project without a
@@ -554,3 +565,42 @@ a confirmed match.
 (OpenCode with `minimax-coding-plan/MiniMax-M3.1-Flash-Preview`); `kind:
 "exhausted"` with reason `accepted` or `admission_unknown` means an executor
 already exists or may exist and no fallback is allowed.
+
+## One project launch consumer
+
+`POST /api/automation/project-launch` is the only place a project launch runs.
+A Notice consumer must call it instead of choosing a harness on its own.
+
+```json
+POST /api/automation/project-launch
+{ "project": "tg-commentator", "cwd": "/abs/workspace", "message": "…", "operation_id": "…" }
+```
+
+```json
+200 {
+  "operation_id": "…",
+  "project": "/home/roomhacker/PycharmProjects/TelegramAuto",
+  "outcome": "accepted",
+  "selected_harness": "zcode",
+  "model": "account:zai-individual-coding-plan/GLM-5.3-Flash$high",
+  "mode": "create",
+  "session_id": "zcode-1",
+  "routing_reason": "OpenCode не запустилась до подтверждения приёма: quota exhausted. Выбираем следующую среду маршрута. Среда ZCode приняла запуск.",
+  "attempts": [{ "harness": "opencode", "outcome": "pre_admission_rejected", "input_id": "herder-launch:opencode:…" }]
+}
+```
+
+- `attempts` is the durable ordered log at
+  `project-launch-attempts.json` in the Autopilot state directory. It is the
+  authority: a repeated `operation_id` is answered from that log and touches no
+  harness again.
+- Only `pre_admission_rejected` (a definite pre-admission failure such as a
+  quota or an unavailable runtime) advances to the next harness of the route.
+- `accepted`, `admission_unknown` and `human_hold` stop the chain. A pending
+  human answer or a semantic repair failure is never a launch outcome, so no
+  second executor can appear.
+- `mode: "handoff_required"` means the project already has a live session on
+  another harness. The caller must use the existing context-preserving handoff;
+  Herder does not clone a running session.
+- `409` with `outcome: "no_harness"` means the route cannot launch: no allowed
+  runtime, no route entry left, or an explicit harness outside the route.

@@ -136,6 +136,24 @@ export function canonicalProjectKey(project: string): string {
   return typeof project === "string" ? project.replace(/\/+$/, "") : "";
 }
 
+/**
+ * Documented starting values for the known projects.
+ *
+ * They are presets, not defaults: a preset is applied only when an operator
+ * saves it, so every unconfigured project keeps the default launch path. The
+ * roots are the verified real checkouts, and the aliases are the identifiers
+ * real Notice cards carry.
+ */
+export const PROJECT_ROUTE_PRESETS: Readonly<Record<string, ProjectLaunchRoute>> = {
+  "/home/roomhacker/PycharmProjects/TelegramAuto": {
+    harnesses: ["opencode", "zcode"],
+    aliases: ["tg-commentator", "autotelegramviews", "canonicalTelegramAuto"],
+  },
+  "/home/roomhacker/PycharmProjects/AutoFindClient": {
+    harnesses: ["codex", "zcode", "opencode"],
+  },
+};
+
 export type AutomationLaunchPolicyLoad =
   | { kind: "absent" }
   | { kind: "valid"; policy: AutomationLaunchPolicy }

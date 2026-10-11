@@ -11,8 +11,8 @@ import { LineageStore } from "../lineage-store.js";
 import { SessionNotFoundError, SessionSupervisor } from "../session-supervisor.js";
 import type { AgentSession, HarnessAdapter, SessionDetails } from "../types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "../session-convert.js";
-import { askHuman, HumanRequestLockUnavailableError, HumanRequestRegistry, resumeHumanRequestOnce, type AskHumanInput } from "../human-request/index.js";
-import type { HumanQuestionDelivery } from "../human-request/notice-delivery.js";
+import { askHuman, HumanRequestLockUnavailableError, HumanRequestRegistry, resumeHumanRequestOnce } from "../human-request/index.js";
+import type { ProjectLaunchDispatcher } from "../automation/project-launch-dispatch.js";
 import { buildSessionProgress } from "../health-progress.js";
 import { healthModelForHarness, normalizeHealthExecution } from "../health-remediation.js";
 import { convertHermesExport } from "../hermes-conversion.js";
@@ -49,8 +49,8 @@ export interface WebDependencies {
   choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   /** Canonical human-answer resume shared with the native MCP resolve surface. */
   humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
-  /** Existing NoticePlace producer port for a new human question. */
-  questionDelivery?: HumanQuestionDelivery;
+  /** Ordered per-project harness routes with their durable attempt log. */
+  projectLaunchDispatch?: ProjectLaunchDispatcher;
   choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   autopilotPolicyStore?: AutopilotPolicyStore;
   autopilotSessionStore?: AutopilotSessionStore;
@@ -616,7 +616,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
     try {
       if (dependencies.fleetHttpGuard && await dependencies.fleetHttpGuard(request, response)) return;
       if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.questionDelivery, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -688,7 +688,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, questionDelivery?: HumanQuestionDelivery, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (url.pathname.startsWith("/api/quota-lens") && request.method === "GET") {
     const body = await handleQuotaLensRequest(url.pathname, url.searchParams);
@@ -883,6 +883,25 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 400, { error: (error as Error).message });
     }
   }
+  if (url.pathname === "/api/automation/project-launch" && request.method === "POST") {
+    if (!projectLaunchDispatch) return sendJson(response, 503, { error: "Project launch routing is not configured" });
+    const body = await readJson(request);
+    try {
+      const result = await projectLaunchDispatch({
+        project: typeof body.project === "string" ? body.project : "",
+        cwd: typeof body.cwd === "string" ? body.cwd : "",
+        message: typeof body.message === "string" ? body.message : "",
+        ...(typeof body.harness === "string" ? { harness: body.harness as HarnessType } : {}),
+        ...(typeof body.model === "string" ? { model: body.model } : {}),
+        ...(body.mode === "queue" ? { mode: "queue" as const } : {}),
+        ...(typeof body.operation_id === "string" ? { operationId: body.operation_id } : {}),
+        ...(typeof body.name === "string" ? { name: body.name } : {}),
+      });
+      return sendJson(response, result.outcome === "no_harness" ? 409 : 200, result);
+    } catch (error) {
+      return sendJson(response, 400, { error: (error as Error).message });
+    }
+  }
   if (url.pathname === "/api/session-autostart" && (request.method === "GET" || request.method === "PUT")) {
     if (!sessionAutostartStore) return sendJson(response, 503, { error: "Session autostart settings are disabled" });
     if (request.method === "GET") return sendJson(response, 200, await sessionAutostartStore.getSettings());
@@ -1071,23 +1090,22 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
   if (request.method === "POST" && url.pathname === "/internal/human-requests") {
     if (!humanRequests) return sendJson(response, 503, { error: "Human Request registry is disabled" });
-    if (!questionDelivery) return sendJson(response, 503, { error: "Notice delivery for human questions is not configured" });
     const body = await readJson(request);
     try {
-      const created = await askHuman(humanRequests, questionDelivery, {
+      // One question binding for exactly one Notice Ask card. Herder never sends
+      // a second card of its own.
+      const binding = await askHuman(humanRequests, {
         kind: body.kind === "secret" ? "secret" : "user",
         target: await verifiedQuestionTarget(body, adapters),
         message: typeof body.message === "string" ? body.message : "",
         ...(Array.isArray(body.choices) ? { choices: body.choices as Array<{ choiceId: string; label: string }> } : {}),
         ...(typeof body.context_ref === "string" ? { contextRef: body.context_ref } : {}),
-        notify: body.notify as AskHumanInput["notify"],
       });
+      const { record, ...question } = binding;
       return sendJson(response, 201, {
-        request_id: created.requestId,
-        human_request_id: created.requestId,
-        status: created.status,
-        continuation: created.continuation,
-        dedup_key: created.notify?.dedupKey,
+        ...question,
+        status: record.status,
+        continuation: record.continuation,
       });
     } catch (error) {
       const reason = (error as Error).message;

@@ -17,9 +17,11 @@ export {
 } from "./registry.js";
 export {
   askHuman,
+  nativeTarget,
   type AskHumanInput,
-  type HumanQuestionDelivery,
-} from "./notice-delivery.js";
+  type HumanQuestionBinding,
+  type HumanQuestionNativeTarget,
+} from "./question-binding.js";
 export {
   humanRequestResumeTarget,
   resumeHumanRequestOnce,

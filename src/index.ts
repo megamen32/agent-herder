@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { createFleetRecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
 
 import { startSelectedStdio } from "./mcp/transport-selection.js";
@@ -17,8 +18,9 @@ import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopil
 import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { AutopilotSessionStore } from "./autopilot/session-store.js";
 import { AutomationLaunchPolicyStore } from "./automation-launch-policy.js";
+import { dispatchProjectLaunch, namedSessionRunner, ProjectLaunchAttemptLog, type ProjectLaunchDispatcher } from "./automation/project-launch-dispatch.js";
 import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
-import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore, type NoticeSeverity } from "./autopilot/index.js";
+import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore } from "./autopilot/index.js";
 import { acquireLock } from "./autopilot-hook.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
 import { SessionSupervisor } from "./session-supervisor.js";
@@ -29,7 +31,6 @@ import { acquireAgentHerderSingleton } from "./singleton.js";
 import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
 import { boundResumeReceiptQuery, createWebServer, resumeSelectedTarget } from "./web/server.js";
 import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "./resume-transport.js";
-import type { HumanQuestionDelivery } from "./human-request/notice-delivery.js";
 import { createConfiguredFleetApiHandler, createManagedFleetHttpGuard, isManagedFleetNode } from "./web/fleet-wiring.js";
 import { registerFleetNodeTools } from "./mesh/fleet-node.js";
 import { createConfiguredBrowserWakeService } from "./browser-wake.js";
@@ -489,7 +490,6 @@ function registerTools(
   events: HerderEventBus = herderEvents,
   humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>,
   humanResumeQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>,
-  questionDelivery?: HumanQuestionDelivery,
 ) {
   registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes });
@@ -497,7 +497,6 @@ function registerTools(
   // A human answer resumes its exact native session exactly once through the
   // same durable admission the internal completion endpoint uses.
   registerHumanRequestTools(server, humanRequests, {
-    questionDelivery,
     humanResume: humanResume ?? (async (request) => new AgentResumeClient().resume(request)),
     queryReceipt: humanResumeQuery ?? ((request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters)),
   });
@@ -505,19 +504,6 @@ function registerTools(
   registerSessionTools(server, { adapters, jobs, events });
   registerHarnessMeshTools(server, { adapters });
   registerFleetNodeTools(server, { adapters });
-}
-
-/** Build the existing NoticePlace producer port for human questions. */
-function createHumanQuestionDelivery(env: NodeJS.ProcessEnv): HumanQuestionDelivery {
-  const eventUrl = env.NOTIFY_CENTER_EVENT_URL?.trim();
-  const token = env.NOTIFY_CENTER_TOKEN?.trim();
-  if (!eventUrl || !token) throw new Error("NOTIFY_CENTER_EVENT_URL and NOTIFY_CENTER_TOKEN are required to ask a human a question");
-  const sink = createNoticePlaceSink({ eventUrl, token });
-  return {
-    send: async (payload) => {
-      await sink.send({ ...payload, severity: payload.severity as NoticeSeverity });
-    },
-  };
 }
 
 // ===== Main =====
@@ -539,8 +525,6 @@ export interface AgentHerderMcpServerOptions {
   humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   /** Durable provider receipt lookup for an already admitted human answer. */
   humanResumeQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
-  /** Existing NoticePlace producer port for a new human question. */
-  questionDelivery?: HumanQuestionDelivery;
 }
 
 /** Build one Agent Herder MCP server over process-owned CDP archive state. */
@@ -584,7 +568,6 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     events,
     options.humanResume,
     options.humanResumeQuery,
-    options.questionDelivery,
   );
   return server;
 }
@@ -719,10 +702,25 @@ async function main() {
   process.once("exit", stopUnfinishedSessionLauncher);
   // One human answer resumes its exact native session once, from every MCP surface.
   const humanResume = (request: ResumeTransportRequest) => resumeSelectedTarget(request, processSupervisor, "human", true);
-  const questionDelivery = createHumanQuestionDelivery(process.env);
+  const projectLaunchAttempts = new ProjectLaunchAttemptLog(join(autopilotStateDir, "project-launch-attempts.json"));
+  // The one project launch consumer: an ordered route, a durable attempt log and
+  // the existing named-session seam as the only place that creates an executor.
+  const projectLaunchDispatch: ProjectLaunchDispatcher = async (request) => {
+    const loaded = await automationLaunchPolicyStore.load();
+    if (loaded.kind !== "valid") throw new Error(loaded.kind === "invalid" ? `Launch policy is invalid: ${loaded.error}` : "Launch policy is not configured");
+    return await dispatchProjectLaunch(
+      {
+        policy: loaded.policy,
+        ...request,
+        name: request.name ?? `project-launch-${createHash("sha256").update(`${request.project}\0${request.operationId ?? ""}`).digest("hex").slice(0, 12)}`,
+      },
+      projectLaunchAttempts,
+      namedSessionRunner(adapters, request.name ?? "project-launch"),
+    );
+  };
   const humanResumeQuery = (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters);
-  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery, questionDelivery });
-  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, questionDelivery });
+  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery });
+  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery });
   const webPort = process.env.AGENT_HERDER_WEB_PORT;
   if (webPort) {
     const host = process.env.AGENT_HERDER_WEB_HOST || "127.0.0.1";
@@ -737,7 +735,7 @@ async function main() {
       humanRequests,
       choiceRegistry,
       humanResume: (request: ResumeTransportRequest) => resumeSelectedTarget(request, processSupervisor, "human", true),
-      questionDelivery,
+      projectLaunchDispatch,
       choiceQuery: (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters),
       adapterRegistry,
       mcpServerFactory: createHttpMcpServer,

@@ -36,7 +36,7 @@ const policy = {
       harnesses: ["opencode", "zcode"],
       aliases: ["tg-commentator", "autotelegramviews", "canonicalTelegramAuto"],
     },
-    "/home/roomhacker/agents-projects/AutoFindClient": { harnesses: ["codex", "zcode", "opencode"] },
+    "/home/roomhacker/PycharmProjects/AutoFindClient": { harnesses: ["codex", "zcode", "opencode"] },
     "/workspace/pinned": {
       harnesses: ["zcode", "opencode"],
       models: { zcode: "account:zai-individual-coding-plan/GLM-5.3-Flash$high" },
@@ -77,7 +77,7 @@ describe("per-project ordered harness routes", () => {
         harnesses: ["opencode", "zcode"],
         aliases: ["tg-commentator", "autotelegramviews", "canonicalTelegramAuto"],
       },
-      "/home/roomhacker/agents-projects/AutoFindClient": { harnesses: ["codex", "zcode", "opencode"] },
+      "/home/roomhacker/PycharmProjects/AutoFindClient": { harnesses: ["codex", "zcode", "opencode"] },
       "/workspace/pinned": {
         harnesses: ["zcode", "opencode"],
         models: { zcode: "account:zai-individual-coding-plan/GLM-5.3-Flash$high" },
@@ -142,7 +142,7 @@ describe("per-project ordered harness routes", () => {
 
   it("resumes a linked session by id and hands the context over instead of cloning", () => {
     const validated = validateAutomationLaunchPolicy(policy);
-    const project = "/home/roomhacker/agents-projects/AutoFindClient";
+    const project = "/home/roomhacker/PycharmProjects/AutoFindClient";
 
     expect(resolveProjectLaunch(validated, { project, activeSession: { harness: "codex", sessionId: "thread-42" } }))
       .toMatchObject({ kind: "launch", harness: "codex", mode: "resume", sessionId: "thread-42" });
@@ -164,7 +164,7 @@ describe("per-project ordered harness routes", () => {
     expect(resolveProjectLaunch(validated, { project: "TG-Commentator" })).toMatchObject({ kind: "launch", harness: "opencode" });
     expect(resolveProjectLaunch(validated, { project: "canonicaltelegramauto" })).toMatchObject({ kind: "launch", harness: "opencode" });
     // The AutoFindClient route keeps its own canonical path with case folding.
-    expect(resolveProjectLaunch(validated, { project: "/HOME/roomhacker/agents-projects/autofindclient" }))
+    expect(resolveProjectLaunch(validated, { project: "/HOME/roomhacker/PycharmProjects/autofindclient" }))
       .toMatchObject({ kind: "launch", harness: "codex", model: "gpt-6.1-sol" });
     // An unrelated project, including autosell, is not bound to any route.
     expect(resolveProjectLaunch(validated, { project: "/home/roomhacker/PycharmProjects/AutoSellBot" }))
@@ -185,6 +185,29 @@ describe("per-project ordered harness routes", () => {
     expect(resolveProjectLaunch(validated, { project: "/home/roomhacker/PycharmProjects/TelegramAuto/" }).kind).toBe("launch");
   });
 });
+describe("documented project route presets", () => {
+  it("uses the verified real roots and the real card identifiers", async () => {
+    const { PROJECT_ROUTE_PRESETS } = await import("../src/automation-launch-policy.js");
+    expect(PROJECT_ROUTE_PRESETS).toEqual({
+      "/home/roomhacker/PycharmProjects/TelegramAuto": {
+        harnesses: ["opencode", "zcode"],
+        aliases: ["tg-commentator", "autotelegramviews", "canonicalTelegramAuto"],
+      },
+      "/home/roomhacker/PycharmProjects/AutoFindClient": { harnesses: ["codex", "zcode", "opencode"] },
+    });
+    const validated = validateAutomationLaunchPolicy({
+      ...policy,
+      allowedHarnesses: ["opencode", "zcode", "codex"],
+      projectRoutes: { ...PROJECT_ROUTE_PRESETS },
+    });
+    expect(resolveProjectLaunch(validated, { project: "tg-commentator" })).toMatchObject({ kind: "launch", harness: "opencode" });
+    expect(resolveProjectLaunch(validated, { project: "autotelegramviews", attempted: ["opencode"], outcome: "quota_exhausted" }))
+      .toMatchObject({ kind: "launch", harness: "zcode" });
+    expect(resolveProjectLaunch(validated, { project: "/home/roomhacker/PycharmProjects/AutoFindClient" }))
+      .toMatchObject({ kind: "launch", harness: "codex", model: "gpt-6.1-sol" });
+  });
+});
+
 describe("project route editing", () => {
   it("keeps the ordered list usable and parses what the server returns", async () => {
     const ui = await import("../src/web-ui/launch-policy-settings.js");
