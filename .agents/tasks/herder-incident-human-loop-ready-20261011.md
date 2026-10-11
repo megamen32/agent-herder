@@ -98,3 +98,37 @@ Evidence: `.tmp/incident-opaque-ref-release/`. RED для legacy HTTP400 сох�
 cleanup PASS. Финальный manifest и source pins:
 `.tmp/incident-opaque-ref-main-release/`. Собственный diff к main ограничен
 validator, новым coupled regression и этим handoff; изменения Root сохранены.
+
+## Codex human callback: native admission before LLM completion
+
+`resumeSelectedTarget` использует существующий native queue ACK для Codex и
+ZCode. Для уже running Codex задаётся steer; native adapter проверяет текущий
+expectedTurnId. Exact inputId, original humanRequestedAt, cwd verification и
+stop fences сохранены. Callback не ждёт LLM completion и не подтверждает
+resumed до настоящего RPC ACK. Никакого нового transport или resolver.
+
+Новая focused integration `human-request-codex-admission`: real HTTP -> registry
+-> supervisor -> production Codex adapter -> isolated Unix WebSocket peer.
+Модельный turn остаётся running после ACK; callback завершается <1.5 секунды.
+Проверены idle/active, duplicate до и после ACK с одним native вызовом,
+exact expectedTurnId, incomplete turn receipt без replay и newer human stop.
+RED: idle callback timeout и отсутствие active steer; evidence сохранён
+в `.tmp/incident-codex-admission-red3/`. Fixture path-limit failure отдельно
+сохранён в red/red2, не считается consumer RED.
+
+Production build + четыре новых checks + пять existing resume fences: 9/9 PASS
+на merge origin/main cf6a890, release command 39.085 секунды, включая setup
+менее 45 секунд. Категория focused integration, expected/max tests 5/10 секунд,
+фактически 5.22. Existing bounded runner CPU1/max2GiB/tasks128, pools <=2;
+peak 562274304 bytes, swap/OOM 0, native cleanup PASS. Scoped review PASS:
+production diff только options существующего resumeSelectedTarget; pins без
+изменений. Manifest, result и log: `.tmp/incident-codex-admission-release/`.
+128 baseline checks повторно не запускались.
+
+Cheap read-only inspection AgentResumeClient: OpenCode/Claude entrypoint
+запускает detached CLI, Hermes wake вызывает finite gateway admission;
+ожидание полного LLM turn в этих inspected seams не подтверждено. Ничего
+вне owned worktree не изменено. Runtime100 build/restart/deploy только Root;
+его canonical image/autocontinue/ZCode/UI WIP не тронут. Исходный Detailed
+request уже admitted: transport/reconcile/stop/interrupt не вызывались;
+query-only settlement и настоящий live consumer acceptance остаются Root.
