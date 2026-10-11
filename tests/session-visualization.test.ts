@@ -28,10 +28,12 @@ describe("canonical session visualization", () => {
       return nodes.get(id);
     } };
     document.getElementById("session-data").textContent = html.match(/<script id="session-data" type="application\/json">([\s\S]*?)<\/script>/)![1];
-    const state = runInNewContext(script + '\nshowMessage("m2"); $("time").value=0; render(); ({selectedMessage, detail:$("inspect").innerHTML});', { document, setInterval, clearInterval });
+    const state = runInNewContext(script + '\nshowMessage("m2"); $("time").value=0; render(); ({selectedMessage, detail:$("inspect").innerHTML, summary:$("summary").innerHTML});', { document, setInterval, clearInterval });
     expect(state.selectedMessage).toBeNull();
     expect(state.detail).not.toContain("Future answer");
     expect(state.detail).toContain("Выберите запись");
+    expect(state.summary).toContain("1</b> сообщение");
+    expect(state.summary).toContain("1 сессия");
     const steps = runInNewContext(script + '\n$("back").onclick(); const first=selectedTs; $("back").onclick(); const second=selectedTs; $("forward").onclick(); ({first,second,next:selectedTs});', { document, setInterval, clearInterval });
     expect(steps.first).toBe(Date.parse("2026-08-18T12:01:00.000Z"));
     expect(steps.second).toBe(Date.parse("2026-08-18T12:00:00.000Z"));
