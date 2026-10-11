@@ -92,3 +92,9 @@ existing bounded runner; peak 612012032 bytes, swap/OOM 0, native cleanup PASS.
 Evidence: `.tmp/incident-opaque-ref-release/`. RED для legacy HTTP400 сохранён.
 128 baseline checks не повторялись. Существующая live question/outbox не читалась
 и не изменялась; её definitive-400 reconciliation и runtime rollout выполняет Root.
+
+После совместимого merge актуального `origin/main` 72057b9 выполнены build и те
+же 6 focused checks: PASS за 33.548 секунды, peak 570949632 bytes, swap/OOM 0,
+cleanup PASS. Финальный manifest и source pins:
+`.tmp/incident-opaque-ref-main-release/`. Собственный diff к main ограничен
+validator, новым coupled regression и этим handoff; изменения Root сохранены.
