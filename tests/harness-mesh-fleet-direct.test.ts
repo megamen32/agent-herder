@@ -18,7 +18,7 @@ import {isDirectOwnerRequest,createManagedFleetHttpGuard,createConfiguredFleetAp
 import {FleetCabinetService} from '../src/mesh/fleet-service.js';
 import {registerFleetNodeTools} from '../src/mesh/fleet-node.js';
 const peer={hostId:'roomhacker-server-88',sshHost:'192.168.2.75',nativeUser:'roomhacker',port:18791,python:'/usr/bin/python3'};
-beforeEach(async()=>{state.home=await mkdtemp(join(process.env.TMPDIR!,'direct-'));state.spawns=[];state.reply={tools:[]};state.mode='ok';state.auth=false;state.host='server-44';state.stderr='';});
+beforeEach(async()=>{const {tmpdir}=await vi.importActual<typeof import('node:os')>('node:os');state.home=await mkdtemp(join(tmpdir(),'direct-'));state.spawns=[];state.reply={tools:[]};state.mode='ok';state.auth=false;state.host='server-44';state.stderr='';});
 afterEach(async()=>{await rm(state.home,{recursive:true,force:true});vi.useRealTimers();});
 describe('owner direct route local logic only',()=>{
  // Focused integration expected1s/max3s: roaming Mac must use the authenticated canonical reverse route, never its LAN IP.
