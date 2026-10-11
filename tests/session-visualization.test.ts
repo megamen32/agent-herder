@@ -34,10 +34,11 @@ describe("canonical session visualization", () => {
     expect(state.detail).toContain("Выберите запись");
     expect(state.summary).toContain("1</b> сообщение");
     expect(state.summary).toContain("1 сессия");
-    const steps = runInNewContext(script + '\n$("back").onclick(); const first=selectedTs; $("back").onclick(); const second=selectedTs; $("forward").onclick(); ({first,second,next:selectedTs});', { document, setInterval, clearInterval });
+    const steps = runInNewContext(script + '\n$("back").onclick(); const first=selectedTs; $("back").onclick(); const second=selectedTs; $("forward").onclick(); ({first,second,next:selectedTs,detail:$("inspect").innerHTML});', { document, setInterval, clearInterval });
     expect(steps.first).toBe(Date.parse("2026-08-18T12:01:00.000Z"));
     expect(steps.second).toBe(Date.parse("2026-08-18T12:00:00.000Z"));
     expect(steps.next).toBe(steps.first);
+    expect(steps.detail).toContain("2 сообщения до выбранного момента");
   });
 
   it.each(["opencode", "claude", "codex", "hermes", "zcode", "fast-agent"] as const)("renders %s without a harness-specific reader", (harness) => {
