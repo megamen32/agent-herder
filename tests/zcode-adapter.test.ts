@@ -1977,3 +1977,15 @@ it("recovers current state after a historical message source fails native valida
   expect(client.calls.some(call=>["createSession","sendPrompt","sendConversationCommandV4"].includes(call.method))).toBe(false);
  }finally{await adapter.dispose();}
 });
+
+// Fast unit expected1s/max5s: model chip must reflect current native settings after selection.
+it("shows selected native model settings rather than stale session metadata", async()=>{
+ class SelectedModelClient extends FakeClient{
+  override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   if(method==="readSession")return {...snapshot,settings:{...snapshot.settings,model:{current:{providerId:"zai",modelId:"GLM-5.3-Flash",options:{reasoningLevel:"high"}}}}};
+   return super.call(channel,method,args);
+  }
+ }
+ const adapter=new ZcodeAdapter({cwd:"/workspace",client:new SelectedModelClient()});
+ try{await adapter.init();expect((await adapter.getSession("session-1"))?.model).toBe("zai/GLM-5.3-Flash$high");}finally{await adapter.dispose();}
+});

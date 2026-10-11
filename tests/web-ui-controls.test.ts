@@ -37,7 +37,7 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain("setSessions(nextSessions);");
     expect(main).toContain('aria-label="Прокрутить к последним"');
     expect(main).toContain('aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}');
-    expect(main).toContain('{isResumeMode ? "▶" : "↑"}');
+    expect(main).toContain('{isResumeMode ? "Продолжить ▶" : "↑"}');
     expect(main).toContain("details?.children?.length");
     expect(main).toContain('aria-label="Показывать все сессии"');
     expect(main).toContain('aria-label={`Выбрать: ${choice.label}`}');

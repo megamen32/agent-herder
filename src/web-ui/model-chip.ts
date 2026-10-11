@@ -59,3 +59,15 @@ export const requestModelChange = async (
     return { ok: false, message: `Не удалось сменить модель: ${(error as Error).message}` };
   }
 };
+/** Human-facing labels preserve distinct account routes without exposing raw IDs as the main text. */
+export const modelOptionLabel = (model: string): string => shortModelLabel(model).replace(/\$(max|high|low|enabled)$/, (_, level: string) => ` · ${({ max: "максимальное мышление", high: "высокое мышление", low: "низкое мышление", enabled: "мышление включено" } as Record<string, string>)[level]}`);
+export const modelSourceLabel = (model: string): string => {
+ const source = model.slice(0, model.lastIndexOf("/"));
+ if(source === "account:zai-individual-coding-plan")return "Z.AI Coding Plan · аккаунт";
+ if(source === "account:zai-start-plan")return "Z.AI Start Plan · аккаунт";
+ if(source === "builtin:zai-coding-plan")return "Z.AI Coding Plan · встроенное подключение";
+ if(source.startsWith("omniroute"))return "OmniRoute";
+ if(source === "offpeak-idle-plan")return "План для непикового времени";
+ if(/^[a-f0-9-]{36}(?:\/|$)/.test(source))return `Пользовательское подключение · ${source.slice(0,8)}`;
+ return source || "Подключение по умолчанию";
+};

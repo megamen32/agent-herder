@@ -569,3 +569,16 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .composer-images { grid-area: images; }
 
 .model-provider { display: block; color: var(--text-2); opacity: .75; font-size: var(--text-xs); overflow-wrap: anywhere; }
+
+.composer-left { grid-area: plus; display: flex; align-items: center; gap: 6px; }
+.composer-left .composer-plus { width: auto; padding: 0 5px; white-space: nowrap; font-size: var(--text-sm); }
+.composer-delivery-mode { border: 0; background: transparent; color: var(--text-2); font-size: var(--text-xs); white-space: nowrap; padding: 5px 0; }
+.composer-delivery-menu { position: absolute; bottom: calc(100% + 8px); left: 0; max-width: 430px; padding: 12px; border: 1px solid var(--border-2); border-radius: 12px; background: var(--surface-1); box-shadow: var(--shadow-menu); z-index: 14; }
+.composer .resume-button { width: auto; min-width: 36px; padding: 0 9px; border-radius: 18px; font-size: var(--text-xs); white-space: nowrap; }
+@media(max-width:900px) {
+ .composer:has(.composer-images) { grid-template-areas: "images images images" "text text text" "plus model send"; }
+ .composer-left { gap: 3px; }
+ .composer-left .composer-plus { font-size: 11px; padding: 0 2px; }
+ .composer-delivery-mode { font-size: 10px; }
+ .composer .resume-button { min-width: 36px; font-size: 10px; padding: 0 7px; }
+}

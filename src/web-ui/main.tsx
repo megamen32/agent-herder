@@ -21,7 +21,7 @@ import { groupSessionMessages } from "./message-groups.js";
 import { MessageAdmissionDispatcher, appendOutboxEntry, beginOutboxAttempt, canDeleteOutboxEntry, canSteerOutboxEntry, cancelOutcomeOfJob, classifyMessageDelivery, deliveryConnectionFailure, deliveryModeLabel, isOutboxUnfinished, isTerminalJobState, newInputId, outboxStatusLabel, readDefaultDeliveryMode, readDeliveryModePinned, readOutboxJobId, readStoredOutbox, reconcileMessageStatus, removeOutboxEntry, updateOutboxEntry, withOutboxJobId, writeDefaultDeliveryMode, writeDeliveryModePinned, writeStoredOutbox, type CancelOutcome, type DeliveryMode, type OutboxEntry } from "./composer-delivery.js";
 import { formatJsonPayload, readJsonRenderingOptOut, splitSystemBlocks, writeJsonRenderingOptOut } from "./json-rendering.js";
 import { applyTheme, readTheme, writeTheme, type HerderTheme } from "./theme.js";
-import { currentModelOption, modelSwitchSupported, requestModelChange, shortModelLabel } from "./model-chip.js";
+import { currentModelOption, modelSwitchSupported, requestModelChange, shortModelLabel, modelOptionLabel, modelSourceLabel } from "./model-chip.js";
 import type { UploadedImage } from "../session-images.js";
 import type { SessionMessageView } from "../types/index.js";
 
@@ -753,6 +753,7 @@ function App() {
   const foldedInitialized = React.useRef(false);
   const [composer, setComposer] = React.useState("");
   const [composerImages, setComposerImages] = React.useState<UploadedImage[]>([]);
+  const [deliveryMenuOpen, setDeliveryMenuOpen] = React.useState(false);
   const [imageUploading, setImageUploading] = React.useState(false);
   const [imageError, setImageError] = React.useState<string>();
   const imageInputRef = React.useRef<HTMLInputElement>(null);
@@ -1543,6 +1544,7 @@ function App() {
   const effectiveDeliveryMode: DeliveryMode = supportsSteer ? (deliveryModePinned ? deliveryMode : "steer") : "queue";
   const selectDeliveryMode = (mode: DeliveryMode) => {
     setDeliveryMode(mode);
+    setDeliveryMenuOpen(false);
     setDeliveryModePinned(true);
     writeDefaultDeliveryMode(window.localStorage, mode);
     writeDeliveryModePinned(window.localStorage, true);
@@ -1552,7 +1554,7 @@ function App() {
     <div><div className="theme-choice" role="group" aria-label="Режим отправки сообщений">
       <button type="button" className={effectiveDeliveryMode === "steer" ? "active" : ""} aria-pressed={effectiveDeliveryMode === "steer"} disabled={!supportsSteer} title={supportsSteer ? "Вставить сообщение в текущий ход агента" : "Этот харнесс не умеет вставлять сообщения в текущий ход — сообщение уйдёт в очередь"} onClick={() => selectDeliveryMode("steer")}>{deliveryModeLabel("steer")}</button>
       <button type="button" className={effectiveDeliveryMode === "queue" ? "active" : ""} aria-pressed={effectiveDeliveryMode === "queue"} onClick={() => selectDeliveryMode("queue")}>{deliveryModeLabel("queue")}</button>
-    </div>{!supportsSteer && <small className="settings-help">Эта среда принимает сообщения после ответа агента; вставка в текущий ход недоступна.</small>}</div>
+    </div><small className="settings-help">«В текущий ход» передаёт уточнение при ближайшей возможности работающего агента. «После ответа» запускает сообщение, когда текущая работа завершится.</small>{!supportsSteer && <small className="settings-help">Эта среда принимает сообщения после ответа агента; вставка в текущий ход недоступна.</small>}</div>
   );
   const sending = activeOutbox.some((entry) => entry.status === "sending");
   const runningSince = activeSession?.status === "running" ? runningSinceMs(activeSession) : undefined;
@@ -1841,8 +1843,8 @@ function App() {
             {entry.status === "failed" && entry.nonRetryable !== true && <button type="button" className="composer-outbox-retry" onClick={() => void retryOutboxEntry(entry.inputId)} title="Повторить отправку">Повторить</button>}
             {entry.images?.map(image => <img className="outbox-image" src={image.url} alt={image.fileName} key={image.id} />)}
             {canSteerOutboxEntry(entry, splitKey(entry.sessionKey).harness, harnessAdapters.find(adapter => adapter.id === splitKey(entry.sessionKey).harness)?.capabilities?.steer === true) && <button type="button" className="composer-outbox-retry" disabled={cancellingOutbox.has(entry.inputId)} onClick={() => void steerOutboxEntry(entry.inputId)} title="Убрать из очереди и вставить в текущий ход агента">Отправить сейчас</button>}
-            {canDeleteOutboxEntry(entry) && <button type="button" className="composer-outbox-delete" disabled={cancellingOutbox.has(entry.inputId)} aria-label="Удалить сообщение из очереди" onClick={() => void deleteOutboxEntry(entry.inputId)}>Удалить</button>}
-            {(entry.status === "delivered" || entry.status === "accepted" || entry.status === "failed" || entry.status === "unknown") && <button type="button" className="composer-outbox-dismiss" aria-label="Убрать сообщение из списка" onClick={() => dismissOutboxEntry(entry.inputId)}>×</button>}
+            {canDeleteOutboxEntry(entry) && <button type="button" className="composer-outbox-delete" disabled={cancellingOutbox.has(entry.inputId)} aria-label="Удалить сообщение из очереди" title="Снять с очереди до передачи агенту" onClick={() => void deleteOutboxEntry(entry.inputId)}>Удалить</button>}
+            {(entry.status === "delivered" || entry.status === "accepted" || entry.status === "failed" || entry.status === "unknown") && <button type="button" className="composer-outbox-dismiss" aria-label="Убрать сообщение из списка" title="Убрать плашку. Сообщение останется в переписке." onClick={() => dismissOutboxEntry(entry.inputId)}>×</button>}
           </div>
           <div className="composer-outbox-text">{entry.text}</div>
           {entry.error && <div className="composer-outbox-error">Детали: {entry.error}</div>}
@@ -1859,7 +1861,8 @@ function App() {
           </div>
           {createSessionError && <div className="create-session-error">{createSessionError}</div>}
         </div>}
-        {supportsImages && !readOnlySession ? <><input ref={imageInputRef} className="composer-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple aria-label="Файл изображения" onChange={event => void uploadImages(event.target.files)} /><button type="button" className="composer-plus" aria-label="Прикрепить изображение" title="Прикрепить изображение (до 5 МБ)" disabled={imageUploading || !activeKey} onClick={() => imageInputRef.current?.click()}>+</button></> : <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="Новая сессия" title="Новая сессия агента" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>}
+        <div className="composer-left">{supportsImages && !readOnlySession ? <><input ref={imageInputRef} className="composer-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple aria-label="Файл изображения" onChange={event => void uploadImages(event.target.files)} /><button type="button" className="composer-plus" aria-label="Прикрепить изображение" title="Прикрепить изображение (до 5 МБ)" disabled={imageUploading || !activeKey} onClick={() => imageInputRef.current?.click()}>+ Фото</button></> : <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="Новая сессия" title="Новая сессия агента" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>}{activeKey && !readOnlySession && <button type="button" className="composer-delivery-mode" aria-label="Режим отправки" aria-expanded={deliveryMenuOpen} onClick={() => setDeliveryMenuOpen(current => !current)}>{deliveryModeLabel(effectiveDeliveryMode)} ▾</button>}</div>
+        {deliveryMenuOpen && <div className="composer-delivery-menu" role="dialog" aria-label="Когда отправлять сообщение">{deliveryModeChoice}</div>}
         {(composerImages.length > 0 || imageUploading || imageError) && <div className="composer-images">{composerImages.map(image => <div className="composer-image" key={image.id}><img src={image.url} alt={image.fileName} /><button type="button" aria-label={`Убрать ${image.fileName}`} onClick={() => setComposerImages(current => current.filter(item => item.id !== image.id))}>×</button></div>)}{imageUploading && <span>Загружаю изображение…</span>}{imageError && <span role="alert">{imageError}</span>}</div>}
         {readOnlySession ? <div className="composer-readonly"><strong>{archivedSession ? "Архивная сессия" : "Только просмотр"}</strong><span>{archivedSession ? "Сохранённая история сессии доступна для просмотра." : "Эта сессия пока не поддерживает отправку сообщений."}</span></div> : <>
           <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Продолжите работу…" : activeKey ? "Работайте с агентом" : "Сначала выберите сессию"} disabled={!activeKey || readOnlySession} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && (composer.trim() || composerImages.length > 0)) { event.preventDefault(); void sendMessage(); } }} />
@@ -1870,12 +1873,13 @@ function App() {
             <span className="composer-model-chevron" aria-hidden="true">▾</span>
           </button>}
           {modelMenuOpen && modelSwitchHarness && <div className="composer-model-menu" role="listbox" aria-label={`Модели ${modelSwitchHarness}`}>
+            <div className="composer-model-note">Модель для следующих ответов в этой сессии. История сохраняется.</div>
             {modelSwitchError && <div className="composer-model-note error" role="alert">{modelSwitchError}</div>}
             {modelOptionsLoading && <div className="composer-model-note">Загружаю модели…</div>}
             {!modelOptionsLoading && modelOptionsHarness === modelSwitchHarness && modelOptions.length === 0 && <div className="composer-model-note">Сервер не вернул моделей для {modelSwitchHarness}.</div>}
-            {modelOptions.map((model) => <button type="button" role="option" aria-selected={model === currentModelOption(activeSession?.model, modelOptions)} className={model === currentModelOption(activeSession?.model, modelOptions) ? "current" : ""} key={model} onClick={() => void changeSessionModel(model)} title={model}>{shortModelLabel(model)}{modelOptions.filter(option => shortModelLabel(option) === shortModelLabel(model)).length > 1 && <small className="model-provider">{model.slice(0, model.lastIndexOf("/")) || model}</small>}</button>)}
+            {modelOptions.map((model) => <button type="button" role="option" aria-selected={model === currentModelOption(activeSession?.model, modelOptions)} className={model === currentModelOption(activeSession?.model, modelOptions) ? "current" : ""} key={model} onClick={() => void changeSessionModel(model)} title={model}>{modelOptionLabel(model)}{modelOptions.filter(option => shortModelLabel(option) === shortModelLabel(model)).length > 1 && <small className="model-provider">{modelSourceLabel(model)}</small>}</button>)}
           </div>}
-          <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || imageUploading || (!isResumeMode && !composer.trim() && !composerImages.length)} aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}>{isResumeMode ? "▶" : "↑"}</button>
+          <button className={`send-button ${isResumeMode ? "resume-button" : ""}`} title={isResumeMode ? "Возобновить работу в той же сессии" : effectiveDeliveryMode === "queue" ? "Отправить после ответа агента" : "Передать в текущий ход агента"} type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || imageUploading || (!isResumeMode && !composer.trim() && !composerImages.length)} aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}>{isResumeMode ? "Продолжить ▶" : "↑"}</button>
         </>}
       </form></div>}
     </section>

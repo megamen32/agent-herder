@@ -612,7 +612,7 @@ function mapSession(
     title: session.title || fallbackTitle || "Untitled ZCode session",
     cwd,
     lastActivity: timestamp(session.updatedAt ?? session.createdAt),
-    model: modelName(session.model),
+    model: modelName(record(record(root.settings).model).current as ZcodeModelRef) ?? modelName(session.model),
     needsPermission: pendingRequestIds.length > 0,
     messageCount: messages.length || undefined,
     costUsd: costUsd || undefined,
