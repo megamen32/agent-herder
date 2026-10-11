@@ -125,14 +125,29 @@ export function createConfiguredFleetApiHandler(options: {
       }
       // Public cabinets reuse the verified cookie over the maintained TLS peer routes.
       // They need no extra SSH key, central100 relay, or caller-supplied identity header.
-      if(hostname()!=='roomhacker-server-100'&&isManagedPublicHost(request)&&!request.headers.authorization){
+      if(isManagedPublicHost(request)&&!request.headers.authorization&&(hostname()!=='roomhacker-server-100'||request.method==='GET')){
         if(userId!==userInfo().username)return reject(403,"Для этого владельца нет профиля флота");
         if(!await verifiedPublicOwner(request))return reject(401,"Войдите в кабинет владельца флота");
         if(!validPublicOrigin(request))return reject(403,"Создание доступно из своего кабинета");
         if(path==='/api/fleet/access'){if(request.method!=='GET')return reject(405,"Проверка доступа принимает только чтение");response.writeHead(204,{'Cache-Control':'no-store'});response.end();return true;}
         const cookie=request.headers.cookie!;
         const context=Object.freeze({cookie,credentialGeneration:createHash('sha256').update(cookie).digest('hex')});
-        return publicOwnerContext.run(context,()=>createFleetApiHandler(direct('roomhacker','haos-sso-owner'),hostname())(request,response));
+        let service:FleetCabinetService;
+        if(hostname()==='roomhacker-server-100'){
+          // Reads use owner TLS while retaining the configured browser partition.
+          // Creates still use the existing Hub binding/journal below; this service has no journal.
+          const binding=await readBinding();
+          const profileId=`${new URL(binding.endpoint).origin}/client:zcode`;
+          const key=`haos-sso-owner:configured-read:${profileId}:${userId}`;
+          const cached=directServices.get(key);
+          if(cached)service=cached;
+          else{
+            if(directServices.size>=2)throw new Error('fleet_direct_scope_limit');
+            service=new FleetCabinetService({hosts:fleetHosts,scope:{profileId,userId},transportFactory:()=>new FleetOwnerHttpTransport({ownerContext:()=>publicOwnerContext.getStore()})});
+            directServices.set(key,service);
+          }
+        }else service=direct('roomhacker','haos-sso-owner');
+        return publicOwnerContext.run(context,()=>createFleetApiHandler(service,hostname())(request,response));
       }
       const binding = await readBinding();
       const configuredBearer = Object.entries(binding.headers).find(([key]) => key.toLowerCase() === "authorization")![1];
