@@ -120,7 +120,7 @@ def private_directory(path):
         raise Refused('owned_directory_permissions')
 
 def darwin_artifact_bytes(root, limit, overall_deadline, verify_root, refuse, pinned):
-    """Apple FTS avoids thousands of Python stat calls; same five-second gate.
+    """One Apple FTS pass avoids duplicate traversal; same five-second gate.
     Physical traversal includes mounted subtrees and counts hard-link entries.
     du rounds up apparent bytes (including dirs), so accounting is conservative.
     Only owned read-only probe children are cleaned up; no output is persisted.
@@ -139,27 +139,27 @@ def darwin_artifact_bytes(root, limit, overall_deadline, verify_root, refuse, pi
         # the pinned directory as cwd instead; the only other Python thread
         # drains stderr and performs no cwd-relative filesystem operations.
         cwd_fd=os.open('.',os.O_RDONLY|os.O_DIRECTORY);os.fchdir(root_fd)
-        finder=subprocess.Popen(['/usr/bin/find','-P','.','-print0'],
-            stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
-        children.append(finder);os.set_blocking(finder.stdout.fileno(),False)
+        # Apple's du -a emits every file and directory in one physical FTS walk.
+        # -l counts hard-link entries, -A counts apparent bytes, -k rounds up.
+        # Newlines in names conservatively increase the entry count; only the
+        # final root summary is parsed, so names cannot forge the byte total.
+        du=subprocess.Popen(['/usr/bin/du','-A','-l','-a','-k','-P','.'],
+            stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
+            env={**os.environ,'LC_ALL':'C'})
+        children.append(du);os.set_blocking(du.stdout.fileno(),False);tail=b''
         while True:
-            if not select.select([finder.stdout.fileno()],[],[],min(.1,remaining()))[0]:continue
-            try:chunk=os.read(finder.stdout.fileno(),32768)
+            if not select.select([du.stdout.fileno()],[],[],min(.1,remaining()))[0]:continue
+            try:chunk=os.read(du.stdout.fileno(),32768)
             except BlockingIOError:continue
             if not chunk:break
-            count+=chunk.count(b'\0')
-            # find includes the pinned root itself, unlike the FD scanner.
+            count+=chunk.count(b'\n');tail=(tail+chunk)[-64:]
+            # Include the pinned root itself, as in the previous find census.
             if count>30001:refuse('storage_observation_limit','file_limit')
-        if finder.wait(timeout=remaining())!=0 or count<1:
+        if du.wait(timeout=remaining())!=0 or count<1:
             refuse('storage_root_unverified','io')
-        du=subprocess.Popen(['/usr/bin/du','-A','-l','-s','-k','-P','.'],
-            stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
-        children.append(du);out,_=du.communicate(timeout=remaining())
-        if du.returncode or len(out)>4096:
-            refuse('storage_root_unverified','io')
-        size=out.partition(b'\t')[0].strip()
-        if not re.fullmatch(rb'[0-9]{1,16}',size):refuse('storage_root_unverified','io')
-        total=int(size)*1024
+        match=re.search(rb'(?:^|\n)([0-9]{1,16})\t\.\n$',tail)
+        if not match:refuse('storage_root_unverified','io')
+        total=int(match[1])*1024
         if total>limit:refuse('storage_budget_exceeded','byte_limit')
         verify_root();remaining()
         return total
