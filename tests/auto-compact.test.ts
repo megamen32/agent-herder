@@ -15,9 +15,9 @@ async function fixture() {
   let now = Date.parse("2026-10-11T10:00:00Z");
   let useful = true, held = false;
   const session = { id: "original", harness: "zcode", cwd: "/workspace", status: "idle", lastActivity: new Date(now).toISOString(), meta: {
-    nativeLoaded: true, nativeStatus: "idle", latestUserPrompt: { id: "user-1" },
+    nativeLoaded: true, nativeStatus: "idle", nativeHumanMessageCount: 5, latestUserPrompt: { id: "user-1" },
     nativeLastTurn: { status: "completed", completedAt: now },
-    nativeContextUsage: { used: 100_000, cache: { cacheReadTokens: 90_000, inputTokens: 10_000 } },
+    nativeContextUsage: { used: 100_000, size: 200_000, cache: { cacheReadTokens: 90_000, inputTokens: 10_000 } },
   } } as AgentSession;
   const compactSession = vi.fn(async () => ({ ok: true, admitted: true, pending: true }));
   const sendMessage = vi.fn(), createSession = vi.fn();
@@ -28,6 +28,17 @@ async function fixture() {
 }
 
 describe("same-session warm-context maintenance (fast unit, expected 1s/max 10s)", () => {
+  it("defaults to 35% and five human messages and allows each threshold to change", async () => {
+    const f = await fixture();
+    expect((await f.store.read()).settings).toMatchObject({ minContextPercent: 35, minHumanMessages: 5 });
+    f.age(205); (f.session.meta!.nativeContextUsage as { used: number }).used = 70_000;
+    await f.service.tick(); expect(f.compactSession).toHaveBeenCalledTimes(1);
+    const g = await fixture(); g.age(205); g.session.meta!.nativeHumanMessageCount = 3;
+    (g.session.meta!.nativeContextUsage as { used: number }).used = 40_000;
+    await g.service.tick(); expect(g.compactSession).not.toHaveBeenCalled();
+    await g.store.updateSettings({ ...(await g.store.read()).settings, minContextPercent: 20, minHumanMessages: 3 });
+    await g.service.tick(); expect(g.compactSession).toHaveBeenCalledTimes(1);
+  });
   it("starts near estimated expiry, confirms reduced context and never sends task prompts", async () => {
     const f = await fixture(); f.age(100); await f.service.tick(); expect(f.compactSession).not.toHaveBeenCalled();
     f.age(205); await f.service.tick(); expect(f.compactSession).toHaveBeenCalledExactlyOnceWith("original", expect.objectContaining({ expectedUserMessageId: "user-1" }));
@@ -36,7 +47,7 @@ describe("same-session warm-context maintenance (fast unit, expected 1s/max 10s)
     await f.restart().tick(); expect((await f.store.read()).operations[0]).toMatchObject({ state: "completed", tokensBefore: 100_000, tokensAfter: 8_000, durationMs: 25_000 });
     expect(f.compactSession).toHaveBeenCalledTimes(1); expect(f.sendMessage).not.toHaveBeenCalled(); expect(f.createSession).not.toHaveBeenCalled();
   });
-  it.each(["finished", "stopped", "cold", "late", "active", "human"])("skips %s without consuming native admission", async (reason) => {
+  it.each(["finished", "stopped", "cold", "late", "active", "human", "small", "few-messages"])("skips %s without consuming native admission", async (reason) => {
     const f = await fixture(); f.age(205);
     if (reason === "finished") f.useful(false);
     if (reason === "stopped") f.held(true);
@@ -44,6 +55,8 @@ describe("same-session warm-context maintenance (fast unit, expected 1s/max 10s)
     if (reason === "late") f.age(290);
     if (reason === "active") f.session.meta!.nativeActiveTurnId = "turn";
     if (reason === "human") f.session.needsPermission = true;
+    if (reason === "small") (f.session.meta!.nativeContextUsage as { used: number }).used = 10_000;
+    if (reason === "few-messages") f.session.meta!.nativeHumanMessageCount = 4;
     await f.service.tick(); expect(f.compactSession).not.toHaveBeenCalled();
   });
   it("does not replay unknown admission after restart or overlapping requests", async () => {

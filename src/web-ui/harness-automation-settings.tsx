@@ -21,8 +21,7 @@ export function HarnessAutomationSettings({ mode, available, enabled, loaded, sa
   onToggle: (harness: string) => void;
 }) {
   const label = mode === "autopilot" ? "Автопилот" : "Автопродолжение";
-  return <div className="harness-automation-list" aria-label={`${label} по средам`}>
-    {HARNESSES.map(([id, name]) => {
+  const renderRow = ([id, name]: (typeof HARNESSES)[number]) => {
       const supported = available.has(id);
       const ready = supported && (!loaded || loaded.has(id));
       const checked = ready && enabled.has(id);
@@ -30,6 +29,10 @@ export function HarnessAutomationSettings({ mode, available, enabled, loaded, sa
         <div><strong>{name}</strong><small id={`${mode}-${id}-status`}>{!supported ? "Пока не поддерживается" : saving === id ? "Сохраняю…" : !ready ? "Загружаю…" : checked ? "Разрешено" : "Выключено"}</small></div>
         <button className={`switch-control ${checked ? "enabled" : ""}`} role="switch" aria-label={`${label} · ${name}`} aria-checked={checked} aria-describedby={`${mode}-${id}-status`} disabled={!ready || Boolean(saving)} onClick={() => onToggle(id)}><span /></button>
       </section>;
-    })}
+  };
+  const unavailable = HARNESSES.filter(([id]) => !available.has(id));
+  return <div className="harness-automation-list" aria-label={`${label} по средам`}>
+    {HARNESSES.filter(([id]) => available.has(id)).map(renderRow)}
+    {!!unavailable.length && <details className="settings-advanced"><summary>Пока недоступные агенты ({unavailable.length})</summary>{unavailable.map(renderRow)}</details>}
   </div>;
 }

@@ -11,7 +11,8 @@ export interface AutoCompactSettings {
   harnesses: string[];
   idleSeconds: number;
   maxAgeSeconds: number;
-  minContextTokens: number;
+  minContextPercent: number;
+  minHumanMessages: number;
   maxPerHour: number;
 }
 export interface CompactReceipt {
@@ -21,7 +22,7 @@ export interface CompactReceipt {
   createdAt: string; updatedAt: string; error?: string; automatic?: boolean; notifiedAt?: string;
 }
 interface State { version: 1; settings: AutoCompactSettings; operations: CompactReceipt[] }
-const DEFAULTS: AutoCompactSettings = { enabled: false, harnesses: ["zcode"], idleSeconds: 45, maxAgeSeconds: 300, minContextTokens: 50_000, maxPerHour: 6 };
+const DEFAULTS: AutoCompactSettings = { enabled: false, harnesses: ["zcode"], idleSeconds: 45, maxAgeSeconds: 300, minContextPercent: 35, minHumanMessages: 5, maxPerHour: 6 };
 
 /** Configuration and native admission share one durable, cross-process transaction. */
 export class AutoCompactStore {
@@ -30,6 +31,8 @@ export class AutoCompactStore {
     try {
       const state = JSON.parse(await readFile(this.path, "utf8")) as State;
       if (state.version !== 1 || !Array.isArray(state.operations)) throw new Error("Повреждено состояние автокомпакта");
+      state.settings = { ...DEFAULTS, ...state.settings };
+      delete (state.settings as AutoCompactSettings & { minContextTokens?: number }).minContextTokens;
       validateSettings(state.settings);
       return state;
     } catch (error) {
@@ -75,7 +78,7 @@ export class AutoCompactStore {
 function validateSettings(value: AutoCompactSettings): void {
   if (!value || typeof value.enabled !== "boolean" || !Array.isArray(value.harnesses)
     || value.harnesses.some((item) => item !== "zcode") || new Set(value.harnesses).size !== value.harnesses.length) throw new Error("Неверные настройки сред автокомпакта");
-  for (const [field, minimum, maximum] of [["idleSeconds", 5, 600], ["maxAgeSeconds", 30, 7200], ["minContextTokens", 1000, 2_000_000], ["maxPerHour", 1, 24]] as const) {
+  for (const [field, minimum, maximum] of [["idleSeconds", 5, 600], ["maxAgeSeconds", 30, 7200], ["minContextPercent", 1, 99], ["minHumanMessages", 1, 100], ["maxPerHour", 1, 24]] as const) {
     if (!Number.isSafeInteger(value[field]) || value[field] < minimum || value[field] > maximum) throw new Error(`Недопустимое значение настройки ${field}`);
   }
   if (value.maxAgeSeconds <= value.idleSeconds) throw new Error("Окно кэша должно быть больше паузы после ответа");
@@ -91,6 +94,8 @@ export function compactContext(session: AgentSession) {
   return {
     userMessageId: typeof prompt.id === "string" ? prompt.id : undefined,
     tokens: typeof usage.used === "number" && Number.isSafeInteger(usage.used) ? usage.used : 0,
+    capacity: typeof usage.size === "number" && Number.isSafeInteger(usage.size) ? usage.size : 0,
+    humanMessages: typeof meta.nativeHumanMessageCount === "number" ? meta.nativeHumanMessageCount : 0,
     cacheRead: typeof cache.cacheReadTokens === "number" ? cache.cacheReadTokens : 0,
     cacheInput: typeof cache.inputTokens === "number" ? cache.inputTokens : 0,
     completedAt: typeof turn.completedAt === "number" ? turn.completedAt : typeof turn.completedAt === "string" ? Date.parse(turn.completedAt) : NaN,
@@ -98,6 +103,7 @@ export function compactContext(session: AgentSession) {
     turnBoundary: typeof turn.turnId === "string" ? turn.turnId : String(turn.completedAt || ""),
     quiet: meta.nativeLoaded === true && ["idle", "stopped", "completed"].includes(String(meta.nativeStatus))
       && !meta.nativeActiveTurnId && !meta.nativeActiveTurnKind && !session.needsPermission
+      && turn.pendingInput !== true && turn.cancelledByUser !== true
       && !session.meta?.humanStopHeld && !meta.automationStop && !(Array.isArray(meta.pendingRequestIds) && meta.pendingRequestIds.length)
       && meta.sessionKind !== "subagent_child" && !meta.parentSessionId,
   };
@@ -151,7 +157,7 @@ export class AutoCompactService {
     for (const harness of state.settings.harnesses) {
       const adapter = this.options.adapters.get(harness);
       if (!adapter?.compactSession || (adapter.isReady && !adapter.isReady())) continue;
-      const recent = (await adapter.listSessions()).filter((session) => now - Date.parse(session.lastActivity) <= state.settings.maxAgeSeconds * 1000);
+      const recent = (await adapter.listSessions()).filter((session) => now - Date.parse(session.lastActivity) <= (cacheWindowFor(session).ttlMs ?? state.settings.maxAgeSeconds * 1000));
       if (!recent.length) continue;
       const candidates = Array.from({ length: Math.min(4, recent.length) }, (_, offset) => recent[(this.cursor + offset) % recent.length]!);
       this.cursor = (this.cursor + 4) % recent.length;
@@ -185,7 +191,8 @@ export class AutoCompactService {
     const startAt = Math.max(state.settings.idleSeconds * 1000, windowMs - durationMs - 45_000);
     if (!manual && (!state.settings.enabled || !state.settings.harnesses.includes(harness)
       || !context.complete || !Number.isFinite(age) || age < startAt || age + durationMs > windowMs - 30_000
-      || context.tokens < state.settings.minContextTokens || context.cacheRead <= 0
+      || context.capacity <= 0 || context.tokens / context.capacity * 100 < state.settings.minContextPercent
+      || context.humanMessages < state.settings.minHumanMessages || context.cacheRead <= 0
       || context.cacheRead / Math.max(1, context.cacheRead + context.cacheInput) < .25
       || !await this.options.worthResuming(session))) return { ok: false, error: "Сессия не требует возобновления, контекст мал, кэш не подтверждён или время компакта ещё не пришло." };
     const sourceKey = createHash("sha256").update(`${harness}:${id}:${session.cwd}:${context.userMessageId}:${context.turnBoundary}`).digest("hex");

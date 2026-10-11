@@ -115,6 +115,22 @@ class FakeClient implements ZcodeClientLike {
 }
 
 describe("native compact admission (focused integration, expected 1s/max 10s)", () => {
+  it("reads omitted terminal receipts and counts only real human messages from native history", async () => {
+    const root = await mkdtemp(join(tmpdir(), "native-compact-engagement-"));
+    const path = join(root, "native.sqlite"); const db = new DatabaseSync(path);
+    db.exec("create table message (session_id text, data text); create table turn_usage (session_id text, turn_id text, status text, started_at integer, completed_at integer)");
+    const insert = db.prepare("insert into message values (?, ?)");
+    const real = { role: "user", semantics: { origin: "real_user", kind: "user_prompt" } };
+    for (let i = 0; i < 5; i++) insert.run("session-1", JSON.stringify(real));
+    for (const extra of [{ metadata: { inputId: "agent-herder:auto:one" } }, { synthetic: true }, { visibility: "model-only" }, { metadata: { offPeakTaskId: "automatic" } }]) insert.run("session-1", JSON.stringify({ ...real, ...extra }));
+    db.prepare("insert into turn_usage values (?, ?, ?, ?, ?)").run("session-1", "exact-completed-turn", "completed", 100, 200);
+    db.close();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new FakeClient(), localDbPath: path });
+    await adapter.init();
+    try {
+      expect((await adapter.getSession("session-1"))?.meta).toMatchObject({ nativeHumanMessageCount: 5, nativeLastTurn: { turnId: "exact-completed-turn", status: "completed", completedAt: 200 } });
+    } finally { await adapter.dispose(); await rm(root, { recursive: true, force: true }); }
+  });
   it.each(["accepted", "busy", "new-input"])("keeps the same ID and revision for %s", async (state) => {
     class CompactClient extends FakeClient {
       override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {

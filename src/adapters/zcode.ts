@@ -559,6 +559,7 @@ function mapSession(
     nativeActiveTurnId: snapshot.runtime?.activeTurnId,
     nativeActiveTurnKind: snapshot.runtime?.activeTurnKind,
     nativeContextUsage: snapshot.runtime?.contextUsage,
+    nativeHumanMessageCount: messages.filter((message) => Boolean(userPromptCandidate(message, nativeEvents))).length,
     automationStop,
     automationStopSequence: typeof automationStopSequence === "number" ? automationStopSequence : undefined,
     automationStopHistoryAvailable: nativeEventHistoryAvailable,
@@ -874,6 +875,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly client: ZcodeClientLike;
   private readonly useLocalConfig: boolean;
   private readonly localDbPath: string;
+  private readonly useLocalTurnMetadata: boolean;
   private readonly tasksIndexDbPath?: string;
   private readonly turnStartTimeoutMs: number;
   private readonly persistedSessionIds = new Set<string>();
@@ -905,6 +907,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.cwd = resolve(options.cwd || process.env.ZCODE_CWD || process.cwd());
     this.modelIds = options.modelIds ?? [];
     this.useLocalConfig = !options.client;
+    this.useLocalTurnMetadata = this.useLocalConfig || options.localDbPath !== undefined;
     this.localDbPath = options.localDbPath ?? (process.env.ZCODE_DB_PATH || join(homedir(), ".zcode", "cli", "db", "db.sqlite"));
     this.turnStartTimeoutMs = options.turnStartTimeoutMs ?? 30_000;
     // An injected transport is an isolated embedding/test boundary: ambient
@@ -1457,6 +1460,8 @@ export class ZcodeAdapter implements HarnessAdapter {
         if (taskMetadata) mapped.meta = { ...mapped.meta, pinned: taskMetadata.pinned };
         const lastTurn = [...nativeEvents].reverse().find((event) =>
           (event.type === "turn.started" || event.type === "turn.completed" || event.type === "turn.failed") && nonEmptyString(event.turnId));
+        const persisted = await this.readLocalTurnBoundary(id);
+        if (persisted) mapped.meta = { ...mapped.meta, nativeLastTurn: persisted.turn, nativeHumanMessageCount: persisted.humanMessageCount };
         if (lastTurn) mapped.meta = { ...mapped.meta, nativeLastTurn: {
           turnId: lastTurn.turnId,
           status: lastTurn.type === "turn.started" ? "inProgress" : lastTurn.type === "turn.failed" ? "failed" : "completed",
@@ -1482,6 +1487,43 @@ export class ZcodeAdapter implements HarnessAdapter {
     } catch {
       return null;
     }
+  }
+
+  /** Exact indexed local receipt; live snapshots can omit turn-event history. */
+  private async readLocalTurnBoundary(id: string): Promise<{ turn?: NativeLastTurn; humanMessageCount: number } | undefined> {
+    if (!this.useLocalTurnMetadata || !existsSync(this.localDbPath)) return undefined;
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(this.localDbPath, { readOnly: true });
+      try {
+        const row = db.prepare("select * from turn_usage where session_id = ? order by started_at desc, completed_at desc, turn_id desc limit 1").get(id) as Record<string, unknown> | undefined;
+        const count = db.prepare(`select count(*) as n from message where session_id = ?
+          and json_extract(data, '$.role') = 'user'
+          and json_extract(data, '$.semantics.origin') = 'real_user'
+          and json_extract(data, '$.semantics.kind') = 'user_prompt'
+          and coalesce(json_extract(data, '$.synthetic'), 0) = 0
+          and coalesce(json_extract(data, '$.visibility'), '') <> 'model-only'
+          and coalesce(json_extract(data, '$.source'), '') = ''
+          and coalesce(json_extract(data, '$.metadata.automationId'), '') = ''
+          and coalesce(json_extract(data, '$.metadata.offPeakTaskId'), '') = ''
+          and coalesce(json_extract(data, '$.metadata.inputId'), '') not like 'agent-herder:auto:%'`).get(id) as { n: number };
+        const turn = row ? pickNativeLastTurn([{
+          sessionId: id, turnId: nonEmptyString(row.turn_id), status: nonEmptyString(row.status),
+          userMessageId: nonEmptyString(row.user_message_id),
+          startedAt: typeof row.started_at === "number" ? row.started_at : undefined,
+          completedAt: typeof row.completed_at === "number" ? row.completed_at : undefined,
+          cancelledByUser: typeof row.cancelled_by_user === "number" ? row.cancelled_by_user : undefined,
+        }]) : undefined;
+        if (turn) {
+          const inputsKnown = db.prepare("select name from sqlite_master where type = 'table' and name = 'session_input'").get();
+          if (inputsKnown) {
+            const pending = db.prepare("select 1 from session_input where session_id = ? and status not in ('promoted','cancelled','discarded') limit 1").get(id);
+            turn.pendingInput = Boolean(pending);
+          }
+        }
+        return { turn, humanMessageCount: count.n };
+      } finally { db.close(); }
+    } catch { return undefined; }
   }
 
   private async readTaskDisplayMetadata(id: string, workspace: ZcodeWorkspaceRef): Promise<{ title?: string; pinned: boolean } | undefined> {

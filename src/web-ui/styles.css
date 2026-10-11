@@ -545,3 +545,13 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .remote-session-pane article { margin: 20px 0; }
 .cached-view-notice { padding: 10px 16px; color: var(--text-secondary); }
 @media (max-width: 660px) { .remote-session-pane { position:absolute;inset:0;grid-column:auto; } .mobile-sessions-active .remote-session-pane { display: none; } }
+
+/* Independent settings remain reachable before selecting a chat. */
+.session-automation-links { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; }
+.session-automation-links .quiet-button { flex: 1; padding: 6px 8px; font-size: var(--text-xs); }
+.settings-close { position: sticky; top: 4px; float: right; margin: 12px 12px -44px 0; z-index: 2; }
+@media (max-width: 900px) {
+  .mobile-sessions-active:has(.autopilot-settings-overlay) .chat-pane { display: flex; }
+  .session-settings-link { flex-direction: column; align-items: stretch; }
+  .session-settings-link .quiet-button { width: 100%; }
+}

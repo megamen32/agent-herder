@@ -288,6 +288,7 @@ export function LaunchPolicySettings() {
     {loading ? <p className="settings-loading" role="status">Загружаем настройки запуска…</p> : <>
       {needsSetup && <p className="launch-policy-notice" role="status">Настройки запуска ещё не сохранены. До сохранения автоматический запуск новых сессий запрещён.</p>}
       {loadError && <p className="autopilot-error" role="alert">Не удалось загрузить настройки запуска: {loadError}. Обновите страницу и повторите.</p>}
+      <details className="settings-advanced"><summary>Дополнительно: автоматическое исправление инцидентов</summary>
       <fieldset className="settings-group" disabled={saving || Boolean(loadError)}>
         <legend>Диагностика и исправление инцидентов Noticeplace</legend>
         <p>MiniMax по подписке. Этот выбор сохраняется отдельно для новых расследований и исправлений. Разрешённые среды ниже относятся к обычным задачам; маршрут инцидентов использует свой выбор.</p>
@@ -311,6 +312,7 @@ export function LaunchPolicySettings() {
         {policy.incidentExecution && !(modelOptions.opencode ?? []).includes("minimax-coding-plan/MiniMax-M3.1-Flash-Preview") &&
           <p role="alert">Подписочная модель пока не подтверждена OpenCode. Запуск будет отклонён без смены провайдера.</p>}
       </fieldset>
+      </details>
       <fieldset className="settings-group" disabled={saving || Boolean(loadError)}>
         <legend>Разрешённые среды</legend>
         {displayedHarnesses.length === 0
