@@ -132,3 +132,62 @@ Cheap read-only inspection AgentResumeClient: OpenCode/Claude entrypoint
 его canonical image/autocontinue/ZCode/UI WIP не тронут. Исходный Detailed
 request уже admitted: transport/reconcile/stop/interrupt не вызывались;
 query-only settlement и настоящий live consumer acceptance остаются Root.
+
+## Original Notice incident and actual execution identity (2026-10-12)
+
+Confirmed consumer defect: OpenCode completion was emitted as a new generic
+Hermes-scoped notification. Generic done/human/choice messages now carry actual
+harness, native session ID, execution model when the native receipt supplies it,
+cwd and exact session URL. Human-readable result/question leads; execution
+metadata follows. OpenCode model comes from assistant info.providerID/modelID,
+never the judge model or producer project. Unconfirmed model is explicit.
+
+Coupled contract with Notice owner: existing PUT /api/autopilot/sessions/{harness}/{nativeId}
+accepts noticeIncident:{incidentId,project} from the receipt-authoritative arm.
+It is stored in sessions.json and retained on ordinary on/off. Existing bound
+identity/cwd cannot be replaced. No token/file path is copied into the context.
+Runner and Stop-hook read this same binding; mismatched cwd does not fall back
+to a generic notification.
+
+Bound continue/done observations use POST /v1/incidents/{originalId}/health/progress:
+plan_id repair, bounded Russian step, actual native session URL evidence ref,
+stable fingerprint and Idempotency-Key, actor agent-herder. This is observation,
+not verification/resolve. Credentials come only from the existing protected
+GPTADMIN_HEALTH_CALLBACK_FILE (default ~/.config/gptadmin/health-callback.json):
+url + tokens[originalProject], legacy token only when the map is absent. Missing
+original project refuses delivery without widening scope or Hermes fallback.
+
+Receipt pendingIncidentUpdate is checkpointed before callback. The existing
+finite completion sweeper retries that exact original update and pendingQuestion,
+including process restart/caller failure. Confirmed delivery clears only the
+matching field from the latest locked receipt snapshot. No new scheduler, registry,
+transport or token store. Unknown native admission remains non-replayable.
+Bound human/choice decisions use one existing HumanRequest + /v1/human-requests
+with original incident_id/project and actual native_target; choice buttons retain
+opaque values/labels and answer via canonical Notice resultRef. These bound
+questions wait for the canonical answer; the legacy unbound ChoiceRegistry timeout
+path remains unchanged. Legacy terminal hooks remain terminal; pending legacy
+notices can migrate with explicit trusted incident context without another judge.
+
+Final tested Herder source: 8e78ce8863b0f25a313df4cb76a6a4ab2504bd85, includes
+accepted origin/main a2ae53d51d09a13fd307193df03d00846bcfe18e and compatible
+foreign image/queue/ZCode/UI changes. Notice peer source frozen at
+2c54bd89458fccfefeedce90c5447d93b57fd976. Scoped self-review PASS; source pins
+unchanged after tests. Fourteen owned source/test files; canonical WIP untouched.
+
+Final ordinary release: build + eight selected files, 58/58 PASS. Command 46.397s,
+case setup through runner cleanup 51.985s (<180s). Existing CPU1/max2GiB/tasks128
+budget, one Vitest worker, finite pools <=2; peak 581783552 bytes, swap/OOM 0,
+cleanup PASS. Fast unit: core/state/runner/direct question contracts (expected/max
+5/15s); focused integration: real arm HTTP, native model, persisted outbox and
+actual Notice HTTP/DB/card handler + existing Codex admission fences (5/15s).
+No slow nightly or the earlier 128 baseline checks rerun. Evidence/manifest/log:
+.tmp/incident-card-final/. Retained prior held/setup/build failures are not GREEN.
+
+Coupled consumer proof uses isolated Notice DB and real HTTP/card handlers with
+an in-memory Telegram network: exactly one original incident, one progress event
+after lost ACK/retry/restart, one initial message42, subsequent completion and
+question edits to that same message42. No real Telegram action, incident, model
+probe, call, conntrack repair/restart/cleanup or deployment was performed. Root
+owns final main/runtime/actual Debug Telegram and phone acceptance. Original
+admitted Detailed/request/ref/outbox remains untouched.
