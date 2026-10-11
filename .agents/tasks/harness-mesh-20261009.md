@@ -287,3 +287,22 @@ allowedownerrelease, ONEactor/stricter6targetinterim остаётся. Independe
 - Browser61 foreign lease interrupted acceptance; only our exactt32 was closed (reuse/no Chrome restart). No all-tab/sessionclose. Cache fast-switch/public repaired-list acceptance remainspending; no globalGREEN. M1 canonical native socket absent; only owner55 investigates/recovery, no competing start here.
 
 - Actual candidate read is NOTGREEN: bounded-gihjrjwz registrydeadline before anypage read; bounded-aw3z6e73 trace initialize261ms/initialized40/discover265/schema1886/info3576/snapshot8031/page10011ms gptadmin_deadline. Subsequent metadata-only warmcheck alsodeadline (no mutations); no rows, no cache acceptance. Stageproof handed to owner55 with immutable artifact. Existingpublic100 wiring alone routes cookie through configuredHub; remotepublicnodes already reuse verified HAOSownerHTTP. Smallest next decision belongs55's wiring: reuse that existing supported path for public100 or repair measured Hub-child latency. No timeout inflation, credential copy or host relabel.
+
+
+## 2026-10-11: устранение задержки списка сервера44
+
+- Исполнитель: native mesh worker121d1. Владелец55 передал только public-cookie ветку `src/web/fleet-wiring.ts` и один focused test. GET на100 использует существующий проверенный HAOS owner TLS transport; POST/Bearer, профиль браузера, журнал создания и UNKNOWN остаются прежними. Регрессия сохраняет блокировку неизвестного создания и архив intent после reload.
+- Source2881 опубликован;8 focused cases + immutable-source noEmit прошли за28.19s, peak532MB, swap/OOM0; независимый review без HIGH/MEDIUM. Это source proof, а не завершение кабинета.
+- Последовательные immutable сборки94/b192/255 сохраняют опубликованные чужие UI изменения. Два promoter guard остановились ДО SCP/remote mutation из-за продвижения main. Для текущего выпуска зафиксирована опубликованная255 build-closure; ancestry и hashes сверяются с этим commit, фактический runtime CAS защищает более новый deployment. Source20252 и чужой WIP сохранены для отдельного следующего выпуска.
+- Reviewed artifact255: `source-check/bounded-5iuomdsl/candidate`,290 payloads,31.394s, SHA256 b1c3fcba00eb64ed47edfe3acb68e06bf0c0c6f9a2374268ddb1e99874730ff4. Проверен также rollback до первого переименования и по фактически выполненным этапам.
+- Реальные44/88 обновлены этой сборкой; HTTP ready, прежние release/config сохранены, shared native socket dev/inode/UID неизменны, native restart и caps change0. Guard receipts da737cf1 /388807b9, remote runtime9.243s/8.825s. Принятые session IDs и inputs не пересоздавались.
+-100: собственное применение НЕ выполнялось. Старый busy job90 завершился; очередной controller сначала получил PRE-admission75 по aggregate, затем остановился ДО mutation по изменившемуся PID. Reconcile обнаружил чужой rebuild/restart18:47:49Z (PID1754710): четыре нужных compiled mesh/wiring файла byte-identical reviewed255 и записаны18:47:15 до запуска процесса. Их исходники/чужой UI/index не откатывались. Старый manifestbacce расходится с15 файлами; точный manifest нового выпуска передан sole runtime owner55, полного immutable closure здесь не заявляем.
+- Read-only88→44 cold/warm observer пока не запускался: PRE-admission75 actual legacy OFD busy. Пониженный budget также отвергнут зарегистрированным profile; обхода нет. Сохранены оба отказа, не GREEN.
+- Реальная браузерная проверка44↔88 и cached reopen остаётся незавершённой. R38 получил ready44/88; наш finite600s запрос уже в очереди, пока без собственного browser target. Чужой7bb/UserIO/61 ресурс не использовался, прежние login/eval/accepted canary не повторялись. Mini/M1 activation и helper остаются только55.
+
+| Проверка | Цель / найденный дефект | Категория | Ожидаемое / максимум |
+| --- | --- | --- | --- |
+| Public100 context + intent scope | Медленный Hub на GET; потеря UNKNOWN при изменении scope | fast unit + focused integration | 30s /180s суммарно |
+| Linux44/88 promotion | Реальный immutable payload, identity/CAS/rollback/native preservation | focused integration | 15s /120s на узел |
+|88→44 metadata cold/warm | Проверить реальную выдачу принятой empty native ID без истории | focused integration | 20s /120s; сейчас PRE-admission HELD |
+| Public cabinet44↔88 + cached reopen | Снять зависание списка и измерить видимое переключение | focused integration | 90s /180s внутри finite600s browser lease; pending |
