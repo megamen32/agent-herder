@@ -71,10 +71,11 @@ def command(argv,deadline=None):
     # Cleanup retains its existing caller deadline; no prior output is reused.
     stages={'/bin/ps':'process','/usr/sbin/lsof':'listener',
             '/usr/sbin/sysctl':'host_identity','/usr/bin/memory_pressure':'host_memory'}
-    stage=stages.get(argv[0],'other')
+    native_probe=Path(argv[0]).name=='mac-codex-owner-probe' and len(argv) in (4,5) and argv[1] in ('--text','--socket')
+    stage='listener' if native_probe else stages.get(argv[0],'other')
     probe=('threads' if '-M' in argv else 'census' if '-axo' in argv or '-g' in argv else 'identity') if stage=='process' else stage
     if stage=='listener':
-        probe='text_mapping' if '-d' in argv and 'txt' in argv else 'unix_owner' if '-U' in argv else 'tcp_listener' if any(str(a).startswith('-iTCP:') for a in argv) else 'listener'
+        probe=('text_mapping' if argv[1]=='--text' else 'unix_owner') if native_probe else 'text_mapping' if '-d' in argv and 'txt' in argv else 'unix_owner' if '-U' in argv else 'tcp_listener' if any(str(a).startswith('-iTCP:') for a in argv) else 'listener'
     window=min(time.monotonic()+4,deadline) if deadline is not None else time.monotonic()+4
     attempts=2 if stage!='other' else 1
     for attempt in range(1,attempts+1):
@@ -282,7 +283,10 @@ def native_app_server_argv(argv,pointer):
     listen=tail.index('--listen')+1
     return listen<len(tail) and tail[listen] in ('unix://','unix://'+str(pointer))
 
-def native_text_identity(pid,claimed):
+def native_text_identity(pid,claimed,*,admission=True):
+    if not admission:
+        if command([str(Path.home()/'.local/share/agent-herder/fleet/mac-codex-owner-probe'),'--text',str(pid),str(claimed)]).strip()!='OWNED':raise Refused('managed_codex_owner_unverified')
+        return
     # Darwin argv0 may be relative. Kernel text mappings prove the real executable.
     fields=command(['/usr/sbin/lsof','-nP','-a','-p',str(pid),'-d','txt','-Fpn']).splitlines()
     pids={line[1:] for line in fields if line.startswith('p')}
@@ -306,17 +310,28 @@ def verify_codex_owner(config,*,admission=False):
             raise Refused('managed_codex_owner_unverified')
         argv=shlex.split(row[6]);claimed=executable(binary).resolve(strict=True)
         if not native_app_server_argv(argv,pointer):raise Refused('managed_codex_owner_unverified')
-        native_text_identity(pid,claimed)
+        native_text_identity(pid,claimed,admission=admission)
     process_identity()
     # JOIN/startup retains the global sole-FD-owner proof. Periodic checks
     # verify only the already-approved PID, with fresh generation/text/socket
     # fences before and after. They do not claim a global exclusivity census.
-    selector=[] if admission else ['-p',str(pid)]
-    pids=command(['/usr/sbin/lsof','-t','-nP','-a',*selector,'-U',str(physical)]).split()
-    if set(pids)!={str(pid)}:raise Refused('managed_codex_owner_unverified')
+    if admission:
+        pids=command(['/usr/sbin/lsof','-t','-nP','-a','-U',str(physical)]).split()
+        if set(pids)!={str(pid)}:raise Refused('managed_codex_owner_unverified')
+    probe=Path.home()/'.local/share/agent-herder/fleet/mac-codex-owner-probe'
+    hint=config.get('_codexSocketFd') if not admission else None
+    args=[str(probe),'--socket',str(pid),str(physical)]
+    if hint is not None:
+        if type(hint)!=int or not 0<=hint<=2147483647:raise Refused('managed_codex_owner_unverified')
+        args.append(str(hint))
+    result=command(args).strip();match=re.fullmatch(r'FD ([0-9]{1,10})',result)
+    if not match or int(match[1])>2147483647:raise Refused('managed_codex_owner_unverified')
+    descriptor=int(match[1])
+    if hint is not None and descriptor!=hint:raise Refused('managed_codex_owner_unverified')
     process_identity()
     final=pointer.stat()
     if (final.st_dev,final.st_ino)!=(info.st_dev,info.st_ino):raise Refused('managed_codex_owner_unverified')
+    config['_codexSocketFd']=descriptor # Hint only: the kernel rereads this FD on every tick.
     return {'pid':pid,'startedAt':expected,'device':info.st_dev,'inode':info.st_ino}
 
 def codex_environment(config):
@@ -608,7 +623,7 @@ def prepare(base,config,artifact_cache=None):
     if sys.platform!='darwin':raise Refused('darwin_required')
     policy=Policy(command(['/usr/sbin/sysctl','-n','hw.model']).strip())
     if config['hostId']!=socket.gethostname():raise Refused('native_host_identity_mismatch')
-    verify_launcher_hashes(base,config,['mac-node-watchdog.py'])
+    verify_launcher_hashes(base,config,['mac-node-watchdog.py',*(['mac-codex-owner-probe'] if 'codex' in config.get('harnesses',[]) else [])])
     entry=verify_manifest(base,config['sourceSha'])
     node=executable(config['nodeBin'])
     harnesses=config['harnesses']

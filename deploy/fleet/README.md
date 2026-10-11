@@ -143,3 +143,34 @@ five-second window, cleanup reserve, 30000 entries plus root,512MiB/two releases
 root UID/device/inode proof,30-second census cadence and fail-closed errors.
 Native candidate measured two releases149498880bytes in0.101 seconds; this is
 read-only candidate evidence, not steady/public-owner acceptance.
+
+
+### M1 periodic kernel observer (2026-10-12)
+
+The single-traversal helper passed artifact accounting, but the next owned
+Node stopped at46.10s: targeted lsof UNIX-owner timeout, RSS148192KiB,
+CPU0.46%, artifact age2.775s and host free22817013KiB. Preserve both failures;
+there is no evidence of RAM/CPU shortage or an owner-cookie policy failure.
+
+`mac-codex-owner-probe.c` is a read-only SDK-built helper sealed alongside the
+Python launcher in `node-config.json.launcherHashes`. Periodic text identity
+uses libproc `proc_pidpath` (kernel executable vnode path, independent of argv).
+Admission obtains the native listener FD via a bounded4096-entry LISTFDS;
+subsequent checks reread that known FD using FDSOCKETINFO, checking AF_UNIX,
+SOCK_STREAM, SO_ACCEPTCONN and exact local bound physical path. A duplicated
+FD of the same kernel socket is accepted at admission; distinct sockets refuse.
+The FD is an in-process hint, never a cached successful observation.
+
+Keep fresh UID/start/argv and pathname UID/type/device/inode fences before/after,
+and preserve global lsof sole-owner proof at JOIN. SOCKETINFO does not populate
+vnode `soi_stat`; do not claim an atomic FD-to-current-pathname-inode guarantee.
+This matches lsof's UNIX path selection and additionally requires listen state.
+[Apple libproc/XNU](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/proc_info.c),
+[Apple lsof path selection](https://github.com/apple-oss-distributions/lsof/blob/main/lsof/dialects/darwin/libproc/dsock.c).
+
+Each helper call retains the existing2s/two-attempt/common4s deadline and
+fail-closed incomplete/error/empty behavior. Deliver source+SDK build receipt,
+binary SHA, launcher SHA and both sealed config entries in one guarded CAS;
+no Node payload or native controller replacement is required. Initial native
+SDK compile took1.078s, observed55MiB peak; socket probe8.8ms and text636.8ms
+(first read). Require steady/native/public-owner acceptance after installation.
