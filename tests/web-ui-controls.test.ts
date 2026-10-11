@@ -92,7 +92,7 @@ describe("mobile chat and session controls", () => {
     expect(header).toContain('aria-label="Настройки сессии"');
     expect(header).toContain('aria-label="Меню чата"');
     for (const label of ['>Машины<', '>Задачи<', '>Статистика<', '>Автопилот<', '>Автопродолжение<']) expect(header).not.toContain(label);
-    expect(main).toContain('onMachines={() => { setShowFleet(true)');
+    expect(main).toContain('onMachines={() => { setFleetCreationMode(false);setShowFleet(true)');
     expect(main).toContain('>Автопилот</button>');
     expect(main).toContain('>Автопродолжение</button>');
     expect(menu).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
