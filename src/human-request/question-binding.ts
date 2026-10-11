@@ -65,6 +65,9 @@ export async function askHuman(
   const record = await registry.create({
     kind: input.kind,
     target: input.target,
+    // Only this seam produces a Notice question row, so only this seam may point
+    // a resumed session at one.
+    ...(message ? { answerSource: "notice_question" as const } : {}),
     ...(input.contextRef ? { contextRef: input.contextRef } : {}),
   });
   return {

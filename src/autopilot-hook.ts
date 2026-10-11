@@ -17,6 +17,8 @@ import {
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
+import { deliverNoticeQuestion, type NoticeQuestionConfig } from "./human-request/notice-question.js";
+import type { PendingHumanQuestion } from "./autopilot/index.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { resolveEffectivePolicy } from "./autopilot/policy.js";
@@ -45,6 +47,8 @@ export type AutopilotHookDeps = {
   choiceRegistry?: ChoiceRegistry;
   /** Durable Human Request registry that binds a human decision to this exact session. */
   humanRequests?: Parameters<typeof createAutopilotCore>[0]["humanRequests"];
+  /** The single Notice human-request intake for a human judge decision. */
+  deliverHumanQuestion?: Parameters<typeof createAutopilotCore>[0]["deliverHumanQuestion"];
   /** Durable answer-pending gate applied before any judgement or continuation. */
   pendingQuestions?: Parameters<typeof createAutopilotCore>[0]["pendingQuestions"];
   effectivePolicy?: Parameters<typeof createAutopilotCore>[0]["effectivePolicy"];
@@ -67,6 +71,22 @@ export async function runAutopilotStopHook(
 }
 
 /** Load the effective policy from the same configured store path used by the web service. */
+/** The dedicated Notice human-request intake, when it is configured. */
+function noticeQuestionConfig(): NoticeQuestionConfig | undefined {
+  const token = process.env.NOTIFY_CENTER_TOKEN?.trim();
+  const endpoint = process.env.NOTIFY_CENTER_HUMAN_REQUEST_URL?.trim()
+    ?? process.env.NOTIFY_CENTER_EVENT_URL?.trim().replace(/\/v1\/events\/?$/, "/v1/human-requests");
+  if (!token || !endpoint) return undefined;
+  const allowedActors = process.env.NOTIFY_CENTER_ALLOWED_ACTORS?.split(",").map((actor) => actor.trim()).filter(Boolean);
+  return {
+    endpoint,
+    token,
+    project: process.env.NOTIFY_CENTER_PROJECT?.trim() || process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_PROJECT?.trim() || "agent-herder",
+    recipient: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT?.trim() || "me",
+    ...(allowedActors && allowedActors.length > 0 ? { allowedActors } : {}),
+  };
+}
+
 export async function loadEffectivePolicyForStopHook(
   stateDir: string,
   legacySessionIds: Iterable<string>,
@@ -141,6 +161,7 @@ async function main(): Promise<void> {
     const receiptStore = await loadReceiptStore(receiptPath);
     const choiceRegistry = new ChoiceRegistry(join(stateDir, "choices.json"));
     const humanRequests = new HumanRequestRegistry(resolveHumanRequestStorePath(stateDir));
+    const questionConfig = noticeQuestionConfig();
     const result = await runAutopilotStopHook(input, {
       judge,
       notify,
@@ -164,6 +185,9 @@ async function main(): Promise<void> {
       },
       choiceRegistry,
       humanRequests,
+      ...(questionConfig
+        ? { deliverHumanQuestion: (question: PendingHumanQuestion) => deliverNoticeQuestion(question, questionConfig) }
+        : {}),
       pendingQuestions: new PendingQuestionGate({ humanRequests, choices: choiceRegistry }),
       humanStopStore: getHumanStopStore(),
     });

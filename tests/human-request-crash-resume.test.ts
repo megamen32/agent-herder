@@ -121,7 +121,7 @@ describe("human-request resume across a crash", () => {
     const path = await registryPath();
     const delivered: ResumeTransportRequest[] = [];
     const store = new HumanRequestRegistry(path);
-    const created = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "ses_open", cwd: "/workspace/app" } });
+    const created = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "ses_open", cwd: "/workspace/app" }, answerSource: "notice_question" });
     const admitted = await store.admitResume(created.requestId, { resultRef: "result://canonical-answer" });
 
     const takeover = await resumeHumanRequestOnce({

@@ -23,6 +23,12 @@ export {
   type HumanQuestionNativeTarget,
 } from "./question-binding.js";
 export {
+  buildAskHumanRequest,
+  deliverNoticeQuestion,
+  type AskHumanRequestV1,
+  type NoticeQuestionConfig,
+} from "./notice-question.js";
+export {
   humanRequestResumeTarget,
   resumeHumanRequestOnce,
   type HumanRequestResumeDependencies,

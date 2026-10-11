@@ -1114,6 +1114,22 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 400, { error: reason });
     }
   }
+  if (request.method === "POST" && url.pathname === "/internal/human-requests/cancel") {
+    if (!humanRequests) return sendJson(response, 503, { error: "Human Request registry is disabled" });
+    const body = await readJson(request);
+    if (typeof body.request_id !== "string" || body.request_id.length === 0) {
+      return sendJson(response, 400, { error: "request_id is required" });
+    }
+    try {
+      // An expired or withdrawn question must not hold its session behind the
+      // pending-question gate forever. Cancelling resumes nothing.
+      const record = await humanRequests.cancel(body.request_id, typeof body.reason === "string" ? body.reason : undefined);
+      return sendJson(response, 200, { request_id: record.requestId, status: record.status, continuation: record.continuation });
+    } catch (error) {
+      const reason = (error as Error).message;
+      return sendJson(response, /not found/.test(reason) ? 404 : 409, { error: reason });
+    }
+  }
   if (request.method === "POST" && (url.pathname === "/internal/human-requests/sss-completion" || url.pathname === "/internal/human-requests/ask-user-completion")) {
     if (!humanRequests) return sendJson(response, 503, { error: "Human Request registry is disabled" });
     const body = await readJson(request);

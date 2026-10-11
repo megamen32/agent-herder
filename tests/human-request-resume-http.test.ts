@@ -72,6 +72,7 @@ describe("human-request completion resume", () => {
     const request = await humanRequests.create({
       kind: "user",
       target: { agent: "zcode", sessionId: session.id, cwd: session.cwd },
+      answerSource: "notice_question",
     });
     const server = createWebServer({
       adapters,
@@ -128,7 +129,7 @@ describe("human-request completion resume", () => {
     const converter = { async convert() { throw new Error("unused"); } };
     const supervisor = new SessionSupervisor(adapters, converter, new LineageStore(join(root, "lineage.json")), { unfinishedSessions: launcher });
     const humanRequests = new HumanRequestRegistry(join(root, "human-requests.json"));
-    const request = await humanRequests.create({ kind: "user", target: { agent: "zcode", sessionId: session.id, cwd: session.cwd } });
+    const request = await humanRequests.create({ kind: "user", target: { agent: "zcode", sessionId: session.id, cwd: session.cwd }, answerSource: "notice_question" });
     const server = createWebServer({ adapters, converter, humanRequests, supervisor, sessionObservationManagedExternally: true });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

@@ -114,6 +114,23 @@ describe("UnfinishedSessionLauncher pending-question gate", () => {
     expect(await launcher.armSession(session)).toBe(true);
   });
 
+  it("lifts the fence when an expired question is cancelled", async () => {
+    const { launcher, humanRequests, humanStops } = await fixture();
+    const session: AgentSession = {
+      id: question.sessionId, harness: "zcode", status: "idle", title: "t", cwd: question.cwd,
+      lastActivity: new Date().toISOString(), needsPermission: false,
+    };
+    const request = await humanRequests.create({ kind: "user", target: question });
+    expect(await launcher.armSession(session)).toBe(false);
+
+    const cancelled = await humanRequests.cancel(request.requestId, "notice://question/expired");
+    expect(cancelled).toMatchObject({ status: "cancelled" });
+    expect(await launcher.armSession(session)).toBe(true);
+    // A cancelled request is never resumed later.
+    await expect(humanRequests.admitResume(request.requestId, { resultRef: "result://late" })).rejects.toThrow("cancelled");
+    expect(await humanRequests.get(request.requestId)).toMatchObject({ status: "cancelled" });
+  });
+
   it("keeps the explicit human-stop fence authoritative over the pending-question gate", async () => {
     const { launcher, humanRequests, humanStops } = await fixture();
     const session: AgentSession = {

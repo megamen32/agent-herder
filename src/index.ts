@@ -20,7 +20,8 @@ import { AutopilotSessionStore } from "./autopilot/session-store.js";
 import { AutomationLaunchPolicyStore } from "./automation-launch-policy.js";
 import { dispatchProjectLaunch, namedSessionRunner, ProjectLaunchAttemptLog, type ProjectLaunchDispatcher } from "./automation/project-launch-dispatch.js";
 import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
-import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore } from "./autopilot/index.js";
+import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore, type PendingHumanQuestion } from "./autopilot/index.js";
+import { buildAskHumanRequest } from "./human-request/notice-question.js";
 import { acquireLock } from "./autopilot-hook.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
 import { SessionSupervisor } from "./session-supervisor.js";
@@ -507,6 +508,44 @@ function registerTools(
   registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined });
 }
 
+/** The dedicated Notice human-request intake: one call is one real question card. */
+function createNoticeQuestionDelivery(env: NodeJS.ProcessEnv): (question: PendingHumanQuestion) => Promise<void> {
+  const token = env.NOTIFY_CENTER_TOKEN?.trim();
+  if (!token) throw new Error("NOTIFY_CENTER_TOKEN is required to ask a human a question");
+  const endpoint = env.NOTIFY_CENTER_HUMAN_REQUEST_URL?.trim()
+    ?? env.NOTIFY_CENTER_EVENT_URL?.trim().replace(/\/v1\/events\/?$/, "/v1/human-requests");
+  if (!endpoint) throw new Error("NOTIFY_CENTER_HUMAN_REQUEST_URL or NOTIFY_CENTER_EVENT_URL is required to ask a human a question");
+  const allowedActors = env.NOTIFY_CENTER_ALLOWED_ACTORS?.split(",").map((actor) => actor.trim()).filter(Boolean);
+  const project = env.NOTIFY_CENTER_PROJECT?.trim() || env.AGENT_HERDER_AUTOPILOT_NOTIFY_PROJECT?.trim() || "agent-herder";
+  const recipient = env.AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT?.trim() || "me";
+  return async (question) => {
+    const envelope = buildAskHumanRequest({
+      request_id: question.request_id,
+      native_target: question.native_target,
+      dedup_key: question.dedup_key,
+      kind: question.kind,
+      question: question.question,
+    }, {
+      project,
+      recipient,
+      ...(allowedActors && allowedActors.length > 0 ? { allowedActors } : {}),
+    });
+    const fetchImpl = fetch;
+    const response = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+        // The registry's canonical key, so a redelivery updates the same card.
+        "idempotency-key": question.dedup_key,
+      },
+      signal: AbortSignal.timeout(10_000),
+      body: JSON.stringify(envelope),
+    });
+    if (!response.ok) throw new Error(`Notice human request rejected with HTTP ${response.status}`);
+  };
+}
+
 // ===== Main =====
 
 export interface AgentHerderMcpServerOptions {
@@ -712,14 +751,15 @@ async function main() {
   const projectLaunchDispatch: ProjectLaunchDispatcher = async (request) => {
     const loaded = await automationLaunchPolicyStore.load();
     if (loaded.kind !== "valid") throw new Error(loaded.kind === "invalid" ? `Launch policy is invalid: ${loaded.error}` : "Launch policy is not configured");
+    // One stable named session per project operation: the same name reaches the
+    // dispatch and the named-session runner, so a retry resumes that session
+    // instead of reusing one constant name for every launch.
+    const name = request.name
+      ?? `project-launch-${createHash("sha256").update(`${request.project}\0${request.operationId ?? ""}`).digest("hex").slice(0, 16)}`;
     return await dispatchProjectLaunch(
-      {
-        policy: loaded.policy,
-        ...request,
-        name: request.name ?? `project-launch-${createHash("sha256").update(`${request.project}\0${request.operationId ?? ""}`).digest("hex").slice(0, 12)}`,
-      },
+      { policy: loaded.policy, ...request, name },
       projectLaunchAttempts,
-      namedSessionRunner(adapters, request.name ?? "project-launch"),
+      namedSessionRunner(adapters, name),
     );
   };
   const humanResumeQuery = (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters);

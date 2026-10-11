@@ -32,7 +32,10 @@ export interface ProjectLaunchAttempt {
   /** The exact model, mode and delivery of this attempt, kept for a full replay. */
   model?: string;
   mode?: NamedSessionMode;
+  /** Whether this attempt created a session or resumed an existing one. */
+  created?: boolean;
   delivery?: NamedSessionResult["delivery"];
+  error?: string;
   atCompleted?: string;
 }
 
@@ -161,7 +164,8 @@ export async function dispatchProjectLaunch(
       ...(last.model ? { model: last.model } : {}),
       ...(last.delivery ? { delivery: last.delivery } : {}),
       ...(last.sessionId ? { sessionId: last.sessionId } : {}),
-      mode: attempts.some((attempt) => attempt.outcome !== "in_flight") ? "create" : undefined,
+      ...(last.error ? { error: last.error } : {}),
+      mode: last.created === false ? "resume" : "create",
     };
   }
 
@@ -255,35 +259,27 @@ export async function dispatchProjectLaunch(
     ...(model ? { model } : {}),
     reason: routingReason,
   });
-  if (reservation.outcome !== "in_flight") {
-    const completed = reservation;
+  if (!reservation.claimed) {
+    // Another caller owns this attempt. Report its state without any native
+    // call: an unclaimed second POST would be a second executor.
+    const completed = reservation.record;
+    if (completed.outcome === "in_flight") {
+      return {
+        operationId,
+        project,
+        attempts: [...attempts.filter((item) => item.inputId !== completed.inputId), completed],
+        outcome: "in_flight",
+        routingReason: `Запуск ${harnessLabel(completed.harness)} уже выполняется другим вызовом; второй запуск не создаётся.`,
+        selectedHarness: completed.harness,
+        ...(completed.model ? { model: completed.model } : {}),
+      };
+    }
     if (!STOP_OUTCOMES.has(completed.outcome as LaunchOutcome | "human_hold")) {
       return dispatchProjectLaunch({ ...input, operationId }, log, run);
     }
-    return {
-      operationId,
-      project,
-      attempts: [...attempts.filter((attempt) => attempt.inputId !== completed.inputId), completed],
-      outcome: completed.outcome as LaunchOutcome | "human_hold",
-      routingReason: completed.reason,
-      selectedHarness: completed.harness,
-      ...(completed.model ? { model: completed.model } : {}),
-      mode: launchMode === "handoff" ? "handoff_required" : launchMode,
-      ...(completed.sessionId ? { sessionId: completed.sessionId } : {}),
-      ...(completed.delivery ? { delivery: completed.delivery } : {}),
-    };
+    return replayOf({ operationId, project, attempts, completed, launchMode });
   }
-  if (attempts.some((attempt) => attempt.inputId === inputId && attempt.outcome === "in_flight")) {
-    return {
-      operationId,
-      project,
-      attempts,
-      outcome: "in_flight",
-      routingReason: `Запуск ${harnessLabel(harness)} уже зарезервирован, результат неизвестен. Повтор не создаёт второго исполнителя.`,
-      selectedHarness: harness,
-      ...(model ? { model } : {}),
-    };
-  }
+
   const result = await run({ harness, cwd, message: input.message, ...(model ? { model } : {}), mode, inputId });
   const outcome = outcomeOf(result);
   const attempt: ProjectLaunchAttempt = {
@@ -292,13 +288,15 @@ export async function dispatchProjectLaunch(
     reason: outcome === "accepted"
       ? (attempts.length === 0 ? routingReason : `${routingReason} Среда ${harnessLabel(harness)} приняла запуск${result.error ? `: ${result.error}` : ""}.`)
       : routingDetail(harness, outcome, result),
-    at: reservation.at,
+    at: reservation.record.at,
     atCompleted: new Date().toISOString(),
     inputId,
     ...(result.sessionId ? { sessionId: result.sessionId } : {}),
     ...(model ? { model } : {}),
     mode,
+    ...(result.created === undefined ? {} : { created: result.created }),
     ...(result.delivery ? { delivery: result.delivery } : {}),
+    ...(result.error ? { error: result.error } : {}),
   };
   await log.complete(project, operationId, inputId, attempt);
   const recorded = [...attempts, attempt];
@@ -328,6 +326,30 @@ export async function dispatchProjectLaunch(
     outcome: "no_harness",
     routingReason: `${attempt.reason} Других сред в маршруте нет.`,
     ...(result.error ? { error: result.error } : {}),
+  };
+}
+
+/** Answer a repeat with the full receipt of the attempt that owns the operation. */
+function replayOf(input: {
+  operationId: string;
+  project: string;
+  attempts: ProjectLaunchAttempt[];
+  completed: ProjectLaunchAttempt;
+  launchMode: "create" | "resume" | "handoff";
+}): ProjectLaunchDispatchResult {
+  const { completed } = input;
+  return {
+    operationId: input.operationId,
+    project: input.project,
+    attempts: [...input.attempts.filter((attempt) => attempt.inputId !== completed.inputId), completed],
+    outcome: completed.outcome as LaunchOutcome | "human_hold",
+    routingReason: completed.reason,
+    selectedHarness: completed.harness,
+    ...(completed.model ? { model: completed.model } : {}),
+    mode: completed.created === false ? "resume" : input.launchMode === "handoff" ? "handoff_required" : "create",
+    ...(completed.sessionId ? { sessionId: completed.sessionId } : {}),
+    ...(completed.delivery ? { delivery: completed.delivery } : {}),
+    ...(completed.error ? { error: completed.error } : {}),
   };
 }
 
@@ -437,27 +459,28 @@ export class ProjectLaunchAttemptLog {
   }
 
   /**
-   * Reserve one attempt before any native call.
+   * Reserve one attempt before any native call, atomically.
    *
-   * The reservation is exclusive per input id, so a concurrent caller or a
-   * restarted service sees the existing attempt instead of launching a second
-   * executor.
+   * The read, the exclusive insert and the write happen under one lock, so a
+   * concurrent caller receives `claimed: false` and the existing record. Only
+   * `claimed: true` may call the native writer: OpenCode has no native input-id
+   * deduplication, so a second native POST would be a second executor.
    */
   async reserve(
     project: string,
     operationId: string,
     attempt: Omit<ProjectLaunchAttempt, "outcome" | "at"> & { reason?: string },
-  ): Promise<ProjectLaunchAttempt> {
+  ): Promise<{ claimed: boolean; record: ProjectLaunchAttempt }> {
     return this.serial(() => this.withFileLock(async () => {
       const file = await this.read();
       const operations = file.projects[project] ?? (file.projects[project] = {});
       const attempts = operations[operationId] ?? (operations[operationId] = []);
       const existing = attempts.find((item) => item.inputId === attempt.inputId);
-      if (existing) return existing;
+      if (existing) return { claimed: false, record: existing };
       const reserved: ProjectLaunchAttempt = { ...attempt, outcome: "in_flight", at: new Date().toISOString() };
       attempts.push(reserved);
       await this.write(file);
-      return reserved;
+      return { claimed: true, record: reserved };
     }));
   }
 

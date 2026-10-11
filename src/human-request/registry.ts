@@ -6,7 +6,18 @@ import { herderEvents, type HerderEventBus } from "../herder-events.js";
 import { humanRequestResourceUri } from "../herder-resource-uris.js";
 
 export type HumanRequestKind = "user" | "secret";
-export type HumanRequestStatus = "pending" | "resuming" | "resumed" | "resume_failed";
+export type HumanRequestStatus = "pending" | "resuming" | "resumed" | "resume_failed" | "cancelled";
+
+/**
+ * Where the human answer of a request comes from.
+ *
+ * A question created through the question-binding seam has a Notice question
+ * row, so its continuation may point at it. Every other request (metadata-only,
+ * secret, or an internal judge decision) has no such row: its answer arrives in
+ * the human channel of the bound session, and a continuation must not claim a
+ * card that does not exist.
+ */
+export type HumanRequestAnswerSource = "notice_question" | "human_channel";
 
 export interface HumanRequestTarget {
   readonly agent?: string;
@@ -21,6 +32,8 @@ export interface HumanRequestTarget {
 export interface CreateHumanRequestInput {
   kind: HumanRequestKind;
   target: HumanRequestTarget;
+  /** Default `human_channel`; only the question-binding seam sets it explicitly. */
+  answerSource?: HumanRequestAnswerSource;
   /** Provider-owned opaque correlation handle; never a prompt or secret. */
   contextRef?: string;
   /** Explicit Notify event tuple. Agent Herder does not choose any of these values. */
@@ -84,6 +97,8 @@ export interface HumanRequestRecord {
   target: HumanRequestTarget;
   contextRef?: string;
   status: HumanRequestStatus;
+  /** How the answer reaches the resumed session. Never guessed at resume time. */
+  answerSource: HumanRequestAnswerSource;
   continuation: "resume";
   resolutionRef?: string;
   resultRef?: string;
@@ -166,7 +181,11 @@ function validateRecord(record: HumanRequestRecord): HumanRequestRecord {
   rejectPayloadFields(record);
   if (!record || typeof record.requestId !== "string" || record.requestId.length < 1) throw new Error("invalid request record");
   if (record.kind !== "user" && record.kind !== "secret") throw new Error("invalid request kind");
-  if (record.status !== "pending" && record.status !== "resuming" && record.status !== "resumed" && record.status !== "resume_failed") throw new Error("invalid request status");
+  if (record.status !== "pending" && record.status !== "resuming" && record.status !== "resumed" && record.status !== "resume_failed" && record.status !== "cancelled") throw new Error("invalid request status");
+  if (record.answerSource !== "notice_question" && record.answerSource !== "human_channel") {
+    // A record written before the discriminator existed had no Notice row.
+    if (record.answerSource !== undefined) throw new Error("invalid request answer source");
+  }
   targetOf(record.target);
   opaqueRef(record.contextRef, "contextRef");
   opaqueRef(record.resolutionRef, "resolutionRef");
@@ -184,6 +203,7 @@ function validateRecord(record: HumanRequestRecord): HumanRequestRecord {
     if (!record.resolvedAt) throw new Error("terminal request is missing resolvedAt");
     if (!record.attemptId) throw new Error("terminal request is missing attemptId");
   }
+  if (record.status === "cancelled" && !record.resolvedAt) throw new Error("cancelled request is missing resolvedAt");
   return record;
 }
 
@@ -230,6 +250,7 @@ export class HumanRequestRegistry {
         requestId: randomUUID(),
         kind: input.kind,
         target,
+        answerSource: input.answerSource ?? "human_channel",
         ...(contextRef ? { contextRef } : {}),
         status: "pending",
         continuation: "resume",
@@ -290,6 +311,7 @@ export class HumanRequestRegistry {
       const record = file.requests.find((item) => item.requestId === requestId);
       if (!record) throw new Error(`Human request '${requestId}' not found`);
       const leaseExpiresAt = new Date(now.getTime() + leaseMs).toISOString();
+      if (record.status === "cancelled") throw new Error(`Human request '${requestId}' was cancelled`);
       if (record.status === "resuming") {
         // The canonical admitted answer stays authoritative for a conflicting repeat.
         const existingKey = record.idempotencyKey ?? idempotencyKeyFor(record.requestId, record.attemptId!);
@@ -317,10 +339,11 @@ export class HumanRequestRegistry {
         return {
           admitted: false,
           recovered: false,
-          idempotencyKey: record.idempotencyKey ?? idempotencyKeyFor(record.requestId, record.attemptId!),
+          idempotencyKey: record.idempotencyKey ?? idempotencyKeyFor(record.requestId, record.attemptId ?? "none"),
           record: cloneRecord(record),
         };
       }
+      if (record.answerSource === undefined) record.answerSource = "human_channel";
       const admittedAttemptId = attemptId ?? randomUUID();
       const idempotencyKey = idempotencyKeyFor(record.requestId, admittedAttemptId);
       record.status = "resuming";
@@ -366,13 +389,39 @@ export class HumanRequestRegistry {
       const file = await this.read();
       const record = file.requests.find((item) => item.requestId === requestId);
       if (!record) throw new Error(`Human request '${requestId}' not found`);
-      if (record.status === "resumed" || record.status === "resume_failed") return cloneRecord(record);
+      if (record.status === "resumed" || record.status === "resume_failed" || record.status === "cancelled") return cloneRecord(record);
       if (record.status !== "resuming" || record.attemptId !== checkedAttemptId) {
         throw new Error(`Human request '${requestId}' is not owned by attemptId '${attemptId}'`);
       }
       record.status = status;
       if (receipt) record.receipt = receipt;
       record.resolvedAt = new Date().toISOString();
+      await this.write(file);
+      this.publishRequest(record.requestId, "updated");
+      return cloneRecord(record);
+    });
+  }
+
+  /**
+   * Cancel an unanswered request.
+   *
+   * A Notice question that expired or was withdrawn must not hold its session
+   * behind the pending-question gate forever. Cancellation is terminal, resumes
+   * nothing and never touches a native session.
+   */
+  async cancel(requestId: string, reason?: string): Promise<HumanRequestRecord> {
+    const checkedReason = opaqueRef(reason, "reason");
+    return this.mutate(async () => {
+      const file = await this.read();
+      const record = file.requests.find((item) => item.requestId === requestId);
+      if (!record) throw new Error(`Human request '${requestId}' not found`);
+      if (record.status === "resumed" || record.status === "resume_failed" || record.status === "cancelled") {
+        return cloneRecord(record);
+      }
+      if (record.status === "resuming") throw new Error(`Human request '${requestId}' is already being resumed`);
+      record.status = "cancelled";
+      record.resolvedAt = new Date().toISOString();
+      if (checkedReason) record.receipt = `cancelled:${checkedReason}`;
       await this.write(file);
       this.publishRequest(record.requestId, "updated");
       return cloneRecord(record);
@@ -467,6 +516,8 @@ export class HumanRequestRegistry {
 function cloneRecord(record: HumanRequestRecord): HumanRequestRecord {
   return {
     ...record,
+    // A record written before the discriminator existed had no Notice row.
+    answerSource: record.answerSource ?? "human_channel",
     target: targetOf(record.target),
     ...(record.notify ? { notify: { ...record.notify } } : {}),
   };

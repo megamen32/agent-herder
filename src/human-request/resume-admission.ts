@@ -116,9 +116,20 @@ export function continuationPrompt(record: HumanRequestRecord, canonicalResultRe
   if (record.kind === "secret") {
     return `Human Request ${record.requestId} resolved. Continue the same task with the supplied secret reference ${canonicalResultRef}; never print the secret.`;
   }
+  // Only a request created through the question-binding seam has a Notice
+  // question row. Anything else must not send the session after a card that
+  // does not exist.
+  if (record.answerSource === "notice_question") {
+    return [
+      `Human Request ${record.requestId} is answered; continue the same task on this exact session.`,
+      `Read the canonical answer with noticeplace_question_result(request_id="${record.requestId}") and apply it.`,
+      `Answer reference: ${canonicalResultRef}. Do not invent an answer and do not start a different task.`,
+    ].join(" ");
+  }
   return [
     `Human Request ${record.requestId} is answered; continue the same task on this exact session.`,
-    `Read the canonical answer with noticeplace_question_result(request_id="${record.requestId}") and apply it.`,
+    `The answer arrived through this session, not through a Notice card: use the human message above it as the answer.`,
+    `If no human message is present above, ask the human here for it instead of guessing.`,
     `Answer reference: ${canonicalResultRef}. Do not invent an answer and do not start a different task.`,
   ].join(" ");
 }

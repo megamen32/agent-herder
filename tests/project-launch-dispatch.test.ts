@@ -317,7 +317,8 @@ describe("project launch dispatch", () => {
     // A crash after the reservation leaves a durable in-flight attempt.
     const crashed = new ProjectLaunchAttemptLog(join(dir, "attempts.json"));
     const reservation = await crashed.reserve(policy.projectRoutes!["/home/roomhacker/PycharmProjects/TelegramAuto"].harnesses ? "/home/roomhacker/PycharmProjects/TelegramAuto" : "", "op-crash", { harness: "opencode", inputId: attemptInputId("op-crash", "opencode"), mode: "sync" });
-    expect(reservation).toMatchObject({ outcome: "in_flight", harness: "opencode" });
+    expect(reservation).toMatchObject({ claimed: true });
+    expect(reservation.record).toMatchObject({ outcome: "in_flight", harness: "opencode" });
 
     const result = await dispatchProjectLaunch({
       policy,
@@ -330,6 +331,40 @@ describe("project launch dispatch", () => {
     expect(result).toMatchObject({ outcome: "in_flight", selectedHarness: "opencode" });
     expect(result.routingReason).toContain("уже зарезервирован");
     expect(attempts).toHaveLength(0);
+  });
+
+  it("never posts twice to a harness without native input deduplication", async () => {
+    const dir = await root();
+    const cwd = await workspace();
+    const attempts: Array<{ harness: string; inputId?: string }> = [];
+    const adapters = new Map<string, HarnessAdapter>([["opencode", nativeAdapter("opencode", "accepted", attempts, cwd)]]);
+    const routeCwd = await workspace();
+    const routed = validateAutomationLaunchPolicy({
+      ...policy,
+      projectRoutes: { [routeCwd]: { harnesses: ["opencode"] } },
+    });
+
+    // Two concurrent callers of the same operation. OpenCode has no native
+    // input-id dedup, so only the durable claim can prevent a second POST.
+    const release = { wait: true };
+    const first = dispatchProjectLaunch({
+      policy: routed, project: routeCwd, cwd: routeCwd, message: "Исправить", operationId: "op-concurrent",
+    }, new ProjectLaunchAttemptLog(join(dir, "attempts.json")), async (request) => {
+      while (release.wait) await new Promise((resolve) => setTimeout(resolve, 5));
+      return await namedSessionRunner(adapters, "tg")(request);
+    });
+    const second = dispatchProjectLaunch({
+      policy: routed, project: routeCwd, cwd: routeCwd, message: "Исправить", operationId: "op-concurrent",
+    }, new ProjectLaunchAttemptLog(join(dir, "attempts.json")), namedSessionRunner(adapters, "tg"));
+    const secondResult = await second;
+    release.wait = false;
+    const firstResult = await first;
+
+    expect(attempts).toHaveLength(1);
+    expect(secondResult).toMatchObject({ outcome: "in_flight", selectedHarness: "opencode" });
+    expect(secondResult.routingReason).toContain("уже выполняется другим вызовом");
+    expect(firstResult).toMatchObject({ outcome: "accepted", selectedHarness: "opencode" });
+    expect(firstResult.attempts).toMatchObject([{ harness: "opencode", created: true, model: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview", mode: "sync" }]);
   });
 
   it("replays the full receipt of a completed attempt", async () => {
@@ -353,7 +388,11 @@ describe("project launch dispatch", () => {
       sessionId: "zcode-1",
     });
     const accepted = replay.attempts[replay.attempts.length - 1]!;
-    expect(accepted).toMatchObject({ harness: "zcode", model: "account:zai-individual-coding-plan/GLM-5.3-Flash$high", mode: "sync", delivery: "completed" });
+    expect(accepted).toMatchObject({
+      harness: "zcode", model: "account:zai-individual-coding-plan/GLM-5.3-Flash$high", mode: "sync",
+      delivery: "completed", created: true,
+    });
+    expect(replay.mode).toBe("create");
     expect(first.attempts.map((attempt) => attempt.inputId)).toEqual(replay.attempts.map((attempt) => attempt.inputId));
     expect(attempts).toHaveLength(1);
   });

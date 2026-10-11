@@ -506,6 +506,37 @@ explicitly; with only the canonical directory pinned, nothing is adopted.
 
 ## One question path: Herder binds, Notice shows, Herder resumes
 
+There is exactly one card per question, and it always lives in the dedicated
+Notice human-request intake. Agent Herder sends **no** generic `/v1/events`
+question card. Two callers may create the binding:
+
+- a plugin or agent through `human_request_create`;
+- Herder itself, when the judge decides a human decision is required. It builds
+  the same binding and posts exactly one envelope to
+  `NOTIFY_CENTER_HUMAN_REQUEST_URL` (default: `NOTIFY_CENTER_EVENT_URL` with
+  `/v1/events` replaced by `/v1/human-requests`), using the configured producer
+  token, `NOTIFY_CENTER_PROJECT` and `NOTIFY_CENTER_ALLOWED_ACTORS`:
+
+```json
+{
+  "schema": "ask_human.request.v1",
+  "request_id": "…",
+  "project": "…",
+  "recipient": "…",
+  "mode": "question",
+  "message": "…",
+  "kind": "user",
+  "native_target": { "harness": "opencode", "session_id": "ses_…", "cwd": "/workspace/incident" },
+  "allowed_actors": ["…"]
+}
+```
+
+The request id is Herder's canonical key and is sent as the `Idempotency-Key`
+header, so a retry updates the same question instead of creating a second card.
+If the intake is not configured, no request is created at all: a notification
+alone must never leave a request pending behind a question nobody can answer.
+
+
 There is exactly one question card. Agent Herder never sends a generic event
 card for a human question: it creates the durable request and returns the
 binding that Notice needs for its own Ask card.
@@ -551,7 +582,20 @@ Answer reference: <canonical result_ref>. Do not invent an answer and do not sta
 ```
 
 A `secret` request stays opaque: its continuation names only the secret
-reference and never the answer itself.
+reference and never the answer itself. The answer source is a durable
+discriminator, not a guess: only a request created through the question-binding
+seam has a Notice question row. A metadata-only request (the generic judge
+decision, a legacy caller) resumes with an instruction to use the human message
+in the session and never points at `noticeplace_question_result`.
+
+An expired or withdrawn question is cancelled through the supported path:
+
+```text
+POST /internal/human-requests/cancel {request_id, reason?}
+```
+
+Cancellation is terminal, resumes nothing and lifts the pending-question gate,
+so an ordinary bound question can never hold its session forever.
 
 A NoticePlace consumer that launches work for a project reads
 `GET /api/automation/launch-policy` and uses `projectRoutes[project]` when the
@@ -611,9 +655,13 @@ POST /api/automation/project-launch
   harness again. It is keyed by the configured route key, so an alias, a path
   spelling or a case variant of the same project share one authority.
 - Each attempt is **reserved durably before the native call** and completed
-  after it, keeping its model, mode and delivery. A crash between the two
-  leaves an `in_flight` reservation: the next call answers `outcome:
-  "in_flight"` with a visible reason instead of launching a second executor.
+  after it, keeping its model, mode, `created` (new session or resumed) and
+  delivery. The reservation is exclusive under one lock and returns
+  `{claimed, record}`: only the claiming caller may call the native writer.
+  OpenCode has no native input-id deduplication, so this durable claim is the
+  only thing preventing a second POST; Codex and ZCode additionally deduplicate
+  natively. A concurrent or restarted caller gets `outcome: "in_flight"` with a
+  visible reason and no native call.
 - A configured project is authoritative: its route decides the harness, the
   model and the workspace. `harness` and `model` from a caller profile are
   ignored for that project and reported as overridden in `routing_reason`; the

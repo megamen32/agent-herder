@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { ChoiceRegistry, type AutopilotChoice } from "./choice-registry.js";
+import { askHuman } from "../human-request/question-binding.js";
 import type { HumanRequestRegistry } from "../human-request/registry.js";
 import {
   effectivePolicyAllowsTarget,
@@ -84,6 +85,17 @@ export type Receipt = {
   pendingNotice?: NotificationPayload;
   /** Durable Human Request created for a human decision; a replay reuses it. */
   humanRequestId?: string;
+  /** Durable question outbox: the card was not delivered yet. */
+  pendingQuestion?: PendingHumanQuestion;
+};
+
+/** One question binding that still has to reach the Notice human-request intake. */
+export type PendingHumanQuestion = {
+  request_id: string;
+  dedup_key: string;
+  kind: "user" | "secret";
+  question: { message: string; choices?: Array<{ choice_id: string; label: string }> };
+  native_target: { harness: string; session_id: string; cwd?: string };
 };
 export type ReceiptStore = Map<string, Receipt>;
 
@@ -310,6 +322,11 @@ export function createAutopilotCore(options: {
    */
   humanRequests?: Pick<HumanRequestRegistry, "create">;
   /**
+   * The single Notice human-request intake. One call is one real question card;
+   * Agent Herder never sends a generic event for a human question.
+   */
+  deliverHumanQuestion?: (question: PendingHumanQuestion) => Promise<void>;
+  /**
    * Durable answer-pending gate. A session that still owes a human an answer is
    * never judged or continued, whatever Stop hook or runner entry point fires
    * and whatever the new turn id is.
@@ -362,6 +379,21 @@ export function createAutopilotCore(options: {
       const terminal = turnReceipts.find(([, receipt]) => receipt.kind !== "continue");
       const existingKey = pending?.[0] ?? terminal?.[0] ?? receiptKey;
       const existingReceipt = options.receiptStore.get(existingKey);
+      if (existingReceipt?.pendingQuestion && options.deliverHumanQuestion) {
+        activeTurnKeys.add(turnPrefix);
+        try {
+          await options.deliverHumanQuestion(existingReceipt.pendingQuestion);
+          options.receiptStore.set(existingKey, {
+            kind: existingReceipt.kind,
+            ...(existingReceipt.humanRequestId ? { humanRequestId: existingReceipt.humanRequestId } : {}),
+          });
+        } catch {
+          // Keep the exact question for a later retry; never ask the human twice.
+        } finally {
+          activeTurnKeys.delete(turnPrefix);
+        }
+        return {};
+      }
       if (existingReceipt?.pendingNotice) {
         activeTurnKeys.add(turnPrefix);
         try {
@@ -500,33 +532,35 @@ export function createAutopilotCore(options: {
           options.onDecision?.(decision, { choiceRequestId: pending.requestId });
           return {};
         } else if (decision.kind === "human") {
-          // A human decision is a question, not a dead end: bind one resumable
-          // request to the exact native session so the answer continues it once.
-          const humanRequest = await createResumableHumanRequest(options, input, decision, notification);
-          options.onDecision?.(decision, humanRequest ? { humanRequestId: humanRequest.requestId } : undefined);
-          const humanNotice = createNoticePlacePayload({
-            title: decision.title,
-            body: decision.body,
-            severity: decision.severity,
-            dedupKey: `agent-herder:human:${input.session_id}:${input.turn_id}`,
-            correlationId: `${input.session_id}/${input.turn_id}`,
-            ...(humanRequest ? { human_request_id: humanRequest.requestId } : {}),
-            ...notification,
-          });
-          options.receiptStore.set(receiptKey, {
-            kind: decision.kind,
-            pendingNotice: humanNotice,
-            ...(humanRequest ? { humanRequestId: humanRequest.requestId } : {}),
-          });
+          // A human decision is one real question: bind a resumable request to
+          // the exact native session and create exactly one Notice question card
+          // through the dedicated human-request intake. No generic event is sent.
+          const question = await createResumableHumanQuestion(options, input, decision);
+          options.onDecision?.(decision, question ? { humanRequestId: question.request_id } : undefined);
+          if (!question || !options.deliverHumanQuestion) {
+            // Without the human-question intake no request is created, so a
+            // pending-question gate never closes behind a question nobody sees.
+            options.receiptStore.set(receiptKey, { kind: decision.kind });
+            await options.notify.send(
+              createNoticePlacePayload({
+                title: decision.title,
+                body: decision.body,
+                severity: decision.severity,
+                dedupKey: `agent-herder:human:${input.session_id}:${input.turn_id}`,
+                correlationId: `${input.session_id}/${input.turn_id}`,
+                ...notification,
+              }),
+            );
+            return {};
+          }
+          const humanRequestId = question.request_id;
+          options.receiptStore.set(receiptKey, { kind: decision.kind, humanRequestId, pendingQuestion: question });
           try {
-            await options.notify.send(humanNotice);
-            options.receiptStore.set(receiptKey, {
-              kind: decision.kind,
-              ...(humanRequest ? { humanRequestId: humanRequest.requestId } : {}),
-            });
+            await options.deliverHumanQuestion(question);
+            options.receiptStore.set(receiptKey, { kind: decision.kind, humanRequestId });
           } catch {
-            // Keep the same request and notice key so a later Stop retries the
-            // notification without judging or asking the human twice.
+            // Keep the exact question so a later Stop retries the same card: the
+            // request id is durable and the human is asked only once.
           }
           return {};
         } else {
@@ -566,28 +600,33 @@ export function createAutopilotCore(options: {
 /** Harness selection for a resumable question; a locator-less Hermes cannot be woken. */
 const RESUMABLE_HUMAN_DECISION_HARNESSES = new Set(["codex", "opencode", "claude", "zcode"]);
 
-async function createResumableHumanRequest(
-  options: { humanRequests?: Pick<HumanRequestRegistry, "create">; harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode" },
+async function createResumableHumanQuestion(
+  options: {
+    humanRequests?: Pick<HumanRequestRegistry, "create">;
+    deliverHumanQuestion?: (question: PendingHumanQuestion) => Promise<void>;
+    harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode";
+  },
   input: StopHookInput,
   decision: Extract<AutopilotDecision, { kind: "human" }>,
-  notification: NotificationConfig,
-): Promise<{ requestId: string } | undefined> {
-  if (!options.humanRequests) return undefined;
+): Promise<PendingHumanQuestion | undefined> {
+  if (!options.humanRequests || !options.deliverHumanQuestion) return undefined;
   const agent = options.harness ?? input.harness ?? "codex";
   if (!RESUMABLE_HUMAN_DECISION_HARNESSES.has(agent)) return undefined;
-  const request = await options.humanRequests.create({
+  const binding = await askHuman(options.humanRequests, {
     kind: "user",
     target: { agent, sessionId: input.session_id, cwd: input.cwd },
+    message: `${decision.title}\n\n${decision.body}`,
     contextRef: `agent-herder://autopilot/human/${encodeURIComponent(input.session_id)}/${encodeURIComponent(input.turn_id)}`,
-    notify: {
-      project: notification.project,
-      recipient: notification.recipient,
-      kind: notification.kind,
-      severity: decision.severity,
-      title: decision.title,
-    },
   });
-  return { requestId: request.requestId };
+  const question = binding.question;
+  if (!question) return undefined;
+  return {
+    request_id: binding.request_id,
+    dedup_key: binding.dedup_key,
+    kind: binding.kind,
+    question,
+    native_target: binding.native_target,
+  };
 }
 
 function buildChoiceNotificationBody(
@@ -1017,14 +1056,31 @@ export async function loadReceiptStore(path: string): Promise<ReceiptStore> {
     ) {
       const pendingNotice = notificationPayloadFromReceipt((value as Record<string, unknown>).pendingNotice);
       const humanRequestId = (value as Record<string, unknown>).humanRequestId;
+      const pendingQuestion = pendingQuestionFromReceipt((value as Record<string, unknown>).pendingQuestion);
       store.set(key, {
         kind: (value as Receipt).kind,
         ...(pendingNotice ? { pendingNotice } : {}),
         ...(typeof humanRequestId === "string" && humanRequestId.length > 0 ? { humanRequestId } : {}),
+        ...(pendingQuestion ? { pendingQuestion } : {}),
       });
     }
   }
   return store;
+}
+
+function pendingQuestionFromReceipt(value: unknown): PendingHumanQuestion | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const question = value as Record<string, unknown>;
+  if (typeof question.request_id !== "string" || question.request_id.length === 0) return undefined;
+  if (typeof question.dedup_key !== "string" || question.dedup_key.length === 0) return undefined;
+  if (question.kind !== "user" && question.kind !== "secret") return undefined;
+  const body = question.question;
+  if (!body || typeof body !== "object" || Array.isArray(body) || typeof (body as Record<string, unknown>).message !== "string") {
+    return undefined;
+  }
+  const target = question.native_target;
+  if (!target || typeof target !== "object" || typeof (target as Record<string, unknown>).session_id !== "string") return undefined;
+  return question as unknown as PendingHumanQuestion;
 }
 
 function notificationPayloadFromReceipt(value: unknown): NotificationPayload | undefined {

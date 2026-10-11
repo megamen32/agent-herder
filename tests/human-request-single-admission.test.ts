@@ -82,7 +82,8 @@ describe("single human-request admission", () => {
 
   it("delivers one canonical instruction that tells the session to read the answer", async () => {
     const store = await registry();
-    const created = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "ses_open", cwd: "/workspace/app" } });
+    // The question-binding seam is what creates a Notice question row.
+    const created = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "ses_open", cwd: "/workspace/app" }, answerSource: "notice_question" });
     const provider = ledger();
     const prompts: string[] = [];
 
@@ -114,6 +115,28 @@ describe("single human-request admission", () => {
     expect(prompts[0]).toBe(canonical);
     // The second call is a terminal replay: it never reaches the transport.
     expect(prompts).toHaveLength(1);
+  });
+
+  it("never points a metadata-only request at a Notice question row", async () => {
+    const store = await registry();
+    const provider = ledger();
+    // The judge and any other metadata-only caller create without a card.
+    const created = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "ses_open", cwd: "/workspace/app" } });
+    expect(created.answerSource).toBe("human_channel");
+    const prompts: string[] = [];
+
+    await resumeHumanRequestOnce({
+      registry: store,
+      requestId: created.requestId,
+      resultRef: "result://answer/1",
+      resume: async (request) => {
+        prompts.push(request.prompt ?? "");
+        return { status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-resume://receipt/1", idempotency_key: request.idempotency_key };
+      },
+    });
+
+    expect(prompts[0]).not.toContain("noticeplace_question_result");
+    expect(prompts[0]).toContain("arrived through this session");
   });
 
   it("keeps a secret answer opaque", async () => {

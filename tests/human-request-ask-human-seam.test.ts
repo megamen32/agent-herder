@@ -98,7 +98,7 @@ describe("asking a human through the single question-binding seam", () => {
       },
       answer: { mcp_tool: "human_request_resolve", completion_path: "/internal/human-requests/ask-user-completion" },
     });
-    expect(binding.record).toMatchObject({ status: "pending", continuation: "resume" });
+    expect(binding.record).toMatchObject({ status: "pending", continuation: "resume", answerSource: "notice_question" });
     expect(await registry.get(binding.request_id)).toMatchObject({ status: "pending" });
   });
 
@@ -112,6 +112,7 @@ describe("asking a human through the single question-binding seam", () => {
       target: { agent: "codex", sessionId: codexSession.id, cwd: codexSession.cwd },
     });
     expect(metadataOnly.question).toBeUndefined();
+    expect(metadataOnly.record.answerSource).toBe("human_channel");
     expect(metadataOnly.native_target).toEqual({ harness: "codex", session_id: codexSession.id, cwd: codexSession.cwd });
     expect(metadataOnly.record).toMatchObject({ status: "pending" });
 

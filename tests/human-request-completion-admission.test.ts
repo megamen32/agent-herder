@@ -34,7 +34,7 @@ describe("internal human-request completion admission", () => {
     };
     const adapters = new Map<string, HarnessAdapter>([["opencode", adapter]]);
     const humanRequests = new HumanRequestRegistry(join(root, "human-requests.json"));
-    const request = await humanRequests.create({ kind: "user", target: { agent: "opencode", sessionId: session.id, cwd: session.cwd } });
+    const request = await humanRequests.create({ kind: "user", target: { agent: "opencode", sessionId: session.id, cwd: session.cwd }, answerSource: "notice_question" });
 
     const invocations: ResumeTransportRequest[] = [];
     const receipts = new Map<string, string>();
@@ -95,7 +95,7 @@ describe("internal human-request completion admission", () => {
       async setPermissions() { return { ok: true }; },
     } satisfies HarnessAdapter]]);
     const humanRequests = new HumanRequestRegistry(join(root, "human-requests.json"));
-    const request = await humanRequests.create({ kind: "user", target: { agent: "opencode", sessionId: session.id, cwd: session.cwd } });
+    const request = await humanRequests.create({ kind: "user", target: { agent: "opencode", sessionId: session.id, cwd: session.cwd }, answerSource: "notice_question" });
     const admitted = await humanRequests.admitResume(request.requestId, { resultRef: "result://first" });
 
     let launches = 0;
