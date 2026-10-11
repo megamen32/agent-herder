@@ -82,3 +82,11 @@ describe("Codex native transcript turn identity", () => {
     });
   });
 });
+
+// Fast unit expected<1s/max5s: image-only human input must not vanish from history.
+it("renders a native image-only Codex message", async () => {
+ const image_url="data:image/png;base64,iVBORw0KGgo=";
+ await withRollout([record("response_item",{type:"message",role:"user",content:[{type:"input_image",image_url}]})],async adapter=>{
+  expect((await adapter.getSessionMessages("thread-1",10))?.[0]?.parts).toEqual([{type:"image",imageUrl:image_url,fileName:"Изображение"}]);
+ });
+});

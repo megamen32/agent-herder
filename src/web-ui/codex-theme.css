@@ -254,7 +254,7 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
   background: var(--panel-strong);
   box-shadow: none;
 }
-.composer textarea { grid-area: text; width: 100%; min-height: 26px; max-height: 200px; color: var(--text); font-size: 15px; line-height: 1.55; }
+.composer textarea { grid-area: text; width: 100%; min-height: 54px; max-height: 200px; color: var(--text); font-size: 15px; line-height: 1.55; }
 .composer textarea::placeholder { color: var(--muted); }
 .composer-readonly { grid-area: text; }
 .composer-plus { grid-area: plus; align-self: center; width: 30px; height: 30px; border-radius: 50%; background: transparent; font-size: 19px; }

@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { HerderJobRegistry, type HerderJob } from "./herder-jobs.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
-import type { HarnessAdapter, SendMessageResult } from "./types/index.js";
+import type { HarnessAdapter, SendMessageResult, MessageImage } from "./types/index.js";
 
-export type UserMessageInput = { harness: string; sessionId: string; inputId: string; message: string; mode: "queue" | "steer" };
+export type UserMessageInput = { harness: string; sessionId: string; inputId: string; message: string; mode: "queue" | "steer"; images?: MessageImage[] };
 export type UserMessageReceipt = SendMessageResult & { delivery?: "deferred"; job?: HerderJob<SendMessageResult> };
 
 /** Process-owned human queue. Coordination continues through its native steer path. */
@@ -24,12 +24,12 @@ export class UserMessageDelivery {
 
   submit(input: UserMessageInput): UserMessageReceipt {
     if (Buffer.byteLength(input.message, "utf8") > 256 * 1024) throw new Error("Сообщение слишком большое для очереди отправки");
-    if (input.mode === "steer" && input.harness !== "codex") {
+    if (input.mode === "steer" && input.harness !== "codex" && this.adapters.get(input.harness)?.controlCapabilities?.steer !== true) {
       throw new Error("Вставка в текущий ход для этого агента пока не поддерживается. Выберите «После ответа».");
     }
     if (!this.adapters.has(input.harness)) throw new Error("Агент недоступен");
     const key = `${input.harness}\0${input.sessionId}\0${input.inputId}`;
-    const fingerprint = createHash("sha256").update(`${input.mode}\0${input.message}`).digest("hex");
+    const fingerprint = createHash("sha256").update(`${input.mode}\0${input.message}\0${JSON.stringify(input.images ?? [])}`).digest("hex");
     const humanRequestedAt = Date.now();
     const jobId = `job_${createHash("sha256").update(`user-message\0${key}`).digest("hex")}`;
     const existing = this.jobs.get<SendMessageResult>(jobId);
@@ -75,10 +75,11 @@ export class UserMessageDelivery {
                 await delay(this.options.pollMs, undefined, { signal: combined });
                 continue;
               }
+              combined.throwIfAborted();
               progress(0.5, "Отправляется агенту");
               attempted = true;
               const result = await this.withSlot(combined, () => this.supervisor.sendMessage(input.harness, input.sessionId, {
-                message: input.message, origin: "human", inputId: input.inputId,
+                message: input.message, origin: "human", inputId: input.inputId, images: input.images,
                 humanRequestedAt,
                 steer: input.mode === "steer", queue: input.harness === "codex" || input.harness === "opencode",
               }));
@@ -100,7 +101,7 @@ export class UserMessageDelivery {
               return { ...result, inputId: input.inputId };
             }
           } catch (error) {
-            return { ok: false, inputId: input.inputId, nonRetryable: true, ...(attempted ? { admissionUnknown: true } : {}),
+            return { ok: false, inputId: input.inputId, nonRetryable: true, ...(attempted ? { admissionUnknown: true } : { notSubmitted: true }),
               error: error instanceof Error && error.name === "TimeoutError" ? "Время ожидания доставки истекло" : error instanceof Error ? error.message : String(error) };
           } finally { finish(); }
         },

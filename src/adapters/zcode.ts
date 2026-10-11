@@ -305,7 +305,14 @@ function terminalInactiveResult(sessionId: string, cause: unknown): { ok: false;
   };
 }
 
+function imagePart(ref: unknown, fileName?: unknown): SessionMessagePart[] {
+  if (typeof ref !== "string") return [];
+  const match = ref.match(/(?:^|\/)([a-f0-9]{64})\.(?:png|jpg|webp)$/);
+  return match ? [{ type: "image", imageUrl: `/api/session-images/${match[1]}`, fileName: typeof fileName === "string" ? fileName : "Изображение" }] : [];
+}
 function mapMessagePart(part: Record<string, unknown>): SessionMessagePart[] {
+  if (part.type === "file" && typeof part.mime === "string" && part.mime.startsWith("image/")) return imagePart(part.url, part.filename);
+  if (part.type === "image") return imagePart(part.ref ?? part.url, part.fileName);
   if (part.type === "text" && typeof part.text === "string") {
     return [{ type: "text", text: part.text }];
   }
@@ -332,6 +339,9 @@ function mapMessage(message: ZcodeMessage, index: number): SessionMessageView {
   const role = info.role === "user" || info.role === "assistant" ? info.role : "assistant";
   const id = nonEmptyString(info.messageId) || `zcode-message-${index + 1}`;
   const parts = (message.parts ?? []).flatMap(mapMessagePart);
+  if (Array.isArray(info.attachments)) for (const attachment of info.attachments) {
+    const image = record(attachment); parts.push(...imagePart(image.ref, image.fileName));
+  }
   const text = textFromMessage(message);
   return {
     id,
@@ -859,6 +869,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   // isReady() was false). Explicit control actions still initialize on demand.
   readonly lazyDiscovery = true;
   readonly controlCapabilities: HarnessCapabilities = {
+    imageInput: true, steer: true,
     cancelTurn: true,
     detach: true,
     resume: true,
@@ -1615,7 +1626,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
-    if (options.steer || options.queue) return this.sendConversationInput(id, options);
+    if (options.steer || options.queue || options.images?.length) return this.sendConversationInput(id, options);
     const origin = options.origin === "human" ? "human" : "automation";
     const send = async (): Promise<{
       ok: boolean;
@@ -1725,7 +1736,7 @@ export class ZcodeAdapter implements HarnessAdapter {
         ...workspace,
         envelope: {
           commandId, clientId: "agent-herder", sessionId: id, type: "sendText",
-          payload: { text: options.message, requestedDelivery }, issuedAt: Date.now(),
+          payload: { text: options.message, requestedDelivery, ...(options.images?.length ? { attachments: options.images.map((image) => ({ ref: image.path, fileName: image.fileName, mime: image.mimeType, bytes: image.bytes })) } : {}) }, issuedAt: Date.now(),
         },
       }));
       if (ack.commandId !== commandId) throw new Error("ZCode вернул подтверждение другой команды; доставка не установлена.");

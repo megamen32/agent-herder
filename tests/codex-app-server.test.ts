@@ -1184,3 +1184,15 @@ describe("Codex app-server adapter", () => {
   });
 
 });
+
+// Focused integration expected1s/max5s: native image input shape is preserved in RPC.
+it("sends a local image through Codex native turn/start", async () => {
+ const codexDir=await mkdtemp(join(tmpdir(),"herder-codex-image-")), logPath=join(codexDir,"rpc.log");
+ const previous=process.env.CODEX_APP_SERVER_LOG; process.env.CODEX_APP_SERVER_LOG=logPath;
+ const adapter=new CodexAppServerAdapter({codexBin:process.execPath,args:[fixture],codexDir});
+ try {
+  await expect(adapter.sendMessage("thread-1",{message:"describe",images:[{id:"a".repeat(64),path:"/protected/image.png",fileName:"figure.png",mimeType:"image/png",bytes:90}]})).resolves.toMatchObject({ok:true,admitted:true});
+  const requests=(await readFile(logPath,"utf8")).trim().split("\n").map(line=>JSON.parse(line));
+  expect(requests.find(row=>row.kind==="request"&&row.method==="turn/start").params.input).toEqual([{type:"text",text:"describe"},{type:"localImage",path:"/protected/image.png"}]);
+ }finally {await adapter.dispose();if(previous===undefined)delete process.env.CODEX_APP_SERVER_LOG;else process.env.CODEX_APP_SERVER_LOG=previous;await rm(codexDir,{recursive:true,force:true});}
+});

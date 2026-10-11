@@ -26,5 +26,6 @@ export {
   type HarnessEventSourceHealth,
   type ControlResult,
   type CompactSessionOptions,
+  type MessageImage,
   getHarnessCapabilities,
 } from "./common.js";

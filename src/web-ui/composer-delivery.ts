@@ -1,6 +1,8 @@
 // Режимы доставки и очередь отправленных сообщений композера.
 // Чистые помощники состояния: без React и fetch — App подключает их к UI.
 
+import type { UploadedImage } from "../session-images.js";
+
 export type DeliveryMode = "steer" | "queue";
 export type OutboxStatus = "ready" | "sending" | "accepted" | "delivered" | "deferred" | "pending" | "unknown" | "failed";
 
@@ -8,6 +10,7 @@ export type OutboxEntry = {
   inputId: string;
   sessionKey: string;
   text: string;
+  images?: UploadedImage[];
   mode: DeliveryMode;
   createdAt: number;
   jobId?: string;
@@ -161,7 +164,8 @@ const reviveOutboxEntry = (raw: unknown): OutboxEntry | null => {
   if (entry.mode !== "steer" && entry.mode !== "queue") return null;
   if (typeof entry.createdAt !== "number" || !Number.isFinite(entry.createdAt)) return null;
   if (typeof entry.status !== "string" || !STATUS_VALUES.has(entry.status)) return null;
-  const base = { inputId: entry.inputId, sessionKey: entry.sessionKey, text: entry.text, mode: entry.mode, createdAt: entry.createdAt, jobId: typeof entry.jobId === "string" && entry.jobId ? entry.jobId : undefined };
+  const images = Array.isArray(entry.images) ? entry.images.filter(image => /^[a-f0-9]{64}$/.test(image?.id) && image.url === `/api/session-images/${image.id}` && typeof image.fileName === "string").slice(0, 4) : undefined;
+  const base = { images, inputId: entry.inputId, sessionKey: entry.sessionKey, text: entry.text, mode: entry.mode, createdAt: entry.createdAt, jobId: typeof entry.jobId === "string" && entry.jobId ? entry.jobId : undefined };
   if (entry.status === "sending") {
     // Отправка прервалась перезагрузкой: состояние уточняется у сервера (GET message-status),
     // повторный POST автоматически не отправляется.
@@ -293,8 +297,8 @@ const DELETEABLE_STATUSES: ReadonlySet<OutboxStatus> = new Set(["ready", "deferr
 export const canDeleteOutboxEntry = (entry: OutboxEntry): boolean => DELETEABLE_STATUSES.has(entry.status);
 
 /** Steer умеет только codex: остальные адаптеры не принимают вставку в текущий ход. */
-export const canSteerOutboxEntry = (entry: OutboxEntry, harness: string): boolean =>
-  entry.mode === "queue" && canDeleteOutboxEntry(entry) && harness === "codex";
+export const canSteerOutboxEntry = (entry: OutboxEntry, harness: string, nativeSteer = false): boolean =>
+  entry.mode === "queue" && canDeleteOutboxEntry(entry) && (harness === "codex" || nativeSteer);
 
 export const withOutboxJobId = (entries: OutboxEntry[], inputId: string, jobId: string | undefined): OutboxEntry[] => {
   if (!jobId) return entries;
@@ -319,5 +323,14 @@ export const isTerminalJobState = (state: unknown): boolean => typeof state === 
 
 /** Отмена сошла успешно только если задача доставки реально остановлена и не доставила сообщение. */
 export type CancelOutcome = "cancelled" | "delivered" | "failed";
+/** A cancelled job may already have entered native transport. Only a proven
+ * notSubmitted receipt permits converting queue to steer with a new input. */
+export const cancelOutcomeOfJob = (job: { state?: unknown; result?: unknown }): CancelOutcome => {
+  const result = job.result as MessageDeliveryResponse & { notSubmitted?: boolean } | undefined;
+  if (result?.admitted === true || result?.turnId !== undefined) return "delivered";
+  if (result?.admissionUnknown === true) return "failed";
+  if (job.state === "cancelled") return result?.notSubmitted === true ? "cancelled" : "failed";
+  return job.state === "completed" ? "delivered" : "failed";
+};
 export const cancelOutcomeOfJobState = (state: unknown): CancelOutcome =>
   state === "cancelled" ? "cancelled" : state === "completed" ? "delivered" : "failed";

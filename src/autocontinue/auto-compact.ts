@@ -98,6 +98,7 @@ export function compactContext(session: AgentSession) {
     humanMessages: typeof meta.nativeHumanMessageCount === "number" ? meta.nativeHumanMessageCount : 0,
     cacheRead: typeof cache.cacheReadTokens === "number" ? cache.cacheReadTokens : 0,
     cacheInput: typeof cache.inputTokens === "number" ? cache.inputTokens : 0,
+    cacheHitRate: typeof cache.latestHitRate === "number" && Number.isFinite(cache.latestHitRate) ? cache.latestHitRate : undefined,
     completedAt: typeof turn.completedAt === "number" ? turn.completedAt : typeof turn.completedAt === "string" ? Date.parse(turn.completedAt) : NaN,
     complete: turn.status === "completed" && turn.kind !== "compact",
     turnBoundary: typeof turn.turnId === "string" ? turn.turnId : String(turn.completedAt || ""),
@@ -193,7 +194,7 @@ export class AutoCompactService {
       || !context.complete || !Number.isFinite(age) || age < startAt || age + durationMs > windowMs - 30_000
       || context.capacity <= 0 || context.tokens / context.capacity * 100 < state.settings.minContextPercent
       || context.humanMessages < state.settings.minHumanMessages || context.cacheRead <= 0
-      || context.cacheRead / Math.max(1, context.cacheRead + context.cacheInput) < .25
+      || (context.cacheHitRate ?? context.cacheRead / Math.max(1, context.cacheRead + context.cacheInput)) < .25
       || !await this.options.worthResuming(session))) return { ok: false, error: "Сессия не требует возобновления, контекст мал, кэш не подтверждён или время компакта ещё не пришло." };
     const sourceKey = createHash("sha256").update(`${harness}:${id}:${session.cwd}:${context.userMessageId}:${context.turnBoundary}`).digest("hex");
     const existing = state.operations.find((item) => item.sourceKey === sourceKey);

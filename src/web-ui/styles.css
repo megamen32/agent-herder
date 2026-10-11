@@ -555,3 +555,15 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
   .session-settings-link { flex-direction: column; align-items: stretch; }
   .session-settings-link .quiet-button { width: 100%; }
 }
+
+.settings-dialog-header { position: sticky; top: -10px; z-index: 3; display: flex; align-items: center; justify-content: flex-end; min-height: 44px; padding: 6px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.settings-dialog-header .settings-close { position: static; float: none; margin: 0; }
+
+.composer-file-input { display: none; }
+.composer-images { order: -1; flex-basis: 100%; display: flex; align-items: center; gap: 10px; color: var(--text-2); }
+.composer-image { position: relative; }
+.composer-image img, .outbox-image { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; }
+.composer-image button { position: absolute; right: -5px; top: -5px; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--border-2); background: var(--surface-2); color: var(--text-1); }
+.message-image { display: block; max-width: min(100%, 420px); max-height: 320px; object-fit: contain; border-radius: 12px; margin: 8px 0; }
+.composer:has(.composer-images) { grid-template-areas: "images images images images" "text text text text" "plus hint model send"; }
+.composer-images { grid-area: images; }

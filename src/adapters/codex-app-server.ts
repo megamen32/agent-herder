@@ -109,6 +109,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   readonly lazyStart = true;
   readonly lazyDiscovery = true;
   readonly controlCapabilities: HarnessCapabilities = {
+    imageInput: true, steer: true,
     cancelTurn: true,
     detach: true,
     resume: true,
@@ -520,7 +521,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         const result = await this.request("turn/steer", {
           threadId: id,
           expectedTurnId,
-          input: [{ type: "text", text: options.message }],
+          input: [{ type: "text", text: options.message }, ...(options.images ?? []).map((image) => ({ type: "localImage", path: image.path }))],
         }) as { turnId?: string };
         if (result.turnId !== expectedTurnId) {
           return { ok: false, admitted: true, nonRetryable: true, error: "Codex steer receipt did not match the verified active turn; do not retry" };
@@ -564,7 +565,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     try {
       const result = await this.request("turn/start", {
         threadId: id,
-        input: [{ type: "text", text: options.message }],
+        input: [{ type: "text", text: options.message }, ...(options.images ?? []).map((image) => ({ type: "localImage", path: image.path }))],
         model: session.model || null,
       }) as { turn?: { id?: string; status?: string } };
       const turnId = result.turn?.id;

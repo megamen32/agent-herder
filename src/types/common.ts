@@ -19,7 +19,9 @@ export interface SessionLineage {
 }
 
 export interface SessionMessagePart {
-  type: "text" | "thinking" | "tool_call" | "tool_result";
+  type: "text" | "thinking" | "tool_call" | "tool_result" | "image";
+  imageUrl?: string;
+  fileName?: string;
   text?: string;
   name?: string;
   input?: unknown;
@@ -86,6 +88,8 @@ export interface HarnessEventSourceHealth {
 }
 
 export interface HarnessCapabilities {
+  imageInput?: boolean;
+  steer?: boolean;
   cancelTurn: boolean;
   detach: boolean;
   resume: boolean;
@@ -98,6 +102,8 @@ export interface HarnessCapabilities {
 }
 
 export interface SendMessageResult {
+  /** Dispatch was cancelled before invoking any native writer. */
+  notSubmitted?: boolean;
   ok: boolean;
   /** Exact native turn identity returned by admission, not task completion. */
   turnId?: string;
@@ -177,6 +183,7 @@ export interface PermissionRequest {
 }
 
 export interface SendMessageOptions {
+  images?: MessageImage[];
   /** Server admission time of queued human intent; a later manual stop wins. */
   humanRequestedAt?: number;
   /** Explicit human input may release a manual stop; generated delivery must not. */
@@ -190,6 +197,8 @@ export interface SendMessageOptions {
   /** Stable native operation identity for crash-safe delivery reconciliation. */
   inputId?: string;
 }
+
+export interface MessageImage { id: string; path: string; fileName: string; mimeType: string; bytes: number }
 
 export interface MessageAdmissionResult {
   state: "not_found" | "admitted" | "failed" | "unknown";
@@ -371,7 +380,7 @@ const CONTROL_KEYS: Array<keyof HarnessCapabilities> = [
 
 /** Resolve the effective transport capabilities for API/UI feature gating. */
 export function getHarnessCapabilities(adapter: HarnessAdapter): HarnessCapabilities {
-  return Object.fromEntries(CONTROL_KEYS.map((key) => [
+  const capabilities = Object.fromEntries(CONTROL_KEYS.map((key) => [
     key,
     adapter.controlCapabilities && key in adapter.controlCapabilities
       ? adapter.controlCapabilities[key] === true
@@ -383,4 +392,7 @@ export function getHarnessCapabilities(adapter: HarnessAdapter): HarnessCapabili
         (key === "detach" && typeof adapter.detach === "function") ||
         (key === "terminate" && (typeof adapter.terminate === "function" || typeof adapter.stopSession === "function")),
   ])) as unknown as HarnessCapabilities;
+  if (adapter.controlCapabilities?.imageInput) capabilities.imageInput = true;
+  if (adapter.controlCapabilities?.steer) capabilities.steer = true;
+  return capabilities;
 }

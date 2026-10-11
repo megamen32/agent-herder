@@ -230,7 +230,7 @@ export class HerderJobRegistry {
     try {
       const result = await runner(context);
       if (job.controller.signal.aborted || job.record.state === "cancelled" || job.record.state === "cancelling") {
-        this.patch(job.record, { state: "cancelled", statusMessage: "Cancelled", ...(job.record.durableOnce ? { result } : {}) }, "updated");
+        this.patch(job.record, { state: "cancelled", statusMessage: "Cancelled", result }, "updated");
         return;
       }
       this.patch(job.record, { state: "completed", progress: 1, result, statusMessage: undefined }, "updated");

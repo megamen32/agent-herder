@@ -144,3 +144,29 @@ describe("actual human message queue admission", () => {
     } finally { release?.(); f.delivery.close(); }
   });
 });
+
+// Fast unit expected1s/max5s: image identity cannot change under an existing queued input.
+it("retains image input through delayed delivery and refuses a changed retry", async () => {
+  const f = fixture();
+  const image = { id: "a".repeat(64), path: "/protected/image.png", fileName: "figure.png", mimeType: "image/png", bytes: 90 };
+  const input = { ...f.input("image-input"), images: [image] };
+  try {
+    f.delivery.submit(input);
+    expect(() => f.delivery.submit({ ...input, images: [{ ...image, id: "b".repeat(64) }] })).toThrow('другого');
+    f.idle(); await completed(f, "image-input");
+    expect(f.sendMessage.mock.calls[0][2].images).toEqual([image]);
+  } finally { f.delivery.close(); }
+});
+
+// Focused integration expected1s/max5s: actual job cancellation preserves the dispatch boundary.
+it("records that a waiting message was never submitted when its job is cancelled", async () => {
+ const f=fixture();
+ try {
+  const receipt=f.delivery.submit(f.input("cancel-before"));
+  await vi.waitFor(() => expect(f.getSession).toHaveBeenCalled());
+  f.jobs.cancel(receipt.job!.id);
+  await vi.waitFor(() => expect(f.jobs.get(receipt.job!.id)?.state).toBe("cancelled"));
+  expect(f.jobs.get(receipt.job!.id)?.result).toMatchObject({ notSubmitted: true });
+  expect(f.sendMessage).not.toHaveBeenCalled();
+ } finally {f.delivery.close();}
+});

@@ -143,7 +143,7 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain("Модель сохранится общей кнопкой");
     expect(main).toContain("Сохранить настройки автопилота");
     expect(main).toContain("Текущие настройки загружены");
-    expect(main).toContain("Приоритет: отдельная настройка сессии");
+    expect(main).toContain("Сначала действует настройка конкретной сессии");
     expect(main).toContain("Если автопилот выключен, восстановление после сбоя всё равно работает");
     expect(main).toContain("Карточка заранее покажет варианты и рекомендацию");
     expect(main).toContain("выключен в общих настройках сред");

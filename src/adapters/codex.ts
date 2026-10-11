@@ -56,7 +56,7 @@ interface CodexTranscriptItem {
     turn_id?: string;
     reason?: string;
     completed_at?: string | number;
-    content?: Array<{ type?: string; text?: string }>;
+    content?: Array<{ type?: string; text?: string; image_url?: string }>;
   };
 }
 
@@ -116,7 +116,8 @@ function mapCodexMessage(id: string, item: CodexTranscriptItem & { timestamp?: s
     .map((part) => ({ type: "text" as const, text: part.text || "" }))
     .filter((part) => part.text.trim().length > 0);
   const messageText = parts.map((part) => part.text).join("\n").trim();
-  if (!messageText) return null;
+  const imageParts = (item.payload.content || []).filter(part => part.type === "input_image" && typeof part.image_url === "string" && part.image_url.length < 8 * 1024 * 1024 && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(part.image_url)).map(part => ({ type: "image" as const, imageUrl: part.image_url, fileName: "Изображение" }));
+  if (!messageText && !imageParts.length) return null;
   const turnId = item.payload.internal_chat_message_metadata_passthrough?.turn_id || item.payload.turn_id || contextTurnId;
   return {
     id: item.payload.id || `${id}:record:${recordOffset}`,
@@ -125,7 +126,7 @@ function mapCodexMessage(id: string, item: CodexTranscriptItem & { timestamp?: s
     ...(item.payload.phase ? { phase: item.payload.phase } : {}),
     timestamp: item.timestamp,
     text: messageText,
-    parts,
+    parts: [...parts, ...imageParts],
   };
 }
 

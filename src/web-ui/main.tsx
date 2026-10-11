@@ -18,10 +18,11 @@ import type {MeshAddress} from '../mesh/protocol.js';
 import { FleetCabinet } from "./fleet/FleetCabinet.js";
 import { creationModels } from "./creation-models.js";
 import { groupSessionMessages } from "./message-groups.js";
-import { MessageAdmissionDispatcher, appendOutboxEntry, beginOutboxAttempt, canDeleteOutboxEntry, canSteerOutboxEntry, cancelOutcomeOfJobState, classifyMessageDelivery, deliveryConnectionFailure, deliveryModeLabel, isOutboxUnfinished, isTerminalJobState, newInputId, outboxStatusLabel, readDefaultDeliveryMode, readDeliveryModePinned, readOutboxJobId, readStoredOutbox, reconcileMessageStatus, removeOutboxEntry, updateOutboxEntry, withOutboxJobId, writeDefaultDeliveryMode, writeDeliveryModePinned, writeStoredOutbox, type CancelOutcome, type DeliveryMode, type OutboxEntry } from "./composer-delivery.js";
+import { MessageAdmissionDispatcher, appendOutboxEntry, beginOutboxAttempt, canDeleteOutboxEntry, canSteerOutboxEntry, cancelOutcomeOfJob, classifyMessageDelivery, deliveryConnectionFailure, deliveryModeLabel, isOutboxUnfinished, isTerminalJobState, newInputId, outboxStatusLabel, readDefaultDeliveryMode, readDeliveryModePinned, readOutboxJobId, readStoredOutbox, reconcileMessageStatus, removeOutboxEntry, updateOutboxEntry, withOutboxJobId, writeDefaultDeliveryMode, writeDeliveryModePinned, writeStoredOutbox, type CancelOutcome, type DeliveryMode, type OutboxEntry } from "./composer-delivery.js";
 import { formatJsonPayload, readJsonRenderingOptOut, splitSystemBlocks, writeJsonRenderingOptOut } from "./json-rendering.js";
 import { applyTheme, readTheme, writeTheme, type HerderTheme } from "./theme.js";
 import { currentModelOption, modelSwitchSupported, requestModelChange, shortModelLabel } from "./model-chip.js";
+import type { UploadedImage } from "../session-images.js";
 import type { SessionMessageView } from "../types/index.js";
 
 type HerderSession = SessionListSession & {
@@ -462,6 +463,7 @@ function MessageParts({ message, showReasoning, showTools, jsonRendering }: { me
     {items.map((item) => {
       if (item.kind === "tools") return <ToolActionsGroup groupKey={item.key} parts={item.parts} />;
       const part = item.part;
+      if (part.type === "image" && part.imageUrl) return <a href={part.imageUrl} target="_blank" rel="noreferrer" key={item.key}><img className="message-image" src={part.imageUrl} alt={part.fileName || "Прикреплённое изображение"} /></a>;
       if (part.type === "text") {
         const { text, blocks } = splitSystemBlocks(part.text || "");
         const jsonText = jsonRendering ? formatJsonPayload(text) : undefined;
@@ -482,7 +484,7 @@ function MessageParts({ message, showReasoning, showTools, jsonRendering }: { me
 
 function hasVisibleMessage(message: SessionMessage, showReasoning: boolean, showTools: boolean): boolean {
   const parts = message.parts.length > 0 ? message.parts : message.text ? [{ type: "text" as const, text: message.text }] : [];
-  return parts.some((part) => part.type === "text" && Boolean(part.text?.trim())
+  return parts.some((part) => part.type === "image" && Boolean(part.imageUrl) || part.type === "text" && Boolean(part.text?.trim())
     || part.type === "thinking" && showReasoning && Boolean(part.text?.trim())
     || (part.type === "tool_call" || part.type === "tool_result") && showTools);
 }
@@ -578,7 +580,7 @@ function AutomationSettings({ section, state, draft, saving, error, saved, conti
       <datalist id="all-herder-models">{[...new Set([runtimeDraft.autopilotJudgeModel, ...modelOptions.map((item) => item.model)])].map((model) => <option value={model} key={`autopilot-${model}`} />)}</datalist>
     </div><p className="settings-help">Модель сохранится общей кнопкой «Сохранить настройки автопилота» ниже.</p></fieldset></details>}
 
-    <fieldset className="settings-group"><legend>Где работает</legend><HarnessAutomationSettings mode="autopilot" available={new Set(Object.keys(AUTOPILOT_HARNESS_LABELS))} enabled={new Set(draft.harnesses)} onToggle={(harness) => setHarness(harness as AutopilotHarness, !draft.harnesses.includes(harness as AutopilotHarness))} /><p className="settings-help">Приоритет: отдельная настройка сессии → выбор среды здесь → общий переключатель. Для одной сессии режим можно переопределить кнопкой «Настроить текущую сессию» выше.</p></fieldset>
+    <fieldset className="settings-group"><legend>Где работает</legend><HarnessAutomationSettings mode="autopilot" available={new Set(Object.keys(AUTOPILOT_HARNESS_LABELS))} enabled={new Set(draft.harnesses)} onToggle={(harness) => setHarness(harness as AutopilotHarness, !draft.harnesses.includes(harness as AutopilotHarness))} /><p className="settings-help">Сначала действует настройка конкретной сессии. Если её нет — выбор агента, затем общая. Для одной сессии режим можно переопределить кнопкой «Настроить текущую сессию» выше.</p></fieldset>
 
     <fieldset className="settings-group"><legend>Если вы не ответили</legend><label className="timeout-setting"><input type="checkbox" checked={draft.timeout.mode === "auto_continue"} onChange={(event) => onChange({ ...draft, timeout: { ...draft.timeout, mode: event.target.checked ? "auto_continue" : "hold" } })} /><span><strong>{timeoutMinutes} мин без ответа → выбрать следующий шаг автоматически</strong><small>Карточка заранее покажет варианты и рекомендацию. Таймер начинается при показе вариантов. После него автопилот выполнит рекомендованный разрешённый шаг. Если выключить — сессия ждёт вас без таймера.</small></span></label><label className="minutes-control">Через <input type="number" min="1" max="10080" value={timeoutMinutes} disabled={draft.timeout.mode === "hold"} onChange={(event) => onChange({ ...draft, timeout: { ...draft.timeout, delayMs: Math.max(1, Number(event.target.value) || 1) * 60_000 } })} /> минут</label></fieldset>
 
@@ -750,6 +752,11 @@ function App() {
   const [collapsedChildren, setCollapsedChildren] = React.useState<Set<string>>(new Set());
   const foldedInitialized = React.useRef(false);
   const [composer, setComposer] = React.useState("");
+  const [composerImages, setComposerImages] = React.useState<UploadedImage[]>([]);
+  const [imageUploading, setImageUploading] = React.useState(false);
+  const [imageError, setImageError] = React.useState<string>();
+  const imageInputRef = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => { setComposerImages([]); setImageError(undefined); }, [activeKey]);
   const [loading, setLoading] = React.useState(true);
   const [sessionsRefreshing, setSessionsRefreshing] = React.useState(false);
   const [sessionsTimingMs, setSessionsTimingMs] = React.useState<number>();
@@ -830,7 +837,7 @@ function App() {
   const [creatingSession, setCreatingSession] = React.useState(false);
   const [createSessionError, setCreateSessionError] = React.useState<string>();
   // чип модели в композере: список моделей харнесса и результат смены
-  const [harnessAdapters, setHarnessAdapters] = React.useState<Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean } | null }>>([]);
+  const [harnessAdapters, setHarnessAdapters] = React.useState<Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean; imageInput?: boolean; steer?: boolean } | null }>>([]);
   const [modelMenuOpen, setModelMenuOpen] = React.useState(false);
   const [modelOptions, setModelOptions] = React.useState<string[]>([]);
   const [modelOptionsLoading, setModelOptionsLoading] = React.useState(false);
@@ -1460,7 +1467,7 @@ function App() {
   // capabilities.modelSwitch решает, показывать ли чип вообще: неподдерживаемый харнесс прячем.
   React.useEffect(() => {
     let cancelled = false;
-    void api<{ adapters?: Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean } | null }> }>("/api/adapters")
+    void api<{ adapters?: Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean; imageInput?: boolean; steer?: boolean } | null }> }>("/api/adapters")
       .then((result) => { if (!cancelled) setHarnessAdapters(Array.isArray(result.adapters) ? result.adapters : []); })
       .catch(() => { if (!cancelled) setHarnessAdapters([]); });
     return () => { cancelled = true; };
@@ -1503,7 +1510,7 @@ function App() {
     }
   };
   React.useEffect(() => { setModelMenuOpen(false); setModelSwitchError(undefined); }, [activeKey]);
-  const isResumeMode = !composer.trim() && (activeSession?.status === "stopped" || activeSession?.status === "error" || activeSession?.meta?.humanStopHeld === true);
+  const isResumeMode = !composer.trim() && !composerImages.length && (activeSession?.status === "stopped" || activeSession?.status === "error" || activeSession?.meta?.humanStopHeld === true);
   const activeJobsCount = jobs.filter((job) => job.state === "queued" || job.state === "running" || job.state === "waiting" || job.state === "cancelling").length;
   const readOnlySession = !detailsVerified || cachedDetails || activeSession?.meta?.readOnly === true;
   const archivedSession = activeSession?.status === "archived" || activeSession?.meta?.archived === true;
@@ -1514,7 +1521,24 @@ function App() {
   const latestToolPart = [...(latestMessage?.parts || [])].reverse().find((part) => part.type === "tool_call" || part.type === "tool_result");
   // очередь отправленных сообщений активной сессии; композер остаётся свободным, пока сообщения в полёте
   const activeOutbox = activeKey ? outbox.filter((entry) => entry.sessionKey === activeKey).slice().sort((left, right) => right.createdAt - left.createdAt) : [];
-  const supportsSteer = activeSession?.harness === "codex";
+  const nativeCapabilities = harnessAdapters.find(adapter => adapter.id === activeSession?.harness)?.capabilities;
+  const supportsSteer = activeSession?.harness === "codex" || nativeCapabilities?.steer === true;
+  const supportsImages = nativeCapabilities?.imageInput === true;
+  const uploadImages = async (files: FileList | null) => {
+    if (!files?.length || !activeKey || imageUploading) return;
+    const targetKey = activeKey, { harness, id } = splitKey(targetKey);
+    setImageUploading(true); setImageError(undefined);
+    try {
+      if (composerImages.length + files.length > 4) throw new Error("Можно прикрепить до четырёх изображений.");
+      for (const file of Array.from(files)) {
+        if (file.size > 5 * 1024 * 1024) throw new Error("Изображение должно быть не больше 5 МБ.");
+        const dataBase64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.onerror = () => reject(new Error("Не удалось прочитать изображение.")); reader.readAsDataURL(file); });
+        const image = await api<UploadedImage>("/api/session-images", { method: "POST", body: JSON.stringify({ harness, sessionId: id, fileName: file.name, mimeType: file.type, dataBase64 }) });
+        if (activeKeyRef.current === targetKey) setComposerImages(current => current.some(item => item.id === image.id) ? current : [...current, image]);
+      }
+    } catch (error) { if (activeKeyRef.current === targetKey) setImageError((error as Error).message); }
+    finally { setImageUploading(false); if (imageInputRef.current) imageInputRef.current.value = ""; }
+  };
   // пока режим не выбран вручную — steer там, где харнесс его понимает (codex), иначе очередь
   const effectiveDeliveryMode: DeliveryMode = supportsSteer ? (deliveryModePinned ? deliveryMode : "steer") : "queue";
   const selectDeliveryMode = (mode: DeliveryMode) => {
@@ -1542,9 +1566,9 @@ function App() {
         : detailsLoading && activeSession
           ? { kind: "loading", label: "Обновляю состояние сессии…" }
           : undefined;
-  const submitOutboxEntry = async (sessionKey: string, text: string, mode: DeliveryMode, inputId: string) => {
+  const submitOutboxEntry = async (sessionKey: string, text: string, mode: DeliveryMode, inputId: string, images?: UploadedImage[]) => {
     const { harness, id } = splitKey(sessionKey);
-    const next = appendOutboxEntry(outboxRef.current, { inputId, sessionKey, text, mode, createdAt: Date.now(), status: "ready" });
+    const next = appendOutboxEntry(outboxRef.current, { inputId, sessionKey, text, images, mode, createdAt: Date.now(), status: "ready" });
     outboxRef.current = next;
     setOutbox(next);
     if (!writeStoredOutbox(window.localStorage, next)) {
@@ -1561,7 +1585,7 @@ function App() {
     setOutbox(attempted);
     let responded = false;
     try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message`, { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30_000), body: JSON.stringify({ message: text, mode, humanRequested: true, inputId }) });
+      const response = await fetch(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message`, { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30_000), body: JSON.stringify({ message: text, mode, humanRequested: true, inputId, ...(images?.length ? { imageIds: images.map(image => image.id) } : {}) }) });
       responded = true;
       const payload: unknown = await response.json().catch(() => undefined);
       setOutbox((current) => updateOutboxEntry(current, inputId, classifyMessageDelivery(payload, response.ok)));
@@ -1576,16 +1600,17 @@ function App() {
     }, { inputId, onCancelled: () => setOutbox((current) => updateOutboxEntry(current, inputId, { status: "ready", note: "Чат остановлен. Это сообщение не отправлено; отправьте его явно, если хотите продолжить." })) });
   };
   const sendMessage = async () => {
-    if (!activeKey || readOnlySession || !composer.trim()) return;
+    if (!activeKey || readOnlySession || imageUploading || (!composer.trim() && !composerImages.length)) return;
     const draft = composer;
-    const text = draft.trim();
+    const text = draft.trim() || "Посмотрите прикреплённое изображение.";
+    const images = composerImages; setComposerImages([]);
     setComposer((current) => current === draft ? "" : current);
-    await submitOutboxEntry(activeKey, text, effectiveDeliveryMode, newInputId());
+    await submitOutboxEntry(activeKey, text, effectiveDeliveryMode, newInputId(), images);
   };
   const retryOutboxEntry = async (inputId: string) => {
     const entry = outbox.find((item) => item.inputId === inputId);
     if (!entry || messageDispatcherRef.current.hasPending(inputId) || (entry.status !== "ready" && (entry.status !== "failed" || entry.nonRetryable === true))) return;
-    await submitOutboxEntry(entry.sessionKey, entry.text, entry.mode, entry.inputId);
+    await submitOutboxEntry(entry.sessionKey, entry.text, entry.mode, entry.inputId, entry.images);
   };
   const dismissOutboxEntry = (inputId: string) => setOutbox((current) => removeOutboxEntry(current, inputId));
   // jobId строки достаётся и из ответа POST, и из message-status: после перезагрузки отмена
@@ -1613,8 +1638,9 @@ function App() {
       for (let attempt = 0; attempt < 12; attempt++) {
         const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, { signal: AbortSignal.timeout(10_000) });
         if (!response.ok) return "failed";
-        const job = await response.json().catch(() => undefined) as { state?: unknown } | undefined;
-        if (isTerminalJobState(job?.state)) return cancelOutcomeOfJobState(job?.state);
+        const payload = await response.json().catch(() => undefined) as { job?: { state?: unknown; result?: unknown } } | undefined;
+        const job = payload?.job;
+        if (job && isTerminalJobState(job.state)) return cancelOutcomeOfJob(job);
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
       return "failed";
@@ -1650,7 +1676,7 @@ function App() {
   // фактически не ушло — отправляем его повторно как steer с новым inputId.
   const steerOutboxEntry = async (inputId: string) => {
     const entry = outboxRef.current.find((item) => item.inputId === inputId);
-    if (!entry || !canSteerOutboxEntry(entry, splitKey(entry.sessionKey).harness) || !beginOutboxCancel(inputId)) return;
+    if (!entry || !canSteerOutboxEntry(entry, splitKey(entry.sessionKey).harness, harnessAdapters.find(adapter => adapter.id === splitKey(entry.sessionKey).harness)?.capabilities?.steer === true) || !beginOutboxCancel(inputId)) return;
     messageDispatcherRef.current.cancelInput(entry.sessionKey, inputId);
     try {
       const outcome = await cancelQueuedDelivery(entry);
@@ -1663,7 +1689,7 @@ function App() {
         if (outcome !== "no-job" || entry.status !== "ready") return;
       }
       dismissOutboxEntry(inputId);
-      await submitOutboxEntry(entry.sessionKey, entry.text, "steer", newInputId());
+      await submitOutboxEntry(entry.sessionKey, entry.text, "steer", newInputId(), entry.images);
     } finally {
       endOutboxCancel(inputId);
     }
@@ -1784,7 +1810,7 @@ function App() {
       {showJobs && <JobsView jobs={jobs} loading={jobsLoading} error={jobsError} cancellingJobId={cancellingJobId} onRefresh={() => void loadJobs()} onCancel={(jobId) => void cancelJob(jobId)} />}
       {showQuota && <QuotaPanel />}
       {showStatistics && <StatisticsView statistics={statistics} loading={statisticsLoading} error={statisticsError} days={statisticsDays} onDays={changeStatisticsDays} onRefresh={() => void loadStatistics(statisticsDays, true)} />}
-      {!showStatistics && !showJobs && !showQuota && automationSettings && <div className="autopilot-settings-overlay" ref={automationDialogRef} role="dialog" aria-modal="true" aria-label="Настройки автоматизации"><div className="autopilot-settings-shell"><button className="settings-close" aria-label={`Закрыть настройки ${automationSettings === "launch-policy" ? "запуска новых сессий" : automationSettings === "autocontinue" ? "автопродолжения" : "автопилота"}`} onClick={() => setAutomationSettings(undefined)}>×</button>{automationSettings === "launch-policy" ? <LaunchPolicySettings /> : <AutomationSettings section={automationSettings} state={autopilotPolicy} draft={autopilotPolicyDraft} saving={autopilotPolicySaving} error={autopilotPolicyError} saved={autopilotPolicySaved} continuation={continuationHarnesses} continuationSaving={continuationHarnessSaving} continuationError={continuationHarnessError} runtimeState={runtimeSettingsState} runtimeDraft={runtimeSettingsDraft} runtimeSaving={runtimeSettingsSaving} runtimeSaved={runtimeSettingsSaved} runtimeError={runtimeSettingsError} modelOptions={runtimeModelOptions} sessionControlAvailable={automationSettings === "autocontinue" ? Boolean(sessionAutostart) : Boolean(autopilotSession)} sessionControlStatus={automationSettings === "autocontinue" ? `Текущая сессия: автопродолжение ${sessionAutostart?.enabled ? "включено" : "выключено"}` : `Текущая сессия: автопилот ${autopilotSession?.enabled ? "включён" : "выключен"}`} capabilityNote={activeSession && !activeHarnessSupportsAutocontinue ? `Автопродолжение после сбоя для ${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} пока недоступно. Автопилот может оценивать завершение задач и продолжать их по своей политике.` : undefined} onChange={(next) => { setAutopilotPolicyDraft(next); setAutopilotPolicySaved(false); }} onSave={() => void saveAutopilotPolicy()} onGlobalContinuationToggle={() => void toggleGlobalContinuation()} onContinuationToggle={(harness) => void toggleContinuationHarness(harness)} onRuntimeChange={(next) => { setRuntimeSettingsDraft(next); setRuntimeSettingsSaved(false); }} onRuntimeSave={() => void saveRuntimeSettings()} onOpenSessionControl={() => openSessionInspector(automationSettings === "autocontinue" ? "autocontinue" : "autopilot")} />}</div></div>}
+      {!showStatistics && !showJobs && !showQuota && automationSettings && <div className="autopilot-settings-overlay" ref={automationDialogRef} role="dialog" aria-modal="true" aria-label="Настройки автоматизации"><div className="autopilot-settings-shell"><div className="settings-dialog-header"><button className="settings-close" aria-label={`Закрыть настройки ${automationSettings === "launch-policy" ? "запуска новых сессий" : automationSettings === "autocontinue" ? "автопродолжения" : "автопилота"}`} onClick={() => setAutomationSettings(undefined)}>×</button></div>{automationSettings === "launch-policy" ? <LaunchPolicySettings /> : <AutomationSettings section={automationSettings} state={autopilotPolicy} draft={autopilotPolicyDraft} saving={autopilotPolicySaving} error={autopilotPolicyError} saved={autopilotPolicySaved} continuation={continuationHarnesses} continuationSaving={continuationHarnessSaving} continuationError={continuationHarnessError} runtimeState={runtimeSettingsState} runtimeDraft={runtimeSettingsDraft} runtimeSaving={runtimeSettingsSaving} runtimeSaved={runtimeSettingsSaved} runtimeError={runtimeSettingsError} modelOptions={runtimeModelOptions} sessionControlAvailable={automationSettings === "autocontinue" ? Boolean(sessionAutostart) : Boolean(autopilotSession)} sessionControlStatus={automationSettings === "autocontinue" ? `Текущая сессия: автопродолжение ${sessionAutostart?.enabled ? "включено" : "выключено"}` : `Текущая сессия: автопилот ${autopilotSession?.enabled ? "включён" : "выключен"}`} capabilityNote={activeSession && !activeHarnessSupportsAutocontinue ? `Автопродолжение после сбоя для ${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} пока недоступно. Автопилот может оценивать завершение задач и продолжать их по своей политике.` : undefined} onChange={(next) => { setAutopilotPolicyDraft(next); setAutopilotPolicySaved(false); }} onSave={() => void saveAutopilotPolicy()} onGlobalContinuationToggle={() => void toggleGlobalContinuation()} onContinuationToggle={(harness) => void toggleContinuationHarness(harness)} onRuntimeChange={(next) => { setRuntimeSettingsDraft(next); setRuntimeSettingsSaved(false); }} onRuntimeSave={() => void saveRuntimeSettings()} onOpenSessionControl={() => openSessionInspector(automationSettings === "autocontinue" ? "autocontinue" : "autopilot")} />}</div></div>}
       {!showStatistics && !showJobs && !showQuota && !!details?.children?.length && <details className="subagents-panel"><summary>Субагенты <span>{details.children.length}</span></summary><div className="subagents-list">{details.children.map((child) => <button className="subagent-row" key={keyOf(child)} onClick={() => { selectSession(keyOf(child)); setMobileView("chat"); }}><span className={`status-dot status-${statusClass(child.status)}`} /><span><strong>{child.title || child.id}</strong><small>{typeof child.meta?.agentRole === "string" ? child.meta.agentRole : statusLabel(child.status)} · {child.id}</small></span></button>)}</div></details>}
       {!showStatistics && !showJobs && !showQuota && <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}>
         <div className="message-column" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Переписка">
@@ -1813,7 +1839,8 @@ function App() {
             {entry.status === "unknown" && <button type="button" className="composer-outbox-retry" onClick={() => void checkOutboxEntry(entry)}>Проверить доставку</button>}
             {entry.status === "ready" && <button type="button" className="composer-outbox-retry" disabled={messageDispatcherRef.current.hasPending(entry.inputId)} onClick={() => void retryOutboxEntry(entry.inputId)}>Отправить</button>}
             {entry.status === "failed" && entry.nonRetryable !== true && <button type="button" className="composer-outbox-retry" onClick={() => void retryOutboxEntry(entry.inputId)} title="Повторить отправку">Повторить</button>}
-            {canSteerOutboxEntry(entry, splitKey(entry.sessionKey).harness) && <button type="button" className="composer-outbox-retry" disabled={cancellingOutbox.has(entry.inputId)} onClick={() => void steerOutboxEntry(entry.inputId)} title="Убрать из очереди и вставить в текущий ход агента">Отправить сейчас</button>}
+            {entry.images?.map(image => <img className="outbox-image" src={image.url} alt={image.fileName} key={image.id} />)}
+            {canSteerOutboxEntry(entry, splitKey(entry.sessionKey).harness, harnessAdapters.find(adapter => adapter.id === splitKey(entry.sessionKey).harness)?.capabilities?.steer === true) && <button type="button" className="composer-outbox-retry" disabled={cancellingOutbox.has(entry.inputId)} onClick={() => void steerOutboxEntry(entry.inputId)} title="Убрать из очереди и вставить в текущий ход агента">Отправить сейчас</button>}
             {canDeleteOutboxEntry(entry) && <button type="button" className="composer-outbox-delete" disabled={cancellingOutbox.has(entry.inputId)} aria-label="Удалить сообщение из очереди" onClick={() => void deleteOutboxEntry(entry.inputId)}>Удалить</button>}
             {(entry.status === "delivered" || entry.status === "accepted" || entry.status === "failed" || entry.status === "unknown") && <button type="button" className="composer-outbox-dismiss" aria-label="Убрать сообщение из списка" onClick={() => dismissOutboxEntry(entry.inputId)}>×</button>}
           </div>
@@ -1832,9 +1859,10 @@ function App() {
           </div>
           {createSessionError && <div className="create-session-error">{createSessionError}</div>}
         </div>}
-        <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="Новая сессия" title="Новая сессия агента" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>
+        {supportsImages && !readOnlySession ? <><input ref={imageInputRef} className="composer-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple aria-label="Файл изображения" onChange={event => void uploadImages(event.target.files)} /><button type="button" className="composer-plus" aria-label="Прикрепить изображение" title="Прикрепить изображение (до 5 МБ)" disabled={imageUploading || !activeKey} onClick={() => imageInputRef.current?.click()}>+</button></> : <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="Новая сессия" title="Новая сессия агента" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>}
+        {(composerImages.length > 0 || imageUploading || imageError) && <div className="composer-images">{composerImages.map(image => <div className="composer-image" key={image.id}><img src={image.url} alt={image.fileName} /><button type="button" aria-label={`Убрать ${image.fileName}`} onClick={() => setComposerImages(current => current.filter(item => item.id !== image.id))}>×</button></div>)}{imageUploading && <span>Загружаю изображение…</span>}{imageError && <span role="alert">{imageError}</span>}</div>}
         {readOnlySession ? <div className="composer-readonly"><strong>{archivedSession ? "Архивная сессия" : "Только просмотр"}</strong><span>{archivedSession ? "Сохранённая история сессии доступна для просмотра." : "Эта сессия пока не поддерживает отправку сообщений."}</span></div> : <>
-          <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Продолжите работу…" : activeKey ? "Работайте с агентом" : "Сначала выберите сессию"} disabled={!activeKey || readOnlySession} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && composer.trim()) { event.preventDefault(); void sendMessage(); } }} />
+          <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Продолжите работу…" : activeKey ? "Работайте с агентом" : "Сначала выберите сессию"} disabled={!activeKey || readOnlySession} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && (composer.trim() || composerImages.length > 0)) { event.preventDefault(); void sendMessage(); } }} />
           <span className="composer-hint">{sending ? "Отправляю сообщения…" : isResumeMode ? "Продолжить" : "Enter — отправить · Shift+Enter — новая строка"}</span>
           {modelSwitchHarness && <button type="button" className={`composer-model ${modelMenuOpen ? "open" : ""}`} aria-label="Выбрать модель" aria-expanded={modelMenuOpen} aria-haspopup="listbox" disabled={modelSwitching} onClick={toggleModelMenu}>
             <span className="composer-model-name">{shortModelLabel(activeSession?.model)}</span>
@@ -1847,7 +1875,7 @@ function App() {
             {!modelOptionsLoading && modelOptionsHarness === modelSwitchHarness && modelOptions.length === 0 && <div className="composer-model-note">Сервер не вернул моделей для {modelSwitchHarness}.</div>}
             {modelOptions.map((model) => <button type="button" role="option" aria-selected={model === currentModelOption(activeSession?.model, modelOptions)} className={model === currentModelOption(activeSession?.model, modelOptions) ? "current" : ""} key={model} onClick={() => void changeSessionModel(model)}>{shortModelLabel(model)}</button>)}
           </div>}
-          <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || (!isResumeMode && !composer.trim())} aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}>{isResumeMode ? "▶" : "↑"}</button>
+          <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || imageUploading || (!isResumeMode && !composer.trim() && !composerImages.length)} aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}>{isResumeMode ? "▶" : "↑"}</button>
         </>}
       </form></div>}
     </section>

@@ -1898,3 +1898,15 @@ describe("ZCode adapter", () => {
     await adapter.dispose();
   });
 });
+
+// Fast unit expected1s/max5s: image guide must be one native command with local attachments.
+it("passes attached image files to the same native ZCode guide command", async () => {
+  const client = new FakeClient(); const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+  const image = { id: "a".repeat(64), path: "/protected/image.png", fileName: "figure.png", mimeType: "image/png", bytes: 90 };
+  try {
+    await expect(adapter.sendMessage("session-1", { message: "describe", origin: "human", steer: true, inputId: "human-image-guide", images: [image] })).resolves.toMatchObject({ ok: true, admitted: true });
+    const calls = client.calls.filter(call => call.method === "sendConversationCommandV4");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].args[0]).toMatchObject({ envelope: { sessionId: "session-1", payload: { requestedDelivery: "guide", attachments: [{ ref: image.path, fileName: image.fileName, mime: image.mimeType, bytes: image.bytes }] } } });
+  } finally { await adapter.dispose(); }
+});

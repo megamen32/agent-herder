@@ -1,4 +1,6 @@
 import { projectSessionInventory } from "./session-inventory.js";
+import { SessionImageStore } from "../session-images.js";
+import { homedir } from "node:os";
 import { UserMessageDelivery } from "../user-message-delivery.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { execFile } from "node:child_process";
@@ -38,6 +40,7 @@ import { handleQuotaLensRequest } from "./quota-lens.js";
 import { deferredMessages, renderDeferredMessages } from "../deferred-messages.js";
 
 export interface WebDependencies {
+  sessionImageStore?: SessionImageStore;
   adapters: Map<string, HarnessAdapter>;
   converter: Pick<AgentHerderSessionConverter, "convert"> & Partial<Pick<AgentHerderSessionConverter, "read">>;
   lineageStore?: LineageStore;
@@ -615,11 +618,12 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const selectedResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor, "automation"));
   const manualChoiceResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor, "human"));
   const userMessageDelivery = dependencies.jobs ? new UserMessageDelivery(dependencies.adapters, supervisor, dependencies.jobs) : undefined;
+  const sessionImages = dependencies.sessionImageStore ?? new SessionImageStore(join(homedir(), ".local/state/agent-herder/session-images"));
   const server = createServer(async (request, response) => {
     try {
       if (dependencies.fleetHttpGuard && await dependencies.fleetHttpGuard(request, response)) return;
       if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -691,7 +695,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (url.pathname.startsWith("/api/quota-lens") && request.method === "GET") {
     const body = await handleQuotaLensRequest(url.pathname, url.searchParams);
@@ -885,6 +889,25 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     } catch (error) {
       return sendJson(response, 400, { error: (error as Error).message });
     }
+  }
+  if (url.pathname === "/api/session-images" && request.method === "POST") {
+    if (!sessionImages) return sendJson(response, 503, { error: "Прикрепление изображений недоступно." });
+    try {
+      const body = await readJson(request, 8 * 1024 * 1024);
+      for (const key of ["harness", "sessionId", "fileName", "mimeType", "dataBase64"]) if (typeof body[key] !== "string") throw new Error("Некорректное изображение.");
+      const harness = body.harness as string, sessionId = body.sessionId as string;
+      if (!adapters.get(harness)?.controlCapabilities?.imageInput) throw new Error("Эта среда пока не принимает изображения.");
+      if (!await supervisor.getSession(harness, sessionId)) return sendJson(response, 404, { error: "Чат не найден." });
+      return sendJson(response, 200, await sessionImages.upload(body as unknown as Parameters<SessionImageStore["upload"]>[0]));
+    } catch (error) { return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
+  }
+  const imageMatch = url.pathname.match(/^\/api\/session-images\/([a-f0-9]{64})$/);
+  if (imageMatch && request.method === "GET") {
+    try {
+      const image = await sessionImages!.content(imageMatch[1]);
+      response.writeHead(200, { "content-type": image.mimeType, "content-length": image.bytes.length, "cache-control": "private, max-age=86400", "x-content-type-options": "nosniff" });
+      response.end(image.bytes); return;
+    } catch { return sendJson(response, 404, { error: "Изображение не найдено." }); }
   }
   if (url.pathname === "/api/session-autocompact" && (request.method === "GET" || request.method === "PUT")) {
     if (!autoCompactStore || !autoCompactService) return sendJson(response, 503, { error: "Автокомпакт недоступен." });
@@ -1561,10 +1584,15 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     if (body.mode !== undefined && (typeof body.mode !== "string" || !["queue", "steer", "sync"].includes(body.mode))) return sendJson(response, 400, { error: "invalid delivery mode" });
     if (body.inputId !== undefined && (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512)) return sendJson(response, 400, { error: "invalid inputId" });
+    let images: import("../types/index.js").MessageImage[];
+    try {
+      if (body.imageIds !== undefined && !adapters.get(harness)?.controlCapabilities?.imageInput) throw new Error("Эта среда пока не принимает изображения.");
+      images = await sessionImages!.resolve(harness, id, body.imageIds);
+    } catch (error) { return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
     if (body.humanRequested === true && (body.mode === "queue" || body.mode === "steer") && body.inputId !== undefined) {
       if (!userMessageDelivery) return sendJson(response, 503, { error: "Надёжная очередь сообщений недоступна" });
       try {
-        const receipt = userMessageDelivery.submit({ harness, sessionId: id, inputId: body.inputId as string, message: body.message, mode: body.mode });
+        const receipt = userMessageDelivery.submit({ harness, sessionId: id, inputId: body.inputId as string, message: body.message, mode: body.mode, images });
         return sendJson(response, receipt.pending ? 202 : receipt.ok ? 200 : 502, receipt);
       } catch (error) {
         return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
@@ -1573,6 +1601,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     return sendOperationResult(response, await supervisor.sendMessage(harness, id, {
       message: body.message,
       origin: body.humanRequested === true ? "human" : "automation",
+      images,
       queue: body.mode === "queue",
       steer: body.mode === "steer",
       inputId: typeof body.inputId === "string" ? body.inputId : undefined,
@@ -1640,13 +1669,13 @@ function isAutopilotHarness(value: string): value is AutopilotHarness {
   return value === "codex" || value === "opencode" || value === "claude" || value === "hermes" || value === "zcode";
 }
 
-async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJson(request: IncomingMessage, maxBytes = 1_000_000): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
-    if (size > 1_000_000) throw new Error("Request body is too large");
+    if (size > maxBytes) throw new Error("Request body is too large");
     chunks.push(buffer);
   }
   if (chunks.length === 0) return {};

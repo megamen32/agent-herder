@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MessageAdmissionDispatcher,
+  cancelOutcomeOfJob,
   appendOutboxEntry,
   beginOutboxAttempt,
   classifyMessageDelivery,
@@ -293,4 +294,20 @@ describe("composer admission order", () => {
     admit(); await Promise.all([first, second]);
     expect(called).toEqual(["first", "independent", "second"]);
   });
+});
+
+// Fast unit, expected <1s/max5s: a reload must retain the exact uploaded image.
+it("keeps image references with a queued message across browser reload", () => {
+  const storage = new MemoryStorage();
+  const id = "a".repeat(64), images = [{ id, fileName: "figure.png", mimeType: "image/png", bytes: 100, url: `/api/session-images/${id}` }];
+  writeStoredOutbox(storage, [entry({ status: "deferred", images })]);
+  expect(readStoredOutbox(storage)[0].images).toEqual(images);
+});
+
+// Fast unit expected<1s/max5s: prevent duplicate native input during queue cancellation.
+it("converts a cancelled queue only with a verified pre-dispatch receipt", () => {
+ expect(cancelOutcomeOfJob({ state: "cancelled", result: { notSubmitted: true } })).toBe("cancelled");
+ expect(cancelOutcomeOfJob({ state: "cancelled", result: { admitted: true } })).toBe("delivered");
+ expect(cancelOutcomeOfJob({ state: "cancelled", result: { admissionUnknown: true } })).toBe("failed");
+ expect(cancelOutcomeOfJob({ state: "cancelled" })).toBe("failed");
 });
