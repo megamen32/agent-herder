@@ -108,7 +108,78 @@ def private_directory(path):
     if not stat.S_ISDIR(info.st_mode) or info.st_uid!=os.getuid() or info.st_mode&0o077:
         raise Refused('owned_directory_permissions')
 
+def darwin_artifact_bytes(root, limit, overall_deadline, verify_root, refuse, pinned):
+    """Apple FTS avoids thousands of Python stat calls; same five-second gate.
+    Physical traversal includes mounted subtrees and counts hard-link entries.
+    du rounds up apparent bytes (including dirs), so accounting is conservative.
+    Only owned read-only probe children are cleaned up; no output is persisted.
+    """
+    children=[];count=0;root_fd=None;cwd_fd=None
+    operation_deadline=overall_deadline-.75  # Reserve owned-probe cleanup time.
+    def remaining():
+        value=operation_deadline-time.monotonic()
+        if value<=0:refuse('storage_observation_limit','deadline')
+        return value
+    try:
+        root_fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        info=os.fstat(root_fd)
+        if (info.st_uid,info.st_dev,info.st_ino)!=pinned:refuse('storage_root_unverified','root_generation')
+        # Darwin fdescfs does not reliably traverse directory FDs. Inherit
+        # the pinned directory as cwd instead; the only other Python thread
+        # drains stderr and performs no cwd-relative filesystem operations.
+        cwd_fd=os.open('.',os.O_RDONLY|os.O_DIRECTORY);os.fchdir(root_fd)
+        finder=subprocess.Popen(['/usr/bin/find','-P','.','-print0'],
+            stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+        children.append(finder);os.set_blocking(finder.stdout.fileno(),False)
+        while True:
+            if not select.select([finder.stdout.fileno()],[],[],min(.1,remaining()))[0]:continue
+            try:chunk=os.read(finder.stdout.fileno(),32768)
+            except BlockingIOError:continue
+            if not chunk:break
+            count+=chunk.count(b'\0')
+            # find includes the pinned root itself, unlike the FD scanner.
+            if count>30001:refuse('storage_observation_limit','file_limit')
+        if finder.wait(timeout=remaining())!=0 or count<1:
+            refuse('storage_root_unverified','io')
+        du=subprocess.Popen(['/usr/bin/du','-A','-l','-s','-k','-P','.'],
+            stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+        children.append(du);out,_=du.communicate(timeout=remaining())
+        if du.returncode or len(out)>4096:
+            refuse('storage_root_unverified','io')
+        size=out.partition(b'\t')[0].strip()
+        if not re.fullmatch(rb'[0-9]{1,16}',size):refuse('storage_root_unverified','io')
+        total=int(size)*1024
+        if total>limit:refuse('storage_budget_exceeded','byte_limit')
+        verify_root();remaining()
+        return total
+    except subprocess.TimeoutExpired:
+        refuse('storage_observation_limit','deadline')
+    except OSError:
+        refuse('storage_root_unverified','io')
+    finally:
+        cleanup_failed=False
+        for child in children:
+            try:
+                if child.poll() is None:child.kill()
+            except OSError:cleanup_failed=True
+        for child in children:
+            try:child.wait(timeout=max(.001,overall_deadline-time.monotonic()))
+            except (OSError,subprocess.TimeoutExpired):cleanup_failed=True
+            finally:
+                try:
+                    if child.stdout:child.stdout.close()
+                except OSError:cleanup_failed=True
+        if cwd_fd is not None:
+            try:os.fchdir(cwd_fd)
+            except OSError:cleanup_failed=True
+            finally:os.close(cwd_fd)
+        if root_fd is not None:
+            try:os.close(root_fd)
+            except OSError:cleanup_failed=True
+        if cleanup_failed:refuse('storage_observation_limit','probe_cleanup')
+
 def storage_bytes(root, limit, *, artifact=False):
+    root=root.absolute()
     window=5 if artifact else 2
     # A complete artifact census may use its existing five-second allowance.
     # Splitting it into two discarded 2.5s traversals rejects a healthy tree
@@ -130,6 +201,9 @@ def storage_bytes(root, limit, *, artifact=False):
         try:current=root.lstat()
         except OSError:refuse('storage_root_unverified','root_generation')
         if not stat.S_ISDIR(current.st_mode) or identity(current)!=pinned:refuse('storage_root_unverified','root_generation')
+    if artifact and sys.platform=='darwin':
+        verify_root()
+        return darwin_artifact_bytes(root,limit,overall_deadline,verify_root,refuse,pinned)
     class Deadline(Exception):pass
     flags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW
     for attempt in (1,2):

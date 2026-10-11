@@ -624,6 +624,92 @@ class MacWatchdogTests(unittest.TestCase):
         self.assertEqual(result['stderrErrorCodes'],['ECONNRESET','ERR_INTERNAL_ASSERTION','callback_not_function'])
         for value in ('PRIVATE_COOKIE','PRIVATE_DIALOGUE','SECRET_CODE'):self.assertNotIn(value,json.dumps(result))
 
+    # Fast unit: native-probe process boundary only, not Darwin integration.
+    # Expected <1s / maximum 10s for all native accounting regressions.
+    def native_artifact_fixture(self,root,find_payload=b'.\0file\0',du_payload=b'4\t.\n',find_code=0,du_timeout=False,on_du=None):
+        class Probe:
+            def __init__(self,kind):
+                self.kind=kind;self.stdout=tempfile.TemporaryFile();self.killed=False
+                if kind=='find':self.stdout.write(find_payload);self.stdout.seek(0)
+                self.returncode=find_code if kind=='find' else (None if du_timeout else 0)
+            def poll(self):return self.returncode
+            def kill(self):self.killed=True;self.returncode=-9
+            def wait(self,timeout=None):return self.returncode
+            def communicate(self,timeout=None):
+                if on_du:on_du()
+                if du_timeout:raise w.subprocess.TimeoutExpired('owned-probe',timeout)
+                return du_payload,None
+        probes=[];argv=[]
+        def spawn(command,**kwargs):
+            self.assertEqual(Path.cwd().stat().st_ino,root.stat().st_ino)
+            self.assertEqual(kwargs['stderr'],w.subprocess.DEVNULL)
+            argv.append(command);p=Probe('find' if command[0]=='/usr/bin/find' else 'du');probes.append(p);return p
+        return spawn,probes,argv
+
+    def test_native_artifact_uses_physical_pinned_cwd_and_counts_hardlinks(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'releases';root.mkdir();before=Path.cwd()
+            spawn,probes,argv=self.native_artifact_fixture(root)
+            with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):
+                self.assertEqual(w.storage_bytes(root,512*w.MIB,artifact=True),4096)
+            self.assertEqual(argv,[['/usr/bin/find','-P','.','-print0'],['/usr/bin/du','-A','-l','-s','-k','-P','.']])
+            self.assertEqual(Path.cwd(),before);self.assertTrue(all(p.stdout.closed for p in probes))
+
+    def test_native_artifact_file_limit_stops_before_size_probe(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'releases';root.mkdir()
+            spawn,probes,argv=self.native_artifact_fixture(root,find_payload=b'.\0'+b'x\0'*30001)
+            with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):
+                with self.assertRaisesRegex(w.Refused,'file_limit'):w.storage_bytes(root,512*w.MIB,artifact=True)
+            self.assertEqual(len(argv),1);self.assertTrue(probes[0].stdout.closed)
+
+    def test_native_artifact_byte_limit_remains_fail_closed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'releases';root.mkdir()
+            spawn,probes,argv=self.native_artifact_fixture(root,du_payload=b'524289\t.\n')
+            with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):
+                with self.assertRaisesRegex(w.Refused,'byte_limit'):w.storage_bytes(root,512*w.MIB,artifact=True)
+            self.assertEqual(len(argv),2);self.assertTrue(all(p.stdout.closed for p in probes))
+
+    def test_native_artifact_timeout_cleans_only_owned_probe_and_restores_cwd(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'releases';root.mkdir();before=Path.cwd()
+            spawn,probes,_=self.native_artifact_fixture(root,du_timeout=True)
+            with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):
+                with self.assertRaisesRegex(w.Refused,'deadline'):w.storage_bytes(root,512*w.MIB,artifact=True)
+            self.assertTrue(probes[-1].killed);self.assertTrue(all(p.stdout.closed for p in probes));self.assertEqual(Path.cwd(),before)
+
+    def test_native_artifact_refuses_failed_find_without_second_probe(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'releases';root.mkdir()
+            spawn,probes,argv=self.native_artifact_fixture(root,find_code=1)
+            with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):
+                with self.assertRaisesRegex(w.Refused,'storage_root_unverified'):w.storage_bytes(root,512*w.MIB,artifact=True)
+            self.assertEqual(len(argv),1);self.assertTrue(probes[0].stdout.closed)
+
+    def test_native_artifact_refuses_root_replacement(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'releases';root.mkdir();before=Path.cwd()
+            def replace_root():root.rename(Path(folder)/'old');root.mkdir()
+            spawn,probes,_=self.native_artifact_fixture(root,on_du=replace_root)
+            with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):
+                with self.assertRaisesRegex(w.Refused,'root_generation'):w.storage_bytes(root,512*w.MIB,artifact=True)
+            self.assertEqual(Path.cwd(),before);self.assertTrue(all(p.stdout.closed for p in probes))
+
+    def test_native_artifact_does_not_leak_failed_output(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'releases';root.mkdir()
+            spawn,probes,_=self.native_artifact_fixture(root,du_payload=b'PRIVATE_DIAGNOSTIC')
+            with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):
+                with self.assertRaises(w.Refused) as caught:w.storage_bytes(root,512*w.MIB,artifact=True)
+            self.assertNotIn('PRIVATE_DIAGNOSTIC',str(caught.exception));self.assertTrue(all(p.stdout.closed for p in probes))
+
+    def test_native_artifact_branch_never_changes_temp_state_scanner(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'tmp';root.mkdir();(root/'entry').write_bytes(b'abc')
+            with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen') as spawn:
+                self.assertEqual(w.storage_bytes(root,128*w.MIB),3);spawn.assert_not_called()
+
     def test_launchagent_has_no_restart_loop_or_user_wide_limits(self):
         text=(ROOT/'deploy/fleet/mac-node.plist.in').read_text().replace('__HOME__','/Users/fixture').replace('__PYTHON_BIN__','/usr/bin/python3')
         value=plistlib.loads(text.encode())
