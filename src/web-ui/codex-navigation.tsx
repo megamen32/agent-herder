@@ -26,7 +26,7 @@ export function CodexNavigation(props: NavigationProps) {
     { id: "statistics", label: "Статистика", action: props.onStatistics },
   ] as const;
   return <nav className="codex-navigation" aria-label="Основная навигация">
-    <div className="codex-navigation-items">{items.map((item) => <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-pressed={item.id === props.active} className={item.id === props.active ? "active" : ""} onClick={item.action}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={paths[item.id]} /></svg></button>)}</div>
+    <div className="codex-navigation-items">{items.map((item) => <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-pressed={item.id === props.active} className={item.id === props.active ? "active" : ""} onClick={item.action}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={paths[item.id]} /></svg><span className="nav-label">{item.label}</span></button>)}</div>
     <span className="codex-navigation-mark" title="Agent Herder">AH</span>
   </nav>;
 }

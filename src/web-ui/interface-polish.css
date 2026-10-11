@@ -135,3 +135,16 @@
   .compact-timing-grid label { display: flex; align-items: center; justify-content: space-between; }
   .settings-dialog-body .compact-save, .settings-dialog-body .settings-footer { bottom: -20px; margin: 0; padding: 14px 0; }
 }
+
+/* Labels and creation flow clarified by the independent novice review. */
+.codex-navigation { padding-inline: 4px; }
+.codex-navigation button { width: 52px; height: 58px; display: flex; flex-direction: column; gap: 5px; justify-content: center; }
+.codex-navigation .nav-label { font-size: 9.5px; line-height: 12px; font-weight: 400; white-space: nowrap; }
+.settings-dialog-body .session-settings-link > button { border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px; background: var(--surface-hover); color: var(--text); }
+@media (min-width: 1181px) { .oc-app:not(.no-inspector) { grid-template-columns: 60px 296px minmax(0,1fr) 320px; } }
+@media (min-width: 901px) and (max-width: 1180px) {
+ .oc-app { grid-template-columns: 60px 296px minmax(0,1fr); }
+ .inspector-pane { position: fixed; inset: 0 0 0 auto; width: min(400px,100%); z-index: 45; background: var(--surface-1); box-shadow: -20px 0 60px rgb(0 0 0 / 25%); }
+}
+.inspector-pane .inspector-title { white-space: normal; overflow-wrap: anywhere; }
+.inspector-pane .autopilot-control small { font-size: 12px; line-height: 1.5; }
