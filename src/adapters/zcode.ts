@@ -720,6 +720,17 @@ function normalizeZcodeTaskEvent(sessionId: string, payload: unknown): HarnessEv
   };
 }
 
+function isLegacyNativeMessageSourceError(error: unknown): boolean {
+  try {
+    const issues: unknown = JSON.parse(error instanceof Error ? error.message : String(error));
+    return Array.isArray(issues) && issues.length > 0 && issues.every(issue => {
+      const value = record(issue), path = value.path;
+      return value.code === "invalid_value" && Array.isArray(path) && path.length === 4
+        && path[0] === "messages" && typeof path[1] === "number" && path[2] === "info" && path[3] === "source";
+    });
+  } catch { return false; }
+}
+
 function unsupported(operation: string): ControlResult {
   return { ok: false, error: `ZCode Protocol operation '${operation}' is not supported by the native app-server` };
 }
@@ -2173,6 +2184,17 @@ export class ZcodeAdapter implements HarnessAdapter {
       this.ensureSessionEventSubscription(id, workspace, typeof eventSeq === "number" ? eventSeq : undefined);
       return { ok: true };
     } catch (error) {
+      if (isLegacyNativeMessageSourceError(error)) {
+        try {
+          const workspace = this.sessionWorkspaces.get(id) || this.workspace();
+          const snapshot = await this.readSnapshot(id, workspace, 1);
+          if (sessionInfoFromPayload(snapshot)?.sessionId === id) {
+            this.sessionWorkspaces.set(id, workspace);
+            this.ensureSessionEventSubscription(id, workspace);
+            return { ok: true };
+          }
+        } catch { /* Preserve failure without repeating native resume. */ }
+      }
       return isInactiveSessionError(error)
         ? terminalInactiveResult(id, error)
         : { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -2258,12 +2280,17 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   private async readSnapshot(id: string, workspace: ZcodeWorkspaceRef, messageLimit?: number): Promise<ZcodeSnapshot> {
-    return await this.callAgent("readSession", {
-      ...workspace,
-      runtimePolicy:"existing-only",
-      sessionId: id,
-      ...(messageLimit !== undefined ? { messageLimit } : {}),
-    }) as ZcodeSnapshot;
+    const read = (limit?: number) => this.callAgent("readSession", {
+      ...workspace, runtimePolicy: "existing-only", sessionId: id,
+      ...(limit !== undefined ? { messageLimit: limit } : {}),
+    }) as Promise<ZcodeSnapshot>;
+    try { return await read(messageLimit); }
+    catch (error) {
+      // Native output validation rejects some historical source labels. Keep
+      // the native history intact and read only the current-state snapshot.
+      if (messageLimit === 1 || !isLegacyNativeMessageSourceError(error)) throw error;
+      return read(1);
+    }
   }
 
   private conversationLoads = new Map<string, Promise<ZcodeSnapshot>>();

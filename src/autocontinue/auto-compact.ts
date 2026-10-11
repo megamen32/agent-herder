@@ -193,9 +193,8 @@ export class AutoCompactService {
     if (!manual && (!state.settings.enabled || !state.settings.harnesses.includes(harness)
       || !context.complete || !Number.isFinite(age) || age < startAt || age + durationMs > windowMs - 30_000
       || context.capacity <= 0 || context.tokens / context.capacity * 100 < state.settings.minContextPercent
-      || context.humanMessages < state.settings.minHumanMessages || context.cacheRead <= 0
-      || (context.cacheHitRate ?? context.cacheRead / Math.max(1, context.cacheRead + context.cacheInput)) < .25
-      || !await this.options.worthResuming(session))) return { ok: false, error: "Сессия не требует возобновления, контекст мал, кэш не подтверждён или время компакта ещё не пришло." };
+      || context.humanMessages < state.settings.minHumanMessages
+      || !await this.options.worthResuming(session))) return { ok: false, error: "Сессия не требует возобновления, контекст мал или время компакта ещё не пришло." };
     const sourceKey = createHash("sha256").update(`${harness}:${id}:${session.cwd}:${context.userMessageId}:${context.turnBoundary}`).digest("hex");
     const existing = state.operations.find((item) => item.sourceKey === sourceKey);
     if (existing) return receiptResult(existing);

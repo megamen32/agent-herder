@@ -1958,3 +1958,22 @@ it('changes model in a cold existing session without creating a turn', async()=>
   expect(client.calls.some(call=>['createSession','sendPrompt','sendConversationCommandV4'].includes(call.method))).toBe(false);
  }finally{await adapter.dispose();}
 });
+
+// Focused integration expected1s/max5s: native output validation must not replay resume.
+it("recovers current state after a historical message source fails native validation", async()=>{
+ const error=new Error(JSON.stringify([{code:"invalid_value",path:["messages",1,"info","source"],message:"Invalid option"}]));
+ class LegacySourceClient extends FakeClient {
+  override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   if(method==="resumeSession"){this.calls.push({channel,method,args});throw error;}
+   if(method==="readSession" && (args[0] as {messageLimit?:number}).messageLimit!==1){this.calls.push({channel,method,args});throw error;}
+   return super.call(channel,method,args);
+  }
+ }
+ const client=new LegacySourceClient(),adapter=new ZcodeAdapter({cwd:"/workspace",client});
+ try{
+  await expect(adapter.resumeSession("session-1")).resolves.toEqual({ok:true});
+  await expect(adapter.changeModel("session-1","zai/GLM-5.3-Flash")).resolves.toEqual({ok:true});
+  expect(client.calls.filter(call=>call.method==="resumeSession")).toHaveLength(1);
+  expect(client.calls.some(call=>["createSession","sendPrompt","sendConversationCommandV4"].includes(call.method))).toBe(false);
+ }finally{await adapter.dispose();}
+});

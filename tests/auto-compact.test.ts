@@ -51,7 +51,7 @@ describe("same-session warm-context maintenance (fast unit, expected 1s/max 10s)
     const f = await fixture(); f.age(205);
     if (reason === "finished") f.useful(false);
     if (reason === "stopped") f.held(true);
-    if (reason === "cold") (f.session.meta!.nativeContextUsage as { cache: { cacheReadTokens: number } }).cache.cacheReadTokens = 0;
+    if (reason === "cold") f.session.meta!.nativeLoaded = false;
     if (reason === "late") f.age(290);
     if (reason === "active") f.session.meta!.nativeActiveTurnId = "turn";
     if (reason === "human") f.session.needsPermission = true;
@@ -65,4 +65,11 @@ describe("same-session warm-context maintenance (fast unit, expected 1s/max 10s)
     await f.restart().tick(); expect(f.compactSession).toHaveBeenCalledTimes(1);
     expect((await f.store.read()).operations[0]?.state).toBe("failed");
   });
+});
+
+// Fast unit expected1s/max5s: first-request cache misses still seed an implicit prefix cache.
+it("uses the configured cache-window estimate without an invented minimum hit ratio", async () => {
+ const f=await fixture(); f.age(205);
+ (f.session.meta!.nativeContextUsage as {cache:unknown}).cache={cacheReadTokens:0,inputTokens:100000,latestHitRate:0};
+ await f.service.tick(); expect(f.compactSession).toHaveBeenCalledTimes(1);
 });
