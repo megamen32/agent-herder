@@ -685,6 +685,7 @@ export function createAutopilotCore(options: {
             return {};
           }
           const pendingNotice = createNoticePlacePayload({
+            eventType: "agent.done",
             title: `Agent Herder: ${harnessLabel(options.harness ?? input.harness ?? "codex")} завершил работу`,
             body: executionBody(decision.summary, input, options.harness ?? input.harness ?? "codex"),
             severity: "low",

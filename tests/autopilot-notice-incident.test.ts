@@ -13,6 +13,7 @@ it("shows actual OpenCode execution rather than the protected Hermes producer", 
  await createAutopilotCore({ judge: { decide: async () => ({ kind: "done", summary: "Исправление проверено" }) }, notify: { send }, receiptStore: new Map(), allowSessions: new Set([hook.session_id]), maxContinuationsPerSession: 3, harness: "opencode", notification: { project: "hermes", recipient: "me", kind: "notification" } }).handleStop(hook);
  const payload = send.mock.calls[0]![0] as any;
  expect(payload.project).toBe("hermes");
+ expect(payload.event_type).toBe("agent.done");
  expect(payload.execution_identity).toEqual({harness:"opencode",session_id:hook.session_id,model:hook.model,cwd:hook.cwd,session_url:"https://agent.bezrabotnyi.com/#/session/opencode%3Ases_real_opencode"});
  expect(payload.body.startsWith("Исправление проверено\n\n")).toBe(true);
  for (const text of ["OpenCode", hook.session_id, hook.model!, hook.cwd, "https://agent.bezrabotnyi.com/#/session/opencode%3Ases_real_opencode"]) expect(payload.body).toContain(text);

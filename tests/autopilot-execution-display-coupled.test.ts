@@ -21,9 +21,11 @@ it.runIf(Boolean(process.env.NOTICEPLACE_TEST_ROOT))("persists real executor ind
   const proof:any=await(await fetch(peer.url+"/fixture-proof")).json();
   expect(proof.incidents).toBe(1);expect(proof.questions).toBe(0);expect(proof.progress).toBe(0);
   expect(proof.payloads).toHaveLength(1);
+  expect(proof.payloads[0].event_type).toBe("agent.done");
   expect(proof.payloads[0].execution_identity).toEqual({harness:"opencode",session_id:hook.session_id,model:hook.model,cwd:dir,session_url:"https://agent.bezrabotnyi.com/#/session/opencode%3Ases_REAL"});
   const sends=proof.calls.filter((c:any)=>c.method==="sendMessage");expect(sends).toHaveLength(1);
   expect(JSON.stringify(sends[0])).toContain("OpenCode");expect(JSON.stringify(sends[0])).toContain("opencode%3Ases_REAL");
+  expect(JSON.stringify(sends[0])).toContain("Сессия сообщила о завершении работы");
  } finally {
   child.stdin.end("stop\n");await new Promise<void>(resolve=>{if(child.exitCode!==null)return resolve();const timer=setTimeout(()=>{child.kill();resolve();},1500);child.once("exit",()=>{clearTimeout(timer);resolve();});});lines.close();await rm(dir,{recursive:true,force:true});
  }

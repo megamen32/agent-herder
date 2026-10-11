@@ -9,8 +9,18 @@ verified auth/config отказывает до named binding, не запуск�
 `HermesAdapter.createSession` создаёт логическую named binding, а не новый native
 chat: session ID Herder — настоящий Gateway **session key**, metadata содержит
 `nativeSessionId`/`sessionId`, `origin` (с thread_id) и actual selected model.
+Native SID в display URL также читается как exact alias **этого** home key;
+доставка и query после lookup используют canonical key. Чужой SID отклоняется.
 `findNamedSessions/getSession` восстанавливают binding через plugin ledger
 после перезапуска Herder. Public MCP остаётся способом наблюдения.
+
+Production named runner передаёт `expectedTaskBinding:{name,cwd,generation}`
+из именно выбранного target receipt, включая cached target. Adapter не заменяет
+его текущим именем другой задачи того же home key. Plugin атомарно сверяет
+контекст с persisted binding до input reservation/native call. Mismatch —
+`notSubmitted:true`; A→B→cached A/resolve A и ABA не меняют чужую CWD.
+Для обычного home follow-up adapter явно получает fresh current binding; её
+поколение проверяется тем же gate. Cache invalidation не используется как fence.
 
 `sendMessage` использует stable inputId и поддерживаемый
 `PluginContext.inject_message(content, session_key=...)`; отправка через
@@ -53,6 +63,8 @@ Generic done/human/choice events содержат отдельный optional ty
 `encodeURIComponent(harness+":"+nativeID)`. Metadata сохраняется в existing
 notification receipt и replay; длинный body её не обрезает. Технический
 project `hermes` остаётся auth scope и не становится названием исполнителя.
+Generic done имеет явный `event_type:agent.done`, кроме intentional override;
+Notice не выводит завершение из title/body. Bound original health progress не меняется.
 Invalid optional model/CWD опускаются; model/provider не угадываются.
 
 Это display-only field, не launch/binding/auth authority. Sessions с явным
@@ -83,7 +95,23 @@ use installed Hermes interpreter + stdlib fixture executor; no dependency
 installation. CPU1, RAM max2GiB/tasks128/swap0, Vitest worker1; peak final
 592719872 bytes, OOM0, generation-specific cleanup PASS. No broad/nightly suite.
 
-Subsequent published-main merge/build source manifest is retained under
-`.tmp/hermes-topic-main-release/`. Final immutable SHAs and that build receipt
-are provided to Root after publication. This is source/plugin readiness;
-real Telegram task dialogue and recipient acceptance belong to Root.
+После опубликованного main dfe79a9 выполнен полный build35.794s; evidence
+`.tmp/hermes-topic-main-release/`. Дополнительный native-SID alias delta
+скомпилирован/imported тем же TypeScript compiler, проверен одним targeted
+Vitest и одним Python scenario. Failed CJS-format setup сохранён отдельно;
+четыре filtered-out сценария не объявлены прошедшими заново. Первая ordinary
+фаза: bounded windows с setup178.390s, начальный source-pin отказ0.954s;
+deadline180s соблюдён, broad suite не запускался.
+
+Независимый последующий review выявил CWD race в общем topic key. В отдельной
+bounded correction phase включён опубликованный main976444c, выполнены полный
+build и7/7 focused Vitest +12/12 Python за45.131s; real production named
+runner→original plugin HTTP→atomic gate→terminal override доказывает, что stale A
+не создаёт input/provider turn, а fresh follow-up сохраняет B. Evidence
+`.tmp/hermes-binding-review-release/`. Финальный typed-done/coupled Notice226
+проход и source/dist manifest — `.tmp/hermes-binding-typed-final/`.
+
+Точные frozen SHAs после публикации передаются Root. Это готовность source/plugin;
+services, совместная установка и настоящий Telegram task dialogue/recipient
+acceptance принадлежат Root. Canonical runtime100 не собирался/не перезапускался
+этим владельцем; все builds выполнены только в owned Herder worktree.
