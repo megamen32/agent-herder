@@ -2,16 +2,25 @@ import {spawn} from 'node:child_process';
 import {hostname,userInfo} from 'node:os';
 import type {GptAdminTransport} from './gptadmin.js';
 /** Reuses owner-authorized fleet SSH, transporting HTTP to each existing singleton. Never starts MCP stdio or a native controller. */
-export type DirectPeer={hostId:string;sshHost:string;nativeUser:string;port:number;python:string};
+export type DirectPeer={hostId:string;sshHost:string;sshPort?:number;nativeUser:string;port:number;python:string};
 export const directFleetPeers:readonly DirectPeer[]=[
  {hostId:'roomhacker-server-100',sshHost:'192.168.2.100',nativeUser:'roomhacker',port:18787,python:'/usr/bin/python3'},
  {hostId:'server-44',sshHost:'192.168.2.5',nativeUser:'roomhacker',port:18791,python:'/usr/bin/python3'},
  {hostId:'roomhacker-server-88',sshHost:'192.168.2.75',nativeUser:'roomhacker',port:18791,python:'/usr/bin/python3'},
  {hostId:'mac-mini-2012.lan',sshHost:'192.168.2.4',nativeUser:'roomhacker',port:18789,python:'/usr/bin/python3'},
- // Direct LAN is the independent recovery leg when the primary reverse route through100 is absent.
- {hostId:'MacBook-Pro-User.local',sshHost:'192.168.2.8',nativeUser:'user',port:18789,python:'/opt/homebrew/bin/python3'},
+ // The Mac maintains this authenticated reverse route even when it leaves the LAN.
+ {hostId:'MacBook-Pro-User.local',sshHost:'127.0.0.1',sshPort:2222,nativeUser:'user',port:18789,python:'/opt/homebrew/bin/python3'},
 ];
 const quote=(s:string)=>"'"+s.replace(/'/g,"'\"'\"'")+"'";
+// Return fixed codes only: peer stderr can contain private paths or request data.
+const peerFailure=(stderr:string):string=>{
+ if(/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/.test(stderr))return 'direct_ssh_host_key_unverified';
+ if(stderr.includes('native_owner_identity_mismatch'))return 'native_owner_identity_mismatch';
+ if(/ssh: connect to host .*Connection refused/.test(stderr))return 'direct_ssh_refused';
+ if(/Connection timed out|Operation timed out/.test(stderr))return 'direct_ssh_connect_timeout';
+ if(/ConnectionRefusedError|URLError.*Connection refused/.test(stderr))return 'direct_native_listener_unavailable';
+ return 'direct_peer_unavailable';
+};
 const bridge=String.raw`import sys,json,socket,pwd,os,time,urllib.request,urllib.parse,urllib.error,uuid,signal
 body=sys.stdin.buffer.read(16385)
 if len(body)>16384:raise RuntimeError('request_limit')
@@ -86,13 +95,14 @@ export class FleetDirectTransport implements GptAdminTransport {
   const request=JSON.stringify({...peer,method,params,timeoutMs});if(Buffer.byteLength(request)>16384)throw new Error('direct_request_limit');
   const local=peer.hostId===hostname()&&peer.nativeUser===userInfo().username;
   const executable=local?peer.python:'/usr/bin/ssh';
-  const args=local?['-I','-S','-B','-c',bridge]:['-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=3','-o','ConnectionAttempts=1','-o','ServerAliveInterval=3','-o','ServerAliveCountMax=1','-l',peer.nativeUser,peer.sshHost,`${quote(peer.python)} -I -S -B -c ${quote(bridge)}`];
+  const reverseVia100=peer.hostId==='MacBook-Pro-User.local'&&peer.sshHost==='127.0.0.1'&&hostname()!=='roomhacker-server-100';
+  const args=local?['-I','-S','-B','-c',bridge]:['-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=3','-o','ConnectionAttempts=1','-o','ServerAliveInterval=3','-o','ServerAliveCountMax=1',...(reverseVia100?['-J','roomhacker@192.168.2.100']:[]),...(peer.sshPort?['-p',String(peer.sshPort)]:[]),'-l',peer.nativeUser,peer.sshHost,`${quote(peer.python)} -I -S -B -c ${quote(bridge)}`];
   return new Promise((resolve,reject)=>{
-   const child=spawn(executable,args,{stdio:['pipe','pipe','pipe']});let size=0;const chunks:Buffer[]=[];let failure:Error|undefined;
+   const child=spawn(executable,args,{stdio:['pipe','pipe','pipe']});let size=0;const chunks:Buffer[]=[];let failure:Error|undefined;let stderr='';
    const timer=setTimeout(()=>{failure=new Error('direct_deadline');child.kill('SIGKILL');},timeoutMs+500);
    child.stdout.on('data',(data:Buffer)=>{size+=data.length;if(size>1048576){failure=new Error('direct_response_limit');child.kill('SIGKILL');}else chunks.push(data);});
-   child.stderr.resume();child.stdin.on('error',()=>{});child.on('error',error=>{clearTimeout(timer);reject(error);});
-   child.on('close',code=>{clearTimeout(timer);if(failure||code!==0)return reject(failure??new Error('direct_peer_unavailable'));try{resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch{reject(new Error('direct_response_invalid'));}});
+   child.stderr.on('data',(data:Buffer)=>{if(stderr.length<8192)stderr+=data.toString('utf8').slice(0,8192-stderr.length);});child.stdin.on('error',()=>{});child.on('error',()=>{clearTimeout(timer);reject(new Error('direct_peer_unavailable'));});
+   child.on('close',code=>{clearTimeout(timer);if(failure||code!==0)return reject(failure??new Error(peerFailure(stderr)));try{resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch{reject(new Error('direct_response_invalid'));}});
    child.stdin.end(request);
   });
  }

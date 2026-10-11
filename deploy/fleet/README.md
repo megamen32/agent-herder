@@ -103,3 +103,22 @@ Global output≤12, exact-ID/full native list/history и STOP/admission guards
 сохранены. Страница не является полным inventory; currentCwd не подменяется
 каталогом запуска. Нестабильный target transport/history сохраняет отдельный
 отказ, успешная страница не доказывает доступность всей истории.
+
+### M1 periodic socket verification (12 October 2026)
+
+The Node watchdog retains the global sole-FD-owner census during Codex
+admission/JOIN. Each periodic poll instead scopes `lsof -t -nP -a -p PID -U
+PHYSICAL_SOCKET` to the already-approved native PID. UID, lstart generation,
+Codex app-server argv, exact kernel text mapping, socket UID/type and inode
+before/after remain fresh; empty, foreign, failed and timed-out observations
+refuse. A periodic result does not claim a fresh global sole-owner census.
+The existing two attempts / four-second window and all workload/reserve/cleanup
+bounds remain unchanged. No controller or socket is created or adopted.
+
+Deliver the published helper through an exact config/helper/Node-manifest CAS:
+retain the old files and receipt, update only the helper and its `launcherHashes`
+pin, record its source commit/hash separately, keep the installed Node source
+and payload manifest unchanged, run native admission, then start the previously
+stopped owned node once. Acceptance requires native `fleet_node_info`, fresh
+cabinet host readiness and multiple steady watchdog samples, with native Codex
+identity unchanged; `--check` alone is insufficient.

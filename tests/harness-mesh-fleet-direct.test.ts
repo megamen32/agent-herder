@@ -4,13 +4,13 @@ import {EventEmitter} from 'node:events';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {IncomingMessage} from 'node:http';
-const state=vi.hoisted(()=>({home:'',spawns:[] as any[],reply:{tools:[]},mode:'ok',auth:false}));
+const state=vi.hoisted(()=>({home:'',spawns:[] as any[],reply:{tools:[]},mode:'ok',auth:false,host:'server-44',stderr:''}));
 vi.mock('../src/web/fleet-owner-auth.js',()=>({verifyFleetOwnerCookie:vi.fn(async()=>state.auth)}));
-vi.mock('node:os',()=>({hostname:()=> 'server-44',userInfo:()=>({username:'roomhacker'}),homedir:()=>state.home,platform:()=> 'linux'}));
+vi.mock('node:os',()=>({hostname:()=> state.host,userInfo:()=>({username:'roomhacker'}),homedir:()=>state.home,platform:()=> 'linux'}));
 vi.mock('node:child_process',()=>({spawn:(bin:string,args:string[])=>{
  const child=new EventEmitter() as any;
- child.stdout=new EventEmitter();child.stderr={resume(){}};child.kill=vi.fn(()=>queueMicrotask(()=>child.emit('close',137)));
- child.stdin=new EventEmitter();child.stdin.end=(body:string)=>{state.spawns.push({bin,args,body:JSON.parse(body),child});queueMicrotask(()=>{if(state.mode==='exit')return child.emit('close',255);if(state.mode==='huge')child.stdout.emit('data',Buffer.alloc(1048577));else child.stdout.emit('data',Buffer.from(JSON.stringify(state.reply)));child.emit('close',0);});};
+ child.stdout=new EventEmitter();child.stderr=new EventEmitter();child.kill=vi.fn(()=>queueMicrotask(()=>child.emit('close',137)));
+ child.stdin=new EventEmitter();child.stdin.end=(body:string)=>{state.spawns.push({bin,args,body:JSON.parse(body),child});queueMicrotask(()=>{if(state.mode==='exit'){child.stderr.emit('data',Buffer.from(state.stderr));return child.emit('close',255);}if(state.mode==='huge')child.stdout.emit('data',Buffer.alloc(1048577));else child.stdout.emit('data',Buffer.from(JSON.stringify(state.reply)));child.emit('close',0);});};
  return child;
 }}));
 import {FleetDirectTransport} from '../src/mesh/fleet-direct-transport.js';
@@ -18,9 +18,16 @@ import {isDirectOwnerRequest,createManagedFleetHttpGuard,createConfiguredFleetAp
 import {FleetCabinetService} from '../src/mesh/fleet-service.js';
 import {registerFleetNodeTools} from '../src/mesh/fleet-node.js';
 const peer={hostId:'roomhacker-server-88',sshHost:'192.168.2.75',nativeUser:'roomhacker',port:18791,python:'/usr/bin/python3'};
-beforeEach(async()=>{state.home=await mkdtemp(join(process.env.TMPDIR!,'direct-'));state.spawns=[];state.reply={tools:[]};state.mode='ok';state.auth=false;});
+beforeEach(async()=>{state.home=await mkdtemp(join(process.env.TMPDIR!,'direct-'));state.spawns=[];state.reply={tools:[]};state.mode='ok';state.auth=false;state.host='server-44';state.stderr='';});
 afterEach(async()=>{await rm(state.home,{recursive:true,force:true});vi.useRealTimers();});
 describe('owner direct route local logic only',()=>{
+ // Focused integration expected1s/max3s: roaming Mac must use the authenticated canonical reverse route, never its LAN IP.
+ it.each(['roomhacker-server-100','server-44'])('routes Mac through the existing server100 reverse SSH from %s',async(host)=>{
+  state.host=host;await new FleetDirectTransport().call('mcp:shell:MacBook-Pro-User.local:AgentHerder','fleet_node_info',{});
+  const call=state.spawns[0];expect(call.args).toEqual(expect.arrayContaining(['-p','2222','127.0.0.1','StrictHostKeyChecking=yes','BatchMode=yes']));expect(call.args).not.toContain('192.168.2.8');expect(call.body.hostId).toBe('MacBook-Pro-User.local');expect(call.body.nativeUser).toBe('user');
+  if(host==='server-44')expect(call.args).toEqual(expect.arrayContaining(['-J','roomhacker@192.168.2.100']));else expect(call.args).not.toContain('-J');
+ });
+
  it('configured routes never claim discovered health; real peer identity/snapshot is still required',async()=>{
   const t=new FleetDirectTransport([peer]);const r=await t.discover() as any;expect(r.servers.every((p:any)=>p.status==='configured')).toBe(true);expect(state.spawns).toHaveLength(0);
  });
@@ -37,6 +44,18 @@ describe('owner direct route local logic only',()=>{
  });
  it('closed/offline route does not fabricate a response or retry',async()=>{
   state.mode='exit';await expect(new FleetDirectTransport([peer]).schema('mcp:shell:roomhacker-server-88:AgentHerder')).rejects.toThrow('direct_peer_unavailable');expect(state.spawns).toHaveLength(1);
+ });
+ // Fast unit expected <1s/max3s: distinguish route, listener and identity failures without leaking peer output or retrying.
+ it.each([
+  ['ssh: connect to host 127.0.0.1 port 2222: Connection refused','direct_ssh_refused'],
+  ['ssh: connect to host 127.0.0.1 port 2222: Operation timed out','direct_ssh_connect_timeout'],
+  ['Host key verification failed.','direct_ssh_host_key_unverified'],
+  ['urllib.error.URLError: <urlopen error [Errno 61] Connection refused>','direct_native_listener_unavailable'],
+  ['RuntimeError: native_owner_identity_mismatch','native_owner_identity_mismatch'],
+  ['private opaque provider details','direct_peer_unavailable'],
+ ])('classifies %s without exposing stderr',async(stderr,reason)=>{
+  state.mode='exit';state.stderr=stderr;
+  await expect(new FleetDirectTransport([peer]).schema('mcp:shell:roomhacker-server-88:AgentHerder')).rejects.toThrow(new Error(reason));expect(state.spawns).toHaveLength(1);
  });
  it('oversized peer output is stopped and never returned',async()=>{
   state.mode='huge';await expect(new FleetDirectTransport([peer]).schema('mcp:shell:roomhacker-server-88:AgentHerder')).rejects.toThrow('direct_response_limit');expect(state.spawns[0].child.kill).toHaveBeenCalledOnce();
