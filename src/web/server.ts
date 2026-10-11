@@ -21,6 +21,7 @@ import { convertHermesExport } from "../hermes-conversion.js";
 import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "../resume-transport.js";
 import { ChoiceRegistry, ChoiceRegistryLockUnavailableError, type PendingChoice } from "../autopilot/choice-registry.js";
 import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../autopilot/policy-store.js";
+import { parseNoticeIncident } from "../autopilot/notice-incident.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import type { AutoCompactService, AutoCompactStore } from "../autocontinue/auto-compact.js";
@@ -871,7 +872,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 400, { error: "enabled and cwd are required" });
     }
     try {
-      const record = await autopilotSessionStore.set({ harness, sessionId, cwd: body.cwd }, body.enabled);
+      const record = await autopilotSessionStore.set({ harness, sessionId, cwd: body.cwd, ...(body.noticeIncident === undefined ? {} : { noticeIncident: parseNoticeIncident(body.noticeIncident) }) }, body.enabled);
       return sendJson(response, 200, { ...record, source: "session" });
     } catch (error) {
       return sendJson(response, 400, { error: (error as Error).message });
@@ -1004,7 +1005,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       }
       const body = await readJson(request);
       if (typeof body.enabled !== "boolean" || typeof body.cwd !== "string" || !body.cwd.trim()) return sendJson(response, 400, { error: "enabled and cwd are required" });
-      const saved = await sessionAutostartStore.setSession({ harness, sessionId, cwd: body.cwd }, body.enabled);
+      const saved = await sessionAutostartStore.setSession({ harness, sessionId, cwd: body.cwd, ...(body.noticeIncident === undefined ? {} : { noticeIncident: body.noticeIncident }) }, body.enabled);
       return sendJson(response, 200, { ...saved, source: "session" });
     } catch (error) {
       return sendJson(response, 400, { error: (error as Error).message });

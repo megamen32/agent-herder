@@ -22,6 +22,7 @@ import { AutopilotSessionStore } from "./autopilot/session-store.js";
 import { AutomationLaunchPolicyStore } from "./automation-launch-policy.js";
 import { dispatchProjectLaunch, namedSessionRunner, ProjectLaunchAttemptLog, type ProjectLaunchDispatcher } from "./automation/project-launch-dispatch.js";
 import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
+import { createIncidentUpdateSink, deliverIncidentQuestion } from "./autopilot/notice-incident.js";
 import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore, type PendingHumanQuestion } from "./autopilot/index.js";
 import { buildAskHumanRequest } from "./human-request/notice-question.js";
 import { describeAskHumanProducer, loadAskHumanProducer, type AskHumanProducer } from "./human-request/ask-human-producer.js";
@@ -429,10 +430,11 @@ function createUnfinishedSessionNotifier(): ((notice: UnfinishedSessionNotice) =
 function startCompletionNoticeSweeper(): () => void {
   const eventUrl = process.env.NOTIFY_CENTER_EVENT_URL?.trim();
   const token = process.env.NOTIFY_CENTER_TOKEN?.trim();
-  if (!eventUrl || !token) return () => undefined;
   const receiptPath = join(autopilotStateDir, "receipts.json");
   const lockPath = join(autopilotStateDir, "state.lock");
-  const sink = createNoticePlaceSink({ eventUrl, token });
+  const sink = eventUrl && token ? createNoticePlaceSink({ eventUrl, token }) : { async send() { throw new Error("generic Notice producer is unavailable"); } };
+  const incidentUpdates = createIncidentUpdateSink();
+  const deliverQuestion = createNoticeQuestionDelivery(process.env);
   let running = false;
   const sweep = async () => {
     if (running) return;
@@ -447,17 +449,22 @@ function startCompletionNoticeSweeper(): () => void {
         await readRelease();
       }
       const before = new Map(receipts);
-      if (await drainPendingNotices(receipts, sink) === 0) return;
-      const delivered = [...before.entries()].filter(([key, receipt]) => receipt.pendingNotice && !receipts.get(key)?.pendingNotice);
+      if (await drainPendingNotices(receipts, sink, incidentUpdates, deliverQuestion) === 0) return;
+      const delivered = [...before.entries()].flatMap(([key, receipt]) =>
+        (["pendingNotice", "pendingIncidentUpdate", "pendingQuestion"] as const)
+          .filter((field) => receipt[field] && !receipts.get(key)?.[field])
+          .map((field) => ({ key, field, payload: receipt[field] })));
       const writeRelease = await acquireLock(lockPath, { waitMs: 250 });
       if (!writeRelease) return;
       try {
         const latest = await loadReceiptStore(receiptPath);
         let changed = false;
-        for (const [key, receipt] of delivered) {
+        for (const { key, field, payload } of delivered) {
           const current = latest.get(key);
-          if (!current?.pendingNotice || !sameNotice(current.pendingNotice, receipt.pendingNotice!)) continue;
-          latest.set(key, { kind: current.kind });
+          if (!current || JSON.stringify(current[field]) !== JSON.stringify(payload)) continue;
+          const cleared = { ...current };
+          delete cleared[field];
+          latest.set(key, cleared);
           changed = true;
         }
         if (changed) await persistReceiptStore(receiptPath, latest);
@@ -533,6 +540,7 @@ function createNoticeQuestionDelivery(env: NodeJS.ProcessEnv): (question: Pendin
     return pending;
   };
   return async (question) => {
+    if (question.noticeIncident) return deliverIncidentQuestion(question, env);
     const producer = await producerOf();
     if (!producer) throw new Error("no AskHuman producer is configured; a human question cannot be delivered");
     const envelope = buildAskHumanRequest(question, {

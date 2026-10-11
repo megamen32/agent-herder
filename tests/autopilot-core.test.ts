@@ -155,7 +155,7 @@ describe("autopilot core", () => {
     expect(judge.decide).toHaveBeenCalledTimes(3);
     expect(sink.send).toHaveBeenCalledTimes(1);
     expect(sink.send).toHaveBeenCalledWith(expect.objectContaining({
-      title: "Agent Herder завершил работу",
+      title: "Agent Herder: Codex завершил работу",
       dedup_key: "agent-herder:done:session-1:turn-7",
       correlation_id: "session-1/turn-7",
     }));

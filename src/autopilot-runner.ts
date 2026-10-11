@@ -10,10 +10,10 @@ import {
   createNoticePlaceSink,
   createOpenAICompatibleJudge,
   loadReceiptStore,
-  persistReceiptStore,
   type StopHookInput,
   type AutopilotDecision,
 } from "./autopilot/index.js";
+import { createIncidentUpdateSink, deliverIncidentQuestion } from "./autopilot/notice-incident.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
@@ -24,7 +24,7 @@ import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopil
 import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { effectivePolicyAllowsTarget } from "./autopilot/policy.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "./autopilot/session-store.js";
-import { acquireLock } from "./autopilot-hook.js";
+import { acquireLock, checkpointAutopilotReceipts } from "./autopilot-hook.js";
 import { SessionAutostartStore } from "./autopilot/unfinished-session-launcher.js";
 import { AgentResumeClient } from "./resume-transport.js";
 import { getHumanStopStore } from "./human-stop-store.js";
@@ -41,6 +41,7 @@ export type AutopilotRunnerInput = {
   lastAssistantMessage?: string | null;
   transcriptPath?: string | null;
   stopHookActive?: boolean;
+  model?: string;
 };
 
 const stateDir = resolveAutopilotStateDir();
@@ -94,6 +95,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
     return { ok: true, command, harness: input.harness, session_id: input.sessionId, enabled: false, decision: "disabled" };
   }
   const hook = await buildStopInput(input);
+  if (record?.noticeIncident && record.cwd !== hook.cwd) throw new Error("Notice incident native cwd no longer matches the saved binding");
   const receiptPath = join(stateDir, "receipts.json");
   const sessionLockPath = join(stateDir, "session-locks", `${createHash("sha256").update(`${input.harness}:${input.sessionId}`).digest("hex")}.lock`);
   const release = await acquireLock(sessionLockPath);
@@ -104,7 +106,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
     const pendingQuestions = new PendingQuestionGate({ humanRequests, choices: choiceRegistry });
     const questionProducer = await noticeQuestionProducer();
     const receipts = await loadReceiptStore(receiptPath);
-    let observedDecision: { decision: AutopilotDecision; choiceRequestId?: string } | undefined;
+    let observedDecision: { decision: AutopilotDecision; choiceRequestId?: string; humanRequestId?: string } | undefined;
     const core = createAutopilotCore({
       judge: createOpenAICompatibleJudge({
         baseUrl: requiredEnv("AGENT_HERDER_AUTOPILOT_JUDGE_BASE_URL"),
@@ -119,6 +121,9 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
       effectivePolicy,
       ...(sessionEnabled ? { policyBypassSessionId: input.sessionId } : {}),
       receiptStore: receipts,
+      ...(record?.cwd === hook.cwd && record.noticeIncident ? { noticeIncident: record.noticeIncident } : {}),
+      incidentUpdates: createIncidentUpdateSink(),
+      checkpointReceipts: () => checkpointAutopilotReceipts(stateDir, receiptPath, receipts, input.sessionId),
       maxContinuationsPerSession: readInteger(process.env.AGENT_HERDER_AUTOPILOT_MAX_CONTINUATIONS, 3),
       notification: {
         project: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_PROJECT || "agent-herder",
@@ -127,17 +132,17 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
       },
       choiceRegistry,
       humanRequests,
-      ...(questionProducer ? { deliverHumanQuestion: (question: PendingHumanQuestion) => deliverNoticeQuestion(question, questionProducer) } : {}),
+      ...(questionProducer || record?.noticeIncident ? { deliverHumanQuestion: (question: PendingHumanQuestion) => question.noticeIncident ? deliverIncidentQuestion(question) : deliverNoticeQuestion(question, questionProducer!) } : {}),
       // The same durable fence the launcher applies: an unanswered question is
       // never continued here, whatever turn id arrives.
       pendingQuestions,
       harness: input.harness,
       onDecision: (decision, metadata) => {
-        observedDecision = { decision, ...(metadata?.choiceRequestId ? { choiceRequestId: metadata.choiceRequestId } : {}) };
+        observedDecision = { decision, ...(metadata?.choiceRequestId ? { choiceRequestId: metadata.choiceRequestId } : {}), ...(metadata?.humanRequestId ? { humanRequestId: metadata.humanRequestId } : {}) };
       },
     });
     const result = await core.handleStop(hook);
-    await persistReceiptStore(receiptPath, receipts);
+    await checkpointAutopilotReceipts(stateDir, receiptPath, receipts, input.sessionId);
     if (await held()) {
       return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "human-stop-held" };
     }
@@ -163,7 +168,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
       return { ok: receipt.status === "accepted", command, harness: input.harness, session_id: input.sessionId, decision: "continue", next_goal: nextGoal, resume_status: receipt.status, ...(receipt.status === "accepted" ? {} : { reason: receipt.reason }) };
     }
     if (observedDecision?.decision.kind === "choice") {
-      return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "choice", request_id: observedDecision.choiceRequestId };
+      return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "choice", request_id: observedDecision.choiceRequestId ?? observedDecision.humanRequestId };
     }
     return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "terminal" };
   } finally {
@@ -175,9 +180,10 @@ async function buildStopInput(input: AutopilotRunnerInput): Promise<StopHookInpu
   if (input.harness === "opencode" && input.lastAssistantMessage === undefined) {
     const adapter = new OpenCodeAdapter({ baseUrl: process.env.OPENCODE_URL, password: process.env.OPENCODE_SERVER_PASSWORD });
     const messages = await adapter.getSessionMessages(input.sessionId, 12);
-    const lastAssistant = messages?.filter((message) => message.role === "assistant").at(-1)?.text ?? null;
+    const assistant = messages?.filter((message) => message.role === "assistant").at(-1);
+    const lastAssistant = assistant?.text ?? null;
     const lastUser = messages?.filter((message) => message.role === "user").at(-1)?.text ?? null;
-    return stopInput(input, lastAssistant, lastUser);
+    return stopInput({ ...input, model: assistant?.model ?? input.model }, lastAssistant, lastUser);
   }
   return stopInput(input, input.lastAssistantMessage ?? null, input.lastUserMessage);
 }
@@ -193,6 +199,7 @@ function stopInput(input: AutopilotRunnerInput, lastAssistantMessage: string | n
     transcript_path: input.transcriptPath ?? null,
     stop_hook_active: input.stopHookActive ?? false,
     harness: input.harness,
+    ...(input.model ? { model: input.model } : {}),
   };
 }
 

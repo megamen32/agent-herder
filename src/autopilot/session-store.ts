@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
 import lockfile from "proper-lockfile";
+import { parseNoticeIncident, type NoticeIncidentBinding } from "./notice-incident.js";
 
 export type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes" | "zcode";
 
@@ -10,6 +11,7 @@ export type AutopilotSessionOverride = {
   cwd: string;
   enabled: boolean;
   updatedAt: string;
+  noticeIncident?: NoticeIncidentBinding;
 };
 
 type SessionFile = { version: 1; sessions: AutopilotSessionOverride[] };
@@ -32,15 +34,19 @@ export class AutopilotSessionStore {
   }
 
   async set(
-    target: { harness: AutopilotHarness; sessionId: string; cwd: string },
+    target: { harness: AutopilotHarness; sessionId: string; cwd: string; noticeIncident?: NoticeIncidentBinding },
     enabled: boolean,
   ): Promise<AutopilotSessionOverride> {
     const normalized = normalizeTarget(target);
     return this.mutate(async (file) => {
       const key = sessionKey(normalized.harness, normalized.sessionId);
+      const previous = file.sessions.find((item) => sessionKey(item.harness, item.sessionId) === key);
+      const noticeIncident = target.noticeIncident === undefined ? previous?.noticeIncident : parseNoticeIncident(target.noticeIncident);
+      if (previous?.noticeIncident && (previous.cwd !== normalized.cwd || JSON.stringify(previous.noticeIncident) !== JSON.stringify(noticeIncident))) throw new Error("original Notice incident binding cannot be replaced");
       const next: AutopilotSessionOverride = {
         ...normalized,
         enabled,
+        ...(noticeIncident ? { noticeIncident } : {}),
         updatedAt: new Date().toISOString(),
       };
       const index = file.sessions.findIndex((item) => sessionKey(item.harness, item.sessionId) === key);
@@ -117,6 +123,7 @@ function parseFile(value: unknown): SessionFile {
         ...normalizeTarget({ harness: record.harness as AutopilotHarness, sessionId: record.sessionId as string, cwd: record.cwd as string }),
         enabled: record.enabled,
         updatedAt: new Date(record.updatedAt).toISOString(),
+        ...(record.noticeIncident === undefined ? {} : { noticeIncident: parseNoticeIncident(record.noticeIncident) }),
       };
     }),
   };

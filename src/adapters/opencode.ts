@@ -19,7 +19,7 @@ interface OpenCodeSessionPayload {
 interface OpenCodeMessagePayload {
   id?: string;
   role?: string;
-  info?: { id?: string; role?: string; time?: { created?: number } };
+  info?: { id?: string; role?: string; providerID?: string; modelID?: string; time?: { created?: number } };
   content?: string | Array<Record<string, unknown>>;
   parts?: Array<Record<string, unknown>>;
 }
@@ -265,6 +265,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
     const last = (await this.getSessionMessages(id, 1))?.at(-1);
     if (last) {
       const tool = [...last.parts].reverse().find((part) => part.type === "tool_call" || part.type === "tool_result");
+      if (last.model) result.model = last.model;
       result.lastMessage = last.text || (tool ? `Инструмент: ${tool.name || "tool"}` : undefined);
       if (last.timestamp && last.timestamp > result.lastActivity) result.lastActivity = last.timestamp;
     }
@@ -485,6 +486,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
         return {
           id: message.id || info.id || `${id}:message-${index + 1}`,
           role: role === "user" || role === "assistant" || role === "system" || role === "tool" ? role : "assistant",
+          ...(info.providerID && info.modelID ? { model: `${info.providerID}/${info.modelID}` } : {}),
           timestamp: typeof info.time?.created === "number" ? new Date(info.time.created).toISOString() : undefined,
           text,
           parts,

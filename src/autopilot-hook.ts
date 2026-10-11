@@ -14,6 +14,7 @@ import {
   type ReceiptStore,
   type StopHookInput,
 } from "./autopilot/index.js";
+import { createIncidentUpdateSink, deliverIncidentQuestion } from "./autopilot/notice-incident.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
@@ -45,6 +46,9 @@ export type AutopilotHookDeps = {
   receiptStore: ReceiptStore;
   maxContinuationsPerSession: number;
   notification?: Parameters<typeof createAutopilotCore>[0]["notification"];
+  noticeIncident?: Parameters<typeof createAutopilotCore>[0]["noticeIncident"];
+  incidentUpdates?: Parameters<typeof createAutopilotCore>[0]["incidentUpdates"];
+  checkpointReceipts?: () => Promise<void>;
   choiceRegistry?: ChoiceRegistry;
   /** Durable Human Request registry that binds a human decision to this exact session. */
   humanRequests?: Parameters<typeof createAutopilotCore>[0]["humanRequests"];
@@ -132,7 +136,8 @@ async function main(): Promise<void> {
   const allowSessions = await loadArmedSessions(stateDir);
   const effectivePolicy = await loadEffectivePolicyForStopHook(stateDir, allowSessions);
   const sessionOverride = await new AutopilotSessionStore(join(stateDir, "sessions.json"))
-    .get("codex", input.session_id);
+    .get(input.harness ?? "codex", input.session_id);
+  if (sessionOverride?.noticeIncident && sessionOverride.cwd !== input.cwd) throw new Error("Notice incident native cwd no longer matches the saved binding");
   if (sessionOverride?.enabled === false) {
     writeResult({});
     return;
@@ -170,6 +175,9 @@ async function main(): Promise<void> {
         ? { policyBypassSessionId: input.session_id }
         : {}),
       receiptStore,
+      ...(sessionOverride?.cwd === input.cwd && sessionOverride.noticeIncident ? { noticeIncident: sessionOverride.noticeIncident } : {}),
+      incidentUpdates: createIncidentUpdateSink(),
+      checkpointReceipts: () => checkpointAutopilotReceipts(stateDir, receiptPath, receiptStore, input.session_id),
       maxContinuationsPerSession: readPositiveInteger(
         process.env.AGENT_HERDER_AUTOPILOT_MAX_CONTINUATIONS,
         3,
@@ -183,35 +191,29 @@ async function main(): Promise<void> {
       },
       choiceRegistry,
       humanRequests,
-      ...(questionConfig
-        ? { deliverHumanQuestion: (question: PendingHumanQuestion) => deliverNoticeQuestion(question, questionConfig) }
+      ...(questionConfig || sessionOverride?.noticeIncident
+        ? { deliverHumanQuestion: (question: PendingHumanQuestion) => question.noticeIncident ? deliverIncidentQuestion(question) : deliverNoticeQuestion(question, questionConfig!) }
         : {}),
       pendingQuestions: new PendingQuestionGate({ humanRequests, choices: choiceRegistry }),
       humanStopStore: getHumanStopStore(),
     });
-    const receiptRelease = await acquireLock(join(stateDir, "state.lock"), {
-      waitMs: 5_000,
-    });
-    if (!receiptRelease) {
-      writeResult({});
-      return;
-    }
-    try {
-      // Another session may have completed while this session was waiting on
-      // its judge. Merge into the latest atomic snapshot instead of replacing
-      // that session's receipt with our older pre-judge view.
-      const latestReceipts = await loadReceiptStore(receiptPath);
-      for (const [key, receipt] of receiptStore) {
-        latestReceipts.set(key, receipt);
-      }
-      await persistReceiptStore(receiptPath, latestReceipts);
-    } finally {
-      await receiptRelease();
-    }
+    await checkpointAutopilotReceipts(stateDir, receiptPath, receiptStore, input.session_id);
     writeResult(result);
   } finally {
     await release();
   }
+}
+
+export async function checkpointAutopilotReceipts(stateDir: string, path: string, receipts: ReceiptStore, sessionId: string): Promise<void> {
+  const release = await acquireLock(join(stateDir, "state.lock"), { waitMs: 5_000 });
+  if (!release) throw new Error("autopilot receipt checkpoint lock unavailable");
+  try {
+    const latest = await loadReceiptStore(path);
+    for (const [key, receipt] of receipts) {
+      if (key.startsWith(`${encodeURIComponent(sessionId)}:`)) latest.set(key, receipt);
+    }
+    await persistReceiptStore(path, latest);
+  } finally { await release(); }
 }
 
 function buildJudge(model?: string) {

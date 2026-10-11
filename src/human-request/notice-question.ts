@@ -1,3 +1,4 @@
+import type { NoticeIncidentBinding } from "../autopilot/notice-incident.js";
 import type { HumanQuestionBinding } from "./question-binding.js";
 
 /** The exact Notice Place human-request envelope. One request is one card. */
@@ -27,13 +28,14 @@ export interface NoticeQuestionConfig {
 }
 
 /** The minimal question shape a delivery needs; a binding also satisfies it. */
-export type DeliverableHumanQuestion = Omit<HumanQuestionBinding, "record" | "answer"> & { answer?: HumanQuestionBinding["answer"] };
+export type DeliverableHumanQuestion = Omit<HumanQuestionBinding, "record" | "answer"> & { answer?: HumanQuestionBinding["answer"]; noticeIncident?: NoticeIncidentBinding };
 
 /** Build the envelope from one question binding. A metadata-only request has none. */
 export function buildAskHumanRequest(
   binding: DeliverableHumanQuestion,
   config: { project: string; recipient: string; allowedActors?: string[]; incidentId?: string; expiresAt?: string },
 ): AskHumanRequestV1 {
+  if (binding.noticeIncident && binding.noticeIncident.project !== config.project) throw new Error("Notice question must use the original incident project");
   if (binding.kind !== "user") throw new Error("a secret request is metadata-only and has no Notice question");
   if (!binding.question) throw new Error("a metadata-only request creates no Notice question");
   const choices = binding.question.choices?.map((choice) => ({ label: choice.label, value: choice.choice_id }));
@@ -48,7 +50,7 @@ export function buildAskHumanRequest(
     ...(config.allowedActors ? { allowed_actors: config.allowedActors } : {}),
     kind: "user",
     native_target: binding.native_target,
-    ...(config.incidentId ? { incident_id: config.incidentId } : {}),
+    ...(binding.noticeIncident ? { incident_id: binding.noticeIncident.incidentId } : config.incidentId ? { incident_id: config.incidentId } : {}),
     ...(config.expiresAt ? { expires_at: config.expiresAt } : {}),
   };
 }

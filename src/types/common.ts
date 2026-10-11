@@ -30,6 +30,8 @@ export interface SessionMessagePart {
 }
 
 export interface SessionMessageView {
+  /** Execution model observed on this native message. */
+  model?: string;
   id: string;
   role: "user" | "assistant" | "tool" | "system";
   /** Native turn identity; absent when the transcript does not prove it. */

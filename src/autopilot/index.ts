@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { parseNoticeIncident, type NoticeIncidentBinding, type IncidentProgressUpdate, type IncidentUpdateSink } from "./notice-incident.js";
 import { ChoiceRegistry, type AutopilotChoice } from "./choice-registry.js";
 import { askHuman } from "../human-request/question-binding.js";
 import type { HumanRequestRegistry } from "../human-request/registry.js";
@@ -87,10 +88,12 @@ export type Receipt = {
   humanRequestId?: string;
   /** Durable question outbox: the card was not delivered yet. */
   pendingQuestion?: PendingHumanQuestion;
+  pendingIncidentUpdate?: IncidentProgressUpdate;
 };
 
 /** One question binding that still has to reach the Notice human-request intake. */
 export type PendingHumanQuestion = {
+  noticeIncident?: NoticeIncidentBinding;
   request_id: string;
   dedup_key: string;
   kind: "user" | "secret";
@@ -132,16 +135,30 @@ const STANDALONE_API_KEY_PATTERN =
 const CHOICE_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 
 /** Drain durable completion notices without re-running the semantic judge. */
-export async function drainPendingNotices(store: ReceiptStore, notify: NotificationSink): Promise<number> {
+export async function drainPendingNotices(
+  store: ReceiptStore,
+  notify: NotificationSink,
+  incidentUpdates?: IncidentUpdateSink,
+  deliverQuestion?: (question: PendingHumanQuestion) => Promise<void>,
+): Promise<number> {
   let delivered = 0;
-  for (const [key, receipt] of store) {
-    if (!receipt.pendingNotice) continue;
-    try {
-      await notify.send(receipt.pendingNotice);
-      store.set(key, { kind: receipt.kind, ...(receipt.humanRequestId ? { humanRequestId: receipt.humanRequestId } : {}) });
-      delivered += 1;
-    } catch {
-      // Keep the exact payload for the next background sweep.
+  for (const [key] of store) {
+    for (const field of ["pendingIncidentUpdate", "pendingQuestion", "pendingNotice"] as const) {
+      const receipt = store.get(key)!;
+      if (!receipt[field]) continue;
+      try {
+        if (field === "pendingIncidentUpdate") {
+          if (!incidentUpdates) continue;
+          await incidentUpdates.send(receipt.pendingIncidentUpdate!);
+        } else if (field === "pendingQuestion") {
+          if (!deliverQuestion) continue;
+          await deliverQuestion(receipt.pendingQuestion!);
+        } else await notify.send(receipt.pendingNotice!);
+        const cleared = { ...receipt };
+        delete cleared[field];
+        store.set(key, cleared);
+        delivered += 1;
+      } catch { /* Preserve the exact payload and original scope for the next sweep. */ }
     }
   }
   return delivered;
@@ -320,6 +337,10 @@ export function createAutopilotCore(options: {
   receiptStore: ReceiptStore;
   maxContinuationsPerSession: number;
   notification?: NotificationConfig;
+  noticeIncident?: NoticeIncidentBinding;
+  incidentUpdates?: IncidentUpdateSink;
+  /** Persist an exact outbox before any callback, including a lost response. */
+  checkpointReceipts?: () => Promise<void>;
   choiceRegistry?: ChoiceRegistry;
   /**
    * Durable Human Request registry. A human decision binds a resumable request
@@ -380,14 +401,44 @@ export function createAutopilotCore(options: {
       const turnPrefix = `${encodeURIComponent(input.session_id)}:${encodeURIComponent(input.turn_id)}:`;
       if (activeTurnKeys.has(turnPrefix)) return {};
       const turnReceipts = [...options.receiptStore].filter(([key]) => key.startsWith(turnPrefix));
-      const pending = turnReceipts.find(([, receipt]) => receipt.pendingNotice);
+      const pending = turnReceipts.find(([, receipt]) => receipt.pendingNotice || receipt.pendingIncidentUpdate);
       const terminal = turnReceipts.find(([, receipt]) => receipt.kind !== "continue");
       const existingKey = pending?.[0] ?? terminal?.[0] ?? receiptKey;
       const existingReceipt = options.receiptStore.get(existingKey);
+      if (existingReceipt?.pendingIncidentUpdate) {
+        activeTurnKeys.add(turnPrefix);
+        try {
+          if (options.incidentUpdates) {
+            await options.incidentUpdates.send(existingReceipt.pendingIncidentUpdate);
+            const { pendingIncidentUpdate: _delivered, ...rest } = existingReceipt;
+            options.receiptStore.set(existingKey, rest);
+          }
+        } catch { /* The durable original incident update remains pending. */ }
+        finally { activeTurnKeys.delete(turnPrefix); }
+        return {};
+      }
+      if (existingReceipt?.pendingNotice && options.noticeIncident) {
+        const update = incidentUpdate(input, options.noticeIncident, existingReceipt.kind, existingReceipt.pendingNotice.body, options.harness ?? input.harness ?? "codex");
+        const { pendingNotice: _legacy, ...rest } = existingReceipt;
+        options.receiptStore.set(existingKey, { ...rest, pendingIncidentUpdate: update });
+        await options.checkpointReceipts?.();
+        try {
+          if (options.incidentUpdates) {
+            await options.incidentUpdates.send(update);
+            options.receiptStore.set(existingKey, rest);
+          }
+        } catch { /* Migrate only the pending notice; never re-judge or continue. */ }
+        return {};
+      }
       if (existingReceipt?.pendingQuestion && options.deliverHumanQuestion) {
         activeTurnKeys.add(turnPrefix);
         try {
-          await options.deliverHumanQuestion(existingReceipt.pendingQuestion);
+          const question = existingReceipt.pendingQuestion.noticeIncident || !options.noticeIncident
+            ? existingReceipt.pendingQuestion
+            : { ...existingReceipt.pendingQuestion, noticeIncident: options.noticeIncident };
+          options.receiptStore.set(existingKey, { ...existingReceipt, pendingQuestion: question });
+          await options.checkpointReceipts?.();
+          await options.deliverHumanQuestion(question);
           options.receiptStore.set(existingKey, {
             kind: existingReceipt.kind,
             ...(existingReceipt.humanRequestId ? { humanRequestId: existingReceipt.humanRequestId } : {}),
@@ -452,9 +503,24 @@ export function createAutopilotCore(options: {
           }),
         );
 
+        const publishIncident = async (kind: Receipt["kind"], text: string) => {
+          const update = incidentUpdate(input, options.noticeIncident!, kind, text, options.harness ?? input.harness ?? "codex");
+          options.receiptStore.set(receiptKey, { kind, pendingIncidentUpdate: update });
+          await options.checkpointReceipts?.();
+          try {
+            if (!options.incidentUpdates) return;
+            await options.incidentUpdates.send(update);
+            options.receiptStore.set(receiptKey, { kind });
+          } catch { /* No generic fallback: retry only this exact incident update. */ }
+        };
+
         if (decision.kind === "continue") {
           options.onDecision?.(decision);
           if (remainingContinuations <= 0) {
+            if (options.noticeIncident) {
+              await publishIncident("human", "Нужен человек: достигнут лимит автоматических продолжений");
+              return {};
+            }
             await options.notify.send(
               createNoticePlacePayload({
                 title: `Agent Herder: достигнут лимит автопродолжений по ${projectLabel(input.cwd)}`,
@@ -479,13 +545,32 @@ export function createAutopilotCore(options: {
             return {};
           }
           continuationCounts.set(budgetKey, currentCount + 1);
-          options.receiptStore.set(receiptKey, { kind: decision.kind });
+          if (options.noticeIncident) await publishIncident("continue", `Продолжается исправление: ${decision.nextGoal}`);
+          else options.receiptStore.set(receiptKey, { kind: decision.kind });
           return {
             decision: "block",
             reason: bounded(decision.nextGoal, MAX_REASON_LENGTH),
           };
         }
 
+        if (decision.kind === "choice" && options.noticeIncident) {
+          const question = await createResumableHumanQuestion(options, input, {
+            kind: "human", title: "Нужно решение по исправлению", severity: "medium",
+            body: buildChoiceNotificationBody(input, decision.choices, input.last_user_message ?? null, undefined, options.harness ?? input.harness ?? "codex"),
+          }, decision.choices.map((choice) => ({ choiceId: choice.choiceId, label: choice.label })));
+          if (!question || !options.deliverHumanQuestion) {
+            await publishIncident("human", "Нужно решение человека по следующему шагу исправления");
+            return {};
+          }
+          options.onDecision?.(decision, { humanRequestId: question.request_id });
+          options.receiptStore.set(receiptKey, { kind: "choice", humanRequestId: question.request_id, pendingQuestion: question });
+          await options.checkpointReceipts?.();
+          try {
+            await options.deliverHumanQuestion(question);
+            options.receiptStore.set(receiptKey, { kind: "choice", humanRequestId: question.request_id });
+          } catch { /* Retain this same question and original incident binding. */ }
+          return {};
+        }
         if (decision.kind === "choice") {
           if (!options.choiceRegistry) throw new Error("Choice registry is required for choice decisions");
           const persistedPolicy = options.effectivePolicy?.source === "persisted"
@@ -505,7 +590,7 @@ export function createAutopilotCore(options: {
             ? new Date(Date.now() + persistedPolicy.timeout.delayMs).toISOString()
             : undefined;
           const pending = await options.choiceRegistry.create({
-            harness: options.harness ?? "codex",
+            harness: options.harness ?? input.harness ?? "codex",
             sessionId: input.session_id,
             turnId: input.turn_id,
             cwd: input.cwd,
@@ -521,7 +606,7 @@ export function createAutopilotCore(options: {
           });
           const pendingNotice = createNoticePlacePayload({
             title: `Agent Herder: выбор следующего шага по ${projectLabel(input.cwd)}`,
-            body: buildChoiceNotificationBody(input, decision.choices, lastUserMessage, includeContext, options.harness ?? "codex")
+            body: buildChoiceNotificationBody(input, decision.choices, lastUserMessage, includeContext, options.harness ?? input.harness ?? "codex")
               + (timeoutChoiceId ? `\n\nЕсли вы не ответите, автопилот выберет: ${decision.choices.find((choice) => choice.choiceId === timeoutChoiceId)?.label}.` : ""),
             severity: "medium",
             dedupKey: `agent-herder:choice:${pending.requestId}`,
@@ -548,11 +633,15 @@ export function createAutopilotCore(options: {
           if (!question || !options.deliverHumanQuestion) {
             // Without the human-question intake no request is created, so a
             // pending-question gate never closes behind a question nobody sees.
+            if (options.noticeIncident) {
+              await publishIncident("human", `Нужно решение человека: ${decision.title}`);
+              return {};
+            }
             options.receiptStore.set(receiptKey, { kind: decision.kind });
             await options.notify.send(
               createNoticePlacePayload({
-                title: decision.title,
-                body: decision.body,
+                title: `${harnessLabel(options.harness ?? input.harness ?? "codex")}: ${decision.title}`,
+                body: executionBody(decision.body, input, options.harness ?? input.harness ?? "codex"),
                 severity: decision.severity,
                 dedupKey: `agent-herder:human:${input.session_id}:${input.turn_id}`,
                 correlationId: `${input.session_id}/${input.turn_id}`,
@@ -563,6 +652,7 @@ export function createAutopilotCore(options: {
           }
           const humanRequestId = question.request_id;
           options.receiptStore.set(receiptKey, { kind: decision.kind, humanRequestId, pendingQuestion: question });
+          await options.checkpointReceipts?.();
           try {
             await options.deliverHumanQuestion(question);
             options.receiptStore.set(receiptKey, { kind: decision.kind, humanRequestId });
@@ -573,13 +663,17 @@ export function createAutopilotCore(options: {
           return {};
         } else {
           options.onDecision?.(decision);
+          if (options.noticeIncident) {
+            await publishIncident("done", `Работа завершена; ожидается независимая проверка: ${decision.summary}`);
+            return {};
+          }
           if (decision.notify === false) {
             options.receiptStore.set(receiptKey, { kind: "done" });
             return {};
           }
           const pendingNotice = createNoticePlacePayload({
-            title: "Agent Herder завершил работу",
-            body: decision.summary,
+            title: `Agent Herder: ${harnessLabel(options.harness ?? input.harness ?? "codex")} завершил работу`,
+            body: executionBody(decision.summary, input, options.harness ?? input.harness ?? "codex"),
             severity: "low",
             dedupKey: `agent-herder:done:${input.session_id}:${input.turn_id}`,
             correlationId: `${input.session_id}/${input.turn_id}`,
@@ -613,9 +707,11 @@ async function createResumableHumanQuestion(
     humanRequests?: Pick<HumanRequestRegistry, "create">;
     deliverHumanQuestion?: (question: PendingHumanQuestion) => Promise<void>;
     harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode";
+    noticeIncident?: NoticeIncidentBinding;
   },
   input: StopHookInput,
   decision: Extract<AutopilotDecision, { kind: "human" }>,
+  choices?: Array<{ choiceId: string; label: string }>,
 ): Promise<PendingHumanQuestion | undefined> {
   if (!options.humanRequests || !options.deliverHumanQuestion) return undefined;
   const agent = options.harness ?? input.harness ?? "codex";
@@ -623,12 +719,14 @@ async function createResumableHumanQuestion(
   const binding = await askHuman(options.humanRequests, {
     kind: "user",
     target: { agent, sessionId: input.session_id, cwd: input.cwd },
-    message: `${decision.title}\n\n${decision.body}`,
+    message: executionBody(`${decision.title}\n\n${decision.body}`, input, agent, 4 * 1024),
+    ...(choices ? { choices } : {}),
     contextRef: `agent-herder://autopilot/human/${encodeURIComponent(input.session_id)}/${encodeURIComponent(input.turn_id)}`,
   });
   const question = binding.question;
   if (!question) return undefined;
   return {
+    ...(options.noticeIncident ? { noticeIncident: options.noticeIncident } : {}),
     request_id: binding.request_id,
     dedup_key: binding.dedup_key,
     kind: binding.kind,
@@ -653,6 +751,7 @@ function buildChoiceNotificationBody(
   const sections = [
     `Проект: ${projectLabel(input.cwd)}`,
     `Сессия: ${shortSessionId(input.session_id)}`,
+    executionIdentity(input, harness),
   ];
   if (includeUserMessage) {
     sections.push(
@@ -731,6 +830,27 @@ function textFromTranscriptValue(value: unknown): string {
   if (typeof record.text === "string") return record.text;
   if (record.content !== undefined) return textFromTranscriptValue(record.content);
   return "";
+}
+
+function incidentUpdate(input: StopHookInput, binding: NoticeIncidentBinding, kind: Receipt["kind"], text: string, harness: string): IncidentProgressUpdate {
+  const step = boundedUtf8(redactSecrets(text).trim(), 128);
+  const evidenceRefs = [nativeSessionUrl(input, harness)];
+  const fingerprint = createHash("sha256").update(JSON.stringify({ binding, step, evidenceRefs })).digest("hex");
+  return { binding, step, evidenceRefs, fingerprint, idempotencyKey: `agent-herder:incident:${createHash("sha256").update(`${binding.incidentId}:${harness}:${input.session_id}:${input.turn_id}:${kind}`).digest("hex")}` };
+}
+
+export function nativeSessionUrl(input: Pick<StopHookInput, "session_id">, harness: string): string {
+  return `https://agent.bezrabotnyi.com/#/session/${encodeURIComponent(`${harness}:${input.session_id}`)}`;
+}
+function harnessLabel(harness: string): string {
+  return ({ opencode: "OpenCode", codex: "Codex", claude: "Claude Code", hermes: "Hermes", zcode: "ZCode" } as Record<string, string>)[harness] ?? harness;
+}
+function executionBody(summary: string, input: StopHookInput, harness: string, limit = 8 * 1024): string {
+  const context = executionIdentity(input, harness);
+  return `${boundedUtf8(redactSecrets(summary).trim(), Math.max(0, limit - byteLength(context) - 2))}\n\n${context}`;
+}
+export function executionIdentity(input: StopHookInput, harness: string): string {
+  return redactSecrets([`Среда выполнения: ${harnessLabel(harness)}`, `Модель: ${input.model || "не подтверждена"}`, `Рабочая папка: ${input.cwd}`, `Нативная сессия: ${input.session_id}`, `Открыть сессию: ${nativeSessionUrl(input, harness)}`].join("\n"));
 }
 
 function projectLabel(cwd: string): string {
@@ -1067,12 +1187,15 @@ export async function loadReceiptStore(path: string): Promise<ReceiptStore> {
     ) {
       const pendingNotice = notificationPayloadFromReceipt((value as Record<string, unknown>).pendingNotice);
       const humanRequestId = (value as Record<string, unknown>).humanRequestId;
+      const pendingIncidentUpdate = (value as Receipt).pendingIncidentUpdate;
+      if (pendingIncidentUpdate) parseNoticeIncident(pendingIncidentUpdate.binding);
       const pendingQuestion = pendingQuestionFromReceipt((value as Record<string, unknown>).pendingQuestion);
       store.set(key, {
         kind: (value as Receipt).kind,
         ...(pendingNotice ? { pendingNotice } : {}),
         ...(typeof humanRequestId === "string" && humanRequestId.length > 0 ? { humanRequestId } : {}),
         ...(pendingQuestion ? { pendingQuestion } : {}),
+        ...(pendingIncidentUpdate ? { pendingIncidentUpdate } : {}),
       });
     }
   }
