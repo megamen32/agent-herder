@@ -102,6 +102,41 @@ describe("autopilot state seam", () => {
     expect(await readFile(join(canonical, "choices.json.pre-merge"), "utf8")).toContain("req-shared");
   });
 
+  it("merges the terminal decisions, the notice outbox and the armed admission set", async () => {
+    const root = await home();
+    const legacy = join(root, "legacy");
+    const canonical = join(root, "canonical");
+    const env = {
+      HOME: root,
+      AGENT_HERDER_AUTOPILOT_STATE_DIR: canonical,
+      AGENT_HERDER_LEGACY_AUTOPILOT_STATE_DIR: legacy,
+      AGENT_HERDER_LEGACY_WORKING_DIRECTORY: root,
+    } as NodeJS.ProcessEnv;
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(legacy, { recursive: true });
+    await mkdir(canonical, { recursive: true });
+    await writeFile(join(legacy, "receipts.json"), JSON.stringify({
+      "ses-old:turn-old": { kind: "human" },
+      "ses-shared:turn-1": { kind: "done" },
+    }), "utf8");
+    await writeFile(join(canonical, "receipts.json"), JSON.stringify({
+      "ses-shared:turn-1": { kind: "continue" },
+    }), "utf8");
+    await writeFile(join(legacy, "armed-sessions.json"), JSON.stringify(["ses-old", "ses-shared"]), "utf8");
+    await writeFile(join(canonical, "armed-sessions.json"), JSON.stringify(["ses-shared"]), "utf8");
+
+    const adopted = await adoptLegacyAutopilotState(canonical, env);
+
+    expect(adopted).toEqual(expect.arrayContaining([join(canonical, "receipts.json"), join(canonical, "armed-sessions.json")]));
+    // The canonical terminal decision wins; a distinct legacy one survives.
+    const receipts = JSON.parse(await readFile(join(canonical, "receipts.json"), "utf8")) as Record<string, { kind: string }>;
+    expect(receipts["ses-shared:turn-1"]?.kind).toBe("continue");
+    expect(receipts["ses-old:turn-old"]?.kind).toBe("human");
+    // The armed admission set is the union, in its own list shape.
+    expect(JSON.parse(await readFile(join(canonical, "armed-sessions.json"), "utf8"))).toEqual(["ses-shared", "ses-old"]);
+    expect(await readFile(join(canonical, "receipts.json.pre-merge"), "utf8")).toContain("continue");
+  });
+
   it("leaves an unrecognized registry shape untouched", async () => {
     const root = await home();
     const legacy = join(root, "legacy");

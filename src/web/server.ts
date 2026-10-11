@@ -118,12 +118,74 @@ function resumeInputId(request: ResumeTransportRequest): string {
   return `herder-resume-${createHash("sha256").update(key).digest("hex").slice(0, 32)}`;
 }
 
+/**
+ * Read-only admission lookup for an already delivered bound answer.
+ *
+ * Delivery happens through the process-owned native writer, so the duplicate
+ * path must reconcile against that same native state, never against an
+ * external ledger that never saw the delivery.
+ */
+export async function nativeResumeReceiptQuery(
+  request: ResumeTransportRequest,
+  adapters: Map<string, HarnessAdapter>,
+): Promise<ResumeReceipt> {
+  const target = request.target;
+  if (target.agent === "hermes" || !target.session_id) return ambiguousNativeReceipt(request, "no_native_admission_query");
+  const adapter = adapters.get(target.agent);
+  if (!adapter?.getMessageAdmission) return ambiguousNativeReceipt(request, "no_native_admission_query");
+  let native: Awaited<ReturnType<NonNullable<HarnessAdapter["getMessageAdmission"]>>>;
+  try {
+    native = await adapter.getMessageAdmission(target.session_id, resumeInputId(request), target.cwd);
+  } catch (error) {
+    return ambiguousNativeReceipt(request, error instanceof Error ? error.message : String(error));
+  }
+  if (native.state !== "admitted") {
+    return ambiguousNativeReceipt(request, native.error ?? `native_admission_${native.state}`);
+  }
+  return {
+    status: "accepted",
+    target: request.target,
+    result_ref: request.result_ref,
+    receipt_ref: `agent-herder://${target.agent}/${target.session_id}/${request.idempotency_key ?? request.result_ref}`,
+    ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
+  };
+}
+
+function ambiguousNativeReceipt(request: ResumeTransportRequest, reason: string): ResumeReceipt {
+  return {
+    status: "ambiguous",
+    target: request.target,
+    result_ref: request.result_ref,
+    reason,
+    ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
+  };
+}
+
 /** Route Codex and ZCode through Herder's process-owned native writers so an
  * accepted human-gate delivery also arms durable Autocontinue tracking. */
-export async function resumeSelectedTarget(request: ResumeTransportRequest, supervisor: SessionSupervisor, origin: "human" | "automation" = "automation"): Promise<ResumeReceipt> {
+export async function resumeSelectedTarget(
+  request: ResumeTransportRequest,
+  supervisor: SessionSupervisor,
+  origin: "human" | "automation" = "automation",
+  /** A replayed stored answer, not a live human action in this call. */
+  answerReplay = false,
+): Promise<ResumeReceipt> {
   if (request.target.agent !== "codex" && request.target.agent !== "zcode") return new AgentResumeClient().resume(request);
   const harness = request.target.agent;
   const prompt = request.prompt ?? request.goal ?? `Human Request resolved: ${request.result_ref}`;
+  // A replayed stored answer carries its own admission instant. Without one
+  // there is no evidence that the human acted before the current stop, so a
+  // held session keeps its hold instead of being released by a late retry.
+  if (answerReplay && origin === "human" && request.human_requested_at === undefined
+    && await supervisor.isAutomationHeld(harness, request.target.session_id)) {
+    return {
+      status: "failed",
+      target: request.target,
+      result_ref: request.result_ref,
+      reason: "human stop is held and this answer has no verifiable admission time",
+      ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
+    };
+  }
   try {
     const current = await supervisor.getSession(harness, request.target.session_id, harness === "zcode" ? request.target.cwd : undefined);
     if (!liveAutopilotTargetMatchesChoice({ harness, sessionId: request.target.session_id, cwd: request.target.cwd }, current)) {
@@ -140,7 +202,9 @@ export async function resumeSelectedTarget(request: ResumeTransportRequest, supe
       request.target.session_id,
       {
         message: prompt,
-        queue: false,
+        // ZCode owns queue admission and command deduplication in its V4
+        // transport; the legacy inline prompt path is not the answer path.
+        queue: harness === "zcode" ? true : false,
         origin,
         // The stable key reaches the deduplicating ingress, so a crash or lease
         // takeover cannot deliver the same answer to the native session twice.
@@ -509,7 +573,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
     try {
       if (dependencies.fleetHttpGuard && await dependencies.fleetHttpGuard(request, response)) return;
       if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
-      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -579,7 +643,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (url.pathname.startsWith("/api/quota-lens") && request.method === "GET") {
     const body = await handleQuotaLensRequest(url.pathname, url.searchParams);
@@ -984,8 +1048,8 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         resultRef: body.result_ref,
         // The same canonical human transport as the native MCP resolve: one
         // answer, one bound session, one explicit-stop fence.
-        resume: humanResume ?? ((input) => resumeSelectedTarget(input, supervisor, "human")),
-        queryReceipt: choiceQuery ?? ((input) => new AgentResumeClient().queryReceipt(input)),
+        resume: humanResume ?? ((input) => resumeSelectedTarget(input, supervisor, "human", true)),
+        queryReceipt: choiceQuery ?? ((input) => nativeResumeReceiptQuery(input, adapters)),
       });
     } catch (error) {
       // A busy lock is a deferral, not a failed answer: the provider may retry.

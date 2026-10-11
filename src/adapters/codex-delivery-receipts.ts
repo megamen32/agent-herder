@@ -20,9 +20,24 @@ export class CodexDeliveryReceipts {
     this.buckets = join(dirname(this.file), basename(this.file) + ".buckets");
   }
 
-  async once(threadId: string, inputId: string, operation: () => Promise<ControlResult>): Promise<ControlResult> {
+  /** Read-only lookup of an earlier admission. It never writes or replays. */
+  async find(threadId: string, inputId: string): Promise<ControlResult | undefined> {
+    const { file, key } = this.receiptLocation(threadId, inputId);
+    return this.serial(async () => {
+      const legacy = await this.read(this.file);
+      if (legacy[key]) return legacy[key]!.result;
+      const receipts = await this.read(file);
+      return receipts[key]?.result;
+    });
+  }
+
+  private receiptLocation(threadId: string, inputId: string): { file: string; key: string } {
     const key = createHash("sha256").update(`${threadId}\0${inputId}`).digest("hex");
-    const file = join(this.buckets, key.slice(0, 2) + ".json");
+    return { key, file: join(this.buckets, key.slice(0, 2) + ".json") };
+  }
+
+  async once(threadId: string, inputId: string, operation: () => Promise<ControlResult>): Promise<ControlResult> {
+    const { file, key } = this.receiptLocation(threadId, inputId);
     const inflight = this.inflight.get(key);
     if (inflight) return inflight;
     const delivery = (async () => {

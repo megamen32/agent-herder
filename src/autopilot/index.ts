@@ -334,19 +334,6 @@ export function createAutopilotCore(options: {
     async handleStop(input) {
       validateInput(input);
 
-      // An unanswered question is a durable fence for every entry point. A new
-      // turn id after an idle stop must not become a way past it.
-      if (
-        options.pendingQuestions
-        && await options.pendingQuestions.blocks(
-          options.harness ?? input.harness ?? "codex",
-          input.session_id,
-          input.cwd,
-        )
-      ) {
-        return {};
-      }
-
       if (options.effectivePolicy) {
         // A per-session opt-in can widen the selector, but never bypasses the
         // global master switch. Turning the master off is an immediate stop.
@@ -393,6 +380,22 @@ export function createAutopilotCore(options: {
         return {};
       }
       if (existingReceipt) {
+        return {};
+      }
+
+      // An unanswered question is a durable fence for every entry point, and a
+      // new turn id after an idle stop must not become a way past it. It is
+      // checked after the durable notice outbox above: a delivered question must
+      // still be retried after a notification failure, or the human would never
+      // see it.
+      if (
+        options.pendingQuestions
+        && await options.pendingQuestions.blocks(
+          options.harness ?? input.harness ?? "codex",
+          input.session_id,
+          input.cwd,
+        )
+      ) {
         return {};
       }
 

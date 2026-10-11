@@ -31,13 +31,25 @@ const ADOPTED_STATE_FILES = [
 ] as const;
 
 /**
- * Record registries merged by request identity when both directories are
- * populated. Skipping one would silently drop an unanswered human question.
+ * Registries merged when both directories are populated, each by its own
+ * verified key. Skipping one would silently drop an unanswered human question,
+ * a terminal decision or a pending notice.
  */
-const MERGED_RECORD_FILES: Readonly<Record<string, "choices" | "human-requests">> = {
-  "choices.json": "choices",
-  "human-requests.json": "human-requests",
-};
+const MERGED_REGISTRY_KINDS = {
+  "choices.json": "records",
+  "human-requests.json": "records",
+  // Terminal decisions and the pending notice outbox.
+  "receipts.json": "entries",
+  // The Stop hook admission set: the union of both armed lists.
+  "armed-sessions.json": "strings",
+} as const;
+
+type RegistryKind = (typeof MERGED_REGISTRY_KINDS)[keyof typeof MERGED_REGISTRY_KINDS];
+
+/** File whose verified shape did not allow a merge. */
+export class AutopilotStateMergeError extends Error {
+  readonly code = "AUTOPILOT_STATE_MERGE_REFUSED";
+}
 
 /** Lock files are process-owned and are never adopted or merged. */
 const NEVER_ADOPTED_STATE_FILES = ["state.lock"] as const;
@@ -121,16 +133,58 @@ async function mergeLegacyFile(source: string, canonical: string, name: string):
   if (normalizePath(source) === normalizePath(canonical)) return false;
   if (!await isRegularFile(source)) return false;
   if (!await exists(canonical)) return adoptFile(source, canonical);
-  const mergeable = MERGED_RECORD_FILES[name];
-  if (!mergeable) return false;
-  const [legacy, current] = await Promise.all([readRecords(source, mergeable), readRecords(canonical, mergeable)]);
+  const kind = MERGED_REGISTRY_KINDS[name as keyof typeof MERGED_REGISTRY_KINDS];
+  if (!kind) return false;
+  const [legacy, current] = await Promise.all([readRegistry(source, kind), readRegistry(canonical, kind)]);
   if (!legacy || !current) return false;
-  const identities = new Set(current.requests.map((record) => record.requestId));
-  const missing = legacy.requests.filter((record) => !identities.has(record.requestId));
-  if (missing.length === 0) return false;
-  const merged = { version: 1, requests: [...current.requests, ...missing] };
+  const merged = kind === "records"
+    ? mergeRecordRegistry(legacy, current)
+    : kind === "entries"
+      ? mergeEntryRegistry(legacy, current)
+      : mergeStringSet(legacy, current);
+  if (merged === undefined) return false;
   await writeMergedRecords(canonical, merged);
   return true;
+}
+
+/** Canonical wins per request identity; a legacy-only question is appended. */
+function mergeRecordRegistry(
+  legacy: RegistryRead,
+  current: RegistryRead,
+): Record<string, unknown> | undefined {
+  const identities = new Set(
+    current.records.map((record) => (record as { requestId?: unknown }).requestId).filter((id): id is string => typeof id === "string"),
+  );
+  const missing = legacy.records.filter((record) => !identities.has((record as { requestId?: unknown }).requestId as string));
+  if (missing.length === 0) return undefined;
+  return { ...current.raw, requests: [...current.records, ...missing] };
+}
+
+/** Canonical wins per receipt key: a legacy terminal decision or notice never overwrites it. */
+function mergeEntryRegistry(
+  legacy: RegistryRead,
+  current: RegistryRead,
+): Record<string, unknown> | undefined {
+  const missing = legacy.records.filter((key) => !(key as string in current.raw));
+  if (missing.length === 0) return undefined;
+  const merged: Record<string, unknown> = { ...current.raw };
+  for (const key of missing) merged[key as string] = legacy.raw[key as string];
+  return merged;
+}
+
+/** The armed admission set is the union of both directories, in its own shape. */
+function mergeStringSet(
+  legacy: RegistryRead,
+  current: RegistryRead,
+): unknown[] | Record<string, unknown> | undefined {
+  const existing = new Set(current.records);
+  const missing = legacy.records.filter((value) => !existing.has(value));
+  if (missing.length === 0) return undefined;
+  if (Array.isArray(legacy.parsed) && Array.isArray(current.parsed)) return [...current.parsed, ...missing];
+  if (Array.isArray(current.parsed) || Array.isArray(legacy.parsed)) return undefined;
+  const merged: Record<string, unknown> = { ...current.raw };
+  for (const value of missing) merged[value as string] = true;
+  return merged;
 }
 
 /** Copy one legacy file into place only when the canonical file does not exist yet. */
@@ -152,30 +206,50 @@ async function adoptFile(source: string, canonical: string): Promise<boolean> {
   }
 }
 
-/** Read a known record registry, or undefined when the shape is not verified. */
-async function readRecords(
-  path: string,
-  kind: "choices" | "human-requests",
-): Promise<{ version: 1; requests: Array<Record<string, unknown> & { requestId: string }> } | undefined> {
+interface RegistryRead {
+  /** The exact parsed document, so a merge can preserve its own shape. */
+  parsed: unknown;
+  raw: Record<string, unknown>;
+  records: unknown[];
+}
+
+/** Read a known registry by its verified shape, or undefined when it is not verified. */
+async function readRegistry(path: string, kind: RegistryKind): Promise<RegistryRead | undefined> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
   } catch {
     return undefined;
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
-  const file = parsed as { version?: unknown; requests?: unknown };
-  if (file.version !== 1 || !Array.isArray(file.requests)) return undefined;
-  const records: Array<Record<string, unknown> & { requestId: string }> = [];
-  for (const entry of file.requests) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return undefined;
-    const record = entry as Record<string, unknown>;
-    if (typeof record.requestId !== "string" || record.requestId.length === 0) return undefined;
-    if (typeof record.status !== "string" || record.status.length === 0) return undefined;
-    records.push(record as Record<string, unknown> & { requestId: string });
+  // The armed admission set is the only registry stored as a JSON list.
+  if (kind === "strings" && Array.isArray(parsed)) {
+    if (!parsed.every((value) => typeof value === "string" && value.length > 0)) return undefined;
+    return { parsed, raw: { list: parsed }, records: parsed };
   }
-  void kind;
-  return { version: 1, requests: records };
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  if (kind === "records") {
+    const file = parsed as { version?: unknown; requests?: unknown };
+    if (file.version !== 1 || !Array.isArray(file.requests)) return undefined;
+    const records: unknown[] = [];
+    for (const entry of file.requests) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return undefined;
+      const record = entry as Record<string, unknown>;
+      if (typeof record.requestId !== "string" || record.requestId.length === 0) return undefined;
+      if (typeof record.status !== "string" || record.status.length === 0) return undefined;
+      records.push(entry);
+    }
+    return { parsed, raw: file as Record<string, unknown>, records };
+  }
+  if (kind === "entries") {
+    // A receipt store is a flat map of receipt key to terminal decision.
+    const entries = Object.entries(parsed);
+    if (entries.some(([, value]) => !value || typeof value !== "object" || typeof (value as Record<string, unknown>).kind !== "string")) {
+      return undefined;
+    }
+    return { parsed, raw: parsed as Record<string, unknown>, records: entries.map(([key]) => key) };
+  }
+  if (!Object.values(parsed).every((value) => value === true)) return undefined;
+  return { parsed, raw: parsed as Record<string, unknown>, records: Object.keys(parsed) };
 }
 
 /** Publish a merged registry atomically and keep the previous canonical copy. */

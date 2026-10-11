@@ -13,6 +13,7 @@ import type {
   HarnessAdapter,
   HarnessCapabilities,
   HarnessEvent,
+  MessageAdmissionResult,
   SendMessageOptions,
   SetPermissionsOptions,
   RawTranscriptExport,
@@ -476,6 +477,20 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     };
     if (!options.inputId) return operation();
     return this.deliveryReceipts.once(id, options.inputId, operation);
+  }
+
+  /** Read-only admission lookup for an earlier input; it never delivers again. */
+  async getMessageAdmission(id: string, inputId: string): Promise<MessageAdmissionResult> {
+    let receipt: ControlResult | undefined;
+    try {
+      receipt = await this.deliveryReceipts.find(id, inputId);
+    } catch (error) {
+      return { state: "unknown", error: error instanceof Error ? error.message : String(error) };
+    }
+    if (!receipt) return { state: "unknown" };
+    if (receipt.ok || receipt.admitted) return { state: "admitted", ...(receipt.turnId ? { error: receipt.turnId } : {}) };
+    if (receipt.nonRetryable || receipt.admissionUnknown) return { state: "unknown", error: receipt.error };
+    return { state: "failed", error: receipt.error };
   }
 
   private async sendNativeMessage(id: string, options: SendMessageOptions, release: () => void, startRaceRetries = 1): Promise<ControlResult> {

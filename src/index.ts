@@ -699,7 +699,7 @@ async function main() {
   const stopUnfinishedSessionLauncher = unfinishedSessionLauncher.start();
   process.once("exit", stopUnfinishedSessionLauncher);
   // One human answer resumes its exact native session once, from every MCP surface.
-  const humanResume = (request: ResumeTransportRequest) => resumeSelectedTarget(request, processSupervisor, "human");
+  const humanResume = (request: ResumeTransportRequest) => resumeSelectedTarget(request, processSupervisor, "human", true);
   const humanResumeQuery = (request: ResumeTransportRequest) => new AgentResumeClient().queryReceipt(request);
   const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery });
   const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery });
@@ -716,7 +716,7 @@ async function main() {
       converter: processSessionConverter,
       humanRequests,
       choiceRegistry,
-      humanResume: (request: ResumeTransportRequest) => resumeSelectedTarget(request, processSupervisor, "human"),
+      humanResume: (request: ResumeTransportRequest) => resumeSelectedTarget(request, processSupervisor, "human", true),
       choiceQuery: (request: ResumeTransportRequest) => new AgentResumeClient().queryReceipt(request),
       adapterRegistry,
       mcpServerFactory: createHttpMcpServer,
