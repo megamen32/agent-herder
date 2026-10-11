@@ -13,6 +13,7 @@ import {
 import type { HarnessAdapter, HarnessType } from "../types/common.js";
 import { newOrResumeNamedSession, type NamedSessionMode, type NamedSessionResult } from "../named-session.js";
 import { HUMAN_STOP_MESSAGE } from "../human-stop-actions.js";
+import { MINIMAX_SUBSCRIPTION_MODEL, type MiniMaxQuotaPreflight } from "./minimax-quota-preflight.js";
 
 /**
  * One recorded attempt of one operation on one harness.
@@ -65,6 +66,8 @@ export type ProjectLaunchRunner = (request: {
   mode: NamedSessionMode;
   /** Stable per operation and harness, so a repeat attempt is deduplicated natively. */
   inputId: string;
+  /** Only an explicit project route may authorize subscription quota fallback. */
+  configuredRoute?: boolean;
 }) => Promise<NamedSessionResult>;
 
 /** The production dispatch port injected into the web seam. */
@@ -266,7 +269,7 @@ export async function dispatchProjectLaunch(
     return projectReceipt({ operationId, project, attempts, completed });
   }
 
-  const nativeResult = await run({ harness, cwd, message: input.message, ...(model ? { model } : {}), mode, inputId });
+  const nativeResult = await run({ harness, cwd, message: input.message, ...(model ? { model } : {}), mode, inputId, configuredRoute: resolution.kind === "launch" });
   // Optional undefined fields disappear in JSON. Project the same durable shape
   // on the first response so a restart cannot change its receipt or model.
   const result = Object.fromEntries(Object.entries(nativeResult).filter(([, value]) => value !== undefined)) as NamedSessionResult;
@@ -380,16 +383,26 @@ function isHumanHold(error: string | undefined): boolean {
 }
 
 /** Build the production runner over the existing named-session seam. */
-export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: string): ProjectLaunchRunner {
-  return async (request) => await newOrResumeNamedSession(adapters, {
-    harness: request.harness,
-    name,
-    cwd: request.cwd,
-    message: request.message,
-    mode: request.mode,
-    ...(request.model ? { model: request.model } : {}),
-    ...(request.inputId ? { inputId: request.inputId } : {}),
-  });
+export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: string, quotaPreflight?: MiniMaxQuotaPreflight): ProjectLaunchRunner {
+  return async (request) => {
+    if (request.configuredRoute && request.harness === "opencode" && request.model === MINIMAX_SUBSCRIPTION_MODEL
+      && quotaPreflight && await quotaPreflight(request.model).catch(() => "unknown") === "quota_exhausted") {
+      return {
+        ok: false, created: false, harness: request.harness, name, cwd: request.cwd, model: request.model,
+        inputId: request.inputId, delivery: "not_attempted", failureCode: "quota_exhausted", nonRetryable: true,
+        error: "Квота подписки MiniMax исчерпана (4292056). Бизнес-задача не отправлена; используется следующая среда маршрута.",
+      };
+    }
+    return await newOrResumeNamedSession(adapters, {
+      harness: request.harness,
+      name,
+      cwd: request.cwd,
+      message: request.message,
+      mode: request.mode,
+      ...(request.model ? { model: request.model } : {}),
+      ...(request.inputId ? { inputId: request.inputId } : {}),
+    });
+  };
 }
 
 /** Stable native operation identity per operation and harness. */
@@ -403,6 +416,7 @@ export function outcomeOf(result: NamedSessionResult): LaunchOutcome | "human_ho
   if (result.admissionUnknown) return "admission_unknown";
   // An executor exists: the turn was admitted and then failed natively.
   if (result.admitted || result.delivery === "accepted_failed") return "accepted";
+  if (result.delivery === "not_attempted" && result.failureCode === "quota_exhausted") return "quota_exhausted";
   if (isHumanHold(result.error)) return "human_hold";
   if (result.delivery === "deferred" || result.delivery === "skipped_inactive" || result.delivery === "not_found") return "unavailable";
   return "pre_admission_rejected";

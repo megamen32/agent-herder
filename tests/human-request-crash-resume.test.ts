@@ -46,7 +46,7 @@ async function registryPath(): Promise<string> {
 }
 
 describe("human-request resume across a crash", () => {
-  it("waits for the admitted attempt while its lease is alive and then takes the same attempt over", async () => {
+  it("keeps an expired admission unknown until a native query proves pre-admission unavailability", async () => {
     const path = await registryPath();
     const provider = ledger();
     const firstProcess = new HumanRequestRegistry(path);
@@ -78,9 +78,17 @@ describe("human-request resume across a crash", () => {
       now: new Date(Date.now() + 10 * 60_000),
     });
 
-    expect(afterLease.status).toBe("resumed");
+    expect(afterLease.status).toBe("in_flight");
     expect(afterLease.idempotencyKey).toBe(admitted.idempotencyKey);
     expect(afterLease.record.attemptId).toBe(admitted.record.attemptId);
+    expect(provider.calls).toHaveLength(0);
+    const provenUnavailable = await resumeHumanRequestOnce({
+      registry: restarted, requestId: created.requestId, resultRef: "result://answer/1", resume: provider.resume,
+      queryReceipt: async (request) => ({ status: "failed", reason: "native-unavailable", target: request.target, result_ref: request.result_ref }),
+      now: new Date(Date.now() + 20 * 60_000),
+    });
+    expect(provenUnavailable).toMatchObject({ status: "resume_failed", retry: true });
+    expect((await resumeHumanRequestOnce({ registry: restarted, requestId: created.requestId, resultRef: "result://answer/1", resume: provider.resume })).status).toBe("resumed");
     expect(provider.calls).toHaveLength(1);
     await expect(restarted.get(created.requestId)).resolves.toMatchObject({ status: "resumed", receipt: "agent-resume://receipt/1" });
   });
@@ -117,7 +125,7 @@ describe("human-request resume across a crash", () => {
     expect(provider.calls).toHaveLength(1);
   });
 
-  it("delivers the canonical admitted answer after a crash, not the conflicting repeat", async () => {
+  it("reconciles the canonical admitted answer after an expired lease without sending the conflicting repeat", async () => {
     const path = await registryPath();
     const delivered: ResumeTransportRequest[] = [];
     const store = new HumanRequestRegistry(path);
@@ -130,6 +138,9 @@ describe("human-request resume across a crash", () => {
       // A repeated provider callback that carries a different answer reference.
       resultRef: "result://conflicting-answer",
       resume: async (request) => {
+        throw new Error("unknown admission must not invoke transport");
+      },
+      queryReceipt: async (request) => {
         delivered.push(request);
         return { status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-resume://receipt/1", idempotency_key: request.idempotency_key };
       },
@@ -140,17 +151,8 @@ describe("human-request resume across a crash", () => {
     expect(takeover.idempotencyKey).toBe(admitted.idempotencyKey);
     expect(delivered).toHaveLength(1);
     expect(delivered[0]?.result_ref).toBe("result://canonical-answer");
-    // The continuation instruction is derived from the durable record, so a
-    // conflicting repeat cannot substitute its own prompt.
-    expect(delivered[0]?.prompt).toBe(continuationPrompt(
-      (await store.get(created.requestId))!,
-      "result://canonical-answer",
-    ));
-    expect(delivered[0]?.prompt).toContain(created.requestId);
-    expect(delivered[0]?.prompt).toContain("noticeplace_question_result");
-    // The admission instant of the real answer travels with the resume, so an
-    // explicit stop newer than that answer still fences it.
-    expect(delivered[0]?.human_requested_at).toBe(Date.parse(admitted.record.admittedAt!));
+    // Observation preserves the original answer time for the explicit-stop fence.
+    expect(takeover.record.admittedAt).toBe(admitted.record.admittedAt);
     await expect(store.get(created.requestId)).resolves.toMatchObject({ status: "resumed", resultRef: "result://canonical-answer" });
   });
 

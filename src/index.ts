@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { createFleetRecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
+import { createMiniMaxQuotaPreflight } from "./automation/minimax-quota-preflight.js";
 
 import { startSelectedStdio } from "./mcp/transport-selection.js";
 import { McpServer } from "@modelcontextprotocol/server";
@@ -752,6 +753,7 @@ async function main() {
   // One human answer resumes its exact native session once, from every MCP surface.
   const humanResume = (request: ResumeTransportRequest) => resumeSelectedTarget(request, processSupervisor, "human", true);
   const projectLaunchAttempts = new ProjectLaunchAttemptLog(join(autopilotStateDir, "project-launch-attempts.json"));
+  const launchQuotaPreflight = createMiniMaxQuotaPreflight({ token: process.env.MINIMAX_API_KEY });
   // The one project launch consumer: an ordered route, a durable attempt log and
   // the existing named-session seam as the only place that creates an executor.
   const projectLaunchDispatch: ProjectLaunchDispatcher = async (request) => {
@@ -765,7 +767,7 @@ async function main() {
     return await dispatchProjectLaunch(
       { policy: loaded.policy, ...request, name },
       projectLaunchAttempts,
-      namedSessionRunner(adapters, name),
+      namedSessionRunner(adapters, name, launchQuotaPreflight),
     );
   };
   const humanResumeQuery = (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters);

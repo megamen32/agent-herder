@@ -469,9 +469,16 @@ An answer is admitted exactly once:
   `admitted: true` may invoke the resume transport, and it must use the
   returned `idempotencyKey`. Every replay returns the same attempt, key and
   canonical admitted answer.
-- A bounded persisted lease makes a crash recoverable: after it expires a
-  later answer takes the same attempt and key over, and the durable provider
-  receipt is read before anything is launched again.
+- A bounded persisted lease transfers observation after expiry: the same
+  attempt and key may read the durable provider receipt. An unknown or missing
+  admission receipt never permits another transport invocation.
+- A definite `agent-resume:native-unavailable` rejection before admission
+  returns HTTP `502` with `status: "resume_failed"`, `continuation: "resume"`,
+  `reason: "agent-resume:native-unavailable"` and `retry: true`. Notice may retry
+  the same `request_id` and canonical `result_ref` after recovery. Re-admission
+  is atomic and keeps the original attempt, key and answer time. A different
+  result reference or an ambiguous/admitted failure returns `retry: false`.
+  An old unavailable query receipt cannot reopen a live restored admission.
 - The stable key travels to the deduplicating native ingress as `inputId`, so
   a takeover cannot deliver the answer to the session twice.
 - The answer carries `human_requested_at`, the instant it was admitted. An
@@ -664,8 +671,10 @@ POST /api/automation/project-launch
   harness again. It is keyed by the configured route key, so an alias, a path
   spelling or a case variant of the same project share one authority.
 - Each attempt is **reserved durably before the native call** and completed
-  after it, keeping its model, mode, `created` (new session or resumed) and
-  delivery. The reservation is exclusive under one lock and returns
+  after it, keeping the complete `NamedSessionResult`, including `turnId`,
+  admission flags, pending state and delivery. First response and replay use
+  one projector; actual launch mode follows native `created`. Legacy attempt
+  records retain their known receipt fields. The reservation is exclusive under one lock and returns
   `{claimed, record}`: only the claiming caller may call the native writer.
   OpenCode has no native input-id deduplication, so this durable claim is the
   only thing preventing a second POST; Codex and ZCode additionally deduplicate
@@ -675,8 +684,20 @@ POST /api/automation/project-launch
   model and the workspace. `harness` and `model` from a caller profile are
   ignored for that project and reported as overridden in `routing_reason`; the
   profile applies only to a project without a route.
-- Only `pre_admission_rejected` (a definite pre-admission failure such as a
-  quota or an unavailable runtime) advances to the next harness of the route.
+- Only a definite pre-admission rejection (`pre_admission_rejected`,
+  `quota_exhausted` or `unavailable`) advances to the next harness of the route.
+- For an explicit project route selecting OpenCode and exact model
+  `minimax-coding-plan/MiniMax-M3.1-Flash-Preview`, the production named runner
+  performs one minimal direct MiniMax probe before creating or messaging a
+  session. It reuses the protected `MINIMAX_API_KEY` already loaded by the
+  service and the existing direct Anthropic endpoint. Timeout is five seconds,
+  response is bounded to 16 KiB, concurrent probes coalesce, and the cache lasts
+  at most 30 seconds. Only the verified subscription quota code `4292056`
+  (HTTP 429 with native code `2056`) records `quota_exhausted` /
+  `not_attempted` and advances the configured route. Missing auth, generic rate
+  limits and uncertain probes keep the explicit OpenCode policy. Unconfigured
+  defaults do not probe or change provider. Accepted or unknown business input
+  never falls back based on a later model failure.
 - `accepted`, `admission_unknown` and `human_hold` stop the chain. A pending
   human answer or a semantic repair failure is never a launch outcome, so no
   second executor can appear.
@@ -685,3 +706,9 @@ POST /api/automation/project-launch
   Herder does not clone a running session.
 - `409` with `outcome: "no_harness"` means the route cannot launch: no allowed
   runtime, no route entry left, or an explicit harness outside the route.
+
+The human composer sends OpenCode queue delivery through native
+`/prompt_async`; its successful receipt marks input admitted while the model
+may still be running. The durable message job records admission, not model
+completion. Clearing a route model override deletes its key and inherits the
+global model; removing a route harness deletes that harness's override too.

@@ -79,6 +79,10 @@ describe("bound resume transport", () => {
     const created = await registry.create({ kind: "user", target: { agent: "zcode", sessionId: session.id, cwd: session.cwd } });
     const admitted = await registry.admitResume(created.requestId, { resultRef: "result://answer/1" });
 
+    // A definite native pre-admission failure may retry this same answer, but
+    // must retain the original time rather than bypassing a later human stop.
+    await registry.failResume(created.requestId, { attemptId: admitted.record.attemptId!, receipt: "agent-resume:native-unavailable", retryable: true });
+
     // The human stops the session after that answer was admitted.
     await humanStops.hold(session, { id: "stop-after-answer", at: new Date(Date.parse(admitted.record.admittedAt!) + 1_000).toISOString(), reason: "explicit stop" });
     expect(await humanStops.isHeld("zcode", session.id)).toBe(true);
@@ -119,8 +123,8 @@ describe("bound resume transport", () => {
     expect(first.status).toBe("in_flight");
     expect(deliveries).toHaveLength(0);
 
-    // Once the lease expires the takeover reaches the transport, and the fresh
-    // stop still holds: there is no verifiable original answer time.
+    // Expiry only transfers observation. Unknown admission never reaches the
+    // transport, and the fresh stop still holds without an original answer time.
     const outcome = await resumeHumanRequestOnce({
       registry,
       requestId: created.requestId,
@@ -129,7 +133,7 @@ describe("bound resume transport", () => {
       now: new Date(Date.now() + 10 * 60_000),
     });
 
-    expect(outcome.status).toBe("resume_failed");
+    expect(outcome.status).toBe("in_flight");
     expect(deliveries).toHaveLength(0);
     expect(await humanStops.isHeld("zcode", session.id)).toBe(true);
   });

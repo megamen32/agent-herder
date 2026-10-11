@@ -63,6 +63,8 @@ export interface HumanRequestResolution {
 export interface ResumeAttemptResult {
   /** Provider-owned opaque result or failure receipt; never a payload. */
   receipt?: string;
+  /** Explicit proof that native transport rejected before admission. */
+  retryable?: boolean;
 }
 
 export interface ResumeClaimInput {
@@ -78,6 +80,7 @@ export interface ResumeClaimInput {
 export interface ResumeCompletionInput {
   attemptId: string;
   receipt?: string;
+  retryable?: boolean;
 }
 
 /** Single admission receipt. Only `admitted` may invoke the resume transport. */
@@ -110,6 +113,8 @@ export interface HumanRequestRecord {
   /** Instant the human answer was admitted; binds later resume attempts to it. */
   admittedAt?: string;
   receipt?: string;
+  /** False fences ambiguous/admitted failures even if their reason looks retryable. */
+  resumeRetryable?: boolean;
   createdAt: string;
   resolvedAt?: string;
   notify?: NotifyRoutingTuple;
@@ -193,6 +198,7 @@ function validateRecord(record: HumanRequestRecord): HumanRequestRecord {
   opaqueRef(record.attemptId, "attemptId");
   opaqueRef(record.idempotencyKey, "idempotencyKey");
   opaqueRef(record.receipt, "receipt");
+  if (record.resumeRetryable !== undefined && typeof record.resumeRetryable !== "boolean") throw new Error("invalid resume retry evidence");
   if (record.notify) {
     notifyOf(record.notify, record.requestId);
     if (record.notify.dedupKey !== `human-request:${record.requestId}`) throw new Error("invalid Notify dedupKey");
@@ -296,8 +302,9 @@ export class HumanRequestRegistry {
    * replay returns the same durable record, attempt and key, so a conflicting
    * repeated answer can never overwrite the canonical admitted answer or
    * produce a second native resume. A crash between admission and completion
-   * is recoverable: once the persisted lease expires a later answer takes the
-   * same attempt and key over, which the provider ledger deduplicates.
+   * is observable: once the persisted lease expires a later answer takes the
+   * same attempt and key over to read the provider ledger. Expiry does not
+   * prove pre-admission failure or permit another native send.
    */
   async admitResume(requestId: string, input: ResumeClaimInput = {}): Promise<ResumeAdmissionReceipt> {
     const attemptId = opaqueRef(input.attemptId, "attemptId");
@@ -312,6 +319,24 @@ export class HumanRequestRegistry {
       if (!record) throw new Error(`Human request '${requestId}' not found`);
       const leaseExpiresAt = new Date(now.getTime() + leaseMs).toISOString();
       if (record.status === "cancelled") throw new Error(`Human request '${requestId}' was cancelled`);
+      // Only definite native-unavailable is a pre-admission failure. Retrying
+      // the exact canonical answer reuses its attempt, key and original time.
+      // Legacy receipts with this reserved reason remain recoverable; explicit
+      // ambiguous/admitted failure evidence always takes precedence over it.
+      if (record.status === "resume_failed" && record.receipt === "agent-resume:native-unavailable"
+        && record.resumeRetryable !== false && resultRef !== undefined && resultRef === record.resultRef) {
+        const existingKey = record.idempotencyKey ?? idempotencyKeyFor(record.requestId, record.attemptId!);
+        record.status = "resuming";
+        record.resumeLeaseExpiresAt = leaseExpiresAt;
+        record.idempotencyKey = existingKey;
+        delete record.receipt;
+        delete record.resolvedAt;
+        delete record.resumeRetryable;
+        await this.write(file);
+        const acknowledged = await this.acknowledge(requestId, record.attemptId!, existingKey, leaseExpiresAt);
+        this.publishRequest(record.requestId, "updated");
+        return { admitted: true, recovered: false, idempotencyKey: existingKey, record: acknowledged };
+      }
       if (record.status === "resuming") {
         // The canonical admitted answer stays authoritative for a conflicting repeat.
         const existingKey = record.idempotencyKey ?? idempotencyKeyFor(record.requestId, record.attemptId!);
@@ -385,6 +410,7 @@ export class HumanRequestRegistry {
     rejectPayloadFields(result);
     const checkedAttemptId = opaqueRef(attemptId, "attemptId");
     const receipt = opaqueRef(result?.receipt, "receipt");
+    if (result?.retryable !== undefined && typeof result.retryable !== "boolean") throw new Error("retryable must be boolean");
     return this.mutate(async () => {
       const file = await this.read();
       const record = file.requests.find((item) => item.requestId === requestId);
@@ -395,6 +421,7 @@ export class HumanRequestRegistry {
       }
       record.status = status;
       if (receipt) record.receipt = receipt;
+      if (status === "resume_failed" && result?.retryable !== undefined) record.resumeRetryable = result.retryable;
       record.resolvedAt = new Date().toISOString();
       await this.write(file);
       this.publishRequest(record.requestId, "updated");

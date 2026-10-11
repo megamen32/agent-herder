@@ -28,7 +28,7 @@ export interface HumanRequestResumeInput {
 
 export type HumanRequestResumeOutcome =
   | { status: "resumed"; record: HumanRequestRecord; idempotencyKey: string; duplicate: boolean }
-  | { status: "resume_failed"; record: HumanRequestRecord; idempotencyKey: string; duplicate: boolean; receipt: string }
+  | { status: "resume_failed"; record: HumanRequestRecord; idempotencyKey: string; duplicate: boolean; receipt: string; retry: boolean }
   | { status: "in_flight"; record: HumanRequestRecord; idempotencyKey: string; duplicate: true }
   | { status: "unsupported_target"; record: HumanRequestRecord; idempotencyKey: string; receipt: string; duplicate: boolean };
 
@@ -60,9 +60,18 @@ export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Pr
         idempotencyKey: admission.idempotencyKey,
         duplicate: true,
         receipt: record.receipt ?? "resume-failed",
+        retry: record.receipt === "agent-resume:native-unavailable" && record.resumeRetryable !== false && record.resultRef === resultRef,
       };
     }
     const recovered = await readAdmittedReceipt(input, record, admission.idempotencyKey);
+    return recovered ?? { status: "in_flight", record, idempotencyKey: admission.idempotencyKey, duplicate: true };
+  }
+  if (admission.recovered) {
+    // A lease expiry transfers observation, not permission to send again.
+    // Missing/ambiguous native evidence never proves that the old input failed
+    // before admission. A definite native-unavailable query can arm a later
+    // exact-answer callback; this call itself performs no second transport.
+    const recovered = await readAdmittedReceipt(input, record, admission.idempotencyKey, true);
     return recovered ?? { status: "in_flight", record, idempotencyKey: admission.idempotencyKey, duplicate: true };
   }
 
@@ -98,10 +107,11 @@ export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Pr
       }
     : {
         status: "resume_failed",
-        record: await registry.failResume(requestId, { attemptId: record.attemptId!, receipt: `agent-resume:${receipt.reason}` }),
+        record: await registry.failResume(requestId, { attemptId: record.attemptId!, receipt: `agent-resume:${receipt.reason}`, retryable: receipt.status === "failed" && receipt.reason === "native-unavailable" }),
         idempotencyKey: admission.idempotencyKey,
         duplicate: admission.recovered,
         receipt: `agent-resume:${receipt.reason}`,
+        retry: receipt.status === "failed" && receipt.reason === "native-unavailable",
       };
 }
 
@@ -163,6 +173,7 @@ async function readAdmittedReceipt(
   input: HumanRequestResumeInput,
   record: HumanRequestRecord,
   idempotencyKey: string,
+  allowPreAdmissionFailure = false,
 ): Promise<HumanRequestResumeOutcome | undefined> {
   if (!input.queryReceipt || record.status !== "resuming" || !record.attemptId) return undefined;
   const target = humanRequestResumeTarget(record);
@@ -177,6 +188,12 @@ async function readAdmittedReceipt(
   } catch {
     // The ledger is unreadable; the admitted attempt is still in flight.
     return undefined;
+  }
+  // A previous failure may remain in the provider ledger while a restored
+  // invocation owns its live lease. It cannot invalidate that reservation.
+  if (allowPreAdmissionFailure && receipt.status === "failed" && receipt.reason === "native-unavailable") {
+    const failed = await input.registry.failResume(input.requestId, { attemptId: record.attemptId, receipt: "agent-resume:native-unavailable", retryable: true });
+    return { status: "resume_failed", record: failed, idempotencyKey, duplicate: true, receipt: "agent-resume:native-unavailable", retry: record.resultRef === input.resultRef };
   }
   if (receipt.status !== "accepted") return undefined;
   const completed = await input.registry.completeResume(input.requestId, { attemptId: record.attemptId, receipt: receipt.receipt_ref });

@@ -44,6 +44,8 @@ export interface NamedSessionResult {
   admissionUnknown?: boolean;
   nonRetryable?: boolean;
   pending?: boolean;
+  /** Definite provider rejection observed before session creation/input admission. */
+  failureCode?: "quota_exhausted";
   model?: string;
   error?: string;
 }

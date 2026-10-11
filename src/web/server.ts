@@ -1173,7 +1173,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 422, { request_id: outcome.record.requestId, status: outcome.record.status });
     }
     if (outcome.status === "resume_failed") {
-      return sendJson(response, 502, { request_id: outcome.record.requestId, status: outcome.record.status, continuation: outcome.record.continuation, reason: outcome.receipt });
+      return sendJson(response, 502, { request_id: outcome.record.requestId, status: outcome.record.status, continuation: outcome.record.continuation, reason: outcome.receipt, retry: outcome.retry });
     }
     return sendJson(response, 202, {
       request_id: outcome.record.requestId,
