@@ -173,3 +173,20 @@ Final cumulative checked coverage9 Vitest +14 Python scenarios; bounded windows
 97.939s +0.1s initial budget refusal, max180s. Peak693080064bytes/swap0/OOM0.
 Final manifest указывает именно последнюю schema-delta compiled closure и
 сохраняет ссылку на исходный failed aggregate. Только own branch dist построен.
+
+## Существующий launch result contract
+
+`NamedSessionResult.model` в `createNamedSession/newOrResumeNamedSession` и JSON
+MCP `create_session/new_or_resume` исторически означает model из launch request.
+Это requested selection, **не actual execution evidence**. Для всех harnesses
+это поле сохраняет прежнюю семантику; новые поля и переименование не добавлены.
+Даже accepted_unconfirmed с model=GLM не доказывает ответ GLM после fallback.
+Для Hermes actual per-turn evidence — только protected delivery receipt
+`model/effectiveModel` от exact native post_api_request; `modelAtAdmission`
+показывает prologue отдельно. Session.model относится к last-session-runtime,
+а meta.selectedModel — к выбранной настройке. Unknown actual не подменяется
+launch result.model или выбранной моделью. Поля execution_identity нельзя
+заполнять requested model под видом actual executor model.
+Последующий reviewer снял named-result blocker после проверки исторического
+контракта; runtime/API fix для этого seam не выполнялся. Это docs-only delta
+поверх0fc8b5a, уже проверенные source/dist остаются побайтно теми же.
