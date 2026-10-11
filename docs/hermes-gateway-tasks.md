@@ -112,10 +112,15 @@ runner→original plugin HTTP→atomic gate→terminal override доказыва
 проход и source/dist manifest — `.tmp/hermes-binding-typed-final/`.
 Финальный проход: полный production build,17/17 Vitest +12/12 Python,
 48.622s executable; обе correction runs вместе с setup103.983s, ниже180s.
-Peak589008896 bytes/swap0/OOM0; generation-specific cleanup PASS. После
-совместимого merge latest published main9749a68 runtime `src` pins целиком
-совпадают с проверенными входами; дополнительные изменения только в owned
-Root Mac watchdog/docs/tests. Повтор build не требовался.
+Peak589008896 bytes/swap0/OOM0; generation-specific cleanup PASS.
+Предыдущий f93 manifest ошибочно называл обновившийся remote ref9749a68
+включённым ancestor; фактически тогда был включён только6d494c8. Ошибка
+ancestry найдена независимым review и исправлена настоящим merge9749a68.
+`git merge-base --is-ancestor 9749a68 HEAD` теперь0, UI diff к9749a68 пуст.
+Полная итоговая closure после этого merge пересобрана за34.695s; evidence и
+актуальный source/dist manifest: `.tmp/hermes-home-ready-merged/`.
+Старый manifest помечен superseded; он не является final installation input.
+Все correction checks/builds с setup укладываются в отдельный180s deadline.
 Unused старые copied UI bundles перенесены из **owned** dist в private evidence,
 сохранены побайтно; canonical/runtime dist не тронут. Source manifest содержит
 318 текущих compiled/backend/declaration/UI files и SHA256 каждого.
