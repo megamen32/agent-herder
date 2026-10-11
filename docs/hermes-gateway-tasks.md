@@ -149,3 +149,17 @@ plugin/reloads самостоятельно; source owner runtime не меня�
 |---|---|---|---|
 | Official post-response producer → original HTTP/DB receipt | Selected GLM vs actual MiniMax fallback, exact turn, restart/legacy/no replay | focused integration | 1/5 |
 | Production named runner → adapter HTTP | Selected intent принимается при другом effective model без provider switch | focused integration | 1/5 |
+
+Model delta evidence (12.10.2026): `.tmp/hermes-effective-model-final/` содержит
+полный production build и8/8 Vitest +12 Python scenario PASS. Aggregate runner
+завершился FAIL на import PyYAML для installer: параллельный официальный updater
+менял Hermes venv. Этот исторический FAIL сохранён. Installer и migration старой
+admitted SQLite row затем отдельно2/2 PASS системным Python с existing PyYAML,
+evidence `.tmp/hermes-effective-installer-delta/`; зависимости не устанавливались.
+Итого проверены8 Vitest +14 Python scenarios,54.714s bounded windows включая setup
+(+0.1s initial registered-budget refusal; затем применён прежний budget).
+CPU1/RAM2GiB/tasks128/swap0/OOM0; peak579252224bytes, cleanup PASS. Broad suite
+не повторялась. Exact producer hook / core metadata sources на c573316 остались
+побайтно неизменны во время checks; официальный updater остаётся runtime owner.
+Published main774eebf действительно merge ancestor, foreign UI diff пуст.
+Final source/dist manifest: `.tmp/hermes-effective-model-final/build-source-manifest.json`.
