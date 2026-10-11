@@ -318,6 +318,17 @@ selection is Codex/ZCode, preferred Codex, using the selected native models.
 This policy does not change existing-session continuation toggles or switch a
 running chat to another harness.
 
+The same policy holds optional `projectRoutes`: an ordered harness list per
+canonical project root, with an optional per-route model override. A route is
+used only for an explicitly configured project; every other project keeps the
+default launch path. Herder advances down the list only after a definite
+pre-admission failure (`unavailable`, `quota_exhausted`,
+`pre_admission_rejected`). An accepted launch and an unknown admission both stop
+the chain, so a semantic repair failure, a pending human answer or an ambiguous
+admission can never produce a second executor. When the project already has a
+live session, the resolver resumes it by id or returns an explicit `handoff`
+request; it never clones a running session silently.
+
 Restart continuation settings are available at `GET/PUT
 /api/session-autostart` and `GET/PUT/DELETE
 /api/session-autostart/sessions/{harness}/{sessionId}`. `PUT

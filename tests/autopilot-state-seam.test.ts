@@ -137,6 +137,28 @@ describe("autopilot state seam", () => {
     expect(await readFile(join(canonical, "receipts.json.pre-merge"), "utf8")).toContain("continue");
   });
 
+  it("never resets live session state that already exists in the canonical directory", async () => {
+    const root = await home();
+    const legacy = join(root, "legacy");
+    const canonical = join(root, "canonical");
+    const env = {
+      HOME: root,
+      AGENT_HERDER_AUTOPILOT_STATE_DIR: canonical,
+      AGENT_HERDER_LEGACY_AUTOPILOT_STATE_DIR: legacy,
+      AGENT_HERDER_LEGACY_WORKING_DIRECTORY: root,
+    } as NodeJS.ProcessEnv;
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(legacy, { recursive: true });
+    await mkdir(canonical, { recursive: true });
+    const live = JSON.stringify({ "opencode:ses-live": { enabled: true, cwd: "/workspace/live" } });
+    await writeFile(join(canonical, "sessions.json"), live, "utf8");
+    await writeFile(join(legacy, "sessions.json"), JSON.stringify({ "opencode:ses-old": { enabled: false } }), "utf8");
+
+    await adoptLegacyAutopilotState(canonical, env);
+
+    expect(await readFile(join(canonical, "sessions.json"), "utf8")).toBe(live);
+  });
+
   it("leaves an unrecognized registry shape untouched", async () => {
     const root = await home();
     const legacy = join(root, "legacy");

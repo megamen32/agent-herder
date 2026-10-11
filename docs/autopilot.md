@@ -503,3 +503,54 @@ record is appended, with the previous canonical file kept as
 `<file>.pre-merge`. An unrecognized shape is never rewritten. Set
 `AGENT_HERDER_LEGACY_AUTOPILOT_STATE_DIR` to merge two populated directories
 explicitly; with only the canonical directory pinned, nothing is adopted.
+
+## Asking a human through the delivered-question seam
+
+Creating registry metadata is not asking a human. The supported create seam
+records the question durably and delivers its card through the existing
+NoticePlace producer, under the registry's canonical key:
+
+```text
+MCP human_request_create {kind, harness, sessionId, cwd, message, choices?, notify{...}}
+POST /internal/human-requests   {kind, harness, session_id, cwd, message, choices?, notify{...}}
+```
+
+Both return the same `request_id`/`human_request_id`. The internal endpoint
+verifies the exact native session (id plus canonical workspace) before binding
+and answers `404` for a missing or foreign session. The card carries:
+
+```text
+human_request_id, dedup_key = human-request:{requestId},
+idempotency_key = human-request:{requestId}, event_type = ask.user.requested
+```
+
+The answer resumes that exact session once, through `human_request_resolve` or
+`POST /internal/human-requests/ask-user-completion`. A card redelivery updates
+the same card instead of creating a second question.
+
+A NoticePlace consumer that launches work for a project reads
+`GET /api/automation/launch-policy` and uses `projectRoutes[project]` when the
+project is configured there:
+
+```json
+{ "kind": "launch", "harness": "opencode", "model": "minimax-coding-plan/MiniMax-M3.1-Flash-Preview", "mode": "create" }
+```
+
+A route may declare the identifiers real cards carry, so the settings match the
+card and not only the checkout path:
+
+```json
+"/home/roomhacker/PycharmProjects/TelegramAuto": {
+  "harnesses": ["opencode", "zcode"],
+  "aliases": ["tg-commentator", "autotelegramviews", "canonicalTelegramAuto"]
+}
+```
+
+Aliases and canonical paths match case-insensitively. A project without a
+declared alias is never bound to a route, and no other service is mapped without
+a confirmed match.
+
+`kind: "unconfigured"` means the project keeps the default incident runtime
+(OpenCode with `minimax-coding-plan/MiniMax-M3.1-Flash-Preview`); `kind:
+"exhausted"` with reason `accepted` or `admission_unknown` means an executor
+already exists or may exist and no fallback is allowed.

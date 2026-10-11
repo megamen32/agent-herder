@@ -16,7 +16,9 @@ describe("new session launch policy settings", () => {
       allowedHarnesses: ["codex", "zcode"],
       preferredHarness: "codex",
       models: {
-        codex: "gpt-5.6-sol",
+        // The live policy values are the draft default; an explicit draft never
+        // rewrites a configured route model.
+        codex: "gpt-6.1-sol",
         zcode: "account:zai-individual-coding-plan/GLM-5.3-Flash$high",
       },
     });

@@ -38,6 +38,7 @@ function fakeAdapter(harness: "opencode" | "codex" | "fast-agent", initial: Agen
   const creationOptions: CreateSessionOptions[] = [];
   let creates = 0;
   let failDelivery = false;
+  let unknownAdmission = false;
   const adapter: HarnessAdapter = {
     type: harness,
     name: `Fake ${harness}`,
@@ -54,7 +55,12 @@ function fakeAdapter(harness: "opencode" | "codex" | "fast-agent", initial: Agen
     },
     async sendMessage(id, options) {
       deliveries.push({ id, options });
-      return failDelivery ? { ok: false, error: "delivery failed" } : { ok: true };
+      if (failDelivery) {
+        return unknownAdmission
+          ? { ok: false, admissionUnknown: true, nonRetryable: true, error: "admission unknown" }
+          : { ok: false, error: "delivery failed" };
+      }
+      return { ok: true };
     },
     async stopSession() { return { ok: true }; },
     async respondPermission() { return { ok: true }; },
@@ -67,6 +73,7 @@ function fakeAdapter(harness: "opencode" | "codex" | "fast-agent", initial: Agen
     creationOptions,
     creates: () => creates,
     failNextDelivery: () => { failDelivery = true; },
+    failNextDeliveryWithUnknownAdmission: () => { failDelivery = true; unknownAdmission = true; },
   };
 }
 
@@ -265,6 +272,26 @@ describe("named session creation and reuse", () => {
     expect(result).toMatchObject({ ok: false, created: false, delivery: "not_attempted" });
     expect(result.error).toContain("Ambiguous named session");
     expect(fake.deliveries).toHaveLength(0);
+  });
+
+  it("preserves an unknown admission so a fallback cannot start a second executor", async () => {
+    const cwd = await workspace();
+    const fake = fakeAdapter("codex");
+    fake.failNextDeliveryWithUnknownAdmission();
+
+    const result = await newOrResumeNamedSession(new Map([["codex", fake.adapter]]), {
+      harness: "codex",
+      name: "repair_unknown",
+      cwd,
+      message: "disk full",
+      mode: "sync",
+    });
+
+    expect(result).toMatchObject({
+      ok: false, delivery: "failed", nonRetryable: true, admissionUnknown: true, error: "admission unknown",
+    });
+    // An unknown admission is not an admitted one and must not look like one.
+    expect(result.admitted).toBeUndefined();
   });
 
   it("preserves the created session id when delivery fails", async () => {
