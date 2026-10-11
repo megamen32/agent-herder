@@ -91,6 +91,7 @@ class FakeClient implements ZcodeClientLike {
       }] : [];
       return { events: [...this.nativeEvents, ...acceptedEvent] };
     }
+    if (channel === "model-selection" && method === "getView") return { providers: [{providerId:"zai",models:[{modelId:"GLM-4.5",config:{enabled:true}}]}] };
     if (channel === "zcode-agent" && method === "readWorkspaceState") return { settings: { model: { current: session.model, available: [{ ref: session.model, label: "GLM-4.5" }] } } };
     if (channel === "zcode-agent" && method === "resumeSession") return snapshot;
     if (channel === "zcode-agent" && method === "createSession") return { ...snapshot, session: { ...session, sessionId: "created-1", title: "New task", parentSessionId: undefined, sessionKind: "interactive" } };
@@ -1109,8 +1110,7 @@ describe("ZCode adapter", () => {
       "zcode-agent.resumeSession",
       "zcode-agent.closeSession",
       "zcode-agent.setModel",
-      "zcode-agent.subscribeWorkspaceConfigV4",
-      "zcode-agent.unsubscribeWorkspaceConfigV4",
+      "model-selection.getView",
     ]));
     expect(client.calls.filter((call) => call.method === "setModel").at(-1)?.args[0]).toMatchObject({
       model: { providerId: "zai", modelId: "GLM-4.5", options: { reasoningLevel: "high" } },
@@ -2009,20 +2009,32 @@ it("uses the model catalog default reasoning level for a plain model selection",
  try{await expect(adapter.changeModel("session-1","zai/GLM-5.3")).resolves.toEqual({ok:true});expect(client.calls.find(call=>call.method==="setModel")?.args[0]).toMatchObject({model:{providerId:"zai",modelId:"GLM-5.3",options:{reasoningLevel:"high"}}});}finally{await adapter.dispose();}
 });
 
-// Focused integration expected1s/max5s: native session catalog can contain only the current model.
-it("reads a new model's required defaults from the workspace picker catalog", async()=>{
+// Focused integration expected1s/max5s: session snapshots omit other models and required reasoning metadata.
+it.each([false,true])("keeps the user's reasoning level using the native provider registry: incomplete %s", async(incompleteEntry)=>{
  class WorkspaceDefaultsClient extends FakeClient{
   override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
-   if(method==="subscribeWorkspaceConfigV4") {
-    this.calls.push({channel,method,args});
-    const params=args[0] as {workspaceKey:string};
-    queueMicrotask(()=>this.listeners.find(listener=>listener.event==="onDynamicWorkspaceConfigFrame")?.handler({kind:"complete",frame:{topic:`workspace-config/${params.workspaceKey}`,subscriptionId:"model-catalog",payload:{kind:"snapshot",snapshot:{config:{configOptions:[{id:"model",options:[{value:"zai/GLM-5.3",name:"GLM-5.3",modelDefaultThoughtLevel:"max"}]}]}}}}}));
-    return {ack:{subscriptionId:"model-catalog"}};
-   }
-   if(method==="unsubscribeWorkspaceConfigV4") {this.calls.push({channel,method,args});return {}; }
+   if(method==="readSession") return {...snapshot,settings:{...snapshot.settings,model:{current:{...session.model,options:{reasoningLevel:"high"}},available:incompleteEntry?[{ref:{providerId:"zai",modelId:"GLM-5.3"}}]:[]}}};
+   if(channel==="model-selection" && method==="getView") {this.calls.push({channel,method,args});return {providers:[{providerId:"zai",models:[{modelId:"GLM-5.3",config:{enabled:true,optionSpecs:{reasoningLevel:{values:["low","high","max"]}}}}]}]};}
    return super.call(channel,method,args);
   }
  }
  const client=new WorkspaceDefaultsClient(),adapter=new ZcodeAdapter({cwd:"/workspace",client});
- try{await expect(adapter.changeModel("session-1","zai/GLM-5.3")).resolves.toEqual({ok:true});expect(client.calls.find(call=>call.method==="setModel")?.args[0]).toMatchObject({model:{providerId:"zai",modelId:"GLM-5.3",options:{reasoningLevel:"max"}}});expect(client.calls.filter(call=>call.method==="unsubscribeWorkspaceConfigV4")).toHaveLength(1);expect(client.calls.some(call=>call.method==="readWorkspaceState")).toBe(false);}finally{await adapter.dispose();}
+ try{await expect(adapter.changeModel("session-1","zai/GLM-5.3")).resolves.toEqual({ok:true});expect(client.calls.find(call=>call.method==="setModel")?.args[0]).toMatchObject({model:{providerId:"zai",modelId:"GLM-5.3",options:{reasoningLevel:"high"}}});expect(client.calls.some(call=>call.channel==="model-selection"&&call.method==="getView")).toBe(true);expect(client.calls.some(call=>call.method==="readWorkspaceState")).toBe(false);}finally{await adapter.dispose();}
+});
+
+// Focused integration expected1s/max5s: durable admission must settle from exact native message attribution when the event schema evolves.
+it.each([false,true])("settles a staged guide from native history despite event/message schema failures: %s", async(messageSchemaFails)=>{
+ const inputId="guide-schema-reconciliation";
+ const attributed={info:{role:"user",metadata:{inputIntent:{sourceCommandId:inputId}}},parts:[{type:"text",text:"Exact guide"}]};
+ class SchemaDriftClient extends FakeClient {
+  override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   this.calls.push({channel,method,args});
+   if(method==="readSessionEvents")throw new Error('Unrecognized key: "executionStartedAt"');
+   if(method==="readSessionMessages"){if(messageSchemaFails)throw new Error('Invalid source: agent_listing_delta');return {messages:[attributed]};}
+   if(method==="readSession")return {...snapshot,messages:[attributed]};
+   return super.call(channel,method,args);
+  }
+ }
+ const client=new SchemaDriftClient(),adapter=new ZcodeAdapter({cwd:"/workspace",client});
+ try{await adapter.init();await expect(adapter.getMessageAdmission("session-1",inputId)).resolves.toEqual({state:"admitted"});expect(client.calls.filter(call=>["sendPrompt","sendConversationCommandV4","resumeSession"].includes(call.method))).toHaveLength(0);}finally{await adapter.dispose();}
 });

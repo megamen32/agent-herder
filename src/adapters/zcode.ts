@@ -1901,19 +1901,17 @@ export class ZcodeAdapter implements HarnessAdapter {
       sessionId: id,
       limit: 200,
     }));
-    let events: Array<Record<string, unknown>>;
+    let events: Array<Record<string, unknown>> = [];
+    let eventReadError: string | undefined;
     try {
       events = await read();
     } catch (error) {
-      if (!isInactiveSessionError(error)) {
-        return { state: "unknown", error: error instanceof Error ? error.message : String(error) };
-      }
-      const resumed = await this.resumeSession(id);
-      if (!resumed.ok) return { state: "unknown", error: resumed.error || "native resume failed during admission reconciliation" };
-      try {
-        events = await read();
-      } catch (retryError) {
-        return { state: "unknown", error: retryError instanceof Error ? retryError.message : String(retryError) };
+      eventReadError = error instanceof Error ? error.message : String(error);
+      if (isInactiveSessionError(error)) {
+        const resumed = await this.resumeSession(id);
+        if (!resumed.ok) return { state: "unknown", error: resumed.error || "native resume failed during admission reconciliation" };
+        try { events = await read(); }
+        catch (retryError) { eventReadError = retryError instanceof Error ? retryError.message : String(retryError); }
       }
     }
     const identities = new Set([inputId, zcodeInputId(inputId, "automation")]);
@@ -1932,7 +1930,9 @@ export class ZcodeAdapter implements HarnessAdapter {
     let messageAdmitted = false;
     let messageReadError: string | undefined;
     try {
-      const messages = snapshotMessages(await this.callAgent("readSessionMessages", { ...workspace, sessionId: id, limit: 200 }));
+      let messages: ZcodeMessage[];
+      try { messages = snapshotMessages(await this.callAgent("readSessionMessages", { ...workspace, sessionId: id, limit: 200 })); }
+      catch { messages = snapshotMessages(await this.readSnapshot(id, workspace)); }
       for (const message of messages) {
         const info = record(message.info);
         const metadata = record(info.metadata);
@@ -1950,7 +1950,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       if (type === "turn.failed") return { state: "failed", error: admittedNativeTurnFailure(id, event) };
       if (["turn.completed", "turn.started", "turn.steerQueued", "turn.steerDrained"].includes(type || "")) admitted = true;
     }
-    return admitted ? { state: "admitted" } : { state: "unknown", error: messageReadError || "В доступной истории ZCode нет подтверждения этого сообщения; повторная отправка запрещена." };
+    return admitted ? { state: "admitted" } : { state: "unknown", error: messageReadError || eventReadError || "В доступной истории ZCode нет подтверждения этого сообщения; повторная отправка запрещена." };
   }
 
   async forkSession(_id: string, _message?: string): Promise<ControlResult> {
@@ -2031,14 +2031,25 @@ export class ZcodeAdapter implements HarnessAdapter {
           const available = record(record(record(state).settings).model).available;
           return (Array.isArray(available) ? available : []).map(record).find(option => {
             const ref = record(option.ref);
-            return ref.providerId === modelRef.providerId && ref.modelId === modelRef.modelId;
+            return ref.providerId === modelRef.providerId && ref.modelId === modelRef.modelId && Boolean(nonEmptyString(record(option.reasoning).defaultLevel));
           });
         };
-        // A session snapshot may expose only its current model. The same
-        // workspace catalog used by the picker carries defaults for new models.
-        const entry = findOption(snapshot) ?? findOption(await this.readNativeModelCatalog(workspace));
-        const defaultLevel = nonEmptyString(record(entry?.reasoning).defaultLevel);
+        // A session snapshot may expose only its current model. The native
+        // provider registry advertises the valid reasoning levels for new models.
+        const entry = findOption(snapshot);
+        const catalog = entry ? undefined : await this.readNativeModelCatalog(workspace);
+        const available = record(record(catalog?.settings).model).available;
+        const registryEntry = (Array.isArray(available) ? available : []).map(record).find(option => {
+          const ref = record(option.ref); return ref.providerId === modelRef.providerId && ref.modelId === modelRef.modelId;
+        });
+        const reasoning = record((entry ?? registryEntry)?.reasoning);
+        const levels = Array.isArray(reasoning.levels) ? reasoning.levels.map(record).map(level => nonEmptyString(level.value)).filter(Boolean) : [];
+        const currentLevel = currentModel?.options?.reasoningLevel;
+        const defaultLevel = nonEmptyString(reasoning.defaultLevel)
+          || (currentLevel && levels.includes(currentLevel) ? currentLevel : undefined)
+          || (levels.length === 1 ? levels[0] : undefined);
         if (defaultLevel) modelRef.options = { reasoningLevel: defaultLevel };
+        else if (levels.length) return { ok: false, error: "Для этой модели выберите уровень мышления в списке моделей." };
       }
       await this.callAgent("setModel", { ...workspace, sessionId, model: modelRef });
       return { ok: true };
@@ -2241,40 +2252,22 @@ export class ZcodeAdapter implements HarnessAdapter {
     }
   }
 
-  /** One prompt-free V4 snapshot using the installed workspace-config seam. */
-  private async readNativeModelCatalog(workspace: ZcodeWorkspaceRef): Promise<Record<string, unknown>> {
-    const params = { ...workspace, runtimePolicy: "existing-only", subscriberScope: `herder-models-${randomUUID()}` };
-    let subscriptionId: string | undefined;
-    const frames: Array<Record<string, unknown>> = [];
-    let notify: (() => void) | undefined;
-    if (!this.client.listen) throw new Error("Native model catalog subscriptions are unavailable");
-    const stop = this.client.listen("zcode-agent", "onDynamicWorkspaceConfigFrame", params, (value) => {
-      const root = record(value), frame = record(root.frame ?? root);
-      if (frame.topic !== `workspace-config/${workspace.workspaceKey}`) return;
-      if (subscriptionId && frame.subscriptionId !== subscriptionId) return;
-      if (frames.length >= 4) frames.shift(); frames.push(frame);
-      if (record(frame.payload).kind === "snapshot") notify?.();
-    });
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const response = record(await this.callAgent("subscribeWorkspaceConfigV4", params));
-      subscriptionId = nonEmptyString(record(response.ack).subscriptionId);
-      if (!subscriptionId) throw new Error("ZCode model catalog subscription has no receipt");
-      const snapshot = () => frames.find(frame => frame.subscriptionId === subscriptionId && record(frame.payload).kind === "snapshot");
-      if (!snapshot()) await new Promise<void>(resolve => { notify = resolve; timer = setTimeout(resolve, 2500); });
-      const frame = snapshot();
-      if (!frame) throw new Error("ZCode model catalog snapshot timed out");
-      const config = record(record(record(frame.payload).snapshot).config);
-      const options = Array.isArray(config.configOptions) ? config.configOptions.map(record) : [];
-      const available = options.flatMap(option => option.id === "model" && Array.isArray(option.options) ? option.options.map(record) : []).flatMap(option => {
-        const ref = typeof option.value === "string" ? parseModelName(option.value) : undefined;
-        return ref ? [{ ref, label: option.name, reasoning: { defaultLevel: option.modelDefaultThoughtLevel } }] : [];
+  /** Read the native provider registry; workspace config can be empty until a task is selected. */
+  private async readNativeModelCatalog(_workspace: ZcodeWorkspaceRef): Promise<Record<string, unknown>> {
+    const view = record(await this.client.call("model-selection", "getView", []));
+    const providers = Array.isArray(view.providers) ? view.providers.map(record) : [];
+    const available = providers.flatMap(provider => {
+      const providerId = nonEmptyString(provider.providerId);
+      const models = Array.isArray(provider.models) ? provider.models.map(record) : [];
+      return models.flatMap(model => {
+        const modelId = nonEmptyString(model.modelId), config = record(model.config);
+        if (!providerId || !modelId || config.enabled === false) return [];
+        const spec = record(record(config.optionSpecs).reasoningLevel);
+        const levels = Array.isArray(spec.values) ? spec.values.filter((value): value is string => typeof value === "string") : [];
+        return [{ ref: { providerId, modelId }, label: modelId, reasoning: { levels: levels.map(value => ({ value })) } }];
       });
-      return { settings: { model: { available } } };
-    } finally {
-      if (timer) clearTimeout(timer); stop();
-      if (subscriptionId) await this.callAgent("unsubscribeWorkspaceConfigV4", { ...params, subscriptionId }).catch(() => undefined);
-    }
+    });
+    return { settings: { model: { available } } };
   }
 
   private workspace(cwd = this.cwd): ZcodeWorkspaceRef {
