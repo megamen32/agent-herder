@@ -1923,3 +1923,38 @@ it("reads attached images from ZCode artifact source paths", async () => {
  try {expect((await adapter.getSessionMessages("session-1"))?.[0]?.parts).toEqual([{type:"image",imageUrl:"/api/session-images/"+"a".repeat(64),fileName:"Прикреплённое изображение"}]);}
  finally{await adapter.dispose();}
 });
+
+// Focused integration expected1s/max5s: staged guide ACK settles from exact native attribution.
+it("waits for a staged guide instead of declaring failure or replaying it", async () => {
+ class StagedGuideClient extends FakeClient {
+  override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   if(method==="sendConversationCommandV4") {this.calls.push({channel,method,args});const {envelope}=args[0] as {envelope:{commandId:string}};return {commandId:envelope.commandId,status:"accepted",result:{type:"inputAccepted",inputId:"native-guide",delivery:"queue"}};}
+   if(method==="readSessionMessages")return [{info:{role:"user",anchor:{turnId:"existing-turn",sourceCommandId:"guide-staged"},metadata:{inputIntent:{admittedDelivery:"guide",sourceCommandId:"guide-staged"}}},parts:[]}];
+   return super.call(channel,method,args);
+  }
+ }
+ const client=new StagedGuideClient(), adapter=new ZcodeAdapter({cwd:"/workspace",client});
+ try{
+  await expect(adapter.sendMessage("session-1",{message:"guide",steer:true,origin:"human",inputId:"guide-staged"})).resolves.toEqual({ok:true,pending:true,inputId:"guide-staged"});
+  await expect(adapter.getMessageAdmission("session-1","guide-staged")).resolves.toEqual({state:"admitted"});
+  expect(client.calls.filter(call=>call.method==="sendConversationCommandV4")).toHaveLength(1);
+ }finally{await adapter.dispose();}
+});
+// Focused integration expected1s/max5s: explicit picker loads only the existing native session.
+it('changes model in a cold existing session without creating a turn', async()=>{
+ class ColdPickerClient extends FakeClient {
+  cold=true;
+  override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   if(method==='readSession'&&this.cold)throw new Error('Session not found');
+   if(method==='resumeSession')this.cold=false;
+   return super.call(channel,method,args);
+  }
+ }
+ const client=new ColdPickerClient(),adapter=new ZcodeAdapter({cwd:'/workspace',client});
+ try {
+  await expect(adapter.changeModel('session-1','zai/GLM-5.3-Flash$high')).resolves.toEqual({ok:true});
+  expect(client.calls.filter(call=>call.method==='resumeSession')).toHaveLength(1);
+  expect(client.calls.find(call=>call.method==='setModel')?.args[0]).toMatchObject({sessionId:'session-1',model:{providerId:'zai',modelId:'GLM-5.3-Flash',options:{reasoningLevel:'high'}}});
+  expect(client.calls.some(call=>['createSession','sendPrompt','sendConversationCommandV4'].includes(call.method))).toBe(false);
+ }finally{await adapter.dispose();}
+});

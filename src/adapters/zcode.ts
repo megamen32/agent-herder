@@ -1749,8 +1749,14 @@ export class ZcodeAdapter implements HarnessAdapter {
         || !["guide", "queue", "startNow"].includes(String(nativeInput.delivery))) {
         throw new Error("ZCode подтвердил команду без подтверждения приёма сообщения; повторная отправка запрещена.");
       }
-      if ((requestedDelivery === "guide" && nativeInput.delivery === "queue")
-        || (requestedDelivery === "queue" && nativeInput.delivery === "guide")) {
+      if (requestedDelivery === "guide" && nativeInput.delivery === "queue") {
+        // Native V4 stages a guide in its queue until a safe tool/model boundary.
+        // Its persisted inputIntent then proves admittedDelivery=guide in the
+        // original turn. ACK alone is pending, never failure or permission to replay.
+        this.ensureSessionEventSubscription(id, workspace);
+        return { ok: true, pending: true, inputId };
+      }
+      if (requestedDelivery === "queue" && nativeInput.delivery === "guide") {
         return { ok: false, admitted: true, inputId, nonRetryable: true,
           error: `ZCode принял сообщение в другом режиме (${String(nativeInput.delivery)}); повторная отправка запрещена.` };
       }
@@ -1919,7 +1925,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       for (const message of messages) {
         const info = record(message.info);
         const metadata = record(info.metadata);
-        if (info.role !== "user" || ![info.sourceCommandId, metadata.sourceCommandId, metadata.inputId].some(matches)) continue;
+        if (info.role !== "user" || ![info.sourceCommandId, record(info.anchor).sourceCommandId, metadata.sourceCommandId, metadata.inputId, record(metadata.inputIntent).sourceCommandId, record(metadata.conversationInputIntent).sourceCommandId].some(matches)) continue;
         messageAdmitted = true;
         addIdentity(metadata.inputId);
       }
@@ -2002,7 +2008,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   async changeModel(sessionId: string, model: string): Promise<{ ok: boolean; error?: string }> {
     try {
       const workspace = this.sessionWorkspaces.get(sessionId) || this.workspace();
-      const snapshot = await this.readSnapshot(sessionId, workspace, 1);
+      const snapshot = await this.readConversationBaseline(sessionId);
       const current = record(record(snapshot).settings).model;
       const currentModel = record(current).current as ZcodeModelRef | undefined;
       const modelRef = await this.resolveModelRef(model, currentModel?.providerId);
