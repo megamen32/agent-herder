@@ -5,8 +5,7 @@ import './fleet.css';
 import {FleetBrowserIntent,type FleetIntent} from './intent.js';
 import type {MeshAddress} from '../../mesh/protocol.js';
 import {fleetSessionLink} from './session-link.js';
-const states={ready:'Доступен',metadata_only:'Только просмотр',offline:'Не в сети',unavailable:'Не отвечает',stale:'Данные устарели'};
-const hostState=(host:FleetHost)=>host.reason==='local_herder_not_registered'?'Herder не подключён':states[host.state];
+import {machineName,machineStatus,machineReason} from './machine-labels.js';
 /** Mount once for one authenticated browser identity. Remote session selection retains its full native address. */
 export function FleetCabinet({defaultHostId,onSelectSession,client:injected}:{defaultHostId?:string;onSelectSession?:(session:FleetSession)=>void;client?:FleetClient}){
  const client=useRef(injected??createFleetClient()).current;
@@ -49,15 +48,15 @@ export function FleetCabinet({defaultHostId,onSelectSession,client:injected}:{de
   finally{ownMutation.current=false;setSending(false);}
  };
  return <section className="fleet-cabinet" aria-label="Машины и сессии">
-  <header><h2>Машины и сессии</h2><button type="button" onClick={()=>{setError('');setRefresh(r=>r+1);}}>Обновить</button></header>
+  <header><div><h2>Машины</h2><p>Выберите, где смотреть историю и создавать сессии.</p></div><button type="button" className="quiet-button" disabled={loading} onClick={()=>{setError('');setRefresh(r=>r+1);}}>{loading?'Проверяю…':'Проверить связь'}</button></header>
   {loading&&<p role="status">Получаю список машин…</p>}
-  <label>Машина <select value={hostId} disabled={loading||sending} onChange={e=>{setHostId(e.target.value);if(receipt?.state!=='unknown')setReceipt(null);}}><option value="">Все машины</option>{hosts.map(h=><option key={h.hostId} value={h.hostId}>{h.label} · {hostState(h)}</option>)}</select></label>
-  <div className="fleet-hosts">{hosts.map(h=><article key={h.hostId}><strong>{h.label}</strong><span>{hostState(h)}</span>{h.uiUrl&&<a href={h.uiUrl}>Открыть кабинет</a>}</article>)}</div>
+  <fieldset className="fleet-machine-picker"><legend>Машина</legend><div className="fleet-hosts"><label className={`fleet-machine-option ${!hostId?'selected':''}`}><input type="radio" name="fleet-machine" value="" checked={!hostId} disabled={loading||sending} onChange={()=>{setHostId('');if(receipt?.state!=='unknown')setReceipt(null);}}/><span><strong>Все машины</strong><small>Общий список сессий</small></span></label>{hosts.map(h=><label key={h.hostId} className={`fleet-machine-option ${hostId===h.hostId?'selected':''}`}><input type="radio" name="fleet-machine" value={h.hostId} checked={hostId===h.hostId} disabled={loading||sending} onChange={()=>{setHostId(h.hostId);if(receipt?.state!=='unknown')setReceipt(null);}}/><span><strong>{machineName(h)}</strong><span className={`machine-status ${h.state}`}>{machineStatus(h)}</span><small>{machineReason(h)}</small></span></label>)}</div></fieldset>
+  {selected?.uiUrl&&<a className="fleet-native-link" href={selected.uiUrl}>Открыть отдельный кабинет · {machineName(selected)} ↗</a>}
   {error&&<p role="alert">{error}</p>}{partial&&<p>Показана часть доступных сессий. У некоторых машин нет свежих данных.</p>}
   <ul className="fleet-sessions">{sessions.map(s=>{const host=hosts.find(h=>h.hostId===s.address.hostId);const link=host&&fleetSessionLink(host,s.address);return <li key={s.key}><strong>{s.title||s.address.nativeSessionId}</strong><span>{host?.label??s.address.hostId} · {s.address.harness} · {s.status}</span><span>Текущий проект: {s.project.currentCwd??'не подтверждён'}</span>{s.project.launchCwd&&<small>Каталог запуска: {s.project.launchCwd}</small>}{directRead?<button type="button" onClick={()=>inspect(s.address)}>Открыть сессию</button>:onSelectSession?<button type="button" onClick={()=>onSelectSession(s)}>Открыть сессию</button>:link&&<a href={link}>Открыть сессию</a>}</li>;})}</ul>
   {reading&&<p role="status">Читаю сессию выбранной машины…</p>}
   {view&&<article ref={viewElement} tabIndex={-1} className="fleet-session-view" aria-label="Сессия выбранной машины"><h3>{view.title}</h3><p>{hosts.find(h=>h.hostId===view.address.hostId)?.label??view.address.hostId} · {view.address.harness} · {view.model}</p><p>{view.cwd}</p>{view.historyUnavailable?<p>История этой нативной сессии пока недоступна. Сессия подтверждена; сообщения не отправлялись повторно.</p>:view.messages.length?view.messages.map((m,i)=><div key={i}><strong>{m.role==='user'?'Вы':m.role==='assistant'?'Агент':'Сообщение'}</strong><pre>{m.text??''}</pre></div>):<p>Сессия пока пустая.</p>}<button type="button" onClick={()=>setView(null)}>Закрыть просмотр</button></article>}
-  <form onSubmit={submit}><h3>Новая сессия</h3><p>{selected?selected.label:'Выберите машину'}</p>
+  <form onSubmit={submit}><h3>Новая сессия</h3><p>{selected?`На машине: ${machineName(selected)}`:'Для создания выберите одну машину выше.'}</p>
    <label>Среда <select value={harness} onChange={e=>setHarness(e.target.value as FleetHarness)} disabled={!allowed.length||sending}>{allowed.map(h=><option key={h}>{h}</option>)}</select></label>
    <label>Название <input required maxLength={128} value={name} onChange={e=>setName(e.target.value)} disabled={sending}/></label>
    <label>Каталог проекта на выбранной машине <input required placeholder="/home/roomhacker/project" maxLength={4096} value={cwd} onChange={e=>setCwd(e.target.value)} disabled={sending}/></label>

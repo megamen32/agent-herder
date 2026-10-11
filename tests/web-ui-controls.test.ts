@@ -5,6 +5,7 @@ import { DEFAULT_THEME, applyTheme, normalizeTheme, readTheme, writeTheme } from
 import { currentModelOption, modelSwitchSupported, requestModelChange, shortModelLabel } from "../src/web-ui/model-chip.js";
 
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
+const polish = readFileSync(new URL("../src/web-ui/interface-polish.css", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/web-ui/styles.css", import.meta.url), "utf8");
 const themeCss = readFileSync(new URL("../src/web-ui/codex-theme.css", import.meta.url), "utf8");
 const themeHtml = readFileSync(new URL("../src/web-ui/index.html", import.meta.url), "utf8");
@@ -79,7 +80,7 @@ describe("mobile chat and session controls", () => {
 
   it("shows every automation control supported by the active harness", () => {
     const headerStart = main.indexOf('<div className="header-actions">');
-    const headerEnd = main.indexOf("</header>", headerStart);
+    const headerEnd = main.indexOf("{chatMenuOpen &&", headerStart);
     const header = main.slice(headerStart, headerEnd);
     const menuStart = main.indexOf('<div className="chat-menu"');
     const menuEnd = main.indexOf("</div>", main.indexOf("Квота</button>"));
@@ -88,12 +89,12 @@ describe("mobile chat and session controls", () => {
     expect(headerStart).toBeGreaterThan(-1);
     expect(menuStart).toBeGreaterThan(-1);
     expect(main).toContain('const AUTOCONTINUE_HARNESSES = new Set(["codex", "zcode"])');
-    expect(header).toContain("activeHarnessSupportsAutocontinue");
-    expect(header).toContain("activeHarnessSupportsAutopilot");
-    expect(header).toContain('>Автопродолжение<span className={`toggle-dot');
-    expect(header).toContain('>Автопилот<span className={`toggle-dot');
-    expect(header).toContain("activeAutocontinueEnabled");
-    expect(header).toContain('activeAutopilotEnabled');
+    expect(header).toContain('aria-label="Настройки сессии"');
+    expect(header).toContain('aria-label="Меню чата"');
+    for (const label of ['>Машины<', '>Задачи<', '>Статистика<', '>Автопилот<', '>Автопродолжение<']) expect(header).not.toContain(label);
+    expect(main).toContain('onMachines={() => { setShowFleet(true)');
+    expect(main).toContain('>Автопилот</button>');
+    expect(main).toContain('>Автопродолжение</button>');
     expect(menu).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
     expect(menu).toContain('Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})');
   });
@@ -126,12 +127,10 @@ describe("mobile chat and session controls", () => {
 
   it("keeps automation modes discoverable on mobile with their current state", () => {
     expect(main).toContain('React.useState(() => window.innerWidth > 1180)');
-    expect(main).toContain('aria-label="Открыть настройки автоматизации"');
-    expect(main).toContain('>Автоматизация</button>');
+    expect(main).toContain('aria-label="Меню чата" aria-expanded={chatMenuOpen}');
     expect(main).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
     expect(main).toContain('Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})');
-    expect(styles).toContain('.header-actions .mobile-automation-button { display: inline-flex;');
-    expect(styles).toContain('.header-actions .desktop-chat-menu { display: none; }');
+    expect(polish).toContain('.header-actions .desktop-chat-menu, .header-actions .session-inspector-button { display: grid; }');
     expect(styles).toContain('@media (max-width: 900px)');
     expect(styles).toContain('.inspector-pane { display: flex; flex-direction: column; position: fixed; inset: 0; z-index: 45;');
   });

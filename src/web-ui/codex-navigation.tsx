@@ -1,11 +1,12 @@
 import * as React from "react";
 
 type NavigationProps = {
-  active: "chat" | "jobs" | "statistics";
+  active: "chat" | "jobs" | "statistics" | "machines";
   onChat: () => void;
   onNew: () => void;
   onJobs: () => void;
   onStatistics: () => void;
+  onMachines: () => void;
 };
 
 const paths = {
@@ -13,12 +14,14 @@ const paths = {
   new: "M12 5v14M5 12h14",
   jobs: "M8 4H5v17h14V4h-3M8 3h8v4H8ZM8 12h8M8 16h5",
   statistics: "M4 20V12M10 20V4M16 20V9M22 20H2",
+  machines: "M3 4h18v12H3ZM8 21h8M12 16v5",
 };
 
 export function CodexNavigation(props: NavigationProps) {
   const items = [
     { id: "chat", label: "Чаты", action: props.onChat },
     { id: "new", label: "Новый чат", action: props.onNew },
+    { id: "machines", label: "Машины", action: props.onMachines },
     { id: "jobs", label: "Задачи", action: props.onJobs },
     { id: "statistics", label: "Статистика", action: props.onStatistics },
   ] as const;
