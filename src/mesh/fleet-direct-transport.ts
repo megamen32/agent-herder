@@ -100,9 +100,10 @@ export class FleetDirectTransport implements GptAdminTransport {
   if(!['codex','zcode','opencode'].includes(harness)||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))throw new Error('direct_session_invalid');
   return this.rpc(this.peer(target),'session/read',{harness,sessionId},this.deadlineMs);
  }
+ readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}
  schema(target:string):Promise<unknown>{return this.rpc(this.peer(target),'tools/list',{},this.deadlineMs);}
  call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
-  if(!['fleet_node_info','mesh_snapshot','create_session'].includes(tool))throw new Error('direct_tool_not_authorized');
+  if(!['fleet_node_info','mesh_snapshot','create_session','fleet_session_page'].includes(tool))throw new Error('direct_tool_not_authorized');
   if(tool==='create_session'){
    if(!idempotencyKey||!/^[a-f0-9]{64}$/.test(idempotencyKey))throw new Error('direct_create_identity_missing');
    return this.rpc(this.peer(target),'tools/call',{name:'fleet_create_session',arguments:{...args,inputId:idempotencyKey}},30000);

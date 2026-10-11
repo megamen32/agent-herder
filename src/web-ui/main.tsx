@@ -8,6 +8,11 @@ import { LaunchPolicySettings } from "./launch-policy-settings.js";
 import "./styles.css";
 import "./codex-theme.css";
 import { CodexNavigation } from "./codex-navigation.js";
+import {useFleetDirectory} from './fleet/use-directory.js';
+import {directorySession} from './fleet/session-directory.js';
+import {RemoteSessionView} from './fleet/RemoteSessionView.js';
+import {SessionViewCache,indexedViewCacheStore,readViewCacheSettings,writeViewCacheSettings,type ViewCacheSettings} from './fleet/view-cache.js';
+import type {MeshAddress} from '../mesh/protocol.js';
 import { FleetCabinet } from "./fleet/FleetCabinet.js";
 import { creationModels } from "./creation-models.js";
 import { groupSessionMessages } from "./message-groups.js";
@@ -594,7 +599,7 @@ function AutomationSettings({ section, state, draft, saving, error, saved, conti
   </section>;
 }
 
-function SessionList({ entries, activeKey, loading, refreshing, settings, settingsOpen, searchOpen, searchQuery, options, choicesBySession, choosingRequestId, choiceError, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect, onChoose, onNewSession }: {
+function SessionList({ entries, activeKey, loading, refreshing, settings, settingsOpen, searchOpen, searchQuery, options, choicesBySession, choosingRequestId, choiceError, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect, onChoose, onNewSession, cacheSettings, onCacheSettings, onCacheClear, directoryStatus, onLoadMore, }: {
   entries: SessionListEntry[];
   activeKey?: string;
   loading: boolean;
@@ -603,7 +608,8 @@ function SessionList({ entries, activeKey, loading, refreshing, settings, settin
   settingsOpen: boolean;
   searchOpen: boolean;
   searchQuery: string;
-  options: { cwds: string[]; projects: string[]; harnesses: string[] };
+  options: { cwds: string[]; projects: string[]; harnesses: string[]; hosts: {hostId:string;label:string}[] };
+  cacheSettings:ViewCacheSettings; onCacheSettings:(s:ViewCacheSettings)=>void; onCacheClear:()=>void; directoryStatus:string; onLoadMore?:()=>void;
   choicesBySession: ReadonlyMap<string, WebAutopilotChoiceCard>;
   choosingRequestId?: string;
   choiceError?: { requestId: string; message: string };
@@ -617,18 +623,23 @@ function SessionList({ entries, activeKey, loading, refreshing, settings, settin
   onChoose: (requestId: string, choiceId: string) => void;
   onNewSession: () => void;
 }) {
+  const [windowSize,setWindowSize]=React.useState(150);
+  React.useEffect(()=>setWindowSize(150),[settings.hostId,settings.harness,settings.cwd,settings.project,settings.sort,settings.showAll,searchQuery]);
   return <nav className="sessions-pane" aria-label="Сессии">
     <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Сессии {refreshing && <span className="inline-loading-dot" role="status" aria-label="Обновление сессий" />}</h1></div><div className="sessions-heading-actions"><button type="button" className="icon-button" aria-label="Новая сессия" title="Новая сессия" onClick={onNewSession}>+</button><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Поиск сессий" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Настройки списка" aria-expanded={settingsOpen} onClick={onSettingsToggle}>⚙</button></div></div>
     {searchOpen && <div className="session-search"><input autoFocus value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Поиск: название, агент, проект…" aria-label="Поиск по сессиям" /></div>}
     {settingsOpen && <div className="session-settings" aria-label="Настройки списка сессий">
       <label>Папка<select value={settings.cwd} onChange={(event) => onSettingsChange({ cwd: event.target.value })}><option value="">Все папки</option>{options.cwds.map((cwd) => <option value={cwd} key={cwd}>{cwd}</option>)}</select></label>
       <label>Проект<select value={settings.project} onChange={(event) => onSettingsChange({ project: event.target.value })}><option value="">Все проекты</option>{options.projects.map((project) => <option value={project} key={project}>{project}</option>)}</select></label>
+      <label>Машина<select aria-label="Машина" value={settings.hostId??""} onChange={event=>onSettingsChange({hostId:event.target.value})}><option value="">Все машины</option>{options.hosts.map(host=><option key={host.hostId} value={host.hostId}>{host.label}</option>)}</select></label>
       <label>Агент<select value={settings.harness} onChange={(event) => onSettingsChange({ harness: event.target.value })}><option value="">Все агенты</option>{options.harnesses.map((harness) => <option value={harness} key={harness}>{harness}</option>)}</select></label>
       <label>Сортировка<select value={settings.sort} onChange={(event) => onSettingsChange({ sort: event.target.value as SessionListSort })}><option value="activity">По активности</option><option value="status">По статусу</option><option value="harness">По агенту</option><option value="title">По названию</option><option value="cwd">По папке</option></select></label>
       <label className="session-toggle"><input type="checkbox" aria-label="Показывать все сессии" checked={settings.showAll} onChange={(event) => onSettingsChange({ showAll: event.target.checked })} /> Показывать завершённые сессии</label>
     </div>}
+    {settingsOpen&&<details className="session-cache-settings"><summary>Быстрое открытие сессий</summary><label>Хранить просмотр в этом браузере<select aria-label="Срок кэша сессий" value={cacheSettings.hours} onChange={e=>onCacheSettings({...cacheSettings,hours:Number(e.target.value)})}><option value={0}>Выключено</option><option value={24}>Сутки</option><option value={72}>3 дня</option><option value={168}>Неделя</option></select></label><label>Размер кэша<select aria-label="Размер кэша сессий" value={cacheSettings.maxMiB} onChange={e=>onCacheSettings({...cacheSettings,maxMiB:Number(e.target.value)})}>{[16,32,64].map(size=><option key={size} value={size}>{size} МБ</option>)}</select></label><small>Только открытые сессии. История остальных остаётся на их машине. При открытии сохранённый просмотр обновляется.</small><button className="quiet-button" onClick={onCacheClear}>Очистить сохранённый просмотр</button></details>}
+    {directoryStatus&&<small className="directory-status" role="status">{directoryStatus}</small>}{onLoadMore&&<button className="quiet-button" onClick={onLoadMore}>Загрузить следующие названия</button>}
     <div className="session-list" role="list" aria-label="Сессии">
-      {entries.map(({ session, depth, hasChildren }) => {
+      {entries.slice(0,windowSize).map(({ session, depth, hasChildren }) => {
         const key = keyOf(session);
         const decision = choicesBySession.get(key);
         const title = cleanSessionTitle(session.title) || session.title || session.id;
@@ -640,7 +651,7 @@ function SessionList({ entries, activeKey, loading, refreshing, settings, settin
           <div className="session-card">
             <button className={`session-row ${key === activeKey ? "selected" : ""}`} aria-label={`${title}, ${session.harness}, ${label}`} onClick={() => onSelect(key)}>
               <span className={`status-dot status-${statusClassValue}`} aria-hidden="true" />
-              <span className="session-copy"><strong title={session.title || session.id}>{title}</strong><small>{session.harness} · <span className={`status-label status-${statusClassValue}`}>{label}</span></small><small className="session-preview">{cleanPreview(session.lastMessage) || session.cwd}</small></span>
+              <span className="session-copy"><strong title={session.title || session.id}>{title}</strong><small>{session.hostLabel&&<>{session.hostLabel} · </>}{session.harness} · <span className={`status-label status-${statusClassValue}`}>{label}</span></small><small className="session-preview">{cleanPreview(session.lastMessage) || session.cwd}</small></span>
               <time title={new Date(session.lastActivity).toLocaleString()}>{formatSessionAge(session.lastActivity)}</time>
             </button>
             {decision && <div className="choice-card" aria-label={`Варианты автопилота для ${title}`}>
@@ -651,6 +662,7 @@ function SessionList({ entries, activeKey, loading, refreshing, settings, settin
           </div>
         </div>;
       })}
+      {entries.length>windowSize&&<button className="quiet-button" onClick={()=>setWindowSize(n=>n+150)}>Показать ещё · всего {entries.length}</button>}
       {loading && entries.length === 0 && <div className="session-skeletons" aria-label="Загрузка сессий">{Array.from({ length: 8 }, (_, index) => <div className="session-skeleton" key={index}><span /><div><b /><i /><i /></div></div>)}</div>}
       {!loading && entries.length === 0 && <div className="empty-list">Нет сессий по этим настройкам.</div>}
     </div>
@@ -658,6 +670,19 @@ function SessionList({ entries, activeKey, loading, refreshing, settings, settin
 }
 
 function App() {
+  const [listSettings, setListSettings] = React.useState<SessionListSettings>({ cwd: "", project: "", harness: "", hostId:"", sort: "activity", showAll: true });
+  const directory=useFleetDirectory(listSettings.hostId);
+  const [remoteSelection,setRemoteSelection]=React.useState<MeshAddress>();
+  const [viewCacheSettings,setViewCacheSettings]=React.useState(()=>readViewCacheSettings(window.localStorage));
+  const cacheSettingsRef=React.useRef(viewCacheSettings);cacheSettingsRef.current=viewCacheSettings;
+  const viewCache=React.useRef(new SessionViewCache(indexedViewCacheStore(),()=>cacheSettingsRef.current)).current;
+  const [cacheEpoch,setCacheEpoch]=React.useState(0);
+  const [detailsVerified,setDetailsVerified]=React.useState(false);
+  const scopeRef=React.useRef(directory.scope);
+  React.useEffect(()=>{if(scopeRef.current!==directory.scope){scopeRef.current=directory.scope;detailsRequestRef.current+=1;setDetails(null);setDetailsVerified(false);setCachedDetails(false);}},[directory.scope]);
+  const [cachedDetails,setCachedDetails]=React.useState(false);
+  React.useEffect(()=>{void viewCache.prune();},[viewCache]);
+  const changeCacheSettings=(next:ViewCacheSettings)=>{setViewCacheSettings(next);try{writeViewCacheSettings(window.localStorage,next);}catch{}void viewCache.prune();};
   const [sessions, setSessions] = React.useState<HerderSession[]>([]);
   const [activeKey, setActiveKey] = React.useState<string | undefined>(() => readSessionFromHash() ?? window.localStorage.getItem("agent-herder.active-session") ?? undefined);
   const activeKeyRef = React.useRef(activeKey);
@@ -698,7 +723,6 @@ function App() {
   const [showSessionSettings, setShowSessionSettings] = React.useState(false);
   const [showSessionSearch, setShowSessionSearch] = React.useState(false);
   const [sessionSearch, setSessionSearch] = React.useState("");
-  const [listSettings, setListSettings] = React.useState<SessionListSettings>({ cwd: "", project: "", harness: "", sort: "activity", showAll: false });
   const [autopilotChoices, setAutopilotChoices] = React.useState<WebAutopilotChoiceCard[]>([]);
   const [choosingRequestId, setChoosingRequestId] = React.useState<string>();
   const [choiceError, setChoiceError] = React.useState<{ requestId: string; message: string }>();
@@ -947,6 +971,8 @@ function App() {
     const { harness, id } = splitKey(key);
     const base = `/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/details`;
     setDetailsError(undefined);
+    if(hydrateFull){setDetailsVerified(false);if(directory.scope&&directory.localHostId){void viewCache.get<SessionDetails>(directory.scope,{hostId:directory.localHostId,harness,nativeSessionId:id}).then(r=>{if(r&&r.value.session?.id===id&&r.value.session?.harness===harness&&requestId===detailsRequestRef.current&&!liveLoaded){setDetails(r.value);setCachedDetails(true);setDetailsLoading(false);}});}}
+    let liveLoaded=false;
     // Фоновое обновление по событию (hydrateFull=false) приходит постоянно, пока
     // активны сессии. Раньше оно гасило details и включало detailsLoading, поэтому
     // на всё время запроса переписка подменялась заглушкой «Загружаю свежие
@@ -962,6 +988,9 @@ function App() {
       const latestStartedAt = performance.now();
       const latest = await api<SessionDetails>(`${base}?limit=12&quick=1`);
       if (requestId !== detailsRequestRef.current) return;
+      if(latest.session?.id!==id||latest.session?.harness!==harness)throw new Error('Не удалось подтвердить выбранную сессию');
+      liveLoaded=true;setCachedDetails(false);setDetailsVerified(true);
+      if(directory.scope&&directory.localHostId)void viewCache.put(directory.scope,{hostId:directory.localHostId,harness,nativeSessionId:id},latest);
       setLatestTimingMs(performance.now() - latestStartedAt);
       setDetails((current) => {
         if (hydrateFull || !current || keyOf(current.session) !== key) return latest;
@@ -977,14 +1006,16 @@ function App() {
       const full = await api<SessionDetails>(`${base}?limit=50`);
       if (requestId !== detailsRequestRef.current) return;
       setHydrateTimingMs(performance.now() - hydrateStartedAt);
+      if(full.session?.id!==id||full.session?.harness!==harness)throw new Error('Не удалось подтвердить выбранную сессию');
       setDetails(full);
+      if(directory.scope&&directory.localHostId)void viewCache.put(directory.scope,{hostId:directory.localHostId,harness,nativeSessionId:id},full);
     } catch (error) {
       if (requestId !== detailsRequestRef.current) return;
       setDetailsError((error as Error).message);
     } finally {
       if (requestId === detailsRequestRef.current) { setDetailsLoading(false); setDetailsHydrating(false); }
     }
-  }, []);
+  }, [directory.scope,directory.localHostId,viewCache]);
   React.useEffect(() => {
     if (!activeKey) { detailsRequestRef.current += 1; setDetails(null); setDetailsLoading(false); setDetailsHydrating(false); setLatestTimingMs(undefined); setHydrateTimingMs(undefined); return; }
     void loadDetails(activeKey);
@@ -1086,12 +1117,18 @@ function App() {
     });
     return () => { cancelled = true; };
   }, [activeSession?.harness, activeSession?.id]);
-  const sessionMap = React.useMemo(() => new Map(sessions.map((session) => [keyOf(session), session])), [sessions]);
+  const displaySessions=React.useMemo(()=>{
+    const local=sessions.map(s=>({...s,hostId:directory.localHostId,hostLabel:directory.hosts.find(h=>h.hostId===directory.localHostId)?.label}));
+    const keys=new Set(local.map(keyOf));
+    return [...local,...directory.rows.flatMap(row=>{const host=directory.hosts.find(h=>h.hostId===row.address.hostId);if(!host)return [];const s=directorySession(row,host,directory.localHostId);return keys.has(keyOf(s))?[]:[s];})];
+  },[sessions,directory.rows,directory.hosts,directory.localHostId]);
+  const sessionMap = React.useMemo(() => new Map(displaySessions.map((session) => [keyOf(session), session])), [displaySessions]);
   const listOptions = React.useMemo(() => ({
-    cwds: [...new Set(sessions.map((session) => session.cwd).filter(Boolean))].sort(),
-    projects: [...new Set(sessions.map((session) => projectFor(session, sessionMap)).filter(Boolean))].sort(),
-    harnesses: [...new Set(sessions.map((session) => session.harness).filter(Boolean))].sort(),
-  }), [sessions, sessionMap]);
+    hosts:directory.hosts,
+    cwds: [...new Set(displaySessions.map((session) => session.cwd).filter(Boolean))].sort(),
+    projects: [...new Set(displaySessions.map((session) => projectFor(session, sessionMap)).filter(Boolean))].sort(),
+    harnesses: [...new Set(displaySessions.map((session) => session.harness).filter(Boolean))].sort(),
+  }), [displaySessions, sessionMap, directory.hosts]);
   const choicesBySession = React.useMemo(() => {
     const result = new Map<string, WebAutopilotChoiceCard>();
     for (const choice of autopilotChoices) {
@@ -1101,11 +1138,11 @@ function App() {
     return result;
   }, [autopilotChoices]);
   const choiceSessionKeys = React.useMemo(() => new Set(choicesBySession.keys()), [choicesBySession]);
-  const sessionEntries = React.useMemo(() => filterAndArrangeSessions(sessions, listSettings, collapsedChildren, choiceSessionKeys), [sessions, listSettings, collapsedChildren, choiceSessionKeys]);
+  const sessionEntries = React.useMemo(() => filterAndArrangeSessions(displaySessions, listSettings, collapsedChildren, choiceSessionKeys), [displaySessions, listSettings, collapsedChildren, choiceSessionKeys]);
   const visibleSessionEntries = React.useMemo(() => sessionEntries.filter(({ session }) => matchesSessionQuery(session, sessionSearch)), [sessionEntries, sessionSearch]);
   React.useEffect(() => {
     if (activeKey && (activeKey === deepLinkKey || visibleSessionEntries.some(({ session }) => keyOf(session) === activeKey))) return;
-    selectSession(visibleSessionEntries[0] ? keyOf(visibleSessionEntries[0].session) : undefined);
+    const first=visibleSessionEntries.find(e=>!e.session.remote);selectSession(first ? keyOf(first.session) : undefined);
   }, [activeKey, visibleSessionEntries, deepLinkKey, selectSession]);
   const chooseAutopilot = async (requestId: string, choiceId: string) => {
     if (choosingRequestId) return;
@@ -1395,6 +1432,7 @@ function App() {
   const changeStatisticsDays = (days: number) => { setStatisticsDays(days); void loadStatistics(days); };
 
   const runAction = async (action: "resume" | "stop" | "recover") => {
+    if(!detailsVerified||cachedDetails)return;
     if (!activeKey || (action === "resume" && resumeSending)) return;
     if (action === "resume") setResumeSending(true);
     if (action === "stop") messageDispatcherRef.current.cancelPending(activeKey);
@@ -1450,7 +1488,7 @@ function App() {
     void loadModelOptions(modelSwitchHarness);
   };
   const changeSessionModel = async (model: string) => {
-    if (!activeKey || !modelSwitchHarness || modelSwitching) return;
+    if (!detailsVerified || cachedDetails || !activeKey || !modelSwitchHarness || modelSwitching) return;
     setModelSwitching(true);
     setModelSwitchError(undefined);
     try {
@@ -1467,7 +1505,7 @@ function App() {
   React.useEffect(() => { setModelMenuOpen(false); setModelSwitchError(undefined); }, [activeKey]);
   const isResumeMode = !composer.trim() && (activeSession?.status === "stopped" || activeSession?.status === "error" || activeSession?.meta?.humanStopHeld === true);
   const activeJobsCount = jobs.filter((job) => job.state === "queued" || job.state === "running" || job.state === "waiting" || job.state === "cancelling").length;
-  const readOnlySession = activeSession?.meta?.readOnly === true;
+  const readOnlySession = !detailsVerified || cachedDetails || activeSession?.meta?.readOnly === true;
   const archivedSession = activeSession?.status === "archived" || activeSession?.meta?.archived === true;
   const visualizationUrl = activeSession
     ? `/api/sessions/${encodeURIComponent(activeSession.harness)}/${encodeURIComponent(activeSession.id)}/visualization`
@@ -1719,10 +1757,12 @@ function App() {
     ? (sessionAutostart?.enabled ?? false)
     : Boolean(runtimeSettingsDraft?.enabled);
 
-  return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"} ${(!showInspector || showStatistics || showJobs || showQuota || automationSettings) ? "no-inspector" : ""}`}>
+  return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"} ${(!showInspector || showStatistics || showJobs || showQuota || automationSettings || remoteSelection) ? "no-inspector" : ""}`}>
     <CodexNavigation active={showJobs ? "jobs" : showStatistics ? "statistics" : "chat"} onChat={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); }} onNew={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); void openCreateSession(); }} onJobs={() => { setShowJobs(true); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); }} onStatistics={() => { setShowJobs(false); setShowQuota(false); setAutomationSettings(undefined); openStatistics(); }} />
-    <SessionList onNewSession={openCreateSession} entries={visibleSessionEntries} activeKey={activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { shouldFollowRef.current = true; setShowScrollToLatest(false); setShowStatistics(false); setShowJobs(false); selectSession(key); setMobileView("chat"); }} />
-    <section className="chat-pane">
+    <SessionList cacheSettings={viewCacheSettings} onCacheSettings={changeCacheSettings} onCacheClear={()=>{void viewCache.clear();if(cachedDetails)setDetails(null);setCacheEpoch(n=>n+1);}} directoryStatus={directory.error||(directory.pending?"Обновляются названия сессий…":directory.partial?"Часть машин ещё не передала полный список.":"")} onLoadMore={directory.more&&!directory.pending?()=>void directory.load(true):undefined} onNewSession={openCreateSession} entries={visibleSessionEntries} activeKey={remoteSelection?`mesh:${JSON.stringify([remoteSelection.hostId,remoteSelection.harness,remoteSelection.nativeSessionId])}`:activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { const selected=displaySessions.find(s=>keyOf(s)===key);if(selected?.remote&&selected.hostId){setRemoteSelection({hostId:selected.hostId,harness:selected.harness,nativeSessionId:selected.id});setMobileView("chat");return;}setRemoteSelection(undefined);shouldFollowRef.current = true; setShowScrollToLatest(false); setShowStatistics(false); setShowJobs(false); selectSession(key); setMobileView("chat"); }} />
+    {remoteSelection&&directory.hosts.find(h=>h.hostId===remoteSelection.hostId)&&<RemoteSessionView key={cacheEpoch} address={remoteSelection} host={directory.hosts.find(h=>h.hostId===remoteSelection.hostId)!} scope={directory.scope} cache={viewCache} onClose={()=>{setRemoteSelection(undefined);setMobileView("sessions");}}/>}
+    <section className="chat-pane" style={remoteSelection?{display:'none'}:undefined}>
+      {cachedDetails&&<p className="cached-view-notice" role="status">Сохранённый просмотр. Отправка станет доступна после загрузки свежих данных.</p>}
       <header className="chat-header">
         <button className="mobile-back" onClick={() => setMobileView("sessions")} aria-label="К списку сессий">← <span>Сессии</span></button>
         <div className="chat-heading">{showJobs ? <><span className="eyebrow">AGENT HERDER</span><h2>Задачи</h2><small>Фоновые задачи и их прогресс</small></> : showStatistics ? <><span className="eyebrow">AGENT HERDER</span><h2>Статистика</h2><small>Реальные паттерны активности недавних сессий</small></> : showQuota ? <><span className="eyebrow">AGENT HERDER</span><h2>Квота</h2><small>Окна Codex, расход моделей, потребители</small></> : <><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2>{activeSession ? (cleanSessionTitle(activeSession.title) || activeSession.id) : loading ? "Загрузка сессий…" : "Выберите сессию"}{(detailsLoading || detailsHydrating) && <span className="inline-loading-dot chat-loading-dot" role="status" aria-label="Загрузка сессии" />}</h2><small>{activeSession?.cwd || ""}</small>{SHOW_DEBUG_TIMINGS && <div className="load-timings" role="status" aria-label="Тайминги загрузки в браузере"><span title="Страница → список сессий готов">sessions <b>{formatLoadTiming(sessionsTimingMs)}</b></span>{activeKey && <><span title="Запрос свежих ходов">latest <b>{detailsLoading ? "…" : formatLoadTiming(latestTimingMs)}</b></span><span title="Фоновая история и метрики">hydrate <b>{detailsHydrating ? "…" : formatLoadTiming(hydrateTimingMs)}</b></span></>}</div>}</>}</div>

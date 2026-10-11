@@ -480,6 +480,7 @@ function registerTools(
   jobs: HerderJobRegistry = herderJobs,
   sessionConverter: Pick<AgentHerderSessionConverter, "convert"> = new AgentHerderSessionConverter(),
   events: HerderEventBus = herderEvents,
+  inventorySupervisor?: SessionSupervisor,
 ) {
   registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes });
@@ -488,12 +489,14 @@ function registerTools(
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
   registerSessionTools(server, { adapters, jobs, events });
   registerHarnessMeshTools(server, { adapters });
-  registerFleetNodeTools(server, { adapters });
+  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined });
 }
 
 // ===== Main =====
 
 export interface AgentHerderMcpServerOptions {
+  /** Reuse the process observer; an isolated MCP factory never starts another observer. */
+  inventorySupervisor?: SessionSupervisor;
   /** Shared domain events; transport sessions are never used as durable state. */
   events?: HerderEventBus;
   /** Enable direct resource notifications for long-lived transports such as stdio. */
@@ -547,6 +550,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     jobs,
     sessionConverter,
     events,
+    options.inventorySupervisor,
   );
   return server;
 }
@@ -671,8 +675,8 @@ async function main() {
   process.once("exit", stopCompletionNoticeSweeper);
   const stopUnfinishedSessionLauncher = unfinishedSessionLauncher.start();
   process.once("exit", stopUnfinishedSessionLauncher);
-  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents });
-  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true });
+  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, inventorySupervisor: processSupervisor });
+  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, inventorySupervisor: processSupervisor });
   const webPort = process.env.AGENT_HERDER_WEB_PORT;
   if (webPort) {
     const host = process.env.AGENT_HERDER_WEB_HOST || "127.0.0.1";

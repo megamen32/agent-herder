@@ -531,3 +531,12 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .fleet-overlay-panel { width: min(1100px, 100%); max-height: calc(100dvh - 40px); overflow: auto; background: var(--background, #171717); color: inherit; border: 1px solid var(--border, #444); border-radius: 14px; padding: 18px; }
 .fleet-overlay-close { float: right; position: sticky; top: 0; z-index: 1; }
 @media (max-width: 600px) { .fleet-overlay { padding: 8px; } .fleet-overlay-panel { max-height: calc(100dvh - 16px); padding: 12px; } }
+.session-cache-settings { margin: 8px 14px; font-size: 12px; }
+.session-cache-settings label { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.session-cache-settings small { display: block; line-height: 1.5; margin: 10px 0; }
+.directory-status { display: block; padding: 8px 14px; color: var(--text-secondary); }
+.remote-session-pane { grid-column: 3 / -1; overflow: auto; min-width: 0; padding: 24px; }
+.remote-session-pane pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.remote-session-pane article { margin: 20px 0; }
+.cached-view-notice { padding: 10px 16px; color: var(--text-secondary); }
+@media (max-width: 660px) { .remote-session-pane { position:absolute;inset:0;grid-column:auto; } .mobile-sessions-active .remote-session-pane { display: none; } }

@@ -40,6 +40,9 @@ export function truncatePreview(text: string, max = 120): string {
 }
 
 export type SessionListSession = {
+  hostId?: string;
+  hostLabel?: string;
+  remote?: boolean;
   id: string;
   harness: string;
   title: string;
@@ -53,6 +56,7 @@ export type SessionListSession = {
 };
 
 export type SessionListSettings = {
+  hostId?: string;
   cwd: string;
   project: string;
   harness: string;
@@ -66,7 +70,7 @@ export type SessionListEntry = {
   hasChildren: boolean;
 };
 
-export const sessionKey = (session: Pick<SessionListSession, "harness" | "id">) => `${session.harness}:${session.id}`;
+export const sessionKey = (session: Pick<SessionListSession, "harness" | "id" | "hostId" | "remote">) => session.remote ? `mesh:${JSON.stringify([session.hostId,session.harness,session.id])}` : `${session.harness}:${session.id}`;
 
 export function sessionKeyFromHash(hash: string): string | undefined {
   try {
@@ -137,6 +141,7 @@ export function filterAndArrangeSessions(
   const byKey = new Map(sessions.map((session) => [sessionKey(session), session]));
   const filtered = sessions.filter((session) => {
     if (!settings.showAll && !["running", "needs_input"].includes(session.status) && !choiceSessionKeys.has(sessionKey(session))) return false;
+    if (settings.hostId && session.hostId !== settings.hostId) return false;
     if (settings.harness && session.harness !== settings.harness) return false;
     if (settings.cwd && !session.cwd.startsWith(settings.cwd)) return false;
     if (settings.project && projectFor(session, byKey) !== settings.project) return false;
