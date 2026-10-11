@@ -110,6 +110,15 @@ runner→original plugin HTTP→atomic gate→terminal override доказыва
 не создаёт input/provider turn, а fresh follow-up сохраняет B. Evidence
 `.tmp/hermes-binding-review-release/`. Финальный typed-done/coupled Notice226
 проход и source/dist manifest — `.tmp/hermes-binding-typed-final/`.
+Финальный проход: полный production build,17/17 Vitest +12/12 Python,
+48.622s executable; обе correction runs вместе с setup103.983s, ниже180s.
+Peak589008896 bytes/swap0/OOM0; generation-specific cleanup PASS. После
+совместимого merge latest published main9749a68 runtime `src` pins целиком
+совпадают с проверенными входами; дополнительные изменения только в owned
+Root Mac watchdog/docs/tests. Повтор build не требовался.
+Unused старые copied UI bundles перенесены из **owned** dist в private evidence,
+сохранены побайтно; canonical/runtime dist не тронут. Source manifest содержит
+318 текущих compiled/backend/declaration/UI files и SHA256 каждого.
 
 Точные frozen SHAs после публикации передаются Root. Это готовность source/plugin;
 services, совместная установка и настоящий Telegram task dialogue/recipient
