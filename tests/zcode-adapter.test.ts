@@ -104,6 +104,12 @@ class FakeClient implements ZcodeClientLike {
       return { commandId: envelope.commandId, status: "accepted", revisionAtDecision: 3,
         result: { type: "inputAccepted", inputId: `native-${envelope.commandId}`, delivery: envelope.payload.requestedDelivery } };
     }
+    if (channel === "zcode-agent" && method === "subscribeWorkspaceConfigV4") {
+      const params = args[0] as {workspaceKey:string};
+      queueMicrotask(() => this.listeners.find(listener => listener.event === "onDynamicWorkspaceConfigFrame")?.handler({kind:"complete",frame:{topic:`workspace-config/${params.workspaceKey}`,subscriptionId:"fake-model-catalog",payload:{kind:"snapshot",snapshot:{config:{configOptions:[{id:"model",options:[{value:"zai/GLM-4.5",name:"GLM-4.5"}]}]}}}}}));
+      return {ack:{subscriptionId:"fake-model-catalog"}};
+    }
+    if (channel === "zcode-agent" && method === "unsubscribeWorkspaceConfigV4") return {};
     if (channel === "zcode-agent" && method === "sendPrompt") return { accepted: true };
     if (channel === "zcode-agent" && method === "setModel") return snapshot;
     if (channel === "zcode-agent" && method === "closeSession") return { closed: true };
@@ -1103,7 +1109,8 @@ describe("ZCode adapter", () => {
       "zcode-agent.resumeSession",
       "zcode-agent.closeSession",
       "zcode-agent.setModel",
-      "zcode-agent.readWorkspaceState",
+      "zcode-agent.subscribeWorkspaceConfigV4",
+      "zcode-agent.unsubscribeWorkspaceConfigV4",
     ]));
     expect(client.calls.filter((call) => call.method === "setModel").at(-1)?.args[0]).toMatchObject({
       model: { providerId: "zai", modelId: "GLM-4.5", options: { reasoningLevel: "high" } },
@@ -2000,4 +2007,22 @@ it("uses the model catalog default reasoning level for a plain model selection",
  }
  const client=new ReasoningCatalogClient(),adapter=new ZcodeAdapter({cwd:"/workspace",client});
  try{await expect(adapter.changeModel("session-1","zai/GLM-5.3")).resolves.toEqual({ok:true});expect(client.calls.find(call=>call.method==="setModel")?.args[0]).toMatchObject({model:{providerId:"zai",modelId:"GLM-5.3",options:{reasoningLevel:"high"}}});}finally{await adapter.dispose();}
+});
+
+// Focused integration expected1s/max5s: native session catalog can contain only the current model.
+it("reads a new model's required defaults from the workspace picker catalog", async()=>{
+ class WorkspaceDefaultsClient extends FakeClient{
+  override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   if(method==="subscribeWorkspaceConfigV4") {
+    this.calls.push({channel,method,args});
+    const params=args[0] as {workspaceKey:string};
+    queueMicrotask(()=>this.listeners.find(listener=>listener.event==="onDynamicWorkspaceConfigFrame")?.handler({kind:"complete",frame:{topic:`workspace-config/${params.workspaceKey}`,subscriptionId:"model-catalog",payload:{kind:"snapshot",snapshot:{config:{configOptions:[{id:"model",options:[{value:"zai/GLM-5.3",name:"GLM-5.3",modelDefaultThoughtLevel:"max"}]}]}}}}}));
+    return {ack:{subscriptionId:"model-catalog"}};
+   }
+   if(method==="unsubscribeWorkspaceConfigV4") {this.calls.push({channel,method,args});return {}; }
+   return super.call(channel,method,args);
+  }
+ }
+ const client=new WorkspaceDefaultsClient(),adapter=new ZcodeAdapter({cwd:"/workspace",client});
+ try{await expect(adapter.changeModel("session-1","zai/GLM-5.3")).resolves.toEqual({ok:true});expect(client.calls.find(call=>call.method==="setModel")?.args[0]).toMatchObject({model:{providerId:"zai",modelId:"GLM-5.3",options:{reasoningLevel:"max"}}});expect(client.calls.filter(call=>call.method==="unsubscribeWorkspaceConfigV4")).toHaveLength(1);expect(client.calls.some(call=>call.method==="readWorkspaceState")).toBe(false);}finally{await adapter.dispose();}
 });

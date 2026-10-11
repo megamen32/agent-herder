@@ -683,10 +683,10 @@ export class SessionSupervisor {
   async getSessionDetails(provider: string, id: string, options: SessionDetailOptions = {}): Promise<SessionDetails> {
     const cachedSessions = (provider === "codex" || options.quick) ? await this.listSessions({ harness: provider }) : undefined;
     const cachedSession = cachedSessions?.find((candidate) => candidate.id === id || nativeSessionId(candidate) === id);
-    // Quick details deliberately start from the cached session snapshot. This
-    // lets the UI paint the latest messages first while rich metrics hydrate later.
+    // ZCode list rows can omit native model options after a picker change.
+    // Keep metrics cheap, but read the selected session's actual control state.
     const rawSession = options.quick
-      ? cachedSession || await this.getSession(provider, id)
+      ? provider === "zcode" ? await this.getSession(provider, id) || cachedSession : cachedSession || await this.getSession(provider, id)
       : await this.getSession(provider, id, undefined, {includeMetrics:true}) || cachedSession;
     if (!rawSession) throw new SessionNotFoundError(provider, id);
     const session = options.quick ? rawSession : await this.pricing.enrich(rawSession);
