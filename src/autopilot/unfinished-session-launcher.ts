@@ -1254,6 +1254,7 @@ export class UnfinishedSessionLauncher {
   }
 
   async handleEvent(provider: string, event: HarnessEvent): Promise<void> {
+    if (event.data?.maintenance === "compact") return;
     this.fenceUsers += 1;
     event = { ...event, at: event.at ?? new Date().toISOString() };
     if (event.kind === "turn.started" && event.sessionId) {
@@ -2368,9 +2369,10 @@ export class UnfinishedSessionLauncher {
         const nativeHumanGate = nativeTurn?.cancelledByUser === true
           || nativeTurn?.requiresHuman === true
           || nativeTurn?.pendingInput === true;
-        const autoResumeEnabled = await this.mayWorkOnSession(session.harness, session.id, session.cwd)
-          && !nativeHumanGate
-          && (!semanticAutopilot || await this.semanticAutopilotAllows(session, semanticAutopilot));
+        const autoResumeEnabled = !nativeHumanGate
+          && !await this.pendingQuestionBlocks(session.harness, session.id, session.cwd)
+          && (semanticAutopilot ? await this.semanticAutopilotAllows(session, semanticAutopilot)
+            : await this.isEnabled(session.harness, session.id, session.cwd));
         const sourceKey = sessionSourceKey(session);
         let urgent = this.urgentSessions.has(sourceKey) || this.urgentSessions.has(sessionKey(session.harness, session.id));
         const urgentSignalVersions = new Map([sourceKey, sessionKey(session.harness, session.id)]
@@ -4558,7 +4560,9 @@ function normalizeBatchReconciliationText(
 
 function batchPlannerPrompt(): string {
   return [
-    "Ты единый оркестратор автопродолжения Agent Herder для Codex и ZCode.",
+    "Ты автопилот Agent Herder: доводи разрешённые задачи до проверенного результата в исходных сессиях.",
+    "Если человек не выбрал следующий шаг, выбери сам наиболее полезный разрешённый шаг и выполни работу. Несколько разумных способов, обычные проверки или желание перестраховаться не означают needs_human. Наблюдение и отчёт не заменяют исправление, выполнение и проверку результата.",
+    "needs_human допустим только для конкретного отсутствующего решения, доступа или полномочий, без которых полезная работа невозможна. Существующее поручение и полномочия действуют до результата; не требуй повторного согласования.",
     "Получаешь все доступные сессии 48-часового окна в одном общем пакете до безопасного потолка контекста.",
     "У каждой сессии обязательно сохранён первый пользовательский запрос как исходная цель и максимально полный свежий смысловой хвост без tool noise и скрытых рассуждений.",
     "Сгруппируй сессии одной и той же пользовательской задачи, даже если названия различаются; не объединяй просто похожие задачи.",

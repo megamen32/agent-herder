@@ -6,6 +6,7 @@ import { resolve, join } from "node:path";
 import {
   type AgentSession,
   type ControlResult,
+  type CompactSessionOptions,
   type CreateSessionOptions,
   type HarnessAdapter,
   type HarnessCapabilities,
@@ -118,7 +119,7 @@ interface ZcodeSnapshot {
     };
     permission?: { mode?: string; rulesRevision?: number };
   };
-  runtime?: { eventSeq?: number; stateRevision?: number; pendingRequestIds?: string[] };
+  runtime?: { eventSeq?: number; stateRevision?: number; activeTurnId?: string; activeTurnKind?: string; pendingRequestIds?: string[]; contextUsage?: { used?: number; size?: number; cache?: { latestHitRate?: number; hitRate?: number; cacheReadTokens?: number; inputTokens?: number } } };
   messages?: ZcodeMessage[];
 }
 
@@ -553,6 +554,11 @@ function mapSession(
     parentSessionId: session.parentSessionId,
     workspaceIdentity: nonEmptyString(workspace.workspaceIdentity),
     pendingRequestIds,
+    nativeStatus: session.status,
+    nativeStateRevision: snapshot.runtime?.stateRevision,
+    nativeActiveTurnId: snapshot.runtime?.activeTurnId,
+    nativeActiveTurnKind: snapshot.runtime?.activeTurnKind,
+    nativeContextUsage: snapshot.runtime?.contextUsage,
     automationStop,
     automationStopSequence: typeof automationStopSequence === "number" ? automationStopSequence : undefined,
     automationStopHistoryAvailable: nativeEventHistoryAvailable,
@@ -578,7 +584,12 @@ function mapSession(
     : rawStatus;
   const lifecycle = lifecycleStateFor("zcode", session.sessionId);
   meta.hasActiveToolCall = lifecycle === "running" && hasActiveToolCall(messages);
+  const nativeQuiet = Number.isSafeInteger(snapshot.runtime?.stateRevision)
+    && !snapshot.runtime?.activeTurnId && !snapshot.runtime?.activeTurnKind
+    && ["idle", "stopped"].includes(rawStatus);
   const status = pendingRequestIds.length > 0 ? "needs_input"
+    : snapshot.runtime?.activeTurnId || snapshot.runtime?.activeTurnKind ? "running"
+    : nativeQuiet ? rawStatus
     : lifecycle === "ended" ? "stopped"
     : lifecycle === "running" ? "running"
     : lifecycle === "idle" ? "idle"
@@ -681,6 +692,7 @@ function normalizeZcodeTaskEvent(sessionId: string, payload: unknown): HarnessEv
     at,
     data: {
       nativeType,
+      ...([payloadData.executionKind, payloadData.kind, payloadData.turnKind].includes("compact") ? { maintenance: "compact" } : {}),
       ...(inputId ? { inputId } : {}),
       ...(resultType ? { nativeResultType: resultType } : {}),
       ...(nonEmptyString(rawNativeEvent?.eventId) ? { nativeEventId: nonEmptyString(rawNativeEvent?.eventId) } : {}),
@@ -1440,13 +1452,16 @@ export class ZcodeAdapter implements HarnessAdapter {
         const mapped = mapSession(snapshot, workspace.workspacePath, undefined, nativeEvents, nativeEventHistoryAvailable);
         // Native renameTask persists the display title in its task metadata even
         // when an empty V4 snapshot still exposes the old draft title.
-        const displayTitle = await this.readTaskDisplayTitle(id, workspace);
-        if (displayTitle) mapped.title = displayTitle;
+        const taskMetadata = await this.readTaskDisplayMetadata(id, workspace);
+        if (taskMetadata?.title) mapped.title = taskMetadata.title;
+        if (taskMetadata) mapped.meta = { ...mapped.meta, pinned: taskMetadata.pinned };
         const lastTurn = [...nativeEvents].reverse().find((event) =>
           (event.type === "turn.started" || event.type === "turn.completed" || event.type === "turn.failed") && nonEmptyString(event.turnId));
         if (lastTurn) mapped.meta = { ...mapped.meta, nativeLastTurn: {
           turnId: lastTurn.turnId,
           status: lastTurn.type === "turn.started" ? "inProgress" : lastTurn.type === "turn.failed" ? "failed" : "completed",
+          completedAt: lastTurn.type === "turn.completed" && (typeof lastTurn.timestamp === "number" || typeof lastTurn.timestamp === "string") ? timestamp(lastTurn.timestamp) : undefined,
+          kind: record(lastTurn.payload).executionKind || record(lastTurn.payload).kind,
         } };
         this.ensureSessionEventSubscription(id, workspace, eventSeq);
         mapped.meta = {...mapped.meta,nativeLoaded:true};
@@ -1469,16 +1484,18 @@ export class ZcodeAdapter implements HarnessAdapter {
     }
   }
 
-  private async readTaskDisplayTitle(id: string, workspace: ZcodeWorkspaceRef): Promise<string | undefined> {
+  private async readTaskDisplayMetadata(id: string, workspace: ZcodeWorkspaceRef): Promise<{ title?: string; pinned: boolean } | undefined> {
     if (!this.tasksIndexDbPath || !existsSync(this.tasksIndexDbPath)) return undefined;
     try {
       const { DatabaseSync } = await import("node:sqlite");
       const db = new DatabaseSync(this.tasksIndexDbPath, { readOnly: true });
       try {
-        const rows = db.prepare("select title from tasks where task_id = ? and workspace_path = ? and workspace_identity = ? order by updated_at desc limit 2")
-          .all(id, workspace.workspacePath, workspace.workspaceIdentity) as Array<{ title?: string }>;
+        const columns = db.prepare("pragma table_info(tasks)").all() as Array<{ name: string }>;
+        const pinnedColumn = columns.some((column) => column.name === "pinned") ? "pinned" : "0 as pinned";
+        const rows = db.prepare(`select title, ${pinnedColumn} from tasks where task_id = ? and workspace_path = ? and workspace_identity = ? order by updated_at desc limit 2`)
+          .all(id, workspace.workspacePath, workspace.workspaceIdentity) as Array<{ title?: string; pinned?: number }>;
         const titles = new Set(rows.map(row => nonEmptyString(row.title)).filter(Boolean));
-        return titles.size === 1 ? [...titles][0] : undefined;
+        return rows.length ? { title: titles.size === 1 ? [...titles][0] : undefined, pinned: rows.every((row) => row.pinned === 1) } : undefined;
       } finally { db.close(); }
     } catch { return undefined; }
   }
@@ -1892,6 +1909,41 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   async setPermissions(_sessionId: string, _options: SetPermissionsOptions): Promise<{ ok: boolean; error?: string }> {
     return unsupported("permissions");
+  }
+
+  private readonly compactingSessions = new Map<string, { inputId: string; turnId?: string; expiresAt: number }>();
+
+  async compactSession(id: string, options: CompactSessionOptions): Promise<ControlResult> {
+    let attempted = false;
+    if (!this.initialized) return { ok: false, error: "ZCode ещё не подключён; холодная сессия не загружается ради компакта." };
+    try {
+      if (await getHumanStopStore().isHeld("zcode", id)) return { ok: false, error: "Сессия явно остановлена; автокомпакт запрещён." };
+      const workspace = this.sessionWorkspaces.get(id) || this.workspace();
+      const snapshot = await this.readSnapshot(id, workspace);
+      if (sessionInfoFromPayload(snapshot)?.sessionId !== id) return { ok: false, error: "Native session identity mismatch" };
+      if (snapshot.runtime?.activeTurnId || snapshot.runtime?.activeTurnKind || snapshot.runtime?.pendingRequestIds?.length
+        || !["idle", "stopped", "completed"].includes(String(snapshot.session?.status))) return { ok: false, error: "Сессия работает или ждёт человека; компакт отложен." };
+      if (!Number.isSafeInteger(snapshot.runtime?.stateRevision)) return { ok: false, error: "Нативная ревизия контекста неизвестна; компакт отложен." };
+      const prompt = latestExplicitUserPrompt(snapshot.messages || [], []);
+      if (options.expectedUserMessageId && prompt?.id !== options.expectedUserMessageId) return { ok: false, error: "Появилось новое сообщение; компакт отложен." };
+      if (await getHumanStopStore().isHeld("zcode", id)) return { ok: false, error: "Сессия явно остановлена; автокомпакт запрещён." };
+      attempted = true;
+      this.compactingSessions.set(id, { inputId: options.inputId, expiresAt: Date.now() + 15 * 60_000 });
+      const result = record(await this.callAgent("compactSession", {
+        ...workspace, sessionId: id, inputId: options.inputId, expectedRevision: snapshot.runtime?.stateRevision,
+        instructions: "Сохрани исходную цель, решения, выполненные действия, важные файлы, проверки и оставшуюся работу. Не выполняй задачу и не повторяй внешние действия.",
+      }));
+      const compact = record(result.compact);
+      const returned = sessionInfoFromPayload(result.snapshot);
+      if (returned?.sessionId !== id) return { ok: false, admissionUnknown: true, nonRetryable: true, inputId: options.inputId, error: "Компакт не подтвердил исходный session ID; повтор запрещён." };
+      if (compact.state === "already_running") { this.compactingSessions.delete(id); return { ok: false, nonRetryable: true, error: "В этой сессии уже выполняется компакт." }; }
+      if (compact.state === "accepted" && compact.inputId !== undefined && compact.inputId !== options.inputId) return { ok: false, admissionUnknown: true, nonRetryable: true, error: "Подтверждён другой compact input ID; повтор запрещён." };
+      this.ensureSessionEventSubscription(id, workspace);
+      return { ok: true, admitted: true, inputId: options.inputId, sessionId: id, pending: compact.state === "accepted" };
+    } catch (error) {
+      this.compactingSessions.delete(id);
+      return { ok: false, admissionUnknown: attempted, nonRetryable: attempted, inputId: options.inputId, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   async changeModel(sessionId: string, model: string): Promise<{ ok: boolean; error?: string }> {
@@ -2312,6 +2364,13 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   private emitEvent(event: HarnessEvent): void {
+    const compact = event.sessionId ? this.compactingSessions.get(event.sessionId) : undefined;
+    if (compact && compact.expiresAt < Date.now()) this.compactingSessions.delete(event.sessionId!);
+    if (compact && compact.expiresAt >= Date.now() && (event.data?.inputId === compact.inputId || (compact.turnId && event.data?.turnId === compact.turnId))) {
+      event = { ...event, data: { ...event.data, maintenance: "compact" } };
+      if (event.kind === "turn.started" && typeof event.data?.turnId === "string") compact.turnId = event.data.turnId;
+      if (event.kind === "turn.completed" || event.kind === "turn.failed") this.compactingSessions.delete(event.sessionId!);
+    }
     const normalized = { ...event, at: event.at ?? new Date().toISOString() };
     for (const listener of [...this.eventListeners]) {
       try { listener(normalized); } catch { /* isolate listeners */ }

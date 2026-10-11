@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -119,11 +119,15 @@ describe("an unanswered question blocks every autopilot entry point", () => {
     const humanRequests = new HumanRequestRegistry(join(dir, "human-requests.json"));
     const older = new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString();
     const pending = await choiceRegistry.create({ harness: "zcode", sessionId: "zcode-old", turnId: "turn-old", cwd: "/workspace/old", choices });
-    for (let index = 0; index < 250; index += 1) {
-      const record = await choiceRegistry.create({ harness: "zcode", sessionId: `zcode-later-${index}`, turnId: `turn-${index}`, cwd: `/workspace/${index}`, choices });
-      await choiceRegistry.claimForResume(record.requestId, "continue");
-      await choiceRegistry.markResumed(record.requestId, "continue");
-    }
+    // This regression exercises pending-first discovery, not 750 unrelated
+    // admission transactions. Seed a realistic durable backlog in one write.
+    const terminal = Array.from({ length: 250 }, (_, index) => ({
+      ...pending, requestId: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      sessionId: `zcode-later-${index}`, turnId: `turn-${index}`, cwd: `/workspace/${index}`,
+      status: "resumed", choiceId: "continue", nextGoal: choices[0]!.nextGoal,
+      createdAt: new Date().toISOString(), resultRef: `agent-herder://fixture/${index}`,
+    }));
+    await writeFile(join(dir, "choices.json"), JSON.stringify({ version: 1, requests: [{ ...pending, createdAt: older }, ...terminal] }));
     const gate = new PendingQuestionGate({ humanRequests, choices: choiceRegistry });
 
     await expect(gate.blocks("zcode", "zcode-old", "/workspace/old")).resolves.toBe(true);

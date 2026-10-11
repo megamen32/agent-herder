@@ -31,7 +31,7 @@ export type AutopilotDecision =
       body: string;
       severity: "low" | "medium" | "high";
     }
-  | { kind: "choice"; choices: AutopilotChoice[] };
+  | { kind: "choice"; choices: AutopilotChoice[]; recommendedChoiceId?: string | null };
 
 export type AutopilotHookResult =
   | { decision: "block"; reason: string }
@@ -258,8 +258,13 @@ export function createOpenAICompatibleJudge(config: {
               content:
                 "You are the Agent Herder stop-hook judge. Return only JSON. " +
                 "Choose exactly one kind: continue, done, human, or choice. " +
-                "If uncertain between 2-4 safe next steps, use choice with " +
-                "{kind:choice,choices:[{choiceId,label,nextGoal}]}; choiceId is opaque, " +
+                "Act on the user objective: choose and execute the most useful authorized next step yourself. " +
+                "Multiple reasonable implementation approaches are not a reason to wait for the human. " +
+                "Observation, more planning and cautious reporting do not substitute for delivery. " +
+                "For a genuine user preference between 2-4 next steps, use choice with " +
+                "{kind:choice,choices:[{choiceId,label,nextGoal}],recommendedChoiceId:string|null}; " +
+                "recommendedChoiceId selects the most productive authorized action to execute if the human does not answer. " +
+                "Use null only if all useful actions require missing authority or information. Never recommend wait/observe when executable work remains. choiceId is opaque, " +
                 "label is a concise, self-contained Russian user-facing action, and nextGoal is bounded text for this exact agent session. " +
                 "Use continue only when a concrete next goal can be executed " +
                 "in the same agent session. Use done only when the user's " +
@@ -493,7 +498,9 @@ export function createAutopilotCore(options: {
               : sanitizeChoiceContext(input.last_user_message) ?? null
             : null;
           const timeoutEnabled = persistedPolicy?.timeout.mode === "auto_continue";
-          const timeoutChoiceId = timeoutEnabled ? decision.choices[0]?.choiceId : undefined;
+          const timeoutChoiceId = timeoutEnabled
+            ? decision.recommendedChoiceId === null ? undefined : decision.recommendedChoiceId ?? decision.choices[0]?.choiceId
+            : undefined;
           const expiresAt = timeoutEnabled && timeoutChoiceId
             ? new Date(Date.now() + persistedPolicy.timeout.delayMs).toISOString()
             : undefined;
@@ -514,7 +521,8 @@ export function createAutopilotCore(options: {
           });
           const pendingNotice = createNoticePlacePayload({
             title: `Agent Herder: выбор следующего шага по ${projectLabel(input.cwd)}`,
-            body: buildChoiceNotificationBody(input, decision.choices, lastUserMessage, includeContext, options.harness ?? "codex"),
+            body: buildChoiceNotificationBody(input, decision.choices, lastUserMessage, includeContext, options.harness ?? "codex")
+              + (timeoutChoiceId ? `\n\nЕсли вы не ответите, автопилот выберет: ${decision.choices.find((choice) => choice.choiceId === timeoutChoiceId)?.label}.` : ""),
             severity: "medium",
             dedupKey: `agent-herder:choice:${pending.requestId}`,
             correlationId: `${input.session_id}/${input.turn_id}`,
@@ -663,7 +671,7 @@ function buildChoiceNotificationBody(
     sections.push("", "Последний ответ агента:", lastMessage);
   }
   if (includeReason) {
-    sections.push("", "MiniMax не выбрал автоматически: безопасных вариантов несколько.");
+    sections.push("", "Автопилот предлагает выбрать следующий шаг.");
   }
   const harnessLabel = harness === "opencode" ? "OpenCode" : harness === "claude" ? "Claude Code" : harness === "hermes" ? "Hermes" : harness === "zcode" ? "ZCode" : "Codex";
   sections.push(
@@ -904,6 +912,9 @@ function normalizeDecision(value: unknown): AutopilotDecision {
   if (decision.kind === "choice" && Array.isArray(decision.choices) && decision.choices.length >= 2 && decision.choices.length <= 4) {
     return {
       kind: "choice",
+      ...(decision.recommendedChoiceId === null ? { recommendedChoiceId: null }
+        : typeof decision.recommendedChoiceId === "string" && decision.choices.some((choice) => (choice as Record<string, unknown>)?.choiceId === decision.recommendedChoiceId)
+          ? { recommendedChoiceId: decision.recommendedChoiceId } : {}),
       choices: decision.choices.map((choice) => {
         if (!choice || typeof choice !== "object") throw new Error("Malformed choice decision");
         const item = choice as Record<string, unknown>;

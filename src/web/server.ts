@@ -21,6 +21,7 @@ import { ChoiceRegistry, ChoiceRegistryLockUnavailableError, type PendingChoice 
 import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../autopilot/policy-store.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
+import type { AutoCompactService, AutoCompactStore } from "../autocontinue/auto-compact.js";
 import type { SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
 import { AutomationLaunchPolicyStore, MAX_MODEL_LENGTH } from "../automation-launch-policy.js";
 import { renderSessionGraph } from "../session-visualization.js";
@@ -55,6 +56,8 @@ export interface WebDependencies {
   autopilotPolicyStore?: AutopilotPolicyStore;
   autopilotSessionStore?: AutopilotSessionStore;
   sessionAutostartStore?: SessionAutostartStore;
+  autoCompactService?: AutoCompactService;
+  autoCompactStore?: AutoCompactStore;
   automationLaunchPolicyStore?: AutomationLaunchPolicyStore;
   autopilotSweepIntervalMs?: number;
   sessionVisualizer?: (details: SessionDetails) => Promise<string>;
@@ -616,7 +619,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
     try {
       if (dependencies.fleetHttpGuard && await dependencies.fleetHttpGuard(request, response)) return;
       if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -688,7 +691,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (url.pathname.startsWith("/api/quota-lens") && request.method === "GET") {
     const body = await handleQuotaLensRequest(url.pathname, url.searchParams);
@@ -882,6 +885,16 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     } catch (error) {
       return sendJson(response, 400, { error: (error as Error).message });
     }
+  }
+  if (url.pathname === "/api/session-autocompact" && (request.method === "GET" || request.method === "PUT")) {
+    if (!autoCompactStore || !autoCompactService) return sendJson(response, 503, { error: "Автокомпакт недоступен." });
+    if (request.method === "PUT") {
+      const body = await readJson(request);
+      try { await autoCompactStore.updateSettings(body.settings as import("../autocontinue/auto-compact.js").AutoCompactSettings); }
+      catch (error) { return sendJson(response, 400, { error: (error as Error).message }); }
+    }
+    const state = await autoCompactStore.read();
+    return sendJson(response, 200, { settings: state.settings, supportedHarnesses: autoCompactService.supportedHarnesses(), operations: state.operations.slice(-10) });
   }
   if (url.pathname === "/api/automation/project-launch" && request.method === "POST") {
     if (!projectLaunchDispatch) return sendJson(response, 503, { error: "Project launch routing is not configured" });
@@ -1476,7 +1489,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     );
     return sendJson(response, 200, buildSessionProgress(details, Number.isFinite(limitValue) ? limitValue : 5));
   }
-  const actionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/(resume|message|stop|terminate|cancel|recover|fork|archive|model|permissions\/([^/]+))$/);
+  const actionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/(resume|message|stop|terminate|cancel|recover|fork|archive|compact|model|permissions\/([^/]+))$/);
   if (actionMatch && request.method === "POST") {
     const body = await readJson(request);
     const harness = decodeURIComponent(actionMatch[1]);
@@ -1498,6 +1511,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     if (action === "cancel") {
       return sendOperationResult(response, await supervisor.cancelTurn(harness, id));
+    }
+    if (action === "compact") {
+      if (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512) return sendJson(response, 400, { error: "compact requires a stable inputId" });
+      if (!autoCompactService) return sendJson(response, 503, { error: "Автокомпакт недоступен." });
+      return sendOperationResult(response, await autoCompactService.compact(harness, id, body.inputId));
     }
     if (action === "archive") {
       return sendOperationResult(response, await supervisor.archiveSession(harness, id));

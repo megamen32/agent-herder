@@ -101,9 +101,9 @@ export function cacheWindowFor(session: Pick<AgentSession, "harness" | "model">,
     return { ttlMs: 30 * 60_000, source: "openai-30m" };
   }
   if (/glm-5\.3(?:-flash)?/i.test(session.model || "")) {
-    // Z.ai publishes automatic cache telemetry but no fixed TTL. A 2026-10-03
-    // three-replica Coding Plan probe found 3/3 hits at 5m and 0/3 by 30m.
-    return { ttlMs: 5 * 60_000, source: "zai-measured-5m" };
+    // Z.ai documents expiry but publishes no fixed cache TTL. Historical hits
+    // at 5m and misses by 30m do not establish expiry at exactly five minutes.
+    return { source: "unknown" };
   }
   if (/minimax[-/.]?m3(?:\.1)?/i.test(session.model || "")) {
     // MiniMax documents load-adjusted passive expiry. Five minutes is the

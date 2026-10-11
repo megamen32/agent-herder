@@ -81,6 +81,18 @@ function liveCodexSession(cwd: string): AgentSession {
 }
 
 describe("autopilot policy hook and timeout sweep", () => {
+  it.each(["verify", null])("uses the judge's productive timeout recommendation %s instead of the first observation", async (recommendedChoiceId) => {
+    const root = await mkdtemp(join(tmpdir(), "autopilot-recommendation-"));
+    const registry = new ChoiceRegistry(join(root, "choices.json"));
+    await createAutopilotCore({
+      judge: { decide: async () => ({ kind: "choice", choices, recommendedChoiceId }) },
+      notify: { send: async () => undefined }, receiptStore: new Map(), allowSessions: new Set(),
+      maxContinuationsPerSession: 2, effectivePolicy: effective(policy()), choiceRegistry: registry,
+    }).handleStop(input);
+    const pending = (await registry.list())[0]!;
+    expect(pending.timeoutChoiceId).toBe(recommendedChoiceId ?? undefined);
+    expect(Boolean(pending.expiresAt)).toBe(recommendedChoiceId !== null);
+  });
   it("uses the shared Notice Place recipient when no autopilot-specific override exists", () => {
     expect(resolveNotificationRecipient({ NOTIFY_CENTER_RECIPIENT: "owner" })).toBe("owner");
     expect(resolveNotificationRecipient({ NOTIFY_CENTER_RECIPIENT: "owner", AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT: "autopilot-owner" })).toBe("autopilot-owner");
@@ -118,7 +130,7 @@ describe("autopilot policy hook and timeout sweep", () => {
     });
     expect(Date.parse(pending.expiresAt!)).toBeGreaterThan(Date.now());
     const body = String(sink.send.mock.calls[0]?.[0]?.body);
-    expect(body).toContain("MiniMax не выбрал автоматически");
+    expect(body).toContain("Автопилот предлагает выбрать следующий шаг.");
     expect(body).not.toContain("Последний ответ агента");
     expect(body).not.toContain("Последний запрос пользователя");
   });

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { AutoCompactStore, AutoCompactService } from "./autocontinue/auto-compact.js";
 import { createHash } from "node:crypto";
 import { createFleetRecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
 import { createMiniMaxQuotaPreflight } from "./automation/minimax-quota-preflight.js";
@@ -130,6 +131,7 @@ const unfinishedSessionStore = new UnfinishedSessionStore(
 const sessionAutostartStore = new SessionAutostartStore(
   process.env.AGENT_HERDER_SESSION_AUTOSTART_SETTINGS || join(autopilotStateDir, "session-autostart.json"),
 );
+const autoCompactStore = new AutoCompactStore(join(autopilotStateDir, "auto-compact.json"));
 const automationLaunchPolicyStore = new AutomationLaunchPolicyStore(join(autopilotStateDir, "automation-launch-policy.json"));
 const humanStopStore = getHumanStopStore();
 const lineageStore = new LineageStore(join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "agent-herder", "lineage.json"));
@@ -744,6 +746,23 @@ async function main() {
     unfinishedSessions: unfinishedSessionLauncher,
     admissionGate: recoveryAdmissionGate,
   });
+  const autoCompactService = new AutoCompactService({
+    adapters, store: autoCompactStore, notify: createUnfinishedSessionNotifier(),
+    held: (harness, id) => humanStopStore.isHeld(harness, id),
+    worthResuming: async (session) => {
+      if (await humanStopStore.observe(session)) return false;
+      const recovery = (await sessionAutostartStore.getEffective(session.harness, session.id, session.cwd)).enabled;
+      const pilot = await autopilotPolicyStore.readEffective();
+      const override = await autopilotSessionStore.get(session.harness as "zcode", session.id);
+      const pilotEnabled = pilot.policy.enabled && (override?.enabled ?? pilot.policy.harnesses.includes(session.harness as "zcode"));
+      if (!recovery && !pilotEnabled) return false;
+      if (session.meta?.pinned === true) return true;
+      const record = (await unfinishedSessionStore.listInventory()).find((item) => item.harness === session.harness && item.sessionId === session.id && item.cwd === session.cwd);
+      return record?.verdict?.verdict === "unfinished" && record.lastActivity === session.lastActivity;
+    },
+  });
+  const stopAutoCompact = autoCompactService.start();
+  process.once("exit", stopAutoCompact);
   const stopProcessObservation = processSupervisor.startObservation(Number(process.env.AGENT_HERDER_SESSION_OBSERVATION_INTERVAL_MS || 5_000));
   process.once("exit", stopProcessObservation);
   const stopCompletionNoticeSweeper = startCompletionNoticeSweeper();
@@ -803,6 +822,8 @@ async function main() {
       autopilotPolicyStore,
       autopilotSessionStore,
       sessionAutostartStore,
+      autoCompactService,
+      autoCompactStore,
       automationLaunchPolicyStore,
       autopilotSweepIntervalMs: Number(process.env.AGENT_HERDER_AUTOPILOT_SWEEP_INTERVAL_MS || 30_000),
     });

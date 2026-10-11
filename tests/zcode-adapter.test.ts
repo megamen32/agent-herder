@@ -114,6 +114,36 @@ class FakeClient implements ZcodeClientLike {
   }
 }
 
+describe("native compact admission (focused integration, expected 1s/max 10s)", () => {
+  it.each(["accepted", "busy", "new-input"])("keeps the same ID and revision for %s", async (state) => {
+    class CompactClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSession") {
+          this.calls.push({ channel, method, args });
+          return { ...snapshot, messages: snapshot.messages.map((message) => ({ ...message, info: { ...message.info, semantics: { origin: "real_user", kind: "user_prompt" } } })), session: { ...session, status: "idle", parentSessionId: undefined, sessionKind: "interactive", updatedAt: Date.now() }, runtime: { ...snapshot.runtime, ...(state === "busy" ? { activeTurnId: "running" } : {}) } };
+        }
+        if (channel === "zcode-agent" && method === "compactSession") {
+          this.calls.push({ channel, method, args });
+          return { snapshot, compact: { state: "accepted", inputId: "compact-one" } };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new CompactClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client }); await adapter.init();
+    try {
+      const result = await adapter.compactSession("session-1", { inputId: "compact-one", expectedUserMessageId: state === "new-input" ? "old-user" : "message-1" });
+      const calls = client.calls.filter((call) => call.method === "compactSession");
+      if (state === "accepted") {
+        expect(result).toMatchObject({ ok: true, admitted: true, sessionId: "session-1", pending: true });
+        expect(calls[0]?.args[0]).toMatchObject({ sessionId: "session-1", inputId: "compact-one", expectedRevision: 3 });
+        expect((await adapter.getSession("session-1"))?.status).toBe("idle");
+      } else { expect(result.ok).toBe(false); expect(calls).toHaveLength(0); }
+      expect(client.calls.some((call) => ["sendPrompt", "sendConversationInput", "createSession"].includes(call.method))).toBe(false);
+    } finally { await adapter.dispose(); }
+  });
+});
+
 class StaleStatusClient extends FakeClient {
   updatedAtMs = Date.now() - 30_000;
   override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {

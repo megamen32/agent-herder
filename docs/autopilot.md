@@ -448,6 +448,38 @@ A timeout, disconnect, or unverifiable turn ID returns
 `admissionUnknown/nonRetryable`: reconcile native state and hold rather than
 blindly submitting the message again.
 
+
+## Independent pages and idle-context maintenance
+
+Autopilot and Autocontinue have separate settings pages. Each page lists harnesses
+with its own switches and explicitly marks unavailable mechanisms. Semantic
+Autopilot does not require the Autocontinue switch: it selects and executes the
+next authorized useful step in the original session. A choice judge can supply
+`recommendedChoiceId` for human-silence timeout; null means the decision actually
+requires human authority/input. Multiple implementation approaches do not by
+themselves require another approval.
+
+Autocompact is maintenance on the Autocontinue page, independently configurable.
+It uses the native ZCode `session/compact` capability without a task prompt or
+replacement session. Automatic eligibility requires a quiet, warm large context
+and resumption interest: a native pin, or a current unfinished inventory verdict,
+with either Autopilot or Autocontinue enabled. Human stops, pending input,
+permissions and active turns postpone it. Admission is durable and deduplicated;
+unknown admission is never automatically replayed. Completion is confirmed by a
+smaller observed native context, rather than the acknowledgement alone.
+
+The start target subtracts the measured recent maximum compact duration (at
+least 60 seconds), a 30-second finish margin and one 15-second poll from the cache
+window. Z.AI [cache documentation](https://docs.z.ai/guides/capabilities/cache)
+publishes no fixed TTL: the 300-second default for GLM is an editable scheduling
+estimate, **not a verified five-minute retention guarantee**. Exact model/harness
+`AGENT_HERDER_CACHE_TTL_MINUTES` overrides take precedence. Compaction consumes
+model tokens; it is not a keepalive or a guarantee of the next request's cache hit.
+
+The old fleet Codex campaign registry is not ZCode task authorization; native
+ZCode work retains its existing mandatory systemd descendant budget. Its
+same-session Autopilot admission is independent of that historical registry.
+Automatic compact failures use the existing Notice Place incident sink.
 ## Human questions, answers and one resume per answer
 
 A `human` judge decision and a `choice` decision are both real questions, not

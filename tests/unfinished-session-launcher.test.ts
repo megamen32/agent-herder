@@ -89,7 +89,7 @@ describe("unfinished session crash recovery", () => {
         expect(plans).toBe(0);
         expect(calls).toEqual({ resumes: 0, messages: [] });
     });
-    it("runs a ZCode-only semantic backlog through enabled Autopilot and preserves each session id", async () => {
+    it("runs Autopilot independently with recovery disabled and preserves each ZCode session id", async () => {
         const root = await mkdtemp(join(tmpdir(), "semantic-zcode-autopilot-"));
         const sessions = [fixture("idle", "zcode", "zcode-1"), fixture("idle", "zcode", "zcode-2")];
         const calls = { resumes: [] as string[], messages: [] as Array<{ id: string; message: string }> };
@@ -103,9 +103,11 @@ describe("unfinished session crash recovery", () => {
         };
         const policyStore = new AutopilotPolicyStore(join(root, "autopilot-policy.json"));
         await policyStore.replacePolicy({ schemaVersion: 1, enabled: true, harnesses: ["zcode"], scope: { mode: "all_ingress" }, maxContinuationsPerSession: 10, timeout: { mode: "auto_continue", delayMs: 1000 }, card: { includeUserMessage: true, includeAssistantMessage: true, includeReason: true } }, null);
+        const recoverySettings = new SessionAutostartStore(join(root, "settings.json"), {});
+        await recoverySettings.setGlobal(false);
         const launcher = new UnfinishedSessionLauncher({
             adapters: new Map([["zcode", adapter]]), store: new UnfinishedSessionStore(join(root, "state.json")),
-            settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), autopilotPolicyStore: policyStore,
+            settingsStore: recoverySettings, autopilotPolicyStore: policyStore,
             autopilotSessionStore: new AutopilotSessionStore(join(root, "sessions.json")), discoveryIdleMs: 1,
             judge: { async decide() { return { verdict: "unfinished", reason: "work remains", confidence: 1 }; }, async plan({ sessions: candidates }) { return { groups: [{ sourceSessionIds: candidates.map(({ session }) => session.id), primarySessionId: candidates[0]!.session.id, verdict: "unfinished", reason: "work remains", confidence: 1, topic: "shared topic", handoff: "finish the task" }] }; } },
         });
