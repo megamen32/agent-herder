@@ -2001,3 +2001,15 @@ it("uses the model catalog default reasoning level for a plain model selection",
  const client=new ReasoningCatalogClient(),adapter=new ZcodeAdapter({cwd:"/workspace",client});
  try{await expect(adapter.changeModel("session-1","zai/GLM-5.3")).resolves.toEqual({ok:true});expect(client.calls.find(call=>call.method==="setModel")?.args[0]).toMatchObject({model:{providerId:"zai",modelId:"GLM-5.3",options:{reasoningLevel:"high"}}});}finally{await adapter.dispose();}
 });
+
+// Focused integration expected1s/max5s: native session catalog can contain only the current model.
+it("reads a new model's required defaults from the workspace picker catalog", async()=>{
+ class WorkspaceDefaultsClient extends FakeClient{
+  override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   if(method==="readWorkspaceState")return {settings:{model:{available:[{ref:{providerId:"zai",modelId:"GLM-5.3"},reasoning:{defaultLevel:"max"}}]}}};
+   return super.call(channel,method,args);
+  }
+ }
+ const client=new WorkspaceDefaultsClient(),adapter=new ZcodeAdapter({cwd:"/workspace",client});
+ try{await expect(adapter.changeModel("session-1","zai/GLM-5.3")).resolves.toEqual({ok:true});expect(client.calls.find(call=>call.method==="setModel")?.args[0]).toMatchObject({model:{providerId:"zai",modelId:"GLM-5.3",options:{reasoningLevel:"max"}}});}finally{await adapter.dispose();}
+});

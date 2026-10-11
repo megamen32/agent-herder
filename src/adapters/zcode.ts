@@ -2027,11 +2027,16 @@ export class ZcodeAdapter implements HarnessAdapter {
         return { ok: false, error: "ZCode model must be provider/model or a model ID with a known current provider" };
       }
       if (!modelRef.options?.reasoningLevel) {
-        const available = record(record(snapshot).settings).model;
-        const entry = (Array.isArray(record(available).available) ? record(available).available as unknown[] : []).map(record).find(option => {
-          const ref = record(option.ref);
-          return ref.providerId === modelRef.providerId && ref.modelId === modelRef.modelId;
-        });
+        const findOption = (state: unknown) => {
+          const available = record(record(record(state).settings).model).available;
+          return (Array.isArray(available) ? available : []).map(record).find(option => {
+            const ref = record(option.ref);
+            return ref.providerId === modelRef.providerId && ref.modelId === modelRef.modelId;
+          });
+        };
+        // A session snapshot may expose only its current model. The same
+        // workspace catalog used by the picker carries defaults for new models.
+        const entry = findOption(snapshot) ?? findOption(await this.callAgent("readWorkspaceState", this.workspace()));
         const defaultLevel = nonEmptyString(record(entry?.reasoning).defaultLevel);
         if (defaultLevel) modelRef.options = { reasoningLevel: defaultLevel };
       }
