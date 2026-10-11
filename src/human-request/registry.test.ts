@@ -68,6 +68,59 @@ describe("HumanRequestRegistry", () => {
     expect(first).toMatchObject({ status: "resuming", resultRef: "result://opaque/1" });
   });
 
+  it("persists one stable admission key and reports which caller may resume", async () => {
+    const { store, filePath } = await registry();
+    const created = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "s", cwd: "/workspace" } });
+
+    const admitted = await store.admitResume(created.requestId, { resultRef: "result://opaque/1" });
+    expect(admitted.admitted).toBe(true);
+    expect(admitted.recovered).toBe(false);
+    expect(admitted.record).toMatchObject({
+      status: "resuming",
+      attemptId: admitted.record.attemptId,
+      idempotencyKey: `human-request:${created.requestId}:${admitted.record.attemptId}`,
+    });
+    expect(admitted.record.resumeLeaseExpiresAt).toBeTypeOf("string");
+
+    const duplicate = await store.admitResume(created.requestId, { resultRef: "result://opaque/2" });
+    expect(duplicate.admitted).toBe(false);
+    expect(duplicate.idempotencyKey).toBe(admitted.idempotencyKey);
+    expect(duplicate.record).toEqual(admitted.record);
+    expect(await readFile(filePath, "utf8")).not.toContain("result://opaque/2");
+
+    const terminal = await store.completeResume(created.requestId, { attemptId: admitted.record.attemptId!, receipt: "receipt://opaque" });
+    const afterTerminal = await store.admitResume(created.requestId, { resultRef: "result://opaque/3" });
+    expect(afterTerminal.admitted).toBe(false);
+    expect(afterTerminal.record).toEqual(terminal);
+  });
+
+  it("admits one caller across concurrent admissions of the same request", async () => {
+    const { store } = await registry();
+    const created = await store.create({ kind: "user", target: { agent: "zcode", sessionId: "s", cwd: "/workspace" } });
+
+    const receipts = await Promise.all(Array.from({ length: 8 }, (_, index) => store.admitResume(created.requestId, { resultRef: `result://opaque/${index}` })));
+
+    expect(receipts.filter((receipt) => receipt.admitted)).toHaveLength(1);
+    expect(new Set(receipts.map((receipt) => receipt.idempotencyKey)).size).toBe(1);
+    expect(new Set(receipts.map((receipt) => receipt.record.attemptId)).size).toBe(1);
+    await expect(store.get(created.requestId)).resolves.toMatchObject({ status: "resuming" });
+  });
+
+  it("takes an expired in-flight lease over with the same attempt and key", async () => {
+    const { store } = await registry();
+    const created = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "s", cwd: "/workspace" } });
+    const admitted = await store.admitResume(created.requestId, { resultRef: "result://opaque/1", leaseMs: 1_000, now: new Date("2026-10-11T10:00:00.000Z") });
+
+    const duringLease = await store.admitResume(created.requestId, { resultRef: "result://opaque/1", now: new Date("2026-10-11T10:00:00.500Z") });
+    expect(duringLease.admitted).toBe(false);
+
+    const afterLease = await store.admitResume(created.requestId, { resultRef: "result://opaque/1", now: new Date("2026-10-11T10:05:00.000Z") });
+    expect(afterLease.admitted).toBe(true);
+    expect(afterLease.recovered).toBe(true);
+    expect(afterLease.idempotencyKey).toBe(admitted.idempotencyKey);
+    expect(afterLease.record.attemptId).toBe(admitted.record.attemptId);
+  });
+
   it("allows only the owning attempt to complete or fail", async () => {
     const { store } = await registry();
     const created = await store.create({ kind: "secret", target: { agent: "claude", sessionId: "s", cwd: "/tmp" } });

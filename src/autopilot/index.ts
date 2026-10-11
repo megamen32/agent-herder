@@ -126,7 +126,7 @@ export async function drainPendingNotices(store: ReceiptStore, notify: Notificat
     if (!receipt.pendingNotice) continue;
     try {
       await notify.send(receipt.pendingNotice);
-      store.set(key, { kind: receipt.kind });
+      store.set(key, { kind: receipt.kind, ...(receipt.humanRequestId ? { humanRequestId: receipt.humanRequestId } : {}) });
       delivered += 1;
     } catch {
       // Keep the exact payload for the next background sweep.
@@ -355,7 +355,10 @@ export function createAutopilotCore(options: {
         activeTurnKeys.add(turnPrefix);
         try {
           await options.notify.send(existingReceipt.pendingNotice);
-          options.receiptStore.set(existingKey, { kind: existingReceipt.kind });
+          options.receiptStore.set(existingKey, {
+            kind: existingReceipt.kind,
+            ...(existingReceipt.humanRequestId ? { humanRequestId: existingReceipt.humanRequestId } : {}),
+          });
         } catch {
           // The terminal decision is already durable. Keep the exact notice in
           // the receipt outbox so a later Stop can retry without re-judging or
@@ -986,7 +989,12 @@ export async function loadReceiptStore(path: string): Promise<ReceiptStore> {
       )
     ) {
       const pendingNotice = notificationPayloadFromReceipt((value as Record<string, unknown>).pendingNotice);
-      store.set(key, { kind: (value as Receipt).kind, ...(pendingNotice ? { pendingNotice } : {}) });
+      const humanRequestId = (value as Record<string, unknown>).humanRequestId;
+      store.set(key, {
+        kind: (value as Receipt).kind,
+        ...(pendingNotice ? { pendingNotice } : {}),
+        ...(typeof humanRequestId === "string" && humanRequestId.length > 0 ? { humanRequestId } : {}),
+      });
     }
   }
   return store;
