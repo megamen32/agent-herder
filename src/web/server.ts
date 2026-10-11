@@ -1120,10 +1120,15 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (typeof body.request_id !== "string" || body.request_id.length === 0) {
       return sendJson(response, 400, { error: "request_id is required" });
     }
+    // An explicit reason is required: a bound question must not be withdrawn
+    // casually, and the reason is the audit record of why it went away.
+    if (typeof body.reason !== "string" || body.reason.trim().length === 0) {
+      return sendJson(response, 400, { error: "reason is required to cancel a bound question" });
+    }
     try {
       // An expired or withdrawn question must not hold its session behind the
       // pending-question gate forever. Cancelling resumes nothing.
-      const record = await humanRequests.cancel(body.request_id, typeof body.reason === "string" ? body.reason : undefined);
+      const record = await humanRequests.cancel(body.request_id, body.reason);
       return sendJson(response, 200, { request_id: record.requestId, status: record.status, continuation: record.continuation });
     } catch (error) {
       const reason = (error as Error).message;

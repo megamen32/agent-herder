@@ -409,8 +409,9 @@ export class HumanRequestRegistry {
    * behind the pending-question gate forever. Cancellation is terminal, resumes
    * nothing and never touches a native session.
    */
-  async cancel(requestId: string, reason?: string): Promise<HumanRequestRecord> {
+  async cancel(requestId: string, reason: string): Promise<HumanRequestRecord> {
     const checkedReason = opaqueRef(reason, "reason");
+    if (!checkedReason) throw new Error("an explicit reason is required to cancel a request");
     return this.mutate(async () => {
       const file = await this.read();
       const record = file.requests.find((item) => item.requestId === requestId);

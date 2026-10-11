@@ -22,6 +22,7 @@ import { dispatchProjectLaunch, namedSessionRunner, ProjectLaunchAttemptLog, typ
 import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
 import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore, type PendingHumanQuestion } from "./autopilot/index.js";
 import { buildAskHumanRequest } from "./human-request/notice-question.js";
+import { describeAskHumanProducer, loadAskHumanProducer, type AskHumanProducer } from "./human-request/ask-human-producer.js";
 import { acquireLock } from "./autopilot-hook.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
 import { SessionSupervisor } from "./session-supervisor.js";
@@ -508,33 +509,36 @@ function registerTools(
   registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined });
 }
 
-/** The dedicated Notice human-request intake: one call is one real question card. */
+/**
+ * The human-question delivery port.
+ *
+ * Ordinary human questions go to the existing protected AskHuman producer: the
+ * same endpoint, project, token and allowed actors that the phone-facing stdio
+ * uses, so the human sees and answers them in the same scope. Herder's own
+ * automatic `/v1/events` intake keeps its `agent-herder` project and is never
+ * used for a question.
+ */
 function createNoticeQuestionDelivery(env: NodeJS.ProcessEnv): (question: PendingHumanQuestion) => Promise<void> {
-  const token = env.NOTIFY_CENTER_TOKEN?.trim();
-  if (!token) throw new Error("NOTIFY_CENTER_TOKEN is required to ask a human a question");
-  const endpoint = env.NOTIFY_CENTER_HUMAN_REQUEST_URL?.trim()
-    ?? env.NOTIFY_CENTER_EVENT_URL?.trim().replace(/\/v1\/events\/?$/, "/v1/human-requests");
-  if (!endpoint) throw new Error("NOTIFY_CENTER_HUMAN_REQUEST_URL or NOTIFY_CENTER_EVENT_URL is required to ask a human a question");
-  const allowedActors = env.NOTIFY_CENTER_ALLOWED_ACTORS?.split(",").map((actor) => actor.trim()).filter(Boolean);
-  const project = env.NOTIFY_CENTER_PROJECT?.trim() || env.AGENT_HERDER_AUTOPILOT_NOTIFY_PROJECT?.trim() || "agent-herder";
-  const recipient = env.AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT?.trim() || "me";
-  return async (question) => {
-    const envelope = buildAskHumanRequest({
-      request_id: question.request_id,
-      native_target: question.native_target,
-      dedup_key: question.dedup_key,
-      kind: question.kind,
-      question: question.question,
-    }, {
-      project,
-      recipient,
-      ...(allowedActors && allowedActors.length > 0 ? { allowedActors } : {}),
+  let pending: Promise<AskHumanProducer | undefined> | undefined;
+  const producerOf = (): Promise<AskHumanProducer | undefined> => {
+    pending ??= loadAskHumanProducer(env).then((producer) => {
+      if (producer) console.error(`[agent-herder] human questions use the AskHuman producer (${describeAskHumanProducer(producer)})`);
+      return producer;
     });
-    const fetchImpl = fetch;
-    const response = await fetchImpl(endpoint, {
+    return pending;
+  };
+  return async (question) => {
+    const producer = await producerOf();
+    if (!producer) throw new Error("no AskHuman producer is configured; a human question cannot be delivered");
+    const envelope = buildAskHumanRequest(question, {
+      project: producer.project,
+      recipient: producer.recipient,
+      ...(producer.allowedActors ? { allowedActors: producer.allowedActors } : {}),
+    });
+    const response = await fetch(producer.endpoint, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${token}`,
+        authorization: `Bearer ${producer.token}`,
         "content-type": "application/json",
         // The registry's canonical key, so a redelivery updates the same card.
         "idempotency-key": question.dedup_key,

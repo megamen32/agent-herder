@@ -23,6 +23,13 @@ export {
   type HumanQuestionNativeTarget,
 } from "./question-binding.js";
 export {
+  askHumanEnvPath,
+  describeAskHumanProducer,
+  loadAskHumanProducer,
+  parseEnvFile,
+  type AskHumanProducer,
+} from "./ask-human-producer.js";
+export {
   buildAskHumanRequest,
   deliverNoticeQuestion,
   type AskHumanRequestV1,

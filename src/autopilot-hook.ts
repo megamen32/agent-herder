@@ -18,6 +18,7 @@ import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
 import { deliverNoticeQuestion, type NoticeQuestionConfig } from "./human-request/notice-question.js";
+import { loadAskHumanProducer } from "./human-request/ask-human-producer.js";
 import type { PendingHumanQuestion } from "./autopilot/index.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
@@ -71,19 +72,16 @@ export async function runAutopilotStopHook(
 }
 
 /** Load the effective policy from the same configured store path used by the web service. */
-/** The dedicated Notice human-request intake, when it is configured. */
-function noticeQuestionConfig(): NoticeQuestionConfig | undefined {
-  const token = process.env.NOTIFY_CENTER_TOKEN?.trim();
-  const endpoint = process.env.NOTIFY_CENTER_HUMAN_REQUEST_URL?.trim()
-    ?? process.env.NOTIFY_CENTER_EVENT_URL?.trim().replace(/\/v1\/events\/?$/, "/v1/human-requests");
-  if (!token || !endpoint) return undefined;
-  const allowedActors = process.env.NOTIFY_CENTER_ALLOWED_ACTORS?.split(",").map((actor) => actor.trim()).filter(Boolean);
+/** The protected AskHuman producer, when it is configured on this host. */
+async function noticeQuestionProducer(): Promise<NoticeQuestionConfig | undefined> {
+  const producer = await loadAskHumanProducer(process.env);
+  if (!producer) return undefined;
   return {
-    endpoint,
-    token,
-    project: process.env.NOTIFY_CENTER_PROJECT?.trim() || process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_PROJECT?.trim() || "agent-herder",
-    recipient: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT?.trim() || "me",
-    ...(allowedActors && allowedActors.length > 0 ? { allowedActors } : {}),
+    endpoint: producer.endpoint,
+    token: producer.token,
+    project: producer.project,
+    recipient: producer.recipient,
+    ...(producer.allowedActors ? { allowedActors: producer.allowedActors } : {}),
   };
 }
 
@@ -161,7 +159,7 @@ async function main(): Promise<void> {
     const receiptStore = await loadReceiptStore(receiptPath);
     const choiceRegistry = new ChoiceRegistry(join(stateDir, "choices.json"));
     const humanRequests = new HumanRequestRegistry(resolveHumanRequestStorePath(stateDir));
-    const questionConfig = noticeQuestionConfig();
+    const questionConfig = await noticeQuestionProducer();
     const result = await runAutopilotStopHook(input, {
       judge,
       notify,

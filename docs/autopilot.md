@@ -512,10 +512,15 @@ question card. Two callers may create the binding:
 
 - a plugin or agent through `human_request_create`;
 - Herder itself, when the judge decides a human decision is required. It builds
-  the same binding and posts exactly one envelope to
-  `NOTIFY_CENTER_HUMAN_REQUEST_URL` (default: `NOTIFY_CENTER_EVENT_URL` with
-  `/v1/events` replaced by `/v1/human-requests`), using the configured producer
-  token, `NOTIFY_CENTER_PROJECT` and `NOTIFY_CENTER_ALLOWED_ACTORS`:
+  the same binding and posts exactly one envelope to the **protected AskHuman
+  producer**, read at runtime from `~/.config/ask-human/env` (override with
+  `ASK_HUMAN_ENV_FILE`): `ASK_HUMAN_URL`, `ASK_HUMAN_ALLOWED_ACTORS`,
+  `NOTIFY_CENTER_PROJECT` and its own token. That is the same producer, project
+  and actor scope the phone-facing stdio uses, so a Judge question is visible
+  and answerable in the same place as an ordinary one. Herder's own
+  `/v1/events` intake keeps its `agent-herder` project and is never used for a
+  question; no token value is copied or logged, and the startup line reports
+  only `project`, endpoint, actor count and source:
 
 ```json
 {
@@ -533,6 +538,10 @@ question card. Two callers may create the binding:
 
 The request id is Herder's canonical key and is sent as the `Idempotency-Key`
 header, so a retry updates the same question instead of creating a second card.
+
+A deployment without an AskHuman config falls back to Herder's own notification
+producer, and the fallback is reported explicitly; it is the last resort, not
+the default, because a question must land in the scope where the human looks.
 If the intake is not configured, no request is created at all: a notification
 alone must never leave a request pending behind a question nobody can answer.
 

@@ -123,8 +123,9 @@ describe("UnfinishedSessionLauncher pending-question gate", () => {
     const request = await humanRequests.create({ kind: "user", target: question });
     expect(await launcher.armSession(session)).toBe(false);
 
-    const cancelled = await humanRequests.cancel(request.requestId, "notice://question/expired");
-    expect(cancelled).toMatchObject({ status: "cancelled" });
+    await expect(humanRequests.cancel(request.requestId)).rejects.toThrow("explicit reason");
+    const cancelled = await humanRequests.cancel(request.requestId, "native_question_withdrawn");
+    expect(cancelled).toMatchObject({ status: "cancelled", receipt: "cancelled:native_question_withdrawn" });
     expect(await launcher.armSession(session)).toBe(true);
     // A cancelled request is never resumed later.
     await expect(humanRequests.admitResume(request.requestId, { resultRef: "result://late" })).rejects.toThrow("cancelled");

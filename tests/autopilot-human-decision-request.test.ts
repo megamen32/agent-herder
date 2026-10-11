@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createAutopilotCore, loadReceiptStore, persistReceiptStore, type AutopilotDecision, type StopHookInput } from "../src/autopilot/index.js";
 import { HumanRequestRegistry } from "../src/human-request/index.js";
 import { buildAskHumanRequest, deliverNoticeQuestion } from "../src/human-request/notice-question.js";
+import { loadAskHumanProducer } from "../src/human-request/ask-human-producer.js";
 
 const baseInput: StopHookInput = {
   hook_event_name: "Stop",
@@ -33,13 +34,23 @@ describe("autopilot human decision branch", () => {
       const sink = { send: vi.fn(async () => { }) };
       const receipts = new Map();
       const posted: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> = [];
+      // The same wiring the daemon uses: the protected AskHuman producer, whose
+      // scope the phone-facing stdio also uses.
+      const producer = await loadAskHumanProducer({
+        ASK_HUMAN_URL: "https://notify.example/v1/human-requests",
+        ASK_HUMAN_ALLOWED_ACTORS: "telegram:540308572",
+        NOTIFY_CENTER_TOKEN: "ask-human-token",
+        NOTIFY_CENTER_PROJECT: "hermes",
+        NOTIFY_CENTER_EVENT_URL: "https://notify.example/v1/events",
+      } as NodeJS.ProcessEnv, root);
       const deliverHumanQuestion = async (question: Parameters<NonNullable<Parameters<typeof createAutopilotCore>[0]["deliverHumanQuestion"]>>[0]) => {
+        expect(producer?.project).toBe("hermes");
         await deliverNoticeQuestion(question, {
-          endpoint: "https://notify.example/v1/human-requests",
-          token: "token",
-          project: "agent-herder",
-          recipient: "me",
-          allowedActors: ["user:roomhacker"],
+          endpoint: producer!.endpoint,
+          token: producer!.token,
+          project: producer!.project,
+          recipient: producer!.recipient,
+          ...(producer!.allowedActors ? { allowedActors: producer!.allowedActors } : {}),
           fetchImpl: (async (url: string, init: RequestInit) => {
             posted.push({
               url: String(url),
@@ -60,16 +71,19 @@ describe("autopilot human decision branch", () => {
 
       // Exactly one real question row and no generic event card.
       expect(posted).toHaveLength(1);
+      // The question goes to the producer the human answers in, not to the
+      // automatic agent-herder events intake.
       expect(posted[0]?.url).toBe("https://notify.example/v1/human-requests");
+      expect(posted[0]?.headers.authorization).toBe("Bearer ask-human-token");
       expect(posted[0]?.headers["idempotency-key"]).toBe(`human-request:${posted[0]?.body.request_id as string}`);
       expect(posted[0]?.body).toMatchObject({
         schema: "ask_human.request.v1",
         request_id: expect.any(String),
-        project: "agent-herder",
+        project: "hermes",
         recipient: "me",
         mode: "question",
         kind: "user",
-        allowed_actors: ["user:roomhacker"],
+        allowed_actors: ["telegram:540308572"],
         native_target: { harness: "opencode", session_id: baseInput.session_id, cwd: baseInput.cwd },
       });
       expect(String(posted[0]?.body.message)).toContain(humanDecision.title);

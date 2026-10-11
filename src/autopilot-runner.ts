@@ -18,6 +18,8 @@ import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { deliverNoticeQuestion, type NoticeQuestionConfig } from "./human-request/notice-question.js";
+import { loadAskHumanProducer } from "./human-request/ask-human-producer.js";
+import type { PendingHumanQuestion } from "./autopilot/index.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { effectivePolicyAllowsTarget } from "./autopilot/policy.js";
@@ -43,21 +45,16 @@ export type AutopilotRunnerInput = {
 
 const stateDir = resolveAutopilotStateDir();
 
-/** The dedicated Notice human-request intake used by a human judge decision. */
-function noticeQuestionConfig(): NoticeQuestionConfig {
-  const token = process.env.NOTIFY_CENTER_TOKEN?.trim();
-  const endpoint = process.env.NOTIFY_CENTER_HUMAN_REQUEST_URL?.trim()
-    ?? process.env.NOTIFY_CENTER_EVENT_URL?.trim().replace(/\/v1\/events\/?$/, "/v1/human-requests");
-  if (!token || !endpoint) {
-    throw new Error("NOTIFY_CENTER_TOKEN and a human-request endpoint are required to ask a human a question");
-  }
-  const allowedActors = process.env.NOTIFY_CENTER_ALLOWED_ACTORS?.split(",").map((actor) => actor.trim()).filter(Boolean);
+/** The protected AskHuman producer: the scope a human answers an ordinary question in. */
+async function noticeQuestionProducer(): Promise<NoticeQuestionConfig | undefined> {
+  const producer = await loadAskHumanProducer(process.env);
+  if (!producer) return undefined;
   return {
-    endpoint,
-    token,
-    project: process.env.NOTIFY_CENTER_PROJECT?.trim() || process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_PROJECT?.trim() || "agent-herder",
-    recipient: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT?.trim() || "me",
-    ...(allowedActors && allowedActors.length > 0 ? { allowedActors } : {}),
+    endpoint: producer.endpoint,
+    token: producer.token,
+    project: producer.project,
+    recipient: producer.recipient,
+    ...(producer.allowedActors ? { allowedActors: producer.allowedActors } : {}),
   };
 }
 
@@ -105,6 +102,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
     const choiceRegistry = new ChoiceRegistry(join(stateDir, "choices.json"));
     const humanRequests = new HumanRequestRegistry(resolveHumanRequestStorePath(stateDir));
     const pendingQuestions = new PendingQuestionGate({ humanRequests, choices: choiceRegistry });
+    const questionProducer = await noticeQuestionProducer();
     const receipts = await loadReceiptStore(receiptPath);
     let observedDecision: { decision: AutopilotDecision; choiceRequestId?: string } | undefined;
     const core = createAutopilotCore({
@@ -129,7 +127,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
       },
       choiceRegistry,
       humanRequests,
-      deliverHumanQuestion: (question) => deliverNoticeQuestion(question, noticeQuestionConfig()),
+      ...(questionProducer ? { deliverHumanQuestion: (question: PendingHumanQuestion) => deliverNoticeQuestion(question, questionProducer) } : {}),
       // The same durable fence the launcher applies: an unanswered question is
       // never continued here, whatever turn id arrives.
       pendingQuestions,
