@@ -463,7 +463,11 @@ Autocompact is maintenance on the Autocontinue page, independently configurable.
 It uses the native ZCode `session/compact` capability without a task prompt or
 replacement session. Automatic eligibility requires a quiet, warm large context
 and resumption interest: a native pin, or a current unfinished inventory verdict,
-with either Autopilot or Autocontinue enabled. Human stops, pending input,
+with either Autopilot or Autocontinue enabled. The independent thresholds default
+to **35% of the native model context window** and **5 real human messages**.
+Both are configurable; generated continuation prompts and synthetic/model-only
+messages do not count toward human engagement. Native SQLite turn receipts are
+used when the live snapshot omits terminal event history. Human stops, pending input,
 permissions and active turns postpone it. Admission is durable and deduplicated;
 unknown admission is never automatically replayed. Completion is confirmed by a
 smaller observed native context, rather than the acknowledgement alone.

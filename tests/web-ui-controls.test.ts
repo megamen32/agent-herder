@@ -94,8 +94,8 @@ describe("mobile chat and session controls", () => {
     expect(header).toContain('>Автопилот<span className={`toggle-dot');
     expect(header).toContain("activeAutocontinueEnabled");
     expect(header).toContain('activeAutopilotEnabled');
-    expect(menu).toContain('Автопродолжение · восстановление после сбоев: ${activeAutocontinueEnabled ? "включено" : "выключено"}');
-    expect(menu).toContain('Автопилот · завершение задач: ${activeAutopilotEnabled ? "включён" : "выключен"}');
+    expect(menu).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
+    expect(menu).toContain('Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})');
   });
 
   it("puts live agent activity immediately above the composer and session automation in the inspector", () => {
@@ -128,8 +128,8 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('React.useState(() => window.innerWidth > 1180)');
     expect(main).toContain('aria-label="Открыть настройки автоматизации"');
     expect(main).toContain('>Автоматизация</button>');
-    expect(main).toContain('Автопродолжение · восстановление после сбоев: ${activeAutocontinueEnabled ? "включено" : "выключено"}');
-    expect(main).toContain('Автопилот · завершение задач: ${activeAutopilotEnabled ? "включён" : "выключен"}');
+    expect(main).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
+    expect(main).toContain('Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})');
     expect(styles).toContain('.header-actions .mobile-automation-button { display: inline-flex;');
     expect(styles).toContain('.header-actions .desktop-chat-menu { display: none; }');
     expect(styles).toContain('@media (max-width: 900px)');
@@ -193,7 +193,7 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain("после подтверждённой ошибки");
     expect(main).toContain("ожидание ответа или разрешения человека");
     expect(main).toContain("Автопилот решает");
-    expect(main).toContain("первый рекомендованный вариант");
+    expect(main).toContain("рекомендованный разрешённый шаг");
     for (const jargon of ["глобальный master", "этот pin", "Judge решает", "рекомендованный Judge вариант", "native process/turn", "Наследуется от harness policy", "Наследовать policy"]) {
       expect(main).not.toContain(jargon);
     }
