@@ -122,3 +122,24 @@ and payload manifest unchanged, run native admission, then start the previously
 stopped owned node once. Acceptance requires native `fleet_node_info`, fresh
 cabinet host readiness and multiple steady watchdog samples, with native Codex
 identity unchanged; `--check` alone is insufficient.
+
+
+### M1 artifact census after the native-PID fix (2026-10-12)
+
+The first targeted-owner runtime remained alive for 763.97 seconds, then its
+protected `last-run.json` recorded `observation_failed` in the artifact census:
+4.257 seconds, RSS196320KiB, one process. The native PID/generation/socket proof
+continued to pass. This is a separate observer failure; the old stderr log is
+not a receipt for the latest run.
+
+Use one `/usr/bin/du -A -l -a -k -P .` physical FTS traversal for both entry
+count and the final root byte total, instead of sequential find and du walks.
+[Apple's source](https://github.com/apple-oss-distributions/file_cmds/blob/main/du/du.c)
+emits all files with `-a`, counts file hard-link entries with `-l`, and reports
+traversal/output errors by nonzero exit. Newlines in names conservatively
+increase the entry count; only the complete final root summary selects bytes.
+Stream output in32KiB chunks retaining64bytes; never log paths. Keep the original
+five-second window, cleanup reserve, 30000 entries plus root,512MiB/two releases,
+root UID/device/inode proof,30-second census cadence and fail-closed errors.
+Native candidate measured two releases149498880bytes in0.101 seconds; this is
+read-only candidate evidence, not steady/public-owner acceptance.
