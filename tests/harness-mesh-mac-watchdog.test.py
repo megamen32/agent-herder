@@ -503,6 +503,51 @@ class MacWatchdogTests(unittest.TestCase):
                     config['codexOwnerStartedAt']='different generation'
                     with self.assertRaisesRegex(w.Refused,'managed_codex_owner_unverified'):w.codex_environment(config)
 
+    def test_periodic_socket_owner_is_targeted_but_admission_keeps_global_exclusivity(self):
+        # Fast unit expected<1s/max3s: periodic native owner checks must not scan all Mac FDs.
+        with tempfile.TemporaryDirectory() as folder:
+            home=Path(folder);pointer=home/'.codex/app-server-control/app-server-control.sock';pointer.parent.mkdir(parents=True)
+            binary=home/'codex';binary.write_bytes(b'fixture');binary.chmod(0o700)
+            config={'codexSocket':str(pointer),'codexOwnerPid':42,'codexOwnerBin':str(binary),'codexOwnerStartedAt':'Sat Oct 10 10:00:00 2026'}
+            with owned_unix_fixture(folder) as server:
+                server.bind(str(pointer));pointer.chmod(0o600);server.listen(1)
+                calls=[]
+                def native(args):
+                    calls.append(args)
+                    if args[0]=='/usr/sbin/lsof':return f'p42\nn{binary}\n' if '-d' in args else '42\n'
+                    return f'{w.os.getuid()} Sat Oct 10 10:00:00 2026 codex app-server --listen unix://\n'
+                with patch.object(w.Path,'home',return_value=home),patch.object(w,'command',side_effect=native):
+                    receipt=w.verify_codex_owner(config)
+                    self.assertEqual(receipt['inode'],pointer.stat().st_ino)
+                    unix=[args for args in calls if '-U' in args]
+                    self.assertEqual(unix,[['/usr/sbin/lsof','-t','-nP','-a','-p','42','-U',str(pointer.resolve())]])
+                    calls.clear();w.verify_codex_owner(config,admission=True)
+                    self.assertEqual([args for args in calls if '-U' in args],[['/usr/sbin/lsof','-t','-nP','-a','-U',str(pointer.resolve())]])
+                    for output in ('','99\n','42\n99\n'):
+                        with patch.object(w,'command',side_effect=lambda args:output if '-U' in args else native(args)):
+                            with self.assertRaisesRegex(w.Refused,'managed_codex_owner_unverified'):w.verify_codex_owner(config)
+
+    def test_targeted_owner_check_refuses_socket_replacement_of_same_uid(self):
+        # Fast unit expected<1s/max3s: same approved PID/argv cannot authorize a replaced socket inode.
+        with tempfile.TemporaryDirectory() as folder:
+            home=Path(folder);pointer=home/'.codex/app-server-control/app-server-control.sock';pointer.parent.mkdir(parents=True)
+            binary=home/'codex';binary.write_bytes(b'fixture');binary.chmod(0o700)
+            config={'codexSocket':str(pointer),'codexOwnerPid':42,'codexOwnerBin':str(binary),'codexOwnerStartedAt':'Sat Oct 10 10:00:00 2026'}
+            with owned_unix_fixture(folder) as server,socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as other:
+                server.bind(str(pointer));pointer.chmod(0o600);server.listen(1)
+                replacement=pointer.parent/'replacement.sock';other.bind(str(replacement));replacement.chmod(0o600);other.listen(1)
+                mappings=0
+                def native(args):
+                    nonlocal mappings
+                    if '-d' in args:
+                        mappings+=1
+                        if mappings==2:pointer.unlink();pointer.symlink_to(replacement)
+                        return f'p42\nn{binary}\n'
+                    if '-U' in args:return '42\n'
+                    return f'{w.os.getuid()} Sat Oct 10 10:00:00 2026 codex app-server --listen unix://\n'
+                with patch.object(w.Path,'home',return_value=home),patch.object(w,'command',side_effect=native):
+                    with self.assertRaisesRegex(w.Refused,'managed_codex_owner_unverified'):w.verify_codex_owner(config)
+
     def test_native_argv_global_options_do_not_accept_proxy_or_fake_subcommands(self):
         pointer=Path('/Users/fixture/.codex/app-server-control/app-server-control.sock')
         self.assertTrue(w.native_app_server_argv(['codex','-c','features.code_mode_host=true','app-server','--listen','unix://'],pointer))

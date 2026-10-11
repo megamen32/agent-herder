@@ -290,7 +290,7 @@ def native_text_identity(pid,claimed):
     if pids!={str(pid)} or str(claimed) not in names:
         raise Refused('managed_codex_owner_unverified')
 
-def verify_codex_owner(config):
+def verify_codex_owner(config,*,admission=False):
     pointer=Path(config['codexSocket'])
     if pointer!=Path.home()/'.codex/app-server-control/app-server-control.sock':
         raise Refused('managed_codex_owner_unverified')
@@ -308,7 +308,11 @@ def verify_codex_owner(config):
         if not native_app_server_argv(argv,pointer):raise Refused('managed_codex_owner_unverified')
         native_text_identity(pid,claimed)
     process_identity()
-    pids=command(['/usr/sbin/lsof','-t','-nP','-a','-U',str(physical)]).split()
+    # JOIN/startup retains the global sole-FD-owner proof. Periodic checks
+    # verify only the already-approved PID, with fresh generation/text/socket
+    # fences before and after. They do not claim a global exclusivity census.
+    selector=[] if admission else ['-p',str(pid)]
+    pids=command(['/usr/sbin/lsof','-t','-nP','-a',*selector,'-U',str(physical)]).split()
     if set(pids)!={str(pid)}:raise Refused('managed_codex_owner_unverified')
     process_identity()
     final=pointer.stat()
@@ -324,11 +328,11 @@ def codex_environment(config):
         info=pointer.stat()
         if not stat.S_ISSOCK(info.st_mode) or info.st_uid!=os.getuid():
             raise Refused('managed_codex_socket_missing')
-        verify_codex_owner(config)
+        verify_codex_owner(config,admission=True)
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as probe:
             probe.settimeout(1);probe.connect(str(pointer))
     except OSError:raise Refused('managed_codex_socket_missing') from None
-    verify_codex_owner(config)
+    verify_codex_owner(config,admission=True)
     binary=executable(config['codexBin'])
     return {'CODEX_APP_SERVER_SOCKET':str(pointer),'CODEX_TRANSPORT':'app-server',
             'CODEX_BIN':str(binary),'CODEX_CWD':str(Path.home())}
