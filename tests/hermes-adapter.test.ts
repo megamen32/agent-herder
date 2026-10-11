@@ -15,7 +15,7 @@ class FakeChild extends EventEmitter {
 
 describe("Hermes CLI job adapter", () => {
   it("fails closed when an unknown session observation bridge never responds", async () => {
-    const adapter = new HermesAdapter({
+    const adapter = new HermesAdapter({ gatewayTasks: false,
       // Deliberately use a bridge that accepted the connection but never
       // returns a lookup result, matching the historical post-restart route.
       client: { async callTool() { return await new Promise<never>(() => undefined); } },
@@ -32,7 +32,7 @@ describe("Hermes CLI job adapter", () => {
 
   it("emits native-style lifecycle events for Hermes CLI jobs", async () => {
     const child = new FakeChild();
-    const adapter = new HermesAdapter({ spawnJob: () => child as unknown as ChildProcessWithoutNullStreams });
+    const adapter = new HermesAdapter({ gatewayTasks: false, spawnJob: () => child as unknown as ChildProcessWithoutNullStreams });
     const events: Array<{ kind: string; sessionId?: string; nativeType?: string }> = [];
     const stop = adapter.subscribeEvents((event) => events.push(event));
     const session = await adapter.createSession({ name: "events", cwd: "/tmp" });
@@ -59,7 +59,7 @@ describe("Hermes CLI job adapter", () => {
       args = nextArgs;
       return child as unknown as ChildProcessWithoutNullStreams;
     };
-    const adapter = new HermesAdapter({
+    const adapter = new HermesAdapter({ gatewayTasks: false,
       hermesBin: "/opt/hermes/bin/hermes",
       jobProvider: "openai-codex",
       jobReasoning: "high",
@@ -100,7 +100,7 @@ describe("Hermes CLI job adapter", () => {
     vi.useFakeTimers();
     try {
       const child = new FakeChild();
-      const adapter = new HermesAdapter({
+      const adapter = new HermesAdapter({ gatewayTasks: false,
         jobTimeoutMs: 1_000,
         spawnJob: () => child as unknown as ChildProcessWithoutNullStreams,
       });
@@ -122,7 +122,7 @@ describe("Hermes CLI job adapter", () => {
     vi.useFakeTimers();
     try {
       const child = new FakeChild();
-      const adapter = new HermesAdapter({
+      const adapter = new HermesAdapter({ gatewayTasks: false,
         jobTimeoutMs: 20_000,
         jobUsefulProgressTimeoutMs: 1_000,
         spawnJob: () => child as unknown as ChildProcessWithoutNullStreams,
@@ -145,7 +145,7 @@ describe("Hermes CLI job adapter", () => {
   });
 
   it("does not expose public MCP model control as a fake CLI capability", async () => {
-    const adapter = new HermesAdapter({ client: { async callTool() { return { conversations: [] }; } } });
+    const adapter = new HermesAdapter({ gatewayTasks: false, client: { async callTool() { return { conversations: [] }; } } });
     expect(await adapter.changeModel("telegram:missing", "gpt-5.6-luna")).toEqual({
       ok: false,
       error: "Hermes public MCP surface does not expose model switching",

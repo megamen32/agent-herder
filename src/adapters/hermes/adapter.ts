@@ -11,6 +11,9 @@ import type {
   SendMessageOptions,
   SessionMessageView,
   SetPermissionsOptions,
+  SendMessageResult,
+  MessageAdmissionResult,
+  CreateSessionOptions,
 } from "../../types/index.js";
 import { spawnIsolatedWorkload } from "../../workload-launcher.js";
 
@@ -24,6 +27,10 @@ export interface HermesToolClient {
 }
 
 export interface HermesAdapterConfig {
+  /** Native Gateway tasks are the default. False explicitly selects legacy bounded CLI jobs. */
+  gatewayTasks?: boolean;
+  /** Existing agent-resume loopback ingress; credentials remain in its protected environment. */
+  gatewayEndpoint?: string;
   hermesBin?: string;
   args?: string[];
   cwd?: string;
@@ -153,9 +160,8 @@ function iso(value: unknown): string {
 function errorResult(message: string): ControlResult { return { ok: false, error: message }; }
 
 /**
- * Hermes adapter with two deliberately separate transports: the public
- * `hermes mcp serve` bridge remains observation-only, while health remediation
- * uses a bounded local CLI job. The two paths must not be conflated.
+ * Native tasks enter the existing authenticated Gateway plugin. Public MCP
+ * provides observation; explicitly selected legacy CLI jobs stay bounded.
  */
 export class HermesAdapter implements HarnessAdapter {
   // Hermes is intentionally not added to session-convert's narrower legacy
@@ -163,17 +169,17 @@ export class HermesAdapter implements HarnessAdapter {
   readonly type = "hermes";
   readonly name = "Hermes gateway";
   readonly lazyStart = true;
-  readonly controlCapabilities: HarnessCapabilities = {
-    cancelTurn: true,
+  get controlCapabilities(): HarnessCapabilities { return {
+    cancelTurn: !this.gatewayTasks,
     detach: true,
     resume: false,
-    terminate: true,
+    terminate: !this.gatewayTasks,
     recover: false,
     fork: false,
-    modelSwitch: true,
+    modelSwitch: !this.gatewayTasks,
     subagents: false,
     events: true,
-  };
+  }; }
 
   private readonly config: HermesAdapterConfig;
   private client?: HermesToolClient;
@@ -264,6 +270,12 @@ export class HermesAdapter implements HarnessAdapter {
   async getSession(id: string): Promise<AgentSession | null> {
     const job = this.jobs.get(id);
     if (job) return this.jobToSession(job);
+    if (this.gatewayTasks && id.startsWith("agent:")) {
+      try {
+        const data = await this.gatewayRequest({ op: "session", session_key: id });
+        if (data.ok && data.session) return data.session as unknown as AgentSession;
+      } catch { /* Optional public observation below remains read-only. */ }
+    }
     try {
       const data = await this.observe(() => this.init().then(() => this.client!.callTool("conversation_get", { session_key: id })).then(resultJson));
       return data.error ? null : this.toSession(data as Conversation, id);
@@ -336,9 +348,18 @@ export class HermesAdapter implements HarnessAdapter {
     };
   }
 
-  async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
+  async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     const job = this.jobs.get(id);
     if (job) return this.sendJob(job, options);
+    if (this.gatewayTasks) {
+      if (options.steer) return { ok: false, notSubmitted: true, error: "Hermes Gateway tasks do not hijack an active turn" };
+      const inputId = options.inputId || randomUUID();
+      try {
+        return await this.gatewayRequest({ op: "send", session_key: id, input_id: inputId, message: options.message }) as unknown as SendMessageResult;
+      } catch {
+        return { ok: false, inputId, admissionUnknown: true, nonRetryable: true, error: "Hermes native admission receipt unavailable; query this input ID only" };
+      }
+    }
     await this.init();
     const session = await this.getSession(id);
     if (!session) return { ok: false, error: `Hermes conversation '${id}' not found` };
@@ -354,7 +375,14 @@ export class HermesAdapter implements HarnessAdapter {
     return data.error ? { ok: false, error: String(data.error) } : { ok: true };
   }
 
-  async createSession(options: { name: string; cwd: string }): Promise<AgentSession> {
+  async createSession(options: CreateSessionOptions): Promise<AgentSession> {
+    if (this.gatewayTasks) {
+      // A shared human dialogue is never advertised as a dedicated recovery worker.
+      if (options.healthRecovery) throw new Error("A Hermes home dialogue is not a dedicated health recovery session");
+      const data = await this.gatewayRequest({ op: "bind", name: options.name, cwd: options.cwd });
+      if (!data.ok || !data.session) throw new Error(String(data.error || "Hermes home task binding unavailable"));
+      return data.session as unknown as AgentSession;
+    }
     const existing = [...this.jobs.values()].find((job) => job.title === options.name && job.cwd === options.cwd);
     if (existing) throw new Error(`Named Hermes job '${options.name}' already exists for ${options.cwd}`);
     const now = new Date().toISOString();
@@ -380,6 +408,10 @@ export class HermesAdapter implements HarnessAdapter {
 
   async changeModel(id: string, model: string): Promise<{ ok: boolean; error?: string }> {
     const job = this.jobs.get(id);
+    if (!job && this.gatewayTasks) {
+      const session = await this.getSession(id);
+      return session?.model === model ? { ok: true } : { ok: false, error: "Hermes home session keeps its actual Gateway model; select it explicitly before dispatch" };
+    }
     if (!job) return { ok: false, error: "Hermes public MCP surface does not expose model switching" };
     if (job.status === "running") return { ok: false, error: "Hermes job is already running" };
     const normalized = model.trim();
@@ -391,7 +423,40 @@ export class HermesAdapter implements HarnessAdapter {
   }
 
   async listModels(): Promise<string[]> {
+    if (this.gatewayTasks) {
+      const data = await this.gatewayRequest({ op: "home" });
+      const model = (data.session as AgentSession | undefined)?.model;
+      return model ? [model] : [];
+    }
     return [process.env.HERMES_HEALTH_MODEL || "gpt-5.6-luna"];
+  }
+
+  async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {
+    if (!this.gatewayTasks) return [...this.jobs.values()].filter((job) => job.title === name && job.cwd === cwd).map((job) => this.jobToSession(job));
+    const data = await this.gatewayRequest({ op: "find", name, cwd });
+    if (!data.ok) throw new Error(String(data.error || "Hermes task lookup failed"));
+    return data.session ? [data.session as unknown as AgentSession] : [];
+  }
+
+  async getMessageAdmission(id: string, inputId: string): Promise<MessageAdmissionResult> {
+    try {
+      const data = await this.gatewayRequest({ op: "receipt", session_key: id, input_id: inputId });
+      return { state: data.admitted ? "admitted" : data.state === "not_found" ? "not_found" : "unknown" };
+    } catch { return { state: "unknown" }; }
+  }
+
+  private get gatewayTasks(): boolean { return this.config.gatewayTasks !== false; }
+
+  private async gatewayRequest(body: JsonObject): Promise<JsonObject> {
+    const env = this.config.env || process.env;
+    const token = env.AGENT_RESUME_HERMES_TOKEN || process.env.AGENT_RESUME_HERMES_TOKEN;
+    if (!token) throw new Error("Existing protected agent-resume Hermes token is unavailable");
+    const endpoint = new URL(this.config.gatewayEndpoint || env.AGENT_RESUME_HERMES_ENDPOINT || "http://127.0.0.1:18791/v1/agent-resume/task");
+    if (endpoint.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname) || endpoint.username || endpoint.password) throw new Error("Hermes task ingress must be authenticated loopback HTTP");
+    endpoint.pathname = "/v1/agent-resume/task"; endpoint.search = ""; endpoint.hash = "";
+    const response = await fetch(endpoint, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(3_000), redirect: "error" });
+    if (!response.ok) throw new Error("Hermes task ingress rejected request");
+    return await response.json() as JsonObject;
   }
 
   async stopSession(id: string): Promise<ControlResult> {

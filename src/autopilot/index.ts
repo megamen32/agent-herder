@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, isAbsolute } from "node:path";
 import { parseNoticeIncident, type NoticeIncidentBinding, type IncidentProgressUpdate, type IncidentUpdateSink } from "./notice-incident.js";
 import { ChoiceRegistry, type AutopilotChoice } from "./choice-registry.js";
 import { askHuman } from "../human-request/question-binding.js";
@@ -55,6 +55,8 @@ export type NoticeSeverity =
   | "emergency";
 
 export type NotificationPayload = {
+  /** Display metadata only; project credentials and native binding remain separate. */
+  execution_identity?: ExecutionIdentity;
   schema: "notify.event.v1";
   project: string;
   recipient: string;
@@ -74,6 +76,14 @@ export type NotificationPayload = {
   choice_request_id?: string;
   /** Resumable Human Request the card may answer to continue this exact session. */
   human_request_id?: string;
+};
+
+export type ExecutionIdentity = {
+  harness: "opencode" | "codex" | "hermes" | "zcode" | "claude" | "qoder" | "fast-agent" | "chatgpt";
+  session_id: string;
+  model?: string;
+  cwd?: string;
+  session_url?: string;
 };
 
 export type NotificationSink = {
@@ -170,6 +180,7 @@ export async function drainPendingNotices(
  * channels, remains the delivery owner's responsibility.
  */
 export function createNoticePlacePayload(input: {
+  execution_identity?: ExecutionIdentity;
   title: string;
   body: string;
   severity: "low" | "medium" | "high" | NoticeSeverity;
@@ -198,6 +209,7 @@ export function createNoticePlacePayload(input: {
     body: bounded(input.body, 8 * 1024),
     dedup_key: input.dedupKey,
     correlation_id: input.correlationId,
+    ...(input.execution_identity ? { execution_identity: input.execution_identity } : {}),
     ...(input.idempotencyKey ? { idempotency_key: input.idempotencyKey } : {}),
     ...(input.sourceId ? { source_id: input.sourceId } : {}),
     ...(input.hostId ? { host_id: input.hostId } : {}),
@@ -365,7 +377,7 @@ export function createAutopilotCore(options: {
 }): { handleStop(input: StopHookInput): Promise<AutopilotHookResult> } {
   const continuationCounts = new Map<string, number>();
   const activeTurnKeys = new Set<string>();
-  const notification = options.notification ?? DEFAULT_NOTIFICATION;
+  const notificationConfig = options.notification ?? DEFAULT_NOTIFICATION;
   const maxContinuations = Math.max(
     0,
     Math.floor(options.effectivePolicy?.source === "persisted"
@@ -376,6 +388,7 @@ export function createAutopilotCore(options: {
   return {
     async handleStop(input) {
       validateInput(input);
+      const notification = { ...notificationConfig, execution_identity: executionMetadata(input, options.harness ?? input.harness ?? "codex") };
 
       if (options.effectivePolicy) {
         // A per-session opt-in can widen the selector, but never bypasses the
@@ -842,6 +855,13 @@ function incidentUpdate(input: StopHookInput, binding: NoticeIncidentBinding, ki
 export function nativeSessionUrl(input: Pick<StopHookInput, "session_id">, harness: string): string {
   return `https://agent.bezrabotnyi.com/#/session/${encodeURIComponent(`${harness}:${input.session_id}`)}`;
 }
+function executionMetadata(input: StopHookInput, harness: ExecutionIdentity["harness"]): ExecutionIdentity | undefined {
+  if (!input.session_id || input.session_id.length>512 || /[\x00-\x1f\x7f]/.test(input.session_id)) return undefined;
+  return { harness, session_id: input.session_id,
+    ...(input.model && input.model.length<=256 && !/[\x00-\x1f\x7f]/.test(input.model) ? { model: input.model } : {}),
+    ...(isAbsolute(input.cwd) && input.cwd.length<=2048 && !/[\x00-\x1f\x7f]/.test(input.cwd) ? { cwd: input.cwd } : {}),
+    session_url: nativeSessionUrl(input, harness) };
+}
 function harnessLabel(harness: string): string {
   return ({ opencode: "OpenCode", codex: "Codex", claude: "Claude Code", hermes: "Hermes", zcode: "ZCode" } as Record<string, string>)[harness] ?? harness;
 }
@@ -1224,6 +1244,8 @@ function notificationPayloadFromReceipt(value: unknown): NotificationPayload | u
   for (const field of ["project", "recipient", "kind", "severity", "title", "body", "dedup_key", "correlation_id"] as const) {
     if (typeof payload[field] !== "string") return undefined;
   }
+  // Preserve optional display metadata in the same durable outbox on replay.
+  // Older receipts have no metadata and remain compatible.
   return value as NotificationPayload;
 }
 

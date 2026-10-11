@@ -13,8 +13,25 @@ it("shows actual OpenCode execution rather than the protected Hermes producer", 
  await createAutopilotCore({ judge: { decide: async () => ({ kind: "done", summary: "Исправление проверено" }) }, notify: { send }, receiptStore: new Map(), allowSessions: new Set([hook.session_id]), maxContinuationsPerSession: 3, harness: "opencode", notification: { project: "hermes", recipient: "me", kind: "notification" } }).handleStop(hook);
  const payload = send.mock.calls[0]![0] as any;
  expect(payload.project).toBe("hermes");
+ expect(payload.execution_identity).toEqual({harness:"opencode",session_id:hook.session_id,model:hook.model,cwd:hook.cwd,session_url:"https://agent.bezrabotnyi.com/#/session/opencode%3Ases_real_opencode"});
  expect(payload.body.startsWith("Исправление проверено\n\n")).toBe(true);
  for (const text of ["OpenCode", hook.session_id, hook.model!, hook.cwd, "https://agent.bezrabotnyi.com/#/session/opencode%3Ases_real_opencode"]) expect(payload.body).toContain(text);
+});
+
+it("keeps execution metadata outside long summaries in the durable notification outbox", async () => {
+ const dir=await mkdtemp(join(tmpdir(),"herder-execution-display-"));
+ try {
+  const receipts=new Map(), send=vi.fn(async()=>{throw new Error("lost ACK");});
+  const options={judge:{decide:async()=>({kind:"done",summary:"Проверенное исправление. ".repeat(500)})},notify:{send},receiptStore:receipts,allowSessions:new Set([hook.session_id]),maxContinuationsPerSession:3,harness:"opencode" as const};
+  await createAutopilotCore(options).handleStop(hook);
+  const payload=send.mock.calls[0]![0] as any;
+  expect(payload.body.slice(0,800)).not.toContain("Открыть сессию");
+  const path=join(dir,"receipts.json");await persistReceiptStore(path,receipts);
+  const replay=vi.fn(async()=>{});
+  await drainPendingNotices(await loadReceiptStore(path),{send:replay});
+  expect((replay.mock.calls[0]![0] as any).execution_identity).toEqual(payload.execution_identity);
+  expect(payload.execution_identity.harness).toBe("opencode");
+ } finally {await rm(dir,{recursive:true,force:true});}
 });
 
 it("keeps a bound completion in the original incident outbox across caller failure and restart", async () => {

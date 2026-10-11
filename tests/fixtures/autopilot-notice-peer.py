@@ -17,12 +17,12 @@ from notification_center.telegram_interactions import TelegramActionCodec
 
 os.environ.update(TELEGRAM_CALLBACK_ALLOWED_USER_IDS="42", TELEGRAM_CHAT_ID="-100", TELEGRAM_BOT_TOKEN="fixture-bot-token")
 root = Path(sys.argv[1])
-center = NotificationCenter(root / 'notice.sqlite3', {'admin-token': {'project': 'admin', 'max_severity': 'critical'}}, default_quiet_hours=[])
+generic = len(sys.argv)>3 and sys.argv[3]=='execution-display'
+center = NotificationCenter(root / 'notice.sqlite3', {'admin-token': {'project': 'admin', 'max_severity': 'critical'}, 'hermes-token': {'project': 'hermes', 'max_severity': 'critical'}}, default_quiet_hours=[])
 event = {'schema': 'notify.event.v1', 'project': 'admin', 'recipient': 'me', 'kind': 'incident', 'severity': 'critical',
          'title': 'Сервис не отвечает', 'body': 'Проверяем причину', 'dedup_key': 'original-incident', 'event_type': 'health.degraded',
          'source_id': 'site-source', 'host_id': 'fixture', 'signal_type': 'https', 'correlation_id': 'site-episode'}
-created = center.create_event('admin-token', 'original-create', event)
-incident_id = created['incident_id']
+incident_id = None if generic else center.create_event('admin-token', 'original-create', event)['incident_id']
 calls = []
 worker = http_api.DeliveryWorker(center, http_api.TelegramSender('fixture-bot-token', '-100', action_codec=TelegramActionCodec('s' * 32), center=center, severity_routes={'health': {'chat_id': '-100', 'message_thread_id': 324}}))
 real_urlopen = http_api.urllib.request.urlopen
@@ -63,7 +63,10 @@ class Handler(base_handler):
                 progress = center._connection.execute("SELECT count(*) FROM events WHERE event_type='health.progress'").fetchone()[0]
                 questions = center._connection.execute('SELECT count(*) FROM human_requests').fetchone()[0]
                 delivery_states = [dict(row) for row in center._connection.execute('SELECT channel,status,last_error FROM deliveries').fetchall()]
-            body = json.dumps({'incident_id': incident_id, 'incidents': incidents, 'progress': progress, 'questions': questions, 'calls': calls, 'delivery_states': delivery_states}).encode()
+            import sqlite3
+            with sqlite3.connect(f'file:{root / "notice.sqlite3"}?mode=ro',uri=True) as reopened:
+                payloads=[json.loads(row[0]) for row in reopened.execute('SELECT payload_json FROM events')]
+            body = json.dumps({'incident_id': incident_id, 'incidents': incidents, 'progress': progress, 'questions': questions, 'calls': calls, 'delivery_states': delivery_states, 'payloads':payloads}).encode()
             self.send_response(200); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
         else:
             super().do_GET()
@@ -71,7 +74,8 @@ class Handler(base_handler):
 
 with patch('notification_center.http_api.urllib.request.urlopen', side_effect=network), patch('notification_center.http_api.telegram_api', side_effect=telegram_api):
     flush()
-    receipt = center.record_health_agent_session(incident_id, 'native-launch', '', 'opencode', 'ses_real_opencode', 'https://agent.bezrabotnyi.com', stage='health-diagnosis')
+    if not generic:
+        receipt = center.record_health_agent_session(incident_id, 'native-launch', '', 'opencode', 'ses_real_opencode', 'https://agent.bezrabotnyi.com', stage='health-diagnosis')
     flush()
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
