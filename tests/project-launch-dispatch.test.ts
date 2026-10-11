@@ -54,6 +54,7 @@ const policy = validateAutomationLaunchPolicy({
 });
 
 type Outcome = "accepted" | "quota" | "unavailable" | "unknown";
+type Delivery = { harness: string; inputId?: string };
 
 /** A typed native adapter whose real attempt outcome the test controls. */
 function nativeAdapter(type: "opencode" | "zcode" | "codex", outcome: Outcome, log: Array<{ harness: string; inputId?: string }>, cwd: string): HarnessAdapter {
@@ -74,6 +75,7 @@ function nativeAdapter(type: "opencode" | "zcode" | "codex", outcome: Outcome, l
     async changeModel() { return { ok: true }; },
     async sendMessage(_id, options) {
       log.push({ harness: type, ...(options.inputId ? { inputId: options.inputId } : {}) });
+      void cwd;
       if (outcome === "accepted") return { ok: true };
       if (outcome === "unknown") return { ok: false, admissionUnknown: true, nonRetryable: true, error: "admission unknown" };
       if (outcome === "quota") return { ok: false, nonRetryable: true, error: "quota exhausted for account" };
@@ -239,6 +241,121 @@ describe("project launch dispatch", () => {
       activeSession: { harness: "codex", sessionId: "codex-7" },
     }));
     expect(resolution).toMatchObject({ mode: "handoff", sessionId: "codex-7", fromHarness: "codex" });
+  });
+
+  it("lets a configured route override the profile harness, model and workspace", async () => {
+    const dir = await root();
+    const profileCwd = await workspace();
+    const routeCwd = await workspace();
+    const log = new ProjectLaunchAttemptLog(join(dir, "attempts.json"));
+    const attempts: Array<{ harness: string; inputId?: string }> = [];
+    const adapters = new Map<string, HarnessAdapter>([
+      ["codex", nativeAdapter("codex", "accepted", attempts, routeCwd)],
+      ["opencode", nativeAdapter("opencode", "accepted", attempts, routeCwd)],
+      ["zcode", nativeAdapter("zcode", "accepted", attempts, routeCwd)],
+    ]);
+    const routed = validateAutomationLaunchPolicy({
+      ...policy,
+      projectRoutes: { [routeCwd]: { harnesses: ["codex", "zcode", "opencode"] } },
+    });
+
+    // The Notice profile still defaults to OpenCode/MiniMax and its own cwd.
+    const result = await dispatchProjectLaunch({
+      policy: routed,
+      project: routeCwd,
+      cwd: profileCwd,
+      message: "Исправить инцидент",
+      harness: "opencode",
+      model: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview",
+      operationId: "op-profile",
+    }, log, namedSessionRunner(adapters, "af-profile"));
+
+    expect(result).toMatchObject({
+      outcome: "accepted",
+      selectedHarness: "codex",
+      model: "gpt-6.1-sol",
+      project: routeCwd,
+    });
+    expect(result.routingReason).toContain(`рабочую папку ${routeCwd}`);
+    expect(result.routingReason).toContain("Профиль предлагал OpenCode");
+    expect(result.routingReason).toContain("маршрут проекта выбирает Codex");
+    expect(result.routingReason).toContain("Модель профиля minimax-coding-plan/MiniMax-M3.1-Flash-Preview проигнорирована");
+    expect(attempts.map((entry) => entry.harness)).toEqual(["codex"]);
+  });
+
+  it("uses the profile only for a project without a configured route", async () => {
+    const dir = await root();
+    const cwd = await workspace();
+    const log = new ProjectLaunchAttemptLog(join(dir, "attempts.json"));
+    const attempts: Array<{ harness: string; inputId?: string }> = [];
+    const adapters = new Map<string, HarnessAdapter>([
+      ["opencode", nativeAdapter("opencode", "accepted", attempts, cwd)],
+      ["codex", nativeAdapter("codex", "accepted", attempts, cwd)],
+    ]);
+
+    const result = await dispatchProjectLaunch({
+      policy,
+      project: "/home/roomhacker/PycharmProjects/AutoSellBot",
+      cwd,
+      message: "Исправить инцидент",
+      harness: "opencode",
+      model: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview",
+      operationId: "op-unconfigured",
+    }, log, namedSessionRunner(adapters, "other"));
+
+    expect(result).toMatchObject({ outcome: "accepted", selectedHarness: "opencode", model: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview" });
+    expect(result.routingReason).toContain("используется профиль OpenCode");
+  });
+
+  it("reserves the attempt before the native call and never launches it twice", async () => {
+    const dir = await root();
+    const cwd = await workspace();
+    const log = new ProjectLaunchAttemptLog(join(dir, "attempts.json"));
+    const attempts: Array<{ harness: string; inputId?: string }> = [];
+    const adapters = new Map<string, HarnessAdapter>([["opencode", nativeAdapter("opencode", "accepted", attempts, cwd)]]);
+
+    // A crash after the reservation leaves a durable in-flight attempt.
+    const crashed = new ProjectLaunchAttemptLog(join(dir, "attempts.json"));
+    const reservation = await crashed.reserve(policy.projectRoutes!["/home/roomhacker/PycharmProjects/TelegramAuto"].harnesses ? "/home/roomhacker/PycharmProjects/TelegramAuto" : "", "op-crash", { harness: "opencode", inputId: attemptInputId("op-crash", "opencode"), mode: "sync" });
+    expect(reservation).toMatchObject({ outcome: "in_flight", harness: "opencode" });
+
+    const result = await dispatchProjectLaunch({
+      policy,
+      project: "tg-commentator",
+      cwd,
+      message: "Исправить инцидент",
+      operationId: "op-crash",
+    }, crashed, namedSessionRunner(adapters, "tg-crash"));
+
+    expect(result).toMatchObject({ outcome: "in_flight", selectedHarness: "opencode" });
+    expect(result.routingReason).toContain("уже зарезервирован");
+    expect(attempts).toHaveLength(0);
+  });
+
+  it("replays the full receipt of a completed attempt", async () => {
+    const dir = await root();
+    const cwd = await workspace();
+    const log = new ProjectLaunchAttemptLog(join(dir, "attempts.json"));
+    const attempts: Array<{ harness: string; inputId?: string }> = [];
+    const adapters = new Map<string, HarnessAdapter>([["zcode", nativeAdapter("zcode", "accepted", attempts, cwd)]]);
+
+    const first = await dispatchProjectLaunch({
+      policy, project: "tg-commentator", cwd, message: "Исправить инцидент", operationId: "op-receipt",
+    }, log, namedSessionRunner(adapters, "tg-receipt"));
+    const replay = await dispatchProjectLaunch({
+      policy, project: "tg-commentator", cwd, message: "Исправить инцидент", operationId: "op-receipt",
+    }, log, namedSessionRunner(adapters, "tg-receipt"));
+
+    expect(replay).toMatchObject({
+      outcome: "accepted",
+      selectedHarness: "zcode",
+      model: "account:zai-individual-coding-plan/GLM-5.3-Flash$high",
+      sessionId: "zcode-1",
+    });
+    const accepted = replay.attempts[replay.attempts.length - 1]!;
+    expect(accepted).toMatchObject({ harness: "zcode", model: "account:zai-individual-coding-plan/GLM-5.3-Flash$high", mode: "sync", delivery: "completed" });
+    expect(first.attempts.map((attempt) => attempt.inputId)).toEqual(replay.attempts.map((attempt) => attempt.inputId));
+    expect(attempts).toHaveLength(1);
   });
 
   it("serves the real HTTP dispatch contract with a user-visible routing reason", async () => {

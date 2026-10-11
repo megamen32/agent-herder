@@ -608,7 +608,16 @@ POST /api/automation/project-launch
 - `attempts` is the durable ordered log at
   `project-launch-attempts.json` in the Autopilot state directory. It is the
   authority: a repeated `operation_id` is answered from that log and touches no
-  harness again.
+  harness again. It is keyed by the configured route key, so an alias, a path
+  spelling or a case variant of the same project share one authority.
+- Each attempt is **reserved durably before the native call** and completed
+  after it, keeping its model, mode and delivery. A crash between the two
+  leaves an `in_flight` reservation: the next call answers `outcome:
+  "in_flight"` with a visible reason instead of launching a second executor.
+- A configured project is authoritative: its route decides the harness, the
+  model and the workspace. `harness` and `model` from a caller profile are
+  ignored for that project and reported as overridden in `routing_reason`; the
+  profile applies only to a project without a route.
 - Only `pre_admission_rejected` (a definite pre-admission failure such as a
   quota or an unavailable runtime) advances to the next harness of the route.
 - `accepted`, `admission_unknown` and `human_hold` stop the chain. A pending
