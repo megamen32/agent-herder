@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { AutoCompactStore, AutoCompactService } from "./autocontinue/auto-compact.js";
+import { createHash } from "node:crypto";
 import { createFleetRecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
+import { createMiniMaxQuotaPreflight } from "./automation/minimax-quota-preflight.js";
 
 import { startSelectedStdio } from "./mcp/transport-selection.js";
 import { McpServer } from "@modelcontextprotocol/server";
@@ -15,10 +17,14 @@ import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, Cod
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
+import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { AutopilotSessionStore } from "./autopilot/session-store.js";
 import { AutomationLaunchPolicyStore } from "./automation-launch-policy.js";
+import { dispatchProjectLaunch, namedSessionRunner, ProjectLaunchAttemptLog, type ProjectLaunchDispatcher } from "./automation/project-launch-dispatch.js";
 import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
-import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore } from "./autopilot/index.js";
+import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore, type PendingHumanQuestion } from "./autopilot/index.js";
+import { buildAskHumanRequest } from "./human-request/notice-question.js";
+import { describeAskHumanProducer, loadAskHumanProducer, type AskHumanProducer } from "./human-request/ask-human-producer.js";
 import { acquireLock } from "./autopilot-hook.js";
 import { AgentHerderSessionConverter } from "./session-convert.js";
 import { SessionSupervisor } from "./session-supervisor.js";
@@ -27,7 +33,8 @@ import { LineageStore } from "./lineage-store.js";
 import { AnthropicMiniMaxSummarizer, CacheHandoffService, FastAgentMiniMaxSummarizer } from "./cache-handoff.js";
 import { acquireAgentHerderSingleton } from "./singleton.js";
 import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
-import { createWebServer } from "./web/server.js";
+import { boundResumeReceiptQuery, createWebServer, resumeSelectedTarget } from "./web/server.js";
+import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "./resume-transport.js";
 import { createConfiguredFleetApiHandler, createManagedFleetHttpGuard, isManagedFleetNode } from "./web/fleet-wiring.js";
 import { registerFleetNodeTools } from "./mesh/fleet-node.js";
 import { createConfiguredBrowserWakeService } from "./browser-wake.js";
@@ -109,8 +116,12 @@ function parseReasoningEffort(value: string | undefined): "low" | "high" | "max"
 // ===== Create adapters =====
 
 const adapters = new Map<string, HarnessAdapter>();
-const humanRequests = new HumanRequestRegistry(process.env.AGENT_HERDER_HUMAN_REQUEST_STORE || ".agent-herder/human-requests.json");
-const autopilotStateDir = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR || join(homedir(), ".local", "state", "agent-herder", "autopilot");
+// One Autopilot state seam for the daemon, the Stop hook and the runner. Legacy
+// state is adopted once instead of being reset, so live sessions, pending
+// questions and pending choices survive this unification.
+const autopilotStateDir = resolveAutopilotStateDir();
+const autopilotStateReady = adoptLegacyAutopilotState(autopilotStateDir);
+const humanRequests = new HumanRequestRegistry(resolveHumanRequestStorePath(autopilotStateDir));
 const choiceRegistry = new ChoiceRegistry(process.env.AGENT_HERDER_AUTOPILOT_CHOICE_STORE || join(autopilotStateDir, "choices.json"));
 const autopilotPolicyStore = new AutopilotPolicyStore(resolveAutopilotPolicyStorePath(autopilotStateDir));
 const autopilotSessionStore = new AutopilotSessionStore(join(autopilotStateDir, "sessions.json"));
@@ -484,16 +495,64 @@ function registerTools(
   jobs: HerderJobRegistry = herderJobs,
   sessionConverter: Pick<AgentHerderSessionConverter, "convert"> = new AgentHerderSessionConverter(),
   events: HerderEventBus = herderEvents,
+  humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>,
+  humanResumeQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>,
   inventorySupervisor?: SessionSupervisor,
 ) {
   registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes });
 
-  registerHumanRequestTools(server, humanRequests);
+  // A human answer resumes its exact native session exactly once through the
+  // same durable admission the internal completion endpoint uses.
+  registerHumanRequestTools(server, humanRequests, {
+    humanResume: humanResume ?? (async (request) => new AgentResumeClient().resume(request)),
+    queryReceipt: humanResumeQuery ?? ((request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters)),
+  });
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
   registerSessionTools(server, { adapters, jobs, events });
   registerHarnessMeshTools(server, { adapters });
   registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined });
+}
+
+/**
+ * The human-question delivery port.
+ *
+ * Ordinary human questions go to the existing protected AskHuman producer: the
+ * same endpoint, project, token and allowed actors that the phone-facing stdio
+ * uses, so the human sees and answers them in the same scope. Herder's own
+ * automatic `/v1/events` intake keeps its `agent-herder` project and is never
+ * used for a question.
+ */
+function createNoticeQuestionDelivery(env: NodeJS.ProcessEnv): (question: PendingHumanQuestion) => Promise<void> {
+  let pending: Promise<AskHumanProducer | undefined> | undefined;
+  const producerOf = (): Promise<AskHumanProducer | undefined> => {
+    pending ??= loadAskHumanProducer(env).then((producer) => {
+      if (producer) console.error(`[agent-herder] human questions use the AskHuman producer (${describeAskHumanProducer(producer)})`);
+      return producer;
+    });
+    return pending;
+  };
+  return async (question) => {
+    const producer = await producerOf();
+    if (!producer) throw new Error("no AskHuman producer is configured; a human question cannot be delivered");
+    const envelope = buildAskHumanRequest(question, {
+      project: producer.project,
+      recipient: producer.recipient,
+      ...(producer.allowedActors ? { allowedActors: producer.allowedActors } : {}),
+    });
+    const response = await fetch(producer.endpoint, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${producer.token}`,
+        "content-type": "application/json",
+        // The registry's canonical key, so a redelivery updates the same card.
+        "idempotency-key": question.dedup_key,
+      },
+      signal: AbortSignal.timeout(10_000),
+      body: JSON.stringify(envelope),
+    });
+    if (!response.ok) throw new Error(`Notice human request rejected with HTTP ${response.status}`);
+  };
 }
 
 // ===== Main =====
@@ -513,6 +572,10 @@ export interface AgentHerderMcpServerOptions {
   jobs?: HerderJobRegistry;
   /** Converter used by background conversion jobs. */
   sessionConverter?: Pick<AgentHerderSessionConverter, "convert">;
+  /** Bound native resume of one human answer; supplied by the process supervisor. */
+  humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
+  /** Durable provider receipt lookup for an already admitted human answer. */
+  humanResumeQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
 }
 
 /** Build one Agent Herder MCP server over process-owned CDP archive state. */
@@ -554,6 +617,8 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     jobs,
     sessionConverter,
     events,
+    options.humanResume,
+    options.humanResumeQuery,
     options.inventorySupervisor,
   );
   return server;
@@ -564,6 +629,10 @@ async function main() {
   process.once("exit", releaseSingleton);
 
   configureAdapterRegistry();
+  const adoptedState = await autopilotStateReady;
+  if (adoptedState.length > 0) {
+    console.error(`[agent-herder] adopted pre-seam autopilot state: ${adoptedState.length} file(s)`);
+  }
   await adapterRegistry.load();
   await initAdapters();
   let cdpChatDriver: CdpChatDriver | undefined;
@@ -657,6 +726,10 @@ async function main() {
   const recoveryAdmissionGate = createFleetRecoveryAdmissionGate(process.env.AGENT_HERDER_FLEET_MONITOR_STATE);
   const unfinishedSessionLauncher = new UnfinishedSessionLauncher({
     admissionGate: recoveryAdmissionGate,
+    // A pending question or choice is a durable fence: reconcile and Autopilot
+    // must not continue that session past the unanswered human decision.
+    humanRequests,
+    choiceRegistry,
     humanStopStore,
     adapters,
     store: unfinishedSessionStore,
@@ -696,8 +769,31 @@ async function main() {
   process.once("exit", stopCompletionNoticeSweeper);
   const stopUnfinishedSessionLauncher = unfinishedSessionLauncher.start();
   process.once("exit", stopUnfinishedSessionLauncher);
-  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, inventorySupervisor: processSupervisor });
-  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, inventorySupervisor: processSupervisor });
+  // One human answer resumes its exact native session once, from every MCP surface.
+  const humanResume = (request: ResumeTransportRequest) => resumeSelectedTarget(request, processSupervisor, "human", true);
+  const projectLaunchAttempts = new ProjectLaunchAttemptLog(join(autopilotStateDir, "project-launch-attempts.json"));
+  const launchQuotaPreflight = createMiniMaxQuotaPreflight({ token: process.env.MINIMAX_API_KEY });
+  // The one project launch consumer: an ordered route, a durable attempt log and
+  // the existing named-session seam as the only place that creates an executor.
+  const projectLaunchDispatch: ProjectLaunchDispatcher = async (request) => {
+    const loaded = await automationLaunchPolicyStore.load();
+    if (loaded.kind !== "valid") throw new Error(loaded.kind === "invalid" ? `Launch policy is invalid: ${loaded.error}` : "Launch policy is not configured");
+    // One stable named session per project operation: the same name reaches the
+    // dispatch and the named-session runner, so a retry resumes that session
+    // instead of reusing one constant name for every launch.
+    const name = request.name
+      ?? `project-launch-${createHash("sha256").update(`${request.project}\0${request.operationId ?? ""}`).digest("hex").slice(0, 16)}`;
+    return await dispatchProjectLaunch(
+      { policy: loaded.policy, ...request, name },
+      projectLaunchAttempts,
+      namedSessionRunner(adapters, name, launchQuotaPreflight),
+    );
+  };
+  const humanResumeQuery = (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters);
+  // Both seams are process-owned: the fleet inventory view and the single
+  // human-answer and project-launch consumer.
+  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor });
+  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor });
   const webPort = process.env.AGENT_HERDER_WEB_PORT;
   if (webPort) {
     const host = process.env.AGENT_HERDER_WEB_HOST || "127.0.0.1";
@@ -711,6 +807,9 @@ async function main() {
       converter: processSessionConverter,
       humanRequests,
       choiceRegistry,
+      humanResume: (request: ResumeTransportRequest) => resumeSelectedTarget(request, processSupervisor, "human", true),
+      projectLaunchDispatch,
+      choiceQuery: (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters),
       adapterRegistry,
       mcpServerFactory: createHttpMcpServer,
       herderEvents,

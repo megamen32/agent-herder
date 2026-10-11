@@ -1,11 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import lockfile from "proper-lockfile";
 import { herderEvents, type HerderEventBus } from "../herder-events.js";
 import { humanRequestResourceUri } from "../herder-resource-uris.js";
 
 export type HumanRequestKind = "user" | "secret";
-export type HumanRequestStatus = "pending" | "resuming" | "resumed" | "resume_failed";
+export type HumanRequestStatus = "pending" | "resuming" | "resumed" | "resume_failed" | "cancelled";
+
+/**
+ * Where the human answer of a request comes from.
+ *
+ * A question created through the question-binding seam has a Notice question
+ * row, so its continuation may point at it. Every other request (metadata-only,
+ * secret, or an internal judge decision) has no such row: its answer arrives in
+ * the human channel of the bound session, and a continuation must not claim a
+ * card that does not exist.
+ */
+export type HumanRequestAnswerSource = "notice_question" | "human_channel";
 
 export interface HumanRequestTarget {
   readonly agent?: string;
@@ -20,6 +32,8 @@ export interface HumanRequestTarget {
 export interface CreateHumanRequestInput {
   kind: HumanRequestKind;
   target: HumanRequestTarget;
+  /** Default `human_channel`; only the question-binding seam sets it explicitly. */
+  answerSource?: HumanRequestAnswerSource;
   /** Provider-owned opaque correlation handle; never a prompt or secret. */
   contextRef?: string;
   /** Explicit Notify event tuple. Agent Herder does not choose any of these values. */
@@ -49,16 +63,35 @@ export interface HumanRequestResolution {
 export interface ResumeAttemptResult {
   /** Provider-owned opaque result or failure receipt; never a payload. */
   receipt?: string;
+  /** Explicit proof that native transport rejected before admission. */
+  retryable?: boolean;
 }
 
 export interface ResumeClaimInput {
   attemptId?: string;
   resultRef?: string;
+  /** Opaque human-answer reference; also becomes the default resultRef. */
+  resolutionRef?: string;
+  /** Bounded in-flight lease for the one admitted transport invocation. */
+  leaseMs?: number;
+  now?: Date;
 }
 
 export interface ResumeCompletionInput {
   attemptId: string;
   receipt?: string;
+  retryable?: boolean;
+}
+
+/** Single admission receipt. Only `admitted` may invoke the resume transport. */
+export interface ResumeAdmissionReceipt {
+  /** True only for the caller that owns the one transport invocation of this attempt. */
+  admitted: boolean;
+  /** True when an expired in-flight lease was taken over with the same attempt and key. */
+  recovered: boolean;
+  /** Stable provider retry key; identical for every replay of one attempt. */
+  idempotencyKey: string;
+  record: HumanRequestRecord;
 }
 
 export interface HumanRequestRecord {
@@ -67,11 +100,21 @@ export interface HumanRequestRecord {
   target: HumanRequestTarget;
   contextRef?: string;
   status: HumanRequestStatus;
+  /** How the answer reaches the resumed session. Never guessed at resume time. */
+  answerSource: HumanRequestAnswerSource;
   continuation: "resume";
   resolutionRef?: string;
   resultRef?: string;
   attemptId?: string;
+  /** Stable provider retry key for the admitted attempt; never a payload. */
+  idempotencyKey?: string;
+  /** Deadline of the admitted in-flight resume attempt. */
+  resumeLeaseExpiresAt?: string;
+  /** Instant the human answer was admitted; binds later resume attempts to it. */
+  admittedAt?: string;
   receipt?: string;
+  /** False fences ambiguous/admitted failures even if their reason looks retryable. */
+  resumeRetryable?: boolean;
   createdAt: string;
   resolvedAt?: string;
   notify?: NotifyRoutingTuple;
@@ -143,30 +186,59 @@ function validateRecord(record: HumanRequestRecord): HumanRequestRecord {
   rejectPayloadFields(record);
   if (!record || typeof record.requestId !== "string" || record.requestId.length < 1) throw new Error("invalid request record");
   if (record.kind !== "user" && record.kind !== "secret") throw new Error("invalid request kind");
-  if (record.status !== "pending" && record.status !== "resuming" && record.status !== "resumed" && record.status !== "resume_failed") throw new Error("invalid request status");
+  if (record.status !== "pending" && record.status !== "resuming" && record.status !== "resumed" && record.status !== "resume_failed" && record.status !== "cancelled") throw new Error("invalid request status");
+  if (record.answerSource !== "notice_question" && record.answerSource !== "human_channel") {
+    // A record written before the discriminator existed had no Notice row.
+    if (record.answerSource !== undefined) throw new Error("invalid request answer source");
+  }
   targetOf(record.target);
   opaqueRef(record.contextRef, "contextRef");
   opaqueRef(record.resolutionRef, "resolutionRef");
   opaqueRef(record.resultRef, "resultRef");
   opaqueRef(record.attemptId, "attemptId");
+  opaqueRef(record.idempotencyKey, "idempotencyKey");
   opaqueRef(record.receipt, "receipt");
+  if (record.resumeRetryable !== undefined && typeof record.resumeRetryable !== "boolean") throw new Error("invalid resume retry evidence");
   if (record.notify) {
     notifyOf(record.notify, record.requestId);
     if (record.notify.dedupKey !== `human-request:${record.requestId}`) throw new Error("invalid Notify dedupKey");
     if (record.notify.incidentId !== undefined) opaqueRef(record.notify.incidentId, "notify.incidentId");
   }
+  if (record.status === "resuming" && !record.attemptId) throw new Error("resuming request is missing attemptId");
   if (record.status === "resumed" || record.status === "resume_failed") {
     if (!record.resolvedAt) throw new Error("terminal request is missing resolvedAt");
     if (!record.attemptId) throw new Error("terminal request is missing attemptId");
   }
+  if (record.status === "cancelled" && !record.resolvedAt) throw new Error("cancelled request is missing resolvedAt");
   return record;
 }
+
+/** Signals that automatic work must wait for a human instead of guessing. */
+export class HumanRequestLockUnavailableError extends Error {
+  readonly code = "HUMAN_REQUEST_LOCK_UNAVAILABLE";
+
+  constructor(readonly lockPath: string, cause: unknown) {
+    super(`Human Request lock is unavailable; answering must wait for human action (${lockPath})`, { cause });
+    this.name = "HumanRequestLockUnavailableError";
+  }
+}
+
+/** One admitted resume attempt may hold this bounded lease before a replay may take it over. */
+export const DEFAULT_RESUME_LEASE_MS = 5 * 60 * 1000;
 
 /** Durable correlation registry. It stores routing metadata and opaque refs only. */
 export class HumanRequestRegistry {
   private operation: Promise<unknown> = Promise.resolve();
+  private readonly lockTarget: string;
 
-  constructor(private readonly filePath: string, private readonly events: HerderEventBus = herderEvents) {}
+  constructor(private readonly filePath: string, private readonly events: HerderEventBus = herderEvents) {
+    this.lockTarget = `${filePath}.lock`;
+  }
+
+  /** Return the durable registry identity used to serialize overlapping admissions. */
+  get coordinationKey(): string {
+    return this.filePath;
+  }
 
   private publishRequest(requestId: string, action: "created" | "updated"): void {
     this.events.publish({ kind: "human-request", uri: "herder://human-requests", action, id: requestId });
@@ -178,12 +250,13 @@ export class HumanRequestRegistry {
     if (input.kind !== "user" && input.kind !== "secret") throw new Error("kind must be user or secret");
     const target = targetOf(input.target);
     const contextRef = opaqueRef(input.contextRef, "contextRef");
-    return this.serial(async () => {
+    return this.mutate(async () => {
       const file = await this.read();
       const record: HumanRequestRecord = {
         requestId: randomUUID(),
         kind: input.kind,
         target,
+        answerSource: input.answerSource ?? "human_channel",
         ...(contextRef ? { contextRef } : {}),
         status: "pending",
         continuation: "resume",
@@ -213,37 +286,105 @@ export class HumanRequestRegistry {
     rejectPayloadFields(resolution);
     if (resolution.continuation !== "resume") throw new Error("continuation must be resume");
     const resolutionRef = opaqueRef(resolution.resolutionRef, "resolutionRef");
-    return this.serial(async () => {
-      const file = await this.read();
-      const record = file.requests.find((item) => item.requestId === requestId);
-      if (!record) throw new Error(`Human request '${requestId}' not found`);
-      if (record.status !== "pending") return cloneRecord(record);
-      if (resolutionRef) record.resolutionRef = resolutionRef;
-      record.status = "resuming";
-      record.attemptId = randomUUID();
-      if (resolutionRef) record.resultRef = resolutionRef;
-      await this.write(file);
-      this.publishRequest(record.requestId, "updated");
-      return cloneRecord(record);
-    });
+    return (await this.admitResume(requestId, resolutionRef ? { resolutionRef } : {})).record;
   }
 
   /** Atomically claim the one automatic resume attempt for a request. */
   async claimResume(requestId: string, input: string | ResumeClaimInput = {}): Promise<HumanRequestRecord> {
-    const claim = typeof input === "string" ? { attemptId: input } : input;
-    const checkedAttemptId = opaqueRef(claim.attemptId, "attemptId") || randomUUID();
-    const resultRef = opaqueRef(claim.resultRef, "resultRef");
-    return this.serial(async () => {
+    return (await this.admitResume(requestId, typeof input === "string" ? { attemptId: input } : input)).record;
+  }
+
+  /**
+   * Single admission for the one resume attempt of a request.
+   *
+   * Only the caller that receives `admitted: true` may invoke the resume
+   * transport, and it must do so with the returned `idempotencyKey`. Every
+   * replay returns the same durable record, attempt and key, so a conflicting
+   * repeated answer can never overwrite the canonical admitted answer or
+   * produce a second native resume. A crash between admission and completion
+   * is observable: once the persisted lease expires a later answer takes the
+   * same attempt and key over to read the provider ledger. Expiry does not
+   * prove pre-admission failure or permit another native send.
+   */
+  async admitResume(requestId: string, input: ResumeClaimInput = {}): Promise<ResumeAdmissionReceipt> {
+    const attemptId = opaqueRef(input.attemptId, "attemptId");
+    const resolutionRef = opaqueRef(input.resolutionRef, "resolutionRef");
+    const resultRef = opaqueRef(input.resultRef, "resultRef") ?? resolutionRef;
+    const leaseMs = boundedLeaseMs(input.leaseMs ?? DEFAULT_RESUME_LEASE_MS);
+    const now = input.now ?? new Date();
+    if (Number.isNaN(now.getTime())) throw new Error("now must be a valid timestamp");
+    return this.mutate(async () => {
       const file = await this.read();
       const record = file.requests.find((item) => item.requestId === requestId);
       if (!record) throw new Error(`Human request '${requestId}' not found`);
-      if (record.status !== "pending") return cloneRecord(record);
+      const leaseExpiresAt = new Date(now.getTime() + leaseMs).toISOString();
+      if (record.status === "cancelled") throw new Error(`Human request '${requestId}' was cancelled`);
+      // Only definite native-unavailable is a pre-admission failure. Retrying
+      // the exact canonical answer reuses its attempt, key and original time.
+      // Legacy receipts with this reserved reason remain recoverable; explicit
+      // ambiguous/admitted failure evidence always takes precedence over it.
+      if (record.status === "resume_failed" && record.receipt === "agent-resume:native-unavailable"
+        && record.resumeRetryable !== false && resultRef !== undefined && resultRef === record.resultRef) {
+        const existingKey = record.idempotencyKey ?? idempotencyKeyFor(record.requestId, record.attemptId!);
+        record.status = "resuming";
+        record.resumeLeaseExpiresAt = leaseExpiresAt;
+        record.idempotencyKey = existingKey;
+        delete record.receipt;
+        delete record.resolvedAt;
+        delete record.resumeRetryable;
+        await this.write(file);
+        const acknowledged = await this.acknowledge(requestId, record.attemptId!, existingKey, leaseExpiresAt);
+        this.publishRequest(record.requestId, "updated");
+        return { admitted: true, recovered: false, idempotencyKey: existingKey, record: acknowledged };
+      }
+      if (record.status === "resuming") {
+        // The canonical admitted answer stays authoritative for a conflicting repeat.
+        const existingKey = record.idempotencyKey ?? idempotencyKeyFor(record.requestId, record.attemptId!);
+        if (record.resumeLeaseExpiresAt === undefined) {
+          // An attempt admitted before leases existed starts its wait now instead
+          // of staying unresumable forever.
+          record.resumeLeaseExpiresAt = leaseExpiresAt;
+          record.idempotencyKey = existingKey;
+          await this.write(file);
+          const backfilled = await this.acknowledge(requestId, record.attemptId!, existingKey, leaseExpiresAt);
+          this.publishRequest(record.requestId, "updated");
+          return { admitted: false, recovered: false, idempotencyKey: existingKey, record: backfilled };
+        }
+        if (!leaseExpired(record.resumeLeaseExpiresAt, now)) {
+          return { admitted: false, recovered: false, idempotencyKey: existingKey, record: cloneRecord(record) };
+        }
+        record.resumeLeaseExpiresAt = leaseExpiresAt;
+        record.idempotencyKey = existingKey;
+        await this.write(file);
+        const recovered = await this.acknowledge(requestId, record.attemptId!, existingKey, leaseExpiresAt);
+        this.publishRequest(record.requestId, "updated");
+        return { admitted: true, recovered: true, idempotencyKey: existingKey, record: recovered };
+      }
+      if (record.status !== "pending") {
+        return {
+          admitted: false,
+          recovered: false,
+          idempotencyKey: record.idempotencyKey ?? idempotencyKeyFor(record.requestId, record.attemptId ?? "none"),
+          record: cloneRecord(record),
+        };
+      }
+      if (record.answerSource === undefined) record.answerSource = "human_channel";
+      const admittedAttemptId = attemptId ?? randomUUID();
+      const idempotencyKey = idempotencyKeyFor(record.requestId, admittedAttemptId);
       record.status = "resuming";
-      record.attemptId = checkedAttemptId;
+      record.attemptId = admittedAttemptId;
+      record.idempotencyKey = idempotencyKey;
+      record.resumeLeaseExpiresAt = leaseExpiresAt;
+      // The admission instant belongs to the first human answer. A later replay
+      // or lease takeover keeps it, so an explicit stop that happened after the
+      // answer still fences this resume.
+      record.admittedAt = now.toISOString();
       if (resultRef) record.resultRef = resultRef;
+      if (resolutionRef) record.resolutionRef = resolutionRef;
       await this.write(file);
+      const acknowledged = await this.acknowledge(requestId, admittedAttemptId, idempotencyKey, leaseExpiresAt);
       this.publishRequest(record.requestId, "updated");
-      return cloneRecord(record);
+      return { admitted: true, recovered: false, idempotencyKey, record: acknowledged };
     });
   }
 
@@ -269,17 +410,46 @@ export class HumanRequestRegistry {
     rejectPayloadFields(result);
     const checkedAttemptId = opaqueRef(attemptId, "attemptId");
     const receipt = opaqueRef(result?.receipt, "receipt");
-    return this.serial(async () => {
+    if (result?.retryable !== undefined && typeof result.retryable !== "boolean") throw new Error("retryable must be boolean");
+    return this.mutate(async () => {
       const file = await this.read();
       const record = file.requests.find((item) => item.requestId === requestId);
       if (!record) throw new Error(`Human request '${requestId}' not found`);
-      if (record.status === "resumed" || record.status === "resume_failed") return cloneRecord(record);
+      if (record.status === "resumed" || record.status === "resume_failed" || record.status === "cancelled") return cloneRecord(record);
       if (record.status !== "resuming" || record.attemptId !== checkedAttemptId) {
         throw new Error(`Human request '${requestId}' is not owned by attemptId '${attemptId}'`);
       }
       record.status = status;
       if (receipt) record.receipt = receipt;
+      if (status === "resume_failed" && result?.retryable !== undefined) record.resumeRetryable = result.retryable;
       record.resolvedAt = new Date().toISOString();
+      await this.write(file);
+      this.publishRequest(record.requestId, "updated");
+      return cloneRecord(record);
+    });
+  }
+
+  /**
+   * Cancel an unanswered request.
+   *
+   * A Notice question that expired or was withdrawn must not hold its session
+   * behind the pending-question gate forever. Cancellation is terminal, resumes
+   * nothing and never touches a native session.
+   */
+  async cancel(requestId: string, reason: string): Promise<HumanRequestRecord> {
+    const checkedReason = opaqueRef(reason, "reason");
+    if (!checkedReason) throw new Error("an explicit reason is required to cancel a request");
+    return this.mutate(async () => {
+      const file = await this.read();
+      const record = file.requests.find((item) => item.requestId === requestId);
+      if (!record) throw new Error(`Human request '${requestId}' not found`);
+      if (record.status === "resumed" || record.status === "resume_failed" || record.status === "cancelled") {
+        return cloneRecord(record);
+      }
+      if (record.status === "resuming") throw new Error(`Human request '${requestId}' is already being resumed`);
+      record.status = "cancelled";
+      record.resolvedAt = new Date().toISOString();
+      if (checkedReason) record.receipt = `cancelled:${checkedReason}`;
       await this.write(file);
       this.publishRequest(record.requestId, "updated");
       return cloneRecord(record);
@@ -289,7 +459,7 @@ export class HumanRequestRegistry {
   /** Persist the incident id returned by Notify after its event is accepted. */
   async bindNotifyIncident(requestId: string, incidentId: string): Promise<HumanRequestRecord> {
     const checkedIncidentId = opaqueRef(incidentId, "incidentId");
-    return this.serial(async () => {
+    return this.mutate(async () => {
       const file = await this.read();
       const record = file.requests.find((item) => item.requestId === requestId);
       if (!record) throw new Error(`Human request '${requestId}' not found`);
@@ -320,6 +490,48 @@ export class HumanRequestRegistry {
     await rename(temporary, this.filePath);
   }
 
+  /** Read the admitted attempt back before acknowledging it to a transport caller. */
+  private async acknowledge(requestId: string, attemptId: string, idempotencyKey: string, leaseExpiresAt: string): Promise<HumanRequestRecord> {
+    const persisted = (await this.read()).requests.find((record) => record.requestId === requestId);
+    if (
+      !persisted
+      || persisted.status !== "resuming"
+      || persisted.attemptId !== attemptId
+      || persisted.idempotencyKey !== idempotencyKey
+      || persisted.resumeLeaseExpiresAt !== leaseExpiresAt
+    ) {
+      throw new Error(`Human request '${requestId}' admission was not acknowledged by durable read-back`);
+    }
+    return cloneRecord(persisted);
+  }
+
+  /** Serialize mutations in this process and across services that share the same durable state file. */
+  private async mutate<T>(operation: () => Promise<T>): Promise<T> {
+    return this.serial(() => this.withFileLock(operation));
+  }
+
+  /** Acquire a bounded interprocess lock or fail closed before an answer can resume a session twice. */
+  private async withFileLock<T>(operation: () => Promise<T>): Promise<T> {
+    await mkdir(dirname(this.filePath), { recursive: true });
+    await writeFile(this.lockTarget, "", { flag: "a", mode: 0o600 });
+    let release: (() => Promise<void>) | undefined;
+    try {
+      release = await lockfile.lock(this.lockTarget, {
+        realpath: false,
+        stale: 30_000,
+        update: 10_000,
+        retries: { retries: 4, minTimeout: 10, maxTimeout: 25, factor: 1 },
+      });
+    } catch (error) {
+      throw new HumanRequestLockUnavailableError(this.lockTarget, error);
+    }
+    try {
+      return await operation();
+    } finally {
+      await release();
+    }
+  }
+
   private async serial<T>(operation: () => Promise<T>): Promise<T> {
     const previous = this.operation;
     let release!: () => void;
@@ -332,9 +544,27 @@ export class HumanRequestRegistry {
 function cloneRecord(record: HumanRequestRecord): HumanRequestRecord {
   return {
     ...record,
+    // A record written before the discriminator existed had no Notice row.
+    answerSource: record.answerSource ?? "human_channel",
     target: targetOf(record.target),
     ...(record.notify ? { notify: { ...record.notify } } : {}),
   };
+}
+
+function idempotencyKeyFor(requestId: string, attemptId: string): string {
+  return `human-request:${requestId}:${attemptId}`;
+}
+
+function boundedLeaseMs(value: number): number {
+  if (!Number.isInteger(value) || value < 1_000 || value > 60 * 60 * 1000) {
+    throw new Error("leaseMs must be an integer from 1000 to 3600000");
+  }
+  return value;
+}
+
+function leaseExpired(value: string, now: Date): boolean {
+  const parsed = Date.parse(value);
+  return !Number.isFinite(parsed) || parsed <= now.getTime();
 }
 
 function filePathName(filePath: string): string {

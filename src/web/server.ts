@@ -11,7 +11,8 @@ import { LineageStore } from "../lineage-store.js";
 import { SessionNotFoundError, SessionSupervisor } from "../session-supervisor.js";
 import type { AgentSession, HarnessAdapter, SessionDetails } from "../types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "../session-convert.js";
-import { HumanRequestRegistry } from "../human-request/index.js";
+import { askHuman, HumanRequestLockUnavailableError, HumanRequestRegistry, resumeHumanRequestOnce } from "../human-request/index.js";
+import type { ProjectLaunchDispatcher } from "../automation/project-launch-dispatch.js";
 import { buildSessionProgress } from "../health-progress.js";
 import { healthModelForHarness, normalizeHealthExecution } from "../health-remediation.js";
 import { convertHermesExport } from "../hermes-conversion.js";
@@ -28,6 +29,7 @@ import { boundedCoordinationContext, coordinationNotes, type CoordinationConflic
 import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
 import { getAgentActivityStatistics, withSessionPortfolioStatistics } from "../session-statistics.js";
 import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
+import { createHash } from "node:crypto";
 import { toNodeHandler, type NodeMcpRequestHandler } from "@modelcontextprotocol/node";
 import type { AdapterRegistry } from "../adapter-registry.js";
 import type { HerderEventBus } from "../herder-events.js";
@@ -46,6 +48,10 @@ export interface WebDependencies {
   herderEvents?: HerderEventBus;
   choiceRegistry?: ChoiceRegistry;
   choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
+  /** Canonical human-answer resume shared with the native MCP resolve surface. */
+  humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
+  /** Ordered per-project harness routes with their durable attempt log. */
+  projectLaunchDispatch?: ProjectLaunchDispatcher;
   choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   autopilotPolicyStore?: AutopilotPolicyStore;
   autopilotSessionStore?: AutopilotSessionStore;
@@ -112,12 +118,98 @@ function localHookTimeoutReceipt(choice: PendingChoice): ResumeReceipt {
   };
 }
 
+/** Deterministic native input identity for one bound resume attempt. */
+function resumeInputId(request: ResumeTransportRequest): string {
+  const key = request.idempotency_key ?? request.result_ref;
+  return `herder-resume-${createHash("sha256").update(key).digest("hex").slice(0, 32)}`;
+}
+
+/**
+ * Read-only admission lookup for an already delivered bound answer.
+ *
+ * Delivery happens through the process-owned native writer, so the duplicate
+ * path must reconcile against that same native state, never against an
+ * external ledger that never saw the delivery.
+ */
+export async function nativeResumeReceiptQuery(
+  request: ResumeTransportRequest,
+  adapters: Map<string, HarnessAdapter>,
+): Promise<ResumeReceipt> {
+  const target = request.target;
+  if (target.agent === "hermes" || !target.session_id) return ambiguousNativeReceipt(request, "no_native_admission_query");
+  const adapter = adapters.get(target.agent);
+  if (!adapter?.getMessageAdmission) return ambiguousNativeReceipt(request, "no_native_admission_query");
+  let native: Awaited<ReturnType<NonNullable<HarnessAdapter["getMessageAdmission"]>>>;
+  try {
+    native = await adapter.getMessageAdmission(target.session_id, resumeInputId(request), target.cwd);
+  } catch (error) {
+    return ambiguousNativeReceipt(request, error instanceof Error ? error.message : String(error));
+  }
+  if (native.state !== "admitted") {
+    return ambiguousNativeReceipt(request, native.error ?? `native_admission_${native.state}`);
+  }
+  return {
+    status: "accepted",
+    target: request.target,
+    result_ref: request.result_ref,
+    receipt_ref: `agent-herder://${target.agent}/${target.session_id}/${request.idempotency_key ?? request.result_ref}`,
+    ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
+  };
+}
+
+/**
+ * Read back the receipt of an already delivered bound answer.
+ *
+ * The lookup follows the delivery route: Codex and ZCode are delivered by the
+ * process-owned native writer, so their admission is read from native state; the
+ * remaining harnesses are delivered by Agent Resume, so only they consult that
+ * external ledger.
+ */
+export async function boundResumeReceiptQuery(
+  request: ResumeTransportRequest,
+  adapters: Map<string, HarnessAdapter>,
+): Promise<ResumeReceipt> {
+  if (request.target.agent === "codex" || request.target.agent === "zcode") {
+    return nativeResumeReceiptQuery(request, adapters);
+  }
+  return new AgentResumeClient().queryReceipt(request);
+}
+
+function ambiguousNativeReceipt(request: ResumeTransportRequest, reason: string): ResumeReceipt {
+  return {
+    status: "ambiguous",
+    target: request.target,
+    result_ref: request.result_ref,
+    reason,
+    ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
+  };
+}
+
 /** Route Codex and ZCode through Herder's process-owned native writers so an
  * accepted human-gate delivery also arms durable Autocontinue tracking. */
-async function resumeSelectedTarget(request: ResumeTransportRequest, supervisor: SessionSupervisor, origin: "human" | "automation" = "automation"): Promise<ResumeReceipt> {
+export async function resumeSelectedTarget(
+  request: ResumeTransportRequest,
+  supervisor: SessionSupervisor,
+  origin: "human" | "automation" = "automation",
+  /** A replayed stored answer, not a live human action in this call. */
+  answerReplay = false,
+): Promise<ResumeReceipt> {
   if (request.target.agent !== "codex" && request.target.agent !== "zcode") return new AgentResumeClient().resume(request);
   const harness = request.target.agent;
   const prompt = request.prompt ?? request.goal ?? `Human Request resolved: ${request.result_ref}`;
+  // A replayed stored answer carries its own admission instant. Without one
+  // there is no evidence that the human acted before the current stop, so a
+  // held session keeps its hold instead of being released by a late retry.
+  if (answerReplay && origin === "human" && request.human_requested_at === undefined
+    && await supervisor.isAutomationHeld(harness, request.target.session_id)) {
+    return {
+      status: "failed",
+      target: request.target,
+      result_ref: request.result_ref,
+      reason: "human stop is held and this answer has no verifiable admission time",
+      ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
+    };
+  }
   try {
     const current = await supervisor.getSession(harness, request.target.session_id, harness === "zcode" ? request.target.cwd : undefined);
     if (!liveAutopilotTargetMatchesChoice({ harness, sessionId: request.target.session_id, cwd: request.target.cwd }, current)) {
@@ -132,7 +224,19 @@ async function resumeSelectedTarget(request: ResumeTransportRequest, supervisor:
     const result = await supervisor.sendMessage(
       harness,
       request.target.session_id,
-      { message: prompt, queue: false, origin },
+      {
+        message: prompt,
+        // ZCode owns queue admission and command deduplication in its V4
+        // transport; the legacy inline prompt path is not the answer path.
+        queue: harness === "zcode" ? true : false,
+        origin,
+        // The stable key reaches the deduplicating ingress, so a crash or lease
+        // takeover cannot deliver the same answer to the native session twice.
+        ...(request.idempotency_key ? { inputId: resumeInputId(request) } : {}),
+        ...(origin === "human" && request.human_requested_at !== undefined
+          ? { humanRequestedAt: request.human_requested_at }
+          : {}),
+      },
       harness === "zcode" ? request.target.cwd : undefined,
     );
     if (!result.ok) {
@@ -160,6 +264,28 @@ async function resumeSelectedTarget(request: ResumeTransportRequest, supervisor:
       ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
     };
   }
+}
+
+/** Require an exact existing native session before a question is bound to it. */
+async function verifiedQuestionTarget(
+  body: Record<string, unknown>,
+  adapters: Map<string, HarnessAdapter>,
+): Promise<{ agent: string; sessionId: string; cwd: string }> {
+  const harness = typeof body.harness === "string" ? body.harness : typeof body.agent === "string" ? body.agent : "";
+  const sessionId = typeof body.session_id === "string" ? body.session_id : typeof body.sessionId === "string" ? body.sessionId : "";
+  if (!harness || !sessionId) throw new Error("harness and session_id are required");
+  const adapter = adapters.get(harness);
+  if (!adapter) throw new Error(`harness '${harness}' is not available`);
+  const cwd = typeof body.cwd === "string" ? body.cwd : undefined;
+  const session = await adapter.getSession(sessionId).catch(() => null);
+  const live = cwd ? (await adapter.listSessions({ cwd: resolve(cwd) }).catch(() => [])).find((candidate) => candidate.id === sessionId) ?? null : session;
+  if (!live || live.harness !== harness || live.id !== sessionId) {
+    throw new Error(`session '${harness}:${sessionId}' not found`);
+  }
+  if (cwd && normalize(live.cwd) !== normalize(cwd)) {
+    throw new Error(`session '${harness}:${sessionId}' is not in '${cwd}'`);
+  }
+  return { agent: harness, sessionId, cwd: live.cwd };
 }
 
 async function completeManualChoiceResume(
@@ -493,7 +619,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
     try {
       if (dependencies.fleetHttpGuard && await dependencies.fleetHttpGuard(request, response)) return;
       if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
-      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -529,7 +655,9 @@ export function createWebServer(dependencies: WebDependencies): Server {
       },
       query: async (choice) => {
         if (choice.harness === "hermes") return localHookTimeoutReceipt(choice);
-        return new AgentResumeClient().queryReceipt(buildTimeoutResumeRequest(choice));
+        // The timeout dispatch also follows the delivery route, so its recovery
+        // query reads native admission for Codex and ZCode.
+        return boundResumeReceiptQuery(buildTimeoutResumeRequest(choice), dependencies.adapters);
       },
     }).catch((error) => console.error(`[agent-herder] autopilot sweep failed: ${(error as Error).message}`));
     const intervalMs = Math.max(100, dependencies.autopilotSweepIntervalMs ?? 30_000);
@@ -563,7 +691,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (url.pathname.startsWith("/api/quota-lens") && request.method === "GET") {
     const body = await handleQuotaLensRequest(url.pathname, url.searchParams);
@@ -768,6 +896,25 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const state = await autoCompactStore.read();
     return sendJson(response, 200, { settings: state.settings, supportedHarnesses: autoCompactService.supportedHarnesses(), operations: state.operations.slice(-10) });
   }
+  if (url.pathname === "/api/automation/project-launch" && request.method === "POST") {
+    if (!projectLaunchDispatch) return sendJson(response, 503, { error: "Project launch routing is not configured" });
+    const body = await readJson(request);
+    try {
+      const result = await projectLaunchDispatch({
+        project: typeof body.project === "string" ? body.project : "",
+        cwd: typeof body.cwd === "string" ? body.cwd : "",
+        message: typeof body.message === "string" ? body.message : "",
+        ...(typeof body.harness === "string" ? { harness: body.harness as HarnessType } : {}),
+        ...(typeof body.model === "string" ? { model: body.model } : {}),
+        ...(body.mode === "queue" ? { mode: "queue" as const } : {}),
+        ...(typeof body.operation_id === "string" ? { operationId: body.operation_id } : {}),
+        ...(typeof body.name === "string" ? { name: body.name } : {}),
+      });
+      return sendJson(response, result.outcome === "no_harness" ? 409 : 200, result);
+    } catch (error) {
+      return sendJson(response, 400, { error: (error as Error).message });
+    }
+  }
   if (url.pathname === "/api/session-autostart" && (request.method === "GET" || request.method === "PUT")) {
     if (!sessionAutostartStore) return sendJson(response, 503, { error: "Session autostart settings are disabled" });
     if (request.method === "GET") return sendJson(response, 200, await sessionAutostartStore.getSettings());
@@ -954,6 +1101,53 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     await mcpNodeHandler(request, response);
     return;
   }
+  if (request.method === "POST" && url.pathname === "/internal/human-requests") {
+    if (!humanRequests) return sendJson(response, 503, { error: "Human Request registry is disabled" });
+    const body = await readJson(request);
+    try {
+      // One question binding for exactly one Notice Ask card. Herder never sends
+      // a second card of its own.
+      const binding = await askHuman(humanRequests, {
+        kind: body.kind === "secret" ? "secret" : "user",
+        target: await verifiedQuestionTarget(body, adapters),
+        ...(typeof body.message === "string" ? { message: body.message } : {}),
+        ...(Array.isArray(body.choices) ? { choices: body.choices as Array<{ choiceId: string; label: string }> } : {}),
+        ...(typeof body.context_ref === "string" ? { contextRef: body.context_ref } : {}),
+      });
+      const { record, ...question } = binding;
+      return sendJson(response, 201, {
+        ...question,
+        status: record.status,
+        continuation: record.continuation,
+      });
+    } catch (error) {
+      const reason = (error as Error).message;
+      if (/not found|is not in/.test(reason)) return sendJson(response, 404, { error: reason });
+      // The native session exists; a malformed question is a bad request.
+      return sendJson(response, 400, { error: reason });
+    }
+  }
+  if (request.method === "POST" && url.pathname === "/internal/human-requests/cancel") {
+    if (!humanRequests) return sendJson(response, 503, { error: "Human Request registry is disabled" });
+    const body = await readJson(request);
+    if (typeof body.request_id !== "string" || body.request_id.length === 0) {
+      return sendJson(response, 400, { error: "request_id is required" });
+    }
+    // An explicit reason is required: a bound question must not be withdrawn
+    // casually, and the reason is the audit record of why it went away.
+    if (typeof body.reason !== "string" || body.reason.trim().length === 0) {
+      return sendJson(response, 400, { error: "reason is required to cancel a bound question" });
+    }
+    try {
+      // An expired or withdrawn question must not hold its session behind the
+      // pending-question gate forever. Cancelling resumes nothing.
+      const record = await humanRequests.cancel(body.request_id, body.reason);
+      return sendJson(response, 200, { request_id: record.requestId, status: record.status, continuation: record.continuation });
+    } catch (error) {
+      const reason = (error as Error).message;
+      return sendJson(response, /not found/.test(reason) ? 404 : 409, { error: reason });
+    }
+  }
   if (request.method === "POST" && (url.pathname === "/internal/human-requests/sss-completion" || url.pathname === "/internal/human-requests/ask-user-completion")) {
     if (!humanRequests) return sendJson(response, 503, { error: "Human Request registry is disabled" });
     const body = await readJson(request);
@@ -967,23 +1161,39 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!pending || pending.kind !== expectedKind) {
       return sendJson(response, 409, { error: "completion does not match the pending human request kind" });
     }
-    const claimed = await humanRequests.claimResume(body.request_id, { resultRef: body.result_ref });
-    if (claimed.status !== "resuming" || !claimed.attemptId) {
-      return sendJson(response, 202, { request_id: claimed.requestId, status: claimed.status });
+    // One durable admission owns the only native resume of this answer. A repeated
+    // provider callback, a concurrent duplicate and a service restart all read the
+    // same attempt and idempotency key instead of launching the session again.
+    let outcome: Awaited<ReturnType<typeof resumeHumanRequestOnce>>;
+    try {
+      outcome = await resumeHumanRequestOnce({
+        registry: humanRequests,
+        requestId: body.request_id,
+        resultRef: body.result_ref,
+        // The same canonical human transport as the native MCP resolve: one
+        // answer, one bound session, one explicit-stop fence.
+        resume: humanResume ?? ((input) => resumeSelectedTarget(input, supervisor, "human", true)),
+        queryReceipt: choiceQuery ?? ((input) => boundResumeReceiptQuery(input, adapters)),
+      });
+    } catch (error) {
+      // A busy lock is a deferral, not a failed answer: the provider may retry.
+      if (error instanceof HumanRequestLockUnavailableError) {
+        return sendJson(response, 409, { request_id: body.request_id, status: "pending", retry: true, error: error.message });
+      }
+      throw error;
     }
-    const target = claimed.target;
-    if (!target.agent || !(["codex", "opencode", "claude", "zcode"].includes(target.agent) && target.cwd || target.agent === "hermes" && target.locator)) {
-      const failed = await humanRequests.failResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: "resume-target-unsupported" });
-      return sendJson(response, 422, { request_id: failed.requestId, status: failed.status });
+    if (outcome.status === "unsupported_target") {
+      return sendJson(response, 422, { request_id: outcome.record.requestId, status: outcome.record.status });
     }
-    const resumeTarget = target.agent === "hermes"
-      ? { agent: "hermes" as const, locator: target.locator as unknown as import("../resume-transport.js").HermesResumeLocator }
-      : { agent: target.agent as "codex" | "opencode" | "claude" | "zcode", session_id: target.sessionId, cwd: target.cwd!, ...(target.marker ? { marker: target.marker } : {}) };
-    const receipt = await (choiceResume ?? ((input) => resumeSelectedTarget(input, supervisor)))({ target: resumeTarget, result_ref: body.result_ref });
-    const record = receipt.status === "accepted"
-      ? await humanRequests.completeResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: receipt.receipt_ref })
-      : await humanRequests.failResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: `agent-resume:${receipt.reason}` });
-    return sendJson(response, receipt.status === "accepted" ? 202 : 502, { request_id: record.requestId, status: record.status, continuation: record.continuation });
+    if (outcome.status === "resume_failed") {
+      return sendJson(response, 502, { request_id: outcome.record.requestId, status: outcome.record.status, continuation: outcome.record.continuation, reason: outcome.receipt, retry: outcome.retry });
+    }
+    return sendJson(response, 202, {
+      request_id: outcome.record.requestId,
+      status: outcome.record.status,
+      continuation: outcome.record.continuation,
+      ...(outcome.status === "in_flight" ? { in_flight: true, idempotency_key: outcome.idempotencyKey } : {}),
+    });
   }
   if (request.method === "GET" && url.pathname === "/") {
     const html = await readFile(htmlPath, "utf8");

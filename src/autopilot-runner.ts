@@ -15,7 +15,13 @@ import {
   type AutopilotDecision,
 } from "./autopilot/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
+import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
+import { HumanRequestRegistry } from "./human-request/index.js";
+import { deliverNoticeQuestion, type NoticeQuestionConfig } from "./human-request/notice-question.js";
+import { loadAskHumanProducer } from "./human-request/ask-human-producer.js";
+import type { PendingHumanQuestion } from "./autopilot/index.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
+import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { effectivePolicyAllowsTarget } from "./autopilot/policy.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "./autopilot/session-store.js";
 import { acquireLock } from "./autopilot-hook.js";
@@ -37,9 +43,23 @@ export type AutopilotRunnerInput = {
   stopHookActive?: boolean;
 };
 
-const stateDir = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR || join(homedir(), ".local", "state", "agent-herder", "autopilot-live");
+const stateDir = resolveAutopilotStateDir();
+
+/** The protected AskHuman producer: the scope a human answers an ordinary question in. */
+async function noticeQuestionProducer(): Promise<NoticeQuestionConfig | undefined> {
+  const producer = await loadAskHumanProducer(process.env);
+  if (!producer) return undefined;
+  return {
+    endpoint: producer.endpoint,
+    token: producer.token,
+    project: producer.project,
+    recipient: producer.recipient,
+    ...(producer.allowedActors ? { allowedActors: producer.allowedActors } : {}),
+  };
+}
 
 export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<Record<string, unknown>> {
+  await adoptLegacyAutopilotState(stateDir);
   const command = input.command ?? "on";
   const humanStops = getHumanStopStore();
   const held = () => humanStops.isHeld(input.harness, input.sessionId);
@@ -79,6 +99,10 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
   const release = await acquireLock(sessionLockPath);
   if (!release) return { ok: false, command, reason: "session-lock-unavailable" };
   try {
+    const choiceRegistry = new ChoiceRegistry(join(stateDir, "choices.json"));
+    const humanRequests = new HumanRequestRegistry(resolveHumanRequestStorePath(stateDir));
+    const pendingQuestions = new PendingQuestionGate({ humanRequests, choices: choiceRegistry });
+    const questionProducer = await noticeQuestionProducer();
     const receipts = await loadReceiptStore(receiptPath);
     let observedDecision: { decision: AutopilotDecision; choiceRequestId?: string } | undefined;
     const core = createAutopilotCore({
@@ -101,7 +125,12 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
         recipient: requiredEnv("AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT"),
         kind: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_KIND || "notification",
       },
-      choiceRegistry: new ChoiceRegistry(join(stateDir, "choices.json")),
+      choiceRegistry,
+      humanRequests,
+      ...(questionProducer ? { deliverHumanQuestion: (question: PendingHumanQuestion) => deliverNoticeQuestion(question, questionProducer) } : {}),
+      // The same durable fence the launcher applies: an unanswered question is
+      // never continued here, whatever turn id arrives.
+      pendingQuestions,
       harness: input.harness,
       onDecision: (decision, metadata) => {
         observedDecision = { decision, ...(metadata?.choiceRequestId ? { choiceRequestId: metadata.choiceRequestId } : {}) };

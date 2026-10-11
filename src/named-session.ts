@@ -44,6 +44,8 @@ export interface NamedSessionResult {
   admissionUnknown?: boolean;
   nonRetryable?: boolean;
   pending?: boolean;
+  /** Definite provider rejection observed before session creation/input admission. */
+  failureCode?: "quota_exhausted";
   model?: string;
   error?: string;
 }
@@ -177,6 +179,10 @@ export async function newOrResumeNamedSession(
       delivery: delivery.admitted && delivery.nonRetryable ? "accepted_failed" : "failed",
       ...(delivery.admitted ? { admitted: true } : {}),
       ...(delivery.nonRetryable ? { nonRetryable: true } : {}),
+      // An unknown admission must survive the failure: a caller deciding on a
+      // harness fallback must never treat it as a definite pre-admission
+      // rejection and start a second executor.
+      ...(delivery.admissionUnknown ? { admissionUnknown: true } : {}),
       error: delivery.error || "Message delivery failed",
       ...(request.model ? { model: request.model } : {}),
       ...resolved.normalized,

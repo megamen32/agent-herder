@@ -4,19 +4,47 @@ import {
   DEFAULT_LAUNCH_POLICY,
   updateAllowedHarness,
   updatePreferredHarness,
+  updateProjectRoute,
+  updateProjectRouteModel,
+  removeProjectRouteHarness,
 } from "../src/web-ui/launch-policy-settings.js";
+import { resolveProjectLaunch, validateAutomationLaunchPolicy } from "../src/automation-launch-policy.js";
 
 const component = readFileSync(new URL("../src/web-ui/launch-policy-settings.tsx", import.meta.url), "utf8");
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
 
 describe("new session launch policy settings", () => {
+  it.each(["", "   "])("clears route override %j and saves the inherited global model through production validation", (empty) => {
+    const project = "/project";
+    const draft = { ...DEFAULT_LAUNCH_POLICY, projectRoutes: { [project]: {
+      harnesses: ["codex", "zcode"], aliases: ["card"], models: { codex: "custom", zcode: "keep" },
+    } } };
+    const next = updateProjectRoute(draft, project, (route) => updateProjectRouteModel(route, "codex", empty));
+    expect(next.projectRoutes?.[project]?.models).toEqual({ zcode: "keep" });
+    const saved = validateAutomationLaunchPolicy(JSON.parse(JSON.stringify(next)));
+    expect(resolveProjectLaunch(saved, { project: "card" })).toMatchObject({ kind: "launch", model: draft.models.codex });
+    expect(draft.projectRoutes[project].models.codex).toBe("custom");
+  });
+
+  it("removes the harness override with its route entry and saves without unused-harness rejection", () => {
+    const project = "/project";
+    const draft = { ...DEFAULT_LAUNCH_POLICY, projectRoutes: { [project]: {
+      harnesses: ["codex", "zcode"], aliases: ["card"], models: { codex: "custom", zcode: "keep" },
+    } } };
+    const next = updateProjectRoute(draft, project, (route) => removeProjectRouteHarness(route, "codex"));
+    expect(next.projectRoutes?.[project]).toEqual({ harnesses: ["zcode"], aliases: ["card"], models: { zcode: "keep" } });
+    expect(validateAutomationLaunchPolicy(next).projectRoutes?.[project]?.harnesses).toEqual(["zcode"]);
+    expect(draft.projectRoutes[project].models.codex).toBe("custom");
+  });
   it("starts with the requested explicit draft without changing the persisted policy", () => {
     expect(DEFAULT_LAUNCH_POLICY).toEqual({
       version: 1,
       allowedHarnesses: ["codex", "zcode"],
       preferredHarness: "codex",
       models: {
-        codex: "gpt-5.6-sol",
+        // The live policy values are the draft default; an explicit draft never
+        // rewrites a configured route model.
+        codex: "gpt-6.1-sol",
         zcode: "account:zai-individual-coding-plan/GLM-5.3-Flash$high",
       },
     });

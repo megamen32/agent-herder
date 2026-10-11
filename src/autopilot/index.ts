@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { ChoiceRegistry, type AutopilotChoice } from "./choice-registry.js";
+import { askHuman } from "../human-request/question-binding.js";
+import type { HumanRequestRegistry } from "../human-request/registry.js";
 import {
   effectivePolicyAllowsTarget,
   type EffectivePolicy,
@@ -69,6 +71,8 @@ export type NotificationPayload = {
   signal_type?: string;
   choices?: Array<{ choice_id: string; label: string }>;
   choice_request_id?: string;
+  /** Resumable Human Request the card may answer to continue this exact session. */
+  human_request_id?: string;
 };
 
 export type NotificationSink = {
@@ -79,6 +83,19 @@ export type Receipt = {
   kind: AutopilotDecision["kind"];
   /** Durable completion notice retry; its stable idempotency key prevents duplicates. */
   pendingNotice?: NotificationPayload;
+  /** Durable Human Request created for a human decision; a replay reuses it. */
+  humanRequestId?: string;
+  /** Durable question outbox: the card was not delivered yet. */
+  pendingQuestion?: PendingHumanQuestion;
+};
+
+/** One question binding that still has to reach the Notice human-request intake. */
+export type PendingHumanQuestion = {
+  request_id: string;
+  dedup_key: string;
+  kind: "user" | "secret";
+  question: { message: string; choices?: Array<{ choice_id: string; label: string }> };
+  native_target: { harness: string; session_id: string; cwd?: string };
 };
 export type ReceiptStore = Map<string, Receipt>;
 
@@ -121,7 +138,7 @@ export async function drainPendingNotices(store: ReceiptStore, notify: Notificat
     if (!receipt.pendingNotice) continue;
     try {
       await notify.send(receipt.pendingNotice);
-      store.set(key, { kind: receipt.kind });
+      store.set(key, { kind: receipt.kind, ...(receipt.humanRequestId ? { humanRequestId: receipt.humanRequestId } : {}) });
       delivered += 1;
     } catch {
       // Keep the exact payload for the next background sweep.
@@ -151,6 +168,7 @@ export function createNoticePlacePayload(input: {
   signalType?: string;
   choices?: Array<{ choice_id: string; label: string }>;
   choice_request_id?: string;
+  human_request_id?: string;
 }): NotificationPayload {
   return {
     schema: "notify.event.v1",
@@ -169,6 +187,7 @@ export function createNoticePlacePayload(input: {
     ...(input.signalType ? { signal_type: input.signalType } : {}),
     ...(input.choices ? { choices: input.choices } : {}),
     ...(input.choice_request_id ? { choice_request_id: input.choice_request_id } : {}),
+    ...(input.human_request_id ? { human_request_id: input.human_request_id } : {}),
   };
 }
 
@@ -288,6 +307,11 @@ export function createOpenAICompatibleJudge(config: {
   };
 }
 
+/** The only capability the core needs from a pending-question gate. */
+export type PendingQuestionSource = {
+  blocks(harness: string, sessionId: string, cwd?: string): Promise<boolean>;
+};
+
 export function createAutopilotCore(options: {
   judge: JudgeClient;
   notify: NotificationSink;
@@ -297,10 +321,26 @@ export function createAutopilotCore(options: {
   maxContinuationsPerSession: number;
   notification?: NotificationConfig;
   choiceRegistry?: ChoiceRegistry;
+  /**
+   * Durable Human Request registry. A human decision binds a resumable request
+   * to the exact native session instead of sending a dead-end notification.
+   */
+  humanRequests?: Pick<HumanRequestRegistry, "create">;
+  /**
+   * The single Notice human-request intake. One call is one real question card;
+   * Agent Herder never sends a generic event for a human question.
+   */
+  deliverHumanQuestion?: (question: PendingHumanQuestion) => Promise<void>;
+  /**
+   * Durable answer-pending gate. A session that still owes a human an answer is
+   * never judged or continued, whatever Stop hook or runner entry point fires
+   * and whatever the new turn id is.
+   */
+  pendingQuestions?: PendingQuestionSource;
   effectivePolicy?: EffectivePolicy;
   policyBypassSessionId?: string;
   harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode";
-  onDecision?: (decision: AutopilotDecision, metadata?: { choiceRequestId?: string }) => void;
+  onDecision?: (decision: AutopilotDecision, metadata?: { choiceRequestId?: string; humanRequestId?: string }) => void;
 }): { handleStop(input: StopHookInput): Promise<AutopilotHookResult> } {
   const continuationCounts = new Map<string, number>();
   const activeTurnKeys = new Set<string>();
@@ -344,11 +384,29 @@ export function createAutopilotCore(options: {
       const terminal = turnReceipts.find(([, receipt]) => receipt.kind !== "continue");
       const existingKey = pending?.[0] ?? terminal?.[0] ?? receiptKey;
       const existingReceipt = options.receiptStore.get(existingKey);
+      if (existingReceipt?.pendingQuestion && options.deliverHumanQuestion) {
+        activeTurnKeys.add(turnPrefix);
+        try {
+          await options.deliverHumanQuestion(existingReceipt.pendingQuestion);
+          options.receiptStore.set(existingKey, {
+            kind: existingReceipt.kind,
+            ...(existingReceipt.humanRequestId ? { humanRequestId: existingReceipt.humanRequestId } : {}),
+          });
+        } catch {
+          // Keep the exact question for a later retry; never ask the human twice.
+        } finally {
+          activeTurnKeys.delete(turnPrefix);
+        }
+        return {};
+      }
       if (existingReceipt?.pendingNotice) {
         activeTurnKeys.add(turnPrefix);
         try {
           await options.notify.send(existingReceipt.pendingNotice);
-          options.receiptStore.set(existingKey, { kind: existingReceipt.kind });
+          options.receiptStore.set(existingKey, {
+            kind: existingReceipt.kind,
+            ...(existingReceipt.humanRequestId ? { humanRequestId: existingReceipt.humanRequestId } : {}),
+          });
         } catch {
           // The terminal decision is already durable. Keep the exact notice in
           // the receipt outbox so a later Stop can retry without re-judging or
@@ -359,6 +417,22 @@ export function createAutopilotCore(options: {
         return {};
       }
       if (existingReceipt) {
+        return {};
+      }
+
+      // An unanswered question is a durable fence for every entry point, and a
+      // new turn id after an idle stop must not become a way past it. It is
+      // checked after the durable notice outbox above: a delivered question must
+      // still be retried after a notification failure, or the human would never
+      // see it.
+      if (
+        options.pendingQuestions
+        && await options.pendingQuestions.blocks(
+          options.harness ?? input.harness ?? "codex",
+          input.session_id,
+          input.cwd,
+        )
+      ) {
         return {};
       }
 
@@ -466,17 +540,37 @@ export function createAutopilotCore(options: {
           options.onDecision?.(decision, { choiceRequestId: pending.requestId });
           return {};
         } else if (decision.kind === "human") {
-          options.onDecision?.(decision);
-          await options.notify.send(
-            createNoticePlacePayload({
-              title: decision.title,
-              body: decision.body,
-              severity: decision.severity,
-              dedupKey: `agent-herder:human:${input.session_id}:${input.turn_id}`,
-              correlationId: `${input.session_id}/${input.turn_id}`,
-              ...notification,
-            }),
-          );
+          // A human decision is one real question: bind a resumable request to
+          // the exact native session and create exactly one Notice question card
+          // through the dedicated human-request intake. No generic event is sent.
+          const question = await createResumableHumanQuestion(options, input, decision);
+          options.onDecision?.(decision, question ? { humanRequestId: question.request_id } : undefined);
+          if (!question || !options.deliverHumanQuestion) {
+            // Without the human-question intake no request is created, so a
+            // pending-question gate never closes behind a question nobody sees.
+            options.receiptStore.set(receiptKey, { kind: decision.kind });
+            await options.notify.send(
+              createNoticePlacePayload({
+                title: decision.title,
+                body: decision.body,
+                severity: decision.severity,
+                dedupKey: `agent-herder:human:${input.session_id}:${input.turn_id}`,
+                correlationId: `${input.session_id}/${input.turn_id}`,
+                ...notification,
+              }),
+            );
+            return {};
+          }
+          const humanRequestId = question.request_id;
+          options.receiptStore.set(receiptKey, { kind: decision.kind, humanRequestId, pendingQuestion: question });
+          try {
+            await options.deliverHumanQuestion(question);
+            options.receiptStore.set(receiptKey, { kind: decision.kind, humanRequestId });
+          } catch {
+            // Keep the exact question so a later Stop retries the same card: the
+            // request id is durable and the human is asked only once.
+          }
+          return {};
         } else {
           options.onDecision?.(decision);
           if (decision.notify === false) {
@@ -508,6 +602,38 @@ export function createAutopilotCore(options: {
         activeTurnKeys.delete(turnPrefix);
       }
     },
+  };
+}
+
+/** Harness selection for a resumable question; a locator-less Hermes cannot be woken. */
+const RESUMABLE_HUMAN_DECISION_HARNESSES = new Set(["codex", "opencode", "claude", "zcode"]);
+
+async function createResumableHumanQuestion(
+  options: {
+    humanRequests?: Pick<HumanRequestRegistry, "create">;
+    deliverHumanQuestion?: (question: PendingHumanQuestion) => Promise<void>;
+    harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode";
+  },
+  input: StopHookInput,
+  decision: Extract<AutopilotDecision, { kind: "human" }>,
+): Promise<PendingHumanQuestion | undefined> {
+  if (!options.humanRequests || !options.deliverHumanQuestion) return undefined;
+  const agent = options.harness ?? input.harness ?? "codex";
+  if (!RESUMABLE_HUMAN_DECISION_HARNESSES.has(agent)) return undefined;
+  const binding = await askHuman(options.humanRequests, {
+    kind: "user",
+    target: { agent, sessionId: input.session_id, cwd: input.cwd },
+    message: `${decision.title}\n\n${decision.body}`,
+    contextRef: `agent-herder://autopilot/human/${encodeURIComponent(input.session_id)}/${encodeURIComponent(input.turn_id)}`,
+  });
+  const question = binding.question;
+  if (!question) return undefined;
+  return {
+    request_id: binding.request_id,
+    dedup_key: binding.dedup_key,
+    kind: binding.kind,
+    question,
+    native_target: binding.native_target,
   };
 }
 
@@ -940,10 +1066,32 @@ export async function loadReceiptStore(path: string): Promise<ReceiptStore> {
       )
     ) {
       const pendingNotice = notificationPayloadFromReceipt((value as Record<string, unknown>).pendingNotice);
-      store.set(key, { kind: (value as Receipt).kind, ...(pendingNotice ? { pendingNotice } : {}) });
+      const humanRequestId = (value as Record<string, unknown>).humanRequestId;
+      const pendingQuestion = pendingQuestionFromReceipt((value as Record<string, unknown>).pendingQuestion);
+      store.set(key, {
+        kind: (value as Receipt).kind,
+        ...(pendingNotice ? { pendingNotice } : {}),
+        ...(typeof humanRequestId === "string" && humanRequestId.length > 0 ? { humanRequestId } : {}),
+        ...(pendingQuestion ? { pendingQuestion } : {}),
+      });
     }
   }
   return store;
+}
+
+function pendingQuestionFromReceipt(value: unknown): PendingHumanQuestion | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const question = value as Record<string, unknown>;
+  if (typeof question.request_id !== "string" || question.request_id.length === 0) return undefined;
+  if (typeof question.dedup_key !== "string" || question.dedup_key.length === 0) return undefined;
+  if (question.kind !== "user" && question.kind !== "secret") return undefined;
+  const body = question.question;
+  if (!body || typeof body !== "object" || Array.isArray(body) || typeof (body as Record<string, unknown>).message !== "string") {
+    return undefined;
+  }
+  const target = question.native_target;
+  if (!target || typeof target !== "object" || typeof (target as Record<string, unknown>).session_id !== "string") return undefined;
+  return question as unknown as PendingHumanQuestion;
 }
 
 function notificationPayloadFromReceipt(value: unknown): NotificationPayload | undefined {

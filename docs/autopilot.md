@@ -480,3 +480,267 @@ The old fleet Codex campaign registry is not ZCode task authorization; native
 ZCode work retains its existing mandatory systemd descendant budget. Its
 same-session Autopilot admission is independent of that historical registry.
 Automatic compact failures use the existing Notice Place incident sink.
+## Human questions, answers and one resume per answer
+
+A `human` judge decision and a `choice` decision are both real questions, not
+dead ends. The judge binds one durable Human Request to the exact native
+session and puts its `human_request_id` on the NoticePlace card, so the
+existing answer path resumes that one session.
+
+```text
+POST /api/autopilot/sessions/{harness}/{sessionId}   {"enabled":true,"cwd":"/abs/cwd"}
+```
+
+The per-session switch above is enough to activate one exact session while the
+global policy still selects other harnesses. It is written into the shared
+state directory, so the daemon, the Stop hook and the runner all read it.
+
+An answer is admitted exactly once:
+
+- `HumanRequestRegistry.admitResume` returns the admission receipt. Only
+  `admitted: true` may invoke the resume transport, and it must use the
+  returned `idempotencyKey`. Every replay returns the same attempt, key and
+  canonical admitted answer.
+- A bounded persisted lease transfers observation after expiry: the same
+  attempt and key may read the durable provider receipt. An unknown or missing
+  admission receipt never permits another transport invocation.
+- A definite `agent-resume:native-unavailable` rejection before admission
+  returns HTTP `502` with `status: "resume_failed"`, `continuation: "resume"`,
+  `reason: "agent-resume:native-unavailable"` and `retry: true`. Notice may retry
+  the same `request_id` and canonical `result_ref` after recovery. Re-admission
+  is atomic and keeps the original attempt, key and answer time. A different
+  result reference or an ambiguous/admitted failure returns `retry: false`.
+  An old unavailable query receipt cannot reopen a live restored admission.
+- The stable key travels to the deduplicating native ingress as `inputId`, so
+  a takeover cannot deliver the answer to the session twice.
+- The answer carries `human_requested_at`, the instant it was admitted. An
+  explicit human stop newer than that instant keeps the session held; the
+  answer is never replaced by a bare "human requested" flag.
+
+A pending Human Request or a pending choice is a durable fence. The launcher,
+the Stop hook and the runner all defer that exact session until the answer is
+applied. A deferral never deletes accepted or recovery state and never pauses
+another session.
+
+## One Autopilot state directory
+
+The daemon, the Stop hook and the runner resolve one directory:
+
+```text
+AGENT_HERDER_AUTOPILOT_STATE_DIR=/home/user/.local/state/agent-herder/autopilot-live
+AGENT_HERDER_HUMAN_REQUEST_STORE=/home/user/.local/state/agent-herder/autopilot-live/human-requests.json
+AGENT_HERDER_LEGACY_AUTOPILOT_STATE_DIR=/home/user/.local/state/agent-herder/autopilot
+```
+
+Without an explicit pin, the default is `~/.local/state/agent-herder/autopilot-live`,
+and pre-seam state is adopted once, exclusively and atomically. The receipt store
+and the armed-session set are adopted as well: they hold the terminal decision
+deduplication, the pending notice outbox and the hook admission list. When both
+directories are populated, only `choices.json` and `human-requests.json` are
+merged, by verified `requestId`: the canonical record wins and a legacy-only
+record is appended, with the previous canonical file kept as
+`<file>.pre-merge`. An unrecognized shape is never rewritten. Set
+`AGENT_HERDER_LEGACY_AUTOPILOT_STATE_DIR` to merge two populated directories
+explicitly; with only the canonical directory pinned, nothing is adopted.
+
+## One question path: Herder binds, Notice shows, Herder resumes
+
+There is exactly one card per question, and it always lives in the dedicated
+Notice human-request intake. Agent Herder sends **no** generic `/v1/events`
+question card. Two callers may create the binding:
+
+- a plugin or agent through `human_request_create`;
+- Herder itself, when the judge decides a human decision is required. It builds
+  the same binding and posts exactly one envelope to the **protected AskHuman
+  producer**, read at runtime from `~/.config/ask-human/env` (override with
+  `ASK_HUMAN_ENV_FILE`): `ASK_HUMAN_URL`, `ASK_HUMAN_ALLOWED_ACTORS`,
+  `NOTIFY_CENTER_PROJECT` and its own token. That is the same producer, project
+  and actor scope the phone-facing stdio uses, so a Judge question is visible
+  and answerable in the same place as an ordinary one. Herder's own
+  `/v1/events` intake keeps its `agent-herder` project and is never used for a
+  question; no token value is copied or logged, and the startup line reports
+  only `project`, endpoint, actor count and source:
+
+```json
+{
+  "schema": "ask_human.request.v1",
+  "request_id": "…",
+  "project": "…",
+  "recipient": "…",
+  "mode": "question",
+  "message": "…",
+  "kind": "user",
+  "native_target": { "harness": "opencode", "session_id": "ses_…", "cwd": "/workspace/incident" },
+  "allowed_actors": ["…"]
+}
+```
+
+The request id is Herder's canonical key and is sent as the `Idempotency-Key`
+header, so a retry updates the same question instead of creating a second card.
+
+A deployment without an AskHuman config falls back to Herder's own notification
+producer, and the fallback is reported explicitly; it is the last resort, not
+the default, because a question must land in the scope where the human looks.
+If the intake is not configured, no request is created at all: a notification
+alone must never leave a request pending behind a question nobody can answer.
+
+
+There is exactly one question card. Agent Herder never sends a generic event
+card for a human question: it creates the durable request and returns the
+binding that Notice needs for its own Ask card.
+
+```text
+1. MCP human_request_create {kind, harness, sessionId, cwd?, message, choices?}
+   or POST /internal/human-requests {kind, harness, session_id, cwd, message, choices?}
+2. Notice: POST /v1/human-requests   (once, with the binding below)
+3. Answer -> Herder human_request_resolve, or
+            POST /internal/human-requests/ask-user-completion
+```
+
+The binding returned by step 1:
+
+```json
+{
+  "request_id": "…",
+  "native_target": { "harness": "opencode", "session_id": "ses_…", "cwd": "/workspace/incident" },
+  "dedup_key": "human-request:…",
+  "kind": "user",
+  "question": { "message": "…", "choices": [{ "choice_id": "continue", "label": "…" }] },
+  "answer": { "mcp_tool": "human_request_resolve", "completion_path": "/internal/human-requests/ask-user-completion" }
+}
+```
+
+The internal endpoint verifies the exact native session (id plus canonical
+workspace) before binding and answers `404` for a missing or foreign session.
+The source session, the message and the choices therefore land in the same
+Notice question row, and the answer of that row resumes the exact bound session
+once. Calling both create paths for one question is the only way to get two
+cards.
+
+`message` is optional. Without it the request is metadata-only and creates no
+Notice question, so existing metadata-only and `secret` callers keep working.
+
+What the resumed turn receives is derived from the durable record, never from
+the caller, so a conflicting repeat cannot substitute its own instruction:
+
+```text
+Human Request <request_id> is answered; continue the same task on this exact session.
+Read the canonical answer with noticeplace_question_result(request_id="<request_id>") and apply it.
+Answer reference: <canonical result_ref>. Do not invent an answer and do not start a different task.
+```
+
+A `secret` request stays opaque: its continuation names only the secret
+reference and never the answer itself. The answer source is a durable
+discriminator, not a guess: only a request created through the question-binding
+seam has a Notice question row. A metadata-only request (the generic judge
+decision, a legacy caller) resumes with an instruction to use the human message
+in the session and never points at `noticeplace_question_result`.
+
+An expired or withdrawn question is cancelled through the supported path:
+
+```text
+POST /internal/human-requests/cancel {request_id, reason?}
+```
+
+Cancellation is terminal, resumes nothing and lifts the pending-question gate,
+so an ordinary bound question can never hold its session forever.
+
+A NoticePlace consumer that launches work for a project reads
+`GET /api/automation/launch-policy` and uses `projectRoutes[project]` when the
+project is configured there:
+
+```json
+{ "kind": "launch", "harness": "opencode", "model": "minimax-coding-plan/MiniMax-M3.1-Flash-Preview", "mode": "create" }
+```
+
+Documented presets (`PROJECT_ROUTE_PRESETS`, applied only when an operator saves
+them) use the verified real roots and the identifiers real cards carry:
+
+```json
+"/home/roomhacker/PycharmProjects/TelegramAuto": {
+  "harnesses": ["opencode", "zcode"],
+  "aliases": ["tg-commentator", "autotelegramviews", "canonicalTelegramAuto"]
+},
+"/home/roomhacker/PycharmProjects/AutoFindClient": { "harnesses": ["codex", "zcode", "opencode"] }
+```
+
+Aliases and canonical paths match case-insensitively. A project without a
+declared alias is never bound to a route, and no other service is mapped without
+a confirmed match.
+
+`kind: "unconfigured"` means the project keeps the default incident runtime
+(OpenCode with `minimax-coding-plan/MiniMax-M3.1-Flash-Preview`); `kind:
+"exhausted"` with reason `accepted` or `admission_unknown` means an executor
+already exists or may exist and no fallback is allowed.
+
+## One project launch consumer
+
+`POST /api/automation/project-launch` is the only place a project launch runs.
+A Notice consumer must call it instead of choosing a harness on its own.
+
+```json
+POST /api/automation/project-launch
+{ "project": "tg-commentator", "cwd": "/abs/workspace", "message": "…", "operation_id": "…" }
+```
+
+```json
+200 {
+  "operation_id": "…",
+  "project": "/home/roomhacker/PycharmProjects/TelegramAuto",
+  "outcome": "accepted",
+  "selected_harness": "zcode",
+  "model": "account:zai-individual-coding-plan/GLM-5.3-Flash$high",
+  "mode": "create",
+  "session_id": "zcode-1",
+  "routing_reason": "OpenCode не запустилась до подтверждения приёма: quota exhausted. Выбираем следующую среду маршрута. Среда ZCode приняла запуск.",
+  "attempts": [{ "harness": "opencode", "outcome": "pre_admission_rejected", "input_id": "herder-launch:opencode:…" }]
+}
+```
+
+- `attempts` is the durable ordered log at
+  `project-launch-attempts.json` in the Autopilot state directory. It is the
+  authority: a repeated `operation_id` is answered from that log and touches no
+  harness again. It is keyed by the configured route key, so an alias, a path
+  spelling or a case variant of the same project share one authority.
+- Each attempt is **reserved durably before the native call** and completed
+  after it, keeping the complete `NamedSessionResult`, including `turnId`,
+  admission flags, pending state and delivery. First response and replay use
+  one projector; actual launch mode follows native `created`. Legacy attempt
+  records retain their known receipt fields. The reservation is exclusive under one lock and returns
+  `{claimed, record}`: only the claiming caller may call the native writer.
+  OpenCode has no native input-id deduplication, so this durable claim is the
+  only thing preventing a second POST; Codex and ZCode additionally deduplicate
+  natively. A concurrent or restarted caller gets `outcome: "in_flight"` with a
+  visible reason and no native call.
+- A configured project is authoritative: its route decides the harness, the
+  model and the workspace. `harness` and `model` from a caller profile are
+  ignored for that project and reported as overridden in `routing_reason`; the
+  profile applies only to a project without a route.
+- Only a definite pre-admission rejection (`pre_admission_rejected`,
+  `quota_exhausted` or `unavailable`) advances to the next harness of the route.
+- For an explicit project route selecting OpenCode and exact model
+  `minimax-coding-plan/MiniMax-M3.1-Flash-Preview`, the production named runner
+  performs one minimal direct MiniMax probe before creating or messaging a
+  session. It reuses the protected `MINIMAX_API_KEY` already loaded by the
+  service and the existing direct Anthropic endpoint. Timeout is five seconds,
+  response is bounded to 16 KiB, concurrent probes coalesce, and the cache lasts
+  at most 30 seconds. Only the verified subscription quota code `4292056`
+  (HTTP 429 with native code `2056`) records `quota_exhausted` /
+  `not_attempted` and advances the configured route. Missing auth, generic rate
+  limits and uncertain probes keep the explicit OpenCode policy. Unconfigured
+  defaults do not probe or change provider. Accepted or unknown business input
+  never falls back based on a later model failure.
+- `accepted`, `admission_unknown` and `human_hold` stop the chain. A pending
+  human answer or a semantic repair failure is never a launch outcome, so no
+  second executor can appear.
+- `mode: "handoff_required"` means the project already has a live session on
+  another harness. The caller must use the existing context-preserving handoff;
+  Herder does not clone a running session.
+- `409` with `outcome: "no_harness"` means the route cannot launch: no allowed
+  runtime, no route entry left, or an explicit harness outside the route.
+
+The human composer sends OpenCode queue delivery through native
+`/prompt_async`; its successful receipt marks input admitted while the model
+may still be running. The durable message job records admission, not model
+completion. Clearing a route model override deletes its key and inherits the
+global model; removing a route harness deletes that harness's override too.

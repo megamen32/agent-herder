@@ -15,6 +15,12 @@ import {
   type StopHookInput,
 } from "./autopilot/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
+import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
+import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
+import { deliverNoticeQuestion, type NoticeQuestionConfig } from "./human-request/notice-question.js";
+import { loadAskHumanProducer } from "./human-request/ask-human-producer.js";
+import type { PendingHumanQuestion } from "./autopilot/index.js";
+import { HumanRequestRegistry } from "./human-request/index.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { resolveEffectivePolicy } from "./autopilot/policy.js";
 import { AutopilotSessionStore } from "./autopilot/session-store.js";
@@ -40,6 +46,12 @@ export type AutopilotHookDeps = {
   maxContinuationsPerSession: number;
   notification?: Parameters<typeof createAutopilotCore>[0]["notification"];
   choiceRegistry?: ChoiceRegistry;
+  /** Durable Human Request registry that binds a human decision to this exact session. */
+  humanRequests?: Parameters<typeof createAutopilotCore>[0]["humanRequests"];
+  /** The single Notice human-request intake for a human judge decision. */
+  deliverHumanQuestion?: Parameters<typeof createAutopilotCore>[0]["deliverHumanQuestion"];
+  /** Durable answer-pending gate applied before any judgement or continuation. */
+  pendingQuestions?: Parameters<typeof createAutopilotCore>[0]["pendingQuestions"];
   effectivePolicy?: Parameters<typeof createAutopilotCore>[0]["effectivePolicy"];
   humanStopStore?: HumanStopStore;
 };
@@ -60,6 +72,19 @@ export async function runAutopilotStopHook(
 }
 
 /** Load the effective policy from the same configured store path used by the web service. */
+/** The protected AskHuman producer, when it is configured on this host. */
+async function noticeQuestionProducer(): Promise<NoticeQuestionConfig | undefined> {
+  const producer = await loadAskHumanProducer(process.env);
+  if (!producer) return undefined;
+  return {
+    endpoint: producer.endpoint,
+    token: producer.token,
+    project: producer.project,
+    recipient: producer.recipient,
+    ...(producer.allowedActors ? { allowedActors: producer.allowedActors } : {}),
+  };
+}
+
 export async function loadEffectivePolicyForStopHook(
   stateDir: string,
   legacySessionIds: Iterable<string>,
@@ -78,6 +103,7 @@ export async function loadEffectivePolicyForStopHook(
 
 async function main(): Promise<void> {
   const stateDir = defaultStateDir();
+  await adoptLegacyAutopilotState(stateDir);
   const args = process.argv.slice(2);
   if (args[0] === "--help" || args[0] === "-h") {
     writeHelp();
@@ -131,6 +157,9 @@ async function main(): Promise<void> {
     const judge = buildJudge(runtimeSettings.autopilotJudgeModel);
     const notify = buildNotificationSink();
     const receiptStore = await loadReceiptStore(receiptPath);
+    const choiceRegistry = new ChoiceRegistry(join(stateDir, "choices.json"));
+    const humanRequests = new HumanRequestRegistry(resolveHumanRequestStorePath(stateDir));
+    const questionConfig = await noticeQuestionProducer();
     const result = await runAutopilotStopHook(input, {
       judge,
       notify,
@@ -152,7 +181,12 @@ async function main(): Promise<void> {
         recipient: resolveNotificationRecipient(),
         kind: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_KIND ?? "notification",
       },
-      choiceRegistry: new ChoiceRegistry(join(stateDir, "choices.json")),
+      choiceRegistry,
+      humanRequests,
+      ...(questionConfig
+        ? { deliverHumanQuestion: (question: PendingHumanQuestion) => deliverNoticeQuestion(question, questionConfig) }
+        : {}),
+      pendingQuestions: new PendingQuestionGate({ humanRequests, choices: choiceRegistry }),
       humanStopStore: getHumanStopStore(),
     });
     const receiptRelease = await acquireLock(join(stateDir, "state.lock"), {
@@ -217,10 +251,7 @@ export function resolveNotificationRecipient(env: NodeJS.ProcessEnv = process.en
 }
 
 function defaultStateDir(): string {
-  return (
-    process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR ??
-    join(homedir(), ".local", "state", "agent-herder", "autopilot")
-  );
+  return resolveAutopilotStateDir();
 }
 
 export function isAllSessionsOptIn(env: NodeJS.ProcessEnv = process.env): boolean {
