@@ -1872,7 +1872,7 @@ function App() {
           <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Продолжите работу…" : activeKey ? "Работайте с агентом" : "Сначала выберите сессию"} disabled={!activeKey || readOnlySession} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && (composer.trim() || composerImages.length > 0)) { event.preventDefault(); void sendMessage(); } }} />
           <span className="composer-hint">{sending ? "Отправляю сообщения…" : isResumeMode ? "Продолжить" : "Enter — отправить · Shift+Enter — новая строка"}</span>
           {modelSwitchHarness && <button type="button" className={`composer-model ${modelMenuOpen ? "open" : ""}`} aria-label="Выбрать модель" aria-expanded={modelMenuOpen} aria-haspopup="listbox" disabled={modelSwitching} onClick={toggleModelMenu}>
-            <span className="composer-model-name">{shortModelLabel(activeSession?.model)}</span>
+            <span className="composer-model-name" title={activeSession?.model ? modelOptionLabel(activeSession.model) : undefined}>{shortModelLabel(activeSession?.model).replace(/\$(?:max|high|low|enabled)$/, "")}</span>
             {!activeSession?.model && <span className="composer-model-default">по умолчанию</span>}
             <span className="composer-model-chevron" aria-hidden="true">▾</span>
           </button>}

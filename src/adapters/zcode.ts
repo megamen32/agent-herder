@@ -1901,19 +1901,17 @@ export class ZcodeAdapter implements HarnessAdapter {
       sessionId: id,
       limit: 200,
     }));
-    let events: Array<Record<string, unknown>>;
+    let events: Array<Record<string, unknown>> = [];
+    let eventReadError: string | undefined;
     try {
       events = await read();
     } catch (error) {
-      if (!isInactiveSessionError(error)) {
-        return { state: "unknown", error: error instanceof Error ? error.message : String(error) };
-      }
-      const resumed = await this.resumeSession(id);
-      if (!resumed.ok) return { state: "unknown", error: resumed.error || "native resume failed during admission reconciliation" };
-      try {
-        events = await read();
-      } catch (retryError) {
-        return { state: "unknown", error: retryError instanceof Error ? retryError.message : String(retryError) };
+      eventReadError = error instanceof Error ? error.message : String(error);
+      if (isInactiveSessionError(error)) {
+        const resumed = await this.resumeSession(id);
+        if (!resumed.ok) return { state: "unknown", error: resumed.error || "native resume failed during admission reconciliation" };
+        try { events = await read(); }
+        catch (retryError) { eventReadError = retryError instanceof Error ? retryError.message : String(retryError); }
       }
     }
     const identities = new Set([inputId, zcodeInputId(inputId, "automation")]);
@@ -1932,7 +1930,9 @@ export class ZcodeAdapter implements HarnessAdapter {
     let messageAdmitted = false;
     let messageReadError: string | undefined;
     try {
-      const messages = snapshotMessages(await this.callAgent("readSessionMessages", { ...workspace, sessionId: id, limit: 200 }));
+      let messages: ZcodeMessage[];
+      try { messages = snapshotMessages(await this.callAgent("readSessionMessages", { ...workspace, sessionId: id, limit: 200 })); }
+      catch { messages = snapshotMessages(await this.readSnapshot(id, workspace)); }
       for (const message of messages) {
         const info = record(message.info);
         const metadata = record(info.metadata);
@@ -1950,7 +1950,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       if (type === "turn.failed") return { state: "failed", error: admittedNativeTurnFailure(id, event) };
       if (["turn.completed", "turn.started", "turn.steerQueued", "turn.steerDrained"].includes(type || "")) admitted = true;
     }
-    return admitted ? { state: "admitted" } : { state: "unknown", error: messageReadError || "В доступной истории ZCode нет подтверждения этого сообщения; повторная отправка запрещена." };
+    return admitted ? { state: "admitted" } : { state: "unknown", error: messageReadError || eventReadError || "В доступной истории ZCode нет подтверждения этого сообщения; повторная отправка запрещена." };
   }
 
   async forkSession(_id: string, _message?: string): Promise<ControlResult> {
