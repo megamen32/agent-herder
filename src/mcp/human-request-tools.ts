@@ -78,11 +78,11 @@ export function registerHumanRequestTools(
   };
 
   server.registerTool("human_request_create", {
-    description: "Ask a human a question about an exact existing harness session. Returns one question binding: the request id, the exact native_target, the message and the choices. Notice creates exactly one Ask card from it through POST /v1/human-requests; Agent Herder never sends a second card. Hermes requires its immutable hermes.locator.v2 locator. The answer resumes that exact session once through human_request_resolve.",
+    description: "Ask a human a question about an exact existing harness session. Returns one question binding: the request id, the exact native_target and, when a message was supplied, the message and choices. Notice creates exactly one Ask card from it through POST /v1/human-requests; Agent Herder never sends a second card. Omit the message for a metadata-only request that shows no card. Hermes requires its immutable hermes.locator.v2 locator. The answer resumes that exact session once through human_request_resolve, and the resumed turn is told to read the canonical answer by request id.",
     inputSchema: z.object({
       kind: z.enum(["user", "secret"]), harness: z.string().min(1), sessionId: z.string().min(1), cwd: z.string().min(1).optional(), marker: z.string().min(1).optional(),
       locator: z.record(z.string(), z.unknown()).optional(), contextRef: z.string().optional(),
-      message: z.string().min(1).max(4096).describe("The human-readable question; never paste a secret value into it"),
+      message: z.string().min(1).max(4096).optional().describe("The human-readable question. Omit it for a metadata-only request that shows no Notice card; never paste a secret value into it"),
       choices: z.array(z.object({ choiceId: z.string().min(1).max(64), label: z.string().min(1).max(512) })).min(2).max(4).optional(),
       notify: z.object({ project: z.string().min(1), recipient: z.string().min(1), kind: z.string().min(1), severity: z.string().min(1), title: z.string().min(1) }).optional(),
     }),
@@ -92,7 +92,7 @@ export function registerHumanRequestTools(
       dedup_key: z.string(),
       context_ref: z.string().optional(),
       kind: z.enum(["user", "secret"]),
-      question: z.object({ message: z.string(), choices: z.array(z.object({ choice_id: z.string(), label: z.string() })).optional() }),
+      question: z.object({ message: z.string(), choices: z.array(z.object({ choice_id: z.string(), label: z.string() })).optional() }).optional(),
       answer: z.object({ mcp_tool: z.string(), completion_path: z.string() }),
     }) }),
   }, async (args) => {
@@ -100,7 +100,7 @@ export function registerHumanRequestTools(
     const binding = await askHuman(humanRequests, {
       kind: args.kind,
       target: { harness: args.harness, sessionId: args.sessionId, ...(args.cwd ? { cwd: args.cwd } : {}), ...(args.marker ? { marker: args.marker } : {}), ...(args.locator ? { locator: args.locator } : {}) },
-      message: args.message,
+      ...(args.message ? { message: args.message } : {}),
       ...(args.choices ? { choices: args.choices } : {}),
       contextRef: args.contextRef,
       ...(args.notify ? { contextRef: args.contextRef ?? `noticeplace://human-request/${args.harness}/${args.sessionId}` } : {}),

@@ -102,16 +102,44 @@ describe("asking a human through the single question-binding seam", () => {
     expect(await registry.get(binding.request_id)).toMatchObject({ status: "pending" });
   });
 
+  it("keeps the metadata-only and secret signature working", async () => {
+    const root = await tempRoot();
+    const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
+
+    // Legacy caller: no message, no choices. It creates no Notice question.
+    const metadataOnly = await askHuman(registry, {
+      kind: "user",
+      target: { agent: "codex", sessionId: codexSession.id, cwd: codexSession.cwd },
+    });
+    expect(metadataOnly.question).toBeUndefined();
+    expect(metadataOnly.native_target).toEqual({ harness: "codex", session_id: codexSession.id, cwd: codexSession.cwd });
+    expect(metadataOnly.record).toMatchObject({ status: "pending" });
+
+    const secret = await askHuman(registry, {
+      kind: "secret",
+      target: { agent: "hermes", sessionId: "agent:main:telegram:1", locator: { schema: "hermes.locator.v2", session_key: "agent:main:telegram:1", platform: "telegram", chat_id: "1", chat_type: "dm" } },
+      message: "Нужен секрет провайдера",
+    });
+    expect(secret.kind).toBe("secret");
+    expect(secret.answer.completion_path).toBe("/internal/human-requests/sss-completion");
+    expect(JSON.stringify(secret)).not.toContain("password");
+    expect(await registry.list()).toHaveLength(2);
+  });
+
   it("rejects an unusable question before any record is created", async () => {
     const root = await tempRoot();
     const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
 
     await expect(askHuman(registry, { kind: "user", target: { agent: "codex", sessionId: codexSession.id, cwd: codexSession.cwd }, message: "   " }))
-      .rejects.toThrow("message is required");
+      .rejects.toThrow("message must be a nonempty string");
     await expect(askHuman(registry, {
       kind: "user", target: { agent: "codex", sessionId: codexSession.id, cwd: codexSession.cwd }, message: "Вопрос",
       choices: [{ choiceId: "only", label: "Один" }],
     })).rejects.toThrow("2 to 4 choices");
+    await expect(askHuman(registry, {
+      kind: "user", target: { agent: "codex", sessionId: codexSession.id, cwd: codexSession.cwd },
+      choices: [{ choiceId: "a", label: "A" }, { choiceId: "b", label: "B" }],
+    })).rejects.toThrow("require a message");
     expect(await registry.list()).toHaveLength(0);
   });
 

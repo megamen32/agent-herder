@@ -1097,7 +1097,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       const binding = await askHuman(humanRequests, {
         kind: body.kind === "secret" ? "secret" : "user",
         target: await verifiedQuestionTarget(body, adapters),
-        message: typeof body.message === "string" ? body.message : "",
+        ...(typeof body.message === "string" ? { message: body.message } : {}),
         ...(Array.isArray(body.choices) ? { choices: body.choices as Array<{ choiceId: string; label: string }> } : {}),
         ...(typeof body.context_ref === "string" ? { contextRef: body.context_ref } : {}),
       });
@@ -1109,7 +1109,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       });
     } catch (error) {
       const reason = (error as Error).message;
-      return sendJson(response, /not found|is not in/.test(reason) ? 404 : 400, { error: reason });
+      if (/not found|is not in/.test(reason)) return sendJson(response, 404, { error: reason });
+      // The native session exists; a malformed question is a bad request.
+      return sendJson(response, 400, { error: reason });
     }
   }
   if (request.method === "POST" && (url.pathname === "/internal/human-requests/sss-completion" || url.pathname === "/internal/human-requests/ask-user-completion")) {

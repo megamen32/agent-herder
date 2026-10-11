@@ -18,7 +18,7 @@ export interface AskHumanInput {
   /** The exact existing native session. Agent Herder never discovers a target. */
   target: CreateHumanRequestInput["target"];
   /** The human-readable question. Notice stores it on the question row. */
-  message: string;
+  message?: string;
   /** Optional buttons; the answer resumes the same bound session. */
   choices?: ReadonlyArray<{ choiceId: string; label: string }>;
   contextRef?: string;
@@ -33,7 +33,8 @@ export interface HumanQuestionBinding {
   /** Opaque correlation handle; never a prompt, an answer or a secret. */
   context_ref?: string;
   kind: "user" | "secret";
-  question: { message: string; choices?: Array<{ choice_id: string; label: string }> };
+  /** Absent for a metadata-only request, which creates no Notice question. */
+  question?: { message: string; choices?: Array<{ choice_id: string; label: string }> };
   /** The one existing answer path that resumes the bound session. */
   answer: {
     mcp_tool: "human_request_resolve";
@@ -59,8 +60,8 @@ export async function askHuman(
   registry: Pick<HumanRequestRegistry, "create">,
   input: AskHumanInput,
 ): Promise<HumanQuestionBinding> {
-  const message = validateMessage(input.message);
-  const choices = validateChoices(input.choices);
+  const message = input.message === undefined ? undefined : validateMessage(input.message);
+  const choices = validateChoices(input.choices, message);
   const record = await registry.create({
     kind: input.kind,
     target: input.target,
@@ -72,7 +73,7 @@ export async function askHuman(
     dedup_key: record.notify?.dedupKey ?? `human-request:${record.requestId}`,
     ...(record.contextRef ? { context_ref: record.contextRef } : {}),
     kind: record.kind,
-    question: { message, ...(choices ? { choices } : {}) },
+    ...(message ? { question: { message, ...(choices ? { choices } : {}) } } : {}),
     answer: {
       mcp_tool: "human_request_resolve",
       completion_path: record.kind === "secret"
@@ -95,14 +96,15 @@ export function nativeTarget(record: HumanRequestRecord): HumanQuestionNativeTar
 }
 
 function validateMessage(message: unknown): string {
-  if (typeof message !== "string" || message.trim().length === 0) throw new Error("message is required");
+  if (typeof message !== "string" || message.trim().length === 0) throw new Error("message must be a nonempty string");
   const bounded = message.trim();
   if (Buffer.byteLength(bounded, "utf8") > MAX_QUESTION_BYTES) throw new Error("message must be at most 4096 bytes");
   return bounded;
 }
 
-function validateChoices(choices: AskHumanInput["choices"]): Array<{ choice_id: string; label: string }> | undefined {
+function validateChoices(choices: AskHumanInput["choices"], message: string | undefined): Array<{ choice_id: string; label: string }> | undefined {
   if (choices === undefined) return undefined;
+  if (!message) throw new Error("choices require a message; a metadata-only request creates no Notice question");
   if (!Array.isArray(choices) || choices.length < 2 || choices.length > 4) throw new Error("2 to 4 choices are required");
   const ids = new Set<string>();
   return choices.map((choice) => {

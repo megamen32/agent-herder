@@ -102,7 +102,8 @@ describe("human-request completion resume", () => {
     expect(sent).toHaveLength(1);
     expect(selectedWorkspace).toBe(session.cwd);
     expect(sent[0]?.id).toBe(session.id);
-    expect(sent[0]?.message).toContain("Human Request resolved:");
+    expect(sent[0]?.message).toContain(request.requestId);
+    expect(sent[0]?.message).toContain("noticeplace_question_result");
     await expect(unfinishedStore.list()).resolves.toMatchObject([{ harness: "zcode", sessionId: session.id, state: "active" }]);
   });
 

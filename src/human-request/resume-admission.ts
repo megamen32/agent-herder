@@ -23,7 +23,6 @@ export interface HumanRequestResumeInput {
   resume: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   /** Reads the durable provider receipt for the same idempotency key without launching the session. */
   queryReceipt?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
-  prompt?: string;
   now?: Date;
 }
 
@@ -84,7 +83,9 @@ export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Pr
   const receipt = await input.resume({
     target,
     result_ref: canonicalResultRef,
-    prompt: input.prompt ?? `Human Request resolved: ${canonicalResultRef}`,
+    // Derived from the durable record, never from the caller: a conflicting
+    // replay or lease takeover cannot substitute its own instruction.
+    prompt: continuationPrompt(record, canonicalResultRef),
     idempotency_key: admission.idempotencyKey,
     ...humanRequestedAt(record),
   });
@@ -102,6 +103,24 @@ export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Pr
         duplicate: admission.recovered,
         receipt: `agent-resume:${receipt.reason}`,
       };
+}
+
+/**
+ * The exact continuation instruction for one admitted answer.
+ *
+ * An ordinary question resumes with the original request id and the
+ * instruction to read the canonical answer and apply it, so the session acts on
+ * the real answer instead of an opaque reference. A secret stays opaque.
+ */
+export function continuationPrompt(record: HumanRequestRecord, canonicalResultRef: string): string {
+  if (record.kind === "secret") {
+    return `Human Request ${record.requestId} resolved. Continue the same task with the supplied secret reference ${canonicalResultRef}; never print the secret.`;
+  }
+  return [
+    `Human Request ${record.requestId} is answered; continue the same task on this exact session.`,
+    `Read the canonical answer with noticeplace_question_result(request_id="${record.requestId}") and apply it.`,
+    `Answer reference: ${canonicalResultRef}. Do not invent an answer and do not start a different task.`,
+  ].join(" ");
 }
 
 /** The instant of the admitted human answer, used as the explicit-stop fence. */

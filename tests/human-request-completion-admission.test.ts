@@ -73,7 +73,9 @@ describe("internal human-request completion admission", () => {
     expect(new Set(invocations.map((input) => input.idempotency_key)).size).toBe(1);
     expect(invocations[0]?.idempotency_key).toMatch(new RegExp(`^human-request:${request.requestId}:`));
     expect(invocations[0]?.target).toMatchObject({ agent: "opencode", session_id: session.id, cwd: session.cwd });
-    expect(invocations[0]?.prompt).toContain("Human Request resolved:");
+    // The resumed turn is told to read the canonical answer by request id.
+    expect(invocations[0]?.prompt).toContain(request.requestId);
+    expect(invocations[0]?.prompt).toContain("noticeplace_question_result");
     await expect(humanRequests.get(request.requestId)).resolves.toMatchObject({ status: "resumed" });
   });
 

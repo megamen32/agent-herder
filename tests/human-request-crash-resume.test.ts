@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { HumanRequestRegistry, resumeHumanRequestOnce } from "../src/human-request/index.js";
+import { continuationPrompt } from "../src/human-request/resume-admission.js";
 import type { ResumeReceipt, ResumeTransportRequest } from "../src/resume-transport.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -139,7 +140,14 @@ describe("human-request resume across a crash", () => {
     expect(takeover.idempotencyKey).toBe(admitted.idempotencyKey);
     expect(delivered).toHaveLength(1);
     expect(delivered[0]?.result_ref).toBe("result://canonical-answer");
-    expect(delivered[0]?.prompt).toContain("result://canonical-answer");
+    // The continuation instruction is derived from the durable record, so a
+    // conflicting repeat cannot substitute its own prompt.
+    expect(delivered[0]?.prompt).toBe(continuationPrompt(
+      (await store.get(created.requestId))!,
+      "result://canonical-answer",
+    ));
+    expect(delivered[0]?.prompt).toContain(created.requestId);
+    expect(delivered[0]?.prompt).toContain("noticeplace_question_result");
     // The admission instant of the real answer travels with the resume, so an
     // explicit stop newer than that answer still fences it.
     expect(delivered[0]?.human_requested_at).toBe(Date.parse(admitted.record.admittedAt!));

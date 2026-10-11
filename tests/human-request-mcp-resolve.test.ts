@@ -59,6 +59,30 @@ describe("native MCP human question and resolve", () => {
     await expect(registry.get(requestId)).resolves.toMatchObject({ status: "resumed", resultRef: "result://answer/1" });
   });
 
+  it("keeps the legacy metadata-only create signature", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-mcp-human-legacy-"));
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
+    const server = new McpServer({ name: "human-request-legacy", version: "1.0.0" });
+    registerHumanRequestTools(server, registry, { humanResume: async (request) => ({ status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-herder://opencode/1", idempotency_key: request.idempotency_key }) });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: "human-request-legacy-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
+    await client.connect(clientTransport);
+    connected.push({ client, server });
+
+    const created = await client.callTool({
+      name: "human_request_create",
+      arguments: { kind: "secret", harness: "opencode", sessionId: "ses_secret", cwd: "/workspace/incident" },
+    });
+
+    expect(created.isError).not.toBe(true);
+    const payload = created.structuredContent as { request: { requestId: string; kind: string }; binding?: { question?: unknown } };
+    expect(payload.request.kind).toBe("secret");
+    expect(payload.binding?.question).toBeUndefined();
+    expect(await registry.get(payload.request.requestId)).toMatchObject({ kind: "secret", status: "pending" });
+  });
+
   it("resumes a Hermes request through its immutable locator", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-mcp-human-hermes-"));
     cleanups.push(() => rm(root, { recursive: true, force: true }));

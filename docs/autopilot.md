@@ -538,6 +538,21 @@ Notice question row, and the answer of that row resumes the exact bound session
 once. Calling both create paths for one question is the only way to get two
 cards.
 
+`message` is optional. Without it the request is metadata-only and creates no
+Notice question, so existing metadata-only and `secret` callers keep working.
+
+What the resumed turn receives is derived from the durable record, never from
+the caller, so a conflicting repeat cannot substitute its own instruction:
+
+```text
+Human Request <request_id> is answered; continue the same task on this exact session.
+Read the canonical answer with noticeplace_question_result(request_id="<request_id>") and apply it.
+Answer reference: <canonical result_ref>. Do not invent an answer and do not start a different task.
+```
+
+A `secret` request stays opaque: its continuation names only the secret
+reference and never the answer itself.
+
 A NoticePlace consumer that launches work for a project reads
 `GET /api/automation/launch-policy` and uses `projectRoutes[project]` when the
 project is configured there:

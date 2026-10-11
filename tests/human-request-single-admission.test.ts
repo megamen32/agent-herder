@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { HumanRequestRegistry, resumeHumanRequestOnce } from "../src/human-request/index.js";
+import { continuationPrompt } from "../src/human-request/resume-admission.js";
 import type { ResumeReceipt, ResumeTransportRequest } from "../src/resume-transport.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -77,6 +78,62 @@ describe("single human-request admission", () => {
     expect(repeated).toMatchObject({ status: "resumed", duplicate: true, idempotencyKey: first.idempotencyKey });
     expect(repeated.record.receipt).toBe("agent-resume://receipt/1");
     expect(provider.calls).toHaveLength(1);
+  });
+
+  it("delivers one canonical instruction that tells the session to read the answer", async () => {
+    const store = await registry();
+    const created = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "ses_open", cwd: "/workspace/app" } });
+    const provider = ledger();
+    const prompts: string[] = [];
+
+    await resumeHumanRequestOnce({
+      registry: store,
+      requestId: created.requestId,
+      resultRef: "result://answer/1",
+      resume: async (request) => {
+        prompts.push(request.prompt ?? "");
+        return { status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-resume://receipt/1", idempotency_key: request.idempotency_key };
+      },
+    });
+    // A repeated answer of the same request cannot change the instruction.
+    await resumeHumanRequestOnce({
+      registry: store,
+      requestId: created.requestId,
+      resultRef: "result://answer/2",
+      resume: async (request) => {
+        prompts.push(request.prompt ?? "");
+        return { status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-resume://receipt/1", idempotency_key: request.idempotency_key };
+      },
+    });
+
+    const record = (await store.get(created.requestId))!;
+    const canonical = continuationPrompt(record, "result://answer/1");
+    expect(canonical).toContain(record.requestId);
+    expect(canonical).toContain("noticeplace_question_result");
+    expect(canonical).toContain("result://answer/1");
+    expect(prompts[0]).toBe(canonical);
+    // The second call is a terminal replay: it never reaches the transport.
+    expect(prompts).toHaveLength(1);
+  });
+
+  it("keeps a secret answer opaque", async () => {
+    const store = await registry();
+    const created = await store.create({ kind: "secret", target: { agent: "opencode", sessionId: "ses_open", cwd: "/workspace/app" } });
+    const prompts: string[] = [];
+
+    await resumeHumanRequestOnce({
+      registry: store,
+      requestId: created.requestId,
+      resultRef: "result://secret/1",
+      resume: async (request) => {
+        prompts.push(request.prompt ?? "");
+        return { status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-resume://receipt/1", idempotency_key: request.idempotency_key };
+      },
+    });
+
+    expect(prompts[0]).toContain("secret reference result://secret/1");
+    expect(prompts[0]).not.toContain("noticeplace_question_result");
+    expect(prompts[0]).not.toContain("Apply it");
   });
 
   it("keeps a conflicting repeat from becoming a second attempt in the durable file", async () => {
