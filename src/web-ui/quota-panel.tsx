@@ -1,4 +1,4 @@
-// Панель «Линза квоты»: окна Codex, расход по моделям и ключам, история 5-часового окна.
+// Панель «Линза квоты»: окна Codex, расход по моделям и ключам, история основного окна.
 // Включается на сервере; когда панель выключена, ручки отдают enabled:false.
 import React from "react";
 
@@ -38,7 +38,7 @@ const tokensRu = (count: number): string => `${fmt(count)} ${pluralRu(count, "т
 const callsRu = (count: number): string => `${fmt(count)} ${pluralRu(count, "вызов", "вызова", "вызовов")}`;
 
 const clockRu = (ts: number): string =>
-  new Date(ts).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  new Date(ts < 1e12 ? ts * 1000 : ts).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 
 const timestampRu = (iso: string): string => {
   const time = Date.parse(iso);
@@ -81,8 +81,11 @@ export function QuotaPanel() {
   const [days, setDays] = React.useState(7);
   const [enabled, setEnabled] = React.useState(true);
   const [error, setError] = React.useState("");
+  const [loading, setLoading] = React.useState(true);
+  const [hasLoaded, setHasLoaded] = React.useState(false);
 
   const load = React.useCallback(async () => {
+    setLoading(true);
     try {
       const params = new URLSearchParams({ days: String(days) });
       if (model) params.set("model", model);
@@ -106,9 +109,10 @@ export function QuotaPanel() {
       setCodex(codexData);
       setTimeline(Array.isArray(timelineData) ? timelineData : []);
       setForecastData(forecastRaw);
+      setHasLoaded(true);
     } catch (loadError) {
       setError(String((loadError as Error).message ?? ""));
-    }
+    } finally { setLoading(false); }
   }, [days, model, keyFilter]);
 
   React.useEffect(() => { void load(); }, [load]);
@@ -126,18 +130,24 @@ export function QuotaPanel() {
     );
   }
 
-  const width = 560, height = 60, points = timeline.length;
-  const sparkPoints = timeline.map((point, index) => {
+  if (loading && !hasLoaded) return <div className="chat-scroll qp-page"><h3 className="qp-title">Общая квота · все сессии</h3><p role="status">Загружаю квоты и расход моделей…</p></div>;
+
+  const measuredTimeline = timeline.filter((point) => typeof point.quota?.primary === "number" && Number.isFinite(point.quota.primary));
+  const width = 560, height = 60, points = measuredTimeline.length;
+  const sparkPoints = measuredTimeline.map((point, index) => {
     const x = points > 1 ? index * (width / (points - 1)) : 0;
     const primary = point.quota?.primary ?? 0;
     const y = height - 4 - (primary * (height - 8)) / 100;
     return { x, y, primary, ts: point.ts };
   });
   const spark = sparkPoints.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
-  const latest = timeline[points - 1];
+  const latest = measuredTimeline[points - 1];
 
   return (
     <div className="chat-scroll qp-page">
+      <h2>Общая квота · все сессии</h2>
+      <p className="qp-muted">Данные аккаунта Codex и расход моделей на этой машине. Длительность окон задаёт провайдер.</p>
+      {loading && <p role="status">Обновляю данные квоты…</p>}
       {error ? (
         <div className="qp-error-block" role="alert">
           <span>{LOAD_ERROR_TEXT}</span>
@@ -151,16 +161,16 @@ export function QuotaPanel() {
         <div className="qp-codex-card">
           <div><b>{codex.plan || "—"}</b> <small className="qp-muted">{codex.email || ""}</small></div>
           <div className="qp-meter">
-            <div className="qp-meter-head"><span>5-часовое окно</span><b>{codex.primary_used ?? "?"} %</b></div>
+            <div className="qp-meter-head"><span>Основное окно</span><b>{codex.primary_used ?? "?"} %</b></div>
             <Bar percent={codex.primary_used} />
           </div>
           <div className="qp-meter">
-            <div className="qp-meter-head"><span>Недельное окно</span><b>{codex.secondary_used ?? "?"} %</b></div>
+            <div className="qp-meter-head"><span>Дополнительное окно</span><b>{codex.secondary_used ?? "?"} %</b></div>
             <Bar percent={codex.secondary_used} />
           </div>
           <small>
             {codex.limit_reached ? <b className="qp-limit-note">Лимит достигнут · </b> : null}
-            {codex.primary_reset_s ? `сброс 5-часового окна ${fmtEta(codex.primary_reset_s / 60)}` : ""}
+            {codex.primary_reset_s ? `сброс основного окна ${fmtEta(codex.primary_reset_s / 60)}` : ""}
           </small>
         </div>
       ) : <p><small className="qp-muted">Нет данных</small></p>}
@@ -171,10 +181,10 @@ export function QuotaPanel() {
             {forecastData.exhausted
               ? <b className="qp-forecast-bad">Окно исчерпано</b>
               : forecastData.eta_primary_min != null
-                ? <>5-часовое окно закончится <b>{fmtEta(forecastData.eta_primary_min)}</b> при темпе {((forecastData.rate_primary_per_min ?? 0) * 5).toLocaleString("ru-RU")} % за 5 минут</>
+                ? <>Основное окно закончится <b>{fmtEta(forecastData.eta_primary_min)}</b> при темпе {((forecastData.rate_primary_per_min ?? 0) * 5).toLocaleString("ru-RU")} % за 5 минут</>
                 : <>Расход не обнаружен — прогноза нет</>}
             {forecastData.eta_secondary_min != null && !forecastData.exhausted
-              ? <> · недельное окно закончится {fmtEta(forecastData.eta_secondary_min)}</>
+              ? <> · дополнительное окно закончится {fmtEta(forecastData.eta_secondary_min)}</>
               : null}
             <small className="qp-muted"> · точность: σ={forecastData.sigma_min} мин, пар {fmt(forecastData.pairs)}</small>
           </div>
@@ -183,10 +193,10 @@ export function QuotaPanel() {
         )
       ) : null}
 
-      <h3 className="qp-title">История 5-часового окна (шаг 5 минут)</h3>
+      <h3 className="qp-title">История основного окна (шаг 5 минут)</h3>
       {points > 0 ? (
         <div className="qp-spark-block">
-          <svg className="qp-spark" width={width} height={height} role="img" aria-label="Заполнение 5-часового окна, проценты">
+          <svg className="qp-spark" width={width} height={height} role="img" aria-label="Заполнение основного окна, проценты">
             <polyline points={spark} fill="none" stroke="#e94b4b" strokeWidth="2" />
             <line x1={0} y1={height - 4 - (90 * (height - 8)) / 100} x2={width} y2={height - 4 - (90 * (height - 8)) / 100} stroke="#e6a23c" strokeDasharray="4" />
             {sparkPoints.map((point, index) => (
@@ -205,11 +215,11 @@ export function QuotaPanel() {
             </div>
           ) : null}
         </div>
-      ) : <p><small className="qp-muted">Замеров пока нет</small></p>}
+      ) : <p><small className="qp-muted">Подтверждённых замеров пока нет</small></p>}
 
       <h3 className="qp-title">
         Модели
-        <select className="qp-days" value={days} aria-label="Период статистики" onChange={(event) => { setDays(Number(event.target.value)); }}>
+        <select className="qp-days" disabled={loading} value={days} aria-label="Период статистики" onChange={(event) => { setDays(Number(event.target.value)); }}>
           <option value={1}>1 день</option>
           <option value={7}>7 дней</option>
           <option value={30}>30 дней</option>

@@ -388,7 +388,7 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
 /* ---------- 8. Мобильный ---------- */
 @media (min-width: 901px) and (max-width: 1180px) {
   .oc-app, .oc-app.no-inspector { grid-template-columns: 56px 264px minmax(0, 1fr); }
-  .inspector-pane { display: none; }
+  .inspector-pane { display: flex; flex-direction: column; position: fixed; inset: 0 0 0 auto; z-index: 45; width: 320px; box-shadow: -12px 0 28px var(--shadow-menu); }
 }
 @media (max-width: 900px) {
   .codex-navigation { display: none; }

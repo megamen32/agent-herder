@@ -70,7 +70,7 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('agent-herder.event-cursor');
     expect(main).toContain('30_000');
     expect(main).toContain('Общий автопилот');
-    expect(main).toContain('{timeoutMinutes} минут без ответа');
+    expect(main).toContain('{timeoutMinutes} мин без ответа');
     expect(main).toContain('Последний запрос пользователя');
     expect(main).toContain('Последний ответ агента');
     expect(main).toContain('Почему нужен выбор');
@@ -125,7 +125,7 @@ describe("mobile chat and session controls", () => {
   });
 
   it("keeps automation modes discoverable on mobile with their current state", () => {
-    expect(main).toContain('React.useState(() => window.innerWidth > 900)');
+    expect(main).toContain('React.useState(() => window.innerWidth > 1180)');
     expect(main).toContain('aria-label="Открыть настройки автоматизации"');
     expect(main).toContain('>Автоматизация</button>');
     expect(main).toContain('Автопродолжение · восстановление после сбоев: ${activeAutocontinueEnabled ? "включено" : "выключено"}');
