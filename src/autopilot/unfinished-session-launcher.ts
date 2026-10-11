@@ -985,6 +985,36 @@ export class UnfinishedSessionStore {
     }, (record) => record !== null);
   }
 
+  /**
+   * A human terminated the accepted turn before any assistant answer existed.
+   * That turn can never confirm completion and must never be submitted again,
+   * so the admission ends here as an explicit non-retryable terminal state
+   * instead of waiting for the accepted-admission deadline to alarm.
+   */
+  async markAdmissionStoppedByHuman(
+    harness: HarnessType,
+    sessionId: string,
+    cwd: string,
+    fingerprint?: string,
+    now = new Date(),
+  ): Promise<UnfinishedSessionRecord | null> {
+    return this.mutate((file) => {
+      const record = findUnfinishedRecord(file.sessions, harness, sessionId, cwd);
+      if (!record?.acceptedAt) return null;
+      if (record.nonRetryableAdmission) return null;
+      record.admissionPhase = "terminal_observed";
+      record.terminalReason = "turn.failed";
+      record.terminalObservedAt = now.toISOString();
+      record.nonRetryableAdmission = true;
+      record.lastError = "accepted turn stopped by the human before any assistant answer";
+      record.updatedAt = now.toISOString();
+      if (fingerprint) record.lastProgressFingerprint = bounded(fingerprint, "fingerprint");
+      delete record.deliveryPending;
+      delete record.terminalAssistantObserved;
+      return { ...record };
+    }, (record) => record !== null);
+  }
+
   async remove(harness: string, sessionId: string, cwd?: string): Promise<boolean> {
     return this.mutate((file) => {
       const normalizedHarness = harnessType(harness);
@@ -2399,6 +2429,31 @@ export class UnfinishedSessionLauncher {
             const queuedVersion = this.queueUrgentSession(sourceKey);
             if (versionBeforeQueue === snapshotVersion) urgentSignalVersions.set(sourceKey, queuedVersion);
             urgent = true;
+          } else if (acceptedTurnStoppedByHuman(nativeTurn, durableAdmission.acceptedAt)) {
+            // The accepted turn is over and produced no answer because a human
+            // stopped it. Nothing can ever confirm that turn, and re-sending it
+            // would fight the human, so reconcile it here instead of leaving an
+            // impossible admission to age into a critical timeout alarm.
+            await this.options.store.markAdmissionStoppedByHuman(
+              session.harness,
+              session.id,
+              sessionWorkspaceIdentity(session),
+              sessionProgressFingerprint(session),
+            );
+            const stoppedVerdict: SessionInventoryVerdict = {
+              verdict: "needs_human",
+              reason: "Принятое продолжение остановлено человеком до появления ответа агента; подтверждать завершение нечего, повторная отправка не выполняется.",
+              confidence: 1,
+              judgedAt: new Date().toISOString(),
+            };
+            await this.options.store.upsertInventoryBatch([
+              inventoryFromAssessment({
+                adapter, session, sourceKey, autoResumeEnabled, urgentSignalVersions,
+                transcriptTail: completionEvidence(admissionMessages ?? [], runtimeSettings.evidenceMessageCount),
+              }, stoppedVerdict),
+            ]);
+            this.clearUrgentSession(sourceKey);
+            continue;
           }
         }
         const admissionProgressAt = Date.parse(durableAdmission?.lastNativeProgressAt || durableAdmission?.acceptedAt || "");
@@ -3781,6 +3836,22 @@ function hasPersistedAssistantAfterAdmission(messages: SessionMessageView[], acc
     const timestamp = Date.parse(message.timestamp);
     return Number.isFinite(timestamp) && timestamp > boundary;
   });
+}
+
+/**
+ * True when the native turn behind an accepted prompt is definitively over
+ * because a human stopped it. Only a cancelled turn that already completed
+ * counts: a live turn may still be aborted later, and a transport abort is
+ * deliberately excluded because the harness adapter already owns that case.
+ */
+function acceptedTurnStoppedByHuman(turn: NativeLastTurn | undefined, acceptedAt: string | undefined): boolean {
+  if (!turn || turn.cancelledByUser !== true || turn.transportLost === true) return false;
+  if (turn.status?.toLowerCase() !== "cancelled") return false;
+  const completedAt = Date.parse(turn.completedAt ?? "");
+  if (!Number.isFinite(completedAt) || completedAt > Date.now()) return false;
+  const boundary = Date.parse(acceptedAt ?? "");
+  // The cancel must belong to the accepted prompt, not to an earlier turn.
+  return !Number.isFinite(boundary) || completedAt >= boundary;
 }
 
 export function enforcePlanWorkspaceBoundaries(
