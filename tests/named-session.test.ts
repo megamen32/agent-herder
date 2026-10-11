@@ -111,8 +111,8 @@ describe("named session creation and reuse", () => {
       child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });
       child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
       child.on("error", reject);
-      child.on("exit", (code) => {
-        if (code !== 0) return reject(new Error(`fixture exited ${code}: ${stderr}`));
+      child.on("exit", (code, signal) => {
+        if (code !== 0) return reject(new Error(`fixture exited ${code}, signal ${signal}: ${stderr}`));
         resolve(JSON.parse(stdout));
       });
     });

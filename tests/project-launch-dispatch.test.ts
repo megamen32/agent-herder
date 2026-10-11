@@ -14,6 +14,7 @@ import {
 } from "../src/automation/project-launch-dispatch.js";
 import { createWebServer } from "../src/web/server.js";
 import type { AgentSession, CreateSessionOptions, HarnessAdapter } from "../src/types/index.js";
+import type { NamedSessionResult } from "../src/named-session.js";
 
 const servers: Server[] = [];
 const cleanups: Array<() => Promise<void>> = [];
@@ -88,6 +89,30 @@ function nativeAdapter(type: "opencode" | "zcode" | "codex", outcome: Outcome, l
 }
 
 describe("project launch dispatch", () => {
+  it.each([
+    { ok: true, admitted: true, delivery: "accepted" as const, pending: false },
+    { ok: true, admitted: false, delivery: "accepted_unconfirmed" as const, pending: true },
+    { ok: false, admitted: true, delivery: "accepted_failed" as const, nonRetryable: true, error: "native failed" },
+    { ok: false, admissionUnknown: true, nonRetryable: true, pending: true, error: "receipt lost" },
+  ])("preserves the full existing-session receipt on first response and restart replay: %j", async (status) => {
+    const dir = await root();
+    const path = join(dir, "attempts.json");
+    const input = { policy, project: "tg-commentator", message: "repair", operationId: "existing" };
+    const run = vi.fn(async (request: Parameters<import("../src/automation/project-launch-dispatch.js").ProjectLaunchRunner>[0]): Promise<NamedSessionResult> => ({
+      ...status, created: false, harness: request.harness, name: "original", cwd: request.cwd,
+      sessionId: "native-existing", inputId: request.inputId, turnId: "native-turn", model: request.model,
+    }));
+    const first = await dispatchProjectLaunch(input, new ProjectLaunchAttemptLog(path), run);
+    const native = await run.mock.results[0]!.value;
+    expect(first).toMatchObject({ ...native, mode: "resume" });
+    const replay = await dispatchProjectLaunch({ ...input, project: "/home/roomhacker/PycharmProjects/TelegramAuto/" }, new ProjectLaunchAttemptLog(path), run);
+    expect(replay).toEqual(first);
+    // A concurrent caller can read before completion and reserve after it.
+    const raced = new ProjectLaunchAttemptLog(path);
+    vi.spyOn(raced, "attempts").mockResolvedValueOnce([]);
+    expect(await dispatchProjectLaunch(input, raced, run)).toEqual(first);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
   it("maps a real named-session result onto a launch outcome", () => {
     expect(outcomeOf({ ok: true, created: true, harness: "opencode", name: "n", cwd: "/w", delivery: "accepted" })).toBe("accepted");
     expect(outcomeOf({ ok: false, created: true, harness: "opencode", name: "n", cwd: "/w", admitted: true, delivery: "accepted_failed", error: "turn failed" })).toBe("accepted");
@@ -346,23 +371,27 @@ describe("project launch dispatch", () => {
 
     // Two concurrent callers of the same operation. OpenCode has no native
     // input-id dedup, so only the durable claim can prevent a second POST.
-    const release = { wait: true };
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
     const first = dispatchProjectLaunch({
       policy: routed, project: routeCwd, cwd: routeCwd, message: "Исправить", operationId: "op-concurrent",
     }, new ProjectLaunchAttemptLog(join(dir, "attempts.json")), async (request) => {
-      while (release.wait) await new Promise((resolve) => setTimeout(resolve, 5));
+      entered();
+      await gate;
       return await namedSessionRunner(adapters, "tg")(request);
     });
+    await started;
     const second = dispatchProjectLaunch({
       policy: routed, project: routeCwd, cwd: routeCwd, message: "Исправить", operationId: "op-concurrent",
     }, new ProjectLaunchAttemptLog(join(dir, "attempts.json")), namedSessionRunner(adapters, "tg"));
-    const secondResult = await second;
-    release.wait = false;
+    const secondResult = await second.finally(release);
     const firstResult = await first;
 
     expect(attempts).toHaveLength(1);
     expect(secondResult).toMatchObject({ outcome: "in_flight", selectedHarness: "opencode" });
-    expect(secondResult.routingReason).toContain("уже выполняется другим вызовом");
+    expect(secondResult.routingReason).toMatch(/уже зарезервирован|уже выполняется другим вызовом/);
     expect(firstResult).toMatchObject({ outcome: "accepted", selectedHarness: "opencode" });
     expect(firstResult.attempts).toMatchObject([{ harness: "opencode", created: true, model: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview", mode: "sync" }]);
   });

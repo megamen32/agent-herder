@@ -80,7 +80,7 @@ export class UserMessageDelivery {
               const result = await this.withSlot(combined, () => this.supervisor.sendMessage(input.harness, input.sessionId, {
                 message: input.message, origin: "human", inputId: input.inputId,
                 humanRequestedAt,
-                steer: input.mode === "steer", queue: input.harness === "codex",
+                steer: input.mode === "steer", queue: input.harness === "codex" || input.harness === "opencode",
               }));
               // A writer rejected admission before input submission. Recheck the
               // native turn; uncertain/accepted input is never replayed.

@@ -79,6 +79,18 @@ export function moveProjectRouteHarness(route: ProjectLaunchRoute, harness: stri
   return { ...route, harnesses };
 }
 
+export function updateProjectRouteModel(route: ProjectLaunchRoute, harness: string, model: string): ProjectLaunchRoute {
+  const models = { ...(route.models ?? {}) };
+  if (model.trim()) models[harness] = model;
+  else delete models[harness];
+  return { ...route, models };
+}
+
+export function removeProjectRouteHarness(route: ProjectLaunchRoute, harness: string): ProjectLaunchRoute {
+  const updated = updateProjectRouteModel(route, harness, "");
+  return { ...updated, harnesses: route.harnesses.filter((item) => item !== harness) };
+}
+
 export function parseProjectRoutes(value: unknown): Record<string, ProjectLaunchRoute> {
   if (value === undefined) return {};
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Маршруты проектов должны быть объектом");
@@ -366,7 +378,7 @@ export function LaunchPolicySettings() {
               <button type="button" aria-label={`Опустить ${labelFor(harness, [...known.values()])} ниже в маршруте ${project}`} disabled={index === route.harnesses.length - 1}
                 onClick={() => { setPolicy((current) => updateProjectRoute(current, project, (value) => moveProjectRouteHarness(value, harness, 1))); setSaved(false); }}>↓</button>
               <button type="button" aria-label={`Убрать ${labelFor(harness, [...known.values()])} из маршрута ${project}`}
-                onClick={() => { setPolicy((current) => updateProjectRoute(current, project, (value) => ({ ...value, harnesses: value.harnesses.filter((item) => item !== harness) }))); setSaved(false); }}>Убрать</button>
+                onClick={() => { setPolicy((current) => updateProjectRoute(current, project, (value) => removeProjectRouteHarness(value, harness))); setSaved(false); }}>Убрать</button>
             </span>
           </div>)}</div>
           <label className="launch-policy-field">
@@ -383,7 +395,7 @@ export function LaunchPolicySettings() {
             <span>Модель маршрута · {project} · {labelFor(harness, [...known.values()])}</span>
             <input type="text" maxLength={256} list={inputId(`route-${harness}`)} value={route.models?.[harness] ?? ""}
               placeholder={policy.models[harness] ?? "Укажите модель"} aria-label={`Модель маршрута для ${project} и среды ${labelFor(harness, [...known.values()])}`} onChange={(event) => {
-                setPolicy((current) => updateProjectRoute(current, project, (value) => ({ ...value, models: { ...(value.models ?? {}), [harness]: event.target.value } })));
+                setPolicy((current) => updateProjectRoute(current, project, (value) => updateProjectRouteModel(value, harness, event.target.value)));
                 setSaved(false);
               }} />
             <datalist id={inputId(`route-${harness}`)}>{(modelOptions[harness] ?? []).map((model) => <option value={model} key={model} />)}</datalist>

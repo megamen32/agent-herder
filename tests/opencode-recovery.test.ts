@@ -105,7 +105,7 @@ describe("OpenCode native recovery controls", () => {
     await adapter.init();
     expect(await adapter.listChildren("parent")).toHaveLength(1);
     expect(await adapter.forkSession("parent")).toEqual({ ok: true, sessionId: "forked" });
-    expect(await adapter.recover("parent", "please continue after the error")).toEqual({ ok: true });
+    expect(await adapter.recover("parent", "please continue after the error")).toEqual({ ok: true, admitted: true });
     expect(recoveryPrompts).toBe(1);
   });
 

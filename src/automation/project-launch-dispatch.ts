@@ -37,9 +37,11 @@ export interface ProjectLaunchAttempt {
   delivery?: NamedSessionResult["delivery"];
   error?: string;
   atCompleted?: string;
+  /** Complete native receipt, including admission state, preserved across restart. */
+  result?: NamedSessionResult;
 }
 
-export interface ProjectLaunchDispatchResult {
+export interface ProjectLaunchDispatchResult extends Partial<NamedSessionResult> {
   operationId: string;
   project: string;
   /** Human-readable reason the route advanced or stopped. */
@@ -153,20 +155,7 @@ export async function dispatchProjectLaunch(
   if (attempts.some((attempt) => STOP_OUTCOMES.has(attempt.outcome as LaunchOutcome | "human_hold"))) {
     // The chain already ended: a repeat callback reports it and touches no harness.
     const last = attempts[attempts.length - 1]!;
-    return {
-      operationId,
-      project,
-      attempts,
-      outcome: last.outcome,
-      routingReason: last.reason,
-      selectedHarness: last.harness,
-      // A replay answers with the full receipt of the attempt that already ran.
-      ...(last.model ? { model: last.model } : {}),
-      ...(last.delivery ? { delivery: last.delivery } : {}),
-      ...(last.sessionId ? { sessionId: last.sessionId } : {}),
-      ...(last.error ? { error: last.error } : {}),
-      mode: last.created === false ? "resume" : "create",
-    };
+    return projectReceipt({ operationId, project, attempts, completed: last });
   }
 
   const attempted = attempts.map((attempt) => attempt.harness);
@@ -179,7 +168,6 @@ export async function dispatchProjectLaunch(
 
   let harness: HarnessType;
   let model: string | undefined;
-  let launchMode: "create" | "resume" | "handoff";
   let routingReason: string;
   if (resolution.kind === "unconfigured") {
     const fallback = defaultTarget(input.policy, input.harness);
@@ -196,7 +184,6 @@ export async function dispatchProjectLaunch(
     }
     harness = fallback.harness;
     model = input.model ?? fallback.model;
-    launchMode = "create";
     routingReason = `Для проекта нет маршрута: используется профиль ${harnessLabel(harness)}.`;
   } else if (resolution.kind === "exhausted") {
     return {
@@ -214,7 +201,6 @@ export async function dispatchProjectLaunch(
     // and workspace. A profile value is reported as overridden, never rejected.
     harness = resolution.harness;
     model = resolution.model;
-    launchMode = resolution.mode;
     const routeProject = routeKeyOf(input.policy, input.project);
     let prefix = "";
     if (routeProject?.startsWith("/")) {
@@ -277,10 +263,13 @@ export async function dispatchProjectLaunch(
     if (!STOP_OUTCOMES.has(completed.outcome as LaunchOutcome | "human_hold")) {
       return dispatchProjectLaunch({ ...input, operationId }, log, run);
     }
-    return replayOf({ operationId, project, attempts, completed, launchMode });
+    return projectReceipt({ operationId, project, attempts, completed });
   }
 
-  const result = await run({ harness, cwd, message: input.message, ...(model ? { model } : {}), mode, inputId });
+  const nativeResult = await run({ harness, cwd, message: input.message, ...(model ? { model } : {}), mode, inputId });
+  // Optional undefined fields disappear in JSON. Project the same durable shape
+  // on the first response so a restart cannot change its receipt or model.
+  const result = Object.fromEntries(Object.entries(nativeResult).filter(([, value]) => value !== undefined)) as NamedSessionResult;
   const outcome = outcomeOf(result);
   const attempt: ProjectLaunchAttempt = {
     harness,
@@ -291,6 +280,7 @@ export async function dispatchProjectLaunch(
     at: reservation.record.at,
     atCompleted: new Date().toISOString(),
     inputId,
+    result,
     ...(result.sessionId ? { sessionId: result.sessionId } : {}),
     ...(model ? { model } : {}),
     mode,
@@ -302,24 +292,13 @@ export async function dispatchProjectLaunch(
   const recorded = [...attempts, attempt];
 
   if (STOP_OUTCOMES.has(outcome)) {
-    return {
-      operationId,
-      project,
-      attempts: recorded,
-      outcome,
-      routingReason: attempt.reason,
-      selectedHarness: harness,
-      ...(model ? { model } : {}),
-      mode: launchMode === "handoff" ? "handoff_required" : launchMode,
-      ...(result.delivery ? { delivery: result.delivery } : {}),
-      ...(result.sessionId ? { sessionId: result.sessionId } : {}),
-      ...(result.error ? { error: result.error } : {}),
-    };
+    return projectReceipt({ operationId, project, attempts: recorded, completed: attempt });
   }
   // A definite pre-admission failure: continue down the ordered route.
   const next = resolveProjectLaunch(input.policy, { project, attempted: [...attempted, harness], outcome: outcome as LaunchOutcome });
   if (next.kind === "launch") return dispatchProjectLaunch({ ...input, operationId }, log, run);
   return {
+    ...result,
     operationId,
     project,
     attempts: recorded,
@@ -329,27 +308,28 @@ export async function dispatchProjectLaunch(
   };
 }
 
-/** Answer a repeat with the full receipt of the attempt that owns the operation. */
-function replayOf(input: {
+/** Project first delivery and every replay from the same durable native receipt. */
+function projectReceipt(input: {
   operationId: string;
   project: string;
   attempts: ProjectLaunchAttempt[];
   completed: ProjectLaunchAttempt;
-  launchMode: "create" | "resume" | "handoff";
 }): ProjectLaunchDispatchResult {
   const { completed } = input;
   return {
+    // Legacy records have no complete receipt; retain their known fields.
+    ...(completed.model ? { model: completed.model } : {}),
+    ...(completed.sessionId ? { sessionId: completed.sessionId } : {}),
+    ...(completed.delivery ? { delivery: completed.delivery } : {}),
+    ...(completed.error ? { error: completed.error } : {}),
+    ...completed.result,
     operationId: input.operationId,
     project: input.project,
     attempts: [...input.attempts.filter((attempt) => attempt.inputId !== completed.inputId), completed],
     outcome: completed.outcome as LaunchOutcome | "human_hold",
     routingReason: completed.reason,
     selectedHarness: completed.harness,
-    ...(completed.model ? { model: completed.model } : {}),
-    mode: completed.created === false ? "resume" : input.launchMode === "handoff" ? "handoff_required" : "create",
-    ...(completed.sessionId ? { sessionId: completed.sessionId } : {}),
-    ...(completed.delivery ? { delivery: completed.delivery } : {}),
-    ...(completed.error ? { error: completed.error } : {}),
+    mode: (completed.result?.created ?? completed.created) === false ? "resume" : "create",
   };
 }
 

@@ -1,4 +1,4 @@
-import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, HarnessEvent, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessagePart, SessionMessageView } from "../types/index.js";
+import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, HarnessEvent, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SendMessageResult, SetPermissionsOptions, SessionMessagePart, SessionMessageView } from "../types/index.js";
 import { readFileSync } from "node:fs";
 import { throwIfAborted } from "../abort-utils.js";
 
@@ -296,7 +296,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
     return session.parentID ? this.getSession(session.parentID) : null;
   }
 
-  async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
+  async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     if (options.queue) {
       const res = await this.fetch(`/session/${id}/prompt_async`, {
         method: "POST",
@@ -304,7 +304,8 @@ export class OpenCodeAdapter implements HarnessAdapter {
           parts: [{ type: "text", text: options.message }],
         }),
       });
-      return { ok: res.ok, error: res.ok ? undefined : `HTTP ${res.status}` };
+      // prompt_async acknowledges native admission, independently of model completion.
+      return res.ok ? { ok: true, admitted: true } : { ok: false, error: `HTTP ${res.status}` };
     }
 
     const res = await this.fetch(`/session/${id}/message`, {
