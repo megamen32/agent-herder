@@ -59,3 +59,19 @@ test и ограничено число native threads без увеличени
 в main, согласованный deploy, реальный current-quota OpenCode → ZCode consumer
 canary, Notice answer/resume и настоящий звонок. Телефонная модель, секреты,
 сервисы, покупки и чужой canonical WIP не изменялись.
+
+## MCP completion retry: дополнительное исправление после review
+
+Изменён только `src/mcp/human-request-tools.ts`: retryable native-unavailable
+проходит через atomic core; resumed и non-retryable terminal shortcuts сохранены.
+`retry` объявлен в MCP output schema и передаётся обоими resolve handlers,
+включая значение false. Registered MCP Client/Server regression проверяет
+canonical recovery, concurrent callbacks, конфликтующий answer, неизменные
+attempt/key/answer time, resumed shortcut и отсутствие native вызова при unknown.
+
+Focused integration: `tests/human-request-mcp-resolve.test.ts`, 7/7 PASS,
+ожидаемые/максимальные 2/10 секунд, фактически 1.66 секунды. Production build
+и эти семь checks выполнены одним bounded проходом за 36.88 секунды; прежние
+128 не повторялись. Peak 575393792 bytes, swap/OOM 0, cleanup подтверждён.
+Manifest/команда/source pins/native evidence: `.tmp/incident-mcp-retry-release/`.
+Включён опубликованный Root `origin/main` 7b0f388; main/deploy остаются Root.

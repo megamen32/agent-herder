@@ -25,6 +25,7 @@ const resumeSchema = z.object({
   idempotencyKey: z.string(),
   duplicate: z.boolean(),
   receipt: z.string().optional(),
+  retry: z.boolean().optional(),
 });
 
 export interface HumanRequestToolOptions {
@@ -49,18 +50,21 @@ export function registerHumanRequestTools(
    * resume the exact native session exactly once.
    */
   const resumeOnce = async (requestId: string, resolutionRef: string | undefined): Promise<{
-    record: HumanRequestRecord; status: z.infer<typeof resumeSchema>["status"]; idempotencyKey: string; duplicate: boolean; receipt?: string;
+    record: HumanRequestRecord; status: z.infer<typeof resumeSchema>["status"]; idempotencyKey: string; duplicate: boolean; receipt?: string; retry?: boolean;
   }> => {
     const record = await humanRequests.get(requestId);
     if (!record) throw new Error(`Human request '${requestId}' not found`);
-    if (record.status === "resumed" || record.status === "resume_failed") {
-      // A terminal request is never resumed again; report its durable receipt.
+    const retryableFailure = record.status === "resume_failed"
+      && record.receipt === "agent-resume:native-unavailable" && record.resumeRetryable !== false;
+    if (record.status === "resumed" || (record.status === "resume_failed" && !retryableFailure)) {
+      // Completed or non-retryable requests retain their terminal shortcut.
+      // Proven unavailable answers must reach the atomic core below.
       return {
         record,
         status: record.status,
         idempotencyKey: record.idempotencyKey ?? `human-request:${record.requestId}:${record.attemptId}`,
         duplicate: true,
-        ...(record.status === "resume_failed" ? { receipt: record.receipt ?? "resume-failed" } : {}),
+        ...(record.status === "resume_failed" ? { receipt: record.receipt ?? "resume-failed", retry: false } : {}),
       };
     }
     if (!humanRequestResumeTarget(record)) {
@@ -74,7 +78,7 @@ export function registerHumanRequestTools(
       ...(options.queryReceipt ? { queryReceipt: options.queryReceipt } : {}),
       ...(resolutionRef ? { resolutionRef } : {}),
     });
-    return { record: outcome.record, status: outcome.status, idempotencyKey: outcome.idempotencyKey, duplicate: outcome.duplicate, ...("receipt" in outcome ? { receipt: outcome.receipt } : {}) };
+    return { record: outcome.record, status: outcome.status, idempotencyKey: outcome.idempotencyKey, duplicate: outcome.duplicate, ...("receipt" in outcome ? { receipt: outcome.receipt } : {}), ...("retry" in outcome ? { retry: outcome.retry } : {}) };
   };
 
   server.registerTool("human_request_create", {
@@ -115,7 +119,7 @@ export function registerHumanRequestTools(
     outputSchema: z.object({ request: humanRequestSchema, resume: resumeSchema }),
   }, async (args) => {
     const outcome = await resumeOnce(args.requestId, args.resolutionRef);
-    return structuredResult({ request: outcome.record, resume: { status: outcome.status, requestId: outcome.record.requestId, idempotencyKey: outcome.idempotencyKey, duplicate: outcome.duplicate, ...(outcome.receipt ? { receipt: outcome.receipt } : {}) } });
+    return structuredResult({ request: outcome.record, resume: { status: outcome.status, requestId: outcome.record.requestId, idempotencyKey: outcome.idempotencyKey, duplicate: outcome.duplicate, ...(outcome.receipt ? { receipt: outcome.receipt } : {}), ...(outcome.retry === undefined ? {} : { retry: outcome.retry }) } });
   });
 
   server.registerTool("human_request_resolve_interactive", {
@@ -139,7 +143,7 @@ export function registerHumanRequestTools(
       });
     }
     const outcome = await resumeOnce(args.requestId, resolutionRef);
-    return structuredResult({ request: outcome.record, resume: { status: outcome.status, requestId: outcome.record.requestId, idempotencyKey: outcome.idempotencyKey, duplicate: outcome.duplicate, ...(outcome.receipt ? { receipt: outcome.receipt } : {}) } });
+    return structuredResult({ request: outcome.record, resume: { status: outcome.status, requestId: outcome.record.requestId, idempotencyKey: outcome.idempotencyKey, duplicate: outcome.duplicate, ...(outcome.receipt ? { receipt: outcome.receipt } : {}), ...(outcome.retry === undefined ? {} : { retry: outcome.retry }) } });
   });
 
   server.registerTool("human_request_get", {

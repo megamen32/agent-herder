@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { McpServer } from "@modelcontextprotocol/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HumanRequestRegistry } from "../src/human-request/index.js";
 import { registerHumanRequestTools } from "../src/mcp/human-request-tools.js";
@@ -18,6 +18,69 @@ afterEach(async () => {
 });
 
 describe("native MCP human question and resolve", () => {
+  it.each(["human_request_resolve", "human_request_resolve_interactive"])("%s exposes retry and atomically resumes the same unavailable answer once after recovery", async (tool) => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-mcp-human-retry-"));
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
+    const record = await registry.create({ kind: "user", target: { agent: "opencode", sessionId: "original", cwd: root }, answerSource: "notice_question" });
+    const admit = vi.spyOn(registry, "admitResume");
+    let restored = false;
+    const native = vi.fn(async (request: ResumeTransportRequest): Promise<ResumeReceipt> => restored
+      ? { status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "native://one", idempotency_key: request.idempotency_key }
+      : { status: "failed", target: request.target, result_ref: request.result_ref, reason: "native-unavailable", idempotency_key: request.idempotency_key });
+    const server = new McpServer({ name: "human-request-retry", version: "1.0.0" });
+    registerHumanRequestTools(server, registry, { humanResume: native });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: "human-request-retry-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
+    await client.connect(clientTransport);
+    connected.push({ client, server });
+    const invoke = (resolutionRef = "result://canonical") => client.callTool({ name: tool, arguments: { requestId: record.requestId, resolutionRef } });
+    const failed = await invoke();
+    expect(failed.isError).not.toBe(true);
+    expect(failed.structuredContent).toMatchObject({ resume: { status: "resume_failed", receipt: "agent-resume:native-unavailable", retry: true } });
+    if (tool === "human_request_resolve") {
+      const descriptor = (await client.listTools()).tools.find((entry) => entry.name === tool);
+      expect(descriptor?.outputSchema).toMatchObject({ properties: { resume: { properties: { retry: { type: "boolean" } } } } });
+    }
+    const failedRecord = (await registry.get(record.requestId))!;
+    expect((await invoke("result://different")).structuredContent).toMatchObject({ resume: { status: "resume_failed", retry: false } });
+    expect(native).toHaveBeenCalledTimes(1);
+    restored = true;
+    const outcomes = await Promise.all(Array.from({ length: 5 }, () => invoke()));
+    expect(outcomes.every((result) => !result.isError && ["resumed", "in_flight"].includes((result.structuredContent as { resume: { status: string } }).resume.status))).toBe(true);
+    expect(native).toHaveBeenCalledTimes(2);
+    expect(native.mock.calls[1][0]).toEqual(native.mock.calls[0][0]);
+    expect(await registry.get(record.requestId)).toMatchObject({ status: "resumed", attemptId: failedRecord.attemptId, idempotencyKey: failedRecord.idempotencyKey, admittedAt: failedRecord.admittedAt });
+    const admittedCalls = admit.mock.calls.length;
+    expect((await invoke()).structuredContent).toMatchObject({ resume: { status: "resumed", duplicate: true } });
+    expect(admit.mock.calls.length).toBe(admittedCalls);
+    expect(native).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a terminal unknown admission closed and returns retry:false through the MCP schema", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-mcp-human-unknown-"));
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
+    const record = await registry.create({ kind: "user", target: { agent: "opencode", sessionId: "original", cwd: root } });
+    const admission = await registry.admitResume(record.requestId, { resultRef: "result://canonical" });
+    await registry.failResume(record.requestId, { attemptId: admission.record.attemptId!, receipt: "agent-resume:native-unavailable", retryable: false });
+    const admit = vi.spyOn(registry, "admitResume");
+    const native = vi.fn(async (request: ResumeTransportRequest): Promise<ResumeReceipt> => ({ status: "accepted", target: request.target, result_ref: request.result_ref }));
+    const server = new McpServer({ name: "human-request-unknown", version: "1.0.0" });
+    registerHumanRequestTools(server, registry, { humanResume: native });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: "human-request-unknown-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
+    await client.connect(clientTransport);
+    connected.push({ client, server });
+    const result = await client.callTool({ name: "human_request_resolve", arguments: { requestId: record.requestId, resolutionRef: "result://canonical" } });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ resume: { status: "resume_failed", retry: false } });
+    expect(admit).not.toHaveBeenCalled();
+    expect(native).not.toHaveBeenCalled();
+  });
+
   it("answers a question once and reports the canonical resume receipt", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-mcp-human-"));
     cleanups.push(() => rm(root, { recursive: true, force: true }));
