@@ -148,3 +148,12 @@
 }
 .inspector-pane .inspector-title { white-space: normal; overflow-wrap: anywhere; }
 .inspector-pane .autopilot-control small { font-size: 12px; line-height: 1.5; }
+
+.composer[data-creating=true] { display: block; margin-top: 20px; padding: 22px; }
+.composer[data-creating=true] .composer-create-panel { position: static; width: 100%; border: 0; padding: 0; box-shadow: none; background: transparent; }
+.composer-stack:has(.composer[data-creating=true]) .activity-slot { display: none; }
+.composer-create-machine { margin-bottom: 20px; }
+.fleet-machine-choice > summary { padding-block: 12px; cursor: pointer; }
+.fleet-creation-target { display: grid; gap: 8px; padding: 14px; background: var(--surface-2); border-radius: 12px; }
+.fleet-creation-target small { color: var(--muted); line-height: 1.5; }
+.fleet-sessions[hidden] { display: none; }
