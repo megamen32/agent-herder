@@ -567,3 +567,5 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .message-image { display: block; max-width: min(100%, 420px); max-height: 320px; object-fit: contain; border-radius: 12px; margin: 8px 0; }
 .composer:has(.composer-images) { grid-template-areas: "images images images images" "text text text text" "plus hint model send"; }
 .composer-images { grid-area: images; }
+
+.model-provider { display: block; color: var(--text-2); opacity: .75; font-size: var(--text-xs); overflow-wrap: anywhere; }

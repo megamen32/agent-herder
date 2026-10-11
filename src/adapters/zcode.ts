@@ -311,7 +311,7 @@ function imagePart(ref: unknown, fileName?: unknown): SessionMessagePart[] {
   return match ? [{ type: "image", imageUrl: `/api/session-images/${match[1]}`, fileName: typeof fileName === "string" ? fileName : "Изображение" }] : [];
 }
 function mapMessagePart(part: Record<string, unknown>): SessionMessagePart[] {
-  if (part.type === "file" && typeof part.mime === "string" && part.mime.startsWith("image/")) return imagePart(part.url, part.filename);
+  if (part.type === "file" && typeof part.mime === "string" && part.mime.startsWith("image/")) return imagePart(record(part.source).path ?? record(part.metadata).originalUrl ?? part.url, "Прикреплённое изображение");
   if (part.type === "image") return imagePart(part.ref ?? part.url, part.fileName);
   if (part.type === "text" && typeof part.text === "string") {
     return [{ type: "text", text: part.text }];

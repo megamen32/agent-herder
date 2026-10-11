@@ -35,7 +35,7 @@ export type ModelSwitchOutcome =
   | { ok: false; message: string };
 
 /**
- * Смена модели живой сессии: POST /api/sessions/<harness>/<id> с action "model"
+ * Смена модели живой сессии: POST /api/sessions/<harness>/<id>/model
  * вызывает supervisor.changeModel. Ошибку адаптера показываем пользователю как есть.
  */
 export const requestModelChange = async (
@@ -45,10 +45,10 @@ export const requestModelChange = async (
   model: string,
 ): Promise<ModelSwitchOutcome> => {
   try {
-    const response = await fetchImpl(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(sessionId)}`, {
+    const response = await fetchImpl(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(sessionId)}/model`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "model", model }),
+      body: JSON.stringify({ model }),
     });
     const payload = await response.json().catch(() => undefined) as { ok?: boolean; error?: string } | undefined;
     if (response.ok && payload?.ok !== false) return { ok: true };

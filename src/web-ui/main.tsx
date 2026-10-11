@@ -1869,11 +1869,11 @@ function App() {
             {!activeSession?.model && <span className="composer-model-default">по умолчанию</span>}
             <span className="composer-model-chevron" aria-hidden="true">▾</span>
           </button>}
-          {modelMenuOpen && modelSwitchHarness && <div className="composer-model-menu" role="listbox" aria-label="Модели {modelSwitchHarness}">
+          {modelMenuOpen && modelSwitchHarness && <div className="composer-model-menu" role="listbox" aria-label={`Модели ${modelSwitchHarness}`}>
             {modelSwitchError && <div className="composer-model-note error" role="alert">{modelSwitchError}</div>}
             {modelOptionsLoading && <div className="composer-model-note">Загружаю модели…</div>}
             {!modelOptionsLoading && modelOptionsHarness === modelSwitchHarness && modelOptions.length === 0 && <div className="composer-model-note">Сервер не вернул моделей для {modelSwitchHarness}.</div>}
-            {modelOptions.map((model) => <button type="button" role="option" aria-selected={model === currentModelOption(activeSession?.model, modelOptions)} className={model === currentModelOption(activeSession?.model, modelOptions) ? "current" : ""} key={model} onClick={() => void changeSessionModel(model)}>{shortModelLabel(model)}</button>)}
+            {modelOptions.map((model) => <button type="button" role="option" aria-selected={model === currentModelOption(activeSession?.model, modelOptions)} className={model === currentModelOption(activeSession?.model, modelOptions) ? "current" : ""} key={model} onClick={() => void changeSessionModel(model)} title={model}>{shortModelLabel(model)}{modelOptions.filter(option => shortModelLabel(option) === shortModelLabel(model)).length > 1 && <small className="model-provider">{model.slice(0, model.lastIndexOf("/")) || model}</small>}</button>)}
           </div>}
           <button className="send-button" type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || imageUploading || (!isResumeMode && !composer.trim() && !composerImages.length)} aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}>{isResumeMode ? "▶" : "↑"}</button>
         </>}

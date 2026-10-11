@@ -1910,3 +1910,16 @@ it("passes attached image files to the same native ZCode guide command", async (
     expect(calls[0].args[0]).toMatchObject({ envelope: { sessionId: "session-1", payload: { requestedDelivery: "guide", attachments: [{ ref: image.path, fileName: image.fileName, mime: image.mimeType, bytes: image.bytes }] } } });
   } finally { await adapter.dispose(); }
 });
+
+// Fast unit expected1s/max5s: native artifact rewriting must retain image display.
+it("reads attached images from ZCode artifact source paths", async () => {
+ class ImageClient extends FakeClient {
+  override async call(channel:string, method:string, args:unknown[]):Promise<unknown> {
+   if(method==="readSessionMessages")return [{info:{messageId:"image-message",role:"user"},parts:[{type:"file",mime:"image/png",filename:"native-name.png",url:"zcode-artifact://session-1/blob",source:{path:"/protected/"+"a".repeat(64)+".png"}}]}];
+   return super.call(channel,method,args);
+  }
+ }
+ const adapter=new ZcodeAdapter({cwd:"/workspace",client:new ImageClient()});
+ try {expect((await adapter.getSessionMessages("session-1"))?.[0]?.parts).toEqual([{type:"image",imageUrl:"/api/session-images/"+"a".repeat(64),fileName:"Прикреплённое изображение"}]);}
+ finally{await adapter.dispose();}
+});
