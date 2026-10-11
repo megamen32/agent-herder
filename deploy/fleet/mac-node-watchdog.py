@@ -72,6 +72,7 @@ def command(argv,deadline=None):
     stages={'/bin/ps':'process','/usr/sbin/lsof':'listener',
             '/usr/sbin/sysctl':'host_identity','/usr/bin/memory_pressure':'host_memory'}
     stage=stages.get(argv[0],'other')
+    probe=('threads' if '-M' in argv else 'census' if '-axo' in argv else 'identity') if stage=='process' else stage
     window=min(time.monotonic()+4,deadline) if deadline is not None else time.monotonic()+4
     attempts=2 if stage!='other' else 1
     for attempt in range(1,attempts+1):
@@ -83,7 +84,7 @@ def command(argv,deadline=None):
             break
         except subprocess.TimeoutExpired:
             if attempt==attempts or time.monotonic()>=window:
-                raise Refused('native_observation_deadline '+json.dumps({'stage':stage,'attempt':attempt},separators=(',',':'))) from None
+                raise Refused('native_observation_deadline '+json.dumps({'stage':stage,'probe':probe,'attempt':attempt},separators=(',',':'))) from None
     if result.returncode or len(result.stdout)>1024**2:
         raise Refused('native_observation_failed')
     return result.stdout.decode('utf8', errors='strict')

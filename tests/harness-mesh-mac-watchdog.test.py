@@ -40,6 +40,16 @@ w = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(w)
 
 class MacWatchdogTests(unittest.TestCase):
+    def test_process_timeout_identifies_only_fixed_probe_class(self):
+        # Fast unit, expected<1s/max2s. Distinguish actual M1 failure stage;
+        # no real process/network boundary or runtime acceptance claim.
+        for args,expected in [(['-axo','pid='],'census'),(['-M','-p','123','-o','pid='],'threads'),(['-p','123','-o','uid='],'identity')]:
+            with self.subTest(probe=expected),patch.object(w.subprocess,'run',side_effect=subprocess.TimeoutExpired(['private-argument'],2)) as run:
+                with self.assertRaises(w.Refused) as error:w.command(['/bin/ps',*args])
+                diagnostic=json.loads(str(error.exception).split(' ',1)[1])
+                self.assertEqual(diagnostic,{'stage':'process','probe':expected,'attempt':2})
+                self.assertEqual(run.call_count,2);self.assertNotIn('private-argument',str(error.exception))
+
     def test_artifact_census_can_finish_within_its_existing_five_second_window(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)/'releases';root.mkdir();(root/'a').write_bytes(b'abc');(root/'b').write_bytes(b'de')
