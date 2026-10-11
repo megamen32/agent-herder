@@ -1989,3 +1989,15 @@ it("shows selected native model settings rather than stale session metadata", as
  const adapter=new ZcodeAdapter({cwd:"/workspace",client:new SelectedModelClient()});
  try{await adapter.init();expect((await adapter.getSession("session-1"))?.model).toBe("zai/GLM-5.3-Flash$high");}finally{await adapter.dispose();}
 });
+
+// Focused integration expected1s/max5s: bare model names must use the native-required default reasoning level.
+it("uses the model catalog default reasoning level for a plain model selection", async()=>{
+ class ReasoningCatalogClient extends FakeClient{
+  override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   if(method==="readSession")return {...snapshot,settings:{...snapshot.settings,model:{current:session.model,available:[{ref:{providerId:"zai",modelId:"GLM-5.3"},reasoning:{defaultLevel:"high",levels:[{value:"high"}]}}]}}};
+   return super.call(channel,method,args);
+  }
+ }
+ const client=new ReasoningCatalogClient(),adapter=new ZcodeAdapter({cwd:"/workspace",client});
+ try{await expect(adapter.changeModel("session-1","zai/GLM-5.3")).resolves.toEqual({ok:true});expect(client.calls.find(call=>call.method==="setModel")?.args[0]).toMatchObject({model:{providerId:"zai",modelId:"GLM-5.3",options:{reasoningLevel:"high"}}});}finally{await adapter.dispose();}
+});

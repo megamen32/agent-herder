@@ -2026,6 +2026,15 @@ export class ZcodeAdapter implements HarnessAdapter {
       if (!modelRef?.providerId || !modelRef.modelId) {
         return { ok: false, error: "ZCode model must be provider/model or a model ID with a known current provider" };
       }
+      if (!modelRef.options?.reasoningLevel) {
+        const available = record(record(snapshot).settings).model;
+        const entry = (Array.isArray(record(available).available) ? record(available).available as unknown[] : []).map(record).find(option => {
+          const ref = record(option.ref);
+          return ref.providerId === modelRef.providerId && ref.modelId === modelRef.modelId;
+        });
+        const defaultLevel = nonEmptyString(record(entry?.reasoning).defaultLevel);
+        if (defaultLevel) modelRef.options = { reasoningLevel: defaultLevel };
+      }
       await this.callAgent("setModel", { ...workspace, sessionId, model: modelRef });
       return { ok: true };
     } catch (error) {
