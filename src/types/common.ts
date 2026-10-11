@@ -185,6 +185,8 @@ export interface PermissionRequest {
 }
 
 export interface SendMessageOptions {
+  /** Exact named-task context resolved before delivery to a shared Hermes home lane. */
+  expectedTaskBinding?: { name: string; cwd: string; generation: string };
   images?: MessageImage[];
   /** Server admission time of queued human intent; a later manual stop wins. */
   humanRequestedAt?: number;

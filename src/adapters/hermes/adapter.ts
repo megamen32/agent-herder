@@ -270,7 +270,7 @@ export class HermesAdapter implements HarnessAdapter {
   async getSession(id: string): Promise<AgentSession | null> {
     const job = this.jobs.get(id);
     if (job) return this.jobToSession(job);
-    if (this.gatewayTasks && id.startsWith("agent:")) {
+    if (this.gatewayTasks) {
       try {
         const data = await this.gatewayRequest({ op: "session", session_key: id });
         if (data.ok && data.session) return data.session as unknown as AgentSession;
@@ -355,7 +355,13 @@ export class HermesAdapter implements HarnessAdapter {
       if (options.steer) return { ok: false, notSubmitted: true, error: "Hermes Gateway tasks do not hijack an active turn" };
       const inputId = options.inputId || randomUUID();
       try {
-        return await this.gatewayRequest({ op: "send", session_key: id, input_id: inputId, message: options.message }) as unknown as SendMessageResult;
+        // A named caller carries its exact earlier resolution. Ordinary home
+        // follow-ups explicitly resolve the current binding; never guess a name
+        // from the shared key or substitute it for a stale named task.
+        const session = options.expectedTaskBinding && id.startsWith("agent:") ? undefined : await this.getSession(id);
+        const binding = options.expectedTaskBinding || session?.meta?.taskBinding;
+        if (!binding) return { ok: false, notSubmitted: true, error: "Resolve the current Hermes task binding before sending" };
+        return await this.gatewayRequest({ op: "send", session_key: session?.id ?? id, input_id: inputId, message: options.message, expected_binding: binding }) as unknown as SendMessageResult;
       } catch {
         return { ok: false, inputId, admissionUnknown: true, nonRetryable: true, error: "Hermes native admission receipt unavailable; query this input ID only" };
       }
@@ -440,7 +446,8 @@ export class HermesAdapter implements HarnessAdapter {
 
   async getMessageAdmission(id: string, inputId: string): Promise<MessageAdmissionResult> {
     try {
-      const data = await this.gatewayRequest({ op: "receipt", session_key: id, input_id: inputId });
+      const sessionKey = id.startsWith("agent:") ? id : (await this.getSession(id))?.id ?? id;
+      const data = await this.gatewayRequest({ op: "receipt", session_key: sessionKey, input_id: inputId });
       return { state: data.admitted ? "admitted" : data.state === "not_found" ? "not_found" : "unknown" };
     } catch { return { state: "unknown" }; }
   }

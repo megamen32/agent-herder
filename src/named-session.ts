@@ -168,6 +168,9 @@ export async function newOrResumeNamedSession(
   const delivery = await resolved.adapter.sendMessage(resolved.target.id, {
       origin: request.humanRequested ? "human" : "automation",
       inputId: request.inputId ?? (request.humanRequested ? undefined : createHash("sha256").update(request.message).digest("hex")),
+      ...(resolved.target.harness === "hermes" && resolved.target.meta?.taskBinding
+        ? { expectedTaskBinding: resolved.target.meta.taskBinding as { name: string; cwd: string; generation: string } }
+        : {}),
       message: injectedMessage,
       queue: mode === "queue",
   });
