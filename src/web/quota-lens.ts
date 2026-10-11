@@ -174,16 +174,24 @@ function listFastAgentSessions(): Record<string, unknown>[] | { error: string } 
   return out;
 }
 
+/** Normalize the Python sampler and the native sampler to one timeline schema. */
+export function normalizeQuotaSample(record: Record<string, unknown>): Record<string, unknown> {
+  const raw = record.quota;
+  const quota = raw && typeof raw === "object" ? raw as Record<string, unknown> : undefined;
+  return { ...record,
+    ts: typeof record.ts === "number" && record.ts > 1e12 ? Math.floor(record.ts / 1000) : record.ts,
+    ...(quota ? { quota: { ...quota, primary: quota.primary ?? quota.primary_used,
+      secondary: quota.secondary ?? quota.secondary_used, reset_s: quota.reset_s ?? quota.primary_reset_s } } : {}),
+  };
+}
+
 function readTimeline(limit: number): Record<string, unknown>[] {
   const file = historyFile();
   if (!existsSync(file)) return [];
   const lines = readFileSync(file, "utf8").split("\n").filter(Boolean);
   return lines.slice(-limit).map((line) => {
     try {
-      const record = JSON.parse(line) as Record<string, unknown>;
-      // нормализация: старые записи python-сэмплера — секунды, возможные ms — приводим
-      if (typeof record.ts === "number" && record.ts > 1e12) record.ts = Math.floor(record.ts / 1000);
-      return record;
+      return normalizeQuotaSample(JSON.parse(line) as Record<string, unknown>);
     } catch { return { ts: 0 }; }
   });
 }
@@ -199,7 +207,7 @@ async function sampleOnce(): Promise<Record<string, unknown>> {
      GROUP BY key, model ORDER BY tokens DESC LIMIT 10`,
     [since],
   );
-  const record = { ts: Math.floor(Date.now() / 1000), quota, deltas }; // секунды, как в python-версии
+  const record = normalizeQuotaSample({ ts: Math.floor(Date.now() / 1000), quota, deltas }); // секунды, как в python-версии
   const file = historyFile();
   mkdirSync(dirname(file), { recursive: true });
   appendFileSync(file, `${JSON.stringify(record)}\n`);

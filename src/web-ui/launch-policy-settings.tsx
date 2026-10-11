@@ -202,7 +202,7 @@ export function LaunchPolicySettings() {
       {loadError && <p className="autopilot-error" role="alert">Не удалось загрузить настройки запуска: {loadError}. Обновите страницу и повторите.</p>}
       <fieldset className="settings-group" disabled={saving || Boolean(loadError)}>
         <legend>Диагностика и исправление инцидентов Noticeplace</legend>
-        <p>MiniMax по подписке. Этот выбор сохраняется отдельно для новых расследований и исправлений.</p>
+        <p>MiniMax по подписке. Этот выбор сохраняется отдельно для новых расследований и исправлений. Разрешённые среды ниже относятся к обычным задачам; маршрут инцидентов использует свой выбор.</p>
         <label className="launch-policy-field"><span>Среда исполнения инцидентов</span>
           <select aria-label="Среда исполнения инцидентов" value={policy.incidentExecution?.runtime ?? ""} onChange={() => {
             setPolicy((current) => ({ ...current, incidentExecution: { ...INCIDENT_EXECUTION } })); setSaved(false);
@@ -217,6 +217,7 @@ export function LaunchPolicySettings() {
             </option>
           </select>
         </label>
+        <p className="settings-help" role="status">Модель: MiniMax-M3.1-Flash-Preview · {(modelOptions.opencode ?? []).includes("minimax-coding-plan/MiniMax-M3.1-Flash-Preview") ? "есть в списке OpenCode" : "доступность не подтверждена"}.</p>
         <small>Провайдер: minimax-coding-plan. При отказе запуск сохраняет причину и не меняет провайдера.</small>
         {!policy.incidentExecution && <p role="status">Маршрут инцидентов ещё не сохранён.</p>}
         {policy.incidentExecution && !(modelOptions.opencode ?? []).includes("minimax-coding-plan/MiniMax-M3.1-Flash-Preview") &&
