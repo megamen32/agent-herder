@@ -37,6 +37,10 @@ export function createFleetRecoveryAdmissionGate(path = FLEET_MONITOR_STATE, now
     if (operation === "create" || operation === "rollover") {
       return { allowed: false, reason: "Fleet authority permits existing-session recovery only" };
     }
+    // This snapshot belongs to the one-off Codex recovery campaign, not to
+    // ZCode task authority. ZCode native descendants retain their mandatory
+    // shared systemd budget; policy/STOP/turn admission are checked by owners.
+    if (session.harness === "zcode") return { allowed: true };
     let file: Awaited<ReturnType<typeof open>> | undefined;
     try {
       file = await open(path, "r");

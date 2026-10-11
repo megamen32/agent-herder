@@ -45,7 +45,7 @@ describe("cache-aware session handoff", () => {
 
   it("uses the documented 30 minute window only for current OpenAI Codex models", () => {
     expect(cacheWindowFor({ harness: "codex", model: "gpt-5.6-sol" })).toEqual({ ttlMs: 1_800_000, source: "openai-30m" });
-    expect(cacheWindowFor({ harness: "zcode", model: "account:zai-individual-coding-plan/GLM-5.3-Flash" })).toEqual({ ttlMs: 300_000, source: "zai-measured-5m" });
+    expect(cacheWindowFor({ harness: "zcode", model: "account:zai-individual-coding-plan/GLM-5.3-Flash" })).toEqual({ source: "unknown" });
     expect(cacheWindowFor({ harness: "opencode", model: "minimax/MiniMax-M3.1-Flash-Preview" })).toEqual({ ttlMs: 300_000, source: "minimax-dynamic-5m" });
     expect(cacheWindowFor({ harness: "opencode", model: "minimax/MiniMax-M3" }, { AGENT_HERDER_CACHE_TTL_MINUTES: '{"opencode:minimax/MiniMax-M3":12}' })).toEqual({ ttlMs: 720_000, source: "configured" });
   });
@@ -238,7 +238,7 @@ describe("cache-aware session handoff", () => {
     fixture.value.name = "ZCode fixture";
     const session = { ...oldSession, harness: "zcode" as const, model: "account:zai-start-plan/GLM-5.3-Flash" };
     fixture.createSession.mockResolvedValue({ ...session, id: "new", model: "account:zai-individual-coding-plan/GLM-5.3-Flash$high", status: "idle" });
-    const service = new CacheHandoffService(new Map([["zcode", fixture.value]]), { summarize: async () => "handoff" });
+    const service = new CacheHandoffService(new Map([["zcode", fixture.value]]), { summarize: async () => "handoff" }, undefined, { AGENT_HERDER_CACHE_TTL_MINUTES: JSON.stringify({ "zcode:*": 5 }) });
     expect((await service.maybeRollover(session, new Date("2026-10-03T10:06:00Z"))).kind).toBe("rolled_over");
     expect(fixture.createSession).toHaveBeenCalledWith(expect.objectContaining({
       model: "account:zai-individual-coding-plan/GLM-5.3-Flash$high",

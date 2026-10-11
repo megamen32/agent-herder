@@ -260,16 +260,8 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .advanced-settings[open] summary { margin-bottom: var(--space-1); }
 .harness-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
 .harness-automation-list { display: grid; gap: var(--space-2); margin: 18px 0; }
-.harness-automation-row { display: grid; grid-template-columns: minmax(90px, .7fr) repeat(2, minmax(0, 1fr)); align-items: center; gap: 16px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-2); }
-.harness-automation-row h4 { margin: 0; color: var(--text); font-size: var(--text-sm); }
-.harness-automation-cell { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 7px; min-width: 0; }
-.harness-automation-cell > strong { color: var(--text); font-size: var(--text-sm); }
-.harness-automation-cell > small { grid-column: 1 / -1; color: var(--muted); font-size: var(--text-xs); line-height: 1.45; }
-.harness-automation-cell .switch-control:disabled { opacity: .45; cursor: default; }
-.harness-automation-details { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.harness-master-help { margin-top: 10px; line-height: 1.5; }
-.harness-automation-row { align-items: start; }.harness-automation-row h4 { align-self: center; }
-@media (max-width: 600px) { .harness-automation-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; padding: 12px; }.harness-automation-row h4 { grid-column: 1 / -1; }.harness-automation-cell { grid-template-columns: 1fr; }.harness-automation-cell > small { grid-column: auto; }.harness-automation-details { flex-direction: column; align-items: flex-start; } }
+.harness-setting-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-2); }
+.harness-setting-row strong { display: block; color: var(--text); font-size: var(--text-sm); }.harness-setting-row small { display: block; margin-top: 4px; color: var(--muted); font-size: var(--text-xs); }.harness-setting-row .switch-control:disabled { opacity: .45; cursor: default; }
 .harness-option { display: flex; align-items: center; gap: 10px; padding: 11px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-3); cursor: pointer; }
 .harness-option:hover { border-color: var(--border-2); background: var(--surface-hover); }
 .harness-option.selected { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); background: var(--accent-soft); }

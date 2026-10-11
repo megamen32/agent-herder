@@ -12,6 +12,14 @@ const now = Date.parse("2026-10-08T00:00:00Z");
 const session = { id: "owned" };
 const state = (taskState = "active") => ({ utc: new Date(now).toISOString(), registry: { owned: { taskState } } });
 describe("fleet admission authority", () => {
+  it("does not apply the historical Codex campaign registry to bounded same-ID ZCode work", async () => {
+    const gate = createFleetRecoveryAdmissionGate("/missing/historical-codex-campaign");
+    for (const operation of ["attempt", "resume", "send"] as const) {
+      expect(await gate({ id: "sess_zcode", harness: "zcode" } as never, operation)).toEqual({ allowed: true });
+    }
+    expect((await gate({ id: "sess_zcode", harness: "zcode" } as never, "create")).allowed).toBe(false);
+    expect((await gate({ id: "codex", harness: "codex" } as never, "send")).allowed).toBe(false);
+  });
   it.each(["paused-unfinished", "resource-blocked", "component-complete-awaiting-integration"])("holds existing %s authority", (status) => {
     expect(evaluateFleetAdmission(state(status), session, now).allowed).toBe(false);
   });

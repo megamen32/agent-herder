@@ -118,6 +118,11 @@ export interface ControlResult extends SendMessageResult {
   sessionId?: string;
 }
 
+export interface CompactSessionOptions {
+  inputId: string;
+  expectedUserMessageId?: string;
+}
+
 export interface SessionHistoryInfo {
   source: SessionHistorySource;
   complete: boolean;
@@ -306,6 +311,9 @@ export interface HarnessAdapter {
 
   /** Archive a completed native session while preserving its history. */
   archiveSession?(id: string): Promise<ControlResult>;
+
+  /** Compact native model context in place; never send a task prompt or replace the session. */
+  compactSession?(id: string, options: CompactSessionOptions): Promise<ControlResult>;
 
   /** Reconnect/resume a failed transport and optionally recover with a prompt. */
   recover?(id: string, message?: string, signal?: AbortSignal): Promise<ControlResult>;
