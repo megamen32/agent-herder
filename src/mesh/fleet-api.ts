@@ -7,12 +7,17 @@ const createSchema=z.object({hostId:z.string().min(1).max(512),harness:z.enum(['
 export function createFleetApiHandler(resolve:FleetCabinetService|((request:IncomingMessage)=>FleetCabinetService|Promise<FleetCabinetService>),localHostId=hostname()){
  return async(request:IncomingMessage,response:ServerResponse):Promise<boolean>=>{
   const url=new URL(request.url??'/', 'http://localhost');
-  if(!['/api/fleet/hosts','/api/fleet/sessions','/api/fleet/create','/api/fleet/session'].includes(url.pathname))return false;
+  if(!['/api/fleet/hosts','/api/fleet/sessions','/api/fleet/create','/api/fleet/session','/api/fleet/inventory'].includes(url.pathname))return false;
   const send=(status:number,value:unknown)=>{response.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify(value));};
   try{
    const service=typeof resolve==='function'?await resolve(request):resolve;
    if(request.method==='GET'&&url.pathname==='/api/fleet/hosts'){
     const view=await service.snapshot({refresh:url.searchParams.get('refresh')==='1'});send(200,{hosts:view.hosts,complete:view.complete,defaultHostId:localHostId,scopeKey:service.browserScopeKey,sessionReadSupported:service.canReadSession});return true;
+   }
+   if(request.method==='GET'&&url.pathname==='/api/fleet/inventory'){
+    const cursorsText=url.searchParams.get('cursors');if(cursorsText&&cursorsText.length>12000)throw new Error('inventory_cursor_limit');
+    const cursors=cursorsText?JSON.parse(cursorsText):undefined;if(cursors&&(typeof cursors!=='object'||Array.isArray(cursors)))throw new Error('inventory_cursor_invalid');
+    send(200,await service.inventory({hostId:url.searchParams.get('hostId')??undefined,cursors,limit:url.searchParams.has('limit')?Number(url.searchParams.get('limit')):100}));return true;
    }
    if(request.method==='GET'&&url.pathname==='/api/fleet/sessions'){
     const value=url.searchParams.get('limit');const limit=value===null?12:Number(value);

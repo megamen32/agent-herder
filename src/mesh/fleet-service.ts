@@ -3,13 +3,33 @@ import {addressKey,unwrapResult} from './protocol.js';
 import {projectPeerSession,type GptAdminTransport} from './gptadmin.js';
 import {fleetHarnesses,type FleetHostDefinition,type FleetHost,type FleetScope,type FleetView,type FleetSession,type FleetCreateRequest,type FleetCreateReceipt} from './fleet-contract.js';
 import {FleetCreateJournal} from './fleet-create-journal.js';
+import type {SessionInventoryPage,InventorySession} from './session-page.js';
 type Context=FleetScope&{hostId:string;credentialGeneration?:string};
-type Cached={revision:number;host:FleetHost;sessions:FleetSession[];complete:boolean;limited:boolean;target:string};
+type Cached={revision:number;host:FleetHost;sessions:FleetSession[];complete:boolean;limited:boolean;target:string;inventorySupported?:boolean};
 export interface FleetDependencies {hosts:readonly FleetHostDefinition[];scope:FleetScope;transportFactory:(context:Context)=>GptAdminTransport;now?:()=>number;ttlMs?:number;readDeadlineMs?:number;discoveryDeadlineMs?:number;createDeadlineMs?:number;journalPath?:string;credentialGeneration?:string}
 /** Service scope is supplied by authenticated server code, never by request bodies. */
 export class FleetCabinetService {
  private readonly transports=new Map<string,GptAdminTransport>();
  private readonly cache=new Map<string,Cached>();
+ private readonly inventoryCache=new Map<string,{expiresAt:number;bytes:number;page:SessionInventoryPage}>();
+ private readonly inventoryPending=new Map<string,Promise<SessionInventoryPage>>();
+ private inventoryResult(page:SessionInventoryPage):SessionInventoryPage{
+  const result=structuredClone(page);
+  if(result.warming||result.observedAt===null||this.now()-Date.parse(result.observedAt)>60000)result.partial=true;
+  return result;
+ }
+ private async inventoryPage(key:string,host:Cached,read:()=>Promise<SessionInventoryPage>):Promise<SessionInventoryPage>{
+  const now=this.now();for(const[k,v]of this.inventoryCache)if(v.expiresAt<=now)this.inventoryCache.delete(k);
+  const cached=this.inventoryCache.get(key);if(cached)return this.inventoryResult(cached.page);
+  const pending=this.inventoryPending.get(key);if(pending)return this.inventoryResult(await pending);
+  if(this.inventoryPending.size>=6)throw new Error('inventory_reads_busy');
+  const operation=read().then(page=>{
+   if(this.cache.get(host.host.hostId)?.revision!==host.revision)throw new Error('inventory_owner_observation_changed');
+   const bytes=Buffer.byteLength(JSON.stringify(page));if(bytes<=524288){this.inventoryCache.set(key,{page:structuredClone(page),bytes,expiresAt:this.now()+30000});
+    let total=[...this.inventoryCache.values()].reduce((n,p)=>n+p.bytes,0);for(const[k,p]of this.inventoryCache){if(total<=2097152&&this.inventoryCache.size<=32)break;total-=p.bytes;this.inventoryCache.delete(k);}}
+   return page;
+  }).finally(()=>{this.inventoryPending.delete(key);});this.inventoryPending.set(key,operation);return this.inventoryResult(await operation);
+ }
  private pending?:Promise<FleetView>;
  private sessionReads=0;
  private lastReadAt:number|null=null;
@@ -28,6 +48,41 @@ export class FleetCabinetService {
   try{return await transport.readSession(`mcp:shell:${address.hostId}:AgentHerder`,address.harness,address.nativeSessionId);}finally{this.sessionReads--;}
  }
  get browserScopeKey(){return createHash('sha256').update(JSON.stringify([this.deps.scope.profileId,this.deps.scope.userId])).digest('hex');}
+ /** Browser directory pages are independent of the compact agent-discovery window. */
+ async inventory(options:{hostId?:string;cursors?:Record<string,string>;limit?:number}={}):Promise<{hosts:FleetHost[];pages:Array<SessionInventoryPage&{reason?:string}>;scopeKey:string}>{
+  const limit=options.limit??100;
+  if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('inventory_page_limit');
+  if(options.hostId&&!this.deps.hosts.some(h=>h.hostId===options.hostId))throw new Error('inventory_host_invalid');
+  for(const [host,cursor]of Object.entries(options.cursors??{}))if(!this.deps.hosts.some(h=>h.hostId===host)||typeof cursor!=='string'||cursor.length>2048||!/^[A-Za-z0-9_-]+$/.test(cursor))throw new Error('inventory_cursor_invalid');
+  const view=await this.snapshot();const selected=view.hosts.filter(h=>(!options.hostId||h.hostId===options.hostId)&&(!options.cursors||Object.prototype.hasOwnProperty.call(options.cursors,h.hostId)));
+  const pages=new Map<string,SessionInventoryPage&{reason?:string}>();let next=0;
+  await Promise.all(Array.from({length:3},async()=>{for(;;){const host=selected[next++];if(!host)return;
+   const empty=(reason:string):SessionInventoryPage&{reason:string}=>({hostId:host.hostId,sessions:[],nextCursor:null,observedAt:null,warming:false,partial:true,total:0,reason});
+   const cached=this.cache.get(host.hostId),transport=this.transport(host.hostId),readSessionPage=transport.readSessionPage?.bind(transport);
+   if(!cached?.inventorySupported||!readSessionPage||!['ready','metadata_only'].includes(host.state)){pages.set(host.hostId,empty(host.reason??'inventory_page_not_registered'));continue;}
+   try{
+    const cursor=options.cursors?.[host.hostId];
+    const overlay=cursor?[]:cached.sessions.slice(0,Math.max(0,limit-1));
+    const nativeLimit=limit-overlay.length;
+    const key=JSON.stringify([host.hostId,cached.revision,cursor??'',limit]);
+    const page=await this.inventoryPage(key,cached,async()=>{
+    const raw=unwrapResult(await this.bounded(readSessionPage(cached.target,cursor,nativeLimit),this.now()+(this.deps.readDeadlineMs??10000)));
+    if(raw.hostId!==host.hostId||!Array.isArray(raw.sessions)||raw.sessions.length>nativeLimit||raw.nextCursor!==null&&(typeof raw.nextCursor!=='string'||raw.nextCursor.length>2048||!/^[A-Za-z0-9_-]+$/.test(raw.nextCursor))||raw.observedAt!==null&&(typeof raw.observedAt!=='string'||raw.observedAt.length>64||!Number.isFinite(Date.parse(raw.observedAt))))throw new Error('inventory_page_invalid');
+    const sessions=new Map<string,InventorySession>();let partial=raw.partial!==false||raw.warming!==false;
+    for(const row of raw.sessions){const s=projectPeerSession(row,host.hostId);if(!s){partial=true;continue;}
+     let parentAddress:InventorySession['parentAddress'];
+     if(row.parentAddress){try{if(row.parentAddress.hostId!==host.hostId||typeof row.parentAddress.harness!=='string'||typeof row.parentAddress.nativeSessionId!=='string')throw new Error();addressKey(row.parentAddress);parentAddress={hostId:host.hostId,harness:row.parentAddress.harness,nativeSessionId:row.parentAddress.nativeSessionId};}catch{partial=true;}}
+     sessions.set(addressKey(s.address),{...s,...(parentAddress?{parentAddress}:{})});
+    }
+    // Include fresh compact IDs absent from the full persisted catalog (allocated empty threads).
+    for(const s of overlay)if(!sessions.has(addressKey(s.address)))sessions.set(addressKey(s.address),s);
+    if(!cursor&&cached.sessions.length>overlay.length)partial=true;
+    return {hostId:host.hostId,sessions:[...sessions.values()],nextCursor:raw.nextCursor as string|null,observedAt:raw.observedAt as string|null,warming:raw.warming===true,partial,total:Number.isSafeInteger(raw.total)&&Number(raw.total)>=0?Number(raw.total):raw.sessions.length};
+    });pages.set(host.hostId,page);
+   }catch(e){pages.set(host.hostId,empty(e instanceof Error?e.message.slice(0,96):'inventory_read_failed'));}
+  }}));
+  return {hosts:selected,pages:selected.map(h=>pages.get(h.hostId)!),scopeKey:this.browserScopeKey};
+ }
  private now(){return (this.deps.now??Date.now)();}
  private transport(hostId:string){let t=this.transports.get(hostId);if(!t){t=this.deps.transportFactory({...this.deps.scope,hostId,...(this.deps.credentialGeneration?{credentialGeneration:this.deps.credentialGeneration}:{})});this.transports.set(hostId,t);}return t;}
  private async bounded<T>(operation:Promise<T>,deadline:number,limitMs=this.deps.readDeadlineMs??10000):Promise<T>{
@@ -89,7 +144,7 @@ export class FleetCabinetService {
     for(const row of raw.sessions.slice(0,12)){const s=projectPeerSession(row,hostId);if(s)sessions.push({...s,key:addressKey(s.address)});else partial=true;}
     const limited=raw.sessions.length>12||raw.limited===true;
     const createHarnesses=full&&tools.some(t=>t.name==='create_session')?fleetHarnesses.filter(h=>Array.isArray(info.createHarnesses)&&info.createHarnesses.includes(h)):[];
-    const at=this.now();results.set(hostId,{revision,target,sessions,limited,complete:full&&raw.complete===true&&!partial&&!limited,host:{...definition,state:full?'ready':'metadata_only',fetchedAt:at,expiresAt:at+(this.deps.ttlMs??60000),generation:Number.isSafeInteger(info.generation)?info.generation as number:null,createHarnesses,...(!full?{reason:'local_control_not_registered'}:partial?{reason:'invalid_peer_session'}:{})}});
+    const at=this.now();results.set(hostId,{revision,target,sessions,limited,inventorySupported:tools.some(t=>t.name==='fleet_session_page'),complete:full&&raw.complete===true&&!partial&&!limited,host:{...definition,state:full?'ready':'metadata_only',fetchedAt:at,expiresAt:at+(this.deps.ttlMs??60000),generation:Number.isSafeInteger(info.generation)?info.generation as number:null,createHarnesses,...(!full?{reason:'local_control_not_registered'}:partial?{reason:'invalid_peer_session'}:{})}});
    }catch(e){results.set(hostId,unavailable(e instanceof Error?e.message.slice(0,96):'fleet_read_failed'));}
   }}));
   // Atomic publish; timed-out reads have no callback that can mutate the cache.

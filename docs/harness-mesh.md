@@ -192,3 +192,31 @@ The concrete factory may use `FleetGptAdminTransport` from `src/mesh/fleet-gptad
 Actual tenant-facade read consumer exposed an undersized3s metadata budget: discovery2.284s succeeded but schema timed out. Retained failure receipt; a finite5s/read consumer completed discovery3.855s, schema2.792s and registered100 snapshot3.837s (10.487s total, actual host/native IDs, partial). That initial5s/read and30s aggregate bound remains in the historical receipt; current Fleet defaults use10s/read and45s overall discovery after cold registered reads exceeded5s, three workers; creation remains30s and UNKNOWN never replays. This is registered metadata evidence, not a created-session/UI receipt.
 
 For creation, a forced selected-host preflight inspects only the target, independent of unrelated pending global reads. Atomic publication marks expired earlier peer results stale without renewing timestamps. A monotonic private read revision assigned before any request prevents delayed global results from restoring an older owner generation or creation capability after a newer target proof.
+
+### Session directory and recent view cache
+
+The ordinary sidebar has a machine filter next to the harness filter. Its default
+is all machines. Each row retains host + harness + native ID; duplicate IDs on
+different machines stay separate. Remote rows open a read view and link to the
+same native session on its machine for controls.
+
+`fleet_session_page` reads only the existing process-owned SessionSupervisor
+metadata snapshot: at most 100 names per page, with the original observation time,
+warming/partial flags and a host-bound cursor. It never starts a native observer,
+loads transcripts or changes a thread. Browser pagination has a finite one-minute
+window and 12 pages per round; an explicit button continues remaining pages. Failed
+or capped peers remain partial. The compact agent-discovery limits are unchanged.
+
+Recent **opened views** are cached in this browser's IndexedDB, independently of
+native session storage. Default retention is 24 hours with a 32 MiB total cap,
+128 views and 1 MiB maximum per view; larger histories are displayed live and not
+stored. The sidebar settings offer off / one day / three days / one week,
+16 / 32 / 64 MiB, and explicit clear. Keys include verified profile/user scope,
+host, harness and exact native ID. Reading a cached view does not renew its age.
+Expired views are pruned on startup, settings changes and new writes. Cache
+failure falls back to live reads. No complete archive is prefetched or replicated.
+
+A saved view can appear immediately while a GET refresh runs. It is marked as
+saved; local message send and session actions stay blocked until live details
+arrive. Remote views have no mutation controls and open the owning machine for
+work. Cached status or history never grants native admission or clears UNKNOWN.

@@ -365,3 +365,28 @@ Real existing Mini headedbrowser→public owncabinet: hosts+M1sessions HTTP200 i
 Latest check after success:100/44/88/Mini READY, M1 STALE owner_http_http_500; reverse2222 banner timeout. Другой older exactID publicread400 retained; target-local bounded metadata/details diagnostic40fa0b354e045cf2106ec69d5fb787ab queued при потере транспорта, не terminal/GREEN. Command readonly/timeout15, не native input/отправка; fakeempty/history нет. Blocker ONLYэтого path: unavailable target-local observer/нестабильный внешний канал. Next121d1: supported reconnect→retained diagnostic/exact localstatus→исправить доказанную причину, без native replay/recreation/foreignSSH changes. M1 offline допустим в принятомcontract; lateststate явно показан, successproof сохранён.
 
 Shared core уже existing GPTAdmin registry/relay, какGrepMesh, no newregistry/Hubfork. Узлу хватает зарегистрированного agent/nativeMCP, отдельный полныйGPTAdmin не обязателен. География≠связность: M1 public outsideLAN использует reverse tunnel100 и не переживает loss100; остальные homeLAN owner paths черезHAOS независимы. Все9harnesses не объявлены взаимно доступными; explicit capabilities/repairplans и глобальная миграция остаются отдельным этапом.
+
+## 2026-10-11 — ordinary sidebar and recent opened-view cache (worker121d1)
+
+Human outcome: machine selector beside harness filter, all machines by default;
+exchange lightweight names/metadata, load history only on opening and cache recent
+views for fast switching. Source reuses the existing process snapshot, bounded
+100-row MCP pages (host-bound original-time cursor), no new native observer/writer.
+Sidebar renders150 rows at a time; search/filter use the received directory.
+Browser IDB cache defaults24h/32MiB, max128 views/1MiB each, settings off/24/72/168h
+and16/32/64MiB. Atomic census/eviction/write across tabs; point reads on switching.
+Profile+user scope and exact native address separate entries; age is not renewed
+by opens. Local mutation controls require exact fresh details. Remote read-only
+preview supports GPTAdmin through exact-ID latest3/acp MCP view; missing/cold lazy
+adapters are rejected before reads/start, unknown history explicitly unavailable.
+No accepted native inputs/create/canaries replayed; prior receipts preserved.
+
+Review: existing independent mesh_review read-only, final noHIGH/noMEDIUM.
+REDs retained: wrong expected test count was runner hold/payload0; useRef type
+initialization failed after22 units; cold lazy activation and cached-view recheck
+were source-review defects corrected before release. Final focused integration:
+23PASS +noEmit, existing bounded profile, peak537354240 bytes/swap0/OOM0,
+receipt attempt-a0d657e051ebe7edad8412d999f0ba1b. Category focused integration,
+expected35s/max100s; build+checks ordinary cap180s. Runtime/real browser acceptance
+pending below; source GREEN alone is not completion. M1 WAN/stale route remains
+explicit until fresh actual proof; no full mutual coverage claim.

@@ -240,6 +240,11 @@ export class SessionSupervisor {
     return { sessions: [], warming: true };
   }
 
+  /** Metadata pages reuse this process's actual snapshot generation, without renewing freshness. */
+  sessionInventorySnapshot(): {sessions: AgentSession[]; warming: boolean; observedAt: string | null} {
+    return {sessions: this.sessionSnapshot?.sessions ?? [], warming: Boolean(this.sessionRefresh) || !this.sessionSnapshot, observedAt: this.sessionSnapshot ? new Date(this.sessionSnapshot.refreshedAt).toISOString() : null};
+  }
+
   async refreshSessions(filters: SessionFilters = {}): Promise<AgentSession[]> {
     await this.refreshSessionSnapshot();
     return this.filterSessions(this.sessionSnapshot?.sessions ?? [], filters);

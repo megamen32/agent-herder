@@ -490,6 +490,7 @@ function registerTools(
   events: HerderEventBus = herderEvents,
   humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>,
   humanResumeQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>,
+  inventorySupervisor?: SessionSupervisor,
 ) {
   registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes });
@@ -503,12 +504,14 @@ function registerTools(
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
   registerSessionTools(server, { adapters, jobs, events });
   registerHarnessMeshTools(server, { adapters });
-  registerFleetNodeTools(server, { adapters });
+  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined });
 }
 
 // ===== Main =====
 
 export interface AgentHerderMcpServerOptions {
+  /** Reuse the process observer; an isolated MCP factory never starts another observer. */
+  inventorySupervisor?: SessionSupervisor;
   /** Shared domain events; transport sessions are never used as durable state. */
   events?: HerderEventBus;
   /** Enable direct resource notifications for long-lived transports such as stdio. */
@@ -568,6 +571,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     events,
     options.humanResume,
     options.humanResumeQuery,
+    options.inventorySupervisor,
   );
   return server;
 }
@@ -719,8 +723,10 @@ async function main() {
     );
   };
   const humanResumeQuery = (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters);
-  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery });
-  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery });
+  // Both seams are process-owned: the fleet inventory view and the single
+  // human-answer and project-launch consumer.
+  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor });
+  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor });
   const webPort = process.env.AGENT_HERDER_WEB_PORT;
   if (webPort) {
     const host = process.env.AGENT_HERDER_WEB_HOST || "127.0.0.1";
