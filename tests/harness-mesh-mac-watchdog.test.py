@@ -40,10 +40,29 @@ w = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(w)
 
 class MacWatchdogTests(unittest.TestCase):
+    def test_empty_group_requires_kernel_absence_and_never_sends_signal(self):
+        argv=['/bin/ps','-g','987654','-o','pid=,pgid=,uid=,rss=,time=,stat=,lstart=']
+        with patch.object(w.subprocess,'run',return_value=subprocess.CompletedProcess(argv,1,b'',b'')),patch.object(w.os,'killpg',side_effect=ProcessLookupError) as probe:
+            self.assertEqual(w.read_processes(987654),[])
+        probe.assert_called_once_with(987654,0)
+
+    def test_empty_group_probe_error_or_existing_group_is_not_cleanup_success(self):
+        for code,output,error,absence in [(1,b'',b'',None),(1,b'',b'',PermissionError()),(1,b'',b'private',ProcessLookupError()),(2,b'',b'',ProcessLookupError()),(1,b'private',b'',ProcessLookupError())]:
+            with self.subTest(code=code,error=bool(error)),patch.object(w.subprocess,'run',return_value=subprocess.CompletedProcess([],code,output,error)),patch.object(w.os,'killpg',side_effect=absence):
+                with self.assertRaises(w.Refused) as caught:w.read_processes(987654)
+                self.assertNotIn('private',str(caught.exception))
+
+    def test_owned_census_selects_full_process_group_before_task_metadata(self):
+        row=f'123 123 {os.getuid()} 2048 0:01 S Sun Oct 11 19:00:00 2026'
+        with patch.object(w,'command',return_value=row) as probe:
+            result=w.read_processes(123)
+        probe.assert_called_once_with(['/bin/ps','-g','123','-o','pid=,pgid=,uid=,rss=,time=,stat=,lstart='])
+        self.assertEqual([r['pid'] for r in result],[123]);self.assertEqual(result[0]['rss_kib'],2048)
+
     def test_process_timeout_identifies_only_fixed_probe_class(self):
         # Fast unit, expected<1s/max2s. Distinguish actual M1 failure stage;
         # no real process/network boundary or runtime acceptance claim.
-        for args,expected in [(['-axo','pid='],'census'),(['-M','-p','123','-o','pid='],'threads'),(['-p','123','-o','uid='],'identity')]:
+        for args,expected in [(['-axo','pid='],'census'),(['-g','123','-o','pid='],'census'),(['-M','-p','123','-o','pid='],'threads'),(['-p','123','-o','uid='],'identity')]:
             with self.subTest(probe=expected),patch.object(w.subprocess,'run',side_effect=subprocess.TimeoutExpired(['private-argument'],2)) as run:
                 with self.assertRaises(w.Refused) as error:w.command(['/bin/ps',*args])
                 diagnostic=json.loads(str(error.exception).split(' ',1)[1])

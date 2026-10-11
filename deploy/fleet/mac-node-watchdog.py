@@ -72,7 +72,7 @@ def command(argv,deadline=None):
     stages={'/bin/ps':'process','/usr/sbin/lsof':'listener',
             '/usr/sbin/sysctl':'host_identity','/usr/bin/memory_pressure':'host_memory'}
     stage=stages.get(argv[0],'other')
-    probe=('threads' if '-M' in argv else 'census' if '-axo' in argv else 'identity') if stage=='process' else stage
+    probe=('threads' if '-M' in argv else 'census' if '-axo' in argv or '-g' in argv else 'identity') if stage=='process' else stage
     window=min(time.monotonic()+4,deadline) if deadline is not None else time.monotonic()+4
     attempts=2 if stage!='other' else 1
     for attempt in range(1,attempts+1):
@@ -85,6 +85,14 @@ def command(argv,deadline=None):
         except subprocess.TimeoutExpired:
             if attempt==attempts or time.monotonic()>=window:
                 raise Refused('native_observation_deadline '+json.dumps({'stage':stage,'probe':probe,'attempt':attempt},separators=(',',':'))) from None
+    # Darwin ps exits1 for an empty selection. Accept only this exact group
+    # query AND a kernel absence check; never interpret a probe error as gone.
+    if (result.returncode==1 and not result.stdout and not result.stderr and len(argv)==5
+            and argv[:2]==['/bin/ps','-g'] and argv[3:]==['-o','pid=,pgid=,uid=,rss=,time=,stat=,lstart=']
+            and re.fullmatch(r'[0-9]{1,10}',argv[2]) and int(argv[2])>1):
+        try:os.killpg(int(argv[2]),0)
+        except ProcessLookupError:return ''
+        except OSError:pass
     if result.returncode or len(result.stdout)>1024**2:
         raise Refused('native_observation_failed')
     return result.stdout.decode('utf8', errors='strict')
@@ -395,7 +403,11 @@ def parse_processes(text, pgid, uid):
     return rows
 
 def read_processes(pgid,deadline=None):
-    argv=['/bin/ps','-axo','pid=,pgid=,uid=,rss=,time=,stat=,lstart=']
+    if type(pgid)!=int or pgid<=1:raise Refused('owned_group_identity_invalid')
+    # Darwin -g selects this exact process group before collecting task info.
+    # Do not combine it with -a/-A: those selectors union in foreign tasks.
+    # Same full group, UID/lstart fences and deadline; no global task census.
+    argv=['/bin/ps','-g',str(pgid),'-o','pid=,pgid=,uid=,rss=,time=,stat=,lstart=']
     text=command(argv,deadline=deadline) if deadline is not None else command(argv)
     return parse_processes(text,pgid,os.getuid())
 
