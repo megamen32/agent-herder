@@ -2247,6 +2247,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     let subscriptionId: string | undefined;
     const frames: Array<Record<string, unknown>> = [];
     let notify: (() => void) | undefined;
+    if (!this.client.listen) throw new Error("Native model catalog subscriptions are unavailable");
     const stop = this.client.listen("zcode-agent", "onDynamicWorkspaceConfigFrame", params, (value) => {
       const root = record(value), frame = record(root.frame ?? root);
       if (frame.topic !== `workspace-config/${workspace.workspaceKey}`) return;

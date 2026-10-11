@@ -1,0 +1,102 @@
+/* Calm chat navigation and a bounded, independently scrolling settings dialog. */
+.sessions-heading { padding: 24px 20px 18px; border-bottom: 0; }
+.sessions-heading h1 { font-size: 22px; font-weight: 550; }
+.session-list { padding: 8px 10px 20px; }
+.session-fold-placeholder { display: none; }
+.session-fold { align-self: center; width: 20px; flex-basis: 20px; }
+.session-card { padding-bottom: 2px; }
+.session-row { min-height: 43px; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; }
+.session-row.selected { box-shadow: none; background: var(--surface-hover); }
+.session-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; font-size: 15px; font-weight: 400; line-height: 23px; }
+.session-copy small { display: none; }
+.session-row .status-dot { width: 6px; height: 6px; flex-basis: 6px; margin: 0; box-shadow: none; }
+.session-row time { display: none; }
+.directory-status { padding: 10px 22px; font-size: 12px; color: var(--muted); }
+.directory-status summary { cursor: pointer; }
+.directory-status[open] { line-height: 1.5; }
+.directory-status small { display: block; margin-top: 10px; }
+.directory-status button { margin-top: 10px; }
+.codex-navigation button { background: transparent; border-radius: 12px; }
+.codex-navigation button:hover, .codex-navigation button.active { background: var(--surface-hover); }
+
+.autopilot-settings-overlay { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; overflow: hidden; padding: 24px; background: rgb(12 13 18 / 58%); backdrop-filter: blur(6px); }
+.autopilot-settings-shell { --panel: var(--surface-1); display: flex; flex-direction: column; width: min(760px, 100%); max-height: calc(100dvh - 48px); min-height: 0; margin: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 20px; background: var(--panel); box-shadow: 0 30px 100px rgb(0 0 0 / 35%); }
+.settings-dialog-header { position: static; flex: 0 0 auto; min-height: 90px; padding: 22px 28px; background: transparent; justify-content: space-between; border-bottom: 1px solid var(--border); }
+.settings-dialog-title > span { color: var(--muted); font-size: 12px; }
+.settings-dialog-title h2 { margin: 5px 0 0; font-size: 23px; font-weight: 550; line-height: 1.25; }
+.settings-dialog-header .settings-close { position: static; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; background: transparent; font-size: 25px; }
+.settings-dialog-header .settings-close:hover { background: var(--surface-hover); color: var(--text); }
+.settings-dialog-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 26px 28px; scrollbar-gutter: stable; }
+.settings-dialog-body > .global-autopilot-card { padding: 0; gap: 24px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.settings-dialog-body .global-autopilot-head { gap: 20px; padding: 0; }
+.settings-dialog-body .global-autopilot-head .eyebrow { display: none; }
+.settings-dialog-body h3 { margin: 0 0 8px; font-size: 19px; font-weight: 550; letter-spacing: -.02em; }
+.settings-dialog-body p, .settings-dialog-body small { font-size: 13px; line-height: 1.55; color: var(--muted); }
+.settings-dialog-body p { margin: 0; }
+.settings-dialog-body .autopilot-state-banner { padding: 13px 16px; border: 0; background: var(--surface-hover); color: var(--text); }
+.settings-dialog-body .autopilot-state-banner strong { font-weight: 500; }
+.settings-dialog-body .settings-group { padding: 0 0 24px; gap: 16px; }
+.settings-dialog-body .settings-group legend { margin-bottom: 16px; font-size: 16px; font-weight: 500; }
+.settings-dialog-body label strong { font-size: 14px; font-weight: 450; line-height: 1.4; }
+.settings-dialog-body .harness-automation-list { margin: 0; gap: 8px; }
+.settings-dialog-body .harness-setting-row { padding: 12px 14px; background: var(--surface-2); border-color: transparent; border-radius: 10px; }
+.settings-dialog-body .harness-setting-row small { margin-top: 2px; }
+.settings-dialog-body .settings-advanced { margin-top: 0; border: 1px solid var(--border); background: transparent; border-radius: 12px; }
+.settings-dialog-body .settings-advanced > summary { padding: 16px; font-size: 14px; font-weight: 450; color: var(--text); }
+.settings-dialog-body .settings-advanced > .settings-help { padding: 16px 20px 0; }
+.settings-dialog-body .settings-advanced > .settings-group { padding: 20px; }
+.settings-dialog-body .settings-save-row { gap: 18px; padding: 4px 0; align-items: center; }
+.settings-dialog-body .settings-save-row > span { flex: 1; min-width: 0; }
+.settings-dialog-body .session-settings-link { padding: 14px 16px; background: var(--surface-2); border-radius: 12px; }
+.settings-dialog-body .session-settings-link strong { display: block; font-size: 13px; font-weight: 500; }
+.settings-dialog-body .primary-button { min-height: 40px; padding: 10px 16px; flex-shrink: 0; border-radius: 10px; background: var(--send-bg); color: var(--send-fg); font-size: 13px; font-weight: 550; }
+.settings-dialog-body input[type=number], .settings-dialog-body select { border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); color: var(--text); }
+.settings-dialog-body .settings-footer { position: static; margin: 0; background: transparent; }
+
+.compact-panel { padding: 22px 20px 18px; display: grid; gap: 20px; }
+.compact-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.compact-heading p { max-width: 440px; }
+.compact-heading .switch-control { margin-top: 2px; }
+.compact-thresholds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.compact-threshold { min-width: 0; display: grid; gap: 12px; padding: 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2); }
+.compact-threshold > span { font-size: 14px; color: var(--text); }
+.compact-threshold > div { display: flex; align-items: baseline; gap: 8px; }
+.compact-threshold input[type=number] { width: 76px; min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 34px; font-weight: 500; line-height: 1.3; }
+.compact-threshold b { color: var(--muted); font-size: 13px; font-weight: 400; }
+.compact-threshold small { font-size: 12px; }
+.compact-condition { max-width: 600px; }
+.compact-harnesses { display: flex; flex-wrap: wrap; gap: 10px; }
+.compact-harnesses label { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; font-size: 13px; }
+.compact-harnesses input { accent-color: var(--accent); }
+.compact-harnesses small { font-size: 12px; }
+.compact-advanced { padding: 0; border-top: 1px solid var(--border); }
+.compact-advanced summary { padding: 15px 0; cursor: pointer; font-size: 14px; color: var(--text); }
+.compact-timing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 14px; }
+.compact-timing-grid label { display: grid; gap: 9px; font-size: 12px; color: var(--text-2); }
+.compact-timing-grid label > div { display: flex; align-items: center; gap: 8px; }
+.compact-timing-grid input { width: 72px; padding: 9px; font-size: 15px; }
+.settings-dialog-body .compact-save { position: sticky; bottom: -26px; margin: 0 -20px -18px; padding: 14px 20px; background: var(--panel); border-top: 1px solid var(--border); }
+.settings-dialog-body .compact-save small { font-size: 12px; }
+.compact-receipt { font-size: 12px; }
+
+@media (max-width: 600px) {
+  .autopilot-settings-overlay { inset: 0; padding: 10px; }
+  .autopilot-settings-shell { max-height: calc(100dvh - 20px); border-radius: 16px; }
+  .settings-dialog-header { min-height: 78px; padding: 18px; }
+  .settings-dialog-title h2 { font-size: 21px; }
+  .settings-dialog-body { padding: 20px 18px; scrollbar-gutter: auto; }
+  .settings-dialog-body .global-autopilot-card { padding: 0; }
+  .settings-dialog-body .settings-save-row { flex-wrap: wrap; gap: 12px; }
+  .settings-dialog-body .settings-save-row > span { flex-basis: 100%; }
+  .settings-dialog-body .settings-save-row .primary-button { width: 100%; }
+  .settings-dialog-body .session-settings-link .quiet-button { width: 100%; }
+  .compact-panel { padding: 20px 14px 14px; gap: 18px; }
+  .compact-thresholds { gap: 10px; }
+  .compact-threshold { padding: 14px 12px; gap: 10px; }
+  .compact-threshold > span { font-size: 12px; }
+  .compact-threshold > div { flex-wrap: wrap; gap: 3px; }
+  .compact-threshold input[type=number] { width: 60px; font-size: 30px; }
+  .compact-timing-grid { grid-template-columns: 1fr; }
+  .compact-timing-grid label { display: flex; align-items: center; justify-content: space-between; }
+  .settings-dialog-body .compact-save { bottom: -20px; margin: 0 -14px -14px; padding: 14px; }
+}
