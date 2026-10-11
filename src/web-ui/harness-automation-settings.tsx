@@ -35,6 +35,7 @@ export function HarnessAutomationSettings({ autopilot, continuation, autopilotSa
   return <section className="global-autopilot-card" aria-label="Автоматизация по средам">
     <div className="global-autopilot-head"><div><span className="eyebrow">АВТОМАТИЗАЦИЯ</span><h3>Отдельно для каждой среды</h3><p>Автопродолжение восстанавливает работу после сбоя. Автопилот оценивает незавершённую задачу и выбирает следующий шаг.</p></div></div>
     <p className="settings-help">Каждый переключатель применяется сразу только к своей среде и своему механизму. Настройки отдельной сессии могут его переопределить.</p>
+    <p className="settings-help harness-master-help">{autopilot ? autopilot.enabled ? "Общий автопилот включён: он работает в выбранных ниже средах." : "Общий автопилот выключен: выбор среды сохранится, но начнёт действовать после включения общего режима." : "Загружаю общий режим автопилота…"} Автопродолжение использует настройку среды вместо общего режима восстановления. Настройка отдельной сессии имеет приоритет.</p>
     <div className="harness-automation-list">
       {HARNESSES.map((harness) => {
         const recovery = harness.continuation ? continuation[harness.id] : undefined;
