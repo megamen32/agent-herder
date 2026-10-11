@@ -229,9 +229,10 @@ export async function resumeSelectedTarget(
       request.target.session_id,
       {
         message: prompt,
-        // ZCode owns queue admission and command deduplication in its V4
-        // transport; the legacy inline prompt path is not the answer path.
-        queue: harness === "zcode" ? true : false,
+        // Both native writers acknowledge admission before the LLM finishes.
+        // Codex must steer a verified active turn rather than start a writer.
+        queue: true,
+        ...(harness === "codex" && current?.status === "running" ? { steer: true } : {}),
         origin,
         // The stable key reaches the deduplicating ingress, so a crash or lease
         // takeover cannot deliver the same answer to the native session twice.
