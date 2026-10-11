@@ -26,7 +26,7 @@
 .settings-dialog-title h2 { margin: 5px 0 0; font-size: 23px; font-weight: 550; line-height: 1.25; }
 .settings-dialog-header .settings-close { position: static; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; background: transparent; font-size: 25px; }
 .settings-dialog-header .settings-close:hover { background: var(--surface-hover); color: var(--text); }
-.settings-dialog-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 26px 28px; scrollbar-gutter: stable; }
+.settings-dialog-body { min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 26px 28px; scrollbar-gutter: stable; scroll-padding-block: 16px 110px; }
 .settings-dialog-body > .global-autopilot-card { padding: 0; gap: 24px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .settings-dialog-body .global-autopilot-head { gap: 20px; padding: 0; }
 .settings-dialog-body .global-autopilot-head .eyebrow { display: none; }
@@ -35,7 +35,16 @@
 .settings-dialog-body p { margin: 0; }
 .settings-dialog-body .autopilot-state-banner { padding: 13px 16px; border: 0; background: var(--surface-hover); color: var(--text); }
 .settings-dialog-body .autopilot-state-banner strong { font-weight: 500; }
-.settings-dialog-body .settings-group { padding: 0 0 24px; gap: 16px; }
+.settings-dialog-body .settings-group { min-width: 0; padding: 0 0 24px; gap: 16px; }
+.settings-dialog-body label > span { min-width: 0; overflow-wrap: anywhere; }
+.settings-dialog-body input, .settings-dialog-body button { scroll-margin-block: 16px 110px; }
+.settings-tabs { display: flex; gap: 6px; padding: 4px; border-radius: 12px; background: var(--surface-2); }
+.settings-tabs button { flex: 1; min-width: 0; padding: 11px 14px; border-radius: 9px; background: transparent; color: var(--muted); font-size: 14px; }
+.settings-tabs button[aria-selected=true] { background: var(--surface-hover); color: var(--text); }
+.settings-tab-panel { display: grid; gap: 24px; min-width: 0; }
+.settings-tab-panel[hidden], .compact-tab-panel[hidden] { display: none; }
+.compact-tab-panel { min-width: 0; }
+.compact-tab-panel .compact-panel { padding: 0; }
 .settings-dialog-body .settings-group legend { margin-bottom: 16px; font-size: 16px; font-weight: 500; }
 .settings-dialog-body label strong { font-size: 14px; font-weight: 450; line-height: 1.4; }
 .settings-dialog-body .harness-automation-list { margin: 0; gap: 8px; }
@@ -51,7 +60,7 @@
 .settings-dialog-body .session-settings-link strong { display: block; font-size: 13px; font-weight: 500; }
 .settings-dialog-body .primary-button { min-height: 40px; padding: 10px 16px; flex-shrink: 0; border-radius: 10px; background: var(--send-bg); color: var(--send-fg); font-size: 13px; font-weight: 550; }
 .settings-dialog-body input[type=number], .settings-dialog-body select { border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); color: var(--text); }
-.settings-dialog-body .settings-footer { position: static; margin: 0; background: transparent; }
+.settings-dialog-body .settings-footer { position: sticky; bottom: -26px; z-index: 2; margin: 0 -4px; padding: 14px 4px; background: var(--panel); }
 
 .compact-panel { padding: 22px 20px 18px; display: grid; gap: 20px; }
 .compact-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
@@ -75,7 +84,7 @@
 .compact-timing-grid label { display: grid; gap: 9px; font-size: 12px; color: var(--text-2); }
 .compact-timing-grid label > div { display: flex; align-items: center; gap: 8px; }
 .compact-timing-grid input { width: 72px; padding: 9px; font-size: 15px; }
-.settings-dialog-body .compact-save { position: sticky; bottom: -26px; margin: 0 -20px -18px; padding: 14px 20px; background: var(--panel); border-top: 1px solid var(--border); }
+.settings-dialog-body .compact-save { position: sticky; bottom: -26px; z-index: 2; margin: 0; padding: 14px 0; background: var(--panel); border-top: 1px solid var(--border); }
 .settings-dialog-body .compact-save small { font-size: 12px; }
 .compact-receipt { font-size: 12px; }
 
@@ -98,5 +107,5 @@
   .compact-threshold input[type=number] { width: 60px; font-size: 30px; }
   .compact-timing-grid { grid-template-columns: 1fr; }
   .compact-timing-grid label { display: flex; align-items: center; justify-content: space-between; }
-  .settings-dialog-body .compact-save { bottom: -20px; margin: 0 -14px -14px; padding: 14px; }
+  .settings-dialog-body .compact-save, .settings-dialog-body .settings-footer { bottom: -20px; margin: 0; padding: 14px 0; }
 }
