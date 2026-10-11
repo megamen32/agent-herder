@@ -73,6 +73,8 @@ def command(argv,deadline=None):
             '/usr/sbin/sysctl':'host_identity','/usr/bin/memory_pressure':'host_memory'}
     stage=stages.get(argv[0],'other')
     probe=('threads' if '-M' in argv else 'census' if '-axo' in argv or '-g' in argv else 'identity') if stage=='process' else stage
+    if stage=='listener':
+        probe='text_mapping' if '-d' in argv and 'txt' in argv else 'unix_owner' if '-U' in argv else 'tcp_listener' if any(str(a).startswith('-iTCP:') for a in argv) else 'listener'
     window=min(time.monotonic()+4,deadline) if deadline is not None else time.monotonic()+4
     attempts=2 if stage!='other' else 1
     for attempt in range(1,attempts+1):
@@ -490,9 +492,11 @@ def violations(sample,policy,elapsed,soft_since=None):
     return [name for name,failed in rules if failed]
 
 def host_available_kib():
-    pressure=command(['/usr/bin/memory_pressure'])
+    # Apple's quiet query retains the same kernel percentage and skips the
+    # unrelated VM statistics query. No allocation/pressure simulation flags.
+    pressure=command(['/usr/bin/memory_pressure','-Q'])
     match=re.search(r'System-wide memory free percentage:\s*(\d+)%',pressure)
-    if not match:raise Refused('host_memory_unverified')
+    if not match or not 0<=int(match[1])<=100:raise Refused('host_memory_unverified')
     total=int(command(['/usr/sbin/sysctl','-n','hw.memsize']))//1024
     return total*int(match[1])//100
 
