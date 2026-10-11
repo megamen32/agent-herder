@@ -170,3 +170,10 @@ it("records that a waiting message was never submitted when its job is cancelled
   expect(f.sendMessage).not.toHaveBeenCalled();
  } finally {f.delivery.close();}
 });
+
+// Focused integration expected1s/max5s: normal ZCode queue must use native V4 admission, not legacy prompt wait.
+it("uses native queue admission for a ZCode human message", async()=>{
+ const f=fixture({harness:"zcode"});
+ try{f.delivery.submit(f.input("zcode-queue"));f.idle();await completed(f,"zcode-queue");expect(f.sendMessage.mock.calls[0][2]).toMatchObject({queue:true,steer:false});}
+ finally{f.delivery.close();}
+});
