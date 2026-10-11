@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import lockfile from "proper-lockfile";
 import { herderEvents, type HerderEventBus } from "../herder-events.js";
 import { humanRequestResourceUri } from "../herder-resource-uris.js";
 
@@ -54,11 +55,27 @@ export interface ResumeAttemptResult {
 export interface ResumeClaimInput {
   attemptId?: string;
   resultRef?: string;
+  /** Opaque human-answer reference; also becomes the default resultRef. */
+  resolutionRef?: string;
+  /** Bounded in-flight lease for the one admitted transport invocation. */
+  leaseMs?: number;
+  now?: Date;
 }
 
 export interface ResumeCompletionInput {
   attemptId: string;
   receipt?: string;
+}
+
+/** Single admission receipt. Only `admitted` may invoke the resume transport. */
+export interface ResumeAdmissionReceipt {
+  /** True only for the caller that owns the one transport invocation of this attempt. */
+  admitted: boolean;
+  /** True when an expired in-flight lease was taken over with the same attempt and key. */
+  recovered: boolean;
+  /** Stable provider retry key; identical for every replay of one attempt. */
+  idempotencyKey: string;
+  record: HumanRequestRecord;
 }
 
 export interface HumanRequestRecord {
@@ -71,6 +88,10 @@ export interface HumanRequestRecord {
   resolutionRef?: string;
   resultRef?: string;
   attemptId?: string;
+  /** Stable provider retry key for the admitted attempt; never a payload. */
+  idempotencyKey?: string;
+  /** Deadline of the admitted in-flight resume attempt. */
+  resumeLeaseExpiresAt?: string;
   receipt?: string;
   createdAt: string;
   resolvedAt?: string;
@@ -149,12 +170,14 @@ function validateRecord(record: HumanRequestRecord): HumanRequestRecord {
   opaqueRef(record.resolutionRef, "resolutionRef");
   opaqueRef(record.resultRef, "resultRef");
   opaqueRef(record.attemptId, "attemptId");
+  opaqueRef(record.idempotencyKey, "idempotencyKey");
   opaqueRef(record.receipt, "receipt");
   if (record.notify) {
     notifyOf(record.notify, record.requestId);
     if (record.notify.dedupKey !== `human-request:${record.requestId}`) throw new Error("invalid Notify dedupKey");
     if (record.notify.incidentId !== undefined) opaqueRef(record.notify.incidentId, "notify.incidentId");
   }
+  if (record.status === "resuming" && !record.attemptId) throw new Error("resuming request is missing attemptId");
   if (record.status === "resumed" || record.status === "resume_failed") {
     if (!record.resolvedAt) throw new Error("terminal request is missing resolvedAt");
     if (!record.attemptId) throw new Error("terminal request is missing attemptId");
@@ -162,11 +185,32 @@ function validateRecord(record: HumanRequestRecord): HumanRequestRecord {
   return record;
 }
 
+/** Signals that automatic work must wait for a human instead of guessing. */
+export class HumanRequestLockUnavailableError extends Error {
+  readonly code = "HUMAN_REQUEST_LOCK_UNAVAILABLE";
+
+  constructor(readonly lockPath: string, cause: unknown) {
+    super(`Human Request lock is unavailable; answering must wait for human action (${lockPath})`, { cause });
+    this.name = "HumanRequestLockUnavailableError";
+  }
+}
+
+/** One admitted resume attempt may hold this bounded lease before a replay may take it over. */
+export const DEFAULT_RESUME_LEASE_MS = 5 * 60 * 1000;
+
 /** Durable correlation registry. It stores routing metadata and opaque refs only. */
 export class HumanRequestRegistry {
   private operation: Promise<unknown> = Promise.resolve();
+  private readonly lockTarget: string;
 
-  constructor(private readonly filePath: string, private readonly events: HerderEventBus = herderEvents) {}
+  constructor(private readonly filePath: string, private readonly events: HerderEventBus = herderEvents) {
+    this.lockTarget = `${filePath}.lock`;
+  }
+
+  /** Return the durable registry identity used to serialize overlapping admissions. */
+  get coordinationKey(): string {
+    return this.filePath;
+  }
 
   private publishRequest(requestId: string, action: "created" | "updated"): void {
     this.events.publish({ kind: "human-request", uri: "herder://human-requests", action, id: requestId });
@@ -178,7 +222,7 @@ export class HumanRequestRegistry {
     if (input.kind !== "user" && input.kind !== "secret") throw new Error("kind must be user or secret");
     const target = targetOf(input.target);
     const contextRef = opaqueRef(input.contextRef, "contextRef");
-    return this.serial(async () => {
+    return this.mutate(async () => {
       const file = await this.read();
       const record: HumanRequestRecord = {
         requestId: randomUUID(),
@@ -213,37 +257,70 @@ export class HumanRequestRegistry {
     rejectPayloadFields(resolution);
     if (resolution.continuation !== "resume") throw new Error("continuation must be resume");
     const resolutionRef = opaqueRef(resolution.resolutionRef, "resolutionRef");
-    return this.serial(async () => {
-      const file = await this.read();
-      const record = file.requests.find((item) => item.requestId === requestId);
-      if (!record) throw new Error(`Human request '${requestId}' not found`);
-      if (record.status !== "pending") return cloneRecord(record);
-      if (resolutionRef) record.resolutionRef = resolutionRef;
-      record.status = "resuming";
-      record.attemptId = randomUUID();
-      if (resolutionRef) record.resultRef = resolutionRef;
-      await this.write(file);
-      this.publishRequest(record.requestId, "updated");
-      return cloneRecord(record);
-    });
+    return (await this.admitResume(requestId, resolutionRef ? { resolutionRef } : {})).record;
   }
 
   /** Atomically claim the one automatic resume attempt for a request. */
   async claimResume(requestId: string, input: string | ResumeClaimInput = {}): Promise<HumanRequestRecord> {
-    const claim = typeof input === "string" ? { attemptId: input } : input;
-    const checkedAttemptId = opaqueRef(claim.attemptId, "attemptId") || randomUUID();
-    const resultRef = opaqueRef(claim.resultRef, "resultRef");
-    return this.serial(async () => {
+    return (await this.admitResume(requestId, typeof input === "string" ? { attemptId: input } : input)).record;
+  }
+
+  /**
+   * Single admission for the one resume attempt of a request.
+   *
+   * Only the caller that receives `admitted: true` may invoke the resume
+   * transport, and it must do so with the returned `idempotencyKey`. Every
+   * replay returns the same durable record, attempt and key, so a conflicting
+   * repeated answer can never overwrite the canonical admitted answer or
+   * produce a second native resume. A crash between admission and completion
+   * is recoverable: once the persisted lease expires a later answer takes the
+   * same attempt and key over, which the provider ledger deduplicates.
+   */
+  async admitResume(requestId: string, input: ResumeClaimInput = {}): Promise<ResumeAdmissionReceipt> {
+    const attemptId = opaqueRef(input.attemptId, "attemptId");
+    const resolutionRef = opaqueRef(input.resolutionRef, "resolutionRef");
+    const resultRef = opaqueRef(input.resultRef, "resultRef") ?? resolutionRef;
+    const leaseMs = boundedLeaseMs(input.leaseMs ?? DEFAULT_RESUME_LEASE_MS);
+    const now = input.now ?? new Date();
+    if (Number.isNaN(now.getTime())) throw new Error("now must be a valid timestamp");
+    return this.mutate(async () => {
       const file = await this.read();
       const record = file.requests.find((item) => item.requestId === requestId);
       if (!record) throw new Error(`Human request '${requestId}' not found`);
-      if (record.status !== "pending") return cloneRecord(record);
+      const leaseExpiresAt = new Date(now.getTime() + leaseMs).toISOString();
+      if (record.status === "resuming") {
+        // The canonical admitted answer stays authoritative for a conflicting repeat.
+        const existingKey = record.idempotencyKey ?? idempotencyKeyFor(record.requestId, record.attemptId!);
+        if (record.resumeLeaseExpiresAt === undefined || !leaseExpired(record.resumeLeaseExpiresAt, now)) {
+          return { admitted: false, recovered: false, idempotencyKey: existingKey, record: cloneRecord(record) };
+        }
+        record.resumeLeaseExpiresAt = leaseExpiresAt;
+        record.idempotencyKey = existingKey;
+        await this.write(file);
+        const recovered = await this.acknowledge(requestId, record.attemptId!, existingKey, leaseExpiresAt);
+        this.publishRequest(record.requestId, "updated");
+        return { admitted: true, recovered: true, idempotencyKey: existingKey, record: recovered };
+      }
+      if (record.status !== "pending") {
+        return {
+          admitted: false,
+          recovered: false,
+          idempotencyKey: record.idempotencyKey ?? idempotencyKeyFor(record.requestId, record.attemptId!),
+          record: cloneRecord(record),
+        };
+      }
+      const admittedAttemptId = attemptId ?? randomUUID();
+      const idempotencyKey = idempotencyKeyFor(record.requestId, admittedAttemptId);
       record.status = "resuming";
-      record.attemptId = checkedAttemptId;
+      record.attemptId = admittedAttemptId;
+      record.idempotencyKey = idempotencyKey;
+      record.resumeLeaseExpiresAt = leaseExpiresAt;
       if (resultRef) record.resultRef = resultRef;
+      if (resolutionRef) record.resolutionRef = resolutionRef;
       await this.write(file);
+      const acknowledged = await this.acknowledge(requestId, admittedAttemptId, idempotencyKey, leaseExpiresAt);
       this.publishRequest(record.requestId, "updated");
-      return cloneRecord(record);
+      return { admitted: true, recovered: false, idempotencyKey, record: acknowledged };
     });
   }
 
@@ -269,7 +346,7 @@ export class HumanRequestRegistry {
     rejectPayloadFields(result);
     const checkedAttemptId = opaqueRef(attemptId, "attemptId");
     const receipt = opaqueRef(result?.receipt, "receipt");
-    return this.serial(async () => {
+    return this.mutate(async () => {
       const file = await this.read();
       const record = file.requests.find((item) => item.requestId === requestId);
       if (!record) throw new Error(`Human request '${requestId}' not found`);
@@ -289,7 +366,7 @@ export class HumanRequestRegistry {
   /** Persist the incident id returned by Notify after its event is accepted. */
   async bindNotifyIncident(requestId: string, incidentId: string): Promise<HumanRequestRecord> {
     const checkedIncidentId = opaqueRef(incidentId, "incidentId");
-    return this.serial(async () => {
+    return this.mutate(async () => {
       const file = await this.read();
       const record = file.requests.find((item) => item.requestId === requestId);
       if (!record) throw new Error(`Human request '${requestId}' not found`);
@@ -320,6 +397,48 @@ export class HumanRequestRegistry {
     await rename(temporary, this.filePath);
   }
 
+  /** Read the admitted attempt back before acknowledging it to a transport caller. */
+  private async acknowledge(requestId: string, attemptId: string, idempotencyKey: string, leaseExpiresAt: string): Promise<HumanRequestRecord> {
+    const persisted = (await this.read()).requests.find((record) => record.requestId === requestId);
+    if (
+      !persisted
+      || persisted.status !== "resuming"
+      || persisted.attemptId !== attemptId
+      || persisted.idempotencyKey !== idempotencyKey
+      || persisted.resumeLeaseExpiresAt !== leaseExpiresAt
+    ) {
+      throw new Error(`Human request '${requestId}' admission was not acknowledged by durable read-back`);
+    }
+    return cloneRecord(persisted);
+  }
+
+  /** Serialize mutations in this process and across services that share the same durable state file. */
+  private async mutate<T>(operation: () => Promise<T>): Promise<T> {
+    return this.serial(() => this.withFileLock(operation));
+  }
+
+  /** Acquire a bounded interprocess lock or fail closed before an answer can resume a session twice. */
+  private async withFileLock<T>(operation: () => Promise<T>): Promise<T> {
+    await mkdir(dirname(this.filePath), { recursive: true });
+    await writeFile(this.lockTarget, "", { flag: "a", mode: 0o600 });
+    let release: (() => Promise<void>) | undefined;
+    try {
+      release = await lockfile.lock(this.lockTarget, {
+        realpath: false,
+        stale: 30_000,
+        update: 10_000,
+        retries: { retries: 4, minTimeout: 10, maxTimeout: 25, factor: 1 },
+      });
+    } catch (error) {
+      throw new HumanRequestLockUnavailableError(this.lockTarget, error);
+    }
+    try {
+      return await operation();
+    } finally {
+      await release();
+    }
+  }
+
   private async serial<T>(operation: () => Promise<T>): Promise<T> {
     const previous = this.operation;
     let release!: () => void;
@@ -335,6 +454,22 @@ function cloneRecord(record: HumanRequestRecord): HumanRequestRecord {
     target: targetOf(record.target),
     ...(record.notify ? { notify: { ...record.notify } } : {}),
   };
+}
+
+function idempotencyKeyFor(requestId: string, attemptId: string): string {
+  return `human-request:${requestId}:${attemptId}`;
+}
+
+function boundedLeaseMs(value: number): number {
+  if (!Number.isInteger(value) || value < 1_000 || value > 60 * 60 * 1000) {
+    throw new Error("leaseMs must be an integer from 1000 to 3600000");
+  }
+  return value;
+}
+
+function leaseExpired(value: string, now: Date): boolean {
+  const parsed = Date.parse(value);
+  return !Number.isFinite(parsed) || parsed <= now.getTime();
 }
 
 function filePathName(filePath: string): string {

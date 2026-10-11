@@ -26,7 +26,8 @@ import { LineageStore } from "./lineage-store.js";
 import { AnthropicMiniMaxSummarizer, CacheHandoffService, FastAgentMiniMaxSummarizer } from "./cache-handoff.js";
 import { acquireAgentHerderSingleton } from "./singleton.js";
 import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
-import { createWebServer } from "./web/server.js";
+import { createWebServer, resumeSelectedTarget } from "./web/server.js";
+import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "./resume-transport.js";
 import { createConfiguredFleetApiHandler, createManagedFleetHttpGuard, isManagedFleetNode } from "./web/fleet-wiring.js";
 import { registerFleetNodeTools } from "./mesh/fleet-node.js";
 import { createConfiguredBrowserWakeService } from "./browser-wake.js";
@@ -480,11 +481,18 @@ function registerTools(
   jobs: HerderJobRegistry = herderJobs,
   sessionConverter: Pick<AgentHerderSessionConverter, "convert"> = new AgentHerderSessionConverter(),
   events: HerderEventBus = herderEvents,
+  humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>,
+  humanResumeQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>,
 ) {
   registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes });
 
-  registerHumanRequestTools(server, humanRequests);
+  // A human answer resumes its exact native session exactly once through the
+  // same durable admission the internal completion endpoint uses.
+  registerHumanRequestTools(server, humanRequests, {
+    humanResume: humanResume ?? (async (request) => new AgentResumeClient().resume(request)),
+    ...(humanResumeQuery ? { queryReceipt: humanResumeQuery } : {}),
+  });
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
   registerSessionTools(server, { adapters, jobs, events });
   registerHarnessMeshTools(server, { adapters });
@@ -506,6 +514,10 @@ export interface AgentHerderMcpServerOptions {
   jobs?: HerderJobRegistry;
   /** Converter used by background conversion jobs. */
   sessionConverter?: Pick<AgentHerderSessionConverter, "convert">;
+  /** Bound native resume of one human answer; supplied by the process supervisor. */
+  humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
+  /** Durable provider receipt lookup for an already admitted human answer. */
+  humanResumeQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
 }
 
 /** Build one Agent Herder MCP server over process-owned CDP archive state. */
@@ -547,6 +559,8 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     jobs,
     sessionConverter,
     events,
+    options.humanResume,
+    options.humanResumeQuery,
   );
   return server;
 }
@@ -671,8 +685,11 @@ async function main() {
   process.once("exit", stopCompletionNoticeSweeper);
   const stopUnfinishedSessionLauncher = unfinishedSessionLauncher.start();
   process.once("exit", stopUnfinishedSessionLauncher);
-  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents });
-  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true });
+  // One human answer resumes its exact native session once, from every MCP surface.
+  const humanResume = (request: ResumeTransportRequest) => resumeSelectedTarget(request, processSupervisor, "human");
+  const humanResumeQuery = (request: ResumeTransportRequest) => new AgentResumeClient().queryReceipt(request);
+  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery });
+  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery });
   const webPort = process.env.AGENT_HERDER_WEB_PORT;
   if (webPort) {
     const host = process.env.AGENT_HERDER_WEB_HOST || "127.0.0.1";

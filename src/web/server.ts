@@ -11,7 +11,7 @@ import { LineageStore } from "../lineage-store.js";
 import { SessionNotFoundError, SessionSupervisor } from "../session-supervisor.js";
 import type { AgentSession, HarnessAdapter, SessionDetails } from "../types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "../session-convert.js";
-import { HumanRequestRegistry } from "../human-request/index.js";
+import { HumanRequestLockUnavailableError, HumanRequestRegistry, resumeHumanRequestOnce } from "../human-request/index.js";
 import { buildSessionProgress } from "../health-progress.js";
 import { healthModelForHarness, normalizeHealthExecution } from "../health-remediation.js";
 import { convertHermesExport } from "../hermes-conversion.js";
@@ -111,7 +111,7 @@ function localHookTimeoutReceipt(choice: PendingChoice): ResumeReceipt {
 
 /** Route Codex and ZCode through Herder's process-owned native writers so an
  * accepted human-gate delivery also arms durable Autocontinue tracking. */
-async function resumeSelectedTarget(request: ResumeTransportRequest, supervisor: SessionSupervisor, origin: "human" | "automation" = "automation"): Promise<ResumeReceipt> {
+export async function resumeSelectedTarget(request: ResumeTransportRequest, supervisor: SessionSupervisor, origin: "human" | "automation" = "automation"): Promise<ResumeReceipt> {
   if (request.target.agent !== "codex" && request.target.agent !== "zcode") return new AgentResumeClient().resume(request);
   const harness = request.target.agent;
   const prompt = request.prompt ?? request.goal ?? `Human Request resolved: ${request.result_ref}`;
@@ -954,23 +954,37 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!pending || pending.kind !== expectedKind) {
       return sendJson(response, 409, { error: "completion does not match the pending human request kind" });
     }
-    const claimed = await humanRequests.claimResume(body.request_id, { resultRef: body.result_ref });
-    if (claimed.status !== "resuming" || !claimed.attemptId) {
-      return sendJson(response, 202, { request_id: claimed.requestId, status: claimed.status });
+    // One durable admission owns the only native resume of this answer. A repeated
+    // provider callback, a concurrent duplicate and a service restart all read the
+    // same attempt and idempotency key instead of launching the session again.
+    let outcome: Awaited<ReturnType<typeof resumeHumanRequestOnce>>;
+    try {
+      outcome = await resumeHumanRequestOnce({
+        registry: humanRequests,
+        requestId: body.request_id,
+        resultRef: body.result_ref,
+        resume: (request) => (choiceResume ?? ((input) => resumeSelectedTarget(input, supervisor)))(request),
+        queryReceipt: choiceQuery ?? ((input) => new AgentResumeClient().queryReceipt(input)),
+      });
+    } catch (error) {
+      // A busy lock is a deferral, not a failed answer: the provider may retry.
+      if (error instanceof HumanRequestLockUnavailableError) {
+        return sendJson(response, 409, { request_id: body.request_id, status: "pending", retry: true, error: error.message });
+      }
+      throw error;
     }
-    const target = claimed.target;
-    if (!target.agent || !(["codex", "opencode", "claude", "zcode"].includes(target.agent) && target.cwd || target.agent === "hermes" && target.locator)) {
-      const failed = await humanRequests.failResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: "resume-target-unsupported" });
-      return sendJson(response, 422, { request_id: failed.requestId, status: failed.status });
+    if (outcome.status === "unsupported_target") {
+      return sendJson(response, 422, { request_id: outcome.record.requestId, status: outcome.record.status });
     }
-    const resumeTarget = target.agent === "hermes"
-      ? { agent: "hermes" as const, locator: target.locator as unknown as import("../resume-transport.js").HermesResumeLocator }
-      : { agent: target.agent as "codex" | "opencode" | "claude" | "zcode", session_id: target.sessionId, cwd: target.cwd!, ...(target.marker ? { marker: target.marker } : {}) };
-    const receipt = await (choiceResume ?? ((input) => resumeSelectedTarget(input, supervisor)))({ target: resumeTarget, result_ref: body.result_ref });
-    const record = receipt.status === "accepted"
-      ? await humanRequests.completeResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: receipt.receipt_ref })
-      : await humanRequests.failResume(claimed.requestId, { attemptId: claimed.attemptId, receipt: `agent-resume:${receipt.reason}` });
-    return sendJson(response, receipt.status === "accepted" ? 202 : 502, { request_id: record.requestId, status: record.status, continuation: record.continuation });
+    if (outcome.status === "resume_failed") {
+      return sendJson(response, 502, { request_id: outcome.record.requestId, status: outcome.record.status, continuation: outcome.record.continuation, reason: outcome.receipt });
+    }
+    return sendJson(response, 202, {
+      request_id: outcome.record.requestId,
+      status: outcome.record.status,
+      continuation: outcome.record.continuation,
+      ...(outcome.status === "in_flight" ? { in_flight: true, idempotency_key: outcome.idempotencyKey } : {}),
+    });
   }
   if (request.method === "GET" && url.pathname === "/") {
     const html = await readFile(htmlPath, "utf8");
