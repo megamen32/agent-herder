@@ -27,6 +27,7 @@ import { boundedCoordinationContext, coordinationNotes, type CoordinationConflic
 import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
 import { getAgentActivityStatistics, withSessionPortfolioStatistics } from "../session-statistics.js";
 import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
+import { createHash } from "node:crypto";
 import { toNodeHandler, type NodeMcpRequestHandler } from "@modelcontextprotocol/node";
 import type { AdapterRegistry } from "../adapter-registry.js";
 import type { HerderEventBus } from "../herder-events.js";
@@ -45,6 +46,8 @@ export interface WebDependencies {
   herderEvents?: HerderEventBus;
   choiceRegistry?: ChoiceRegistry;
   choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
+  /** Canonical human-answer resume shared with the native MCP resolve surface. */
+  humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   autopilotPolicyStore?: AutopilotPolicyStore;
   autopilotSessionStore?: AutopilotSessionStore;
@@ -109,6 +112,12 @@ function localHookTimeoutReceipt(choice: PendingChoice): ResumeReceipt {
   };
 }
 
+/** Deterministic native input identity for one bound resume attempt. */
+function resumeInputId(request: ResumeTransportRequest): string {
+  const key = request.idempotency_key ?? request.result_ref;
+  return `herder-resume-${createHash("sha256").update(key).digest("hex").slice(0, 32)}`;
+}
+
 /** Route Codex and ZCode through Herder's process-owned native writers so an
  * accepted human-gate delivery also arms durable Autocontinue tracking. */
 export async function resumeSelectedTarget(request: ResumeTransportRequest, supervisor: SessionSupervisor, origin: "human" | "automation" = "automation"): Promise<ResumeReceipt> {
@@ -129,7 +138,17 @@ export async function resumeSelectedTarget(request: ResumeTransportRequest, supe
     const result = await supervisor.sendMessage(
       harness,
       request.target.session_id,
-      { message: prompt, queue: false, origin },
+      {
+        message: prompt,
+        queue: false,
+        origin,
+        // The stable key reaches the deduplicating ingress, so a crash or lease
+        // takeover cannot deliver the same answer to the native session twice.
+        ...(request.idempotency_key ? { inputId: resumeInputId(request) } : {}),
+        ...(origin === "human" && request.human_requested_at !== undefined
+          ? { humanRequestedAt: request.human_requested_at }
+          : {}),
+      },
       harness === "zcode" ? request.target.cwd : undefined,
     );
     if (!result.ok) {
@@ -490,7 +509,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
     try {
       if (dependencies.fleetHttpGuard && await dependencies.fleetHttpGuard(request, response)) return;
       if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
-      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery);
+      await route(request, response, supervisor, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -560,7 +579,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (url.pathname.startsWith("/api/quota-lens") && request.method === "GET") {
     const body = await handleQuotaLensRequest(url.pathname, url.searchParams);
@@ -963,7 +982,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         registry: humanRequests,
         requestId: body.request_id,
         resultRef: body.result_ref,
-        resume: (request) => (choiceResume ?? ((input) => resumeSelectedTarget(input, supervisor)))(request),
+        // The same canonical human transport as the native MCP resolve: one
+        // answer, one bound session, one explicit-stop fence.
+        resume: humanResume ?? ((input) => resumeSelectedTarget(input, supervisor, "human")),
         queryReceipt: choiceQuery ?? ((input) => new AgentResumeClient().queryReceipt(input)),
       });
     } catch (error) {

@@ -1361,7 +1361,7 @@ export class UnfinishedSessionLauncher {
         this.scheduleUrgentRecovery();
         return;
       }
-      if (session.status === "needs_input" || session.needsPermission || !await this.isEnabled(session.harness, session.id, session.cwd)) return;
+      if (session.status === "needs_input" || session.needsPermission || !await this.mayWorkOnSession(session.harness, session.id, session.cwd)) return;
       await this.options.store.markRecoveryEligible(
         { ...session, status: event.kind === "turn.failed" ? "error" : "idle" },
         event.kind,
@@ -1381,7 +1381,7 @@ export class UnfinishedSessionLauncher {
       return;
     }
     if (await this.suppressIfHumanStopped(provider, event.sessionId, session?.cwd, session)) return;
-    if (session && await this.isEnabled(session.harness, session.id, session.cwd)) {
+    if (session && await this.mayWorkOnSession(session.harness, session.id, session.cwd)) {
       if (!identity.turnId && !identity.inputId) return;
       const startedFence = nativeTurnFenceKey(provider, event.sessionId, identity);
       if (startedFence) this.eagerCompletions.delete(startedFence);
@@ -1444,7 +1444,7 @@ export class UnfinishedSessionLauncher {
     if (await this.suppressIfHumanStopped(session.harness, session.id, session.cwd, session)) return false;
     const adapter = this.options.adapters.get(session.harness);
     if (!adapter?.resumeSession) return false;
-    if (!await this.isEnabled(session.harness, session.id, session.cwd)) return false;
+    if (!await this.mayWorkOnSession(session.harness, session.id, session.cwd)) return false;
     await this.pinActiveSession(adapter, session.id);
     this.completedSessions.delete(sessionSourceKey(session));
     this.clearUrgentSession(sessionSourceKey(session));
@@ -1601,7 +1601,7 @@ export class UnfinishedSessionLauncher {
       let urgent = false;
       for (const record of targets) {
         if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.cwd)) continue;
-        if (!await this.isEnabled(record.harness, record.sessionId, record.cwd)) continue;
+        if (!await this.mayWorkOnSession(record.harness, record.sessionId, record.cwd)) continue;
         const adapter = this.options.adapters.get(record.harness);
         if (!adapter?.resumeSession) continue;
         const key = sessionKey(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
@@ -1792,6 +1792,9 @@ export class UnfinishedSessionLauncher {
         await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
         continue;
       }
+      // An unanswered question defers recovery; it must never discard the
+      // accepted turn or its recovery record.
+      if (await this.pendingQuestionBlocks(record.harness, record.sessionId, record.cwd)) continue;
       if (!record.recoveryCause) {
         if ((record.activeTurnStartedAt && (record.activeTurnId || record.activeInputId))
           || record.acceptedAt || record.deliveryPending || record.admissionPhase || record.nonRetryableAdmission) continue;
@@ -1985,7 +1988,7 @@ export class UnfinishedSessionLauncher {
       if (turn.pendingInput !== false) continue;
       if (!transportLost && (turn.cancelledByUser !== false || turn.userMessageMatchesLatest !== true
         || turn.assistantSucceeded !== false || turn.progressedAfterFailure !== false)) continue;
-      if (!await this.isEnabled("zcode", session.id, session.cwd)) continue;
+      if (!await this.mayWorkOnSession("zcode", session.id, session.cwd)) continue;
       if (this.options.humanStopStore && await this.options.humanStopStore.isHeld("zcode", session.id)) continue;
       await this.options.store.ingestColdFailure(session, {
         turnId: turn.turnId,
@@ -2123,6 +2126,10 @@ export class UnfinishedSessionLauncher {
         || (record.recoveryCause === "stalled" && !admissionSettings.watchdogEnabled)) {
         await this.options.store.cancelAttempt(attempt);
         await this.options.store.remove(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
+        return;
+      }
+      if (await this.pendingQuestionBlocks(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)) {
+        await this.options.store.cancelAttempt(attempt);
         return;
       }
       if (recoveryFence && (this.turnGenerations.get(recoveryFence) ?? 0) !== turnGeneration) {
@@ -2361,7 +2368,7 @@ export class UnfinishedSessionLauncher {
         const nativeHumanGate = nativeTurn?.cancelledByUser === true
           || nativeTurn?.requiresHuman === true
           || nativeTurn?.pendingInput === true;
-        const autoResumeEnabled = await this.isEnabled(session.harness, session.id, session.cwd)
+        const autoResumeEnabled = await this.mayWorkOnSession(session.harness, session.id, session.cwd)
           && !nativeHumanGate
           && (!semanticAutopilot || await this.semanticAutopilotAllows(session, semanticAutopilot));
         const sourceKey = sessionSourceKey(session);
@@ -3396,12 +3403,26 @@ export class UnfinishedSessionLauncher {
     }
   }
 
+  /** The durable switch only. A pending question is a deferral, never a disable. */
   private async isEnabled(harness: HarnessType, sessionId: string, cwd: string): Promise<boolean> {
-    if (!(await this.options.settingsStore.getEffective(harness, sessionId, cwd)).enabled) return false;
-    // A session that still owes a human an answer is not continued automatically,
-    // even when the native status no longer reports the question.
-    if (this.pendingQuestions && await this.pendingQuestions.blocks(harness, sessionId, cwd)) return false;
-    return true;
+    return (await this.options.settingsStore.getEffective(harness, sessionId, cwd)).enabled;
+  }
+
+  /** True while this exact session still owes a human an answer. */
+  private async pendingQuestionBlocks(harness: HarnessType, sessionId: string, cwd: string): Promise<boolean> {
+    if (!this.pendingQuestions) return false;
+    return await this.pendingQuestions.blocks(harness, sessionId, cwd);
+  }
+
+  /**
+   * Whether Herder may work on this session right now.
+   *
+   * An unanswered question blocks automatic work even when the native status no
+   * longer reports it. It defers: durable accepted and recovery state stays.
+   */
+  private async mayWorkOnSession(harness: HarnessType, sessionId: string, cwd: string): Promise<boolean> {
+    if (!await this.isEnabled(harness, sessionId, cwd)) return false;
+    return !(await this.pendingQuestionBlocks(harness, sessionId, cwd));
   }
 }
 

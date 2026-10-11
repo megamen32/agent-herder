@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HumanRequestRegistry } from "./registry.js";
@@ -104,6 +104,28 @@ describe("HumanRequestRegistry", () => {
     expect(new Set(receipts.map((receipt) => receipt.idempotencyKey)).size).toBe(1);
     expect(new Set(receipts.map((receipt) => receipt.record.attemptId)).size).toBe(1);
     await expect(store.get(created.requestId)).resolves.toMatchObject({ status: "resuming" });
+  });
+
+  it("starts the wait for an attempt admitted before leases existed", async () => {
+    const { store, filePath } = await registry();
+    const created = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "s", cwd: "/workspace" } });
+    // Reproduce the pre-lease format: resuming with an attempt id and no lease.
+    const stored = JSON.parse(await readFile(filePath, "utf8")) as { version: number; requests: Array<Record<string, unknown>> };
+    const record = stored.requests[0]!;
+    record.status = "resuming";
+    record.attemptId = "attempt-legacy";
+    record.resultRef = "result://opaque/1";
+    await writeFile(filePath, `${JSON.stringify(stored, null, 2)}\n`, "utf8");
+
+    const backfilled = await store.admitResume(created.requestId, { resultRef: "result://opaque/1" });
+    expect(backfilled.admitted).toBe(false);
+    expect(backfilled.record).toMatchObject({
+      status: "resuming",
+      attemptId: "attempt-legacy",
+      idempotencyKey: `human-request:${created.requestId}:attempt-legacy`,
+    });
+    expect(backfilled.record.resumeLeaseExpiresAt).toBeTypeOf("string");
+    expect(backfilled.idempotencyKey).toBe(backfilled.record.idempotencyKey);
   });
 
   it("takes an expired in-flight lease over with the same attempt and key", async () => {

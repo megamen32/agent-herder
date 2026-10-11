@@ -92,6 +92,8 @@ export interface HumanRequestRecord {
   idempotencyKey?: string;
   /** Deadline of the admitted in-flight resume attempt. */
   resumeLeaseExpiresAt?: string;
+  /** Instant the human answer was admitted; binds later resume attempts to it. */
+  admittedAt?: string;
   receipt?: string;
   createdAt: string;
   resolvedAt?: string;
@@ -291,7 +293,17 @@ export class HumanRequestRegistry {
       if (record.status === "resuming") {
         // The canonical admitted answer stays authoritative for a conflicting repeat.
         const existingKey = record.idempotencyKey ?? idempotencyKeyFor(record.requestId, record.attemptId!);
-        if (record.resumeLeaseExpiresAt === undefined || !leaseExpired(record.resumeLeaseExpiresAt, now)) {
+        if (record.resumeLeaseExpiresAt === undefined) {
+          // An attempt admitted before leases existed starts its wait now instead
+          // of staying unresumable forever.
+          record.resumeLeaseExpiresAt = leaseExpiresAt;
+          record.idempotencyKey = existingKey;
+          await this.write(file);
+          const backfilled = await this.acknowledge(requestId, record.attemptId!, existingKey, leaseExpiresAt);
+          this.publishRequest(record.requestId, "updated");
+          return { admitted: false, recovered: false, idempotencyKey: existingKey, record: backfilled };
+        }
+        if (!leaseExpired(record.resumeLeaseExpiresAt, now)) {
           return { admitted: false, recovered: false, idempotencyKey: existingKey, record: cloneRecord(record) };
         }
         record.resumeLeaseExpiresAt = leaseExpiresAt;
@@ -315,6 +327,10 @@ export class HumanRequestRegistry {
       record.attemptId = admittedAttemptId;
       record.idempotencyKey = idempotencyKey;
       record.resumeLeaseExpiresAt = leaseExpiresAt;
+      // The admission instant belongs to the first human answer. A later replay
+      // or lease takeover keeps it, so an explicit stop that happened after the
+      // answer still fences this resume.
+      record.admittedAt = now.toISOString();
       if (resultRef) record.resultRef = resultRef;
       if (resolutionRef) record.resolutionRef = resolutionRef;
       await this.write(file);

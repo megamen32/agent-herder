@@ -16,6 +16,7 @@ import {
 } from "./autopilot/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
+import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { resolveEffectivePolicy } from "./autopilot/policy.js";
@@ -44,6 +45,8 @@ export type AutopilotHookDeps = {
   choiceRegistry?: ChoiceRegistry;
   /** Durable Human Request registry that binds a human decision to this exact session. */
   humanRequests?: Parameters<typeof createAutopilotCore>[0]["humanRequests"];
+  /** Durable answer-pending gate applied before any judgement or continuation. */
+  pendingQuestions?: Parameters<typeof createAutopilotCore>[0]["pendingQuestions"];
   effectivePolicy?: Parameters<typeof createAutopilotCore>[0]["effectivePolicy"];
   humanStopStore?: HumanStopStore;
 };
@@ -136,6 +139,8 @@ async function main(): Promise<void> {
     const judge = buildJudge(runtimeSettings.autopilotJudgeModel);
     const notify = buildNotificationSink();
     const receiptStore = await loadReceiptStore(receiptPath);
+    const choiceRegistry = new ChoiceRegistry(join(stateDir, "choices.json"));
+    const humanRequests = new HumanRequestRegistry(resolveHumanRequestStorePath(stateDir));
     const result = await runAutopilotStopHook(input, {
       judge,
       notify,
@@ -157,8 +162,9 @@ async function main(): Promise<void> {
         recipient: resolveNotificationRecipient(),
         kind: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_KIND ?? "notification",
       },
-      choiceRegistry: new ChoiceRegistry(join(stateDir, "choices.json")),
-      humanRequests: new HumanRequestRegistry(resolveHumanRequestStorePath(stateDir)),
+      choiceRegistry,
+      humanRequests,
+      pendingQuestions: new PendingQuestionGate({ humanRequests, choices: choiceRegistry }),
       humanStopStore: getHumanStopStore(),
     });
     const receiptRelease = await acquireLock(join(stateDir, "state.lock"), {

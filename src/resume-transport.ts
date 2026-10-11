@@ -46,6 +46,12 @@ export interface ResumeTransportRequest {
   readonly prompt?: string;
   /** Stable choice-bound retry key. */
   readonly idempotency_key?: string;
+  /**
+   * Admission instant of the real human answer this resume delivers, in epoch
+   * milliseconds. An explicit human stop newer than this instant keeps the
+   * session held; it is never replaced by a bare "human requested" flag.
+   */
+  readonly human_requested_at?: number;
 }
 
 export type ResumeReceipt =
@@ -168,6 +174,12 @@ function freezeRequest(input: ResumeTransportRequest): ResumeTransportRequest {
   for (const field of ["goal", "prompt", "idempotency_key"] as const) {
     if (input[field] !== undefined && (typeof input[field] !== "string" || input[field].trim() === "")) throw new TypeError(`${field} must be non-empty when provided`);
   }
+  if (
+    input.human_requested_at !== undefined
+    && (!Number.isSafeInteger(input.human_requested_at) || input.human_requested_at! < 0)
+  ) {
+    throw new TypeError("human_requested_at must be epoch milliseconds when provided");
+  }
   const frozenTarget: SelectedResumeTarget = target.agent === "hermes"
     ? { agent: "hermes", locator: freezeHermesLocator(target.locator) }
     : {
@@ -183,6 +195,7 @@ function freezeRequest(input: ResumeTransportRequest): ResumeTransportRequest {
     ...(input.goal === undefined ? {} : { goal: input.goal }),
     ...(input.prompt === undefined ? {} : { prompt: input.prompt }),
     ...(input.idempotency_key === undefined ? {} : { idempotency_key: input.idempotency_key }),
+    ...(input.human_requested_at === undefined ? {} : { human_requested_at: input.human_requested_at }),
   };
   Object.freeze(copy.target);
   return Object.freeze(copy);

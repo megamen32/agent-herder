@@ -716,6 +716,8 @@ async function main() {
       converter: processSessionConverter,
       humanRequests,
       choiceRegistry,
+      humanResume: (request: ResumeTransportRequest) => resumeSelectedTarget(request, processSupervisor, "human"),
+      choiceQuery: (request: ResumeTransportRequest) => new AgentResumeClient().queryReceipt(request),
       adapterRegistry,
       mcpServerFactory: createHttpMcpServer,
       herderEvents,

@@ -15,6 +15,7 @@ import {
   type AutopilotDecision,
 } from "./autopilot/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
+import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
@@ -82,6 +83,9 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
   const release = await acquireLock(sessionLockPath);
   if (!release) return { ok: false, command, reason: "session-lock-unavailable" };
   try {
+    const choiceRegistry = new ChoiceRegistry(join(stateDir, "choices.json"));
+    const humanRequests = new HumanRequestRegistry(resolveHumanRequestStorePath(stateDir));
+    const pendingQuestions = new PendingQuestionGate({ humanRequests, choices: choiceRegistry });
     const receipts = await loadReceiptStore(receiptPath);
     let observedDecision: { decision: AutopilotDecision; choiceRequestId?: string } | undefined;
     const core = createAutopilotCore({
@@ -104,8 +108,11 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
         recipient: requiredEnv("AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT"),
         kind: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_KIND || "notification",
       },
-      choiceRegistry: new ChoiceRegistry(join(stateDir, "choices.json")),
-      humanRequests: new HumanRequestRegistry(resolveHumanRequestStorePath(stateDir)),
+      choiceRegistry,
+      humanRequests,
+      // The same durable fence the launcher applies: an unanswered question is
+      // never continued here, whatever turn id arrives.
+      pendingQuestions,
       harness: input.harness,
       onDecision: (decision, metadata) => {
         observedDecision = { decision, ...(metadata?.choiceRequestId ? { choiceRequestId: metadata.choiceRequestId } : {}) };

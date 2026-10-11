@@ -52,6 +52,16 @@ export function registerHumanRequestTools(
   }> => {
     const record = await humanRequests.get(requestId);
     if (!record) throw new Error(`Human request '${requestId}' not found`);
+    if (record.status === "resumed" || record.status === "resume_failed") {
+      // A terminal request is never resumed again; report its durable receipt.
+      return {
+        record,
+        status: record.status,
+        idempotencyKey: record.idempotencyKey ?? `human-request:${record.requestId}:${record.attemptId}`,
+        duplicate: true,
+        ...(record.status === "resume_failed" ? { receipt: record.receipt ?? "resume-failed" } : {}),
+      };
+    }
     if (!humanRequestResumeTarget(record)) {
       throw new Error(`Human request '${requestId}' has no resumable native target`);
     }

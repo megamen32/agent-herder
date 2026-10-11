@@ -116,6 +116,36 @@ describe("human-request resume across a crash", () => {
     expect(provider.calls).toHaveLength(1);
   });
 
+  it("delivers the canonical admitted answer after a crash, not the conflicting repeat", async () => {
+    const path = await registryPath();
+    const delivered: ResumeTransportRequest[] = [];
+    const store = new HumanRequestRegistry(path);
+    const created = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "ses_open", cwd: "/workspace/app" } });
+    const admitted = await store.admitResume(created.requestId, { resultRef: "result://canonical-answer" });
+
+    const takeover = await resumeHumanRequestOnce({
+      registry: new HumanRequestRegistry(path),
+      requestId: created.requestId,
+      // A repeated provider callback that carries a different answer reference.
+      resultRef: "result://conflicting-answer",
+      resume: async (request) => {
+        delivered.push(request);
+        return { status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-resume://receipt/1", idempotency_key: request.idempotency_key };
+      },
+      now: new Date(Date.now() + 10 * 60_000),
+    });
+
+    expect(takeover.status).toBe("resumed");
+    expect(takeover.idempotencyKey).toBe(admitted.idempotencyKey);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]?.result_ref).toBe("result://canonical-answer");
+    expect(delivered[0]?.prompt).toContain("result://canonical-answer");
+    // The admission instant of the real answer travels with the resume, so an
+    // explicit stop newer than that answer still fences it.
+    expect(delivered[0]?.human_requested_at).toBe(Date.parse(admitted.record.admittedAt!));
+    await expect(store.get(created.requestId)).resolves.toMatchObject({ status: "resumed", resultRef: "result://canonical-answer" });
+  });
+
   it("never resumes a session again after a terminal failure", async () => {
     const path = await registryPath();
     const provider = ledger();

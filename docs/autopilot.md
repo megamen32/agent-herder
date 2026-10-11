@@ -447,3 +447,59 @@ No implicit 24-hour message-hash dedupe is introduced for legacy requests.
 A timeout, disconnect, or unverifiable turn ID returns
 `admissionUnknown/nonRetryable`: reconcile native state and hold rather than
 blindly submitting the message again.
+
+## Human questions, answers and one resume per answer
+
+A `human` judge decision and a `choice` decision are both real questions, not
+dead ends. The judge binds one durable Human Request to the exact native
+session and puts its `human_request_id` on the NoticePlace card, so the
+existing answer path resumes that one session.
+
+```text
+POST /api/autopilot/sessions/{harness}/{sessionId}   {"enabled":true,"cwd":"/abs/cwd"}
+```
+
+The per-session switch above is enough to activate one exact session while the
+global policy still selects other harnesses. It is written into the shared
+state directory, so the daemon, the Stop hook and the runner all read it.
+
+An answer is admitted exactly once:
+
+- `HumanRequestRegistry.admitResume` returns the admission receipt. Only
+  `admitted: true` may invoke the resume transport, and it must use the
+  returned `idempotencyKey`. Every replay returns the same attempt, key and
+  canonical admitted answer.
+- A bounded persisted lease makes a crash recoverable: after it expires a
+  later answer takes the same attempt and key over, and the durable provider
+  receipt is read before anything is launched again.
+- The stable key travels to the deduplicating native ingress as `inputId`, so
+  a takeover cannot deliver the answer to the session twice.
+- The answer carries `human_requested_at`, the instant it was admitted. An
+  explicit human stop newer than that instant keeps the session held; the
+  answer is never replaced by a bare "human requested" flag.
+
+A pending Human Request or a pending choice is a durable fence. The launcher,
+the Stop hook and the runner all defer that exact session until the answer is
+applied. A deferral never deletes accepted or recovery state and never pauses
+another session.
+
+## One Autopilot state directory
+
+The daemon, the Stop hook and the runner resolve one directory:
+
+```text
+AGENT_HERDER_AUTOPILOT_STATE_DIR=/home/user/.local/state/agent-herder/autopilot-live
+AGENT_HERDER_HUMAN_REQUEST_STORE=/home/user/.local/state/agent-herder/autopilot-live/human-requests.json
+AGENT_HERDER_LEGACY_AUTOPILOT_STATE_DIR=/home/user/.local/state/agent-herder/autopilot
+```
+
+Without an explicit pin, the default is `~/.local/state/agent-herder/autopilot-live`,
+and pre-seam state is adopted once, exclusively and atomically. The receipt store
+and the armed-session set are adopted as well: they hold the terminal decision
+deduplication, the pending notice outbox and the hook admission list. When both
+directories are populated, only `choices.json` and `human-requests.json` are
+merged, by verified `requestId`: the canonical record wins and a legacy-only
+record is appended, with the previous canonical file kept as
+`<file>.pre-merge`. An unrecognized shape is never rewritten. Set
+`AGENT_HERDER_LEGACY_AUTOPILOT_STATE_DIR` to merge two populated directories
+explicitly; with only the canonical directory pinned, nothing is adopted.

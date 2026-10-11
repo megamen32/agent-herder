@@ -51,7 +51,7 @@ describe("internal human-request completion admission", () => {
         : { status: "ambiguous", target: input.target, result_ref: input.result_ref, reason: "no_receipt", idempotency_key: input.idempotency_key };
     };
 
-    const server = createWebServer({ adapters, converter: { async convert() { throw new Error("unused"); } }, humanRequests, choiceResume, choiceQuery, sessionObservationManagedExternally: true });
+    const server = createWebServer({ adapters, converter: { async convert() { throw new Error("unused"); } }, humanRequests, humanResume: choiceResume, choiceQuery, sessionObservationManagedExternally: true });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
@@ -101,7 +101,7 @@ describe("internal human-request completion admission", () => {
       adapters,
       converter: { async convert() { throw new Error("unused"); } },
       humanRequests,
-      choiceResume: async (input) => { launches += 1; return { status: "accepted", target: input.target, result_ref: input.result_ref, receipt_ref: "agent-resume://unexpected", idempotency_key: input.idempotency_key }; },
+      humanResume: async (input) => { launches += 1; return { status: "accepted", target: input.target, result_ref: input.result_ref, receipt_ref: "agent-resume://unexpected", idempotency_key: input.idempotency_key }; },
       choiceQuery: async (input) => ({ status: "ambiguous", target: input.target, result_ref: input.result_ref, reason: "no_receipt", idempotency_key: input.idempotency_key }),
       sessionObservationManagedExternally: true,
     });

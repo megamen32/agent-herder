@@ -290,6 +290,11 @@ export function createOpenAICompatibleJudge(config: {
   };
 }
 
+/** The only capability the core needs from a pending-question gate. */
+export type PendingQuestionSource = {
+  blocks(harness: string, sessionId: string, cwd?: string): Promise<boolean>;
+};
+
 export function createAutopilotCore(options: {
   judge: JudgeClient;
   notify: NotificationSink;
@@ -304,6 +309,12 @@ export function createAutopilotCore(options: {
    * to the exact native session instead of sending a dead-end notification.
    */
   humanRequests?: Pick<HumanRequestRegistry, "create">;
+  /**
+   * Durable answer-pending gate. A session that still owes a human an answer is
+   * never judged or continued, whatever Stop hook or runner entry point fires
+   * and whatever the new turn id is.
+   */
+  pendingQuestions?: PendingQuestionSource;
   effectivePolicy?: EffectivePolicy;
   policyBypassSessionId?: string;
   harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode";
@@ -322,6 +333,19 @@ export function createAutopilotCore(options: {
   return {
     async handleStop(input) {
       validateInput(input);
+
+      // An unanswered question is a durable fence for every entry point. A new
+      // turn id after an idle stop must not become a way past it.
+      if (
+        options.pendingQuestions
+        && await options.pendingQuestions.blocks(
+          options.harness ?? input.harness ?? "codex",
+          input.session_id,
+          input.cwd,
+        )
+      ) {
+        return {};
+      }
 
       if (options.effectivePolicy) {
         // A per-session opt-in can widen the selector, but never bypasses the

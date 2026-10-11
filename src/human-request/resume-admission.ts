@@ -51,14 +51,17 @@ export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Pr
   });
   const record = admission.record;
   if (!admission.admitted) {
-    if (record.status === "resumed" || record.status === "resume_failed") {
+    if (record.status === "resumed") {
+      return { status: "resumed", record, idempotencyKey: admission.idempotencyKey, duplicate: true };
+    }
+    if (record.status === "resume_failed") {
       return {
-        status: record.status,
+        status: "resume_failed",
         record,
         idempotencyKey: admission.idempotencyKey,
         duplicate: true,
-        ...(record.status === "resume_failed" ? { receipt: record.receipt ?? "resume-failed" } : {}),
-      } as HumanRequestResumeOutcome;
+        receipt: record.receipt ?? "resume-failed",
+      };
     }
     const recovered = await readAdmittedReceipt(input, record, admission.idempotencyKey);
     return recovered ?? { status: "in_flight", record, idempotencyKey: admission.idempotencyKey, duplicate: true };
@@ -75,11 +78,15 @@ export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Pr
       duplicate: admission.recovered,
     };
   }
+  // The admitted answer is canonical. A replay or lease takeover delivers that
+  // answer, never the conflicting reference that arrived with the repeat.
+  const canonicalResultRef = record.resultRef ?? resultRef;
   const receipt = await input.resume({
     target,
-    result_ref: resultRef,
-    prompt: input.prompt ?? `Human Request resolved: ${resultRef}`,
+    result_ref: canonicalResultRef,
+    prompt: input.prompt ?? `Human Request resolved: ${canonicalResultRef}`,
     idempotency_key: admission.idempotencyKey,
+    ...humanRequestedAt(record),
   });
   return receipt.status === "accepted"
     ? {
@@ -95,6 +102,13 @@ export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Pr
         duplicate: admission.recovered,
         receipt: `agent-resume:${receipt.reason}`,
       };
+}
+
+/** The instant of the admitted human answer, used as the explicit-stop fence. */
+function humanRequestedAt(record: HumanRequestRecord): { human_requested_at?: number } {
+  if (!record.admittedAt) return {};
+  const admittedAt = Date.parse(record.admittedAt);
+  return Number.isFinite(admittedAt) ? { human_requested_at: admittedAt } : {};
 }
 
 /** Select the exact bound native session; Agent Herder never discovers a replacement. */
@@ -127,7 +141,7 @@ async function readAdmittedReceipt(
   try {
     receipt = await input.queryReceipt({
       target,
-      result_ref: input.resultRef,
+      result_ref: record.resultRef ?? input.resultRef,
       idempotency_key: idempotencyKey,
     });
   } catch {

@@ -11,14 +11,14 @@ export interface PendingQuestionSources {
 export interface PendingQuestionGateOptions {
   /** How long a loaded snapshot is trusted before the registries are read again. */
   ttlMs?: number;
-  /** Bound on the number of recent choice records inspected per refresh. */
-  choiceLimit?: number;
+  /** Bound on the pending choice records inspected per refresh. */
+  pendingChoiceLimit?: number;
 }
 
 /** A question blocks work only while it is unanswered; an applied answer must continue. */
 const BLOCKING_CHOICE_STATUSES = new Set<PendingChoice["status"]>(["pending"]);
 const DEFAULT_TTL_MS = 15_000;
-const DEFAULT_CHOICE_LIMIT = 200;
+const DEFAULT_PENDING_CHOICE_LIMIT = 200;
 
 /**
  * Durable answer-pending gate over the existing registries.
@@ -92,9 +92,14 @@ export class PendingQuestionGate {
     }
     const choices = this.sources.choices;
     if (choices) {
-      const limit = this.options.choiceLimit ?? DEFAULT_CHOICE_LIMIT;
-      for (const choice of await choices.list({ limit })) {
-        if (BLOCKING_CHOICE_STATUSES.has(choice.status)) add(choice.harness, choice.sessionId, choice.cwd);
+      // Filter by status before the bound is applied: a long-lived registry holds
+      // hundreds of later terminal records, and an unanswered question can be
+      // older than every one of them.
+      const limit = this.options.pendingChoiceLimit ?? DEFAULT_PENDING_CHOICE_LIMIT;
+      for (const status of BLOCKING_CHOICE_STATUSES) {
+        for (const choice of await choices.list({ status, limit })) {
+          add(choice.harness, choice.sessionId, choice.cwd);
+        }
       }
     }
     return index;

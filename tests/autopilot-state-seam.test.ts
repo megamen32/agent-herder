@@ -51,16 +51,17 @@ describe("autopilot state seam", () => {
     await mkdir(legacy, { recursive: true });
     await writeFile(join(legacy, "choices.json"), '{"version":1,"requests":[]}', "utf8");
     await writeFile(join(legacy, "sessions.json"), '{"legacy-sessions":true}', "utf8");
-    await writeFile(join(legacy, "receipts.json"), '{"legacy-receipts":true}', "utf8");
+    // The receipt store is the terminal-dedup and pending-notice outbox.
+    await writeFile(join(legacy, "receipts.json"), '{"session-1:turn-1":{"kind":"human","pendingNotice":{"schema":"notify.event.v1"}}}', "utf8");
 
     const adopted = await adoptLegacyAutopilotState(canonical, env);
 
     expect(await readFile(join(canonical, "choices.json"), "utf8")).toBe('{"version":1,"requests":[]}');
     expect(await readFile(join(canonical, "sessions.json"), "utf8")).toBe('{"legacy-sessions":true}');
     expect(await readFile(join(canonical, "human-requests.json"), "utf8")).toBe('{"legacy":true}');
-    // A turn cache is rebuilt by a fresh process and is never adopted.
-    await expect(readFile(join(canonical, "receipts.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-    expect(adopted).toHaveLength(3);
+    // The pending notice outbox survives the cutover.
+    expect(await readFile(join(canonical, "receipts.json"), "utf8")).toContain("pendingNotice");
+    expect(adopted.length).toBeGreaterThanOrEqual(4);
 
     // A second boot adopts nothing and never rewrites live canonical state.
     await writeFile(join(canonical, "choices.json"), '{"live":true}', "utf8");
@@ -68,14 +69,66 @@ describe("autopilot state seam", () => {
     expect(await readFile(join(canonical, "choices.json"), "utf8")).toBe('{"live":true}');
   });
 
-  it("does not adopt anything when the state directory is pinned explicitly", async () => {
+  it("merges two populated directories by verified record identity", async () => {
+    const root = await home();
+    const legacy = join(root, "legacy");
+    const canonical = join(root, "canonical");
+    const env = {
+      HOME: root,
+      AGENT_HERDER_AUTOPILOT_STATE_DIR: canonical,
+      AGENT_HERDER_LEGACY_AUTOPILOT_STATE_DIR: legacy,
+      AGENT_HERDER_LEGACY_WORKING_DIRECTORY: root,
+    } as NodeJS.ProcessEnv;
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(legacy, { recursive: true });
+    await mkdir(canonical, { recursive: true });
+    const canonicalChoice = (requestId: string, status: string) => ({ requestId, harness: "zcode", sessionId: "s", turnId: "t", cwd: "/w", choices: [{ choiceId: "a", label: "a", nextGoal: "g" }], status, createdAt: "2026-10-11T10:00:00.000Z", resultRef: `agent-herder://autopilot/choice/${requestId}` });
+    await writeFile(join(legacy, "choices.json"), JSON.stringify({ version: 1, requests: [
+      canonicalChoice("req-shared", "pending"),
+      canonicalChoice("req-legacy-only", "pending"),
+    ] }), "utf8");
+    await writeFile(join(canonical, "choices.json"), JSON.stringify({ version: 1, requests: [
+      canonicalChoice("req-shared", "resumed"),
+    ] }), "utf8");
+
+    const adopted = await adoptLegacyAutopilotState(canonical, env);
+
+    const merged = JSON.parse(await readFile(join(canonical, "choices.json"), "utf8")) as { requests: Array<{ requestId: string; status: string }> };
+    expect(adopted).toContain(join(canonical, "choices.json"));
+    // The canonical state of a shared record wins; a legacy-only pending
+    // question is preserved instead of being dropped.
+    expect(merged.requests.filter((record) => record.requestId === "req-shared").map((record) => record.status)).toEqual(["resumed"]);
+    expect(merged.requests.map((record) => record.requestId)).toContain("req-legacy-only");
+    expect(await readFile(join(canonical, "choices.json.pre-merge"), "utf8")).toContain("req-shared");
+  });
+
+  it("leaves an unrecognized registry shape untouched", async () => {
+    const root = await home();
+    const legacy = join(root, "legacy");
+    const canonical = join(root, "canonical");
+    const env = {
+      HOME: root,
+      AGENT_HERDER_AUTOPILOT_STATE_DIR: canonical,
+      AGENT_HERDER_LEGACY_AUTOPILOT_STATE_DIR: legacy,
+      AGENT_HERDER_LEGACY_WORKING_DIRECTORY: root,
+    } as NodeJS.ProcessEnv;
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(legacy, { recursive: true });
+    await mkdir(canonical, { recursive: true });
+    await writeFile(join(legacy, "human-requests.json"), '{"unexpected":"shape"}', "utf8");
+    await writeFile(join(canonical, "human-requests.json"), '{"version":1,"requests":[]}', "utf8");
+
+    expect(await adoptLegacyAutopilotState(canonical, env)).toEqual([]);
+    expect(await readFile(join(canonical, "human-requests.json"), "utf8")).toBe('{"version":1,"requests":[]}');
+  });
+
+  it("does not adopt anything when only the canonical directory is pinned", async () => {
     const root = await home();
     const legacy = join(root, "legacy");
     const canonical = join(root, "pinned");
     const env = {
       HOME: root,
       AGENT_HERDER_AUTOPILOT_STATE_DIR: canonical,
-      AGENT_HERDER_LEGACY_AUTOPILOT_STATE_DIR: legacy,
       AGENT_HERDER_LEGACY_WORKING_DIRECTORY: root,
     } as NodeJS.ProcessEnv;
     const { mkdir } = await import("node:fs/promises");
