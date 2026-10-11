@@ -28,7 +28,7 @@ describe("native MCP human question and resolve", () => {
       return { status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-resume://opencode/1", idempotency_key: request.idempotency_key };
     };
     const server = new McpServer({ name: "human-request-fixture", version: "1.0.0" });
-    registerHumanRequestTools(server, registry, { humanResume });
+    registerHumanRequestTools(server, registry, { humanResume, questionDelivery: { async send() {} } });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: "human-request-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
@@ -37,7 +37,11 @@ describe("native MCP human question and resolve", () => {
 
     const created = await client.callTool({
       name: "human_request_create",
-      arguments: { kind: "user", harness: "opencode", sessionId: "ses_incident", cwd: "/workspace/incident" },
+      arguments: {
+        kind: "user", harness: "opencode", sessionId: "ses_incident", cwd: "/workspace/incident",
+        message: "Инцидент требует решения человека",
+        notify: { project: "agent-herder", recipient: "me", kind: "ask.user", severity: "high", title: "Нужно решение человека" },
+      },
     });
     const requestId = (created.structuredContent as { request: { requestId: string } }).request.requestId;
     expect(created.isError).not.toBe(true);
@@ -61,7 +65,7 @@ describe("native MCP human question and resolve", () => {
     const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
     const invocations: ResumeTransportRequest[] = [];
     const server = new McpServer({ name: "human-request-hermes-fixture", version: "1.0.0" });
-    registerHumanRequestTools(server, registry, { humanResume: async (request) => {
+    registerHumanRequestTools(server, registry, { questionDelivery: { async send() {} }, humanResume: async (request) => {
       invocations.push(request);
       return { status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-herder://hermes/1", idempotency_key: request.idempotency_key };
     } });
@@ -76,6 +80,8 @@ describe("native MCP human question and resolve", () => {
       arguments: {
         kind: "user", harness: "hermes", sessionId: "agent:main:telegram:1",
         locator: { schema: "hermes.locator.v2", session_key: "agent:main:telegram:1", platform: "telegram", chat_id: "1", chat_type: "dm" },
+        message: "Вопрос для Hermes",
+        notify: { project: "agent-herder", recipient: "me", kind: "ask.user", severity: "high", title: "Вопрос" },
       },
     });
     const requestId = (created.structuredContent as { request: { requestId: string } }).request.requestId;
@@ -90,7 +96,7 @@ describe("native MCP human question and resolve", () => {
     cleanups.push(() => rm(root, { recursive: true, force: true }));
     const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
     const server = new McpServer({ name: "human-request-hermes-fixture", version: "1.0.0" });
-    registerHumanRequestTools(server, registry, { humanResume: async (request) => ({ status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-herder://hermes/1", idempotency_key: request.idempotency_key }) });
+    registerHumanRequestTools(server, registry, { questionDelivery: { async send() {} }, humanResume: async (request) => ({ status: "accepted", target: request.target, result_ref: request.result_ref, receipt_ref: "agent-herder://hermes/1", idempotency_key: request.idempotency_key }) });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: "human-request-hermes-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
@@ -99,7 +105,11 @@ describe("native MCP human question and resolve", () => {
 
     const created = await client.callTool({
       name: "human_request_create",
-      arguments: { kind: "user", harness: "fast-agent", sessionId: "fa-session-1" },
+      arguments: {
+        kind: "user", harness: "fast-agent", sessionId: "fa-session-1",
+        message: "Вопрос без нативного возобновления",
+        notify: { project: "agent-herder", recipient: "me", kind: "ask.user", severity: "high", title: "Вопрос" },
+      },
     });
     const requestId = (created.structuredContent as { request: { requestId: string } }).request.requestId;
     const resolved = await client.callTool({ name: "human_request_resolve", arguments: { requestId, resolutionRef: "result://answer/1" } });

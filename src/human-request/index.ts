@@ -16,6 +16,11 @@ export {
   type NotifyRoutingTupleInput,
 } from "./registry.js";
 export {
+  askHuman,
+  type AskHumanInput,
+  type HumanQuestionDelivery,
+} from "./notice-delivery.js";
+export {
   humanRequestResumeTarget,
   resumeHumanRequestOnce,
   type HumanRequestResumeDependencies,

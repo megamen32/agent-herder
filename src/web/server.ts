@@ -11,7 +11,8 @@ import { LineageStore } from "../lineage-store.js";
 import { SessionNotFoundError, SessionSupervisor } from "../session-supervisor.js";
 import type { AgentSession, HarnessAdapter, SessionDetails } from "../types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "../session-convert.js";
-import { HumanRequestLockUnavailableError, HumanRequestRegistry, resumeHumanRequestOnce } from "../human-request/index.js";
+import { askHuman, HumanRequestLockUnavailableError, HumanRequestRegistry, resumeHumanRequestOnce, type AskHumanInput } from "../human-request/index.js";
+import type { HumanQuestionDelivery } from "../human-request/notice-delivery.js";
 import { buildSessionProgress } from "../health-progress.js";
 import { healthModelForHarness, normalizeHealthExecution } from "../health-remediation.js";
 import { convertHermesExport } from "../hermes-conversion.js";
@@ -48,6 +49,8 @@ export interface WebDependencies {
   choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   /** Canonical human-answer resume shared with the native MCP resolve surface. */
   humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
+  /** Existing NoticePlace producer port for a new human question. */
+  questionDelivery?: HumanQuestionDelivery;
   choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   autopilotPolicyStore?: AutopilotPolicyStore;
   autopilotSessionStore?: AutopilotSessionStore;
@@ -151,6 +154,24 @@ export async function nativeResumeReceiptQuery(
   };
 }
 
+/**
+ * Read back the receipt of an already delivered bound answer.
+ *
+ * The lookup follows the delivery route: Codex and ZCode are delivered by the
+ * process-owned native writer, so their admission is read from native state; the
+ * remaining harnesses are delivered by Agent Resume, so only they consult that
+ * external ledger.
+ */
+export async function boundResumeReceiptQuery(
+  request: ResumeTransportRequest,
+  adapters: Map<string, HarnessAdapter>,
+): Promise<ResumeReceipt> {
+  if (request.target.agent === "codex" || request.target.agent === "zcode") {
+    return nativeResumeReceiptQuery(request, adapters);
+  }
+  return new AgentResumeClient().queryReceipt(request);
+}
+
 function ambiguousNativeReceipt(request: ResumeTransportRequest, reason: string): ResumeReceipt {
   return {
     status: "ambiguous",
@@ -240,6 +261,28 @@ export async function resumeSelectedTarget(
       ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
     };
   }
+}
+
+/** Require an exact existing native session before a question is bound to it. */
+async function verifiedQuestionTarget(
+  body: Record<string, unknown>,
+  adapters: Map<string, HarnessAdapter>,
+): Promise<{ agent: string; sessionId: string; cwd: string }> {
+  const harness = typeof body.harness === "string" ? body.harness : typeof body.agent === "string" ? body.agent : "";
+  const sessionId = typeof body.session_id === "string" ? body.session_id : typeof body.sessionId === "string" ? body.sessionId : "";
+  if (!harness || !sessionId) throw new Error("harness and session_id are required");
+  const adapter = adapters.get(harness);
+  if (!adapter) throw new Error(`harness '${harness}' is not available`);
+  const cwd = typeof body.cwd === "string" ? body.cwd : undefined;
+  const session = await adapter.getSession(sessionId).catch(() => null);
+  const live = cwd ? (await adapter.listSessions({ cwd: resolve(cwd) }).catch(() => [])).find((candidate) => candidate.id === sessionId) ?? null : session;
+  if (!live || live.harness !== harness || live.id !== sessionId) {
+    throw new Error(`session '${harness}:${sessionId}' not found`);
+  }
+  if (cwd && normalize(live.cwd) !== normalize(cwd)) {
+    throw new Error(`session '${harness}:${sessionId}' is not in '${cwd}'`);
+  }
+  return { agent: harness, sessionId, cwd: live.cwd };
 }
 
 async function completeManualChoiceResume(
@@ -573,7 +616,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
     try {
       if (dependencies.fleetHttpGuard && await dependencies.fleetHttpGuard(request, response)) return;
       if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.questionDelivery, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -609,7 +652,9 @@ export function createWebServer(dependencies: WebDependencies): Server {
       },
       query: async (choice) => {
         if (choice.harness === "hermes") return localHookTimeoutReceipt(choice);
-        return new AgentResumeClient().queryReceipt(buildTimeoutResumeRequest(choice));
+        // The timeout dispatch also follows the delivery route, so its recovery
+        // query reads native admission for Codex and ZCode.
+        return boundResumeReceiptQuery(buildTimeoutResumeRequest(choice), dependencies.adapters);
       },
     }).catch((error) => console.error(`[agent-herder] autopilot sweep failed: ${(error as Error).message}`));
     const intervalMs = Math.max(100, dependencies.autopilotSweepIntervalMs ?? 30_000);
@@ -643,7 +688,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, questionDelivery?: HumanQuestionDelivery, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (url.pathname.startsWith("/api/quota-lens") && request.method === "GET") {
     const body = await handleQuotaLensRequest(url.pathname, url.searchParams);
@@ -1024,6 +1069,31 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     await mcpNodeHandler(request, response);
     return;
   }
+  if (request.method === "POST" && url.pathname === "/internal/human-requests") {
+    if (!humanRequests) return sendJson(response, 503, { error: "Human Request registry is disabled" });
+    if (!questionDelivery) return sendJson(response, 503, { error: "Notice delivery for human questions is not configured" });
+    const body = await readJson(request);
+    try {
+      const created = await askHuman(humanRequests, questionDelivery, {
+        kind: body.kind === "secret" ? "secret" : "user",
+        target: await verifiedQuestionTarget(body, adapters),
+        message: typeof body.message === "string" ? body.message : "",
+        ...(Array.isArray(body.choices) ? { choices: body.choices as Array<{ choiceId: string; label: string }> } : {}),
+        ...(typeof body.context_ref === "string" ? { contextRef: body.context_ref } : {}),
+        notify: body.notify as AskHumanInput["notify"],
+      });
+      return sendJson(response, 201, {
+        request_id: created.requestId,
+        human_request_id: created.requestId,
+        status: created.status,
+        continuation: created.continuation,
+        dedup_key: created.notify?.dedupKey,
+      });
+    } catch (error) {
+      const reason = (error as Error).message;
+      return sendJson(response, /not found|is not in/.test(reason) ? 404 : 400, { error: reason });
+    }
+  }
   if (request.method === "POST" && (url.pathname === "/internal/human-requests/sss-completion" || url.pathname === "/internal/human-requests/ask-user-completion")) {
     if (!humanRequests) return sendJson(response, 503, { error: "Human Request registry is disabled" });
     const body = await readJson(request);
@@ -1049,7 +1119,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         // The same canonical human transport as the native MCP resolve: one
         // answer, one bound session, one explicit-stop fence.
         resume: humanResume ?? ((input) => resumeSelectedTarget(input, supervisor, "human", true)),
-        queryReceipt: choiceQuery ?? ((input) => nativeResumeReceiptQuery(input, adapters)),
+        queryReceipt: choiceQuery ?? ((input) => boundResumeReceiptQuery(input, adapters)),
       });
     } catch (error) {
       // A busy lock is a deferral, not a failed answer: the provider may retry.

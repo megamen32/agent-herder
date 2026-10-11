@@ -1,6 +1,7 @@
 import { acceptedContent, inputRequired, type McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import type { HumanRequestRecord, HumanRequestRegistry } from "../human-request/index.js";
+import { askHuman, type HumanQuestionDelivery } from "../human-request/notice-delivery.js";
+import type { HumanRequestRecord, HumanRequestRegistry } from "../human-request/registry.js";
 import { resumeHumanRequestOnce, humanRequestResumeTarget } from "../human-request/resume-admission.js";
 import { resolveMcpClientFeatures } from "../mcp-client-features.js";
 import type { ResumeReceipt, ResumeTransportRequest } from "../resume-transport.js";
@@ -27,6 +28,12 @@ const resumeSchema = z.object({
 });
 
 export interface HumanRequestToolOptions {
+  /**
+   * Notice delivery for a new question. Creating registry metadata alone is not
+   * asking a human, so without this port the create tool refuses instead of
+   * leaving an undelivered question that would hold its session.
+   */
+  questionDelivery?: HumanQuestionDelivery;
   /**
    * Bound native resume of one human answer. Required: an answer must either
    * resume its exact session exactly once or fail loudly, never park a request
@@ -77,19 +84,25 @@ export function registerHumanRequestTools(
   };
 
   server.registerTool("human_request_create", {
-    description: "Create an opaque Ask User or Ask Secret request bound to an existing harness session. Hermes requires its immutable hermes.locator.v2 locator; Agent Herder never discovers a replacement session. Notification routing is explicit.",
+    description: "Ask a human a question about an exact existing harness session and deliver its card. Hermes requires its immutable hermes.locator.v2 locator; Agent Herder never discovers a replacement session. The answer resumes that exact session once through human_request_resolve. Notification routing is explicit.",
     inputSchema: z.object({
       kind: z.enum(["user", "secret"]), harness: z.string().min(1), sessionId: z.string().min(1), cwd: z.string().min(1).optional(), marker: z.string().min(1).optional(),
       locator: z.record(z.string(), z.unknown()).optional(), contextRef: z.string().optional(),
-      notify: z.object({ project: z.string().min(1), recipient: z.string().min(1), kind: z.string().min(1), severity: z.string().min(1), title: z.string().min(1) }).optional(),
+      message: z.string().min(1).max(4096).describe("The human-readable question shown on the card; never paste a secret value into it"),
+      choices: z.array(z.object({ choiceId: z.string().min(1).max(64), label: z.string().min(1).max(512) })).min(2).max(4).optional(),
+      notify: z.object({ project: z.string().min(1), recipient: z.string().min(1), kind: z.string().min(1), severity: z.string().min(1), title: z.string().min(1) }),
     }),
     outputSchema: z.object({ request: humanRequestSchema }),
   }, async (args) => {
     if (args.harness === "hermes" && !args.locator) throw new Error("Hermes human request requires an immutable hermes.locator.v2 locator");
-    const request = await humanRequests.create({
+    if (!options.questionDelivery) throw new Error("Notice delivery for human questions is not configured; a question cannot be created without it");
+    const request = await askHuman(humanRequests, options.questionDelivery, {
       kind: args.kind,
       target: { harness: args.harness, sessionId: args.sessionId, ...(args.cwd ? { cwd: args.cwd } : {}), ...(args.marker ? { marker: args.marker } : {}), ...(args.locator ? { locator: args.locator } : {}) },
-      contextRef: args.contextRef, notify: args.notify,
+      message: args.message,
+      ...(args.choices ? { choices: args.choices } : {}),
+      contextRef: args.contextRef,
+      notify: args.notify,
     });
     return structuredResult({ request });
   });
