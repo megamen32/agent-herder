@@ -40,6 +40,35 @@ w = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(w)
 
 class MacWatchdogTests(unittest.TestCase):
+    def test_host_memory_quiet_query_preserves_percentage_without_vm_stats(self):
+        # Fast unit <1s/max2s: old default query fails on the unused VM-stat
+        # stage; quiet output must retain the identical reserve calculation.
+        def query(argv):
+            if argv==['/usr/bin/memory_pressure','-Q']:
+                return 'System-wide memory free percentage: 68%\n'
+            if argv==['/usr/sbin/sysctl','-n','hw.memsize']:
+                return str(32*w.GIB)
+            raise w.Refused('native_observation_deadline')
+        with patch.object(w,'command',side_effect=query) as probe:
+            self.assertEqual(w.host_available_kib(),(32*w.GIB//1024)*68//100)
+        self.assertEqual(probe.call_args_list[0].args[0],['/usr/bin/memory_pressure','-Q'])
+
+    def test_host_memory_unknown_or_invalid_percentage_refuses(self):
+        for text in ('System-wide memory free percentage: 101%', 'System-wide memory free percentage: -1%', 'private unexpected output'):
+            with patch.object(w,'command',return_value=text):
+                with self.assertRaises(w.Refused) as caught:w.host_available_kib()
+                self.assertEqual(str(caught.exception),'host_memory_unverified')
+
+    def test_listener_deadline_identifies_fixed_variant_without_arguments(self):
+        variants=[(['-nP','-a','-p','123','-d','txt','-Fpn'],'text_mapping'),
+                  (['-t','-nP','-a','-U','/private-sensitive'],'unix_owner'),
+                  (['-t','-nP','-a','-p','123','-iTCP:18789','-sTCP:LISTEN'],'tcp_listener')]
+        for args,expected in variants:
+            with patch.object(w.subprocess,'run',side_effect=subprocess.TimeoutExpired('private',2)):
+                with self.assertRaises(w.Refused) as caught:w.command(['/usr/sbin/lsof',*args])
+            self.assertIn('"probe":"'+expected+'"',str(caught.exception))
+            self.assertNotIn('private',str(caught.exception))
+
     def test_empty_group_requires_kernel_absence_and_never_sends_signal(self):
         argv=['/bin/ps','-g','987654','-o','pid=,pgid=,uid=,rss=,time=,stat=,lstart=']
         with patch.object(w.subprocess,'run',return_value=subprocess.CompletedProcess(argv,1,b'',b'')),patch.object(w.os,'killpg',side_effect=ProcessLookupError) as probe:
