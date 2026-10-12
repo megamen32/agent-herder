@@ -21,3 +21,13 @@ Owner: Codex 01a112ee-5d49-7c31-8e3d-221a13a7a4d0. Server100 runtime/infrastruct
 5. Original48-hour task completion remains unverified. Historical inventories, launch/queue receipts and a completed turn do not prove every original task finished.
 
 Native Codex PID29017/start21:48:55 was retained. No controller/app restart or replacement session. Foreign infrastructure watchdog/sysctl/phone WIP and incident/Hermes paths are preserved.
+
+
+## 2026-10-12 coupled watchdog recovery update
+
+- Root activated clean62f164e on100 at00:07:53UTC; all318 compiled payloads matched. Independent mobile browser verified creation form and all eight recovery switches. One status wrapping correction is published in76db1fb and awaits the next100 closure.
+- Tunnel7308607f CAS activation occurred03:06:29MSK exactly once. Lost SSH ACK was reconciled from the Mac durable receipt: admitted, runs574→575; observer5c retained. No native/Node restart by that tunnel activation.
+- Former native PID29017 disappeared because its managed wrapper recorded a bounded process-census observation deadline after19205.7s, with resources inside limits. Old socket absence was verified; no locks or history were removed.
+- A fresh approved managed label is already running wrapper87643/child87650, start03:25:14 and ready generation1791764714809894000. This owner did not start it; external actor attribution is unverified. Root expressly authorizes existing managed JOIN and preserving this live generation, without repeating startup.
+- Source periodic identity avoids ps by using bounded kernel UID/start/argv records, retaining executable/listener/inode fences and unchanged global admission. Independent review identified successful PROCARGS2 stack-tail truncation; a size query/capacity refusal and oversized regression fixed it. Actual SDK final candidate passed identity/text/socket against87650 in0.503/0.012/0.016s, build0.900s and60928KiB peak.73 targeted checks pass. Earlier owner-absent and oversized RED evidence remain distinct.
+- Coupled sealed helper/launcher/config installation and Node-only controlled update remain pending. Current native census timeout is a separate confirmed hazard; identity changes alone do not prove its resolution. Final authenticated public steady acceptance and original48-hour task completion remain open.

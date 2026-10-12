@@ -492,6 +492,7 @@ class MacWatchdogTests(unittest.TestCase):
                 with patch.object(w.Path,'home',return_value=home),patch.object(w,'command',side_effect=observation):
                     with self.assertRaisesRegex(w.Refused,'managed_codex_owner_unverified'):w.codex_environment(config)
                 def native(args):
+                    if '--identity' in args:return f'IDENTITY {w.os.getuid()} 100 0\n'
                     if '--socket' in args:return 'FD 6\n'
                     if args[0]=='/usr/sbin/lsof':
                         self.assertIn('-a',args)
@@ -515,6 +516,7 @@ class MacWatchdogTests(unittest.TestCase):
                 calls=[]
                 def native(args):
                     calls.append(args)
+                    if '--identity' in args:return f'IDENTITY {w.os.getuid()} 100 0\n'
                     if '--text' in args:return 'OWNED\n'
                     if '--socket' in args:return 'FD 6\n'
                     if args[0]=='/usr/sbin/lsof':return 'OWNED\n' if '--text' in args else f'p42\nn{binary}\n' if '-d' in args else '42\n'
@@ -526,6 +528,8 @@ class MacWatchdogTests(unittest.TestCase):
                     self.assertEqual(unix,[])
                     probe=str(home/'.local/share/agent-herder/fleet/mac-codex-owner-probe')
                     self.assertIn([probe,'--socket','42',str(pointer.resolve())],calls)
+                    self.assertIn([probe,'--identity','42',config['codexOwnerStartedAt'],str(pointer)],calls)
+                    self.assertFalse(any(args[0]=='/bin/ps' for args in calls))
                     calls.clear();w.verify_codex_owner(config)
                     self.assertIn([probe,'--socket','42',str(pointer.resolve()),'6'],calls)
                     self.assertFalse(any(args[0]=='/usr/sbin/lsof' for args in calls))
@@ -534,6 +538,14 @@ class MacWatchdogTests(unittest.TestCase):
                     for output in ('','FD 99\n','FD 6\nFD 99\n'):
                         with patch.object(w,'command',side_effect=lambda args:output if '--socket' in args else native(args)):
                             with self.assertRaisesRegex(w.Refused,'managed_codex_owner_unverified'):w.verify_codex_owner(config)
+                    identity_calls=[0]
+                    def replaced_same_second(args):
+                        if '--identity' in args:
+                            identity_calls[0]+=1
+                            return f'IDENTITY {w.os.getuid()} 100 {identity_calls[0]-1}\n'
+                        return native(args)
+                    with patch.object(w,'command',side_effect=replaced_same_second):
+                        with self.assertRaisesRegex(w.Refused,'managed_codex_owner_unverified'):w.verify_codex_owner(config)
 
     def test_kernel_probe_uses_the_existing_two_attempt_common_deadline(self):
         probe=str(Path.home()/'.local/share/agent-herder/fleet/mac-codex-owner-probe')
@@ -558,6 +570,7 @@ class MacWatchdogTests(unittest.TestCase):
                 mappings=0
                 def native(args):
                     nonlocal mappings
+                    if '--identity' in args:return f'IDENTITY {w.os.getuid()} 100 0\n'
                     if '-d' in args or '--text' in args:
                         mappings+=1
                         if mappings==2:pointer.unlink();pointer.symlink_to(replacement)

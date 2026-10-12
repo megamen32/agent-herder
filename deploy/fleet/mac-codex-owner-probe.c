@@ -11,6 +11,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <unistd.h>
+#include <time.h>
+#include <ctype.h>
+#if defined(__APPLE__) || defined(HERDER_DARWIN_FIXTURE)
+#include <sys/sysctl.h>
+#endif
 
 static int number(const char *s, int minimum) {
     char *end; long n = strtol(s, &end, 10);
@@ -33,10 +39,74 @@ static int listener(int pid, int fd, const char *path, uint64_t *handle) {
     return length == strlen(path) && !memcmp(address->sun_path, path, length);
 }
 
+#if defined(__APPLE__) || defined(HERDER_DARWIN_FIXTURE)
+static int same_words(const char *a, const char *b) {
+    while (*a || *b) {
+        while (isspace((unsigned char)*a)) a++;
+        while (isspace((unsigned char)*b)) b++;
+        if (!*a || !*b) return !*a && !*b;
+        while (*a && !isspace((unsigned char)*a)) {
+            if (*a++ != *b++) return 0;
+        }
+        if (*b && !isspace((unsigned char)*b)) return 0;
+    }
+    return 1;
+}
+static int identity(int pid, const char *started, const char *socket_path, uint64_t *sec, uint64_t *usec) {
+    struct proc_bsdinfo before, after;
+    if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &before, sizeof(before)) != (int)sizeof(before) || before.pbi_uid != getuid()) return 0;
+    time_t seconds = (time_t)before.pbi_start_tvsec; struct tm local; char rendered[64];
+    if (!localtime_r(&seconds, &local) || !strftime(rendered, sizeof(rendered), "%a %b %e %T %Y", &local) || !same_words(started, rendered)) return 0;
+    /* PROCARGS2 includes argv followed by env. Interpret only argc argument
+     * strings; never inspect, print or persist the environment portion.
+     */
+    int mib[] = {CTL_KERN, KERN_PROCARGS2, pid}; char data[8192]; size_t required = 0;
+    /* XNU may successfully return a truncated stack tail when the supplied
+     * buffer is too small. Obtain the full size first; never parse that tail
+     * as argv. A capacity-sized copy also refuses a growth race.
+     */
+    if (sysctl(mib, 3, NULL, &required, NULL, 0) || required < sizeof(int) || required > sizeof(data)) return 0;
+    size_t bytes = sizeof(data);
+    if (sysctl(mib, 3, data, &bytes, NULL, 0) || bytes < sizeof(int) || bytes >= sizeof(data)) return 0;
+    int argc; memcpy(&argc, data, sizeof(argc)); if (argc < 2 || argc > 128) return 0;
+    char *cursor = data + sizeof(argc), *end = data + bytes, *args[128];
+    char *zero = memchr(cursor, 0, (size_t)(end-cursor)); if (!zero) return 0;
+    cursor = zero+1; while (cursor<end && !*cursor) cursor++;
+    for (int i=0;i<argc;i++) {
+        if (cursor>=end || !(zero=memchr(cursor,0,(size_t)(end-cursor)))) return 0;
+        args[i]=cursor; cursor=zero+1;
+    }
+    int i=1;
+    while (i<argc && strcmp(args[i],"app-server")) {
+        const char *a=args[i];
+        if (!strcmp(a,"-c") || !strcmp(a,"--config") || !strcmp(a,"--enable") || !strcmp(a,"--disable")) { if (i+1>=argc) return 0; i+=2; }
+        else if (!strncmp(a,"--config=",9) || !strncmp(a,"--enable=",9) || !strncmp(a,"--disable=",10)) i++;
+        else return 0;
+    }
+    if (++i>=argc || args[i][0]!='-') return 0;
+    int listens=0;
+    for (;i<argc;i++) if (!strcmp(args[i],"--listen")) {
+        if (++listens!=1 || i+1>=argc) return 0;
+        const char *value=args[i+1];
+        if (strcmp(value,"unix://") && (strncmp(value,"unix://",7) || strcmp(value+7,socket_path))) return 0;
+    }
+    if (listens!=1 || proc_pidinfo(pid,PROC_PIDTBSDINFO,0,&after,sizeof(after))!=(int)sizeof(after)) return 0;
+    if (before.pbi_uid!=after.pbi_uid || before.pbi_start_tvsec!=after.pbi_start_tvsec || before.pbi_start_tvusec!=after.pbi_start_tvusec) return 0;
+    *sec=after.pbi_start_tvsec; *usec=after.pbi_start_tvusec; return 1;
+}
+#endif
+
 int main(int argc, char **argv) {
     if (argc < 4) return 65;
     int pid = number(argv[2], 2);
     if (pid < 0) return 65;
+#if defined(__APPLE__) || defined(HERDER_DARWIN_FIXTURE)
+    if (!strcmp(argv[1], "--identity") && argc == 5) {
+        uint64_t sec,usec;
+        if (!identity(pid,argv[3],argv[4],&sec,&usec)) return 66;
+        printf("IDENTITY %u %llu %llu\n",(unsigned)getuid(),(unsigned long long)sec,(unsigned long long)usec); return 0;
+    }
+#endif
     if (!strcmp(argv[1], "--text") && argc == 4) {
         char path[PROC_PIDPATHINFO_MAXSIZE] = {0};
         int bytes = proc_pidpath(pid, path, sizeof(path));

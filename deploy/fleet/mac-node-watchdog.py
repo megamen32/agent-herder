@@ -71,8 +71,8 @@ def command(argv,deadline=None):
     # Cleanup retains its existing caller deadline; no prior output is reused.
     stages={'/bin/ps':'process','/usr/sbin/lsof':'listener',
             '/usr/sbin/sysctl':'host_identity','/usr/bin/memory_pressure':'host_memory'}
-    native_probe=Path(argv[0]).name=='mac-codex-owner-probe' and len(argv) in (4,5) and argv[1] in ('--text','--socket')
-    stage='listener' if native_probe else stages.get(argv[0],'other')
+    native_probe=Path(argv[0]).name=='mac-codex-owner-probe' and len(argv) in (4,5) and argv[1] in ('--text','--socket','--identity')
+    stage=('process' if argv[1]=='--identity' else 'listener') if native_probe else stages.get(argv[0],'other')
     probe=('threads' if '-M' in argv else 'census' if '-axo' in argv or '-g' in argv else 'identity') if stage=='process' else stage
     if stage=='listener':
         probe=('text_mapping' if argv[1]=='--text' else 'unix_owner') if native_probe else 'text_mapping' if '-d' in argv and 'txt' in argv else 'unix_owner' if '-U' in argv else 'tcp_listener' if any(str(a).startswith('-iTCP:') for a in argv) else 'listener'
@@ -304,13 +304,31 @@ def verify_codex_owner(config,*,admission=False):
     logical=pointer.lstat();physical=pointer.resolve(strict=True);info=physical.stat()
     if logical.st_uid!=os.getuid() or info.st_uid!=os.getuid() or not stat.S_ISSOCK(info.st_mode):
         raise Refused('managed_codex_owner_unverified')
+    generation=config.get('_codexOwnerGeneration')
+    if generation is not None and (not isinstance(generation,tuple) or len(generation)!=3 or any(type(v)!=int for v in generation)):
+        raise Refused('managed_codex_owner_unverified')
+    def kernel_identity():
+        nonlocal generation
+        probe=Path.home()/'.local/share/agent-herder/fleet/mac-codex-owner-probe'
+        frame=command([str(probe),'--identity',str(pid),expected,str(pointer)]).strip()
+        match=re.fullmatch(r'IDENTITY ([0-9]{1,10}) ([0-9]{1,20}) ([0-9]{1,6})',frame)
+        if not match:raise Refused('managed_codex_owner_unverified')
+        current=tuple(map(int,match.groups()))
+        if current[0]!=os.getuid() or current[2]>=1000000 or generation is not None and current!=generation:
+            raise Refused('managed_codex_owner_unverified')
+        generation=current
     def process_identity():
+        if not admission:
+            kernel_identity()
+            native_text_identity(pid,executable(binary).resolve(strict=True),admission=False)
+            return
         row=command(['/bin/ps','-p',str(pid),'-o','uid=,lstart=,command=']).strip().split(maxsplit=6)
         if len(row)!=7 or int(row[0])!=os.getuid() or ' '.join(row[1:6])!=' '.join(expected.split()):
             raise Refused('managed_codex_owner_unverified')
         argv=shlex.split(row[6]);claimed=executable(binary).resolve(strict=True)
         if not native_app_server_argv(argv,pointer):raise Refused('managed_codex_owner_unverified')
         native_text_identity(pid,claimed,admission=admission)
+        kernel_identity()
     process_identity()
     # JOIN/startup retains the global sole-FD-owner proof. Periodic checks
     # verify only the already-approved PID, with fresh generation/text/socket
@@ -332,6 +350,7 @@ def verify_codex_owner(config,*,admission=False):
     final=pointer.stat()
     if (final.st_dev,final.st_ino)!=(info.st_dev,info.st_ino):raise Refused('managed_codex_owner_unverified')
     config['_codexSocketFd']=descriptor # Hint only: the kernel rereads this FD on every tick.
+    config['_codexOwnerGeneration']=generation # Exact token pinned only after the complete proof.
     return {'pid':pid,'startedAt':expected,'device':info.st_dev,'inode':info.st_ino}
 
 def codex_environment(config):

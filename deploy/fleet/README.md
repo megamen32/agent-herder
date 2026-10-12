@@ -191,3 +191,13 @@ binary SHA, launcher SHA and both sealed config entries in one guarded CAS;
 no Node payload or native controller replacement is required. Initial native
 SDK compile took1.078s, observed55MiB peak; socket probe8.8ms and text636.8ms
 (first read). Require steady/native/public-owner acceptance after installation.
+
+Periodic UID/start/argv identity now uses the same sealed helper: full BSD
+records before/after preserve UID and microsecond start generation; PROCARGS2
+parses only its bounded argument count, never exposes environment values.
+The existing admission still verifies ps, executable mappings and global socket
+exclusivity. Unknown, truncated or changed kernel records refuse without input
+replay. This removes periodic ps identity latency without raising the existing
+two-attempt/four-second observation budget. A separate native-manager census
+deadline was recorded for PID29017; do not describe this identity change as
+proof that all process-census deadlines are resolved.
