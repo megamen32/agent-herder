@@ -27,6 +27,7 @@ import { lifecycleEntryFor, lifecycleStateFor, type SessionLifecycleSnapshot } f
 import { getHumanStopStore } from "../human-stop-store.js";
 import { ownedShutdownMatches, ownedZcodeActiveInput, zcodeRecoveryBoundaryCurrent, zcodeNativeAdmission } from "./zcode-recovery-boundary.js";
 import { configuredGptAdminMcp } from "./zcode-gptadmin-mcp.js";
+import { captureZcodeInput, validateRetainedInput, zcodeUndeliveredFence, zcodeRetainedAttemptReceipt, sameRetainedModel, type ZcodeRetainedInput } from "./zcode-undelivered.js";
 
 interface ZcodeWorkspaceRef {
   workspacePath: string;
@@ -1001,6 +1002,80 @@ export class ZcodeAdapter implements HarnessAdapter {
     return { ...this.sessionSnapshotReceipt };
   }
 
+  /** Operator-selected exact input only; no native load, provider or send. */
+  captureRetainedInput(sessionId: string, inputId: string, cwd: string): ZcodeRetainedInput {
+    return captureZcodeInput(this.localDbPath, sessionId, inputId, cwd);
+  }
+
+  canRetryRetainedInput(input: ZcodeRetainedInput): boolean {
+    return zcodeUndeliveredFence(this.localDbPath, input, `${input.logicalInputId}:delivery-attempt:1`);
+  }
+
+  getRetainedInputAttempt(input: ZcodeRetainedInput, attemptId: string) {
+    return zcodeRetainedAttemptReceipt(this.localDbPath, input, attemptId);
+  }
+
+  /** Exact payload path: bypass human release/injection, retain all Stop/native
+   * identity/work guards. No resume or transport bootstrap occurs here. */
+  async retryRetainedInput(input: ZcodeRetainedInput, attemptId: string): Promise<SendMessageResult> {
+    const refused = (error: string): SendMessageResult => ({ ok: false, nonRetryable: true, notSubmitted: true, inputId: attemptId, error });
+    let attempted = false;
+    try {
+      validateRetainedInput(input);
+      if (attemptId !== `${input.logicalInputId}:delivery-attempt:1` || !this.client.callIfReady) return refused("Точная попытка или готовый native transport недоступны");
+      const sdkPid = this.client.getOwnedProcessId?.();
+      if (!sdkPid) return refused("Поколение собственного native transport неизвестно");
+      const stops = getHumanStopStore();
+      if (await stops.isHeld("zcode", input.sessionId)) return refused("Чат явно остановлен; сохранённый ввод не отправлен");
+      const workspace = { ...this.workspace(input.cwd), sessionId: input.sessionId, runtimePolicy: "existing-only" };
+      const identity = record(await this.client.callIfReady("zcode-agent", "getWorkspaceRuntimeIdentity", [workspace]));
+      if (!Number.isSafeInteger(identity.processId) || identity.workspaceKey !== input.cwd || !Number.isSafeInteger(identity.generation)) return refused("Exact native runtime identity не подтверждена");
+      const snapshot = record(await this.client.callIfReady("zcode-agent", "readSession", [{ ...workspace, messageLimit: 1 }]));
+      const original = JSON.parse(input.nativePayload).intent;
+      const eligibleSnapshot = (value: Record<string, unknown>): boolean => {
+        const info = sessionInfoFromPayload(value), runtime = record(value.runtime), projection = record(value.projection);
+        return info?.sessionId === input.sessionId && resolve(info.workspace?.workspacePath ?? "") === input.cwd && info.status === "idle"
+          && !runtime.activeTurnId && !runtime.activeTurnKind && Array.isArray(runtime.pendingRequestIds) && runtime.pendingRequestIds.length === 0
+          && Array.isArray(projection.activeToolCalls) && Array.isArray(projection.backgroundJobs)
+          && projection.activeToolCalls.every(tool => ["completed", "failed", "denied"].includes(String(record(tool).status)))
+          && projection.backgroundJobs.every(job => ["completed", "failed", "cancelled"].includes(String(record(job).status)))
+          && sameRetainedModel(original.modelSelection, info.model) && original.mode === info.mode;
+      };
+      if (!eligibleSnapshot(snapshot)) return refused("В сессии есть работа, ожидание или изменённые/неизвестные настройки; повтор отложен");
+      // Recheck the ready workspace generation, then the durable Stop after all
+      // awaited native reads. The synchronous full DB fence is the final step.
+      const freshIdentity = record(await this.client.callIfReady("zcode-agent", "getWorkspaceRuntimeIdentity", [workspace]));
+      if (freshIdentity.processId !== identity.processId || freshIdentity.generation !== identity.generation
+        || this.client.getOwnedProcessId?.() !== sdkPid) return refused("Поколение native runtime изменилось");
+      const finalSnapshot = record(await this.client.callIfReady("zcode-agent", "readSession", [{ ...workspace, messageLimit: 1 }]));
+      if (!eligibleSnapshot(finalSnapshot)) return refused("Во время проверки появилась работа или изменились настройки; повтор отложен");
+      if (await stops.isHeld("zcode", input.sessionId)) return refused("Чат остановлен во время проверки; повтор запрещён");
+      if (!zcodeUndeliveredFence(this.localDbPath, input, attemptId)) return refused("Новый ввод, работа или отсутствие точной квитанции запретили повтор");
+      attempted = true;
+      const ack = record(await this.client.callIfReady("zcode-agent", "sendConversationCommandV4", [{ ...workspace,
+        envelope: { commandId: attemptId, clientId: "agent-herder", sessionId: input.sessionId, type: "sendText", issuedAt: Date.now(),
+          payload: { text: input.text, requestedDelivery: "queue", modelSelection: original.modelSelection,
+            mode: original.mode, planEnabled: original.planEnabled, ...(input.attachments.length ? {
+            attachments: input.attachments.map(({ realPath: _realPath, contentBytes: _contentBytes, sha256: _sha256, ...file }) => file),
+          } : {}) } },
+      }]));
+      const result = record(ack.result);
+      if (ack.commandId !== attemptId || !["accepted", "duplicate"].includes(String(ack.status))
+        || result.type !== "inputAccepted" || result.inputId !== attemptId || !["queue", "startNow"].includes(String(result.delivery))) {
+        return { ok: false, inputId: attemptId, nonRetryable: true, admissionUnknown: true, error: "Native не подтвердил точную попытку; разрешена только проверка квитанции" };
+      }
+      // Native dedup keys by command ID, not payload/actor. A competing exact-ID
+      // command may win after the pre-send fence; ACK alone cannot attribute it.
+      const receipt = zcodeRetainedAttemptReceipt(this.localDbPath, input, attemptId);
+      if (receipt.state !== "admitted") return { ok: false, admissionUnknown: true, nonRetryable: true, inputId: attemptId,
+        error: "ACK не подтверждён точным native payload; разрешена только проверка квитанции" };
+      return { ok: true, admitted: true, inputId: attemptId, pending: receipt.pending === true };
+    } catch {
+      return attempted ? { ok: false, admissionUnknown: true, nonRetryable: true, inputId: attemptId, error: "Ответ native не установлен; повторная отправка запрещена" }
+        : refused("Проверка сохранённого ввода не завершена; отправка не выполнялась");
+    }
+  }
+
   subscribeEvents(handler: (event: HarnessEvent) => void): () => void {
     this.eventListeners.add(handler);
     if (this.initialized) queueMicrotask(() => handler({ kind: "process.connected", harness: "zcode", data: { transport: "app-server-events" } }));
@@ -1018,7 +1093,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       const workspace = this.sessionWorkspaces.get(sessionId);
       if (!workspace) continue;
       try {
-        const snapshot = record(await this.client.callIfReady('zcode-agent','readSession', [{...workspace,sessionId,runtimePolicy:'existing-only',messageLimit:0}]));
+        const snapshot = record(await this.client.callIfReady('zcode-agent','readSession', [{...workspace,sessionId,runtimePolicy:'existing-only',messageLimit:1}]));
         const runtime = record(snapshot.runtime);
         if (sessionInfoFromPayload(snapshot)?.sessionId !== sessionId || runtime.activeTurnId !== identity.turnId
           || !Array.isArray(runtime.pendingRequestIds) || runtime.pendingRequestIds.length) continue;
@@ -1822,7 +1897,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       let recoverySnapshot = baseline;
       if (options.recoveryBoundary) {
         if (!this.client.callIfReady) return {ok:false,admitted:false,inputId,nonRetryable:true,error:'Проверка текущего native runtime недоступна; recovery не отправлено.'};
-        recoverySnapshot = await this.client.callIfReady('zcode-agent', 'readSession', [{...workspace,sessionId:id,runtimePolicy:'existing-only',messageLimit:0}]) as ZcodeSnapshot;
+        recoverySnapshot = await this.client.callIfReady('zcode-agent', 'readSession', [{...workspace,sessionId:id,runtimePolicy:'existing-only',messageLimit:1}]) as ZcodeSnapshot;
         if (sessionInfoFromPayload(recoverySnapshot)?.sessionId !== id || recoverySnapshot.runtime?.activeTurnId
           || recoverySnapshot.runtime?.activeTurnKind || !Array.isArray(recoverySnapshot.runtime?.pendingRequestIds)
           || recoverySnapshot.runtime.pendingRequestIds.length) {
@@ -2681,7 +2756,7 @@ export class ZcodeAdapter implements HarnessAdapter {
               const identity={turnId:native.turnId,inputId};
               if(native.turnId&&this.client.callIfReady){
                 try{
-                  const fresh=record(await this.client.callIfReady('zcode-agent','readSession',[{...workspace,sessionId,runtimePolicy:'existing-only',messageLimit:0}]));
+                  const fresh=record(await this.client.callIfReady('zcode-agent','readSession',[{...workspace,sessionId,runtimePolicy:'existing-only',messageLimit:1}]));
                   if(sessionInfoFromPayload(fresh)?.sessionId===sessionId&&record(fresh.runtime).activeTurnId===native.turnId
                     &&ownedZcodeActiveInput(this.localDbPath,sessionId,identity))this.observedActiveTurns.set(sessionId,identity);
                 }catch{ /* Historical receipt remains accepted; unknown active ownership is not adopted. */ }

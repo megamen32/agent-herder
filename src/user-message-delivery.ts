@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { HerderJobRegistry, type HerderJob } from "./herder-jobs.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import type { HarnessAdapter, SendMessageResult, MessageImage } from "./types/index.js";
+import type { ZcodeRetainedInput } from "./adapters/zcode-undelivered.js";
 
 export type UserMessageInput = { harness: string; sessionId: string; inputId: string; message: string; mode: "queue" | "steer"; images?: MessageImage[] };
 export type UserMessageReceipt = SendMessageResult & { delivery?: "deferred"; job?: HerderJob<SendMessageResult> };
@@ -21,6 +22,55 @@ export class UserMessageDelivery {
     private readonly jobs: HerderJobRegistry,
     private readonly options = { pollMs: 2_000, maxWaitMs: 24 * 60 * 60 * 1_000, maxPending: 64 },
   ) {}
+
+  /** Explicit maintenance capture, never a planner or an automatic restart job. */
+  checkpointZcodeInput(sessionId: string, inputId: string, cwd: string): { jobId: string; fingerprint: string } {
+    const adapter = this.retainedZcodeAdapter();
+    if (!adapter.captureRetainedInput) throw new Error("Адаптер не поддерживает точное сохранение принятого ввода");
+    return this.jobs.retainZcodeInput(adapter.captureRetainedInput(sessionId, inputId, cwd));
+  }
+
+  /** One logical retry, after native definitively discarded the original.
+   * Origin/context handling deliberately stays out of the human composer and
+   * supervisor injection/deferred fallback. Adapter keeps native/Stop fences. */
+  async retryZcodeInput(jobId: string): Promise<SendMessageResult> {
+    const stored = this.jobs.readZcodeInput(jobId), adapter = this.retainedZcodeAdapter();
+    if (stored.attempt) return this.reconcileZcodeInput(jobId);
+    if (!adapter.canRetryRetainedInput?.(stored.capture)) return { ok: false, nonRetryable: true, notSubmitted: true,
+      inputId: stored.capture.logicalInputId, error: "Отсутствие исполнения исходного ввода не доказано; повтор запрещён" };
+    if (!adapter.retryRetainedInput) throw new Error("Восстановление сохранённого ввода недоступно");
+    // Synchronous strict reservation precedes every await/native dispatch.
+    const attemptId = this.jobs.reserveZcodeInputAttempt(jobId);
+    let result: SendMessageResult;
+    try { result = await adapter.retryRetainedInput(stored.capture, attemptId); }
+    catch { result = { ok: false, admissionUnknown: true, nonRetryable: true, inputId: attemptId, error: "Квитанция попытки недоступна; повторная отправка запрещена" }; }
+    this.jobs.recordZcodeInputAttempt(jobId, attemptId, result);
+    return { ...result, inputId: stored.capture.logicalInputId };
+  }
+
+  async reconcileZcodeInput(jobId: string): Promise<SendMessageResult> {
+    const stored = this.jobs.readZcodeInput(jobId);
+    if (!stored.attempt) return { ok: false, notSubmitted: true, inputId: stored.capture.logicalInputId, error: "Попытка ещё не зарезервирована" };
+    const adapter = this.retainedZcodeAdapter();
+    const receipt = adapter.getRetainedInputAttempt?.(stored.capture, stored.attempt.inputId) ?? { state: "unknown" as const };
+    const result: SendMessageResult = receipt.state === "admitted"
+      ? { ok: true, admitted: true, pending: receipt.pending === true, inputId: stored.attempt.inputId }
+      : { ok: false, nonRetryable: true, ...(receipt.state === "unknown" ? { admissionUnknown: true } : { admitted: true }),
+        inputId: stored.attempt.inputId, error: receipt.state === "failed" ? "Попытка завершена нативным отказом; новая отправка запрещена" : "Квитанция попытки не установлена; повтор запрещён" };
+    this.jobs.recordZcodeInputAttempt(jobId, stored.attempt.inputId, result);
+    return { ...result, inputId: stored.capture.logicalInputId };
+  }
+
+  private retainedZcodeAdapter(): HarnessAdapter & {
+    captureRetainedInput?(sessionId: string, inputId: string, cwd: string): ZcodeRetainedInput;
+    canRetryRetainedInput?(input: ZcodeRetainedInput): boolean;
+    retryRetainedInput?(input: ZcodeRetainedInput, attemptId: string): Promise<SendMessageResult>;
+    getRetainedInputAttempt?(input: ZcodeRetainedInput, attemptId: string): { state: "admitted" | "failed" | "unknown"; pending?: boolean };
+  } {
+    const adapter = this.adapters.get("zcode");
+    if (!adapter) throw new Error("Native ZCode адаптер недоступен");
+    return adapter;
+  }
 
   submit(input: UserMessageInput): UserMessageReceipt {
     if (Buffer.byteLength(input.message, "utf8") > 256 * 1024) throw new Error("Сообщение слишком большое для очереди отправки");

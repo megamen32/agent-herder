@@ -6,6 +6,12 @@ import { fileURLToPath } from "node:url";
 import { NativeCodexClient } from "./mesh/native-codex.js";
 import { herderEvents, type HerderEventBus } from "./herder-events.js";
 import { jobResourceUri } from "./herder-resource-uris.js";
+import { validateRetainedInput, type ZcodeRetainedInput } from "./adapters/zcode-undelivered.js";
+
+export interface RetainedZcodeDelivery {
+  capture: ZcodeRetainedInput;
+  attempt?: { inputId: string; reservedAt: number; result?: import("./types/index.js").SendMessageResult };
+}
 
 export type HerderJobState = "queued" | "running" | "waiting" | "cancelling" | "completed" | "failed" | "cancelled" | "interrupted";
 
@@ -25,6 +31,8 @@ export interface HerderJob<T = unknown> {
   /** A native mutation whose receipt must never be evicted or replayed. */
   durableOnce?: boolean;
   onceKey?: string;
+  /** Protected original envelope and attempt lineage; never exposed by jobs API. */
+  zcodeInput?: RetainedZcodeDelivery;
 }
 
 export interface HerderJobContext {
@@ -80,14 +88,74 @@ export class HerderJobRegistry {
 
   list(limit = 100): HerderJob[] {
     return [...this.jobs.values()]
-      .map(({ record }) => clone(record))
+      .map(({ record }) => publicJob(record))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, Math.max(1, Math.min(limit, 500)));
   }
 
   get<T = unknown>(id: string): HerderJob<T> | null {
     const job = this.jobs.get(id);
-    return job ? clone(job.record as HerderJob<T>) : null;
+    return job ? publicJob(job.record as HerderJob<T>) : null;
+  }
+
+  /** First-upgrade compatible: this method's JS body is self-contained and may
+   * run bound to the exact existing live registry. Never use a second writer.
+   * It does not start a job runner or invoke an adapter/native command. */
+  retainZcodeInput(capture: ZcodeRetainedInput): { jobId: string; fingerprint: string } {
+    const crypto = process.getBuiltinModule("crypto");
+    if (!this.persistencePath || this.persistenceRestoreError) throw new Error("История jobs недоступна; сохранение ввода запрещено");
+    const copy = JSON.parse(JSON.stringify(capture)) as ZcodeRetainedInput;
+    const { fingerprint, ...body } = copy;
+    const payload = JSON.parse(copy.nativePayload);
+    if (copy.version !== 1 || copy.harness !== "zcode" || copy.origin !== "automation" || !copy.cwd.startsWith("/")
+      || !copy.sessionId || !copy.logicalInputId.startsWith("agent-herder:auto:") || !Array.isArray(copy.attachments)
+      || crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex") !== fingerprint
+      || payload.text !== copy.text || payload.intent?.clientId !== "agent-herder"
+      || payload.intent.sourceCommandId !== copy.logicalInputId || payload.intent.queueItemId !== copy.queueItemId
+      || payload.intent.kind !== "sendText" || payload.intent.requestedDelivery !== "queue") throw new Error("Исходный envelope повреждён или имеет другое происхождение");
+    const onceKey = `zcode-undelivered\0${copy.cwd}\0${copy.sessionId}\0${copy.logicalInputId}`;
+    const jobId = `job_${crypto.createHash("sha256").update(onceKey).digest("hex")}`;
+    const existing = this.jobs.get(jobId);
+    if (existing) {
+      if (existing.record.zcodeInput?.capture.fingerprint !== fingerprint) throw new Error("Сохранённый logical ID уже связан с другим envelope");
+      return { jobId, fingerprint };
+    }
+    const now = new Date().toISOString();
+    const record: HerderJob = { id: jobId, kind: "Сохранённый ввод ZCode", state: "completed", createdAt: now, updatedAt: now,
+      ownerSessionId: copy.sessionId, resultRef: `herder://jobs/${jobId}`, durableOnce: true, onceKey,
+      requestFingerprint: fingerprint, result: { retained: true }, zcodeInput: { capture: copy } };
+    this.jobs.set(jobId, { record, controller: new AbortController() });
+    try { this.persist(true); } catch (error) { this.jobs.delete(jobId); throw error; }
+    return { jobId, fingerprint };
+  }
+
+  /** Internal delivery consumer only; public get/list redact the envelope. */
+  readZcodeInput(jobId: string): RetainedZcodeDelivery {
+    if (this.persistenceRestoreError) throw new Error("История jobs не прочитана; повтор запрещён");
+    const record = this.jobs.get(jobId)?.record;
+    if (!record?.durableOnce || !record.zcodeInput) throw new Error("Сохранённый собственный ввод не найден");
+    validateRetainedInput(record.zcodeInput.capture);
+    return clone(record.zcodeInput);
+  }
+
+  reserveZcodeInputAttempt(jobId: string): string {
+    const stored = this.readZcodeInput(jobId);
+    if (stored.attempt) throw new Error("Попытка уже зарезервирована; разрешена только проверка квитанции");
+    const internal = this.jobs.get(jobId)!;
+    const previous = internal.record.zcodeInput!;
+    const inputId = `${stored.capture.logicalInputId}:delivery-attempt:1`;
+    internal.record.zcodeInput = { ...stored, attempt: { inputId, reservedAt: Date.now() } };
+    try { this.persist(true); } catch (error) { internal.record.zcodeInput = previous; throw error; }
+    return inputId;
+  }
+
+  recordZcodeInputAttempt(jobId: string, inputId: string, result: import("./types/index.js").SendMessageResult): void {
+    const internal = this.jobs.get(jobId);
+    if (!internal?.record.zcodeInput?.attempt || internal.record.zcodeInput.attempt.inputId !== inputId) throw new Error("Другая попытка доставки");
+    internal.record.zcodeInput.attempt.result = clone(result);
+    // After native admission a persistence failure retains the durable reserved
+    // marker; it never grants a second send. Caller must reconcile that attempt.
+    this.persist(true);
   }
 
   start<T>(input: {
@@ -197,14 +265,14 @@ export class HerderJobRegistry {
   cancel(id: string): HerderJob | null {
     const job = this.jobs.get(id);
     if (!job) return null;
-    if (isTerminal(job.record.state)) return clone(job.record);
+    if (isTerminal(job.record.state)) return publicJob(job.record);
     job.controller.abort();
     job.record.state = "cancelling";
     job.record.updatedAt = new Date().toISOString();
     job.record.statusMessage = "Cancellation requested";
     this.persist();
     this.publish(job.record, "updated");
-    return clone(job.record);
+    return publicJob(job.record);
   }
 
   updateCompletedResult<T>(id: string, result: T): void {
@@ -275,6 +343,12 @@ export class HerderJobRegistry {
           && (raw.durableOnce !== true || typeof raw.onceKey !== "string" || !raw.onceKey
             || raw.id !== `job_${createHash("sha256").update(raw.onceKey).digest("hex")}` || typeof raw.kind !== "string"
             || !["queued", "running", "waiting", "cancelling", "completed", "failed", "cancelled", "interrupted"].includes(raw.state))) throw new Error("durable once history record invalid");
+        if (raw?.zcodeInput) {
+          validateRetainedInput(raw.zcodeInput.capture);
+          const key = `zcode-undelivered\0${raw.zcodeInput.capture.cwd}\0${raw.zcodeInput.capture.sessionId}\0${raw.zcodeInput.capture.logicalInputId}`;
+          if (!raw.durableOnce || raw.onceKey !== key || raw.requestFingerprint !== raw.zcodeInput.capture.fingerprint
+            || (raw.zcodeInput.attempt && raw.zcodeInput.attempt.inputId !== `${raw.zcodeInput.capture.logicalInputId}:delivery-attempt:1`)) throw new Error("retained input history invalid");
+        }
       }
       const now = new Date().toISOString();
       let changed = false;
@@ -326,6 +400,12 @@ function isTerminal(state: HerderJobState): boolean {
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function publicJob<T>(record: HerderJob<T>): HerderJob<T> {
+  const copy = clone(record);
+  delete copy.zcodeInput;
+  return copy;
 }
 
 export const herderJobs = new HerderJobRegistry(herderEvents, { persistencePath: defaultHerderJobPath() });

@@ -2121,6 +2121,72 @@ it.each(['Desktop input','human Stop'])('rejects recovery when %s arrives during
  }finally{await adapter.dispose();db.close();await rm(root,{recursive:true,force:true});}
 });
 
+// Focused integration expected .3s/max5s: installed SDK rejects messageLimit=0,
+// so the guarded recovery read must use a positive limit before supported send.
+it('uses positive native message limit for an eligible guarded recovery',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'zcode-positive-limit-'));const path=join(root,'native.sqlite');const db=new DatabaseSync(path);
+ db.exec(`create table turn_usage(session_id text,turn_id text,user_message_id text,started_at integer,completed_at integer);
+ create table message(id text,session_id text,data text,sequence integer);create table session_input(session_id text,status text);`);
+ db.prepare('insert into turn_usage values(?,?,?,?,?)').run('positive-session','old-turn','old-user',1,10);
+ db.prepare('insert into message values(?,?,?,?)').run('old-user','positive-session',JSON.stringify({role:'user'}),1);
+ class PositiveLimitClient extends FakeClient {
+  override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   if(method==='readSession')return {...snapshot,session:{...session,sessionId:'positive-session'},runtime:{stateRevision:1,pendingRequestIds:[]}};
+   return super.call(channel,method,args);
+  }
+  async callIfReady(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   if(method==='readSession'){
+    this.calls.push({channel,method,args});
+    if(!Number.isInteger((args[0] as any).messageLimit)||(args[0] as any).messageLimit<=0)throw Error('Native schema: messageLimit expected >0');
+   }
+   return this.call(channel,method,args);
+  }
+ }
+ const client=new PositiveLimitClient();const adapter=new ZcodeAdapter({client,localDbPath:path,cwd:root});
+ try{
+  await adapter.init();
+  expect(await adapter.sendMessage('positive-session',{message:'fixture only',queue:true,inputId:'positive-recovery',recoveryBoundary:{turnId:'old-turn',userMessageId:'old-user',completedAt:10}})).toMatchObject({ok:true,admitted:true});
+  expect(client.calls.find(c=>c.method==='readSession'&&(c.args[0] as any).runtimePolicy==='existing-only')?.args[0]).toMatchObject({messageLimit:1});
+  expect(client.calls.filter(c=>c.method==='sendConversationCommandV4')).toHaveLength(1);
+ }finally{await adapter.dispose();db.close();await rm(root,{recursive:true,force:true});}
+});
+
+// Focused integration expected .3s/max5s: strict history fallback must still
+// establish exact own active turn and checkpoint it using a valid native read.
+it('uses positive limits for native receipt fallback and owned shutdown checkpoint',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'zcode-positive-owned-')),path=join(root,'native.sqlite'),db=new DatabaseSync(path);
+ const id='positive-owned',input='agent-herder:auto:exact-owned';
+ db.exec(`create table message(id text,session_id text,data text,sequence integer);
+ create table turn_usage(session_id text,turn_id text,user_message_id text,status text,started_at integer,completed_at integer);
+ create table session_input(session_id text,status text,payload text,promoted_message_id text);`);
+ db.prepare('insert into message values(?,?,?,?)').run('own-user',id,JSON.stringify({role:'user',anchor:{sourceCommandId:input,turnId:'own-turn'}}),1);
+ db.prepare('insert into message values(?,?,?,?)').run('own-assistant',id,JSON.stringify({role:'assistant',parentID:'own-user'}),2);
+ db.prepare('insert into turn_usage values(?,?,?,?,?,null)').run(id,'own-turn','own-user','running',1);
+ class OwnedPositiveClient extends FakeClient {
+  getOwnedProcessId(){return 42;}
+  override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   if(method==='readSessionEvents')throw Error('Native strict executionStartedAt event schema');
+   if(method==='readSession')return {...snapshot,session:{...session,sessionId:id},runtime:{activeTurnId:'own-turn',pendingRequestIds:[]}};
+   return super.call(channel,method,args);
+  }
+  async callIfReady(channel:string,method:string,args:unknown[]){
+   this.calls.push({channel,method,args});
+   if(method==='readSession'&&(args[0] as any).messageLimit!==1)throw Error('Native schema: messageLimit expected >0');
+   return this.call(channel,method,args);
+  }
+ }
+ const client=new OwnedPositiveClient(),adapter=new ZcodeAdapter({client,cwd:root,localDbPath:path,turnStartTimeoutMs:100});
+ const workspace={workspacePath:root,workspaceIdentity:root,workspaceKey:root};
+ try{
+  await adapter.init();(adapter as any).sessionWorkspaces.set(id,workspace);
+  expect(await (adapter as any).waitForTurnStart(id,workspace,input,'fixture',undefined,undefined)).toMatchObject({ok:true,turnId:'own-turn'});
+  expect((adapter as any).observedActiveTurns.get(id)).toEqual({turnId:'own-turn',inputId:input});
+  expect(await adapter.checkpointOwnedRuntimeShutdown()).toEqual([id]);
+  const guarded=client.calls.filter(call=>call.method==='readSession'&&(call.args[0] as any).messageLimit!==undefined);
+  expect(guarded.length).toBeGreaterThanOrEqual(2);expect(guarded.every(call=>(call.args[0] as any).messageLimit===1)).toBe(true);
+ }finally{await adapter.dispose();db.close();await rm(root,{recursive:true,force:true});}
+});
+
 it('uses exact native command receipts when strict event and message schemas reject reads (focused integration expected .3s/max5s)',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'zcode-sdk-drift-'));const path=join(dir,'native.sqlite');const db=new DatabaseSync(path);
  db.exec(`create table message(id text,session_id text,data text,sequence integer);create table turn_usage(session_id text,turn_id text,user_message_id text,status text,started_at integer,completed_at integer);`);
