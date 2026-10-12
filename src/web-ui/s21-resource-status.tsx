@@ -22,7 +22,14 @@ export function S21ResourceStatus() {
   }, []);
   const view = s21OwnershipView(value);
   return <div className="s21-resource-status" role="status" aria-label="Аренда телефона S21">
-    <span><strong>{view.label}</strong><small>{view.detail}</small></span>
+    <span><strong>{view.label}</strong><small>{view.detail}</small>
+      {view.technical && <details className="s21-resource-technical"><summary>Технические детали</summary>
+        <dl><dt>Метка задачи</dt><dd>{view.technical.owner}</dd>
+          <dt>Исходное описание</dt><dd>{view.technical.purpose}</dd>
+          {view.technical.systemUnit && <><dt>Служба</dt><dd>{view.technical.systemUnit}</dd></>}
+        </dl>
+      </details>}
+    </span>
     {view.href && <a href={view.href}>Открыть сессию</a>}
   </div>;
 }

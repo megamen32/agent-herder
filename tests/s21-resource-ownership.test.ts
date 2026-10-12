@@ -35,6 +35,40 @@ describe("S21 ownership (fast unit; expected .1s/max 5s; no phone)", () => {
     const result = parseS21Ownership('{"status":"free","lease_id":"secret","actor":{"session_id":"stale"}}');
     expect(result.actor).toBeNull();expect(s21OwnershipView(result).label).toBe("Телефон свободен");
   });
+  it("translates known operations while keeping raw legacy labels only in technical details", () => {
+    const raw = { ...held, owner: "tproxy-keepalive", purpose: "always-on phone capture re-arm" };
+    const value = parseS21Ownership(JSON.stringify(raw));
+    const view = s21OwnershipView(value);
+    expect(view.label).toBe("Телефон занят: запись трафика приложения Rutube");
+    expect(view.detail).toBe("Сессия не записана");
+    expect(view.href).toBeNull();
+    expect(view.technical).toMatchObject({ owner: raw.owner, purpose: raw.purpose });
+    expect(value.actor?.type).toBe("legacy");
+  });
+  it("uses Russian actor/task text for known system operations without exposing unit names in the main text", () => {
+    for (const [owner, task] of Object.entries({
+      "system:agentcall-tts-google": "подготовка речи голосового помощника",
+      "system:agentcall-tts": "подготовка голосового уведомления",
+      "system:agentcall-gatewayd": "восстановление телефонной связи",
+      "system:agentcall-sip-watchdog": "восстановление телефонной связи",
+    })) {
+      const value = parseS21Ownership(JSON.stringify({ ...held, owner, purpose: "English operation", actor: { type: "system", system_unit: "raw.service", invocation_id: "a".repeat(32) } }));
+      const view = s21OwnershipView(value);
+      expect(view.label).toBe(`Телефон занят: ${task}`);
+      expect(view.detail).toBe("Владелец: системная служба");
+      expect(view.href).toBeNull();
+      expect(view.technical?.systemUnit).toBe("raw.service");
+      expect(view.label + view.detail).not.toMatch(/system:|English|raw\.service/);
+    }
+  });
+  it("labels unknown tasks generically while preserving the exact agent link", () => {
+    const value = parseS21Ownership(JSON.stringify({ ...held, owner: "unknown-internal-label", purpose: "do obscure work", actor: { type: "agent", harness: "codex", session_id: "exact-id" } }));
+    const view = s21OwnershipView(value);
+    expect(view.label).toBe("Телефон занят: другая задача");
+    expect(view.detail).toBe("Владелец: агент Codex");
+    expect(view.href).toBe(value.actor?.sessionUrl);
+    expect(view.label + view.detail).not.toMatch(/unknown|obscure/);
+  });
   it("registers only a strict readonly MCP tool", () => {
     const calls: any[]=[];
     registerResourceOwnershipTools({ registerTool: (...args: any[]) => calls.push(args) } as any);
