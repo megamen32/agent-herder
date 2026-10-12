@@ -53,7 +53,10 @@ describe("/autopilot plugin surfaces", () => {
     expect(hermes).toContain('"lastUserMessage": last_user');
     expect(hermes).toContain('"consume": "1"');
     expect(readFileSync(resolve(root, "integrations/fast-agent/coordination_hooks.py"), "utf8")).toContain('"consume": "1"');
-    expect(readFileSync(resolve(root, "integrations/zcode/agent-herder-autopilot/hooks/coordination.mjs"), "utf8")).toContain("consume:'1'");
+    const zcodeCoordination = readFileSync(resolve(root, "integrations/zcode/agent-herder-autopilot/hooks/coordination.mjs"), "utf8");
+    expect(zcodeCoordination).toContain('AGENT_HERDER_HARNESS = "zcode"');
+    expect(zcodeCoordination).toContain('scripts/coordination-hook.mjs');
+    expect(readFileSync(resolve(root, "scripts/coordination-hook.mjs"), "utf8")).toContain('consume: "1"');
     expect(zcodeHooks).toContain('"Stop"');
     expect(zcodeStop).toContain('AGENT_HERDER_AUTOPILOT_ALL_SESSIONS');
     expect(zcodeStop).toContain('continue: true');

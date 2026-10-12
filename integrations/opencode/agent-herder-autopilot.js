@@ -2,10 +2,26 @@ const root = process.env.AGENT_HERDER_ROOT || new URL("../../", import.meta.url)
 
 const coordinationEndpoint = process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787"
 
-async function coordinationFetch(path, options = {}) {
-  const response = await fetch(`${coordinationEndpoint}${path}`, { ...options, signal: AbortSignal.timeout(1200) })
-  if (!response.ok) return null
-  return response.json()
+async function coordinationFetch(path, options = {}, observe) {
+  const started = performance.now()
+  let status
+  const report = async (stage, data = {}) => {
+    if (typeof observe !== "function") return
+    const url = new URL(path, coordinationEndpoint)
+    const sessionId = url.searchParams.get("sessionId") || (()=>{try{return JSON.parse(options.body||"{}").sessionId}catch{return undefined}})()
+    try { await observe({stage,path:url.pathname,sessionId,elapsedMs:Math.round(performance.now()-started),status,...data}) } catch {}
+  }
+  try {
+    const response = await fetch(`${coordinationEndpoint}${path}`, { ...options, signal: AbortSignal.timeout(1200) })
+    status = response.status
+    if (!response.ok) { await report("http_refused"); return null }
+    const data = await response.json()
+    await report("json", {humanStopHeld:typeof data?.humanStopHeld==="boolean"?data.humanStopHeld:undefined,activeInboxCount:Array.isArray(data?.activeInboxIds)?data.activeInboxIds.length:undefined,hasActiveContext:typeof data?.activeInboxContext==="string"&&data.activeInboxContext.length>0})
+    return data
+  } catch (error) {
+    await report("error", {errorType:["Error","TypeError","SyntaxError","DOMException"].includes(error?.constructor?.name)?error.constructor.name:"unknown",errorName:["AbortError","TimeoutError","TypeError","SyntaxError"].includes(error?.name)?error.name:"other"})
+    throw error
+  }
 }
 
 function coordinationPaths(value, out = new Set()) {
@@ -56,7 +72,8 @@ async function invoke($, payload) {
   return JSON.parse(result.text())
 }
 
-export default async function AgentHerderAutopilot({ directory, $ }) {
+export default async function AgentHerderAutopilot({ directory, $ }, options = {}) {
+  const contextFetch = (path, fetchOptions) => coordinationFetch(path, fetchOptions, options.observeContextFetch)
   const enabled = new Set()
   const controlTurns = new Set()
   return {
@@ -68,20 +85,20 @@ export default async function AgentHerderAutopilot({ directory, $ }) {
       if(!sessionID||!activeTurnId||!textPart)return;
       try{
         const q=new URLSearchParams({harness:'opencode',sessionId:sessionID,cwd:directory,activeTurnId,consumeActive:'1'});
-        const data=await coordinationFetch(`/api/coordination/context?${q}`);
+        const data=await contextFetch(`/api/coordination/context?${q}`);
         if(!data?.activeInboxIds?.length||!data.activeInboxContext)return;
         textPart.text+='\n\n'+data.activeInboxContext;
-        await coordinationFetch('/api/coordination/inbox-ack',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sessionId:sessionID,ids:data.activeInboxIds})});
+        await contextFetch('/api/coordination/inbox-ack',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sessionId:sessionID,ids:data.activeInboxIds})});
       }catch{}
     },
     "experimental.chat.system.transform": async ({ sessionID }, output) => {
       if (!sessionID || !Array.isArray(output.system)) return
       try {
         const q = new URLSearchParams({ harness: "opencode", sessionId: sessionID, cwd: directory, touch: "1", consume: "1" })
-        const data = await coordinationFetch(`/api/coordination/context?${q}`)
+        const data = await contextFetch(`/api/coordination/context?${q}`)
         if (data?.context) {
           output.system.push(data.context)
-          if (data.inboxIds?.length) await coordinationFetch("/api/coordination/inbox-ack", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId:sessionID,ids:data.inboxIds})})
+          if (data.inboxIds?.length) await contextFetch("/api/coordination/inbox-ack", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId:sessionID,ids:data.inboxIds})})
         }
       } catch {}
     },

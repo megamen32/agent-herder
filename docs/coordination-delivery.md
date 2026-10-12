@@ -135,3 +135,50 @@ a different dependency selection. The final stdlib scenario runner uses a privat
 HERMES_HOME and the documented `HERMES_DISABLE_LAZY_INSTALLS=1` test flag; it does
 not install dependencies or change the live actor. Native redirect/tool-result
 implementations are still the installed primary code, not replacements.
+
+## OpenCode native loader discriminator
+
+The real 1.18.32 consumers did not observe scoped context: their records stayed
+pending despite completed effects. This is an unresolved native consumer failure,
+not a successful reservation. The tagged native loader accepts one legacy
+function export, passes config-tuple options, and invokes
+`experimental.chat.messages.transform` before provider message conversion.
+Those source contracts do not prove that this particular daemon loaded the
+updated module or invoked it.
+
+Root can replace the owned fixture's Herder plugin entry with the versioned
+`integrations/opencode/agent-herder-diagnostic.js` wrapper and tuple options
+`{ "diagnostics": true, "diagnosticSessionId": "<exact owned native SID>" }`.
+The wrapper delegates the implementation and writes a private, bounded
+`.agent-herder-opencode-diagnostic.jsonl` in that directory. Factory/hook names,
+exact root user/SID and text-change booleans separate failed loading from a
+missing transform call. Opt-in critical context fetch observations add HTTP
+status, elapsed milliseconds, allowlisted error types and boolean/count response
+metadata. Generic event flooding is delegated without logging, preserving the
+128-record budget for critical transforms. The native transport and 1200ms
+deadline are unchanged; a timeout cannot be called a native no-admission proof. It records no prompt/context
+text and is off unless explicitly enabled. Root alone refreshes that idle
+instance and performs the one authorized native check; old accepted inputs and
+effects are never replayed. A new physical entry file is preferable to relying
+on an already loaded module path. The optional `implementationUrl` can point to
+an exact hash-verified physical implementation copy in the original
+`integrations/opencode` directory; this preserves its relative package root and
+avoids assuming a query suffix refreshes dependencies. Stage both frozen files
+and preserve the originals; the ordinary plugin does not use this option. The wrapper does not claim delivery itself.
+
+There is no supported immediate global hook replacement proved safe for unknown
+active instances. The tagged
+[global config handler](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/server/routes/instance/httpapi/handlers/global.ts)
+starts `disposeAllInstancesAndEmitGlobalDisposed` whenever its global update
+changes config. A direct file edit is also not proof of activation: global
+config is cached with an infinite TTL, and plugin hooks are instance-local.
+Use the existing scoped instance route for each independently idle instance;
+leave active/unknown instances intact. Future-instance global discovery and
+existing-instance activation must be reported separately.
+
+A separate observed `/config`400 reports an incomplete model `limit.output`.
+The native optional ConfigModel limit requires both finite context and output.
+The canonical OmniRoute catalog can emit a partial limit for unknown output;
+this source defect is being corrected without inventing token limits or changing
+model identities/options. It is not yet evidence that this caused the missing
+Herder hook invocation.
