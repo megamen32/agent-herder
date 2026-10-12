@@ -25,6 +25,17 @@ payload и ручной остановки процессов не было.
 Evidence: `.tmp/zcode-opt-out-regression/` — exact cases, bounded receipts/logs.
 Source ещё требует Root review/install; работающий backend6b не менялся.
 
+Independent review STOP2ba выявил manual-hold gap во время нового semantic read.
+Три дополнительные изолированные RED проверили реальные resume/send/create
+вызовы при hold, записанном внутри финального policy read, включая rollover.
+После semantic awaits `groupAdmissionAllowed` теперь читает существующие durable
+source holds последними. Ни нового native RPC, ни очистки принятых admissions
+эта проверка не вызывает. Все три проверки стали GREEN. Малый интервал после
+последнего чтения не является native CAS.
+Итоговый ordinary payload: launcher39 PASS + tsc --noEmit, 33.29s;
+предыдущий 36-test результат сохранён отдельно. Проверки source не доказывают
+установку, завершение бизнес-задачи или свободное состояние runtime.
+
 Владелец диагностики/source/4b consumer: Codex 01a12ddd-6233-7522-8a68-fa932c661d6d.
 Владелец runtime/install: Codex 01a12740-96aa-7b93-9bef-679dcae60d84.
 

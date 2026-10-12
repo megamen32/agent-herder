@@ -3460,6 +3460,12 @@ export class UnfinishedSessionLauncher {
       const effective = await this.semanticAutopilotPolicy();
       if (!effective) return false;
       for (const session of sessions) if (!await this.semanticAutopilotAllows(session, effective)) return false;
+      // A manual Stop may arrive during either semantic read. Check the
+      // existing durable source holds last, without another native RPC or
+      // clearing accepted work, before creating or controlling any identity.
+      for (const session of sessions) {
+        if (await this.options.humanStopStore?.isHeld(session.harness, session.id)) return false;
+      }
       return true;
     } catch {
       // An unreadable permission is a deferral, not a reason to deliver a prompt.

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { completionEvidence, createAnthropicCompatibleSessionCompletionJudge, fitBatchContext, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type UnfinishedSessionNotice } from "../src/autopilot/unfinished-session-launcher.js";
 import { AutopilotPolicyStore } from "../src/autopilot/policy-store.js";
 import { AutopilotSessionStore } from "../src/autopilot/session-store.js";
-import { getHumanStopStore } from "../src/human-stop-store.js";
+import { getHumanStopStore, HumanStopStore } from "../src/human-stop-store.js";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "../src/types/index.js";
 function fixture(status: AgentSession["status"] = "idle", harness: "codex" | "zcode" = "codex", id = "session-1"): AgentSession {
     return { id, harness, status, title: "Recovery fixture", cwd: "/tmp/recovery", lastActivity: new Date(Date.now() - 60000).toISOString(), needsPermission: status === "needs_input", messageCount: 2 };
@@ -26,6 +26,49 @@ async function waitUntil(predicate: () => boolean | Promise<boolean>, timeoutMs 
     await new Promise((resolve) => setTimeout(resolve, 5));
 } }
 describe("unfinished session crash recovery", () => {
+    // Fast unit: a human Stop during the final semantic read must prevent a
+    // native action, including a rollover which would create a new identity.
+    // Expected <2s, maximum 10s; all stores and adapters are isolated.
+    it.each(["resume", "send", "create"] as const)("honors a human hold during the final semantic read before %s", async (operation) => {
+        const root = await mkdtemp(join(tmpdir(), "late-semantic-human-stop-"));
+        try {
+            const current = { ...fixture("idle", "zcode", `held-${operation}`), ...(operation === "create" ? { model: "minimax-m3", lastActivity: new Date(Date.now() - 10 * 60000).toISOString() } : {}) };
+            const calls = { resumes: 0, messages: [] as string[] };
+            let creates = 0, armed = false;
+            const adapter = fakeAdapter(() => current, calls);
+            adapter.createSession = async () => { creates += 1; return { ...current, id: "new-identity" }; };
+            const stops = new HumanStopStore(join(root, "stops.json"));
+            const policyStore = new AutopilotPolicyStore(join(root, "policy.json"));
+            await policyStore.replacePolicy({ schemaVersion: 1, enabled: true, harnesses: ["zcode"], scope: { mode: "all_ingress" }, maxContinuationsPerSession: 10, timeout: { mode: "auto_continue", delayMs: 1000 }, card: { includeUserMessage: true, includeAssistantMessage: true, includeReason: true } }, null);
+            const read = policyStore.readEffective.bind(policyStore);
+            policyStore.readEffective = async () => {
+                const effective = await read();
+                if (armed) {
+                    armed = false;
+                    await stops.hold(current, { id: "manual-stop-during-policy-read", at: new Date().toISOString(), reason: "human Stop" });
+                }
+                return effective;
+            };
+            const settings = new SessionAutostartStore(join(root, "settings.json"), {});
+            await settings.setRuntimeSettings({ inventoryWindowHours: 48, evidenceMessageCount: 200, judgeModel: "fixture", autopilotJudgeModel: "fixture", rolloverExpiredCache: true });
+            const launcher = new UnfinishedSessionLauncher({
+                adapters: new Map([["zcode", adapter]]), store: new UnfinishedSessionStore(join(root, "unfinished.json")), settingsStore: settings,
+                autopilotPolicyStore: policyStore, autopilotSessionStore: new AutopilotSessionStore(join(root, "sessions.json")), humanStopStore: stops, discoveryIdleMs: 1,
+                admissionGate: async (_session, requested) => { if (requested === operation) armed = true; return { allowed: true }; },
+                judge: {
+                    async decide() { return { verdict: "unfinished", reason: "work remains", confidence: 1 }; },
+                    async plan({ sessions }) { return { groups: [{ sourceSessionIds: sessions.map(({ session }) => session.id), primarySessionId: current.id, verdict: "unfinished", reason: "work remains", confidence: 1, topic: "task", handoff: "continue" }] }; },
+                },
+            });
+            await launcher.runAutopilotCycle();
+            expect(creates).toBe(0);
+            expect(calls.messages).toEqual([]);
+            expect(calls.resumes).toBe(operation === "send" ? 1 : 0);
+            expect(await stops.isHeld("zcode", current.id)).toBe(true);
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
     // Fast unit: reproduce opt-out during an awaited planner/attach/admission
     // boundary. Expected <2s, maximum 10s; no native/provider activity.
     it.each(["plan", "resume", "admission"] as const)("honors a late session opt-out during %s before admitting another prompt", async (boundary) => {
