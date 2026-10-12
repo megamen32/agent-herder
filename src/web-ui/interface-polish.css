@@ -1,6 +1,7 @@
 /* Calm chat navigation and a bounded, independently scrolling settings dialog. */
 .sessions-heading { padding: 24px 20px 18px; border-bottom: 0; }
 .sessions-heading h1 { font-size: 22px; font-weight: 550; }
+.sessions-machines-button { display: none; }
 .session-list { padding: 8px 10px 20px; }
 .session-fold-placeholder { display: none; }
 .session-fold { align-self: center; width: 20px; flex-basis: 20px; }
@@ -104,6 +105,9 @@
 .compact-receipt { font-size: 12px; }
 
 @media (max-width: 900px) {
+  .sessions-heading { flex-wrap: wrap; }
+  .sessions-heading .sessions-machines-button { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; flex-shrink: 0; }
+  .header-actions .desktop-chat-menu { display: grid; }
   .fleet-overlay { inset: 0; }
 }
 

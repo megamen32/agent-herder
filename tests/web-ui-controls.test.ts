@@ -134,6 +134,19 @@ describe("mobile chat and session controls", () => {
     expect(styles).toContain('.inspector-pane { display: flex; flex-direction: column; position: fixed; inset: 0; z-index: 45;');
   });
 
+  it("exposes Machines from the session-list header without selecting or creating a chat", () => {
+    const list = main.slice(main.indexOf("function SessionList("), main.indexOf("function App("));
+    expect(list).toContain('className="quiet-button sessions-machines-button" onClick={onMachines}>Машины</button>');
+    expect(main).toContain('<SessionList onMachines={() => { setFleetCreationMode(false); setShowFleet(true); setAutomationSettings(undefined); }}');
+  });
+
+  it("keeps the existing chat menu available throughout mobile and tablet widths", () => {
+    const tablet = polish.slice(polish.indexOf("@media (max-width: 900px)"), polish.indexOf("@media (max-width: 600px)"));
+    expect(tablet).toMatch(/\.header-actions \.desktop-chat-menu\s*\{\s*display:\s*grid;/);
+    expect(tablet).toMatch(/\.sessions-heading \.sessions-machines-button\s*\{[^}]*display:\s*inline-flex;/);
+    expect(tablet).toContain('min-height: 44px');
+  });
+
   it("addresses focus-group ambiguity around scope, saving, and the active timeout", () => {
     expect(main).toContain("Настроить текущую сессию");
     expect(main).toContain("переопределяет общую только для этой сессии");
