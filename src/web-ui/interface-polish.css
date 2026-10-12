@@ -132,7 +132,8 @@
   .settings-dialog-body .launch-policy-settings .launch-runtime-option { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; }
   .settings-dialog-body .launch-policy-settings .launch-runtime-option > span:first-child,
   .settings-dialog-body .launch-policy-settings .settings-help { overflow-wrap: anywhere; }
-  .settings-dialog-body .launch-policy-settings .launch-runtime-option > span + span { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+  .settings-dialog-body .launch-policy-settings .launch-runtime-option > span + span { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+  .settings-dialog-body .launch-policy-settings .launch-runtime-option button { min-width: 44px; min-height: 44px; }
   .settings-dialog-body .settings-save-row { flex-wrap: wrap; gap: 12px; }
   .settings-dialog-body .settings-save-row > span { flex-basis: 100%; }
   .settings-dialog-body .settings-save-row .primary-button { width: 100%; }
