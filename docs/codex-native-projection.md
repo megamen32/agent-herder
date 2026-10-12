@@ -14,7 +14,8 @@ The utility uses the existing TypeScript parser on the build host to inspect act
 
 The release utility makes a **Codex-only artifact of the existing plugin**.
 The original portable AgentPlugin 1.0 manifest, other harness interfaces,
-canonical checkout and installed native cache are unchanged. The artifact has
+and canonical checkout are unchanged. The utility itself does not write the
+installed native cache; the subsequent official installer does. The artifact has
 no root portable manifest, so native Codex discovers `.codex-plugin/plugin.json`.
 Its exact original hook commands, HTTP singleton MCP route, skills, built
 runtime and hook dependency closure are retained. Version is selected as
@@ -32,6 +33,25 @@ node scripts/prepare-codex-native-projection.mjs \
 ```
 
 Root must independently verify this new version is absent from the native cache before install. Never reuse an installed version for different bytes. Native selection takes the greatest cached semver; an old-version prerelease is insufficient.
+
+**Before official installation, Root must archive the existing plugin cache
+outside that plugin's managed cache directory and verify its complete file
+inventory and hashes against the archive.** Retain the verified archive and its
+receipt as the preservation/rollback evidence. The native updater's
+`PluginStore.activate_staged_plugin_cache` calls `remove_old_plugin_versions`:
+it prunes older cached versions when activating the new version. A distinct
+new version or cache path does **not** preserve the previous installed bytes.
+Do not install until the pre-install archive has been verified.
+
+Historical result, 2026-10-12: official installation of native `0.2.3`
+successfully exposed five trusted hooks and produced a genuine Stop `done`
+receipt. The installer also deleted the previous `0.2.2` cache before any
+backup was made. Root's comparison of 62,234 old file hashes confirmed
+preservation **FAIL**. Earlier claims that the old installed cache remained
+immutable/preserved were incorrect; source portable `0.2.2` and the other
+harness interfaces remained unchanged. Record this missing backup honestly;
+do not reconstruct unverified old bytes, fabricate preservation evidence or
+rewrite the installed cache to disguise the loss.
 
 The new output must be separate from the input package and absent. Limits are
 16 MiB and 4096 files; symlinks, escaping imports, missing dependencies and a
