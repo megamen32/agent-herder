@@ -4,9 +4,10 @@ import {projectPeerSession,type GptAdminTransport} from './gptadmin.js';
 import {fleetHarnesses,type FleetHostDefinition,type FleetHost,type FleetScope,type FleetView,type FleetSession,type FleetCreateRequest,type FleetCreateReceipt} from './fleet-contract.js';
 import {FleetCreateJournal} from './fleet-create-journal.js';
 import type {SessionInventoryPage,InventorySession} from './session-page.js';
+import type {RustCoreHostSelector} from './rust-core-client.js';
 type Context=FleetScope&{hostId:string;credentialGeneration?:string};
 type Cached={revision:number;host:FleetHost;sessions:FleetSession[];complete:boolean;limited:boolean;target:string;inventorySupported?:boolean};
-export interface FleetDependencies {hosts:readonly FleetHostDefinition[];scope:FleetScope;transportFactory:(context:Context)=>GptAdminTransport;now?:()=>number;ttlMs?:number;readDeadlineMs?:number;discoveryDeadlineMs?:number;createDeadlineMs?:number;journalPath?:string;credentialGeneration?:string}
+export interface FleetDependencies {hosts:readonly FleetHostDefinition[];scope:FleetScope;transportFactory:(context:Context)=>GptAdminTransport;rustCore?:RustCoreHostSelector;now?:()=>number;ttlMs?:number;readDeadlineMs?:number;discoveryDeadlineMs?:number;createDeadlineMs?:number;journalPath?:string;credentialGeneration?:string}
 /** Service scope is supplied by authenticated server code, never by request bodies. */
 export class FleetCabinetService {
  private readonly transports=new Map<string,GptAdminTransport>();
@@ -43,6 +44,7 @@ export class FleetCabinetService {
  get canReadSession(){return typeof this.transport(this.deps.hosts[0]!.hostId).readSession==='function';}
  async readSession(address:{hostId:string;harness:string;nativeSessionId:string}):Promise<unknown>{
   if(!this.deps.hosts.some(h=>h.hostId===address.hostId)||!fleetHarnesses.includes(address.harness as any)||!validText(address.nativeSessionId,512))throw new Error('fleet_session_invalid');
+  await this.selectedHost(address.hostId);
   const transport=this.transport(address.hostId);if(!transport.readSession||this.sessionReads>=3)throw new Error('fleet_session_read_unavailable');
   this.sessionReads++;
   try{return await transport.readSession(`mcp:shell:${address.hostId}:AgentHerder`,address.harness,address.nativeSessionId);}finally{this.sessionReads--;}
@@ -54,6 +56,7 @@ export class FleetCabinetService {
   if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('inventory_page_limit');
   if(options.hostId&&!this.deps.hosts.some(h=>h.hostId===options.hostId))throw new Error('inventory_host_invalid');
   for(const [host,cursor]of Object.entries(options.cursors??{}))if(!this.deps.hosts.some(h=>h.hostId===host)||typeof cursor!=='string'||cursor.length>2048||!/^[A-Za-z0-9_-]+$/.test(cursor))throw new Error('inventory_cursor_invalid');
+  if(options.hostId)await this.selectedHost(options.hostId);
   const view=await this.snapshot();const selected=view.hosts.filter(h=>(!options.hostId||h.hostId===options.hostId)&&(!options.cursors||Object.prototype.hasOwnProperty.call(options.cursors,h.hostId)));
   const pages=new Map<string,SessionInventoryPage&{reason?:string}>();let next=0;
   await Promise.all(Array.from({length:3},async()=>{for(;;){const host=selected[next++];if(!host)return;
@@ -84,6 +87,11 @@ export class FleetCabinetService {
   return {hosts:selected,pages:selected.map(h=>pages.get(h.hostId)!),scopeKey:this.browserScopeKey};
  }
  private now(){return (this.deps.now??Date.now)();}
+ private async selectedHost(hostId:string,requestId?:string):Promise<void>{
+  if(!this.deps.rustCore)return; // Existing configured-source behavior is unchanged until explicit wiring.
+  const selected=await this.deps.rustCore.resolveHost(hostId,this.deps.hosts.map(h=>h.hostId),requestId);
+  if(selected!==hostId)throw new Error('rust_core_route_unverified'); // Never retarget an accepted intent.
+ }
  private transport(hostId:string){let t=this.transports.get(hostId);if(!t){t=this.deps.transportFactory({...this.deps.scope,hostId,...(this.deps.credentialGeneration?{credentialGeneration:this.deps.credentialGeneration}:{})});this.transports.set(hostId,t);}return t;}
  private async bounded<T>(operation:Promise<T>,deadline:number,limitMs=this.deps.readDeadlineMs??10000):Promise<T>{
   let timer:ReturnType<typeof setTimeout>|undefined;
@@ -93,6 +101,7 @@ export class FleetCabinetService {
   const limit=options.limit??12;
   if(!Number.isInteger(limit)||limit<1||limit>12)throw new Error('Fleet limit must be 1..12');
   if(options.hostId&&!this.deps.hosts.some(h=>h.hostId===options.hostId))throw new Error('Unknown fleet host');
+  if(options.hostId)await this.selectedHost(options.hostId);
   // Sharing only within this immutable profile/user scope. Each request applies its own output window.
   let all:FleetView;
   if(options.refresh&&options.hostId)all=await this.refresh(options.hostId);
