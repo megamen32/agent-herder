@@ -39,6 +39,7 @@ import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { handleQuotaLensRequest } from "./quota-lens.js";
 import { getS21Ownership } from "../s21-resource-ownership.js";
+import { getHumanStopStore } from "../human-stop-store.js";
 import { deferredMessages, renderDeferredMessages } from "../deferred-messages.js";
 
 export interface WebDependencies {
@@ -713,21 +714,35 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const sessionId = url.searchParams.get("sessionId")?.trim();
     const cwd = url.searchParams.get("cwd")?.trim();
     if (!harness || !sessionId || !cwd) return sendJson(response, 400, { error: "harness, sessionId, and cwd are required" });
-    let humanStopHeld = await supervisor.isAutomationHeld(harness, sessionId);
+    const coordinationHeld=async()=>await getHumanStopStore().isHeld(harness,sessionId)||await supervisor.isAutomationHeld(harness,sessionId);
+    let humanStopHeld = await coordinationHeld();
     if (url.searchParams.get("touch") === "1" && !coordinationNotes.activeWorkspaceForSession(sessionId)) await coordinationNotes.heartbeatSession({ sessionId, cwd });
     const coordinationContext = await coordinationNotes.renderForSession({ harness, id: sessionId, cwd });
     if (response.destroyed) return;
-    humanStopHeld = humanStopHeld || await supervisor.isAutomationHeld(harness, sessionId);
+    humanStopHeld = humanStopHeld || await coordinationHeld();
+    if(humanStopHeld)await deferredMessages.discardActive(harness,sessionId);
     const inboxMessages = humanStopHeld ? [] : await deferredMessages.list(sessionId);
+    const activeTurnId=url.searchParams.get('activeTurnId')?.trim();
+    const currentAdapter=adapters.get(harness);
+    const activeMessages=!humanStopHeld&&activeTurnId&&url.searchParams.get('consumeActive')==='1'
+      ?await deferredMessages.offerActive(harness,sessionId,activeTurnId,async()=>{
+        if(!currentAdapter?.getCoordinationActiveTurnId)return false;
+        try{if(await currentAdapter.getCoordinationActiveTurnId(sessionId)!==activeTurnId)return false;
+          return !await coordinationHeld();
+        }catch{return false;}
+      }):[];
+    // The hook may have waited for store/native reads. A late Stop suppresses output.
+    if(activeMessages.length&&await coordinationHeld()){activeMessages.length=0;humanStopHeld=true;await deferredMessages.discardActive(harness,sessionId);}
     const inboxContext = humanStopHeld ? null : renderDeferredMessages(inboxMessages);
     const context = [inboxContext, coordinationContext].filter(Boolean).join("\n\n") || null;
-    return sendJson(response, 200, { context, inboxContext, inboxCount: inboxMessages.length, inboxIds:inboxMessages.map(message=>message.id), active: Boolean(context), humanStopHeld });
+    return sendJson(response, 200, { context, inboxContext, inboxCount: inboxMessages.length, inboxIds:inboxMessages.map(message=>message.id), activeInboxContext:renderDeferredMessages(activeMessages), activeInboxIds:activeMessages.map(message=>message.id), active: Boolean(context), humanStopHeld });
   }
   if (url.pathname === "/api/coordination/inbox-ack" && request.method === "POST") {
     const body = await readJson(request);
     const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
     if (!sessionId || !Array.isArray(body.ids)) return sendJson(response,400,{error:"sessionId and ids required"});
     const requested = new Set(body.ids.filter((id):id is string=>typeof id === "string"));
+    await deferredMessages.acknowledgeActive(sessionId,[...requested]);
     const pending = await deferredMessages.list(sessionId);
     const acknowledged = pending.filter(message=>requested.has(message.id)).map(message=>message.id);
     await deferredMessages.remove(acknowledged);

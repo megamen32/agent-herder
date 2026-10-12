@@ -1,3 +1,4 @@
+import { getHumanStopStore } from "../../human-stop-store.js";
 import { randomUUID } from "node:crypto";
 import { type ChildProcessWithoutNullStreams, type SpawnOptions } from "node:child_process";
 import type {
@@ -346,6 +347,27 @@ export class HermesAdapter implements HarnessAdapter {
       timestampCoverage: messages.every((message) => !!message.timestamp) ? "partial" : "none",
       limitations: ["Hermes public MCP bridge exposes rendered user/assistant messages only; tool records and native export are unavailable."],
     };
+  }
+
+  async sendActiveMessage(id:string,options:SendMessageOptions):Promise<SendMessageResult>{
+    const inputId=options.inputId||randomUUID();
+    if(this.jobs.has(id)||!this.gatewayTasks)return {ok:false,inputId,notSubmitted:true,nonRetryable:true,error:'Транспорт Hermes не поддерживает текущий native ход'};
+    try{
+      const session=await this.getSession(id);
+      if(!session||session.status!=='running'||!session.meta?.activeTurnToken||!session.meta?.nativeActiveTurnId||!session.meta?.nativeSessionId)
+        return {ok:false,inputId,notSubmitted:true,nonRetryable:true,error:'skipped_inactive: exact Hermes native turn is unavailable'};
+      if(await getHumanStopStore().isHeld('hermes',session.id))return {ok:false,inputId,notSubmitted:true,nonRetryable:true,error:'Чат явно остановлен'};
+      return await this.gatewayRequest({op:'steer',session_key:session.id,input_id:inputId,message:options.message,
+        expected_binding:options.expectedTaskBinding||session.meta.taskBinding,expected_turn_token:session.meta.activeTurnToken,
+        expected_native_turn_id:session.meta.nativeActiveTurnId,expected_native_session_id:session.meta.nativeSessionId}) as unknown as SendMessageResult;
+    }catch{return {ok:false,inputId,admissionUnknown:true,nonRetryable:true,error:'Квитанция Hermes guidance недоступна; разрешён только receipt query'};}
+  }
+  async getCoordinationMessageAdmission(id:string,inputId:string):Promise<MessageAdmissionResult>{
+    if(this.jobs.has(id)||!this.gatewayTasks)return {state:'not_found'};
+    try{const key=id.startsWith('agent:')?id:(await this.getSession(id))?.id;if(!key)return {state:'unknown',error:'Native Hermes alias is unavailable'};
+      const data=await this.gatewayRequest({op:'receipt',session_key:key,input_id:inputId});
+      return data.admitted?{state:'admitted',pending:data.pending===true}:data.state==='not_found'?{state:'not_found'}:{state:'unknown',error:String(data.error||'Earlier Hermes native receipt is uncertain; no replay')};
+    }catch{return {state:'unknown',error:'Hermes receipt unavailable; no replay'};}
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {

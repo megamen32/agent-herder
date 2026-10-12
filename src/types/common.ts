@@ -104,10 +104,12 @@ export interface HarnessCapabilities {
 }
 
 export interface SendMessageResult {
+  /** Scoped hook reservation, not a native input/turn-start or model receipt. */
+  admissionKind?: "current_turn_context";
   /** Dispatch was cancelled before invoking any native writer. */
   notSubmitted?: boolean;
   ok: boolean;
-  /** Exact native turn identity returned by admission, not task completion. */
+  /** Exact native turn addressed/returned by admission, not task completion. */
   turnId?: string;
   /** Caller-supplied stable operation identity; distinct attempts need distinct IDs. */
   inputId?: string;
@@ -185,6 +187,8 @@ export interface PermissionRequest {
 }
 
 export interface SendMessageOptions {
+  /** Existing regular inbox IDs transferred only at durable hook offer. */
+  retainedInboxIds?: string[];
   /** Internal active-turn-only delivery. Never resume/start or enqueue a future turn. */
   activeTurnOnly?: boolean;
   /** Exact failed input fence for recovery only; ordinary coordination is unchanged. */
@@ -209,6 +213,8 @@ export interface SendMessageOptions {
 export interface MessageImage { id: string; path: string; fileName: string; mimeType: string; bytes: number }
 
 export interface MessageAdmissionResult {
+  /** Technical admission is not model-observed delivery. */
+  pending?: boolean;
   state: "not_found" | "admitted" | "failed" | "unknown";
   error?: string;
 }
@@ -278,6 +284,8 @@ export interface HarnessAdapter {
   isReady?(): boolean;
   /** Native current-turn admission with no idle/start fallback. */
   sendActiveMessage?(id: string, options: SendMessageOptions): Promise<ControlResult>;
+  /** Read exact live native turn/user-loop identity without load/start/resume. */
+  getCoordinationActiveTurnId?(id: string): Promise<string | null>;
   /** Pure receipt lookup for coordination; must never load/resume a native session. */
   getCoordinationMessageAdmission?(id: string, inputId: string): Promise<MessageAdmissionResult>;
 

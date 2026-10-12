@@ -1,3 +1,4 @@
+import { reserveCurrentTurnContext, currentTurnContextReceipt } from "../coordination-active-delivery.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -2202,6 +2203,16 @@ export class ZcodeAdapter implements HarnessAdapter {
     if (!resumed.ok || !message) return resumed;
     return this.sendMessage(id, { message, queue: true });
   }
+
+  async getCoordinationActiveTurnId(id:string):Promise<string|null>{
+    const workspace=this.sessionWorkspaces.get(id);if(!workspace||!this.client.callIfReady)return null;
+    const snapshot=await this.client.callIfReady('zcode-agent','readSession',[{...workspace,sessionId:id,runtimePolicy:'existing-only',messageLimit:1}]) as ZcodeSnapshot;
+    if(sessionInfoFromPayload(snapshot)?.sessionId!==id||sessionInfoFromPayload(snapshot)?.status!=='running'
+      ||this.pendingPermissionError(snapshot)||!Array.isArray(snapshot.runtime?.pendingRequestIds)||snapshot.runtime.pendingRequestIds.length)return null;
+    return nonEmptyString(snapshot.runtime?.activeTurnId)||null;
+  }
+  async sendActiveMessage(id:string,options:SendMessageOptions):Promise<ControlResult>{return reserveCurrentTurnContext(this,id,options);}
+  async getCoordinationMessageAdmission(id:string,inputId:string){return currentTurnContextReceipt(this,id,inputId);}
 
   async getMessageAdmission(id: string, inputId: string, cwd?: string): Promise<MessageAdmissionResult> {
     const workspace = this.sessionWorkspaces.get(id) || this.workspace(cwd);

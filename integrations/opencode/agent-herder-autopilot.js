@@ -60,6 +60,20 @@ export default async function AgentHerderAutopilot({ directory, $ }) {
   const enabled = new Set()
   const controlTurns = new Set()
   return {
+    // Supported native loop context hook. No prompt endpoint or persisted user message.
+    "experimental.chat.messages.transform": async (_input,output)=>{
+      const user=[...(output.messages||[])].reverse().find(m=>m.info?.role==='user');
+      const sessionID=user?.info?.sessionID,activeTurnId=user?.info?.id;
+      const textPart=user?.parts?.findLast(p=>p.type==='text'&&typeof p.text==='string');
+      if(!sessionID||!activeTurnId||!textPart)return;
+      try{
+        const q=new URLSearchParams({harness:'opencode',sessionId:sessionID,cwd:directory,activeTurnId,consumeActive:'1'});
+        const data=await coordinationFetch(`/api/coordination/context?${q}`);
+        if(!data?.activeInboxIds?.length||!data.activeInboxContext)return;
+        textPart.text+='\n\n'+data.activeInboxContext;
+        await coordinationFetch('/api/coordination/inbox-ack',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sessionId:sessionID,ids:data.activeInboxIds})});
+      }catch{}
+    },
     "experimental.chat.system.transform": async ({ sessionID }, output) => {
       if (!sessionID || !Array.isArray(output.system)) return
       try {

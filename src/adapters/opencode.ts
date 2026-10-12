@@ -1,3 +1,4 @@
+import { reserveCurrentTurnContext, currentTurnContextReceipt } from "../coordination-active-delivery.js";
 import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, HarnessEvent, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SendMessageResult, SetPermissionsOptions, SessionMessagePart, SessionMessageView } from "../types/index.js";
 import { readFileSync } from "node:fs";
 import { throwIfAborted } from "../abort-utils.js";
@@ -296,6 +297,18 @@ export class OpenCodeAdapter implements HarnessAdapter {
     const session = await this.fetchJson<OpenCodeSessionPayload>(`/session/${encodeURIComponent(id)}`);
     return session.parentID ? this.getSession(session.parentID) : null;
   }
+
+  async getCoordinationActiveTurnId(id:string):Promise<string|null>{
+    // Native V1 loop's lastUser.id is stable across tool/model steps; never invent a turn ID.
+    const messages=await this.fetchJson<OpenCodeMessagePayload[]>(`/session/${encodeURIComponent(id)}/message?limit=50`);
+    const session=await this.fetchJson<OpenCodeSessionPayload>(`/session/${encodeURIComponent(id)}`);
+    const statuses=await this.readStatuses(session.directory||session.path);
+    const st=statuses[id];if(this.mapStatus(st?.status||st?.type)!=='running'||st?.needsPermission||st?.permission)return null;
+    const user=[...messages].reverse().find(m=>(m.info?.role||m.role)==='user');
+    return user?.info?.id||user?.id||null;
+  }
+  async sendActiveMessage(id:string,options:SendMessageOptions):Promise<ControlResult>{return reserveCurrentTurnContext(this,id,options);}
+  async getCoordinationMessageAdmission(id:string,inputId:string){return currentTurnContextReceipt(this,id,inputId);}
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     if (options.queue) {

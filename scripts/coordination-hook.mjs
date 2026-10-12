@@ -98,7 +98,10 @@ try {
     const workdir = typeof observedWorkdir === "string" && isAbsolute(observedWorkdir) ? resolve(observedWorkdir) : cwd;
     const paths = isWriteActivity(input.tool_name, input.tool_input) ? normalizePaths(collectPaths(input.tool_input), workdir) : [];
     const data = await fetchJson(`${endpoint}/api/coordination/activity`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ harness, sessionId, cwd: workdir, launchCwd: cwd, paths }) });
-    output(event, data.context || undefined);
+    const activeTurnId=typeof input.turn_id==='string'?input.turn_id:typeof input.turnId==='string'?input.turnId:undefined;
+    const current=harness==='zcode'&&activeTurnId?await fetchJson(`${endpoint}/api/coordination/context?${new URLSearchParams({harness,sessionId,cwd,activeTurnId,consumeActive:'1'})}`):null;
+    output(event,[data.context,current?.activeInboxContext].filter(Boolean).join('\n\n')||undefined);
+    if(current?.activeInboxIds?.length)await fetchJson(`${endpoint}/api/coordination/inbox-ack`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sessionId,ids:current.activeInboxIds})});
     if (data.inboxIds?.length) await fetchJson(`${endpoint}/api/coordination/inbox-ack`, {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId,ids:data.inboxIds})});
   }
 } catch { process.exit(0); }

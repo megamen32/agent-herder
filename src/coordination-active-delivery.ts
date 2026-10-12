@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { deferredMessages } from './deferred-messages.js';
+import { getHumanStopStore } from './human-stop-store.js';
 import type { AgentSession, ControlResult, HarnessAdapter, SendMessageOptions } from './types/index.js';
 
 export function isCoordinationActive(session: AgentSession | null | undefined): boolean {
@@ -30,8 +33,26 @@ export async function previousCoordinationReceipt(adapter: HarnessAdapter, id: s
   if (!inputId || !adapter.getCoordinationMessageAdmission) return undefined;
   try {
     const receipt = await adapter.getCoordinationMessageAdmission(id,inputId);
-    if (receipt.state === 'admitted') return JSON.stringify({ok:true,sessionId:id,inputId,delivery:'previously_admitted',admitted:true,activated:false});
+    if (receipt.state === 'admitted') return JSON.stringify({ok:true,sessionId:id,inputId,delivery:'previously_admitted',admitted:true,...(receipt.pending?{pending:true}:{}),activated:false});
     if (receipt.state === 'unknown' && receipt.error) return JSON.stringify({ok:false,sessionId:id,inputId,delivery:'admission_unknown',admissionUnknown:true,nonRetryable:true,activated:false,error:receipt.error});
   } catch { return JSON.stringify({ok:false,sessionId:id,inputId,delivery:'admission_unknown',admissionUnknown:true,nonRetryable:true,activated:false,error:'Квитанция прежней доставки недоступна; повтор не выполнен.'}); }
   return undefined;
+}
+
+/** Supported hook transport: reservation is not model-observed delivery. */
+export async function reserveCurrentTurnContext(adapter:HarnessAdapter,id:string,options:SendMessageOptions):Promise<ControlResult>{
+ const inputId=options.inputId||randomUUID();
+ try{
+  const prior=await deferredMessages.activeReceipt(adapter.type,id,inputId);
+  if(prior)return prior.activeTurn?.state==='expired'?{ok:false,inputId,notSubmitted:true,nonRetryable:true,error:'Текущий ход уже завершён; прежнее сообщение не переносится.'}:{ok:true,admitted:true,pending:true,admissionKind:'current_turn_context',inputId};
+  const identity=await adapter.getCoordinationActiveTurnId?.(id);
+  if(!identity)return {ok:false,notSubmitted:true,nonRetryable:true,inputId,error:'skipped_inactive: точный активный native ход не установлен'};
+  if(await getHumanStopStore().isHeld(adapter.type,id))return {ok:false,notSubmitted:true,nonRetryable:true,inputId,error:'Чат явно остановлен.'};
+  const row=await deferredMessages.addActive(adapter.type,id,identity,inputId,options.message,options.retainedInboxIds);
+  return row.activeTurn?.state==='expired'?{ok:false,inputId,notSubmitted:true,nonRetryable:true,error:'skipped_inactive: исходный ход завершён'}:{ok:true,admitted:true,pending:true,admissionKind:'current_turn_context',inputId,...(adapter.type==='zcode'?{turnId:identity}:{})};
+ }catch{return {ok:false,inputId,admissionKind:'current_turn_context',admissionUnknown:true,nonRetryable:true,error:'Квитанция текущего хода недоступна; повтор запрещён.'};}
+}
+export async function currentTurnContextReceipt(adapter:HarnessAdapter,id:string,inputId:string){
+ const row=await deferredMessages.activeReceipt(adapter.type,id,inputId);
+ return row?{state:'admitted' as const,pending:true}:{state:'not_found' as const};
 }

@@ -475,6 +475,7 @@ async function sendMessageOnce(
     origin: parsed.humanRequested ? "human" as const : "automation" as const,
     inputId: parsed.inputId ?? (parsed.humanRequested ? undefined : createHash("sha256").update(baseMessage).digest("hex")),
     message: injectedMessage,
+    retainedInboxIds:pending.ids,
     queue: parsed.mode === "queue",
     steer: parsed.mode === "steer",
   };
@@ -485,22 +486,24 @@ async function sendMessageOnce(
     : JSON.stringify({ok:false,delivery:'not_attempted',activated:false,error:result.error});
 
   if (result.ok) {
-    if (pending.ids.length) {
+    if (result.admissionKind !== "current_turn_context" && pending.ids.length) {
       try { await deferredMessages.remove(pending.ids); }
       catch (error) { console.error(`[agent-herder] accepted delivery cleanup failed for ${parsed.sessionId}: ${error instanceof Error ? error.message : String(error)}`); }
     }
     const receipt = result.admitted && (result.turnId || result.inputId)
-      ? `\nNative admission receipt: ${JSON.stringify({ admitted: true,
+      ? `\n${result.admissionKind === "current_turn_context" ? "Current-turn context reservation" : "Native admission"} receipt: ${JSON.stringify({ admitted: true,
         ...(result.turnId ? { turnId: result.turnId } : {}),
         ...(result.inputId ? { inputId: result.inputId } : {}) })}` : "";
     if (result.pending) {
-      return `Message accepted by [${found.session.harness}] ${parsed.sessionId}; native turn start is still being verified.${receipt}`;
+      return result.admissionKind === "current_turn_context"
+        ? `Message reserved for the current turn of [${found.session.harness}] ${parsed.sessionId}; model observation is not yet confirmed.${receipt}`
+        : `Message accepted by [${found.session.harness}] ${parsed.sessionId}; native turn start is still being verified.${receipt}`;
     }
     const modeLabel = parsed.mode === "queue" ? " (queued)" : parsed.mode === "steer" ? " (steering)" : " (sync)";
     return `Message sent to [${found.session.harness}] ${parsed.sessionId}${modeLabel}.${receipt}`;
   }
   if ((result.admitted || result.admissionUnknown) && result.nonRetryable) {
-    if (pending.ids.length) {
+    if (result.admissionKind !== "current_turn_context" && pending.ids.length) {
       try { await deferredMessages.remove(pending.ids); }
       catch (error) { console.error(`[agent-herder] admitted-failure cleanup failed for ${parsed.sessionId}: ${error instanceof Error ? error.message : String(error)}`); }
     }
@@ -553,11 +556,11 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
     const pending = await withDeferred(fresh.id, parsed.message);
     const injected = await coordinationNotes.inject(fresh, pending.message);
     if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
-    const options = {message:injected,queue:parsed.mode==="queue",inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),origin:"automation" as const};
+    const options = {message:injected,retainedInboxIds:pending.ids,queue:parsed.mode==="queue",inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),origin:"automation" as const};
     const sent = activation === 'if_running' ? await sendCurrentTurnOnly(found.adapter,fresh.id,options) : await found.adapter.sendMessage(fresh.id,options);
     if (sent.notSubmitted) return sent.error?.startsWith('skipped_inactive') ? skippedCoordination(fresh)
       : JSON.stringify({ok:false,delivery:'not_attempted',activated:false,error:sent.error});
-    if ((sent.ok || sent.admitted || (sent.admissionUnknown && sent.nonRetryable)) && pending.ids.length) {
+    if (sent.admissionKind !== "current_turn_context" && (sent.ok || sent.admitted || (sent.admissionUnknown && sent.nonRetryable)) && pending.ids.length) {
       try { await deferredMessages.remove(pending.ids); }
       catch (error) { console.error(`[agent-herder] accepted delivery cleanup failed for ${fresh.id}: ${error instanceof Error ? error.message : String(error)}`); }
     }
@@ -569,6 +572,7 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
       return JSON.stringify({ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"deferred",activated:false});
     }
     const receipt = {
+      ...(sent.admissionKind ? {admissionKind:sent.admissionKind} : {}),
       ...(sent.admitted !== undefined ? {admitted:sent.admitted} : {}),
       ...(sent.inputId ? {inputId:sent.inputId} : {}),
       ...(sent.turnId ? {turnId:sent.turnId} : {}),

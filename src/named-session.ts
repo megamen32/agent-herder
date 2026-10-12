@@ -384,15 +384,15 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     if (activation==="defer" && fresh.status!=="running") { await deferredMessages.add(fresh.id,request.message); return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"deferred",activated:false,...normalized}; }
     const pending=await withDeferred(fresh.id,request.message); const injected=await coordinationNotes.inject(fresh,pending.message);
     if (await sourceHeldNow(request) || await automaticDeliveryHeld(fresh, false, adapter)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: fresh.id, activated: false };
-    const options={message:injected,queue:(request.mode||"queue")==="queue",inputId:request.inputId ?? createHash("sha256").update(request.message).digest("hex"),origin:"automation" as const};
+    const options={message:injected,retainedInboxIds:pending.ids,queue:(request.mode||"queue")==="queue",inputId:request.inputId ?? createHash("sha256").update(request.message).digest("hex"),origin:"automation" as const};
     const sent=activation==='if_running'?await sendCurrentTurnOnly(adapter,fresh.id,options):await adapter.sendMessage(fresh.id,options);
     if (sent.notSubmitted) return {ok:sent.error?.startsWith('skipped_inactive')===true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:sent.error?.startsWith('skipped_inactive')?'skipped_inactive':'not_attempted',activated:false,...normalized,...(sent.error?.startsWith('skipped_inactive')?{}:{error:sent.error})};
-    const receipt = {...(sent.admitted !== undefined ? {admitted:sent.admitted} : {}), ...(sent.inputId ? {inputId:sent.inputId} : {}), ...(sent.turnId ? {turnId:sent.turnId} : {}), ...(sent.admissionUnknown ? {admissionUnknown:true,nonRetryable:true} : {})};
-    if (!sent.ok && sent.admissionUnknown && sent.nonRetryable && pending.ids.length) await deferredMessages.remove(pending.ids);
+    const receipt = {...(sent.admissionKind?{admissionKind:sent.admissionKind}:{}),...(sent.admitted !== undefined ? {admitted:sent.admitted} : {}), ...(sent.inputId ? {inputId:sent.inputId} : {}), ...(sent.turnId ? {turnId:sent.turnId} : {}), ...(sent.admissionUnknown ? {admissionUnknown:true,nonRetryable:true} : {})};
+    if (!sent.ok && sent.admissionUnknown && sent.nonRetryable && sent.admissionKind !== "current_turn_context" && pending.ids.length) await deferredMessages.remove(pending.ids);
     if (!sent.ok && sent.admitted && sent.nonRetryable) {
       const result: DeliverResult = {ok:false,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"accepted_failed",activated:false,admitted:true,nonRetryable:true,error:sent.error||"Native turn failed after prompt admission",...normalized,...receipt};
       rememberNamedDelivery(deliveryIdentity, result);
-      if (pending.ids.length) await deferredMessages.remove(pending.ids);
+      if (sent.admissionKind !== "current_turn_context" && pending.ids.length) await deferredMessages.remove(pending.ids);
       return result;
     }
     if (activation !== 'if_running' && !sent.ok && !sent.nonRetryable && isBusyCodexWriter(fresh.harness, sent.error)) {
@@ -402,10 +402,10 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     if (sent.ok && sent.pending) {
       const result: DeliverResult = {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"accepted_unconfirmed",activated:false,admitted:sent.admitted === true,pending:true,...normalized,...receipt};
       rememberNamedDelivery(deliveryIdentity, result);
-      if (pending.ids.length) await deferredMessages.remove(pending.ids);
+      if (sent.admissionKind !== "current_turn_context" && pending.ids.length) await deferredMessages.remove(pending.ids);
       return result;
     }
-    if (sent.ok && pending.ids.length) await deferredMessages.remove(pending.ids);
+    if (sent.ok && sent.admissionKind !== "current_turn_context" && pending.ids.length) await deferredMessages.remove(pending.ids);
     return sent.ok ? {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:(request.mode||"queue")==="queue"?"accepted":"completed",activated:activation !== 'if_running',...normalized,...receipt} : {ok:false,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"failed",activated:false,error:sent.error||"Message delivery failed",...normalized,...receipt};
   });
 }
