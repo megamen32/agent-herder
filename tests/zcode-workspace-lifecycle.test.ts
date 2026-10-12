@@ -33,8 +33,9 @@ function fixture(unavailableCode='ZCODE_AGENT_RUNTIME_UNAVAILABLE'){
  const info={sessionId:'own-session',workspace:{workspacePath:cwd,workspaceIdentity:cwd},sessionKind:'root',title:'Own fixture',mode:'build',status:'running',model:{providerId:'fixture',modelId:'fixture'},createdAt:Date.now(),updatedAt:Date.now()};
  const snap=()=>({session:{...info,status:resumed?'idle':'running'},runtime:{activeTurnId:resumed?undefined:'own-turn',eventSeq:4,stateRevision:2,pendingRequestIds:[]},messages:[],projection:{activeToolCalls:[],backgroundJobs:[]},settings:{model:{current:info.model}}});
  const calls:string[]=[];
+ let nativeListener:((payload:unknown)=>void)|undefined;
  const client:any={start:async()=>{},close:async()=>{},getOwnedProcessId:()=>700,
-  listen:()=>()=>{},callIfReady:async(_c:string,m:string,args:any[])=>{calls.push(m);
+  listen:(_channel:string,_event:string,_args:unknown,handler:(payload:unknown)=>void)=>{nativeListener=handler;return ()=>{nativeListener=undefined;};},callIfReady:async(_c:string,m:string,args:any[])=>{calls.push(m);
    if(m==='getWorkspaceRuntimeIdentity'){if(!alive)throw Object.assign(Error('runtime identity unavailable'),{code:unavailableCode});return {processId:runtimePid,generation,workspaceKey:cwd};}
    if(m==='readSession')return snap();
    if(m==='sendConversationCommandV4'){calls.pop();return client.call(_c,m,args);}throw Error(m);
@@ -53,7 +54,7 @@ function fixture(unavailableCode='ZCODE_AGENT_RUNTIME_UNAVAILABLE'){
   }};
  const adapter=new ZcodeAdapter({client,cwd,localDbPath:path,workspaceProcessProbe:{capture:()=>alive?{...processProof,pid:runtimePid,groupId:runtimePid,startTick:String(generation+99),descendants:[...sampledChildren]}:null,gone:proof=>!survivors&&(proof.pid!==runtimePid||!alive)&&!proof.descendants.some(child=>detachedLive.has(`${child.pid}:${child.startTick}`))}});
  const events:any[]=[];adapter.subscribeEvents(e=>events.push(e));
- return {adapter,db,cwd,calls,events,observeChild(pid:number,startTick:string){sampledChildren=[{pid,startTick}];detachedLive.add(`${pid}:${startTick}`);},detachChildren(){sampledChildren=[];},kill:()=>{alive=false;},survivingChild:()=>{survivors=true;},async start(){await adapter.init();await adapter.sendMessage('own-session',{message:'Initial once',queue:true,origin:'automation',inputId:'initial-once'});await adapter.listSessions({cwd});}};
+ return {adapter,db,cwd,calls,events,async emitNative(payload:unknown){if(!nativeListener)throw Error('Native subscription missing');nativeListener(payload);await Promise.all([...(adapter as any).sessionEventTasks]);},observeChild(pid:number,startTick:string){sampledChildren=[{pid,startTick}];detachedLive.add(`${pid}:${startTick}`);},detachChildren(){sampledChildren=[];},kill:()=>{alive=false;},survivingChild:()=>{survivors=true;},async start(){await adapter.init();await adapter.sendMessage('own-session',{message:'Initial once',queue:true,origin:'automation',inputId:'initial-once'});await adapter.listSessions({cwd});}};
 }
 describe('native workspace lifecycle, not SDK disconnection',()=>{
  it('persists pre-death native identity and automatically claims SAME SID without terminal row',async()=>{
@@ -134,11 +135,12 @@ async function hooks(){
  await settingsStore.setSession({harness:'zcode',sessionId:'own-session',cwd:f.cwd},true);
  const questions:any[]=[];
  const adapters=new Map([['zcode',f.adapter]]),launcher=new UnfinishedSessionLauncher({adapters,store,settingsStore,humanStopStore:getHumanStopStore(),humanRequests:{list:async()=>questions} as any});
+ const lifecycleTasks:Promise<void>[]=[];const unsubscribe=f.adapter.subscribeEvents(event=>{lifecycleTasks.push(launcher.handleEvent('zcode',event));});
  const supervisor=new SessionSupervisor(adapters,{} as any,new LineageStore(join(f.cwd,'lineage.json')),{humanStopStore:getHumanStopStore(),unfinishedSessions:launcher});
  const server=createWebServer({adapters,supervisor,converter:{} as any});await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
  const origin='http://127.0.0.1:'+(server.address() as {port:number}).port;
  await f.adapter.init();await f.adapter.sendMessage('own-session',{message:'Initial once',queue:true,origin:'automation',inputId:'initial-once'});
- return {...f,store,launcher,questions,async post(event:string,outcome?:string){const r=await fetch(origin+'/api/coordination/lifecycle',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({harness:'zcode',sessionId:'own-session',cwd:f.cwd,turnId:'own-turn',event,...(outcome?{outcome}:{})})});expect(r.status).toBe(200);return r.json();},async close(){launcher.stop();server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));await f.adapter.dispose();f.db.close();}};
+ return {...f,store,launcher,questions,async emitCompleted(){await f.emitNative({type:'session.event',event:{type:'turn.completed',eventId:'generic-model-completed',sessionId:'own-session',turnId:'own-turn',seq:8,timestamp:Date.now(),payload:{resultType:'success',inputId:'agent-herder:auto:initial-once'}}});await Promise.all(lifecycleTasks.splice(0));},async post(event:string,outcome?:string){const r=await fetch(origin+'/api/coordination/lifecycle',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({harness:'zcode',sessionId:'own-session',cwd:f.cwd,turnId:'own-turn',event,...(outcome?{outcome}:{})})});expect(r.status).toBe(200);return r.json();},async close(){launcher.stop();unsubscribe();server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));await f.adapter.dispose();f.db.close();}};
 }
 describe('hooks primary native begin and successful final outcome',()=>{
  it('records begin BEFORE assistant/terminal row and resolves missing input_id as automation',async()=>{
@@ -162,6 +164,23 @@ describe('hooks primary native begin and successful final outcome',()=>{
    f.db.prepare("update session_input set payload=json_set(payload,'$.intent.clientId','unknown-agent')").run();
    expect(await f.post('user-prompt')).toMatchObject({origin:'unknown',released:false,recorded:false});
    expect(await f.store.list()).toHaveLength(0);
+  }finally{await f.close();}
+ });
+ it('keeps hook-primary tracking and durable active through generic model completion until verified Stop success',async()=>{
+  const f=await hooks();try{
+   await f.post('user-prompt');
+   let technicalAck:any;
+   (f.adapter as any).turnStartWaiters.set('own-session:agent-herder:auto:initial-once',(result:unknown)=>{technicalAck=result;});
+   await f.emitCompleted();
+   expect(technicalAck).toMatchObject({ok:true,turnId:'own-turn'});
+   expect(await f.store.activeNativeTurn('zcode','own-session')).toBeDefined();
+   expect(f.events.some(e=>e.kind==='turn.completed')).toBe(false);
+   expect((f.adapter as any).observedActiveTurns.get('own-session')?.hookStarted).toBe(true);
+   for(const outcome of ['continue','failed','unknown']){await f.post('turn-end',outcome);await f.emitCompleted();expect(await f.store.activeNativeTurn('zcode','own-session')).toBeDefined();}
+   f.db.prepare("update message set data=json_set(data,'$.finish','stop') where id='assistant-1'").run();
+   expect(await f.post('turn-end','success')).toMatchObject({recorded:true});
+   expect(await f.store.list()).toHaveLength(0);
+   expect((f.adapter as any).observedActiveTurns.has('own-session')).toBe(false);
   }finally{await f.close();}
  });
  it('does not complete a native turn while a newly pending human question is cached out',async()=>{

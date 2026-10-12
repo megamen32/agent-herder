@@ -2726,6 +2726,7 @@ export class ZcodeAdapter implements HarnessAdapter {
               }
             }
             if (!active) return;
+            let hookPrimaryCompletion = false;
             if (event.kind === "turn.started") {
               const turnId = nonEmptyString(record(event.data).turnId);
               if (turnId || inputId) this.observedActiveTurns.set(sessionId, { ...this.observedActiveTurns.get(sessionId), ...(turnId ? { turnId } : {}), ...(inputId ? { inputId } : {}) });
@@ -2735,7 +2736,11 @@ export class ZcodeAdapter implements HarnessAdapter {
               const matches = observed?.turnId && turnId
                 ? observed.turnId === turnId
                 : !!observed?.inputId && !!inputId && observed.inputId === inputId;
-              if (!observed || matches) this.observedActiveTurns.delete(sessionId);
+              // Model-turn completion is a technical receipt, not the explicit
+              // Stop success that owns hook-primary business completion. Native
+              // cancellation keeps its existing human-stop evidence path.
+              hookPrimaryCompletion = event.kind === "turn.completed" && !cancelled && observed?.hookStarted === true && !!matches;
+              if (!hookPrimaryCompletion && (!observed || matches)) this.observedActiveTurns.delete(sessionId);
             }
             if (inputId) {
               const waiterKey = `${sessionId}:${inputId}`;
@@ -2754,7 +2759,7 @@ export class ZcodeAdapter implements HarnessAdapter {
                   : { ok: true, turnId: nonEmptyString(record(event.data).turnId) });
               }
             }
-            this.emitEvent(event);
+            if (!hookPrimaryCompletion) this.emitEvent(event);
             if (!cancelled && (event.kind === "turn.completed" || event.kind === "turn.failed")) this.scheduleQueuedPromptFlush(sessionId, 0);
           }
         })().catch((error) => {
