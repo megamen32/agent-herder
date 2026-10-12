@@ -27,6 +27,15 @@ The running old daemon lacks the new signal handler. Before its first stop:
    existing durable session identities through the current local HTTP surface.
    It never resumes/creates/submits work. Unknown, held, pending or Desktop work
    is excluded. Coverage is explicitly partial, never a blanket idle proof.
+   `--audit-native-activity` additionally reads native DB session identities
+   updated since the exact current controller's `/proc` start generation,
+   including identities outside the durable launcher store. The receipt also
+   lists direct native workspace-client PIDs/cwds under the verified app-server.
+   This is independent activity evidence, not an exhaustive loaded-session list:
+   a process or a recent DB row alone does not establish an active/owned turn.
+   Historical session bootstrap is deliberately unsupported. The 30-second
+   deadline and every failed/missing snapshot stay visible; an incomplete scan
+   exits 2, and `idleProof` always remains false.
 3. After Root verifies the actual boundary, run the same command without
    `--dry-run` immediately before the controlled stop. This writes exact
    internal-stop attribution into the already locked store while the old daemon
@@ -40,13 +49,25 @@ The running old daemon lacks the new signal handler. Before its first stop:
    disposing it. With `KillMode=control-group`, simultaneous child termination
    can defeat an in-process observation; the pre-stop seam remains necessary.
 
+The old 6b adapter already maps `nativeActiveTurnId` directly from
+`snapshot.runtime.activeTurnId`, with `nativeStateRevision` and native status.
+First-upgrade classification requires those existing fields, not a new alias.
+`observed_idle` requires an available native snapshot, idle native/session status,
+no active turn and no pending request. `native_snapshot_unavailable` (including
+a historical row saying running), missing/replaced turn, missing revision,
+HTTP failure/hidden ID, unknown hold, pending input/request and foreign Desktop
+ownership each have a separate reason. None authorizes stopping an unknown turn.
+Root must independently resolve unknown/partial workspace activity before stop;
+the checkpoint command only preserves exact proven owned turns in the old store.
+
 ## Desktop input race
 
 Native V4 `sendText` has no documented idle-only CAS. `baseRevision` is required
 by other V4 commands; it is not claimed as an idle-only fence for `sendText`.
 Recovery passes the exact failed turn/user/completion boundary. After all load,
 Stop and generated-input awaits, the adapter re-reads an already-existing runtime
-and synchronously verifies native latest user, turn and input queue immediately
+and rechecks the existing human Stop store after that final awaited snapshot.
+It then synchronously verifies native latest user, turn and input queue immediately
 before ready-transport dispatch. New Desktop/queued/unknown work prevents that
 recovery input. Ordinary guide/coordination delivery is unchanged. This is the
 closest supported guard, not a cross-controller atomic admission guarantee.

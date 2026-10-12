@@ -1821,10 +1821,13 @@ export class ZcodeAdapter implements HarnessAdapter {
         recoverySnapshot = await this.client.callIfReady('zcode-agent', 'readSession', [{...workspace,sessionId:id,runtimePolicy:'existing-only',messageLimit:0}]) as ZcodeSnapshot;
         if (sessionInfoFromPayload(recoverySnapshot)?.sessionId !== id || recoverySnapshot.runtime?.activeTurnId
           || recoverySnapshot.runtime?.activeTurnKind || !Array.isArray(recoverySnapshot.runtime?.pendingRequestIds)
-          || recoverySnapshot.runtime.pendingRequestIds.length
-          || !zcodeRecoveryBoundaryCurrent(this.localDbPath, id, options.recoveryBoundary)) {
+          || recoverySnapshot.runtime.pendingRequestIds.length) {
           return { ok: false, admitted: false, nonRetryable: true, inputId, error: 'В этой сессии появился новый ввод или работа; продолжение старого turn не отправлено.' };
         }
+        // A Stop may be committed by another controller during the final read.
+        // Finish all asynchronous holds before the synchronous native DB fence.
+        if (await stopStore.isHeld('zcode',id)) return {ok:false,admitted:false,nonRetryable:true,inputId,error:'Чат явно остановлен; автоматическая отправка запрещена.'};
+        if (!zcodeRecoveryBoundaryCurrent(this.localDbPath,id,options.recoveryBoundary)) return {ok:false,admitted:false,nonRetryable:true,inputId,error:'В этой сессии появился новый ввод или работа; продолжение старого turn не отправлено.'};
       }
       attempted = true;
       // Pinned installed zcode-server.cjs exposes this exact service method.

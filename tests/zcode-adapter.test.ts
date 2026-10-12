@@ -2083,7 +2083,7 @@ it.each([false,true])("settles a staged guide from native history despite event/
 });
 
 
-it('rejects recovery when Desktop input arrives during native baseline refresh without replaying tools (focused integration expected .3s/max5s)',async()=>{
+it.each(['Desktop input','human Stop'])('rejects recovery when %s arrives during the final native read without replaying tools (focused integration expected .3s/max5s)',async(race)=>{
  const root=await mkdtemp(join(tmpdir(),'zcode-admission-race-'));const path=join(root,'native.sqlite');const db=new DatabaseSync(path);
  db.exec(`create table turn_usage(session_id text,turn_id text,user_message_id text,started_at integer,completed_at integer);
  create table message(id text,session_id text,data text,sequence integer);
@@ -2099,7 +2099,8 @@ it('rejects recovery when Desktop input arrives during native baseline refresh w
   async callIfReady(channel:string,method:string,args:unknown[]):Promise<unknown>{
    if(method==='readSession'){
     // Other-controller admission is invisible in this controller's snapshot.
-    db.exec("insert into session_input values('race-session','admitted')");
+    if(race==='Desktop input')db.exec("insert into session_input values('race-session','admitted')");
+    else await getHumanStopStore().hold({harness:'zcode',id:'race-session'},{id:'stop-during-final-read',at:new Date().toISOString(),reason:'human Stop',turnId:'old-turn'});
    }
    return this.call(channel,method,args);
   }
@@ -2109,8 +2110,9 @@ it('rejects recovery when Desktop input arrives during native baseline refresh w
   await adapter.init();
   const result=await adapter.sendMessage('race-session',{message:'resume once',queue:true,inputId:'same-recovery',recoveryBoundary:{turnId:'old-turn',userMessageId:'old-user',completedAt:10}});
   expect(result).toMatchObject({ok:false,admitted:false,nonRetryable:true});
-  expect(result.error).toContain('новый ввод');
+  expect(result.error).toContain(race==='Desktop input'?'новый ввод':'остановлен');
   expect(client.calls.some(c=>['sendPrompt','sendConversationCommandV4','createSession'].includes(c.method))).toBe(false);
   expect(db.prepare('select status from tool_usage').get()).toEqual({status:'completed'});
+  if(race==='human Stop')expect(await getHumanStopStore().isHeld('zcode','race-session')).toBe(true);
  }finally{await adapter.dispose();db.close();await rm(root,{recursive:true,force:true});}
 });

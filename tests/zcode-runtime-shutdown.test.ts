@@ -3,7 +3,7 @@ import {mkdtemp,rm,readFile,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {HumanStopStore} from '../src/human-stop-store.js';
-import {ownedShutdownMatches,ownedZcodeActiveInput,zcodeRecoveryBoundaryCurrent} from '../src/adapters/zcode-recovery-boundary.js';
+import {ownedShutdownMatches,ownedZcodeActiveInput,zcodeActiveInputOwnership,zcodeShutdownObservation,zcodeRecoveryBoundaryCurrent} from '../src/adapters/zcode-recovery-boundary.js';
 
 describe('ZCode own-runtime attribution and Desktop race (focused integration; expected 2s/max 30s; isolated DB/state only)',()=>{
  it('keeps first-upgrade proof in the existing old-readable locked store without clearing human holds',async()=>{
@@ -46,13 +46,29 @@ describe('ZCode own-runtime attribution and Desktop race (focused integration; e
    db.prepare('insert into message values(?,?,?,?)').run('desktop-user','s',JSON.stringify({role:'user'}),2);
    expect(zcodeRecoveryBoundaryCurrent(path,'s',boundary)).toBe(false);
    expect(ownedZcodeActiveInput(path,'s')).toBe(false);
+   expect(zcodeActiveInputOwnership(path,'s').reason).toBe('foreign_input');
    // Even a later Herder receipt does not convert outstanding Desktop work into own work.
    db.prepare('insert into message values(?,?,?,?)').run('herder-user','s',JSON.stringify({role:'user'}),3);
    db.prepare('insert into session_input values(?,?,?,?)').run('s','herder-user','promoted',JSON.stringify({intent:{clientId:'agent-herder'}}));
    expect(ownedZcodeActiveInput(path,'s')).toBe(false);
+   expect(zcodeActiveInputOwnership(path,'s').reason).toBe('outstanding_foreign_input');
    db.prepare('insert into turn_usage values(?,?,?,?,?)').run('s','desktop-turn','desktop-user',11,20);
    expect(ownedZcodeActiveInput(path,'s')).toBe(true);
    expect(zcodeRecoveryBoundaryCurrent('/missing','s',boundary)).toBe(false);
   }finally{db.close();await rm(dir,{recursive:true,force:true});}
+ });
+ it('reports exact first-boundary exclusions without turning historical running into idle proof',()=>{
+  const session={id:'s',status:'idle',meta:{nativeLoaded:true,nativeStatus:'idle',nativeStateRevision:3,pendingRequestIds:[],humanStopHeld:false}};
+  const observe=(patch:any)=>zcodeShutdownObservation('/missing','s',{...session,...patch,meta:{...session.meta,...patch.meta}});
+  expect(observe({}).reason).toBe('observed_idle');
+  expect(observe({status:'running',meta:{nativeLoaded:false}}).reason).toBe('native_snapshot_unavailable');
+  expect(observe({meta:{humanStopHeld:true}}).reason).toBe('human_hold');
+  expect(observe({meta:{pendingRequestIds:['permission']}}).reason).toBe('pending_native_request');
+  expect(observe({meta:{pendingRequestIds:undefined}}).reason).toBe('native_pending_requests_unknown');
+  expect(observe({meta:{nativeStateRevision:undefined}}).reason).toBe('native_revision_missing');
+  expect(observe({status:'running',meta:{nativeStatus:'running'}}).reason).toBe('active_turn_identity_missing');
+  const active={...session,status:'running',meta:{...session.meta,nativeStatus:'running',nativeActiveTurnId:'new-turn'}};
+  expect(zcodeShutdownObservation('/missing','s',active,'old-turn').reason).toBe('durable_active_turn_changed');
+  expect(zcodeShutdownObservation('/missing','s',active).reason).toBe('native_input_observation_unavailable');
  });
 });

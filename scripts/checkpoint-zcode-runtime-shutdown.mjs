@@ -2,7 +2,7 @@
 // First-upgrade and future ExecStop seam: existing HTTP observation + existing
 // locked stop-attribution store. No input/resume/control/phone operations.
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
-import {join,dirname,resolve} from 'node:path';
+import {join,dirname,resolve,basename} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 const args=process.argv.slice(2);
@@ -12,7 +12,7 @@ const value=name=>{const at=args.indexOf(name);return at<0?undefined:args[at+1];
 const dryRun=args.includes('--dry-run');
 const moduleRoot=resolve(value('--module-root')??'dist');
 const {HumanStopStore}=await import(pathToFileURL(join(moduleRoot,'human-stop-store.js')).href);
-const {ownedZcodeActiveInput}=await import(pathToFileURL(join(moduleRoot,'adapters/zcode-recovery-boundary.js')).href);
+const {zcodeShutdownObservation}=await import(pathToFileURL(join(moduleRoot,'adapters/zcode-recovery-boundary.js')).href);
 const pid=Number(execFileSync('systemctl',['--user','show','agent-herder.service','-p','MainPID','--value'],{encoding:'utf8',timeout:5000}).trim());
 if(!Number.isSafeInteger(pid)||pid<=0)throw Error('Existing Herder controller is not active');
 const environment=Object.fromEntries((await readFile(`/proc/${pid}/environ`)).toString().split('\0').filter(v=>v.includes('=')).map(v=>{const i=v.indexOf('=');return[v.slice(0,i),v.slice(i+1)];}));
@@ -39,28 +39,64 @@ for(const item of await readdir('/proc')){
  }catch{}
 }
 if(runtimePids.length!==1)throw Error('Exact owned runtime identity is unknown or ambiguous');
-const result={dryRun,controllerPid:pid,runtimePid:runtimePids[0],observedAt:new Date().toISOString(),coverage:'existing-durable-session-identities-only',idleProof:false,checkpointed:[],excluded:[]};
-const endpoint=`http://127.0.0.1:${environment.AGENT_HERDER_WEB_PORT??18787}`;
-for(const row of unfinished.sessions??[]){
- checkDeadline();
- if(row.harness!=='zcode')continue;
- let reason='native_or_input_ownership_unconfirmed';
+const {DatabaseSync}=await import('node:sqlite');
+const rawControllerStat=await readFile(`/proc/${pid}/stat`,'utf8');
+const controllerStat=rawControllerStat.slice(rawControllerStat.lastIndexOf(')')+2).split(' ');
+const boot=Number((await readFile('/proc/stat','utf8')).match(/^btime (\d+)$/m)?.[1]);
+const clockTicks=Number(execFileSync('getconf',['CLK_TCK'],{encoding:'utf8',timeout:1000}).trim());
+const controllerStartedAt=Math.floor((boot+Number(controllerStat[19])/clockTicks)*1000);
+if(!Number.isFinite(controllerStartedAt))throw Error('Controller start generation is unknown');
+const activityAudit=args.includes('--audit-native-activity');
+if(args.includes('--audit-all-native-sessions'))throw Error('Historical bootstrap is unsupported; use --audit-native-activity for bounded existing activity');
+const rows=new Map((unfinished.sessions??[]).filter(row=>row.harness==='zcode').map(row=>[row.sessionId,row]));
+let nativeSessionCount;
+if(activityAudit){
+ const db=new DatabaseSync(nativeDb,{readOnly:true});
  try{
-  const response=await fetch(`${endpoint}/api/sessions/zcode/${encodeURIComponent(row.sessionId)}`,{signal:AbortSignal.timeout(5000)});
-  if(!response.ok)throw Error('Native observation failed');
-  const {session}=await response.json();const m=session?.meta??{};
-  if(session?.id===row.sessionId&&session.status==='running'&&m.nativeLoaded===true
-    &&typeof m.nativeActiveTurnId==='string'&&(!row.activeTurnId||m.nativeActiveTurnId===row.activeTurnId)&&m.humanStopHeld===false
-    &&Array.isArray(m.pendingRequestIds)&&m.pendingRequestIds.length===0
-    &&ownedZcodeActiveInput(nativeDb,row.sessionId)){
-   const proof={turnId:m.nativeActiveTurnId,controllerPid:pid,runtimePid:runtimePids[0],at:Date.now()};
-   if(dryRun||await store.checkpointOwnedZcodeShutdown(row.sessionId,proof)){result.checkpointed.push({sessionId:row.sessionId,...proof});continue;}
-   reason='human_hold';
-  }
- }catch{}
- result.excluded.push({sessionId:row.sessionId,...(row.activeTurnId?{turnId:row.activeTurnId}:{}),reason});
+  nativeSessionCount=db.prepare('select count(*) as count from session').get().count;
+  const candidates=db.prepare('select id from session where time_updated>=? order by time_updated desc').all(controllerStartedAt);
+  for(const {id} of candidates)if(!rows.has(id))rows.set(id,{sessionId:id,harness:'zcode'});
+ }finally{db.close();}
 }
+const ownedWorkspaceClients=[];
+for(const item of await readdir('/proc')){
+ checkDeadline();if(!/^\d+$/.test(item))continue;
+ try{
+  const status=await readFile(`/proc/${item}/status`,'utf8');
+  if(Number(status.match(/^PPid:\s+(\d+)/m)?.[1])!==runtimePids[0])continue;
+  const cmd=(await readFile(`/proc/${item}/cmdline`)).toString().split('\0');
+  if(basename(cmd[0])!=='zcode-cli')continue;
+  const {readlink}=await import('node:fs/promises');
+  ownedWorkspaceClients.push({pid:Number(item),cwd:await readlink(`/proc/${item}/cwd`)});
+ }catch{}
+}
+const result={dryRun,controllerPid:pid,runtimePid:runtimePids[0],controllerStartedAt,observedAt:new Date().toISOString(),
+ coverage:activityAudit?'native-activity-since-controller-start-plus-durable-identities':'existing-durable-session-identities-only',
+ ownedWorkspaceClients,nativeSessionCount,candidateCount:rows.size,candidateScanComplete:false,loadedSessionCoverage:"unknown",idleProof:false,checkpointed:[],excluded:[]};
+const endpoint=`http://127.0.0.1:${environment.AGENT_HERDER_WEB_PORT??18787}`;
+let observed=0;
+for(const row of rows.values()){
+ if(Date.now()>deadline){result.incompleteReason='deadline';break;}
+ let observation;
+ try{
+  const response=await fetch(`${endpoint}/api/sessions/zcode/${encodeURIComponent(row.sessionId)}`,{signal:AbortSignal.timeout(Math.min(5000,Math.max(1,deadline-Date.now())))});
+  if(!response.ok)observation={owned:false,reason:`native_http_${response.status}`};
+  else observation=zcodeShutdownObservation(nativeDb,row.sessionId,(await response.json()).session,row.activeTurnId);
+ }catch{observation={owned:false,reason:'native_http_observation_unavailable'};}
+ observed++;
+ if(observation.owned){
+  const proof={turnId:observation.turnId,controllerPid:pid,runtimePid:runtimePids[0],at:Date.now()};
+  if(dryRun||await store.checkpointOwnedZcodeShutdown(row.sessionId,proof)){result.checkpointed.push({sessionId:row.sessionId,...proof});continue;}
+  observation={...observation,owned:false,reason:'human_hold_at_checkpoint'};
+ }
+ result.excluded.push({sessionId:row.sessionId,...(observation.turnId?{turnId:observation.turnId}:{}),reason:observation.reason});
+}
+result.observedCount=observed;result.candidateScanComplete=observed===rows.size;
+// Snapshot reads are not an atomic admission fence. Unknown/hidden native IDs
+// and concurrent Desktop work must remain explicit; this never authorizes stop.
+result.unknownCount=result.excluded.filter(row=>row.reason!=='observed_idle').length;
 if(Number(execFileSync('systemctl',['--user','show','agent-herder.service','-p','MainPID','--value'],{encoding:'utf8',timeout:5000}).trim())!==pid)throw Error('Controller generation changed during checkpoint');
 const receipt=value('--receipt');
 if(receipt){await mkdir(dirname(receipt),{recursive:true});await writeFile(receipt,JSON.stringify(result,null,2),{mode:0o600});}
 console.log(JSON.stringify(result));
+if(!result.candidateScanComplete)process.exitCode=2;
