@@ -899,11 +899,40 @@ class MacWatchdogTests(unittest.TestCase):
                     with self.assertRaisesRegex(w.Refused,'storage_root_unverified'):w.storage_bytes(root,512*w.MIB,artifact=True)
                 self.assertTrue(all(p.stdout.closed for p in probes))
 
-    def test_native_artifact_branch_never_changes_temp_state_scanner(self):
+    def test_non_darwin_temp_state_retains_fd_relative_scanner(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)/'tmp';root.mkdir();(root/'entry').write_bytes(b'abc')
-            with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen') as spawn:
+            with patch.object(w.sys,'platform','linux'),patch.object(w.subprocess,'Popen') as spawn:
                 self.assertEqual(w.storage_bytes(root,128*w.MIB),3);spawn.assert_not_called()
+
+    def test_darwin_mutable_accounting_uses_owned_utility_observer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'tmp';root.mkdir();(root/'entry').write_bytes(b'abc')
+            with patch.object(w.sys,'platform','darwin'),patch.object(w,'darwin_mutable_bytes',return_value=3) as probe:
+                self.assertEqual(w.storage_bytes(root,128*w.MIB),3)
+            self.assertEqual(probe.call_args.args[:2],(root,128*w.MIB))
+
+    def test_internal_storage_child_keeps_no_follow_scanner_without_recursion(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'entry').write_bytes(b'abc')
+            with patch.object(w.sys,'platform','darwin'),patch.object(w,'darwin_mutable_bytes') as probe:
+                self.assertEqual(w.storage_bytes(root,128*w.MIB,_native_mutable=False),3)
+            probe.assert_not_called()
+
+    def test_storage_probe_rejects_wrong_generation_before_any_census(self):
+        info=Path.cwd().lstat()
+        with patch.object(w,'storage_bytes') as census:
+            self.assertEqual(w.storage_probe_main([str(128*w.MIB),str(info.st_uid),str(info.st_dev),str(info.st_ino+1)]),69)
+        census.assert_not_called()
+
+    def test_storage_probe_invalid_arguments_and_error_classes(self):
+        for values in [[],['-1','0','0','0'],['1','0','0','0','extra'],[str(513*w.MIB),'0','0','0']]:
+            with patch.object(w,'storage_bytes') as census:
+                self.assertEqual(w.storage_probe_main(values),65);census.assert_not_called()
+        info=Path.cwd().lstat();args=[str(128*w.MIB),str(info.st_uid),str(info.st_dev),str(info.st_ino)]
+        for kind,code in [('file_limit',67),('byte_limit',68),('root_generation',69),('deadline',70),('io',71)]:
+            with patch.object(w,'storage_bytes',side_effect=w.Refused('storage_observation_limit {"kind":"'+kind+'"}')):
+                self.assertEqual(w.storage_probe_main(args),code)
 
     def test_launchagent_has_no_restart_loop_or_user_wide_limits(self):
         text=(ROOT/'deploy/fleet/mac-node.plist.in').read_text().replace('__HOME__','/Users/fixture').replace('__PYTHON_BIN__','/usr/bin/python3')

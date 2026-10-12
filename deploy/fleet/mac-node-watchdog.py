@@ -198,7 +198,77 @@ def darwin_artifact_bytes(root, limit, overall_deadline, verify_root, refuse, pi
             except OSError:cleanup_failed=True
         if cleanup_failed:refuse('storage_observation_limit','probe_cleanup')
 
-def storage_bytes(root, limit, *, artifact=False):
+def darwin_mutable_bytes(root,limit,overall_deadline,verify_root,refuse,pinned):
+    """The same fd/no-follow census, in one sealed utility-QoS observer.
+    Parent/Node retain background policy; the original two-second wall and
+    hard accounting bounds also apply to startup and owned-child cleanup.
+    """
+    child=None;root_fd=None;cwd_fd=None;summary=b''
+    operation_deadline=overall_deadline-.75
+    def remaining():
+        value=operation_deadline-time.monotonic()
+        if value<=0:refuse('storage_observation_limit','deadline')
+        return value
+    try:
+        root_fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        info=os.fstat(root_fd)
+        if (info.st_uid,info.st_dev,info.st_ino)!=pinned:refuse('storage_root_unverified','root_generation')
+        cwd_fd=os.open('.',os.O_RDONLY|os.O_DIRECTORY);os.fchdir(root_fd)
+        remaining()
+        child=subprocess.Popen(['/usr/sbin/taskpolicy','-a','-c','utility','-d','standard','-g','utility',
+            sys.executable,'-I','-S','-B',str(Path(__file__).resolve()),'--scan-owned-storage',str(limit),*[str(x) for x in pinned]],
+            stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,env={**os.environ,'LC_ALL':'C'})
+        os.set_blocking(child.stdout.fileno(),False)
+        while True:
+            if not select.select([child.stdout.fileno()],[],[],min(.1,remaining()))[0]:continue
+            try:chunk=os.read(child.stdout.fileno(),128)
+            except BlockingIOError:continue
+            if not chunk:break
+            summary+=chunk
+            if len(summary)>64:refuse('storage_root_unverified','io')
+        code=child.wait(timeout=remaining())
+        failures={67:('storage_observation_limit','file_limit'),68:('storage_budget_exceeded','byte_limit'),
+                  69:('storage_root_unverified','root_generation'),70:('storage_observation_limit','deadline')}
+        if code in failures:refuse(*failures[code])
+        if code!=0:refuse('storage_root_unverified','io')
+        match=re.fullmatch(rb'BYTES ([0-9]{1,16})\n',summary)
+        if not match:refuse('storage_root_unverified','io')
+        total=int(match[1])
+        if total>limit:refuse('storage_budget_exceeded','byte_limit')
+        verify_root();remaining();return total
+    except subprocess.TimeoutExpired:refuse('storage_observation_limit','deadline')
+    except OSError:refuse('storage_root_unverified','io')
+    finally:
+        cleanup_failed=False
+        if child:
+            try:
+                if child.poll() is None:child.kill()
+                child.wait(timeout=max(.001,overall_deadline-time.monotonic()))
+            except (OSError,subprocess.TimeoutExpired):cleanup_failed=True
+            finally:
+                if child.stdout:child.stdout.close()
+        if cwd_fd is not None:
+            try:os.fchdir(cwd_fd)
+            except OSError:cleanup_failed=True
+            finally:os.close(cwd_fd)
+        if root_fd is not None:os.close(root_fd)
+        if cleanup_failed:refuse('storage_observation_limit','probe_cleanup')
+
+def storage_probe_main(args):
+    # Internal child has no config/daemon/native/controller or credential path.
+    if len(args)!=4 or any(not re.fullmatch(r'[0-9]{1,20}',a) for a in args):return 65
+    limit,uid,dev,ino=map(int,args)
+    if not 0<limit<=512*MIB:return 65
+    root=Path.cwd();info=root.lstat()
+    if (info.st_uid,info.st_dev,info.st_ino)!=(uid,dev,ino) or uid!=os.getuid():return 69
+    try:total=storage_bytes(root,limit,_native_mutable=False)
+    except (OSError,Refused) as error:
+        kind=re.search(r'"kind":"([a-z_]+)"',str(error))
+        return {'file_limit':67,'byte_limit':68,'root_identity':69,'root_generation':69,
+                'child_generation':69,'deadline':70}.get(kind[1] if kind else '',71)
+    print('BYTES '+str(total));return 0
+
+def storage_bytes(root, limit, *, artifact=False, _native_mutable=True):
     root=root.absolute()
     window=ARTIFACT_OBSERVATION_SECONDS if artifact else 2
     # Give a complete artifact census one finite allowance. Disk metadata
@@ -223,6 +293,9 @@ def storage_bytes(root, limit, *, artifact=False):
     if artifact and sys.platform=='darwin':
         verify_root()
         return darwin_artifact_bytes(root,limit,overall_deadline,verify_root,refuse,pinned)
+    if not artifact and sys.platform=='darwin' and _native_mutable:
+        verify_root()
+        return darwin_mutable_bytes(root,limit,overall_deadline,verify_root,refuse,pinned)
     class Deadline(Exception):pass
     flags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW
     for attempt in (1,2):
@@ -831,6 +904,7 @@ class ChildStderrDiagnostic:
             'stderrErrorCodes':sorted(self._error_codes)}
 
 def main():
+    if sys.argv[1:2]==['--scan-owned-storage']:return storage_probe_main(sys.argv[2:])
     os.umask(0o077);base=Path.home()/'.local/share/agent-herder/fleet'
     if len(sys.argv)==3 and sys.argv[1]=='--lint-plist':
         validate_launchagent(Path(sys.argv[2]));print(json.dumps({'plistValid':True,'activated':False}));return 0

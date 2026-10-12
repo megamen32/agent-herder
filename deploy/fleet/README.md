@@ -85,6 +85,24 @@ the same accepted44 metadata through HAOS TLS. This is Mini-specific installed
 runtime evidence, not a default path or permission grant for M1. Process/storage
 bounds and shared native controls remain unchanged.
 
+M1's owned Node later stopped after a temp census read only two entries before
+the two-second deadline (generation1791840547204; old receipt retained). Mutable
+temp/state reads now run the same fd-relative/O_NOFOLLOW scanner in one sealed
+Python utility-QoS child, matching the existing read-only artifact observer's
+scheduling approach. Parent/Node background policy and all RAM/CPU/storage/file
+bounds remain unchanged. Child startup, scan and cleanup share the original
+two-second parent window; .75s is reserved for owned-child cleanup. The child
+retains the one-second attempt/fresh retry logic, never traverses symlinks and
+checks UID/device/inode before reading. No cache or immediate stale-byte fallback
+is used for mutable storage. This is observational Darwin enforcement, not a
+kernel memory/swap guarantee. Shared native Codex is not restarted to promote
+the Node helper; its configured helper hashes must be reconciled for future
+natural starts, without claiming that an already running interpreter reloaded.
+
+The staged helper was also exercised on the actual M1 under a Background parent:
+three temp/state pairs completed in 0.221–0.438s, with 291927/5904 bytes measured.
+This establishes the read-only observer path, before any Node helper activation.
+
 ### Узел вне домашней сети
 
 Идентичность `hostId + harness + nativeSessionId` не меняется при переезде;
