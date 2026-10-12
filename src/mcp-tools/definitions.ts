@@ -187,6 +187,9 @@ export const CoordinationNoteDeleteSchema = z.object({ noteId: z.string().uuid()
 // ===== Tool definitions (static metadata) =====
 
 export const toolDefinitions: Tool[] = [
+  { name: "s21_lease_status", description: "Read-only S21 ownership and exact session link; no capability or controls.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } },
   {
     name: "browser_wake",
     description:

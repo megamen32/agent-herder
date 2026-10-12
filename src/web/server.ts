@@ -38,6 +38,7 @@ import type { AdapterRegistry } from "../adapter-registry.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { handleQuotaLensRequest } from "./quota-lens.js";
+import { getS21Ownership } from "../s21-resource-ownership.js";
 import { deferredMessages, renderDeferredMessages } from "../deferred-messages.js";
 
 export interface WebDependencies {
@@ -699,6 +700,10 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
 
 async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
+  if (url.pathname === "/api/resources/s21-lease" && request.method === "GET") {
+    response.setHeader("cache-control", "no-store");
+    return sendJson(response, 200, await getS21Ownership());
+  }
   if (url.pathname.startsWith("/api/quota-lens") && request.method === "GET") {
     const body = await handleQuotaLensRequest(url.pathname, url.searchParams);
     if (body !== null) return sendJson(response, 200, body);

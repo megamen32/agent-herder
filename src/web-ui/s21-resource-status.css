@@ -1,0 +1,4 @@
+.s21-resource-status{display:flex;align-items:center;gap:12px;padding:7px 16px;flex:none;min-width:0;border-bottom:1px solid var(--border,#353535);font-size:12px}
+.s21-resource-status>span{display:flex;flex-direction:column;min-width:0;flex:1;overflow-wrap:anywhere}
+.s21-resource-status small{opacity:.75}.s21-resource-status a{flex:none}
+@media(max-width:480px){.s21-resource-status{padding:6px 12px;align-items:flex-start;gap:8px}.s21-resource-status a{max-width:88px}}

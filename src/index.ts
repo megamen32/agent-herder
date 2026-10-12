@@ -48,6 +48,7 @@ import { registerControlPlaneTools } from "./mcp/control-plane-tools.js";
 import { registerHumanRequestTools } from "./mcp/human-request-tools.js";
 import { registerCdpTools } from "./mcp/cdp-tools.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
+import { registerResourceOwnershipTools } from "./mcp/resource-ownership-tools.js";
 import { registerHarnessMeshTools } from "./mesh/register-tools.js";
 import { registerBackgroundTools } from "./mcp/background-tools.js";
 import { loadCdpChatDriver } from "./cdp-chat-mcp.js";
@@ -517,6 +518,7 @@ function registerTools(
   });
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
   registerSessionTools(server, { adapters, jobs, events });
+  registerResourceOwnershipTools(server);
   registerHarnessMeshTools(server, { adapters });
   registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined });
 }
