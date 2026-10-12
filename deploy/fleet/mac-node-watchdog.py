@@ -141,7 +141,11 @@ def darwin_artifact_bytes(root, limit, overall_deadline, verify_root, refuse, pi
         # drains stderr and performs no cwd-relative filesystem operations.
         cwd_fd=os.open('.',os.O_RDONLY|os.O_DIRECTORY);os.fchdir(root_fd)
         probe=Path.home()/'.local/share/agent-herder/fleet/mac-artifact-probe'
-        du=subprocess.Popen([str(probe),str(limit),'30001'],
+        # Only this short accounting child leaves inherited daemon/LowPriorityIO
+        # policy. Utility QoS remains capped, Nice10 is preserved; taskpolicy
+        # SETEXEC keeps the same owned PID for bounded cleanup. The parent,
+        # native controller and Node retain their existing background policy.
+        du=subprocess.Popen(['/usr/sbin/taskpolicy','-a','-c','utility','-d','standard','-g','utility',str(probe),str(limit),'30001'],
             stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
             env={**os.environ,'LC_ALL':'C'})
         children.append(du);os.set_blocking(du.stdout.fileno(),False);summary=b''
@@ -683,6 +687,7 @@ def prepare(base,config,artifact_cache=None):
     policy=Policy(command(['/usr/sbin/sysctl','-n','hw.model']).strip())
     if config['hostId']!=socket.gethostname():raise Refused('native_host_identity_mismatch')
     verify_launcher_hashes(base,config,['mac-node-watchdog.py','mac-artifact-probe',*(['mac-codex-owner-probe'] if 'codex' in config.get('harnesses',[]) else [])])
+    executable('/usr/sbin/taskpolicy')
     entry=verify_manifest(base,config['sourceSha'])
     node=executable(config['nodeBin'])
     harnesses=config['harnesses']

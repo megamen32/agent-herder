@@ -828,7 +828,7 @@ class MacWatchdogTests(unittest.TestCase):
             spawn,probes,argv=self.native_artifact_fixture(root)
             with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):
                 self.assertEqual(w.storage_bytes(root,512*w.MIB,artifact=True),4096)
-            self.assertEqual(argv,[[str(Path.home()/'.local/share/agent-herder/fleet/mac-artifact-probe'),str(512*w.MIB),'30001']])
+            self.assertEqual(argv,[['/usr/sbin/taskpolicy','-a','-c','utility','-d','standard','-g','utility',str(Path.home()/'.local/share/agent-herder/fleet/mac-artifact-probe'),str(512*w.MIB),'30001']])
             self.assertEqual(Path.cwd(),before);self.assertTrue(all(p.stdout.closed for p in probes))
 
     def test_native_artifact_file_limit_stops_before_size_probe(self):

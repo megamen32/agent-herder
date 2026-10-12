@@ -224,3 +224,25 @@ unit category, expected3s/max20s combined. The real SDK group probe on the appro
 requires fresh direct read-only loaded-thread/receipt proof of no active or unknown
 admitted work. Preserve SID/history/profile/auth and managed labels, and never
 repeat a start after an unknown ACK before reconciling actual state.
+
+
+### Artifact probe policy: retained327s failure and paired actor proof
+
+After the shared native census installation, nine snapshots over80.8s passed,
+but Node5936 stopped at327.46s with artifact deadline4.365s/RSS190592KiB.
+Native5771 remained alive. Retain this failure; prior READY was not final stability.
+
+A finite owned read-only LaunchAgent copied Background/Nice10/LowPriorityIO,
+then ran six paired A/B and B/A artifact probes (focused integration,
+expected25s/max60s; actual16.896s including12 one-second gaps). All measured
+155599872bytes. Baseline wall364/310/461/654/382/606ms versus candidate
+142/139/193/146/125/149ms; candidate CPU104..128ms, child peak below1.6MiB.
+The candidate uses `/usr/sbin/taskpolicy -a -c utility -d standard -g utility`
+only for the sealed artifact helper. SETEXEC preserves owned-child cleanup;
+utility QoS is capped and Nice10 retained. Parent/native/Node policy is unchanged.
+Five-second gate,750ms cleanup reserve, byte/entry/root-generation checks and
+30-second census cadence stay unchanged. The policy is OS-supported, not a
+claim of an effective kernel tier on every system; external suppression may
+still apply. Require actual steady/public evidence beyond the prior327s failure.
+[Apple taskpolicy](https://github.com/apple-oss-distributions/system_cmds/blob/main/taskpolicy/taskpolicy.c),
+[Apple launchd I/O policy](https://github.com/apple-oss-distributions/launchd/blob/main/src/core.c).
