@@ -1,6 +1,9 @@
 const shots = {
-  statistics: {src: 'assets/statistics.png', alt: 'Agent Herder: статистика активности, распределение сессий по средам и моделям', caption: 'Статистика по рабочим сессиям. Скриншот из открытого репозитория проекта.', label: 'Увеличить скриншот статистики'},
-  sessions: {src: 'assets/sessions.png', alt: 'Agent Herder: список сессий, выбранный агент и панель управления', caption: 'Список сессий и панель управления агентом. Скриншот из открытого репозитория проекта.', label: 'Увеличить скриншот сессий'}
+  sessions: {src: 'assets/live-sessions.png', alt: "Agent Herder: Список рабочих сессий и история диалога с агентом.", caption: "Список рабочих сессий и история диалога с агентом. Снято в работающем Agent Herder 12.10.2026.", label: "Увеличить: Сессии и переписка"},
+  controls: {src: 'assets/live-controls.png', alt: "Agent Herder: Модель, рабочая папка, автопродолжение и настройки отправки для выбранной сессии.", caption: "Модель, рабочая папка, автопродолжение и настройки отправки для выбранной сессии. Снято в работающем Agent Herder 12.10.2026.", label: "Увеличить: Управление сессией"},
+  statistics: {src: 'assets/live-statistics.png', alt: "Agent Herder: Сводка по реальным сессиям: среды, модели и работа с файлами.", caption: "Сводка по реальным сессиям: среды, модели и работа с файлами. Снято в работающем Agent Herder 12.10.2026.", label: "Увеличить: Статистика"},
+  activity: {src: 'assets/live-activity.png', alt: "Agent Herder: Сессии по дням, активные интервалы и возвращения к проектам.", caption: "Сессии по дням, активные интервалы и возвращения к проектам. Снято в работающем Agent Herder 12.10.2026.", label: "Увеличить: Графики активности"},
+  tasks: {src: 'assets/live-tasks.png', alt: "Agent Herder: История длительных операций: результаты доставки, прогресс и сохранённый ввод.", caption: "История длительных операций: результаты доставки, прогресс и сохранённый ввод. Снято в работающем Agent Herder 12.10.2026.", label: "Увеличить: Фоновые задачи"}
 };
 const tabs = [...document.querySelectorAll('[data-shot]')];
 const screenshot = document.getElementById('product-screenshot');
@@ -27,10 +30,12 @@ for (const tab of tabs) {
   });
 }
 const dialog = document.getElementById('image-dialog');
-expand.addEventListener('click', () => {
-  const image = document.getElementById('large-screenshot'); image.src = screenshot.src; image.alt = screenshot.alt;
+function openImage(source) {
+  const image = document.getElementById('large-screenshot'); image.src = source.src; image.alt = source.alt;
   dialog.showModal();
-});
+}
+expand.addEventListener('click', () => openImage(screenshot));
+document.getElementById('expand-hero').addEventListener('click', () => openImage(document.querySelector('#expand-hero img')));
 document.getElementById('close-image').addEventListener('click', () => dialog.close());
 dialog.addEventListener('click', event => {if(event.target === dialog) {const box=dialog.getBoundingClientRect(); if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom) dialog.close();}});
 document.getElementById('copy-install').addEventListener('click', async () => {

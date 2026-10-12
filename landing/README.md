@@ -2,10 +2,10 @@
 
 Public URL: https://agentherder.bezrabotnyi.com/
 
-This buildless Russian product site owns index.html, styles.css, landing.js and its assets. Screenshots are already-public copies from docs/assets/screenshots, verified against GitHub blobs. The architecture diagram is explanatory, not live runtime data. No application API, account store or forms.
+Buildless Russian product site. Owns index.html, styles.css, landing.js and assets. The first screen positions Agent Herder as a mesh across computers. Five unedited 1680x1050 screenshots were freshly captured from the owner's authenticated https://agent.bezrabotnyi.com/ UI on 2026-10-12: chat, session controls, statistics, activity charts and background tasks. Source/viewport/checksums are in assets/captures.json. They represent the captured state, not a promise of live counters or universal harness capabilities. No mock interface or diagram.
 
-Source install explicitly sets AGENT_HERDER_WEB_PORT=18787 because src/index.ts starts the HTTP/Web UI only when that variable is set. The unavailable public npm package is not advertised.
+Source install explicitly sets AGENT_HERDER_WEB_PORT=18787 because src/index.ts enables HTTP/Web UI only with that variable. The unavailable npm package is not advertised.
 
-Publish only these owned static files to /var/www/agentherder on server-100. Copy assets before atomically replacing index.html; apply directory755/file644 modes for nginx. Preserve rollback under the repository's ignored .tmp/. Do not run the product runtime build or restart shared Agent Herder for a landing edit.
+Publish only owned static files to /var/www/agentherder on server-100. Assets first, index atomically last, directory755/file644. Rollback under ignored .tmp/. Do not build or restart shared Agent Herder for landing edits.
 
-The physical ingress, DNS/TLS and managed vhost belong to ServersAdministartion, docs/inventory/sites/agentherder.md. GitHub's homepage points to this public URL.
+Physical ingress/DNS/TLS: ServersAdministartion docs/inventory/sites/agentherder.md. GitHub homepage points to this URL.

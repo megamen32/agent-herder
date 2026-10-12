@@ -1,0 +1,57 @@
+[
+  {
+    "file": "live-sessions.png",
+    "source": "https://agent.bezrabotnyi.com/",
+    "captured_date": "2026-10-12",
+    "viewport": [
+      1680,
+      1050
+    ],
+    "sha256": "77c74aa7974559112e854dfefac24c837f52f5d7758b8148a8586f25b1dae017",
+    "edited": false
+  },
+  {
+    "file": "live-controls.png",
+    "source": "https://agent.bezrabotnyi.com/",
+    "captured_date": "2026-10-12",
+    "viewport": [
+      1680,
+      1050
+    ],
+    "sha256": "cb0d64d85106c904c392ace10be1d4f580471a4994117d6f967947c9db03a0a9",
+    "edited": false
+  },
+  {
+    "file": "live-statistics.png",
+    "source": "https://agent.bezrabotnyi.com/",
+    "captured_date": "2026-10-12",
+    "viewport": [
+      1680,
+      1050
+    ],
+    "sha256": "a3d98060d5f32562dcef9693fca4d71df7b23620f4b6d9683df3fb7eec1dfab2",
+    "edited": false
+  },
+  {
+    "file": "live-activity.png",
+    "source": "https://agent.bezrabotnyi.com/",
+    "captured_date": "2026-10-12",
+    "viewport": [
+      1680,
+      1050
+    ],
+    "sha256": "4517c9250594a5a8ab2b515cb2451d2da6c81ea6aba974859bd138a597a9c514",
+    "edited": false
+  },
+  {
+    "file": "live-tasks.png",
+    "source": "https://agent.bezrabotnyi.com/",
+    "captured_date": "2026-10-12",
+    "viewport": [
+      1680,
+      1050
+    ],
+    "sha256": "18e413b16383d8f20eb35f630231776318b59d2db92b794f551eed87244dfcff",
+    "edited": false
+  }
+]
