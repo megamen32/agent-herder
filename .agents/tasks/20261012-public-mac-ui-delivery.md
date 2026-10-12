@@ -53,3 +53,15 @@ requires one Node-only sealed CAS update and authenticated consumer proof.
 Before this update, the installed7b policy already retained Node29/PID18084
 past the previous327s failure (28 snapshots,latest wall1791767288). Its finite
 observation series is preserved and superseded by the explicit limit change.
+
+
+## Additional deadline / pending supported stopped restoration
+
+Before the88 timeout installation could mutate runtime, preflight found native
+5771 stopped: last-run1298.72s/host_memory deadline attempt2, last RSS114496KiB.
+Node consequently stopped with missing socket.88 installer refused before any
+stop/write/start; preserve that refusal. The user explicitly requested increasing
+limits: metadata now5s per attempt/10s total as well as artifact15s. Scope includes
+supported restoration of the stopped existing native label/config, preserving
+all profile/auth/SIDs and no replay. Source90 scoped checks pass; runtime delivery
+and fresh public acceptance remain open.

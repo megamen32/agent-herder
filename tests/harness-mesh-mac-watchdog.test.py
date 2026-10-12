@@ -111,7 +111,7 @@ class MacWatchdogTests(unittest.TestCase):
         with patch.object(w.subprocess,'run',side_effect=[subprocess.TimeoutExpired(['/bin/ps'],2),ok]) as run:
             self.assertEqual(w.command(['/bin/ps','-axo','pid=']),'fresh\n')
             self.assertEqual(run.call_count,2)
-            self.assertTrue(all(0<call.kwargs['timeout']<=2 for call in run.call_args_list))
+            self.assertTrue(all(0<call.kwargs['timeout']<=5 for call in run.call_args_list))
 
     def test_second_timeout_fails_with_safe_stage_and_no_raw_arguments(self):
         with patch.object(w.subprocess,'run',side_effect=subprocess.TimeoutExpired(['sensitive-argument'],2)) as run:
@@ -588,7 +588,7 @@ class MacWatchdogTests(unittest.TestCase):
                 calls.append(kwargs['timeout']);now[0]+=kwargs['timeout'];raise subprocess.TimeoutExpired(argv,kwargs['timeout'])
             with patch.object(w.time,'monotonic',side_effect=lambda:now[0]),patch.object(w.subprocess,'run',side_effect=timeout):
                 with self.assertRaisesRegex(w.Refused,'native_observation_deadline') as caught:w.command([probe,mode,'42','/fixture'])
-            self.assertEqual(calls,[2,2]);self.assertEqual(now[0],4)
+            self.assertEqual(calls,[5,5]);self.assertEqual(now[0],10)
             details=json.loads(str(caught.exception).split(' ',1)[1]);self.assertEqual(details['probe'],'text_mapping' if mode=='--text' else 'unix_owner')
 
     def test_targeted_owner_check_refuses_socket_replacement_of_same_uid(self):

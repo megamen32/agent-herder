@@ -14,7 +14,8 @@ Never inspect /proc, create a native daemon, copy credentials or prune releases.
 Owned child process group: RSS soft256MiB (30s sustained), hard512MiB;
 CPU100% over20s,150% per sample after10s startup;128 threads/16 processes;
 temp128/state64MiB; <=2 release directories/512MiB; host reserve Mini2/M1 4GiB,
-disk2GiB. Poll delay2s plus bounded probes, commands2s, storage scan1s/30000 entries
+disk2GiB. Poll delay2s plus bounded probes, metadata commands5s/two attempts10s total,
+storage scan1s/30000 entries
 (one deadline-only fresh retry within2s total; artifact-only15s, census every30s);
 cleanup global10s (within LaunchAgent ExitTimeOut20s), unknown =>unverified. These are
 Darwin watchdog observations/stops, NOT kernel reservations or swap0 guarantees.
@@ -56,6 +57,8 @@ SOFT_WINDOW = 30
 CPU_WINDOW = 20
 POLL_SECONDS = 2
 ARTIFACT_OBSERVATION_SECONDS = 15
+METADATA_ATTEMPT_SECONDS = 5
+METADATA_OBSERVATION_SECONDS = 10
 
 class Refused(RuntimeError):
     """Short non-secret reason; underlying commands/config are never printed."""
@@ -77,10 +80,10 @@ def command(argv,deadline=None):
     probe=('threads' if '-M' in argv else 'census' if '-axo' in argv or '-g' in argv or '--group' in argv else 'identity') if stage=='process' else stage
     if stage=='listener':
         probe=('text_mapping' if argv[1]=='--text' else 'unix_owner') if native_probe else 'text_mapping' if '-d' in argv and 'txt' in argv else 'unix_owner' if '-U' in argv else 'tcp_listener' if any(str(a).startswith('-iTCP:') for a in argv) else 'listener'
-    window=min(time.monotonic()+4,deadline) if deadline is not None else time.monotonic()+4
+    window=min(time.monotonic()+METADATA_OBSERVATION_SECONDS,deadline) if deadline is not None else time.monotonic()+METADATA_OBSERVATION_SECONDS
     attempts=2 if stage!='other' else 1
     for attempt in range(1,attempts+1):
-        timeout=min(2,window-time.monotonic())
+        timeout=min(METADATA_ATTEMPT_SECONDS,window-time.monotonic())
         if timeout<=0:raise Refused('owned_cleanup_deadline' if deadline is not None else 'native_observation_deadline')
         try:
             result = subprocess.run(argv, capture_output=True, timeout=timeout, check=False,

@@ -256,3 +256,13 @@ reserve and30-second cadence. Regular state/temp observation and process-group
 identity budgets are unchanged. No RAM/CPU/bytes/entry/process limits are raised.
 Regression14.99s completes,15.01s refuses; malformed data, changed roots and
 owned-child cleanup remain covered. The recorded earlier5s outcomes are historical.
+
+
+Latest owner-directed metadata increase: a separate native5771 host-memory
+observation exhausted its former2s/two-attempt4s gate after1298.72s while the
+last RSS was114496KiB. This stopped the native endpoint and consequently Node.
+The metadata attempt is now5s, with at most two attempts in10s total; an explicit
+cleanup caller deadline still wins. Artifact observation is15s. Resource ceilings
+remain unchanged; recorded free RAM24..25GiB and CPU measurements justify more
+waiting headroom, not an unbounded workload.90 scoped checks pass, including
+bounded retries, caller cleanup deadline and artifact14.99/15.01 boundaries.
