@@ -10,6 +10,10 @@ describe("S21 ownership (fast unit; expected .1s/max 5s; no phone)", () => {
     expect(JSON.stringify(result)).not.toMatch(/secret|evil|lease_id/);
     expect(s21OwnershipView(result).href).toBe(result.actor?.sessionUrl);
   });
+  it("supports exact explicit ownership for the existing eighth harness", () => {
+    const result = parseS21Ownership(JSON.stringify({ ...held, actor: { type: "agent", harness: "chatgpt", session_id: "exact-conversation-id" } }));
+    expect(result.actor?.sessionUrl).toBe("https://agent.bezrabotnyi.com/#/session/chatgpt%3Aexact-conversation-id");
+  });
   it("shows legacy ownership honestly without guessing a harness/session", () => {
     const result = parseS21Ownership(JSON.stringify(held));
     expect(result.actor?.type).toBe("legacy"); expect(result.actor?.sessionId).toBeNull();

@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { hostname } from "node:os";
 import { promisify } from "node:util";
 const execute = promisify(execFile);
-const harnesses = new Set(["codex", "claude", "opencode", "hermes", "zcode", "fast-agent", "qoder"]);
+const harnesses = new Set(["codex", "claude", "opencode", "hermes", "zcode", "fast-agent", "qoder", "chatgpt"]);
 export type S21Ownership = {
   resource: "s21"; resourceHost: "roomhacker-server-100"; status: "free" | "held" | "unavailable";
   actor: null | { type: "agent" | "system" | "legacy"; harness: string | null; sessionId: string | null;
