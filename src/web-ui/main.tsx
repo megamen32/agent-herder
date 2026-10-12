@@ -1,3 +1,4 @@
+import {AUTOCONTINUE_HARNESS_IDS,loadAutocontinueHarnesses,saveAutocontinueHarness,type AutocontinueHarness,type WebSessionAutostartHarness} from "./autocontinue-harnesses.js";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
@@ -65,7 +66,6 @@ type WebAutopilotPolicy = {
 type WebAutopilotPolicyState = { policy: WebAutopilotPolicy; source: "persisted" | "legacy" | "default" | "error"; revision: string; coverage: string; error?: string };
 type WebAutopilotSession = { harness: string; sessionId: string; enabled: boolean; source: "session" | "policy" | "plugin-default" | "default"; cwd?: string; updatedAt?: string };
 type WebSessionAutostart = { harness: string; sessionId: string; enabled: boolean; source: "session" | "harness" | "global" | "default"; cwd?: string; updatedAt?: string };
-type WebSessionAutostartHarness = { harness: "codex" | "zcode"; enabled: boolean; source: "harness" | "global" | "default"; updatedAt?: string };
 type WebSessionRuntimeSettings = { version: number; enabled: boolean; pinActiveSessions?: boolean; rolloverExpiredCache?: boolean; movePinnedOnRollover?: boolean; inventoryWindowHours: number; evidenceMessageCount: number; recoverOnFailure?: boolean; recoverOnDisconnect?: boolean; watchdogEnabled?: boolean; watchdogIntervalSeconds?: number; stalledTurnMinutes?: number; judgeModel: string; autopilotJudgeModel: string; source: "persisted" | "default" };
 type WebModelOption = { model: string; harness: string };
 type HerderJobState = "queued" | "running" | "waiting" | "cancelling" | "completed" | "failed" | "cancelled" | "interrupted";
@@ -78,7 +78,7 @@ const AUTOPILOT_HARNESS_LABELS: Record<AutopilotHarness, string> = {
   hermes: "Hermes",
   zcode: "ZCode",
 };
-const AUTOCONTINUE_HARNESSES = new Set(["codex", "zcode"]);
+const AUTOCONTINUE_HARNESSES = new Set<string>(AUTOCONTINUE_HARNESS_IDS);
 
 const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, { ...init, headers: { "content-type": "application/json", ...(init?.headers || {}) } });
@@ -519,15 +519,16 @@ function ServiceNote({ label, message }: { label: string; message: SessionMessag
   </div>;
 }
 
-function AutomationSettings({ section, state, draft, saving, error, saved, continuation, continuationSaving, continuationError, runtimeState, runtimeDraft, runtimeSaving, runtimeSaved, runtimeError, modelOptions, sessionControlAvailable, sessionControlStatus, capabilityNote, onChange, onSave, onGlobalContinuationToggle, onContinuationToggle, onRuntimeChange, onRuntimeSave, onOpenSessionControl }: {
+function AutomationSettings({ section, state, draft, saving, error, saved, continuation, continuationSaving, continuationFailed, continuationError, runtimeState, runtimeDraft, runtimeSaving, runtimeSaved, runtimeError, modelOptions, sessionControlAvailable, sessionControlStatus, capabilityNote, onChange, onSave, onGlobalContinuationToggle, onContinuationToggle, onRuntimeChange, onRuntimeSave, onOpenSessionControl }: {
   section: "autocontinue" | "autopilot";
   state?: WebAutopilotPolicyState;
   draft?: WebAutopilotPolicy;
   saving: boolean;
   error?: string;
   saved: boolean;
-  continuation: Partial<Record<"codex" | "zcode", WebSessionAutostartHarness>>;
-  continuationSaving?: "codex" | "zcode";
+  continuation: Partial<Record<AutocontinueHarness, WebSessionAutostartHarness>>;
+  continuationSaving?: AutocontinueHarness;
+  continuationFailed?: ReadonlySet<string>;
   continuationError?: string;
   runtimeState?: WebSessionRuntimeSettings;
   runtimeDraft?: WebSessionRuntimeSettings;
@@ -541,7 +542,7 @@ function AutomationSettings({ section, state, draft, saving, error, saved, conti
   onChange: (next: WebAutopilotPolicy) => void;
   onSave: () => void;
   onGlobalContinuationToggle: () => void;
-  onContinuationToggle: (harness: "codex" | "zcode") => void;
+  onContinuationToggle: (harness: AutocontinueHarness) => void;
   onRuntimeChange: (next: WebSessionRuntimeSettings) => void;
   onRuntimeSave: () => void;
   onOpenSessionControl: () => void;
@@ -554,11 +555,11 @@ function AutomationSettings({ section, state, draft, saving, error, saved, conti
       <div><span className="eyebrow">АВТОПРОДОЛЖЕНИЕ</span><h3>Восстановление сессий</h3><p>Восстанавливает ту же сессию после подтверждённой ошибки, обрыва связи или зависания. Незавершённые задачи оценивает и продолжает автопилот.</p></div>
       {runtimeDraft && <button className={`switch-control large ${runtimeDraft.enabled ? "enabled" : ""}`} role="switch" aria-checked={runtimeDraft.enabled} aria-label="Общее автопродолжение" disabled={runtimeSaving} onClick={onGlobalContinuationToggle}><span /></button>}
     </div>
-    {runtimeDraft && <div className={`autopilot-state-banner ${runtimeDraft.enabled ? "enabled" : ""}`}><strong>{runtimeDraft.enabled ? "Автопродолжение включено" : "Автопродолжение выключено"}</strong><span>Это общий переключатель. Настройки для Codex, ZCode и активной сессии могут его переопределить; автопилот не изменяется.</span></div>}
+    {runtimeDraft && <div className={`autopilot-state-banner ${runtimeDraft.enabled ? "enabled" : ""}`}><strong>{runtimeDraft.enabled ? "Автопродолжение включено" : "Автопродолжение выключено"}</strong><span>Это общий переключатель. Настройки каждой среды и активной сессии могут его переопределить; автопилот не изменяется.</span></div>}
     {sessionControlAvailable && <div className="settings-save-row session-settings-link"><span><strong>{sessionControlStatus || "Только для текущей сессии"}</strong><small>Отдельная настройка применяется сразу и переопределяет общую только для этой сессии.</small></span><button className="quiet-button" onClick={onOpenSessionControl}>Настроить текущую сессию</button></div>}
     {runtimeDraft && <details className="settings-advanced"><summary>Дополнительно: закрепление сессий</summary><fieldset className="settings-group"><legend>Закрепление сессий</legend><label className="runtime-toggle-setting timeout-setting"><span><strong>Сразу закреплять активные сессии</strong><small>Сессия Codex или ZCode закрепляется при начале работы или успешном автопродолжении. Herder не снимает закрепление после завершения — снимите его сами после проверки результата.</small></span><input type="checkbox" checked={runtimeDraft.pinActiveSessions ?? true} onChange={(event) => onRuntimeChange({ ...runtimeDraft, pinActiveSessions: event.target.checked })} /></label></fieldset></details>}
     <p className="settings-help">Общий переключатель и выбор агента применяются сразу. Параметры восстановления, проверки зависания и закрепления — после «Сохранить автопродолжение».</p>
-    <fieldset className="settings-group"><legend>Где разрешено восстановление</legend><HarnessAutomationSettings mode="autocontinue" available={AUTOCONTINUE_HARNESSES} enabled={new Set(Object.values(continuation).filter((setting) => setting?.enabled).map((setting) => setting!.harness))} loaded={new Set(Object.keys(continuation))} saving={continuationSaving} onToggle={(harness) => onContinuationToggle(harness as "codex" | "zcode")} /><p className="settings-help">Сначала действует настройка конкретной сессии. Если её нет — настройка агента, затем общая. Автопродолжение восстанавливает аварийно прерванную работу. Если автопилот выключен, восстановление после сбоя всё равно работает, но обычные незавершённые задачи не запускаются.</p>{continuationError && <small className="autopilot-error">{continuationError}</small>}</fieldset>
+    <fieldset className="settings-group"><legend>Где разрешено восстановление</legend><HarnessAutomationSettings mode="autocontinue" available={AUTOCONTINUE_HARNESSES} enabled={new Set(Object.values(continuation).filter((setting) => setting?.enabled).map((setting) => setting!.harness))} loaded={new Set(Object.keys(continuation))} failed={continuationFailed} saving={continuationSaving} onToggle={(harness) => onContinuationToggle(harness as AutocontinueHarness)} /><p className="settings-help">Сначала действует настройка конкретной сессии. Если её нет — настройка агента, затем общая. Автопродолжение восстанавливает аварийно прерванную работу. Если автопилот выключен, восстановление после сбоя всё равно работает, но обычные незавершённые задачи не запускаются.</p>{continuationError && <small className="autopilot-error">{continuationError}</small>}</fieldset>
 
     {runtimeDraft && <><fieldset className="settings-group"><legend>Восстановление после сбоя</legend><label className="runtime-toggle-setting timeout-setting"><span><strong>После ошибки выполнения</strong><small>Herder повторно запускает работу только в той же сессии после подтверждённой ошибки агента.</small></span><input type="checkbox" checked={runtimeDraft.recoverOnFailure ?? true} onChange={(event) => onRuntimeChange({ ...runtimeDraft, recoverOnFailure: event.target.checked })} /></label><label className="runtime-toggle-setting timeout-setting"><span><strong>После разрыва соединения</strong><small>Herder восстанавливает ту же сессию, если связь с её процессом аварийно оборвалась.</small></span><input type="checkbox" checked={runtimeDraft.recoverOnDisconnect ?? true} onChange={(event) => onRuntimeChange({ ...runtimeDraft, recoverOnDisconnect: event.target.checked })} /></label><p className="settings-help">Завершённые и работающие сессии, ожидание ответа или разрешения человека и сессии, явно остановленные человеком, исключены. Незавершённые задачи разбирает автопилот.</p></fieldset><fieldset className="settings-group"><legend>Контроль зависания</legend><label className="runtime-toggle-setting timeout-setting"><span><strong>Восстанавливать зависшую работу по таймауту</strong><small>Дополнительная проверка включается отдельно и продолжает ту же сессию только после заданного времени без прогресса.</small></span><input type="checkbox" checked={runtimeDraft.watchdogEnabled ?? false} onChange={(event) => onRuntimeChange({ ...runtimeDraft, watchdogEnabled: event.target.checked })} /></label><div className="context-options runtime-settings-grid"><label><span><strong>Интервал проверки, секунд</strong></span><input type="number" min="5" max="300" disabled={!(runtimeDraft.watchdogEnabled ?? false)} value={runtimeDraft.watchdogIntervalSeconds ?? 10} onChange={(event) => onRuntimeChange({ ...runtimeDraft, watchdogIntervalSeconds: Math.min(300, Math.max(5, Number(event.target.value) || 10)) })} /></label><label><span><strong>Без прогресса, минут</strong></span><input type="number" min="1" max="120" disabled={!(runtimeDraft.watchdogEnabled ?? false)} value={runtimeDraft.stalledTurnMinutes ?? 2} onChange={(event) => onRuntimeChange({ ...runtimeDraft, stalledTurnMinutes: Math.min(120, Math.max(1, Number(event.target.value) || 2)) })} /></label></div></fieldset><div className="settings-save-row settings-footer"><span>{runtimeError ? <small className="autopilot-error">{runtimeError}</small> : runtimeSaved ? <small className="settings-saved">Настройки автопродолжения сохранены</small> : runtimeState && JSON.stringify(runtimeDraft) !== JSON.stringify(runtimeState) ? <small>Изменения ещё не применены. Закрытие оставит их в форме до сохранения или перезагрузки страницы.</small> : <small>Текущие настройки загружены. Здесь сохраняются восстановление, проверки зависания и закрепление; сжатие сохраняется отдельно.</small>}</span><button className="primary-button" disabled={runtimeSaving || !runtimeDraft.judgeModel.trim()} onClick={onRuntimeSave}>{runtimeSaving ? "Сохраняю…" : "Сохранить автопродолжение"}</button></div></>}
     </div><div className="compact-tab-panel" id="compact-panel" role="tabpanel" aria-labelledby="compact-tab" hidden={recoveryTab !== "compact"}><AutoCompactSettingsPanel /></div>
@@ -740,9 +741,10 @@ function App() {
   const [sessionAutostart, setSessionAutostart] = React.useState<WebSessionAutostart>();
   const [sessionAutostartSaving, setSessionAutostartSaving] = React.useState(false);
   const [sessionAutostartError, setSessionAutostartError] = React.useState<string>();
-  const [continuationHarnesses, setContinuationHarnesses] = React.useState<Partial<Record<"codex" | "zcode", WebSessionAutostartHarness>>>({});
-  const [continuationHarnessSaving, setContinuationHarnessSaving] = React.useState<"codex" | "zcode">();
+  const [continuationHarnesses, setContinuationHarnesses] = React.useState<Partial<Record<AutocontinueHarness, WebSessionAutostartHarness>>>({});
+  const [continuationHarnessSaving, setContinuationHarnessSaving] = React.useState<AutocontinueHarness>();
   const [continuationHarnessError, setContinuationHarnessError] = React.useState<string>();
+  const [continuationHarnessFailed, setContinuationHarnessFailed] = React.useState<ReadonlySet<string>>(new Set());
   const [runtimeSettingsState, setRuntimeSettingsState] = React.useState<WebSessionRuntimeSettings>();
   const [runtimeSettingsDraft, setRuntimeSettingsDraft] = React.useState<WebSessionRuntimeSettings>();
   const [runtimeSettingsSaving, setRuntimeSettingsSaving] = React.useState(false);
@@ -940,10 +942,7 @@ function App() {
   const loadAutopilotPolicy = React.useCallback(async () => {
     const [autopilotResult, continuationResult, runtimeResult] = await Promise.allSettled([
       api<WebAutopilotPolicyState>("/api/autopilot/policy"),
-      Promise.all([
-        api<WebSessionAutostartHarness>("/api/session-autostart/harnesses/codex"),
-        api<WebSessionAutostartHarness>("/api/session-autostart/harnesses/zcode"),
-      ]),
+      loadAutocontinueHarnesses(api),
       api<WebSessionRuntimeSettings>("/api/session-autostart"),
     ]);
     if (autopilotResult.status === "fulfilled") {
@@ -952,9 +951,9 @@ function App() {
       setAutopilotPolicyError(autopilotResult.value.error);
     } else setAutopilotPolicyError(autopilotResult.reason instanceof Error ? autopilotResult.reason.message : String(autopilotResult.reason));
     if (continuationResult.status === "fulfilled") {
-      const [codex, zcode] = continuationResult.value;
-      setContinuationHarnesses({ codex, zcode });
-      setContinuationHarnessError(undefined);
+      setContinuationHarnesses(continuationResult.value.settings);
+      setContinuationHarnessFailed(new Set(continuationResult.value.failed));
+      setContinuationHarnessError(continuationResult.value.failed.length ? "Некоторые настройки не удалось загрузить. Обновите страницу, чтобы повторить проверку." : undefined);
     } else setContinuationHarnessError(continuationResult.reason instanceof Error ? continuationResult.reason.message : String(continuationResult.reason));
     if (runtimeResult.status === "fulfilled") {
       setRuntimeSettingsState(runtimeResult.value);
@@ -1112,7 +1111,7 @@ function App() {
     return () => { cancelled = true; };
   }, [activeSession?.harness, activeSession?.id]);
   React.useEffect(() => {
-    if (!activeSession || !["codex", "zcode"].includes(activeSession.harness)) {
+    if (!activeSession || !AUTOCONTINUE_HARNESSES.has(activeSession.harness)) {
       setSessionAutostart(undefined);
       setSessionAutostartError(undefined);
       return;
@@ -1253,16 +1252,13 @@ function App() {
       setAutopilotPolicySaving(false);
     }
   };
-  const toggleContinuationHarness = async (harness: "codex" | "zcode") => {
+  const toggleContinuationHarness = async (harness: AutocontinueHarness) => {
     const current = continuationHarnesses[harness];
     if (!current || continuationHarnessSaving) return;
     setContinuationHarnessSaving(harness);
     setContinuationHarnessError(undefined);
     try {
-      const saved = await api<WebSessionAutostartHarness>(`/api/session-autostart/harnesses/${harness}`, {
-        method: "PUT",
-        body: JSON.stringify({ enabled: !current.enabled }),
-      });
+      const saved = await saveAutocontinueHarness(api, harness, !current.enabled);
       setContinuationHarnesses((values) => ({ ...values, [harness]: saved }));
       if (activeSession?.harness === harness) {
         setSessionAutostart(await api<WebSessionAutostart>(`/api/session-autostart/sessions/${encodeURIComponent(activeSession.harness)}/${encodeURIComponent(activeSession.id)}?cwd=${encodeURIComponent(activeSession.cwd)}`));
@@ -1294,12 +1290,11 @@ function App() {
       });
       setRuntimeSettingsState(saved);
       setRuntimeSettingsDraft((current) => current ? { ...current, enabled: saved.enabled } : saved);
-      const [codex, zcode] = await Promise.all([
-        api<WebSessionAutostartHarness>("/api/session-autostart/harnesses/codex"),
-        api<WebSessionAutostartHarness>("/api/session-autostart/harnesses/zcode"),
-      ]);
-      setContinuationHarnesses({ codex, zcode });
-      if (activeSession && ["codex", "zcode"].includes(activeSession.harness)) {
+      const result = await loadAutocontinueHarnesses(api);
+      setContinuationHarnesses(result.settings);
+      setContinuationHarnessFailed(new Set(result.failed));
+      setContinuationHarnessError(result.failed.length ? "Некоторые настройки не удалось загрузить. Обновите страницу, чтобы повторить проверку." : undefined);
+      if (activeSession && AUTOCONTINUE_HARNESSES.has(activeSession.harness)) {
         setSessionAutostart(await api<WebSessionAutostart>(`/api/session-autostart/sessions/${encodeURIComponent(activeSession.harness)}/${encodeURIComponent(activeSession.id)}?cwd=${encodeURIComponent(activeSession.cwd)}`));
       }
       setRuntimeSettingsSaved(true);
@@ -1821,7 +1816,7 @@ function App() {
       {showJobs && <JobsView jobs={jobs} loading={jobsLoading} error={jobsError} cancellingJobId={cancellingJobId} onRefresh={() => void loadJobs()} onCancel={(jobId) => void cancelJob(jobId)} />}
       {showQuota && <QuotaPanel />}
       {showStatistics && <StatisticsView statistics={statistics} loading={statisticsLoading} error={statisticsError} days={statisticsDays} onDays={changeStatisticsDays} onRefresh={() => void loadStatistics(statisticsDays, true)} />}
-      {!showStatistics && !showJobs && !showQuota && automationSettings && <div className="autopilot-settings-overlay" ref={automationDialogRef} role="dialog" aria-modal="true" aria-label="Настройки автоматизации"><div className="autopilot-settings-shell"><header className="settings-dialog-header"><div className="settings-dialog-title"><span>Автоматизация</span><h2>{automationSettings === "autocontinue" ? "Автопродолжение" : automationSettings === "autopilot" ? "Автопилот" : "Запуск сессий"}</h2></div><button className="settings-close" aria-label={`Закрыть настройки ${automationSettings === "launch-policy" ? "запуска новых сессий" : automationSettings === "autocontinue" ? "автопродолжения" : "автопилота"}`} onClick={() => setAutomationSettings(undefined)}>×</button></header><div className="settings-dialog-body">{automationSettings === "launch-policy" ? <LaunchPolicySettings /> : <AutomationSettings section={automationSettings} state={autopilotPolicy} draft={autopilotPolicyDraft} saving={autopilotPolicySaving} error={autopilotPolicyError} saved={autopilotPolicySaved} continuation={continuationHarnesses} continuationSaving={continuationHarnessSaving} continuationError={continuationHarnessError} runtimeState={runtimeSettingsState} runtimeDraft={runtimeSettingsDraft} runtimeSaving={runtimeSettingsSaving} runtimeSaved={runtimeSettingsSaved} runtimeError={runtimeSettingsError} modelOptions={runtimeModelOptions} sessionControlAvailable={automationSettings === "autocontinue" ? Boolean(sessionAutostart) : Boolean(autopilotSession)} sessionControlStatus={automationSettings === "autocontinue" ? `Текущая сессия: автопродолжение ${sessionAutostart?.enabled ? "включено" : "выключено"}` : `Текущая сессия: автопилот ${autopilotSession?.enabled ? "включён" : "выключен"}`} capabilityNote={activeSession && !activeHarnessSupportsAutocontinue ? `Автопродолжение после сбоя для ${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} пока недоступно. Автопилот может оценивать завершение задач и продолжать их по своей политике.` : undefined} onChange={(next) => { setAutopilotPolicyDraft(next); setAutopilotPolicySaved(false); }} onSave={() => void saveAutopilotPolicy()} onGlobalContinuationToggle={() => void toggleGlobalContinuation()} onContinuationToggle={(harness) => void toggleContinuationHarness(harness)} onRuntimeChange={(next) => { setRuntimeSettingsDraft(next); setRuntimeSettingsSaved(false); }} onRuntimeSave={() => void saveRuntimeSettings()} onOpenSessionControl={() => openSessionInspector(automationSettings === "autocontinue" ? "autocontinue" : "autopilot")} />}</div></div></div>}
+      {!showStatistics && !showJobs && !showQuota && automationSettings && <div className="autopilot-settings-overlay" ref={automationDialogRef} role="dialog" aria-modal="true" aria-label="Настройки автоматизации"><div className="autopilot-settings-shell"><header className="settings-dialog-header"><div className="settings-dialog-title"><span>Автоматизация</span><h2>{automationSettings === "autocontinue" ? "Автопродолжение" : automationSettings === "autopilot" ? "Автопилот" : "Запуск сессий"}</h2></div><button className="settings-close" aria-label={`Закрыть настройки ${automationSettings === "launch-policy" ? "запуска новых сессий" : automationSettings === "autocontinue" ? "автопродолжения" : "автопилота"}`} onClick={() => setAutomationSettings(undefined)}>×</button></header><div className="settings-dialog-body">{automationSettings === "launch-policy" ? <LaunchPolicySettings /> : <AutomationSettings section={automationSettings} state={autopilotPolicy} draft={autopilotPolicyDraft} saving={autopilotPolicySaving} error={autopilotPolicyError} saved={autopilotPolicySaved} continuation={continuationHarnesses} continuationSaving={continuationHarnessSaving} continuationFailed={continuationHarnessFailed} continuationError={continuationHarnessError} runtimeState={runtimeSettingsState} runtimeDraft={runtimeSettingsDraft} runtimeSaving={runtimeSettingsSaving} runtimeSaved={runtimeSettingsSaved} runtimeError={runtimeSettingsError} modelOptions={runtimeModelOptions} sessionControlAvailable={automationSettings === "autocontinue" ? Boolean(sessionAutostart) : Boolean(autopilotSession)} sessionControlStatus={automationSettings === "autocontinue" ? `Текущая сессия: автопродолжение ${sessionAutostart?.enabled ? "включено" : "выключено"}` : `Текущая сессия: автопилот ${autopilotSession?.enabled ? "включён" : "выключен"}`} capabilityNote={activeSession && !activeHarnessSupportsAutocontinue ? `Автопродолжение после сбоя для ${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} пока недоступно. Автопилот может оценивать завершение задач и продолжать их по своей политике.` : undefined} onChange={(next) => { setAutopilotPolicyDraft(next); setAutopilotPolicySaved(false); }} onSave={() => void saveAutopilotPolicy()} onGlobalContinuationToggle={() => void toggleGlobalContinuation()} onContinuationToggle={(harness) => void toggleContinuationHarness(harness)} onRuntimeChange={(next) => { setRuntimeSettingsDraft(next); setRuntimeSettingsSaved(false); }} onRuntimeSave={() => void saveRuntimeSettings()} onOpenSessionControl={() => openSessionInspector(automationSettings === "autocontinue" ? "autocontinue" : "autopilot")} />}</div></div></div>}
       {!showStatistics && !showJobs && !showQuota && !!details?.children?.length && <details className="subagents-panel"><summary>Субагенты <span>{details.children.length}</span></summary><div className="subagents-list">{details.children.map((child) => <button className="subagent-row" key={keyOf(child)} onClick={() => { selectSession(keyOf(child)); setMobileView("chat"); }}><span className={`status-dot status-${statusClass(child.status)}`} /><span><strong>{child.title || child.id}</strong><small>{typeof child.meta?.agentRole === "string" ? child.meta.agentRole : statusLabel(child.status)} · {child.id}</small></span></button>)}</div></details>}
       {!showCreateSession && !showStatistics && !showJobs && !showQuota && <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}>
         <div className="message-column" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Переписка">

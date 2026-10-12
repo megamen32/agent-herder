@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-10-12)
 Phase: 3 of 4 (Stable public Mac connection)
 Plan: Existing delivery in progress; no fabricated plan-completion count.
 Status: In progress
-Last activity: 2026-10-12 — Public SSO access204 and all five hosts READY sampled, but connection remains intermittent; no final acceptance.
+Last activity: 2026-10-12 — Actual public headed Mac READY and exact native session/CWD read passed; recurring artifact census failure prevents final stable acceptance. All eight existing recovery controls fixed in owned UI source.
 
 ## Performance Metrics
 
@@ -34,9 +34,10 @@ Existing release checks: UI83 checks/build29.807s; watchdog65 Python plus4 C-con
 
 ### Blockers/Concerns
 
-- Latest durable Mac stop: artifact census deadline4.329s after101.96s, Node32287; low RSS184880KiB.
-- Existing infrastructure healer produced additional LaunchAgent starts; runs12/latest watcher35265. No manual replay by this actor.
-- SSH2222 and public reverse21701 intermittently close/refuse.
+- Latest durable Mac stop: artifact census deadline4.311s after35.46s, Node63127, RSS149360KiB; current watcher63901/runs14.
+- Direct observer fix is installed. Direct tunnel fix7308607f is published; reconcile published observer5c7d808 and execute at most one supported activation, never replay lost ACK.
+- Actual integration owner01a12740 handles server100 closure; source-only owner01a12c46 supplies compiled artifacts.
+- See .agents/tasks/20261012-public-mac-ui-delivery.md for exact results, ownership and remaining consumer checks.
 
 ## Deferred Items
 

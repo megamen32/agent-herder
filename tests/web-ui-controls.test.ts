@@ -49,8 +49,7 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('/api/autopilot/sessions/');
     expect(main).toContain('aria-label="Автопилот для текущей сессии"');
     expect(main).toContain('/api/session-autostart/sessions/');
-    expect(main).toContain('/api/session-autostart/harnesses/codex');
-    expect(main).toContain('/api/session-autostart/harnesses/zcode');
+    expect(main).toContain('loadAutocontinueHarnesses(api)');
     expect(main).toContain('aria-label="Автопродолжение для текущей сессии"');
     expect(main).toContain('Где разрешено восстановление');
     expect(main).toContain('Если автопилот выключен, восстановление после сбоя всё равно работает');
@@ -88,7 +87,7 @@ describe("mobile chat and session controls", () => {
 
     expect(headerStart).toBeGreaterThan(-1);
     expect(menuStart).toBeGreaterThan(-1);
-    expect(main).toContain('const AUTOCONTINUE_HARNESSES = new Set(["codex", "zcode"])');
+    expect(main).toContain('const AUTOCONTINUE_HARNESSES = new Set<string>(AUTOCONTINUE_HARNESS_IDS)');
     expect(header).toContain('aria-label="Настройки сессии"');
     expect(header).toContain('aria-label="Меню чата"');
     for (const label of ['>Машины<', '>Задачи<', '>Статистика<', '>Автопилот<', '>Автопродолжение<']) expect(header).not.toContain(label);
@@ -210,7 +209,7 @@ describe("mobile chat and session controls", () => {
 
     expect(autopilotHandler).toContain("/api/autopilot/policy");
     expect(autopilotHandler).not.toContain("/api/session-autostart/harnesses/");
-    expect(autocontinueHandler).toContain("/api/session-autostart/harnesses/");
+    expect(autocontinueHandler).toContain("saveAutocontinueHarness(api, harness, !current.enabled)");
     expect(autocontinueHandler).not.toContain("/api/autopilot/policy");
     expect(globalAutocontinueHandler).toContain('"/api/session-autostart"');
     expect(globalAutocontinueHandler).not.toContain("/api/autopilot/policy");
