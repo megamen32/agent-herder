@@ -554,6 +554,32 @@ class MacWatchdogTests(unittest.TestCase):
                     with patch.object(w,'command',side_effect=replaced_during_final_text):
                         with self.assertRaisesRegex(w.Refused,'managed_codex_owner_unverified'):w.verify_codex_owner(config)
 
+    def test_darwin_group_metrics_use_one_complete_kernel_frame(self):
+        # Fast unit expected<1s/max3s: replaces confirmed native ps-group deadline.
+        frame=f'GROUP 1 3 2\nPROC 42 {w.os.getuid()} 42 2049 3000000000 129 3 100 7\n'
+        with patch.object(w.sys,'platform','darwin'),patch.object(w,'command',return_value=frame) as probe:
+            rows=w.read_processes(42);self.assertEqual(rows[0]['rss_kib'],3)
+            self.assertEqual(rows[0]['cpu_seconds'],4.5);self.assertEqual(rows[0]['generation'],(100,7))
+            self.assertEqual(w.read_threads(rows),129)
+            self.assertEqual(probe.call_count,1);self.assertEqual(probe.call_args.args[0][1:],['--group','42'])
+        with patch.object(w.sys,'platform','darwin'):
+            with self.assertRaises(w.Refused):w.read_threads([{'pid':42}])
+
+    def test_kernel_group_refuses_partial_foreign_or_unknown_empty_observation(self):
+        good=f'PROC 42 {w.os.getuid()} 42 1 1 1 3 100 0\n'
+        for frame in ('', 'GROUP 17 1 1\n','GROUP 1 1 0\n'+good,'GROUP 2 1 1\n'+good,
+                      'GROUP 1 1 1\n'+good.replace(' 42 1 1 ',' 99 1 1 '),'GROUP 1 1 1\n'+good.replace(f'42 {w.os.getuid()} ',f'42 {w.os.getuid()+1} '),
+                      'GROUP 2 1 1\n'+good+good,'GROUP 1 1 1\n'+good.replace(' 1 3 100',' 0 3 100')):
+            with self.subTest(frame=frame),self.assertRaises(w.Refused):w.parse_kernel_group(frame,42,w.os.getuid())
+        with patch.object(w.os,'killpg',return_value=None),self.assertRaises(w.Refused):w.parse_kernel_group('GROUP 0 1 1\n',42,w.os.getuid())
+        with patch.object(w.os,'killpg',side_effect=ProcessLookupError()):self.assertEqual(w.parse_kernel_group('GROUP 0 1 1\n',42,w.os.getuid()),[])
+
+    def test_kernel_group_zombie_and_budgets_remain_explicit(self):
+        rows=w.parse_kernel_group(f'GROUP 1 1 1\nPROC 42 {w.os.getuid()} 42 0 0 0 5 100 0\n',42,w.os.getuid())
+        self.assertEqual(rows[0]['stat'],'Z')
+        with patch.object(w.sys,'platform','darwin'):self.assertEqual(w.read_threads(rows),0)
+        with self.assertRaises(w.Refused):w.parse_kernel_group(f'GROUP 1 1 1\nPROC 42 {w.os.getuid()} 42 1 0 0 5 100 0\n',42,w.os.getuid())
+
     def test_kernel_probe_uses_the_existing_two_attempt_common_deadline(self):
         probe=str(Path.home()/'.local/share/agent-herder/fleet/mac-codex-owner-probe')
         for mode in ('--text','--socket'):
@@ -619,6 +645,10 @@ class MacWatchdogTests(unittest.TestCase):
         child.poll.return_value=0
         saved={'pid':43,'pgid':42,'uid':501,'identity':'old'}
         with patch.object(w,'read_processes',return_value=[{**saved,'identity':'reused'}]),patch.object(w.os,'kill') as kill:
+            with self.assertRaisesRegex(w.Refused,'owned_group_identity_lost'):w.stop_owned(child,[saved])
+            kill.assert_not_called()
+        saved['generation']=(100,0)
+        with patch.object(w,'read_processes',return_value=[{**saved,'generation':(100,1)}]),patch.object(w.os,'kill') as kill:
             with self.assertRaisesRegex(w.Refused,'owned_group_identity_lost'):w.stop_owned(child,[saved])
             kill.assert_not_called()
 

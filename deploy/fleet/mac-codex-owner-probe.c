@@ -16,6 +16,7 @@
 #include <ctype.h>
 #if defined(__APPLE__) || defined(HERDER_DARWIN_FIXTURE)
 #include <sys/sysctl.h>
+#include <mach/mach_time.h>
 #endif
 
 static int number(const char *s, int minimum) {
@@ -40,6 +41,51 @@ static int listener(int pid, int fd, const char *path, uint64_t *handle) {
 }
 
 #if defined(__APPLE__) || defined(HERDER_DARWIN_FIXTURE)
+static int compare_pid(const void *a,const void *b) {
+    int left=*(const int*)a,right=*(const int*)b;
+    return (left>right)-(left<right);
+}
+static int group_pids(int pgid,int *pids) {
+    int bytes=proc_listpids(PROC_PGRP_ONLY,(uint32_t)pgid,pids,17*(int)sizeof(int));
+    if (bytes<0 || bytes>=17*(int)sizeof(int) || bytes%(int)sizeof(int)) return -1;
+    int count=bytes/(int)sizeof(int);
+    qsort(pids,(size_t)count,sizeof(int),compare_pid);
+    for (int i=0;i<count;i++) if (pids[i]<=1 || (i && pids[i]==pids[i-1])) return -1;
+    return count;
+}
+static int group_snapshot(int pgid) {
+    int pids[17],after_pids[17],count=group_pids(pgid,pids);
+    struct proc_bsdinfo bsd[16],after;
+    struct proc_taskinfo task[16];
+    mach_timebase_info_data_t scale;
+    if (count<0 || mach_timebase_info(&scale) || !scale.numer || !scale.denom) return 0;
+    for (int i=0;i<count;i++) {
+        /* arg=1 includes zombies for BSD metadata only. A live task-info
+         * failure is never silently treated as a zero-cost zombie.
+         */
+        if (proc_pidinfo(pids[i],PROC_PIDTBSDINFO,1,&bsd[i],sizeof(bsd[i]))!=(int)sizeof(bsd[i]) ||
+            bsd[i].pbi_pid!=(uint32_t)pids[i] || bsd[i].pbi_pgid!=(uint32_t)pgid || bsd[i].pbi_uid!=getuid() ||
+            bsd[i].pbi_status<1 || bsd[i].pbi_status>5 || bsd[i].pbi_start_tvusec>=1000000) return 0;
+        memset(&task[i],0,sizeof(task[i]));
+        if (bsd[i].pbi_status!=5 &&
+            (proc_pidinfo(pids[i],PROC_PIDTASKINFO,0,&task[i],sizeof(task[i]))!=(int)sizeof(task[i]) || task[i].pti_threadnum<=0)) return 0;
+        if (UINT64_MAX-task[i].pti_total_user<task[i].pti_total_system) return 0;
+    }
+    if (group_pids(pgid,after_pids)!=count || memcmp(pids,after_pids,(size_t)count*sizeof(int))) return 0;
+    for (int i=0;i<count;i++) {
+        if (proc_pidinfo(pids[i],PROC_PIDTBSDINFO,1,&after,sizeof(after))!=(int)sizeof(after) ||
+            after.pbi_pid!=bsd[i].pbi_pid || after.pbi_pgid!=bsd[i].pbi_pgid || after.pbi_uid!=bsd[i].pbi_uid ||
+            after.pbi_start_tvsec!=bsd[i].pbi_start_tvsec || after.pbi_start_tvusec!=bsd[i].pbi_start_tvusec ||
+            (after.pbi_status==5)!=(bsd[i].pbi_status==5)) return 0;
+    }
+    /* Emit only a complete, same-group numeric frame after all fences pass. */
+    printf("GROUP %d %u %u\n",count,scale.numer,scale.denom);
+    for (int i=0;i<count;i++) printf("PROC %d %u %u %llu %llu %d %u %llu %llu\n",
+        pids[i],bsd[i].pbi_uid,bsd[i].pbi_pgid,(unsigned long long)task[i].pti_resident_size,
+        (unsigned long long)(task[i].pti_total_user+task[i].pti_total_system),task[i].pti_threadnum,
+        bsd[i].pbi_status,(unsigned long long)bsd[i].pbi_start_tvsec,(unsigned long long)bsd[i].pbi_start_tvusec);
+    return 1;
+}
 static int same_words(const char *a, const char *b) {
     while (*a || *b) {
         while (isspace((unsigned char)*a)) a++;
@@ -97,6 +143,13 @@ static int identity(int pid, const char *started, const char *socket_path, uint6
 #endif
 
 int main(int argc, char **argv) {
+#if defined(__APPLE__) || defined(HERDER_DARWIN_FIXTURE)
+    if (argc==3 && !strcmp(argv[1],"--group")) {
+        int pgid=number(argv[2],2);
+        if (pgid<0) return 65;
+        return group_snapshot(pgid)?0:66;
+    }
+#endif
     if (argc < 4) return 65;
     int pid = number(argv[2], 2);
     if (pid < 0) return 65;

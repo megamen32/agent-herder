@@ -71,9 +71,9 @@ def command(argv,deadline=None):
     # Cleanup retains its existing caller deadline; no prior output is reused.
     stages={'/bin/ps':'process','/usr/sbin/lsof':'listener',
             '/usr/sbin/sysctl':'host_identity','/usr/bin/memory_pressure':'host_memory'}
-    native_probe=Path(argv[0]).name=='mac-codex-owner-probe' and len(argv) in (4,5) and argv[1] in ('--text','--socket','--identity')
-    stage=('process' if argv[1]=='--identity' else 'listener') if native_probe else stages.get(argv[0],'other')
-    probe=('threads' if '-M' in argv else 'census' if '-axo' in argv or '-g' in argv else 'identity') if stage=='process' else stage
+    native_probe=Path(argv[0]).name=='mac-codex-owner-probe' and len(argv) in (3,4,5) and argv[1] in ('--text','--socket','--identity','--group')
+    stage=('process' if argv[1] in ('--identity','--group') else 'listener') if native_probe else stages.get(argv[0],'other')
+    probe=('threads' if '-M' in argv else 'census' if '-axo' in argv or '-g' in argv or '--group' in argv else 'identity') if stage=='process' else stage
     if stage=='listener':
         probe=('text_mapping' if argv[1]=='--text' else 'unix_owner') if native_probe else 'text_mapping' if '-d' in argv and 'txt' in argv else 'unix_owner' if '-U' in argv else 'tcp_listener' if any(str(a).startswith('-iTCP:') for a in argv) else 'listener'
     window=min(time.monotonic()+4,deadline) if deadline is not None else time.monotonic()+4
@@ -448,12 +448,45 @@ def parse_processes(text, pgid, uid):
 
 def read_processes(pgid,deadline=None):
     if type(pgid)!=int or pgid<=1:raise Refused('owned_group_identity_invalid')
+    if sys.platform=='darwin':
+        probe=Path.home()/'.local/share/agent-herder/fleet/mac-codex-owner-probe'
+        text=command([str(probe),'--group',str(pgid)],deadline=deadline)
+        return parse_kernel_group(text,pgid,os.getuid())
     # Darwin -g selects this exact process group before collecting task info.
     # Do not combine it with -a/-A: those selectors union in foreign tasks.
     # Same full group, UID/lstart fences and deadline; no global task census.
     argv=['/bin/ps','-g',str(pgid),'-o','pid=,pgid=,uid=,rss=,time=,stat=,lstart=']
     text=command(argv,deadline=deadline) if deadline is not None else command(argv)
     return parse_processes(text,pgid,os.getuid())
+
+def parse_kernel_group(text,pgid,uid):
+    def refuse():raise Refused('process_observation_invalid')
+    lines=text.splitlines()
+    if not lines or len(lines)>17 or len(text)>8192:refuse()
+    head=re.fullmatch(r'GROUP ([0-9]{1,2}) ([0-9]{1,10}) ([0-9]{1,10})',lines[0])
+    if not head:refuse()
+    count,numer,denom=map(int,head.groups())
+    if count>16 or len(lines)!=count+1 or not 0<numer<=4294967295 or not 0<denom<=4294967295:refuse()
+    rows=[];seen=set()
+    for line in lines[1:]:
+        match=re.fullmatch(r'PROC ([0-9]{1,10}) ([0-9]{1,10}) ([0-9]{1,10}) ([0-9]{1,20}) ([0-9]{1,20}) ([0-9]{1,10}) ([1-5]) ([0-9]{1,20}) ([0-9]{1,6})',line)
+        if not match:refuse()
+        pid,user,group,rss,cpu,threads,status,seconds,usec=map(int,match.groups())
+        if pid<=1 or pid in seen or user!=uid or group!=pgid or usec>=1000000 or rss>2**64-1 or cpu>2**64-1 or threads>2147483647:refuse()
+        if status==5:
+            if rss or cpu or threads:refuse()
+        elif threads<=0:refuse()
+        try:identity=' '.join(time.strftime('%a %b %e %H:%M:%S %Y',time.localtime(seconds)).split())
+        except (OverflowError,OSError,ValueError):refuse()
+        seen.add(pid);rows.append({'pid':pid,'pgid':group,'uid':user,'rss_kib':(rss+1023)//1024,
+            'cpu_seconds':cpu*numer/denom/1e9,'stat':{1:'I',2:'R',3:'S',4:'T',5:'Z'}[status],
+            'identity':identity,'generation':(seconds,usec),'kernel_threads':threads})
+    if not rows:
+        try:os.killpg(pgid,0)
+        except ProcessLookupError:return []
+        except OSError:pass
+        refuse()
+    return rows
 
 def thread_pids(text):
     pids=[];table=False
@@ -480,6 +513,9 @@ def thread_pids(text):
 
 def read_threads(rows):
     if not rows:return 0
+    if sys.platform=='darwin':
+        if any(type(r.get('kernel_threads'))!=int or r['kernel_threads']<0 for r in rows):raise Refused('thread_observation_invalid')
+        return sum(r['kernel_threads'] for r in rows)
     def refuse(stage,census,pids=()):
         # Travels through both supervisors' existing Refused receipt handling.
         # No argv, paths, lstart strings, foreign tables or other private data.
@@ -696,7 +732,7 @@ def stop_owned(child,observed,timeout=10):
     pinned={r['pid']:r for r in observed}
     def remaining():
         remaining_time();current=read_processes(child.pid,deadline=deadline);remaining_time()
-        if any(r['pid'] not in pinned or any(r[k]!=pinned[r['pid']][k] for k in ('pgid','uid','identity')) for r in current):
+        if any(r['pid'] not in pinned or any(r[k]!=pinned[r['pid']][k] for k in ('pgid','uid','identity')) or r.get('generation')!=pinned[r['pid']].get('generation') for r in current):
             raise Refused('owned_group_identity_lost')
         return current
     # Re-read before every signal. Never use a reaped leader PID as an ownership proof.
@@ -816,7 +852,7 @@ def main():
                 sample={'rss_kib':sum(r['rss_kib'] for r in observed),'processes':len(observed)}
                 failed=[name for name,over in [('memory_hard',sample['rss_kib']>MEMORY_MAX_KIB),('processes',len(observed)>16)] if over]
                 if failed:reason='resource_budget';break
-                current={(r['pid'],r['identity']):r['cpu_seconds'] for r in observed};cpu=cpu_percent(previous_cpu,current,now-previous)
+                current={(r['pid'],r.get('generation',r['identity'])):r['cpu_seconds'] for r in observed};cpu=cpu_percent(previous_cpu,current,now-previous)
                 cpu_samples.append((previous,now,cpu));cpu_samples=[s for s in cpu_samples if s[1]>now-CPU_WINDOW];previous=now;previous_cpu=current
                 releases,artifact=release_usage(base,artifact_cache)
                 sample={'rss_kib':sum(r['rss_kib'] for r in observed),'processes':len(observed),'threads':read_threads(observed),

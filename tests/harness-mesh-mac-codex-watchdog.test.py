@@ -38,6 +38,14 @@ spec=importlib.util.spec_from_file_location('native',ROOT/'deploy/fleet/mac-code
 n=importlib.util.module_from_spec(spec);spec.loader.exec_module(n)
 
 class NativeManagerTests(unittest.TestCase):
+    def test_native_tick_uses_the_shared_kernel_group_without_ps(self):
+        # Fast unit expected<1s/max3s: former native process-census timeout.
+        frame=f'GROUP 1 1 1\nPROC 42 {n.os.getuid()} 42 1024 1000000000 65 3 100 0\n'
+        with patch.object(n.w.sys,'platform','darwin'),patch.object(n.w,'command',return_value=frame) as probe:
+            rows=n.w.read_processes(42);threads=n.w.read_threads(rows)
+            self.assertEqual(threads,65);self.assertEqual(rows[0]['cpu_seconds'],1)
+            self.assertEqual(probe.call_args.args[0][1:],['--group','42']);self.assertEqual(probe.call_count,1)
+        self.assertIn('threads',n.native_violations(self.sample(threads=threads),1))
     def sample(self,**changes):
         sample=dict(rss_kib=200*1024,processes=2,threads=12,cpu_percent=50,sustained_cpu_percent=50,temp_bytes=0,state_bytes=0,artifact_bytes=0,releases=0,host_available_kib=5*1024**2,disk_free_bytes=3*1024**3)
         sample.update(changes);return sample

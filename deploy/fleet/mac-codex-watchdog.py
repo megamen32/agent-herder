@@ -42,7 +42,7 @@ def validate_source_files(base,config):
     # Independent pre-import guard: a drifted companion cannot validate itself.
     hashes=config.get('launcherHashes')
     if not isinstance(hashes,dict):raise ValueError('launcher_identity_missing')
-    for name in ('mac-node-watchdog.py','mac-codex-watchdog.py'):
+    for name in ('mac-node-watchdog.py','mac-codex-watchdog.py','mac-codex-owner-probe'):
         expected=hashes.get(name)
         if not isinstance(expected,str) or not re.fullmatch('[a-f0-9]{64}',expected):raise ValueError('launcher_identity_missing')
         with (base/name).open('rb') as handle:data=handle.read(1024**2+1)
@@ -127,7 +127,7 @@ def prepare(base,config):
     if sys.platform!='darwin':raise w.Refused('darwin_required')
     w.Policy(w.command(['/usr/sbin/sysctl','-n','hw.model']).strip())
     if config['hostId']!=socket.gethostname():raise w.Refused('native_host_identity_mismatch')
-    w.verify_launcher_hashes(base,config,['mac-node-watchdog.py','mac-codex-watchdog.py'])
+    w.verify_launcher_hashes(base,config,['mac-node-watchdog.py','mac-codex-watchdog.py','mac-codex-owner-probe'])
     w.verify_manifest(base,config['sourceSha'])
     binary=binary_identity(config['codexBin'],config.get('codexSha256'))
     pointer=Path(config['codexSocket'])
@@ -159,7 +159,7 @@ def monitor(child,pointer,state,temp,config):
             sample={'rss_kib':sum(r['rss_kib'] for r in observed),'processes':len(observed)}
             failed=[name for name,over in [('memory_hard',sample['rss_kib']>w.MEMORY_MAX_KIB),('processes',len(observed)>16)] if over]
             if failed:reason='resource_budget';break
-            current={(r['pid'],r['identity']):r['cpu_seconds'] for r in observed}
+            current={(r['pid'],r.get('generation',r['identity'])):r['cpu_seconds'] for r in observed}
             cpu=w.cpu_percent(last_cpu,current,now-previous) if last_cpu else 0
             cpu_samples.append((previous,now,cpu));cpu_samples=[r for r in cpu_samples if r[1]>now-w.CPU_WINDOW];previous=now;last_cpu=current
             sample.update(threads=w.read_threads(observed),cpu_percent=cpu,sustained_cpu_percent=w.rolling_cpu(cpu_samples,now),

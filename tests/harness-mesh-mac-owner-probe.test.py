@@ -11,6 +11,8 @@ class OwnerProbeTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp=tempfile.TemporaryDirectory();root=Path(cls.temp.name)
         (root/'sys').mkdir()
+        (root/'mach').mkdir()
+        (root/'mach/mach_time.h').write_text('#include <stdint.h>\ntypedef struct {uint32_t numer,denom;} mach_timebase_info_data_t;\nint mach_timebase_info(mach_timebase_info_data_t*);\n')
         (root/'sys/socket.h').write_text('#define AF_UNIX 1\n#define SOCK_STREAM 1\n#define SO_ACCEPTCONN 2\n')
         (root/'sys/un.h').write_text('#ifndef FIXTURE_UN_H\n#define FIXTURE_UN_H\nstruct sockaddr_un { unsigned char sun_len, sun_family; char sun_path[104]; };\n#endif\n')
         (root/'sys/sysctl.h').write_text('#include <stddef.h>\n#define CTL_KERN 1\n#define KERN_PROCARGS2 2\nint sysctl(const int*,unsigned,void*,size_t*,const void*,size_t);\n')
@@ -19,7 +21,10 @@ class OwnerProbeTests(unittest.TestCase):
 #define SOCKINFO_UN 3
 #define PROX_FDTYPE_SOCKET 2
 #define PROC_PIDTBSDINFO 3
-struct proc_bsdinfo { unsigned pbi_uid; uint64_t pbi_start_tvsec,pbi_start_tvusec; };
+struct proc_bsdinfo { unsigned pbi_uid,pbi_pid,pbi_pgid,pbi_status; uint64_t pbi_start_tvsec,pbi_start_tvusec; };
+#define PROC_PGRP_ONLY 2
+#define PROC_PIDTASKINFO 4
+struct proc_taskinfo {uint64_t pti_resident_size,pti_total_user,pti_total_system;int pti_threadnum;};
 #define PROC_PIDLISTFDS 1
 #define PROC_PIDFDSOCKETINFO 2
 #define PROC_PIDPATHINFO_MAXSIZE 4096
@@ -28,7 +33,7 @@ struct socket_info { int soi_family,soi_kind,soi_type,soi_options; uint64_t soi_
  union {struct {union {struct sockaddr_un ua_sun;} unsi_addr,unsi_caddr;} pri_un;} soi_proto; };
 struct socket_fdinfo { struct socket_info psi; };
 ''')
-        (root/'libproc.h').write_text('int proc_pidinfo(int,int,unsigned long,void*,int);\nint proc_pidfdinfo(int,int,int,void*,int);\nint proc_pidpath(int,void*,unsigned);\n')
+        (root/'libproc.h').write_text('#include <stdint.h>\nint proc_listpids(uint32_t,uint32_t,void*,int);\nint proc_pidinfo(int,int,unsigned long,void*,int);\nint proc_pidfdinfo(int,int,int,void*,int);\nint proc_pidpath(int,void*,unsigned);\n')
         stub=root/'stub.c';stub.write_text('''#include <sys/proc_info.h>
 #include <string.h>
 #include <stdlib.h>
@@ -36,9 +41,25 @@ struct socket_fdinfo { struct socket_info psi; };
 #include <stddef.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <mach/mach_time.h>
 static int is(const char *s){return getenv("CASE")&&!strcmp(getenv("CASE"),s);}
+int mach_timebase_info(mach_timebase_info_data_t *s){s->numer=3;s->denom=2;return 0;}
+int proc_listpids(uint32_t type,uint32_t pgid,void *out,int size){
+ static int calls=0;calls++;
+ if(type!=PROC_PGRP_ONLY||pgid!=42)return -1;
+ if(is("group17"))return size;if(is("partial_group"))return 1;
+ int *p=out;p[0]=42;p[1]=is("changed_group")&&calls>1?44:43;return 2*sizeof(int);
+}
 int proc_pidpath(int pid,void *out,unsigned size){if(pid!=42)return 0;return snprintf(out,size,"/native/codex");}
 int proc_pidinfo(int pid,int flavor,unsigned long arg,void *out,int size){
+ if(arg==1 && flavor==PROC_PIDTBSDINFO){
+  static int calls=0;calls++;if(is("partial_group_bsd"))return size-1;
+  struct proc_bsdinfo *b=out;memset(b,0,size);b->pbi_uid=getuid()+(is("foreign_uid")?1:0);b->pbi_pid=pid;b->pbi_pgid=is("foreign_group")?99:42;b->pbi_status=is("zombie")?5:3;b->pbi_start_tvsec=100;b->pbi_start_tvusec=is("group_reused")&&calls>2?1:0;return size;
+ }
+ if(flavor==PROC_PIDTASKINFO){
+  if(is("task_failed"))return 0;if(is("partial_task"))return size-1;
+  struct proc_taskinfo *t=out;t->pti_resident_size=2049;t->pti_total_user=1000000000;t->pti_total_system=2000000000;t->pti_threadnum=is("thread129")?129:3;return size;
+ }
  if(pid!=42||is("absent"))return 0;
  if(flavor==PROC_PIDTBSDINFO){if(is("partial_bsd"))return size-1;struct proc_bsdinfo *b=out;b->pbi_uid=getuid()+(is("foreign_uid")?1:0);b->pbi_start_tvsec=is("new_generation")?101:100;b->pbi_start_tvusec=0;return sizeof(*b);}
  if(is("partial_list"))return 1;if(is("full_list"))return size;
@@ -81,6 +102,14 @@ int sysctl(const int *mib,unsigned n,void *out,size_t *size,const void *newp,siz
         self.assertEqual(self.probe('--text','42','/native/codex').stdout,'OWNED\n')
         self.assertNotEqual(self.probe('--text','42','/native/proxy').returncode,0)
         self.assertNotEqual(self.probe('--text','43','/native/codex').returncode,0)
+    def test_owned_group_kernel_resources_and_complete_generation(self):
+        r=self.probe('--group','42');self.assertEqual(r.returncode,0)
+        self.assertEqual(r.stdout,f'GROUP 2 3 2\nPROC 42 {os.getuid()} 42 2049 3000000000 3 3 100 0\nPROC 43 {os.getuid()} 42 2049 3000000000 3 3 100 0\n')
+        self.assertIn(' 129 3 ',self.probe('--group','42',case='thread129').stdout)
+        self.assertIn(' 0 0 0 5 ',self.probe('--group','42',case='zombie').stdout)
+        for case in ('group17','partial_group','foreign_uid','foreign_group','changed_group','group_reused','task_failed','partial_task','partial_group_bsd'):
+            with self.subTest(case=case):
+                r=self.probe('--group','42',case=case);self.assertNotEqual(r.returncode,0);self.assertEqual(r.stdout,'');self.assertEqual(r.stderr,'')
     def test_fresh_listener_and_descriptor_hint(self):
         for case in ('','dup','no_nul','padded'):
             with self.subTest(case=case):

@@ -201,3 +201,26 @@ replay. This removes periodic ps identity latency without raising the existing
 two-attempt/four-second observation budget. A separate native-manager census
 deadline was recorded for PID29017; do not describe this identity change as
 proof that all process-census deadlines are resolved.
+
+
+### Shared native and Node kernel group census
+
+The native29017 manager recorded a real `ps -g` deadline after19205.7s while
+inside its resource budget. The sealed owner helper now provides `--group`
+using PROC_PGRP_ONLY and full BSD/TASKINFO records only for that group. At most
+16 members are admitted; full/partial PID buffers, foreign UID/group, missing
+live task data and PID microsecond-generation changes refuse. Group membership
+and every generation are refreshed before a complete numeric frame is emitted.
+Zombie zero-resource rows require fresh BSD zombie proof; empty groups additionally
+require the caller's kernel absence check. No environment, argv or foreign task
+metrics are emitted. RSS rounds up to KiB; CPU Mach ticks use the reported timebase;
+thread counts retain Node128/native64 guards and all previous workload budgets.
+Both supervisors import the shared path; the native pre-import and preparation
+checks now require its sealed helper. Cleanup compares full generation tokens.
+
+Focused checks:68 supervisor+6 C observer+13 native+3 artifact scenarios, fast
+unit category, expected3s/max20s combined. The real SDK group probe on the approved
+87650 controller took7.5ms; compilation/probes772ms,56688KiB peak. Native reload
+requires fresh direct read-only loaded-thread/receipt proof of no active or unknown
+admitted work. Preserve SID/history/profile/auth and managed labels, and never
+repeat a start after an unknown ACK before reconciling actual state.
