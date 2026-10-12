@@ -3,6 +3,7 @@ import type { ContentPart, Conversation, ConversionResult, HarnessType, Message 
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getHumanStopStore, type HumanStopStore } from "./human-stop-store.js";
+import type {NativeHookTurn} from './adapters/zcode-workspace-lifecycle.js';
 import type {
   AgentSession,
   ControlResult,
@@ -71,7 +72,7 @@ export interface SessionSupervisorOptions {
   /** Initial retry delay; subsequent failed resumes use exponential backoff. */
   autoResumeDelayMs?: number;
   /** Durable restart launcher for unfinished turns; independent from autopilot. */
-  unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession">>);
+  unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook">>);
 }
 
 interface AutomaticResumeState {
@@ -121,7 +122,7 @@ export class SessionSupervisor {
   private readonly automaticResumes = new Map<string, AutomaticResumeState>();
   private readonly humanStops: HumanStopStore;
   private readonly immediateStops = new Set<string>();
-  private readonly unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession">>);
+  private readonly unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook">>);
 
   constructor(
     private readonly adapters: Map<string, HarnessAdapter>,
@@ -162,6 +163,31 @@ export class SessionSupervisor {
     const released = await this.humanStops.release(harness, id, prompt);
     if (released || !await this.humanStops.isHeld(harness, id)) this.immediateStops.delete(sessionKey(harness, id));
     return released;
+  }
+
+  async recordZcodeLifecycle(sessionId:string,cwd:string,turnId:string,event:string,outcome?:string):Promise<{origin:string;released:boolean;recorded:boolean}>{
+    const adapter=this.adapters.get('zcode') as (HarnessAdapter&{
+      getNativeHookTurn?(id:string,turnId:string,cwd:string):NativeHookTurn|null;
+      registerNativeHookTurn?(proof:NativeHookTurn):void;
+      completeNativeHookTurn?(proof:NativeHookTurn):void;
+    })|undefined;
+    const proof=adapter?.getNativeHookTurn?.(sessionId,turnId,cwd);
+    if(!proof)return {origin:'unknown',released:false,recorded:false};
+    let released=false,recorded=false;
+    const identity={turnId:proof.turnId,inputId:proof.inputId};
+    const current=()=>{const fresh=adapter?.getNativeHookTurn?.(sessionId,turnId,cwd);return fresh?.inputId===proof.inputId&&fresh.userMessageId===proof.userMessageId;};
+    if(event==='user-prompt'&&proof.origin==='real_user'&&current())released=await this.releaseHumanStop('zcode',sessionId,{id:proof.inputId,at:proof.at,turnId:proof.turnId});
+    if(await this.humanStops.isHeld('zcode',sessionId)||!current())return {origin:proof.origin,released,recorded:false};
+    if(event==='user-prompt'||event==='tool-progress'){
+      recorded=await this.unfinishedSessions?.recordNativeHook?.({id:sessionId,harness:'zcode',cwd:proof.cwd,title:'ZCode',status:'running',lastActivity:proof.at,needsPermission:false,meta:{workspaceIdentity:proof.cwd}},
+        identity,event==='user-prompt'?'begin':'progress',proof.progress,current)??false;
+      if(recorded)adapter?.registerNativeHookTurn?.(proof);
+    }else if(event==='turn-end'&&outcome==='success'&&proof.finished&&current()){
+      recorded=await this.unfinishedSessions?.recordNativeHook?.({id:sessionId,harness:'zcode',cwd:proof.cwd,title:'ZCode',status:'idle',lastActivity:proof.at,needsPermission:false,meta:{workspaceIdentity:proof.cwd}},identity,'success',proof.progress,
+        ()=>current()&&adapter?.getNativeHookTurn?.(sessionId,turnId,cwd)?.finished===true)??false;
+      if(recorded)adapter?.completeNativeHookTurn?.(proof);
+    }
+    return {origin:proof.origin,released,recorded};
   }
 
   private async holdExplicitStop(harness: string, id: string): Promise<void> {

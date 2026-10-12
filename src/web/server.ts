@@ -800,6 +800,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const harness = typeof body.harness === "string" ? body.harness.trim() : "";
     const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
     const event = typeof body.event === "string" ? body.event.trim() : "";
+    if(harness==='zcode'&&sessionId&&['user-prompt','tool-progress','turn-end'].includes(event)){
+      const result=await supervisor.recordZcodeLifecycle(sessionId,typeof body.cwd==='string'?body.cwd:'',typeof body.turnId==='string'?body.turnId:'',event,typeof body.outcome==='string'?body.outcome:undefined);
+      if((event==='user-prompt'&&result.origin!=='unknown')||(event==='turn-end'&&result.recorded))markLifecycleEvent(harness,sessionId,event==='user-prompt'?'turn-start':'turn-end',typeof body.cwd==='string'?body.cwd:undefined,events);
+      return sendJson(response,200,{ok:true,...result});
+    }
     if (harness && sessionId && event === "user-prompt") {
       const inputId = typeof body.inputId === "string" ? body.inputId : "";
       if (inputId.startsWith("agent-herder:auto:")) return sendJson(response, 200, { ok: true, released: false });

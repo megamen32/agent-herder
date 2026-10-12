@@ -170,7 +170,10 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
     if (observedDecision?.decision.kind === "choice") {
       return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "choice", request_id: observedDecision.choiceRequestId ?? observedDecision.humanRequestId };
     }
-    return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "terminal" };
+    // The wire decision stays compatible; hooks must distinguish a confirmed
+    // done verdict from human/unknown instead of treating {} as task success.
+    return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "terminal",
+      terminalKind: observedDecision?.decision.kind === "done" ? "completed" : observedDecision?.decision.kind === "human" ? "needs-input" : "unknown" };
   } finally {
     await release();
   }

@@ -7,6 +7,36 @@ import { describe, expect, it } from "vitest";
 
 const root = resolve(import.meta.dirname, "..");
 const userPromptHook = resolve(root, "integrations/zcode/agent-herder-autopilot/hooks/user-prompt.mjs");
+
+// Fast unit, expected2s/max10s: real hook subprocess+owned loopback receiver.
+// No native SDK/model/tool request; terminal outcomes must remain distinct.
+describe('native hook lifecycle attribution and outcomes',()=>{
+ it('reports native turn without input_id and stores backend-verified automation origin',async()=>{
+  const sandbox=await mkdtemp(join(tmpdir(),'zcode-hook-origin-'));let payload:any;
+  const server=createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;payload=JSON.parse(raw);res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({origin:'automation',released:false,recorded:true}));});
+  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
+  try{
+   await runNode(userPromptHook,{session_id:'native-sid',turn_id:'native-turn',cwd:sandbox,prompt:'Original task'},{...process.env,AGENT_HERDER_URL:`http://127.0.0.1:${(server.address() as any).port}`,AGENT_HERDER_AUTOPILOT_STATE_DIR:sandbox});
+   expect(payload).toMatchObject({event:'user-prompt',turnId:'native-turn'});expect(payload.inputId).toBeUndefined();
+   const cache=JSON.parse(await readFile(join(sandbox,'zcode-user-prompts.json'),'utf8'));
+   expect(cache.sessions['native-sid']).toMatchObject({origin:'automation',automated:true,turnId:'native-turn'});
+  }finally{await new Promise<void>(r=>server.close(()=>r()));await rm(sandbox,{recursive:true,force:true});}
+ });
+ it.each([
+  [{decision:'disabled'},'unknown'],[{decision:'choice'},'needs-input'],[{decision:'terminal',terminalKind:'needs-input'},'needs-input'],
+  [{ok:true,decision:'terminal',terminalKind:'completed'},'success'],[{decision:'terminal',terminalKind:'completed'},'unknown'],
+  [{ok:false,decision:'terminal',terminalKind:'completed'},'failed'],[{decision:'terminal'},'unknown'],[{decision:'blocked'},'failed'],[{ok:false,decision:'failed'},'failed'],
+ ])('does not conflate no-nextGoal result %j with business success',async(result,outcome)=>{
+  const sandbox=await mkdtemp(join(tmpdir(),'zcode-hook-outcome-')),posts:any[]=[];
+  const server=createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;if(raw)posts.push(JSON.parse(raw));res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({humanStopHeld:false}));});
+  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
+  try{
+   await mkdir(join(sandbox,'scripts'),{recursive:true});await writeFile(join(sandbox,'scripts/autopilot-command-launcher.sh'),`#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '${JSON.stringify(result)}'\n`,{mode:0o755});
+   await runNode(stopHook,{session_id:'native-sid',turn_id:'native-turn',cwd:sandbox},{...process.env,AGENT_HERDER_ROOT:sandbox,AGENT_HERDER_AUTOPILOT_STATE_DIR:sandbox,AGENT_HERDER_URL:`http://127.0.0.1:${(server.address() as any).port}`});
+   expect(posts.find(p=>p.event==='turn-end')).toMatchObject({turnId:'native-turn',outcome});
+  }finally{await new Promise<void>(r=>server.close(()=>r()));await rm(sandbox,{recursive:true,force:true});}
+ });
+});
 const stopHook = resolve(root, "integrations/zcode/agent-herder-autopilot/hooks/stop.mjs");
 
 async function runNode(script: string, input: unknown, env: NodeJS.ProcessEnv, timeoutMs = 10_000): Promise<string> {

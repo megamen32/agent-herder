@@ -1,4 +1,10 @@
 import type { RecoveryAdmissionGate, RecoveryOperation } from "./recovery-admission.js";
+import type {WorkspaceCrash} from '../adapters/zcode-workspace-lifecycle.js';
+
+type WorkspaceLifecycleAdapter={
+ workspaceCrashRecoveryAllowed?(sessionId:string,turnId?:string,inputId?:string):boolean|undefined;
+ getWorkspaceCrashBoundary?(sessionId:string):WorkspaceCrash|undefined;
+};
 import { PendingQuestionGate } from "./pending-question-gate.js";
 import type { ChoiceRegistry } from "./choice-registry.js";
 import type { HumanRequestRegistry } from "../human-request/registry.js";
@@ -1466,6 +1472,31 @@ export class UnfinishedSessionLauncher {
     return (await this.options.store.activeNativeTurn("codex", session.id))?.turnId === turnId;
   }
 
+  /** Hook primary begin/progress uses the existing durable active-turn seam.
+   * The caller supplies an exact native promoted identity and rechecks it after
+   * semantic/Stop awaits; no SDK event replay or new tracking file is needed. */
+  async recordNativeHook(session:AgentSession,identity:{turnId:string;inputId:string},phase:'begin'|'progress'|'success',progress:string,current:()=>boolean):Promise<boolean>{
+    if(session.harness!=='zcode'||isSubagentSession(session)||!await this.mayWorkOnSession(session.harness,session.id,session.cwd))return false;
+    if(await this.options.humanStopStore?.isHeld(session.harness,session.id)||!current())return false;
+    const key=sessionKey(session.harness,session.id),active=await this.options.store.activeNativeTurn(session.harness,session.id);
+    if(await this.options.humanStopStore?.isHeld(session.harness,session.id)||!current())return false;
+    if(phase==='begin'){
+      this.activeNativeTurns.set(key,identity);
+      if(!active||!sameNativeRecoveryIdentity(active,identity))await this.options.store.markNativeTurnStarted(session,identity,this.generationId);
+    }else if(!active||!sameNativeRecoveryIdentity(active,identity))return false;
+    if(phase==='success'){
+      // A question may have appeared after begin populated the TTL snapshot.
+      // Success must read the existing registries again and preserve Stop.
+      this.pendingQuestions?.invalidate();
+      if(await this.pendingQuestionBlocks(session.harness,session.id,session.cwd))return false;
+      if(await this.options.humanStopStore?.isHeld(session.harness,session.id)||!current())return false;
+      await this.handleEvent('zcode',{kind:'turn.completed',harness:'zcode',sessionId:session.id,nativeType:'native-stop-hook-success',data:identity});
+      return true;
+    }
+    await this.options.store.markAdmissionInProgress(session.harness,session.id,sessionWorkspaceIdentity(session),progress);
+    return true;
+  }
+
   async armSession(session: AgentSession, deliveryPending = false, admittedFailure?: string): Promise<boolean> {
     if (!isAutocontinueInventoryHarness(session.harness)) return false;
     if (isSubagentSession(session)) {
@@ -1858,6 +1889,7 @@ export class UnfinishedSessionLauncher {
       if (!adapter?.resumeSession) {
         continue;
       }
+      if((adapter as WorkspaceLifecycleAdapter).workspaceCrashRecoveryAllowed?.(record.sessionId,record.recoveryTurnId,record.recoveryInputId)===false)continue;
       let session: AgentSession | null = null;
       try {
         session = await adapter.getSession(record.sessionId);
@@ -2030,6 +2062,7 @@ export class UnfinishedSessionLauncher {
   }
 
   private async recoveryNativeStateStillEligible(adapter: HarnessAdapter, record: UnfinishedSessionRecord): Promise<boolean> {
+    if((adapter as WorkspaceLifecycleAdapter).workspaceCrashRecoveryAllowed?.(record.sessionId,record.recoveryTurnId,record.recoveryInputId)===false)return false;
     const key = sessionKey(record.harness, record.sessionId);
     if (this.completedSessions.has(key) || this.completedSessions.has(unfinishedRecordKey(record))) return false;
     let current: AgentSession | null;
@@ -2212,7 +2245,13 @@ export class UnfinishedSessionLauncher {
         return;
       }
       const boundary = session?.harness === 'zcode' ? nativeLastTurn(session) : undefined;
+      const lifecycle=adapter as WorkspaceLifecycleAdapter;
+      const workspaceCrash=lifecycle.getWorkspaceCrashBoundary?.(record.sessionId);
+      if(lifecycle.workspaceCrashRecoveryAllowed?.(record.sessionId,record.recoveryTurnId,record.recoveryInputId)===false){
+        await this.options.store.cancelAttempt(attempt);return;
+      }
       const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true,
+        ...(workspaceCrash?{workspaceCrashBoundary:workspaceCrash}:{}),
         ...(boundary?.turnId && boundary.userMessageId && boundary.completedAt ? { recoveryBoundary: {
           turnId: boundary.turnId, userMessageId: boundary.userMessageId, completedAt: Date.parse(boundary.completedAt),
         } } : {}),

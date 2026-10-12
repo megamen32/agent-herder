@@ -84,6 +84,11 @@ try {
     output(event, data.context || undefined);
     if (data.inboxIds?.length) await fetchJson(`${endpoint}/api/coordination/inbox-ack`, {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId,ids:data.inboxIds})});
   } else if (event === "PreToolUse" || event === "PostToolUse") {
+    if(harness==='zcode'){
+      const turnId=typeof input.turn_id==='string'?input.turn_id:typeof input.turnId==='string'?input.turnId:undefined;
+      if(turnId)await fetchJson(`${endpoint}/api/coordination/lifecycle`,{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({harness,sessionId,cwd,event:'tool-progress',turnId,phase:event})}).catch(()=>undefined);
+    }
     input.tool_input ??= input.toolInput;
     input.tool_name ??= input.toolName;
     const declaredWorkdir = input.tool_input && typeof input.tool_input === "object"

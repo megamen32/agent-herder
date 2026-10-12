@@ -33,6 +33,9 @@ function invoke(root, payload) {
       if (code !== 0) return reject(new Error(stderr.trim() || `autopilot launcher exited ${code}`));
       try { resolvePromise(JSON.parse(stdout)); } catch { reject(new Error("autopilot launcher returned invalid JSON")); }
     });
+    // A launcher may close stdin after producing its decision. Keep this
+    // transport failure within the hook error path instead of crashing Node.
+    child.stdin.once("error", reject);
     child.stdin.end(JSON.stringify(payload));
   });
 }
@@ -59,24 +62,14 @@ async function main() {
   const cwd = typeof input.cwd === "string" && input.cwd ? input.cwd : process.env.ZCODE_PROJECT_DIR || process.cwd();
   if (!sessionId) throw new Error("ZCode Stop hook did not provide session_id");
   const root = agentHerderRoot();
-  // The turn just ended: record the lifecycle boundary before any gating, so
-  // the daemon reports this session as idle, not running — a human-stopped
-  // turn has ended just the same.
-  try {
-    await fetch(`${process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787"}/api/coordination/lifecycle`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ harness: "zcode", sessionId, cwd, event: "turn-end" }),
-      signal: AbortSignal.timeout(1200),
-    });
-  } catch {}
+  const userContext = await lastUserContext(sessionId);
+  const turnId=nonEmptyString(input.turn_id)??nonEmptyString(input.turnId)??userContext?.turnId;
   let held = false;
   try { held = await humanStopHeld(sessionId, cwd); } catch { held = true; }
-  if (held) return writeEmpty();
-  const userContext = await lastUserContext(sessionId);
+  if (held) {await reportOutcome(sessionId,cwd,turnId,'manual-stop');return writeEmpty();}
   // Evaluate the existing session/global policy. A Stop event must never
   // re-enable a session explicitly switched off by its user.
-  if (await humanStopHeld(sessionId, cwd)) return writeEmpty();
+  if (await humanStopHeld(sessionId, cwd)) {await reportOutcome(sessionId,cwd,turnId,'manual-stop');return writeEmpty();}
   const result = await invoke(root, {
     command: "stop",
     harness: "zcode",
@@ -100,10 +93,18 @@ async function main() {
   const nextGoal = result?.decision === "continue" ? result.next_goal : null;
   if (typeof nextGoal === "string" && nextGoal.trim()) {
     if (await humanStopHeld(sessionId, cwd)) return writeEmpty();
+    await reportOutcome(sessionId,cwd,turnId,'continue');
     // ZCode handles this natively: it retains the current session and starts
     // its next turn with this additional context. No app-server or relay client.
     process.stdout.write(JSON.stringify({ continue: true, reason: nextGoal, additionalContext: nextGoal }));
   } else {
+    // Invocation alone is not success. The existing lifecycle endpoint verifies
+    // the exact native final assistant/tool outcome before recording completion.
+    const outcome=result?.ok===false||['failed','error','blocked','block'].includes(result?.decision)?'failed'
+      :result?.ok===true&&result.decision==='terminal'&&result.terminalKind==='completed'?'success'
+      :['choice','human','ask_human'].includes(result?.decision)||result?.terminalKind==='needs-input'?'needs-input'
+        :'unknown';
+    await reportOutcome(sessionId,cwd,turnId,outcome);
     process.stdout.write("{}");
     // Session wrapped up (judge has no next goal): drop its auto-reserved
     // leases and presence from the coordination boards immediately, so
@@ -120,6 +121,12 @@ async function main() {
 }
 
 function writeEmpty() { process.stdout.write("{}"); }
+
+async function reportOutcome(sessionId,cwd,turnId,outcome){
+ if(!turnId)return;
+ try{await fetch(`${process.env.AGENT_HERDER_URL||'http://127.0.0.1:18787'}/api/coordination/lifecycle`,{
+  method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({harness:'zcode',sessionId,cwd,event:'turn-end',turnId,outcome}),signal:AbortSignal.timeout(1200)});}catch{}
+}
 
 void main().catch((error) => {
   process.stderr.write(`[agent-herder-zcode] ${(error instanceof Error ? error.message : String(error))}\n`);

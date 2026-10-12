@@ -28,6 +28,7 @@ import { getHumanStopStore } from "../human-stop-store.js";
 import { ownedShutdownMatches, ownedZcodeActiveInput, zcodeRecoveryBoundaryCurrent, zcodeNativeAdmission } from "./zcode-recovery-boundary.js";
 import { configuredGptAdminMcp } from "./zcode-gptadmin-mcp.js";
 import { captureZcodeInput, validateRetainedInput, zcodeUndeliveredFence, zcodeRetainedAttemptReceipt, sameRetainedModel, type ZcodeRetainedInput } from "./zcode-undelivered.js";
+import {workspaceInputBoundary, workspaceCrashCurrent, workspaceProcessProbe, nativeHookTurn, type NativeHookTurn, type WorkspaceProcessProbe, type WorkspaceCrash, type WorkspaceProcess} from './zcode-workspace-lifecycle.js';
 
 interface ZcodeWorkspaceRef {
   workspacePath: string;
@@ -156,6 +157,8 @@ export interface ZcodeAdapterOptions {
   localDbPath?: string;
   /** Bound for proving that an admitted prompt actually began a native turn. */
   turnStartTimeoutMs?: number;
+  /** Isolated embedding/test boundary; production uses read-only /proc proof. */
+  workspaceProcessProbe?: WorkspaceProcessProbe;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -919,7 +922,10 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
   private readonly sessionEventUnsubscribers = new Map<string, () => void>();
   private readonly sessionEventTasks = new Set<Promise<void>>();
-  private readonly observedActiveTurns = new Map<string, { turnId?: string; inputId?: string }>();
+  private readonly observedActiveTurns = new Map<string, { turnId?: string; inputId?: string;
+    knownOwnInputs?:Set<string>; hookStarted?:boolean;workspaceRuntime?:{process:WorkspaceProcess;sdkPid:number;generation:number;session:AgentSession};workspaceCrash?:WorkspaceCrash }>();
+  private readonly workspaceProcessProbe:WorkspaceProcessProbe;
+  private observingWorkspaceTurns=false;
   private sessionSnapshotReceipt: SessionSnapshotReceipt = {
     exhaustive: false,
     observedAt: new Date(0).toISOString(),
@@ -930,6 +936,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   private initialized = false;
 
   constructor(options: ZcodeAdapterOptions = {}) {
+    this.workspaceProcessProbe=options.workspaceProcessProbe??workspaceProcessProbe;
     this.cwd = resolve(options.cwd || process.env.ZCODE_CWD || process.cwd());
     this.modelIds = options.modelIds ?? [];
     this.useLocalConfig = !options.client;
@@ -962,7 +969,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.client.onDisconnect?.(() => {
       this.initialized = false;
       for (const [sessionId, identity] of this.observedActiveTurns) {
-        this.emitEvent({ kind: "process.disconnected", harness: "zcode", sessionId, nativeType: "transport-exit", data: { transport: "app-server-events", ...identity } });
+        if(identity.turnId)this.emitEvent({ kind: "process.disconnected", harness: "zcode", sessionId, nativeType: "transport-exit", data: { transport: "app-server-events", turnId:identity.turnId,inputId:identity.inputId } });
       }
       this.observedActiveTurns.clear();
       for (const unsubscribe of this.sessionEventUnsubscribers.values()) { try { unsubscribe(); } catch { /* already disconnected */ } }
@@ -1124,7 +1131,85 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.emitEvent({ kind: "process.disconnected", harness: "zcode", data: { transport: "app-server-events" } });
   }
 
+  /** Existing supervisor snapshot tick observes only IDs accepted by THIS
+   * adapter. No new timer, native spawn, or directory inventory is introduced. */
+  private async observeAcceptedWorkspaceTurns():Promise<void>{
+    if(this.observingWorkspaceTurns||!this.initialized||!this.useLocalTurnMetadata||!this.client.callIfReady)return;
+    const sdkPid=this.client.getOwnedProcessId?.();if(!sdkPid)return;
+    this.observingWorkspaceTurns=true;
+    try{for(const [sessionId,entry]of this.observedActiveTurns){
+      if(!entry.knownOwnInputs?.size||entry.workspaceCrash)continue;
+      const workspace=this.sessionWorkspaces.get(sessionId);if(!workspace)continue;
+      if(await getHumanStopStore().isHeld('zcode',sessionId))continue;
+      let identity:Record<string,unknown>;
+      try{identity=record(await this.client.callIfReady('zcode-agent','getWorkspaceRuntimeIdentity',[{...workspace,runtimePolicy:'existing-only'}]));}
+      catch(error){
+        if(record(error).code!=='ZCODE_AGENT_RUNTIME_UNAVAILABLE'||!entry.workspaceRuntime||!entry.turnId||!entry.inputId
+          ||entry.workspaceRuntime.sdkPid!==sdkPid||this.client.getOwnedProcessId?.()!==sdkPid)continue;
+        const boundary=workspaceInputBoundary(this.localDbPath,sessionId,entry.inputId,workspace.workspacePath);
+        if(!boundary||boundary.finished||boundary.turnId!==entry.turnId
+          ||!this.workspaceProcessProbe.gone(entry.workspaceRuntime.process)||await getHumanStopStore().isHeld('zcode',sessionId))continue;
+        entry.workspaceCrash={...boundary,inputId:entry.inputId,cwd:workspace.workspacePath,runtime:entry.workspaceRuntime.process,sdkPid,at:Date.now()};
+        this.emitEvent({kind:'process.disconnected',harness:'zcode',sessionId,nativeType:'owned-workspace-runtime-exit',
+          data:{turnId:entry.turnId,inputId:entry.inputId,workspaceRuntimeLost:true}});
+        continue;
+      }
+      if(identity.workspaceKey!==workspace.workspacePath||!Number.isSafeInteger(identity.processId)||!Number.isSafeInteger(identity.generation))continue;
+      if(entry.workspaceRuntime&&(entry.workspaceRuntime.process.pid!==identity.processId||entry.workspaceRuntime.generation!==identity.generation))continue;
+      const process=this.workspaceProcessProbe.capture(identity.processId as number,sdkPid,workspace.workspacePath);if(!process)continue;
+      let snapshot:ZcodeSnapshot;
+      try{snapshot=await this.client.callIfReady('zcode-agent','readSession',[{...workspace,sessionId,runtimePolicy:'existing-only',messageLimit:1}]) as ZcodeSnapshot;}
+      catch{continue;}
+      if(sessionInfoFromPayload(snapshot)?.sessionId!==sessionId||this.client.getOwnedProcessId?.()!==sdkPid
+        ||!Array.isArray(snapshot.runtime?.pendingRequestIds)||snapshot.runtime.pendingRequestIds.length
+        ||await getHumanStopStore().isHeld('zcode',sessionId))continue;
+      for(const inputId of entry.knownOwnInputs){
+        const boundary=workspaceInputBoundary(this.localDbPath,sessionId,inputId,workspace.workspacePath);if(!boundary)continue;
+        if(boundary.finished){
+          // Hook primary owns success when installed; a failed/continue/absent
+          // final hook must not be replaced with a generic "assistant exists".
+          if(entry.hookStarted)continue;
+          entry.knownOwnInputs.delete(inputId);
+          if(entry.inputId===inputId){this.emitEvent({kind:'turn.completed',harness:'zcode',sessionId,nativeType:'owned-native-completion',data:{turnId:boundary.turnId,inputId}});entry.turnId=undefined;entry.inputId=undefined;entry.workspaceRuntime=undefined;}
+          continue;
+        }
+        if(snapshot.runtime?.activeTurnId!==boundary.turnId||sessionInfoFromPayload(snapshot)?.status!=='running')continue;
+        const first=entry.turnId!==boundary.turnId||!entry.workspaceRuntime;
+        entry.turnId=boundary.turnId;entry.inputId=inputId;
+        entry.workspaceRuntime={process,sdkPid,generation:identity.generation as number,session:mapSession(snapshot,workspace.workspacePath)};
+        if(first&&!entry.hookStarted)this.emitEvent({kind:'turn.started',harness:'zcode',sessionId,nativeType:'owned-native-active-snapshot',data:{turnId:boundary.turnId,inputId}});
+      }
+    }}finally{this.observingWorkspaceTurns=false;}
+  }
+
+  workspaceCrashRecoveryAllowed(id:string,turnId?:string,inputId?:string):boolean|undefined{
+    const proof=this.observedActiveTurns.get(id)?.workspaceCrash;
+    if(!proof)return undefined;
+    return proof.turnId===turnId&&proof.inputId===inputId&&this.client.getOwnedProcessId?.()===proof.sdkPid
+      &&workspaceCrashCurrent(this.localDbPath,id,proof,this.workspaceProcessProbe);
+  }
+  getWorkspaceCrashBoundary(id:string):WorkspaceCrash|undefined{
+    const proof=this.observedActiveTurns.get(id)?.workspaceCrash;
+    return proof&&this.workspaceCrashRecoveryAllowed(id,proof.turnId,proof.inputId)?proof:undefined;
+  }
+  getNativeHookTurn(id:string,turnId:string,cwd:string):NativeHookTurn|null{
+    return this.useLocalTurnMetadata?nativeHookTurn(this.localDbPath,id,turnId,resolve(cwd)):null;
+  }
+  registerNativeHookTurn(proof:NativeHookTurn):void{
+    const current=this.getNativeHookTurn(proof.sessionId,proof.turnId,proof.cwd);
+    if(current?.inputId!==proof.inputId||current.origin!=='automation')return;
+    this.sessionWorkspaces.set(proof.sessionId,this.workspace(proof.cwd));
+    const entry=this.observedActiveTurns.get(proof.sessionId)??{},known=entry.knownOwnInputs??new Set<string>();
+    if(known.size<64)known.add(proof.inputId);
+    this.observedActiveTurns.set(proof.sessionId,{...entry,...(entry.turnId!==proof.turnId?{workspaceRuntime:undefined,workspaceCrash:undefined}:{}),knownOwnInputs:known,turnId:proof.turnId,inputId:proof.inputId,hookStarted:true});
+  }
+  completeNativeHookTurn(proof:NativeHookTurn):void{
+    const entry=this.observedActiveTurns.get(proof.sessionId);
+    if(entry?.turnId===proof.turnId&&entry.inputId===proof.inputId)this.observedActiveTurns.delete(proof.sessionId);
+  }
+
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
+    await this.observeAcceptedWorkspaceTurns();
     const persisted = await this.listPersistedSessions(options);
     const created = [...this.createdSessions.values()].filter((session) => !options.cwd || session.cwd === resolve(options.cwd));
     const mergeCreated = (sessions: AgentSession[]): AgentSession[] => {
@@ -1589,6 +1674,12 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
+    const lost=this.observedActiveTurns.get(id);
+    if(lost?.workspaceCrash&&lost.workspaceRuntime&&workspaceCrashCurrent(this.localDbPath,id,lost.workspaceCrash,this.workspaceProcessProbe)){
+      const session=lost.workspaceRuntime.session;
+      return {...session,status:'error',meta:{...session.meta,nativeLoaded:false,nativeStatus:'error',activeTurnId:undefined,nativeActiveTurnId:undefined,
+        nativeWorkspaceCrash:{turnId:lost.workspaceCrash.turnId,inputId:lost.workspaceCrash.inputId,at:lost.workspaceCrash.at}}};
+    }
     for (const workspace of this.sessionWorkspaces.has(id) ? [this.sessionWorkspaces.get(id)!] : await this.workspaceCandidates()) {
       try {
         const snapshot = await this.readSnapshot(id, workspace);
@@ -1791,7 +1882,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     return sessions.filter((candidate) => candidate.meta?.parentSessionId === id);
   }
 
-  async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
+  async sendMessage(id: string, options: SendMessageOptions & {workspaceCrashBoundary?:WorkspaceCrash}): Promise<SendMessageResult> {
     if (options.steer || options.queue || options.images?.length) return this.sendConversationInput(id, options);
     const origin = options.origin === "human" ? "human" : "automation";
     const send = async (): Promise<{
@@ -1878,7 +1969,7 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   /** Native V4 owns guide/queue admission and command deduplication. Never
    * replace its receipt with our old RAM queue or retry through session/send. */
-  private async sendConversationInput(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
+  private async sendConversationInput(id: string, options: SendMessageOptions & {workspaceCrashBoundary?:WorkspaceCrash}): Promise<SendMessageResult> {
     const origin = options.origin === "human" ? "human" : "automation";
     const inputId = options.inputId || randomUUID();
     const commandId = zcodeInputId(inputId, origin);
@@ -1894,8 +1985,9 @@ export class ZcodeAdapter implements HarnessAdapter {
       if (origin !== "human") await stopStore.rememberGeneratedPrompt("zcode", id, options.message);
       if (await stopStore.isHeld("zcode", id)) return { ok: false, inputId, error: "Чат явно остановлен; автоматическая отправка запрещена." };
       const workspace = this.sessionWorkspaces.get(id) || this.workspace();
+      this.sessionWorkspaces.set(id,workspace);
       let recoverySnapshot = baseline;
-      if (options.recoveryBoundary) {
+      if (options.recoveryBoundary || options.workspaceCrashBoundary) {
         if (!this.client.callIfReady) return {ok:false,admitted:false,inputId,nonRetryable:true,error:'Проверка текущего native runtime недоступна; recovery не отправлено.'};
         recoverySnapshot = await this.client.callIfReady('zcode-agent', 'readSession', [{...workspace,sessionId:id,runtimePolicy:'existing-only',messageLimit:1}]) as ZcodeSnapshot;
         if (sessionInfoFromPayload(recoverySnapshot)?.sessionId !== id || recoverySnapshot.runtime?.activeTurnId
@@ -1906,7 +1998,9 @@ export class ZcodeAdapter implements HarnessAdapter {
         // A Stop may be committed by another controller during the final read.
         // Finish all asynchronous holds before the synchronous native DB fence.
         if (await stopStore.isHeld('zcode',id)) return {ok:false,admitted:false,nonRetryable:true,inputId,error:'Чат явно остановлен; автоматическая отправка запрещена.'};
-        if (!zcodeRecoveryBoundaryCurrent(this.localDbPath,id,options.recoveryBoundary)) return {ok:false,admitted:false,nonRetryable:true,inputId,error:'В этой сессии появился новый ввод или работа; продолжение старого turn не отправлено.'};
+        if (options.recoveryBoundary&&!zcodeRecoveryBoundaryCurrent(this.localDbPath,id,options.recoveryBoundary)
+          || options.workspaceCrashBoundary&&(this.getWorkspaceCrashBoundary(id)!==options.workspaceCrashBoundary
+            || !workspaceCrashCurrent(this.localDbPath,id,options.workspaceCrashBoundary,this.workspaceProcessProbe))) return {ok:false,admitted:false,nonRetryable:true,inputId,error:'В этой сессии появился новый ввод или работа; продолжение старого turn не отправлено.'};
       }
       attempted = true;
       // Pinned installed zcode-server.cjs exposes this exact service method.
@@ -1921,7 +2015,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       };
       // Guarded recovery never awaits a transport start/reconnect after the
       // synchronous native-input fence. sendText has no documented idle CAS.
-      const ack = record(await (options.recoveryBoundary
+      const ack = record(await (options.recoveryBoundary || options.workspaceCrashBoundary
         ? this.client.callIfReady!('zcode-agent', 'sendConversationCommandV4', [params])
         : this.callAgent('sendConversationCommandV4', params)));
       if (ack.commandId !== commandId) throw new Error("ZCode вернул подтверждение другой команды; доставка не установлена.");
@@ -1944,6 +2038,12 @@ export class ZcodeAdapter implements HarnessAdapter {
       if (requestedDelivery === "queue" && nativeInput.delivery === "guide") {
         return { ok: false, admitted: true, inputId, nonRetryable: true,
           error: `ZCode принял сообщение в другом режиме (${String(nativeInput.delivery)}); повторная отправка запрещена.` };
+      }
+      if(origin==='automation'&&requestedDelivery==='queue'&&this.useLocalTurnMetadata){
+        const current=this.observedActiveTurns.get(id)??{};
+        const knownOwnInputs=current.knownOwnInputs??new Set<string>();
+        if(knownOwnInputs.size<64)knownOwnInputs.add(commandId);
+        this.observedActiveTurns.set(id,{...current,knownOwnInputs,...(current.workspaceCrash?{workspaceCrash:undefined,workspaceRuntime:undefined,turnId:undefined,inputId:undefined,hookStarted:false}:{})});
       }
       this.ensureSessionEventSubscription(id, workspace);
       // Admission is sufficient. Do not wait for a new turn: a guided input
@@ -2621,7 +2721,7 @@ export class ZcodeAdapter implements HarnessAdapter {
             if (!active) return;
             if (event.kind === "turn.started") {
               const turnId = nonEmptyString(record(event.data).turnId);
-              if (turnId || inputId) this.observedActiveTurns.set(sessionId, { ...(turnId ? { turnId } : {}), ...(inputId ? { inputId } : {}) });
+              if (turnId || inputId) this.observedActiveTurns.set(sessionId, { ...this.observedActiveTurns.get(sessionId), ...(turnId ? { turnId } : {}), ...(inputId ? { inputId } : {}) });
             } else if (event.kind === "turn.completed" || event.kind === "turn.failed" || event.kind === "session.deleted") {
               const observed = this.observedActiveTurns.get(sessionId);
               const turnId = nonEmptyString(record(event.data).turnId);

@@ -20,28 +20,27 @@ try {
       const inputId = nonEmptyString(input.input_id) ?? nonEmptyString(input.inputId) ?? nonEmptyString(input.metadata?.inputId);
       const nativeTurnId = nonEmptyString(input.turn_id) ?? nonEmptyString(input.turnId);
       const promptId = nonEmptyString(input.prompt_id) ?? nonEmptyString(input.promptId) ?? inputId ?? nativeTurnId ?? `zcode-prompt-${randomUUID()}`;
-      const automated = Boolean(inputId?.startsWith("agent-herder:auto:"));
+      let origin = "unknown";
       const at = new Date().toISOString();
-      if (!automated) {
         try {
-          await fetch(`${process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787"}/api/coordination/lifecycle`, {
+          const response=await fetch(`${process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787"}/api/coordination/lifecycle`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ harness: "zcode", sessionId, cwd: input.cwd, event: "user-prompt", promptId, at, text: prompt,
               ...(inputId ? { inputId } : {}), ...(nativeTurnId ? { turnId: nativeTurnId } : {}) }),
             signal: AbortSignal.timeout(1200),
           });
+          if(response.ok){const result=await response.json();if(['automation','real_user'].includes(result.origin))origin=result.origin;}
         } catch { /* Native input still runs if the supervisor is unavailable. */ }
-      }
       file.sessions[sessionId] = {
         text: prompt.slice(0, 12_000),
         cwd: input.cwd,
         turnId: nativeTurnId ?? `zcode-user-${randomUUID()}`,
         promptId,
         at,
-        origin: automated ? "automation" : "real_user",
+        origin,
         ...(inputId ? { inputId } : {}),
-        ...(automated ? { automated: true } : {}),
+        ...(origin==='automation' ? { automated: true } : {}),
         updatedAt: at,
       };
     await mkdir(dirname(path), { recursive: true });
