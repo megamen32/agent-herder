@@ -9,6 +9,7 @@ type WorkspaceLifecycleAdapter={
 import { PendingQuestionGate } from "./pending-question-gate.js";
 import type { ChoiceRegistry } from "./choice-registry.js";
 import type { HumanRequestRegistry } from "../human-request/registry.js";
+import type { CodexTrackedTurnCompletion } from "../adapters/codex-app-server.js";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
@@ -1056,6 +1057,29 @@ export class UnfinishedSessionStore {
     }, (changed) => changed);
   }
 
+  /** One strict transaction: a semantic verdict cannot delete a newer turn or
+   * accepted admission which arrived during the native read/judgement. */
+  async settleTrackedCodexCompletion(expected: UnfinishedSessionRecord, inventory: UnfinishedSessionInventoryRecord,
+    expectedInventory: UnfinishedSessionInventoryRecord | undefined, current: () => boolean | Promise<boolean>, stillCurrent: () => boolean = () => true): Promise<boolean> {
+    return this.mutate(async file => {
+      if (expected.harness !== "codex" || !expected.activeTurnId
+        || inventory.verdict?.verdict !== "completed" || inventory.verdict.confidence <= 0) return false;
+      const index = file.sessions.findIndex(record => unfinishedRecordKey(record) === unfinishedRecordKey(expected));
+      if (index < 0 || JSON.stringify(file.sessions[index]) !== JSON.stringify(expected)) return false;
+      const records = file.inventory ?? [];
+      const previous = records.findIndex(record => inventoryRecordKey(record) === inventoryRecordKey(inventory));
+      if (JSON.stringify(previous < 0 ? undefined : records[previous]) !== JSON.stringify(expectedInventory)) return false;
+      // The existing operation queue/read can wait. Recheck native history,
+      // policy, questions and Stop here, after that wait, before any mutation.
+      if (!await current() || !stillCurrent()) return false;
+      file.inventory ??= records;
+      if (previous < 0) records.push(cloneInventoryRecord(inventory));
+      else records[previous] = cloneInventoryRecord(inventory);
+      file.sessions.splice(index, 1);
+      return true;
+    }, changed => changed);
+  }
+
   /**
    * Drop only the same nonaccepted row that was observed before an async
    * completion-evidence read. A newer native event or accepted delivery must
@@ -2039,6 +2063,66 @@ export class UnfinishedSessionLauncher {
     if (!this.lifecycleActive(lifecycleEpoch)) return;
   }
 
+  private async reconcileSurvivingCodexTurn(record: UnfinishedSessionRecord, epoch: number): Promise<void> {
+    const providerGeneration = this.providerTurnGenerations.get("codex") ?? 0;
+    const current = () => this.lifecycleActive(epoch)
+      && (this.providerTurnGenerations.get("codex") ?? 0) === providerGeneration;
+    const adapter = this.options.adapters.get("codex") as (HarnessAdapter & {
+      readTrackedTurnCompletion?: (id: string, turnId: string, cwd: string) => Promise<CodexTrackedTurnCompletion | null>;
+    }) | undefined;
+    if (!adapter?.readTrackedTurnCompletion || !record.activeTurnId || !this.options.judge) return;
+    const allowed = async (session: AgentSession): Promise<boolean> => {
+      if (!current() || !await this.isEnabled("codex", record.sessionId, record.cwd)
+        || await this.options.humanStopStore?.isHeld("codex", record.sessionId)) return false;
+      const policy = await this.semanticAutopilotPolicy();
+      if (!policy || !await this.semanticAutopilotAllows(session, policy)) return false;
+      this.pendingQuestions?.invalidate();
+      if (await this.pendingQuestionBlocks("codex", record.sessionId, record.cwd)) return false;
+      const held = await this.options.humanStopStore?.isHeld("codex", record.sessionId);
+      return current() && !held;
+    };
+    const target: AgentSession = {id: record.sessionId, harness: "codex", cwd: record.cwd, title: record.title ?? record.sessionId,
+      status: "idle", needsPermission: false, lastActivity: record.updatedAt};
+    if (!await allowed(target)) return;
+    let proof: CodexTrackedTurnCompletion | null;
+    try { proof = await adapter.readTrackedTurnCompletion(record.sessionId, record.activeTurnId, record.cwd); }
+    catch { return; } // Unknown/transport timeout never means success or failure.
+    if (!proof || !await allowed(proof.session)) return;
+    const expectedInventory = (await this.options.store.listInventory())
+      .find(candidate => inventoryRecordKey(candidate) === sessionSourceKey(proof.session));
+    let verdict: Omit<SessionInventoryVerdict, "judgedAt">;
+    try { verdict = normalizeVerdict(await this.options.judge.decide({session: proof.session, transcriptTail: proof.transcriptTail})); }
+    catch { return; }
+    // No synthetic Stop. Completion of the model turn alone is not task
+    // success, and a human question/unfinished result retains its active row.
+    if (verdict.verdict !== "completed" || verdict.confidence <= 0 || !await allowed(proof.session)) return;
+    let fresh: CodexTrackedTurnCompletion | null;
+    try { fresh = await adapter.readTrackedTurnCompletion(record.sessionId, record.activeTurnId, record.cwd); }
+    catch { return; }
+    if (!fresh || fresh.fingerprint !== proof.fingerprint || !await allowed(fresh.session)) return;
+    const inventory = inventoryFromAssessment({adapter, session: fresh.session, sourceKey: sessionSourceKey(fresh.session),
+      autoResumeEnabled: true, urgentSignalVersions: new Map(), transcriptTail: fresh.transcriptTail},
+      {...verdict, judgedAt: new Date().toISOString()});
+    const settled = await this.options.store.settleTrackedCodexCompletion(record, inventory, expectedInventory, async () => {
+      if (!await allowed(fresh.session)) return false;
+      let final: CodexTrackedTurnCompletion | null;
+      try { final = await adapter.readTrackedTurnCompletion!(record.sessionId, record.activeTurnId!, record.cwd); }
+      catch { return false; }
+      if (!final || final.fingerprint !== proof.fingerprint) return false;
+      this.pendingQuestions?.invalidate();
+      if (await this.pendingQuestionBlocks("codex", record.sessionId, record.cwd)) return false;
+      const held = await this.options.humanStopStore?.isHeld("codex", record.sessionId);
+      return current() && !held;
+    }, current);
+    if (settled) {
+      const key = sessionKey("codex", record.sessionId);
+      if (sameNativeRecoveryIdentity(this.activeNativeTurns.get(key) ?? {}, {turnId: record.activeTurnId, inputId: record.activeInputId})) {
+        this.activeNativeTurns.delete(key);
+      }
+      this.clearUrgentSession(unfinishedRecordKey(record));
+    }
+  }
+
   /** LLM task planning is a separate owner from deterministic crash recovery. */
   runAutopilotCycle(): Promise<void> {
     if (this.autopiloting) return this.autopiloting;
@@ -2047,6 +2131,17 @@ export class UnfinishedSessionLauncher {
       if (!this.lifecycleActive(lifecycleEpoch)) return;
       const policy = await this.semanticAutopilotPolicy();
       if (!policy || !this.lifecycleActive(lifecycleEpoch)) return;
+      // Business classification belongs to this existing semantic lifecycle,
+      // never to the no-LLM recovery loop. Shared native writers can finish an
+      // old exact turn after we reconnect without delivering its notification.
+      let checked = 0;
+      for (const record of await this.options.store.list()) {
+        if (!this.lifecycleActive(lifecycleEpoch)) return;
+        if (record.harness !== "codex" || !record.activeTurnId || record.recoveryCause
+          || record.generationId === this.generationId || record.threadSource === "subagent") continue;
+        if (checked++ >= this.maxJudgementsPerCycle) break;
+        await this.reconcileSurvivingCodexTurn(record, lifecycleEpoch);
+      }
       const outcome = await this.discoverUnfinishedSessions(lifecycleEpoch, policy);
       if (outcome === "blocked") {
         console.error("[agent-herder] LLM-автопилот не построил безопасный план; повтор будет выполнен по backoff");

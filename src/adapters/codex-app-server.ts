@@ -1,4 +1,5 @@
 import { type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { realpath } from "node:fs/promises";
 import { CodexDeliveryReceipts } from "./codex-delivery-receipts.js";
@@ -48,6 +49,14 @@ interface CodexThread {
 interface CodexThreadPermissionState {
   approvalPolicy?: unknown;
   sandbox?: { type?: unknown };
+}
+
+/** Native terminal evidence, not a Stop invocation or a business verdict. */
+export interface CodexTrackedTurnCompletion {
+  session: AgentSession;
+  turnId: string;
+  fingerprint: string;
+  transcriptTail: string;
 }
 
 function hasCodexFullAccess(state: CodexThreadPermissionState): boolean {
@@ -369,6 +378,47 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       matches.push(this.toSession(thread));
     }
     return matches;
+  }
+
+  /** Reconcile an already tracked turn after observation loss. This public
+   * read never loads/subscribes a thread and never starts a model request. */
+  async readTrackedTurnCompletion(id: string, turnId: string, cwd: string): Promise<CodexTrackedTurnCompletion | null> {
+    if (!this.socketPath && !this.isReady()) return null;
+    await this.ensureReady();
+    const result = await this.request("thread/read", { threadId: id, includeTurns: true }) as { thread?: Record<string, unknown> };
+    const thread = result?.thread;
+    if (!thread || thread.id !== id || thread.cwd !== cwd) return null;
+    const status = thread.status as { type?: unknown; activeFlags?: unknown } | undefined;
+    if (!status || !["idle", "notLoaded"].includes(String(status.type))
+      || (status.activeFlags !== undefined && (!Array.isArray(status.activeFlags) || status.activeFlags.length !== 0))) return null;
+    if (!Array.isArray(thread.turns) || thread.turns.length === 0) return null;
+    const turns = thread.turns as Array<Record<string, unknown>>;
+    if (turns.some(turn => !turn || typeof turn !== "object" || turn.status === "inProgress")) return null;
+    const latest = turns.at(-1)!;
+    if (latest.id !== turnId || latest.status !== "completed" || latest.error !== null || !Array.isArray(latest.items)) return null;
+    const items = latest.items as Array<Record<string, unknown>>;
+    if (items.filter(item => item?.type === "userMessage").length !== 1 || items[0]?.type !== "userMessage") return null;
+    const last = items.at(-1);
+    if (last?.type !== "agentMessage" || last.phase !== "final_answer" || typeof last.text !== "string" || !last.text.trim()) return null;
+    const passive = new Set(["userMessage", "agentMessage", "reasoning", "plan", "webSearch", "imageView", "enteredReviewMode", "exitedReviewMode", "contextCompaction"]);
+    const stateful = new Set(["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "collabToolCall"]);
+    for (const turn of turns) {
+      if (!Array.isArray(turn.items)) return null; // No partial-history judgement.
+      for (const item of turn.items as Array<Record<string, unknown>>) {
+        if (!item || typeof item.id !== "string" || typeof item.type !== "string") return null;
+        if (stateful.has(item.type)) {
+          if (item.status !== "completed") return null;
+          if (item.type === "commandExecution" && item.exitCode !== 0) return null;
+          if (item.error != null || item.success === false) return null;
+        } else if (!passive.has(item.type)) return null;
+      }
+    }
+    const transcriptTail = JSON.stringify(turns);
+    // Retain full original instructions and completed effects; don't silently
+    // judge a truncated tail which lost the original task.
+    if (transcriptTail.length > 120_000) return null;
+    const fingerprint = createHash("sha256").update(JSON.stringify({ id, cwd, status, turns })).digest("hex");
+    return { session: this.toSession(thread as unknown as CodexThread), turnId, fingerprint, transcriptTail };
   }
 
   async getSession(id: string, options: { includeMetrics?: boolean } = {}): Promise<AgentSession | null> {
