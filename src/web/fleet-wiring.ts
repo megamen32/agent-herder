@@ -4,6 +4,7 @@ import {open} from "node:fs/promises";
 import {homedir, hostname, userInfo} from "node:os";
 import {join} from "node:path";
 import type {IncomingMessage, ServerResponse} from "node:http";
+import {RustCoreClient} from "../mesh/rust-core-client.js";
 import {FleetCabinetService} from "../mesh/fleet-service.js";
 import {createFleetApiHandler} from "../mesh/fleet-api.js";
 import {verifyFleetOwnerCookie} from "./fleet-owner-auth.js";
@@ -23,6 +24,10 @@ export const fleetHosts: readonly FleetHostDefinition[] = [
 
 type Binding = {endpoint: string; headers: Record<string, string>; generation: string};
 type Active = Binding & {service: FleetCabinetService};
+/** Explicit deployment seam. Disabled default preserves the approved caller/journal. */
+export function configuredFleetRustCore(socket: string | undefined = process.env.AGENT_HERDER_MESH_CORE_SOCKET, localHost: string = hostname()) {
+  return socket ? new RustCoreClient(socket, localHost) : undefined;
+}
 const matches = (left: string, right: string) => {
   const a = Buffer.from(left), b = Buffer.from(right);
   return a.length === b.length && timingSafeEqual(a, b);
@@ -37,6 +42,7 @@ export function createConfiguredFleetApiHandler(options: {
   approvedCredentialGeneration?: string;
 } = {}) {
   const userId = options.userId ?? userInfo().username;
+  const rustCore = configuredFleetRustCore();
   const configPath = options.clientConfigPath ?? join(homedir(), ".zcode", "cli", "config.json");
   const stateRoot = options.stateRoot ?? join(homedir(), ".local", "state", "agent-herder", "fleet");
   const approvedGeneration = options.approvedCredentialGeneration ?? process.env.AGENT_HERDER_FLEET_CREDENTIAL_PIN;
@@ -46,7 +52,7 @@ export function createConfiguredFleetApiHandler(options: {
   const publicOwnerContext=new AsyncLocalStorage<Readonly<{cookie:string;credentialGeneration:string}>>();
   const direct=(principal:string,realm:string)=>{
     const key=realm+':'+principal;let service=directServices.get(key);
-    if(!service){if(directServices.size>=2)throw new Error('fleet_direct_scope_limit');service=new FleetCabinetService({hosts:fleetHosts,scope:{profileId:key,userId:principal},journalPath:realm==='ssh-native-owner'?join(stateRoot,'direct-owner-create.json'):join(stateRoot,'direct-'+createHash('sha256').update(key).digest('hex')+'-create.json'),transportFactory:()=>realm==='haos-sso-owner'?new FleetOwnerHttpTransport({ownerContext:()=>publicOwnerContext.getStore()}):new FleetDirectTransport()});directServices.set(key,service);}
+    if(!service){if(directServices.size>=2)throw new Error('fleet_direct_scope_limit');service=new FleetCabinetService({rustCore,hosts:fleetHosts,scope:{profileId:key,userId:principal},journalPath:realm==='ssh-native-owner'?join(stateRoot,'direct-owner-create.json'):join(stateRoot,'direct-'+createHash('sha256').update(key).digest('hex')+'-create.json'),transportFactory:()=>realm==='haos-sso-owner'?new FleetOwnerHttpTransport({ownerContext:()=>publicOwnerContext.getStore()}):new FleetDirectTransport()});directServices.set(key,service);}
     return service;
   };
   let active: Active | undefined;
@@ -97,7 +103,7 @@ export function createConfiguredFleetApiHandler(options: {
       const profileId = `${new URL(binding.endpoint).origin}/client:${identity.client_id}`;
       // Journal identity survives credential rotation so UNKNOWN intents cannot be replayed.
       const journalKey = createHash("sha256").update(JSON.stringify([profileId, userId])).digest("hex");
-      const service = new FleetCabinetService({
+      const service = new FleetCabinetService({rustCore,
         hosts: fleetHosts, scope: {profileId, userId}, credentialGeneration: binding.generation,
         journalPath: join(stateRoot, `create-${journalKey}.json`),
         transportFactory: () => new FleetGptAdminTransport({endpoint: binding.endpoint, headersProvider: () => ({...binding.headers})}),
@@ -143,7 +149,7 @@ export function createConfiguredFleetApiHandler(options: {
           if(cached)service=cached;
           else{
             if(directServices.size>=2)throw new Error('fleet_direct_scope_limit');
-            service=new FleetCabinetService({hosts:fleetHosts,scope:{profileId,userId},transportFactory:()=>new FleetOwnerHttpTransport({ownerContext:()=>publicOwnerContext.getStore()})});
+            service=new FleetCabinetService({rustCore,hosts:fleetHosts,scope:{profileId,userId},transportFactory:()=>new FleetOwnerHttpTransport({ownerContext:()=>publicOwnerContext.getStore()})});
             directServices.set(key,service);
           }
         }else service=direct('roomhacker','haos-sso-owner');
