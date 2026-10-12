@@ -132,7 +132,7 @@ protected `last-run.json` recorded `observation_failed` in the artifact census:
 continued to pass. This is a separate observer failure; the old stderr log is
 not a receipt for the latest run.
 
-Use one `/usr/bin/du -A -l -a -k -P .` physical FTS traversal for both entry
+The initial replacement used one `/usr/bin/du -A -l -a -k -P .` physical FTS traversal for both entry
 count and the final root byte total, instead of sequential find and du walks.
 [Apple's source](https://github.com/apple-oss-distributions/file_cmds/blob/main/du/du.c)
 emits all files with `-a`, counts file hard-link entries with `-l`, and reports
@@ -143,6 +143,23 @@ five-second window, cleanup reserve, 30000 entries plus root,512MiB/two releases
 root UID/device/inode proof,30-second census cadence and fail-closed errors.
 Native candidate measured two releases149498880bytes in0.101 seconds; this is
 read-only candidate evidence, not steady/public-owner acceptance.
+
+The du approach later failed again at35.46s/RSS149360KiB with a4.311s
+artifact deadline. `mac-artifact-probe.c` replaces per-file formatted output
+with one bounded numeric summary from a physical FTS walk. Parent pins cwd
+to the verified root FD and checks root/release generation before/after;
+symlinks are counted without following, hard links count per entry, dirs and
+files round upward independently. This is conservative apparent accounting:
+native17811 entries total155599872bytes versus the prior du149498880bytes.
+No paths enter stdout/stderr. File/byte overflow or incomplete traversal returns
+nonzero without a partial summary; parent also checks the complete128-byte-max
+frame. Same5s/.75s cleanup reserve,30000 descendants plus root,512MiB/two
+releases,30s dated cadence and all other resource/native fences remain.
+Seal `mac-artifact-probe` together with Python launcherHashes in one CAS; keep
+the kernel owner helper and Node payload unchanged. Native SDK compile+three
+candidate scans took1.915s/42432KiB peak; cold803ms, warm68ms. This candidate
+does not prove steady LaunchAgent/public consumer acceptance. Do not claim
+`taskpolicy -d utility` fixes background I/O: XNU may already use utility tier.
 
 
 ### M1 periodic kernel observer (2026-10-12)

@@ -121,9 +121,9 @@ def private_directory(path):
         raise Refused('owned_directory_permissions')
 
 def darwin_artifact_bytes(root, limit, overall_deadline, verify_root, refuse, pinned):
-    """One Apple FTS pass avoids duplicate traversal; same five-second gate.
-    Physical traversal includes mounted subtrees and counts hard-link entries.
-    du rounds up apparent bytes (including dirs), so accounting is conservative.
+    """One physical FTS pass, same five-second gate and conservative bytes.
+    A sealed helper counts entries directly and emits only one numeric summary:
+    no per-path printf/pipe/UTF8 work for tens of thousands of immutable files.
     Only owned read-only probe children are cleaned up; no output is persisted.
     """
     children=[];count=0;root_fd=None;cwd_fd=None
@@ -140,27 +140,27 @@ def darwin_artifact_bytes(root, limit, overall_deadline, verify_root, refuse, pi
         # the pinned directory as cwd instead; the only other Python thread
         # drains stderr and performs no cwd-relative filesystem operations.
         cwd_fd=os.open('.',os.O_RDONLY|os.O_DIRECTORY);os.fchdir(root_fd)
-        # Apple's du -a emits every file and directory in one physical FTS walk.
-        # -l counts hard-link entries, -A counts apparent bytes, -k rounds up.
-        # Newlines in names conservatively increase the entry count; only the
-        # final root summary is parsed, so names cannot forge the byte total.
-        du=subprocess.Popen(['/usr/bin/du','-A','-l','-a','-k','-P','.'],
+        probe=Path.home()/'.local/share/agent-herder/fleet/mac-artifact-probe'
+        du=subprocess.Popen([str(probe),str(limit),'30001'],
             stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
             env={**os.environ,'LC_ALL':'C'})
-        children.append(du);os.set_blocking(du.stdout.fileno(),False);tail=b''
+        children.append(du);os.set_blocking(du.stdout.fileno(),False);summary=b''
         while True:
             if not select.select([du.stdout.fileno()],[],[],min(.1,remaining()))[0]:continue
             try:chunk=os.read(du.stdout.fileno(),32768)
             except BlockingIOError:continue
             if not chunk:break
-            count+=chunk.count(b'\n');tail=(tail+chunk)[-64:]
-            # Include the pinned root itself, as in the previous find census.
-            if count>30001:refuse('storage_observation_limit','file_limit')
-        if du.wait(timeout=remaining())!=0 or count<1:
+            summary+=chunk
+            if len(summary)>128:refuse('storage_root_unverified','io')
+        code=du.wait(timeout=remaining())
+        if code==67:refuse('storage_observation_limit','file_limit')
+        if code==68:refuse('storage_budget_exceeded','byte_limit')
+        if code!=0:
             refuse('storage_root_unverified','io')
-        match=re.search(rb'(?:^|\n)([0-9]{1,16})\t\.\n$',tail)
+        match=re.fullmatch(rb'BYTES ([0-9]{1,16}) ENTRIES ([0-9]{1,10})\n',summary)
         if not match:refuse('storage_root_unverified','io')
-        total=int(match[1])*1024
+        total=int(match[1]);count=int(match[2])
+        if not 1<=count<=30001:refuse('storage_observation_limit','file_limit')
         if total>limit:refuse('storage_budget_exceeded','byte_limit')
         verify_root();remaining()
         return total
@@ -623,7 +623,7 @@ def prepare(base,config,artifact_cache=None):
     if sys.platform!='darwin':raise Refused('darwin_required')
     policy=Policy(command(['/usr/sbin/sysctl','-n','hw.model']).strip())
     if config['hostId']!=socket.gethostname():raise Refused('native_host_identity_mismatch')
-    verify_launcher_hashes(base,config,['mac-node-watchdog.py',*(['mac-codex-owner-probe'] if 'codex' in config.get('harnesses',[]) else [])])
+    verify_launcher_hashes(base,config,['mac-node-watchdog.py','mac-artifact-probe',*(['mac-codex-owner-probe'] if 'codex' in config.get('harnesses',[]) else [])])
     entry=verify_manifest(base,config['sourceSha'])
     node=executable(config['nodeBin'])
     harnesses=config['harnesses']

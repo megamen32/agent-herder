@@ -749,7 +749,7 @@ class MacWatchdogTests(unittest.TestCase):
 
     # Fast unit: native-probe process boundary only, not Darwin integration.
     # Expected <1s / maximum 10s for all native accounting regressions.
-    def native_artifact_fixture(self,root,find_payload=b'.\0file\0',du_payload=b'4\t.\n',find_code=0,du_timeout=False,on_du=None):
+    def native_artifact_fixture(self,root,find_payload=b'.\0file\0',du_payload=b'BYTES 4096 ENTRIES 1\n',find_code=0,du_timeout=False,on_du=None):
         class Probe:
             def __init__(self,kind):
                 self.kind=kind;self.stdout=tempfile.TemporaryFile();self.killed=False
@@ -778,13 +778,13 @@ class MacWatchdogTests(unittest.TestCase):
             spawn,probes,argv=self.native_artifact_fixture(root)
             with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):
                 self.assertEqual(w.storage_bytes(root,512*w.MIB,artifact=True),4096)
-            self.assertEqual(argv,[['/usr/bin/du','-A','-l','-a','-k','-P','.']])
+            self.assertEqual(argv,[[str(Path.home()/'.local/share/agent-herder/fleet/mac-artifact-probe'),str(512*w.MIB),'30001']])
             self.assertEqual(Path.cwd(),before);self.assertTrue(all(p.stdout.closed for p in probes))
 
     def test_native_artifact_file_limit_stops_before_size_probe(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)/'releases';root.mkdir()
-            spawn,probes,argv=self.native_artifact_fixture(root,du_payload=b'1\t./x\n'*30001+b'30001\t.\n')
+            spawn,probes,argv=self.native_artifact_fixture(root,du_payload=b'BYTES 30720000 ENTRIES 30002\n')
             with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):
                 with self.assertRaisesRegex(w.Refused,'file_limit'):w.storage_bytes(root,512*w.MIB,artifact=True)
             self.assertEqual(len(argv),1);self.assertTrue(probes[0].stdout.closed)
@@ -792,7 +792,7 @@ class MacWatchdogTests(unittest.TestCase):
     def test_native_artifact_byte_limit_remains_fail_closed(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)/'releases';root.mkdir()
-            spawn,probes,argv=self.native_artifact_fixture(root,du_payload=b'524289\t.\n')
+            spawn,probes,argv=self.native_artifact_fixture(root,du_payload=b'BYTES 536871936 ENTRIES 1\n')
             with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):
                 with self.assertRaisesRegex(w.Refused,'byte_limit'):w.storage_bytes(root,512*w.MIB,artifact=True)
             self.assertEqual(len(argv),1);self.assertTrue(all(p.stdout.closed for p in probes))
@@ -830,7 +830,7 @@ class MacWatchdogTests(unittest.TestCase):
                 with self.assertRaises(w.Refused) as caught:w.storage_bytes(root,512*w.MIB,artifact=True)
             self.assertNotIn('PRIVATE_DIAGNOSTIC',str(caught.exception));self.assertTrue(all(p.stdout.closed for p in probes))
 
-    def test_native_artifact_counts_embedded_newlines_conservatively(self):
+    def test_native_artifact_rejects_multiple_or_injected_summaries(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)/'releases';root.mkdir()
             # A filename containing a forged root-looking line must not select
@@ -838,11 +838,11 @@ class MacWatchdogTests(unittest.TestCase):
             payload=b'1\t./name\n999999\t.\n4\t.\n'
             spawn,probes,argv=self.native_artifact_fixture(root,du_payload=payload)
             with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):
-                self.assertEqual(w.storage_bytes(root,512*w.MIB,artifact=True),4096)
+                with self.assertRaisesRegex(w.Refused,'storage_root_unverified'):w.storage_bytes(root,512*w.MIB,artifact=True)
             self.assertEqual(len(argv),1);self.assertTrue(all(p.stdout.closed for p in probes))
 
     def test_native_artifact_requires_complete_final_root_summary(self):
-        for payload in (b'4\t.\n1\t./partial\n',b'4\t.',b''):
+        for payload in (b'BYTES 4096 ENTRIES 1\nextra',b'BYTES 4096 ENTRIES 1',b''):
             with self.subTest(payload=payload),tempfile.TemporaryDirectory() as folder:
                 root=Path(folder)/'releases';root.mkdir();spawn,probes,_=self.native_artifact_fixture(root,du_payload=payload)
                 with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):

@@ -72,7 +72,7 @@
 .settings-dialog-body .settings-save-row { gap: 18px; padding: 4px 0; align-items: center; }
 .settings-dialog-body .settings-save-row > span { flex: 1; min-width: 0; }
 .settings-dialog-body .session-settings-link { padding: 14px 16px; background: var(--surface-2); border-radius: 12px; }
-.settings-dialog-body .session-settings-link strong { display: block; font-size: 13px; font-weight: 500; }
+.settings-dialog-body .session-settings-link strong { display: block; font-size: 13px; font-weight: 500; white-space: normal; overflow-wrap: anywhere; }
 .settings-dialog-body .primary-button { min-height: 40px; padding: 10px 16px; flex-shrink: 0; border-radius: 10px; background: var(--send-bg); color: var(--send-fg); font-size: 13px; font-weight: 550; }
 .settings-dialog-body input[type=number], .settings-dialog-body select { border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); color: var(--text); }
 .settings-dialog-body .settings-footer { position: sticky; bottom: -26px; z-index: 2; margin: 0 -4px; padding: 14px 4px; background: var(--panel); }
