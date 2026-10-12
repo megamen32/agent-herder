@@ -28,7 +28,7 @@ import { getHumanStopStore } from "../human-stop-store.js";
 import { ownedShutdownMatches, ownedZcodeActiveInput, zcodeRecoveryBoundaryCurrent, zcodeNativeAdmission } from "./zcode-recovery-boundary.js";
 import { configuredGptAdminMcp } from "./zcode-gptadmin-mcp.js";
 import { captureZcodeInput, validateRetainedInput, zcodeUndeliveredFence, zcodeRetainedAttemptReceipt, sameRetainedModel, type ZcodeRetainedInput } from "./zcode-undelivered.js";
-import {workspaceInputBoundary, workspaceCrashCurrent, workspaceProcessProbe, nativeHookTurn, type NativeHookTurn, type WorkspaceProcessProbe, type WorkspaceCrash, type WorkspaceProcess} from './zcode-workspace-lifecycle.js';
+import {workspaceInputBoundary, workspaceCrashCurrent, workspaceProcessProbe, nativeHookTurn, nativeOwnerCrashCurrent, nativeOwnerCancellationMatches, type NativeOwnerProof, type NativeHookTurn, type WorkspaceProcessProbe, type WorkspaceCrash, type WorkspaceProcess} from './zcode-workspace-lifecycle.js';
 
 interface ZcodeWorkspaceRef {
   workspacePath: string;
@@ -159,6 +159,8 @@ export interface ZcodeAdapterOptions {
   turnStartTimeoutMs?: number;
   /** Isolated embedding/test boundary; production uses read-only /proc proof. */
   workspaceProcessProbe?: WorkspaceProcessProbe;
+  controllerGenerationId?: string;
+  persistNativeOwner?: (id:string,proof:NativeOwnerProof,current:()=>boolean)=>Promise<boolean>;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -926,6 +928,8 @@ export class ZcodeAdapter implements HarnessAdapter {
     knownOwnInputs?:Set<string>; hookStarted?:boolean;workspaceRuntime?:{process:WorkspaceProcess;sdkPid:number;generation:number;session:AgentSession};workspaceCrash?:WorkspaceCrash }>();
   private readonly workspaceProcessProbe:WorkspaceProcessProbe;
   private observingWorkspaceTurns=false;
+  private readonly controllerGenerationId?:string;
+  private readonly persistNativeOwner?:ZcodeAdapterOptions["persistNativeOwner"];
   private sessionSnapshotReceipt: SessionSnapshotReceipt = {
     exhaustive: false,
     observedAt: new Date(0).toISOString(),
@@ -937,6 +941,7 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   constructor(options: ZcodeAdapterOptions = {}) {
     this.workspaceProcessProbe=options.workspaceProcessProbe??workspaceProcessProbe;
+    this.controllerGenerationId=options.controllerGenerationId;this.persistNativeOwner=options.persistNativeOwner;
     this.cwd = resolve(options.cwd || process.env.ZCODE_CWD || process.cwd());
     this.modelIds = options.modelIds ?? [];
     this.useLocalConfig = !options.client;
@@ -1184,6 +1189,18 @@ export class ZcodeAdapter implements HarnessAdapter {
         const first=entry.turnId!==boundary.turnId||!entry.workspaceRuntime;
         entry.turnId=boundary.turnId;entry.inputId=inputId;
         entry.workspaceRuntime={process,sdkPid,generation:identity.generation as number,session:mapSession(snapshot,workspace.workspacePath)};
+        if(this.persistNativeOwner&&this.controllerGenerationId){
+          const controller=this.workspaceProcessProbe.birth?.(globalThis.process.pid),sdk=this.workspaceProcessProbe.birth?.(sdkPid),service=this.workspaceProcessProbe.serviceOrigin?.();
+          if(controller&&sdk&&service&&sdk.parentPid===controller.pid){
+            const proof:NativeOwnerProof={service,generationId:this.controllerGenerationId,...boundary,inputId,cwd:workspace.workspacePath,controller,sdk,runtime:process,at:Date.now()};
+            await this.persistNativeOwner(sessionId,proof,()=>{
+              const current=workspaceInputBoundary(this.localDbPath,sessionId,inputId,workspace.workspacePath);
+              return this.client.getOwnedProcessId?.()===sdkPid&&this.workspaceProcessProbe.birth?.(sdkPid)?.startTick===sdk.startTick
+                &&this.workspaceProcessProbe.birth?.(process.pid)?.startTick===process.startTick
+                &&!!current&&!current.finished&&current.turnId===proof.turnId&&current.userMessageId===proof.userMessageId;
+            });
+          }
+        }
         if(first&&!entry.hookStarted)this.emitEvent({kind:'turn.started',harness:'zcode',sessionId,nativeType:'owned-native-active-snapshot',data:{turnId:boundary.turnId,inputId}});
       }
     }}finally{this.observingWorkspaceTurns=false;}
@@ -1192,8 +1209,19 @@ export class ZcodeAdapter implements HarnessAdapter {
   workspaceCrashRecoveryAllowed(id:string,turnId?:string,inputId?:string):boolean|undefined{
     const proof=this.observedActiveTurns.get(id)?.workspaceCrash;
     if(!proof)return undefined;
-    return proof.turnId===turnId&&proof.inputId===inputId&&this.client.getOwnedProcessId?.()===proof.sdkPid
+    return proof.turnId===turnId&&proof.inputId===inputId&&(proof.owner!==undefined||this.client.getOwnedProcessId?.()===proof.sdkPid)
       &&workspaceCrashCurrent(this.localDbPath,id,proof,this.workspaceProcessProbe);
+  }
+  /** Restore only an automatically persisted own pre-loss observation.
+   * This performs no native load/start; caller must claim before resume. */
+  restoreParentRuntimeLoss(id:string,proof:NativeOwnerProof,session:AgentSession):boolean{
+    if(!this.controllerGenerationId||proof.generationId===this.controllerGenerationId
+      ||session.cwd!==proof.cwd||!nativeOwnerCrashCurrent(this.localDbPath,id,proof,this.workspaceProcessProbe))return false;
+    const crash:WorkspaceCrash={...proof,sdkPid:proof.sdk.pid,at:Date.now(),owner:proof};
+    this.sessionWorkspaces.set(id,this.workspace(proof.cwd));
+    this.observedActiveTurns.set(id,{turnId:proof.turnId,inputId:proof.inputId,knownOwnInputs:new Set([proof.inputId]),hookStarted:true,
+      workspaceRuntime:{process:proof.runtime,sdkPid:proof.sdk.pid,generation:0,session},workspaceCrash:crash});
+    return true;
   }
   getWorkspaceCrashBoundary(id:string):WorkspaceCrash|undefined{
     const proof=this.observedActiveTurns.get(id)?.workspaceCrash;
@@ -2702,6 +2730,14 @@ export class ZcodeAdapter implements HarnessAdapter {
             const cancelled = nativeResultType === "cancelled";
             if (cancelled) this.clearQueuedPrompts(sessionId);
             const runtimeStopTurn = nonEmptyString(record(record(event.data).automationStop).turnId);
+            let parentLossCancellation=false;
+            const owner=this.observedActiveTurns.get(sessionId)?.workspaceCrash?.owner;
+            if(cancelled&&owner&&event.data?.automationStop
+              &&nativeOwnerCancellationMatches(this.localDbPath,sessionId,owner,runtimeStopTurn,event.at,inputId,this.workspaceProcessProbe)){
+              await getHumanStopStore().ignoreNativeStop('zcode',sessionId,event.data.automationStop as unknown as AutomationStopMarker);
+              if(!active)return;
+              delete event.data.automationStop;event.data.herderRuntimeOwnerLost=true;parentLossCancellation=true;
+            }
             const shutdown = cancelled && runtimeStopTurn && this.ownedShutdownTurns.has(`${sessionId}:${runtimeStopTurn}`) ? (await getHumanStopStore().ownedZcodeShutdowns()).find(
               p => p.sessionId === sessionId && p.turnId === runtimeStopTurn && Date.now() >= p.at && Date.now() - p.at <= 120000) : undefined;
             if (shutdown && event.data?.automationStop) {
@@ -2739,7 +2775,7 @@ export class ZcodeAdapter implements HarnessAdapter {
               // Model-turn completion is a technical receipt, not the explicit
               // Stop success that owns hook-primary business completion. Native
               // cancellation keeps its existing human-stop evidence path.
-              hookPrimaryCompletion = event.kind === "turn.completed" && !cancelled && observed?.hookStarted === true && !!matches;
+              hookPrimaryCompletion = event.kind === "turn.completed" && (!cancelled||parentLossCancellation) && observed?.hookStarted === true && !!matches;
               if (!hookPrimaryCompletion && (!observed || matches)) this.observedActiveTurns.delete(sessionId);
             }
             if (inputId) {

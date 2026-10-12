@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { AutoCompactStore, AutoCompactService } from "./autocontinue/auto-compact.js";
-import { createHash } from "node:crypto";
+import { createHash,randomUUID } from "node:crypto";
 import { createFleetRecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
 import { createMiniMaxQuotaPreflight } from "./automation/minimax-quota-preflight.js";
 
@@ -136,6 +136,11 @@ const sessionAutostartStore = new SessionAutostartStore(
 const autoCompactStore = new AutoCompactStore(join(autopilotStateDir, "auto-compact.json"));
 const automationLaunchPolicyStore = new AutomationLaunchPolicyStore(join(autopilotStateDir, "automation-launch-policy.json"));
 const humanStopStore = getHumanStopStore();
+const herderGenerationId=`process-${process.pid}-${randomUUID()}`;
+const persistNativeOwner:NonNullable<import("./adapters/zcode.js").ZcodeAdapterOptions["persistNativeOwner"]>=async(id,proof,current)=>{
+  if(await humanStopStore.isHeld("zcode",id))return false;
+  return unfinishedSessionStore.recordNativeOwnerProof(id,proof,current);
+};
 const lineageStore = new LineageStore(join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "agent-herder", "lineage.json"));
 const browserWakeService = createConfiguredBrowserWakeService(process.env);
 const adapterFactories = new Map<string, AdapterFactory>();
@@ -166,6 +171,7 @@ function configureAdapterRegistry(): void {
     jobToolsets: process.env.HERMES_HEALTH_TOOLSETS || "terminal",
   }));
   adapterFactories.set("zcode", () => new ZcodeAdapter({
+    controllerGenerationId:herderGenerationId,persistNativeOwner,
     command: process.env.ZCODE_SERVER_NODE,
     args: process.env.ZCODE_SERVER_ENTRY ? [process.env.ZCODE_SERVER_ENTRY] : undefined,
     cwd: process.env.ZCODE_CWD, modelIds: parseCsv(process.env.ZCODE_MODELS, []),
@@ -338,6 +344,7 @@ async function initAdapters() {
 
   if (adapterRegistry.shouldEnable("zcode", ENABLE_ZCODE)) {
     const adapter = new ZcodeAdapter({
+    controllerGenerationId:herderGenerationId,persistNativeOwner,
       command: process.env.ZCODE_SERVER_NODE,
       args: process.env.ZCODE_SERVER_ENTRY ? [process.env.ZCODE_SERVER_ENTRY] : undefined,
       cwd: process.env.ZCODE_CWD,
@@ -735,6 +742,7 @@ async function main() {
     : createDynamicSessionCompletionJudge(getUnfinishedJudgeClient, async () => (await sessionAutostartStore.getSettings()).autopilotJudgeModel);
   const recoveryAdmissionGate = createFleetRecoveryAdmissionGate(process.env.AGENT_HERDER_FLEET_MONITOR_STATE);
   const unfinishedSessionLauncher = new UnfinishedSessionLauncher({
+    generationId:herderGenerationId,
     admissionGate: recoveryAdmissionGate,
     // A pending question or choice is a durable fence: reconcile and Autopilot
     // must not continue that session past the unanswered human decision.

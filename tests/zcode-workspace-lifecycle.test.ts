@@ -4,6 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {ZcodeAdapter} from '../src/adapters/zcode.js';
+import {parseNativeOwnerProof} from '../src/adapters/zcode-workspace-lifecycle.js';
 import {getHumanStopStore} from '../src/human-stop-store.js';
 import {SessionAutostartStore,UnfinishedSessionStore,UnfinishedSessionLauncher} from '../src/autopilot/unfinished-session-launcher.js';
 import {SessionSupervisor} from '../src/session-supervisor.js';
@@ -34,10 +35,20 @@ function fixture(unavailableCode='ZCODE_AGENT_RUNTIME_UNAVAILABLE'){
  const snap=()=>({session:{...info,status:resumed?'idle':'running'},runtime:{activeTurnId:resumed?undefined:'own-turn',eventSeq:4,stateRevision:2,pendingRequestIds:[]},messages:[],projection:{activeToolCalls:[],backgroundJobs:[]},settings:{model:{current:info.model}}});
  const calls:string[]=[];
  let nativeListener:((payload:unknown)=>void)|undefined;
- const client:any={start:async()=>{},close:async()=>{},getOwnedProcessId:()=>700,
+ let generationId='parent-generation-A',sdkPid=700,parentGone=false,sdkGone=false;
+ let exitAt:number|null|undefined;
+ let proofSink:(id:string,proof:any,current:()=>boolean)=>Promise<boolean>=async()=>false;
+ let latestAdapter:ZcodeAdapter,injectParentReplay=false,parentReplayObserved=false;
+ const client:any={start:async()=>{},close:async()=>{},getOwnedProcessId:()=>sdkPid,
   listen:(_channel:string,_event:string,_args:unknown,handler:(payload:unknown)=>void)=>{nativeListener=handler;return ()=>{nativeListener=undefined;};},callIfReady:async(_c:string,m:string,args:any[])=>{calls.push(m);
    if(m==='getWorkspaceRuntimeIdentity'){if(!alive)throw Object.assign(Error('runtime identity unavailable'),{code:unavailableCode});return {processId:runtimePid,generation,workspaceKey:cwd};}
-   if(m==='readSession')return snap();
+   if(m==='readSession'){
+    if(resumed&&injectParentReplay){injectParentReplay=false;parentReplayObserved=true;
+     const at=(db.prepare('select completed_at from turn_usage where turn_id=?').get('own-turn') as any).completed_at;
+     if(!nativeListener)throw Error('Cold native listener missing');
+     nativeListener({type:'session.event',event:{type:'turn.completed',eventId:'owner-exit-cancelled',sessionId:'own-session',turnId:'own-turn',seq:8,timestamp:at,payload:{resultType:'cancelled',inputId:'agent-herder:auto:initial-once'}}});
+     await Promise.all([...(latestAdapter as any).sessionEventTasks]);
+    }return snap();}
    if(m==='sendConversationCommandV4'){calls.pop();return client.call(_c,m,args);}throw Error(m);
   },call:async(_c:string,m:string,args:any[])=>{calls.push(m);
    if(m==='initialize')return {available:true};if(m==='readSession')return snap();
@@ -52,11 +63,73 @@ function fixture(unavailableCode='ZCODE_AGENT_RUNTIME_UNAVAILABLE'){
     return {commandId:id,status:'accepted',result:{type:'inputAccepted',inputId:id,delivery:'startNow'}};
    }throw Error(m);
   }};
- const adapter=new ZcodeAdapter({client,cwd,localDbPath:path,workspaceProcessProbe:{capture:()=>alive?{...processProof,pid:runtimePid,groupId:runtimePid,startTick:String(generation+99),descendants:[...sampledChildren]}:null,gone:proof=>!survivors&&(proof.pid!==runtimePid||!alive)&&!proof.descendants.some(child=>detachedLive.has(`${child.pid}:${child.startTick}`))}});
+ const probe:any={serviceOrigin:()=>({unit:'agent-herder.service',invocationId:'a'.repeat(32)}),ownerExit:(proof:any)=>exitAt===null?null:{unit:'agent-herder.service',invocationId:'a'.repeat(32),code:'killed',status:'9',atMicros:exitAt===undefined?String(BigInt(proof.at)*1000n+1n):String(BigInt(exitAt)*1000n)},birth:(pid:number)=>({pid,startTick:pid===process.pid?'1000':pid===runtimePid?String(generation+99):'2000',parentPid:pid===sdkPid?process.pid:1}),birthGone:(birth:any)=>birth.pid===process.pid?parentGone:sdkGone,capture:()=>alive?{...processProof,parentPid:sdkPid,pid:runtimePid,groupId:runtimePid,startTick:String(generation+99),descendants:[...sampledChildren]}:null,gone:(proof:any)=>!survivors&&(proof.pid!==runtimePid||!alive)&&!proof.descendants.some((child:any)=>detachedLive.has(`${child.pid}:${child.startTick}`))};
+ const makeAdapter=()=>latestAdapter=new ZcodeAdapter({client,cwd,localDbPath:path,workspaceProcessProbe:probe,controllerGenerationId:generationId,persistNativeOwner:(id:string,proof:any,current:()=>boolean)=>proofSink(id,proof,current)} as any);
+ const adapter=makeAdapter();
  const events:any[]=[];adapter.subscribeEvents(e=>events.push(e));
- return {adapter,db,cwd,calls,events,async emitNative(payload:unknown){if(!nativeListener)throw Error('Native subscription missing');nativeListener(payload);await Promise.all([...(adapter as any).sessionEventTasks]);},observeChild(pid:number,startTick:string){sampledChildren=[{pid,startTick}];detachedLive.add(`${pid}:${startTick}`);},detachChildren(){sampledChildren=[];},kill:()=>{alive=false;},survivingChild:()=>{survivors=true;},async start(){await adapter.init();await adapter.sendMessage('own-session',{message:'Initial once',queue:true,origin:'automation',inputId:'initial-once'});await adapter.listSessions({cwd});}};
+ return {adapter,db,cwd,calls,events,setOwnerExit(at:number|null){exitAt=at;},replayOwnerCancellation(){injectParentReplay=true;},parentReplayObserved:()=>parentReplayObserved,setProofSink(sink:typeof proofSink){proofSink=sink;},coldAdapter(){generationId='parent-generation-B';sdkPid=800;return makeAdapter();},loseParent(){alive=false;parentGone=true;sdkGone=true;},keepOldSdk(){sdkGone=false;},async emitNative(payload:unknown){if(!nativeListener)throw Error('Native subscription missing');nativeListener(payload);await Promise.all([...(latestAdapter as any).sessionEventTasks]);},observeChild(pid:number,startTick:string){sampledChildren=[{pid,startTick}];detachedLive.add(`${pid}:${startTick}`);},detachChildren(){sampledChildren=[];},kill:()=>{alive=false;},survivingChild:()=>{survivors=true;},async start(){await adapter.init();await adapter.sendMessage('own-session',{message:'Initial once',queue:true,origin:'automation',inputId:'initial-once'});await adapter.listSessions({cwd});}};
 }
 describe('native workspace lifecycle, not SDK disconnection',()=>{
+ it.each(['controller','sdk','runtime','child'])('rejects numeric persisted startTick for %s',target=>{
+  const proof:any={service:{unit:'agent-herder.service',invocationId:'a'.repeat(32)},generationId:'A',turnId:'turn',inputId:'input',userMessageId:'user',cwd:'/tmp/fixture',at:Date.now(),controller:{pid:101,parentPid:1,startTick:'1000'},sdk:{pid:202,parentPid:101,startTick:'2000'},runtime:{pid:302,parentPid:202,startTick:'3000',cwd:'/tmp/fixture',groupId:302,descendants:[{pid:303,startTick:'4000'}]}};
+  expect(parseNativeOwnerProof(proof)).toBeDefined();
+  (target==='child'?proof.runtime.descendants[0]:proof[target]).startTick=1000;
+  expect(parseNativeOwnerProof(proof)).toBeUndefined();
+ });
+ it('automatically persists exact owner before loss, then a NEW launcher claims SAME SID without a checkpoint',async()=>{
+  const f=fixture(),path=join(f.cwd,'parent-unfinished.json'),store=new UnfinishedSessionStore(path),settings=new SessionAutostartStore(join(f.cwd,'parent-settings.json'),{});
+  await settings.setSession({harness:'zcode',sessionId:'own-session',cwd:f.cwd},true);
+  f.setProofSink((id,proof,current)=>(store as any).recordNativeOwnerProof(id,proof,current));
+  const first=new UnfinishedSessionLauncher({adapters:new Map([['zcode',f.adapter]]),store,settingsStore:settings,humanStopStore:getHumanStopStore(),generationId:'parent-generation-A'});
+  const unsub=f.adapter.subscribeEvents(e=>{void first.handleEvent('zcode',e);});let cold:ZcodeAdapter|undefined,second:UnfinishedSessionLauncher|undefined;
+  try{
+   await f.start();await new Promise(r=>setTimeout(r,50));await f.adapter.listSessions({cwd:f.cwd});
+   const saved=(await store.list())[0] as any;expect(saved.activeNativeOwner).toMatchObject({turnId:'own-turn',inputId:'agent-herder:auto:initial-once',controller:{pid:process.pid,startTick:'1000'},sdk:{pid:700,startTick:'2000'}});
+   expect(saved.recoveryCause).toBeUndefined();
+   f.loseParent();unsub();
+   f.db.prepare('insert into turn_usage values(?,?,?,?,?,?)').run('own-session','own-turn','own-user','cancelled',saved.activeNativeOwner.at-10,Date.now());
+   cold=f.coldAdapter();second=new UnfinishedSessionLauncher({adapters:new Map([['zcode',cold]]),store:new UnfinishedSessionStore(path),settingsStore:settings,humanStopStore:getHumanStopStore(),generationId:'parent-generation-B',retryDelayMs:1});
+   cold.subscribeEvents(e=>{void second?.handleEvent('zcode',e);});f.replayOwnerCancellation();
+   second.start();const end=Date.now()+3000;while(f.db.prepare('select count(*) n from session_input').get()?.n!==2){if(Date.now()>end)throw Error('Cold parent-crash continuation missing');await new Promise(r=>setTimeout(r,10));}
+   expect(f.calls.filter(m=>m==='resumeSession')).toHaveLength(1);
+   expect(f.parentReplayObserved()).toBe(true);
+   expect(await getHumanStopStore().isHeld('zcode','own-session')).toBe(false);
+   expect(f.db.prepare("select count(*) n from session_input where id='queue_agent-herder:auto:initial-once'").get()?.n).toBe(1);
+  }finally{first.stop();second?.stop();unsub();await cold?.dispose();await f.adapter.dispose();f.db.close();}
+ });
+ it.each(['surviving-sdk','detached-child','manual-hold','new-desktop','pending-input','missing-terminal','success','cancel-before-proof','new-tool','unknown-tool','manualcancel-before-death','unknown-exit','legacy-no-proof'])(
+  'refuses parent-crash adoption with %s',async(reason)=>{
+  const f=fixture(),path=join(f.cwd,'negative-parent.json'),store=new UnfinishedSessionStore(path),settings=new SessionAutostartStore(join(f.cwd,'negative-settings.json'),{});
+  await settings.setSession({harness:'zcode',sessionId:'own-session',cwd:f.cwd},true);
+  if(reason!=='legacy-no-proof')f.setProofSink((id,proof,current)=>(store as any).recordNativeOwnerProof(id,proof,current));
+  const first=new UnfinishedSessionLauncher({adapters:new Map([['zcode',f.adapter]]),store,settingsStore:settings,humanStopStore:getHumanStopStore(),generationId:'parent-generation-A'});
+  const unsub=f.adapter.subscribeEvents(e=>{void first.handleEvent('zcode',e);});let cold:ZcodeAdapter|undefined,second:UnfinishedSessionLauncher|undefined;
+  try{
+   await f.start();await new Promise(r=>setTimeout(r,50));
+   if(reason==='detached-child')f.observeChild(703,'3000');
+   await f.adapter.listSessions({cwd:f.cwd});
+   if(reason==='detached-child'){f.detachChildren();await f.adapter.listSessions({cwd:f.cwd});}
+   const saved=(await store.list())[0] as any,at=saved.activeNativeOwner?.at??Date.now();
+   if(reason==='legacy-no-proof')expect(saved.activeNativeOwner).toBeUndefined();else expect(saved.activeNativeOwner).toBeDefined();
+   // A metadata refresh from another generation may not relabel this ownership.
+   await store.markStarted({id:'own-session',harness:'zcode',cwd:f.cwd,title:'fixture',status:'running',lastActivity:new Date().toISOString(),needsPermission:false},'parent-generation-B');
+   if(reason!=='legacy-no-proof')expect((await store.list())[0].generationId).toBe('parent-generation-A');
+   f.loseParent();unsub();
+   if(reason==='surviving-sdk')f.keepOldSdk();
+   if(reason==='unknown-exit')f.setOwnerExit(null);
+   if(reason==='manualcancel-before-death')f.setOwnerExit(at+2);
+   if(reason!=='missing-terminal')f.db.prepare('insert into turn_usage values(?,?,?,?,?,?)').run('own-session','own-turn','own-user',reason==='success'?'completed':'cancelled',at-10,reason==='cancel-before-proof'?at-1:reason==='manualcancel-before-death'?at+1:Date.now());
+   if(reason==='manual-hold')await getHumanStopStore().hold({harness:'zcode',id:'own-session'},{id:'manual',at:new Date().toISOString(),reason:'human'});
+   if(reason==='new-desktop')f.db.prepare('insert into message values(?,?,?,?,?,?)').run('desktop','own-session',3,JSON.stringify({role:'user',anchor:{sourceCommandId:'desktop',turnId:'new'}}),Date.now(),Date.now());
+   if(reason==='pending-input')f.db.prepare('insert into session_input values(?,?,?,?,?,?)').run('other','own-session','admitted','{}',null,Date.now());
+   if(reason==='success')f.db.prepare("update message set data=json_set(data,'$.finish','stop') where id='assistant-1'").run();
+   if(reason==='new-tool')f.db.prepare('insert into part values(?,?,?,?,?,?,?)').run('late','own-session','assistant-1',1,JSON.stringify({type:'tool',state:{status:'running'}}),Date.now()+1,Date.now()+1);
+   if(reason==='unknown-tool')f.db.prepare('insert into part values(?,?,?,?,?,?,?)').run('unknown','own-session','assistant-1',1,JSON.stringify({type:'tool',state:{status:'unknown'}}),at-1,at-1);
+   cold=f.coldAdapter();second=new UnfinishedSessionLauncher({adapters:new Map([['zcode',cold]]),store:new UnfinishedSessionStore(path),settingsStore:settings,humanStopStore:getHumanStopStore(),generationId:'parent-generation-B'});
+   second.start();await second.recoverPending();
+   expect(f.calls.filter(m=>m==='resumeSession')).toHaveLength(0);expect(f.calls.filter(m=>m==='sendConversationCommandV4')).toHaveLength(1);
+  }finally{first.stop();second?.stop();unsub();await cold?.dispose();await f.adapter.dispose();f.db.close();}
+ });
  it('persists pre-death native identity and automatically claims SAME SID without terminal row',async()=>{
   const f=fixture(),store=new UnfinishedSessionStore(join(f.cwd,'unfinished.json')),settings=new SessionAutostartStore(join(f.cwd,'settings.json'),{});
   await settings.setSession({harness:'zcode',sessionId:'own-session',cwd:f.cwd},true);

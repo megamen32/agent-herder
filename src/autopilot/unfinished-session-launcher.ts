@@ -1,7 +1,8 @@
 import type { RecoveryAdmissionGate, RecoveryOperation } from "./recovery-admission.js";
-import type {WorkspaceCrash} from '../adapters/zcode-workspace-lifecycle.js';
+import {parseNativeOwnerProof,type NativeOwnerProof,type WorkspaceCrash} from '../adapters/zcode-workspace-lifecycle.js';
 
 type WorkspaceLifecycleAdapter={
+ restoreParentRuntimeLoss?(id:string,proof:NativeOwnerProof,session:AgentSession):boolean;
  workspaceCrashRecoveryAllowed?(sessionId:string,turnId?:string,inputId?:string):boolean|undefined;
  getWorkspaceCrashBoundary?(sessionId:string):WorkspaceCrash|undefined;
 };
@@ -434,6 +435,7 @@ export interface UnfinishedSessionRecord {
   recoveryObservedAt?: string;
   recoveryTurnId?: string;
   recoveryInputId?: string;
+  activeNativeOwner?: NativeOwnerProof;
   activeTurnStartedAt?: string;
   activeTurnId?: string;
   activeInputId?: string;
@@ -695,7 +697,7 @@ export class UnfinishedSessionStore {
         workspaceIdentity,
         startedAt: reset || !existing ? now.toISOString() : existing.startedAt,
         updatedAt: now.toISOString(),
-        generationId: bounded(generationId, "generationId"),
+        generationId: existing?.activeNativeOwner&&existing.activeTurnId&&!acceptedDelivery ? existing.generationId : bounded(generationId, "generationId"),
         attempts: reset || resetAttempts ? 0 : existing?.attempts ?? 0,
         state: "active",
         ...(existing?.recoveryCause ? {
@@ -704,6 +706,7 @@ export class UnfinishedSessionStore {
           ...(existing.recoveryTurnId ? { recoveryTurnId: existing.recoveryTurnId } : {}),
           ...(existing.recoveryInputId ? { recoveryInputId: existing.recoveryInputId } : {}),
         } : {}),
+        ...(existing?.activeNativeOwner ? {activeNativeOwner:existing.activeNativeOwner} : {}),
         ...(existing?.activeTurnStartedAt ? {
           activeTurnStartedAt: existing.activeTurnStartedAt,
           ...(existing.activeTurnId ? { activeTurnId: existing.activeTurnId } : {}),
@@ -860,12 +863,27 @@ export class UnfinishedSessionStore {
     return this.mutate((file) => {
       const record = findUnfinishedRecord(file.sessions, harnessType(session.harness), session.id, sessionWorkspaceIdentity(session));
       if (!record) throw new Error("active native turn record disappeared");
+      if(record.activeNativeOwner&&(record.activeNativeOwner.generationId!==generationId
+        ||record.activeNativeOwner.turnId!==identity.turnId||record.activeNativeOwner.inputId!==identity.inputId))delete record.activeNativeOwner;
+      record.generationId=bounded(generationId,"generationId");
       record.activeTurnStartedAt = now.toISOString();
       if (identity.turnId) record.activeTurnId = bounded(identity.turnId, "activeTurnId");
       if (identity.inputId) record.activeInputId = bounded(identity.inputId, "activeInputId");
       record.updatedAt = now.toISOString();
       return { ...record };
     });
+  }
+
+  /** Strict persist on this existing store, while exact native identity is
+   * still live. A fresh daemon cannot retrofit an old record. */
+  async recordNativeOwnerProof(sessionId:string,value:NativeOwnerProof,current:()=>boolean):Promise<boolean>{
+    const proof=parseNativeOwnerProof(value);if(!proof)return false;
+    return this.mutate(file=>{
+      const record=findUnfinishedRecord(file.sessions,'zcode',sessionId,proof.cwd);
+      if(!record||record.threadSource==='subagent'||record.generationId!==proof.generationId
+        ||record.activeTurnId!==proof.turnId||record.activeInputId!==proof.inputId||!current())return false;
+      record.activeNativeOwner=proof;return true;
+    },written=>written);
   }
 
   async activeNativeTurn(harness: string, sessionId: string, cwd?: string): Promise<{ turnId?: string; inputId?: string } | undefined> {
@@ -891,11 +909,15 @@ export class UnfinishedSessionStore {
     cause: "turn.failed" | "process.disconnected",
     identity: { turnId?: string; inputId?: string },
     now = new Date(),
+    owner?:NativeOwnerProof,
+    current?:()=>boolean,
   ): Promise<UnfinishedSessionRecord | null> {
     return this.mutate((file) => {
       const record = file.sessions.find((candidate) => candidate.harness === harness && candidate.sessionId === sessionId
         && sameNativeRecoveryIdentity({ turnId: candidate.activeTurnId, inputId: candidate.activeInputId }, identity));
       if (!record || record.threadSource === "subagent") return null;
+      if(owner&&(!current?.()||JSON.stringify(record.activeNativeOwner)!==JSON.stringify(owner)))return null;
+      if(owner){record.admissionPhase="terminal_observed";record.terminalObservedAt=now.toISOString();record.terminalReason="turn.failed";record.terminalRetryCount=0;}
       record.recoveryCause = cause;
       record.recoveryObservedAt = now.toISOString();
       if (identity.turnId) record.recoveryTurnId = identity.turnId;
@@ -1846,8 +1868,8 @@ export class UnfinishedSessionLauncher {
       if (!this.lifecycleActive(lifecycleEpoch)) break;
       if (!isAutocontinueInventoryHarness(record.harness)) continue;
       const recordKey = unfinishedRecordKey(record);
-      const recoveryFence = nativeTurnFenceKey(record.harness, record.sessionId, { turnId: record.recoveryTurnId, inputId: record.recoveryInputId });
-      const observedTurnGeneration = recoveryFence ? this.turnGenerations.get(recoveryFence) ?? 0 : 0;
+      let recoveryFence = nativeTurnFenceKey(record.harness, record.sessionId, { turnId: record.recoveryTurnId, inputId: record.recoveryInputId });
+      let observedTurnGeneration = recoveryFence ? this.turnGenerations.get(recoveryFence) ?? 0 : 0;
       if (recoveryFence) this.turnGenerations.set(recoveryFence, observedTurnGeneration);
       if (this.continuedThisRecovery.has(recordKey)) continue;
       if (!await this.isEnabled(record.harness, record.sessionId, record.cwd)) {
@@ -1857,6 +1879,26 @@ export class UnfinishedSessionLauncher {
       // An unanswered question defers recovery; it must never discard the
       // accepted turn or its recovery record.
       if (await this.pendingQuestionBlocks(record.harness, record.sessionId, record.cwd)) continue;
+      // A parent SIGKILL has no shutdown event. Only an exact automatically
+      // persisted pre-loss owner observation may bridge the generation change.
+      if(record.harness==='zcode'&&record.activeNativeOwner&&record.activeTurnId&&record.activeInputId
+        &&record.generationId!==this.generationId){
+        const proof=record.activeNativeOwner,adapter=this.options.adapters.get('zcode') as (HarnessAdapter&WorkspaceLifecycleAdapter)|undefined;
+        const target:AgentSession={id:record.sessionId,harness:'zcode',cwd:record.cwd,title:record.title??record.sessionId,model:record.model,status:'error',lastActivity:record.updatedAt,needsPermission:false};
+        if(!this.lifecycleActive(lifecycleEpoch)||!await this.admissionAllowed(target,'attempt')
+          ||await this.options.humanStopStore?.isHeld('zcode',record.sessionId))continue;
+        this.pendingQuestions?.invalidate();
+        if(await this.pendingQuestionBlocks('zcode',record.sessionId,record.cwd)
+          ||await this.options.humanStopStore?.isHeld('zcode',record.sessionId))continue;
+        if(!adapter?.restoreParentRuntimeLoss?.(record.sessionId,proof,target))continue;
+        const qualified=await this.options.store.markPersistedActiveTurnFailed('zcode',record.sessionId,'process.disconnected',
+          {turnId:record.activeTurnId,inputId:record.activeInputId},new Date(),proof,
+          ()=>this.lifecycleActive(lifecycleEpoch)&&adapter.workspaceCrashRecoveryAllowed?.(record.sessionId,proof.turnId,proof.inputId)===true);
+        if(!qualified)continue;Object.assign(record,qualified);
+        recoveryFence=nativeTurnFenceKey('zcode',record.sessionId,{turnId:record.recoveryTurnId,inputId:record.recoveryInputId});
+        observedTurnGeneration=recoveryFence?this.turnGenerations.get(recoveryFence)??0:0;
+        if(recoveryFence)this.turnGenerations.set(recoveryFence,observedTurnGeneration);
+      }
       if (!record.recoveryCause) {
         if ((record.activeTurnStartedAt && (record.activeTurnId || record.activeInputId))
           || record.acceptedAt || record.deliveryPending || record.admissionPhase || record.nonRetryableAdmission) continue;
@@ -2212,6 +2254,11 @@ export class UnfinishedSessionLauncher {
         await this.options.store.cancelAttempt(attempt);
         return;
       }
+      if(record.activeNativeOwner){
+        this.pendingQuestions?.invalidate();
+        if(await this.pendingQuestionBlocks(record.harness,record.sessionId,record.cwd)
+          ||await this.options.humanStopStore?.isHeld(record.harness,record.sessionId)){await this.options.store.cancelAttempt(attempt);return;}
+      }
       const resumed = adapter.resumeSession ? await adapter.resumeSession(record.sessionId) : { ok: true };
       if (!resumed.ok) throw new Error(resumed.error || "возобновление отклонено");
       if (!this.lifecycleActive(lifecycleEpoch)) {
@@ -2243,6 +2290,11 @@ export class UnfinishedSessionLauncher {
       if (!await this.recoveryNativeStateStillEligible(adapter, record)) {
         await this.options.store.cancelAttempt(attempt);
         return;
+      }
+      if(record.activeNativeOwner){
+        this.pendingQuestions?.invalidate();
+        if(await this.pendingQuestionBlocks(record.harness,record.sessionId,record.cwd)
+          ||await this.options.humanStopStore?.isHeld(record.harness,record.sessionId)){await this.options.store.cancelAttempt(attempt);return;}
       }
       const boundary = session?.harness === 'zcode' ? nativeLastTurn(session) : undefined;
       const lifecycle=adapter as WorkspaceLifecycleAdapter;
@@ -4006,6 +4058,7 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
     ...(record.recoveryObservedAt ? { recoveryObservedAt: isoDate(record.recoveryObservedAt, "recoveryObservedAt") } : {}),
     ...(record.recoveryTurnId ? { recoveryTurnId: bounded(record.recoveryTurnId, "recoveryTurnId") } : {}),
     ...(record.recoveryInputId ? { recoveryInputId: bounded(record.recoveryInputId, "recoveryInputId") } : {}),
+    ...(parseNativeOwnerProof(record.activeNativeOwner) ? {activeNativeOwner:parseNativeOwnerProof(record.activeNativeOwner)} : {}),
     ...(record.activeTurnStartedAt ? { activeTurnStartedAt: isoDate(record.activeTurnStartedAt, "activeTurnStartedAt") } : {}),
     ...(record.activeTurnId ? { activeTurnId: bounded(record.activeTurnId, "activeTurnId") } : {}),
     ...(record.activeInputId ? { activeInputId: bounded(record.activeInputId, "activeInputId") } : {}),

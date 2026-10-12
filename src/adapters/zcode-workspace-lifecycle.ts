@@ -1,10 +1,19 @@
 import {readFileSync, readdirSync, realpathSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
+import {execFileSync} from 'node:child_process';
 
 export type WorkspaceProcess = {pid:number;parentPid:number;startTick:string;cwd:string;groupId:number;descendants:Array<{pid:number;startTick:string}>};
-export type WorkspaceCrash = {turnId:string;inputId:string;userMessageId:string;cwd:string;runtime:WorkspaceProcess;sdkPid:number;at:number};
+export type ProcessBirth={pid:number;startTick:string;parentPid:number};
+export type ServiceOrigin={unit:'agent-herder.service';invocationId:string};
+export type OwnerExit={unit:string;invocationId:string;code:string;status:string;atMicros:string};
+export type NativeOwnerProof={service:ServiceOrigin;generationId:string;turnId:string;inputId:string;userMessageId:string;cwd:string;controller:ProcessBirth;sdk:ProcessBirth;runtime:WorkspaceProcess;at:number};
+export type WorkspaceCrash = {turnId:string;inputId:string;userMessageId:string;cwd:string;runtime:WorkspaceProcess;sdkPid:number;at:number;owner?:NativeOwnerProof};
 export type NativeHookTurn={sessionId:string;cwd:string;turnId:string;inputId:string;userMessageId:string;at:string;origin:'automation'|'real_user';finished:boolean;progress:string};
 export interface WorkspaceProcessProbe {
+ serviceOrigin?():ServiceOrigin|null;
+ ownerExit?(proof:NativeOwnerProof):OwnerExit|null;
+ birth?(pid:number):ProcessBirth|null;
+ birthGone?(proof:ProcessBirth):boolean;
  capture(pid:number,sdkPid:number,cwd:string):WorkspaceProcess|null;
  gone(proof:WorkspaceProcess):boolean;
 }
@@ -18,6 +27,25 @@ function processes(){
  return names.flatMap(n=>{try{return [stat(Number(n))];}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return [];throw e;}});
 }
 export const workspaceProcessProbe:WorkspaceProcessProbe={
+ serviceOrigin(){try{
+  const invocationId=process.env.INVOCATION_ID;
+  if(!invocationId||!/^[0-9a-f]{32}$/i.test(invocationId)||!/\/agent-herder\.service(?:\/|$)/m.test(readFileSync('/proc/self/cgroup','utf8')))return null;
+  return {unit:'agent-herder.service',invocationId};
+ }catch{return null;}},
+ ownerExit(proof){try{
+  const raw=execFileSync('/usr/bin/journalctl',[
+   '--user-unit=agent-herder.service','--output=json','--no-pager','-n','4',
+   `USER_INVOCATION_ID=${proof.service.invocationId}`,'MESSAGE_ID=98e322203f7a4ed290d09fe03c09fe15',
+  ],{encoding:'utf8',timeout:2000,maxBuffer:65536,stdio:['ignore','pipe','pipe']});
+  const rows=raw.trim().split('\n').filter(Boolean).map(line=>JSON.parse(line) as Record<string,unknown>);
+  const matches=rows.filter(d=>d.USER_UNIT===proof.service.unit&&d.USER_INVOCATION_ID===proof.service.invocationId
+   &&d.MESSAGE_ID==='98e322203f7a4ed290d09fe03c09fe15'&&d._UID===String(process.getuid?.())
+   &&d.EXIT_CODE==='killed'&&d.EXIT_STATUS==='9'&&typeof d.__REALTIME_TIMESTAMP==='string'&&/^\d+$/.test(d.__REALTIME_TIMESTAMP));
+  if(matches.length!==1)return null;
+  return {unit:proof.service.unit,invocationId:proof.service.invocationId,code:'killed',status:'9',atMicros:matches[0].__REALTIME_TIMESTAMP as string};
+ }catch{return null;}},
+ birth(pid){try{return stat(pid);}catch{return null;}},
+ birthGone(proof){try{return stat(proof.pid).startTick!==proof.startTick;}catch(e){return (e as NodeJS.ErrnoException).code==='ENOENT';}},
  capture(pid,sdkPid,cwd){try{
   const root=stat(pid);
   if(root.parentPid!==sdkPid||root.groupId!==pid||realpathSync(`/proc/${pid}/cwd`)!==cwd)return null;
@@ -68,7 +96,7 @@ export function nativeHookTurn(path:string,id:string,turnId:string,cwd:string):N
 
 /** Exact promoted own admission + active tail. Empty turn_usage is permitted,
  * but successful completion, another user/input, unknown JSON/permissions are not. */
-export function workspaceInputBoundary(path:string,id:string,inputId:string,cwd:string):{turnId:string;userMessageId:string;finished:boolean}|null{
+export function workspaceInputBoundary(path:string,id:string,inputId:string,cwd:string,ownerObservedAt?:number):{turnId:string;userMessageId:string;finished:boolean}|null{
  let db:DatabaseSync|undefined;
  try{
   db=new DatabaseSync(path,{readOnly:true});db.exec('begin');
@@ -84,16 +112,67 @@ export function workspaceInputBoundary(path:string,id:string,inputId:string,cwd:
   if(user?.id!==input.promoted_message_id||anchor?.sourceCommandId!==inputId||typeof anchor.turnId!=='string'||!anchor.turnId)return null;
   if(db.prepare("select 1 from session_input where session_id=? and status not in ('promoted','discarded','cancelled') limit 1").get(id))return null;
   for(const table of ['message','part'])if(db.prepare('select 1 from '+table+' where session_id=? and not json_valid(data) limit 1').get(id))return null;
+  if(db.prepare("select 1 from part where session_id=? and json_extract(data,'$.type')='tool' and coalesce(json_extract(data,'$.state.status'),'') not in ('pending','running','completed','error') limit 1").get(id))return null;
   const tail=db.prepare(`select data from message where session_id=? and json_valid(data)
    and json_extract(data,'$.role')='assistant' and json_extract(data,'$.anchor.turnId')=? order by sequence desc limit 1`).get(id,anchor.turnId) as any;
   const assistant=JSON.parse(tail?.data??'{}');
   if(!tail||assistant.parentID!==user.id||assistant.error)return null;
-  const terminal=db.prepare('select status,completed_at from turn_usage where session_id=? and turn_id=? order by started_at desc limit 1').get(id,anchor.turnId) as any;
-  if(terminal?.completed_at!==null&&terminal?.completed_at!==undefined&&terminal.status!=='completed')return null;
+  const terminal=db.prepare('select status,started_at,completed_at from turn_usage where session_id=? and turn_id=? order by started_at desc limit 1').get(id,anchor.turnId) as any;
+  if(ownerObservedAt!==undefined){
+   if(terminal?.status!=='cancelled'||!Number.isSafeInteger(terminal.started_at)||!Number.isSafeInteger(terminal.completed_at)
+    ||terminal.started_at>ownerObservedAt||terminal.completed_at<ownerObservedAt||terminal.completed_at>Date.now())return null;
+   // A late tool/background execution can appear without a new user anchor.
+   // Settling an old tool is allowed; newly created work after cancellation is not.
+   if(db.prepare("select 1 from part where session_id=? and json_extract(data,'$.type')='tool' and time_created>? limit 1").get(id,terminal.completed_at))return null;
+  }else if(terminal?.completed_at!==null&&terminal?.completed_at!==undefined&&terminal.status!=='completed')return null;
   return {turnId:anchor.turnId,userMessageId:user.id,finished:['stop','length'].includes(assistant.finish)||terminal?.status==='completed'};
  }catch{return null;}finally{db?.close();}
 }
 export function workspaceCrashCurrent(path:string,id:string,proof:WorkspaceCrash,probe:WorkspaceProcessProbe=workspaceProcessProbe):boolean{
+ if(proof.owner)return nativeOwnerCrashCurrent(path,id,proof.owner,probe);
  const current=workspaceInputBoundary(path,id,proof.inputId,proof.cwd);
  return !!current&&!current.finished&&current.turnId===proof.turnId&&current.userMessageId===proof.userMessageId&&probe.gone(proof.runtime);
+}
+
+/** Existing durable record only: an observed live own generation, not a
+ * post-hoc controller packet, authorizes the cancelled native boundary. */
+export function parseNativeOwnerProof(value:unknown):NativeOwnerProof|undefined{
+ try{
+  const p=value as NativeOwnerProof;
+  const birth=(b:ProcessBirth)=>!!b&&Number.isSafeInteger(b.pid)&&b.pid>0&&Number.isSafeInteger(b.parentPid)&&b.parentPid>=0&&typeof b.startTick==='string'&&/^\d+$/.test(b.startTick);
+  if(!p||typeof p!=='object'||p.service?.unit!=='agent-herder.service'||typeof p.service.invocationId!=='string'||! /^[0-9a-f]{32}$/i.test(p.service.invocationId)||!birth(p.controller)||!birth(p.sdk)||p.sdk.parentPid!==p.controller.pid
+   ||!birth(p.runtime)||p.runtime.parentPid!==p.sdk.pid||p.runtime.groupId!==p.runtime.pid||p.runtime.cwd!==p.cwd
+   ||!Number.isSafeInteger(p.at)||p.at<=0||!p.cwd.startsWith('/')
+   ||![p.generationId,p.turnId,p.inputId,p.userMessageId].every(v=>typeof v==='string'&&!!v&&v.length<=4096)
+   ||!Array.isArray(p.runtime.descendants)||p.runtime.descendants.length>16384
+   ||p.runtime.descendants.some(c=>!Number.isSafeInteger(c.pid)||c.pid<=0||typeof c.startTick!=='string'||!/^\d+$/.test(c.startTick)))return undefined;
+  return JSON.parse(JSON.stringify(p)) as NativeOwnerProof;
+ }catch{return undefined;}
+}
+export function nativeOwnerCrashCurrent(path:string,id:string,value:NativeOwnerProof,probe:WorkspaceProcessProbe=workspaceProcessProbe):boolean{
+ const p=parseNativeOwnerProof(value);if(!p||!probe.birthGone?.(p.controller)||!probe.birthGone?.(p.sdk)||!probe.gone(p.runtime))return false;
+ const exit=probe.ownerExit?.(p);
+ if(!exit||exit.unit!==p.service.unit||exit.invocationId!==p.service.invocationId||exit.code!=='killed'||exit.status!=='9'
+   ||typeof exit.atMicros!=='string'||!/^\d+$/.test(exit.atMicros))return false;
+ const loss=BigInt(exit.atMicros);
+ if(loss<BigInt(p.at)*1000n||loss>BigInt(Date.now())*1000n)return false;
+ const current=workspaceInputBoundary(path,id,p.inputId,p.cwd,p.at);
+ if(!current)return false;
+ let db:DatabaseSync|undefined;try{
+  db=new DatabaseSync(path,{readOnly:true});
+  const terminal=db.prepare("select completed_at from turn_usage where session_id=? and turn_id=? and user_message_id=? and status='cancelled' order by started_at desc limit 1").get(id,p.turnId,p.userMessageId) as any;
+  if(!Number.isSafeInteger(terminal?.completed_at)||BigInt(terminal.completed_at)*1000n<loss)return false;
+ }catch{return false;}finally{db?.close();}
+ return !!current&&!current.finished&&current.turnId===p.turnId&&current.userMessageId===p.userMessageId;
+}
+
+/** A late/replayed native cancellation of the qualified dead owner is a
+ * technical receipt. An unrelated cancellation remains human-stop evidence. */
+export function nativeOwnerCancellationMatches(path:string,id:string,proof:NativeOwnerProof,turnId:string|undefined,at:string|undefined,inputId?:string,probe:WorkspaceProcessProbe=workspaceProcessProbe):boolean{
+ if(turnId!==proof.turnId||inputId!==undefined&&inputId!==proof.inputId||!at||!nativeOwnerCrashCurrent(path,id,proof,probe))return false;
+ let db:DatabaseSync|undefined;try{
+  db=new DatabaseSync(path,{readOnly:true});
+  const row=db.prepare("select completed_at from turn_usage where session_id=? and turn_id=? and user_message_id=? and status='cancelled' order by started_at desc limit 1").get(id,proof.turnId,proof.userMessageId) as any;
+  return Number.isSafeInteger(row?.completed_at)&&row.completed_at===Date.parse(at);
+ }catch{return false;}finally{db?.close();}
 }
