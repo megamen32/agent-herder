@@ -182,3 +182,32 @@ The canonical OmniRoute catalog can emit a partial limit for unknown output;
 this source defect is being corrected without inventing token limits or changing
 model identities/options. It is not yet evidence that this caused the missing
 Herder hook invocation.
+
+## OpenCode response deadline and lost offers
+
+The changed native fetch diagnostic proved that the loader and transform run,
+but the active-context response exceeded its unchanged 1200ms fetch/body budget.
+The backend recorded OFFERED while the plugin timed out or could not parse the
+response. That record is unknown model delivery and remains receipt-only; it
+must not be reset or retried. The passive context response was fast, isolating
+the native active guard and the shared inbox chain as the response path to fix.
+
+With the existing session directory resolved, the bounded message, exact session
+and native status reads run concurrently. Returned session/directory and the
+latest user's native session ID must match; busy without a permission request is
+still required. Unknown, mismatched or failed reads refuse output. No native
+input, load, resume or API mutation is used. Qualification runs outside the
+shared DeferredMessageStore chain, so an awaiting native response does not block
+unrelated inbox operations. Inside the existing serialized mutation, the rows
+are read again and TTL, fresh persisted Stop and the HTTP connection are checked
+before the one durable offer and linked explicit-inbox transfer.
+
+An observed disconnected client before this mutation leaves the input unoffered.
+A disconnect during or after the durable write still means an unknown offer,
+which is never replayed. These read APIs do not provide a native multi-read CAS;
+the exact transient hook identity and fresh native snapshot are the supported
+boundary, not a claim that arbitrary Desktop changes are atomically excluded.
+The isolated delayed-read proof covers total plugin body delivery with three
+450ms native reads, final-wait Stop, disconnect and identity refusal. It does not
+prove live OpenCode model observation: Root must deliver the backend and run one
+new same-turn unpredictable-code consumer; previous failed cases stay failed.

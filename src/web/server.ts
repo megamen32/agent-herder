@@ -724,15 +724,20 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const inboxMessages = humanStopHeld ? [] : await deferredMessages.list(sessionId);
     const activeTurnId=url.searchParams.get('activeTurnId')?.trim();
     const currentAdapter=adapters.get(harness);
+    const contextConnected=()=>!response.destroyed&&!request.aborted&&!request.socket.destroyed;
     const activeMessages=!humanStopHeld&&activeTurnId&&url.searchParams.get('consumeActive')==='1'
       ?await deferredMessages.offerActive(harness,sessionId,activeTurnId,async()=>{
         if(!currentAdapter?.getCoordinationActiveTurnId)return false;
-        try{if(await currentAdapter.getCoordinationActiveTurnId(sessionId)!==activeTurnId)return false;
-          return !await coordinationHeld();
-        }catch{return false;}
+        try{return await currentAdapter.getCoordinationActiveTurnId(sessionId)===activeTurnId;}
+        catch{return false;}
+      },async()=>{
+        if(!contextConnected())return false;
+        if(await coordinationHeld()){humanStopHeld=true;return false;}
+        return contextConnected();
       }):[];
     // The hook may have waited for store/native reads. A late Stop suppresses output.
-    if(activeMessages.length&&await coordinationHeld()){activeMessages.length=0;humanStopHeld=true;await deferredMessages.discardActive(harness,sessionId);}
+    if(humanStopHeld||activeMessages.length&&await coordinationHeld()){activeMessages.length=0;humanStopHeld=true;await deferredMessages.discardActive(harness,sessionId);}
+    if(!contextConnected())return;
     const inboxContext = humanStopHeld ? null : renderDeferredMessages(inboxMessages);
     const context = [inboxContext, coordinationContext].filter(Boolean).join("\n\n") || null;
     return sendJson(response, 200, { context, inboxContext, inboxCount: inboxMessages.length, inboxIds:inboxMessages.map(message=>message.id), activeInboxContext:renderDeferredMessages(activeMessages), activeInboxIds:activeMessages.map(message=>message.id), active: Boolean(context), humanStopHeld });

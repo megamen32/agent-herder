@@ -32,10 +32,18 @@ export class DeferredMessageStore {
     return this.serial(async()=>{const s=await this.read();this.expireActive(s);return s.messages.find(m=>m.sessionId===sessionId&&m.activeTurn?.harness===harness&&m.activeTurn.inputId===inputId)});
   }
   /** One offer only, durably recorded before hook output. A lost hook response is never replayed. */
-  async offerActive(harness:string,sessionId:string,identity:string,allowed:()=>Promise<boolean>):Promise<DeferredMessage[]>{
+  async offerActive(harness:string,sessionId:string,identity:string,allowed:()=>Promise<boolean>,finalAllowed:()=>Promise<boolean>=async()=>true):Promise<DeferredMessage[]>{
+    if(!identity)return [];
+    // Never hold the shared inbox chain during a native network read. Empty or
+    // previously offered inboxes need no native read at all. Re-read under the
+    // chain after qualification; a concurrent offer/drop/expiry still wins.
+    const pending=await this.serial(async()=>{const s=await this.read();this.expireActive(s);return s.messages.some(m=>m.sessionId===sessionId&&m.activeTurn?.harness===harness&&m.activeTurn.state==='pending');});
+    if(!pending||!await allowed())return [];
     return this.serial(async()=>{
       const s=await this.read();this.expireActive(s);
-      if(!identity||!await allowed()){await this.write(s);return [];}
+      // Local Stop/connection guard is fresh AFTER waiting for the store chain.
+      // It must not perform another native network round trip inside this lock.
+      if(!await finalAllowed()){await this.write(s);return [];}
       this.expireActive(s);
       for(const m of s.messages)if(m.sessionId===sessionId&&m.activeTurn?.harness===harness&&m.activeTurn.identity!==identity&&m.activeTurn.state==='pending'){m.activeTurn.state='expired';m.message='';}
       const offered=s.messages.filter(m=>m.sessionId===sessionId&&m.activeTurn?.harness===harness&&m.activeTurn.identity===identity&&m.activeTurn.state==='pending');

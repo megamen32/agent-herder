@@ -20,7 +20,7 @@ interface OpenCodeSessionPayload {
 interface OpenCodeMessagePayload {
   id?: string;
   role?: string;
-  info?: { id?: string; role?: string; providerID?: string; modelID?: string; time?: { created?: number } };
+  info?: { id?: string; sessionID?: string; role?: string; providerID?: string; modelID?: string; time?: { created?: number } };
   content?: string | Array<Record<string, unknown>>;
   parts?: Array<Record<string, unknown>>;
 }
@@ -300,12 +300,19 @@ export class OpenCodeAdapter implements HarnessAdapter {
 
   async getCoordinationActiveTurnId(id:string):Promise<string|null>{
     // Native V1 loop's lastUser.id is stable across tool/model steps; never invent a turn ID.
-    const messages=await this.fetchJson<OpenCodeMessagePayload[]>(`/session/${encodeURIComponent(id)}/message?limit=50`);
-    const session=await this.fetchJson<OpenCodeSessionPayload>(`/session/${encodeURIComponent(id)}`);
-    const statuses=await this.readStatuses(session.directory||session.path);
+    // Admission already resolves this directory. Cold reads resolve it without
+    // loading/resuming; independent reads then share one network latency budget.
+    const directory=await this.resolveSessionDirectory(id);
+    if(!directory)return null;
+    const [messages,session,statuses]=await Promise.all([
+      this.fetchJson<OpenCodeMessagePayload[]>(`/session/${encodeURIComponent(id)}/message?limit=50`),
+      this.fetchJson<OpenCodeSessionPayload>(`/session/${encodeURIComponent(id)}`),
+      this.readStatuses(directory),
+    ]);
+    if(session.id!==id||(session.directory||session.path)!==directory||!Array.isArray(messages))return null;
     const st=statuses[id];if(this.mapStatus(st?.status||st?.type)!=='running'||st?.needsPermission||st?.permission)return null;
     const user=[...messages].reverse().find(m=>(m.info?.role||m.role)==='user');
-    return user?.info?.id||user?.id||null;
+    return user?.info?.sessionID===id&&typeof user.info.id==='string'&&user.info.id?user.info.id:null;
   }
   async sendActiveMessage(id:string,options:SendMessageOptions):Promise<ControlResult>{return reserveCurrentTurnContext(this,id,options);}
   async getCoordinationMessageAdmission(id:string,inputId:string){return currentTurnContextReceipt(this,id,inputId);}
