@@ -26,6 +26,47 @@ async function waitUntil(predicate: () => boolean | Promise<boolean>, timeoutMs 
     await new Promise((resolve) => setTimeout(resolve, 5));
 } }
 describe("unfinished session crash recovery", () => {
+    // Fast unit: reproduce opt-out during an awaited planner/attach/admission
+    // boundary. Expected <2s, maximum 10s; no native/provider activity.
+    it.each(["plan", "resume", "admission"] as const)("honors a late session opt-out during %s before admitting another prompt", async (boundary) => {
+        const root = await mkdtemp(join(tmpdir(), "late-autopilot-opt-out-"));
+        try {
+            const current = fixture("idle", "zcode", `late-opt-out-${boundary}`);
+            const calls = { resumes: 0, messages: [] as string[] };
+            const adapter = fakeAdapter(() => current, calls);
+            const policyStore = new AutopilotPolicyStore(join(root, "policy.json"));
+            await policyStore.replacePolicy({ schemaVersion: 1, enabled: true, harnesses: ["zcode"], scope: { mode: "all_ingress" }, maxContinuationsPerSession: 10, timeout: { mode: "auto_continue", delayMs: 1000 }, card: { includeUserMessage: true, includeAssistantMessage: true, includeReason: true } }, null);
+            const overrides = new AutopilotSessionStore(join(root, "sessions.json"));
+            const disable = () => overrides.set({ harness: "zcode", sessionId: current.id, cwd: current.cwd }, false);
+            adapter.resumeSession = async () => {
+                calls.resumes += 1;
+                if (boundary === "resume") await disable();
+                return { ok: true };
+            };
+            const launcher = new UnfinishedSessionLauncher({
+                adapters: new Map([["zcode", adapter]]), store: new UnfinishedSessionStore(join(root, "unfinished.json")),
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+                autopilotPolicyStore: policyStore, autopilotSessionStore: overrides, discoveryIdleMs: 1,
+                admissionGate: async (_session, operation) => {
+                    if (boundary === "admission" && operation === "send") await disable();
+                    return { allowed: true };
+                },
+                judge: {
+                    async decide() { return { verdict: "unfinished", reason: "work remains", confidence: 1 }; },
+                    async plan({ sessions }) {
+                        if (boundary === "plan") await disable();
+                        return { groups: [{ sourceSessionIds: sessions.map(({ session }) => session.id), primarySessionId: current.id, verdict: "unfinished", reason: "work remains", confidence: 1, topic: "task", handoff: "continue" }] };
+                    },
+                },
+            });
+            await launcher.runAutopilotCycle();
+            expect(calls.messages).toEqual([]);
+            expect(calls.resumes).toBe(boundary === "plan" ? 0 : 1);
+            expect((await overrides.get("zcode", current.id))?.enabled).toBe(false);
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
     it("retains first goal and last answer in bounded evidence", () => {
         const messages: SessionMessageView[] = [{ id: "u", role: "user", text: "original goal", parts: [{ type: "text", text: "original goal" }] }, { id: "a", role: "assistant", text: "final result", parts: [{ type: "text", text: "final result" }] }];
         expect(completionEvidence(messages)).toContain("original goal");

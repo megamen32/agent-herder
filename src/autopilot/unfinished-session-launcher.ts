@@ -3452,7 +3452,19 @@ export class UnfinishedSessionLauncher {
 
   private async groupAdmissionAllowed(sessions: AgentSession[], operation: RecoveryOperation): Promise<boolean> {
     for (const session of sessions) if (!await this.admissionAllowed(session, operation)) return false;
-    return true;
+    // Batch assessment can precede a slow planner/attach. Read the existing
+    // semantic switches again after the awaited admission gate, before each
+    // native action; a cached autoResumeEnabled must not override a new opt-out.
+    // Recovery's independent switch must not disable an enabled Autopilot.
+    try {
+      const effective = await this.semanticAutopilotPolicy();
+      if (!effective) return false;
+      for (const session of sessions) if (!await this.semanticAutopilotAllows(session, effective)) return false;
+      return true;
+    } catch {
+      // An unreadable permission is a deferral, not a reason to deliver a prompt.
+      return false;
+    }
   }
 
   private async admissionAllowed(session: AgentSession, operation: RecoveryOperation): Promise<boolean> {

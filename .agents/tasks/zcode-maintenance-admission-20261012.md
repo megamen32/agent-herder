@@ -1,5 +1,30 @@
 # ZCode: остановить новые автопродолжения, сохранить принятую работу
 
+## Узкая source коррекция позднего отключения
+
+В 05:41:44.274 UTC, после OFF05:39:53, native 0cce принял ещё один input
+`queue_agent-herder:auto:eeca5ff1-8aec-4bd7-a6b5-60bc9f8d6a33`.
+Journal того же parent подтверждает единый planner resume. Ввод сохранён.
+`groupAdmissionAllowed` теперь повторно читает существующие semantic policy и
+per-session override после awaited admission gate перед resume/send/create.
+Recovery OFF остаётся независимым от разрешённого semantic Autopilot.
+Нечитаемое разрешение откладывает действие. Это не native CAS и не остановка
+уже принятого input или уже исполняющейся внутри адаптера отправки.
+
+Три изолированные RED регрессии воспроизвели отправку после отключения во время
+planner, resume и финального admission gate; после коррекции 3 PASS.
+Focused integration: весь launcher36 PASS + tsc --noEmit, общий payload46.101s,
+RAM peak553549824B, swap/OOM0, finite existing profile120s/CPU1/max1GiB/tasks128.
+Контрольный тест сохраняет Autopilot при выключенном recovery.
+Первые fixture/setup failures (старый /usr/bin/node12 и неправильный sessionId
+в fixture) сохранены и не считаются RED доказательством самого дефекта.
+Runner выдал cleanup_held с original cgroup population unknown, затем summary
+completed; отдельный readonly systemctl подтвердил owned run-u188291.scope
+inactive/dead без ControlGroup. Cleanup предупреждение не скрыто, повторного
+payload и ручной остановки процессов не было.
+Evidence: `.tmp/zcode-opt-out-regression/` — exact cases, bounded receipts/logs.
+Source ещё требует Root review/install; работающий backend6b не менялся.
+
 Владелец диагностики/source/4b consumer: Codex 01a12ddd-6233-7522-8a68-fa932c661d6d.
 Владелец runtime/install: Codex 01a12740-96aa-7b93-9bef-679dcae60d84.
 
