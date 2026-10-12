@@ -445,6 +445,22 @@ describe("ZCode adapter", () => {
       expect(meta("runtime-silent").transportLost).toBe(true);
       expect(rows.find(x=>x.id==="runtime-silent")?.status).toBe("error");
       expect(meta("runtime-silent-unowned").transportLost).toBeUndefined();
+      class WarmStoppedClient extends FakeClient {
+        override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
+          if(method==='readSession')return {...snapshot,session:{...session,sessionId:'runtime-silent',parentSessionId:undefined,status:'idle',workspace:{workspacePath:root,workspaceIdentity:root}},runtime:{eventSeq:3,stateRevision:3,pendingRequestIds:[]},messages:[]};
+          return super.call(channel,method,args);
+        }
+      }
+      const warmClient=new WarmStoppedClient();
+      warmClient.nativeEvents=[{type:'turn.completed',eventId:'owned-cancel-event',sessionId:'runtime-silent',turnId:'turn-runtime-silent',seq:1,timestamp:now-2000,payload:{resultType:'cancelled'}}];
+      const warmAdapter=new ZcodeAdapter({client:warmClient,cwd:root,tasksIndexDbPath:tasksPath,localDbPath:nativePath});
+      await warmAdapter.init();
+      const warm=await warmAdapter.getSession('runtime-silent');
+      expect(warm?.meta?.nativeLastTurn).toMatchObject({turnId:'turn-runtime-silent',transportLost:true});
+      expect(warm?.meta?.automationStop).toBeUndefined();
+      expect(await getHumanStopStore().observe(warm!)).toBe(false);
+      await warmAdapter.dispose();
+
       markLifecycleEvent("zcode", "runtime-progress", "end", root);
       expect((await adapter.listSessions()).find((x)=>x.id==="runtime-progress")?.status).toBe("stopped");
       expect(meta("child").rootSession).toBe(false);
@@ -2067,7 +2083,7 @@ it.each([false,true])("settles a staged guide from native history despite event/
 });
 
 
-it('rejects recovery when Desktop input arrives during native baseline refresh without replaying tools',async()=>{
+it('rejects recovery when Desktop input arrives during native baseline refresh without replaying tools (focused integration expected .3s/max5s)',async()=>{
  const root=await mkdtemp(join(tmpdir(),'zcode-admission-race-'));const path=join(root,'native.sqlite');const db=new DatabaseSync(path);
  db.exec(`create table turn_usage(session_id text,turn_id text,user_message_id text,started_at integer,completed_at integer);
  create table message(id text,session_id text,data text,sequence integer);

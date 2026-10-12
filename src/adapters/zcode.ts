@@ -1552,6 +1552,13 @@ export class ZcodeAdapter implements HarnessAdapter {
           const exact = record(cold?.meta?.nativeLastTurn);
           if (exact.turnId === persisted.turn.turnId) persisted.turn = {...persisted.turn,...exact};
         }
+        if (persisted?.turn?.transportLost === true && mapped.meta?.automationStop) {
+          const stop = record(mapped.meta.automationStop);
+          if (stop.turnId === persisted.turn.turnId) {
+            await getHumanStopStore().ignoreNativeStop('zcode', id, stop as unknown as AutomationStopMarker);
+            if (!await getHumanStopStore().isHeld('zcode', id)) delete mapped.meta.automationStop;
+          }
+        }
         if (persisted) mapped.meta = { ...mapped.meta, nativeLastTurn: persisted.turn, nativeHumanMessageCount: persisted.humanMessageCount };
         if (lastTurn && (!persisted?.turn || lastTurn.turnId !== persisted.turn.turnId)) mapped.meta = { ...mapped.meta, nativeLastTurn: {
           turnId: lastTurn.turnId,
