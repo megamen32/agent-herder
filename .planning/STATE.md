@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-10-12)
 Phase: 3 of 4 (Stable public Mac connection)
 Plan: Existing delivery in progress; no fabricated plan-completion count.
 Status: In progress
-Last activity: 2026-10-12 — Source7bca976 and coupled native/Node kernel census are published and installed. Actual public/native session acceptance passed, but retained327s artifact failure requires final post-policy steady acceptance. Independent mobile62 and all eight recovery switches passed.
+Last activity: 2026-10-12 — User-requested artifact15s and metadata5s/two-attempt10s deadlines112d3dd are published and installed through stopped native restoration and existing JOIN. Actual imported constants and authenticated public100/all5READY plus publicMac MCP200 verified. Earlier artifact and native host-memory failures retained. Independent mobile62/eight switches accepted.
 
 ## Performance Metrics
 
@@ -34,7 +34,7 @@ Relevant checks:68 supervisor,6 C observer,13 native and3 artifact scenarios pas
 
 ### Blockers/Concerns
 
-- Retained later failure: Node5936/artifact deadline4.365s after327.46s; kernel native observer remains alive. Current Node29/PID18084 uses child-only utility-capped artifact policy; final public steady result pending.
+- Retained failures: Node5936 artifact327s and native5771 host-memory1298s; both corrected paths have source/regression and runtime evidence. Current native27613/runs5 and Node31 use enlarged finite deadlines. Long-term stability remains bounded by observed samples.
 - Direct tunnel7308607f activated once03:06:29MSK, admitted durable receipt despite lost transport ACK; observer5c preserved. No pending tunnel replay.
 - Actual integration owner01a12740 handles server100 closure; source-only owner01a12c46 supplies compiled artifacts.
 - See .agents/tasks/20261012-public-mac-ui-delivery.md for exact results, ownership and remaining consumer checks.

@@ -65,3 +65,25 @@ limits: metadata now5s per attempt/10s total as well as artifact15s. Scope inclu
 supported restoration of the stopped existing native label/config, preserving
 all profile/auth/SIDs and no replay. Source90 scoped checks pass; runtime delivery
 and fresh public acceptance remain open.
+
+
+## Installed owner-requested deadlines112d3dd
+
+112d3dd is published and installed by exact sealed CAS. The88 attempt refused
+before any mutation; the112 installer first proved both managed labels stopped
+and the canonical socket absent, then performed one supported native start and
+existing JOIN, followed by one Node start. Native27613/wrapper27606/runs5,
+generation1791767599868526000; Node wrapper27675/runs31. Receipt completed
+1791767605.860141. No Desktop restart, history/auth/profile copy, task replay,
+Node payload relabel, tunnel change or observer5c modification.
+
+Actual imported constants read back: artifact15s, metadata5s per attempt/10s total.
+Authenticated public100 forced fresh hosts returned200/all5READY in5.304s;
+publicMac native MCP returned200 with actual host/user/generation1791767604027.
+Earlier31 policy snapshots and the terminal host-memory FAIL remain preserved,
+not presented as final success. Evidence directory: group-census-fix; exact112
+receipt deadline-restore-install-transport.json and public-*-112.json.
+
+Remaining broad task: original48-hour task outcomes are not all verified.
+Independent62 mobile creation/eight recovery settings acceptance is confirmed;
+small published76 status wrapping awaits the next single100 integration closure.
