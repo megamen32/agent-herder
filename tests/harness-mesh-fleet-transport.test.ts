@@ -1,6 +1,26 @@
 import {describe,it,expect,vi} from 'vitest';
 import {FleetGptAdminTransport} from '../src/mesh/fleet-gptadmin-transport.js';
 describe('GPTAdmin tenant fleet transport (focused integration; expected 2s, maximum 20s)',()=>{
+ it('requests full native DTOs and schemas rather than human compact previews (regression; expected 1s, maximum 5s)',async()=>{
+  const requests:any[]=[];
+  const fake=vi.fn(async(_url:any,init:any)=>{
+   const r=JSON.parse(init.body);
+   if(r.method==='notifications/initialized')return new Response(null,{status:202});
+   let result:any={protocolVersion:'2025-11-25'};
+   if(r.method==='tools/call'){
+    requests.push(r.params);const full=r.params.arguments.detail==='full';
+    result=r.params.name==='schema'?(full?{tools:[{name:'mesh_snapshot',inputSchema:{type:'object'}}]}:{preview:'schema preview'}):(full?{hostId:'roomhacker-server-100',sessions:[]}:{bytes:128,preview:'native snapshot preview',status:'completed'});
+   }
+   return new Response(JSON.stringify({id:r.id,result}));
+  });
+  const t=new FleetGptAdminTransport({endpoint:'https://hub.test/mcp',headersProvider:()=>({}),fetch:fake as any});
+  expect(await t.call('peer','mesh_snapshot',{limit:1})).toEqual({hostId:'roomhacker-server-100',sessions:[]});
+  expect((await t.schema('peer') as any).tools[0].inputSchema).toEqual({type:'object'});
+  for(const tool of ['fleet_node_info','fleet_session_page','fleet_session_view','create_session'])await t.call('peer',tool,{},tool==='create_session'?'stable-once':undefined);
+  expect(requests.every(r=>r.arguments.detail==='full')).toBe(true);
+  expect(requests.filter(r=>r.arguments.tool==='create_session')).toHaveLength(1);
+  expect(requests.find(r=>r.arguments.tool==='create_session').arguments.idempotency_key).toBe('stable-once');
+ });
  it('uses initialize/discover/schema/execute/job facade, schema response unwrap and one mutation even with async job',async()=>{
   const calls:any[]=[];const fake=vi.fn(async(_url:any,init:any)=>{const request=JSON.parse(init.body);calls.push(request);expect(init.redirect).toBe('error');expect(init.headers.Authorization).toBe('protected-memory-only');
    const tool=request.params?.name;let result:any={protocolVersion:'2025-11-25',capabilities:{},serverInfo:{name:'hub',version:'1'}};
