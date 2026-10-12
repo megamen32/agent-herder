@@ -246,3 +246,13 @@ claim of an effective kernel tier on every system; external suppression may
 still apply. Require actual steady/public evidence beyond the prior327s failure.
 [Apple taskpolicy](https://github.com/apple-oss-distributions/system_cmds/blob/main/taskpolicy/taskpolicy.c),
 [Apple launchd I/O policy](https://github.com/apple-oss-distributions/launchd/blob/main/src/core.c).
+
+
+### Owner-requested artifact timeout increase
+
+The owner explicitly requested more headroom after the327s false-stop report.
+The artifact observation window is now15s (formerly5s), retaining750ms cleanup
+reserve and30-second cadence. Regular state/temp observation and process-group
+identity budgets are unchanged. No RAM/CPU/bytes/entry/process limits are raised.
+Regression14.99s completes,15.01s refuses; malformed data, changed roots and
+owned-child cleanup remain covered. The recorded earlier5s outcomes are historical.

@@ -15,7 +15,7 @@ Owned child process group: RSS soft256MiB (30s sustained), hard512MiB;
 CPU100% over20s,150% per sample after10s startup;128 threads/16 processes;
 temp128/state64MiB; <=2 release directories/512MiB; host reserve Mini2/M1 4GiB,
 disk2GiB. Poll delay2s plus bounded probes, commands2s, storage scan1s/30000 entries
-(one deadline-only fresh retry within2s total; artifact-only5s, census every30s);
+(one deadline-only fresh retry within2s total; artifact-only15s, census every30s);
 cleanup global10s (within LaunchAgent ExitTimeOut20s), unknown =>unverified. These are
 Darwin watchdog observations/stops, NOT kernel reservations or swap0 guarantees.
 Detached processes are outside group enforcement; native shared controls remain
@@ -55,6 +55,7 @@ MEMORY_MAX_KIB = 512*1024
 SOFT_WINDOW = 30
 CPU_WINDOW = 20
 POLL_SECONDS = 2
+ARTIFACT_OBSERVATION_SECONDS = 15
 
 class Refused(RuntimeError):
     """Short non-secret reason; underlying commands/config are never printed."""
@@ -121,7 +122,7 @@ def private_directory(path):
         raise Refused('owned_directory_permissions')
 
 def darwin_artifact_bytes(root, limit, overall_deadline, verify_root, refuse, pinned):
-    """One physical FTS pass, same five-second gate and conservative bytes.
+    """One physical FTS pass, finite observation gate and conservative bytes.
     A sealed helper counts entries directly and emits only one numeric summary:
     no per-path printf/pipe/UTF8 work for tens of thousands of immutable files.
     Only owned read-only probe children are cleaned up; no output is persisted.
@@ -196,10 +197,9 @@ def darwin_artifact_bytes(root, limit, overall_deadline, verify_root, refuse, pi
 
 def storage_bytes(root, limit, *, artifact=False):
     root=root.absolute()
-    window=5 if artifact else 2
-    # A complete artifact census may use its existing five-second allowance.
-    # Splitting it into two discarded 2.5s traversals rejects a healthy tree
-    # that takes 3..5s even though it fits the declared total budget.
+    window=ARTIFACT_OBSERVATION_SECONDS if artifact else 2
+    # Give a complete artifact census one finite allowance. Disk metadata
+    # delays must not discard a healthy pass at the former five-second gate.
     attempt_window=window if artifact else window/2
     started=time.monotonic();overall_deadline=started+window;count=0;attempt=0
     root_class={'releases':'artifact','tmp':'temp','native-codex-tmp':'temp',

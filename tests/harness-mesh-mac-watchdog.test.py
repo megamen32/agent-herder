@@ -395,14 +395,14 @@ class MacWatchdogTests(unittest.TestCase):
                     w.storage_bytes(root,10)
                 self.assertEqual(len(attempts),1)
 
-    def test_artifact_full_five_second_window_never_restarts_after_exhaustion(self):
+    def test_artifact_full_fifteen_second_window_never_restarts_after_exhaustion(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)/'releases';root.mkdir();(root/'data').write_bytes(b'123');now=[0.0]
-            clock,scan,attempts=self.storage_clock_fixture(now,lambda n,e:now.__setitem__(0,4.99))
+            clock,scan,attempts=self.storage_clock_fixture(now,lambda n,e:now.__setitem__(0,14.99))
             with clock,scan:self.assertEqual(w.storage_bytes(root,512*w.MIB,artifact=True),3)
             self.assertEqual(len(attempts),1)
             now[0]=0
-            clock,scan,attempts=self.storage_clock_fixture(now,lambda n,e:now.__setitem__(0,5.01))
+            clock,scan,attempts=self.storage_clock_fixture(now,lambda n,e:now.__setitem__(0,15.01))
             with clock,scan,self.assertRaisesRegex(w.Refused,'storage_observation_limit') as caught:
                 w.storage_bytes(root,512*w.MIB,artifact=True)
             self.assertEqual(len(attempts),1)
