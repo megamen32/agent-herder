@@ -1,54 +1,64 @@
-# Координация без повторных вводов и лишнего контекста
+# Coordination is not task activation
 
-Для доставки используйте полный `sessionId`, `harness` и стабильный `inputId`.
-По имени: `deliver(harness,name,cwd,create="never")` выполняет точный native lookup.
-`queue` активного Codex направляет сообщение в текущий ход; ожидание завершения
-не входит в подтверждение admission. Ответ содержит native admission и IDs.
-`admission_unknown/nonRetryable` запрещает автоматическую повторную мутацию.
+Ordinary `send_message` (omitted/false `humanRequested`) sends only into an
+active native turn. An inactive/completed target returns `skipped_inactive` and
+receives no input, new turn or deferred debt. Queue mode controls waiting; it
+is not permission to wake a completed agent. Sender/provenance fields do not
+change activation authority. An explicit human new task/send/resume keeps the
+existing `humanRequested=true` path.
 
-Обычный `list_agents` возвращает максимум20 недавних сессий; preview только
-по запросу, максимум5×160символов. Harness discovery выполняется параллельно
-с3секундным ограничением. `complete=false` обозначает неполный охват,
-`unavailable` сохраняет ошибки независимо от folder/status-фильтров.
-Для точной цели используйте ID; `limit` увеличивает интерактивный охват.
+For `deliver`, omitted activation is `if_running` for an existing target,
+including a matched named target. A **newly created named target** still
+receives its initial task. Explicit `activation=always`, `new_or_resume` and
+explicit `activation=defer` retain their deliberate task-launch/retention
+semantics; they are not ordinary report delivery. No text classifier infers a
+human request or a new task. Refresh cached MCP tool schemas: the old declared
+`activation=always` default is removed, and the backend resolves omission.
 
-Инструменты сообщают фактический `workdir/cwd`, абсолютные пути за пределами
-каталога запуска сохраняются. `coordination_note_create(kind="working",cwd=...)`
-позволяет явно обозначить новый проект. В списке `cwd` отражает свежую активность,
-а `meta.launchCwd` сохраняет каталог запуска. Activity истекает через5минут;
-смена реплики не возвращает launch cwd поверх текущего проекта. Владение файлами
-в изолированном worktree не распространяется на соседние репозитории.
+After budget, provenance, inbox and context awaits, the handler rereads native
+activity. It then requires an adapter's supported `sendActiveMessage` contract:
+no idle start/resume or future-turn enqueue fallback. Codex app-server implements
+it through existing serialized/durable admission and `turn/steer` with verified
+`expectedTurnId`. Explicit native rejection may refresh once; an ended turn
+returns no-admission, never `thread/resume` or `turn/start`. Lost/unknown receipts
+are never replayed. A late manual Stop is reread immediately before steer.
 
-Автоматическая координация: до6 сообщений на пару агентов и12 входящих на
-сессию за60секунд. Отклонённые сообщения не создают очередь. Повтор одного
-inputId coalesces; различные явные IDs допускают намеренно одинаковый текст.
-Человеческое explicit продолжение сохраняет прежний путь. Native durable
-receipts отдельно защищают admission после перезапуска.
+The shared helper refuses missing/unknown observations and transports without
+supported current-turn admission instead of using their ordinary queue/start
+API. At this release the positive native contract is Codex app-server. Other
+transports' active coordination is reported unsupported; explicit task delivery
+is preserved. This limitation protects against waking a target during the final
+native race and is not claimed as cross-harness steering acceptance.
 
-Инъекция до4000символов содержит изменения, а не полную повторную доску.
-При неполноте показана ссылка на полные сведения и инструкция проверить
-непоказанное владение перед правкой. TTL heartbeat не меняет fingerprint.
-Ответ требуется только для решения, ошибки или результата; routine ACK
-не нужен. MCP подтверждение не повторяет весь отправленный prompt.
+Earlier receipt reconciliation requires the dedicated pure
+`getCoordinationMessageAdmission` contract. Codex implements it using its durable
+receipt files without transport initialization/load/resume. Generic
+`getMessageAdmission` must not be used: legacy ZCode may call `resumeSession`
+while reading an inactive session. Earlier accepted/unknown input IDs return
+receipt-only outcomes; no new message, native control or deferred entry is added.
 
-Inbox остаётся на сервере после GET. Hook подтверждает полученные IDs после
-получения/выдачи контекста через `POST /api/coordination/inbox-ack`.
-Стабильные inbox IDs позволяют распознать повтор; внешнее действие, уже
-подтверждённое business receipt, не запускается повторно.
+Existing deferred inputs are preserved on a definite active-delivery refusal.
+Only already accepted or unknown native admission uses existing cleanup rules.
+Ordinary reports never add a new deferred entry after a busy/no-active error.
 
-Проверки: fast unit (контекст, IDs, ограничения, exact observation: ожидаемо
-<1секунды наcase, max5секунд); focused integration (настоящие HTTP/MCP/Unix
-fixtures, native admission, stop/unknown и crossprocess lock: ожидаемо≤40секунд
-на весь выбранный набор, max120секунд runner); slow nightly не требуется для
-этой delta. Обычный выпуск: релевантные сохранённые результаты + изменённые
-checks + backend build в совокупном180секундном окне. Исходный red/failed
-результат сохранён и не называется GREEN.
+## Failure shield and checks
 
-Plugin MCP clients use `dist/http-mcp-stdio.js` and connect to the singleton
-HTTP service (`AGENT_HERDER_HTTP_URL`, default loopback18787/mcp). Running
-`dist/index.js` per client creates a private controller and splits live state.
+Verified real RED: Root's own completed Codex fixture received one automatic
+status report and incorrectly started a second turn. The source cause was both
+unguarded registered delivery and `turn/steer` no-active refresh falling through
+to idle `thread/resume`/`turn/start`.
 
-Frontend-only releases must preserve the currently deployed backend. Replacing
-all of `dist` from an older source commit rolls back delivery fixes. Copy only
-`web/index.html` and `web/assets`; compiled `web/*.js` are backend modules.
-Verify the live backend manifest immediately before promotion and preserve it.
+Fast unit/focused integration (expected 10 seconds, maximum 30):
+`coordination-idle-admission.test.ts` exercises the actual registered in-memory
+MCP handler with isolated adapters; `registered-codex-delivery.test.ts` exercises
+registered handlers against an owned fake native Unix socket. Shields cover
+inactive/completed/permission/unknown states, context-await completion, native
+no-active rejection, positive current-turn steering, explicit human/new named
+launches, dedicated pure receipt reconciliation and uncertain admission without
+replay or deferred debt. The Unix socket remains inside the bounded temp lease.
+
+Final ordinary release includes direct named/provenance/budget/schema
+regressions and TypeScript under the aggregate 180-second deadline. Source GREEN
+is separate from Root's actual same-fixture runtime acceptance; no production
+native session/send/resume/stop or Herder restart is performed by the source
+executor. Root owns reviewed installation and real consumer verification.

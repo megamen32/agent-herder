@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
@@ -16,7 +16,7 @@ import { coordinationNotes } from "../src/coordination-notes.js";
 afterEach(() => vi.restoreAllMocks());
 
 describe("registered Codex communication delivery", () => {
-  it("steers queued active delivery, refreshes a rejected turn ID, deduplicates retries and starts idle once", async () => {
+  it("steers active coordination, refuses ended-turn fallback, deduplicates unknown receipts and starts explicit tasks once", async () => {
     await mkdir(".tmp", { recursive: true });
     const root = await mkdtemp(join(tmpdir(), "rc-"));
     const previous = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
@@ -25,11 +25,13 @@ describe("registered Codex communication delivery", () => {
     const removeInbox = vi.spyOn(deferredMessages, "remove").mockImplementation(async () => { listInbox.mockResolvedValue([]); });
     const deferred = vi.spyOn(deferredMessages, "add").mockImplementation(async (sessionId, message) => ({ id: "fixture-deferred", sessionId, message, createdAt: new Date().toISOString() }));
     vi.spyOn(coordinationNotes, "inject").mockImplementation(async (_s, text) => text);
-    const socketPath = join(root, "native.sock");
+    // /proc/self/cwd shortens AF_UNIX while keeping the file inside the owned bounded TMPDIR.
+    const socketPath = join("/proc/self/cwd", relative(process.cwd(), join(root, "native.sock")));
     const http = createServer();
     const ws = new WebSocketServer({ server: http });
     let active: string | undefined = "native-turn-1";
     let race = false;
+    let endsDuringSteer = false;
     let uncertain = false;
     const accepted: string[] = [];
     const methods: string[] = [];
@@ -47,6 +49,7 @@ describe("registered Codex communication delivery", () => {
         case "thread/resume": return reply({ thread });
         case "thread/turns/list": return reply({ data: active ? [{ id: active, status: "inProgress" }] : [] });
         case "turn/steer":
+          if (endsDuringSteer) { endsDuringSteer = false; active = undefined; return reject("no active turn"); }
           if (race) { race = false; active = "native-turn-2"; return reject("expected active turn id `native-turn-1` but found `native-turn-2`"); }
           expect(req.params.expectedTurnId).toBe(active);
           accepted.push(req.params.input[0].text);
@@ -97,8 +100,16 @@ describe("registered Codex communication delivery", () => {
       await deliver("active coordination"); await deliver("uncertain receipt");
       expect(accepted.filter(x => x === "active coordination")).toHaveLength(1);
       expect(accepted.filter(x => x.includes("uncertain receipt"))).toHaveLength(1);
-      active = undefined;
-      await Promise.all([deliver("wake idle once"), deliver("wake idle once"), deliver("second distinct idle input")]);
+      endsDuringSteer = true;
+      const late=payload(await deliver("must not revive completed turn"));
+      expect(late).toMatchObject({delivery:"skipped_inactive",activated:false});
+      expect(methods.filter(m => m === "turn/start")).toHaveLength(0);
+      expect(deferred).not.toHaveBeenCalled();
+      await client.callTool({ name:"send_message",arguments:{harness:"codex",sessionId:"native-thread",message:"idle report",mode:"queue",inputId:"idle-report"}});
+      expect(payload(await deliver("idle default deliver"))).toMatchObject({delivery:"skipped_inactive",activated:false});
+      expect(methods.filter(m => m === "turn/start")).toHaveLength(0);
+      const explicit=(message:string)=>client.callTool({name:"deliver",arguments:{harness:"codex",sessionId:"native-thread",message,inputId:message,activation:"always"}});
+      await Promise.all([explicit("wake idle once"), explicit("wake idle once"), explicit("second distinct idle input")]);
       expect(methods.filter(m => m === "turn/start")).toHaveLength(1);
       expect(accepted.filter(x => x === "wake idle once")).toHaveLength(1);
       expect(accepted.filter(x => x === "second distinct idle input")).toHaveLength(1);

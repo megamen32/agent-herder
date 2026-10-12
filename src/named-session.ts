@@ -8,6 +8,7 @@ import { coordinationNotes } from "./coordination-notes.js";
 import { deferredMessages, isBusyCodexWriter, withDeferred } from "./deferred-messages.js";
 import { getHumanStopStore } from "./human-stop-store.js";
 import { automaticDeliveryHeld, HUMAN_STOP_MESSAGE } from "./human-stop-actions.js";
+import { isCoordinationActive, sendCurrentTurnOnly, previousCoordinationReceipt } from "./coordination-active-delivery.js";
 
 export type NamedSessionMode = "queue" | "sync";
 
@@ -37,7 +38,7 @@ export interface NamedSessionResult {
   name: string;
   cwd: string;
   sessionId?: string;
-  delivery?: "accepted" | "accepted_unconfirmed" | "accepted_failed" | "completed" | "failed" | "not_attempted" | "deferred" | "skipped_inactive" | "not_found";
+  delivery?: "accepted" | "accepted_unconfirmed" | "accepted_failed" | "completed" | "failed" | "not_attempted" | "deferred" | "skipped_inactive" | "not_found" | "previously_admitted" | "admission_unknown";
   admitted?: boolean;
   inputId?: string;
   turnId?: string;
@@ -365,19 +366,27 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     let matches:AgentSession[]; try { matches=await exactMatches(adapter,normalized.name,normalized.cwd); } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
     if (matches.length>1) return {...failed(normalized,`Ambiguous named session '${normalized.name}' for ${normalized.harness}:${normalized.cwd}`,"not_attempted"),activated:false};
     let target=matches[0], created=false;
+    if (target) {
+      const prior = await previousCoordinationReceipt(adapter,target.id,request.inputId);
+      if (prior) return {...JSON.parse(prior),...normalized,created:false};
+    }
     if (target && await automaticDeliveryHeld(target, false, adapter)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: target.id, activated: false };
     if (!target) {
       if ((request.create||"if_missing")==="never") return {ok:false,created:false,harness:normalized.harness,name:normalized.name,cwd:normalized.cwd,delivery:"not_found",activated:false,error:"Named session not found"};
       if (!adapter.createSession) return {...failed(normalized,`${adapter.name} does not support session creation`,"not_attempted"),activated:false};
       try { if (await sourceHeldNow(request)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), activated: false }; target=await adapter.createSession({name:normalized.name,cwd:normalized.cwd,model:request.model,fullAccess:true}); rememberNamedSession(normalized,target); created=true; } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
     }
-    const fresh=(await adapter.getSession(target.id)) || target; const activation=request.activation||"always";
+    const fresh=await adapter.getSession(target.id); const activation=request.activation ?? (created ? "always" : "if_running");
+    if (!fresh) return {...failed(normalized,"Native target activity unavailable","not_attempted"),sessionId:target.id,activated:false};
     if (await sourceHeldNow(request) || await automaticDeliveryHeld(fresh, false, adapter)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: fresh.id, activated: false };
-    if (activation==="if_running" && fresh.status!=="running") return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"skipped_inactive",activated:false,...normalized};
+    if (activation==="if_running" && (fresh.meta?.nativeStateObserved === false || fresh.meta?.nativeLoaded === false)) return {...failed(normalized,"Текущая native-активность не установлена.","not_attempted"),sessionId:fresh.id,activated:false};
+    if (activation==="if_running" && !isCoordinationActive(fresh)) return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"skipped_inactive",activated:false,...normalized};
     if (activation==="defer" && fresh.status!=="running") { await deferredMessages.add(fresh.id,request.message); return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"deferred",activated:false,...normalized}; }
     const pending=await withDeferred(fresh.id,request.message); const injected=await coordinationNotes.inject(fresh,pending.message);
     if (await sourceHeldNow(request) || await automaticDeliveryHeld(fresh, false, adapter)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: fresh.id, activated: false };
-    const sent=await adapter.sendMessage(fresh.id,{message:injected,queue:(request.mode||"queue")==="queue",inputId:request.inputId ?? createHash("sha256").update(request.message).digest("hex"),origin:"automation"});
+    const options={message:injected,queue:(request.mode||"queue")==="queue",inputId:request.inputId ?? createHash("sha256").update(request.message).digest("hex"),origin:"automation" as const};
+    const sent=activation==='if_running'?await sendCurrentTurnOnly(adapter,fresh.id,options):await adapter.sendMessage(fresh.id,options);
+    if (sent.notSubmitted) return {ok:sent.error?.startsWith('skipped_inactive')===true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:sent.error?.startsWith('skipped_inactive')?'skipped_inactive':'not_attempted',activated:false,...normalized,...(sent.error?.startsWith('skipped_inactive')?{}:{error:sent.error})};
     const receipt = {...(sent.admitted !== undefined ? {admitted:sent.admitted} : {}), ...(sent.inputId ? {inputId:sent.inputId} : {}), ...(sent.turnId ? {turnId:sent.turnId} : {}), ...(sent.admissionUnknown ? {admissionUnknown:true,nonRetryable:true} : {})};
     if (!sent.ok && sent.admissionUnknown && sent.nonRetryable && pending.ids.length) await deferredMessages.remove(pending.ids);
     if (!sent.ok && sent.admitted && sent.nonRetryable) {
@@ -386,7 +395,7 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
       if (pending.ids.length) await deferredMessages.remove(pending.ids);
       return result;
     }
-    if (!sent.ok && !sent.nonRetryable && isBusyCodexWriter(fresh.harness, sent.error)) {
+    if (activation !== 'if_running' && !sent.ok && !sent.nonRetryable && isBusyCodexWriter(fresh.harness, sent.error)) {
       await deferredMessages.add(fresh.id, request.message);
       return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"deferred",activated:false,...normalized,...receipt};
     }
@@ -397,6 +406,6 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
       return result;
     }
     if (sent.ok && pending.ids.length) await deferredMessages.remove(pending.ids);
-    return sent.ok ? {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:(request.mode||"queue")==="queue"?"accepted":"completed",activated:true,...normalized,...receipt} : {ok:false,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"failed",activated:false,error:sent.error||"Message delivery failed",...normalized,...receipt};
+    return sent.ok ? {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:(request.mode||"queue")==="queue"?"accepted":"completed",activated:activation !== 'if_running',...normalized,...receipt} : {ok:false,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"failed",activated:false,error:sent.error||"Message delivery failed",...normalized,...receipt};
   });
 }

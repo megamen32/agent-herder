@@ -24,7 +24,7 @@ afterEach(async () => {
 
 function session(id: string, harness: "codex" | "zcode"): AgentSession {
   return {
-    id, harness, status: "idle", title: `${harness} ${id}`, cwd: "/tmp/message-provenance-test",
+    id, harness, status: "running", title: `${harness} ${id}`, cwd: "/tmp/message-provenance-test",
     lastActivity: new Date().toISOString(), needsPermission: false,
   };
 }
@@ -48,8 +48,10 @@ describe("send_message sender provenance", () => {
     });
     const events = new HerderEventBus();
     const server = new McpServer({ name: "message-provenance-test", version: "1" });
+    const adapters = new Map([["codex", adapter(sender)], ["zcode", adapter(target)]]);
+    for (const fixture of adapters.values()) fixture.sendActiveMessage = fixture.sendMessage.bind(fixture);
     registerSessionTools(server, {
-      adapters: new Map([["codex", adapter(sender)], ["zcode", adapter(target)]]),
+      adapters,
       jobs: new HerderJobRegistry(events), events,
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -117,8 +119,10 @@ describe("send_message sender provenance", () => {
     };
     const events = new HerderEventBus();
     const server = new McpServer({ name: "message-provenance-timeout-test", version: "1" });
+    const adapters = new Map([["codex", delayedSenderAdapter], ["zcode", targetAdapter]]);
+    for (const fixture of adapters.values()) fixture.sendActiveMessage = fixture.sendMessage.bind(fixture);
     registerSessionTools(server, {
-      adapters: new Map([["codex", delayedSenderAdapter], ["zcode", targetAdapter]]),
+      adapters,
       jobs: new HerderJobRegistry(events), events,
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

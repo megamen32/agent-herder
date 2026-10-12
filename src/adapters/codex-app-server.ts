@@ -530,6 +530,16 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     return this.deliveryReceipts.once(id, options.inputId, operation);
   }
 
+  /** Current-turn coordination uses native steer CAS, never idle resume/start. */
+  async sendActiveMessage(id: string, options: SendMessageOptions): Promise<ControlResult> {
+    return this.sendMessage(id, {...options, activeTurnOnly: true, steer: true});
+  }
+
+  /** This adapter's admission lookup reads only durable receipt files. */
+  async getCoordinationMessageAdmission(id: string, inputId: string): Promise<MessageAdmissionResult> {
+    return this.getMessageAdmission(id,inputId);
+  }
+
   /** Read-only admission lookup for an earlier input; it never delivers again. */
   async getMessageAdmission(id: string, inputId: string): Promise<MessageAdmissionResult> {
     let receipt: ControlResult | undefined;
@@ -545,6 +555,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private async sendNativeMessage(id: string, options: SendMessageOptions, release: () => void, startRaceRetries = 1): Promise<ControlResult> {
+    if (options.activeTurnOnly && !this.socketPath && !this.isReady()) return {ok:false,notSubmitted:true,nonRetryable:true,error:"Current-turn transport is unavailable; coordination was not delivered"};
     await this.ensureReady();
     let session: AgentSession | null;
     try { session = await this.getSession(id); }
@@ -553,6 +564,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     if (!session) return { ok: false, error: `Session ${id} not found` };
     if (session.meta?.nativeStateObserved === false) return { ok: false, nonRetryable: true, error: "Codex native thread state could not be verified; prompt was not delivered" };
+    if (options.activeTurnOnly && session.status !== "running") {
+      return {ok:false,notSubmitted:true,nonRetryable:true,error:"skipped_inactive: Codex has no active turn; coordination was not delivered"};
+    }
     // Queue controls whether the caller waits. It never queues coordination
     // behind an active native turn or starts a competing writer.
     const steerActive = options.steer === true || options.origin !== "human";
@@ -566,6 +580,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       try {
         if (options.origin !== "human") {
           await getHumanStopStore().rememberGeneratedPrompt("codex", id, options.message, expectedTurnId);
+        }
+        if (options.activeTurnOnly && await getHumanStopStore().isHeld("codex", id)) {
+          return {ok:false,notSubmitted:true,nonRetryable:true,error:"Чат явно остановлен; сообщение в текущий ход не отправлено."};
         }
         deliveryAttempted = true;
         const result = await this.request("turn/steer", {
@@ -587,11 +604,14 @@ export class CodexAppServerAdapter implements HarnessAdapter {
           session = fresh;
           if (session.status === "needs_input") return { ok: false, nonRetryable: true, error: "Codex now requires human input" };
           if (session.status !== "running" && session.status !== "idle") return { ok: false, nonRetryable: true, error: "Codex turn refresh did not verify an active or idle thread" };
+          if (options.activeTurnOnly && session.status !== "running") return {ok:false,notSubmitted:true,nonRetryable:true,error:"skipped_inactive: Codex turn ended during coordination delivery"};
           continue;
         }
         return { ok: false, admissionUnknown: deliveryAttempted && !(error instanceof CodexRpcError && error.code === -32600), nonRetryable: true, error: (error as Error).message };
       }
     }
+    // Never convert an explicit no-active rejection into a new turn/start.
+    if (options.activeTurnOnly) return {ok:false,notSubmitted:true,nonRetryable:true,error:"skipped_inactive: native current-turn admission is no longer available"};
     const resumed = await this.resumeSession(id);
     if (!resumed.ok) {
       if (steerActive && startRaceRetries > 0 && /already has an active writer/i.test(resumed.error ?? "")) {

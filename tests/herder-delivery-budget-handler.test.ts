@@ -16,6 +16,6 @@ it('returns a compact receipt without echoing the prompt through the registered 
  const session:AgentSession={id:'target',harness:'opencode',status:'idle',title:'owner',cwd:'/fixture',lastActivity:new Date().toISOString(),needsPermission:false};
  const adapter:HarnessAdapter={type:'opencode',name:'fixture',async init(){},async listSessions(){return[session]},async getSession(){return session},async sendMessage(){return{ok:true,admitted:true,inputId:'one'}},async stopSession(){return{ok:true}},async respondPermission(){return{ok:true}},async setPermissions(){return{ok:true}}};
  const prompt='sensitive-work-context-'.repeat(100);
- const result=await handleSendMessage(new Map([['opencode',adapter]]),{sessionId:'target',harness:'opencode',message:prompt,inputId:'compact',mode:'queue'});
+ const result=await handleSendMessage(new Map([['opencode',adapter]]),{sessionId:'target',harness:'opencode',message:prompt,inputId:'compact',mode:'queue',humanRequested:true});
  expect(result).not.toContain(prompt);expect(result.length).toBeLessThan(250);
 });

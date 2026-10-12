@@ -29,6 +29,7 @@ import { auditWorktrees } from "../worktree-audit.js";
 import { BrowserWakeService } from "../browser-wake.js";
 import { deliveryBudgetFor } from "../coordination-delivery-budget.js";
 import { coordinationNotes } from "../coordination-notes.js";
+import { isCoordinationActive, sendCurrentTurnOnly, skippedCoordination, previousCoordinationReceipt } from "../coordination-active-delivery.js";
 import { deferredMessages, isBusyCodexWriter, withDeferred } from "../deferred-messages.js";
 import {
   buildTranscriptArchiveCard,
@@ -456,7 +457,12 @@ async function sendMessageOnce(
   const parsed = SendMessageSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
+  if (!parsed.humanRequested) {
+    const prior = await previousCoordinationReceipt(found.adapter,parsed.sessionId,parsed.inputId);
+    if (prior) return prior;
+  }
   if (await automaticDeliveryHeld(found.session, parsed.humanRequested, found.adapter)) return HUMAN_STOP_MESSAGE;
+  if (!parsed.humanRequested && !isCoordinationActive(found.session)) return skippedCoordination(found.session);
 
   const provenanceHeader = parsed.meshSender
     ? `🤖 Сообщение от AI-сессии\nОбъявленный источник: ${parsed.meshSender.hostId} / ${parsed.meshSender.harness} / ${parsed.meshSender.nativeSessionId}.\nАтрибуция объявлена; личность отправителя не подтверждена.`
@@ -465,13 +471,18 @@ async function sendMessageOnce(
   const pending = await withDeferred(parsed.sessionId, baseMessage);
   const injectedMessage = await coordinationNotes.inject(found.session, pending.message);
   if (await automaticDeliveryHeld(found.session, false, found.adapter)) return HUMAN_STOP_MESSAGE;
-  const result = await found.adapter.sendMessage(parsed.sessionId, {
-    origin: parsed.humanRequested ? "human" : "automation",
+  const options = {
+    origin: parsed.humanRequested ? "human" as const : "automation" as const,
     inputId: parsed.inputId ?? (parsed.humanRequested ? undefined : createHash("sha256").update(baseMessage).digest("hex")),
     message: injectedMessage,
     queue: parsed.mode === "queue",
     steer: parsed.mode === "steer",
-  });
+  };
+  const result = parsed.humanRequested
+    ? await found.adapter.sendMessage(parsed.sessionId, options)
+    : await sendCurrentTurnOnly(found.adapter, parsed.sessionId, options);
+  if (result.notSubmitted) return result.error?.startsWith('skipped_inactive') ? skippedCoordination(found.session)
+    : JSON.stringify({ok:false,delivery:'not_attempted',activated:false,error:result.error});
 
   if (result.ok) {
     if (pending.ids.length) {
@@ -495,7 +506,7 @@ async function sendMessageOnce(
     }
     return `Native delivery to [${found.session.harness}] ${parsed.sessionId} cannot be replayed safely (${result.admitted ? "accepted" : "receipt unknown"}): ${result.error || "unknown native failure"}`;
   }
-  if (!result.nonRetryable && isBusyCodexWriter(found.session.harness, result.error)) {
+  if (parsed.humanRequested && !result.nonRetryable && isBusyCodexWriter(found.session.harness, result.error)) {
     await deferredMessages.add(parsed.sessionId, baseMessage);
     return `Message deferred for [${found.session.harness}] ${parsed.sessionId}; the native hook will inject it at the next safe turn boundary.`;
   }
@@ -531,14 +542,21 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
   if (parsed.sessionId) {
     const found = await findSession(adapters, parsed.sessionId, parsed.harness);
     if (!found) return JSON.stringify({ ok:false, delivery:"not_found", activated:false, error:`Session '${parsed.sessionId}' not found.` });
-    const fresh = (await found.adapter.getSession(parsed.sessionId)) || found.session;
+    const prior = await previousCoordinationReceipt(found.adapter,parsed.sessionId,parsed.inputId);
+    if (prior) return prior;
+    const fresh = await found.adapter.getSession(parsed.sessionId);
+    if (!fresh) return JSON.stringify({ok:false,sessionId:parsed.sessionId,delivery:"not_attempted",activated:false,error:"Текущая native-активность не установлена."});
+    const activation = parsed.activation ?? 'if_running';
     if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
-    if (parsed.activation === "if_running" && fresh.status !== "running") return JSON.stringify({ ok:true, sessionId:fresh.id, harness:fresh.harness, sessionStatus:fresh.status, delivery:"skipped_inactive", activated:false });
-    if (parsed.activation === "defer" && fresh.status !== "running") { await deferredMessages.add(fresh.id, parsed.message); return JSON.stringify({ ok:true, sessionId:fresh.id, harness:fresh.harness, sessionStatus:fresh.status, delivery:"deferred", activated:false }); }
+    if (activation === "if_running" && !isCoordinationActive(fresh)) return skippedCoordination(fresh);
+    if (activation === "defer" && fresh.status !== "running") { await deferredMessages.add(fresh.id, parsed.message); return JSON.stringify({ ok:true, sessionId:fresh.id, harness:fresh.harness, sessionStatus:fresh.status, delivery:"deferred", activated:false }); }
     const pending = await withDeferred(fresh.id, parsed.message);
     const injected = await coordinationNotes.inject(fresh, pending.message);
     if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
-    const sent = await found.adapter.sendMessage(fresh.id,{message:injected,queue:parsed.mode==="queue",inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),origin:"automation"});
+    const options = {message:injected,queue:parsed.mode==="queue",inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),origin:"automation" as const};
+    const sent = activation === 'if_running' ? await sendCurrentTurnOnly(found.adapter,fresh.id,options) : await found.adapter.sendMessage(fresh.id,options);
+    if (sent.notSubmitted) return sent.error?.startsWith('skipped_inactive') ? skippedCoordination(fresh)
+      : JSON.stringify({ok:false,delivery:'not_attempted',activated:false,error:sent.error});
     if ((sent.ok || sent.admitted || (sent.admissionUnknown && sent.nonRetryable)) && pending.ids.length) {
       try { await deferredMessages.remove(pending.ids); }
       catch (error) { console.error(`[agent-herder] accepted delivery cleanup failed for ${fresh.id}: ${error instanceof Error ? error.message : String(error)}`); }
@@ -546,7 +564,7 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
     if (!sent.ok && sent.admitted && sent.nonRetryable) {
       return JSON.stringify({ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"accepted_failed",activated:false,admitted:true,nonRetryable:true,error:sent.error||"Native turn failed after prompt admission"});
     }
-    if (!sent.ok && !sent.nonRetryable && isBusyCodexWriter(fresh.harness, sent.error)) {
+    if (activation !== 'if_running' && !sent.ok && !sent.nonRetryable && isBusyCodexWriter(fresh.harness, sent.error)) {
       await deferredMessages.add(fresh.id, parsed.message);
       return JSON.stringify({ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"deferred",activated:false});
     }
@@ -559,7 +577,7 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
     return JSON.stringify({...receipt,...(sent.ok
       ? sent.pending
         ? {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"accepted_unconfirmed",activated:false}
-        : {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:parsed.mode==="queue"?"accepted":"completed",activated:true}
+        : {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:parsed.mode==="queue"?"accepted":"completed",activated:activation !== 'if_running'}
       : {ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"failed",activated:false,...(sent.nonRetryable?{nonRetryable:true}:{}),error:sent.error||"Message delivery failed"})});
   }
   return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:parsed.message,inputId:parsed.inputId,create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model,sourceSessionId:parsed.sourceSessionId,sourceHarness:parsed.sourceHarness,sourceSessions:parsed.sourceSessions}));

@@ -185,6 +185,8 @@ export interface PermissionRequest {
 }
 
 export interface SendMessageOptions {
+  /** Internal active-turn-only delivery. Never resume/start or enqueue a future turn. */
+  activeTurnOnly?: boolean;
   /** Exact failed input fence for recovery only; ordinary coordination is unchanged. */
   recoveryBoundary?: {turnId:string;userMessageId:string;completedAt:number};
   /** Exact named-task context resolved before delivery to a shared Hermes home lane. */
@@ -274,6 +276,10 @@ export interface HarnessAdapter {
   readonly lazyDiscovery?: boolean;
   /** Whether this adapter currently owns or is attached to a live transport. */
   isReady?(): boolean;
+  /** Native current-turn admission with no idle/start fallback. */
+  sendActiveMessage?(id: string, options: SendMessageOptions): Promise<ControlResult>;
+  /** Pure receipt lookup for coordination; must never load/resume a native session. */
+  getCoordinationMessageAdmission?(id: string, inputId: string): Promise<MessageAdmissionResult>;
 
   /** Effective execution profile for request-bound health jobs, when exposed. */
   getExecutionProfile?(): Record<string, string>;

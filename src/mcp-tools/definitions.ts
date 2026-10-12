@@ -75,7 +75,7 @@ export const MeshSenderSchema = z.object({
 
 export const SendMessageSchema = z.object({
   inputId: z.string().min(1).max(256).optional().describe("Stable delivery ID. Retry with the same ID; Codex deduplicates native admission for 24 hours."),
-  humanRequested: z.boolean().optional().describe("Set true only when a human explicitly asked to resume/send to this stopped chat. Automatic work must omit it."),
+  humanRequested: z.boolean().optional().describe("True only for an explicit human new task/send/resume. Otherwise coordination is active-turn-only and never wakes or defers to an inactive chat."),
   sessionId: z.string().describe("Target session ID."),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Harness (optional if ID is unique)."),
   message: z.string().describe("Message to send to the agent."),
@@ -119,7 +119,7 @@ export const DeliverSchema = z.object({
   cwd: z.string().min(1).optional(),
   message: z.string().trim().min(1),
   create: z.enum(["if_missing", "never"]).optional().default("if_missing").describe("Named targets only: create the session if it does not exist, or fail with never."),
-  activation: z.enum(["always", "if_running", "defer"]).optional().default("always").describe("always wakes/runs; if_running delivers only during an active turn; defer stores for the next Herder-delivered turn without waking an inactive agent."),
+  activation: z.enum(["always", "if_running", "defer"]).optional().describe("Omitted: active-turn-only for existing targets; initial task starts a newly created named target. Explicit always starts/wakes a task; if_running never wakes/defers; defer explicitly retains input for later."),
   mode: z.enum(["queue", "sync"]).optional().default("queue"),
   model: z.string().trim().min(1).max(MAX_MODEL_LENGTH).regex(/^[^\u0000-\u001f\u007f]*$/).optional(),
 }).superRefine((v,ctx)=>{
@@ -336,12 +336,13 @@ export const toolDefinitions: Tool[] = [
   {
     name: "send_message",
     description:
-      "Send a message to an agent session. Agent Herder automatically injects active coordination notes for the target workspace before delivery. Supports three modes: " +
+      "Ordinary coordination sends only to an active native turn; it never wakes an inactive/completed target or stores deferred debt. humanRequested=true is for an explicit human new task/send/resume. Agent Herder automatically injects active coordination notes for the target workspace before delivery. Supports three modes: " +
       "'sync' (wait for response), 'queue' (fire-and-forget), 'steer' (redirect agent's direction).",
     inputSchema: {
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Target session ID" },
+        humanRequested: {type:"boolean",description:"True only for an explicit human new task/send/resume; automatic coordination must omit it."},
         inputId: { type: "string", description: "Stable idempotent delivery ID (Codex: 24 hour retry window)" },
         harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
         message: { type: "string", description: "Message to send" },
@@ -359,7 +360,7 @@ export const toolDefinitions: Tool[] = [
   },
   {
     name: "deliver",
-    description: "High-level agent delivery. Target by sessionId or harness+name+cwd. create controls whether a missing named session is created. activation=always may wake/start the agent; if_running only delivers while currently running; defer stores for the next Agent Herder-delivered turn without waking an inactive target. Herder evaluates activity at delivery time, so callers should not pre-check with list_agents.",
+    description: "High-level agent delivery. Target by sessionId or harness+name+cwd. create controls whether a missing named session is created. Omitted activation is active-turn-only for existing targets; a newly created named target receives its initial task. Explicit activation=always may wake/start the agent; if_running only delivers while currently running; defer stores for the next Agent Herder-delivered turn without waking an inactive target. Herder evaluates activity at delivery time, so callers should not pre-check with list_agents.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -367,7 +368,7 @@ export const toolDefinitions: Tool[] = [
         name: { type: "string" }, cwd: { type: "string" }, message: { type: "string" },
         inputId: { type: "string", description: "Stable idempotent delivery ID (Codex: 24 hour retry window)" },
         create: { type: "string", enum: ["if_missing","never"], default: "if_missing" },
-        activation: { type: "string", enum: ["always","if_running","defer"], default: "always" },
+        activation: { type: "string", enum: ["always","if_running","defer"] },
         mode: { type: "string", enum: ["queue","sync"], default: "queue" }, model: { type: "string" },
       },
       required: ["message"],
