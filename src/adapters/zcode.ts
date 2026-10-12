@@ -25,7 +25,7 @@ import { ZcodeAppServerClient, type ZcodeClientLike } from "./zcode-protocol.js"
 import { readExistingZcodeRuntimeObservation } from "./zcode-runtime-observation.js";
 import { lifecycleEntryFor, lifecycleStateFor, type SessionLifecycleSnapshot } from "../session-lifecycle.js";
 import { getHumanStopStore } from "../human-stop-store.js";
-import { ownedShutdownMatches, ownedZcodeActiveInput, zcodeRecoveryBoundaryCurrent } from "./zcode-recovery-boundary.js";
+import { ownedShutdownMatches, ownedZcodeActiveInput, zcodeRecoveryBoundaryCurrent, zcodeNativeAdmission } from "./zcode-recovery-boundary.js";
 import { configuredGptAdminMcp } from "./zcode-gptadmin-mcp.js";
 
 interface ZcodeWorkspaceRef {
@@ -758,6 +758,7 @@ export interface NativeLastTurn {
   turnId?: string;
   status?: string;
   userMessageId?: string;
+  sourceCommandId?: string;
   startedAt?: number;
   completedAt?: number;
   firstModelStartAt?: number;
@@ -1013,7 +1014,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     if (!runtimePid || !this.client.callIfReady) return [];
     const checkpointed: string[] = [];
     for (const [sessionId, identity] of this.observedActiveTurns) {
-      if (!identity.turnId || !ownedZcodeActiveInput(this.localDbPath, sessionId)) continue;
+      if (!identity.turnId || !ownedZcodeActiveInput(this.localDbPath, sessionId,identity)) continue;
       const workspace = this.sessionWorkspaces.get(sessionId);
       if (!workspace) continue;
       try {
@@ -1021,7 +1022,7 @@ export class ZcodeAdapter implements HarnessAdapter {
         const runtime = record(snapshot.runtime);
         if (sessionInfoFromPayload(snapshot)?.sessionId !== sessionId || runtime.activeTurnId !== identity.turnId
           || !Array.isArray(runtime.pendingRequestIds) || runtime.pendingRequestIds.length) continue;
-        if (!ownedZcodeActiveInput(this.localDbPath, sessionId)) continue;
+        if (!ownedZcodeActiveInput(this.localDbPath, sessionId,identity)) continue;
         if (await getHumanStopStore().checkpointOwnedZcodeShutdown(sessionId, {
           turnId: identity.turnId, controllerPid: process.pid, runtimePid, at: Date.now(),
         })) { this.ownedShutdownTurns.add(`${sessionId}:${identity.turnId}`); checkpointed.push(sessionId); }
@@ -1318,7 +1319,7 @@ export class ZcodeAdapter implements HarnessAdapter {
                   and coalesce(json_extract(data, '$.semantics.origin'), '') = 'agent_runtime'
                   and coalesce(json_extract(data, '$.semantics.kind'), '') in ('todo_reminder', 'system_reminder') else 0 end)`;
                 const latestMessage = canReadMessages ? nativeDb.prepare(`select id, data, time_updated, sequence from message where session_id = ? and ${conversationMessage} order by sequence desc limit 1`) : undefined;
-                const latestUser = canReadMessages ? nativeDb.prepare(`select id, sequence from message where session_id = ? and json_valid(data) and ${conversationMessage} and json_extract(data, '$.role') = 'user' order by sequence desc limit 1`) : undefined;
+                const latestUser = canReadMessages ? nativeDb.prepare(`select id, data, sequence from message where session_id = ? and json_valid(data) and ${conversationMessage} and json_extract(data, '$.role') = 'user' order by sequence desc limit 1`) : undefined;
                 for (const [sessionId, entry] of nativeSessions) {
                   const lastTurn = pickNativeLastTurn(nativeTurnRowsBySession.get(sessionId) ?? [], nativeLastInputBySession.get(sessionId));
                   if (!lastTurn) continue;
@@ -1326,12 +1327,13 @@ export class ZcodeAdapter implements HarnessAdapter {
                   if (pendingInputsKnown) lastTurn.pendingInput = nativePendingInputs.has(sessionId);
                   if ((lastTurn.status === "error" || lastTurn.status === "cancelled") && lastTurn.userMessageId && latestMessage && latestUser) {
                     try {
-                      const user = latestUser.get(sessionId) as { id?: string; sequence?: number } | undefined;
+                      const user = latestUser.get(sessionId) as { id?: string; data?:string; sequence?: number } | undefined;
                       const tail = latestMessage.get(sessionId) as { id?: string; data?: string; time_updated?: number; sequence?: number } | undefined;
                       const info = tail?.data ? record(JSON.parse(tail.data)) : {};
                       const outcomeKnown = !!user?.id && !!tail?.id && typeof user.sequence === "number" && typeof tail.sequence === "number" && (info.role === "user" || info.role === "assistant");
                       if (outcomeKnown) {
                         lastTurn.userMessageMatchesLatest = user!.id === lastTurn.userMessageId;
+                        lastTurn.sourceCommandId = nonEmptyString(record(record(user?.data?JSON.parse(user.data):{}).anchor).sourceCommandId);
                         const parentId = nonEmptyString(info.parentID);
                         const error = record(info.error);
                         lastTurn.assistantSucceeded = info.role === "assistant" && parentId === lastTurn.userMessageId
@@ -1581,6 +1583,8 @@ export class ZcodeAdapter implements HarnessAdapter {
     try {
       const sessions = await this.listSessions();
       const historical = sessions.find((session) => session.id === id);
+      const identity=nonEmptyString(historical?.meta?.workspaceIdentity);
+      if(historical?.cwd&&(!identity||identity===resolve(historical.cwd)))this.sessionWorkspaces.set(id,this.workspace(historical.cwd));
       return historical ? {...historical,meta:{...historical.meta,nativeLoaded:false}} : null;
     } catch {
       return null;
@@ -2044,6 +2048,11 @@ export class ZcodeAdapter implements HarnessAdapter {
       const type = nonEmptyString(event.type);
       if (type === "turn.failed") return { state: "failed", error: admittedNativeTurnFailure(id, event) };
       if (["turn.completed", "turn.started", "turn.steerQueued", "turn.steerDrained"].includes(type || "")) admitted = true;
+    }
+    if (this.useLocalTurnMetadata && (!admitted || eventReadError)) {
+      const native=zcodeNativeAdmission(this.localDbPath,id,[...identities]);
+      if(native.state==='failed')return {state:'failed',error:'Точный принятый native turn завершился ошибкой или отменой; повторная отправка запрещена.'};
+      admitted=admitted||native.state!=='unknown';
     }
     return admitted ? { state: "admitted" } : { state: "unknown", error: messageReadError || eventReadError || "В доступной истории ZCode нет подтверждения этого сообщения; повторная отправка запрещена." };
   }
@@ -2665,6 +2674,21 @@ export class ZcodeAdapter implements HarnessAdapter {
             lastReadError = error instanceof Error ? error.message : String(error);
             eventHistoryUnavailable = true;
           }
+        }
+        if (eventHistoryUnavailable && this.useLocalTurnMetadata) {
+            const native=zcodeNativeAdmission(this.localDbPath,sessionId,[inputId]);
+            if(native.state==='started'){
+              const identity={turnId:native.turnId,inputId};
+              if(native.turnId&&this.client.callIfReady){
+                try{
+                  const fresh=record(await this.client.callIfReady('zcode-agent','readSession',[{...workspace,sessionId,runtimePolicy:'existing-only',messageLimit:0}]));
+                  if(sessionInfoFromPayload(fresh)?.sessionId===sessionId&&record(fresh.runtime).activeTurnId===native.turnId
+                    &&ownedZcodeActiveInput(this.localDbPath,sessionId,identity))this.observedActiveTurns.set(sessionId,identity);
+                }catch{ /* Historical receipt remains accepted; unknown active ownership is not adopted. */ }
+              }
+              return {ok:true,turnId:native.turnId};
+            }
+            if(native.state==='failed')return {ok:false,error:'Точный принятый native turn завершился ошибкой или отменой; повторная отправка запрещена.'};
         }
         if (eventHistoryUnavailable && baseline) {
           try {

@@ -395,7 +395,7 @@ describe("ZCode adapter", () => {
     `);
     tasks.exec("begin"); native.exec("begin");
     const now = Date.now();
-    const cases = ["retry", "captcha", "cancelled", "transport-lost", "completed", "running", "child", "new-user", "progress", "succeeded", "pending", "runtime-stop", "runtime-progress", "runtime-pending", "runtime-old-stop", "runtime-invalid", "runtime-silent", "runtime-silent-unowned"];
+    const cases = ["retry", "captcha", "cancelled", "transport-lost", "completed", "running", "child", "new-user", "progress", "succeeded", "pending", "runtime-stop", "runtime-progress", "runtime-pending", "runtime-old-stop", "runtime-invalid", "runtime-silent", "runtime-silent-unowned", "runtime-parent-crash", "runtime-parent-crash-foreign"];
     for (const id of cases) {
       tasks.prepare("insert into tasks values(?,?,?,?,?,?,?,?,?,?)").run(id,root,id === "transport-lost" ? "remote:ssh:example.test:22:user:/workspace" : root,id,id === "transport-lost" ? "running" : "completed",null,now-10000,now-2000,0,0);
       native.prepare("insert into session values(?,?,?,?)").run(id,root,id==="child"?"parent":null,now-2000);
@@ -405,7 +405,8 @@ describe("ZCode adapter", () => {
       native.prepare("insert into message values(?,?,?,?,?)").run("assistant-"+id,id,JSON.stringify({role:"assistant",parentID:"user-"+id,...(id==="succeeded"?{finish:"stop"}: {error:{name:"NativeError",data:{message:id==="captcha"?"Captcha verification request timed out":"connection lost"}}})}),2,id==="progress"?now-1000:now-2001);
       if (id.startsWith("runtime-")) {
         native.prepare("update message set data=? where id=?").run(JSON.stringify({role:"assistant",parentID:"user-"+id,error:{name:"AiSdkModelAdapterError",data:{message:"ZCode Protocol runtime stopping",code:"model_request_failed",attribution:{source:"runtime"},turnResult:"cancelled"}}}), "assistant-"+id);
-        if (id.startsWith("runtime-silent")) native.prepare("update message set data=? where id=?").run(JSON.stringify({role:"assistant",parentID:"user-"+id,finish:"tool-calls"}),"assistant-"+id);
+        if (id.startsWith("runtime-silent")||id.startsWith('runtime-parent-crash')) native.prepare("update message set data=? where id=?").run(JSON.stringify({role:"assistant",parentID:"user-"+id,finish:"tool-calls"}),"assistant-"+id);
+        if(id.startsWith('runtime-parent-crash'))native.prepare('update message set data=? where id=?').run(JSON.stringify({role:'user',anchor:{sourceCommandId:'exact-accepted-command'}}),'user-'+id);
         if (id === "runtime-progress") {
           native.prepare("insert into message values(?,?,?,?,?)").run("runtime-new-user",id,JSON.stringify({role:"user"}),3,now-1500);
           native.prepare("insert into message values(?,?,?,?,?)").run("runtime-new-assistant",id,JSON.stringify({role:"assistant",parentID:"runtime-new-user",finish:"tool-calls"}),4,now-500);
@@ -422,6 +423,7 @@ describe("ZCode adapter", () => {
     tasks.exec("commit"); native.exec("commit");
     tasks.close();native.close();
     await getHumanStopStore().checkpointOwnedZcodeShutdown("runtime-silent",{turnId:"turn-runtime-silent",controllerPid:10,runtimePid:11,at:now-3000});
+    for(const id of ['runtime-parent-crash','runtime-parent-crash-foreign'])await getHumanStopStore().checkpointOwnedZcodeShutdown(id,{turnId:'turn-'+id,controllerPid:10,runtimePid:11,at:now-3000,userMessageId:'user-'+id,sourceCommandId:id.endsWith('foreign')?'fake-prefix':'exact-accepted-command'},{kind:'parent-crash',controllerStartedAt:now-20000,journalCursor:'exact-journal-cursor',errorCode:'ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING'});
     const client = new FakeClient();
     try {
       const adapter = new ZcodeAdapter({client,tasksIndexDbPath:tasksPath,localDbPath:nativePath});
@@ -445,6 +447,8 @@ describe("ZCode adapter", () => {
       expect(meta("runtime-silent").transportLost).toBe(true);
       expect(rows.find(x=>x.id==="runtime-silent")?.status).toBe("error");
       expect(meta("runtime-silent-unowned").transportLost).toBeUndefined();
+      expect(meta('runtime-parent-crash').transportLost).toBe(true);
+      expect(meta('runtime-parent-crash-foreign').transportLost).toBeUndefined();
       class WarmStoppedClient extends FakeClient {
         override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
           if(method==='readSession')return {...snapshot,session:{...session,sessionId:'runtime-silent',parentSessionId:undefined,status:'idle',workspace:{workspacePath:root,workspaceIdentity:root}},runtime:{eventSeq:3,stateRevision:3,pendingRequestIds:[]},messages:[]};
@@ -2115,4 +2119,52 @@ it.each(['Desktop input','human Stop'])('rejects recovery when %s arrives during
   expect(db.prepare('select status from tool_usage').get()).toEqual({status:'completed'});
   if(race==='human Stop')expect(await getHumanStopStore().isHeld('zcode','race-session')).toBe(true);
  }finally{await adapter.dispose();db.close();await rm(root,{recursive:true,force:true});}
+});
+
+it('uses exact native command receipts when strict event and message schemas reject reads (focused integration expected .3s/max5s)',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'zcode-sdk-drift-'));const path=join(dir,'native.sqlite');const db=new DatabaseSync(path);
+ db.exec(`create table message(id text,session_id text,data text,sequence integer);create table turn_usage(session_id text,turn_id text,user_message_id text,status text,started_at integer,completed_at integer);`);
+ const id='sdk-session';const input='exact-accepted-input';
+ db.prepare('insert into message values(?,?,?,?)').run('native-user',id,JSON.stringify({role:'user',anchor:{sourceCommandId:'agent-herder:auto:'+input}}),1);
+ db.prepare('insert into message values(?,?,?,?)').run('native-assistant',id,JSON.stringify({role:'assistant',parentID:'native-user'}),2);
+ class StrictSchemaClient extends FakeClient {
+  override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   if(method==='readSessionEvents'){this.calls.push({channel,method,args});throw Error(JSON.stringify([{code:'unrecognized_keys',keys:['executionStartedAt'],path:['events',0,'payload']}]));}
+   if(['readSessionMessages','readSession'].includes(method)){this.calls.push({channel,method,args});throw Error(JSON.stringify([{code:'invalid_value',path:['messages',0,'info','source']}]));}
+   if(method==='sendPrompt'){
+    const command=(args[0] as {inputId:string}).inputId;
+    db.prepare('insert into message values(?,?,?,?)').run('later-user',id,JSON.stringify({role:'user',anchor:{sourceCommandId:command}}),3);
+    db.prepare('insert into message values(?,?,?,?)').run('later-assistant',id,JSON.stringify({role:'assistant',parentID:'later-user'}),4);
+   }
+   return super.call(channel,method,args);
+  }
+ }
+ const client=new StrictSchemaClient();const adapter=new ZcodeAdapter({client,cwd:dir,localDbPath:path,turnStartTimeoutMs:100});
+ try{
+  await expect(adapter.getMessageAdmission(id,input)).resolves.toEqual({state:'admitted'});
+  await expect(adapter.getMessageAdmission(id,'other-input')).resolves.toMatchObject({state:'unknown'});
+  expect(client.calls.some(c=>['sendPrompt','sendConversationCommandV4','resumeSession','createSession'].includes(c.method))).toBe(false);
+  await expect(adapter.sendMessage(id,{message:'fixture only',inputId:'later-input'})).resolves.toEqual({ok:true});
+  expect(client.calls.filter(c=>c.method==='sendPrompt')).toHaveLength(1);
+  expect(client.calls.some(c=>['sendConversationCommandV4','resumeSession','createSession'].includes(c.method))).toBe(false);
+ }finally{await adapter.dispose();db.close();await rm(dir,{recursive:true,force:true});}
+});
+
+it('retains the exact native workspace of a cold historical session for supported same-ID resume (fast unit expected .1s/max2s)',async()=>{
+ const native={...session,sessionId:'cold-native',workspace:{workspacePath:'/exact-owned-project',workspaceIdentity:'/exact-owned-project'}};
+ class ColdWorkspaceClient extends FakeClient {
+  override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   if(method==='readSession')throw Error('ZCode Agent runtime is not running.');
+   if(method==='listSessions')return [native];
+   if(method==='resumeSession'){this.calls.push({channel,method,args});return {...snapshot,session:native};}
+   return super.call(channel,method,args);
+  }
+ }
+ const client=new ColdWorkspaceClient(),adapter=new ZcodeAdapter({client,cwd:'/default-project'});
+ try{
+  expect((await adapter.getSession('cold-native'))?.meta?.nativeLoaded).toBe(false);
+  await expect(adapter.resumeSession('cold-native')).resolves.toEqual({ok:true});
+  expect(client.calls.find(c=>c.method==='resumeSession')?.args[0]).toMatchObject({sessionId:'cold-native',workspacePath:'/exact-owned-project'});
+  expect(client.calls.some(c=>['sendPrompt','sendConversationCommandV4','createSession','setModel'].includes(c.method))).toBe(false);
+ }finally{await adapter.dispose();}
 });

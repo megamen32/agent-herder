@@ -47,12 +47,17 @@ export type HumanStopRecord = {
 };
 
 type GeneratedPromptRecord = { harness: string; id: string; digest: string; turnId?: string; expiresAt: string };
-export type OwnedZcodeShutdownProof = { turnId: string; controllerPid: number; runtimePid: number; at: number };
+export type OwnedZcodeShutdownProof = { turnId: string; controllerPid: number; runtimePid: number; at: number; userMessageId?:string;sourceCommandId?:string;contextHash?:string };
+export type OwnedZcodeCrashContext = {kind:'parent-crash';controllerStartedAt:number;journalCursor:string;errorCode:string};
 const OWNED_ZCODE_SHUTDOWN = 'herder-owned-zcode-shutdown:';
+const OWNED_ZCODE_CONTEXT = 'herder-owned-zcode-context:';
 function ownedShutdownId(proof: OwnedZcodeShutdownProof): string {
   if (!proof.turnId || !Number.isSafeInteger(proof.controllerPid) || proof.controllerPid <= 0
     || !Number.isSafeInteger(proof.runtimePid) || proof.runtimePid <= 0
     || !Number.isSafeInteger(proof.at) || proof.at <= 0) throw new Error('invalid owned runtime shutdown proof');
+  if ((proof.userMessageId!==undefined||proof.sourceCommandId!==undefined)
+    && (typeof proof.userMessageId!=='string'||!proof.userMessageId||typeof proof.sourceCommandId!=='string'||!proof.sourceCommandId))throw Error('invalid native owned input identity');
+  if(proof.contextHash!==undefined&&!/^[a-f0-9]{64}$/.test(proof.contextHash))throw Error('invalid owned runtime context hash');
   return OWNED_ZCODE_SHUTDOWN + Buffer.from(JSON.stringify(proof)).toString('base64url');
 }
 function parseOwnedShutdownId(id: string): OwnedZcodeShutdownProof | undefined {
@@ -231,14 +236,22 @@ export class HumanStopStore {
   /** Uses the existing locked internal-stop attribution seam and old-readable
    * schema. Never clears a human hold; unknown/foreign runtime work is filtered
    * by the caller before this exact-turn checkpoint is written. */
-  async checkpointOwnedZcodeShutdown(id: string, proof: OwnedZcodeShutdownProof): Promise<boolean> {
+  async checkpointOwnedZcodeShutdown(id: string, proof: OwnedZcodeShutdownProof, context?:OwnedZcodeCrashContext): Promise<boolean> {
     const targetId = bounded(id, 'sessionId', MAX_ID_LENGTH);
+    let contextId:string|undefined;
+    if(context){
+      if(context.kind!=='parent-crash'||!Number.isSafeInteger(context.controllerStartedAt)||context.controllerStartedAt<=0
+        ||!proof.userMessageId||!proof.sourceCommandId)throw Error('invalid owned parent crash context');
+      const body=JSON.stringify({...context,journalCursor:bounded(context.journalCursor,'journalCursor',256),errorCode:bounded(context.errorCode,'errorCode',96)});
+      contextId=bounded(OWNED_ZCODE_CONTEXT+Buffer.from(body).toString('base64url'),'runtimeContextId',MAX_ID_LENGTH);
+      proof={...proof,contextHash:createHash('sha256').update(contextId).digest('hex')};
+    }else if(proof.contextHash)throw Error('owned parent crash context missing');
     const evidenceId = bounded(ownedShutdownId(proof), 'runtimeStopId', MAX_ID_LENGTH);
     return this.mutate(file => {
       const index = file.sessions.findIndex(r => r.harness === 'zcode' && r.id === targetId);
       const existing = file.sessions[index];
       if (existing?.active) return false;
-      const ignoredStopIds = boundIgnoredIds([...(existing?.ignoredStopIds ?? []), evidenceId]);
+      const ignoredStopIds = boundIgnoredIds([...(existing?.ignoredStopIds ?? []),...(contextId?[contextId]:[]), evidenceId]);
       const record: HumanStopRecord = existing ? { ...existing, ignoredStopIds } : {
         harness: 'zcode', id: targetId, active: false, ignoredStopIds,
         stop: { id: evidenceId, at: new Date(proof.at).toISOString(), turnId: proof.turnId, reason: 'Owned Herder runtime shutdown' },
@@ -251,7 +264,8 @@ export class HumanStopStore {
   async ownedZcodeShutdowns(): Promise<Array<OwnedZcodeShutdownProof & { sessionId: string }>> {
     const file = await this.read();
     return file.sessions.filter(r => r.harness === 'zcode' && !r.active).flatMap(r =>
-      r.ignoredStopIds.map(parseOwnedShutdownId).filter((p): p is OwnedZcodeShutdownProof => !!p)
+      r.ignoredStopIds.map(parseOwnedShutdownId).filter((p): p is OwnedZcodeShutdownProof => !!p
+        && (!p.contextHash||r.ignoredStopIds.some(id=>id.startsWith(OWNED_ZCODE_CONTEXT)&&createHash('sha256').update(id).digest('hex')===p.contextHash)))
         .map(p => ({ ...p, sessionId: r.id })));
   }
 

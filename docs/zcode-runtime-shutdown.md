@@ -83,3 +83,41 @@ Checks: focused integration exact store/schema/hold/ownership/receipt boundaries
 and launcher failure shields. No phone, calls, new business sessions or provider
 experiments are involved in these tests. Root owns runtime activation and actual
 consumer acceptance; source tests do not substitute for that boundary.
+
+## Native SDK drift and a confirmed parent crash
+
+The installed native server strictly validates `session/events` before returning
+it. An additive `payload.executionStartedAt` can reject the entire event read;
+Herder cannot strip that field after a rejected response. The managed native
+bundle remains unchanged. Herder uses its existing readonly native SQLite seam
+to correlate the exact command ID in `message.anchor.sourceCommandId` (or native
+input metadata), within the exact session, to its own assistant/terminal turn.
+Prompt text and a Herder-looking prefix do not prove admission or ownership.
+An admission receipt alone does not prove a started turn. A terminal failure
+stays non-replayable. Legacy active ownership additionally requires the exact
+accepted command and native turn anchor, an existing runtime snapshot matching
+that turn, no pending queue and no outstanding foreign input.
+
+The public native `readSessionDebug` uses `existing-only` and its own debug
+schema, but exposes model rounds/network history, not active-turn/input-queue
+coverage. It is not an idle proof. Existing-only native workspace lists and the
+actual owned adapter's active/queued/waiter state are separate scoped evidence.
+Cold historical discovery retains its native project address for same-ID resume.
+
+For an externally confirmed owned-parent crash, the existing checkpoint utility
+accepts `--confirmed-parent-crash <proof.json>`. The manifest supplies the exact
+session, failed turn/user/completion boundary, native command anchor, historical
+owned-parent generation receipt and exact journal cursor/error. The utility
+checks those actual records, latest user/turn, root identity, settled tools and
+no newer activity/pending input/human hold. `--dry-run` records nothing.
+Without that flag it stores the exact proof and linked journal/generation context
+as internal attribution in the existing locked StopStore, keeping its old schema.
+It sends no input and performs no resume. Manual holds remain authoritative.
+
+The Root-caused crash of parent 2193856 on 2026-10-12 at 07:32:04 MSK is prepared
+for exact 4b attribution in ignored `.tmp/zcode70a-recovery-20261012/` manifests;
+this is not permission to reinterpret other cancelled sessions. After Root's
+reviewed installation, re-run fresh guards and record only that proof. Query the
+same ID again before the supported prompt-free native resume: if Desktop/native
+work has already resumed, submit nothing. Root owns activation and the final
+consumer check. Completed 70a and all accepted external actions are retained.

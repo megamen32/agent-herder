@@ -12,7 +12,7 @@ const value=name=>{const at=args.indexOf(name);return at<0?undefined:args[at+1];
 const dryRun=args.includes('--dry-run');
 const moduleRoot=resolve(value('--module-root')??'dist');
 const {HumanStopStore}=await import(pathToFileURL(join(moduleRoot,'human-stop-store.js')).href);
-const {zcodeShutdownObservation}=await import(pathToFileURL(join(moduleRoot,'adapters/zcode-recovery-boundary.js')).href);
+const {zcodeShutdownObservation,zcodeConfirmedCrashBoundary}=await import(pathToFileURL(join(moduleRoot,'adapters/zcode-recovery-boundary.js')).href);
 const pid=Number(execFileSync('systemctl',['--user','show','agent-herder.service','-p','MainPID','--value'],{encoding:'utf8',timeout:5000}).trim());
 if(!Number.isSafeInteger(pid)||pid<=0)throw Error('Existing Herder controller is not active');
 const environment=Object.fromEntries((await readFile(`/proc/${pid}/environ`)).toString().split('\0').filter(v=>v.includes('=')).map(v=>{const i=v.indexOf('=');return[v.slice(0,i),v.slice(i+1)];}));
@@ -22,6 +22,24 @@ const unfinished=JSON.parse(await readFile(environment.AGENT_HERDER_UNFINISHED_S
 const stopPath=environment.AGENT_HERDER_HUMAN_STOP_STORE??join(environment.HOME??'/home/roomhacker','.local/state/agent-herder/human-stops.json');
 const store=new HumanStopStore(stopPath);
 const nativeDb=environment.ZCODE_DB_PATH??join(environment.HOME??'/home/roomhacker','.zcode/cli/db/db.sqlite');
+const crashFile=value('--confirmed-parent-crash');
+if(crashFile){
+ const {sessionId,proof,boundary,context,ownerReceipt}=JSON.parse(await readFile(crashFile,'utf8'));
+ const owner=JSON.parse(await readFile(ownerReceipt,'utf8'));
+ if(owner.controllerPid!==proof.controllerPid||owner.runtimePid!==proof.runtimePid||owner.controllerStartedAt!==context.controllerStartedAt)throw Error('Exact historical owned-parent generation receipt missing');
+ const journal=execFileSync('journalctl',['--no-pager','-o','json',`--cursor=${context.journalCursor}`,'-n','1'],{encoding:'utf8',timeout:5000});
+ const entry=JSON.parse(journal.trim());
+ if(entry.__CURSOR!==context.journalCursor||Number(entry._PID)!==proof.controllerPid||!String(entry.MESSAGE).includes(context.errorCode)
+   ||Math.floor(Number(entry.__REALTIME_TIMESTAMP)/1000)!==proof.at||context.kind!=='parent-crash')throw Error('Exact parent crash journal evidence changed');
+ const response=await fetch(`http://127.0.0.1:${environment.AGENT_HERDER_WEB_PORT??18787}/api/sessions/zcode/${encodeURIComponent(sessionId)}`,{signal:AbortSignal.timeout(5000)});
+ const session=response.ok?(await response.json()).session:undefined;
+ if(session?.id!==sessionId||session.meta?.humanStopHeld!==false||session.status==='running'||session.meta?.nativeActiveTurnId
+   ||(Array.isArray(session.meta?.pendingRequestIds)&&session.meta.pendingRequestIds.length)||!zcodeConfirmedCrashBoundary(nativeDb,sessionId,proof,boundary,context.controllerStartedAt))throw Error('Native state/input/hold changed; crash attribution refused');
+ if(!dryRun&&!await store.checkpointOwnedZcodeShutdown(sessionId,proof,context))throw Error('Human hold appeared; crash attribution refused');
+ const result={dryRun,controllerPid:pid,sessionId,proof,context,attributionRecorded:!dryRun,noInputSent:true,idleProof:false};
+ const receipt=value('--receipt');if(receipt){await mkdir(dirname(receipt),{recursive:true});await writeFile(receipt,JSON.stringify(result,null,2),{mode:0o600});}
+ console.log(JSON.stringify(result));process.exit(0);
+}
 const runtimePids=[];
 const {readdir}=await import('node:fs/promises');
 for(const item of await readdir('/proc')){
