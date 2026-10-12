@@ -804,6 +804,18 @@ async function main() {
   // human-answer and project-launch consumer.
   const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor });
   const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor });
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) return; shuttingDown = true;
+    stopUnfinishedSessionLauncher(); stopProcessObservation(); stopAutoCompact(); stopCompletionNoticeSweeper();
+    void (async () => {
+      const zcode = adapters.get('zcode') as ZcodeAdapter | undefined;
+      try { await zcode?.checkpointOwnedRuntimeShutdown(); await zcode?.dispose(); }
+      catch (error) { console.error('[agent-herder] owned ZCode shutdown checkpoint failed:', String(error)); }
+      finally { process.exit(0); }
+    })();
+  };
+  process.once('SIGTERM', shutdown); process.once('SIGINT', shutdown);
   const webPort = process.env.AGENT_HERDER_WEB_PORT;
   if (webPort) {
     const host = process.env.AGENT_HERDER_WEB_HOST || "127.0.0.1";

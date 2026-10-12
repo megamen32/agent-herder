@@ -27,6 +27,7 @@ export interface ZcodeClientLike {
   callIfReady?(channel: string, method: string, args: unknown[]): Promise<unknown>;
   listen?(channel: string, event: string, arg: unknown, handler: (payload: unknown) => void): () => void;
   onDisconnect?(handler: (error: Error) => void): () => void;
+  getOwnedProcessId?(): number | undefined;
   close(): Promise<void>;
 }
 
@@ -410,6 +411,8 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
       }
     };
   }
+
+  getOwnedProcessId(): number | undefined { return this.ready ? this.child?.pid : undefined; }
 
   async close(): Promise<void> {
     const child = this.child;

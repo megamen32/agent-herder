@@ -185,6 +185,8 @@ export interface PermissionRequest {
 }
 
 export interface SendMessageOptions {
+  /** Exact failed input fence for recovery only; ordinary coordination is unchanged. */
+  recoveryBoundary?: {turnId:string;userMessageId:string;completedAt:number};
   /** Exact named-task context resolved before delivery to a shared Hermes home lane. */
   expectedTaskBinding?: { name: string; cwd: string; generation: string };
   images?: MessageImage[];

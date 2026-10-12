@@ -1,7 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { join } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { ZcodeAppServerClient } from "../src/adapters/zcode-protocol.js";
+
+// This transport fixture is a tiny Node echo process, never the native ZCode
+// workload. Keep production admission intact; mock only this exact test binary.
+vi.mock('../src/workload-launcher.js', async () => {
+  const {spawn}=await import('node:child_process');
+  return {spawnIsolatedWorkload:(command:string,args:string[],options:any)=>{
+    if(command!==process.execPath||!args[0]?.endsWith('/tests/fixtures/fake-zcode-app-server.mjs'))throw new Error('Protocol fixture refuses a real runtime');
+    return spawn(command,args,{cwd:options.cwd,env:options.env,stdio:options.stdio});
+  }};
+});
 
 const fixture = join(process.cwd(), "tests/fixtures/fake-zcode-app-server.mjs");
 
@@ -30,7 +40,9 @@ describe("ZCode app-server protocol client", () => {
       requestTimeoutMs: 3000,
     });
     try {
+      expect(client.getOwnedProcessId()).toBeUndefined();
       await client.start();
+      expect(client.getOwnedProcessId()).toBeGreaterThan(0);
       const result = await client.call("zcode-agent", "initialize", [{ workspacePath: "/workspace", workspaceIdentity: "/workspace" }]);
       expect(result).toEqual({ available: true, protocolName: "ZCode Protocol", protocolVersion: 1, transportKind: "stdio" });
       const event = await new Promise<unknown>((resolve, reject) => {
@@ -40,6 +52,7 @@ describe("ZCode app-server protocol client", () => {
       expect(event).toEqual({ type: "task_complete", taskId: "session-1" });
     } finally {
       await client.close();
+      expect(client.getOwnedProcessId()).toBeUndefined();
     }
   });
 });

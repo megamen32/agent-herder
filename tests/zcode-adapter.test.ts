@@ -395,7 +395,7 @@ describe("ZCode adapter", () => {
     `);
     tasks.exec("begin"); native.exec("begin");
     const now = Date.now();
-    const cases = ["retry", "captcha", "cancelled", "transport-lost", "completed", "running", "child", "new-user", "progress", "succeeded", "pending", "runtime-stop", "runtime-progress", "runtime-pending", "runtime-old-stop", "runtime-invalid"];
+    const cases = ["retry", "captcha", "cancelled", "transport-lost", "completed", "running", "child", "new-user", "progress", "succeeded", "pending", "runtime-stop", "runtime-progress", "runtime-pending", "runtime-old-stop", "runtime-invalid", "runtime-silent", "runtime-silent-unowned"];
     for (const id of cases) {
       tasks.prepare("insert into tasks values(?,?,?,?,?,?,?,?,?,?)").run(id,root,id === "transport-lost" ? "remote:ssh:example.test:22:user:/workspace" : root,id,id === "transport-lost" ? "running" : "completed",null,now-10000,now-2000,0,0);
       native.prepare("insert into session values(?,?,?,?)").run(id,root,id==="child"?"parent":null,now-2000);
@@ -405,6 +405,7 @@ describe("ZCode adapter", () => {
       native.prepare("insert into message values(?,?,?,?,?)").run("assistant-"+id,id,JSON.stringify({role:"assistant",parentID:"user-"+id,...(id==="succeeded"?{finish:"stop"}: {error:{name:"NativeError",data:{message:id==="captcha"?"Captcha verification request timed out":"connection lost"}}})}),2,id==="progress"?now-1000:now-2001);
       if (id.startsWith("runtime-")) {
         native.prepare("update message set data=? where id=?").run(JSON.stringify({role:"assistant",parentID:"user-"+id,error:{name:"AiSdkModelAdapterError",data:{message:"ZCode Protocol runtime stopping",code:"model_request_failed",attribution:{source:"runtime"},turnResult:"cancelled"}}}), "assistant-"+id);
+        if (id.startsWith("runtime-silent")) native.prepare("update message set data=? where id=?").run(JSON.stringify({role:"assistant",parentID:"user-"+id,finish:"tool-calls"}),"assistant-"+id);
         if (id === "runtime-progress") {
           native.prepare("insert into message values(?,?,?,?,?)").run("runtime-new-user",id,JSON.stringify({role:"user"}),3,now-1500);
           native.prepare("insert into message values(?,?,?,?,?)").run("runtime-new-assistant",id,JSON.stringify({role:"assistant",parentID:"runtime-new-user",finish:"tool-calls"}),4,now-500);
@@ -420,6 +421,7 @@ describe("ZCode adapter", () => {
     }
     tasks.exec("commit"); native.exec("commit");
     tasks.close();native.close();
+    await getHumanStopStore().checkpointOwnedZcodeShutdown("runtime-silent",{turnId:"turn-runtime-silent",controllerPid:10,runtimePid:11,at:now-3000});
     const client = new FakeClient();
     try {
       const adapter = new ZcodeAdapter({client,tasksIndexDbPath:tasksPath,localDbPath:nativePath});
@@ -440,6 +442,9 @@ describe("ZCode adapter", () => {
       expect(meta("runtime-pending").transportLost).toBeUndefined();
       expect(meta("runtime-old-stop").transportLost).toBeUndefined();
       expect(meta("runtime-invalid").transportLost).toBeUndefined();
+      expect(meta("runtime-silent").transportLost).toBe(true);
+      expect(rows.find(x=>x.id==="runtime-silent")?.status).toBe("error");
+      expect(meta("runtime-silent-unowned").transportLost).toBeUndefined();
       markLifecycleEvent("zcode", "runtime-progress", "end", root);
       expect((await adapter.listSessions()).find((x)=>x.id==="runtime-progress")?.status).toBe("stopped");
       expect(meta("child").rootSession).toBe(false);
@@ -2059,4 +2064,37 @@ it.each([false,true])("settles a staged guide from native history despite event/
  }
  const client=new SchemaDriftClient(),adapter=new ZcodeAdapter({cwd:"/workspace",client});
  try{await adapter.init();await expect(adapter.getMessageAdmission("session-1",inputId)).resolves.toEqual({state:"admitted"});expect(client.calls.filter(call=>["sendPrompt","sendConversationCommandV4","resumeSession"].includes(call.method))).toHaveLength(0);}finally{await adapter.dispose();}
+});
+
+
+it('rejects recovery when Desktop input arrives during native baseline refresh without replaying tools',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'zcode-admission-race-'));const path=join(root,'native.sqlite');const db=new DatabaseSync(path);
+ db.exec(`create table turn_usage(session_id text,turn_id text,user_message_id text,started_at integer,completed_at integer);
+ create table message(id text,session_id text,data text,sequence integer);
+ create table session_input(session_id text,status text);create table tool_usage(id text,status text);`);
+ db.prepare('insert into turn_usage values(?,?,?,?,?)').run('race-session','old-turn','old-user',1,10);
+ db.prepare('insert into message values(?,?,?,?)').run('old-user','race-session',JSON.stringify({role:'user'}),1);
+ db.exec("insert into tool_usage values('accepted-old-tool','completed')");
+ class RaceClient extends FakeClient {
+  override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   if(method==='readSession')return {...snapshot,session:{...session,sessionId:'race-session'},runtime:{eventSeq:1,stateRevision:1,pendingRequestIds:[]}};
+   return super.call(channel,method,args);
+  }
+  async callIfReady(channel:string,method:string,args:unknown[]):Promise<unknown>{
+   if(method==='readSession'){
+    // Other-controller admission is invisible in this controller's snapshot.
+    db.exec("insert into session_input values('race-session','admitted')");
+   }
+   return this.call(channel,method,args);
+  }
+ }
+ const client=new RaceClient();const adapter=new ZcodeAdapter({client,localDbPath:path,cwd:root});
+ try{
+  await adapter.init();
+  const result=await adapter.sendMessage('race-session',{message:'resume once',queue:true,inputId:'same-recovery',recoveryBoundary:{turnId:'old-turn',userMessageId:'old-user',completedAt:10}});
+  expect(result).toMatchObject({ok:false,admitted:false,nonRetryable:true});
+  expect(result.error).toContain('новый ввод');
+  expect(client.calls.some(c=>['sendPrompt','sendConversationCommandV4','createSession'].includes(c.method))).toBe(false);
+  expect(db.prepare('select status from tool_usage').get()).toEqual({status:'completed'});
+ }finally{await adapter.dispose();db.close();await rm(root,{recursive:true,force:true});}
 });

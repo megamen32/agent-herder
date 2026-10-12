@@ -2211,7 +2211,12 @@ export class UnfinishedSessionLauncher {
         await this.options.store.cancelAttempt(attempt);
         return;
       }
-      const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true });
+      const boundary = session?.harness === 'zcode' ? nativeLastTurn(session) : undefined;
+      const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true,
+        ...(boundary?.turnId && boundary.userMessageId && boundary.completedAt ? { recoveryBoundary: {
+          turnId: boundary.turnId, userMessageId: boundary.userMessageId, completedAt: Date.parse(boundary.completedAt),
+        } } : {}),
+      });
       const terminalAdmission = admittedNonRetryableFailure(sent);
       if (terminalAdmission) {
         promptAccepted = true;

@@ -47,6 +47,21 @@ export type HumanStopRecord = {
 };
 
 type GeneratedPromptRecord = { harness: string; id: string; digest: string; turnId?: string; expiresAt: string };
+export type OwnedZcodeShutdownProof = { turnId: string; controllerPid: number; runtimePid: number; at: number };
+const OWNED_ZCODE_SHUTDOWN = 'herder-owned-zcode-shutdown:';
+function ownedShutdownId(proof: OwnedZcodeShutdownProof): string {
+  if (!proof.turnId || !Number.isSafeInteger(proof.controllerPid) || proof.controllerPid <= 0
+    || !Number.isSafeInteger(proof.runtimePid) || proof.runtimePid <= 0
+    || !Number.isSafeInteger(proof.at) || proof.at <= 0) throw new Error('invalid owned runtime shutdown proof');
+  return OWNED_ZCODE_SHUTDOWN + Buffer.from(JSON.stringify(proof)).toString('base64url');
+}
+function parseOwnedShutdownId(id: string): OwnedZcodeShutdownProof | undefined {
+  if (!id.startsWith(OWNED_ZCODE_SHUTDOWN)) return undefined;
+  try { const proof = JSON.parse(Buffer.from(id.slice(OWNED_ZCODE_SHUTDOWN.length), 'base64url').toString());
+    return ownedShutdownId(proof) === id ? proof : undefined;
+  } catch { return undefined; }
+}
+
 type HumanStopFile = { version: 1; sessions: HumanStopRecord[]; generatedInputs?: GeneratedPromptRecord[] };
 const stores = new Map<string, HumanStopStore>();
 
@@ -213,6 +228,33 @@ export class HumanStopStore {
   }
 
   /** Record a Herder-issued native interrupt without overriding a human hold. */
+  /** Uses the existing locked internal-stop attribution seam and old-readable
+   * schema. Never clears a human hold; unknown/foreign runtime work is filtered
+   * by the caller before this exact-turn checkpoint is written. */
+  async checkpointOwnedZcodeShutdown(id: string, proof: OwnedZcodeShutdownProof): Promise<boolean> {
+    const targetId = bounded(id, 'sessionId', MAX_ID_LENGTH);
+    const evidenceId = bounded(ownedShutdownId(proof), 'runtimeStopId', MAX_ID_LENGTH);
+    return this.mutate(file => {
+      const index = file.sessions.findIndex(r => r.harness === 'zcode' && r.id === targetId);
+      const existing = file.sessions[index];
+      if (existing?.active) return false;
+      const ignoredStopIds = boundIgnoredIds([...(existing?.ignoredStopIds ?? []), evidenceId]);
+      const record: HumanStopRecord = existing ? { ...existing, ignoredStopIds } : {
+        harness: 'zcode', id: targetId, active: false, ignoredStopIds,
+        stop: { id: evidenceId, at: new Date(proof.at).toISOString(), turnId: proof.turnId, reason: 'Owned Herder runtime shutdown' },
+      };
+      if (index < 0) file.sessions.push(record); else file.sessions[index] = record;
+      return true;
+    }, changed => changed);
+  }
+
+  async ownedZcodeShutdowns(): Promise<Array<OwnedZcodeShutdownProof & { sessionId: string }>> {
+    const file = await this.read();
+    return file.sessions.filter(r => r.harness === 'zcode' && !r.active).flatMap(r =>
+      r.ignoredStopIds.map(parseOwnedShutdownId).filter((p): p is OwnedZcodeShutdownProof => !!p)
+        .map(p => ({ ...p, sessionId: r.id })));
+  }
+
   async ignoreNativeStop(harness: string, id: string, evidence: HumanStopEvidence): Promise<void> {
     const targetHarness = bounded(harness, "harness", MAX_ID_LENGTH);
     const targetId = bounded(id, "sessionId", MAX_ID_LENGTH);
