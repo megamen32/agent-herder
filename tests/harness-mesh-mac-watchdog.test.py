@@ -546,6 +546,13 @@ class MacWatchdogTests(unittest.TestCase):
                         return native(args)
                     with patch.object(w,'command',side_effect=replaced_same_second):
                         with self.assertRaisesRegex(w.Refused,'managed_codex_owner_unverified'):w.verify_codex_owner(config)
+                    text_calls=[0]
+                    def replaced_during_final_text(args):
+                        if '--text' in args:text_calls[0]+=1
+                        if '--identity' in args:return f'IDENTITY {w.os.getuid()} 100 {int(text_calls[0]>=2)}\n'
+                        return native(args)
+                    with patch.object(w,'command',side_effect=replaced_during_final_text):
+                        with self.assertRaisesRegex(w.Refused,'managed_codex_owner_unverified'):w.verify_codex_owner(config)
 
     def test_kernel_probe_uses_the_existing_two_attempt_common_deadline(self):
         probe=str(Path.home()/'.local/share/agent-herder/fleet/mac-codex-owner-probe')

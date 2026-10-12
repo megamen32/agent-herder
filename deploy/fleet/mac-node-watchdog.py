@@ -317,8 +317,12 @@ def verify_codex_owner(config,*,admission=False):
         if current[0]!=os.getuid() or current[2]>=1000000 or generation is not None and current!=generation:
             raise Refused('managed_codex_owner_unverified')
         generation=current
-    def process_identity():
+    def process_identity(*,final=False):
         if not admission:
+            if final:
+                native_text_identity(pid,executable(binary).resolve(strict=True),admission=False)
+                kernel_identity()
+                return
             kernel_identity()
             native_text_identity(pid,executable(binary).resolve(strict=True),admission=False)
             return
@@ -346,9 +350,9 @@ def verify_codex_owner(config,*,admission=False):
     if not match or int(match[1])>2147483647:raise Refused('managed_codex_owner_unverified')
     descriptor=int(match[1])
     if hint is not None and descriptor!=hint:raise Refused('managed_codex_owner_unverified')
-    process_identity()
-    final=pointer.stat()
-    if (final.st_dev,final.st_ino)!=(info.st_dev,info.st_ino):raise Refused('managed_codex_owner_unverified')
+    process_identity(final=True)
+    final_socket=pointer.stat()
+    if (final_socket.st_dev,final_socket.st_ino)!=(info.st_dev,info.st_ino):raise Refused('managed_codex_owner_unverified')
     config['_codexSocketFd']=descriptor # Hint only: the kernel rereads this FD on every tick.
     config['_codexOwnerGeneration']=generation # Exact token pinned only after the complete proof.
     return {'pid':pid,'startedAt':expected,'device':info.st_dev,'inode':info.st_ino}
