@@ -28,6 +28,8 @@ function fixture(unavailableCode='ZCODE_AGENT_RUNTIME_UNAVAILABLE'){
  db.prepare('insert into session values(?,?,null)').run('own-session',cwd);
  const processProof={pid:701,parentPid:700,startTick:'100',cwd,groupId:701,descendants:[]};
  let alive=true,survivors=false,resumed=false,runtimePid=701,generation=1,dispatches=0;
+ let sampledChildren:Array<{pid:number;startTick:string}>=[];
+ const detachedLive=new Set<string>();
  const info={sessionId:'own-session',workspace:{workspacePath:cwd,workspaceIdentity:cwd},sessionKind:'root',title:'Own fixture',mode:'build',status:'running',model:{providerId:'fixture',modelId:'fixture'},createdAt:Date.now(),updatedAt:Date.now()};
  const snap=()=>({session:{...info,status:resumed?'idle':'running'},runtime:{activeTurnId:resumed?undefined:'own-turn',eventSeq:4,stateRevision:2,pendingRequestIds:[]},messages:[],projection:{activeToolCalls:[],backgroundJobs:[]},settings:{model:{current:info.model}}});
  const calls:string[]=[];
@@ -49,9 +51,9 @@ function fixture(unavailableCode='ZCODE_AGENT_RUNTIME_UNAVAILABLE'){
     return {commandId:id,status:'accepted',result:{type:'inputAccepted',inputId:id,delivery:'startNow'}};
    }throw Error(m);
   }};
- const adapter=new ZcodeAdapter({client,cwd,localDbPath:path,workspaceProcessProbe:{capture:()=>alive?{...processProof,pid:runtimePid,groupId:runtimePid,startTick:String(generation+99)}:null,gone:proof=>!survivors&&(proof.pid!==runtimePid||!alive)}});
+ const adapter=new ZcodeAdapter({client,cwd,localDbPath:path,workspaceProcessProbe:{capture:()=>alive?{...processProof,pid:runtimePid,groupId:runtimePid,startTick:String(generation+99),descendants:[...sampledChildren]}:null,gone:proof=>!survivors&&(proof.pid!==runtimePid||!alive)&&!proof.descendants.some(child=>detachedLive.has(`${child.pid}:${child.startTick}`))}});
  const events:any[]=[];adapter.subscribeEvents(e=>events.push(e));
- return {adapter,db,cwd,calls,events,kill:()=>{alive=false;},survivingChild:()=>{survivors=true;},async start(){await adapter.init();await adapter.sendMessage('own-session',{message:'Initial once',queue:true,origin:'automation',inputId:'initial-once'});await adapter.listSessions({cwd});}};
+ return {adapter,db,cwd,calls,events,observeChild(pid:number,startTick:string){sampledChildren=[{pid,startTick}];detachedLive.add(`${pid}:${startTick}`);},detachChildren(){sampledChildren=[];},kill:()=>{alive=false;},survivingChild:()=>{survivors=true;},async start(){await adapter.init();await adapter.sendMessage('own-session',{message:'Initial once',queue:true,origin:'automation',inputId:'initial-once'});await adapter.listSessions({cwd});}};
 }
 describe('native workspace lifecycle, not SDK disconnection',()=>{
  it('persists pre-death native identity and automatically claims SAME SID without terminal row',async()=>{
@@ -82,6 +84,17 @@ describe('native workspace lifecycle, not SDK disconnection',()=>{
   expect(f.events.filter(e=>e.kind==='process.disconnected'&&e.sessionId==='own-session')).toHaveLength(1);
   expect(f.calls.filter(m=>m==='sendConversationCommandV4')).toHaveLength(1);
   await f.adapter.dispose();f.db.close();
+ });
+ it('retains an observed detached child across captures of the SAME CLI generation',async()=>{
+  const f=fixture();try{
+   await f.start();
+   f.observeChild(703,'child-start-1');await f.adapter.listSessions({cwd:f.cwd});
+   // The child reparents and takes another PGID; the next current tree is empty.
+   f.detachChildren();await f.adapter.listSessions({cwd:f.cwd});
+   f.kill();await f.adapter.listSessions({cwd:f.cwd});
+   expect(f.events.some(e=>e.kind==='process.disconnected'&&e.sessionId==='own-session')).toBe(false);
+   expect(f.calls.filter(m=>m==='sendConversationCommandV4')).toHaveLength(1);
+  }finally{await f.adapter.dispose();f.db.close();}
  });
  it('does not turn a surviving own child into a safe crash boundary',async()=>{
   const f=fixture();await f.start();f.survivingChild();f.kill();await f.adapter.listSessions({cwd:f.cwd});

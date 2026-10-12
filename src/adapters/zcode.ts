@@ -1157,6 +1157,13 @@ export class ZcodeAdapter implements HarnessAdapter {
       if(identity.workspaceKey!==workspace.workspacePath||!Number.isSafeInteger(identity.processId)||!Number.isSafeInteger(identity.generation))continue;
       if(entry.workspaceRuntime&&(entry.workspaceRuntime.process.pid!==identity.processId||entry.workspaceRuntime.generation!==identity.generation))continue;
       const process=this.workspaceProcessProbe.capture(identity.processId as number,sdkPid,workspace.workspacePath);if(!process)continue;
+      const previous=entry.workspaceRuntime?.process;
+      if(previous&&previous.startTick!==process.startTick)continue;
+      // A previously observed tool may detach/reparent/change PGID between
+      // samples. Preserve its exact PID + start tick for this CLI generation.
+      const descendants=new Map<string,{pid:number;startTick:string}>();
+      for(const child of [...(previous?.descendants??[]),...process.descendants])descendants.set(`${child.pid}:${child.startTick}`,child);
+      process.descendants=[...descendants.values()];
       let snapshot:ZcodeSnapshot;
       try{snapshot=await this.client.callIfReady('zcode-agent','readSession',[{...workspace,sessionId,runtimePolicy:'existing-only',messageLimit:1}]) as ZcodeSnapshot;}
       catch{continue;}
