@@ -55,7 +55,8 @@ export function zcodeConfirmedCrashBoundary(path:string,id:string,proof:OwnedZco
   const user=db.prepare('select data from message where session_id=? and id=?').get(id,proof.userMessageId) as any;
   if(JSON.parse(user?.data??'{}').anchor?.sourceCommandId!==proof.sourceCommandId)return false;
   const turn=db.prepare('select status,started_at from turn_usage where session_id=? and turn_id=? and user_message_id=?').get(id,proof.turnId,proof.userMessageId) as any;
-  if(turn?.status!=='cancelled'||(controllerStartedAt!==undefined&&(controllerStartedAt>proof.at||typeof turn.started_at!=='number'||turn.started_at<controllerStartedAt)))return false;
+  if(turn?.status!=='cancelled'||!Number.isSafeInteger(turn.started_at)||turn.started_at>proof.at
+    ||(controllerStartedAt!==undefined&&(controllerStartedAt>proof.at||turn.started_at<controllerStartedAt)))return false;
   const tail=db.prepare(`select data,time_updated from message where session_id=? and json_valid(data)
     and not(coalesce(json_extract(data,'$.synthetic'),0)=1 and coalesce(json_extract(data,'$.semantics.origin'),'')='agent_runtime') order by sequence desc limit 1`).get(id) as any;
   const data=JSON.parse(tail?.data??'{}');

@@ -34,6 +34,9 @@ describe('ZCode own-runtime attribution and Desktop race (focused integration; e
    expect(zcodeConfirmedCrashBoundary(path,'s',proof,boundary)).toBe(true);
    expect(zcodeConfirmedCrashBoundary(path,'s',proof,boundary,9)).toBe(true);
    expect(zcodeConfirmedCrashBoundary(path,'s',proof,boundary,11)).toBe(false);
+   db.exec("update turn_usage set started_at=19");
+   expect(zcodeConfirmedCrashBoundary(path,'s',proof,boundary,9)).toBe(false);
+   db.exec("update turn_usage set started_at=10");
    expect(zcodeConfirmedCrashBoundary(path,'s',{...proof,sourceCommandId:'fake-prefix'},boundary)).toBe(false);
    db.exec("insert into session_input values('s','admitted')");expect(zcodeConfirmedCrashBoundary(path,'s',proof,boundary)).toBe(false);db.exec('delete from session_input');
    db.prepare('insert into part values(?,?)').run('s',JSON.stringify({type:'tool',state:{status:'running'}}));expect(zcodeConfirmedCrashBoundary(path,'s',proof,boundary)).toBe(false);db.exec('delete from part');
