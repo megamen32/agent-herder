@@ -775,7 +775,7 @@ export interface NativeLastTurn {
   progressedAfterFailure?: boolean;
   requiresHuman?: boolean;
   blockedReason?: string;
-  /** A remote SSH task still expected to run, but its exact latest turn was cancelled without a durable human-stop receipt. */
+  /** Exact native runtime-shutdown evidence, or a detached remote SSH task still expected to run. Human-stop receipts remain authoritative. */
   transportLost?: boolean;
 }
 
@@ -1159,7 +1159,7 @@ export class ZcodeAdapter implements HarnessAdapter {
           throw error;
         }
 
-        const nativeSessions = new Map<string, { directory?: string; workspaceIdentity?: string; timeUpdated?: number; parentId?: string | null; rootKnown: boolean; lastTurn?: NativeLastTurn }>();
+        const nativeSessions = new Map<string, { directory?: string; workspaceIdentity?: string; timeUpdated?: number; parentId?: string | null; rootKnown: boolean; lastTurn?: NativeLastTurn; ongoingAssistantAt?: number }>();
         let nativeCanonicalizationError: string | undefined;
         if (existsSync(this.localDbPath)) {
           try {
@@ -1283,8 +1283,14 @@ export class ZcodeAdapter implements HarnessAdapter {
                 const messageColumns = nativeTableNames.has("message")
                   ? new Set((nativeDb.prepare("pragma table_info(message)").all() as Array<{ name?: string }>).map((column) => column.name)) : new Set();
                 const canReadMessages = ["id", "session_id", "data", "sequence", "time_updated"].every((column) => messageColumns.has(column));
-                const latestMessage = canReadMessages ? nativeDb.prepare("select id, data, time_updated, sequence from message where session_id = ? order by sequence desc limit 1") : undefined;
-                const latestUser = canReadMessages ? nativeDb.prepare("select id, sequence from message where session_id = ? and json_valid(data) and json_extract(data, '$.role') = 'user' order by sequence desc limit 1") : undefined;
+                // Hidden native reminders are provider context, not new admitted
+                // conversation turns. Keep real and automation prompts intact.
+                const conversationMessage = `not (case when json_valid(data) then
+                  coalesce(json_extract(data, '$.synthetic'), 0) = 1
+                  and coalesce(json_extract(data, '$.semantics.origin'), '') = 'agent_runtime'
+                  and coalesce(json_extract(data, '$.semantics.kind'), '') in ('todo_reminder', 'system_reminder') else 0 end)`;
+                const latestMessage = canReadMessages ? nativeDb.prepare(`select id, data, time_updated, sequence from message where session_id = ? and ${conversationMessage} order by sequence desc limit 1`) : undefined;
+                const latestUser = canReadMessages ? nativeDb.prepare(`select id, sequence from message where session_id = ? and json_valid(data) and ${conversationMessage} and json_extract(data, '$.role') = 'user' order by sequence desc limit 1`) : undefined;
                 for (const [sessionId, entry] of nativeSessions) {
                   const lastTurn = pickNativeLastTurn(nativeTurnRowsBySession.get(sessionId) ?? [], nativeLastInputBySession.get(sessionId));
                   if (!lastTurn) continue;
@@ -1305,6 +1311,25 @@ export class ZcodeAdapter implements HarnessAdapter {
                         lastTurn.progressedAfterFailure = typeof tail?.time_updated !== "number" || typeof lastTurn.completedAt !== "number"
                           || tail.time_updated > lastTurn.completedAt
                           || (info.role === "assistant" && parentId !== lastTurn.userMessageId);
+                        // turn_usage records terminal turns only. A newer desktop
+                        // continuation can be doing tool work while this row still
+                        // describes the old controller's cancellation.
+                        if (info.role === "assistant" && parentId === user!.id && !info.error
+                          && (!info.finish || info.finish === "tool-calls")
+                          && typeof tail?.time_updated === "number"
+                          && tail.time_updated > (lastTurn.completedAt ?? 0)) entry.ongoingAssistantAt = tail.time_updated;
+                        const errorData = record(error.data);
+                        // ZCode flags its own runtime shutdown as cancelled_by_user.
+                        // Require the exact current failed assistant, not that flag
+                        // or a stale error from an earlier user turn.
+                        if (lastTurn.status === "cancelled" && lastTurn.cancelledByUser === true
+                          && lastTurn.rootSession === true && lastTurn.pendingInput === false
+                          && lastTurn.userMessageMatchesLatest === true && lastTurn.progressedAfterFailure === false
+                          && info.role === "assistant" && parentId === lastTurn.userMessageId
+                          && typeof tail?.time_updated === "number" && tail.time_updated >= (lastTurn.startedAt ?? Infinity)
+                          && errorData.message === "ZCode Protocol runtime stopping"
+                          && errorData.code === "model_request_failed" && errorData.turnResult === "cancelled"
+                          && record(errorData.attribution).source === "runtime") lastTurn.transportLost = true;
                         const errorText = String(record(error.data).message ?? "");
                         lastTurn.requiresHuman = /captcha|verification required|authentication required/i.test(errorText);
                         if (lastTurn.requiresHuman) lastTurn.blockedReason = "Провайдер требует подтверждения в своём интерфейсе; автоматические повторы остановлены.";
@@ -1358,14 +1383,21 @@ export class ZcodeAdapter implements HarnessAdapter {
           const updatedAt = Number(row.updated_at || row.created_at || 0);
           const rawStatus = row.task_status?.toLowerCase();
           const nativeTimeUpdated = native?.timeUpdated;
+          const observedLifecycle = lifecycleEntryFor("zcode", sessionId);
           let status: AgentSession["status"] = resolvePersistedZcodeStatus({
             rawStatus,
             tasksUpdatedAt: updatedAt,
             nativeUpdatedAt: nativeTimeUpdated,
-            lifecycle: lifecycleEntryFor("zcode", sessionId),
+            lifecycle: observedLifecycle,
             now: Date.now(),
             activeWindowMs,
           });
+          // Recent assistant tool work is evidence of a newer continuation;
+          // a terminal-only usage row and a completed task index are historical.
+          if (status !== "needs_input" && native?.ongoingAssistantAt
+            && native.ongoingAssistantAt > (observedLifecycle?.at ?? 0)
+            && native.ongoingAssistantAt <= Date.now()
+            && Date.now() - native.ongoingAssistantAt < activeWindowMs) status = "running";
           const turn = native?.lastTurn ? { ...native.lastTurn } : undefined;
           // The task index can flatten a failed native turn to completed. Only
           // exact current transcript evidence may overlay that historical row;
@@ -1396,6 +1428,7 @@ export class ZcodeAdapter implements HarnessAdapter {
             turn.transportLost = true;
             if (status !== "needs_input") status = "error";
           }
+          if (turn?.transportLost === true && status !== "needs_input") status = "error";
           this.persistedSessionIds.add(row.task_id);
           this.sessionWorkspaces.set(row.task_id, {
             workspacePath: cwd,

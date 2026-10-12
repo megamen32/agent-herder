@@ -393,19 +393,32 @@ describe("ZCode adapter", () => {
       create index message_session_sequence_idx on message(session_id,sequence);
       create table session_input(id text,session_id text,status text,time_created integer);
     `);
+    tasks.exec("begin"); native.exec("begin");
     const now = Date.now();
-    const cases = ["retry", "captcha", "cancelled", "transport-lost", "completed", "running", "child", "new-user", "progress", "succeeded", "pending"];
+    const cases = ["retry", "captcha", "cancelled", "transport-lost", "completed", "running", "child", "new-user", "progress", "succeeded", "pending", "runtime-stop", "runtime-progress", "runtime-pending", "runtime-old-stop", "runtime-invalid"];
     for (const id of cases) {
       tasks.prepare("insert into tasks values(?,?,?,?,?,?,?,?,?,?)").run(id,root,id === "transport-lost" ? "remote:ssh:example.test:22:user:/workspace" : root,id,id === "transport-lost" ? "running" : "completed",null,now-10000,now-2000,0,0);
       native.prepare("insert into session values(?,?,?,?)").run(id,root,id==="child"?"parent":null,now-2000);
-      const status = id === "cancelled" || id === "transport-lost" ? "cancelled" : id === "completed" ? "completed" : id === "running" ? "running" : "error";
-      native.prepare("insert into turn_usage values(?,?,?,?,?,?,?,?,?,?)").run(id,"turn-"+id,"user-"+id,status,now-10000,id==="running"?null:now-2000,id==="captcha"?0:1,id==="cancelled" || id === "transport-lost"?1:0,"transport_error","CONNECTION_RESET");
+      const status = id.startsWith("runtime-") || id === "cancelled" || id === "transport-lost" ? "cancelled" : id === "completed" ? "completed" : id === "running" ? "running" : "error";
+      native.prepare("insert into turn_usage values(?,?,?,?,?,?,?,?,?,?)").run(id,"turn-"+id,"user-"+id,status,now-10000,id==="running"?null:now-2000,id==="captcha" || id.startsWith("runtime-")?0:1,id.startsWith("runtime-") || id==="cancelled" || id === "transport-lost"?1:0,"transport_error","CONNECTION_RESET");
       native.prepare("insert into message values(?,?,?,?,?)").run("user-"+id,id,JSON.stringify({role:"user"}),1,now-10000);
       native.prepare("insert into message values(?,?,?,?,?)").run("assistant-"+id,id,JSON.stringify({role:"assistant",parentID:"user-"+id,...(id==="succeeded"?{finish:"stop"}: {error:{name:"NativeError",data:{message:id==="captcha"?"Captcha verification request timed out":"connection lost"}}})}),2,id==="progress"?now-1000:now-2001);
+      if (id.startsWith("runtime-")) {
+        native.prepare("update message set data=? where id=?").run(JSON.stringify({role:"assistant",parentID:"user-"+id,error:{name:"AiSdkModelAdapterError",data:{message:"ZCode Protocol runtime stopping",code:"model_request_failed",attribution:{source:"runtime"},turnResult:"cancelled"}}}), "assistant-"+id);
+        if (id === "runtime-progress") {
+          native.prepare("insert into message values(?,?,?,?,?)").run("runtime-new-user",id,JSON.stringify({role:"user"}),3,now-1500);
+          native.prepare("insert into message values(?,?,?,?,?)").run("runtime-new-assistant",id,JSON.stringify({role:"assistant",parentID:"runtime-new-user",finish:"tool-calls"}),4,now-500);
+          native.prepare("insert into message values(?,?,?,?,?)").run("runtime-reminder",id,JSON.stringify({role:"user",synthetic:true,semantics:{origin:"agent_runtime",kind:"todo_reminder"}}),5,now-100);
+        }
+        if (id === "runtime-pending") native.prepare("insert into session_input values(?,?,?,?)").run("runtime-queued",id,"admitted",now-5000);
+        if (id === "runtime-old-stop") native.prepare("update message set time_updated=? where id=?").run(now-20000,"assistant-"+id);
+        if (id === "runtime-invalid") native.prepare("insert into message values(?,?,?,?,?)").run("runtime-invalid-tail",id,"{",3,now-100);
+      }
       if (id === "transport-lost") native.prepare("insert into message values(?,?,?,?,?)").run("transport-tail",id,JSON.stringify({role:"user"}),3,now-1000);
       if (id==="pending") native.prepare("insert into session_input values(?,?,?,?)").run("pending-input",id,"admitted",now-5000);
       if (id==="new-user") native.prepare("insert into message values(?,?,?,?,?)").run("new-user-input",id,JSON.stringify({role:"user"}),3,now-1000);
     }
+    tasks.exec("commit"); native.exec("commit");
     tasks.close();native.close();
     const client = new FakeClient();
     try {
@@ -420,6 +433,15 @@ describe("ZCode adapter", () => {
       expect(meta("cancelled").transportLost).toBeUndefined();
       expect(meta("transport-lost")).toMatchObject({status:"cancelled",cancelledByUser:true,transportLost:true,userMessageMatchesLatest:false,assistantSucceeded:false,progressedAfterFailure:true});
       expect(rows.find((x)=>x.id==="transport-lost")?.status).toBe("error");
+      expect(meta("runtime-stop")).toMatchObject({status:"cancelled",cancelledByUser:true,transportLost:true});
+      expect(rows.find((x)=>x.id==="runtime-stop")?.status).toBe("error");
+      expect(meta("runtime-progress").transportLost).toBeUndefined();
+      expect(rows.find((x)=>x.id==="runtime-progress")?.status).toBe("running");
+      expect(meta("runtime-pending").transportLost).toBeUndefined();
+      expect(meta("runtime-old-stop").transportLost).toBeUndefined();
+      expect(meta("runtime-invalid").transportLost).toBeUndefined();
+      markLifecycleEvent("zcode", "runtime-progress", "end", root);
+      expect((await adapter.listSessions()).find((x)=>x.id==="runtime-progress")?.status).toBe("stopped");
       expect(meta("child").rootSession).toBe(false);
       expect(meta("new-user").userMessageMatchesLatest).toBe(false);
       expect(meta("progress").progressedAfterFailure).toBe(true);

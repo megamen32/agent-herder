@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -393,6 +393,28 @@ describe("unfinished session crash recovery", () => {
         expect(calls.resumes).toBe(1);
         expect(calls.messages).toHaveLength(1);
         expect((await state.list())[0]).toMatchObject({ sessionId: current.id, recoveryTurnId: "native-turn-1", admissionPhase: "accepted_pending" });
+    });
+
+    it("recovers a local runtime shutdown once, preserving newer work, native queues and human stops", async () => {
+        for (const mode of ["shutdown", "new-desktop-work", "pending-native-input", "human-stop"] as const) {
+            const root = await mkdtemp(join(tmpdir(), `cold-local-runtime-${mode}-`));
+            const current = coldFailureSession({ status: "cancelled", retryable: false, cancelledByUser: true,
+                transportLost: true, pendingInput: mode === "pending-native-input" });
+            if (mode === "new-desktop-work") current.status = "running";
+            const calls = { resumes: 0, messages: [] as string[] };
+            const state = new UnfinishedSessionStore(join(root, "state.json"));
+            const stops = getHumanStopStore({ AGENT_HERDER_HUMAN_STOP_STORE: join(root, "stops.json") });
+            if (mode === "human-stop") await stops.hold(current, { id: "local-explicit-stop", at: new Date().toISOString(), reason: "user stop", turnId: "native-turn-1" });
+            const options = { humanStopStore: stops, adapters: new Map([["zcode", fakeAdapter(() => current, calls)]]),
+                store: state, settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) };
+            await new UnfinishedSessionLauncher(options).recoverPending();
+            await new UnfinishedSessionLauncher({ ...options, store: new UnfinishedSessionStore(join(root, "state.json")) }).recoverPending();
+            expect(calls.resumes).toBe(mode === "shutdown" ? 1 : 0);
+            expect(calls.messages).toHaveLength(mode === "shutdown" ? 1 : 0);
+            if (mode === "shutdown") expect((await state.list())[0]).toMatchObject({sessionId: current.id, recoveryTurnId: "native-turn-1", admissionPhase: "accepted_pending"});
+            else expect(await state.list()).toEqual([]);
+            await rm(root, {recursive:true,force:true});
+        }
     });
 
     it("does not ingest a cold failure while the same root session is human-held", async () => {
