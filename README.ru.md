@@ -9,26 +9,37 @@ MCP-сервер: OpenCode, Claude Code, Codex CLI, Qoder, ZCode и Fast Agent.
 
 [English](README.md) · **Русский** · [简体中文](README.zh.md)
 
+**[Сайт Agent Herder →](https://agentherder.bezrabotnyi.com/)**
+
 ![Анимированная схема связей сессий Agent Herder](docs/assets/agent-herder-animated.svg)
 
-## Запуск за 30 секунд
+## Установка из исходников
+
+Нужны Node.js 22.12+ и Git. Пакет сейчас недоступен в публичном npm;
+соберите открытые исходники:
 
 ```bash
-npx -y agent-herder
+git clone https://github.com/megamen32/agent-herder.git
+cd agent-herder
+npm ci
+npm run build
+AGENT_HERDER_WEB_PORT=18787 npm start
 ```
 
-Подключение к любому MCP-клиенту:
+Веб-интерфейс: `http://127.0.0.1:18787/`. В MCP-клиенте добавьте сервер
+Streamable HTTP:
 
 ```json
 {
   "mcpServers": {
     "agent-herder": {
-      "command": "npx",
-      "args": ["-y", "agent-herder"]
+      "url": "http://127.0.0.1:18787/mcp"
     }
   }
 }
 ```
+
+На хосте работает один экземпляр Agent Herder; клиенты подключаются к нему.
 
 ## Три слоя возможностей
 

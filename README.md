@@ -8,28 +8,38 @@ control plane, a shared presence ledger, and a shared inbox.
 
 [Русский](README.ru.md) · [简体中文](README.zh.md)
 
+**[Agent Herder website →](https://agentherder.bezrabotnyi.com/)**
+
 ![Animated Agent Herder session lineage](docs/assets/agent-herder-animated.svg)
 
-## Start in 30 seconds
+## Build from source
 
-Run it without cloning a repository:
+Use Node.js 22.12+ and Git. The package is not currently available from the
+public npm registry; build the public source instead:
 
 ```bash
-npx -y agent-herder
+git clone https://github.com/megamen32/agent-herder.git
+cd agent-herder
+npm ci
+npm run build
+AGENT_HERDER_WEB_PORT=18787 npm start
 ```
 
-Add the same command to any MCP client:
+The command enables the loopback web server on port 18787. Open the web UI at
+`http://127.0.0.1:18787/` and connect an MCP client using its Streamable HTTP
+server setting:
 
 ```json
 {
   "mcpServers": {
     "agent-herder": {
-      "command": "npx",
-      "args": ["-y", "agent-herder"]
+      "url": "http://127.0.0.1:18787/mcp"
     }
   }
 }
 ```
+
+Keep one server process per host; clients connect to that running instance.
 
 Start the harness you want to observe first. For OpenCode, that means:
 

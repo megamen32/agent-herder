@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f3ed">
+  <title>Agent Herder — один центр управления AI-агентами</title>
+  <meta name="description" content="Наблюдайте за coding-агентами, передавайте задачи между сессиями и координируйте работу в репозиториях. Agent Herder: открытый код, собственный сервер, MCP.">
+  <link rel="canonical" href="https://agentherder.bezrabotnyi.com/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Agent Herder — агенты разные, управление одно">
+  <meta property="og:description" content="Codex, Claude Code, OpenCode и другие сессии в одном центре управления. Открытый код. Self-hosted. MCP.">
+  <meta property="og:url" content="https://agentherder.bezrabotnyi.com/">
+  <meta property="og:image" content="https://agentherder.bezrabotnyi.com/assets/statistics.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="assets/mark.svg">
+  <link rel="stylesheet" href="styles.css">
+  <script src="landing.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">К содержанию</a>
+  <header class="site-header wrap">
+    <a class="brand" href="./" aria-label="Agent Herder — главная">
+      <svg viewBox="0 0 34 34" width="34" height="34" aria-hidden="true"><path d="M9 10v14M25 10v14M9 17h16" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="8" r="4" fill="currentColor"/><circle cx="25" cy="8" r="4" fill="currentColor"/><circle cx="9" cy="26" r="4" fill="currentColor"/><circle cx="25" cy="26" r="4" fill="currentColor"/></svg>
+      <span>Agent Herder</span>
+    </a>
+    <nav aria-label="Основная навигация">
+      <a href="#how">Возможности</a><a href="#interface">Интерфейс</a><a href="#start">Установка</a>
+    </nav>
+    <a class="header-github" href="https://github.com/megamen32/agent-herder" target="_blank" rel="noopener">GitHub <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> MCP для coding-агентов</p>
+        <h1 id="hero-title">Агенты разные.<br><span>Управление одно.</span></h1>
+        <p class="hero-description">Codex, Claude Code, OpenCode — каждый работает в своей среде. Agent Herder собирает их сессии в одном месте и помогает им работать вместе.</p>
+        <div class="actions"><a class="button primary" href="#start">Установить Agent Herder <span aria-hidden="true">↗</span></a><a class="text-link" href="https://github.com/megamen32/agent-herder" target="_blank" rel="noopener">Посмотреть исходники <span aria-hidden="true">↗</span></a></div>
+        <p class="hero-note">Открытый код · MIT · На вашем сервере</p>
+      </div>
+      <figure class="connection-map">
+        <div class="map-label">Один контекст управления</div>
+        <div class="map-hub"><svg viewBox="0 0 34 34" width="38" height="38" aria-hidden="true"><path d="M9 10v14M25 10v14M9 17h16" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="8" r="4" fill="currentColor"/><circle cx="25" cy="8" r="4" fill="currentColor"/><circle cx="9" cy="26" r="4" fill="currentColor"/><circle cx="25" cy="26" r="4" fill="currentColor"/></svg><strong>Agent Herder</strong><span>MCP + Web UI</span></div>
+        <div class="map-stem" aria-hidden="true"></div>
+        <div class="map-nodes"><div><span class="node-icon">C</span><strong>Codex</strong><span>Сессии и задачи</span></div><div><span class="node-icon">✳</span><strong>Claude Code</strong><span>Сессии и задачи</span></div><div><span class="node-icon">&gt;_</span><strong>OpenCode</strong><span>Сессии и задачи</span></div></div>
+        <figcaption>Ваши привычные инструменты. Общий пульт.</figcaption>
+      </figure>
+    </section>
+
+    <section class="compatibility wrap" aria-label="Поддерживаемые среды">
+      <p>Работает с вашими агентами</p>
+      <div><span>Codex</span><span>Claude Code</span><span>OpenCode</span><span>ZCode</span><span>Qoder</span><span>Fast Agent</span></div>
+      <a href="https://github.com/megamen32/agent-herder#supported-harnesses" target="_blank" rel="noopener">Возможности и настройка каждой среды <span aria-hidden="true">↗</span></a>
+    </section>
+
+    <section id="how" class="workflow wrap" aria-labelledby="how-title">
+      <div class="section-intro"><p class="eyebrow">Меньше переключений. Больше работы.</p><h2 id="how-title">От отдельных сессий<br>к совместной работе.</h2><p>Когда одновременно работают несколько агентов, важно понимать, кто чем занят, куда отправить задачу и кто уже меняет нужный файл.</p></div>
+      <div class="steps">
+        <article><span class="step-number">01 / Наблюдение</span><h3>Видеть всю картину.</h3><p>Сессии, их состояние, история и связи между родительскими и дочерними агентами. Найдите нужную работу, не перебирая окна и терминалы.</p><span class="step-detail">Список сессий · История · Связи</span></article>
+        <article><span class="step-number">02 / Переписка</span><h3>Передать следующий шаг.</h3><p>Отправьте сообщение конкретному агенту. Через MCP агенты тоже могут общаться между собой: передавать контекст, вопросы и результаты.</p><span class="step-detail">Сообщения · Продолжение сессий</span></article>
+        <article><span class="step-number">03 / Координация</span><h3>Знать, кто меняет что.</h3><p>Заметки и присутствие привязаны к рабочему проекту. Активность в файлах помогает заметить пересечения до того, как они станут конфликтами.</p><span class="step-detail">Проекты · Владельцы файлов · Заметки</span></article>
+      </div>
+    </section>
+
+    <section id="interface" class="interface-section" aria-labelledby="interface-title">
+      <div class="wrap">
+        <div class="interface-heading"><div><p class="eyebrow">Посмотрите, как это устроено</p><h2 id="interface-title">Работа агентов.<br>Перед глазами.</h2></div><p>Веб-интерфейс для сессий, управления и статистики. MCP — для тех же действий из вашего AI-клиента.</p></div>
+        <div class="screenshot-tabs" role="tablist" aria-label="Скриншоты Agent Herder">
+          <button type="button" id="tab-statistics" role="tab" aria-selected="true" aria-controls="screenshot-panel" data-shot="statistics" tabindex="0">Статистика <span>01</span></button>
+          <button type="button" id="tab-sessions" role="tab" aria-selected="false" aria-controls="screenshot-panel" data-shot="sessions" tabindex="-1">Сессии и управление <span>02</span></button>
+        </div>
+        <figure id="screenshot-panel" class="screenshot-panel" role="tabpanel" aria-labelledby="tab-statistics">
+          <button class="image-button" type="button" id="expand-screenshot" aria-label="Увеличить скриншот статистики"><img id="product-screenshot" src="assets/statistics.png" width="1680" height="1050" alt="Agent Herder: статистика активности, распределение сессий по средам и моделям" loading="lazy"><span class="image-expand" aria-hidden="true">Смотреть подробнее ↗</span></button>
+          <figcaption id="screenshot-caption">Статистика по рабочим сессиям. Скриншот из открытого репозитория проекта.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="ownership wrap" aria-labelledby="ownership-title">
+      <p class="eyebrow">Контроль остаётся у вас</p><div class="ownership-grid"><h2 id="ownership-title">Свои агенты.<br>Своя инфраструктура.</h2><div><p>Agent Herder запускается на вашей машине или сервере. Сессии продолжают жить в своих средах — вы получаете общий способ наблюдать за ними и передавать задачи.</p><ul><li><span aria-hidden="true">↗</span> Открытый исходный код и лицензия MIT</li><li><span aria-hidden="true">↗</span> Веб-интерфейс и подключение через MCP</li><li><span aria-hidden="true">↗</span> Настройка адаптеров под используемые инструменты</li></ul></div></div>
+    </section>
+
+    <section id="start" class="start-section wrap" aria-labelledby="start-title">
+      <div class="start-copy"><p class="eyebrow">Начать с одной машины</p><h2 id="start-title">Соберите.<br>Запустите.<br><span>Подключите агентов.</span></h2><p>Нужны Git, Node.js 22.12+ и установленный coding-агент. Установка — из открытых исходников.</p><a class="text-link" href="https://github.com/megamen32/agent-herder/blob/main/README.ru.md" target="_blank" rel="noopener">Полная инструкция на GitHub <span aria-hidden="true">↗</span></a></div>
+      <div class="start-instructions"><div class="code-block"><div class="code-header"><span>Терминал</span><button type="button" id="copy-install">Скопировать <span aria-hidden="true">⧉</span></button></div><pre><code id="install-code">git clone https://github.com/megamen32/agent-herder.git
+cd agent-herder
+npm ci
+npm run build
+AGENT_HERDER_WEB_PORT=18787 npm start</code></pre><p id="copy-status" role="status" aria-live="polite"></p></div><ol class="next-steps"><li><span>1</span><div><strong>Откройте веб-интерфейс</strong><p><code>http://127.0.0.1:18787/</code> на машине, где запущен Agent Herder.</p></div></li><li><span>2</span><div><strong>Добавьте сервер в MCP-клиент</strong><p>Streamable HTTP: <code>http://127.0.0.1:18787/mcp</code>. Клиенты подключаются к одному работающему экземпляру.</p></div></li><li><span>3</span><div><strong>Подключите свою среду</strong><p>Запустите coding-агент и настройте его адаптер. Для OpenCode сначала нужен <code>opencode serve</code>.</p></div></li></ol></div>
+    </section>
+
+    <section class="faq wrap" aria-labelledby="faq-title"><div><p class="eyebrow">Перед стартом</p><h2 id="faq-title">Несколько<br>важных деталей.</h2></div><div class="faq-items">
+      <details><summary>Agent Herder заменяет Codex или Claude Code?<span aria-hidden="true">+</span></summary><p>Он объединяет управление их сессиями. Агент, его модель и привычная среда остаются вашими; Agent Herder добавляет наблюдение, переписку и координацию.</p></details>
+      <details><summary>Можно работать с одним агентом?<span aria-hidden="true">+</span></summary><p>Да. Подключите только используемую среду. Остальные адаптеры можно отключить в конфигурации.</p></details>
+      <details><summary>Что нужно для подключения?<span aria-hidden="true">+</span></summary><p>Установленная и авторизованная среда coding-агента, работающий Agent Herder и настройка соответствующего адаптера. Возможности управления различаются между средами — они перечислены в документации.</p></details>
+      <details><summary>Нужен ли MCP каждому агенту?<span aria-hidden="true">+</span></summary><p>Для получения сообщения Agent Herder использует подключение к среде целевого агента. MCP на стороне агента нужен, когда он сам отправляет сообщения или управляет заметками.</p></details>
+      <details><summary>Это бесплатный проект?<span aria-hidden="true">+</span></summary><p>Исходный код Agent Herder открыт под MIT. Вы используете собственную инфраструктуру; расходы на модели и подписки coding-агентов зависят от ваших провайдеров.</p></details>
+    </div></section>
+
+    <section class="closing wrap"><p class="eyebrow">Agent Herder</p><h2>Дайте агентам<br>общую точку сборки.</h2><div class="actions"><a class="button primary" href="#start">Начать установку <span aria-hidden="true">↗</span></a><a class="text-link" href="https://github.com/megamen32/agent-herder" target="_blank" rel="noopener">GitHub <span aria-hidden="true">↗</span></a></div></section>
+  </main>
+
+  <footer class="site-footer wrap"><a class="brand" href="./">Agent Herder</a><p>Авторский проект Никиты · <a href="https://bezrabotnyi.com/">Безработный</a></p><a href="https://github.com/megamen32/agent-herder/blob/main/LICENSE" target="_blank" rel="noopener">Open source / MIT ↗</a></footer>
+  <dialog id="image-dialog" aria-label="Увеличенный скриншот Agent Herder"><button id="close-image" type="button" aria-label="Закрыть скриншот">Закрыть ×</button><img id="large-screenshot" alt=""></dialog>
+</body>
+</html>

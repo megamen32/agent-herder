@@ -44,9 +44,12 @@ describe("npm package metadata", () => {
     for (const phrase of [
       "Agent Herder",
       "MCP control center for coding agents",
-      "Start in 30 seconds",
+      "Build from source",
       "MCP server",
-      "npx -y agent-herder",
+      "git clone https://github.com/megamen32/agent-herder.git",
+      "npm ci",
+      "npm run build",
+      "npm start",
       "Monitor, inspect, and coordinate",
       "OpenCode",
       "Claude Code",
@@ -62,5 +65,14 @@ describe("npm package metadata", () => {
     expect(packageMetadata.keywords).toEqual(
       expect.arrayContaining(["agent-orchestration", "transcript-export", "mcp-server"]),
     );
+  });
+
+  it("does not send first-time users to an unpublished npm package", () => {
+    const russianReadme = readFileSync(resolve(repositoryRoot, "README.ru.md"), "utf8");
+    for (const readme of [englishReadme, russianReadme]) {
+      expect(readme).not.toContain("npx -y agent-herder");
+      expect(readme).toContain("http://127.0.0.1:18787/mcp");
+      expect(readme).toContain("AGENT_HERDER_WEB_PORT=18787 npm start");
+    }
   });
 });
