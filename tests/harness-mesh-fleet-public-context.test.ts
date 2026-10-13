@@ -5,11 +5,13 @@ import {createHash,randomUUID} from 'node:crypto';
 import {writeFile,rm} from 'node:fs/promises';
 import {FleetBrowserIntent} from '../src/web-ui/fleet/intent.js';
 import type {IncomingMessage} from 'node:http';
+import {Readable} from 'node:stream';
 const state=vi.hoisted(()=>({host:'mac-mini-2012.lan',auth:true,hubCalls:0,files:[] as string[],calls:[] as Readonly<{cookie:string;credentialGeneration:string}>[],providers:[] as (()=>unknown)[]}));
 vi.mock('node:os',()=>({hostname:()=>state.host,userInfo:()=>({username:'roomhacker'}),homedir:()=>process.env.TMPDIR!}));
 vi.mock('../src/web/fleet-owner-auth.js',()=>({verifyFleetOwnerCookie:vi.fn(async()=>state.auth)}));
 vi.mock('../src/mesh/fleet-owner-http-transport.js',()=>({FleetOwnerHttpTransport:class{
  constructor(private options:{ownerContext:()=>Readonly<{cookie:string;credentialGeneration:string}>|undefined}){state.providers.push(options.ownerContext);}
+ async requestSession(target:string,harness:string,id:string,control:any){const context=this.options.ownerContext();if(!context)throw new Error('missing context');state.calls.push(context);return {hostId:target.split(':')[2],status:202,body:{inputId:control.inputId,admitted:true}};}
  async readSession(target:string,harness:string,id:string){
   const context=this.options.ownerContext();if(!context)throw new Error('missing context');
   state.calls.push(context);await Promise.resolve();
@@ -51,6 +53,17 @@ describe('verified public owner context',()=>{
   const qa=request('gptadmin_auth=unit-a');qa.url='/api/fleet/hosts';const qb=request('gptadmin_auth=unit-b');qb.url='/api/fleet/hosts';
   await h(qa,a as any);await h(qb,b as any);
   expect(seen[0]).toBe(seen[1]);expect(JSON.parse(a.end.mock.calls[0]![0]).scopeKey).toBe(JSON.parse(b.end.mock.calls[0]![0]).scopeKey);
+ });
+ it.each(['message','stop','resume'])('public100 %s uses exact owner session control without entering the Hub creation lane',async(operation)=>{
+  state.host='roomhacker-server-100';const options=await ownerOptions();const body={operation,...(operation!=='stop'?{inputId:'stable-control'}:{}),...(operation==='message'?{message:'own message',mode:'queue'}:{})};
+  const q=Readable.from([Buffer.from(JSON.stringify(body))]) as IncomingMessage;
+  Object.assign(q,request('gptadmin_auth=unit-a'));q.method='POST';q.url='/api/fleet/control?hostId=server-44&harness=codex&sessionId=accepted-id';q.headers.origin='https://agent.bezrabotnyi.com';const r=response();
+  await createConfiguredFleetApiHandler(options)(q,r as any);
+  expect(r.writeHead).toHaveBeenCalledWith(202,expect.anything());expect(state.providers).toHaveLength(1);expect(state.calls.map(c=>c.cookie)).toEqual(['gptadmin_auth=unit-a']);expect(state.hubCalls).toBe(0);
+ });
+ it('rejects cross-origin public100 session control before constructing an owner transport',async()=>{
+  state.host='roomhacker-server-100';const q=request('gptadmin_auth=unit-a');q.method='POST';q.url='/api/fleet/control';q.headers.origin='https://other.example';const r=response();
+  await createConfiguredFleetApiHandler()(q,r as any);expect(r.writeHead).toHaveBeenCalledWith(403,expect.anything());expect(state.providers).toHaveLength(0);expect(state.calls).toHaveLength(0);
  });
  it('keeps public100 creates on the existing Hub binding and journal lane',async()=>{
   state.host='roomhacker-server-100';const q=request('gptadmin_auth=unit-a');q.method='POST';q.url='/api/fleet/create';q.headers.origin='https://agent.bezrabotnyi.com';const r=response();

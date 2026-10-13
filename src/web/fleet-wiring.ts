@@ -131,7 +131,7 @@ export function createConfiguredFleetApiHandler(options: {
       }
       // Public cabinets reuse the verified cookie over the maintained TLS peer routes.
       // They need no extra SSH key, central100 relay, or caller-supplied identity header.
-      if(isManagedPublicHost(request)&&!request.headers.authorization&&(hostname()!=='roomhacker-server-100'||request.method==='GET')){
+      if(isManagedPublicHost(request)&&!request.headers.authorization&&(hostname()!=='roomhacker-server-100'||request.method==='GET'||path==='/api/fleet/control')){
         if(userId!==userInfo().username)return reject(403,"Для этого владельца нет профиля флота");
         if(!await verifiedPublicOwner(request))return reject(401,"Войдите в кабинет владельца флота");
         if(!validPublicOrigin(request))return reject(403,"Создание доступно из своего кабинета");
@@ -140,7 +140,7 @@ export function createConfiguredFleetApiHandler(options: {
         const context=Object.freeze({cookie,credentialGeneration:createHash('sha256').update(cookie).digest('hex')});
         let service:FleetCabinetService;
         if(hostname()==='roomhacker-server-100'){
-          // Reads use owner TLS while retaining the configured browser partition.
+          // Reads and exact session controls use owner TLS in the existing browser partition.
           // Creates still use the existing Hub binding/journal below; this service has no journal.
           const binding=await readBinding();
           const profileId=`${new URL(binding.endpoint).origin}/client:zcode`;
