@@ -1,0 +1,20 @@
+.session-row-actions { display:flex; align-items:center; min-width:0; width:100%; }
+.session-row-actions .session-row { flex:1 1 0; width:auto; min-width:0; min-height:50px; padding:6px 10px; }
+.session-row-actions .session-copy { min-width:0; }
+.session-row-actions .session-copy strong { line-height:21px; }
+.session-list .session-copy .session-identity { display:block; color:var(--muted); font-size:11px; line-height:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin:1px 0 0; }
+.session-pin { border:0; background:transparent; color:var(--muted); flex:0 0 32px; width:32px; height:32px; padding:0; display:grid; place-items:center; border-radius:8px; opacity:0; cursor:pointer; }
+.session-pin:disabled { cursor:wait; }
+.session-row-actions:hover .session-pin, .session-row-actions:focus-within .session-pin, .session-row-actions.is-pinned .session-pin { opacity:1; }
+.session-pin:hover, .session-pin:focus-visible { background:var(--surface-hover); color:var(--text); }
+.session-pin[aria-pressed="true"] { color:var(--accent); }
+.session-pin-error { color:var(--status-error); font-size:12px; padding:4px 20px; }
+.session-context-tooltip { position:fixed; z-index:2500; width:340px; max-width:calc(100vw - 24px); max-height:calc(100vh - 24px); overflow:hidden; box-sizing:border-box; padding:14px 16px; border:1px solid var(--border); background:var(--surface-3); color:var(--text); border-radius:12px; box-shadow:0 10px 28px #0005; pointer-events:none; font-size:12px; line-height:1.5; }
+.session-context-tooltip > strong { display:block; font-size:14px; overflow-wrap:anywhere; margin-bottom:10px; }
+.session-context-tooltip dl { margin:0; display:grid; grid-template-columns:90px minmax(0,1fr); gap:5px 10px; }
+.session-context-tooltip dt { color:var(--muted); }
+.session-context-tooltip dd { margin:0; overflow-wrap:anywhere; }
+@media(max-width:900px) {
+  .session-pin { flex-basis:44px; width:44px; height:44px; opacity:1; }
+  .session-context-tooltip { display:none; }
+}

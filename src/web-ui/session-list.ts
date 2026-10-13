@@ -42,6 +42,7 @@ export function truncatePreview(text: string, max = 120): string {
 export type SessionListSession = {
   hostId?: string;
   hostLabel?: string;
+  project?: {launchCwd:string|null; currentCwd:string|null; source:string};
   remote?: boolean;
   id: string;
   harness: string;
