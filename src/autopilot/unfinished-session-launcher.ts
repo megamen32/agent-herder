@@ -1005,8 +1005,14 @@ export class UnfinishedSessionStore {
       record.admissionPhase = "terminal_observed";
       record.terminalReason = reason;
       record.terminalObservedAt = now.toISOString();
-      if (assistantObserved) record.terminalAssistantObserved = true;
-      else delete record.terminalAssistantObserved;
+      // A terminal that carried a persisted assistant answer is a satisfied
+      // admission, not a silent one. It discharges the bounded re-admission
+      // budget exactly like markStarted does for terminalAssistantObserved;
+      // keeping the previous count would later alarm as "answered twice".
+      if (assistantObserved) {
+        record.terminalAssistantObserved = true;
+        record.terminalRetryCount = 0;
+      } else delete record.terminalAssistantObserved;
       record.updatedAt = now.toISOString();
       if (fingerprint) record.lastProgressFingerprint = bounded(fingerprint, "fingerprint");
       delete record.deliveryPending;
@@ -2601,12 +2607,17 @@ export class UnfinishedSessionLauncher {
         const durableAdmission = durableBySourceKey.get(sourceKey);
         let admissionPhase = durableAdmission?.admissionPhase
           ?? (durableAdmission?.acceptedAt || durableAdmission?.deliveryPending ? "accepted_pending" : undefined);
+        // markAdmissionTerminal discharges the retry budget of an answered
+        // admission. The assessment below must read that updated count, not the
+        // pre-terminal snapshot, or it re-decides the session as exhausted in
+        // the very cycle where the assistant answer was proven.
+        let acceptedTerminalRetryCount = durableAdmission?.terminalRetryCount ?? 0;
         let admissionMessages: SessionMessageView[] | null | undefined;
         if ((admissionPhase === "accepted_pending" || admissionPhase === "in_progress" || admissionPhase === "terminal_observed")
           && durableAdmission?.acceptedAt) {
           admissionMessages = await sessionEvidenceMessages(adapter, session.id, runtimeSettings.evidenceMessageCount);
           if (hasPersistedAssistantAfterAdmission(admissionMessages ?? [], durableAdmission.acceptedAt)) {
-            await this.options.store.markAdmissionTerminal(
+            const terminal = await this.options.store.markAdmissionTerminal(
               session.harness,
               session.id,
               sessionWorkspaceIdentity(session),
@@ -2614,6 +2625,7 @@ export class UnfinishedSessionLauncher {
               sessionProgressFingerprint(session),
               true,
             );
+            if (terminal) acceptedTerminalRetryCount = terminal.terminalRetryCount ?? 0;
             admissionPhase = "terminal_observed";
             const snapshotVersion = urgentSignalVersions.get(sourceKey) ?? 0;
             const versionBeforeQueue = this.urgentSessionVersions.get(sourceKey) ?? 0;
@@ -2730,7 +2742,7 @@ export class UnfinishedSessionLauncher {
             latestSemanticMessage: { role: latestSemanticMessage.role, text: latestSemanticMessage.text },
           } : {}),
           ...(admissionPhase === "terminal_observed" ? {
-            acceptedTerminalRetryCount: durableAdmission?.terminalRetryCount ?? 0,
+            acceptedTerminalRetryCount,
             ...(durableAdmission?.terminalReason ? { acceptedTerminalReason: durableAdmission.terminalReason } : {}),
           } : {}),
           ...(admissionTimedOut ? { acceptedAdmissionTimedOut: true } : {}),
