@@ -2,8 +2,10 @@ type WebStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 const JSON_RENDERING_OPT_OUT_STORAGE_KEY = "agent-herder.json-rendering.opt-out";
 
-const SYSTEM_BLOCK_PATTERN = /<(system-reminder|context_guidance|agent-herder-repo-peers|agent-herder-coordination|agent-herder-deferred|oai-mem-citation)>([\s\S]*?)<\/\1>/g;
+const SYSTEM_BLOCK_PATTERN = /<(system-reminder|context_guidance|agent-herder-repo-peers|agent-herder-coordination|agent-herder-deferred|oai-mem-citation|INSTRUCTIONS|environment_context)(?:\s+[^>]*)?>([\s\S]*?)<\/\1>/g;
 const SYSTEM_BLOCK_LABELS: Record<string, string> = {
+  "INSTRUCTIONS": "Инструкции проекта",
+  "environment_context": "Контекст сессии",
   "system-reminder": "Системное напоминание",
   "context_guidance": "Служебный контекст",
   "agent-herder-repo-peers": "Соседи по репозиторию",

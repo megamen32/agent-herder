@@ -17,6 +17,16 @@ describe("system blocks in rendered messages", () => {
     expect(splitSystemBlocks(text)).toEqual({ text, blocks: [] });
   });
 
+  it("folds native project instructions and session environment while retaining human text", () => {
+    const value = splitSystemBlocks("# AGENTS.md\n<INSTRUCTIONS>private runtime rules</INSTRUCTIONS>\n<environment_context><cwd>/own/work</cwd></environment_context>\nПродолжи задачу");
+    expect(value.text).toBe("# AGENTS.md\n\n\nПродолжи задачу");
+    expect(value.blocks).toEqual([{label:"Инструкции проекта",body:"private runtime rules"},{label:"Контекст сессии",body:"<cwd>/own/work</cwd>"}]);
+  });
+  it("folds attributed coordination blocks and preserves literal instruction tags in code", () => {
+    const value=splitSystemBlocks('<agent-herder-coordination board="own">status</agent-herder-coordination>\n```xml\n<INSTRUCTIONS>literal</INSTRUCTIONS>\n```');
+    expect(value.blocks).toEqual([{label:"Заметка координации",body:"status"}]);
+    expect(value.text).toBe('```xml\n<INSTRUCTIONS>literal</INSTRUCTIONS>\n```');
+  });
   it("preserves an unfinished streamed fence", () => {
     const text = "```js\nconst answer = 42;";
     expect(splitSystemBlocks(text)).toEqual({ text, blocks: [] });
