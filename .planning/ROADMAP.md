@@ -48,12 +48,11 @@ Recover the original requested delivery and its actual progress. This roadmap do
 1. Each eligible original session has a verified task outcome, without combining unrelated chats or replaying completed actions.
 **Plans**: Existing inventory reconciliation; result acceptance pending.
 
-## Next milestone (planned)
+## Sidebar milestone delivered
 
 **Закрепления и компактные сведения о сессиях** — личные закрепления в левом
 списке, маленькая строка «среда · сервер», desktop hover/focus с CWD проекта,
-моделью и состоянием. Пользователь выбрал только запись следующего майлстоуна,
-не его текущую реализацию. [Scope and acceptance](milestones/session-pins.md).
+моделью и состоянием. Пользователь затем поручил реализацию; UI принят на реальном сайте 13.10.2026. Следующий шаг — синхронизация с нативными закреплениями, пока только в backlog. [Scope and acceptance](milestones/session-pins.md).
 Requirements: PIN-01, PIN-02, META-01, META-02, META-03, META-04.
 
 ## Current milestone progress
