@@ -2,6 +2,7 @@ import {createHash} from "node:crypto";
 import {CoordinationDeliveryBudget} from "../coordination-delivery-budget.js";
 import {addressKey,unwrapResult,type MeshAddress,type MeshSession,type NativeReceipt} from "./protocol.js";
 import {inventoryHarnesses} from "./inventory.js";
+import type {FleetSessionControl,FleetSessionResponse} from './fleet-session-control.js';
 
 /** Supplied by the authenticated consumer; mesh does not mint tokens or bypass profiles. */
 export interface GptAdminTransport {
@@ -10,6 +11,7 @@ export interface GptAdminTransport {
   readSessionPage?(target:string,cursor?:string,limit?:number):Promise<unknown>;
   /** Optional owner-direct read; no session mutation or token mint. */
   readSession?(target:string,harness:string,sessionId:string):Promise<unknown>;
+  requestSession?(target:string,harness:string,sessionId:string,control:FleetSessionControl):Promise<FleetSessionResponse>;
   schema(target:string):Promise<unknown>;
   call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>;
 }

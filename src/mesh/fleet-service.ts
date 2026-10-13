@@ -5,6 +5,7 @@ import {fleetHarnesses,type FleetHostDefinition,type FleetHost,type FleetScope,t
 import {FleetCreateJournal} from './fleet-create-journal.js';
 import type {SessionInventoryPage,InventorySession} from './session-page.js';
 import type {RustCoreHostSelector} from './rust-core-client.js';
+import {fleetSessionControlSchema,type FleetSessionControl,type FleetSessionResponse} from './fleet-session-control.js';
 type Context=FleetScope&{hostId:string;credentialGeneration?:string};
 type Cached={revision:number;host:FleetHost;sessions:FleetSession[];complete:boolean;limited:boolean;target:string;inventorySupported?:boolean};
 export interface FleetDependencies {hosts:readonly FleetHostDefinition[];scope:FleetScope;transportFactory:(context:Context)=>GptAdminTransport;rustCore?:RustCoreHostSelector;now?:()=>number;ttlMs?:number;readDeadlineMs?:number;discoveryDeadlineMs?:number;createDeadlineMs?:number;journalPath?:string;credentialGeneration?:string}
@@ -42,6 +43,15 @@ export class FleetCabinetService {
   if(deps.journalPath)this.journal=new FleetCreateJournal(this.deps.journalPath!,this.deps.scope);
  }
  get canReadSession(){return typeof this.transport(this.deps.hosts[0]!.hostId).readSession==='function';}
+ async requestSession(address:{hostId:string;harness:string;nativeSessionId:string},control:FleetSessionControl):Promise<FleetSessionResponse>{
+  if(!this.deps.hosts.some(h=>h.hostId===address.hostId)||!fleetHarnesses.includes(address.harness as any)||!validText(address.nativeSessionId,512))throw new Error('fleet_session_invalid');
+  const captured=Object.freeze({...address}),request=fleetSessionControlSchema.parse(control);
+  await this.selectedHost(captured.hostId);
+  const transport=this.transport(captured.hostId);if(!transport.requestSession)throw new Error('fleet_session_control_unavailable');
+  const response=await transport.requestSession(`mcp:shell:${captured.hostId}:AgentHerder`,captured.harness,captured.nativeSessionId,request);
+  if(response.hostId!==captured.hostId)throw new Error('fleet_session_response_identity_mismatch');
+  return response;
+ }
  async readSession(address:{hostId:string;harness:string;nativeSessionId:string}):Promise<unknown>{
   if(!this.deps.hosts.some(h=>h.hostId===address.hostId)||!fleetHarnesses.includes(address.harness as any)||!validText(address.nativeSessionId,512))throw new Error('fleet_session_invalid');
   await this.selectedHost(address.hostId);

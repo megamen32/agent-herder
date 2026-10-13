@@ -35,7 +35,7 @@ function fixture(){
    if(!held)queueMicrotask(()=>{
     if(call.body?.method==='notifications/initialized')return void respond(call,undefined,202);
     const result=handler(call);
-    const data=call.body?{jsonrpc:'2.0',id:call.body.id,result}:result;
+    const data=call.body?.jsonrpc?{jsonrpc:'2.0',id:call.body.id,result}:result;
     respond(call,data,200,call.body?.method==='initialize'?{'mcp-session-id':String((options.headers as any).Host)+':'+String((options.headers as any).Cookie)}:{});
    });
   })});calls.push(call);return call.req as ClientRequest;
@@ -175,5 +175,23 @@ describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=
   const f=fixture();f.setHandler(c=>c.body.method==='initialize'?{protocolVersion:'2025-11-25',capabilities:{}}:{structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}});
   await expect(f.transport.schema('mcp:shell:roomhacker-server-100:AgentHerder')).rejects.toThrow('owner_http_native_identity_mismatch');
   expect(f.calls[0].options).toMatchObject({hostname:'agent.bezrabotnyi.com',servername:'agent.bezrabotnyi.com',headers:{Host:'agent.bezrabotnyi.com',Origin:'https://agent.bezrabotnyi.com'}});
+ });
+});
+
+// Remote human controls reuse the existing owner API, not mesh AI delivery.
+describe('remote session human controls (focused integration; expected2s/max20s)',()=>{
+ it('sends exactly once to the selected owner/native SID with stable input and human origin',async()=>{
+  const f=fixture();f.setHandler(c=>{if(c.options.method==='GET')return {session:{id:'accepted-44',harness:'codex'}};if(c.body.humanRequested)return {ok:true,inputId:c.body.inputId,admitted:true};if(c.body.method==='initialize')return {protocolVersion:'2025-11-25',capabilities:{}};return {structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}};});
+  const r=await f.transport.requestSession(target44,'codex','accepted-44',{operation:'message',inputId:'owned-input',message:'hello',mode:'queue'});
+  expect(r).toEqual({hostId:'server-44',status:200,body:{ok:true,inputId:'owned-input',admitted:true}});
+  const writes=f.calls.filter(c=>c.body?.humanRequested);expect(writes).toHaveLength(1);expect(writes[0].options.path).toBe('/api/sessions/codex/accepted-44/message');expect(writes[0].body).toEqual({humanRequested:true,inputId:'owned-input',message:'hello',mode:'queue'});
+ });
+ it('rejects a foreign session identity before any mutation and never retargets',async()=>{
+  const f=fixture();await expect(f.transport.requestSession(target44,'codex','different',{operation:'stop',inputId:'stop-once'})).rejects.toThrow('session_identity_mismatch');expect(f.calls.some(c=>c.body?.humanRequested)).toBe(false);expect(f.calls.every(c=>(c.options.headers as any).Host==='agent44.bezrabotnyi.com')).toBe(true);
+ });
+ it('a lost native POST remains unknown with no second POST',async()=>{
+  const f=fixture();await f.transport.schema(target44);f.setHandler(c=>{if(c.options.method==='GET'){f.hold();return {session:{id:'accepted-44',harness:'codex'}};}return {structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}};});
+  const pending=f.transport.requestSession(target44,'codex','accepted-44',{operation:'message',inputId:'lost-input',message:'do once'});const rejected=expect(pending).rejects.toThrow();
+  await vi.waitFor(()=>expect(f.calls.filter(c=>c.body?.humanRequested)).toHaveLength(1));f.calls.find(c=>c.body?.humanRequested)!.req.emit('error',new Error('lost'));await rejected;expect(f.calls.filter(c=>c.body?.humanRequested)).toHaveLength(1);
  });
 });

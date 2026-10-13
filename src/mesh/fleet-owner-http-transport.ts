@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {hostname} from 'node:os';
 import {unwrapResult} from './protocol.js';
 import type {GptAdminTransport} from './gptadmin.js';
+import {fleetSessionControlSchema,type FleetSessionControl,type FleetSessionResponse} from './fleet-session-control.js';
 
 export type FleetOwnerHttpContext=Readonly<{cookie:string;credentialGeneration:string}>;
 export interface FleetOwnerHttpOptions {ownerContext:()=>FleetOwnerHttpContext|undefined}
@@ -158,6 +159,27 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
   });
  }
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}
+ requestSession(target:string,harness:string,sessionId:string,control:FleetSessionControl):Promise<FleetSessionResponse>{
+  if(!['codex','zcode','opencode'].includes(harness)||typeof sessionId!=='string'||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))return Promise.reject(new Error('owner_http_session_invalid'));
+  const captured=fleetSessionControlSchema.parse(control),mutation=['message','stop','resume'].includes(captured.operation);
+  return this.operation(target,mutation?30000:15000,async(state,signal)=>{
+   await this.connect(state,signal);await this.info(state,signal);
+   const path=`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(sessionId)}`;
+   const identity=await this.http(state,signal,'GET',path),session=record(record(identity.data)?.session);
+   if(identity.status!==200||session?.id!==sessionId||session.harness!==harness)throw new Error('owner_http_session_identity_mismatch');
+   let response:HttpResult;
+   if(captured.operation==='details')response=await this.http(state,signal,'GET',path+'/details?limit=40&quick=1');
+   else if(captured.operation==='message-status')response=await this.http(state,signal,'GET',path+'/message-status?inputId='+encodeURIComponent(captured.inputId!));
+   else {
+    const body=JSON.stringify({humanRequested:true,...(captured.inputId?{inputId:captured.inputId}:{}),...(captured.message?{message:captured.message}:{}),...(captured.operation==='message'?{mode:captured.mode??'queue'}:{})});
+    // Exactly one call to the existing owner API/UDM. Lost replies are not retried.
+    response=await this.http(state,signal,'POST',path+'/'+captured.operation,body);
+   }
+   if(captured.operation==='details'&&response.status===200){const received=record(record(response.data)?.session);if(received?.id!==sessionId||received.harness!==harness)throw new Error('owner_http_session_identity_mismatch');}
+   if(captured.operation==='message-status'&&response.status===200&&record(response.data)?.inputId!==captured.inputId)throw new Error('owner_http_input_identity_mismatch');
+   return {hostId:state.peer.hostId,status:response.status,body:response.data??{ok:false,error:'Удалённая сессия пока недоступна.',...(mutation?{admissionUnknown:true,nonRetryable:true}:{})}};
+  });
+ }
  readSession(target:string,harness:string,sessionId:string):Promise<unknown>{
   if(!['codex','zcode','opencode'].includes(harness)||typeof sessionId!=='string'||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))return Promise.reject(new Error('owner_http_session_invalid'));
   return this.operation(target,10000,async(state,signal)=>{
