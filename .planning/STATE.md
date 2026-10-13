@@ -58,3 +58,8 @@ The originally planned session pins milestone was subsequently authorized and de
 ## Quick Task Completed — 2026-10-13
 
 261013-nje: browser session pins and compact context accepted on actual desktop/mobile public site. See quick/261013-nje-session-pins-and-compact-sidebar-context/261013-nje-SUMMARY.md. Next explicit wish: native pin synchronization (pending todo). New user-requested work now investigates silent watchdog recovery failures; separate M1 inventory500 assigned to Mac owner55. Earlier unrelated milestone statuses remain unchanged.
+
+
+## Quick Task Completed — 2026-10-13 remote session controls
+
+261013-srr delivered and accepted on actual central site: remote native message/stop/resume, SAME Codex SID onserver44 and once/wait/finish each1. Desktop/390px accepted ordinary history and44px reachable controls; Herder/native owners and9foreign queue rows preserved. See quick/261013-srr-unified-remote-session-chat-controls-sen/261013-srr-SUMMARY.md. This does not close unrelated native-pin synchronization, OCR or fleet recovery tasks.
