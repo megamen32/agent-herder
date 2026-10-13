@@ -765,6 +765,7 @@ export class HermesAdapter implements HarnessAdapter {
       messageCount: undefined,
       costUsd: typeof row.actual_cost_usd === "number" ? row.actual_cost_usd : undefined,
       meta: {
+        createdAt: row.created_at && Number.isFinite(Date.parse(row.created_at)) ? new Date(row.created_at).toISOString() : undefined,
         transport: "hermes-mcp",
         sessionId: row.session_id,
         sessionKey: id,

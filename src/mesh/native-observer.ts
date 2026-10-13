@@ -12,13 +12,14 @@ export async function observeCodex(limit=12,codexDir=join(homedir(),".codex"),ho
   const rows=(nativeSessionId?db.prepare("select id,cwd,title,updated_at,rollout_path from threads where archived=0 and id=? limit 1").all(nativeSessionId):db.prepare("select id,cwd,title,updated_at,rollout_path from threads where archived=0 order by updated_at desc limit ?").all(limit+1)) as Array<{id:string;cwd:string;title:string;updated_at:number;rollout_path:string}>;
   const sessions:MeshSession[]=[];
   for(const row of rows.slice(0,limit)){
-   let launchCwd:string|null=row.cwd||null,currentCwd:string|null=null,status="unknown";
+   let launchCwd:string|null=row.cwd||null,currentCwd:string|null=null,status="unknown",createdAt:string|undefined;
    try{
     // rollout_path comes from the native index; do not accept arbitrary caller paths.
     const file=await open(row.rollout_path,"r");
     try{
      const {size}=await file.stat();const head=Buffer.alloc(Math.min(size,8192));await file.read(head,0,head.length,0);
      const first=JSON.parse(head.toString().split("\n")[0]!);if(first.type==="session_meta"&&typeof first.payload?.cwd==="string")launchCwd=first.payload.cwd;
+     if(first.type==='session_meta'){const value=first.payload?.timestamp??first.timestamp;if(typeof value==='string'&&Number.isFinite(Date.parse(value)))createdAt=new Date(value).toISOString();}
      const offset=Math.max(0,size-128*1024),tail=Buffer.alloc(Math.min(size,128*1024));await file.read(tail,0,tail.length,offset);
      const lines=tail.toString().split("\n");if(offset)lines.shift();
      for(const line of lines){try{
@@ -31,7 +32,7 @@ export async function observeCodex(limit=12,codexDir=join(homedir(),".codex"),ho
      }catch{/* partial record */}}
     }finally{await file.close();}
    }catch{/* native metadata remains discoverable; project/status not fabricated */}
-   sessions.push({address:{hostId,harness:"codex",nativeSessionId:row.id},project:{launchCwd,currentCwd,source:currentCwd?"native_turn_context":"unverified"},status,title:(row.title||"").slice(0,160),lastActivity:new Date(row.updated_at*1000).toISOString()});
+   sessions.push({address:{hostId,harness:"codex",nativeSessionId:row.id},project:{launchCwd,currentCwd,source:currentCwd?"native_turn_context":"unverified"},status,title:(row.title||"").slice(0,160),lastActivity:new Date(row.updated_at*1000).toISOString(),...(createdAt?{createdAt}:{})});
   }
   return {sessions,complete:rows.length<=limit};
  }finally{db.close();}

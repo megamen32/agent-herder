@@ -1,7 +1,7 @@
 /** Stable native address. Project is observed state, never an address component. */
 export interface MeshAddress { hostId: string; harness: string; nativeSessionId: string }
 export interface ProjectObservation { launchCwd: string | null; currentCwd: string | null; source: string }
-export interface MeshSession { address: MeshAddress; project: ProjectObservation; status: string; title: string; lastActivity: string; model?: string }
+export interface MeshSession { address: MeshAddress; project: ProjectObservation; status: string; title: string; lastActivity: string; createdAt?: string; model?: string }
 export interface NativeReceipt { state: "admitted" | "not_attempted" | "unknown"; inputId: string; turnId?: string; retryable: boolean; reason?:string; retryAfterMs?:number }
 type SessionInput = { id: string; harness: string; cwd: string; status: string; title: string; lastActivity: string; model?: string; meta?: Record<string, unknown> };
 export function addressKey(address: MeshAddress): string {
@@ -17,7 +17,7 @@ export function projectObservation(session: {cwd:string;meta?:Record<string,unkn
 export function compactSession(hostId:string,session:SessionInput): MeshSession {
   const address={hostId,harness:session.harness,nativeSessionId:typeof session.meta?.nativeSessionId==="string" ? session.meta.nativeSessionId : session.id};
   addressKey(address);
-  return {address,project:projectObservation(session),status:session.status,title:session.title.slice(0,160),lastActivity:session.lastActivity,...(session.model?{model:session.model}:{})};
+  return {address,project:projectObservation(session),status:session.status,title:session.title.slice(0,160),lastActivity:session.lastActivity,...(typeof session.meta?.createdAt === "string" && Number.isFinite(Date.parse(session.meta.createdAt)) ? {createdAt:session.meta.createdAt} : {}),...(session.model?{model:session.model}:{})};
 }
 /** Unwrap only documented GPTAdmin and MCP envelopes; never infer success from ACK. */
 export function unwrapResult(value:unknown): Record<string,unknown> {

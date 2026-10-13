@@ -21,7 +21,7 @@ export function useFleetDirectory(selectedHostId?:string){
     for(const p of r.pages){incomplete ||= p.partial;for(const row of p.sessions)collected.set(JSON.stringify(row.address),row);if(p.nextCursor)next[p.hostId]=p.nextCursor;}
     // Follow only hosts with a next page; completed hosts are not read again.
     cursors.current=next;setMore(Object.keys(next).length>0);
-    const merged=mergeDirectoryRows(page===0&&!continuePages?[]:rowsRef.current,[...collected.values()]);rowsRef.current=merged.rows;setRows(merged.rows);capped ||= merged.limited;cappedState.current=capped;
+    const merged=mergeDirectoryRows(!continuePages&&!incomplete&&!capped&&!Object.keys(next).length?[]:rowsRef.current,[...collected.values()]);rowsRef.current=merged.rows;setRows(merged.rows);capped ||= merged.limited;cappedState.current=capped;
     if(capped)setError('Список очень большой: показано последнее окно названий. Выберите конкретную машину.');
     setPartial(incomplete||capped||Object.keys(next).length>0);
     if(!Object.keys(next).length)break;
@@ -29,6 +29,6 @@ export function useFleetDirectory(selectedHostId?:string){
   }catch{if(!signal?.aborted&&runId===run.current){setPartial(true);setError('Часть машин пока не отвечает. Доступные сессии сохранены в списке.');}}
   finally{if(runId===run.current){busy.current=false;if(!signal?.aborted)setPending(false);}}
  };
- useEffect(()=>{const abort=new AbortController();void load(false,abort.signal);const timer=setInterval(()=>void load(false,abort.signal),60000);return()=>{abort.abort();clearInterval(timer);};},[selectedHostId]);
+ useEffect(()=>{const abort=new AbortController();void load(false,abort.signal);const timer=setInterval(()=>{if(!document.hidden)void load(false,abort.signal);},60000);return()=>{abort.abort();clearInterval(timer);};},[selectedHostId]);
  return {hosts,scope,localHostId,rows,pending,partial,more,error,load};
 }

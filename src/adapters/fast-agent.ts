@@ -430,6 +430,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       messageCount: messages.length,
       lastMessage: preview?.slice(0, 300),
       meta: {
+        createdAt: stringValue(record.snapshot.created_at),
         source: "fast-agent-persisted-home",
         lastError: record.launchError,
         healthRecovery: record.snapshot.metadata?.extras?.healthRecovery === true || (record.snapshot.metadata as Record<string, unknown> | undefined)?.healthRecovery === true,

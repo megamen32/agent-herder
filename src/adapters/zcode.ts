@@ -562,6 +562,7 @@ function mapSession(
     ? nativeEvents.map(nativeSessionEvent).find((event) => event?.eventId === automationStop.id)?.seq
     : undefined;
   const meta: Record<string, unknown> = {
+    createdAt: Number.isFinite(createdAt) && createdAt > 0 ? new Date(createdAt).toISOString() : undefined,
     sessionKind: session.sessionKind,
     mode: session.mode,
     permissionMode: nonEmptyString(record(record(root.settings).permission).mode),
@@ -1673,6 +1674,7 @@ export class ZcodeAdapter implements HarnessAdapter {
             model: nonEmptyString(row.model),
             needsPermission: status === "needs_input",
             meta: {
+              createdAt: typeof row.created_at === "number" && row.created_at > 0 ? new Date(row.created_at).toISOString() : undefined,
               persistedTaskStatus: rawStatus,
               discoverySource: "tasks-index",
               pinned: row.pinned === 1,

@@ -31,7 +31,7 @@ export function projectPeerSession(raw:unknown,hostId:string):MeshSession|null{
   // Paths and identity are evidence, not display text: reject, never truncate.
   for(const cwd of [p.launchCwd,p.currentCwd])if(cwd!==null&&(typeof cwd!=="string"||!cwd||cwd.length>4096||/[\x00-\x1f\x7f]/.test(cwd)||!(/^(\/|[A-Za-z]:[\\/]|\\\\)/.test(cwd))))return null;
   const model=display(s.model,128);
-  return {address,project:{launchCwd:p.launchCwd as string|null,currentCwd:p.currentCwd as string|null,source:display(p.source,64,"unverified")||"unverified"},status:display(s.status,32,"unknown")||"unknown",title:display(s.title,160),lastActivity:display(s.lastActivity,64),...(model?{model}:{})};
+  return {address,project:{launchCwd:p.launchCwd as string|null,currentCwd:p.currentCwd as string|null,source:display(p.source,64,"unverified")||"unverified"},status:display(s.status,32,"unknown")||"unknown",title:display(s.title,160),lastActivity:display(s.lastActivity,64),...(typeof s.createdAt === "string" && s.createdAt.length <= 64 && Number.isFinite(Date.parse(s.createdAt)) ? {createdAt:s.createdAt} : {}),...(model?{model}:{})};
 }
 function compactHarnesses(rows:unknown[]):{rows:unknown[];partial:boolean}{
   const result:unknown[]=[];const seen=new Set<string>();let partial=rows.length>32;

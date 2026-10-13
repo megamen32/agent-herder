@@ -1,4 +1,4 @@
-export type SessionListSort = "activity" | "status" | "harness" | "title" | "cwd";
+export type SessionListSort = "created" | "activity" | "status" | "harness" | "title" | "cwd";
 
 const STATUS_RU: Record<string, string> = {
   running: "Работает",
@@ -50,6 +50,7 @@ export type SessionListSession = {
   cwd: string;
   status: string;
   lastActivity: string;
+  createdAt?: string;
   lastMessage?: string;
   model?: string;
   needsPermission?: boolean;
@@ -113,8 +114,33 @@ export function projectFor(session: SessionListSession, byKey: Map<string, Sessi
 
 const statusOrder = new Map([["running", 0], ["needs_input", 1], ["error", 2], ["idle", 3], ["stopped", 4]]);
 
-function compareSessions(left: SessionListSession, right: SessionListSession, sort: SessionListSort): number {
-  if (sort === "status") {
+export const SESSION_LIST_REFRESH_MS = 30_000;
+
+/** Missing native creation evidence stays unknown; activity is never a substitute. */
+export function sessionCreatedAt(session: SessionListSession): number {
+  const value = session.createdAt ?? session.meta?.createdAt;
+  const time = typeof value === 'string' ? Date.parse(value) : NaN;
+  return Number.isFinite(time) ? time : 0;
+}
+
+/** Keep existing sort times between samples; new rows appear without waiting for a sample. */
+export function sampleSessionActivity(previous: ReadonlyMap<string, string>, sessions: SessionListSession[], refresh = false): ReadonlyMap<string, string> {
+  const next = new Map(sessions.map(session => {
+    const key = sessionKey(session);
+    return [key, !refresh && previous.has(key) ? previous.get(key)! : session.lastActivity] as const;
+  }));
+  return next.size === previous.size && [...next].every(([key, value]) => previous.get(key) === value) ? previous : next;
+}
+
+export function sessionListRefreshDelay(lastStarted: number, now: number): number {
+  return Math.max(0, SESSION_LIST_REFRESH_MS - (now - lastStarted));
+}
+
+function compareSessions(left: SessionListSession, right: SessionListSession, sort: SessionListSort, activity?: ReadonlyMap<string,string>): number {
+  if (sort === "created") {
+    const delta = sessionCreatedAt(right) - sessionCreatedAt(left);
+    if (delta) return delta;
+  } else if (sort === "status") {
     const delta = (statusOrder.get(left.status) ?? 99) - (statusOrder.get(right.status) ?? 99);
     if (delta) return delta;
   } else if (sort === "harness") {
@@ -127,7 +153,7 @@ function compareSessions(left: SessionListSession, right: SessionListSession, so
     const delta = left.cwd.localeCompare(right.cwd);
     if (delta) return delta;
   } else {
-    const delta = Date.parse(right.lastActivity || "") - Date.parse(left.lastActivity || "");
+    const delta = Date.parse(activity?.get(sessionKey(right)) ?? right.lastActivity ?? "") - Date.parse(activity?.get(sessionKey(left)) ?? left.lastActivity ?? "");
     if (Number.isFinite(delta) && delta) return delta;
   }
   return sessionKey(left).localeCompare(sessionKey(right));
@@ -138,6 +164,7 @@ export function filterAndArrangeSessions(
   settings: SessionListSettings,
   collapsed: ReadonlySet<string>,
   choiceSessionKeys: ReadonlySet<string> = new Set(),
+  activity?: ReadonlyMap<string,string>,
 ): SessionListEntry[] {
   const byKey = new Map(sessions.map((session) => [sessionKey(session), session]));
   const filtered = sessions.filter((session) => {
@@ -159,7 +186,7 @@ export function filterAndArrangeSessions(
   }
   const roots = filtered
     .filter((session) => !session.meta?.parentSessionKey || !byKey.has(session.meta.parentSessionKey))
-    .sort((left, right) => compareSessions(left, right, settings.sort));
+    .sort((left, right) => compareSessions(left, right, settings.sort, activity));
   const result: SessionListEntry[] = [];
   const visited = new Set<string>();
   const hideDescendants = (session: SessionListSession) => {
@@ -172,7 +199,7 @@ export function filterAndArrangeSessions(
     const key = sessionKey(session);
     if (visited.has(key)) return;
     visited.add(key);
-    const nested = (children.get(key) || []).sort((left, right) => compareSessions(left, right, settings.sort));
+    const nested = (children.get(key) || []).sort((left, right) => compareSessions(left, right, settings.sort, activity));
     result.push({ session, depth, hasChildren: nested.length > 0 });
     if (!collapsed.has(key)) for (const child of nested) walk(child, depth + 1);
     else for (const child of nested) hideDescendants(child);

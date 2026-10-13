@@ -3,7 +3,7 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { filterAndArrangeSessions, matchesSessionQuery, projectFor, sessionKey, sessionKeyFromHash, selectionAfterSessionRefresh, type SessionListEntry, type SessionListSession, type SessionListSettings, type SessionListSort } from "./session-list.js";
+import { SESSION_LIST_REFRESH_MS, sessionListRefreshDelay, sampleSessionActivity, filterAndArrangeSessions, matchesSessionQuery, projectFor, sessionKey, sessionKeyFromHash, selectionAfterSessionRefresh, type SessionListEntry, type SessionListSession, type SessionListSettings, type SessionListSort } from "./session-list.js";
 import { QuotaPanel } from "./quota-panel.js";
 import { S21ResourceStatus } from "./s21-resource-status.js";
 import { AutoCompactSettingsPanel } from "./auto-compact-settings.js";
@@ -635,7 +635,7 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
       <label>Проект<select value={settings.project} onChange={(event) => onSettingsChange({ project: event.target.value })}><option value="">Все проекты</option>{options.projects.map((project) => <option value={project} key={project}>{project}</option>)}</select></label>
       <label>Машина<select aria-label="Машина" value={settings.hostId??""} onChange={event=>onSettingsChange({hostId:event.target.value})}><option value="">Все машины</option>{options.hosts.map(host=><option key={host.hostId} value={host.hostId}>{host.label}</option>)}</select></label>
       <label>Агент<select value={settings.harness} onChange={(event) => onSettingsChange({ harness: event.target.value })}><option value="">Все агенты</option>{options.harnesses.map((harness) => <option value={harness} key={harness}>{harness}</option>)}</select></label>
-      <label>Сортировка<select value={settings.sort} onChange={(event) => onSettingsChange({ sort: event.target.value as SessionListSort })}><option value="activity">По активности</option><option value="status">По статусу</option><option value="harness">По агенту</option><option value="title">По названию</option><option value="cwd">По папке</option></select></label>
+      <label>Сортировка<select value={settings.sort} onChange={(event) => onSettingsChange({ sort: event.target.value as SessionListSort })}><option value="created">По дате создания</option><option value="activity">По активности · раз в 30 с</option><option value="status">По статусу</option><option value="harness">По агенту</option><option value="title">По названию</option><option value="cwd">По папке</option></select></label>
       <label className="session-toggle"><input type="checkbox" aria-label="Показывать все сессии" checked={settings.showAll} onChange={(event) => onSettingsChange({ showAll: event.target.checked })} /> Показывать завершённые сессии</label>
     </div>}
     {settingsOpen&&<details className="session-cache-settings"><summary>Быстрое открытие сессий</summary><label>Хранить просмотр в этом браузере<select aria-label="Срок кэша сессий" value={cacheSettings.hours} onChange={e=>onCacheSettings({...cacheSettings,hours:Number(e.target.value)})}><option value={0}>Выключено</option><option value={24}>Сутки</option><option value={72}>3 дня</option><option value={168}>Неделя</option></select></label><label>Размер кэша<select aria-label="Размер кэша сессий" value={cacheSettings.maxMiB} onChange={e=>onCacheSettings({...cacheSettings,maxMiB:Number(e.target.value)})}>{[16,32,64].map(size=><option key={size} value={size}>{size} МБ</option>)}</select></label><small>Только открытые сессии. История остальных остаётся на их машине. При открытии сохранённый просмотр обновляется.</small><button className="quiet-button" onClick={onCacheClear}>Очистить сохранённый просмотр</button></details>}
@@ -671,7 +671,7 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
 }
 
 function App() {
-  const [listSettings, setListSettings] = React.useState<SessionListSettings>({ cwd: "", project: "", harness: "", hostId:"", sort: "activity", showAll: true });
+  const [listSettings, setListSettings] = React.useState<SessionListSettings>({ cwd: "", project: "", harness: "", hostId:"", sort: "created", showAll: true });
   const directory=useFleetDirectory(listSettings.hostId);
   const sessionPins = useSessionPins(directory.scope);
   const [remoteSelection,setRemoteSelection]=React.useState<MeshAddress>();
@@ -860,7 +860,12 @@ function App() {
   const chatScrollRef = React.useRef<HTMLDivElement>(null);
   const shouldFollowRef = React.useRef(true);
 
-  const loadSessions = React.useCallback(async (): Promise<boolean> => {
+  const sessionsReadRef = React.useRef<Promise<boolean> | undefined>(undefined);
+  const sessionsLastReadRef = React.useRef(0);
+  const loadSessions = React.useCallback((): Promise<boolean> => {
+    if (sessionsReadRef.current) return sessionsReadRef.current;
+    sessionsLastReadRef.current = Date.now();
+    const read = (async () => {
     setSessionsRefreshing(true);
     try {
     const [result, choiceResult] = await Promise.all([
@@ -896,6 +901,10 @@ function App() {
     } finally {
       setSessionsRefreshing(false);
     }
+    })();
+    sessionsReadRef.current = read;
+    void read.finally(() => { if (sessionsReadRef.current === read) sessionsReadRef.current = undefined; }).catch(() => {});
+    return read;
   }, []);
   React.useEffect(() => {
     let cancelled = false;
@@ -915,7 +924,7 @@ function App() {
       }
     };
     void initial();
-    const timer = window.setInterval(() => void loadSessions(), 30_000);
+    const timer = window.setInterval(() => { if (!document.hidden && sessionListRefreshDelay(sessionsLastReadRef.current, Date.now()) === 0) void loadSessions().catch(() => {}); }, SESSION_LIST_REFRESH_MS);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [loadSessions]);
   const loadJobs = React.useCallback(async () => {
@@ -1039,9 +1048,17 @@ function App() {
     let sessionTimer = 0;
     let jobTimer = 0;
     let detailTimer = 0;
-    const scheduleSessions = () => {
-      if (sessionTimer) return;
-      sessionTimer = window.setTimeout(() => { sessionTimer = 0; void loadSessions(); }, 120);
+    const scheduleSessions = (immediate = false) => {
+      if (sessionTimer && !immediate) return;
+      if (sessionTimer) window.clearTimeout(sessionTimer);
+      const refresh = () => {
+        sessionTimer = 0;
+        if (document.hidden) return;
+        const delay = immediate ? 0 : sessionListRefreshDelay(sessionsLastReadRef.current, Date.now());
+        if (delay > 0) { sessionTimer = window.setTimeout(refresh, delay); return; }
+        void loadSessions().catch(() => {});
+      };
+      sessionTimer = window.setTimeout(refresh, immediate ? 120 : sessionListRefreshDelay(sessionsLastReadRef.current, Date.now()));
     };
     const scheduleJobs = () => {
       if (jobTimer) return;
@@ -1056,7 +1073,7 @@ function App() {
     const stream = new EventSource(`/api/events/stream?after=${cursor}`);
     stream.onmessage = (message) => {
       try {
-        const event = JSON.parse(message.data) as { control?: string; latestSequence?: number; sequence?: number; uri?: string };
+        const event = JSON.parse(message.data) as { control?: string; latestSequence?: number; sequence?: number; uri?: string; action?: string };
         if (event.control === "reset") {
           if (typeof event.latestSequence === "number") window.localStorage.setItem("agent-herder.event-cursor", String(event.latestSequence));
           scheduleSessions(); scheduleJobs(); scheduleDetails();
@@ -1066,7 +1083,7 @@ function App() {
         const uri = event.uri || "";
         if (uri.startsWith("herder://jobs")) scheduleJobs();
         if (uri.startsWith("herder://sessions") || uri.startsWith("herder://coordination") || uri.startsWith("herder://human-requests")) {
-          scheduleSessions();
+          scheduleSessions(uri.startsWith("herder://sessions/") && (event.action === "created" || event.action === "deleted"));
           scheduleDetails();
         }
       } catch { /* malformed event; fallback refresh still runs */ }
@@ -1137,6 +1154,16 @@ function App() {
     const keys=new Set(local.map(keyOf));
     return [...local,...directory.rows.flatMap(row=>{const host=directory.hosts.find(h=>h.hostId===row.address.hostId);if(!host)return [];const s=directorySession(row,host,directory.localHostId);return keys.has(keyOf(s))?[]:[s];})];
   },[sessions,directory.rows,directory.hosts,directory.localHostId]);
+  const activitySessionsRef = React.useRef(displaySessions);
+  activitySessionsRef.current = displaySessions;
+  const [activityOrder, setActivityOrder] = React.useState<ReadonlyMap<string,string>>(() => new Map());
+  React.useEffect(() => { setActivityOrder(previous => sampleSessionActivity(previous, displaySessions)); }, [displaySessions]);
+  React.useEffect(() => {
+    if (listSettings.sort !== 'activity') return;
+    setActivityOrder(previous => sampleSessionActivity(previous, activitySessionsRef.current, true));
+    const timer = window.setInterval(() => { if (!document.hidden) setActivityOrder(previous => sampleSessionActivity(previous, activitySessionsRef.current, true)); }, SESSION_LIST_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [listSettings.sort]);
   const sessionMap = React.useMemo(() => new Map(displaySessions.map((session) => [keyOf(session), session])), [displaySessions]);
   const listOptions = React.useMemo(() => ({
     hosts:directory.hosts,
@@ -1153,7 +1180,7 @@ function App() {
     return result;
   }, [autopilotChoices]);
   const choiceSessionKeys = React.useMemo(() => new Set(choicesBySession.keys()), [choicesBySession]);
-  const visibleSessionEntries = React.useMemo(() => sidebarEntries(displaySessions, listSettings, collapsedChildren, choiceSessionKeys, sessionSearch, sessionPins.pins), [displaySessions, listSettings, collapsedChildren, choiceSessionKeys, sessionSearch, sessionPins.pins]);
+  const visibleSessionEntries = React.useMemo(() => sidebarEntries(displaySessions, listSettings, collapsedChildren, choiceSessionKeys, sessionSearch, sessionPins.pins, activityOrder), [displaySessions, listSettings, collapsedChildren, choiceSessionKeys, sessionSearch, sessionPins.pins, activityOrder]);
   React.useEffect(() => {
     if (activeKey && (activeKey === deepLinkKey || visibleSessionEntries.some(({ session }) => keyOf(session) === activeKey))) return;
     const first=visibleSessionEntries.find(e=>!e.session.remote);selectSession(first ? keyOf(first.session) : undefined);
@@ -1415,7 +1442,7 @@ function App() {
       });
       if (!created.sessionId) throw new Error("Сервер не вернул созданную сессию");
       setShowCreateSession(false);
-      setListSettings((current) => ({ ...current, harness: createHarness, cwd: "", sort: "activity", showAll: true }));
+      setListSettings((current) => ({ ...current, harness: createHarness, cwd: "", sort: current.sort, showAll: true }));
       const key = `${createHarness}:${created.sessionId}`;
       selectSession(key);
       setMobileView("chat");

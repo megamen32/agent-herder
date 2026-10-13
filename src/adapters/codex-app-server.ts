@@ -1313,6 +1313,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       lastMessage: thread.preview,
       meta: {
         nativeSessionId: thread.id,
+        createdAt: threadTimestamp(thread.createdAt) || undefined,
         transport: "codex-app-server",
         activeTurnId: this.activeTurns.get(thread.id),
         ...(this.lastNativeTurns.has(thread.id) ? { nativeLastTurn: this.lastNativeTurns.get(thread.id) } : {}),

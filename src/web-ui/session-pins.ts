@@ -45,11 +45,11 @@ export function toggleSessionPin(storage: StorageAccess | null, scope: string, k
   try {storage.setItem(pinStorageKey(scope), JSON.stringify(next)); return next;} catch {return null;}
 }
 
-export function sidebarEntries(sessions: SessionListSession[], settings: SessionListSettings, collapsed: ReadonlySet<string>, choices: ReadonlySet<string>, query: string, pins: readonly string[]): SessionListEntry[] {
-  const visible = filterAndArrangeSessions(sessions, settings, collapsed, choices).filter(({session}) => matchesSessionQuery(session, query));
+export function sidebarEntries(sessions: SessionListSession[], settings: SessionListSettings, collapsed: ReadonlySet<string>, choices: ReadonlySet<string>, query: string, pins: readonly string[], activity?: ReadonlyMap<string,string>): SessionListEntry[] {
+  const visible = filterAndArrangeSessions(sessions, settings, collapsed, choices, activity).filter(({session}) => matchesSessionQuery(session, query));
   if (!pins.length) return visible;
   // Expand metadata only, not native sessions: a pinned child survives a folded parent.
-  const available = filterAndArrangeSessions(sessions, settings, new Set(), choices).filter(({session}) => matchesSessionQuery(session, query));
+  const available = filterAndArrangeSessions(sessions, settings, new Set(), choices, activity).filter(({session}) => matchesSessionQuery(session, query));
   const byPin = new Map(available.flatMap(entry => {const key = sessionPinKey(entry.session); return key ? [[key, entry] as const] : [];}));
   const selected = pins.flatMap(key => {const entry = byPin.get(key); return entry ? [{...entry, depth: 0}] : [];});
   const pinned = new Set(pins);
