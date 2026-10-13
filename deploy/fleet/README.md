@@ -110,6 +110,19 @@ The original physical FTS artifact mode is unchanged. Twelve staged scans on
 the actual M1 under a Background parent completed in0.0136–0.478s; this is
 read-only candidate evidence before the next guarded helper/probe promotion.
 
+The native C version subsequently hit a fresh state observer parent deadline at
+1.492s after144.15s of real operation (receipt retained). Its internal census can
+use two seconds, while the former parent allowed only1.25 seconds before cleanup;
+that contract could abort a complete allowed child operation. Darwin mutable
+storage now has a four-second total parent window: at most three seconds for
+startup/unchanged C census and one reserved second for owned-child cleanup.
+The C scan remains1s per attempt/two seconds total, with only one deadline retry;
+no file/byte/UID/inode/IO rejection retry or stale measurements. Linux/internal
+Python storage remains1s/2s. Artifact window/cadence and process/CPU/RAM/thread/
+storage byte caps, host reserves and common10s cleanup remain unchanged.
+Mutable observation remains synchronous and fresh, so its worst-case scheduling
+cost is now up to4s per root, rather than2s; it is not kernel enforcement.
+
 The staged helper was also exercised on the actual M1 under a Background parent:
 three temp/state pairs completed in 0.221–0.438s, with 291927/5904 bytes measured.
 This establishes the read-only observer path, before any Node helper activation.

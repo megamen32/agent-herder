@@ -200,11 +200,11 @@ def darwin_artifact_bytes(root, limit, overall_deadline, verify_root, refuse, pi
 
 def darwin_mutable_bytes(root,limit,overall_deadline,verify_root,refuse,pinned):
     """The same fd/no-follow census, in one sealed native utility-QoS observer.
-    Parent/Node retain background policy; the original two-second wall and
-    hard accounting bounds also apply to startup and owned-child cleanup.
+    Parent/Node retain background policy. The four-second parent window fits
+    the child's unchanged two-second census plus startup and owned cleanup.
     """
     child=None;root_fd=None;cwd_fd=None;summary=b''
-    operation_deadline=overall_deadline-.75
+    operation_deadline=overall_deadline-1
     def remaining():
         value=operation_deadline-time.monotonic()
         if value<=0:refuse('storage_observation_limit','deadline')
@@ -271,7 +271,7 @@ def storage_probe_main(args):
 
 def storage_bytes(root, limit, *, artifact=False, _native_mutable=True):
     root=root.absolute()
-    window=ARTIFACT_OBSERVATION_SECONDS if artifact else 2
+    window=ARTIFACT_OBSERVATION_SECONDS if artifact else (4 if sys.platform=='darwin' and _native_mutable else 2)
     # Give a complete artifact census one finite allowance. Disk metadata
     # delays must not discard a healthy pass at the former five-second gate.
     attempt_window=window if artifact else window/2

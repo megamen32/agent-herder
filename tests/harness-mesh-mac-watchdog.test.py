@@ -912,6 +912,15 @@ class MacWatchdogTests(unittest.TestCase):
                 self.assertEqual(w.storage_bytes(root,128*w.MIB),3)
             self.assertEqual(probe.call_args.args[:2],(root,128*w.MIB))
 
+    def test_native_mutable_parent_fits_full_child_window_and_cleanup(self):
+        # Fast unit: parent used1.25s execution despite a2s child contract;
+        # actual fresh state probe was killed at1.492s. No native acceptance.
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'tmp';root.mkdir()
+            with patch.object(w.sys,'platform','darwin'),patch.object(w.time,'monotonic',return_value=100),patch.object(w,'darwin_mutable_bytes',return_value=3) as probe:
+                self.assertEqual(w.storage_bytes(root,128*w.MIB),3)
+            self.assertEqual(probe.call_args.args[2],104)
+
     def test_mutable_observer_uses_sealed_native_fd_scanner_not_interpreter_startup(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)/'tmp';root.mkdir();info=root.lstat()
