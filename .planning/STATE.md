@@ -48,3 +48,9 @@ No user-approved deferrals. Earlier evidence and foreign WIP remain preserved.
 Last session: 2026-10-12
 Stopped at: Active repair and consumer verification.
 Resume file: None
+
+## Current task result — 2026-10-13
+
+Confirmed delivered composer messages now use the normal chronological chat renderer, with one-to-one native reconciliation and unchanged unknown/noReplay behavior. Public authenticated desktop and390px mobile accepted on server44; frontend-only activation preserved backend/native generation. Evidence: .planning/debug/delivered-chat.md and .tmp/delivered-chat-20261013/public-site-acceptance.json. Earlier phase statuses above remain historical; this result does not complete unrelated recovery/Mac work.
+
+Next user-selected milestone is planned only: personal session pins, compact harness/server line and desktop hover/focus with full CWD/model/status context. See milestones/session-pins.md. Implementation has not started.
