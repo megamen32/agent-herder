@@ -13,6 +13,8 @@ export type OutboxEntry = {
   images?: UploadedImage[];
   mode: DeliveryMode;
   createdAt: number;
+  deliveredAt?: number;
+  nativeTurnId?: string;
   jobId?: string;
   status: OutboxStatus;
   error?: string;
@@ -35,7 +37,7 @@ export type MessageDeliveryResponse = {
   job?: { id?: string; state?: string; result?: unknown; error?: string };
 };
 
-export type OutboxStatusPatch = Pick<OutboxEntry, "status"> & Partial<Pick<OutboxEntry, "error" | "note" | "nonRetryable">>;
+export type OutboxStatusPatch = Pick<OutboxEntry, "status"> & Partial<Pick<OutboxEntry, "error" | "note" | "nonRetryable" | "nativeTurnId">>;
 
 type WebStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
@@ -82,7 +84,7 @@ export const classifyMessageDelivery = (payload: unknown, httpOk: boolean): Outb
   const error = typeof response.error === "string" && response.error.trim() ? response.error.trim() : undefined;
   if (error) return { status: "failed", error, nonRetryable: response.nonRetryable === true ? true : undefined };
   if (!httpOk) return { status: "failed", error: "Сервер отклонил сообщение", nonRetryable: response.nonRetryable === true ? true : undefined };
-  if (response.admitted === true || response.turnId !== undefined) return { status: "delivered" };
+  if (response.admitted === true || response.turnId !== undefined) return { status: "delivered", ...(typeof response.turnId === 'string' && response.turnId ? {nativeTurnId:response.turnId} : {}) };
   if (response.delivery === "deferred") {
     return { status: "deferred", note: "Сообщение в очереди и будет доставлено, когда агент закончит текущий ответ." };
   }
@@ -149,7 +151,7 @@ export const updateOutboxEntry = (entries: OutboxEntry[], inputId: string, patch
     changed = true;
     // при смене статуса старые note/error не переносятся, если патч не задал новые
     const statusChanged = patch.status !== entry.status;
-    return { ...entry, ...patch, error: patch.error ?? (statusChanged ? undefined : entry.error), note: patch.note ?? (statusChanged ? undefined : entry.note) };
+    return { ...entry, ...patch, ...(patch.status === 'delivered' && entry.deliveredAt === undefined ? {deliveredAt:Date.now()} : {}), error: patch.error ?? (statusChanged ? undefined : entry.error), note: patch.note ?? (statusChanged ? undefined : entry.note) };
   });
   return changed ? next : entries;
 };
@@ -165,7 +167,7 @@ const reviveOutboxEntry = (raw: unknown): OutboxEntry | null => {
   if (typeof entry.createdAt !== "number" || !Number.isFinite(entry.createdAt)) return null;
   if (typeof entry.status !== "string" || !STATUS_VALUES.has(entry.status)) return null;
   const images = Array.isArray(entry.images) ? entry.images.filter(image => /^[a-f0-9]{64}$/.test(image?.id) && image.url === `/api/session-images/${image.id}` && typeof image.fileName === "string").slice(0, 4) : undefined;
-  const base = { images, inputId: entry.inputId, sessionKey: entry.sessionKey, text: entry.text, mode: entry.mode, createdAt: entry.createdAt, jobId: typeof entry.jobId === "string" && entry.jobId ? entry.jobId : undefined };
+  const base = { images, inputId: entry.inputId, sessionKey: entry.sessionKey, text: entry.text, mode: entry.mode, createdAt: entry.createdAt, ...(typeof entry.deliveredAt === 'number' && Number.isFinite(entry.deliveredAt) ? {deliveredAt:entry.deliveredAt} : {}), ...(typeof entry.nativeTurnId === 'string' && entry.nativeTurnId ? {nativeTurnId:entry.nativeTurnId} : {}), jobId: typeof entry.jobId === "string" && entry.jobId ? entry.jobId : undefined };
   if (entry.status === "sending") {
     // Отправка прервалась перезагрузкой: состояние уточняется у сервера (GET message-status),
     // повторный POST автоматически не отправляется.

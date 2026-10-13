@@ -22,6 +22,7 @@ import { FleetCabinet } from "./fleet/FleetCabinet.js";
 import { creationModels } from "./creation-models.js";
 import { isLongVisibleMessage, readCollapseLongMessages, writeCollapseLongMessages } from "./message-collapse.js";
 import { groupSessionMessages } from "./message-groups.js";
+import { projectDeliveredChat, resolveDeliveredImages } from "./delivered-chat.js";
 import { MessageAdmissionDispatcher, appendOutboxEntry, beginOutboxAttempt, canDeleteOutboxEntry, canSteerOutboxEntry, cancelOutcomeOfJob, classifyMessageDelivery, deliveryConnectionFailure, deliveryModeLabel, isOutboxUnfinished, isTerminalJobState, newInputId, outboxStatusLabel, readDefaultDeliveryMode, readDeliveryModePinned, readOutboxJobId, readStoredOutbox, reconcileMessageStatus, removeOutboxEntry, updateOutboxEntry, withOutboxJobId, writeDefaultDeliveryMode, writeDeliveryModePinned, writeStoredOutbox, type CancelOutcome, type DeliveryMode, type OutboxEntry } from "./composer-delivery.js";
 import { formatJsonPayload, readJsonRenderingOptOut, splitSystemBlocks, writeJsonRenderingOptOut } from "./json-rendering.js";
 import { applyTheme, readTheme, writeTheme, type HerderTheme } from "./theme.js";
@@ -500,7 +501,7 @@ function CollapsibleMessage({ message, showReasoning, showTools, jsonRendering, 
   return <div className={`message-body ${collapsed ? "message-collapsed" : ""}`}>
     <MessageParts message={message} showReasoning={showReasoning} showTools={showTools} jsonRendering={jsonRendering} />
     {collapsed && <button type="button" className="message-expand" onClick={() => setExpanded(true)}>Показать полностью</button>}
-    {!collapsed && isLong && !forceExpanded && <button type="button" className="message-expand" onClick={() => setExpanded(false)}>Свернуть</button>}
+    {collapseLongMessages && !collapsed && isLong && !forceExpanded && <button type="button" className="message-expand" onClick={() => setExpanded(false)}>Свернуть</button>}
   </div>;
 }
 
@@ -1086,7 +1087,7 @@ function App() {
       });
     });
     return () => { cancelAnimationFrame(frame); if (secondFrame) cancelAnimationFrame(secondFrame); };
-  }, [activeKey, details?.messages.length, details?.children?.length, showReasoning, showTools, jsonRendering]);
+  }, [activeKey, details?.messages.length, details?.children?.length, outbox, showReasoning, showTools, jsonRendering]);
 
   const activeSession = details?.session && keyOf(details.session) === activeKey ? details.session : sessions.find((session) => keyOf(session) === activeKey);
   React.useEffect(() => {
@@ -1523,7 +1524,19 @@ function App() {
   const latestMessage = details?.messages[details.messages.length - 1];
   const latestToolPart = [...(latestMessage?.parts || [])].reverse().find((part) => part.type === "tool_call" || part.type === "tool_result");
   // очередь отправленных сообщений активной сессии; композер остаётся свободным, пока сообщения в полёте
-  const activeOutbox = activeKey ? outbox.filter((entry) => entry.sessionKey === activeKey).slice().sort((left, right) => right.createdAt - left.createdAt) : [];
+  const [deliveredImageProof, setDeliveredImageProof] = React.useState<{sessionKey:string;messages:SessionMessage[];entries:OutboxEntry[];matches:Map<string,Set<string>>}>();
+  React.useEffect(() => {
+    if (!activeKey || !details?.session || keyOf(details.session) !== activeKey) return;
+    const sessionKey=activeKey, messages=details.messages, entries=outbox;
+    let cancelled=false;
+    void resolveDeliveredImages(messages,entries,sessionKey).then(matches=>{
+      if (!cancelled) setDeliveredImageProof({sessionKey,messages,entries,matches});
+    });
+    return ()=>{cancelled=true;};
+  }, [activeKey,details?.messages,outbox]);
+  const currentImageProof = deliveredImageProof && deliveredImageProof.sessionKey === activeKey && deliveredImageProof.messages === details?.messages && deliveredImageProof.entries === outbox ? deliveredImageProof.matches : undefined;
+  const chatDelivery = projectDeliveredChat(details?.session && keyOf(details.session) === activeKey ? details.messages : [], outbox, activeKey || '', currentImageProof);
+  const activeOutbox = chatDelivery.pending.slice().sort((left, right) => right.createdAt - left.createdAt);
   const nativeCapabilities = harnessAdapters.find(adapter => adapter.id === activeSession?.harness)?.capabilities;
   const supportsSteer = activeSession?.harness === "codex" || nativeCapabilities?.steer === true;
   const supportsImages = nativeCapabilities?.imageInput === true;
@@ -1822,7 +1835,7 @@ function App() {
           {detailsLoading && !details && <div className="session-loading-chat" aria-live="polite"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Загружаю свежие сообщения</strong><small>Начинаем с последних ходов; остальным Agent Herder можно пользоваться дальше.</small></div>}
           {!detailsLoading && !details && <div className="empty-chat">{detailsError || "Выберите сессию, чтобы открыть переписку."}</div>}
           {detailsHydrating && details && <div className="history-loading-banner"><span className="inline-loading-dot" /> Последние {formatLoadTiming(latestTimingMs)} · подгружаю историю и метрики…</div>}
-          {groupSessionMessages(details?.messages || []).map((group, groupIndex, groups) => {
+          {groupSessionMessages(chatDelivery.messages).map((group, groupIndex, groups) => {
             const visible = group.messages.filter((message) => hasVisibleMessage(message, showReasoning, showTools));
             if (visible.length === 0) return null;
             const isLastAssistant = group.role === "assistant" && groupIndex === groups.length - 1;
