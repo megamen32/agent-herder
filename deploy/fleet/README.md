@@ -99,6 +99,17 @@ kernel memory/swap guarantee. Shared native Codex is not restarted to promote
 the Node helper; its configured helper hashes must be reconciled for future
 natural starts, without claiming that an already running interpreter reloaded.
 
+The Python utility-child version later hit its startup/scan deadline again
+(actual1.492s, retained failed152s run). Mutable scans now use the existing
+sealed C observer's explicit fd-relative/no-follow mode to remove interpreter
+startup/import work. It preserves exact apparent non-directory bytes, root and
+opened-directory UID/device/inode fences, hard30000 entries, one deadline-only
+fresh retry, and the same parent2s including reserved cleanup. Unknown IO or a
+directory depth beyond256 refuses; no cache or stale-byte substitution is added.
+The original physical FTS artifact mode is unchanged. Twelve staged scans on
+the actual M1 under a Background parent completed in0.0136–0.478s; this is
+read-only candidate evidence before the next guarded helper/probe promotion.
+
 The staged helper was also exercised on the actual M1 under a Background parent:
 three temp/state pairs completed in 0.221–0.438s, with 291927/5904 bytes measured.
 This establishes the read-only observer path, before any Node helper activation.

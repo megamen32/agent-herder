@@ -912,6 +912,17 @@ class MacWatchdogTests(unittest.TestCase):
                 self.assertEqual(w.storage_bytes(root,128*w.MIB),3)
             self.assertEqual(probe.call_args.args[:2],(root,128*w.MIB))
 
+    def test_mutable_observer_uses_sealed_native_fd_scanner_not_interpreter_startup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'tmp';root.mkdir();info=root.lstat()
+            spawn,probes,argv=self.native_artifact_fixture(root,du_payload=b'BYTES 3\n')
+            with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):
+                self.assertEqual(w.storage_bytes(root,128*w.MIB),3)
+            self.assertEqual(len(argv),1)
+            self.assertEqual(argv[0][-7:],[str(Path(w.__file__).with_name('mac-artifact-probe')),
+                '--mutable',str(128*w.MIB),'30000',str(info.st_uid),str(info.st_dev),str(info.st_ino)])
+            self.assertTrue(all(p.stdout.closed for p in probes))
+
     def test_internal_storage_child_keeps_no_follow_scanner_without_recursion(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);(root/'entry').write_bytes(b'abc')

@@ -199,7 +199,7 @@ def darwin_artifact_bytes(root, limit, overall_deadline, verify_root, refuse, pi
         if cleanup_failed:refuse('storage_observation_limit','probe_cleanup')
 
 def darwin_mutable_bytes(root,limit,overall_deadline,verify_root,refuse,pinned):
-    """The same fd/no-follow census, in one sealed utility-QoS observer.
+    """The same fd/no-follow census, in one sealed native utility-QoS observer.
     Parent/Node retain background policy; the original two-second wall and
     hard accounting bounds also apply to startup and owned-child cleanup.
     """
@@ -215,8 +215,9 @@ def darwin_mutable_bytes(root,limit,overall_deadline,verify_root,refuse,pinned):
         if (info.st_uid,info.st_dev,info.st_ino)!=pinned:refuse('storage_root_unverified','root_generation')
         cwd_fd=os.open('.',os.O_RDONLY|os.O_DIRECTORY);os.fchdir(root_fd)
         remaining()
+        probe=Path(__file__).with_name('mac-artifact-probe')
         child=subprocess.Popen(['/usr/sbin/taskpolicy','-a','-c','utility','-d','standard','-g','utility',
-            sys.executable,'-I','-S','-B',str(Path(__file__).resolve()),'--scan-owned-storage',str(limit),*[str(x) for x in pinned]],
+            str(probe),'--mutable',str(limit),'30000',*[str(x) for x in pinned]],
             stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,env={**os.environ,'LC_ALL':'C'})
         os.set_blocking(child.stdout.fileno(),False)
         while True:
