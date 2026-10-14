@@ -763,12 +763,6 @@ async function main() {
     cacheHandoff,
     judge: unfinishedJudge,
   });
-  const processSupervisor = new SessionSupervisor(adapters, processSessionConverter, lineageStore, {
-    humanStopStore,
-    events: herderEvents,
-    unfinishedSessions: unfinishedSessionLauncher,
-    admissionGate: recoveryAdmissionGate,
-  });
   const autoCompactService = new AutoCompactService({
     adapters, store: autoCompactStore, notify: createUnfinishedSessionNotifier(),
     held: (harness, id) => humanStopStore.isHeld(harness, id),
@@ -783,6 +777,13 @@ async function main() {
       const record = (await unfinishedSessionStore.listInventory()).find((item) => item.harness === session.harness && item.sessionId === session.id && item.cwd === session.cwd);
       return record?.verdict?.verdict === "unfinished" && record.lastActivity === session.lastActivity;
     },
+  });
+  const processSupervisor = new SessionSupervisor(adapters, processSessionConverter, lineageStore, {
+    humanStopStore,
+    events: herderEvents,
+    unfinishedSessions: unfinishedSessionLauncher,
+    autoCompact: autoCompactService,
+    admissionGate: recoveryAdmissionGate,
   });
   const stopAutoCompact = autoCompactService.start();
   process.once("exit", stopAutoCompact);

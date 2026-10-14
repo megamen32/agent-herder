@@ -483,7 +483,11 @@ model tokens; it is not a keepalive or a guarantee of the next request's cache h
 The old fleet Codex campaign registry is not ZCode task authorization; native
 ZCode work retains its existing mandatory systemd descendant budget. Its
 same-session Autopilot admission is independent of that historical registry.
-Automatic compact failures use the existing Notice Place incident sink.
+Automatic compact failures use the existing Notice Place incident sink. A native
+failed compact turn settles its own operation immediately and records the native
+failure detail as the cause; the 15-minute confirmation window remains only for an
+outcome the harness never reports, and the notice names the known cause instead of
+claiming the result was merely unconfirmed.
 ## Human questions, answers and one resume per answer
 
 A `human` judge decision and a `choice` decision are both real questions, not

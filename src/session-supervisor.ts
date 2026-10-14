@@ -28,6 +28,7 @@ import { herderEvents, type HerderEventBus } from "./herder-events.js";
 import { adapterResourceUri, sessionMessagesResourceUri, sessionResourceUri } from "./herder-resource-uris.js";
 import { harnessEventHealth, type HarnessEventHealthRegistry } from "./harness-event-health.js";
 import type { UnfinishedSessionLauncher } from "./autopilot/unfinished-session-launcher.js";
+import type { AutoCompactService } from "./autocontinue/auto-compact.js";
 import { deferredMessages, isBusyCodexWriter } from "./deferred-messages.js";
 
 export interface SessionFilters {
@@ -73,6 +74,8 @@ export interface SessionSupervisorOptions {
   autoResumeDelayMs?: number;
   /** Durable restart launcher for unfinished turns; independent from autopilot. */
   unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook">>);
+  /** Native compact maintenance outcomes; never a task prompt or a resume. */
+  autoCompact?: Pick<AutoCompactService, "observe">;
 }
 
 interface AutomaticResumeState {
@@ -123,6 +126,7 @@ export class SessionSupervisor {
   private readonly humanStops: HumanStopStore;
   private readonly immediateStops = new Set<string>();
   private readonly unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook">>);
+  private readonly autoCompact?: Pick<AutoCompactService, "observe">;
 
   constructor(
     private readonly adapters: Map<string, HarnessAdapter>,
@@ -140,6 +144,7 @@ export class SessionSupervisor {
     this.autoResumeDelayMs = Math.max(0, options.autoResumeDelayMs
       ?? Number(process.env.AGENT_HERDER_AUTO_RESUME_DELAY_MS || 2_000));
     this.unfinishedSessions = options.unfinishedSessions;
+    this.autoCompact = options.autoCompact;
     this.admissionGate = options.admissionGate;
     this.humanStops = options.humanStopStore ?? getHumanStopStore();
   }
@@ -879,6 +884,10 @@ export class SessionSupervisor {
       }
       return;
     }
+
+    void this.autoCompact?.observe(event).catch((error) => {
+      console.error(`[agent-herder] не удалось зафиксировать результат сжатия контекста: ${error instanceof Error ? error.message : String(error)}`);
+    });
 
     const stop = event.data?.automationStop;
     if (stop && typeof stop === "object" && !Array.isArray(stop)) {

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AutoCompactService, AutoCompactStore } from "../src/autocontinue/auto-compact.js";
-import type { AgentSession, HarnessAdapter } from "../src/types/index.js";
+import type { AgentSession, HarnessAdapter, HarnessEvent } from "../src/types/index.js";
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((path) => rm(path, { recursive: true, force: true }))); });
@@ -22,8 +22,10 @@ async function fixture() {
   const compactSession = vi.fn(async () => ({ ok: true, admitted: true, pending: true }));
   const sendMessage = vi.fn(), createSession = vi.fn();
   const adapter = { isReady: () => true, getSession: async () => session, listSessions: async () => [session], compactSession, sendMessage, createSession } as unknown as HarnessAdapter;
-  const options = { adapters: new Map([["zcode", adapter]]), store, held: async () => held, worthResuming: async () => useful, now: () => now };
-  return { store, service: new AutoCompactService(options), restart: () => new AutoCompactService(options), session, compactSession, sendMessage, createSession,
+  const notified: { title: string; body: string }[] = [];
+  const options = { adapters: new Map([["zcode", adapter]]), store, held: async () => held, worthResuming: async () => useful, now: () => now,
+    notify: async (notice: { title: string; body: string }) => { notified.push(notice); } };
+  return { store, service: new AutoCompactService(options), restart: () => new AutoCompactService(options), session, compactSession, sendMessage, createSession, notified,
     age: (seconds: number) => { now = Date.parse("2026-10-11T10:00:00Z") + seconds * 1000; }, useful: (value: boolean) => { useful = value; }, held: (value: boolean) => { held = value; } };
 }
 
@@ -63,6 +65,40 @@ describe("same-session warm-context maintenance (fast unit, expected 1s/max 10s)
     const f = await fixture(); f.age(205); f.compactSession.mockRejectedValue(new Error("transport lost"));
     await Promise.all([f.service.compact("zcode", "original", "one", false), f.restart().compact("zcode", "original", "one", false)]);
     await f.restart().tick(); expect(f.compactSession).toHaveBeenCalledTimes(1);
+    expect((await f.store.read()).operations[0]?.state).toBe("failed");
+  });
+});
+
+describe("native compact failure (fast unit, expected 1s/max 10s)", () => {
+  it("records the native failure at once and reports its real cause", async () => {
+    const f = await fixture(); f.age(205); await f.service.tick();
+    const inputId = (await f.store.read()).operations[0]!.inputId;
+    f.age(235);
+    await f.service.observe({ kind: "turn.failed", harness: "zcode", sessionId: "original", at: new Date().toISOString(),
+      data: { maintenance: "compact", inputId, nativeErrorCode: "UNKNOWN_ERROR", nativeErrorMessage: "Compact failed" } } as HarnessEvent);
+    const receipt = (await f.store.read()).operations[0]!;
+    expect(receipt).toMatchObject({ state: "failed", tokensBefore: 100_000, durationMs: 30_000 });
+    expect(receipt.error).toContain("Compact failed");
+    await f.restart().tick();
+    expect(f.notified).toHaveLength(1);
+    expect(f.notified[0]!.body).toContain("Compact failed");
+    expect(f.compactSession).toHaveBeenCalledTimes(1);
+  });
+  it("fails from a failed compact turn in the session snapshot", async () => {
+    const f = await fixture(); f.age(205); await f.service.tick(); f.age(250);
+    Object.assign(f.session.meta!.nativeLastTurn as Record<string, unknown>, { status: "failed", kind: "compact", turnId: "turn-9", completedAt: undefined });
+    await f.restart().tick();
+    expect((await f.store.read()).operations[0]?.state).toBe("failed");
+    expect(f.compactSession).toHaveBeenCalledTimes(1);
+  });
+  it("keeps the operation open for a task turn failure and times out only afterwards", async () => {
+    const f = await fixture(); f.age(205); await f.service.tick(); f.age(250);
+    Object.assign(f.session.meta!.nativeLastTurn as Record<string, unknown>, { status: "failed", turnId: "turn-9", completedAt: undefined });
+    await f.service.observe({ kind: "turn.failed", harness: "zcode", sessionId: "original", data: { inputId: (await f.store.read()).operations[0]!.inputId } } as HarnessEvent);
+    await f.restart().tick();
+    expect((await f.store.read()).operations[0]?.state).toBe("accepted");
+    expect(f.notified).toHaveLength(0);
+    f.age(1_200); await f.restart().tick();
     expect((await f.store.read()).operations[0]?.state).toBe("failed");
   });
 });

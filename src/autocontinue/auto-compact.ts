@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import lockfile from "proper-lockfile";
 import { cacheWindowFor } from "../cache-handoff.js";
 import type { UnfinishedSessionNotice } from "../autopilot/unfinished-session-launcher.js";
-import type { AgentSession, ControlResult, HarnessAdapter } from "../types/index.js";
+import type { AgentSession, ControlResult, HarnessAdapter, HarnessEvent } from "../types/index.js";
 
 export interface AutoCompactSettings {
   enabled: boolean;
@@ -19,7 +19,7 @@ export interface CompactReceipt {
   inputId: string; sourceKey: string; harness: string; sessionId: string;
   userMessageId: string; tokensBefore: number; tokensAfter?: number; durationMs?: number;
   state: "submitting" | "accepted" | "completed" | "failed";
-  createdAt: string; updatedAt: string; error?: string; automatic?: boolean; notifiedAt?: string;
+  createdAt: string; updatedAt: string; error?: string; cause?: string; automatic?: boolean; notifiedAt?: string;
 }
 interface State { version: 1; settings: AutoCompactSettings; operations: CompactReceipt[] }
 const DEFAULTS: AutoCompactSettings = { enabled: false, harnesses: ["zcode"], idleSeconds: 45, maxAgeSeconds: 300, minContextPercent: 35, minHumanMessages: 5, maxPerHour: 6 };
@@ -101,6 +101,7 @@ export function compactContext(session: AgentSession) {
     cacheHitRate: typeof cache.latestHitRate === "number" && Number.isFinite(cache.latestHitRate) ? cache.latestHitRate : undefined,
     completedAt: typeof turn.completedAt === "number" ? turn.completedAt : typeof turn.completedAt === "string" ? Date.parse(turn.completedAt) : NaN,
     complete: turn.status === "completed" && turn.kind !== "compact",
+    compactFailed: turn.kind === "compact" && turn.status === "failed",
     turnBoundary: typeof turn.turnId === "string" ? turn.turnId : String(turn.completedAt || ""),
     quiet: meta.nativeLoaded === true && ["idle", "stopped", "completed"].includes(String(meta.nativeStatus))
       && !meta.nativeActiveTurnId && !meta.nativeActiveTurnKind && !session.needsPermission
@@ -123,6 +124,20 @@ export class AutoCompactService {
     notify?: (notice: UnfinishedSessionNotice) => Promise<void>;
   }) {}
   supportedHarnesses(): string[] { return [...this.options.adapters].filter(([, adapter]) => Boolean(adapter.compactSession)).map(([harness]) => harness); }
+  /** Native maintenance outcome: one failed compact turn settles its own operation. */
+  observe(event: HarnessEvent): Promise<void> {
+    if (event.kind !== "turn.failed" || !event.sessionId || event.data?.maintenance !== "compact") return Promise.resolve();
+    return this.settleNativeFailure(event.harness, event.sessionId, nativeFailureCause(event.data), event.data?.inputId);
+  }
+  private async settleNativeFailure(harness: string, sessionId: string, cause: string, inputId?: unknown): Promise<void> {
+    const state = await this.options.store.read();
+    const claimed = typeof inputId === "string" ? inputId : undefined;
+    const operation = [...state.operations].reverse().find((item) => (item.state === "accepted" || item.state === "submitting")
+      && item.harness === harness && item.sessionId === sessionId && (!claimed || item.inputId === claimed));
+    if (!operation) return;
+    const now = this.options.now?.() ?? Date.now();
+    await this.options.store.finish(operation.inputId, { state: "failed", cause, error: `Нативное сжатие завершилось ошибкой: ${cause}`, durationMs: Math.max(0, now - Date.parse(operation.createdAt)), updatedAt: new Date(now).toISOString() });
+  }
   start(): () => void {
     this.timer = setInterval(() => { void this.tick().catch((error) => console.error("[agent-herder] автокомпакт:", (error as Error).message)); }, 15_000);
     this.timer.unref();
@@ -145,13 +160,17 @@ export class AutoCompactService {
       const context = compactContext(session);
       if (context.quiet && context.userMessageId === operation.userMessageId && context.tokens > 0 && context.tokens < operation.tokensBefore) {
         await this.options.store.finish(operation.inputId, { state: "completed", tokensAfter: context.tokens, durationMs: now - Date.parse(operation.createdAt), updatedAt: new Date(now).toISOString() });
+      } else if (context.compactFailed) {
+        const cause = "Нативная среда сообщила об ошибке сжатия без подробностей.";
+        await this.options.store.finish(operation.inputId, { state: "failed", cause, error: `Нативное сжатие завершилось ошибкой: ${cause}`, durationMs: now - Date.parse(operation.createdAt), updatedAt: new Date(now).toISOString() });
       } else if (now - Date.parse(operation.createdAt) > 15 * 60_000) {
         await this.options.store.finish(operation.inputId, { state: "failed", error: "Результат компакта не подтверждён; автоматический повтор запрещён.", updatedAt: new Date(now).toISOString() });
       }
     }
     for (const operation of (await this.options.store.read()).operations.filter((item) => item.automatic && item.state === "failed" && !item.notifiedAt).slice(-4)) {
       if (!this.options.notify) break;
-      await this.options.notify({ severity: "critical", title: "Agent Herder: не удалось сжать контекст", body: "Автокомпакт не подтвердил уменьшение контекста сессии. Повторная отправка остановлена, история сохранена. Автоматическая диагностика проверит нативное сжатие; до исправления возобновление может потребовать больше токенов.", dedupKey: `agent-herder:autocompact:${operation.sourceKey}`, correlationId: operation.inputId, sourceId: `agent-herder:autocompact:${operation.sourceKey}`, signalType: "autocompact-failed" });
+      const cause = operation.cause ? ` Причина: ${operation.cause}.` : " Причина нативной средой не сообщена.";
+      await this.options.notify({ severity: "critical", title: "Agent Herder: не удалось сжать контекст", body: `Сжатие контекста сессии ${operation.harness} не выполнено.${cause} В контексте осталось ${operation.tokensBefore} токенов, поэтому возобновление сессии потребует больше токенов. История сессии сохранена, автоматический повтор не выполняется.`, dedupKey: `agent-herder:autocompact:${operation.sourceKey}`, correlationId: operation.inputId, sourceId: `agent-herder:autocompact:${operation.sourceKey}`, signalType: "autocompact-failed" });
       await this.options.store.finish(operation.inputId, { notifiedAt: new Date(now).toISOString() });
     }
     if (!state.settings.enabled) return;
@@ -209,6 +228,15 @@ export class AutoCompactService {
     await this.options.store.finish(inputId, { state: result.ok ? "accepted" : "failed", error: result.error?.slice(0, 500), updatedAt: stamp });
     return result;
   }
+}
+
+/** Native failure detail, bounded and single-line so a notice never carries a payload. */
+function nativeFailureCause(data: Record<string, unknown> | undefined): string {
+  const text = (value: unknown) => typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+  const code = text(data?.nativeErrorCode).slice(0, 96);
+  const message = text(data?.nativeErrorMessage).slice(0, 200);
+  if (code && message) return `[${code}] ${message}`;
+  return message || code || "Нативная среда сообщила об ошибке сжатия без подробностей.";
 }
 
 function receiptResult(receipt: CompactReceipt): ControlResult {
