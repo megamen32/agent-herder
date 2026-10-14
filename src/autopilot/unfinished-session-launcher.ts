@@ -1,3 +1,4 @@
+import { JudgeRequestTrace, JudgeRequestError } from "./judge-request.js";
 import { UserStyleStore, USER_STYLE_PROMPT, type StyleObservation } from "./user-style.js";
 import type { RecoveryAdmissionGate, RecoveryOperation } from "./recovery-admission.js";
 import {parseNativeOwnerProof,type NativeOwnerProof,type WorkspaceCrash} from '../adapters/zcode-workspace-lifecycle.js';
@@ -4024,7 +4025,7 @@ function continuationTitle(topic: string): string {
 }
 
 function transientPlannerHttpStatus(error: string): number | null {
-  const status = error.match(/\bMiniMax.{0,120}\bHTTP\s*(429|5\d{2})\b/i)?.[1];
+  const status = error.match(/\b(?:MiniMax|LLM).{0,120}\bHTTP\s*(429|5\d{2})\b/i)?.[1];
   return status ? Number(status) : null;
 }
 
@@ -5016,10 +5017,10 @@ function trimEvidenceTokens(value: string, maxTokens: number): string {
   return trimmed;
 }
 
-async function anthropicText(response: Response): Promise<string> {
+async function anthropicText(response: Response, request: JudgeRequestTrace): Promise<string> {
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("text/event-stream")) {
-    const body = await response.json() as Record<string, unknown>;
+    const body = await request.json(response);
     const blocks = Array.isArray(body.content) ? body.content : [];
     const content = blocks.flatMap((block) => block && typeof block === "object"
       && (block as Record<string, unknown>).type === "text"
@@ -5043,7 +5044,7 @@ async function anthropicText(response: Response): Promise<string> {
     if (!raw || raw === "[DONE]") return;
     let event: Record<string, unknown>;
     try { event = JSON.parse(raw) as Record<string, unknown>; } catch { return; }
-    if (event.type === "error") throw new Error(`MiniMax Anthropic stream error: ${JSON.stringify(event.error || event)}`);
+    if (event.type === "error") throw request.providerFailure({ error: event.error || event });
     if (event.type === "content_block_start" && event.content_block && typeof event.content_block === "object") {
       const block = event.content_block as Record<string, unknown>;
       if (block.type === "text" && typeof block.text === "string") content += block.text;
@@ -5180,7 +5181,8 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
   const endpoint = `${config.baseUrl.replace(/\/$/, "")}/chat/completions`;
   return {
     async decide({ session, transcriptTail, signal }) {
-      const response = await fetchImpl(endpoint, {
+      const request = new JudgeRequestTrace({ model: config.model, endpoint, operation: "completion" });
+      const response = await request.fetch(fetchImpl, endpoint, {
         method: "POST",
         headers: {
           ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
@@ -5225,7 +5227,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
         }),
       });
       if (!response.ok) throw new Error(`MiniMax judge rejected with HTTP ${response.status}`);
-      const body = await response.json() as Record<string, unknown>;
+      const body = await request.json(response);
       const choices = Array.isArray(body.choices) ? body.choices : [];
       const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message : undefined;
       const content = message && typeof message === "object" ? (message as Record<string, unknown>).content : undefined;
@@ -5234,6 +5236,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       return normalizeVerdict(JSON.parse(json) as unknown);
     },
     async plan({ sessions, signal }) {
+      const request = new JudgeRequestTrace({ model: config.model, endpoint, operation: "batch-plan" });
       const style = await styleStore.prepare(sessions.flatMap(s => s.humanMessages ?? []));
       const contextBudget = positiveInteger(
         Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS || DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET),
@@ -5254,7 +5257,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
         ],
       });
       const fitted = fitBatchContextForSerializedRequest(sessions, inputCeiling, buildRequest);
-      const response = await fetchImpl(endpoint, {
+      const response = await request.fetch(fetchImpl, endpoint, {
         method: "POST",
         headers: {
           ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
@@ -5264,7 +5267,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
         body: JSON.stringify(fitted.request),
       });
       if (!response.ok) throw new Error(`MiniMax batch planner rejected with HTTP ${response.status}`);
-      const body = await response.json() as Record<string, unknown>;
+      const body = await request.json(response);
       const choices = Array.isArray(body.choices) ? body.choices : [];
       const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message : undefined;
       const content = message && typeof message === "object" ? (message as Record<string, unknown>).content : undefined;
@@ -5274,7 +5277,8 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       return result;
     },
     async reconcile({ groups, signal }) {
-      const response = await fetchImpl(endpoint, {
+      const request = new JudgeRequestTrace({ model: config.model, endpoint, operation: "batch-reconcile" });
+      const response = await request.fetch(fetchImpl, endpoint, {
         method: "POST",
         headers: {
           ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
@@ -5297,9 +5301,9 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       if (!response.ok) throw new Error(`MiniMax reconciliation rejected with HTTP ${response.status}`);
       let body: Record<string, unknown>;
       try {
-        body = await response.json() as Record<string, unknown>;
+        body = await request.json(response);
       } catch (error) {
-        if (error instanceof SyntaxError) throw new BatchReconciliationValidationError(`MiniMax reconciliation returned invalid JSON: ${error.message}`);
+        if (error instanceof SyntaxError || (error instanceof JudgeRequestError && error.diagnostic.kind === "invalid_json")) throw new BatchReconciliationValidationError(`MiniMax reconciliation returned invalid JSON: ${error.message}`);
         throw error;
       }
       const choices = Array.isArray(body.choices) ? body.choices : [];
@@ -5324,7 +5328,8 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
   const endpoint = `${config.baseUrl.replace(/\/$/, "")}/v1/messages`;
   return {
     async decide({ session, transcriptTail, signal }) {
-      const response = await fetchImpl(endpoint, {
+      const request = new JudgeRequestTrace({ model: config.model, endpoint, operation: "completion" });
+      const response = await request.fetch(fetchImpl, endpoint, {
         method: "POST",
         headers: {
           authorization: `Bearer ${config.token}`,
@@ -5366,7 +5371,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
         }),
       });
       if (!response.ok) throw new Error(`MiniMax Anthropic judge rejected with HTTP ${response.status}`);
-      const body = await response.json() as Record<string, unknown>;
+      const body = await request.json(response);
       const blocks = Array.isArray(body.content) ? body.content : [];
       const content = blocks.flatMap((block) => block && typeof block === "object"
         && (block as Record<string, unknown>).type === "text"
@@ -5378,6 +5383,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
       return normalizeVerdict(JSON.parse(json) as unknown);
     },
     async plan({ sessions, signal }) {
+      const request = new JudgeRequestTrace({ model: config.model, endpoint, operation: "batch-plan" });
       const style = await styleStore.prepare(sessions.flatMap(s => s.humanMessages ?? []));
       const contextBudget = positiveInteger(
         Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS || DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET),
@@ -5395,7 +5401,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
         messages: [{ role: "user", content: JSON.stringify({ ...batchPlannerPayload(packedSessions) as object, ...styleStore.payload(style) }) }],
       });
       const fitted = fitBatchContextForSerializedRequest(sessions, inputCeiling, buildRequest);
-      const response = await fetchImpl(endpoint, {
+      const response = await request.fetch(fetchImpl, endpoint, {
         method: "POST",
         headers: {
           authorization: `Bearer ${config.token}`,
@@ -5406,13 +5412,14 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
         body: JSON.stringify(fitted.request),
       });
       if (!response.ok) throw new Error(`MiniMax Anthropic batch planner rejected with HTTP ${response.status}`);
-      const content = await anthropicText(response);
+      const content = await request.read(() => anthropicText(response, request));
       const result = normalizeBatchPlanText(content, sessions);
       await styleStore.remember(style, JSON.parse(content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")));
       return result;
     },
     async reconcile({ groups, signal }) {
-      const response = await fetchImpl(endpoint, {
+      const request = new JudgeRequestTrace({ model: config.model, endpoint, operation: "batch-reconcile" });
+      const response = await request.fetch(fetchImpl, endpoint, {
         method: "POST",
         headers: {
           authorization: `Bearer ${config.token}`,
@@ -5433,10 +5440,10 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
       if (!response.ok) throw new Error(`MiniMax Anthropic reconciliation rejected with HTTP ${response.status}`);
       let content: string;
       try {
-        content = await anthropicText(response);
+        content = await request.read(() => anthropicText(response, request));
       } catch (error) {
         if (error instanceof BatchPlanValidationError) throw new BatchReconciliationValidationError(errorText(error));
-        if (error instanceof SyntaxError) throw new BatchReconciliationValidationError(`MiniMax reconciliation returned invalid JSON: ${error.message}`);
+        if (error instanceof SyntaxError || (error instanceof JudgeRequestError && error.diagnostic.kind === "invalid_json")) throw new BatchReconciliationValidationError(`MiniMax reconciliation returned invalid JSON: ${error.message}`);
         throw error;
       }
       return normalizeBatchReconciliationText(content, groups);

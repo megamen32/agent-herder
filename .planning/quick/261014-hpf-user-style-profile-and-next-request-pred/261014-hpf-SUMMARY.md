@@ -56,3 +56,37 @@ No full installed/runtime completion claimed.
 
 Foreign WIP preserved: two untracked OpenCode release JS files. No branches,
 worktrees, foreign sessions or native queues changed.
+
+## Clarification14.10: provider failures and existing fallback
+
+Live configuration confirmed both the daemon environment and hook env/persisted
+judge settings choose direct `glm-5.3-flash` via Z.AI Coding Plan. No judge fallback
+chain exists in these factories. The expected MiniMax→GLM chain does exist for
+TelegramAuto execution: OpenCode/MiniMax then ZCode/GLM; its definite pre-admission
+quota2056 gate does not govern judge requests. Models, deadlines and routes were
+preserved; no accepted/unknown native task was retried.
+
+Actual provider snapshot 14.10 ~13:08 MSK, isolated inference/no native dispatch:
+- Existing MiniMax one-token quota probe: HTTP200, returned exact
+  MiniMax-M3.1-Flash-Preview,698ms. This proves admission, not a full business turn.
+- Actual configured GLM Stop judge: HTTP200, headers after33365ms, valid completed
+  verdict after33418ms. The previous failures had a35s client deadline. The new
+  sample supports slow-response latency near that deadline; it does not prove
+  the historical server-side reason or any historical429/quota exhaustion.
+- Evidence: `.tmp/judge-diagnostics/live-result.json` (mode0600).
+
+Implemented `JudgeRequestError.diagnostic` for Stop and both judge protocols:
+actual model/endpoint/operation, elapsed time, headers/body stage, known HTTP
+status, native code/message, request id and Retry-After. Distinguish cancellation,
+transport, timeout, quota, rate limiting, overload, auth and malformed JSON.
+HTTP429 alone never becomes confirmed subscription exhaustion. Anthropic stream
+errors keep their native detail even under HTTP200. Read at most8KiB of provider
+error body under the existing deadline; redact existing patterns and exact auth
+values, exclude request prompts/auth and URL query/userinfo. Preserve semantic
+JSON repair and existing bounded HTTP429/5xx planner retry classification.
+
+Focused diagnostic/style/core/audit checks:70 passed,6.30s tests/7.32s scope,
+including12 new HTTP/native-code/timeout-phase/stream/repair cases. First compile
+49.15s passed; final compile46.76s passed. Original activation boundary remains: no
+restart or installed-plugin overwrite was performed, so future live daemon/hook
+errors still require supported activation to gain these diagnostics.

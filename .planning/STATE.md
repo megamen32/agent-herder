@@ -75,3 +75,10 @@ session coverage cannot prove safe owner restart. Two Stop provider requests
 hit the existing35s timeout; batch consumer passed. See
 quick/261014-hpf-user-style-profile-and-next-request-pred/261014-hpf-SUMMARY.md.
 This task does not reset previous milestone/recovery ownership or phase status.
+
+Clarification14.10 on261014-hpf: confirmed GLM is the direct judge, while the
+MiniMax→GLM fallback governs TelegramAuto executor admission. Fresh actual probes:
+MiniMaxHTTP200/698ms; GLM judgeHTTP200/33418ms near its35s deadline, no429 observed.
+Added structured provider diagnostics for Stop and both planner protocols;
+70 focused checks passed. Historical timeout server-side cause remains unknown;
+activation boundary for the unchanged running daemon/plugin remains explicit.

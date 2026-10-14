@@ -778,3 +778,29 @@ receipts. Mutable style data is sent separately from the cacheable system prompt
 Focused validation uses one Vitest worker and finite CPU/RAM/task ceilings.
 Rolldown needs `ROLLDOWN_WORKER_THREADS=2 ROLLDOWN_MAX_BLOCKING_THREADS=2` on
 large-core hosts; `RAYON_NUM_THREADS=2` alone does not bound its Tokio workers.
+
+## Provider errors and the scope of fallback
+
+`JudgeRequestError.diagnostic` records the actual model, provider endpoint
+(origin/path only), operation, elapsed milliseconds and failure stage (waiting
+for headers or reading a body). Available HTTP status, native error code and
+message, request ID and Retry-After are retained. Timeouts without headers carry
+no invented HTTP429 or quota verdict. HTTP429 alone means rate limiting;
+provider-specific quota codes distinguish subscription exhaustion from request
+frequency or overload. Error-body reads are bounded to8KiB, secret-redacted and
+limited by the existing request deadline. Request prompts/bodies and auth headers
+are excluded. Both OpenAI and Anthropic judges use the same diagnostics, including
+Anthropic error events inside an HTTP200 stream. Existing semantic JSON-repair
+classification and bounded429/5xx planner retry remain intact.
+
+The current direct judge route and project execution routes are different
+settings. `autopilot.env` and `session-autostart.json` select GLM5.3Flash directly
+for Stop and inventory judges. The configured TelegramAuto execution route is
+OpenCode/MiniMax followed by ZCode/GLM after a definite pre-admission rejection
+(including the verified MiniMax quota2056); this does not configure a fallback
+for the judge. This diagnostic change does not switch providers, extend timeouts,
+add retries, or replay an admitted native task.
+
+Official code references:
+- https://docs.z.ai/api-reference/api-code
+- https://platform.minimax.io/docs/api-reference/errorcode

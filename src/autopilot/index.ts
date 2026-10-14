@@ -1,3 +1,4 @@
+import { JudgeRequestTrace } from "./judge-request.js";
 import { UserStyleStore, USER_STYLE_PROMPT } from "./user-style.js";
 import { createHash } from "node:crypto";
 import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
@@ -272,7 +273,8 @@ export function createOpenAICompatibleJudge(config: {
       const style = await styleStore.prepare(input.hook.last_user_message ? [{
         text: input.hook.last_user_message, harness: input.hook.harness ?? "codex", sessionId: input.hook.session_id,
       }] : []);
-      const response = await fetchImpl(endpoint, {
+      const request = new JudgeRequestTrace({ model: config.model, endpoint, operation: "stop" });
+      const response = await request.fetch(fetchImpl, endpoint, {
         method: "POST",
         headers: {
           ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
@@ -334,7 +336,7 @@ export function createOpenAICompatibleJudge(config: {
         throw new Error(`Judge request rejected with HTTP ${response.status}`);
       }
 
-      const body = (await response.json()) as Record<string, unknown>;
+      const body = await request.json(response);
       const content = extractJudgeContent(body);
       try {
         const result = parseJudgeJson(content);

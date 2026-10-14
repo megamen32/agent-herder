@@ -11,3 +11,9 @@ swap0, CPU100%, Tasks64, IOWeight25; temp/output <=100MiB; no GPU.
 Fast unit expected10s/max100s. Focused integration (judge wire + store)10s/max100s.
 Typecheck expected30s/max300s. Live read/LLM canary expected40s/max400s.
 No nightly suite needed. Ordinary checks do not restart the daemon.
+
+User clarification14.10: trace the existing MiniMax quota→GLM fallback versus
+judge route; retain provider HTTP/code/message/retry/request-id and distinguish
+no-response timeout from an actual429. Use existing configured routes, no native
+business dispatch/replay. Fix diagnostics, validate focused regressions and a
+real configured provider request. Existing resource budget remains unchanged.
