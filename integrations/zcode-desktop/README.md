@@ -1,8 +1,8 @@
-# ZCode Desktop external task catalogue refresh — candidate
+# ZCode Desktop external task catalogue refresh
 
-Status: source candidate and regression verified, **not installed**. The parent
-AGENTS.md runtime-source policy requires a human decision before changing the
-installed managed runtime after the native MCP/configuration path failed.
+Status: approved, installed and accepted in the actual Desktop15Oct2026.
+The human explicitly authorized this bounded core patch under parent AGENTS.md.
+Desktop, host and existing native CLI process identities were preserved.
 
 ZCode Desktop3.15.3 keeps each WindowHostController source snapshot indefinitely
 until its own task service emits a workspace event. Herder commits valid task
@@ -33,10 +33,11 @@ Validation15Oct2026:
 - Private evidence: `.tmp/zcode-desktop-visibility-20261015/`, including native
   before screenshot, exact native source, RED/GREEN receipts and staged module.
 
-Activation still requires the runtime policy decision, protected archive backup,
-reviewed packaging/rollback and a safe native application handoff. It must not
-interrupt active Desktop-owned CLI turns. Final acceptance must show a fresh
-Herder task in the actual running Desktop, with original IDs/history retained.
+Activation acceptance: actual Desktop displayed both the recovered airlock task
+and one newly created Herder task without a prompt or restart. Persistent ASAR
+entry equals the tested candidate; protected rollback is at
+`/var/backups/zcode-desktop/catalog-refresh-20261015`. Existing source bytes remain
+in the archive. Installer peak130,453,504B, swap/OOM0, native cleanup confirmed.
 
 The human approved this precise native-source exception15Oct after reviewing the
 TDD candidate. The existing live controller observer was then activated without
@@ -53,3 +54,17 @@ original host source bytes remain intact. A protected header/length journal
 allows exact rollback. This needs under10MiB extra disk, not another340MiB copy.
 Three focused archive tests prove SHA256 readback, byte-for-byte rollback,
 unknown-source refusal and protection of later foreign archive changes.
+
+The catalog-to-json task had an additional ordinary visibility condition: its
+project folder was not open in Desktop. Registered that existing folder through
+the native OpenWorkspacePath API; its original task then appeared as well.
+The previous TelegramAuto task/view and Timeline/updated preferences were restored.
+Desktop keeps its normal open-project filtering; the patch does not silently
+merge remote workspaces or register temporary canary folders.
+
+Operational resource note: live Desktop was a user-launched app scope under the
+existing UID boundary, not the inactive zcode-server100-local.service. Its process
+identity and live budget were retained; the observer adds one unreferenced2s
+serial timer and two local file stat reads per tick. No new daemon/browser/LLM
+worker or resource-limit increase was introduced. Archive staging/install used
+the reviewed native foreground guard and under10MiB of additional disk.

@@ -41,6 +41,10 @@ def apply_archive(path,candidate,backup,expected_old_sha256):
   (backup/'manifest.json').write_text(json.dumps(journal));(backup/'manifest.json').chmod(0o600)
   for name in ['header.bin','manifest.json']:
    with (backup/name).open('rb') as f:os.fsync(f.fileno())
+  for directory in [backup,backup.parent]:
+   directory_fd=os.open(directory,os.O_RDONLY|os.O_DIRECTORY)
+   try:os.fsync(directory_fd)
+   finally:os.close(directory_fd)
   try:
    write_at(fd,candidate,before.st_size);os.fsync(fd)
    write_at(fd,patched_meta,offset);os.fsync(fd)

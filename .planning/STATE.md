@@ -109,3 +109,11 @@ SAME-SID HTTP resume and authenticated public browser Continue+Send verified;
 release3fc63f4 installed without backend restart. Original97ae editor/history
 visible. Debug: zcode-communication-resume.md. New direct human extension:
 Herder-created ZCode sessions missing in desktop, investigating in same task.
+
+15Oct Desktop visibility repair accepted after explicit human core-patch approval:
+actual old and fresh Herder tasks visible in native Desktop; same process IDs,
+original task/history/preferences retained. Exact-source ASAR installation and
+protected rollback verified. Native regressionRED→GREEN plus3 observer/3archive
+checks. See debug/zcode-desktop-visibility.md and integrations/zcode-desktop/.
+The latest human request extends GPTAdmin RAM root-cause repair in its owning
+checkout; it does not replace existing Herder milestone state.

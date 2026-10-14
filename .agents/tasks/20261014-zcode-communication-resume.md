@@ -77,3 +77,21 @@ Human explicitly approved the ZCode Desktop core patch in the native permission
 reply15Oct. This is the runtime-source-policy exception for this bounded defect.
 Proceed with protected rollback, no session recreation, preserved active actors,
 TDD candidate and actual native Desktop acceptance. No repeated permission needed.
+
+Desktop extension accepted15Oct: the approved exact-source patch is active in
+existing native host1431671 and persisted in installed ASAR with SHA256 readback.
+One real new Herder task d6546a0b appeared automatically; old16ae and0dd4 visible
+(the latter after ordinary native folder registration). Same Desktop1430106,
+host and2 originalCLI actors; original selected task/preferences restored.
+Protected exact rollback: /var/backups/zcode-desktop/catalog-refresh-20261015.
+Native RED→GREEN,3 observer tests and3 archive rollback tests passed; final
+durable-journal tests peak27,529,216B, swap/OOM0, same-generation cleanup.
+Evidence: .tmp/zcode-desktop-visibility-20261015/acceptance.json.
+
+GPTAdmin final measured workload needed soft6GiB (hard10GiB unchanged). Native
+Codex fleet_node_info succeeded1445ms with samePID3158. Exact10s post-change
+high events stayed13142630 and pressure totals stayed unchanged; fullavg10
+0.01→0.00. No process restart/history deletion. Published owning config/docs.
+Latest human extension: investigate and fix GPTAdmin RAM retention in source,
+through TDD and actual consumer proof. Owning task continues under gptadmin;
+previous desktop/communication/resume outcome remains accepted.

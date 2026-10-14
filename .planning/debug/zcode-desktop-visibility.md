@@ -1,5 +1,5 @@
 ---
-status: investigating
+status: resolved
 trigger: User cannot see ZCode sessions created by Agent Herder in ZCode Desktop
 ---
 ## Mandate
@@ -31,3 +31,20 @@ policy after supported extension cannot provide capability. Candidate review:
 integrations/zcode-desktop/README.md. Actual Desktop acceptance remains OPEN;
 changing ASAR/activating candidate requires that explicit decision and safe
 handoff of active Desktop CLI turns. No task recreation is needed.
+
+## Resolution / actual acceptance
+Human approved the precise native core patch. Activated tested observation in
+existing host1431671 through a bounded debugger call at a read-only list request,
+with verified exact script identity. No script-source replacement/dynamic import,
+application/host/CLI restart. Breakpoint removed, host resumed and own inspector
+closed. The old airlock16ae row appeared in the actual native sidebar.
+Then one real GPTAdmin/Herder create_session returned d6546a0b in airlock-admin;
+its unique title appeared automatically in Desktop. No prompt/model call.
+Both policies disabled for this own empty canary. Native index confirms one ID.
+Persisted identical candidate in ASAR through tested journalled installer; exact
+SHA256 readback. Protected rollback preserves header/length and original source.
+The previously unopened catalog-to-json folder was registered using the native
+OpenWorkspacePath action; its original0dd4 task appeared. Original TelegramAuto
+selected task dc1fbdef and Timeline/updated preferences restored. Same Desktop,
+host and original2 CLI processes remain. Native screenshots inspected in place.
+No sessions/history were recreated. Private acceptance.json records identities.
