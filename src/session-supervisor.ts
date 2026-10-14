@@ -666,7 +666,11 @@ export class SessionSupervisor {
         return { ok: true };
       }
     }
-    if (adapter.resumeSession) {
+    // ZCode resume reloads native execution state and discards accepted queue
+    // rows. A continuation in a loaded session needs only input admission.
+    const loadedZcode = harness === "zcode" ? await adapter.getSession(id) : undefined;
+    if (loadedZcode?.meta?.nativeLoaded === true && !message) return { ok: true };
+    if (adapter.resumeSession && loadedZcode?.meta?.nativeLoaded !== true) {
       if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "resume")) return { ok: false, error: "Fleet admission holds automatic resume" };
       const resumed = await adapter.resumeSession(id);
       if (!resumed.ok || !message) {

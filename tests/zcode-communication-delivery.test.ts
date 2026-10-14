@@ -52,10 +52,10 @@ describe("ZCode registered communication native command admission", () => {
     expect(client.commands.size).toBe(2);
     expect(client.calls.filter(c => c.method === "sendConversationCommandV4").map(c => c.params.envelope.commandId)).toEqual(["operation-1", "operation-1", "operation-2"]);
   });
-  it("does not advertise a native guide fallback to queue as successful direct delivery", async () => {
+  it("keeps a staged native guide pending until attribution proves current-turn delivery", async () => {
     const client = new NativeCommands();
     client.reply = ({ envelope }) => ({ commandId: envelope.commandId, status: "accepted", revisionAtDecision: 5, result: { type: "inputAccepted", inputId: "native", delivery: "queue" } });
-    expect(await adapter(client).sendMessage("owned", { ...message, steer: true })).toMatchObject({ ok: false, admitted: true, nonRetryable: true, inputId: "operation-1" });
+    expect(await adapter(client).sendMessage("owned", { ...message, steer: true })).toEqual({ ok: true, pending: true, inputId: "operation-1" });
     expect(client.calls).toHaveLength(2);
   });
   it("rejects an unrelated command receipt without retry or false admission", async () => {

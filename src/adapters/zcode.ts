@@ -2602,6 +2602,24 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   async resumeSession(id: string): Promise<{ ok: boolean; error?: string }> {
     try {
+      // The HTTP resume route can be the first exact-session operation after
+      // restart. Resolve only this native row; never use the daemon's CWD for
+      // a session belonging to another workspace.
+      if (!this.sessionWorkspaces.has(id) && existsSync(this.localDbPath)) {
+        const { DatabaseSync } = await import("node:sqlite");
+        const db = new DatabaseSync(this.localDbPath, { readOnly: true });
+        try {
+          const columns = new Set((db.prepare("pragma table_info(session)").all() as Array<{name:string}>).map(row => row.name));
+          if (columns.has("directory")) {
+            const row = db.prepare(`select directory, ${columns.has("workspace_id") ? "workspace_id" : "null as workspace_id"} from session where id = ?`).get(id) as {directory?:string;workspace_id?:string} | undefined;
+            if (row?.directory) {
+              const workspace = this.workspace(row.directory);
+              if (row.workspace_id) workspace.workspaceIdentity = row.workspace_id;
+              this.sessionWorkspaces.set(id, workspace);
+            }
+          }
+        } finally { db.close(); }
+      }
       const workspace = this.sessionWorkspaces.get(id) || this.workspace();
       const snapshot = await this.callAgent("resumeSession", { ...workspace, sessionId: id });
       this.sessionWorkspaces.set(id, workspace);
