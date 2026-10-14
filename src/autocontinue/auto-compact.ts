@@ -173,7 +173,7 @@ export class AutoCompactService {
       if (context.quiet && context.userMessageId === operation.userMessageId && context.tokens > 0 && context.tokens < operation.tokensBefore) {
         await this.options.store.finish(operation.inputId, { state: "completed", tokensAfter: context.tokens, durationMs: now - Date.parse(operation.createdAt), updatedAt: new Date(now).toISOString() });
       } else if (context.compactFailed) {
-        const cause = "Нативная среда сообщила об ошибке сжатия без подробностей.";
+        const cause = context.nativeCause ?? "Нативная среда сообщила об ошибке сжатия без подробностей.";
         await this.options.store.finish(operation.inputId, { state: "failed", cause, error: `Нативное сжатие завершилось ошибкой: ${cause}`, durationMs: now - Date.parse(operation.createdAt), updatedAt: new Date(now).toISOString() });
       } else if (context.turnFailed && !context.turnUserMessageId && context.turnBoundary !== operation.turnBoundaryAt) {
         // The durable native receipt carries no compact kind, so a terminal turn that
@@ -186,7 +186,7 @@ export class AutoCompactService {
     }
     for (const operation of (await this.options.store.read()).operations.filter((item) => item.automatic && item.state === "failed" && !item.notifiedAt).slice(-4)) {
       if (!this.options.notify) break;
-      const cause = operation.cause ? ` Причина: ${operation.cause}.` : " Причина нативной средой не сообщена.";
+      const cause = operation.cause ? ` Причина: ${operation.cause.replace(/[.\s]+$/, "")}.` : " Причина нативной средой не сообщена.";
       await this.options.notify({ severity: "critical", title: "Agent Herder: не удалось сжать контекст", body: `Сжатие контекста сессии ${operation.harness} не выполнено.${cause} В контексте осталось ${operation.tokensBefore} токенов, поэтому возобновление сессии потребует больше токенов. История сессии сохранена, автоматический повтор не выполняется.`, dedupKey: `agent-herder:autocompact:${operation.sourceKey}`, correlationId: operation.inputId, sourceId: `agent-herder:autocompact:${operation.sourceKey}`, signalType: "autocompact-failed" });
       await this.options.store.finish(operation.inputId, { notifiedAt: new Date(now).toISOString() });
     }
@@ -252,6 +252,10 @@ function nativeTurnCause(turn: Record<string, unknown>): string | undefined {
   const text = (value: unknown) => typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
   const code = text(turn.errorCode).slice(0, 96);
   const type = text(turn.errorType).slice(0, 96);
+  const message = text(turn.errorMessage).slice(0, 200);
+  // An aggregate turn code is often a placeholder, so the per-request reason wins.
+  const requestType = text(turn.modelErrorType).slice(0, 96);
+  if (message) return requestType ? `Сбой запроса к модели (${requestType}): ${message}` : `Сбой запроса к модели: ${message}`;
   if (code && type && code !== type) return `[${code}] ${type}`;
   return code || type || undefined;
 }

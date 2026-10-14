@@ -397,6 +397,14 @@ function nativeFailureCode(value: unknown): string | undefined {
   return nonEmptyString(value);
 }
 
+/** Structural read-only handle, so node:sqlite stays an optional dynamic import. */
+type NativeSqliteReader = {
+  prepare: (sql: string) => {
+    get: (...parameters: (null | number | bigint | string | Uint8Array)[]) => unknown;
+    all: () => unknown;
+  };
+};
+
 function nativeTurnFailure(value: unknown): NativeTurnFailure | undefined {
   const envelope = record(value);
   const root = nativeSessionEvent(value) || envelope;
@@ -760,6 +768,10 @@ export interface NativeTurnUsageRow {
   contextExceeded?: number | null;
   errorType?: string | null;
   errorCode?: string | null;
+  /** Per-request failure detail of the same turn. The aggregate turn_usage row
+   * keeps only a placeholder code, while model_usage names the real reason. */
+  modelErrorType?: string | null;
+  errorMessage?: string | null;
 }
 
 export interface NativeLastTurn {
@@ -778,6 +790,9 @@ export interface NativeLastTurn {
   contextExceeded?: boolean;
   errorType?: string;
   errorCode?: string;
+  /** Real reason behind an aggregate error code, when the per-request receipt has one. */
+  modelErrorType?: string;
+  errorMessage?: string;
   rootSession?: boolean;
   pendingInput?: boolean;
   userMessageMatchesLatest?: boolean;
@@ -818,6 +833,8 @@ export function pickNativeLastTurn(rows: NativeTurnUsageRow[], lastInputAt?: num
     ...(latest.contextExceeded === 0 || latest.contextExceeded === 1 ? { contextExceeded: latest.contextExceeded === 1 } : {}),
     ...(latest.errorType ? { errorType: latest.errorType } : {}),
     ...(latest.errorCode ? { errorCode: latest.errorCode } : {}),
+    ...(latest.modelErrorType ? { modelErrorType: latest.modelErrorType } : {}),
+    ...(latest.errorMessage ? { errorMessage: latest.errorMessage } : {}),
   };
 }
 
@@ -1795,6 +1812,25 @@ export class ZcodeAdapter implements HarnessAdapter {
     }
   }
 
+  /** The aggregate turn_usage row keeps only a placeholder code such as
+   * UNKNOWN_ERROR, while the per-request receipt of the same turn names the real
+   * reason a request ended. Absent table or columns stay a quiet omission. */
+  private readTurnRequestFailure(db: NativeSqliteReader, sessionId: string, turnId: string | undefined,
+    status: string | undefined): { modelErrorType?: string; errorMessage?: string } {
+    if (!turnId || !["error", "failed", "cancelled"].includes(status ?? "")) return {};
+    try {
+      const columns = new Set((db.prepare("pragma table_info(model_usage)").all() as Array<{ name?: string }>).map((column) => column.name));
+      if (!columns.has("turn_id") || !columns.has("error_message")) return {};
+      const newest = columns.has("completed_at") ? "completed_at desc, rowid desc" : "rowid desc";
+      const row = db.prepare(`select error_type, error_message from model_usage
+        where session_id = ? and turn_id = ? and coalesce(error_message, '') <> ''
+        order by ${newest} limit 1`).get(sessionId, turnId) as { error_type?: string; error_message?: string } | undefined;
+      const message = safeNativeFailureField(row?.error_message, 200);
+      const type = safeNativeFailureField(row?.error_type, 96);
+      return { ...(type ? { modelErrorType: type } : {}), ...(message ? { errorMessage: message } : {}) };
+    } catch { return {}; }
+  }
+
   /** Exact indexed local receipt; live snapshots can omit turn-event history. */
   private async readLocalTurnBoundary(id: string): Promise<{ turn?: NativeLastTurn; humanMessageCount: number } | undefined> {
     if (!this.useLocalTurnMetadata || !existsSync(this.localDbPath)) return undefined;
@@ -1821,6 +1857,7 @@ export class ZcodeAdapter implements HarnessAdapter {
           cancelledByUser: typeof row.cancelled_by_user === "number" ? row.cancelled_by_user : undefined,
           errorType: nonEmptyString(row.error_type),
           errorCode: nonEmptyString(row.error_code),
+          ...this.readTurnRequestFailure(db, id, nonEmptyString(row.turn_id), nonEmptyString(row.status)),
         }]) : undefined;
         if (turn) {
           const inputsKnown = db.prepare("select name from sqlite_master where type = 'table' and name = 'session_input'").get();

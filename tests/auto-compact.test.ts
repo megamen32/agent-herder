@@ -124,6 +124,35 @@ describe("native compact failure (fast unit, expected 1s/max 10s)", () => {
     expect(f.notified[0]!.body).toContain("TURN_CANCELLED");
     expect(f.compactSession).toHaveBeenCalledTimes(1);
   });
+  it("names the provider failure that the aggregate turn code hides", async () => {
+    // Real zcode receipt of 2026-10-14T19:51:31Z: the durable turn_usage row holds
+    // only the placeholder UNKNOWN_ERROR, and the per-request receipt of the same
+    // compact turn holds the network failure that actually ended the stream.
+    const f = await fixture(); f.age(205); await f.service.tick(); f.age(235);
+    f.session.meta!.nativeLastTurn = { turnId: "turn-3461f34c", status: "error", errorType: "unknown_error",
+      errorCode: "UNKNOWN_ERROR", modelErrorType: "network_error",
+      errorMessage: "Network connection failed for the provider request.",
+      cancelledByUser: false, completedAt: Date.parse("2026-10-11T10:01:35Z") };
+    await f.restart().tick();
+    const receipt = (await f.store.read()).operations[0]!;
+    expect(receipt).toMatchObject({ state: "failed", durationMs: 30_000 });
+    expect(receipt.cause).toContain("Network connection failed for the provider request.");
+    expect(receipt.cause).toContain("network_error");
+    await f.restart().tick();
+    expect(f.notified).toHaveLength(1);
+    expect(f.notified[0]!.body).toContain("Network connection failed for the provider request.");
+    expect(f.notified[0]!.body).not.toContain("request..");
+    expect(f.notified[0]!.body).not.toContain("UNKNOWN_ERROR");
+    expect(f.compactSession).toHaveBeenCalledTimes(1);
+  });
+  it("keeps the real cause of a failed compact turn instead of a generic sentence", async () => {
+    const f = await fixture(); f.age(205); await f.service.tick(); f.age(250);
+    Object.assign(f.session.meta!.nativeLastTurn as Record<string, unknown>, { status: "failed", kind: "compact", turnId: "turn-9", completedAt: undefined,
+      errorType: "unknown_error", errorCode: "UNKNOWN_ERROR", errorMessage: "Network connection failed for the provider request." });
+    await f.restart().tick();
+    expect((await f.store.read()).operations[0]?.cause).toContain("Network connection failed for the provider request.");
+    expect((await f.store.read()).operations[0]?.cause).not.toContain("без подробностей");
+  });
   it("keeps a human-stopped native turn out of the compact failure path", async () => {
     const f = await fixture(); f.age(205); await f.service.tick(); f.age(235);
     f.session.meta!.humanStopHeld = true;

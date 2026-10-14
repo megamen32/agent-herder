@@ -173,6 +173,17 @@ describe("pickNativeLastTurn", () => {
     expect(pickNativeLastTurn([row({ retryable: 0, cancelledByUser: 0 })])).toMatchObject({ retryable: false, cancelledByUser: false });
   });
 
+  it("carries the per-request failure detail that the aggregate turn code hides", () => {
+    // Real zcode receipt of 2026-10-14T19:51:31Z: turn_usage holds only the
+    // placeholder UNKNOWN_ERROR, while the model_usage row of the same turn names
+    // the provider failure that killed the compaction stream.
+    const summary = pickNativeLastTurn([row({ status: "error", errorType: "unknown_error", errorCode: "UNKNOWN_ERROR",
+      modelErrorType: "network_error", errorMessage: "Network connection failed for the provider request." })]);
+    expect(summary).toMatchObject({ status: "error", errorType: "unknown_error", errorCode: "UNKNOWN_ERROR",
+      modelErrorType: "network_error", errorMessage: "Network connection failed for the provider request." });
+    expect(pickNativeLastTurn([row({ status: "completed" })])!.errorMessage).toBeUndefined();
+  });
+
   it("returns undefined for empty rows", () => {
     expect(pickNativeLastTurn([])).toBeUndefined();
   });

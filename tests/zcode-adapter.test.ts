@@ -138,6 +138,47 @@ describe("native compact admission (focused integration, expected 1s/max 10s)", 
       expect((await adapter.getSession("session-1"))?.meta).toMatchObject({ nativeHumanMessageCount: 5, nativeLastTurn: { turnId: "exact-completed-turn", status: "completed", completedAt: 200 } });
     } finally { await adapter.dispose(); await rm(root, { recursive: true, force: true }); }
   });
+  it("names the provider failure that the aggregate turn receipt hides", async () => {
+    // Real zcode receipt of 2026-10-14T19:51:31Z: turn_usage keeps only the
+    // placeholder code, and the model_usage row of the same compact turn names
+    // the network failure that ended the compaction stream.
+    const root = await mkdtemp(join(tmpdir(), "native-turn-failure-"));
+    const path = join(root, "native.sqlite"); const db = new DatabaseSync(path);
+    db.exec(`create table message (session_id text, data text);
+      create table turn_usage (session_id text, turn_id text, status text, started_at integer, completed_at integer, cancelled_by_user integer, error_type text, error_code text);
+      create table model_usage (session_id text, turn_id text, status text, completed_at integer, error_type text, error_message text)`);
+    db.prepare("insert into turn_usage values (?, ?, ?, ?, ?, ?, ?, ?)").run("session-1", "turn-3461f34c", "error", 1_000, 1_900, 0, "unknown_error", "UNKNOWN_ERROR");
+    db.prepare("insert into model_usage values (?, ?, ?, ?, ?, ?)").run("session-1", "turn-3461f34c", "error", 1_900, "network_error", "Network connection failed for the provider request.");
+    db.prepare("insert into model_usage values (?, ?, ?, ?, ?, ?)").run("session-1", "turn-earlier", "completed", 900, null, null);
+    db.close();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new FakeClient(), localDbPath: path });
+    await adapter.init();
+    try {
+      expect((await adapter.getSession("session-1"))?.meta?.nativeLastTurn).toMatchObject({
+        turnId: "turn-3461f34c", status: "error", errorCode: "UNKNOWN_ERROR",
+        modelErrorType: "network_error", errorMessage: "Network connection failed for the provider request." });
+    } finally { await adapter.dispose(); await rm(root, { recursive: true, force: true }); }
+  });
+  it("keeps a secret-bearing request failure redacted and bounded", async () => {
+    const root = await mkdtemp(join(tmpdir(), "native-turn-failure-redaction-"));
+    const path = join(root, "native.sqlite"); const db = new DatabaseSync(path);
+    db.exec(`create table message (session_id text, data text);
+      create table turn_usage (session_id text, turn_id text, status text, started_at integer, completed_at integer, cancelled_by_user integer, error_type text, error_code text);
+      create table model_usage (session_id text, turn_id text, status text, completed_at integer, error_type text, error_message text)`);
+    db.prepare("insert into turn_usage values (?, ?, ?, ?, ?, ?, ?, ?)").run("session-1", "turn-fine", "completed", 500, 600, 0, null, null);
+    db.prepare("insert into turn_usage values (?, ?, ?, ?, ?, ?, ?, ?)").run("session-1", "turn-leaky", "error", 1_000, 1_900, 0, "unknown_error", "UNKNOWN_ERROR");
+    db.prepare("insert into model_usage values (?, ?, ?, ?, ?, ?)").run("session-1", "turn-leaky", "error", 1_900, "provider_error", "rejected with api_key=sk-abcdefghijklmnop and token: secret-value-1234");
+    db.close();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new FakeClient(), localDbPath: path });
+    await adapter.init();
+    try {
+      const leaky = (await adapter.getSession("session-1"))?.meta?.nativeLastTurn;
+      expect(leaky?.errorMessage).toContain("[redacted");
+      expect(leaky?.errorMessage).not.toContain("sk-abcdefghijklmnop");
+      expect(leaky?.errorMessage).not.toContain("secret-value-1234");
+      expect(leaky?.errorMessage!.length).toBeLessThanOrEqual(200);
+    } finally { await adapter.dispose(); await rm(root, { recursive: true, force: true }); }
+  });
   it.each(["accepted", "busy", "new-input"])("keeps the same ID and revision for %s", async (state) => {
     class CompactClient extends FakeClient {
       override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
