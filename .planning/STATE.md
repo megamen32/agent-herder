@@ -82,3 +82,13 @@ MiniMaxHTTP200/698ms; GLM judgeHTTP200/33418ms near its35s deadline, no429 obser
 Added structured provider diagnostics for Stop and both planner protocols;
 70 focused checks passed. Historical timeout server-side cause remains unknown;
 activation boundary for the unchanged running daemon/plugin remains explicit.
+
+261014-hpf completed14.10: asynchronous Stop437d74e published; user explicitly
+authorized activation. Installed Codex package updated with preserved manifests
+and backup; Herder restarted once,PID1536249 active. Installed hook→live daemon
+354/274ms and duplicateHTTP20217ms with one job; disabled isolated fixture fenced
+without native dispatch. Real configured GLM canary:hook936ms,background22.18s.
+Guarded same-session delivery/cancellation covered by focused integration;
+72 unique async-related cases and final tsc passed. Style/prediction and provider
+diagnostics now loaded on this instance. See261014-hpf-SUMMARY for evidence and
+the explicit boundary: no foreign native chat was used for business continuation.

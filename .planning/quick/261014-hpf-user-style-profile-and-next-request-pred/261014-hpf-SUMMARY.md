@@ -1,5 +1,5 @@
 ---
-status: incomplete
+status: complete
 ---
 
 # User style and next-request prediction
@@ -112,3 +112,27 @@ Official GLM docs confirm5.3/5.3Flash force thinking; it cannot be disabled.
 The user explicitly authorized updating the installed plugin and restarting
 Herder now after the idle-coverage limitation was explained. Earlier activation
 block is historical; deployment receipt follows below.
+
+## Activated and verified —14.10 13:34MSK
+
+Published implementation437d74e to origin/main before activation. Backed up
+canonical and installed dist plus replaced plugin files under
+`.tmp/async-stop-activation-20261014/`; overlaid350 compiled artifacts while
+preserving static UI, installed0.2.3 manifests/config and dependencies. Updated
+the installed Codex hook/skill. Hermes plugin is already a symlink to the
+canonical integration; existing Hermes processes were not restarted.
+
+With explicit human authorization, restarted only agent-herder.service once.
+New daemonPID1536249 active/running, memory398MiB at first check. Exact installed
+Codex hook against the live daemon exited `{}` in354ms, then274ms; repeated
+POST returnedHTTP202 in17ms with the SAME completed job identity. The isolated
+unknown session had no opt-in and was fenced before model/native dispatch,
+as expected. Evidence: install-receipt.json and live-hook-result.json in the
+activation directory. Combined with the real GLM async canary and guarded
+same-session integration tests, this proves installed notification/background
+activation. A real business continuation was not injected into a foreign chat.
+
+Shared style/prediction and detailed judge error diagnostics are now loaded by
+the running daemon and installed Codex package. Historical activation blockers
+above are resolved for this instance; this is not a fleet-wide plugin rollout.
+Foreign untracked OpenCode release files remain untouched.
