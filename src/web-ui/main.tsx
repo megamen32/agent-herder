@@ -25,6 +25,7 @@ import { groupSessionMessages } from "./message-groups.js";
 import { projectDeliveredChat, resolveDeliveredImages } from "./delivered-chat.js";
 import {sidebarEntries, sessionPinKey} from './session-pins.js';
 import {SessionSidebarRow, useSessionPins} from './session-sidebar.js';
+import { DetailsReadGate } from "./details-read-gate.js";
 import { MessageAdmissionDispatcher, appendOutboxEntry, beginOutboxAttempt, canDeleteOutboxEntry, canSteerOutboxEntry, cancelOutcomeOfJob, classifyMessageDelivery, deliveryConnectionFailure, deliveryModeLabel, isOutboxUnfinished, isTerminalJobState, newInputId, outboxStatusLabel, planContinuation, readDefaultDeliveryMode, readDeliveryModePinned, readOutboxJobId, readStoredOutbox, reconcileMessageStatus, removeOutboxEntry, updateOutboxEntry, withOutboxJobId, writeDefaultDeliveryMode, writeDeliveryModePinned, writeStoredOutbox, type CancelOutcome, type DeliveryMode, type OutboxEntry } from "./composer-delivery.js";
 import { formatJsonPayload, readJsonRenderingOptOut, splitSystemBlocks, writeJsonRenderingOptOut } from "./json-rendering.js";
 import { applyTheme, readTheme, writeTheme, type HerderTheme } from "./theme.js";
@@ -681,7 +682,7 @@ function App() {
   const [cacheEpoch,setCacheEpoch]=React.useState(0);
   const [detailsVerified,setDetailsVerified]=React.useState(false);
   const scopeRef=React.useRef(directory.scope);
-  React.useEffect(()=>{if(scopeRef.current!==directory.scope){scopeRef.current=directory.scope;detailsRequestRef.current+=1;setDetails(null);setDetailsVerified(false);setCachedDetails(false);}},[directory.scope]);
+  React.useEffect(()=>{if(scopeRef.current!==directory.scope){scopeRef.current=directory.scope;detailsReadGateRef.current.invalidate();setDetails(null);setDetailsVerified(false);setCachedDetails(false);}},[directory.scope]);
   const [cachedDetails,setCachedDetails]=React.useState(false);
   React.useEffect(()=>{void viewCache.prune();},[viewCache]);
   const changeCacheSettings=(next:ViewCacheSettings)=>{setViewCacheSettings(next);try{writeViewCacheSettings(window.localStorage,next);}catch{}void viewCache.prune();};
@@ -701,7 +702,7 @@ function App() {
   const [detailsLoading, setDetailsLoading] = React.useState(false);
   const [detailsHydrating, setDetailsHydrating] = React.useState(false);
   const [detailsError, setDetailsError] = React.useState<string>();
-  const detailsRequestRef = React.useRef(0);
+  const detailsReadGateRef = React.useRef(new DetailsReadGate());
   const [mobileView, setMobileView] = React.useState<"sessions" | "chat">(() => readSessionFromHash() ? "chat" : "sessions");
   const [showReasoning, setShowReasoning] = React.useState(false);
   const [showTools, setShowTools] = React.useState(false);
@@ -991,11 +992,12 @@ function App() {
   }, []);
 
   const loadDetails = React.useCallback(async (key: string, hydrateFull = true) => {
-    const requestId = ++detailsRequestRef.current;
+    const requestId = detailsReadGateRef.current.begin(key, hydrateFull);
+    if (requestId === undefined) return;
     const { harness, id } = splitKey(key);
     const base = `/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/details`;
     setDetailsError(undefined);
-    if(hydrateFull){setDetailsVerified(false);if(directory.scope&&directory.localHostId){void viewCache.get<SessionDetails>(directory.scope,{hostId:directory.localHostId,harness,nativeSessionId:id}).then(r=>{if(r&&r.value.session?.id===id&&r.value.session?.harness===harness&&requestId===detailsRequestRef.current&&!liveLoaded){setDetails(r.value);setCachedDetails(true);setDetailsLoading(false);}});}}
+    if(hydrateFull){setDetailsVerified(false);if(directory.scope&&directory.localHostId){void viewCache.get<SessionDetails>(directory.scope,{hostId:directory.localHostId,harness,nativeSessionId:id}).then(r=>{if(r&&r.value.session?.id===id&&r.value.session?.harness===harness&&detailsReadGateRef.current.isCurrent(requestId)&&!liveLoaded){setDetails(r.value);setCachedDetails(true);setDetailsLoading(false);}});}}
     let liveLoaded=false;
     // Фоновое обновление по событию (hydrateFull=false) приходит постоянно, пока
     // активны сессии. Раньше оно гасило details и включало detailsLoading, поэтому
@@ -1011,7 +1013,7 @@ function App() {
     try {
       const latestStartedAt = performance.now();
       const latest = await api<SessionDetails>(`${base}?limit=12&quick=1`);
-      if (requestId !== detailsRequestRef.current) return;
+      if (!detailsReadGateRef.current.isCurrent(requestId)) return;
       if(latest.session?.id!==id||latest.session?.harness!==harness)throw new Error('Не удалось подтвердить выбранную сессию');
       liveLoaded=true;setCachedDetails(false);setDetailsVerified(true);
       if(directory.scope&&directory.localHostId)void viewCache.put(directory.scope,{hostId:directory.localHostId,harness,nativeSessionId:id},latest);
@@ -1028,20 +1030,21 @@ function App() {
       await new Promise((resolve) => window.setTimeout(resolve, 40));
       const hydrateStartedAt = performance.now();
       const full = await api<SessionDetails>(`${base}?limit=50`);
-      if (requestId !== detailsRequestRef.current) return;
+      if (!detailsReadGateRef.current.isCurrent(requestId)) return;
       setHydrateTimingMs(performance.now() - hydrateStartedAt);
       if(full.session?.id!==id||full.session?.harness!==harness)throw new Error('Не удалось подтвердить выбранную сессию');
       setDetails(full);
       if(directory.scope&&directory.localHostId)void viewCache.put(directory.scope,{hostId:directory.localHostId,harness,nativeSessionId:id},full);
     } catch (error) {
-      if (requestId !== detailsRequestRef.current) return;
+      if (!detailsReadGateRef.current.isCurrent(requestId)) return;
       setDetailsError((error as Error).message);
     } finally {
-      if (requestId === detailsRequestRef.current) { setDetailsLoading(false); setDetailsHydrating(false); }
+      if (detailsReadGateRef.current.isCurrent(requestId)) { setDetailsLoading(false); setDetailsHydrating(false); }
+      detailsReadGateRef.current.finish(requestId);
     }
   }, [directory.scope,directory.localHostId,viewCache]);
   React.useEffect(() => {
-    if (!activeKey) { detailsRequestRef.current += 1; setDetails(null); setDetailsLoading(false); setDetailsHydrating(false); setLatestTimingMs(undefined); setHydrateTimingMs(undefined); return; }
+    if (!activeKey) { detailsReadGateRef.current.invalidate(); setDetails(null); setDetailsLoading(false); setDetailsHydrating(false); setLatestTimingMs(undefined); setHydrateTimingMs(undefined); return; }
     void loadDetails(activeKey);
   }, [activeKey, loadDetails]);
   React.useEffect(() => {
