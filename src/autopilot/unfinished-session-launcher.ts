@@ -1,3 +1,4 @@
+import { UserStyleStore, USER_STYLE_PROMPT, type StyleObservation } from "./user-style.js";
 import type { RecoveryAdmissionGate, RecoveryOperation } from "./recovery-admission.js";
 import {parseNativeOwnerProof,type NativeOwnerProof,type WorkspaceCrash} from '../adapters/zcode-workspace-lifecycle.js';
 
@@ -494,6 +495,7 @@ export interface SessionCompletionJudge {
 }
 
 export interface SessionBatchCandidate {
+  humanMessages?: StyleObservation[];
   session: AgentSession;
   transcriptTail: string;
 }
@@ -2738,6 +2740,7 @@ export class UnfinishedSessionLauncher {
           (message.role === "user" || message.role === "assistant") && Boolean(message.text?.trim()));
         if (cohortAwake || actionable) assessed.push({
           adapter, session, sourceKey, autoResumeEnabled, urgentSignalVersions, transcriptTail,
+          humanMessages: styleObservations(session, messages),
           ...(latestSemanticMessage ? {
             latestSemanticMessage: { role: latestSemanticMessage.role, text: latestSemanticMessage.text },
           } : {}),
@@ -3318,7 +3321,7 @@ export class UnfinishedSessionLauncher {
       DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
     );
     const outputTokenBudget = configuredBatchOutputTokens();
-    const rawCandidates = assessed.map(({ session, transcriptTail }) => ({ session, transcriptTail }));
+    const rawCandidates = assessed.map(({ session, transcriptTail, humanMessages }) => ({ session, transcriptTail, humanMessages }));
     if (partitionBatchCandidates(rawCandidates, batchPlanChunkSize(outputTokenBudget)).length > MAX_BATCH_PLAN_CHUNKS) {
       throw new BatchPlanValidationError(`MiniMax assessment needs more than ${MAX_BATCH_PLAN_CHUNKS} workspace-homogeneous chunks`);
     }
@@ -3357,7 +3360,7 @@ export class UnfinishedSessionLauncher {
     ));
     const requestPlan = async (candidates: AssessedSession[]): Promise<SessionBatchPlan> => canonicalizePlanSourceKeys(
         await withAbortDeadline(planner({
-          sessions: candidates.map(({ session, transcriptTail }) => ({ session, transcriptTail })),
+          sessions: candidates.map(({ session, transcriptTail, humanMessages }) => ({ session, transcriptTail, humanMessages })),
           signal: plannerPhaseController.signal,
         }), plannerPhaseDeadline, plannerPhaseController),
         candidates,
@@ -4693,7 +4696,11 @@ function buildBatchPlannerBudgetRequest(
     response_format: { type: "json_object" },
     output_config: { effort: "low" },
     system: [{ type: "text", text: batchPlannerPrompt(), cache_control: { type: "ephemeral" } }],
-    messages: [{ role: "user", content: JSON.stringify(batchPlannerPayload(sessions)) }],
+    messages: [{ role: "user", content: JSON.stringify({
+      ...batchPlannerPayload(sessions) as object,
+      user_style: { revision: Number.MAX_SAFE_INTEGER, summary: "я".repeat(2400) },
+      style_learning_messages: sessions.flatMap(s => s.humanMessages ?? []).slice(-8).map(m => m.text.slice(0, 1200)),
+    }) }],
   };
 }
 
@@ -4851,8 +4858,15 @@ function normalizeBatchReconciliationText(
   }
 }
 
+function styleObservations(session: AgentSession, messages: SessionMessageView[]): StyleObservation[] {
+  return messages.filter(message => message.role === "user").slice(-8).map(message => ({
+    text: message.parts.filter(p => p.type === "text").map(p => p.text || "").join("\n") || message.text || "", harness: session.harness, sessionId: session.id,
+  }));
+}
+
 function batchPlannerPrompt(): string {
   return [
+    USER_STYLE_PROMPT,
     "Ты автопилот Agent Herder: доводи разрешённые задачи до проверенного результата в исходных сессиях.",
     "Если человек не выбрал следующий шаг, выбери сам наиболее полезный разрешённый шаг и выполни работу. Несколько разумных способов, обычные проверки или желание перестраховаться не означают needs_human. Наблюдение и отчёт не заменяют исправление, выполнение и проверку результата.",
     "needs_human допустим только для конкретного отсутствующего решения, доступа или полномочий, без которых полезная работа невозможна. Существующее поручение и полномочия действуют до результата; не требуй повторного согласования.",
@@ -4868,7 +4882,7 @@ function batchPlannerPrompt(): string {
     REQUESTED_ARTIFACT_COMPLETION_RULE,
     "topic — понятная русская тема из 3-8 слов без UUID, Auto Continue и технического мусора.",
     "handoff для unfinished — единая краткая сводка всех сессий группы: цель, уже сделано, решения, файлы/проверки, осталось, риски, следующий шаг.",
-    "Не выполняй задачи и не добавляй факты. Верни только JSON {groups:[{source_session_ids,primary_session_id,verdict,reason,confidence,topic,handoff}]}",
+    "Не выполняй задачи и не добавляй факты. Верни только JSON {groups:[{source_session_ids,primary_session_id,verdict,reason,confidence,topic,handoff}],predicted_user_request:string,user_style_update?:string}. Прогноз и обновление стиля относятся ко всему ответу; handoff каждой группы сохраняет только её собственную задачу.",
   ].join(" ");
 }
 
@@ -5154,6 +5168,7 @@ function displayHarness(harness: HarnessType): string {
 }
 
 export function createOpenAICompatibleSessionCompletionJudge(config: {
+  styleStore?: UserStyleStore;
   baseUrl: string;
   model: string;
   token?: string;
@@ -5161,6 +5176,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
   fetchImpl?: typeof fetch;
 }): SessionCompletionJudge {
   const fetchImpl = config.fetchImpl ?? fetch;
+  const styleStore = config.styleStore ?? new UserStyleStore();
   const endpoint = `${config.baseUrl.replace(/\/$/, "")}/chat/completions`;
   return {
     async decide({ session, transcriptTail, signal }) {
@@ -5218,6 +5234,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       return normalizeVerdict(JSON.parse(json) as unknown);
     },
     async plan({ sessions, signal }) {
+      const style = await styleStore.prepare(sessions.flatMap(s => s.humanMessages ?? []));
       const contextBudget = positiveInteger(
         Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS || DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET),
         DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
@@ -5233,7 +5250,7 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: batchPlannerPrompt() },
-          { role: "user", content: JSON.stringify(batchPlannerPayload(packedSessions)) },
+          { role: "user", content: JSON.stringify({ ...batchPlannerPayload(packedSessions) as object, ...styleStore.payload(style) }) },
         ],
       });
       const fitted = fitBatchContextForSerializedRequest(sessions, inputCeiling, buildRequest);
@@ -5252,7 +5269,9 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message : undefined;
       const content = message && typeof message === "object" ? (message as Record<string, unknown>).content : undefined;
       if (typeof content !== "string") throw new BatchPlanValidationError("MiniMax batch planner returned no content");
-      return normalizeBatchPlanText(content, sessions);
+      const result = normalizeBatchPlanText(content, sessions);
+      await styleStore.remember(style, JSON.parse(content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")));
+      return result;
     },
     async reconcile({ groups, signal }) {
       const response = await fetchImpl(endpoint, {
@@ -5294,12 +5313,14 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
 
 /** Direct MiniMax Anthropic-compatible judge with an explicit cached system prefix. */
 export function createAnthropicCompatibleSessionCompletionJudge(config: {
+  styleStore?: UserStyleStore;
   baseUrl: string;
   model: string;
   token: string;
   fetchImpl?: typeof fetch;
 }): SessionCompletionJudge {
   const fetchImpl = config.fetchImpl ?? fetch;
+  const styleStore = config.styleStore ?? new UserStyleStore();
   const endpoint = `${config.baseUrl.replace(/\/$/, "")}/v1/messages`;
   return {
     async decide({ session, transcriptTail, signal }) {
@@ -5357,6 +5378,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
       return normalizeVerdict(JSON.parse(json) as unknown);
     },
     async plan({ sessions, signal }) {
+      const style = await styleStore.prepare(sessions.flatMap(s => s.humanMessages ?? []));
       const contextBudget = positiveInteger(
         Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONTEXT_TOKENS || DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET),
         DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
@@ -5370,7 +5392,7 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
         stream: true,
         output_config: { effort: "low" },
         system: [{ type: "text", text: batchPlannerPrompt(), cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: JSON.stringify(batchPlannerPayload(packedSessions)) }],
+        messages: [{ role: "user", content: JSON.stringify({ ...batchPlannerPayload(packedSessions) as object, ...styleStore.payload(style) }) }],
       });
       const fitted = fitBatchContextForSerializedRequest(sessions, inputCeiling, buildRequest);
       const response = await fetchImpl(endpoint, {
@@ -5385,7 +5407,9 @@ export function createAnthropicCompatibleSessionCompletionJudge(config: {
       });
       if (!response.ok) throw new Error(`MiniMax Anthropic batch planner rejected with HTTP ${response.status}`);
       const content = await anthropicText(response);
-      return normalizeBatchPlanText(content, sessions);
+      const result = normalizeBatchPlanText(content, sessions);
+      await styleStore.remember(style, JSON.parse(content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")));
+      return result;
     },
     async reconcile({ groups, signal }) {
       const response = await fetchImpl(endpoint, {

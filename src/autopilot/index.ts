@@ -1,3 +1,4 @@
+import { UserStyleStore, USER_STYLE_PROMPT } from "./user-style.js";
 import { createHash } from "node:crypto";
 import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
@@ -256,6 +257,7 @@ export function createNoticePlaceSink(config: {
  * by the runtime environment; no provider or credential is hard-coded here.
  */
 export function createOpenAICompatibleJudge(config: {
+  styleStore?: UserStyleStore;
   baseUrl: string;
   model: string;
   token?: string;
@@ -263,9 +265,13 @@ export function createOpenAICompatibleJudge(config: {
 }): JudgeClient {
   const fetchImpl = config.fetchImpl ?? fetch;
   const endpoint = `${config.baseUrl.replace(/\/$/, "")}/chat/completions`;
+  const styleStore = config.styleStore ?? new UserStyleStore();
 
   return {
     async decide(input) {
+      const style = await styleStore.prepare(input.hook.last_user_message ? [{
+        text: input.hook.last_user_message, harness: input.hook.harness ?? "codex", sessionId: input.hook.session_id,
+      }] : []);
       const response = await fetchImpl(endpoint, {
         method: "POST",
         headers: {
@@ -285,6 +291,7 @@ export function createOpenAICompatibleJudge(config: {
             {
               role: "system",
               content:
+                USER_STYLE_PROMPT + " " +
                 "You are the Agent Herder stop-hook judge. Return only JSON. " +
                 "Choose exactly one kind: continue, done, human, or choice. " +
                 "Act on the user objective: choose and execute the most useful authorized next step yourself. " +
@@ -306,12 +313,14 @@ export function createOpenAICompatibleJudge(config: {
                 "Shape: {kind:continue,nextGoal:string} or " +
                 "{kind:done,summary:string} or " +
                 "{kind:human,title:string,body:string,severity:low|medium|high}. " +
+                "All decision shapes also include predicted_user_request and, when supported by fresh human evidence, user_style_update. " +
                 "Do not put credentials, tokens, private keys, or raw secrets " +
                 "in nextGoal, summary, title, or body.",
             },
             {
               role: "user",
               content: JSON.stringify({
+                ...styleStore.payload(style),
                 hook: input.hook,
                 evidence: input.evidence,
                 remaining_continuations: input.remainingContinuations,
@@ -328,7 +337,10 @@ export function createOpenAICompatibleJudge(config: {
       const body = (await response.json()) as Record<string, unknown>;
       const content = extractJudgeContent(body);
       try {
-        return parseJudgeJson(content);
+        const result = parseJudgeJson(content);
+        normalizeDecision(result); // Never learn from an invalid decision.
+        await styleStore.remember(style, result);
+        return result;
       } catch {
         throw new Error("Judge returned non-JSON content");
       }
@@ -961,7 +973,7 @@ function evidenceForJudge(evidence: string): string {
   }).join("\n"));
 }
 
-function redactSecrets(value: string): string {
+export function redactSecrets(value: string): string {
   return value
     .replace(PRIVATE_KEY_PATTERN, "[REDACTED_PRIVATE_KEY]")
     .replace(BEARER_PATTERN, "[REDACTED_BEARER]")

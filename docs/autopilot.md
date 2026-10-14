@@ -748,3 +748,33 @@ The human composer sends OpenCode queue delivery through native
 may still be running. The durable message job records admission, not model
 completion. Clearing a route model override deletes its key and inherits the
 global model; removing a route harness deletes that harness's override too.
+
+## Learned user style and next-request prediction
+
+The Stop judge and both batch-planner protocols receive a compact `user_style`
+profile and predict `predicted_user_request`: what this user would likely ask
+next in the current task. The prediction informs `nextGoal`/`handoff`; existing
+scope, human Stop, pending decisions and verified completion still apply.
+
+The profile is shared between projects within the same Herder OS account and
+configured autopilot state directory: `user-style.json` next to `sessions.json`.
+It is local to that instance; this does not synchronize profiles between hosts
+or users. It begins empty. Human messages update a consolidated summary through
+the existing judge response, without a separate LLM call or background job.
+The summary describes communication, corrections and task preferences, rather
+than retaining project facts or raw transcripts. New explicit corrections take
+precedence over older inferences. The shared summary is capped at 2400 characters;
+each learning request has at most eight human messages of 1200 characters.
+
+The file uses mode0600, bounded hashes for repeated/generated inputs and atomic
+writes under a cross-process lock. Stale concurrent summaries cannot overwrite
+a newer revision. Known generated continuations, tools and assistant messages
+are excluded from learning. Existing secret redaction applies to observations
+and summaries. A cache error is logged and leaves the original task decision
+usable; an invalid cache is preserved. To inspect/reset it, read/remove only
+this file while automation is idle. It does not change session policies or
+receipts. Mutable style data is sent separately from the cacheable system prompt.
+
+Focused validation uses one Vitest worker and finite CPU/RAM/task ceilings.
+Rolldown needs `ROLLDOWN_WORKER_THREADS=2 ROLLDOWN_MAX_BLOCKING_THREADS=2` on
+large-core hosts; `RAYON_NUM_THREADS=2` alone does not bound its Tokio workers.
