@@ -343,6 +343,37 @@ describe("ZCode adapter", () => {
     }
   });
 
+  it("carries the same real cause through the persisted page snapshot", async () => {
+    // The cold getSession path and the persisted listSessions page must not disagree
+    // about why a compaction was lost: both read the per-request receipt.
+    const root = await mkdtemp(join(tmpdir(), "persisted-page-failure-"));
+    const dbPath = join(root, "tasks-index.sqlite"); const sessionDbPath = join(root, "db.sqlite");
+    const tasks = new DatabaseSync(dbPath);
+    tasks.exec("create table tasks (task_id text primary key, workspace_path text, title text, task_status text, model text, created_at integer, updated_at integer, deleted integer default 0, archived integer default 0)");
+    const now = Date.now();
+    tasks.prepare("insert into tasks values (?,?,?,?,?,?,?,0,0)").run("failed-session", "/workspace", "Failed", "error", null, now - 5_000, now - 5_000);
+    tasks.prepare("insert into tasks values (?,?,?,?,?,?,?,0,0)").run("healthy-session", "/workspace", "Healthy", "completed", null, now - 9_000, now - 9_000);
+    tasks.close();
+    const native = new DatabaseSync(sessionDbPath);
+    native.exec(`create table session(id text primary key, directory text, parent_id text, time_updated integer);
+      create table turn_usage(session_id text, turn_id text, status text, started_at integer, completed_at integer, error_type text, error_code text, primary key(session_id, turn_id));
+      create table model_usage(session_id text, turn_id text, status text, completed_at integer, error_type text, error_message text)`);
+    native.prepare("insert into session values(?,?,?,?)").run("failed-session", "/workspace", null, now - 5_000);
+    native.prepare("insert into session values(?,?,?,?)").run("healthy-session", "/workspace", null, now - 9_000);
+    native.prepare("insert into turn_usage values(?,?,?,?,?,?,?)").run("failed-session", "turn-net", "error", 1_000, 1_900, "unknown_error", "UNKNOWN_ERROR");
+    native.prepare("insert into model_usage values(?,?,?,?,?,?)").run("failed-session", "turn-net", "error", 1_900, "network_error", "Network connection failed for the provider request.");
+    native.prepare("insert into turn_usage values(?,?,?,?,?,?,?)").run("healthy-session", "turn-ok", "completed", 500, 600, null, null);
+    native.close();
+    try {
+      const adapter = new ZcodeAdapter({ client: new FakeClient(), tasksIndexDbPath: dbPath, localDbPath: sessionDbPath });
+      const sessions = await adapter.listSessions();
+      expect(sessions.find((item) => item.id === "failed-session")?.meta?.nativeLastTurn).toMatchObject({
+        turnId: "turn-net", errorCode: "UNKNOWN_ERROR", modelErrorType: "network_error",
+        errorMessage: "Network connection failed for the provider request." });
+      expect(sessions.find((item) => item.id === "healthy-session")?.meta?.nativeLastTurn?.errorMessage).toBeUndefined();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("marks a multi-page persisted snapshot non-exhaustive when a later page fails", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-partial-index-"));
     const taskDbPath = join(root, "tasks-index.sqlite");

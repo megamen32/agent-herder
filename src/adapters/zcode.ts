@@ -1500,6 +1500,42 @@ export class ZcodeAdapter implements HarnessAdapter {
                       });
                       nativeTurnRowsBySession.set(sessionId, group);
                     }
+                    // A failed turn persists only an aggregate error code, so the real
+                    // reason is fetched from the per-request receipt of that same last
+                    // turn, batched per page and guarded for older native schemas.
+                    if (nativeTableNames.has("model_usage")) {
+                      const modelColumns = new Set((nativeDb.prepare("pragma table_info(model_usage)").all() as Array<{ name?: string }>).map((column) => column.name));
+                      if (modelColumns.has("session_id") && modelColumns.has("turn_id") && modelColumns.has("error_message")) {
+                        const failedSessionIds = [...nativeTurnRowsBySession].filter(([, group]) =>
+                          group.some((item) => item.turnId && ["error", "failed", "cancelled"].includes(item.status ?? ""))).map(([sessionId]) => sessionId);
+                        if (failedSessionIds.length) {
+                          const newestTurn = `order by started_at desc, ${turnColumns.has("completed_at") ? "completed_at" : "0+0"} desc, turn_id desc limit 1`;
+                          const statement = nativeDb.prepare(`
+                            select m.session_id as session_id, m.turn_id as turn_id,
+                                   ${modelColumns.has("error_type") ? "cast(m.error_type as text) as error_type" : "null as error_type"},
+                                   cast(m.error_message as text) as error_message
+                            from model_usage m
+                            where coalesce(m.error_message, '') <> ''
+                              and (m.session_id, m.turn_id) in (
+                                select value, (select turn_id from turn_usage where session_id = target.value ${newestTurn})
+                                from json_each(?) as target
+                              )
+                            order by ${modelColumns.has("completed_at") ? "m.completed_at desc, m.rowid desc" : "m.rowid desc"}
+                          `);
+                          for (let offset = 0; offset < failedSessionIds.length; offset += 200) {
+                            for (const row of statement.all(JSON.stringify(failedSessionIds.slice(offset, offset + 200))) as Array<Record<string, unknown>>) {
+                              const sessionId = typeof row.session_id === "string" ? row.session_id : "";
+                              const target = nativeTurnRowsBySession.get(sessionId)?.find((item) => item.turnId === row.turn_id);
+                              if (!target) continue;
+                              const message = safeNativeFailureField(row.error_message, 200);
+                              const type = safeNativeFailureField(row.error_type, 96);
+                              if (message) target.errorMessage = message;
+                              if (type) target.modelErrorType = type;
+                            }
+                          }
+                        }
+                      }
+                    }
                   }
                 }
                 const nativeLastInputBySession = new Map<string, number>();
