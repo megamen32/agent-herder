@@ -63,3 +63,15 @@ The originally planned session pins milestone was subsequently authorized and de
 ## Quick Task Completed — 2026-10-13 remote session controls
 
 261013-srr delivered and accepted on actual central site: remote native message/stop/resume, SAME Codex SID onserver44 and once/wait/finish each1. Desktop/390px accepted ordinary history and44px reachable controls; Herder/native owners and9foreign queue rows preserved. See quick/261013-srr-unified-remote-session-chat-controls-sen/261013-srr-SUMMARY.md. This does not close unrelated native-pin synchronization, OCR or fleet recovery tasks.
+
+## Quick task — 2026-10-14 user style in autopilot
+
+261014-hpf implementation published: shared consolidated style and next-request
+prediction in Stop and batch judges.97 focused checks + TypeScript passed;
+real configured LLM created a profile, another project's batch request consumed
+it and predicted the outstanding reload acceptance. Full runtime activation
+remains incomplete: existing daemon/plugin have older code, native queue/loaded
+session coverage cannot prove safe owner restart. Two Stop provider requests
+hit the existing35s timeout; batch consumer passed. See
+quick/261014-hpf-user-style-profile-and-next-request-pred/261014-hpf-SUMMARY.md.
+This task does not reset previous milestone/recovery ownership or phase status.
