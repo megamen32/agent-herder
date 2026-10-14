@@ -137,7 +137,8 @@ describe("mobile chat and session controls", () => {
   it("exposes Machines from the session-list header without selecting or creating a chat", () => {
     const list = main.slice(main.indexOf("function SessionList("), main.indexOf("function App("));
     expect(list).toContain('className="quiet-button sessions-machines-button" onClick={onMachines}>Машины</button>');
-    expect(main).toContain('<SessionList onMachines={() => { setFleetCreationMode(false); setShowFleet(true); setAutomationSettings(undefined); }}');
+    const render = main.slice(main.indexOf('<SessionList '));
+    expect(render).toContain('onMachines={() => { setFleetCreationMode(false); setShowFleet(true); setAutomationSettings(undefined); }}');
   });
 
   it("keeps the existing chat menu available throughout mobile and tablet widths", () => {

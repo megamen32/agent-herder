@@ -58,6 +58,16 @@ export const newInputId = (): string => {
   return `input-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 };
 
+const CONTINUATION_MESSAGE = "Продолжи текущую задачу в этой же сессии. Если задача уже завершена, кратко сообщи результат.";
+
+/** Continue is a human input with the same durable admission/UNKNOWN rules
+ * as composer messages. Repeated clicks cannot create a second pending task. */
+export function planContinuation(entries: readonly OutboxEntry[], sessionKey: string, createId = newInputId) {
+  const pending = entries.find(entry => entry.sessionKey === sessionKey
+    && entry.text === CONTINUATION_MESSAGE && isOutboxUnfinished(entry));
+  return { inputId: pending?.inputId ?? createId(), text: CONTINUATION_MESSAGE, alreadyPending: Boolean(pending && pending.status !== "ready") };
+}
+
 export const deliveryModeLabel = (mode: DeliveryMode): string => (mode === "steer" ? "В текущий ход" : "После ответа");
 
 export const outboxStatusLabel = (status: OutboxStatus): string => {

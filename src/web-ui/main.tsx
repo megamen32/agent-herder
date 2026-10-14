@@ -25,7 +25,7 @@ import { groupSessionMessages } from "./message-groups.js";
 import { projectDeliveredChat, resolveDeliveredImages } from "./delivered-chat.js";
 import {sidebarEntries, sessionPinKey} from './session-pins.js';
 import {SessionSidebarRow, useSessionPins} from './session-sidebar.js';
-import { MessageAdmissionDispatcher, appendOutboxEntry, beginOutboxAttempt, canDeleteOutboxEntry, canSteerOutboxEntry, cancelOutcomeOfJob, classifyMessageDelivery, deliveryConnectionFailure, deliveryModeLabel, isOutboxUnfinished, isTerminalJobState, newInputId, outboxStatusLabel, readDefaultDeliveryMode, readDeliveryModePinned, readOutboxJobId, readStoredOutbox, reconcileMessageStatus, removeOutboxEntry, updateOutboxEntry, withOutboxJobId, writeDefaultDeliveryMode, writeDeliveryModePinned, writeStoredOutbox, type CancelOutcome, type DeliveryMode, type OutboxEntry } from "./composer-delivery.js";
+import { MessageAdmissionDispatcher, appendOutboxEntry, beginOutboxAttempt, canDeleteOutboxEntry, canSteerOutboxEntry, cancelOutcomeOfJob, classifyMessageDelivery, deliveryConnectionFailure, deliveryModeLabel, isOutboxUnfinished, isTerminalJobState, newInputId, outboxStatusLabel, planContinuation, readDefaultDeliveryMode, readDeliveryModePinned, readOutboxJobId, readStoredOutbox, reconcileMessageStatus, removeOutboxEntry, updateOutboxEntry, withOutboxJobId, writeDefaultDeliveryMode, writeDeliveryModePinned, writeStoredOutbox, type CancelOutcome, type DeliveryMode, type OutboxEntry } from "./composer-delivery.js";
 import { formatJsonPayload, readJsonRenderingOptOut, splitSystemBlocks, writeJsonRenderingOptOut } from "./json-rendering.js";
 import { applyTheme, readTheme, writeTheme, type HerderTheme } from "./theme.js";
 import { currentModelOption, modelSwitchSupported, requestModelChange, shortModelLabel, modelOptionLabel, modelSourceLabel } from "./model-chip.js";
@@ -1478,6 +1478,13 @@ function App() {
     if (action === "stop") messageDispatcherRef.current.cancelPending(activeKey);
     const { harness, id } = splitKey(activeKey);
     try {
+      if (action === "resume" && ["codex", "zcode", "fast-agent"].includes(harness)) {
+        const intent = planContinuation(outboxRef.current, activeKey);
+        if (!intent.alreadyPending && !messageDispatcherRef.current.hasPending(intent.inputId)) {
+          await submitOutboxEntry(activeKey, intent.text, "queue", intent.inputId);
+        }
+        return;
+      }
       const result = await api<{ job?: HerderJob }>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ humanRequested: action !== "stop", ...(action === "resume" && (harness === "codex" || harness === "zcode" || harness === "fast-agent") ? { message: "Продолжи текущую задачу в этой же сессии. Если задача уже завершена, кратко сообщи результат." } : {}) }) });
       if (action === "recover" && result.job) {
         setShowJobs(true);
