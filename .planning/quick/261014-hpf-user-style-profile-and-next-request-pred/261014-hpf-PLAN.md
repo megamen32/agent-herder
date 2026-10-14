@@ -17,3 +17,12 @@ judge route; retain provider HTTP/code/message/retry/request-id and distinguish
 no-response timeout from an actual429. Use existing configured routes, no native
 business dispatch/replay. Fix diagnostics, validate focused regressions and a
 real configured provider request. Existing resource budget remains unchanged.
+
+New user mandate: asynchronous Stop ingestion, immediate hook release, existing
+Herder jobs owner evaluates existing Stop judge in background and continues exact
+native session. Reuse jobs, policy, human gates, receipt store and native writer;
+one queued LLM per service, coalesce/deduplicate events, fence later user activity.
+No detached runner or second daemon. Black-box acceptance: owned Stop process
+exits before deliberately delayed real/fake LLM; background result later appears;
+continuation once to same SID, duplicate/Stop/newer-input cases suppress delivery.
+GLM5.3/Flash thinking is forced per official docs; do not claim disabling it.

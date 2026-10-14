@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { notifyAutopilotStop } from "./autopilot/stop-notify.js";
+import { readFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -60,6 +62,21 @@ async function noticeQuestionProducer(): Promise<NoticeQuestionConfig | undefine
 }
 
 export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<Record<string, unknown>> {
+  if (input.command === "stop") {
+    const status = await evaluateAutopilotCommand({ ...input, command: "status" });
+    if (status.human_stop_held) return { ...status, command: "stop", decision: "human-stop-held" };
+    if (!status.enabled) return { ...status, command: "stop", decision: "disabled" };
+    return notifyAutopilotStop(input);
+  }
+  return evaluateAutopilotCommand(input);
+}
+
+/** Process-owned background consumer; hooks call notifyAutopilotStop instead. */
+export async function evaluateAutopilotStop(input: AutopilotRunnerInput): Promise<Record<string, unknown>> {
+  return evaluateAutopilotCommand({ ...input, command: "stop" }, true);
+}
+
+async function evaluateAutopilotCommand(input: AutopilotRunnerInput, background = false): Promise<Record<string, unknown>> {
   await adoptLegacyAutopilotState(stateDir);
   const command = input.command ?? "on";
   const humanStops = getHumanStopStore();
@@ -111,7 +128,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
       judge: createOpenAICompatibleJudge({
         baseUrl: requiredEnv("AGENT_HERDER_AUTOPILOT_JUDGE_BASE_URL"),
         model: runtimeSettings.autopilotJudgeModel || requiredEnv("AGENT_HERDER_AUTOPILOT_JUDGE_MODEL"),
-        token: process.env.AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN || process.env.OPENAI_API_KEY,
+        token: process.env.AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN || (process.env.AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN_FILE ? (await readFile(process.env.AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN_FILE, "utf8")).trim() : undefined) || process.env.OPENAI_API_KEY,
       }),
       notify: createNoticePlaceSink({
         eventUrl: requiredEnv("NOTIFY_CENTER_EVENT_URL"),
@@ -127,7 +144,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
       maxContinuationsPerSession: readInteger(process.env.AGENT_HERDER_AUTOPILOT_MAX_CONTINUATIONS, 3),
       notification: {
         project: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_PROJECT || "agent-herder",
-        recipient: requiredEnv("AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT"),
+        recipient: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT || requiredEnv("NOTIFY_CENTER_RECIPIENT"),
         kind: process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_KIND || "notification",
       },
       choiceRegistry,
@@ -150,7 +167,7 @@ export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<
       const nextGoal = result.reason;
       await humanStops.rememberGeneratedPrompt(input.harness, input.sessionId, nextGoal);
       if (await held()) return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "human-stop-held" };
-      if (input.harness === "codex" || input.harness === "claude" || input.harness === "zcode") {
+      if (background || input.harness === "codex" || input.harness === "claude" || input.harness === "zcode") {
         return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "continue", next_goal: nextGoal };
       }
       if (input.harness === "hermes") {

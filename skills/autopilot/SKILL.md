@@ -19,6 +19,7 @@ available shell tool and return its output.
 
 The script uses Claude Code's `CLAUDE_CODE_SESSION_ID` or Codex's
 `CODEX_THREAD_ID` for the exact current task. Return its Russian status line to
-the user. When enabled, the native Stop hook invokes the judge after this task
-stops; `continue` stays in the same task, while an uncertain decision goes to
-NoticePlace as contextual buttons.
+the user. When enabled, the native Stop hook sends a short event to Herder and returns
+without waiting for a model. Herder evaluates the existing judge in the background
+and continues the same native task through its supported API; an uncertain
+decision goes to NoticePlace as contextual buttons.

@@ -87,6 +87,11 @@ async function main() {
     transcriptPath: typeof input.transcript_path === "string" ? input.transcript_path : undefined,
     stopHookActive: input.stop_hook_active === true,
   });
+  if (result?.decision === "queued") {
+    // This only closes the exact verified native turn, not the business task.
+    await reportOutcome(sessionId,cwd,turnId,'success');
+    return writeEmpty();
+  }
   // A choice is durable, but waiting for it here holds ZCode's native turn
   // open and prevents its queued user messages from starting. Release the
   // turn; a later selection resumes this exact session through Agent Resume.

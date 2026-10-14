@@ -20,6 +20,7 @@ _CTX: Any = None
 _SOURCE_BY_SESSION: dict[str, dict[str, Any]] = {}
 _GATEWAY_BY_SESSION: dict[str, tuple[Any, Any, Any]] = {}
 _ENABLED: set[str] = set()
+_PENDING_JOBS: set[str] = set()
 
 
 def _invoke(payload: dict[str, Any]) -> dict[str, Any]:
@@ -192,7 +193,12 @@ def _after_turn(
             "lastUserMessage": last_user,
             "lastAssistantMessage": last_assistant,
         })
-        if result.get("decision") == "continue" and result.get("next_goal"):
+        if result.get("decision") == "queued" and result.get("jobId"):
+            job_id = str(result["jobId"])
+            if job_id not in _PENDING_JOBS and len(_PENDING_JOBS) < 32:
+                _PENDING_JOBS.add(job_id)
+                threading.Thread(target=_await_job, args=(current_session, job_id, last_user), daemon=True).start()
+        elif result.get("decision") == "continue" and result.get("next_goal"):
             next_goal = str(result["next_goal"])
             _deliver_goal(current_session, next_goal)
         elif result.get("decision") == "choice" and result.get("request_id"):
@@ -219,6 +225,34 @@ def _deliver_goal(session_id: str, next_goal: str) -> None:
             enqueue()
     elif _CTX is None or not _CTX.inject_message(next_goal, role="user"):
         _resume_cli_session(session_id, next_goal)
+
+
+def _await_job(session_id: str, job_id: str, expected_user: str | None) -> None:
+    """Only delivery polling stays in the plugin; the Herder job owns the LLM."""
+    deadline = time.monotonic() + 120
+    try:
+        while time.monotonic() < deadline:
+            try:
+                endpoint = os.getenv("AGENT_HERDER_URL", "http://127.0.0.1:18787")
+                with urllib.request.urlopen(f"{endpoint}/api/jobs/{urllib.parse.quote(job_id)}", timeout=2) as response:
+                    job = json.load(response).get("job", {})
+                if job.get("state") == "completed":
+                    result = job.get("result") or {}
+                    current_user = next((str(m.get("content") or "") for m in reversed(_session_history(session_id)) if m.get("role") == "user"), None)
+                    if current_user != expected_user:
+                        return
+                    if result.get("decision") == "continue" and result.get("local_delivery") and result.get("next_goal"):
+                        _deliver_goal(session_id, str(result["next_goal"]))
+                    elif result.get("decision") == "choice" and result.get("request_id"):
+                        threading.Thread(target=_await_choice, args=(session_id, str(result["request_id"])), daemon=True).start()
+                    return
+                if job.get("state") in {"failed", "cancelled", "interrupted"}:
+                    return
+            except (OSError, ValueError):
+                pass
+            time.sleep(0.5)
+    finally:
+        _PENDING_JOBS.discard(job_id)
 
 
 def _await_choice(session_id: str, request_id: str) -> None:

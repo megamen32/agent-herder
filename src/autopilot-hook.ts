@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { notifyAutopilotStop } from "./autopilot/stop-notify.js";
 import { createHash } from "node:crypto";
 import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -105,7 +106,7 @@ export async function loadEffectivePolicyForStopHook(
   });
 }
 
-async function main(): Promise<void> {
+async function legacyControlMain(): Promise<void> {
   const stateDir = defaultStateDir();
   await adoptLegacyAutopilotState(stateDir);
   const args = process.argv.slice(2);
@@ -349,6 +350,18 @@ function isStopHookInput(value: unknown): value is StopHookInput {
     (typeof input.transcript_path === "string" || input.transcript_path === null) &&
     typeof input.stop_hook_active === "boolean"
   );
+}
+
+async function main(): Promise<void> {
+  if (process.argv.slice(2).length) return legacyControlMain();
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+  const input = JSON.parse(Buffer.concat(chunks).toString("utf8")) as StopHookInput;
+  if (input.session_id && input.cwd) await notifyAutopilotStop({ command: "stop", harness: input.harness ?? "codex",
+    sessionId: input.session_id, cwd: input.cwd, turnId: input.turn_id,
+    lastUserMessage: input.last_user_message, lastAssistantMessage: input.last_assistant_message,
+    transcriptPath: input.transcript_path });
+  writeResult({});
 }
 
 function requiredEnv(name: string, message: string): string {

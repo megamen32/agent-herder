@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -72,21 +71,10 @@ if (sessionId) {
   }
 }
 
-const child = spawn("bash", [resolve(pluginRoot, "scripts/autopilot-hook-launcher.sh")], {
-  env: process.env,
-  stdio: ["pipe", "pipe", "inherit"],
-});
-child.stdin.end(raw);
-child.once("error", (error) => { process.stderr.write(`${error.message}\n`); process.exit(1); });
-let childOutput = "";
-child.stdout.setEncoding("utf8").on("data", (chunk) => { childOutput += chunk; });
-child.once("close", async (code) => {
-  if (code !== 0) process.exit(code ?? 1);
-  try {
-    if (sessionId && await humanStopHeld()) await exitWithoutContinuation();
-    process.stdout.write(childOutput || "{}");
-    process.exit(0);
-  } catch {
-    await exitWithoutContinuation();
-  }
-});
+try {
+  const { notifyAutopilotStop } = await import(pathToFileURL(resolve(pluginRoot, "dist/autopilot/stop-notify.js")).href);
+  await notifyAutopilotStop({ command: "stop", harness: "codex", sessionId, cwd,
+    turnId: input.turn_id, lastUserMessage: input.last_user_message,
+    lastAssistantMessage: input.last_assistant_message ?? null, transcriptPath: input.transcript_path ?? null });
+} catch { /* Unavailable Herder never holds the native Stop or runs a local model. */ }
+process.stdout.write("{}");

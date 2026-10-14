@@ -1243,6 +1243,8 @@ export interface UnfinishedSessionLauncherOptions {
   autopilotSessionStore?: Pick<AutopilotSessionStore, "get">;
   /** Stable only for one Agent Herder process; tests may inject it. */
   generationId?: string;
+  /** The process-owned background Stop consumer currently owns this native decision. */
+  semanticAdmissionHeld?: (session: AgentSession) => boolean;
 }
 
 /** Reconciles durable unfinished turns for the lifetime of the Agent Herder process. */
@@ -3653,7 +3655,7 @@ export class UnfinishedSessionLauncher {
   }
 
   private async groupAdmissionAllowed(sessions: AgentSession[], operation: RecoveryOperation): Promise<boolean> {
-    for (const session of sessions) if (!await this.admissionAllowed(session, operation)) return false;
+    for (const session of sessions) if (this.options.semanticAdmissionHeld?.(session) || !await this.admissionAllowed(session, operation)) return false;
     // Batch assessment can precede a slow planner/attach. Read the existing
     // semantic switches again after the awaited admission gate, before each
     // native action; a cached autoResumeEnabled must not override a new opt-out.

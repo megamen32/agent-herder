@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +8,30 @@ describe("autopilot runner", () => {
     vi.resetModules();
     process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR = await mkdtemp(join(tmpdir(), "agent-herder-runner-"));
     process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR, "human-stops.json");
+  });
+
+  it("evaluates inside the daemon with a token file and inherited recipient, without native delivery", async () => {
+    const { runAutopilotCommand, evaluateAutopilotStop } = await import("../src/autopilot-runner.js");
+    const tokenPath = join(process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR!, "judge-token");
+    await writeFile(tokenPath, "fixture-token\n");
+    vi.stubEnv("AGENT_HERDER_AUTOPILOT_JUDGE_BASE_URL", "https://fixture-judge.invalid/v1");
+    vi.stubEnv("AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN", "");
+    vi.stubEnv("AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN_FILE", tokenPath);
+    vi.stubEnv("AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT", "");
+    vi.stubEnv("NOTIFY_CENTER_RECIPIENT", "fixture-recipient");
+    vi.stubEnv("NOTIFY_CENTER_EVENT_URL", "https://fixture-notice.invalid/v1/events");
+    vi.stubEnv("NOTIFY_CENTER_TOKEN", "fixture-notify-token");
+    const fetchMock = vi.fn(async (_url: unknown, init: any) => {
+      expect(init.headers.authorization).toBe("Bearer fixture-token");
+      return Response.json({ choices: [{ message: { content: JSON.stringify({ kind: "continue", nextGoal: "Проверить результат" }) } }] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const input = { harness: "opencode" as const, sessionId: "background-fixture", cwd: "/workspace/app", turnId: "t1", lastAssistantMessage: "Осталась проверка" };
+      await runAutopilotCommand({ ...input, command: "on" });
+      await expect(evaluateAutopilotStop(input)).resolves.toMatchObject({ decision: "continue", next_goal: "Проверить результат" });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally { vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
   });
 
   it("defaults slash invocation to on and persists exact current-session status", async () => {

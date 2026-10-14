@@ -90,3 +90,25 @@ including12 new HTTP/native-code/timeout-phase/stream/repair cases. First compil
 49.15s passed; final compile46.76s passed. Original activation boundary remains: no
 restart or installed-plugin overwrite was performed, so future live daemon/hook
 errors still require supported activation to gain these diagnostics.
+
+## Async Stop and authorized activation —14.10
+
+Replaced hook-side judging with a1200ms-deadline notification. The existing
+Herder job registry owns a bounded serial queue of32 pending jobs and performs
+the LLM call after acknowledgement. Native session snapshots, opt-in, Stop,
+pending-question and cancellation checks fence continuation; batch admission
+waits while that same session has a Stop job. Existing native transport and
+stable input identities retain receipt/noReplay behavior. Hermes polls the
+existing job API through its supported plugin. No detached judge is spawned.
+
+Fast unit/focused integration:72 unique cases across6 files passed (71-case
+scope15.71s; final background+runner13-case scope6.98s). Final candidate tsc48.85s
+passed; Python plugin compiled. Actual installed-hook code against the real
+configured GLM exited `{}` after936ms, while the isolated background judge
+completed after22176ms. No native dispatch or notification was allowed by that
+canary. Evidence: `.tmp/async-stop-plugin/result.json`.
+
+Official GLM docs confirm5.3/5.3Flash force thinking; it cannot be disabled.
+The user explicitly authorized updating the installed plugin and restarting
+Herder now after the idle-coverage limitation was explained. Earlier activation
+block is historical; deployment receipt follows below.

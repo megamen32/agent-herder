@@ -804,3 +804,27 @@ add retries, or replay an admitted native task.
 Official code references:
 - https://docs.z.ai/api-reference/api-code
 - https://platform.minimax.io/docs/api-reference/errorcode
+
+## Nonblocking Stop processing
+
+Installed Stop hooks submit `/api/autopilot/stop` and release the native turn.
+The notification has a 1200ms HTTP deadline and never falls back to local LLM
+execution. Herder owns the bounded serial queue (32 pending) in its existing
+job registry; `/api/jobs/:id` exposes the result and provider diagnostics.
+Duplicate native turn identities return the existing job. Interrupted jobs are
+retained without automatic replay after restart.
+
+The worker reads the exact native session and checks opt-in, human Stop and
+pending questions before judging and before delivery. A changed transcript,
+running turn, cancellation or new human hold suppresses stale continuation.
+The existing native resume transport receives a stable input identity for that
+same session; batch semantic admission is fenced while its Stop job is pending.
+Hermes consumes the finished job through its supported plugin context. No
+detached judge process or new scheduler is started.
+
+Acceptance: the actual Codex hook exited with `{}` in936ms while the real
+configured GLM judge was still running; its isolated background job completed
+after22.18s. Focused tests cover immediate acknowledgement, duplicate handling,
+same-session delivery and Stop/new-message/opt-out/cancellation fencing.
+GLM5.3/5.3Flash force thinking; disabling thinking is not a supported latency fix:
+https://docs.z.ai/guides/capabilities/thinking-mode .

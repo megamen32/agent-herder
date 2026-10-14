@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { BackgroundAutopilotStop } from "./autopilot/background-stop.js";
+import { evaluateAutopilotStop, runAutopilotCommand } from "./autopilot-runner.js";
+import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
 import { AutoCompactStore, AutoCompactService } from "./autocontinue/auto-compact.js";
 import { createHash,randomUUID } from "node:crypto";
 import { createFleetRecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
@@ -741,7 +744,9 @@ async function main() {
     ? undefined
     : createDynamicSessionCompletionJudge(getUnfinishedJudgeClient, async () => (await sessionAutostartStore.getSettings()).autopilotJudgeModel);
   const recoveryAdmissionGate = createFleetRecoveryAdmissionGate(process.env.AGENT_HERDER_FLEET_MONITOR_STATE);
+  let backgroundAutopilotStop: BackgroundAutopilotStop | undefined;
   const unfinishedSessionLauncher = new UnfinishedSessionLauncher({
+    semanticAdmissionHeld: session => backgroundAutopilotStop?.isPending(session.harness, session.id) ?? false,
     generationId:herderGenerationId,
     admissionGate: recoveryAdmissionGate,
     // A pending question or choice is a durable fence: reconcile and Autopilot
@@ -785,6 +790,17 @@ async function main() {
   process.once("exit", stopProcessObservation);
   const stopCompletionNoticeSweeper = startCompletionNoticeSweeper();
   process.once("exit", stopCompletionNoticeSweeper);
+  const stopPendingQuestions = new PendingQuestionGate({ humanRequests, choices: choiceRegistry });
+  backgroundAutopilotStop = new BackgroundAutopilotStop({ jobs: herderJobs, adapters, evaluate: evaluateAutopilotStop,
+    held: (harness, id) => humanStopStore.isHeld(harness, id),
+    allowed: async input => {
+      stopPendingQuestions.invalidate();
+      const status = await runAutopilotCommand({ ...input, command: "status" });
+      return status.enabled === true && !await stopPendingQuestions.blocks(input.harness, input.sessionId, input.cwd);
+    },
+    deliver: (input, goal, inputId) => resumeSelectedTarget({ target: { agent: input.harness as "codex", session_id: input.sessionId, cwd: input.cwd },
+      goal, prompt: goal, result_ref: `agent-herder://autopilot/stop/${inputId}`, idempotency_key: inputId }, processSupervisor, "automation"),
+  });
   const stopUnfinishedSessionLauncher = unfinishedSessionLauncher.start();
   process.once("exit", stopUnfinishedSessionLauncher);
   // One human answer resumes its exact native session once, from every MCP surface.
@@ -849,6 +865,7 @@ async function main() {
       mcpAuthToken: httpToken,
       fleetApiHandler: createConfiguredFleetApiHandler(),
       fleetHttpGuard: createManagedFleetHttpGuard(httpToken),
+      backgroundAutopilotStop,
       autopilotPolicyStore,
       autopilotSessionStore,
       sessionAutostartStore,
