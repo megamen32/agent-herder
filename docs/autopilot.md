@@ -828,3 +828,10 @@ after22.18s. Focused tests cover immediate acknowledgement, duplicate handling,
 same-session delivery and Stop/new-message/opt-out/cancellation fencing.
 GLM5.3/5.3Flash force thinking; disabling thinking is not a supported latency fix:
 https://docs.z.ai/guides/capabilities/thinking-mode .
+
+Native acceptance follow-up: resolve a Stop target through `getSession(id)`
+and verify its cwd; never enumerate all native sessions for a known identity.
+The process-owned background judge has a90s inference deadline, independent of
+the1200ms notification deadline (legacy direct library judge defaults to35s).
+The first real native canary exposed both a36.7s inventory scan and a35s GLM
+headers timeout. These are distinct from hook latency (actual521ms) and HTTP429.

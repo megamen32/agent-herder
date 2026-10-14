@@ -15,10 +15,10 @@ async function fixture() {
  const jobs=new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(root,"jobs.json")});
  let finish!:(r:any)=>void; const pending=new Promise<any>(r=>{finish=r});
  let held=false,allowed=true; let messages=[{id:"u1",role:"user",text:"Почини и проверь",parts:[]},{id:"a1",role:"assistant",text:event.lastAssistantMessage,parts:[]}];
- const adapter={type:"codex",listSessions:async()=>[{id:event.sessionId,harness:"codex",cwd:"/test",status:"idle",lastActivity:new Date().toISOString()}],getSessionMessages:async()=>messages};
+ const adapter={type:"codex",listSessions:vi.fn(async()=>{throw Error("Full inventory must never run for an exact Stop target")}),getSession:vi.fn(async(id:string)=>id===event.sessionId?{id:event.sessionId,harness:"codex",cwd:"/test",status:"idle",lastActivity:new Date().toISOString()}:null),getSessionMessages:async()=>messages};
  const evaluate=vi.fn(async()=>pending),deliver=vi.fn(async()=>({status:"accepted"}));
  const consumer=new BackgroundAutopilotStop({jobs,adapters:new Map([["codex",adapter as any]]),evaluate,deliver,held:async()=>held,allowed:async()=>allowed});
- return {root,jobs,consumer,evaluate,deliver,finish,setHeld:(v:boolean)=>{held=v},setAllowed:(v:boolean)=>{allowed=v},newMessage:()=>{messages=[...messages,{id:"u2",role:"user",text:"Стоп, другое поручение",parts:[]}]}};
+ return {root,jobs,consumer,adapter,evaluate,deliver,finish,setHeld:(v:boolean)=>{held=v},setAllowed:(v:boolean)=>{allowed=v},newMessage:()=>{messages=[...messages,{id:"u2",role:"user",text:"Стоп, другое поручение",parts:[]}]}};
 }
 async function waitUntil(fn:()=>boolean) { const end=Date.now()+3000; while(!fn()){if(Date.now()>end)throw Error("unfinished job");await new Promise(r=>setTimeout(r,5));} }
 describe("background Stop delivery",()=>{
@@ -33,6 +33,7 @@ describe("background Stop delivery",()=>{
   expect((await duplicate.json() as any).jobId).toBe(body.jobId);
   await waitUntil(()=>f.evaluate.mock.calls.length===1);expect(f.consumer.isPending("codex",event.sessionId)).toBe(true);
   f.finish({decision:"continue",next_goal:"Проверь"});await waitUntil(()=>f.jobs.get(body.jobId)?.state==="completed");
+  expect(f.adapter.listSessions).not.toHaveBeenCalled();expect(f.adapter.getSession).toHaveBeenCalledWith(event.sessionId);
   expect(f.deliver).toHaveBeenCalledTimes(1);expect(f.deliver.mock.calls[0][0]).toMatchObject({sessionId:event.sessionId,cwd:event.cwd,turnId:event.turnId});
   expect(f.consumer.isPending("codex",event.sessionId)).toBe(false);
   expect(f.consumer.submit(event).id).toBe(body.jobId);

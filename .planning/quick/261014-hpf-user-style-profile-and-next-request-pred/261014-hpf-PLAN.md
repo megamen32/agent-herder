@@ -26,3 +26,9 @@ No detached runner or second daemon. Black-box acceptance: owned Stop process
 exits before deliberately delayed real/fake LLM; background result later appears;
 continuation once to same SID, duplicate/Stop/newer-input cases suppress delivery.
 GLM5.3/Flash thinking is forced per official docs; do not claim disabling it.
+
+Follow-up acceptance: real owned native Codex session with two-stage text-only
+task. Capture actual hooks/turn completion and daemon job times, then prove an
+automated next turn on the same nativeSID with no manual second message. Native
+runtime retains its existing service budget; controller scope512MiB/CPU1/Tasks64,
+swap0,IO25,temp<=10MiB, expected60s/emergency600s. Stop/disable only owned canary.

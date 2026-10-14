@@ -259,6 +259,7 @@ export function createNoticePlaceSink(config: {
  */
 export function createOpenAICompatibleJudge(config: {
   styleStore?: UserStyleStore;
+  timeoutMs?: number;
   baseUrl: string;
   model: string;
   token?: string;
@@ -280,7 +281,7 @@ export function createOpenAICompatibleJudge(config: {
           ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
           "content-type": "application/json",
         },
-        signal: AbortSignal.timeout(35_000),
+        signal: AbortSignal.timeout(config.timeoutMs ?? 35_000),
         body: JSON.stringify({
           model: config.model,
           temperature: 0,

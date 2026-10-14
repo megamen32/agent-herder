@@ -21,6 +21,7 @@ describe("autopilot runner", () => {
     vi.stubEnv("NOTIFY_CENTER_RECIPIENT", "fixture-recipient");
     vi.stubEnv("NOTIFY_CENTER_EVENT_URL", "https://fixture-notice.invalid/v1/events");
     vi.stubEnv("NOTIFY_CENTER_TOKEN", "fixture-notify-token");
+    const judgeDeadline = vi.spyOn(AbortSignal, "timeout");
     const fetchMock = vi.fn(async (_url: unknown, init: any) => {
       expect(init.headers.authorization).toBe("Bearer fixture-token");
       return Response.json({ choices: [{ message: { content: JSON.stringify({ kind: "continue", nextGoal: "Проверить результат" }) } }] });
@@ -31,7 +32,8 @@ describe("autopilot runner", () => {
       await runAutopilotCommand({ ...input, command: "on" });
       await expect(evaluateAutopilotStop(input)).resolves.toMatchObject({ decision: "continue", next_goal: "Проверить результат" });
       expect(fetchMock).toHaveBeenCalledTimes(1);
-    } finally { vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
+      expect(judgeDeadline).toHaveBeenCalledWith(90_000);
+    } finally { judgeDeadline.mockRestore(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
   });
 
   it("defaults slash invocation to on and persists exact current-session status", async () => {

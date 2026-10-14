@@ -67,8 +67,8 @@ export class BackgroundAutopilotStop {
     if (count <= 1) this.pending.delete(target); else this.pending.set(target, count - 1);
   }
   private async snapshot(adapter: HarnessAdapter, input: AutopilotRunnerInput) {
-    const session = (await adapter.listSessions({ cwd: input.cwd })).find(s => s.id === input.sessionId && resolve(s.cwd) === resolve(input.cwd));
-    if (!session || session.needsPermission) return null;
+    const session = await adapter.getSession(input.sessionId);
+    if (!session || session.id !== input.sessionId || resolve(session.cwd) !== resolve(input.cwd) || session.needsPermission) return null;
     const messages = await adapter.getSessionMessages?.(session.id, 4);
     if (!messages?.length) return null;
     const fingerprint = createHash("sha256").update(JSON.stringify(messages.map(m => [m.id, m.role, m.text, m.parts]))).digest("hex");

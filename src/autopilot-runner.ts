@@ -126,6 +126,8 @@ async function evaluateAutopilotCommand(input: AutopilotRunnerInput, background 
     let observedDecision: { decision: AutopilotDecision; choiceRequestId?: string; humanRequestId?: string } | undefined;
     const core = createAutopilotCore({
       judge: createOpenAICompatibleJudge({
+        // Background inference is independent of the short native-hook deadline.
+        timeoutMs: background ? 90_000 : 35_000,
         baseUrl: requiredEnv("AGENT_HERDER_AUTOPILOT_JUDGE_BASE_URL"),
         model: runtimeSettings.autopilotJudgeModel || requiredEnv("AGENT_HERDER_AUTOPILOT_JUDGE_MODEL"),
         token: process.env.AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN || (process.env.AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN_FILE ? (await readFile(process.env.AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN_FILE, "utf8")).trim() : undefined) || process.env.OPENAI_API_KEY,
