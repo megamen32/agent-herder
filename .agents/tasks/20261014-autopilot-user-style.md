@@ -85,3 +85,12 @@ backup сохранён; разрешённый Herder restart применил 
 явный heavyDENIED, неизвестный registry, native budgets и human fences сохранены.
 Ни запись реестра, ни ресурсные ограничения не изменены. Новая проверка включает
 передачу purpose через обе supervisor checks и сохранение cold ZCode workspace.
+
+Реальная приёмка завершена: nativeSID01a13a0d-3b4c-7d72-b9e2-3b15af68874a;
+ровно один ручной turn/start. Stop1068ms→turn/completed; GLM background job18471ms
+выбралаcontinue, native deliveryaccepted; второй ход через17950ms после первого
+completion, тот жеSID, итог ровно «ЭТАП_2: 42; задача завершена». Второй Stop377ms.
+34 проверки+tsc прошли, c954c57 опубликован и активен; HerderPID1752422.
+Три собственные canary-сессии выключены и архивированы, evidence/receipts сохранены.
+Доказательства: .tmp/async-native-verified-20261014/acceptance.json и linkedSUMMARY.
+Это liveCodex-приёмка; остальные harness не объявляются проверенными этим запуском.

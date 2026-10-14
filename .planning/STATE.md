@@ -92,3 +92,13 @@ Guarded same-session delivery/cancellation covered by focused integration;
 72 unique async-related cases and final tsc passed. Style/prediction and provider
 diagnostics now loaded on this instance. See261014-hpf-SUMMARY for evidence and
 the explicit boundary: no foreign native chat was used for business continuation.
+
+261014-hpf real native follow-up accepted14.10: user requested full Stop→judge→
+automatic SAME nativeSID continuation. Fixed exact-target inventory cost, retained
+bounded90s background inference and separated semantic Stop admission from the
+historical recovery campaign (eafba70,c954c57); native/campaign/Stop holds retained.
+34 checks+tsc passed. Real CodexSID01a13a0d-3b4c-7d72-b9e2-3b15af68874a:
+Stop1068ms; first turncompleted; background GLM18471ms; automatic second turn
+17950ms later and exact assistant «ЭТАП_2: 42; задача завершена». Only one manual
+initial turn; native writer unchanged. Owned canaries disabled/archived. See
+261014-hpf-SUMMARY and .tmp/async-native-verified-20261014/acceptance.json.

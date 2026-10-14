@@ -136,3 +136,47 @@ Shared style/prediction and detailed judge error diagnostics are now loaded by
 the running daemon and installed Codex package. Historical activation blockers
 above are resolved for this instance; this is not a fleet-wide plugin rollout.
 Foreign untracked OpenCode release files remain untouched.
+
+## Real native continuation acceptance —14.10 13:55MSK
+
+The user requested the complete real-session path, extending earlier isolated
+judge/installed-ingestion acceptance. The first two real attempts exposed and
+retained actual failures, rather than being reported as success:
+
+1. Native Stop521ms, then36.7s full Codex inventory before inference; GLM headers
+   timed out at35007ms. Fixed exact native `getSession(id)`/cwd validation and
+   a finite90s background inference deadline, independent of1200ms hook notify.
+   Existing ZCode cold-workspace scoped lookup retained. Publishedeafba70.
+2. GLM returned real `continue`, but delivery was held by the Oct09 one-off fleet
+   recovery campaign registry. Added internal semantic `autopilot-send` purpose
+   through BOTH supervisor checks; opted-in sessions outside that campaign need
+   no campaign enrolment. Registered/stale campaign holds, explicit heavyDENIED,
+   unknown registry, native budgets, Stop and human fences remain enforced. No
+   campaign file, origin or resource limit was changed. Publishedc954c57.
+
+Final exact source:34 fast-unit/focused-integration checks passed (3files,9.20s);
+combined checks+tsc57.80s. Canonical and installed Codex artifacts updated with
+backups, only Herder restarted; managed native Codex runtime was not restarted.
+
+Real native session: `01a13a0d-3b4c-7d72-b9e2-3b15af68874a`,gpt-6.1-sol;
+real background judge:glm-5.3-flash. The controller sent exactly ONE initial
+`turn/start`, with an authorized two-stage text-only task. Native notifications
+and full `thread/read` history proved:
+
+- First installed Stop hook1068ms; first native turn completed at+6930ms.
+- Background job57d7fc17… ran18471ms; real judge returnedcontinue and Herder's
+  existing same-session native transport recorded accepted delivery.
+- Second turn started at+24880ms,17950ms AFTER first turn completion, while
+  the program had already been released. No manual second input.
+- Second turn completed at+30579ms, same nativeSID; assistant output exactly
+  `ЭТАП_2: 42; задача завершена`. Second Stop hook377ms.
+- Exactly two native turns. Controller scope32.48s, exit0. The second background
+  job subsequently returned terminalKind=completed; no further continuation.
+
+Evidence directory: `.tmp/async-native-verified-20261014/`; files:
+`acceptance.json`, `result.json`, `events.jsonl`, `final-jobs.json`, `cleanup.json`.
+Earlier canary directories retain first-failure.json and admission-failure.json.
+All three OWNED test sessions were disabled and archived after checking they
+had no running turn. Their transcripts and failed/accepted job receipts remain.
+New HerderPID1752422 active; no foreign native message or business action sent.
+This real acceptance covers Codex; it does not assert live proof on every harness.
