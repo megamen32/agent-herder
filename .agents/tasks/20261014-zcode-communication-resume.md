@@ -55,3 +55,20 @@ Latest human extension15Oct: ZCode sessions created by Agent Herder are missing
 from ZCode Desktop; investigate and repair visibility via TDD, preserve IDs,
 history and native runtime source policy. Same owning project/assignment;
 original communication/resume outcome remains accepted. Do not duplicate sessions.
+
+Desktop extension confirmed on server100 (human answer). Actual live native
+Desktop3.15.3/PID1430106 and host1431671 share tasks-index.sqlite with Herder.
+GUI omits airlock16ae/catalog0dd4 despite valid indexed IDs; native controller
+caches source forever until an in-process workspace event. Config-only native
+view switch failed; original Timeline/updated preferences restored exactly.
+Read-only inspector probes used supported Electron/renderer API only, no
+Debugger pause or source replacement; own inspector closed after every probe.
+The diagnostic click parser/const-name errors were captured in same Desktop
+window screenshots before retry. No application/host/CLI restarted.
+
+Exact installed controller regression RED then GREEN with candidate; lifecycle
+unit3/3 and full native module parse passed, peak46MiB, swap/OOM0. Source-only
+candidate at integrations/zcode-desktop; staging refuses unknown native source
+and installed output paths. Installed ASAR unchanged. Need explicit native-source
+policy decision under parent AGENTS.md before installation, then safe activation
+and actual Desktop same-ID acceptance. See integrations/zcode-desktop/README.md.
