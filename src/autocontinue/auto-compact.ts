@@ -19,6 +19,9 @@ export interface CompactReceipt {
   inputId: string; sourceKey: string; harness: string; sessionId: string;
   userMessageId: string; tokensBefore: number; tokensAfter?: number; durationMs?: number;
   state: "submitting" | "accepted" | "completed" | "failed";
+  /** Native turn boundary observed at submit time; a later terminal boundary without a
+   * real user prompt is the maintenance turn this operation submitted. */
+  turnBoundaryAt?: string;
   createdAt: string; updatedAt: string; error?: string; cause?: string; automatic?: boolean; notifiedAt?: string;
 }
 interface State { version: 1; settings: AutoCompactSettings; operations: CompactReceipt[] }
@@ -91,6 +94,9 @@ export function compactContext(session: AgentSession) {
   const cache = object(usage.cache);
   const turn = object(meta.nativeLastTurn);
   const prompt = object(meta.latestUserPrompt);
+  // The native cancelled_by_user flag also covers a cancelled maintenance turn, so
+  // only this service's own human-stop evidence can rule a terminal turn out.
+  const humanStopHeld = meta.humanStopHeld === true || session.meta?.humanStopHeld === true;
   return {
     userMessageId: typeof prompt.id === "string" ? prompt.id : undefined,
     tokens: typeof usage.used === "number" && Number.isSafeInteger(usage.used) ? usage.used : 0,
@@ -102,6 +108,12 @@ export function compactContext(session: AgentSession) {
     completedAt: typeof turn.completedAt === "number" ? turn.completedAt : typeof turn.completedAt === "string" ? Date.parse(turn.completedAt) : NaN,
     complete: turn.status === "completed" && turn.kind !== "compact",
     compactFailed: turn.kind === "compact" && turn.status === "failed",
+    /** Terminal native failure of the latest turn, except a human stop this service can prove. */
+    turnFailed: ["failed", "error", "cancelled"].includes(String(turn.status))
+      && !humanStopHeld && !meta.automationStop,
+    /** A maintenance turn is bound to no real user prompt; a task turn always is. */
+    turnUserMessageId: typeof turn.userMessageId === "string" ? turn.userMessageId : undefined,
+    nativeCause: nativeTurnCause(turn),
     turnBoundary: typeof turn.turnId === "string" ? turn.turnId : String(turn.completedAt || ""),
     quiet: meta.nativeLoaded === true && ["idle", "stopped", "completed"].includes(String(meta.nativeStatus))
       && !meta.nativeActiveTurnId && !meta.nativeActiveTurnKind && !session.needsPermission
@@ -163,6 +175,11 @@ export class AutoCompactService {
       } else if (context.compactFailed) {
         const cause = "Нативная среда сообщила об ошибке сжатия без подробностей.";
         await this.options.store.finish(operation.inputId, { state: "failed", cause, error: `Нативное сжатие завершилось ошибкой: ${cause}`, durationMs: now - Date.parse(operation.createdAt), updatedAt: new Date(now).toISOString() });
+      } else if (context.turnFailed && !context.turnUserMessageId && context.turnBoundary !== operation.turnBoundaryAt) {
+        // The durable native receipt carries no compact kind, so a terminal turn that
+        // appeared after submit time and owns no real user prompt is the compact itself.
+        const cause = context.nativeCause ?? "Нативная среда сообщила об ошибке сжатия без подробностей.";
+        await this.options.store.finish(operation.inputId, { state: "failed", cause, error: `Нативное сжатие завершилось ошибкой: ${cause}`, durationMs: now - Date.parse(operation.createdAt), updatedAt: new Date(now).toISOString() });
       } else if (now - Date.parse(operation.createdAt) > 15 * 60_000) {
         await this.options.store.finish(operation.inputId, { state: "failed", error: "Результат компакта не подтверждён; автоматический повтор запрещён.", updatedAt: new Date(now).toISOString() });
       }
@@ -219,7 +236,7 @@ export class AutoCompactService {
     if (existing) return receiptResult(existing);
     const inputId = requestedInputId || `autocompact:${sourceKey}`;
     const stamp = new Date(now).toISOString();
-    const claimed = await this.options.store.claim({ inputId, sourceKey, harness, sessionId: id, userMessageId: context.userMessageId, tokensBefore: context.tokens, state: "submitting", automatic: !manual, createdAt: stamp, updatedAt: stamp }, manual ? undefined : state.settings.maxPerHour);
+    const claimed = await this.options.store.claim({ inputId, sourceKey, harness, sessionId: id, userMessageId: context.userMessageId, tokensBefore: context.tokens, turnBoundaryAt: context.turnBoundary, state: "submitting", automatic: !manual, createdAt: stamp, updatedAt: stamp }, manual ? undefined : state.settings.maxPerHour);
     if (!claimed) return { ok: false, error: "Компакт уже зарегистрирован или исчерпан лимит сжатий за час." };
     if (await this.options.held(harness, id)) { await this.options.store.finish(inputId, { state: "failed", error: "Сессия остановлена перед отправкой." }); return { ok: false, error: "Сессия явно остановлена." }; }
     let result: ControlResult;
@@ -228,6 +245,15 @@ export class AutoCompactService {
     await this.options.store.finish(inputId, { state: result.ok ? "accepted" : "failed", error: result.error?.slice(0, 500), updatedAt: stamp });
     return result;
   }
+}
+
+/** Durable native turn failure detail, bounded and single-line so a notice never carries a payload. */
+function nativeTurnCause(turn: Record<string, unknown>): string | undefined {
+  const text = (value: unknown) => typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+  const code = text(turn.errorCode).slice(0, 96);
+  const type = text(turn.errorType).slice(0, 96);
+  if (code && type && code !== type) return `[${code}] ${type}`;
+  return code || type || undefined;
 }
 
 /** Native failure detail, bounded and single-line so a notice never carries a payload. */

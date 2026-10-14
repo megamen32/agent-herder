@@ -91,9 +91,52 @@ describe("native compact failure (fast unit, expected 1s/max 10s)", () => {
     expect((await f.store.read()).operations[0]?.state).toBe("failed");
     expect(f.compactSession).toHaveBeenCalledTimes(1);
   });
+  it("settles from the durable native turn receipt that carries no compact kind", async () => {
+    // Real zcode shape: turn_usage is the only receipt, it has no `kind`, and the
+    // harness emits no turn.failed session event for a compact failure.
+    const f = await fixture(); f.age(205); await f.service.tick();
+    expect((await f.store.read()).operations[0]?.turnBoundaryAt).toBe(String(Date.parse("2026-10-11T10:00:00Z")));
+    f.age(235);
+    f.session.meta!.nativeLastTurn = { turnId: "turn-1bfae040", status: "error", errorType: "unknown_error",
+      errorCode: "UNKNOWN_ERROR", cancelledByUser: false, completedAt: Date.parse("2026-10-11T10:01:35Z") };
+    await f.restart().tick();
+    const receipt = (await f.store.read()).operations[0]!;
+    expect(receipt).toMatchObject({ state: "failed", durationMs: 30_000 });
+    expect(receipt.error).toContain("UNKNOWN_ERROR");
+    await f.restart().tick();
+    expect(f.notified).toHaveLength(1);
+    expect(f.notified[0]!.body).toContain("UNKNOWN_ERROR");
+    expect(f.notified[0]!.body).not.toContain("Причина нативной средой не сообщена");
+    expect(f.compactSession).toHaveBeenCalledTimes(1);
+  });
+  it("names the real cause of a cancelled maintenance turn that the native flag blames on a user", async () => {
+    // Real zcode receipt of a compact killed by a Herder restart: status cancelled,
+    // cancelled_by_user=1, no user prompt, errorCode TURN_CANCELLED.
+    const f = await fixture(); f.age(205); await f.service.tick(); f.age(235);
+    f.session.meta!.nativeLastTurn = { turnId: "turn-5a426eb8", status: "cancelled", errorType: "turn_cancelled",
+      errorCode: "TURN_CANCELLED", cancelledByUser: true, completedAt: Date.parse("2026-10-11T10:03:56Z") };
+    await f.restart().tick();
+    const receipt = (await f.store.read()).operations[0]!;
+    expect(receipt).toMatchObject({ state: "failed", durationMs: 30_000 });
+    expect(receipt.cause).toContain("TURN_CANCELLED");
+    await f.restart().tick();
+    expect(f.notified).toHaveLength(1);
+    expect(f.notified[0]!.body).toContain("TURN_CANCELLED");
+    expect(f.compactSession).toHaveBeenCalledTimes(1);
+  });
+  it("keeps a human-stopped native turn out of the compact failure path", async () => {
+    const f = await fixture(); f.age(205); await f.service.tick(); f.age(235);
+    f.session.meta!.humanStopHeld = true;
+    f.session.meta!.nativeLastTurn = { turnId: "turn-5a42", status: "cancelled", errorType: "turn_cancelled",
+      errorCode: "TURN_CANCELLED", cancelledByUser: true, completedAt: Date.parse("2026-10-11T10:03:56Z") };
+    await f.restart().tick();
+    expect((await f.store.read()).operations[0]?.state).toBe("accepted");
+    expect(f.notified).toHaveLength(0);
+  });
   it("keeps the operation open for a task turn failure and times out only afterwards", async () => {
     const f = await fixture(); f.age(205); await f.service.tick(); f.age(250);
-    Object.assign(f.session.meta!.nativeLastTurn as Record<string, unknown>, { status: "failed", turnId: "turn-9", completedAt: undefined });
+    // A real task turn owns its user prompt; a maintenance turn never does.
+    Object.assign(f.session.meta!.nativeLastTurn as Record<string, unknown>, { status: "failed", turnId: "turn-9", userMessageId: "user-1", completedAt: undefined });
     await f.service.observe({ kind: "turn.failed", harness: "zcode", sessionId: "original", data: { inputId: (await f.store.read()).operations[0]!.inputId } } as HarnessEvent);
     await f.restart().tick();
     expect((await f.store.read()).operations[0]?.state).toBe("accepted");

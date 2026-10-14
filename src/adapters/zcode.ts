@@ -1819,6 +1819,8 @@ export class ZcodeAdapter implements HarnessAdapter {
           startedAt: typeof row.started_at === "number" ? row.started_at : undefined,
           completedAt: typeof row.completed_at === "number" ? row.completed_at : undefined,
           cancelledByUser: typeof row.cancelled_by_user === "number" ? row.cancelled_by_user : undefined,
+          errorType: nonEmptyString(row.error_type),
+          errorCode: nonEmptyString(row.error_code),
         }]) : undefined;
         if (turn) {
           const inputsKnown = db.prepare("select name from sqlite_master where type = 'table' and name = 'session_input'").get();
