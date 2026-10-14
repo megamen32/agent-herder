@@ -72,3 +72,8 @@ candidate at integrations/zcode-desktop; staging refuses unknown native source
 and installed output paths. Installed ASAR unchanged. Need explicit native-source
 policy decision under parent AGENTS.md before installation, then safe activation
 and actual Desktop same-ID acceptance. See integrations/zcode-desktop/README.md.
+
+Human explicitly approved the ZCode Desktop core patch in the native permission
+reply15Oct. This is the runtime-source-policy exception for this bounded defect.
+Proceed with protected rollback, no session recreation, preserved active actors,
+TDD candidate and actual native Desktop acceptance. No repeated permission needed.

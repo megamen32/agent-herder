@@ -37,3 +37,19 @@ Activation still requires the runtime policy decision, protected archive backup,
 reviewed packaging/rollback and a safe native application handoff. It must not
 interrupt active Desktop-owned CLI turns. Final acceptance must show a fresh
 Herder task in the actual running Desktop, with original IDs/history retained.
+
+The human approved this precise native-source exception15Oct after reviewing the
+TDD candidate. The existing live controller observer was then activated without
+replacing script source or restarting Desktop/host/CLI processes. Its initial
+reconciliation restored the hidden airlock task. A new real Herder create_session
+in that existing project produced sess_d6546a0b-4a48-4934-98f3-8202ffaeb6ab;
+the actual Desktop automatically displayed it. No model prompt was submitted.
+
+`asar_catalog_install.py` persists the same reviewed candidate using a journalled
+single-entry ASAR update. It refuses unexpected source hashes, changed archive
+identity, unsupported integrity format and variable-length header mutations.
+It appends the candidate, fsyncs, then updates one fixed-size metadata object;
+original host source bytes remain intact. A protected header/length journal
+allows exact rollback. This needs under10MiB extra disk, not another340MiB copy.
+Three focused archive tests prove SHA256 readback, byte-for-byte rollback,
+unknown-source refusal and protection of later foreign archive changes.
