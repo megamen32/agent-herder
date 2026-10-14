@@ -102,3 +102,10 @@ Stop1068ms; first turncompleted; background GLM18471ms; automatic second turn
 17950ms later and exact assistant «ЭТАП_2: 42; задача завершена». Only one manual
 initial turn; native writer unchanged. Owned canaries disabled/archived. See
 261014-hpf-SUMMARY and .tmp/async-native-verified-20261014/acceptance.json.
+
+15Oct bounded communication/resume repair accepted: native ZCode→Codex MCP,
+SAME-SID HTTP resume and authenticated public browser Continue+Send verified;
+142 backend and74 UI tests plus TypeScript/bundle GREEN. Public pinned UI
+release3fc63f4 installed without backend restart. Original97ae editor/history
+visible. Debug: zcode-communication-resume.md. New direct human extension:
+Herder-created ZCode sessions missing in desktop, investigating in same task.

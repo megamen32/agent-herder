@@ -40,3 +40,18 @@ then used PID411416 idle SDK/no live workspace CLI and started PID436876.
 Three interrupted native SIDs97ae/16ae/0dd4 restored once with distinct new
 continuations requiring durable result/log reconciliation and no replay.
 All three resumed SAME IDs, promoted the new inputs and produced assistant rows.
+
+Communication/resume acceptance15Oct: backend142/142 and frontend74/74 with
+TypeScript/build passed. Native ZCode MCP sent unique marker into this Codex.
+Installed public pinned UI3fc63f4; authenticated browser original97ae history/
+editor verified. Final own canary Continue and Send have exactly one promoted
+native input each and actual assistant answers; outbox both delivered.
+Both own server44 browser units closed successfully, temporary auth deleted.
+Only scoped files published; foreign WIP retained. Infra main preexisting
+foreign divergence preserved; exact owned vhost blob published67d47315 and
+verified identical. GPTAdmin audit-file retention is separate recorded work.
+
+Latest human extension15Oct: ZCode sessions created by Agent Herder are missing
+from ZCode Desktop; investigate and repair visibility via TDD, preserve IDs,
+history and native runtime source policy. Same owning project/assignment;
+original communication/resume outcome remains accepted. Do not duplicate sessions.
