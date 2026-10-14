@@ -187,6 +187,8 @@ export interface PermissionRequest {
 }
 
 export interface SendMessageOptions {
+  /** Internal opted-in Stop judge delivery; separate from one-off fleet recovery. */
+  automationPurpose?: "autopilot";
   /** Existing regular inbox IDs transferred only at durable hook offer. */
   retainedInboxIds?: string[];
   /** Internal active-turn-only delivery. Never resume/start or enqueue a future turn. */

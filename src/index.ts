@@ -799,7 +799,7 @@ async function main() {
       return status.enabled === true && !await stopPendingQuestions.blocks(input.harness, input.sessionId, input.cwd);
     },
     deliver: (input, goal, inputId) => resumeSelectedTarget({ target: { agent: input.harness as "codex", session_id: input.sessionId, cwd: input.cwd },
-      goal, prompt: goal, result_ref: `agent-herder://autopilot/stop/${inputId}`, idempotency_key: inputId }, processSupervisor, "automation"),
+      goal, prompt: goal, result_ref: `agent-herder://autopilot/stop/${inputId}`, idempotency_key: inputId }, processSupervisor, "automation", false, "autopilot"),
   });
   const stopUnfinishedSessionLauncher = unfinishedSessionLauncher.start();
   process.once("exit", stopUnfinishedSessionLauncher);

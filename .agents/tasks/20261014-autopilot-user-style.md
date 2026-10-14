@@ -66,3 +66,22 @@ LLM/native dispatch. Ранее реальная GLM: hook936ms, job22176ms. С�
 Приёмка: timestamps hook/turn/job, реальное judge continue, исходный nativeSID,
 второй assistant completion без ручного второго запроса. Исправлять подтверждённые
 дефекты этого пути до повторной приёмки; не менять чужие сессии/маршруты.
+
+Реальный первый прогон SID01a13a04-9ef3-7ff0-a307-64465c133814 выявил дефекты:
+Stop521ms и turn/completed подтверждены, но snapshot делал полный inventory
+36.7s, затем GLM не прислал headers за35s (диагностика,429 отсутствует).
+Исправленоeafba70: getSession(exactSID) с проверкой cwd и background deadline90s
+отдельно от1200ms уведомления.13 focused tests7.79s и tsc46.995s прошли.
+Опубликовано, установлено только6 compiled artifacts на canonical/plugin,
+backup сохранён; разрешённый Herder restart применил правки, native owner
+не перезапускался. Исходный failed job сохранён; первая сессия отключена.
+Новая независимая canarySID01a13a08-10fe-7402-aa23-f58a1580b288 запущена.
+
+Второй прогон: GLM реально решила continue; на42s фоновая доставка отказана:
+«Fleet admission holds automatic delivery». Причина: createFleetRecoveryAdmissionGate
+использует реестр кампании09.10 (9sessions) и запрещает новые CodexSID вне него.
+Исправление разделяет внутренний autopilot-send и recovery: только semantic Stop
+с уже проверенным opt-in использует новый purpose. Existing registered holds,
+явный heavyDENIED, неизвестный registry, native budgets и human fences сохранены.
+Ни запись реестра, ни ресурсные ограничения не изменены. Новая проверка включает
+передачу purpose через обе supervisor checks и сохранение cold ZCode workspace.

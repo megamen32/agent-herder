@@ -1,7 +1,7 @@
 import { open } from "node:fs/promises";
 import type { AgentSession } from "../types/index.js";
 
-export type RecoveryOperation = "attempt" | "resume" | "send" | "rollover" | "create";
+export type RecoveryOperation = "attempt" | "resume" | "send" | "autopilot-send" | "rollover" | "create";
 export type RecoveryAdmission = { allowed: true } | { allowed: false; reason: string };
 export type RecoveryAdmissionGate = (session: AgentSession, operation: RecoveryOperation) => Promise<RecoveryAdmission>;
 
@@ -9,11 +9,9 @@ const MAX_STATE_BYTES = 16 * 1024 * 1024;
 export const FLEET_MONITOR_STATE = "/home/roomhacker/ServersAdministartion/.tmp/fleet-codex-watch-20261007/monitor/state.json";
 
 /** The existing fleet registry remains authoritative; this gate never clears or copies blockers. */
-export function evaluateFleetAdmission(state: unknown, session: Pick<AgentSession, "id">, now = Date.now(), maxAgeMs = 30 * 60_000): RecoveryAdmission {
+export function evaluateFleetAdmission(state: unknown, session: Pick<AgentSession, "id">, now = Date.now(), maxAgeMs = 30 * 60_000, autopilotSend = false): RecoveryAdmission {
   if (!state || typeof state !== "object" || Array.isArray(state)) return { allowed: false, reason: "Fleet admission state is unavailable" };
   const value = state as Record<string, unknown>;
-  const observed = typeof value.utc === "string" ? Date.parse(value.utc) : NaN;
-  if (!Number.isFinite(observed) || now - observed > maxAgeMs || observed > now + 60_000) return { allowed: false, reason: "Fleet admission observation is stale or invalid" };
   const heavy = value.heavy;
   if (heavy && typeof heavy === "object" && !Array.isArray(heavy)
     && (heavy as Record<string, unknown>).admission === "DENIED") {
@@ -21,6 +19,12 @@ export function evaluateFleetAdmission(state: unknown, session: Pick<AgentSessio
   }
   const registry = value.registry;
   if (!registry || typeof registry !== "object" || Array.isArray(registry)) return { allowed: false, reason: "Fleet admission registry is unavailable" };
+  // The historical campaign owns only its registered sessions. An opted-in
+  // semantic Stop delivery outside that campaign retains native budgets and
+  // human fences, without needing enrolment in an unrelated recovery list.
+  if (autopilotSend && !Object.hasOwn(registry, session.id)) return { allowed: true };
+  const observed = typeof value.utc === "string" ? Date.parse(value.utc) : NaN;
+  if (!Number.isFinite(observed) || now - observed > maxAgeMs || observed > now + 60_000) return { allowed: false, reason: "Fleet admission observation is stale or invalid" };
   const target = (registry as Record<string, unknown>)[session.id];
   if (!target || typeof target !== "object" || Array.isArray(target)) return { allowed: false, reason: "Session has no fleet recovery authorization" };
   const entry = target as Record<string, unknown>;
@@ -50,7 +54,7 @@ export function createFleetRecoveryAdmissionGate(path = FLEET_MONITOR_STATE, now
       const bytes = Buffer.alloc(size + 1);
       const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
       if (bytesRead !== size) return { allowed: false, reason: "Fleet admission state changed during read" };
-      return evaluateFleetAdmission(JSON.parse(bytes.subarray(0, bytesRead).toString("utf8")), session, now());
+      return evaluateFleetAdmission(JSON.parse(bytes.subarray(0, bytesRead).toString("utf8")), session, now(), undefined, operation === "autopilot-send");
     } catch {
       return { allowed: false, reason: "Fleet admission state cannot be verified" };
     } finally {

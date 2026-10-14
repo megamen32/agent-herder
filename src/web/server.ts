@@ -202,6 +202,7 @@ export async function resumeSelectedTarget(
   origin: "human" | "automation" = "automation",
   /** A replayed stored answer, not a live human action in this call. */
   answerReplay = false,
+  automationPurpose?: "autopilot",
 ): Promise<ResumeReceipt> {
   if (request.target.agent !== "codex" && request.target.agent !== "zcode") return new AgentResumeClient().resume(request);
   const harness = request.target.agent;
@@ -240,6 +241,7 @@ export async function resumeSelectedTarget(
         queue: true,
         ...(harness === "codex" && current?.status === "running" ? { steer: true } : {}),
         origin,
+        ...(origin === "automation" && automationPurpose ? { automationPurpose } : {}),
         // The stable key reaches the deduplicating ingress, so a crash or lease
         // takeover cannot deliver the same answer to the native session twice.
         ...(request.idempotency_key ? { inputId: resumeInputId(request) } : {}),

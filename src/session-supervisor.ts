@@ -437,7 +437,7 @@ export class SessionSupervisor {
 
   async sendMessage(harness: string, id: string, options: SendMessageOptions, expectedCwd?: string): Promise<SendMessageResult & { sessionId?: string; delivery?: "deferred" }> {
     const adapter = this.requireAdapter(harness);
-    if (options.origin !== "human" && !await this.automaticNativeAdmissionAllowed(adapter, id, "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic delivery" };
+    if (options.origin !== "human" && !await this.automaticNativeAdmissionAllowed(adapter, id, options.automationPurpose === "autopilot" ? "autopilot-send" : "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic delivery" };
     let session: AgentSession | null;
     if (expectedCwd) {
       const canonicalCwd = resolve(expectedCwd);
@@ -463,11 +463,11 @@ export class SessionSupervisor {
     }
     const message = session ? await coordinationNotes.inject(session, options.message) : options.message;
     if (await this.isAutomationHeld(harness, id)) return { ok: false, nonRetryable: true, error: "Чат явно остановлен. Требуется новое сообщение человека или явное продолжение." };
-    if (options.origin !== "human" && !await this.automaticNativeAdmissionAllowed(adapter, id, "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic delivery" };
+    if (options.origin !== "human" && !await this.automaticNativeAdmissionAllowed(adapter, id, options.automationPurpose === "autopilot" ? "autopilot-send" : "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic delivery" };
     const result = await adapter.sendMessage(id, { ...options, message });
     if (!result.ok && options.origin !== "human" && !result.nonRetryable
       && !result.admitted && !result.admissionUnknown && isBusyCodexWriter(harness, result.error)) {
-      if (!await this.automaticNativeAdmissionAllowed(adapter, id, "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic deferred delivery" };
+      if (!await this.automaticNativeAdmissionAllowed(adapter, id, options.automationPurpose === "autopilot" ? "autopilot-send" : "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic deferred delivery" };
       await deferredMessages.add(id, options.message);
       return { ok: true, sessionId: id, delivery: "deferred" };
     }
@@ -986,7 +986,7 @@ export class SessionSupervisor {
     this.scheduleAutomaticResume(provider, sessionId);
   }
 
-  private async automaticNativeAdmissionAllowed(adapter: HarnessAdapter, sessionId: string, operation: "resume" | "send" | "create"): Promise<boolean> {
+  private async automaticNativeAdmissionAllowed(adapter: HarnessAdapter, sessionId: string, operation: "resume" | "send" | "autopilot-send" | "create"): Promise<boolean> {
     if (!this.admissionGate) return true;
     try {
       return (await this.admissionGate({ id: sessionId, harness: adapter.type,

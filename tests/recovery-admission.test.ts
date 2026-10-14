@@ -12,6 +12,30 @@ const now = Date.parse("2026-10-08T00:00:00Z");
 const session = { id: "owned" };
 const state = (taskState = "active") => ({ utc: new Date(now).toISOString(), registry: { owned: { taskState } } });
 describe("fleet admission authority", () => {
+  it("separates opted-in Stop delivery from the historical recovery campaign without clearing holds", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fleet-autopilot-admission-"));
+    const path = join(root, "state.json");
+    await writeFile(path, JSON.stringify(state("paused-unfinished")));
+    const gate = createFleetRecoveryAdmissionGate(path, () => now + 31 * 60_000);
+    const fresh = { id: "new-opted-in-session", harness: "codex" } as never;
+    expect(await gate(fresh, "autopilot-send")).toEqual({ allowed: true });
+    expect((await gate(fresh, "send")).allowed).toBe(false);
+    expect((await gate({ id: "owned", harness: "codex" } as never, "autopilot-send")).allowed).toBe(false);
+    await writeFile(path, JSON.stringify({ ...state(), heavy: { admission: "DENIED" } }));
+    expect((await gate(fresh, "autopilot-send")).allowed).toBe(false);
+    await writeFile(path, JSON.stringify({ utc: new Date(now).toISOString() }));
+    expect((await gate(fresh, "autopilot-send")).allowed).toBe(false);
+  });
+  it("propagates semantic Stop purpose through both native admission checks", async () => {
+    const seen: string[] = [];
+    const adapter = { type: "codex", async getSession() { return null; }, async sendMessage() { return { ok: true }; } } as HarnessAdapter;
+    const supervisor = new SessionSupervisor(new Map([["codex", adapter]]), {} as never, undefined,
+      { humanStopStore: { async isHeld() { return false; }, async observe() { return false; } } as never,
+        admissionGate: async (_target, operation) => { seen.push(operation); return { allowed: operation === "autopilot-send" }; } });
+    expect((await supervisor.sendMessage("codex", "new-session", { message: "second stage", origin: "automation", automationPurpose: "autopilot" })).ok).toBe(true);
+    expect(seen).toEqual(["autopilot-send", "autopilot-send"]);
+    expect((await supervisor.sendMessage("codex", "new-session", { message: "recovery", origin: "automation" })).ok).toBe(false);
+  });
   it("does not apply the historical Codex campaign registry to bounded same-ID ZCode work", async () => {
     const gate = createFleetRecoveryAdmissionGate("/missing/historical-codex-campaign");
     for (const operation of ["attempt", "resume", "send"] as const) {

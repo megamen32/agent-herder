@@ -835,3 +835,12 @@ The process-owned background judge has a90s inference deadline, independent of
 the1200ms notification deadline (legacy direct library judge defaults to35s).
 The first real native canary exposed both a36.7s inventory scan and a35s GLM
 headers timeout. These are distinct from hook latency (actual521ms) and HTTP429.
+
+A semantic Stop continuation carries internal `automationPurpose: autopilot`
+through both supervisor admission checks. The historical Codex campaign registry
+still governs every registered session and ordinary automatic recovery. Its
+absence of a new opted-in Stop session is not a recovery prohibition for that
+new session. Explicit fleet resource DENIED, unreadable/malformed registry,
+campaign session holds, native limits and human fences still reject delivery.
+No registry entry or hold is removed; external message APIs do not set this
+internal purpose.

@@ -67,7 +67,10 @@ export class BackgroundAutopilotStop {
     if (count <= 1) this.pending.delete(target); else this.pending.set(target, count - 1);
   }
   private async snapshot(adapter: HarnessAdapter, input: AutopilotRunnerInput) {
-    const session = await adapter.getSession(input.sessionId);
+    // ZCode must bind the original workspace before its cold shared SDK read.
+    const session = input.harness === "zcode"
+      ? (await adapter.listSessions({ cwd: input.cwd })).find(s => s.id === input.sessionId)
+      : await adapter.getSession(input.sessionId);
     if (!session || session.id !== input.sessionId || resolve(session.cwd) !== resolve(input.cwd) || session.needsPermission) return null;
     const messages = await adapter.getSessionMessages?.(session.id, 4);
     if (!messages?.length) return null;

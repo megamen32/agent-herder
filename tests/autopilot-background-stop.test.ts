@@ -38,6 +38,14 @@ describe("background Stop delivery",()=>{
   expect(f.consumer.isPending("codex",event.sessionId)).toBe(false);
   expect(f.consumer.submit(event).id).toBe(body.jobId);
  });
+ it("binds a cold ZCode workspace before checking the exact native target",async()=>{
+  const f=await fixture();const scoped=vi.fn(async()=>[{id:event.sessionId,harness:"zcode",cwd:event.cwd,status:"idle",lastActivity:new Date().toISOString()}]);
+  const adapter={...f.adapter,type:"zcode",listSessions:scoped,getSession:vi.fn(async()=>null)};
+  const consumer=new BackgroundAutopilotStop({jobs:f.jobs,adapters:new Map([["zcode",adapter as any]]),evaluate:f.evaluate,deliver:f.deliver,held:async()=>false,allowed:async()=>true});
+  const job=consumer.submit({...event,harness:"zcode"});await waitUntil(()=>f.evaluate.mock.calls.length===1);
+  f.finish({decision:"continue",next_goal:"Проверить"});await waitUntil(()=>f.jobs.get(job.id)?.state==="completed");
+  expect(scoped).toHaveBeenCalledWith({cwd:event.cwd});expect(adapter.getSession).not.toHaveBeenCalled();expect(f.deliver).toHaveBeenCalledTimes(1);
+ });
  it.each(["stop","new-message","opt-out","cancel"])("suppresses late continuation after %s",async reason=>{
   const f=await fixture();const job=f.consumer.submit(event);await waitUntil(()=>f.evaluate.mock.calls.length===1);
   if(reason==="stop")f.setHeld(true);if(reason==="new-message")f.newMessage();if(reason==="opt-out")f.setAllowed(false);if(reason==="cancel")f.jobs.cancel(job.id);
