@@ -14,6 +14,7 @@ function fixture(role) {
   const sessions = new Map(), loads = [], listeners = new Set();
   const service = {
     async readSession(params) {
+      if (params.messageLimit !== undefined) assert.ok(params.messageLimit > 0, 'native messageLimit must be positive');
       if (!sessions.has(params.sessionId)) throw Object.assign(Error('Session not found: '+params.sessionId), {code:'proto.sessionNotFound'});
       return {session:{sessionId:params.sessionId},runtime:sessions.get(params.sessionId)};
     },

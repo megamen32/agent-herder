@@ -45,6 +45,48 @@ def main():
   if len(scripts)!=1:raise RuntimeError('Native script identity ambiguous')
   script=scripts[0]
   if call('Debugger.getScriptSource',{'scriptId':script['scriptId']})['scriptSource']!=source:raise RuntimeError('Exact live source differs; no activation')
+  def fields_in_scopes(function_id, names):
+   properties=call('Runtime.getProperties',{'objectId':function_id,'ownProperties':True})
+   target=next((x.get('value',{}).get('objectId') for x in properties.get('internalProperties',[]) if x['name']=='[[TargetFunction]]'),None)
+   if target:return fields_in_scopes(target,names)
+   scopes=next(x['value']['objectId'] for x in properties.get('internalProperties',[]) if x['name']=='[[Scopes]]')
+   found={}
+   for entry in call('Runtime.getProperties',{'objectId':scopes,'ownProperties':True})['result']:
+    identity=entry.get('value',{}).get('objectId')
+    if not identity:continue
+    for field in call('Runtime.getProperties',{'objectId':identity,'ownProperties':True})['result']:
+     if field['name'] in names and field.get('value',{}).get('objectId'):found.setdefault(field['name'],field['value']['objectId'])
+   return found
+  # The approved catalogue observer already retains the exact native source
+  # resolver. Reuse that closure instead of waiting for or triggering a UI read.
+  service_id=scope_id=None
+  if a.role=='desktop':
+   ref=call('Runtime.evaluate',{'expression':'globalThis.__herderCatalogueRefreshV1?.keys().next().value','returnByValue':False})['result']
+   if ref.get('objectId'):
+    fields=fields_in_scopes(ref['objectId'],{'e','n','th'})
+    if set(fields)=={'e','n','th'}:
+     result=call('Runtime.callFunctionOn',{'objectId':fields['e'],'functionDeclaration':"function(scopes){return Array.from(scopes.values()).map(scope=>this.resolveSource(scope)).find(source=>source?.scope.kind==='local'&&source.agentService)?.agentService;}",'arguments':[{'objectId':fields['n']}]})
+     service_id=result['result'].get('objectId');scope_id=fields['th']
+  else:
+   ref=call('Runtime.evaluate',{'expression':'globalThis.__herderSharedNativeV1?.values().next().value?.service','returnByValue':False})['result']
+   if ref.get('objectId'):
+    properties=call('Runtime.getProperties',{'objectId':ref['objectId'],'ownProperties':True})['result']
+    fn=next(x['value']['objectId'] for x in properties if x['name']=='readSession')
+    fields=fields_in_scopes(fn,{'createZCodeAgentConnectionScope'})
+    if fields:service_id=ref['objectId'];scope_id=fields['createZCodeAgentConnectionScope']
+  if service_id and scope_id:
+   other='desktop' if a.role=='herder' else 'herder'
+   function='''async function(createScope){
+    const registry=globalThis.__herderSharedNativeV1??=new Set();
+    for(const old of registry){if(old.owners.size)throw Error('Existing routed sessions; no replacement');await new Promise((resolve,reject)=>old.server.close(error=>error?reject(error):resolve()));registry.delete(old);}
+    const share=(HELPER);
+    const value=share({service:this,role:ROLE,socketPath:SOCKET,peerPath:PEER,net:process.getBuiltinModule('node:net'),fs:process.getBuiltinModule('node:fs'),createScope,randomUUID:process.getBuiltinModule('node:crypto').randomUUID,activate:false});
+    registry.add(value);return {installed:true,routingEnabled:false,pid:process.pid,role:ROLE};
+   }'''.replace('HELPER',helper).replace('ROLE',json.dumps(a.role)).replace('SOCKET',json.dumps('/run/user/1000/agent-herder/zcode-'+a.role+'.sock')).replace('PEER',json.dumps('/run/user/1000/agent-herder/zcode-'+other+'.sock'))
+   result=call('Runtime.callFunctionOn',{'objectId':service_id,'functionDeclaration':function,'arguments':[{'objectId':scope_id}],'awaitPromise':True,'returnByValue':True})
+   if result.get('exceptionDetails'):raise RuntimeError('Native service export rejected')
+   value=result['result']['value'];value.update(startTicks=a.start_ticks,liveSourceSha256=hashlib.sha256(source.encode()).hexdigest())
+   a.receipt.write_text(json.dumps(value));a.receipt.chmod(0o600);print(json.dumps(value),flush=True);return
   bp=call('Debugger.setBreakpoint',{'location':{'scriptId':script['scriptId'],'lineNumber':line,'columnNumber':column},'condition':condition})['breakpointId']
   deadline=time.monotonic()+20
   while time.monotonic()<deadline:

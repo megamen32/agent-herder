@@ -42,7 +42,7 @@ export function shareZcodeSessionService({service, role, socketPath, peerPath, n
     });
   };
   const observe = async params => {
-    try { return {present: true, snapshot: await raw.readSession({...target(params), runtimePolicy: 'existing-only', messageLimit: 0})}; }
+    try { return {present: true, snapshot: await raw.readSession({...target(params), runtimePolicy: 'existing-only', messageLimit: 1})}; }
     catch (error) { if (missing(error)) return {present: false}; throw error; }
   };
 
