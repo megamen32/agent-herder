@@ -308,3 +308,21 @@ cleanup caller deadline still wins. Artifact observation is15s. Resource ceiling
 remain unchanged; recorded free RAM24..25GiB and CPU measurements justify more
 waiting headroom, not an unbounded workload.90 scoped checks pass, including
 bounded retries, caller cleanup deadline and artifact14.99/15.01 boundaries.
+
+## Native SQLite file ceiling (15 October 2026)
+
+A live ZCode MCP-expiry check on88 exposed an inherited16MiB file ceiling:
+its healthy97MiB SQLite database could not checkpoint, the WAL reached exactly
+16MiB and the turn failed with SQLITE_IOERR before tool dispatch. A disposable
+20MiB SQLite database plus1MiB append reproduces the error with the old unit.
+
+The reviewed per-file ceiling is now256MiB soft/hard in the unit and
+`native-sqlite-file-budget.conf` drop-in. Measured88 has about90GiB RAM available
+and88GiB free disk; main+WAL headroom512MiB preserves disk reserve. Existing
+RAM/CPU/swap/task/I/O and artifact/storage aggregate caps remain unchanged.
+Live delivery may apply this exact reviewed limit with prlimit to pinned fleet
+parent/SDK generations without restarting them; already running foreign
+children retain their sealed limits. New native children inherit the new cap.
+No database deletion, manual WAL checkpoint or prompt replay is needed.
+Acceptance requires real SQLite RED/GREEN and the fresh native consumer;
+`.agents/tasks/20261015-native-sqlite-file-budget.md` records the measured case.
