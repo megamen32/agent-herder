@@ -28,3 +28,9 @@ regression: same assertion fails on preserved original services and passes on
 shared routed services. This is post-implementation RED/GREEN, not retrospective
 test-first TDD. Original observed-stop cause remains unproven; requested shared
 executor/state and caller-stop survival are now verified.
+
+User follow-up supplied the old stand-down transcript. Read-only correlation
+proved stop succeeded for Herder at11:12:18MSK while the separate Desktop turn
+continued until11:28, before this repair. The reported coordination failures are
+a separate unresolved managed-MCP connection recovery issue. Exact evidence and
+owning integration next action: 20261015-zcode-mcp-expired-followup.md.
