@@ -37,6 +37,8 @@ const MAX_BATCH_PLAN_SESSIONS_PER_REQUEST = 32;
 const MAX_BATCH_PLAN_CHUNKS = 64;
 const DEFAULT_BATCH_PLAN_CONCURRENCY = 3;
 const MAX_REPAIRED_CHUNKS = 6;
+/** Enough to leave a dead pooled connection behind, short enough to keep the phase budget. */
+const TRANSIENT_PLANNER_RETRY_DELAY_MS = 5_000;
 const MAX_OMISSION_DECISION_CONCURRENCY = 4;
 const MAX_PERSISTENT_OMISSION_DECISIONS = 4;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
@@ -1214,6 +1216,8 @@ export interface UnfinishedSessionLauncherOptions {
   admissionGate?: RecoveryAdmissionGate;
   maxAttempts?: number;
   retryDelayMs?: number;
+  /** Pause before the single safe retry of a transient batch-planner transport failure. */
+  plannerTransportRetryDelayMs?: number;
   reconcileIntervalMs?: number;
   inventoryWindowMs?: number;
   discoveryIdleMs?: number;
@@ -1261,6 +1265,7 @@ export class UnfinishedSessionLauncher {
   private readonly watchdogIntervalOverrideMs?: number;
   private readonly stalledTurnOverrideMs?: number;
   private readonly acceptedAdmissionTimeoutMs: number;
+  private readonly plannerTransportRetryDelayMs: number;
   private readonly pendingQuestions?: PendingQuestionGate;
   private recovering: Promise<void> | null = null;
   private autopiloting: Promise<void> | null = null;
@@ -1305,6 +1310,10 @@ export class UnfinishedSessionLauncher {
   constructor(private readonly options: UnfinishedSessionLauncherOptions) {
     this.maxAttempts = positiveInteger(options.maxAttempts ?? Number(process.env.AGENT_HERDER_AUTOSTART_MAX_ATTEMPTS || 3), 3);
     this.retryDelayMs = nonNegativeInteger(options.retryDelayMs ?? Number(process.env.AGENT_HERDER_AUTOSTART_RETRY_DELAY_MS || 5_000), 5_000);
+    this.plannerTransportRetryDelayMs = nonNegativeInteger(
+      options.plannerTransportRetryDelayMs ?? TRANSIENT_PLANNER_RETRY_DELAY_MS,
+      TRANSIENT_PLANNER_RETRY_DELAY_MS,
+    );
     this.reconcileIntervalMs = positiveInteger(
       options.reconcileIntervalMs ?? Number(process.env.AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS || 60_000),
       60_000,
@@ -3374,13 +3383,27 @@ export class UnfinishedSessionLauncher {
         plannerChunks,
         plannerConcurrency,
         async (chunk) => {
-          try {
+          // A transport blip (ETIMEDOUT, reset, 429, 5xx) says nothing about the
+          // cohort's safety, so retry the whole chunk once here. Without this the
+          // first timeout aborts plannerPhaseController, silences the sibling
+          // chunks and fails every assessed session for a one-off network error.
+          const requestChunk = async (): Promise<SessionBatchPlan> => {
             const plan = await requestPlan(chunk);
             assertBatchPlanCoverage(plan, chunk);
-            return { plan };
+            return plan;
+          };
+          try {
+            return { plan: await requestChunk() };
           } catch (error) {
-            if (!(error instanceof BatchPlanValidationError)) throw error;
-            return { validationError: error };
+            if (error instanceof BatchPlanValidationError) return { validationError: error };
+            if (!isTransientPlannerFailure(error)) throw error;
+            // A dead keep-alive connection fails again inside the same window, so an
+            // immediate repeat spends the only safe retry and still aborts the phase.
+            // Space one bounded retry instead; planning stays read-only, the phase
+            // deadline still bounds the wait, and no session action is repeated.
+            await transientPlannerRetryDelay(this.plannerTransportRetryDelayMs, plannerPhaseDeadline, plannerPhaseController);
+            console.error(`[agent-herder] транспорт планировщика упал на chunk; повторяю chunk целиком один раз: ${errorText(error)}`);
+            return { plan: await requestChunk() };
           }
         },
         plannerPhaseController,
@@ -4032,6 +4055,43 @@ function continuationTitle(topic: string): string {
 function transientPlannerHttpStatus(error: string): number | null {
   const status = error.match(/\b(?:MiniMax|LLM).{0,120}\bHTTP\s*(429|5\d{2})\b/i)?.[1];
   return status ? Number(status) : null;
+}
+
+/** True only for a transport/provider blip that a single identical retry can heal.
+ *
+ * A safe plan is never worth guessing at, so an invalid plan keeps failing the
+ * cohort. A dropped connection, a rate limit or a provider overload is a fact
+ * about the network, not about the sessions: JudgeRequestError already tags it
+ * in its diagnostic, and an untagged transport error is still retried only when
+ * it is not a local cancellation or a budget exhaustion. */
+function isTransientPlannerFailure(error: unknown): boolean {
+  if (error instanceof BatchPlanValidationError || error instanceof BatchReconciliationValidationError) return false;
+  if (error instanceof SyntaxError) return false;
+  const kind = error instanceof JudgeRequestError
+    ? error.diagnostic.kind
+    : plannerFailureRoute(errorText(error)) && /"kind"\s*:\s*"(\w+)"/.exec(errorText(error))?.[1];
+  return kind === "timeout"
+    || kind === "network"
+    || kind === "rate_limited"
+    || kind === "overloaded";
+}
+
+/** Bounded pause before the single safe planner transport retry.
+ *
+ * Observed on server-100: a long-running planner process can lose its pooled
+ * connection to the judge endpoint for a short window, and both an immediate
+ * repeat and the whole phase then fail with the same transport error. One
+ * spaced retry stays inside the phase deadline and still never repeats a
+ * session action, because the batch planner only produces a plan. */
+async function transientPlannerRetryDelay(delayMs: number, deadline: number, controller: AbortController): Promise<void> {
+  const remainingMs = Math.min(delayMs, deadline - Date.now());
+  if (remainingMs <= 0) return;
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(() => { controller.signal.removeEventListener("abort", onAbort); resolve(); }, remainingMs);
+    timer.unref?.();
+    function onAbort() { clearTimeout(timer); resolve(); }
+    controller.signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 /** The planner model and endpoint host actually observed in the judge diagnostic.
