@@ -10,6 +10,21 @@ Current plan: .planning/quick/261015-fg7-independent-zcode-session-lifetime-afte
 Verified15Oct11:10MSK: original root parent_id=NULL; managed Herder436876/server437103 alive since00:28MSK. Original turn_d1b2… started10:51MSK and continued tool/model work after Desktop human continuation11:05MSK. Same SID concurrently executes turn_9b9e… through Desktop. Herder agent_info returns running/original turn. No caller-linked death established.
 
 User corrections: user insists stopped everywhere, explicitly identifies ZCode Desktop, asks “Подожди, параллельный ход с той же сессии — это как?”. Explain the two-runtime finding without dismissing the observed stop or claiming its cause proven.
-Discussion checkpoint: controlled caller-SIGKILL canary PASS; native root original turn vs Desktop continuation concurrent. Actual stopped UI cause/single-owner repair remains OPEN, no production source fix. See current quick SUMMARY.
+Historical discussion checkpoint: controlled caller-SIGKILL canary passed; single-owner repair was still open at that point. The accepted repair below supersedes that checkpoint.
 
 15Oct direct human extension: “Исправляй. У сессии должен быть один исполнитель, а Desktop и Herder должны видеть одно состояние. И проверь, что остановка вызывающей сессии её не убивает.” This explicitly selects unified execution/state repair in Herder plus Desktop integration; continue to reviewed concrete delivery without repeating approval for that same scope. Preserve existing tasks, inputs, native IDs, unrelated WIP and finite budgets.
+
+Completed15Oct12:09MSK: paired native owner routing installed live and persisted
+without host restart. Actual native Codex caller was interrupted while its child
+continued the same native turn; completed91.872s later. Exactly one input/tool/final
+marker. Actual Desktop received live running/completed events and both views
+matched; Desktop raw probe confirmed no second local executor. Original selection
+restored and fixture automation disabled. See current quick SUMMARY for receipts,
+source ownership, rollback and resource limits.
+
+Latest user question: “я надеюсь ты все через tdd правил?” Answered honestly:
+implementation preceded tests, so not strict TDD. Added a read-only real-native
+regression: same assertion fails on preserved original services and passes on
+shared routed services. This is post-implementation RED/GREEN, not retrospective
+test-first TDD. Original observed-stop cause remains unproven; requested shared
+executor/state and caller-stop survival are now verified.

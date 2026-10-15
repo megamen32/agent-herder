@@ -117,3 +117,13 @@ protected rollback verified. Native regressionRED→GREEN plus3 observer/3archiv
 checks. See debug/zcode-desktop-visibility.md and integrations/zcode-desktop/.
 The latest human request extends GPTAdmin RAM root-cause repair in its owning
 checkout; it does not replace existing Herder milestone state.
+
+15Oct shared ZCode executor accepted: paired native routing installed live and
+persisted without host restart. Actual native Codex caller interrupted; child
+retained the same turn and completed91.872s later, one input/tool/final marker.
+Desktop live running→completed state matched Herder, no local duplicate executor.
+Six socket + two adapter/lifecycle regressions and native parse passed. Same
+read-only native assertion failed on original services and passed with routing;
+implementation preceded tests, so not strict TDD. See
+quick/261015-fg7-independent-zcode-session-lifetime-after/261015-fg7-SUMMARY.md.
+This completes only the direct shared-executor mandate, not the fleet milestone.

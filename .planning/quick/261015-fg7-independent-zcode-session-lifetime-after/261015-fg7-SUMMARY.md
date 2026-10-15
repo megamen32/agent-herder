@@ -1,20 +1,91 @@
 ---
-status: incomplete
+status: complete
 ---
-# Evidence and discussion checkpoint
+# One executor and shared native state: accepted 15 October 2026
 
-User clarified actual surface is ZCode Desktop and asked to pause/explain concurrent turns. No lifetime source fix has been made; no Desktop/runtime restart or original-session input was sent.
+The direct human extension selected the repair of both native hosts: one executor
+per session, identical Desktop/Herder state and independence from the caller.
+The paired source adapter is published and installed, with protected rollback.
+Herder436876, SDK437103 and Desktop1430106/1431671 retained their process
+generations. Only the Desktop renderer was reloaded, after verifying empty
+composers. Original user work was neither stopped nor replayed.
 
-## Verified
-- Herder436876 and owned SDK437103 retain original process generations since00:28MSK. Original session parent_id is NULL.
-- Original turn_d1b2a871-7f22-4560-bc81-43278cb91339 had one model request11:03:20.594–11:07:32.868MSK,252274ms,attempt1. Desktop human continuation11:05:13.554MSK started turn_9b9e9912-1f74-48c9-bebc-9f883c16860b. Both produced later tool/model records, with original turn still reported running by registered Herder agent_info. This does not establish the exact cause of the user's observed stopped UI.
-- Native plugin observed the Desktop turn at11:05:16.200MSK; existing permitted integration does not prevent two host runtimes opening the same session. SDK createZCodeAgentService owns a separate processManager per host. Native parent_id does not relate this to the originating Codex/MCP caller.
-- Real controlled MCP caller2172536 admitted exactly one input to own sess_4ae3b8fc-9944-40c2-9166-514ea55faf96 and killed itself at11:13:59.050MSK. Same native session completed11:14:28.611MSK with exact LIFETIME_OK_323 and no additional send. Independent fresh MCP observer and readonly native DB confirmed completion, one input and dead caller.
-- Initial model selector lacked required reasoning: explicit created=false/not_attempted retained; corrected selector$low then created exactly one canary.
-- Own canary autopilot/autostart both disabled and read back. Archive is unsupported by current ZCode adapter (HTTP502); retained idle canary/history, no forced deletion.
+## Defect and repair
 
-## Remaining
-Actual Desktop execution/state ownership is unresolved. Need supported single-owner path or a precisely staged Desktop-source candidate under runtime-source policy, followed by actual Desktop acceptance. Do not claim fix, reinterpret all cancellation as crash, restart shared native runtime or replay either original input. Existing approval of catalogue refresh is specific to catalogue observation; it is not blanket Desktop core-edit authority.
+The native SDK and Desktop each owned a separate service collection. The original
+SID sess_155597f8-bb54-42f3-b16a-8807e8ac2ff7 had overlapping original and Desktop
+continuation turns. The exact cause of the user's observed stop was not established
+by those logs; the separate executors and divergent runtime state were confirmed.
 
-Private secret-safe evidence: .tmp/zcode-independent-lifetime-20261015/{acceptance.json,original-timeline.json,after-caller-death.json,caller-receipt-2.json,cleanup-policies.json}.
-Tests: focused integration; expected60s/emergency600s; actual native completion29.561s after caller kill. Existing sealed native budget, no suite/build.
+Private Unix endpoints now attach consumers through the real native connection
+scope to the selected existing executor. New Desktop sessions use Herder; active
+legacy Desktop executors stay where they are. Two active owners or uncertain
+ownership refuse implicit execution. Disconnect only releases subscriptions and
+connection scope. Forwarded Desktop sessions are excluded from SDK process
+attribution and SDK shutdown checkpoints. Commands are never automatically retried.
+
+## Actual consumer acceptance
+
+A fresh native Codex caller01a13ed0-ea96-7cc3-8744-6f6ef0fb12ae itself created
+ZCode sess_ace22e73-c316-4ca8-9237-29e40107e3f1 through registered MCP. The caller
+was stopped at12:08:04.851MSK; its native turn is recorded as interrupted. The
+child retained turn_843b5beb-bf81-4d0e-af2f-dc1f58bc6f49 and completed at
+12:09:36.723MSK,91.872 seconds later, without another prompt.
+
+Native database readback: exactly one input, one completed Bash tool and one
+assistant final SHARED_EXECUTOR_OK_323. The actual Desktop showed the running
+tool after the caller stopped, then the final result and Send button through live
+events. It did not load a local executor: Desktop raw existing-only probe remained
+absent, SDK raw probe was present, and both routed views had the same running
+turn/revision2/eventSeq99. Final routed views also matched (revision3/eventSeq144).
+
+Secret-safe evidence under .tmp/zcode-independent-lifetime-20261015/:
+case2-lifetime-acceptance.json, case2-parent-final.json,
+case2-child-before-stop.json, case2-child-after-stop.json,
+case2-shared-owner-state.json, case2-native-once-proof.json,
+shared-child-running-after-caller-stop.png, shared-child-completed.png.
+Both screenshots were inspected. The original Desktop selection was restored.
+Own fixtures retain history with autopilot/autostart disabled; archive is
+unsupported and was not forced. Foreign OpenCode release artifacts were preserved.
+
+## Verification and its limits
+
+| Scenario | Category | Defect detected | Expected / emergency seconds | Result |
+|---|---|---|---|---|
+| Six Unix-socket regression cases | Focused integration | Duplicate load, split ownership, lost events, disconnect cancellation, conflicting owners | 5 / 50 | 6 passed |
+| Two selected existing adapter/lifecycle cases | Focused integration | Invalid native message limit and forwarded Desktop process attribution | 5 / 50 | 2 passed |
+| Exact staged SDK/Desktop parsing | Fast unit | Native-source syntax/target drift | 5 / 50 | Passed |
+| Actual native caller stop + Desktop live state | Focused integration | Child cancellation, second executor or missing live completion | 60 / 600 | Passed; controller137.798s |
+| Same read-only native state assertion, original then routed services | Focused integration | Divergent Desktop/Herder native state | 5 / 50 | Original exit1, shared exit0 |
+
+The implementation preceded the new regression tests: this was **not strict
+test-first TDD**. The final RED/GREEN is a post-implementation regression proof
+against the preserved original native services and the routed production services,
+using the same assertion without loading or sending to a session. It does not
+retroactively establish test-first order or full prepatch UI replay. Receipt:
+native-red-green.json; logs native-shared-state-RED.log/GREEN.log. Reusable reader:
+scripts/canary-zcode-shared-state.mjs.
+
+Source checks peaked at233390080 bytes, persistent install189661184, native
+controller66908160; no swap or OOM, native cleanup confirmed. Source jobs used the
+existing guarded project profile, CPU1/tasks128, RAM512MiB (selected source
+integration up to1GiB), swap0, private temp256MiB/20000files/IOWeight10, and live
+host/UID reserves. Existing sealed native cgroups were retained. No broad suite.
+
+Earlier failed attempts remain evidence: messageLimit0 violated the real native
+schema and was fixed to1; the initial source-socket test exceeded the Unix path
+limit and its harness was corrected. Neither is claimed as behavioral TDD RED.
+The first native Codex case completed its child before caller stop and is not
+counted as caller-survival acceptance. The earlier subprocess-SIGKILL case did
+finish29.561s after caller death; the final native Codex case above is stronger.
+
+## Persistent delivery
+
+Reviewed sources: integrations/zcode-desktop/{shared-session-service.mjs,
+shared-session-service.test.mjs,stage-shared-session-service.mjs,
+activate-shared-session-service.py}, src/adapters/zcode.ts and selected tests.
+Future-start Desktop ASAR, SDK server and Herder adapter dist contain the same
+reviewed change. Protected original archives remain in
+/var/backups/zcode-desktop/shared-sessions-{sdk,desktop}-20261015.
+Persistent receipts: persistent-install.json and adapter-dist-activation.json.
+This bounded task does not complete or reset the separate fleet/Mac milestone.

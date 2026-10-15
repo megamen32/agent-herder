@@ -42,8 +42,19 @@ actual runner admission also retains the live host/UID/tenant reserves.
 
 ## Acceptance
 
-Source/socket regression and exact SDK/Desktop parse checks pass. Production
-routing and actual native Desktop acceptance remain pending in the task record:
-`.agents/tasks/20261015-zcode-independent-lifetime.md`. The earlier real MCP
-caller-SIGKILL canary completed its single native input29.561s after caller death;
-this proves caller independence, not yet the paired Desktop routing change.
+Installed and accepted15Oct2026 without restarting native hosts. Actual native
+Codex caller was interrupted while its ZCode child retained the same turn and
+completed91.872s later. Native history contains one input, one completed tool and
+one final marker. The real Desktop received the running state and final result
+through live events, with no local executor loaded and identical routed native
+state in both hosts. Original user task/history and Desktop selection retained.
+
+Six socket regressions, two selected adapter/lifecycle checks and exact staged
+SDK/Desktop parsing passed. `scripts/canary-zcode-shared-state.mjs` reads an
+already existing owned fixture without loading or sending. Its same assertion
+fails with `--original` (preserved original native services) and passes against
+the routed native services. These tests followed implementation; this is a
+post-implementation regression proof, not strict test-first TDD.
+
+Full acceptance, finite budgets, persistent install/rollback and retained failed
+attempts: `.planning/quick/261015-fg7-independent-zcode-session-lifetime-after/261015-fg7-SUMMARY.md`.
