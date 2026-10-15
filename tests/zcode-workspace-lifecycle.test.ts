@@ -29,10 +29,11 @@ function fixture(unavailableCode='ZCODE_AGENT_RUNTIME_UNAVAILABLE'){
  db.prepare('insert into session values(?,?,null)').run('own-session',cwd);
  const processProof={pid:701,parentPid:700,startTick:'100',cwd,groupId:701,descendants:[]};
  let alive=true,survivors=false,resumed=false,runtimePid=701,generation=1,dispatches=0;
+ let sharedOwner:string|undefined;
  let sampledChildren:Array<{pid:number;startTick:string}>=[];
  const detachedLive=new Set<string>();
  const info={sessionId:'own-session',workspace:{workspacePath:cwd,workspaceIdentity:cwd},sessionKind:'root',title:'Own fixture',mode:'build',status:'running',model:{providerId:'fixture',modelId:'fixture'},createdAt:Date.now(),updatedAt:Date.now()};
- const snap=()=>({session:{...info,status:resumed?'idle':'running'},runtime:{activeTurnId:resumed?undefined:'own-turn',eventSeq:4,stateRevision:2,pendingRequestIds:[]},messages:[],projection:{activeToolCalls:[],backgroundJobs:[]},settings:{model:{current:info.model}}});
+ const snap=()=>({session:{...info,status:resumed?'idle':'running'},runtime:{activeTurnId:resumed?undefined:'own-turn',eventSeq:4,stateRevision:2,pendingRequestIds:[],herderSharedOwner:sharedOwner},messages:[],projection:{activeToolCalls:[],backgroundJobs:[]},settings:{model:{current:info.model}}});
  const calls:string[]=[];
  let nativeListener:((payload:unknown)=>void)|undefined;
  let generationId='parent-generation-A',sdkPid=700,parentGone=false,sdkGone=false;
@@ -67,9 +68,14 @@ function fixture(unavailableCode='ZCODE_AGENT_RUNTIME_UNAVAILABLE'){
  const makeAdapter=()=>latestAdapter=new ZcodeAdapter({client,cwd,localDbPath:path,workspaceProcessProbe:probe,controllerGenerationId:generationId,persistNativeOwner:(id:string,proof:any,current:()=>boolean)=>proofSink(id,proof,current)} as any);
  const adapter=makeAdapter();
  const events:any[]=[];adapter.subscribeEvents(e=>events.push(e));
- return {adapter,db,cwd,calls,events,setOwnerExit(at:number|null){exitAt=at;},replayOwnerCancellation(){injectParentReplay=true;},parentReplayObserved:()=>parentReplayObserved,setProofSink(sink:typeof proofSink){proofSink=sink;},coldAdapter(){generationId='parent-generation-B';sdkPid=800;return makeAdapter();},loseParent(){alive=false;parentGone=true;sdkGone=true;},keepOldSdk(){sdkGone=false;},async emitNative(payload:unknown){if(!nativeListener)throw Error('Native subscription missing');nativeListener(payload);await Promise.all([...(latestAdapter as any).sessionEventTasks]);},observeChild(pid:number,startTick:string){sampledChildren=[{pid,startTick}];detachedLive.add(`${pid}:${startTick}`);},detachChildren(){sampledChildren=[];},kill:()=>{alive=false;},survivingChild:()=>{survivors=true;},async start(){await adapter.init();await adapter.sendMessage('own-session',{message:'Initial once',queue:true,origin:'automation',inputId:'initial-once'});await adapter.listSessions({cwd});}};
+ return {adapter,db,cwd,calls,events,setSharedOwner(owner:string){sharedOwner=owner;},setOwnerExit(at:number|null){exitAt=at;},replayOwnerCancellation(){injectParentReplay=true;},parentReplayObserved:()=>parentReplayObserved,setProofSink(sink:typeof proofSink){proofSink=sink;},coldAdapter(){generationId='parent-generation-B';sdkPid=800;return makeAdapter();},loseParent(){alive=false;parentGone=true;sdkGone=true;},keepOldSdk(){sdkGone=false;},async emitNative(payload:unknown){if(!nativeListener)throw Error('Native subscription missing');nativeListener(payload);await Promise.all([...(latestAdapter as any).sessionEventTasks]);},observeChild(pid:number,startTick:string){sampledChildren=[{pid,startTick}];detachedLive.add(`${pid}:${startTick}`);},detachChildren(){sampledChildren=[];},kill:()=>{alive=false;},survivingChild:()=>{survivors=true;},async start(){await adapter.init();await adapter.sendMessage('own-session',{message:'Initial once',queue:true,origin:'automation',inputId:'initial-once'});await adapter.listSessions({cwd});}};
 }
 describe('native workspace lifecycle, not SDK disconnection',()=>{
+ it('does not attribute a forwarded Desktop executor to the SDK process in the same workspace',async()=>{
+  const f=fixture();let proofs=0;f.setSharedOwner('desktop');f.setProofSink(async()=>{proofs++;return true;});
+  try {await f.start();expect(proofs).toBe(0);expect((f.adapter as any).observedActiveTurns.get('own-session')?.workspaceRuntime).toBeUndefined();}
+  finally {await f.adapter.dispose();f.db.close();}
+ });
  it.each(['controller','sdk','runtime','child'])('rejects numeric persisted startTick for %s',target=>{
   const proof:any={service:{unit:'agent-herder.service',invocationId:'a'.repeat(32)},generationId:'A',turnId:'turn',inputId:'input',userMessageId:'user',cwd:'/tmp/fixture',at:Date.now(),controller:{pid:101,parentPid:1,startTick:'1000'},sdk:{pid:202,parentPid:101,startTick:'2000'},runtime:{pid:302,parentPid:202,startTick:'3000',cwd:'/tmp/fixture',groupId:302,descendants:[{pid:303,startTick:'4000'}]}};
   expect(parseNativeOwnerProof(proof)).toBeDefined();

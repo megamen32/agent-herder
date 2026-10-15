@@ -76,3 +76,14 @@ test('disconnecting a caller does not stop its admitted native turn',async t=>{
   d.service.disposeAll();
   assert.equal(h.sessions.get('root').activeTurnId,'admitted');
 });
+test('a live legacy Desktop owner wins over an idle Herder copy in both views',async t=>{
+  const {h,d,params}=pair(t);h.sessions.set('root',{});d.sessions.set('root',{activeTurnId:'live-desktop'});
+  assert.equal((await h.service.readSession(params('root'))).runtime.activeTurnId,'live-desktop');
+  assert.equal((await d.service.readSession(params('root'))).runtime.activeTurnId,'live-desktop');
+});
+test('pre-existing two-active-owner conflict refuses another load or input',async t=>{
+  const {h,d,params}=pair(t);h.sessions.set('root',{activeTurnId:'old'});d.sessions.set('root',{activeTurnId:'new'});
+  await assert.rejects(h.service.loadSession(params('root')),error=>error.code==='ZCODE_EXECUTOR_CONFLICT');
+  await assert.rejects(d.service.sendPrompt({...params('root'),inputId:'third'}),error=>error.code==='ZCODE_EXECUTOR_CONFLICT');
+  assert.deepEqual(h.loads,[]);assert.deepEqual(d.loads,[]);
+});

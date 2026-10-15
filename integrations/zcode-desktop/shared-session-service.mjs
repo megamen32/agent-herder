@@ -3,6 +3,7 @@
  * Dependencies are supplied by the native host; no additional daemon/process. */
 export function shareZcodeSessionService({service, role, socketPath, peerPath, net, fs, createScope, randomUUID, activate = true}) {
   if (!['herder', 'desktop'].includes(role)) throw Error('Unknown native session owner');
+  const original = {...service};
   const raw = Object.fromEntries(Object.keys(service).map(key => [key,
     typeof service[key] === 'function' ? service[key].bind(service) : service[key]]));
   const maxBytes = 32 * 1024 * 1024, maxPending = 128;
@@ -73,6 +74,7 @@ export function shareZcodeSessionService({service, role, socketPath, peerPath, n
         try {
           let value;
           if (message.method === '__observe') value = await observe(message.args?.[0] || {});
+          else if (message.method === '__viewRead') value = await service.readSession({...target(message.args?.[0] || {}), runtimePolicy:'existing-only',messageLimit:1});
           else {
             if (/^(?:dispose|on[A-Z]|__)/.test(message.method) || typeof bound[message.method] !== 'function') throw Error('Native lifecycle belongs to its host');
             value = await bound[message.method](...(message.args || []));
@@ -148,13 +150,14 @@ export function shareZcodeSessionService({service, role, socketPath, peerPath, n
     if (owners.has(key)) return owners.get(key);
     const deciding = (async () => {
       const local = await observe(params);
-      // The original Herder runtime remains authoritative for its loaded IDs.
-      // All new Desktop sessions go there; pre-existing Desktop-only tasks stay
-      // in Desktop until naturally finished, with both consumers routed to it.
-      if (role === 'herder' && local.present) return 'local';
       let other;
       try {other = await remoteCall('__observe', [target(params)]);}
       catch (error) {if (local.present) return 'local'; throw error;}
+      // Reconcile pre-upgrade loaded copies without interrupting live work.
+      if (active(local.snapshot) && active(other.snapshot)) throw Object.assign(Error('Two native executors are active; explicit reconciliation required'), {code:'ZCODE_EXECUTOR_CONFLICT'});
+      if (active(local.snapshot)) return 'local';
+      if (active(other.snapshot)) return 'remote';
+      if (local.present && other.present) return role === 'herder' ? 'local' : 'remote';
       if (other.present) return 'remote';
       if (local.present) return 'local';
       return role === 'herder' ? 'local' : 'remote';
@@ -203,10 +206,14 @@ export function shareZcodeSessionService({service, role, socketPath, peerPath, n
       // Establish event transport before a native subscription can emit its
       // initial frame. No submitted command is retried on any transport error.
       if (/^subscribe.*V4$/.test(method)) await Promise.all([...subscriptions]);
-      return owner === 'remote' ? remoteCall(method, args) : raw[method](...args);
+      const result = await (owner === 'remote' ? remoteCall(method, args) : raw[method](...args));
+      if (method === 'readSession' && result?.runtime) return {...result,runtime:{...result.runtime,
+        herderSharedOwner:owner==='local'?role:role==='herder'?'desktop':'herder'}};
+      return result;
     };
   }
   };
   if (activate) enable();
-  return {raw, role, observe, owners, server, service, active, enable};
+  return {raw, role, observe, owners, server, service, active, enable,
+    get enabled(){return enabled;},disable(){Object.assign(service,original);enabled=false;}};
 }

@@ -2235,10 +2235,11 @@ it('uses positive limits for native receipt fallback and owned shutdown checkpoi
  db.prepare('insert into message values(?,?,?,?)').run('own-assistant',id,JSON.stringify({role:'assistant',parentID:'own-user'}),2);
  db.prepare('insert into turn_usage values(?,?,?,?,?,null)').run(id,'own-turn','own-user','running',1);
  class OwnedPositiveClient extends FakeClient {
+  sharedOwner?:string;
   getOwnedProcessId(){return 42;}
   override async call(channel:string,method:string,args:unknown[]):Promise<unknown>{
    if(method==='readSessionEvents')throw Error('Native strict executionStartedAt event schema');
-   if(method==='readSession')return {...snapshot,session:{...session,sessionId:id},runtime:{activeTurnId:'own-turn',pendingRequestIds:[]}};
+   if(method==='readSession')return {...snapshot,session:{...session,sessionId:id},runtime:{activeTurnId:'own-turn',pendingRequestIds:[],herderSharedOwner:this.sharedOwner}};
    return super.call(channel,method,args);
   }
   async callIfReady(channel:string,method:string,args:unknown[]){
@@ -2254,6 +2255,8 @@ it('uses positive limits for native receipt fallback and owned shutdown checkpoi
   expect(await (adapter as any).waitForTurnStart(id,workspace,input,'fixture',undefined,undefined)).toMatchObject({ok:true,turnId:'own-turn'});
   expect((adapter as any).observedActiveTurns.get(id)).toEqual({turnId:'own-turn',inputId:input});
   expect(await adapter.checkpointOwnedRuntimeShutdown()).toEqual([id]);
+  client.sharedOwner='desktop';
+  expect(await adapter.checkpointOwnedRuntimeShutdown()).toEqual([]);
   const guarded=client.calls.filter(call=>call.method==='readSession'&&(call.args[0] as any).messageLimit!==undefined);
   expect(guarded.length).toBeGreaterThanOrEqual(2);expect(guarded.every(call=>(call.args[0] as any).messageLimit===1)).toBe(true);
  }finally{await adapter.dispose();db.close();await rm(root,{recursive:true,force:true});}

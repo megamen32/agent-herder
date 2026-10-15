@@ -78,7 +78,7 @@ def main():
    other='desktop' if a.role=='herder' else 'herder'
    function='''async function(createScope){
     const registry=globalThis.__herderSharedNativeV1??=new Set();
-    for(const old of registry){if(old.owners.size)throw Error('Existing routed sessions; no replacement');await new Promise((resolve,reject)=>old.server.close(error=>error?reject(error):resolve()));registry.delete(old);}
+    for(const old of registry){if(old.enabled||old.owners.size)throw Error('Existing routed sessions; no replacement');await new Promise((resolve,reject)=>old.server.close(error=>error?reject(error):resolve()));registry.delete(old);}
     const share=(HELPER);
     const value=share({service:this,role:ROLE,socketPath:SOCKET,peerPath:PEER,net:process.getBuiltinModule('node:net'),fs:process.getBuiltinModule('node:fs'),createScope,randomUUID:process.getBuiltinModule('node:crypto').randomUUID,activate:false});
     registry.add(value);return {installed:true,routingEnabled:false,pid:process.pid,role:ROLE};

@@ -1126,6 +1126,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       try {
         const snapshot = record(await this.client.callIfReady('zcode-agent','readSession', [{...workspace,sessionId,runtimePolicy:'existing-only',messageLimit:1}]));
         const runtime = record(snapshot.runtime);
+        if (runtime.herderSharedOwner === 'desktop') continue;
         if (sessionInfoFromPayload(snapshot)?.sessionId !== sessionId || runtime.activeTurnId !== identity.turnId
           || !Array.isArray(runtime.pendingRequestIds) || runtime.pendingRequestIds.length) continue;
         if (!ownedZcodeActiveInput(this.localDbPath, sessionId,identity)) continue;
@@ -1191,6 +1192,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       let snapshot:ZcodeSnapshot;
       try{snapshot=await this.client.callIfReady('zcode-agent','readSession',[{...workspace,sessionId,runtimePolicy:'existing-only',messageLimit:1}]) as ZcodeSnapshot;}
       catch{continue;}
+      if(record(snapshot.runtime).herderSharedOwner==='desktop')continue;
       if(sessionInfoFromPayload(snapshot)?.sessionId!==sessionId||this.client.getOwnedProcessId?.()!==sdkPid
         ||!Array.isArray(snapshot.runtime?.pendingRequestIds)||snapshot.runtime.pendingRequestIds.length
         ||await getHumanStopStore().isHeld('zcode',sessionId))continue;
