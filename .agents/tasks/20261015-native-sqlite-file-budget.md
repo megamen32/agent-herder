@@ -41,3 +41,22 @@ bound8GiB. Existing real SQLite test also GREEN,2tests0.158s on44 in finite
 unlimited, untouched.88 GREEN2 original sealed256MiB was retained through
 completion: one human input, natural expiry, one automatic recovery, one
 completed action and native final. Source/runtime8GiB delivery follows.
+
+Delivered8GiB persistently via supported user-service drop-in on44/88 and
+pinned parent/SDK prlimit; same fleet PID239070 on44 and322786/SDK701544 on88,
+no restart, other finite cgroup budgets unchanged. Separate native88 acceptance
+sess_f48e46aa-58a7-43b4-96c4-cff973a2d77c: one input, native Bash proves inherited
+8GiB, real DB quick_check=ok, MCP agent_info completed, LIMITS_OK final.
+GREEN2 expiry proof remains one initial input, one auto reconnect, one note,
+MCP_EXPIRY_RECOVERED. Own fixture processes and temporary credential copies
+removed after terminal result; shared parent/SDK retained. See GPTAdmin task.
+
+Setup findings retained separately: empty native session on100 was started by
+unfinished-session automation without its original input; exact own fixture
+was stopped and automation disabled, no action replay. Old88 queued-human
+fixture stayed empty; its own queue job is cancelled, native input count0.
+These old/autostart policy paths are not acceptance substitutes; they require
+an independently scoped launcher repair/updated fleet artifact, with proof of
+empty-session startup semantics before any production policy change. Evidence
+GPTAdmin .tmp/mcp-expiry-20261015/side-findings.md; no blind service upgrade or
+restart of foreign sessions was performed under this transport-only change.
