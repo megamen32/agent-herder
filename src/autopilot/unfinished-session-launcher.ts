@@ -2771,7 +2771,7 @@ export class UnfinishedSessionLauncher {
         } catch (error) {
           if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
           await this.recordAssessmentFailure(assessed, priorInventory, errorText(error));
-          console.error(`[agent-herder] единый план MiniMax не построен; посессионный fallback запрещён: ${errorText(error)}`);
+          console.error(`[agent-herder] единый план ${plannerRouteLabel(errorText(error))} не построен; посессионный fallback запрещён: ${errorText(error)}`);
           return "blocked";
         }
         if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
@@ -3597,16 +3597,19 @@ export class UnfinishedSessionLauncher {
     if (!this.options.notify || newlyRepeated.length === 0) return;
     const overloadStatus = transientPlannerHttpStatus(error);
     const overloaded = overloadStatus !== null;
+    // The planner route is an explicit deployment choice (env, service drop-in), so an
+    // operator alarm must name the route that actually failed instead of a hardcoded vendor.
+    const routeLabel = plannerRouteLabel(error);
     const correlation = createHash("sha256")
       .update(`pipeline:${CURRENT_ASSESSMENT_PIPELINE_VERSION}\n${newlyRepeated.map((record) => `${inventoryRecordKey(record)}:${record.assessmentFailure!.evidenceFingerprint}`).sort().join("\n")}`)
       .digest("hex").slice(0, 24);
     try {
       await this.options.notify({
         ...(overloaded ? { severity: "notice" as const } : { severity: "critical" as const }),
-        title: overloaded ? "MiniMax временно перегружен" : "Agent Herder повторно не смог разобрать сессии",
+        title: overloaded ? `${routeLabel} временно перегружен` : "Agent Herder повторно не смог разобрать сессии",
         body: overloaded
-          ? "Agent Herder пока не может безопасно проверить незавершённые задачи из-за временной перегрузки MiniMax. Повторная проверка отложена с увеличивающимся интервалом и возобновится автоматически; действий от вас не требуется."
-          : `MiniMax повторно не построил безопасный план для ${newlyRepeated.length} сесс. Автопродолжение временно отложено с увеличивающимся интервалом; новые сообщения сбросят задержку автоматически.`,
+          ? `Agent Herder пока не может безопасно проверить незавершённые задачи из-за временной перегрузки модели ${routeLabel}. Повторная проверка отложена с увеличивающимся интервалом и возобновится автоматически; действий от вас не требуется.`
+          : `Модель ${routeLabel} повторно не построила безопасный план для ${newlyRepeated.length} сесс. Автопродолжение временно отложено с увеличивающимся интервалом; новые сообщения сбросят задержку автоматически.`,
         dedupKey: overloaded
           ? "agent-herder:minimax-batch-planner-overload"
           : `agent-herder:assessment-failed:${correlation}`,
@@ -3620,7 +3623,7 @@ export class UnfinishedSessionLauncher {
       for (const record of newlyRepeated) record.assessmentFailure!.notifiedAt = notifiedAt;
       await this.options.store.upsertInventoryBatch(newlyRepeated);
     } catch (noticeError) {
-      console.error(`[agent-herder] не удалось отправить уведомление о повторном сбое MiniMax: ${errorText(noticeError)}`);
+      console.error(`[agent-herder] не удалось отправить уведомление о повторном сбое планировщика ${routeLabel}: ${errorText(noticeError)}`);
     }
   }
 
@@ -4029,6 +4032,32 @@ function continuationTitle(topic: string): string {
 function transientPlannerHttpStatus(error: string): number | null {
   const status = error.match(/\b(?:MiniMax|LLM).{0,120}\bHTTP\s*(429|5\d{2})\b/i)?.[1];
   return status ? Number(status) : null;
+}
+
+/** The planner model and endpoint host actually observed in the judge diagnostic.
+ *
+ * The batch planner runs on an explicitly configured route that differs per deployment,
+ * so an alarm may never blame a hardcoded vendor. JudgeRequestError already embeds the
+ * redacted diagnostic; read the route from it and never fail the caller on a bad shape. */
+function plannerFailureRoute(error: string): { model: string; host: string } | null {
+  const start = error.lastIndexOf("{");
+  if (start < 0) return null;
+  let diagnostic: Record<string, unknown>;
+  try { diagnostic = JSON.parse(error.slice(start)) as Record<string, unknown>; }
+  catch { return null; }
+  const model = typeof diagnostic.model === "string" ? diagnostic.model.trim().slice(0, 96) : "";
+  if (!model) return null;
+  let host = "";
+  if (typeof diagnostic.endpoint === "string" && diagnostic.endpoint) {
+    try { host = new URL(diagnostic.endpoint).hostname.slice(0, 96); } catch { host = ""; }
+  }
+  return { model, host };
+}
+
+function plannerRouteLabel(error: string): string {
+  const route = plannerFailureRoute(error);
+  if (!route) return "планировщик";
+  return route.host ? `${route.model} (${route.host})` : route.model;
 }
 
 function isAutocontinueRequest(text: string | undefined): boolean {
