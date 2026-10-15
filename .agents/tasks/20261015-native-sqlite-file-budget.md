@@ -29,3 +29,15 @@ Acceptance: same real SQLite test GREEN and fresh native ZCode post-expiry
 single-action completion under the reviewed cap. Original failed canary and
 its request are preserved, never continued or replayed. GPTAdmin evidence:
 .tmp/mcp-expiry-20261015/{fleet-file-budget-real-red.log,fleet-file-budget-green.log}.
+
+Latest direct human correction: raise obstructive ceilings for real workload.
+Measured100 DB3442515968B, free disk375843815424B,88 free93601443840B,
+44 free68946292736B. First256MiB was adequate only for88 and is superseded
+by8GiB per file (main+WAL16GiB retains20GiB disk reserve on all measured hosts).
+Added sparse native-file-growth test BEFORE this change: actual EFBIG with
+256MiB, GREEN with8GiB; one page allocated at DB-size+1MiB, logical temporary
+bound8GiB. Existing real SQLite test also GREEN,2tests0.158s on44 in finite
+512MiB/CPU1/tasks64/swap0/IO10/10s service.100 actual parent/SDK already
+unlimited, untouched.88 GREEN2 original sealed256MiB was retained through
+completion: one human input, natural expiry, one automatic recovery, one
+completed action and native final. Source/runtime8GiB delivery follows.

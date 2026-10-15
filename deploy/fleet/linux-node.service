@@ -23,7 +23,7 @@ TasksMax=128
 IOWeight=10
 LimitNOFILE=4096
 # Native SQLite checkpoint must fit the existing database, not just its WAL.
-LimitFSIZE=256M
+LimitFSIZE=8192M
 UMask=0077
 StandardOutput=null
 StandardError=append:%h/.local/state/agent-herder/fleet-node/runtime.log

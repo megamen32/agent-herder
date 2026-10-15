@@ -12,6 +12,26 @@ from pathlib import Path
 
 
 class NativeSqliteBudgetTest(unittest.TestCase):
+    def test_file_budget_permits_existing_server100_database_size(self):
+        """Fast unit expected1/max10s: one sparse page past measured3.44GB DB.
+
+        Detects fleet256MiB cap still failing ordinary100 DB growth. Only one
+        page is allocated; logical temporary bound8GiB, disposed by this test.
+        """
+        template = Path(__file__).parents[1] / 'deploy/fleet/linux-node.service'
+        mib = int(re.search(r'^LimitFSIZE=(\d+)M$', template.read_text(), re.M)[1])
+        with tempfile.TemporaryDirectory() as root:
+            script = '''import os,resource,signal,sys
+signal.signal(signal.SIGXFSZ,signal.SIG_IGN)
+cap=int(sys.argv[2])*1024*1024
+resource.setrlimit(resource.RLIMIT_FSIZE,(cap,cap))
+with open(sys.argv[1],'wb') as f:
+ f.seek(3442515968+1024*1024);f.write(b'x');f.flush();os.fsync(f.fileno())
+'''
+            result = subprocess.run([sys.executable,'-c',script,str(Path(root)/'database-growth'),str(mib)],
+                                    capture_output=True,text=True,timeout=8)
+            self.assertEqual(result.returncode,0,result.stderr)
+
     def test_native_sqlite_checkpoint_with_inherited_fleet_cap(self):
         template = Path(__file__).parents[1] / 'deploy/fleet/linux-node.service'
         mib = int(re.search(r'^LimitFSIZE=(\d+)M$', template.read_text(), re.M)[1])

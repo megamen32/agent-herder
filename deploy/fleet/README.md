@@ -316,13 +316,19 @@ its healthy97MiB SQLite database could not checkpoint, the WAL reached exactly
 16MiB and the turn failed with SQLITE_IOERR before tool dispatch. A disposable
 20MiB SQLite database plus1MiB append reproduces the error with the old unit.
 
-The reviewed per-file ceiling is now256MiB soft/hard in the unit and
-`native-sqlite-file-budget.conf` drop-in. Measured88 has about90GiB RAM available
-and88GiB free disk; main+WAL headroom512MiB preserves disk reserve. Existing
-RAM/CPU/swap/task/I/O and artifact/storage aggregate caps remain unchanged.
-Live delivery may apply this exact reviewed limit with prlimit to pinned fleet
-parent/SDK generations without restarting them; already running foreign
-children retain their sealed limits. New native children inherit the new cap.
-No database deletion, manual WAL checkpoint or prompt replay is needed.
-Acceptance requires real SQLite RED/GREEN and the fresh native consumer;
-`.agents/tasks/20261015-native-sqlite-file-budget.md` records the measured case.
+The reviewed per-file ceiling is now8GiB soft/hard in the unit and
+`native-sqlite-file-budget.conf` drop-in. The first256MiB correction passed
+native88 acceptance, but a fresh100 measurement found a3,442,515,968-byte DB.
+A sparse-page growth test reproduced EFBIG at256MiB before raising the ceiling.
+Free disk measured:100 about350GiB,88 about87GiB,44 about64GiB. Worst-case
+main+WAL16GiB fits those filesystems with a20GiB disk reserve. Source-test
+sparse fixture allocates one page, has8GiB logical temporary ceiling and is
+removed immediately; its parent remains512MiB/CPU1/tasks64/swap0/IO10.
+Existing RAM/CPU/swap/task/I/O and artifact/storage aggregate caps remain.
+Live delivery applies this exact reviewed limit with prlimit to pinned fleet
+parent/SDK generations without restarting them. Completed own test children
+can be cleaned up; current foreign children retain their sealed limits. New
+native children inherit the new cap.100 already has unlimited file size and
+is not reduced. No database deletion, manual checkpoint or prompt replay.
+Acceptance includes real SQLite RED/GREEN, sparse database-growth RED/GREEN,
+and native ZCode completion. Task: `.agents/tasks/20261015-native-sqlite-file-budget.md`.
