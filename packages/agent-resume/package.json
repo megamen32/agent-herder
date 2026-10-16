@@ -1,0 +1,26 @@
+{
+  "name": "agent-resume-mcp",
+  "version": "0.2.2",
+  "description": "Agent Resume core: harness protocol knowledge, durable receipts and detached long jobs. Shared by Agent Herder and installable on its own.",
+  "type": "module",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "agent-resume": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  }
+}
