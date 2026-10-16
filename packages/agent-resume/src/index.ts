@@ -18,4 +18,21 @@ export type {
   HarnessSendRequest,
   HarnessSendResult,
   HarnessSessionSummary,
-} from "./harness/client.js";
+} from "./harness/client.js";export {
+  OpenCodeClient,
+  normalizeOpenCodeEvent,
+  openCodeConnectedModels,
+  openCodeConnectedProviders,
+  openCodeMessageParts,
+  openCodeModelCatalogEntries,
+  openCodeSnapshotFingerprint,
+  parseOpenCodeServerCommand,
+  unwrapEnvelope,
+  type OpenCodeCreateRequest,
+  type OpenCodeEvent,
+  type OpenCodePermissionDetails,
+  type OpenCodeRawTranscript,
+  type OpenCodeProviderCatalog,
+  type OpenCodeSessionDetail,
+  type OpenCodeStatusSnapshot,
+} from "./harness/opencode/client.js";

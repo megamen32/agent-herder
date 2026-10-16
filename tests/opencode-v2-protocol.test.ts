@@ -339,10 +339,22 @@ it("normalizes native v2 event frames", () => {
   expect(frames.map((frame) => normalizeOpenCodeEvent(frame)?.kind)).toEqual([
     "message.updated", "turn.started", "turn.completed", "turn.failed", "permission.requested", "session.deleted",
   ]);
-  const steer = normalizeOpenCodeEvent(frames[1])!;
-  expect(steer).toMatchObject({ harness: "opencode", sessionId: "ses_1" });
-  expect(normalizeOpenCodeEvent({ type: "provider.updated", data: {} })).toBeNull();
+  // The core owns protocol facts only: identity, directory and native type.
+  const started = normalizeOpenCodeEvent(frames[1])!;
+  expect(started).toMatchObject({ kind: "turn.started", sessionId: "ses_1", nativeType: "session.execution.started" });
+  expect(started.data).toMatchObject({ nativeEventId: "evt_2" });
+  expect(normalizeOpenCodeEvent({ type: "provider.updated", data: {} })?.kind).toBe("unknown");
   // Legacy frames keep working unchanged.
   expect(normalizeOpenCodeEvent({ type: "message.updated", properties: { info: { sessionID: "ses_2", id: "msg_2" } } }))
-    .toMatchObject({ kind: "message.updated", sessionId: "ses_2" });
+    .toMatchObject({ kind: "message.updated", sessionId: "ses_2", messageId: "msg_2" });
+});
+
+it("the adapter adds Herder's orchestration shape on top of the core event", () => {
+  const adapter = new OpenCodeAdapter({ baseUrl: "http://127.0.0.1:1", protocol: "v2" });
+  const harnessEvent = (adapter as unknown as {
+    toHarnessEvent(event: unknown): { kind: string; harness: string; at: string } | null;
+  }).toHarnessEvent(normalizeOpenCodeEvent({ id: "evt_2", type: "session.execution.started", data: { sessionID: "ses_1" } }));
+  expect(harnessEvent).toMatchObject({ kind: "turn.started", harness: "opencode" });
+  expect(typeof harnessEvent?.at).toBe("string");
+  expect((adapter as unknown as { toHarnessEvent(event: unknown): unknown }).toHarnessEvent({ kind: "unknown" })).toBeNull();
 });
