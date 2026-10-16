@@ -1,36 +1,51 @@
 # Agent Herder autopilot
 
-## `/autopilot`
+## Turning Autopilot on
 
-The plugin exposes the same user command in Codex, Claude Code, OpenCode, and Hermes:
+The durable current-session switch has one owner per harness:
+
+| Harness | Control |
+|---|---|
+| Codex | `/autopilot` skill, Codex Stop hook |
+| Claude Code | `.claude-plugin` `/autopilot`, Claude Code Stop hook |
+| Hermes | extension `register_command`, Hermes completion hook |
+| OpenCode 2 | Agent Herder `autopilot_set` MCP tool, native turn event |
+| OpenCode 1 (legacy servers) | `integrations/opencode/agent-herder-autopilot.js`, `session.idle` event |
 
 ```text
-/autopilot          # enable for the current session
+/autopilot          # enable for the current session (plugin harnesses)
 /autopilot status   # show the current-session switch
 /autopilot off      # disable for the current session
 ```
 
+OpenCode 2 no longer loads the v1 plugin contract, so its switch lives behind
+the `autopilot_set` MCP tool (`action: on | off | status`), and its Stop
+judgement is triggered by Herder's own subscriber to the native
+`session.execution.*` event stream instead of a plugin hook. The policy already
+lists `opencode`, so a session is on by default unless the store or policy says
+otherwise.
+
 Codex loads the bundled `autopilot` skill and keeps using its native `Stop`
 hook. Claude Code loads the native `.claude-plugin` package, captures the exact
 `CLAUDE_CODE_SESSION_ID`, and invokes the shared judge from its `Stop` hook.
-OpenCode loads `integrations/opencode/agent-herder-autopilot.js`, which
-captures the exact `sessionID` in `command.execute.before` and invokes the
-judge on `session.idle` (the slash-control turn itself is skipped). Hermes loads the extension under
-`integrations/hermes/agent-herder-autopilot/`, registers the real slash command
-with `register_command`, and invokes the same judge at `on_session_end`.
+Hermes loads the extension under `integrations/hermes/agent-herder-autopilot/`,
+registers the real slash command with `register_command`, and invokes the same
+judge at `on_session_end`.
 
-All four write one durable current-session switch to
-`$AGENT_HERDER_AUTOPILOT_STATE_DIR/sessions.json`. OpenCode resumes through the
-existing durable `agent-resume` client. Hermes injects an automatic next goal
-or a selected NoticePlace choice into its bound session. Codex and Claude Code
-return the next goal through native Stop-hook continuation. A selected Claude
+All of them write one durable current-session switch to
+`$AGENT_HERDER_AUTOPILOT_STATE_DIR/sessions.json`. A continuation for OpenCode
+goes through the session's own inbox (OpenCode 2 cannot address its sessions
+from the standalone CLI); every other harness returns the next goal through its
+native hook continuation, and agent-resume stays the durable fallback whenever a
+native admission fails. Hermes injects an automatic next goal
+or a selected NoticePlace choice into its bound session. A selected Claude
 Code choice resumes the exact session through Agent Resume.
 
 The web session inspector exposes the same durable switch as an **Autopilot**
 toggle. It does not create a second policy: changes made on the website are
-immediately visible to `/autopilot status` and to the next Codex Stop hook,
-Claude Code Stop hook, OpenCode idle event, or Hermes completion hook for that
-exact session.
+immediately visible to `/autopilot status`, to `autopilot_set status`, and to
+the next Codex Stop hook, Claude Code Stop hook, OpenCode turn event, or Hermes
+completion hook for that exact session.
 
 ## Explicit stops in Codex and ZCode
 

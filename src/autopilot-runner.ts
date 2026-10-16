@@ -26,6 +26,7 @@ import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopil
 import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { effectivePolicyAllowsTarget } from "./autopilot/policy.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "./autopilot/session-store.js";
+import { deliverAutopilotGoal } from "./autopilot/continuation-delivery.js";
 import { acquireLock, checkpointAutopilotReceipts } from "./autopilot-hook.js";
 import { SessionAutostartStore } from "./autopilot/unfinished-session-launcher.js";
 import { AgentResumeClient } from "./resume-transport.js";
@@ -175,16 +176,17 @@ async function evaluateAutopilotCommand(input: AutopilotRunnerInput, background 
       if (input.harness === "hermes") {
         return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "continue", next_goal: nextGoal, resume_status: "local-inject" };
       }
-      const resultRef = randomUUID();
       if (await held()) return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "human-stop-held" };
-      const receipt = await new AgentResumeClient().resume({
-        target: { agent: "opencode", session_id: input.sessionId, cwd: resolve(input.cwd) },
-        goal: nextGoal,
-        prompt: nextGoal,
-        result_ref: resultRef,
-        idempotency_key: `autopilot:${input.harness}:${input.sessionId}:${hook.turn_id}:${createHash("sha256").update(nextGoal).digest("hex").slice(0, 16)}`,
-      });
-      return { ok: receipt.status === "accepted", command, harness: input.harness, session_id: input.sessionId, decision: "continue", next_goal: nextGoal, resume_status: receipt.status, ...(receipt.status === "accepted" ? {} : { reason: receipt.reason }) };
+      // OpenCode 2 sessions are not addressable by the standalone CLI, so the
+      // continuation goes through the harness' own inbox and falls back to the
+      // durable agent-resume transport only if that fails.
+      const delivery = await deliverAutopilotGoal(input, nextGoal,
+        `autopilot:${input.harness}:${input.sessionId}:${hook.turn_id}:${createHash("sha256").update(nextGoal).digest("hex").slice(0, 16)}`);
+      return {
+        ok: delivery.status !== "failed", command, harness: input.harness, session_id: input.sessionId,
+        decision: "continue", next_goal: nextGoal, resume_status: delivery.status,
+        delivery_transport: delivery.transport, ...(delivery.error ? { reason: delivery.error } : {}),
+      };
     }
     if (observedDecision?.decision.kind === "choice") {
       return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "choice", request_id: observedDecision.choiceRequestId ?? observedDecision.humanRequestId };

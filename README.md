@@ -143,7 +143,7 @@ deletable by the author, auto-pruned on expiry.
 
 | Harness | Connection | Enablement |
 |---|---|---|
-| OpenCode | HTTP API (auto-detects the v2 `/api` protocol and the legacy one) | Enabled by default; run `opencode serve` |
+| OpenCode | HTTP API (auto-detects the v2 `/api` protocol and the legacy one); Autopilot from native turn events with the `autopilot_set` tool | Enabled by default; run `opencode serve` |
 | Claude Code | SDK/CLI, current and legacy session files, native `/autopilot` + `Stop` plugin | Enabled by default |
 | Codex CLI | Native app-server with CLI fallback, plugin `Stop` judge | Enabled by default |
 | Qoder CLI | Native ACP | Set `ENABLE_QODER=true` |

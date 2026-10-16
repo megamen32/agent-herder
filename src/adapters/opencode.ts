@@ -151,10 +151,16 @@ export function normalizeOpenCodeEvent(raw: unknown): HarnessEvent | null {
   else return null;
   const statusRaw = stringValue(properties.status, properties.type);
   const status = statusRaw ? (/busy|running|active/i.test(statusRaw) ? "running" : /wait|permission|input/i.test(statusRaw) ? "needs_input" : /error|fail/i.test(statusRaw) ? "error" : /stop|abort/i.test(statusRaw) ? "stopped" : "idle") : undefined;
+  // OpenCode 2 frames carry the instance directory and a stable event identity,
+  // so turn consumers (Autopilot) never need a second native read.
+  const frameLocation = properties.location && typeof properties.location === "object"
+    ? properties.location as Record<string, unknown>
+    : event.location && typeof event.location === "object" ? event.location as Record<string, unknown> : undefined;
+  const directory = stringValue(frameLocation?.directory, session?.directory, session?.path);
   return {
     kind, harness: "opencode", sessionId, nativeType, messageId, permissionId, status,
     at: new Date().toISOString(),
-    data: { nativeType },
+    data: { nativeType, ...(stringValue(properties.id, event.id) ? { nativeEventId: stringValue(properties.id, event.id) } : {}), ...(directory ? { directory } : {}) },
   };
 }
 

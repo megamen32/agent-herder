@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { BackgroundAutopilotStop } from "./autopilot/background-stop.js";
+import { NativeTurnAutopilotObserver } from "./autopilot/native-turn-observer.js";
+import { deliverAutopilotGoal } from "./autopilot/continuation-delivery.js";
 import { evaluateAutopilotStop, runAutopilotCommand } from "./autopilot-runner.js";
 import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
 import { AutoCompactStore, AutoCompactService } from "./autocontinue/auto-compact.js";
@@ -21,7 +23,7 @@ import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
-import { AutopilotSessionStore } from "./autopilot/session-store.js";
+import { AutopilotSessionStore, type AutopilotHarness } from "./autopilot/session-store.js";
 import { AutomationLaunchPolicyStore } from "./automation-launch-policy.js";
 import { dispatchProjectLaunch, namedSessionRunner, ProjectLaunchAttemptLog, type ProjectLaunchDispatcher } from "./automation/project-launch-dispatch.js";
 import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
@@ -504,6 +506,22 @@ function sameNotice(left: Parameters<ReturnType<typeof createNoticePlaceSink>["s
 
 // ===== Register MCP tools =====
 
+/** Autopilot needs an absolute cwd; prefer the native session, then the store. */
+async function autopilotSessionCommand(
+  input: { command: "on" | "off" | "status"; harness: string; sessionId: string; cwd?: string },
+): Promise<Record<string, unknown>> {
+  const harness = input.harness as AutopilotHarness;
+  const explicit = input.cwd?.trim();
+  const stored = await autopilotSessionStore.get(harness, input.sessionId).catch(() => undefined);
+  const cwd = explicit
+    || (stored?.cwd && stored.cwd.startsWith("/") ? stored.cwd : undefined)
+    || await adapters.get(input.harness)?.getSession(input.sessionId).then((session) => session?.cwd).catch(() => undefined);
+  if (!cwd || !cwd.startsWith("/")) {
+    return { ok: false, command: input.command, harness: input.harness, session_id: input.sessionId, reason: "cwd is required: pass cwd or a session Herder can locate" };
+  }
+  return runAutopilotCommand({ command: input.command, harness, sessionId: input.sessionId, cwd });
+}
+
 function registerTools(
   server: McpServer,
   cdpChatClient?: CdpChatClient,
@@ -518,7 +536,7 @@ function registerTools(
   inventorySupervisor?: SessionSupervisor,
 ) {
   registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
-  registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes });
+  registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: autopilotSessionCommand } });
 
   // A human answer resumes its exact native session exactly once through the
   // same durable admission the internal completion endpoint uses.
@@ -799,9 +817,41 @@ async function main() {
       const status = await runAutopilotCommand({ ...input, command: "status" });
       return status.enabled === true && !await stopPendingQuestions.blocks(input.harness, input.sessionId, input.cwd);
     },
-    deliver: (input, goal, inputId) => resumeSelectedTarget({ target: { agent: input.harness as "codex", session_id: input.sessionId, cwd: input.cwd },
-      goal, prompt: goal, result_ref: `agent-herder://autopilot/stop/${inputId}`, idempotency_key: inputId }, processSupervisor, "automation", false, "autopilot"),
+    deliver: async (input, goal, inputId) => {
+      // Harnesses Herder can drive natively never need a CLI process; the
+      // durable agent-resume transport stays the fallback for CLI-only ones.
+      if (input.harness === "opencode") {
+        const native = await deliverAutopilotGoal(input, goal, inputId, {
+          adapter: adapters.get("opencode") as OpenCodeAdapter | undefined,
+        });
+        if (native.status === "delivered") return native;
+        return await resumeSelectedTarget({ target: { agent: input.harness as "codex", session_id: input.sessionId, cwd: input.cwd },
+          goal, prompt: goal, result_ref: `agent-herder://autopilot/stop/${inputId}`, idempotency_key: inputId }, processSupervisor, "automation", false, "autopilot");
+      }
+      return resumeSelectedTarget({ target: { agent: input.harness as "codex", session_id: input.sessionId, cwd: input.cwd },
+        goal, prompt: goal, result_ref: `agent-herder://autopilot/stop/${inputId}`, idempotency_key: inputId }, processSupervisor, "automation", false, "autopilot");
+    },
   });
+  // Harnesses whose Stop hook plugin cannot run on their current native version
+  // reach the same durable consumer through their own turn events instead.
+  // Hook-driven harnesses stay out of this list: two Stop identities per turn
+  // would run the judge twice.
+  const stopNativeTurnObservers = (process.env.AGENT_HERDER_NATIVE_AUTOPILOT_HARNESSES ?? "opencode")
+    .split(",").map((value) => value.trim()).filter(Boolean)
+    .flatMap((harness) => {
+      const adapter = adapters.get(harness);
+      if (!adapter) return [];
+      const observer = new NativeTurnAutopilotObserver({
+        harness,
+        adapter,
+        enabled: async (input) => (await runAutopilotCommand({ ...input, command: "status" })).enabled === true,
+        submit: (input) => backgroundAutopilotStop!.submit(input),
+        resolveCwd: async (sessionId) => (await adapter.getSession(sessionId))?.cwd,
+        onError: (message) => console.error(`[agent-herder] ${message}`),
+      });
+      console.error(`[agent-herder] Autopilot native turn bridge active for ${harness}`);
+      return [observer.start()];
+    });
   const stopUnfinishedSessionLauncher = unfinishedSessionLauncher.start();
   process.once("exit", stopUnfinishedSessionLauncher);
   // One human answer resumes its exact native session once, from every MCP surface.
@@ -833,6 +883,7 @@ async function main() {
   const shutdown = () => {
     if (shuttingDown) return; shuttingDown = true;
     stopUnfinishedSessionLauncher(); stopProcessObservation(); stopAutoCompact(); stopCompletionNoticeSweeper();
+    for (const stop of stopNativeTurnObservers) stop();
     void (async () => {
       const zcode = adapters.get('zcode') as ZcodeAdapter | undefined;
       try { await zcode?.checkpointOwnedRuntimeShutdown(); await zcode?.dispose(); }

@@ -26,6 +26,10 @@ export function registerControlPlaneTools(server: McpServer, deps: {
   jobs: HerderJobRegistry;
   events: HerderEventBus;
   coordination: CoordinationNoteStore;
+  /** Per-session Autopilot control; harnesses without a native Stop hook need it. */
+  autopilot?: {
+    command: (input: { command: "on" | "off" | "status"; harness: string; sessionId: string; cwd?: string }) => Promise<Record<string, unknown>>;
+  };
 }): void {
   const { jobs, events, coordination } = deps;
 
@@ -93,4 +97,34 @@ export function registerControlPlaneTools(server: McpServer, deps: {
     inputSchema: z.object({ noteId: z.string().uuid(), authorSessionId: z.string().trim().min(1).max(256) }),
     outputSchema: z.object({ deleted: z.boolean() }),
   }, async (args) => structuredResult({ deleted: await coordination.delete(args.noteId, args.authorSessionId) }));
+
+  if (deps.autopilot) {
+    const autopilot = deps.autopilot;
+    server.registerTool("autopilot_set", {
+      description:
+        "Enable, disable or read Agent Herder Autopilot for one session. When enabled, Herder reviews each finished turn with the Stop judge and automatically continues an unfinished goal. " +
+        "Use this for harnesses without a native Stop hook command (OpenCode 2). An explicit human Stop always wins over Autopilot.",
+      inputSchema: z.object({
+        action: z.enum(["on", "off", "status"]).describe("on = continue unfinished goals automatically, off = stop judging, status = read the current state."),
+        harness: z.enum(["opencode", "claude", "codex", "zcode", "hermes", "fast-agent"]).describe("Harness that owns the session."),
+        sessionId: z.string().trim().min(1).max(512),
+        cwd: z.string().trim().min(1).optional().describe("Absolute working directory; required when the session record has none."),
+      }),
+      outputSchema: z.object({
+        ok: z.boolean(), action: z.string(), harness: z.string(), sessionId: z.string(),
+        enabled: z.boolean().optional(), humanStopHeld: z.boolean().optional(), source: z.string().optional(),
+      }).passthrough(),
+    }, async (args) => {
+      const result = await autopilot.command({ command: args.action, harness: args.harness, sessionId: args.sessionId, cwd: args.cwd });
+      return structuredResult({
+        ok: result.ok === true,
+        action: args.action,
+        harness: args.harness,
+        sessionId: args.sessionId,
+        ...(typeof result.enabled === "boolean" ? { enabled: result.enabled } : {}),
+        ...(result.human_stop_held === true ? { humanStopHeld: true } : {}),
+        ...(typeof result.source === "string" ? { source: result.source } : {}),
+      });
+    });
+  }
 }
