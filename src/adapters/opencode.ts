@@ -115,7 +115,7 @@ export function openCodeModelCatalogEntries(entries: OpenCodeModelCatalogEntry[]
   return [...new Set(result)];
 }
 
-function normalizeOpenCodeEvent(raw: unknown): HarnessEvent | null {
+export function normalizeOpenCodeEvent(raw: unknown): HarnessEvent | null {
   if (!raw || typeof raw !== "object") return null;
   const event = raw as Record<string, unknown>;
   const nativeType = typeof event.type === "string" ? event.type : typeof event.event === "string" ? event.event : "";

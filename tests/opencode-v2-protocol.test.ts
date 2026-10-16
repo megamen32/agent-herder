@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { expect, it } from "vitest";
-import { OpenCodeAdapter, unwrapEnvelope } from "../src/adapters/opencode.js";
+import { normalizeOpenCodeEvent, OpenCodeAdapter, unwrapEnvelope } from "../src/adapters/opencode.js";
 
 // Focused integration: OpenCode >= 2 protocol over real HTTP.
 // The fixture serves the v2 `/api` surface with `{ data }` envelopes and answers
@@ -325,4 +325,24 @@ it("unwraps v2 envelopes only when the payload is one", () => {
   expect(unwrapEnvelope({ data: { ses_1: { type: "running" } } })).toEqual({ ses_1: { type: "running" } });
   expect(unwrapEnvelope({ id: "ses_1" })).toEqual({ id: "ses_1" });
   expect(unwrapEnvelope({ data: "payload", unexpected: true })).toEqual({ data: "payload", unexpected: true });
+});
+
+it("normalizes native v2 event frames", () => {
+  const frames = [
+    { id: "evt_1", type: "session.inbox.enqueued", data: { sessionID: "ses_1", inboxID: "msg_1" } },
+    { id: "evt_2", type: "session.execution.started", data: { sessionID: "ses_1" } },
+    { id: "evt_3", type: "session.execution.succeeded", data: { sessionID: "ses_1" } },
+    { id: "evt_4", type: "session.execution.failed", data: { sessionID: "ses_1" } },
+    { id: "evt_5", type: "permission.asked", data: { sessionID: "ses_1", permissionID: "per_1" } },
+    { id: "evt_6", type: "session.deleted", data: { sessionID: "ses_1" } },
+  ];
+  expect(frames.map((frame) => normalizeOpenCodeEvent(frame)?.kind)).toEqual([
+    "message.updated", "turn.started", "turn.completed", "turn.failed", "permission.requested", "session.deleted",
+  ]);
+  const steer = normalizeOpenCodeEvent(frames[1])!;
+  expect(steer).toMatchObject({ harness: "opencode", sessionId: "ses_1" });
+  expect(normalizeOpenCodeEvent({ type: "provider.updated", data: {} })).toBeNull();
+  // Legacy frames keep working unchanged.
+  expect(normalizeOpenCodeEvent({ type: "message.updated", properties: { info: { sessionID: "ses_2", id: "msg_2" } } }))
+    .toMatchObject({ kind: "message.updated", sessionId: "ses_2" });
 });
