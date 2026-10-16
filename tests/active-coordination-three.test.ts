@@ -43,7 +43,7 @@ it('OpenCode only reads native busy/root-user identity and current plugin contex
   const p=new URL(req.url||'','http://local').pathname;
   res.end(JSON.stringify(p==='/session/status'?{[id]:{type:busy?'busy':'idle'}}:p.endsWith('/message')?[{info:{id:root,sessionID:id,role:'user'},parts:[{type:'text',text:'initial'}]}]:{id,directory:'/workspace'}));});
  await new Promise<void>(r=>native.listen(0,'127.0.0.1',r));
- const adapter=new OpenCodeAdapter({baseUrl:`http://127.0.0.1:${(native.address() as any).port}`});
+ const adapter=new OpenCodeAdapter({baseUrl:`http://127.0.0.1:${(native.address() as any).port}`, protocol: "v1"});
  let held=false;const server=createWebServer({adapters:new Map([['opencode',adapter]]),converter:{} as any,supervisor:{isAutomationHeld:async()=>held} as any});
  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
  const endpoint=`http://127.0.0.1:${(server.address() as any).port}`;const old=process.env.AGENT_HERDER_URL;process.env.AGENT_HERDER_URL=endpoint;

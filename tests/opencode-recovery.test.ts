@@ -24,7 +24,7 @@ describe("OpenCode native recovery controls", () => {
     }).listen(0);
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
     const events: Array<{ kind: string; sessionId?: string; messageId?: string }> = [];
     const stop = adapter.subscribeEvents((event) => events.push(event));
     for (let i = 0; i < 20 && !events.some((event) => event.kind === "message.updated"); i++) await new Promise((resolve) => setTimeout(resolve, 10));
@@ -59,7 +59,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
 
     expect(await adapter.listModels()).toEqual([
       "omniroute/zc/glm-5.3-flash",
@@ -101,7 +101,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
     await adapter.init();
     expect(await adapter.listChildren("parent")).toHaveLength(1);
     expect(await adapter.forkSession("parent")).toEqual({ ok: true, sessionId: "forked" });
@@ -130,7 +130,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
     await adapter.init();
     const result = await handleSendMessage(new Map([["opencode", adapter]]), {
       sessionId: "direct-parent",
@@ -168,7 +168,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
     await adapter.init();
     const created = await adapter.createSession({ name: "repair_100", cwd: "/tmp/repair" });
 
@@ -198,7 +198,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
     const created = await adapter.createSession({ name: "unattended task", cwd: "/tmp/automated", fullAccess: true });
 
     expect(created.id).toBe("created-full-access");
@@ -227,7 +227,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
     const result = await adapter.changeModel("selected-session", "openrouter/openai/gpt-4.1");
 
     expect(result).toEqual({ ok: true });
@@ -261,7 +261,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
     const result = await newOrResumeNamedSession(new Map([["opencode", adapter]]), {
       harness: "opencode",
       name: "health",
@@ -300,7 +300,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
     const result = await newOrResumeNamedSession(new Map([["opencode", adapter]]), {
       harness: "opencode",
       name: "health-model-failure",
@@ -334,7 +334,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
     expect(await adapter.listSessions({ cwd: "/tmp/repair" })).toMatchObject([
       { id: "existing-session", title: "repair_100", cwd: "/tmp/repair" },
     ]);
@@ -359,7 +359,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
     const messages = await adapter.getSessionMessages("health", 3);
 
     expect(messages).toHaveLength(2);
@@ -392,7 +392,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}` });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
     await adapter.init();
     const adapters = new Map([["opencode", adapter]]);
 

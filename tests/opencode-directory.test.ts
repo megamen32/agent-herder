@@ -53,7 +53,7 @@ describe("OpenCode project directory readback", () => {
       return reply({ error: "wrong project context" });
     }).listen(0);
     await new Promise<void>((resolve) => server!.once("listening", resolve));
-    return new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${(server.address() as { port: number }).port}` });
+    return new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${(server.address() as { port: number }).port}`, protocol: "v1" });
   }
 
   it("uses the requested directory for discovery and actual busy status", async () => {

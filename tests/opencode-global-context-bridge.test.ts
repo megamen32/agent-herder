@@ -24,7 +24,7 @@ async function fixture() {
     res.setHeader('content-type','application/json');
     res.end(JSON.stringify(path==='/session/status'?{[id]:{type:busy?'busy':'idle'}}:path.endsWith('/message')?[{info:{id:root,sessionID:id,role:'user'},parts:[{type:'text',text:'initial'}]}]:{id,directory}));
   });
-  const adapter=new OpenCodeAdapter({baseUrl:await listen(native)});
+  const adapter=new OpenCodeAdapter({baseUrl:await listen(native), protocol: "v1"});
   const server=createWebServer({adapters:new Map([['opencode',adapter]]),converter:{} as any,supervisor:{isAutomationHeld:async()=>false} as any});
   const endpoint=await listen(server);
   const physical=join(directory,'agent-herder-current-context-'+randomUUID()+'.mjs');

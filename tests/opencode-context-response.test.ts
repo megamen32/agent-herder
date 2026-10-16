@@ -56,7 +56,7 @@ it('three delayed native reads fit the unchanged 1200ms plugin body deadline', a
     const body = path === '/session/status' ? {[id]:{type:'busy'}} : path.endsWith('/message') ? [{info:{id:root, sessionID:id, role:'user'}, parts:[{type:'text', text:'initial'}]}] : {id, directory:'/workspace'};
     setTimeout(() => { res.setHeader('content-type','application/json'); res.end(JSON.stringify(body)); }, delay);
   });
-  const adapter = new OpenCodeAdapter({baseUrl:await listen(native)});
+  const adapter = new OpenCodeAdapter({baseUrl:await listen(native), protocol: "v1"});
   await adapter.getSession(id); // Existing admission warms the exact native directory.
   const server = createWebServer({adapters:new Map([['opencode',adapter]]), converter:{} as any, supervisor:{isAutomationHeld:async()=>false} as any});
   const endpoint = await listen(server), old = process.env.AGENT_HERDER_URL;
@@ -127,7 +127,7 @@ it.each(['foreign-session','foreign-user-session','missing-user-identity','permi
       : {id:changed&&mismatch==='foreign-session'?'other':id,directory:changed&&mismatch==='directory-rebound'?'/other':'/workspace'};
     res.setHeader('content-type','application/json');res.end(JSON.stringify(body));
   });
-  const adapter = new OpenCodeAdapter({baseUrl:await listen(native)});
+  const adapter = new OpenCodeAdapter({baseUrl:await listen(native), protocol: "v1"});
   try { expect(await adapter.getCoordinationActiveTurnId(id)).toBe('user'); changed=true; expect(await adapter.getCoordinationActiveTurnId(id)).toBeNull(); }
   finally { await close(native); }
 });

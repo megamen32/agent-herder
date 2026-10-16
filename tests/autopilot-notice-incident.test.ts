@@ -142,7 +142,7 @@ it("reads the execution model from the native OpenCode assistant receipt", async
   { info: { id: "native-message", role: "assistant", providerID: "minimax-coding-plan", modelID: "MiniMax-M3.1-Flash-Preview" }, parts: [{ type: "text", text: "Исправление проверено" }] },
  ] : { id: hook.session_id, directory: hook.cwd })));
  try {
-  const adapter = new OpenCodeAdapter({ baseUrl: "http://native-fixture" });
+  const adapter = new OpenCodeAdapter({ baseUrl: "http://native-fixture", protocol: "v1" });
   expect((await adapter.getSessionMessages(hook.session_id, 12))?.at(-1)?.model).toBe("minimax-coding-plan/MiniMax-M3.1-Flash-Preview");
  } finally { vi.unstubAllGlobals(); }
 });

@@ -41,7 +41,7 @@ it("acknowledges OpenCode async admission while the native model response remain
   });
   await new Promise<void>((resolve) => native.listen(0, "127.0.0.1", resolve));
   const nativeAddress = native.address() as { port: number };
-  const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${nativeAddress.port}` });
+  const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${nativeAddress.port}`, protocol: "v1" });
   const adapters = new Map([["opencode", adapter]]);
   const converter = { async convert() { return { success: true, targetSessionId: "thread", targetPath: dir, messageCount: 0 }; } };
   const supervisor = new SessionSupervisor(adapters, converter, undefined, { humanStopStore: new HumanStopStore(join(dir, "stops.json")) });
