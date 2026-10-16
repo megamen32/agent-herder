@@ -33,10 +33,20 @@
 | Зависимость Herder → ядро | **сделано** | npm workspaces + `coreContractHash()`; контракт запинен в `src/resume/core-contract-pin.ts` |
 | Артефакты из одного исходника | **частично** | версии связаны и проверяются тестом; релизный пайплайн ещё не собран |
 | Протоколы Codex и Claude | не начато | herder-адаптеры + legacy-пути Resume |
-| Квитанции и идемпотентность | не начато | Resume `_receipt_*`, herder `herder-jobs.ts` |
-| Отсоединённые длинные задачи | не начато | Resume `start_watcher`, herder `workload-launcher.ts` |
+| Квитанции и идемпотентность | **перенесено** | `packages/agent-resume/src/resume/receipts.ts`; herder читает и пишет его через `src/resume/core-transport.ts` |
+| Отсоединённые длинные задачи | **частично** | доставка с отсоединённым запуском в `packages/agent-resume/src/resume/delivery.ts`; наблюдение и ожидание задач ещё в Resume и herder |
 | Hermes | не начато | Resume `hermes_gateway.py`, herder `adapters/hermes` |
 | Поиск по маркеру | не начато | Resume `find_sessions`/`match_score` |
+| Доставка бондингованной цели | **перенесено** | `packages/agent-resume/src/resume/delivery.ts`; herder вызывает через `AgentResumeClient` |
+
+Квитанции перенесены вместе с доставкой, и это сняло главный риск миграции: ядро
+и старый сервис пишут **один и тот же** файл `receipts.json` и считают отпечаток
+запроса по одной и той же канонизации (проверено: TypeScript и Python дают
+побайтово одинаковый sha256). Поэтому отказ ядра можно передать старому сервису
+без второй доставки — он прочитает уже записанную квитанцию и вернёт её.
+Живая проверка: `AgentResumeClient.resume()` доставил цель в настоящую сессию
+OpenCode 2 ровно один раз, повтор с тем же ключом вернул ту же квитанцию, а
+`queryReceipt` ответил из ядра.
 
 Перенос OpenCode сохранил поведение: v2 и legacy протоколы, порядок сообщений,
 форму ответов доставки (`prompt_async`/`message` против инбокса), сигналы

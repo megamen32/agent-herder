@@ -1,5 +1,7 @@
 import { type ChildProcessWithoutNullStreams } from "node:child_process";
+import { ReceiptLedger } from "agent-resume-mcp";
 import { spawnIsolatedWorkload } from "./workload-launcher.js";
+import { coreCanDeliver, createCoreResumeTransport, defaultResumeLedgerPath } from "./resume/core-transport.js";
 
 export type ResumeAgent = "codex" | "opencode" | "claude" | "hermes" | "zcode";
 
@@ -77,6 +79,8 @@ export interface ResumeTransport {
 }
 
 export interface AgentResumeClientOptions {
+  /** Ledger the shared core reads and writes; defaults to the legacy state file. */
+  coreLedgerPath?: string;
   /** Override the machine entrypoint for tests or an installed agent-resume package. */
   readonly command?: string;
   readonly args?: readonly string[];
@@ -101,6 +105,9 @@ export class AgentResumeClient implements ResumeTransport {
   private readonly invokeOverride?: (request: ResumeTransportRequest) => Promise<unknown>;
   private readonly queryOverride?: (request: ResumeTransportRequest) => Promise<unknown>;
   private readonly script: string;
+  /** In-process admission over the shared core; used wherever it can deliver natively. */
+  private readonly coreTransport: ResumeTransport;
+  private readonly coreLedger: ReceiptLedger;
 
   constructor(options: AgentResumeClientOptions = {}) {
     this.command = options.command ?? process.env.AGENT_RESUME_PYTHON ?? "python3";
@@ -109,10 +116,36 @@ export class AgentResumeClient implements ResumeTransport {
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.invokeOverride = options.invoke;
     this.queryOverride = options.query;
+    // An injected transport owns admission in tests; otherwise the core does it
+    // in-process whenever it can reach the target natively.
+    this.coreLedger = new ReceiptLedger({ path: defaultResumeLedgerPath() });
+    this.coreTransport = process.env.AGENT_HERDER_CORE_RESUME === "false"
+      ? { resume: async (request) => ({ status: "rejected", target: request.target, result_ref: request.result_ref, reason: "core_resume_disabled" }) }
+      : createCoreResumeTransport();
   }
 
   async resume(input: ResumeTransportRequest): Promise<ResumeReceipt> {
     const request = freezeRequest(input);
+    // The core owns admission whenever it can reach the target natively. A
+    // refusal or failure falls through to the legacy service, which reads the
+    // same ledger and therefore replays the stored receipt instead of sending
+    // the goal a second time.
+    if (this.coreTransport && coreCanDeliver(request.target, process.env.OPENCODE_URL)) {
+      try {
+        const admitted = await this.coreTransport.resume(request);
+        if (admitted.status === "accepted") return admitted;
+        if (admitted.reason === "idempotency_key_required" || admitted.reason === "unsupported") {
+          // Not a delivery attempt: the legacy service may still handle it.
+        } else {
+          // The service shares the ledger: a key the core already admitted is
+          // replayed there instead of being delivered a second time.
+          const fallback = await this.resumeWithService(request);
+          return fallback;
+        }
+      } catch {
+        // A broken core must never cost a delivery that the service can perform.
+      }
+    }
     // Codex must be controlled by Agent Herder's one persistent app-server
     // connection. The legacy Agent Resume entrypoint shells out to
     // `codex exec resume`, which becomes a second writer for the same thread.
@@ -121,6 +154,10 @@ export class AgentResumeClient implements ResumeTransport {
     if (request.target.agent === "codex" && !this.invokeOverride) {
       return failed(request, "unsupported", "Codex resume requires the Agent Herder native app-server transport");
     }
+    return this.resumeWithService(request);
+  }
+
+  private async resumeWithService(request: ResumeTransportRequest): Promise<ResumeReceipt> {
     try {
       const raw = this.invokeOverride
         ? await this.invokeOverride(request)
@@ -139,6 +176,29 @@ export class AgentResumeClient implements ResumeTransport {
   async queryReceipt(input: ResumeTransportRequest): Promise<ResumeReceipt> {
     const request = freezeRequest(input);
     if (!request.idempotency_key) throw new TypeError("idempotency_key is required for receipt queries");
+    // The core owns the ledger, so it answers the query first; the service reads
+    // the same file and is only consulted for keys the core does not know.
+    if (this.queryOverride === undefined && this.coreTransport !== undefined) {
+      const stored = this.coreLedger.read(request.idempotency_key);
+      if (stored) {
+        const target = request.target;
+        return stored.status === "accepted"
+          ? {
+              status: "accepted",
+              target,
+              result_ref: typeof stored.result_ref === "string" ? stored.result_ref : request.result_ref,
+              ...(typeof stored.receipt_ref === "string" ? { receipt_ref: stored.receipt_ref } : {}),
+              idempotency_key: request.idempotency_key,
+            }
+          : {
+              status: stored.status,
+              target,
+              result_ref: typeof stored.result_ref === "string" ? stored.result_ref : request.result_ref,
+              reason: stored.reason ?? stored.error ?? "resume_rejected",
+              idempotency_key: request.idempotency_key,
+            };
+      }
+    }
     const raw = this.queryOverride
       ? await this.queryOverride(request)
       : await runEntrypoint(this.command, [this.script, "query_resume_receipt", "--idempotency-key", request.idempotency_key], request, this.timeoutMs, false);

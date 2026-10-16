@@ -17,13 +17,13 @@
   },
   "scripts": {
     "build": "npm run build:core && tsc && vite build --config vite.config.ts && cp -R dist/web-static/. dist/web/",
-    "test": "npm run build && vitest run --root . --config vitest.config.ts",
+    "test": "npm run build:core && npm run test:core && vitest run --root . --config vitest.config.ts",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
     "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
     "prepublishOnly": "npm run build",
     "build:core": "npm run build --workspace agent-resume-mcp",
-    "test:core": "npm run test --workspace agent-resume-mcp"
+    "test:core": "vitest run --root packages/agent-resume"
   },
   "files": [
     "dist",

@@ -36,3 +36,21 @@ export type {
   type OpenCodeSessionDetail,
   type OpenCodeStatusSnapshot,
 } from "./harness/opencode/client.js";
+export {
+  ReceiptLedger,
+  nativeAdmissionVerified,
+  receiptFingerprint,
+  validateIdempotencyKey,
+  type BoundTarget,
+  type ReceiptLedgerOptions,
+  type ReceiptStatus,
+  type ResumeReceiptRecord,
+} from "./resume/receipts.js";
+export {
+  buildResumeCommand,
+  resolveBoundTarget,
+  resumeBoundTarget,
+  type BoundDeliveryDeps,
+  type BoundDeliveryRequest,
+  type BoundTargetInput,
+} from "./resume/delivery.js";
