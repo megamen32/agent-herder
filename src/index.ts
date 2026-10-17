@@ -50,6 +50,9 @@ import { herderJobs, type HerderJobRegistry } from "./herder-jobs.js";
 import { harnessEventHealth } from "./harness-event-health.js";
 import { registerHerderResources } from "./mcp/resources.js";
 import { registerControlPlaneTools } from "./mcp/control-plane-tools.js";
+import { registerResumeAfterTools } from "./mcp/resume-after-tools.js";
+import { createResumeAfterRuntime } from "./resume-after-runtime.js";
+import type { ResumeAfterService } from "./resume-after.js";
 import { registerHumanRequestTools } from "./mcp/human-request-tools.js";
 import { registerCdpTools } from "./mcp/cdp-tools.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
@@ -534,9 +537,11 @@ function registerTools(
   humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>,
   humanResumeQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>,
   inventorySupervisor?: SessionSupervisor,
+  resumeAfter?: ResumeAfterService,
 ) {
   registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: autopilotSessionCommand } });
+  registerResumeAfterTools(server, resumeAfter);
 
   // A human answer resumes its exact native session exactly once through the
   // same durable admission the internal completion endpoint uses.
@@ -598,6 +603,8 @@ function createNoticeQuestionDelivery(env: NodeJS.ProcessEnv): (question: Pendin
 export interface AgentHerderMcpServerOptions {
   /** Reuse the process observer; an isolated MCP factory never starts another observer. */
   inventorySupervisor?: SessionSupervisor;
+  /** Shared durable joins, never scoped to an MCP transport. */
+  resumeAfter?: ResumeAfterService;
   /** Shared domain events; transport sessions are never used as durable state. */
   events?: HerderEventBus;
   /** Enable direct resource notifications for long-lived transports such as stdio. */
@@ -658,6 +665,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     options.humanResume,
     options.humanResumeQuery,
     options.inventorySupervisor,
+    options.resumeAfter,
   );
   return server;
 }
@@ -803,6 +811,9 @@ async function main() {
     autoCompact: autoCompactService,
     admissionGate: recoveryAdmissionGate,
   });
+  const resumeAfterRuntime = createResumeAfterRuntime(adapters, processSupervisor, (harness,id) => humanStopStore.isHeld(harness,id));
+  const stopResumeAfter = resumeAfterRuntime.start();
+  process.once("exit", stopResumeAfter);
   const stopAutoCompact = autoCompactService.start();
   process.once("exit", stopAutoCompact);
   const stopProcessObservation = processSupervisor.startObservation(Number(process.env.AGENT_HERDER_SESSION_OBSERVATION_INTERVAL_MS || 5_000));
@@ -877,8 +888,8 @@ async function main() {
   const humanResumeQuery = (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters);
   // Both seams are process-owned: the fleet inventory view and the single
   // human-answer and project-launch consumer.
-  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor });
-  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor });
+  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, resumeAfter: resumeAfterRuntime.service });
+  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, resumeAfter: resumeAfterRuntime.service });
   let shuttingDown = false;
   const shutdown = () => {
     if (shuttingDown) return; shuttingDown = true;
