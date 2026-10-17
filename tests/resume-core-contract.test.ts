@@ -28,7 +28,12 @@ it("core, Herder and the standalone artifact share one version", () => {
 it("the published core declares an installable standalone entrypoint", () => {
   const core = readJson("packages/agent-resume/package.json");
   const bin = core.bin as Record<string, string>;
-  expect(Object.values(bin).every((entry) => entry.startsWith("dist/"))).toBe(true);
+  // Bins must resolve inside a published directory: dist/ holds build artifacts,
+  // scripts/ ships build-free .mjs installers. An unpublished path would break
+  // the command right after npm install.
+  expect(core.files).toContain("dist");
+  expect(core.files).toContain("scripts");
+  expect(Object.values(bin).every((entry) => entry.startsWith("dist/") || entry.startsWith("scripts/"))).toBe(true);
   expect(readJson("package.json").workspaces).toEqual(["packages/*"]);
   expect((readJson("package.json").dependencies as Record<string, string>)["agent-resume-mcp"]).toBe(core.version as string);
 });
