@@ -54,3 +54,37 @@ export {
   type BoundDeliveryRequest,
   type BoundTargetInput,
 } from "./resume/delivery.js";
+export {
+  defaultJobResumePrompt,
+  matchScore,
+  rankSessions,
+  textHas,
+  validateMarker,
+  MARKER_PATTERN,
+  type SessionCandidate,
+  type SessionSearchCriteria,
+} from "./harness/marker-search.js";
+export {
+  JobRegistry,
+  findPidsByQuery,
+  isPidAlive,
+  parseDurationSeconds,
+  type JobKind,
+  type JobMeta,
+  type JobRegistryOptions,
+  type JobState,
+  type JobStatus,
+  type ProcessMatch,
+} from "./resume/jobs.js";
+export {
+  claudeSessionSource,
+  codexSessionSource,
+  type SessionSource,
+} from "./harness/session-sources.js";
+export {
+  defaultSessionSearchDeps,
+  searchSessions,
+  SUPPORTED_SEARCH_AGENTS,
+  type DefaultSearchDepsOptions,
+  type SessionSearchDeps,
+} from "./harness/search.js";

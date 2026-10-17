@@ -23,7 +23,7 @@
     "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
     "prepublishOnly": "npm run build",
     "build:core": "npm run build --workspace agent-resume-mcp",
-    "test:core": "vitest run --root packages/agent-resume"
+    "test:core": "vitest run --root packages/agent-resume --config vitest.config.ts"
   },
   "files": [
     "dist",
