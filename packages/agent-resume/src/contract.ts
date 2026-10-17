@@ -15,6 +15,7 @@ export type CoreCapability =
   | "harness.protocol.codex"
   | "harness.protocol.claude"
   | "harness.session-enumeration"
+  | "harness.session-identity"
   | "harness.marker-search"
   | "resume.delivery"
   | "resume.receipts"
@@ -39,6 +40,7 @@ export const CORE_CAPABILITIES: readonly CoreCapability[] = [
   "harness.protocol.codex",
   "harness.protocol.claude",
   "harness.session-enumeration",
+  "harness.session-identity",
   "harness.marker-search",
   "resume.delivery",
   "resume.receipts",
@@ -67,6 +69,7 @@ export const CORE_ENTRYPOINTS: readonly CoreEntrypoint[] = [
   { kind: "mcp", tool: "wait_and_resume", purpose: "Wait a fixed duration and admit one resume." },
   { kind: "mcp", tool: "wait_job_status", purpose: "Read the state and liveness of one background watch job." },
   { kind: "library", symbol: "OpenCodeClient", purpose: "Native OpenCode protocol client owned by the core." },
+  { kind: "library", symbol: "OpenCodeClient.announceIdentity", purpose: "Let a session learn its own name, id and workspace natively." },
   { kind: "library", symbol: "searchSessions", purpose: "Marker-first session discovery across every supported store." },
   { kind: "library", symbol: "JobRegistry", purpose: "Durable records and liveness for long background work." },
   { kind: "library", symbol: "HermesWakeClient", purpose: "Wake exactly one bound Hermes session through its authenticated seam." },

@@ -85,7 +85,39 @@ export class OpenCodeAdapter implements HarnessAdapter {
       ...(options.model ? { model: options.model } : {}),
       ...(options.fullAccess ? { fullAccess: true } : {}),
     });
+    // A session Herder created knows who it is from its first turn: otherwise
+    // an OpenCode agent cannot name itself, coordinate, or answer "who am I".
+    await this.announceIdentity({
+      name: options.name,
+      sessionId: created.id,
+      cwd: created.cwd || options.cwd,
+    }).catch(() => false);
     return this.toAgentSession({ ...created, cwd: created.cwd || options.cwd });
+  }
+
+  /**
+   * Tell one session its own identity. Best effort by design: an OpenCode 1
+   * server has no instruction entries, and a failed announcement must never
+   * block the session itself.
+   */
+  async announceIdentity(input: { name?: string; sessionId: string; cwd?: string; parentSessionId?: string }): Promise<boolean> {
+    const cwd = input.cwd ?? (await this.client.resolveDirectory(input.sessionId)) ?? process.cwd();
+    const name = input.name?.trim() || (await this.client.getSession(input.sessionId))?.title || input.sessionId;
+    return this.client.announceIdentity(input.sessionId, {
+      name,
+      sessionId: input.sessionId,
+      harness: "opencode",
+      cwd,
+      ...(process.env.AGENT_HERDER_URL ? { herderUrl: process.env.AGENT_HERDER_URL } : {}),
+      ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
+    });
+  }
+
+  /** Read the identity a session knows about itself, if herder ever announced one. */
+  async identityOf(sessionId: string): Promise<{ name: string; sessionId: string; harness: string; cwd: string } | null> {
+    const session = await this.client.getSession(sessionId).catch(() => null);
+    if (!session) return null;
+    return { name: session.title || sessionId, sessionId: session.id, harness: "opencode", cwd: session.cwd };
   }
 
   async getParent(id: string): Promise<AgentSession | null> {

@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { HarnessAdapter } from "../types/index.js";
+import { sessionIdentity } from "../session-identity.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import {
@@ -70,6 +71,44 @@ export function registerSessionTools(server: McpServer, deps: {
     const session = await agentInfoResult(adapters, args);
     return { content: [{ type: "text" as const, text: session ? formatSession(session, true) : `Session '${args.sessionId}' not found.` }], structuredContent: { session } };
   });
+  server.registerTool("session_identity", {
+    description:
+      "Read the identity of a session (its name, native id, harness and workspace). " +
+      "With announce=true the identity is published into the session's own instructions so an OpenCode 2 agent can answer 'who am I' from its next turn.",
+    inputSchema: z.object({
+      sessionId: z.string().trim().min(1),
+      harness: harnessSchema.optional(),
+      name: z.string().trim().min(1).max(128).optional().describe("Name to publish; defaults to the native title."),
+      announce: z.boolean().optional().default(false).describe("Publish the identity into the session itself."),
+    }),
+    outputSchema: z.object({
+      sessionId: z.string(), harness: z.string(), name: z.string(), cwd: z.string(),
+      status: z.string().optional(), announced: z.boolean().optional(), reason: z.string().optional(),
+    }).nullable(),
+  }, async (args) => {
+    const harness = args.harness ? [args.harness] : [...adapters.keys()];
+    let owned: HarnessAdapter | undefined;
+    for (const name of harness) {
+      const adapter = adapters.get(name);
+      if (!adapter) continue;
+      if (await adapter.getSession(args.sessionId).catch(() => null)) { owned = adapter; break; }
+    }
+    if (!owned) return { content: [{ type: "text" as const, text: `Session '${args.sessionId}' not found.` }], structuredContent: null };
+    const identity = await sessionIdentity(owned, {
+      sessionId: args.sessionId,
+      ...(args.name ? { name: args.name } : {}),
+      announce: args.announce === true,
+    });
+    const text = identity
+      ? [
+          `Session ${identity.sessionId} [${identity.harness}] is named "${identity.name}" and works in ${identity.cwd}.`,
+          ...(identity.announced === true ? ["The identity was published into the session's own instructions."] : []),
+          ...(identity.reason ? [`Not published: ${identity.reason}`] : []),
+        ].join("\n")
+      : `Session '${args.sessionId}' not found.`;
+    return { content: [{ type: "text" as const, text }], structuredContent: identity };
+  });
+
   server.registerTool("find_parent", { description: "Find the native parent session of an agent session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }), outputSchema: z.object({ session: sessionSchema.nullable(), parent: sessionSchema.nullable(), supported: z.boolean() }) }, async (args) => {
     const result = await findParentResult(adapters, args);
     return { content: [{ type: "text" as const, text: formatFindParentResult(args.sessionId, result) }], structuredContent: result };

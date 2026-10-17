@@ -7,7 +7,7 @@
  * and only together with a rebuild of this package — that pairing is the
  * dependency proof the monorepo relies on.
  */
-export const CORE_CONTRACT_PIN = "bef86c0bada100933b4c18251062e031b2940efdb230af391999e25a2bfa4c37";
+export const CORE_CONTRACT_PIN = "1aa9b63f3a6e3dc3254d18c45c5d4a58d8494958512eca991100b473af1d0777";
 
 export function pinnedCoreContract(): { hash: string; source: "pinned-in-herder" } {
   return { hash: CORE_CONTRACT_PIN, source: "pinned-in-herder" };

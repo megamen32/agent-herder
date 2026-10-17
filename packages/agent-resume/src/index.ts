@@ -20,6 +20,7 @@ export type {
   HarnessSessionSummary,
 } from "./harness/client.js";export {
   OpenCodeClient,
+  SESSION_IDENTITY_ENTRY_KEY,
   normalizeOpenCodeEvent,
   openCodeConnectedModels,
   openCodeConnectedProviders,
@@ -29,6 +30,7 @@ export type {
   parseOpenCodeServerCommand,
   unwrapEnvelope,
   type OpenCodeCreateRequest,
+  type SessionIdentity,
   type OpenCodeEvent,
   type OpenCodePermissionDetails,
   type OpenCodeRawTranscript,

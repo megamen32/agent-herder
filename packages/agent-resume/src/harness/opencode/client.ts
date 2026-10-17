@@ -104,6 +104,21 @@ export type OpenCodeEvent = {
   data?: Record<string, unknown>;
 };
 
+/** Where a session keeps the identity Agent Herder announced to it. */
+export const SESSION_IDENTITY_ENTRY_KEY = "agent.herder.identity";
+
+export interface SessionIdentity {
+  /** The name the orchestrator gave this session. */
+  name: string;
+  sessionId: string;
+  harness: string;
+  cwd: string;
+  /** Where coordination tools live, so the session can answer a human question. */
+  herderUrl?: string;
+  /** Present when the session continues an existing one. */
+  parentSessionId?: string;
+}
+
 export interface OpenCodeStatusSnapshot {
   status?: string;
   /** Legacy servers report the same state as `type`. */
@@ -692,6 +707,27 @@ export class OpenCodeClient implements HarnessClient {
     if (!this.isV2 && user.info?.sessionID && user.info.sessionID !== id) return null;
     const identity = this.isV2 ? user.id : user.info?.id;
     return typeof identity === "string" && identity ? identity : null;
+  }
+
+  /**
+   * Tell a session who it is.
+   *
+   * OpenCode 2 attaches per-session instruction entries to the session's own
+   * instructions, so the identity reaches the agent from its very first turn
+   * instead of having to be repeated in every prompt. An absent entry is not an
+   * error for callers that only wanted a best effort.
+   */
+  async announceIdentity(sessionId: string, identity: SessionIdentity): Promise<boolean> {
+    await this.probeProtocol();
+    const value: SessionIdentity = { ...identity, sessionId: identity.sessionId || sessionId };
+    if (this.isV2) {
+      const res = await this.fetch(
+        this.api(`/experimental/session/${encodeURIComponent(sessionId)}/instructions/entries/${SESSION_IDENTITY_ENTRY_KEY}`),
+        { method: "PUT", body: JSON.stringify({ value }) },
+      );
+      return res.ok;
+    }
+    return false;
   }
 
   /** Working directory of a native session, as the server records it. */

@@ -155,12 +155,22 @@ deletable by the author, auto-pruned on expiry.
 
 | Group | Tools |
 |---|---|
-| Discover | `list_agents`, `agent_info`, `audit_worktrees` |
+| Discover | `list_agents`, `agent_info`, `session_identity`, `audit_worktrees` |
 | Lineage and transcript | `find_parent`, `list_children`, `export_transcript` |
 | Named sessions | `create_session`, `new_or_resume` (OpenCode, Codex, and ZCode); existing ChatGPT chats are addressed by `sessionId` or title + `/home/roomhacker/.chatgpt` with `create=never` |
 | Control | `deliver` (activation policy + queue/sync), `send_message`, `resume_agent`, `stop_agent`; ChatGPT supports delivery/resume but not stop/create yet |
 | Coordination | `coordination_note_create`, `coordination_note_list`, `coordination_note_get`, `coordination_note_update`, `coordination_note_delete` |
 | Permissions and models | `respond_permission`, `set_permissions`, `list_models`, `change_model` |
+
+### Session identity
+
+A session Agent Herder creates knows its own name, native id and workspace from
+its first turn: Herder publishes them into the session's own instructions
+(OpenCode 2 `agent.herder.identity` entry), so the agent can answer "who am I"
+and use the right `authorSessionId` for coordination notes without being told in
+the prompt. `session_identity` reads that identity for any session and, with
+`announce=true`, publishes it to a session created outside Herder. Harnesses
+without a native identity channel report that honestly instead of pretending.
 
 ### ChatGPT resume semantics
 
