@@ -223,14 +223,22 @@ export class OpenCodeAdapter implements HarnessAdapter {
   async getSessionMessages(id: string, limit = 3): Promise<SessionMessageView[] | null> {
     const messages = await this.client.getMessages(id, limit);
     if (!messages) return null;
-    return messages.map((message) => ({
-      id: message.id,
-      role: message.role,
-      ...(message.model ? { model: message.model } : {}),
-      ...(message.timestamp ? { timestamp: message.timestamp } : {}),
-      ...(message.text ? { text: message.text } : {}),
-      parts: message.parts as SessionMessagePart[],
-    }));
+    return messages.map((message) => {
+      const toolNames = [...new Set(message.parts
+        .filter((part) => part.type === "tool_call" && typeof part.name === "string" && part.name.length > 0)
+        .map((part) => part.name as string))];
+      // Text-less turns are usually tool rounds; keep them legible instead of
+      // an empty bubble that hides what the session actually did.
+      const text = message.text || (toolNames.length > 0 ? `Инструмент: ${toolNames.join(", ")}` : undefined);
+      return {
+        id: message.id,
+        role: message.role,
+        ...(message.model ? { model: message.model } : {}),
+        ...(message.timestamp ? { timestamp: message.timestamp } : {}),
+        ...(text ? { text } : {}),
+        parts: message.parts as SessionMessagePart[],
+      };
+    });
   }
 
   async getTranscript(id: string): Promise<string | null> {

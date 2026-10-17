@@ -41,6 +41,8 @@ interface OpenCodeMessagePayload {
   text?: string;
   info?: { id?: string; sessionID?: string; role?: string; providerID?: string; modelID?: string; time?: { created?: number } };
   model?: { providerID?: string; id?: string };
+  finish?: string;
+  error?: { type?: string; message?: string; status?: number };
   content?: string | Array<Record<string, unknown>>;
   parts?: Array<Record<string, unknown>>;
 }
@@ -146,6 +148,26 @@ function isJsonResponse(response: Response): boolean {
 
 function isHtmlResponse(response: Response): boolean {
   return (response.headers.get("content-type") ?? "").includes("text/html");
+}
+
+/**
+ * OpenCode 2 turns interleave the v2 `/message` list with execution-status
+ * frames (`type: "idle"` carrying `outcome`/`error`, no content). They are not
+ * conversation messages: mapping them as-role-less records turned Herder's
+ * session views into empty assistant bubbles. Conversation record types only.
+ */
+const openCodeConversationTypes = new Set(["user", "assistant", "system", "tool"]);
+
+function isOpenCodeTurnStatusFrame(message: OpenCodeMessagePayload): boolean {
+  if (typeof message.role === "string") return false;
+  const type = typeof message.type === "string" ? message.type : "";
+  return type.length > 0 && !openCodeConversationTypes.has(type);
+}
+
+function openCodeTurnErrorText(message: OpenCodeMessagePayload): string | undefined {
+  const message_ = message.error && typeof message.error === "object" ? message.error : undefined;
+  if (message_?.message && typeof message_.message === "string") return message_.message.slice(0, toolOutputLimit);
+  return undefined;
 }
 
 export function openCodeMessageParts(message: OpenCodeMessagePayload): HarnessMessagePart[] {
@@ -394,13 +416,30 @@ export class OpenCodeClient implements HarnessClient {
     await this.probeProtocol();
     try {
       const bounded = Math.max(1, Math.min(limit, 50));
+      // v2 interleaves execution-status frames with real messages, so overfetch
+      // and drop them before the bounded slice keeps the requested window real.
+      const fetchLimit = this.isV2 ? bounded * 3 : bounded;
       const endpoint = this.isV2
-        ? this.api(`/session/${encodeURIComponent(id)}/message?limit=${bounded}&order=desc`)
+        ? this.api(`/session/${encodeURIComponent(id)}/message?limit=${fetchLimit}&order=desc`)
         : this.api(`/session/${encodeURIComponent(id)}/message?limit=${bounded}`);
       const messages = await this.fetchJson<OpenCodeMessagePayload[]>(endpoint);
       if (!Array.isArray(messages)) return null;
-      const ordered = this.isV2 ? [...messages].reverse().slice(-bounded) : messages.slice(-bounded);
-      return ordered.map((message, index) => {
+      const ordered = this.isV2 ? [...messages].reverse() : messages;
+      const conversation = this.isV2 ? ordered.filter((message) => !isOpenCodeTurnStatusFrame(message)).slice(-bounded) : ordered.slice(-bounded);
+      if (conversation.length === 0 && this.isV2) {
+        // Status frames only: do not invent fake assistant bubbles. Surface an
+        // explicit turn failure when the window carries one, otherwise the
+        // history is unavailable.
+        const failed = [...ordered].reverse().find((message) => isOpenCodeTurnStatusFrame(message) && message.error?.message);
+        if (!failed) return null;
+        return [{
+          id: failed.id || `${id}:turn-status`,
+          role: "assistant",
+          ...{ text: `Ошибка хода: ${failed.error!.message!.slice(0, textLimit)}` },
+          parts: [],
+        }];
+      }
+      return conversation.map((message, index) => {
         const parts = openCodeMessageParts(message);
         const info = message.info || {};
         const nativeRole = message.role || info.role || message.type;
@@ -408,6 +447,11 @@ export class OpenCodeClient implements HarnessClient {
           ? nativeRole
           : nativeRole === "tool" || (parts.length > 0 && parts.every((part) => part.type === "tool_result")) ? "tool" : "assistant";
         const text = parts.filter((part) => part.type === "text" || part.type === "thinking").map((part) => part.text || "").join("\n").trim() || undefined;
+        // A failed v2 assistant turn persists as an empty assistant record with
+        // `finish: "error"` and the provider error attached; show the cause
+        // instead of a silently empty response.
+        const turnError = text ? undefined : openCodeTurnErrorText(message);
+        const shownText = text ?? (turnError ? `Ошибка хода: ${turnError}` : undefined);
         const model = message.model?.providerID && message.model?.id
           ? `${message.model.providerID}/${message.model.id}`
           : info.providerID && info.modelID ? `${info.providerID}/${info.modelID}` : undefined;
@@ -416,7 +460,7 @@ export class OpenCodeClient implements HarnessClient {
           role,
           ...(model ? { model } : {}),
           ...(typeof info.time?.created === "number" ? { timestamp: new Date(info.time.created).toISOString() } : {}),
-          ...(text ? { text } : {}),
+          ...(shownText ? { text: shownText } : {}),
           parts,
         };
       });

@@ -263,6 +263,50 @@ it("refuses active-turn delivery when the v2 session is idle", async () => {
   }
 });
 
+it("reads v2 history without turn-status frames and surfaces provider failures", async () => {
+  const state = sessionFixture();
+  state.sessions.ses_idle.messages = [
+    { id: "msg_user_1", type: "user", text: "проверь претензии кода" },
+    { id: "msg_assistant_1", type: "assistant", model: { providerID: "omniroute", id: "zc/glm-5.3-flash" }, content: [{ type: "text", text: "читаю файлы" }] },
+    { id: "msg_exec_1", time: { created: 10 }, type: "idle", outcome: "succeeded" },
+    { id: "msg_exec_2", time: { created: 20 }, type: "idle", outcome: "failed", error: { type: "provider.internal", message: "[502]: Model request was cancelled." } },
+    { id: "msg_assistant_2", type: "assistant", model: { providerID: "omniroute", id: "zc/glm-5.3-flash" }, finish: "error", content: [], error: { type: "provider.internal", message: "[502]: Model request was cancelled." } },
+    { id: "msg_exec_3", time: { created: 30 }, type: "idle", outcome: "failed", error: { type: "provider.internal", message: "[502]: Model request was cancelled." } },
+  ];
+  const server = v2Fixture(state);
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    // The execution frames (idle + outcome) are not assistant messages.
+    const messages = (await adapter.getSessionMessages("ses_idle", 3))!;
+    expect(messages.map((message) => message.id)).toEqual(["msg_user_1", "msg_assistant_1", "msg_assistant_2"]);
+    expect(messages[1]).toMatchObject({ role: "assistant", model: "omniroute/zc/glm-5.3-flash", text: "читаю файлы" });
+    // The failed assistant turn shows its provider error instead of an empty bubble.
+    expect(messages[2]).toMatchObject({ role: "assistant", text: "Ошибка хода: [502]: Model request was cancelled." });
+
+    const idle = await adapter.getSession("ses_idle");
+    expect(idle!.lastMessage).toContain("Model request was cancelled");
+  } finally {
+    server.close();
+  }
+});
+
+it("exposes a status-only v2 window as an explicit turn failure, not empty assistants", async () => {
+  const state = sessionFixture();
+  state.sessions.ses_idle.messages = [
+    { id: "msg_exec_failed", time: { created: 1 }, type: "idle", outcome: "failed", error: { type: "provider.internal", message: "[502]: Model request was cancelled." } },
+  ];
+  const server = v2Fixture(state);
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    const messages = (await adapter.getSessionMessages("ses_idle", 3))!;
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ role: "assistant", text: "Ошибка хода: [502]: Model request was cancelled." });
+  } finally {
+    server.close();
+  }
+});
+
+
 it("controls v2 turns, lineage, recovery, permissions and models", async () => {
   const state = sessionFixture();
   const server = v2Fixture(state);
