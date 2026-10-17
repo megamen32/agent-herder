@@ -53,7 +53,10 @@ describe("local mesh capabilities (focused integration; expected 5s, maximum 30s
   process.env.AGENT_HERDER_HUMAN_STOP_STORE=join(dir,"stop.json");const inject=vi.spyOn(coordinationNotes,"inject").mockImplementation(async(_session,message)=>message);
   try{
    const id=randomUUID(),session={...base,id},sendMessage=vi.fn(async(_id,options)=>({ok:true,admitted:true,inputId:options.inputId,turnId:"turn"}));
-   const getSession=vi.fn(async(target)=>target===id?session:null),adapter={type:"codex",getSession,sendMessage,isReady:()=>true};
+   // Real codex transports deliver into the verified active turn; the mesh
+   // handler refuses other lanes, so the fixture mirrors that transport.
+   const sendActiveMessage=vi.fn(async(activeId:string,activeOptions:any)=>sendMessage(activeId,{...activeOptions,activeTurnOnly:true,steer:true}));
+   const getSession=vi.fn(async(target)=>target===id?session:null),adapter={type:"codex",getSession,sendMessage,sendActiveMessage,isReady:()=>true};
    const m=new LocalHarnessMesh({hostId:"h",adapters:new Map([['codex',adapter]]) as any,ledgerPath:join(dir,"ledger.json")});
    const request={target:{hostId:"h",harness:"codex",nativeSessionId:id},sender:{hostId:"source",harness:"codex",nativeSessionId:"sender-a"},inputId:"",message:"delta"};
    for(const sender of ['sender-a','sender-b'])for(let n=0;n<6;n++)expect((await m.deliver({...request,sender:{...request.sender,nativeSessionId:sender},inputId:`${sender}-${n}`})).state).toBe("admitted");

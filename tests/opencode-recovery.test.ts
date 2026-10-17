@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { describe, expect, it, afterEach } from "vitest";
 import { OpenCodeAdapter, openCodeConnectedModels, parseOpenCodeServerCommand } from "../src/adapters/opencode.js";
-import { handleFindParent, handleListChildren, handleSendMessage } from "../src/mcp-tools/handlers.js";
+import { handleDeliver, handleFindParent, handleListChildren, handleSendMessage } from "../src/mcp-tools/handlers.js";
 import { newOrResumeNamedSession } from "../src/named-session.js";
 
 describe("OpenCode native recovery controls", () => {
@@ -112,13 +112,14 @@ describe("OpenCode native recovery controls", () => {
   it("sends to a direct session id that is absent from the list response", async () => {
     let sentBody = "";
     server = createServer((request, response) => {
+      const path = (request.url ?? "").split("?")[0];
       response.setHeader("content-type", "application/json");
-      if (request.url === "/global/health") return response.end(JSON.stringify({ healthy: true }));
-      if (request.url === "/session" && request.method === "GET") return response.end(JSON.stringify([]));
-      if (request.url === "/session/direct-parent" && request.method === "GET") {
+      if (path === "/global/health") return response.end(JSON.stringify({ healthy: true }));
+      if (path === "/session" && request.method === "GET") return response.end(JSON.stringify([]));
+      if (path === "/session/direct-parent" && request.method === "GET") {
         return response.end(JSON.stringify({ id: "direct-parent", title: "Parent", path: "/tmp/project" }));
       }
-      if (request.url === "/session/direct-parent/prompt_async?directory=%2Ftmp%2Fproject" && request.method === "POST") {
+      if (path === "/session/direct-parent/prompt_async" && request.method === "POST") {
         request.setEncoding("utf8");
         request.on("data", (chunk) => { sentBody += chunk; });
         request.on("end", () => response.end(JSON.stringify({ accepted: true })));
@@ -132,17 +133,44 @@ describe("OpenCode native recovery controls", () => {
 
     const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
     await adapter.init();
-    const result = await handleSendMessage(new Map([["opencode", adapter]]), {
+    const adapters = new Map([["opencode", adapter]]);
+
+    // Ordinary coordination must not wake an idle session, and the direct-id
+    // fallback still resolves the session when listSessions is empty.
+    const coordinated = await handleSendMessage(adapters, {
       sessionId: "direct-parent",
       harness: "opencode",
       message: "reply to parent",
       mode: "queue",
     });
+    expect(JSON.parse(coordinated)).toMatchObject({
+      ok: true,
+      sessionId: "direct-parent",
+      harness: "opencode",
+      delivery: "skipped_inactive",
+      activated: false,
+    });
+    expect(sentBody).toBe("");
 
-    expect(result).toContain("Message sent to [opencode] direct-parent (queued).");
+    // An explicit human deliver may wake the target and queues the prompt.
+    const delivered = await handleDeliver(adapters, {
+      sessionId: "direct-parent",
+      harness: "opencode",
+      message: "reply to parent",
+      mode: "queue",
+      activation: "always",
+    });
+    expect(JSON.parse(delivered)).toMatchObject({
+      ok: true,
+      sessionId: "direct-parent",
+      harness: "opencode",
+      delivery: "accepted",
+      activated: true,
+    });
+    // Human deliveries carry the payload as-is; no synthetic provenance header.
     expect(JSON.parse(sentBody)).toEqual({ parts: [{
       type: "text",
-      text: "🤖 Сообщение от AI-сессии\nОтправитель неизвестен: сессия не указана.\n\nreply to parent",
+      text: "reply to parent",
     }] });
   });
 

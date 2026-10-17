@@ -3,11 +3,13 @@
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {createHash,randomUUID} from 'node:crypto';
 import {writeFile,rm} from 'node:fs/promises';
+import {mkdtempSync,rmSync,realpathSync} from 'node:fs';
+import {join} from 'node:path';
 import {FleetBrowserIntent} from '../src/web-ui/fleet/intent.js';
 import type {IncomingMessage} from 'node:http';
 import {Readable} from 'node:stream';
-const state=vi.hoisted(()=>({host:'mac-mini-2012.lan',auth:true,hubCalls:0,files:[] as string[],calls:[] as Readonly<{cookie:string;credentialGeneration:string}>[],providers:[] as (()=>unknown)[]}));
-vi.mock('node:os',()=>({hostname:()=>state.host,userInfo:()=>({username:'roomhacker'}),homedir:()=>process.env.TMPDIR!}));
+const state=vi.hoisted(()=>({host:'mac-mini-2012.lan',auth:true,hubCalls:0,home:'',files:[] as string[],calls:[] as Readonly<{cookie:string;credentialGeneration:string}>[],providers:[] as (()=>unknown)[]}));
+vi.mock('node:os',()=>({hostname:()=>state.host,userInfo:()=>({username:'roomhacker'}),homedir:()=>state.home}));
 vi.mock('../src/web/fleet-owner-auth.js',()=>({verifyFleetOwnerCookie:vi.fn(async()=>state.auth)}));
 vi.mock('../src/mesh/fleet-owner-http-transport.js',()=>({FleetOwnerHttpTransport:class{
  constructor(private options:{ownerContext:()=>Readonly<{cookie:string;credentialGeneration:string}>|undefined}){state.providers.push(options.ownerContext);}
@@ -22,12 +24,13 @@ vi.mock('../src/mesh/fleet-owner-http-transport.js',()=>({FleetOwnerHttpTranspor
 vi.mock('../src/mesh/fleet-gptadmin-transport.js',()=>({FleetGptAdminTransport:class{constructor(){state.hubCalls++;throw new Error('unexpected Hub request');}}}));
 import {createConfiguredFleetApiHandler} from '../src/web/fleet-wiring.js';
 import {FleetCabinetService} from '../src/mesh/fleet-service.js';
-beforeEach(()=>{state.host='mac-mini-2012.lan';state.auth=true;state.hubCalls=0;state.calls=[];state.providers=[];vi.restoreAllMocks();vi.stubGlobal('fetch',vi.fn(async()=>new Response(null,{status:204,headers:{'X-GPTAdmin-User':'roomhacker'}})));});
-afterEach(async()=>{vi.unstubAllGlobals();await Promise.all(state.files.splice(0).map(path=>rm(path)));});
+const temporaryHomeRoots: string[] = [];
+beforeEach(()=>{state.host='mac-mini-2012.lan';state.auth=true;state.hubCalls=0;state.calls=[];state.providers=[];state.home=mkdtempSync(join(realpathSync('/tmp'),'fleet-owner-home-'));temporaryHomeRoots.push(state.home);vi.restoreAllMocks();vi.stubGlobal('fetch',vi.fn(async()=>new Response(null,{status:204,headers:{'X-GPTAdmin-User':'roomhacker'}})));});
+afterEach(async()=>{vi.unstubAllGlobals();await Promise.all(state.files.splice(0).map(path=>rm(path)));for(const home of temporaryHomeRoots.splice(0))rmSync(home,{recursive:true,force:true});});
 const endpoint='https://unit.gptadmin.bezrabotnyi.com/mcp';
 const profileId=new URL(endpoint).origin+'/client:zcode';
 async function ownerOptions(){
- const path=process.env.TMPDIR+'/fleet-owner-unit-'+randomUUID()+'.json';state.files.push(path);
+ const path=join(state.home,'fleet-owner-unit-'+randomUUID()+'.json');state.files.push(path);
  const headers={Authorization:'Bearer test-fixture'};await writeFile(path,JSON.stringify({mcp:{servers:{gptadmin:{url:endpoint,headers}}}}),{mode:0o600});
  return {clientConfigPath:path,approvedCredentialGeneration:createHash('sha256').update(JSON.stringify([endpoint,headers])).digest('hex')};
 }
@@ -37,7 +40,10 @@ describe('verified public owner context',()=>{
  it.each(['mac-mini-2012.lan','roomhacker-server-100'])('concurrent cookie generations retain their own credentials on the same cached host transport on %s',async(host)=>{state.host=host;
   const handler=createConfiguredFleetApiHandler(host==='roomhacker-server-100'?await ownerOptions():{clientConfigPath:'/never-read-a-foreign-client'});
   const a=response(),b=response();await Promise.all([handler(request('gptadmin_auth=unit-a'),a as any),handler(request('gptadmin_auth=unit-b'),b as any)]);
-  expect(state.providers).toHaveLength(1);expect(state.calls.map(c=>c.cookie)).toEqual(['gptadmin_auth=unit-a','gptadmin_auth=unit-b']);
+  expect(state.providers).toHaveLength(1);
+  // Two concurrent requests may resolve in either order; the retained property
+  // under test is per-request credential fidelity, not completion ordering.
+  expect([...state.calls.map(c=>c.cookie)].sort()).toEqual(['gptadmin_auth=unit-a','gptadmin_auth=unit-b']);
   for(const c of state.calls){expect(c.credentialGeneration).toBe(createHash('sha256').update(c.cookie).digest('hex'));expect(Object.isFrozen(c)).toBe(true);}
   expect(a.writeHead).toHaveBeenCalledWith(200,expect.anything());expect(b.writeHead).toHaveBeenCalledWith(200,expect.anything());
   expect(state.providers[0]!()).toBeUndefined();expect(state.hubCalls).toBe(0);

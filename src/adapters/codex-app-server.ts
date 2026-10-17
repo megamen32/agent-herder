@@ -444,12 +444,18 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         this.threads.delete(id);
       }
     }
+    const tailMissing = { value: false };
     const readArchive = async (read: () => Promise<AgentSession | null>) => {
       try { return await read(); }
       catch (error) {
         // Native thread/start can allocate a rollout path before its first turn creates the file.
         // Preserve only freshly verified native metadata; never hide permission/other archive failures.
-        if (base && (error as NodeJS.ErrnoException).code === "ENOENT") return null;
+        if (base && (error as NodeJS.ErrnoException).code === "ENOENT") {
+          // A thread with proven native turn history must keep its rollout tail observable:
+          // the tail carries stop evidence and message archive, so mutation may not proceed blindly.
+          if (this.lastNativeTurns.has(id)) tailMissing.value = true;
+          return null;
+        }
         throw error;
       }
     };
@@ -467,7 +473,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const normalized = withKnownModel({ ...raw, status, meta: { ...mergeAutomationMetadata(raw.meta, nativeAutomation), nativeStateObserved: false } }, raw.model);
       return normalized;
     }
-    if (!raw) return { ...base, meta: mergeAutomationMetadata(base.meta, nativeAutomation) };
+    if (!raw) {
+      const merged = { ...mergeAutomationMetadata(base.meta, nativeAutomation) };
+      if (tailMissing.value) merged.nativeStateObserved = false;
+      return { ...base, meta: merged };
+    }
     const rawMeta = { ...raw.meta };
     if (this.socketPath) delete rawMeta.status;
     delete rawMeta.automationStop;
@@ -563,7 +573,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       return { ok: false, admitted: false, error: `Codex session preflight failed: ${(error as Error).message}` };
     }
     if (!session) return { ok: false, error: `Session ${id} not found` };
-    if (session.meta?.nativeStateObserved === false) return { ok: false, nonRetryable: true, error: "Codex native thread state could not be verified; prompt was not delivered" };
+    if (session.meta?.nativeStateObserved === false) return { ok: false, admitted: false, nonRetryable: true, error: "Codex native thread state could not be verified; prompt was not delivered" };
     if (options.activeTurnOnly && session.status !== "running") {
       return {ok:false,notSubmitted:true,nonRetryable:true,error:"skipped_inactive: Codex has no active turn; coordination was not delivered"};
     }

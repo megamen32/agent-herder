@@ -20,7 +20,16 @@ async function fixture(run:(f:any)=>Promise<void>){
  const session={id:randomUUID(),harness:"codex",status:"running",title:"target",cwd:"/work",lastActivity:new Date().toISOString(),needsPermission:false};
  const getSession=vi.fn(async(id:string)=>id===session.id?session:null);
  const sendMessage=vi.fn(async(_id:string,o:any)=>({ok:true,admitted:true,inputId:o.inputId,turnId:"turn"}));
- const adapters=new Map([['codex',{type:"codex",getSession,sendMessage,isReady:()=>true}]]) as any;
+ // Real codex transports keep one durable receipt per exact input: a replay
+ // of the same inputId returns the original receipt without a second send.
+ const receipts=new Map<string,Promise<unknown>>();
+ const sendActiveMessage=vi.fn(async(id:string,o:any)=>{
+  const key=`${id}:${o.inputId ?? ""}`;
+  let receipt=receipts.get(key);
+  if(!receipt){receipt=(async()=>sendMessage(id,{...o,activeTurnOnly:true,steer:true}))();receipts.set(key,receipt);}
+  return receipt;
+ });
+ const adapters=new Map([['codex',{type:"codex",getSession,sendMessage,sendActiveMessage,isReady:()=>true}]]) as any;
  const meshSender={hostId:"88",harness:"opencode",nativeSessionId:"same-native-id"};
  const request={sessionId:session.id,harness:"codex",inputId:"i",message:"delta",mode:"steer",meshSender};
  try{await run({adapters,session,getSession,sendMessage,request,stopPath});}

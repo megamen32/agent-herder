@@ -4,5 +4,6 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts", "src/**/*.test.ts"],
     exclude: ["vendor/**", "node_modules/**"],
+    setupFiles: ["tests/vitest-isolation.setup.ts"],
   },
 });

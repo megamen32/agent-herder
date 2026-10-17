@@ -14,10 +14,22 @@ async function fixtureHome(prefix: string): Promise<string> {
   return mkdtemp(join(root, prefix));
 }
 
+// A late async adapter write can land between the directory listing and the
+// unlink, making a single recursive rm fail with ENOTEMPTY. Retry briefly so
+// the assertion results stay about adapter behavior, not cleanup timing.
+async function removeTree(path: string): Promise<void> {
+  try {
+    await rm(path, { recursive: true, force: true });
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await rm(path, { recursive: true, force: true });
+  }
+}
+
 afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
-  await Promise.all(cleanups.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  await Promise.all(cleanups.splice(0).map((path) => removeTree(path)));
 });
 
 describe("Fast Agent persisted observer", () => {
