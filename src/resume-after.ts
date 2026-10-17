@@ -30,6 +30,8 @@ export interface ResumeAfterOptions {
   /** Unknown/unavailable state returns true, not guessed completion. */
   isBusy: (ref: SessionRef) => Promise<boolean>;
   validateRef?: (ref: SessionRef) => Promise<void>;
+  /** Extra dependency-only checks, e.g. a harness without a native event stream can never prove completion. */
+  validateDependency?: (ref: SessionRef) => Promise<void>;
 }
 const key = (ref: SessionRef): string => JSON.stringify([ref.harness, ref.sessionId]);
 const terminal = new Set(["turn.completed", "turn.failed", "session.deleted"]);
@@ -93,7 +95,11 @@ export class ResumeAfterService {
         return (graph.get(from)??[]).some(next=>reaches(next,target,seen));
       };
       if(dependencies.some(ref=>reaches(key(ref),key(input.owner)))) throw new Error("Dependency cycle");
-      for(const ref of [input.owner,...dependencies]) await this.options.validateRef?.(ref);
+      for(const ref of [input.owner]) await this.options.validateRef?.(ref);
+      for(const ref of dependencies){
+        await this.options.validateRef?.(ref);
+        await this.options.validateDependency?.(ref);
+      }
       const wait:ResumeAfterWait={id,owner:{...input.owner},dependencies,message,createdAt:new Date().toISOString(),state:"waiting",completed:{}};
       await this.save(wait);
       return wait;

@@ -54,4 +54,26 @@ describe("MCP dependency wait through native adapter events",()=>{
     const retry=await client.callTool({name:"resume_after",arguments:{owner:ref("owner"),dependencies:[ref("a"),ref("b")],message:"merge the actual work",requestId:"native-join"}});
     expect((retry.structuredContent as any).wait.id).toBe(wait.id);expect(sent).toHaveLength(1);
   });
+  it("refuses a dependency on a harness that publishes no native turn events",async()=>{
+    const directory=await mkdtemp(join(process.cwd(),".tmp/resume-after-mcp-"));
+    cleanup.push(()=>rm(directory,{recursive:true,force:true}));
+    const adapter:HarnessAdapter={
+      type:"codex",name:"controlled native seam",async init(){},
+      async listSessions(){return [];},async getSession(id){return {id,harness:"codex",title:id,cwd:process.cwd(),status:"idle",lastActivity:new Date().toISOString(),needsPermission:false};},
+      async sendMessage(){return {ok:true,admitted:true};},async stopSession(){return{ok:true};},
+      async respondPermission(){return{ok:true};},async setPermissions(){return{ok:true};},
+    };
+    const result_adapter:HarnessAdapter={...adapter,type:"claude",name:"file-only adapter without native events"};
+    const runtime=createResumeAfterRuntime(new Map([["codex",adapter],["claude",result_adapter]]),{
+      isAutomationHeld:async()=>false,sendMessage:async()=>({ok:true,admitted:true}),
+    },async()=>false,directory);
+    const [clientTransport,serverTransport]=InMemoryTransport.createLinkedPair();
+    const server=createAgentHerderMcpServer(undefined,{resumeAfter:runtime.service});
+    const client=new Client({name:"resume-after-capability",version:"1"},{versionNegotiation:{mode:"auto"}});
+    await server.connect(serverTransport);await client.connect(clientTransport);
+    cleanup.push(async()=>{await client.close();await server.close();});
+    const call=await client.callTool({name:"resume_after",arguments:{owner:ref("owner"),dependencies:[{harness:"claude",sessionId:"c"}]}});
+    expect(call.isError).toBe(true);
+    expect(JSON.stringify(call.content)).toContain("does not publish native turn events");
+  });
 });

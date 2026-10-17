@@ -17,6 +17,11 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
       if(!adapters.has(ref.harness) || !await adapters.get(ref.harness)!.getSession(ref.sessionId))
         throw new Error(`Exact session unavailable: ${ref.harness}:${ref.sessionId}`);
     },
+    validateDependency:async(ref:SessionRef)=>{
+      const adapter=adapters.get(ref.harness);
+      if(!adapter?.subscribeEvents)
+        throw new Error(`Harness ${ref.harness} does not publish native turn events, so a resume-after dependency on it can never confirm completion; wait on an event-capable harness (opencode, codex, zcode, hermes, qoder) instead`);
+    },
     isHeld:async ref=>await held(ref.harness,ref.sessionId) || await supervisor.isAutomationHeld(ref.harness,ref.sessionId),
     isBusy:async ref=>{
       try{

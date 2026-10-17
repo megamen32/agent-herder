@@ -89,5 +89,11 @@ describe("resume after exact sessions", () => {
     expect(deliver).not.toHaveBeenCalled();
     await done(service,a);expect(deliver).toHaveBeenCalledTimes(1);
   });
-
+  it("rejects a dependency whose harness cannot prove native completion", async () => {
+    const {service}=await fixture({validateDependency:async(ref)=>{
+      if(ref.harness!=="codex") throw new Error(`Harness ${ref.harness} does not publish native turn events, so a resume-after dependency on it can never confirm completion`);
+    }});
+    await expect(service.register({owner,dependencies:[{harness:"claude",sessionId:"c"}]})).rejects.toThrow(/claude/);
+    await expect(service.register({owner,dependencies:[a]})).resolves.toBeTruthy();
+  });
 });
