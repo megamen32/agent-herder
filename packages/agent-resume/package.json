@@ -13,14 +13,23 @@
     }
   },
   "bin": {
-    "agent-resume": "dist/cli.js"
+    "agent-resume": "dist/cli.js",
+    "agent-resume-install-configs": "scripts/install-client-configs.mjs"
   },
   "files": [
     "dist",
+    "scripts",
     "README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.0.0"
   }
 }

@@ -88,3 +88,14 @@ export {
   type DefaultSearchDepsOptions,
   type SessionSearchDeps,
 } from "./harness/search.js";
+export { createResumeMcpServer, type ResumeMcpOptions, type ResumeRuntime } from "./mcp/server.js";
+export {
+  HermesWakeClient,
+  hermesTokenMatches,
+  hermesWakeClientFromEnv,
+  resolveHermesLocator,
+  validateHermesResultRef,
+  type HermesLocator,
+  type HermesWakeClientOptions,
+  type HermesWakeReceipt,
+} from "./hermes/wake.js";

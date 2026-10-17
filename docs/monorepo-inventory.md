@@ -31,12 +31,12 @@
 |---|---|---|
 | Протокол OpenCode | **перенесено** | `packages/agent-resume/src/harness/opencode/client.ts`; `src/adapters/opencode.ts` — оркестрация поверх ядра |
 | Зависимость Herder → ядро | **сделано** | npm workspaces + `coreContractHash()`; контракт запинен в `src/resume/core-contract-pin.ts` |
-| Артефакты из одного исходника | **частично** | версии связаны и проверяются тестом; релизный пайплайн ещё не собран |
+| Артефакты из одного исходника | **перенесено** | отдельный агент выпускается из того же пакета и той же версии: `node packages/agent-resume/dist/cli.js …` проверен вживую без Herder; npm-публикация остаётся отдельным шагом |
 | Протоколы Codex и Claude | не начато | herder-адаптеры + legacy-пути Resume |
 | Квитанции и идемпотентность | **перенесено** | `packages/agent-resume/src/resume/receipts.ts`; herder читает и пишет его через `src/resume/core-transport.ts` |
 | Отсоединённые длинные задачи | **перенесено** | `packages/agent-resume/src/resume/jobs.ts`: реестр задач, наблюдение за pid, жёсткий таймаут, завершение с одним допуском через общий леджер |
-| Hermes | не начато | Resume `hermes_gateway.py`, herder `adapters/hermes` |
-| MCP-поверхность и установщики | не начато | Python `mcp_main`/`register` и `scripts/install-*.py` в старом репозитории |
+| Hermes | **частично** | клиент привязки в `packages/agent-resume/src/hermes/wake.ts`; шлюз и его хуки остаются на стороне Hermes |
+| MCP-поверхность и установщики | **перенесено** | `packages/agent-resume/src/mcp/server.ts` (те же имена инструментов), CLI в `src/cli.ts`, установщик в `scripts/install-client-configs.mjs` |
 | Поиск по маркеру | **перенесено** | `packages/agent-resume/src/harness/marker-search.ts`, источники в `session-sources.ts`, поиск в `harness/search.ts` |
 | Доставка бондингованной цели | **перенесено** | `packages/agent-resume/src/resume/delivery.ts`; herder вызывает через `AgentResumeClient` |
 
