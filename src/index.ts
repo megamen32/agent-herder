@@ -27,6 +27,7 @@ import { AutopilotSessionStore, type AutopilotHarness } from "./autopilot/sessio
 import { AutomationLaunchPolicyStore } from "./automation-launch-policy.js";
 import { dispatchProjectLaunch, namedSessionRunner, ProjectLaunchAttemptLog, type ProjectLaunchDispatcher } from "./automation/project-launch-dispatch.js";
 import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
+import { applyOutboundFamilyToProcess } from "./net/outbound-family.js";
 import { createIncidentUpdateSink, deliverIncidentQuestion } from "./autopilot/notice-incident.js";
 import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore, type PendingHumanQuestion } from "./autopilot/index.js";
 import { buildAskHumanRequest } from "./human-request/notice-question.js";
@@ -673,6 +674,15 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
 async function main() {
   const releaseSingleton = acquireAgentHerderSingleton();
   process.once("exit", releaseSingleton);
+
+  // Must run before the first outbound request: on a host without IPv6 egress,
+  // Node's address racing turns every unreachable AAAA leg into a synthetic
+  // ~505 ms `connect ETIMEDOUT`, which the batch planner reads as an unusable
+  // judge route and turns into a deferred safe plan for the whole cohort.
+  const outboundFamily = await applyOutboundFamilyToProcess();
+  if (outboundFamily.disableAutoSelectFamily) {
+    console.error(`[agent-herder] ${outboundFamily.reason}`);
+  }
 
   configureAdapterRegistry();
   const adoptedState = await autopilotStateReady;
