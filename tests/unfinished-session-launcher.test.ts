@@ -602,6 +602,55 @@ describe("original task completion evidence", () => {
         expect(calls).toEqual({ resumes: 0, messages: [] });
     });
 
+    // Fast unit: a backlog wider than the safe planner chunk budget is a
+    // capacity fact, not a reason to refuse every session. Expected <5s,
+    // maximum 30s; judge.plan is a stub and no native action is allowed.
+    it("plans a bounded priority window instead of refusing an oversized backlog", async () => {
+        const root = await mkdtemp(join(tmpdir(), "oversized-backlog-"));
+        try {
+            const sessions: AgentSession[] = Array.from({ length: 80 }, (_, index) => ({
+                ...fixture("idle", "zcode", `backlog-${index}`),
+                cwd: `/tmp/oversized-backlog-${index}`,
+                lastActivity: new Date(Date.now() - (index + 1) * 1000).toISOString(),
+            }));
+            const calls = { resumes: 0, messages: [] as string[] };
+            const adapter = fakeAdapter(() => sessions[0]!, calls);
+            adapter.listSessions = async () => sessions.map((session) => ({ ...session }));
+            const planned: string[] = [];
+            const policyStore = new AutopilotPolicyStore(join(root, "policy.json"));
+            await policyStore.replacePolicy({ schemaVersion: 1, enabled: true, harnesses: ["zcode"], scope: { mode: "all_ingress" }, maxContinuationsPerSession: 10, timeout: { mode: "auto_continue", delayMs: 1000 }, card: { includeUserMessage: true, includeAssistantMessage: true, includeReason: true } }, null);
+            const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+            const launcher = new UnfinishedSessionLauncher({
+                adapters: new Map([["zcode", adapter]]), store,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+                autopilotPolicyStore: policyStore, autopilotSessionStore: new AutopilotSessionStore(join(root, "sessions.json")),
+                discoveryIdleMs: 1,
+                judge: {
+                    async decide() { return { verdict: "unfinished", reason: "work remains", confidence: 1 }; },
+                    async plan({ sessions: plannedSessions }) {
+                        planned.push(...plannedSessions.map(({ session }) => session.id));
+                        return { groups: plannedSessions.map(({ session }) => ({ sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed", reason: "verified", confidence: 1, topic: "task", handoff: "" })) };
+                    },
+                },
+            });
+            await launcher.runAutopilotCycle();
+            const inventory = await store.listInventory();
+            expect(inventory).toHaveLength(80);
+            // Planned sessions get their verdict; the rest keep a refreshed
+            // snapshot and stay verdict-free for the next cycle, with no
+            // assessment failure and no growing backoff invented for them.
+            expect(planned.length).toBeGreaterThan(0);
+            expect(planned.length).toBeLessThan(80);
+            expect(new Set(planned).size).toBe(planned.length);
+            expect(inventory.filter((record) => record.verdict?.verdict === "completed").length).toBe(planned.length);
+            expect(inventory.filter((record) => record.assessmentFailure)).toEqual([]);
+            expect(inventory.every((record) => record.transcriptTail !== undefined)).toBe(true);
+            expect(calls).toEqual({ resumes: 0, messages: [] });
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
     it("keeps forgotten-session completion unverified instead of claiming the task done", async () => {
         const root = await mkdtemp(join(tmpdir(), "forgotten-completion-"));
         const current = fixture();

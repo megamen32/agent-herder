@@ -47,7 +47,9 @@ const MAX_SESSION_EVIDENCE_CHARS = 120_000;
 const CURRENT_EVIDENCE_VERSION = 3;
 // Increment only when semantic planning/packing changes make persisted
 // assessment failures obsolete. Successful verdict evidence is unaffected.
-const CURRENT_ASSESSMENT_PIPELINE_VERSION = 2;
+// Version 3 bounds one cycle to a fitting priority window instead of refusing
+// an oversized backlog, so the refusals stored under version 2 are obsolete.
+const CURRENT_ASSESSMENT_PIPELINE_VERSION = 3;
 const REQUESTED_ARTIFACT_COMPLETION_RULE = [
   "Сначала сопоставь финальный ответ с исходной пользовательской целью.",
   "Если пользователь просил только подготовить план, отчёт, черновик или JSON-артефакт, валидный финальный артефакт означает completed; будущие шаги внутри него — содержимое результата, а не оставшиеся действия агента.",
@@ -2775,8 +2777,9 @@ export class UnfinishedSessionLauncher {
           };
         }));
         let plan: SessionBatchPlan;
+        let plannedWindow: AssessedSession[];
         try {
-          plan = await this.planAssessedSessions(assessed);
+          ({ plan, window: plannedWindow } = await this.planAssessedSessions(assessed));
         } catch (error) {
           if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
           await this.recordAssessmentFailure(assessed, priorInventory, errorText(error));
@@ -2784,8 +2787,10 @@ export class UnfinishedSessionLauncher {
           return "blocked";
         }
         if (!this.lifecycleActive(lifecycleEpoch)) return "idle";
-        if (semanticAutopilot) await this.applyBatchPlan(plan, assessed, lifecycleEpoch);
-        else await this.recordBatchAudit(plan, assessed);
+        // Sessions outside the planned window keep the refreshed snapshot
+        // written above and stay verdict-free, so the next cycle assesses them.
+        if (semanticAutopilot) await this.applyBatchPlan(plan, plannedWindow, lifecycleEpoch);
+        else await this.recordBatchAudit(plan, plannedWindow);
         return "ready";
       }
       // Empty fresh inventory is not an unsafe planner failure. Persisted
@@ -3322,7 +3327,53 @@ export class UnfinishedSessionLauncher {
     });
   }
 
-  private async planAssessedSessions(assessed: AssessedSession[]): Promise<SessionBatchPlan> {
+  /**
+   * One cycle plans a bounded priority window instead of refusing the whole
+   * inventory. Candidates arrive in priority order, and a backlog wider than
+   * the chunk budget or the shared serialized context ceiling is a capacity
+   * fact, not a semantic failure: refusing it stranded every session behind a
+   * growing assessment backoff and left none of them planned. The window keeps
+   * the unified planner, the workspace-homogeneous chunking and the reserved
+   * repair/omission envelope exactly as they were; only the amount of work per
+   * cycle is bounded. Sessions outside the window keep their refreshed native
+   * snapshot without a verdict, so the next cycle assesses them again.
+   */
+  private boundedBatchPlanWindow(
+    assessed: AssessedSession[],
+    contextBudget: number,
+    outputTokenBudget: number,
+  ): AssessedSession[] {
+    const chunkSize = batchPlanChunkSize(outputTokenBudget);
+    const fits = (candidates: AssessedSession[]): boolean => {
+      if (partitionBatchCandidates(candidates, chunkSize).length > MAX_BATCH_PLAN_CHUNKS) return false;
+      const metadataOnly = candidates.map(({ session, transcriptTail, humanMessages }) => ({ session, transcriptTail: "", humanMessages }));
+      const { estimatedTokens } = fitBatchContextForSerializedRequest(metadataOnly, contextBudget, (sessions) => ({
+        chunkRequests: partitionBatchCandidates(sessions, chunkSize)
+          .map((chunk) => buildBatchPlannerBudgetRequest(chunk, outputTokenBudget)),
+      }));
+      return estimatedTokens <= contextBudget;
+    };
+    if (fits(assessed)) return assessed;
+    // Both measures only grow with more candidates, so the longest fitting
+    // prefix is found without serializing the whole inventory at every step.
+    let low = 0;
+    let high = assessed.length;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (fits(assessed.slice(0, middle))) low = middle;
+      else high = middle - 1;
+    }
+    const single = assessed[0]!;
+    if (low === 0) {
+      // Not a backlog problem: one session's own metadata does not fit. Keep
+      // the honest refusal so it is recorded and retried instead of planned blind.
+      throw new BatchPlanValidationError(`MiniMax batch metadata for a single session ${single.sourceKey} exceeds the ${contextBudget} token ceiling`);
+    }
+    console.error(`[agent-herder] очередь оценки шире окна планировщика: ${assessed.length} сесс., в этом цикле планируются первые ${low}`);
+    return assessed.slice(0, low);
+  }
+
+  private async planAssessedSessions(assessed: AssessedSession[]): Promise<{ plan: SessionBatchPlan; window: AssessedSession[] }> {
     const planner = this.options.judge?.plan;
     if (!planner) throw new Error("MiniMax batch planner is unavailable");
     const contextBudget = Math.min(
@@ -3333,10 +3384,8 @@ export class UnfinishedSessionLauncher {
       DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET,
     );
     const outputTokenBudget = configuredBatchOutputTokens();
-    const rawCandidates = assessed.map(({ session, transcriptTail, humanMessages }) => ({ session, transcriptTail, humanMessages }));
-    if (partitionBatchCandidates(rawCandidates, batchPlanChunkSize(outputTokenBudget)).length > MAX_BATCH_PLAN_CHUNKS) {
-      throw new BatchPlanValidationError(`MiniMax assessment needs more than ${MAX_BATCH_PLAN_CHUNKS} workspace-homogeneous chunks`);
-    }
+    const window = this.boundedBatchPlanWindow(assessed, contextBudget, outputTokenBudget);
+    const rawCandidates = window.map(({ session, transcriptTail, humanMessages }) => ({ session, transcriptTail, humanMessages }));
     const globallyPacked = fitBatchContextForSerializedRequest(rawCandidates, contextBudget, (sessions) => ({
       chunkRequests: partitionBatchCandidates(sessions, batchPlanChunkSize(outputTokenBudget))
         .map((chunk) => buildBatchPlannerBudgetRequest(chunk, outputTokenBudget)),
@@ -3354,7 +3403,7 @@ export class UnfinishedSessionLauncher {
       decisionRequests: largestSessionDecisionBudgetRequests(sessions, MAX_PERSISTENT_OMISSION_DECISIONS),
       reconciliationRequests: worstCaseWorkspaceReconciliationBudgetRequests(sessions),
     })).sessions;
-    const packedAssessed = assessed.map((candidate, index) => ({
+    const packedAssessed = window.map((candidate, index) => ({
       ...candidate,
       transcriptTail: globallyPacked[index]!.transcriptTail,
     }));
@@ -3553,7 +3602,7 @@ export class UnfinishedSessionLauncher {
       };
       assertBatchPlanCoverage(plan, packedAssessed);
     }
-    return plan;
+    return { plan, window };
     } finally {
       if (this.activePlannerController === plannerPhaseController) this.activePlannerController = undefined;
     }
