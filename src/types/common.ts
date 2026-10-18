@@ -187,6 +187,8 @@ export interface PermissionRequest {
 }
 
 export interface SendMessageOptions {
+  /** Explicit model for this native turn; do not replace it with older archive metadata. */
+  model?: string;
   /** Internal opted-in Stop judge delivery; separate from one-off fleet recovery. */
   automationPurpose?: "autopilot";
   /** Existing regular inbox IDs transferred only at durable hook offer. */

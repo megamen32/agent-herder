@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from 'vitest';
 import {randomUUID} from 'node:crypto';
-import {handleDeliver} from '../src/mcp-tools/handlers.js';
+import {handleDeliver,handleNewOrResume} from '../src/mcp-tools/handlers.js';
 import type {HarnessAdapter,AgentSession} from '../src/types/index.js';
 
 describe('existing deliver model selection',()=>{
@@ -17,7 +17,13 @@ describe('existing deliver model selection',()=>{
   }
   it(`applies the selected model before ${named?'named':'exact'} delivery`,async()=>{
    const f=fixture();const r=JSON.parse(await handleDeliver(new Map([['codex',f.adapter]]),f.args));
-   expect(r.ok).toBe(true);expect(f.order).toEqual(['model:chosen-model','send:chosen-model']);expect(r.requestedModel).toBe('chosen-model');
+   expect(r.ok).toBe(true);expect(f.order).toEqual(['model:chosen-model','send:chosen-model']);expect(r.requestedModel).toBe('chosen-model');expect(f.sendMessage).toHaveBeenCalledWith(f.session.id,expect.objectContaining({model:'chosen-model'}));
+  });
+  if (named) it('new_or_resume also sends the explicit model to native inference',async()=>{
+   const f=fixture();f.adapter.createSession=vi.fn(async()=>{throw new Error('must reuse exact session');});const result=JSON.parse(await handleNewOrResume(new Map([['codex',f.adapter]]),{
+    harness:'codex',name:f.session.title,cwd:f.session.cwd,message:'existing task',model:'chosen-model',mode:'sync',inputId:randomUUID(),
+   }));
+   expect(result.ok).toBe(true);expect(f.sendMessage).toHaveBeenCalledWith(f.session.id,expect.objectContaining({model:'chosen-model'}));
   });
   it(`does not deliver on failed ${named?'named':'exact'} model selection`,async()=>{
    const f=fixture();f.changeModel.mockResolvedValueOnce({ok:false,error:'model unavailable'} as any);

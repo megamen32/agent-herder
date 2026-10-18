@@ -33,3 +33,16 @@ describe('native Codex model discovery',()=>{
   expect(await adapter.listModels()).toEqual(['gpt-test','gpt-test-2']);
  });
 });
+
+describe('model actually submitted to native Codex inference',()=>{
+ it('does not overwrite a selected model with the prior archive model at preflight',async()=>{
+  const adapter=new CodexAppServerAdapter();
+  vi.spyOn(adapter as any,'ensureReady').mockResolvedValue(undefined);
+  vi.spyOn(adapter,'getSession').mockResolvedValue({id:'turn-model-proof',harness:'codex',title:'read-only test',cwd:process.cwd(),status:'idle',lastActivity:new Date().toISOString(),needsPermission:false,model:'prior-luna'});
+  vi.spyOn(adapter,'resumeSession').mockResolvedValue({ok:true});
+  const request=vi.spyOn(adapter as any,'request').mockResolvedValue({turn:{id:'new-turn',status:'inProgress'}});
+  const result=await adapter.sendMessage('turn-model-proof',{message:'test only',model:'selected-sol',origin:'human',queue:true} as any);
+  expect(result.ok).toBe(true);
+  expect(request).toHaveBeenCalledWith('turn/start',expect.objectContaining({model:'selected-sol'}));
+ });
+});
