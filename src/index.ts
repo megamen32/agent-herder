@@ -60,6 +60,7 @@ import { registerSessionTools } from "./mcp/session-tools.js";
 import { registerResourceOwnershipTools } from "./mcp/resource-ownership-tools.js";
 import { registerHarnessMeshTools } from "./mesh/register-tools.js";
 import { registerBackgroundTools } from "./mcp/background-tools.js";
+import { registerRagTools } from "./mcp/rag-tools.js";
 import { loadCdpChatDriver } from "./cdp-chat-mcp.js";
 import type { CdpChatCapabilities, CdpChatDriver } from "./cdp-chat.js";
 import { ALL_CDP_CHAT_CAPABILITIES, CdpChatClient } from "./cdp-chat.js";
@@ -552,6 +553,7 @@ function registerTools(
   });
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
   registerSessionTools(server, { adapters, jobs, events });
+  registerRagTools(server, adapters);
   registerResourceOwnershipTools(server);
   registerHarnessMeshTools(server, { adapters });
   registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined });

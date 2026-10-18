@@ -43,6 +43,7 @@ import { handleQuotaLensRequest } from "./quota-lens.js";
 import { getS21Ownership } from "../s21-resource-ownership.js";
 import { getHumanStopStore } from "../human-stop-store.js";
 import { deferredMessages, renderDeferredMessages } from "../deferred-messages.js";
+import { agentHerderRag } from "../rag-search.js";
 
 export interface WebDependencies {
   sessionImageStore?: SessionImageStore;
@@ -628,10 +629,12 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const manualChoiceResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor, "human"));
   const userMessageDelivery = dependencies.jobs ? new UserMessageDelivery(dependencies.adapters, supervisor, dependencies.jobs) : undefined;
   const sessionImages = dependencies.sessionImageStore ?? new SessionImageStore(join(homedir(), ".local/state/agent-herder/session-images"));
+  const rag = agentHerderRag();
   const server = createServer(async (request, response) => {
     try {
       if (dependencies.fleetHttpGuard && await dependencies.fleetHttpGuard(request, response)) return;
       if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
+      if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
       await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
