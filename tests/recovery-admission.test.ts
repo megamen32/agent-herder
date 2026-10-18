@@ -146,4 +146,38 @@ describe("fleet admission authority", () => {
     await writeFile(path, JSON.stringify(state("paused-unfinished")));
     expect((await gate(session as never, "send")).allowed).toBe(false);
   });
+
+  // Fast unit: the 2026-10-07 campaign snapshot stopped being refreshed when the
+  // campaign ended, so an enforced gate silently held every non-ZCode session
+  // for days. Retirement is an explicit operator switch, never inferred.
+  it("retires the ended campaign gate only by explicit operator decision", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fleet-admission-retired-"));
+    const path = join(root, "state.json");
+    await writeFile(path, JSON.stringify(state("active")));
+    const enforced = createFleetRecoveryAdmissionGate(path, () => now, {});
+    expect((await enforced({ id: "foreign", harness: "codex" } as never, "resume")).allowed).toBe(false);
+    const retired = createFleetRecoveryAdmissionGate(path, () => now, { AGENT_HERDER_FLEET_ADMISSION: "retired" });
+    for (const operation of ["attempt", "resume", "send", "autopilot-send"] as const) {
+      expect((await retired({ id: "foreign", harness: "codex" } as never, operation)).allowed).toBe(true);
+    }
+    // Retirement drops only the campaign registry, never Herder's own fences.
+    for (const operation of ["create", "rollover"] as const) {
+      expect((await retired({ id: "foreign", harness: "codex" } as never, operation)).allowed).toBe(false);
+    }
+  });
+
+  it("reports a silent campaign hold once per interval instead of denying without a trace", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fleet-admission-warn-"));
+    const path = join(root, "state.json");
+    await writeFile(path, JSON.stringify(state()));
+    const gate = createFleetRecoveryAdmissionGate(path, () => now + 31 * 60_000, {});
+    const reported = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        expect((await gate({ id: "owned", harness: "codex" } as never, "attempt")).allowed).toBe(false);
+      }
+      expect(reported).toHaveBeenCalledTimes(1);
+      expect(String(reported.mock.calls[0]![0])).toContain("AGENT_HERDER_FLEET_ADMISSION=retired");
+    } finally { reported.mockRestore(); }
+  });
 });
