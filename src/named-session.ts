@@ -169,6 +169,7 @@ export async function newOrResumeNamedSession(
   const injectedMessage = await coordinationNotes.inject(resolved.target, pending.message);
   if (await sourceHeldNow(request) || await automaticDeliveryHeld(resolved.target, false, resolved.adapter)) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created };
   const delivery = await resolved.adapter.sendMessage(resolved.target.id, {
+      model: request.model,
       origin: request.humanRequested ? "human" : "automation",
       inputId: request.inputId ?? (request.humanRequested ? undefined : createHash("sha256").update(request.message).digest("hex")),
       ...(resolved.target.harness === "hermes" && resolved.target.meta?.taskBinding
@@ -400,7 +401,7 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     if (modelError) return {...failed(normalized,modelError,"not_attempted"),sessionId:fresh.id,activated:false};
     const pending=await withDeferred(fresh.id,request.message); const injected=await coordinationNotes.inject(fresh,pending.message);
     if (await sourceHeldNow(request) || await automaticDeliveryHeld(fresh, false, adapter)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: fresh.id, activated: false };
-    const options={message:injected,retainedInboxIds:pending.ids,queue:(request.mode||"queue")==="queue",inputId:request.inputId ?? createHash("sha256").update(request.message).digest("hex"),origin:"automation" as const};
+    const options={message:injected,model:request.model,retainedInboxIds:pending.ids,queue:(request.mode||"queue")==="queue",inputId:request.inputId ?? createHash("sha256").update(request.message).digest("hex"),origin:"automation" as const};
     const sent=activation==='if_running'?await sendCurrentTurnOnly(adapter,fresh.id,options):await adapter.sendMessage(fresh.id,options);
     if (sent.notSubmitted) return {ok:sent.error?.startsWith('skipped_inactive')===true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:sent.error?.startsWith('skipped_inactive')?'skipped_inactive':'not_attempted',activated:false,...normalized,...(sent.error?.startsWith('skipped_inactive')?{}:{error:sent.error})};
     const receipt = {...(request.model?{requestedModel:request.model}:{}),...(sent.admissionKind?{admissionKind:sent.admissionKind}:{}),...(sent.admitted !== undefined ? {admitted:sent.admitted} : {}), ...(sent.inputId ? {inputId:sent.inputId} : {}), ...(sent.turnId ? {turnId:sent.turnId} : {}), ...(sent.admissionUnknown ? {admissionUnknown:true,nonRetryable:true} : {})};

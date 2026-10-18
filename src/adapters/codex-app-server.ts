@@ -646,7 +646,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const result = await this.request("turn/start", {
         threadId: id,
         input: [{ type: "text", text: options.message }, ...(options.images ?? []).map((image) => ({ type: "localImage", path: image.path }))],
-        model: session.model || null,
+        model: options.model ?? session.model ?? null,
       }) as { turn?: { id?: string; status?: string } };
       const turnId = result.turn?.id;
       if (typeof turnId !== "string" || !turnId.trim()) {

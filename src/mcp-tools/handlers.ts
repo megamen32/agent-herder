@@ -559,7 +559,7 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
     const pending = await withDeferred(fresh.id, parsed.message);
     const injected = await coordinationNotes.inject(fresh, pending.message);
     if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
-    const options = {message:injected,retainedInboxIds:pending.ids,queue:parsed.mode==="queue",inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),origin:"automation" as const};
+    const options = {message:injected,model:parsed.model,retainedInboxIds:pending.ids,queue:parsed.mode==="queue",inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),origin:"automation" as const};
     const sent = activation === 'if_running' ? await sendCurrentTurnOnly(found.adapter,fresh.id,options) : await found.adapter.sendMessage(fresh.id,options);
     if (sent.notSubmitted) return sent.error?.startsWith('skipped_inactive') ? skippedCoordination(fresh)
       : JSON.stringify({ok:false,delivery:'not_attempted',activated:false,error:sent.error});
