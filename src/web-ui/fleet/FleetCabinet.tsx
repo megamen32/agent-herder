@@ -7,12 +7,22 @@ import type {MeshAddress} from '../../mesh/protocol.js';
 import {fleetSessionLink} from './session-link.js';
 import {machineName,machineStatus,machineReason} from './machine-labels.js';
 import {fleetSessionStatus} from './session-labels.js';
+// Public machine catalog only: no cached health or creation capability is trusted.
+// The authenticated, scope-keyed /hosts response replaces these entries after its background check.
+const fleetCatalog:FleetHost[]=[
+ {hostId:'roomhacker-server-100',label:'Сервер 100',uiUrl:'https://agent.bezrabotnyi.com',state:'stale',fetchedAt:null,expiresAt:null,generation:null,createHarnesses:[]},
+ {hostId:'server-44',label:'Сервер 44',uiUrl:'https://agent44.bezrabotnyi.com',state:'stale',fetchedAt:null,expiresAt:null,generation:null,createHarnesses:[]},
+ {hostId:'roomhacker-server-88',label:'Сервер 88',uiUrl:'https://agent88.bezrabotnyi.com',state:'stale',fetchedAt:null,expiresAt:null,generation:null,createHarnesses:[]},
+ {hostId:'mac-mini-2012.lan',label:'Mac Mini',uiUrl:'https://agent-mac-mini.bezrabotnyi.com',state:'stale',fetchedAt:null,expiresAt:null,generation:null,createHarnesses:[]},
+ {hostId:'MacBook-Pro-User.local',label:'Mac M1',uiUrl:'https://agent-mac-m1.bezrabotnyi.com',state:'stale',fetchedAt:null,expiresAt:null,generation:null,createHarnesses:[]},
+];
 /** Mount once for one authenticated browser identity. Remote session selection retains its full native address. */
 export function FleetCabinet({creationMode=false,defaultHostId,onSelectedHostChange,onSelectSession,client:injected}:{creationMode?:boolean;defaultHostId?:string;onSelectedHostChange?:(hostId:string)=>void;onSelectSession?:(session:FleetSession)=>void;client?:FleetClient}){
  const client=useRef(injected??createFleetClient()).current;
- const [hosts,setHosts]=useState<FleetHost[]>([]),[hostId,setHostId]=useState(defaultHostId??''),[sessions,setSessions]=useState<FleetSession[]>([]);
+ const [hosts,setHosts]=useState<FleetHost[]>(fleetCatalog),[hostId,setHostId]=useState(defaultHostId??''),[sessions,setSessions]=useState<FleetSession[]>([]);
  const [loaded,setLoaded]=useState(false),[loading,setLoading]=useState(true),[partial,setPartial]=useState(false),[error,setError]=useState(''),[refresh,setRefresh]=useState(0);
  const [harness,setHarness]=useState<FleetHarness>('codex'),[name,setName]=useState(''),[cwd,setCwd]=useState(''),[model,setModel]=useState('');
+ const [clock,setClock]=useState(Date.now());
  const [sending,setSending]=useState(false),[receipt,setReceipt]=useState<FleetCreateReceipt|null>(null);
  const [directRead,setDirectRead]=useState(false),[view,setView]=useState<{address:MeshAddress;title:string;cwd?:string;model?:string;historyUnavailable?:boolean;messages:{text?:string;role?:string;kind?:string}[]}|null>(null),[reading,setReading]=useState(false);
  const viewRequest=useRef<AbortController|null>(null);
@@ -41,9 +51,11 @@ export function FleetCabinet({creationMode=false,defaultHostId,onSelectedHostCha
  useEffect(()=>{if(!loaded)return;const abort=new AbortController();setSessions([]);client.sessions(hostId||undefined,abort.signal).then(r=>{if(abort.signal.aborted)return;setSessions(r.sessions);setPartial(!r.complete||r.limited);}).catch(()=>{if(!abort.signal.aborted)setError('Не удалось прочитать сессии этой машины');});return()=>abort.abort();},[client,hostId,loaded,refresh]);
  const selected=hosts.find(h=>h.hostId===hostId);
  const allowed=selected?.createHarnesses??[];
+ useEffect(()=>{if(selected?.state!=='ready'||selected.expiresAt===null)return;const timer=window.setTimeout(()=>setClock(Date.now()),Math.max(0,selected.expiresAt-Date.now()));return()=>window.clearTimeout(timer);},[selected?.hostId,selected?.state,selected?.expiresAt]);
+ const canCreate=loaded&&!loading&&selected?.state==='ready'&&selected.expiresAt!==null&&selected.expiresAt>clock&&allowed.includes(harness);
  useEffect(()=>{if(!allowed.includes(harness)&&allowed.length)setHarness(allowed[0]!);},[selected]);
  const submit=async(event:FormEvent)=>{
-  event.preventDefault();if(ownMutation.current||receipt?.state==='unknown')return;
+  event.preventDefault();if(ownMutation.current||receipt?.state==='unknown'||!canCreate)return;
   const inputId=crypto.randomUUID();const request={hostId,harness,name,cwd,...(model.trim()?{model:model.trim()}:{}),inputId};
   try{if(!intentStore.current)throw new Error('Нет сохранённого состояния кабинета');intentStore.current.begin(request);}catch{setError('Не удалось сохранить запрос. Создание не отправлено.');return;}
   ownMutation.current=true;setSending(true);setError('');
@@ -67,7 +79,7 @@ export function FleetCabinet({creationMode=false,defaultHostId,onSelectedHostCha
    <label>Название <input ref={nameElement} required maxLength={128} value={name} onChange={e=>setName(e.target.value)} disabled={sending}/></label>
    <label>Каталог проекта на выбранной машине <input required placeholder={hostId==='MacBook-Pro-User.local'?'/Users/user/project':'/home/roomhacker/project'} maxLength={4096} value={cwd} onChange={e=>setCwd(e.target.value)} disabled={sending}/></label>
    <label>Модель <input placeholder="По умолчанию" maxLength={128} value={model} onChange={e=>setModel(e.target.value)} disabled={sending}/></label>
-   <button disabled={loading||sending||!allowed.includes(harness)||selected?.state!=='ready'||receipt?.state==='unknown'}>{sending?'Создаётся…':'Создать на выбранной машине'}</button>
+   <button disabled={sending||!canCreate||receipt?.state==='unknown'}>{sending?'Создаётся…':'Создать на выбранной машине'}</button>
   </form>
   {directRead&&receipt?.state==='created'&&receipt.address&&<button type="button" onClick={()=>inspect(receipt.address!)}>Открыть созданную сессию</button>}
   {!directRead&&receipt?.state==='created'&&receipt.address&&fleetSessionLink(hosts.find(h=>h.hostId===receipt.address!.hostId),receipt.address)&&<a className="fleet-created-link" href={fleetSessionLink(hosts.find(h=>h.hostId===receipt.address!.hostId),receipt.address)}>Открыть созданную сессию</a>}

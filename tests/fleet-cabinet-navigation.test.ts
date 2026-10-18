@@ -16,6 +16,13 @@ describe('Fleet cabinet navigation (fast unit; expected 1s/max 10s; no native se
   expect(html).toContain('aria-label="Новая сессия"');
   expect(client.create).not.toHaveBeenCalled();
  });
+ it('shows the fleet catalog while the scoped machine check is still pending and keeps creation disabled',()=>{
+  const client={hosts:()=>new Promise(()=>{}),sessions:vi.fn(),create:vi.fn()} as any;
+  const html=renderToStaticMarkup(createElement(FleetCabinet,{client,defaultHostId:'roomhacker-server-100'}));
+  for(const host of ['roomhacker-server-100','server-44','roomhacker-server-88','mac-mini-2012.lan','MacBook-Pro-User.local'])expect(html).toContain(`value="${host}"`);
+  expect(html).toContain('Получаю список машин…');
+  expect(html).toMatch(/<button disabled[^>]*>Создать на выбранной машине<\/button>/);
+ });
  it('translates every native session state and keeps unknown diagnostics out of the label',()=>{
   for(const [state,label] of Object.entries({running:'Выполняет задачу',idle:'Ожидает задачи',needs_input:'Ждёт ответа',stopped:'Остановлена',error:'Ошибка сессии'})){
    expect(fleetSessionStatus(state)).toBe(label);
@@ -26,7 +33,7 @@ describe('Fleet cabinet navigation (fast unit; expected 1s/max 10s; no native se
   const html=renderToStaticMarkup(createElement(FleetCabinet,{creationMode:true,defaultHostId:'roomhacker-server-100'}));
   expect(html).toContain('fleet-cabinet-creating');
   expect(html).not.toContain('Переходы по кабинету');
-  expect(html).not.toMatch(/name="fleet-machine"[^>]*checked/);
-  expect(html).toContain('Создать на выбранной машине');
+  expect(html).toContain('Сервер 100 · Нужна проверка');
+  expect(html).toMatch(/<button disabled[^>]*>Создать на выбранной машине<\/button>/);
  });
 });
