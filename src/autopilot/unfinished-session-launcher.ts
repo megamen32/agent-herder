@@ -3347,11 +3347,21 @@ export class UnfinishedSessionLauncher {
     const fits = (candidates: AssessedSession[]): boolean => {
       if (partitionBatchCandidates(candidates, chunkSize).length > MAX_BATCH_PLAN_CHUNKS) return false;
       const metadataOnly = candidates.map(({ session, transcriptTail, humanMessages }) => ({ session, transcriptTail: "", humanMessages }));
-      const { estimatedTokens } = fitBatchContextForSerializedRequest(metadataOnly, contextBudget, (sessions) => ({
-        chunkRequests: partitionBatchCandidates(sessions, chunkSize)
-          .map((chunk) => buildBatchPlannerBudgetRequest(chunk, outputTokenBudget)),
-      }));
-      return estimatedTokens <= contextBudget;
+      try {
+        // Measure the exact envelope the real fit below reserves, including the
+        // repair, omission and reconciliation passes. Measuring only the first
+        // pass understates the wire budget and lets an oversized window through.
+        const { estimatedTokens } = fitBatchContextForSerializedRequest(
+          metadataOnly,
+          contextBudget,
+          (sessions) => batchPlannerBudgetRequests(sessions, chunkSize, outputTokenBudget),
+        );
+        return estimatedTokens <= contextBudget;
+      } catch {
+        // Even with no evidence left the envelope does not fit, and a longer
+        // window only grows it.
+        return false;
+      }
     };
     if (fits(assessed)) return assessed;
     // Both measures only grow with more candidates, so the longest fitting
@@ -3386,23 +3396,11 @@ export class UnfinishedSessionLauncher {
     const outputTokenBudget = configuredBatchOutputTokens();
     const window = this.boundedBatchPlanWindow(assessed, contextBudget, outputTokenBudget);
     const rawCandidates = window.map(({ session, transcriptTail, humanMessages }) => ({ session, transcriptTail, humanMessages }));
-    const globallyPacked = fitBatchContextForSerializedRequest(rawCandidates, contextBudget, (sessions) => ({
-      chunkRequests: partitionBatchCandidates(sessions, batchPlanChunkSize(outputTokenBudget))
-        .map((chunk) => buildBatchPlannerBudgetRequest(chunk, outputTokenBudget)),
-      // Reserve one bounded repair pass for every chunk before the first fetch.
-      // A malformed or incomplete result retries the entire chunk and discards
-      // the first result, so the repair envelope must be the same full request.
-      repairRequests: largestBatchPlannerBudgetRequests(
-        partitionBatchCandidates(sessions, batchPlanChunkSize(outputTokenBudget)),
-        MAX_REPAIRED_CHUNKS,
-        outputTokenBudget,
-      ),
-      // Persistent omissions are globally capped. Reserve exactly the four
-      // largest possible decide envelopes rather than multiplying evidence by
-      // every source in a large 48-hour inventory.
-      decisionRequests: largestSessionDecisionBudgetRequests(sessions, MAX_PERSISTENT_OMISSION_DECISIONS),
-      reconciliationRequests: worstCaseWorkspaceReconciliationBudgetRequests(sessions),
-    })).sessions;
+    const globallyPacked = fitBatchContextForSerializedRequest(
+      rawCandidates,
+      contextBudget,
+      (sessions) => batchPlannerBudgetRequests(sessions, batchPlanChunkSize(outputTokenBudget), outputTokenBudget),
+    ).sessions;
     const packedAssessed = window.map((candidate, index) => ({
       ...candidate,
       transcriptTail: globallyPacked[index]!.transcriptTail,
@@ -4842,6 +4840,31 @@ function buildBatchPlannerBudgetRequest(
       user_style: { revision: Number.MAX_SAFE_INTEGER, summary: "я".repeat(2400) },
       style_learning_messages: sessions.flatMap(s => s.humanMessages ?? []).slice(-8).map(m => m.text.slice(0, 1200)),
     }) }],
+  };
+}
+
+/**
+ * The single reserved wire-input envelope for one planning phase. Both the
+ * per-cycle window bound and the real context fit must measure exactly this
+ * object, otherwise the bound reserves less than the phase actually spends.
+ */
+function batchPlannerBudgetRequests(
+  sessions: SessionBatchCandidate[],
+  chunkSize: number,
+  outputTokenBudget: number,
+): unknown {
+  const chunks = partitionBatchCandidates(sessions, chunkSize);
+  return {
+    chunkRequests: chunks.map((chunk) => buildBatchPlannerBudgetRequest(chunk, outputTokenBudget)),
+    // Reserve one bounded repair pass for every chunk before the first fetch.
+    // A malformed or incomplete result retries the entire chunk and discards
+    // the first result, so the repair envelope must be the same full request.
+    repairRequests: largestBatchPlannerBudgetRequests(chunks, MAX_REPAIRED_CHUNKS, outputTokenBudget),
+    // Persistent omissions are globally capped. Reserve exactly the four
+    // largest possible decide envelopes rather than multiplying evidence by
+    // every source in a large 48-hour inventory.
+    decisionRequests: largestSessionDecisionBudgetRequests(sessions, MAX_PERSISTENT_OMISSION_DECISIONS),
+    reconciliationRequests: worstCaseWorkspaceReconciliationBudgetRequests(sessions),
   };
 }
 

@@ -602,13 +602,15 @@ describe("original task completion evidence", () => {
         expect(calls).toEqual({ resumes: 0, messages: [] });
     });
 
-    // Fast unit: a backlog wider than the safe planner chunk budget is a
-    // capacity fact, not a reason to refuse every session. Expected <5s,
-    // maximum 30s; judge.plan is a stub and no native action is allowed.
+    // Fast unit: a backlog wider than the safe planner window is a capacity fact,
+    // not a reason to refuse every session. The fixture carries the real
+    // reserved-envelope shape (eight user messages per session), so it also
+    // catches a window measured against less than the phase really reserves.
+    // Expected <5s, maximum 30s; judge.plan is a stub and no native action runs.
     it("plans a bounded priority window instead of refusing an oversized backlog", async () => {
         const root = await mkdtemp(join(tmpdir(), "oversized-backlog-"));
         try {
-            const sessions: AgentSession[] = Array.from({ length: 80 }, (_, index) => ({
+            const sessions: AgentSession[] = Array.from({ length: 124 }, (_, index) => ({
                 ...fixture("idle", "zcode", `backlog-${index}`),
                 cwd: `/tmp/oversized-backlog-${index}`,
                 lastActivity: new Date(Date.now() - (index + 1) * 1000).toISOString(),
@@ -616,6 +618,7 @@ describe("original task completion evidence", () => {
             const calls = { resumes: 0, messages: [] as string[] };
             const adapter = fakeAdapter(() => sessions[0]!, calls);
             adapter.listSessions = async () => sessions.map((session) => ({ ...session }));
+            adapter.getSessionMessages = async () => Array.from({ length: 8 }, (_, index) => ({ id: `u${index}`, role: "user" as const, text: `задача ${index} ${"я".repeat(1200)}`, parts: [{ type: "text" as const, text: `задача ${index} ${"я".repeat(1200)}` }] }));
             const planned: string[] = [];
             const policyStore = new AutopilotPolicyStore(join(root, "policy.json"));
             await policyStore.replacePolicy({ schemaVersion: 1, enabled: true, harnesses: ["zcode"], scope: { mode: "all_ingress" }, maxContinuationsPerSession: 10, timeout: { mode: "auto_continue", delayMs: 1000 }, card: { includeUserMessage: true, includeAssistantMessage: true, includeReason: true } }, null);
@@ -635,12 +638,12 @@ describe("original task completion evidence", () => {
             });
             await launcher.runAutopilotCycle();
             const inventory = await store.listInventory();
-            expect(inventory).toHaveLength(80);
+            expect(inventory).toHaveLength(124);
             // Planned sessions get their verdict; the rest keep a refreshed
             // snapshot and stay verdict-free for the next cycle, with no
             // assessment failure and no growing backoff invented for them.
             expect(planned.length).toBeGreaterThan(0);
-            expect(planned.length).toBeLessThan(80);
+            expect(planned.length).toBeLessThan(124);
             expect(new Set(planned).size).toBe(planned.length);
             expect(inventory.filter((record) => record.verdict?.verdict === "completed").length).toBe(planned.length);
             expect(inventory.filter((record) => record.assessmentFailure)).toEqual([]);
