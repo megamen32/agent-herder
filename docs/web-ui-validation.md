@@ -12,9 +12,10 @@ Current `agent-herder.service` ceilings: MemoryHigh=1 GiB, MemoryMax=2 GiB, CPUQ
 
 - TypeScript and Vite production build.
 - Focused web-ui, web-ui-controls and launch-policy-settings tests, one worker.
+- For `agent.bezrabotnyi.com`, the public `/` and `/assets/` locations are pinned to an immutable release under `/var/www/agent-herder-ui/<commit>`. The managed pin lives in `ServersAdministartion/nginx-dev/state/files/sites-available/agent.bezrabotnyi.com`; rebuilding `dist/web-static` or restarting `agent-herder.service` alone does not publish a new public UI. Stage only `dist/web-static`, update and apply that vhost through the nginx-dev workflow, then verify the active release header and the authenticated browser page. Keep the previous release intact for rollback.
 - Real browser desktop and 390px mobile: open existing session messages, navigate rail sections, confirm Fast Agent and MiniMax in the new-chat form without launching work merely for a visual check.
 - Mobile folder suggestions must scroll inside the form while model/Create and composer remain reachable.
 - Automation keyboard navigation must reach visible controls and collapsed advanced summaries, never hidden fields.
 - Capture final screenshots and real session consumer canary after all intentional backend restarts and deployment changes finish.
 
-`npm run build` writes static output served by the running backend, so treat it as deployment-affecting. Finish source review and scoped commit/push before final deploy/build and acceptance canary.
+`npm run build` writes static output served by the running backend, so treat it as deployment-affecting. The public static pin is a separate deployment step described above. Finish source review and scoped commit/push before final deploy/build and acceptance canary.
