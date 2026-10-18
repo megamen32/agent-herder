@@ -166,7 +166,7 @@ function configureAdapterRegistry(): void {
   adapterFactories.set("claude", () => ENABLE_CLAUDE_SDK ? new ClaudeSDKAdapter() : new ClaudeCodeAdapter({ claudeBin: process.env.CLAUDE_BIN }));
   adapterFactories.set("codex", () => CODEX_TRANSPORT === "cli"
     ? new CodexAdapter({ codexBin: process.env.CODEX_BIN, codexDir: process.env.CODEX_DATA_DIR })
-    : new CodexAppServerAdapter({ codexBin: process.env.CODEX_BIN, cwd: process.env.CODEX_CWD, modelIds: parseCsv(process.env.CODEX_MODELS, ["o4-mini", "o3", "gpt-4.1", "gpt-4o"]) }));
+    : new CodexAppServerAdapter({ codexBin: process.env.CODEX_BIN, cwd: process.env.CODEX_CWD, modelIds: parseCsv(process.env.CODEX_MODELS, []) }));
   adapterFactories.set("qoder", () => new AcpAdapter({
     profile: "qoder", harness: "qoder", command: process.env.QODER_BIN || "qodercli",
     args: [...parseArgs(process.env.QODER_ARGS, "QODER_ARGS"), "--acp", ...(process.env.QODER_MODEL ? ["--model", process.env.QODER_MODEL] : [])],
@@ -292,7 +292,7 @@ async function initAdapters() {
       const nativeAdapter = new CodexAppServerAdapter({
         codexBin: process.env.CODEX_BIN,
         cwd: process.env.CODEX_CWD,
-        modelIds: parseCsv(process.env.CODEX_MODELS, ["o4-mini", "o3", "gpt-4.1", "gpt-4o"]),
+        modelIds: parseCsv(process.env.CODEX_MODELS, []),
       });
       adapters.set("codex", nativeAdapter);
       adapterRegistry.registerActive(nativeAdapter);

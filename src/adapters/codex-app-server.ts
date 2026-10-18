@@ -181,7 +181,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (this.socketPath && (!isAbsolute(this.socketPath) || this.socketPath.includes(":") || this.socketPath.includes("?"))) {
       throw new Error("CODEX_APP_SERVER_SOCKET must be an absolute Unix socket path without ':' or '?' characters");
     }
-    this.modelIds = config.modelIds || ["o4-mini", "o3", "o3-mini", "gpt-4.1", "gpt-4o"];
+    this.modelIds = config.modelIds || [];
     this.requestTimeoutMs = config.requestTimeoutMs || 30_000;
     this.deliveryReceipts = new CodexDeliveryReceipts(config.codexDir);
     this.rawTranscriptAdapter = new CodexAdapter({ codexBin: this.codexBin, codexDir: config.codexDir });
@@ -902,7 +902,32 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async listModels(): Promise<string[]> {
-    return [...this.modelIds];
+    // Explicit operator overrides stay supported. The default must follow the
+    // same native client that will execute the selected model, not old constants.
+    if (this.modelIds.length) return [...this.modelIds];
+    await this.ensureReady();
+    const rows: Array<{model: string; isDefault: boolean}> = [];
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    for (let page = 0; page < 20; page++) {
+      const result = await this.request("model/list", {
+        limit: 100, includeHidden: false, ...(cursor ? {cursor} : {}),
+      }) as {data?: Array<{model?: unknown; id?: unknown; hidden?: boolean; isDefault?: boolean}>; nextCursor?: string | null};
+      if (!result || !Array.isArray(result.data)) throw new Error("Native Codex model catalog is unavailable or malformed");
+      for (const item of result.data) {
+        if (!item || item.hidden) continue;
+        const model = typeof item.model === "string" ? item.model : item.id;
+        if (typeof model === "string" && model.trim()) rows.push({model, isDefault: item.isDefault === true});
+      }
+      if (!result.nextCursor) {
+        rows.sort((a,b)=>Number(b.isDefault)-Number(a.isDefault));
+        return [...new Set(rows.map(row=>row.model))];
+      }
+      if (typeof result.nextCursor !== "string" || cursors.has(result.nextCursor)) throw new Error("Native Codex model catalog repeated or malformed cursor");
+      cursor = result.nextCursor;
+      cursors.add(cursor);
+    }
+    throw new Error("Native Codex model catalog exceeded bounded pagination");
   }
 
   async respondPermission(
