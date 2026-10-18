@@ -2924,7 +2924,14 @@ export class UnfinishedSessionLauncher {
         if (!await this.admissionAllowed(source.session, "attempt")) { admissionHeld = true; break; }
       }
       if (!this.lifecycleActive(lifecycleEpoch)) return;
-      if (admissionHeld) continue;
+      if (admissionHeld) {
+        // A plan that produced a verdict but whose group the admission gate
+        // refused must never look like a success. The record stays untouched so
+        // the next cycle assesses it again, but the drop is named: a gate that
+        // refuses everything otherwise silences the whole planner with no trace.
+        console.error(`[agent-herder] единый план построен, но допуск отклонил группу из ${sources.length} сесс. (${sources[0]!.session.harness}); вердикт не применён, сессии ждут следующего цикла`);
+        continue;
+      }
       let humanStoppedSource = false;
       for (const source of sources) {
         if (await this.suppressIfHumanStopped(source.session.harness, source.session.id, sessionWorkspaceIdentity(source.session), source.session)) {
