@@ -620,6 +620,7 @@ describe("original task completion evidence", () => {
             adapter.listSessions = async () => sessions.map((session) => ({ ...session }));
             adapter.getSessionMessages = async () => Array.from({ length: 8 }, (_, index) => ({ id: `u${index}`, role: "user" as const, text: `задача ${index} ${"я".repeat(1200)}`, parts: [{ type: "text" as const, text: `задача ${index} ${"я".repeat(1200)}` }] }));
             const planned: string[] = [];
+            let planCalls = 0;
             const policyStore = new AutopilotPolicyStore(join(root, "policy.json"));
             await policyStore.replacePolicy({ schemaVersion: 1, enabled: true, harnesses: ["zcode"], scope: { mode: "all_ingress" }, maxContinuationsPerSession: 10, timeout: { mode: "auto_continue", delayMs: 1000 }, card: { includeUserMessage: true, includeAssistantMessage: true, includeReason: true } }, null);
             const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -632,6 +633,7 @@ describe("original task completion evidence", () => {
                     async decide() { return { verdict: "unfinished", reason: "work remains", confidence: 1 }; },
                     async plan({ sessions: plannedSessions }) {
                         planned.push(...plannedSessions.map(({ session }) => session.id));
+                        planCalls += 1;
                         return { groups: plannedSessions.map(({ session }) => ({ sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed", reason: "verified", confidence: 1, topic: "task", handoff: "" })) };
                     },
                 },
@@ -645,6 +647,10 @@ describe("original task completion evidence", () => {
             expect(planned.length).toBeGreaterThan(0);
             expect(planned.length).toBeLessThan(124);
             expect(new Set(planned).size).toBe(planned.length);
+            // One provider round per chunk at the configured concurrency: a cycle
+            // must stay short enough to finish inside its own deadline, because
+            // nothing is applied until the whole phase returns.
+            expect(planCalls).toBeLessThanOrEqual(12);
             expect(inventory.filter((record) => record.verdict?.verdict === "completed").length).toBe(planned.length);
             expect(inventory.filter((record) => record.assessmentFailure)).toEqual([]);
             expect(inventory.every((record) => record.transcriptTail !== undefined)).toBe(true);

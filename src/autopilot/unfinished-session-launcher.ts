@@ -35,6 +35,13 @@ const DEFAULT_BATCH_OUTPUT_TOKENS = 16_384;
 // chunk is rejected by exact coverage before a verdict or continuation applies.
 const MAX_BATCH_PLAN_SESSIONS_PER_REQUEST = 32;
 const MAX_BATCH_PLAN_CHUNKS = 64;
+/**
+ * Sequential provider rounds one planning phase may spend, at the configured
+ * concurrency. The phase deadline is a ceiling, not a schedule: it cannot stop
+ * a phase that keeps requesting inside it, and nothing is applied until the
+ * whole phase finishes.
+ */
+const MAX_BATCH_PLAN_ROUNDS = 4;
 const DEFAULT_BATCH_PLAN_CONCURRENCY = 3;
 const MAX_REPAIRED_CHUNKS = 6;
 /** Enough to leave a dead pooled connection behind, short enough to keep the phase budget. */
@@ -3344,8 +3351,9 @@ export class UnfinishedSessionLauncher {
     outputTokenBudget: number,
   ): AssessedSession[] {
     const chunkSize = batchPlanChunkSize(outputTokenBudget);
+    const maxChunks = this.batchPlanChunkBudget();
     const fits = (candidates: AssessedSession[]): boolean => {
-      if (partitionBatchCandidates(candidates, chunkSize).length > MAX_BATCH_PLAN_CHUNKS) return false;
+      if (partitionBatchCandidates(candidates, chunkSize).length > maxChunks) return false;
       const metadataOnly = candidates.map(({ session, transcriptTail, humanMessages }) => ({ session, transcriptTail: "", humanMessages }));
       try {
         // Measure the exact envelope the real fit below reserves, including the
@@ -3381,6 +3389,24 @@ export class UnfinishedSessionLauncher {
     }
     console.error(`[agent-herder] очередь оценки шире окна планировщика: ${assessed.length} сесс., в этом цикле планируются первые ${low}`);
     return assessed.slice(0, low);
+  }
+
+  /**
+   * Chunks one planning phase may request. The reserved wire-input budget only
+   * bounds size; a phase is also bounded by wall clock, and every chunk is one
+   * sequential provider round at the configured concurrency. A window that fits
+   * the tokens can still overrun the phase deadline — the live cycle planned 60
+   * chunks, ran past ten minutes, and never applied a single verdict, because
+   * the inventory is only written when the whole phase finishes. Rounds keep a
+   * cycle short enough to finish, apply and be seen, and the rest of the
+   * priority-ordered backlog is assessed on the following cycles.
+   */
+  private batchPlanChunkBudget(): number {
+    const concurrency = Math.min(DEFAULT_BATCH_PLAN_CONCURRENCY, positiveInteger(
+      Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY || DEFAULT_BATCH_PLAN_CONCURRENCY),
+      DEFAULT_BATCH_PLAN_CONCURRENCY,
+    ));
+    return Math.min(MAX_BATCH_PLAN_CHUNKS, concurrency * MAX_BATCH_PLAN_ROUNDS);
   }
 
   private async planAssessedSessions(assessed: AssessedSession[]): Promise<{ plan: SessionBatchPlan; window: AssessedSession[] }> {
