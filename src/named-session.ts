@@ -354,6 +354,19 @@ export type DeliverCreate = "if_missing" | "never";
 export interface DeliverNamedRequest extends NewOrResumeNamedSessionRequest { create?: DeliverCreate; activation?: DeliverActivation; }
 export type DeliverResult = Omit<NamedSessionResult, "delivery"> & { sessionStatus?: AgentSession["status"]; activated?: boolean; delivery?: NamedSessionResult["delivery"] | "deferred" | "skipped_inactive" | "not_found"; };
 
+/** Apply an explicitly selected model before an idle delivery, never ignore it. */
+export async function selectDeliveryModel(adapter: HarnessAdapter, session: AgentSession, model?: string): Promise<string | null> {
+  if (model === undefined || model === session.model) return null;
+  if (session.status === "running" || session.status === "needs_input" || session.needsPermission) {
+    return "The target is active or awaiting permission; its model cannot be changed for this delivery. Continue independent work, then send with the chosen model when it is idle.";
+  }
+  if (!adapter.changeModel) return "The target adapter does not support explicit model selection; no message was sent";
+  try {
+    const selected = await adapter.changeModel(session.id, model);
+    return selected.ok ? null : selected.error || "Model selection failed; no message was sent";
+  } catch (error) { return error instanceof Error ? error.message : String(error); }
+}
+
 export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, request: DeliverNamedRequest): Promise<DeliverResult> {
   return withNamedSessionLock(request, async normalized => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
@@ -381,13 +394,16 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     if (await sourceHeldNow(request) || await automaticDeliveryHeld(fresh, false, adapter)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: fresh.id, activated: false };
     if (activation==="if_running" && (fresh.meta?.nativeStateObserved === false || fresh.meta?.nativeLoaded === false)) return {...failed(normalized,"Текущая native-активность не установлена.","not_attempted"),sessionId:fresh.id,activated:false};
     if (activation==="if_running" && !isCoordinationActive(fresh)) return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"skipped_inactive",activated:false,...normalized};
+    if (activation==="defer" && request.model && request.model!==fresh.model) return {...failed(normalized,"A deferred message cannot preserve a model override; select it explicitly at delivery time","not_attempted"),sessionId:fresh.id,activated:false};
     if (activation==="defer" && fresh.status!=="running") { await deferredMessages.add(fresh.id,request.message); return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"deferred",activated:false,...normalized}; }
+    const modelError = await selectDeliveryModel(adapter,fresh,request.model);
+    if (modelError) return {...failed(normalized,modelError,"not_attempted"),sessionId:fresh.id,activated:false};
     const pending=await withDeferred(fresh.id,request.message); const injected=await coordinationNotes.inject(fresh,pending.message);
     if (await sourceHeldNow(request) || await automaticDeliveryHeld(fresh, false, adapter)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: fresh.id, activated: false };
     const options={message:injected,retainedInboxIds:pending.ids,queue:(request.mode||"queue")==="queue",inputId:request.inputId ?? createHash("sha256").update(request.message).digest("hex"),origin:"automation" as const};
     const sent=activation==='if_running'?await sendCurrentTurnOnly(adapter,fresh.id,options):await adapter.sendMessage(fresh.id,options);
     if (sent.notSubmitted) return {ok:sent.error?.startsWith('skipped_inactive')===true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:sent.error?.startsWith('skipped_inactive')?'skipped_inactive':'not_attempted',activated:false,...normalized,...(sent.error?.startsWith('skipped_inactive')?{}:{error:sent.error})};
-    const receipt = {...(sent.admissionKind?{admissionKind:sent.admissionKind}:{}),...(sent.admitted !== undefined ? {admitted:sent.admitted} : {}), ...(sent.inputId ? {inputId:sent.inputId} : {}), ...(sent.turnId ? {turnId:sent.turnId} : {}), ...(sent.admissionUnknown ? {admissionUnknown:true,nonRetryable:true} : {})};
+    const receipt = {...(request.model?{requestedModel:request.model}:{}),...(sent.admissionKind?{admissionKind:sent.admissionKind}:{}),...(sent.admitted !== undefined ? {admitted:sent.admitted} : {}), ...(sent.inputId ? {inputId:sent.inputId} : {}), ...(sent.turnId ? {turnId:sent.turnId} : {}), ...(sent.admissionUnknown ? {admissionUnknown:true,nonRetryable:true} : {})};
     if (!sent.ok && sent.admissionUnknown && sent.nonRetryable && sent.admissionKind !== "current_turn_context" && pending.ids.length) await deferredMessages.remove(pending.ids);
     if (!sent.ok && sent.admitted && sent.nonRetryable) {
       const result: DeliverResult = {ok:false,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"accepted_failed",activated:false,admitted:true,nonRetryable:true,error:sent.error||"Native turn failed after prompt admission",...normalized,...receipt};

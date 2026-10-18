@@ -20,7 +20,7 @@ import {
 import { throwIfAborted } from "../abort-utils.js";
 import { automaticDeliveryHeld, holdManualStop, HUMAN_STOP_MESSAGE } from "../human-stop-actions.js";
 import { buildMessageProvenanceHeader } from "../message-provenance.js";
-import { createNamedSession, newOrResumeNamedSession, deliverNamedSession } from "../named-session.js";
+import { createNamedSession, newOrResumeNamedSession, deliverNamedSession, selectDeliveryModel } from "../named-session.js";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { relative, resolve, sep } from "node:path";
@@ -552,7 +552,10 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
     const activation = parsed.activation ?? 'if_running';
     if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
     if (activation === "if_running" && !isCoordinationActive(fresh)) return skippedCoordination(fresh);
+    if (activation === "defer" && parsed.model && parsed.model !== fresh.model) return JSON.stringify({ok:false,sessionId:fresh.id,delivery:"not_attempted",activated:false,error:"A deferred message cannot preserve a model override; select it explicitly at delivery time"});
     if (activation === "defer" && fresh.status !== "running") { await deferredMessages.add(fresh.id, parsed.message); return JSON.stringify({ ok:true, sessionId:fresh.id, harness:fresh.harness, sessionStatus:fresh.status, delivery:"deferred", activated:false }); }
+    const modelError = await selectDeliveryModel(found.adapter,fresh,parsed.model);
+    if (modelError) return JSON.stringify({ok:false,sessionId:fresh.id,delivery:"not_attempted",activated:false,error:modelError});
     const pending = await withDeferred(fresh.id, parsed.message);
     const injected = await coordinationNotes.inject(fresh, pending.message);
     if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
@@ -572,6 +575,7 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
       return JSON.stringify({ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"deferred",activated:false});
     }
     const receipt = {
+      ...(parsed.model ? {requestedModel:parsed.model} : {}),
       ...(sent.admissionKind ? {admissionKind:sent.admissionKind} : {}),
       ...(sent.admitted !== undefined ? {admitted:sent.admitted} : {}),
       ...(sent.inputId ? {inputId:sent.inputId} : {}),
