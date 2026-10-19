@@ -140,7 +140,7 @@ export function registerSessionTools(server: McpServer, deps: {
     const result = await handleCreateSession(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("new_or_resume", { description: "Reuse the exact named session for harness+CWD or create it, then deliver one message.", inputSchema: NewOrResumeSchema }, async (args) => {
+  server.registerTool("new_or_resume", { description: "Reuse the exact named session for harness+CWD or create it, then deliver one message. For quota-aware routing, call model_quotas and provide only explicitly allowed same-harness fallbackModels in priority order. A fallback is attempted only after a provider-specific hard quota rejection before admission; generic rate limits, unknown/accepted admission and manual stops never trigger it.", inputSchema: NewOrResumeSchema }, async (args) => {
     const result = await handleNewOrResume(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });

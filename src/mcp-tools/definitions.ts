@@ -262,7 +262,7 @@ export const toolDefinitions: Tool[] = [
   },
   {
     name: "new_or_resume",
-    description: "Reuse the exact named session for harness+CWD or create it, then deliver one message.",
+    description: "Reuse the exact named session for harness+CWD or create it, then deliver one message. For quota-aware routing, call model_quotas and provide only explicitly allowed same-harness fallbackModels in priority order. A fallback is attempted only after a provider-specific hard quota rejection before admission.",
     inputSchema: {
       type: "object" as const,
       properties: {
