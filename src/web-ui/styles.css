@@ -604,6 +604,12 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .rag-index-error{color:#ff9a91}
 .rag-results h2{font-size:18px}
 .rag-search-timings{display:block;margin-top:5px;color:var(--text-secondary,#a0a2a8);font-size:12px;font-weight:400}
+.rag-result-groups{max-width:1100px;margin:0 auto 18px}
+.rag-result-group{margin-bottom:12px;border:1px solid var(--border,#34363b);border-radius:12px;background:var(--surface-raised,#191a1e);overflow:hidden}
+.rag-result-fold{display:flex;width:100%;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;border:0;background:transparent;color:var(--text-primary,#e9e9eb);font:inherit;text-align:left;cursor:pointer}
+.rag-result-fold:hover{background:rgba(255,255,255,.035)}
+.rag-result-fold small{color:var(--text-secondary,#a0a2a8);font-size:12px;white-space:nowrap}
+.rag-result-group .rag-results{padding:0 16px 8px}
 .rag-result{padding:16px 0;border-top:1px solid var(--border,#34363b)}
 .rag-result-meta{display:flex;gap:12px;align-items:center;color:var(--text-secondary,#a0a2a8);font-size:12px}
 .rag-result h3{margin:8px 0 4px;font-size:16px}

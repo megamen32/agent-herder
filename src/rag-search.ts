@@ -273,12 +273,6 @@ export class AgentHerderRag {
     const exactMs = Date.now() - exactStartedAt;
     await onProgress({ type: "results", source: "exact", results: exactResults, elapsedMs: exactMs });
 
-    if (exactResults.length >= requestedLimit) {
-      const totalMs = Date.now() - startedAt;
-      await onProgress({ type: "complete", exactMs, totalMs });
-      return { results: exactResults, run: state.run ?? null, timings: { exactMs, totalMs } };
-    }
-
     await onProgress({ type: "phase", stage: "semantic" });
     const semanticStartedAt = Date.now();
     const [vector] = await embed([clean]);
@@ -286,13 +280,14 @@ export class AgentHerderRag {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ vector, limit: Math.min(100, requestedLimit * 10), with_payload: true, ...(must.length ? { filter: { must } } : {}) }),
     });
+    const semanticSeen = new Set<string>();
     const semanticResults = (Array.isArray(data?.result) ? data.result : []).flatMap((hit: Hit) => {
       const payload = object(hit.payload);
       const key = `${payload.harness}:${payload.session_id}`;
-      if (!payload.harness || !payload.session_id || seen.has(key)) return [];
-      seen.add(key);
+      if (!payload.harness || !payload.session_id || semanticSeen.has(key)) return [];
+      semanticSeen.add(key);
       return [{ score: hit.score, ...payload, source: "semantic" }];
-    }).slice(0, Math.max(0, requestedLimit - exactResults.length));
+    }).slice(0, requestedLimit);
     if (resolveSession) await Promise.all(semanticResults.map(async (hit: Record<string, any>) => {
       if (hit.harness !== "codex" || !String(hit.title || "").startsWith("rollout-")) return;
       const session = await resolveSession(hit.harness, String(hit.session_id)).catch(() => undefined);

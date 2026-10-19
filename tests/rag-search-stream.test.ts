@@ -88,14 +88,16 @@ describe("Agent Herder progressive search", () => {
     expect(response.headers["x-accel-buffering"]).toBe("no");
   });
 
-  it("finishes immediately when the exact stage already filled the requested result limit", async () => {
+  it("runs the semantic search independently even when exact matches fill their own result limit", async () => {
     const fetchMock = vi.fn(async (input: URL | RequestInfo) => {
       const url = String(input);
       if (url.endsWith("/points/scroll")) {
         return Response.json({ result: { points: Array.from({ length: 20 }, (_, index) => point(`exact-${index}`, "TGC TelegramAuto")), next_page_offset: null } });
       }
       if (url.includes("/v1/embeddings")) return Response.json({ data: [{ embedding: Array(2048).fill(0.1) }] });
-      if (url.endsWith("/points/search")) return Response.json({ result: [] });
+      if (url.endsWith("/points/search")) {
+        return Response.json({ result: [{ id: "semantic-1", score: 0.7, payload: point("semantic-1", "Семантическое совпадение").payload }] });
+      }
       throw new Error(`Unexpected request: ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -113,7 +115,9 @@ describe("Agent Herder progressive search", () => {
 
     expect(await handled).toBe(true);
     expect(response.body).toContain('"type":"complete"');
-    expect(response.body).not.toContain('"stage":"semantic"');
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/v1/embeddings"))).toBe(false);
+    expect(response.body).toContain('"stage":"semantic"');
+    expect(response.body).toContain('"source":"semantic"');
+    expect(response.body).toContain("Семантическое совпадение");
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/v1/embeddings"))).toBe(true);
   });
 });

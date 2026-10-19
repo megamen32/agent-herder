@@ -22,7 +22,10 @@ export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSessi
   const [from, setFrom] = React.useState(savedPreferences.from);
   const [to, setTo] = React.useState(savedPreferences.to);
   const [project, setProject] = React.useState(savedPreferences.project);
-  const [results, setResults] = React.useState<SearchHit[]>([]);
+  const [exactResults, setExactResults] = React.useState<SearchHit[]>([]);
+  const [semanticResults, setSemanticResults] = React.useState<SearchHit[]>([]);
+  const [exactExpanded, setExactExpanded] = React.useState(true);
+  const [semanticExpanded, setSemanticExpanded] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [searchStage, setSearchStage] = React.useState<"exact" | "semantic" | null>(null);
   const [timings, setTimings] = React.useState<SearchTimings>();
@@ -57,7 +60,7 @@ export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSessi
     finally { setBusy(false); }
   };
   const search = async (event: React.FormEvent) => {
-    event.preventDefault(); setBusy(true); setSearchStage("exact"); setTimings(undefined); setResults([]); setError("");
+    event.preventDefault(); setBusy(true); setSearchStage("exact"); setTimings(undefined); setExactResults([]); setSemanticResults([]); setError("");
     try {
       const response = await fetch("/api/rag/search/stream", {
         method: "POST",
@@ -80,10 +83,8 @@ export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSessi
           setSearchStage(progress.stage === "semantic" ? "semantic" : "exact");
         } else if (progress.type === "results") {
           const incoming = Array.isArray(progress.results) ? progress.results as SearchHit[] : [];
-          setResults((current) => {
-            const keys = new Set(current.map((hit) => `${hit.harness}:${hit.session_id}`));
-            return [...current, ...incoming.filter((hit) => !keys.has(`${hit.harness}:${hit.session_id}`))];
-          });
+          if (progress.source === "semantic") setSemanticResults(incoming);
+          else setExactResults(incoming);
           setTimings((current) => ({ ...current, [progress.source === "semantic" ? "semanticMs" : "exactMs"]: progress.elapsedMs }));
         } else if (progress.type === "complete") {
           setTimings({ exactMs: progress.exactMs, semanticMs: progress.semanticMs, totalMs: progress.totalMs });
@@ -120,13 +121,17 @@ export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSessi
   const forget = async () => {
     if (!window.confirm("Удалить индекс Agent Herder из Qdrant? Исходные истории останутся без изменений.")) return;
     setBusy(true); setError("");
-    try { setSettings(await api("/api/rag/index", "DELETE", {})); setResults([]); }
+    try { setSettings(await api("/api/rag/index", "DELETE", {})); setExactResults([]); setSemanticResults([]); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Не удалось удалить индекс"); }
     finally { setBusy(false); }
   };
 
+  const renderHits = (hits: SearchHit[]) => hits.map((hit, index) => <article className="rag-result" key={`${hit.harness}:${hit.session_id}:${hit.message_id}:${index}`}><div className="rag-result-meta"><span>{labels[hit.harness] || hit.harness}</span><time>{hit.timestamp ? new Date(hit.timestamp).toLocaleDateString("ru-RU") : ""}</time></div><h3><button className="rag-result-open" onClick={() => onOpenSession?.(hit.harness, hit.session_id)}>{hit.title || hit.session_id} ↗</button></h3>{hit.directory && <small>{hit.directory}</small>}<p>{hit.text}</p></article>);
+  const exactPending = busy && searchStage === "exact" && timings?.exactMs === undefined;
+  const semanticPending = busy && searchStage !== null && timings?.semanticMs === undefined;
+
   return <section className="rag-search-page" aria-label="Расширенный поиск">
-    <header className="rag-search-heading"><div><span className="eyebrow">AGENT HERDER · QDRANT</span><h1>Поиск по сессиям</h1><p>Ищите по смыслу в разговорах Codex, ZCode и OpenCode.</p></div>
+    <header className="rag-search-heading"><div><span className="eyebrow">AGENT HERDER · QDRANT</span><h1>Поиск по сессиям</h1><p>Ищите по тексту и смыслу в разговорах Codex, ZCode и OpenCode.</p></div>
       {settings?.enabled && <div className="rag-index-actions"><button className="quiet-button" onClick={() => void reindex()} disabled={busy || settings.run?.status === "running"}>Обновить индекс</button><button className="quiet-button" onClick={() => void disable()} disabled={busy}>Приостановить</button><button className="quiet-button" onClick={() => void forget()} disabled={busy}>Удалить индекс</button></div>}
     </header>
     {settings?.run?.status === "running" && <div className="rag-index-status" role="status">Индексируются сессии{settings.run.current ? ` · ${settings.run.current}` : ""}. Обработано {settings.run.processed || 0}, фрагментов {settings.run.indexed || 0}.</div>}
@@ -142,9 +147,21 @@ export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSessi
           <button className="primary-button" disabled={busy || !query.trim()}>{busy ? searchStage === "semantic" ? "Ищем по смыслу…" : "Ищем в тексте…" : "Найти"}</button>
         </div>
       </form>
-      {busy && <p className="rag-empty" role="status">{searchStage === "semantic" ? "Совпадения по тексту уже показаны. Подбираю похожие по смыслу…" : "Ищу в тексте…"}</p>}
-      {results.length > 0 && <div className="rag-results" aria-live="polite"><h2>Результаты · {results.length}{timings && <small className="rag-search-timings">Текст {timings.exactMs ?? "…"} мс · RAG {timings.semanticMs === undefined ? timings.totalMs === undefined ? "…" : "не запускался" : `${timings.semanticMs} мс`} · всего {timings.totalMs ?? "…"} мс</small>}</h2>{results.map((hit, index) => <article className="rag-result" key={`${hit.harness}:${hit.session_id}:${hit.message_id}:${index}`}><div className="rag-result-meta"><span>{labels[hit.harness] || hit.harness}{hit.source ? ` · ${hit.source === "exact" ? "по тексту" : "по смыслу"}` : ""}</span><time>{hit.timestamp ? new Date(hit.timestamp).toLocaleDateString("ru-RU") : ""}</time></div><h3><button className="rag-result-open" onClick={() => onOpenSession?.(hit.harness, hit.session_id)}>{hit.title || hit.session_id} ↗</button></h3>{hit.directory && <small>{hit.directory}</small>}<p>{hit.text}</p></article>)}</div>}
-      {!results.length && !busy && <p className="rag-empty">{timings ? "Совпадений не найдено." : "Введите запрос, чтобы найти точные совпадения и похожие темы."}</p>}
+      {(busy || timings) && <div className="rag-result-groups" aria-live="polite">
+        <section className="rag-result-group" aria-label="Точный поиск">
+          <button className="rag-result-fold" type="button" aria-expanded={exactExpanded} aria-controls="rag-exact-results" onClick={() => setExactExpanded((open) => !open)}><span>{exactExpanded ? "⌄" : "›"} Точный поиск · {exactResults.length}</span><small>{timings?.exactMs === undefined ? exactPending ? "Ищет…" : "—" : `${timings.exactMs} мс`}</small></button>
+          <div id="rag-exact-results" hidden={!exactExpanded} className="rag-results">
+            {exactPending ? <p className="rag-empty">Ищу совпадения в тексте…</p> : exactResults.length ? renderHits(exactResults) : <p className="rag-empty">Точных совпадений не найдено.</p>}
+          </div>
+        </section>
+        <section className="rag-result-group" aria-label="Семантический поиск">
+          <button className="rag-result-fold" type="button" aria-expanded={semanticExpanded} aria-controls="rag-semantic-results" onClick={() => setSemanticExpanded((open) => !open)}><span>{semanticExpanded ? "⌄" : "›"} Семантический RAG · {semanticResults.length}</span><small>{timings?.semanticMs === undefined ? semanticPending ? "Ищет…" : "—" : `${timings.semanticMs} мс`}</small></button>
+          <div id="rag-semantic-results" hidden={!semanticExpanded} className="rag-results">
+            {semanticPending ? <p className="rag-empty">{searchStage === "semantic" ? "Подбираю похожие по смыслу…" : "Начнётся после текстового поиска."}</p> : semanticResults.length ? renderHits(semanticResults) : <p className="rag-empty">Семантических совпадений не найдено.</p>}
+          </div>
+        </section>
+      </div>}
+      {!timings && !busy && <p className="rag-empty">Введите запрос, чтобы отдельно найти совпадения в тексте и похожие темы.</p>}
     </>}
     {error && <p className="rag-index-error" role="alert">{error}</p>}
     <footer className="rag-search-footer">Векторная модель {settings?.model || "qwen3-embedding:4b"} · {settings?.dimensions || 2048} измерения · отдельная коллекция Qdrant.</footer>
