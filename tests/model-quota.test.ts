@@ -19,6 +19,18 @@ async function miniMax(body: unknown) {
   })).providers[1];
 }
 
+it.each(["fixture-private-code", "", "123456789", "12\n", "-1", "1e2"])("redacts non-numeric or oversized string code %j at every telemetry depth", async (code) => {
+  const result = await miniMax({ code, model_remains: [{ ...observedGeneral, code }] });
+  const details = result.details as { code?: unknown; model_remains: Array<{ code?: unknown }> };
+  expect(details).not.toHaveProperty("code");
+  expect(details.model_remains[0]).not.toHaveProperty("code");
+});
+
+it.each(["0", "12345678", 2056])("preserves safe provider code %j", async (code) => {
+  const result = await miniMax({ code, model_remains: [{ ...observedGeneral, code }] });
+  expect(result.details).toMatchObject({ code, model_remains: [{ code }] });
+});
+
 it("classifies observed general interval zero / weekly69 as exhausted and preserves millisecond reset fields", async () => {
   expect(await miniMax({ base_resp: { status_code: 0 }, model_remains: [observedGeneral] }))
     .toMatchObject({ state: "quota_exhausted", details: { model_remains: [observedGeneral] } });

@@ -37,8 +37,12 @@ const safeDetails = (value: unknown, depth = 0): unknown => {
   const out: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
     if (!detailKeys.has(key)) continue;
+    if (key === "code" && typeof item === "string") {
+      if (/^\d{1,8}$/u.test(item)) out[key] = item;
+      continue;
+    }
     if (item === null || typeof item === "boolean" || (typeof item === "number" && Number.isFinite(item))) out[key] = item;
-    else if (typeof item === "string" && /^(?:model|type|unit|status|plan|period|name|code)/u.test(key)) out[key] = item.slice(0, 120);
+    else if (typeof item === "string" && /^(?:model|type|unit|status|plan|period|name)/u.test(key)) out[key] = item.slice(0, 120);
     else {
       const nested = safeDetails(item, depth + 1);
       if (nested !== undefined) out[key] = nested;
