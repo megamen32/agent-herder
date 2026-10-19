@@ -207,7 +207,6 @@ export class AgentHerderRag {
     };
     if (next.enabled) {
       await ensureCollection();
-      await embed(["Agent Herder Qdrant opt in readiness check"]);
     }
     state.options = next;
     if (!next.enabled) {
@@ -417,23 +416,47 @@ export class AgentHerderRag {
         const updated = Number(row.time_updated) || Number(row.time_created) || Date.now();
         if (!id) continue;
         if (updated <= (state.checkpoints[`${harness}:${id}`] || 0)) continue;
-        const records = db.prepare("SELECT m.id,m.data AS message_data,m.time_created,m.time_updated,p.data AS part_data FROM message m LEFT JOIN part p ON p.message_id=m.id AND p.session_id=m.session_id WHERE m.session_id=? ORDER BY m.time_created,p.time_created,p.id").all(id) as Array<Record<string, unknown>>;
-        const byMessage = new Map<string, { role: string; text: string[]; timestamp: number }>();
-        for (const record of records) {
-          let message = object(byMessage.get(text(record.id)));
-          if (!byMessage.has(text(record.id))) {
-            let data: Record<string, unknown> = {};
-            try { data = object(JSON.parse(text(record.message_data))); } catch { /* skip malformed native row */ }
-            message = { role: text(data.role), text: [], timestamp: Number(record.time_created) || Number(record.time_updated) || updated };
-            byMessage.set(text(record.id), message as { role: string; text: string[]; timestamp: number });
-          }
-          let part: Record<string, unknown> = {};
-          try { part = object(JSON.parse(text(record.part_data))); } catch { /* no text part */ }
-          if (part.type === "text" && typeof part.text === "string") byMessage.get(text(record.id))!.text.push(part.text);
-        }
-        const messages = [...byMessage].map(([messageId, value]) => ({ id: messageId, role: value.role, text: value.text.join("\n"), timestamp: value.timestamp }));
+        const messageRows = db.prepare(`
+          SELECT m.id, json_extract(m.data, '$.role') AS role, m.time_created, m.time_updated
+          FROM message m
+          WHERE m.session_id=?
+            AND CASE WHEN json_valid(m.data) THEN json_extract(m.data, '$.role') IN ('user','assistant') ELSE 0 END
+          ORDER BY m.time_created,m.id
+        `).iterate(id) as Iterable<Record<string, unknown>>;
+        const partRows = db.prepare(`
+          SELECT json_extract(data, '$.text') AS part_text
+          FROM part INDEXED BY part_message_id_id_idx
+          WHERE message_id=? AND session_id=?
+            AND CASE WHEN substr(data,1,64) GLOB '{"type":"text"*'
+              THEN CASE WHEN json_valid(data) THEN typeof(json_extract(data, '$.text'))='text' ELSE 0 END
+              ELSE 0 END
+          ORDER BY time_created,id
+        `);
         await requestJson(`${QDRANT}/collections/${COLLECTION}/points/delete?wait=true`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ filter: { must: [{ key: "harness", match: { value: harness } }, { key: "session_id", match: { value: id } }] } }) });
-        await this.indexMessages(harness, { id, title: text(row.title), directory: text(row.directory), project: text(row.directory), timestamp: Number(row.time_created) || updated }, messages);
+        const session = { id, title: text(row.title), directory: text(row.directory), project: text(row.directory), timestamp: Number(row.time_created) || updated };
+        let messages: Array<{ id: string; role: string; text: string; timestamp: number }> = [];
+        let current: { id: string; role: string; text: string[]; timestamp: number } | undefined;
+        const flush = async (): Promise<void> => {
+          if (!messages.length) return;
+          await this.indexMessages(harness, session, messages);
+          messages = [];
+        };
+        const finishMessage = (): void => {
+          if (!current) return;
+          const body = current.text.join("\n");
+          if (body) messages.push({ id: current.id, role: current.role, text: body, timestamp: current.timestamp });
+          current = undefined;
+        };
+        for (const record of messageRows) {
+          const messageId = text(record.id);
+          current = { id: messageId, role: text(record.role), text: [], timestamp: Number(record.time_created) || Number(record.time_updated) || updated };
+          for (const part of partRows.iterate(messageId, id) as Iterable<Record<string, unknown>>) {
+            current.text.push(text(part.part_text));
+          }
+          finishMessage();
+          if (messages.length >= 24) await flush();
+        }
+        await flush();
         state.checkpoints[`${harness}:${id}`] = updated;
         await this.updateRun({ processed: (this.state?.run?.processed ?? 0) + 1 });
       }
