@@ -30,6 +30,7 @@ import { MessageAdmissionDispatcher, appendOutboxEntry, beginOutboxAttempt, canD
 import { formatJsonPayload, readJsonRenderingOptOut, splitSystemBlocks, writeJsonRenderingOptOut } from "./json-rendering.js";
 import { applyTheme, readTheme, writeTheme, type HerderTheme } from "./theme.js";
 import { readSessionSearchPreferences, writeSessionSearchPreferences } from "./search-preferences.js";
+import { readDisplayPreference, writeDisplayPreference, REASONING_DISPLAY_STORAGE_KEY, TOOLS_DISPLAY_STORAGE_KEY } from "./display-preferences.js";
 import { currentModelOption, modelSwitchSupported, requestModelChange, shortModelLabel, modelOptionLabel, modelSourceLabel } from "./model-chip.js";
 import type { UploadedImage } from "../session-images.js";
 import type { SessionMessageView } from "../types/index.js";
@@ -706,8 +707,10 @@ function App() {
   const [detailsError, setDetailsError] = React.useState<string>();
   const detailsReadGateRef = React.useRef(new DetailsReadGate());
   const [mobileView, setMobileView] = React.useState<"sessions" | "chat">(() => readSessionFromHash() ? "chat" : "sessions");
-  const [showReasoning, setShowReasoning] = React.useState(false);
-  const [showTools, setShowTools] = React.useState(false);
+  const [showReasoning, setShowReasoning] = React.useState(() => readDisplayPreference(window.localStorage, REASONING_DISPLAY_STORAGE_KEY));
+  const [showTools, setShowTools] = React.useState(() => readDisplayPreference(window.localStorage, TOOLS_DISPLAY_STORAGE_KEY));
+  React.useEffect(() => { writeDisplayPreference(window.localStorage, REASONING_DISPLAY_STORAGE_KEY, showReasoning); }, [showReasoning]);
+  React.useEffect(() => { writeDisplayPreference(window.localStorage, TOOLS_DISPLAY_STORAGE_KEY, showTools); }, [showTools]);
   const [jsonRendering, setJsonRendering] = React.useState(() => !readJsonRenderingOptOut(window.localStorage));
   const [collapseLongMessages, setCollapseLongMessages] = React.useState(() => readCollapseLongMessages(window.localStorage));
   React.useEffect(() => { writeCollapseLongMessages(window.localStorage, collapseLongMessages); }, [collapseLongMessages]);
