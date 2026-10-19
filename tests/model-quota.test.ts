@@ -49,6 +49,23 @@ it("treats saturated Codex secondary as exhausted despite a positive primary", a
   expect(result.providers[2].state).toBe("quota_exhausted");
 });
 
+it.each([
+  [1792441000000, "reported", 1792441000000],
+  [1792441000, "unknown", 1792441000], // seconds must never be guessed as milliseconds
+  [1792440000000, "unknown", 1792440000000], // exact deadline
+  [null, "reported", undefined],
+  [undefined, "reported", undefined],
+])("honors MiniMax millisecond deadline %j without coercing null or seconds", async (end_time, state, validUntilMs) => {
+  const result = await readModelQuotas({ env: { MINIMAX_API_KEY: "fixture" }, now: () => 1792440000000,
+    fetchImpl: async () => Response.json({ model_remains: [{ ...observedGeneral, current_interval_remaining_percent: 50,
+      end_time, weekly_end_time: null }, { model_name: "video", end_time: 0 }] }), codexQuota: async () => ({}),
+  });
+  expect(result.providers[1].state).toBe(state);
+  expect(result.providers[1].validUntilMs).toBe(validUntilMs);
+  if (end_time !== undefined) expect((result.providers[1].details as { model_remains: Array<{ end_time: unknown }> }).model_remains[0].end_time).toBe(end_time);
+  if (state === "unknown") expect(result.providers[1].error).toBe("quota_snapshot_expired");
+});
+
 describe("live provider quota reads", () => {
   it("reads GLM, MiniMax and Codex independently and strips credential-shaped fields", async () => {
     const authorization = new Map<string, string | null>();
