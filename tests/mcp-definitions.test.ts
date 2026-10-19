@@ -26,6 +26,9 @@ describe("canonical MCP harness definitions", () => {
     expect(CreateSessionSchema.parse(input)).toEqual(input);
     expect(NewOrResumeSchema.parse({ ...input, message: "hello" })).toMatchObject({ ...input, mode: "sync" });
     expect(() => CreateSessionSchema.parse({ ...input, model: "bad\nmodel" })).toThrow();
+    expect(NewOrResumeSchema.parse({ ...input, fallbackModels: ["generic.MiniMax-M3.1-Flash"], message: "hello" }).fallbackModels)
+      .toEqual(["generic.MiniMax-M3.1-Flash"]);
+    expect(toolDefinitions.find((tool) => tool.name === "model_quotas")).toBeTruthy();
   });
 
   it("pins the browser wake tool to the BrowserClaw allowlist and opaque request schema", () => {

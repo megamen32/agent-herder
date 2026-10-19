@@ -21,6 +21,8 @@ export interface NamedSessionRequest {
   name: string;
   cwd: string;
   model?: string;
+  /** Ordered, same-harness models explicitly approved for definite quota failures. */
+  fallbackModels?: string[];
 }
 
 export interface NewOrResumeNamedSessionRequest extends NamedSessionRequest {
@@ -48,6 +50,8 @@ export interface NamedSessionResult {
   /** Definite provider rejection observed before session creation/input admission. */
   failureCode?: "quota_exhausted";
   model?: string;
+  requestedModel?: string;
+  fallbackFrom?: string;
   error?: string;
 }
 
@@ -140,9 +144,9 @@ export async function newOrResumeNamedSession(
   // A create request may accept a model option without the native service
   // actually applying it. Trust only the returned session state; otherwise
   // select the model explicitly before the first prompt.
-  const selectedModel = resolved.target.harness === "hermes" && typeof resolved.target.meta?.selectedModel === "string"
+  const currentModel = resolved.target.harness === "hermes" && typeof resolved.target.meta?.selectedModel === "string"
     ? resolved.target.meta.selectedModel : resolved.target.model;
-  if (request.model !== undefined && selectedModel !== request.model) {
+  if (request.model !== undefined && currentModel !== request.model) {
     if (!resolved.adapter.changeModel) {
       return {
         ok: false,
@@ -168,16 +172,43 @@ export async function newOrResumeNamedSession(
   const pending = await withDeferred(resolved.target.id, request.message);
   const injectedMessage = await coordinationNotes.inject(resolved.target, pending.message);
   if (await sourceHeldNow(request) || await automaticDeliveryHeld(resolved.target, false, resolved.adapter)) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created };
-  const delivery = await resolved.adapter.sendMessage(resolved.target.id, {
+  const inputId = request.inputId ?? (request.humanRequested ? undefined : createHash("sha256").update(request.message).digest("hex"));
+  let selectedModel = request.model;
+  let fallbackFrom: string | undefined;
+  let delivery = await resolved.adapter.sendMessage(resolved.target.id, {
       model: request.model,
       origin: request.humanRequested ? "human" : "automation",
-      inputId: request.inputId ?? (request.humanRequested ? undefined : createHash("sha256").update(request.message).digest("hex")),
+      inputId,
       ...(resolved.target.harness === "hermes" && resolved.target.meta?.taskBinding
         ? { expectedTaskBinding: resolved.target.meta.taskBinding as { name: string; cwd: string; generation: string } }
         : {}),
       message: injectedMessage,
       queue: mode === "queue",
   });
+  const tried = new Set([request.model].filter((model): model is string => typeof model === "string"));
+  for (const fallbackModel of request.fallbackModels ?? []) {
+    if (delivery.ok || delivery.admitted || delivery.admissionUnknown || !isConfirmedQuotaExhaustion(delivery.error)) break;
+    if (!request.model || !resolved.adapter.changeModel || tried.has(fallbackModel)) continue;
+    tried.add(fallbackModel);
+    const changed = await resolved.adapter.changeModel(resolved.target.id, fallbackModel);
+    if (!changed.ok) break;
+    if (await sourceHeldNow(request) || await automaticDeliveryHeld(resolved.target, false, resolved.adapter)) {
+      return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created,
+        ...(request.model ? { requestedModel: request.model, model: request.model } : {}) };
+    }
+    fallbackFrom ??= request.model;
+    selectedModel = fallbackModel;
+    delivery = await resolved.adapter.sendMessage(resolved.target.id, {
+      model: fallbackModel,
+      origin: request.humanRequested ? "human" : "automation",
+      inputId,
+      ...(resolved.target.harness === "hermes" && resolved.target.meta?.taskBinding
+        ? { expectedTaskBinding: resolved.target.meta.taskBinding as { name: string; cwd: string; generation: string } }
+        : {}),
+      message: injectedMessage,
+      queue: mode === "queue",
+    });
+  }
   if (!delivery.ok) {
     const result: NamedSessionResult = {
       ok: false,
@@ -190,9 +221,11 @@ export async function newOrResumeNamedSession(
       // harness fallback must never treat it as a definite pre-admission
       // rejection and start a second executor.
       ...(delivery.admissionUnknown ? { admissionUnknown: true } : {}),
+      ...(isConfirmedQuotaExhaustion(delivery.error) ? { failureCode: "quota_exhausted" as const } : {}),
       error: delivery.error || "Message delivery failed",
-      ...(request.model ? { model: request.model } : {}),
       ...resolved.normalized,
+      ...(selectedModel ? { model: selectedModel } : {}),
+      ...(fallbackFrom ? { requestedModel: fallbackFrom, fallbackFrom } : {}),
     };
     if (delivery.admitted) rememberNamedDelivery(deliveryIdentity, result);
     if ((delivery.admitted || (delivery.admissionUnknown && delivery.nonRetryable)) && pending.ids.length) await deferredMessages.remove(pending.ids);
@@ -205,12 +238,19 @@ export async function newOrResumeNamedSession(
     delivery: delivery.pending ? "accepted_unconfirmed" : mode === "queue" ? "accepted" : "completed",
     ...(delivery.admitted ? { admitted: true } : {}),
     ...(delivery.pending ? { pending: true } : {}),
-    ...(request.model ? { model: request.model } : {}),
     ...resolved.normalized,
+    ...(selectedModel ? { model: selectedModel } : {}),
+    ...(fallbackFrom ? { requestedModel: fallbackFrom, fallbackFrom } : {}),
   };
   if (delivery.pending) rememberNamedDelivery(deliveryIdentity, result);
   if (pending.ids.length) await deferredMessages.remove(pending.ids);
   return result;
+}
+
+/** Only provider-specific hard quota codes authorize replay on an explicit fallback. */
+function isConfirmedQuotaExhaustion(error: string | undefined): boolean {
+  if (!error) return false;
+  return /(?:\b4292056\b|\b2056\b|\b(?:1308|1310|1316|1317|1318|1319|1320|1321)\b|quota[_ -]exhausted|quota exceeded|usage limit exceeded)/iu.test(error);
 }
 
 async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string): Promise<AgentSession[]> {

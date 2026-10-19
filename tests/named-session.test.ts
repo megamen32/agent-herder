@@ -39,6 +39,9 @@ function fakeAdapter(harness: "opencode" | "codex" | "fast-agent", initial: Agen
   let creates = 0;
   let failDelivery = false;
   let unknownAdmission = false;
+  let admittedFailure = false;
+  let nextDeliveryError = "delivery failed";
+  const modelChanges: Array<{ id: string; model: string }> = [];
   const adapter: HarnessAdapter = {
     type: harness,
     name: `Fake ${harness}`,
@@ -56,12 +59,16 @@ function fakeAdapter(harness: "opencode" | "codex" | "fast-agent", initial: Agen
     async sendMessage(id, options) {
       deliveries.push({ id, options });
       if (failDelivery) {
-        return unknownAdmission
+        failDelivery = false;
+        return admittedFailure
+          ? { ok: false, admitted: true, nonRetryable: true, error: nextDeliveryError }
+          : unknownAdmission
           ? { ok: false, admissionUnknown: true, nonRetryable: true, error: "admission unknown" }
-          : { ok: false, error: "delivery failed" };
+          : { ok: false, error: nextDeliveryError };
       }
       return { ok: true };
     },
+    async changeModel(id, model) { modelChanges.push({ id, model }); return { ok: true }; },
     async stopSession() { return { ok: true }; },
     async respondPermission() { return { ok: true }; },
     async setPermissions() { return { ok: true }; },
@@ -70,14 +77,50 @@ function fakeAdapter(harness: "opencode" | "codex" | "fast-agent", initial: Agen
     adapter,
     sessions,
     deliveries,
+    modelChanges,
     creationOptions,
     creates: () => creates,
     failNextDelivery: () => { failDelivery = true; },
+    failNextDeliveryWithError: (error: string) => { failDelivery = true; nextDeliveryError = error; },
     failNextDeliveryWithUnknownAdmission: () => { failDelivery = true; unknownAdmission = true; },
+    failNextDeliveryAfterAdmission: (error: string) => { failDelivery = true; admittedFailure = true; nextDeliveryError = error; },
   };
 }
 
 describe("named session creation and reuse", () => {
+  it("switches to an explicitly allowed fallback after a definite quota rejection and retries the same input once", async () => {
+    const cwd = await workspace();
+    const fake = fakeAdapter("opencode");
+    fake.failNextDeliveryWithError("GLM 5.3 Flash HTTP 429 provider code 1310 quota exhausted");
+    const result = await newOrResumeNamedSession(new Map([["opencode", fake.adapter]]), {
+      harness: "opencode", name: "quota-fallback", cwd, model: "omniroute/zc/glm-5.3-flash",
+      fallbackModels: ["omniroute/minimax/MiniMax-M3.1-Flash"], message: "work", inputId: "quota-fallback-input",
+    });
+    expect(fake.modelChanges).toEqual([
+      { id: "opencode-1", model: "omniroute/zc/glm-5.3-flash" },
+      { id: "opencode-1", model: "omniroute/minimax/MiniMax-M3.1-Flash" },
+    ]);
+    expect(fake.deliveries).toHaveLength(2);
+    expect(fake.deliveries.map((delivery) => delivery.options.inputId)).toEqual(["quota-fallback-input", "quota-fallback-input"]);
+    expect(result).toMatchObject({ ok: true, model: "omniroute/minimax/MiniMax-M3.1-Flash", requestedModel: "omniroute/zc/glm-5.3-flash", fallbackFrom: "omniroute/zc/glm-5.3-flash" });
+  });
+
+  it("does not switch on generic rate limits, unknown admission, or accepted failures", async () => {
+    for (const failure of ["HTTP 429 rate limited", "quota 1310 but admission unknown", "quota 1310 admitted"]) {
+      const cwd = await workspace();
+      const fake = fakeAdapter("opencode");
+      if (failure.includes("unknown")) fake.failNextDeliveryWithUnknownAdmission();
+      else if (failure.includes("admitted")) fake.failNextDeliveryAfterAdmission(failure);
+      else fake.failNextDeliveryWithError(failure);
+      const result = await newOrResumeNamedSession(new Map([["opencode", fake.adapter]]), {
+        harness: "opencode", name: `quota-safe-${cleanups.length}`, cwd, model: "glm", fallbackModels: ["minimax"], message: "work",
+      });
+      expect(result.ok).toBe(false);
+      expect(fake.modelChanges).toHaveLength(1); // initial model selection only
+      expect(fake.deliveries).toHaveLength(1);
+    }
+  });
+
   it("creates and reuses the exact Fast Agent named session through MCP handlers", async () => {
     const cwd = await workspace();
     const fake = fakeAdapter("fast-agent");

@@ -138,7 +138,16 @@ Streamable HTTP:
 | Именованные сессии | `create_session`, `new_or_resume` (OpenCode, Codex, ZCode) |
 | Управление | `send_message` (queue / steer / sync, шапка ответа через `fromSessionId`), `resume_agent`, `stop_agent` |
 | Координация | `coordination_note_create/list/get/update/delete` |
-| Права и модели | `respond_permission`, `set_permissions`, `list_models`, `change_model` |
+| Права, модели и квоты | `respond_permission`, `set_permissions`, `list_models`, `change_model`, `model_quotas` |
+
+`model_quotas` читает GLM Coding Plan из `ANTHROPIC_AUTH_TOKEN` (или
+`ZAI_API_KEY` / `GLM_API_KEY`), MiniMax Token Plan из `MINIMAX_API_KEY`, а
+Codex — из локальной авторизации Codex. Если
+источник не настроен или недоступен, результат будет `unknown`, а не выдуманный
+остаток. Для `new_or_resume` можно передать упорядоченный `fallbackModels`;
+переключение происходит только при точном отказе провайдера по квоте до приёма
+сообщения. Общий HTTP 429, неизвестный приём, принятый запрос и ручная остановка
+не запускают второй вариант.
 
 ## Заметки об архитектуре
 

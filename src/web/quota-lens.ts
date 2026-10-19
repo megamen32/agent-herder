@@ -73,7 +73,7 @@ function jwtClaim(jwt: string, claim: string): string {
   }
 }
 
-async function codexUsage(): Promise<Record<string, unknown>> {
+export async function readCodexUsage(): Promise<Record<string, unknown>> {
   const { token, accountId } = localCodexAuth();
   if (!token) return { error: "no local ~/.codex/auth.json" };
   try {
@@ -198,7 +198,7 @@ function readTimeline(limit: number): Record<string, unknown>[] {
 
 async function sampleOnce(): Promise<Record<string, unknown>> {
   const since = new Date(Math.max(lastTickTs - 1_000, 0)).toISOString().replace(/\.\d{3}Z$/, "");
-  const quota = await codexUsage();
+  const quota = await readCodexUsage();
   const deltas = await omniQuerySafe(
     `SELECT coalesce(api_key_name,'(internal)') key, model, count(*) calls,
             sum(tokens_in+tokens_out) tokens
@@ -301,7 +301,7 @@ export async function handleQuotaLensRequest(pathname: string, params: URLSearch
   if (pathname === "/api/quota-lens/rows") {
     return callRows(params.get("model"), params.get("key"), days, Math.min(Number(params.get("limit")) || 400, 2000));
   }
-  if (pathname === "/api/quota-lens/codex") return codexUsage();
+  if (pathname === "/api/quota-lens/codex") return readCodexUsage();
   if (pathname === "/api/quota-lens/fastagent") return listFastAgentSessions();
   if (pathname === "/api/quota-lens/timeline") return readTimeline(Math.min(Number(params.get("limit")) || 288, 2000));
   if (pathname === "/api/quota-lens/forecast") return forecast();

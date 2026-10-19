@@ -36,6 +36,7 @@ import {
   handleAuditWorktrees,
 } from "../mcp-tools/handlers.js";
 import { startJobResult } from "./results.js";
+import { readModelQuotas } from "../model-quota.js";
 
 const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]);
 
@@ -67,6 +68,13 @@ export function registerSessionTools(server: McpServer, deps: {
   });
 
   server.registerTool("audit_worktrees", { description: "Read-only Git worktree audit: dirty files, lock/PID state, and Claude/Codex/OpenCode/ZCode processes whose cwd is inside each worktree.", inputSchema: z.object({ repoPath: z.string(), includeClean: z.boolean().optional().default(false) }) }, async (args) => ({ content: [{ type: "text" as const, text: await handleAuditWorktrees(args) }] }));
+  server.registerTool("model_quotas", {
+    description: "Read current GLM Coding Plan, MiniMax Token Plan and local Codex usage allowances. Returns unknown when credentials or official account usage are unavailable; never guesses quota values.",
+    inputSchema: z.object({}),
+  }, async () => {
+    const result = await readModelQuotas();
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
+  });
   server.registerTool("agent_info", { description: "Get detailed info about a specific session. Always shows model and last message.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }), outputSchema: z.object({ session: sessionSchema.nullable() }) }, async (args) => {
     const session = await agentInfoResult(adapters, args);
     return { content: [{ type: "text" as const, text: session ? formatSession(session, true) : `Session '${args.sessionId}' not found.` }], structuredContent: { session } };

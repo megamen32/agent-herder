@@ -160,7 +160,15 @@ deletable by the author, auto-pruned on expiry.
 | Named sessions | `create_session`, `new_or_resume` (OpenCode, Codex, and ZCode); existing ChatGPT chats are addressed by `sessionId` or title + `/home/roomhacker/.chatgpt` with `create=never` |
 | Control | `deliver` (activation policy + queue/sync), `send_message`, `resume_agent`, `stop_agent`; ChatGPT supports delivery/resume but not stop/create yet |
 | Coordination | `coordination_note_create`, `coordination_note_list`, `coordination_note_get`, `coordination_note_update`, `coordination_note_delete` |
-| Permissions and models | `respond_permission`, `set_permissions`, `list_models`, `change_model` |
+| Permissions, models and quotas | `respond_permission`, `set_permissions`, `list_models`, `change_model`, `model_quotas` |
+
+`model_quotas` reads GLM Coding Plan usage from `ANTHROPIC_AUTH_TOKEN` (or
+`ZAI_API_KEY` / `GLM_API_KEY`), MiniMax Token Plan usage from
+`MINIMAX_API_KEY`, and Codex usage from the local Codex login. Missing or
+unavailable sources return `unknown`; values are never guessed. `new_or_resume`
+accepts an ordered `fallbackModels` list and switches only after a provider's
+specific quota rejection before message admission. Generic HTTP 429s, unknown or
+accepted admissions, and manual stops never start a second attempt.
 
 ### Session identity
 

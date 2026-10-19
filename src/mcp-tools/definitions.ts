@@ -101,6 +101,8 @@ export const CreateSessionSchema = NamedSessionBaseSchema;
 
 export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
   inputId: z.string().min(1).max(256).optional(),
+  fallbackModels: z.array(z.string().trim().min(1).max(MAX_MODEL_LENGTH).regex(/^[^\u0000-\u001f\u007f]*$/)).max(8).optional()
+    .describe("Ordered same-harness models explicitly allowed only after a provider-specific hard quota rejection before admission."),
   humanRequested: z.boolean().optional().describe("True only for an explicit human continuation request; never inferred by an automated planner."),
   message: z.string().trim().min(1).describe("Message delivered to the created or reused session."),
   mode: z.enum(["queue", "sync"]).optional().default("sync").describe(
@@ -253,6 +255,7 @@ export const toolDefinitions: Tool[] = [
         name: { type: "string", description: "Stable session name, for example repair_100" },
         cwd: { type: "string", description: "Absolute working directory" },
         model: { type: "string", maxLength: MAX_MODEL_LENGTH, description: "Optional model selected before first delivery" },
+        fallbackModels: { type: "array", maxItems: 8, items: { type: "string", maxLength: MAX_MODEL_LENGTH }, description: "Ordered same-harness models allowed only after a definite provider quota rejection before the task was accepted." },
       },
       required: ["harness", "name", "cwd"],
     },
@@ -459,5 +462,10 @@ export const toolDefinitions: Tool[] = [
         harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness to list models for (omit = all)" },
       },
     },
+  },
+  {
+    name: "model_quotas",
+    description: "Read the current GLM Coding Plan, MiniMax Token Plan, and local Codex usage allowances. Missing credentials or unsupported account plans are reported as unknown; values are never inferred.",
+    inputSchema: { type: "object" as const, properties: {}, additionalProperties: false },
   },
 ];
