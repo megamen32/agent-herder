@@ -255,14 +255,14 @@ export const toolDefinitions: Tool[] = [
         name: { type: "string", description: "Stable session name, for example repair_100" },
         cwd: { type: "string", description: "Absolute working directory" },
         model: { type: "string", maxLength: MAX_MODEL_LENGTH, description: "Optional model selected before first delivery" },
-        fallbackModels: { type: "array", maxItems: 8, items: { type: "string", maxLength: MAX_MODEL_LENGTH }, description: "Ordered same-harness models allowed only after a definite provider quota rejection before the task was accepted." },
+        fallbackModels: { type: "array", maxItems: 8, items: { type: "string", maxLength: MAX_MODEL_LENGTH }, description: "Ordered same-harness models allowed after a definite pre-admission HTTP 429 or provider quota rejection." },
       },
       required: ["harness", "name", "cwd"],
     },
   },
   {
     name: "new_or_resume",
-    description: "Reuse the exact named session for harness+CWD or create it, then deliver one message. For quota-aware routing, call model_quotas and provide only explicitly allowed same-harness fallbackModels in priority order. A fallback is attempted only after a provider-specific hard quota rejection before admission.",
+    description: "Reuse the exact named session for harness+CWD or create it, then deliver one message. For quota-aware routing, call model_quotas and provide only explicitly allowed same-harness fallbackModels in priority order. Fallback is attempted after HTTP 429 or provider-specific quota rejection before admission; unknown/accepted delivery and manual stops never trigger fallback.",
     inputSchema: {
       type: "object" as const,
       properties: {

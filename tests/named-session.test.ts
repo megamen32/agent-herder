@@ -105,8 +105,21 @@ describe("named session creation and reuse", () => {
     expect(result).toMatchObject({ ok: true, model: "omniroute/minimax/MiniMax-M3.1-Flash", requestedModel: "omniroute/zc/glm-5.3-flash", fallbackFrom: "omniroute/zc/glm-5.3-flash" });
   });
 
-  it("does not switch on generic rate limits, unknown admission, or accepted failures", async () => {
-    for (const failure of ["HTTP 429 rate limited", "quota 1310 but admission unknown", "quota 1310 admitted"]) {
+  it("switches on generic HTTP 429 but never retries an unknown or admitted delivery", async () => {
+    {
+      const cwd = await workspace();
+      const fake = fakeAdapter("opencode");
+      fake.failNextDeliveryWithError("HTTP 429 rate limited");
+      const result = await newOrResumeNamedSession(new Map([["opencode", fake.adapter]]), {
+        harness: "opencode", name: `quota-safe-${cleanups.length}`, cwd, model: "glm", fallbackModels: ["minimax"], message: "work",
+      });
+      expect(result).toMatchObject({ ok: true, model: "minimax", fallbackFrom: "glm" });
+      expect(fake.modelChanges.map(({ model }) => model)).toEqual(["glm", "minimax"]);
+      expect(fake.deliveries).toHaveLength(2);
+      expect(fake.deliveries.map(({ options }) => options.inputId)).toEqual([fake.deliveries[0]?.options.inputId, fake.deliveries[0]?.options.inputId]);
+    }
+
+    for (const failure of ["quota 1310 but admission unknown", "quota 1310 admitted"]) {
       const cwd = await workspace();
       const fake = fakeAdapter("opencode");
       if (failure.includes("unknown")) fake.failNextDeliveryWithUnknownAdmission();

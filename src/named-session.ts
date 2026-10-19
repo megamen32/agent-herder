@@ -187,7 +187,7 @@ export async function newOrResumeNamedSession(
   });
   const tried = new Set([request.model].filter((model): model is string => typeof model === "string"));
   for (const fallbackModel of request.fallbackModels ?? []) {
-    if (delivery.ok || delivery.admitted || delivery.admissionUnknown || !isConfirmedQuotaExhaustion(delivery.error)) break;
+    if (delivery.ok || delivery.admitted || delivery.admissionUnknown || !isFallbackEligibleRejection(delivery.error)) break;
     if (!request.model || !resolved.adapter.changeModel || tried.has(fallbackModel)) continue;
     tried.add(fallbackModel);
     const changed = await resolved.adapter.changeModel(resolved.target.id, fallbackModel);
@@ -247,7 +247,11 @@ export async function newOrResumeNamedSession(
   return result;
 }
 
-/** Only provider-specific hard quota codes authorize replay on an explicit fallback. */
+/** Provider quota exhaustion and HTTP 429 authorize retry on an explicit fallback. */
+function isFallbackEligibleRejection(error: string | undefined): boolean {
+  return isConfirmedQuotaExhaustion(error) || /\b429\b/u.test(error ?? "");
+}
+
 function isConfirmedQuotaExhaustion(error: string | undefined): boolean {
   if (!error) return false;
   return /(?:\b4292056\b|\b2056\b|\b(?:1308|1310|1316|1317|1318|1319|1320|1321)\b|quota[_ -]exhausted|quota exceeded|usage limit exceeded)/iu.test(error);
