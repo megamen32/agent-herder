@@ -603,6 +603,7 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .rag-index-status,.rag-index-error{padding:12px 14px;border-radius:9px;background:var(--surface-raised,#191a1e);color:var(--text-secondary,#a0a2a8)}
 .rag-index-error{color:#ff9a91}
 .rag-results h2{font-size:18px}
+.rag-search-timings{display:block;margin-top:5px;color:var(--text-secondary,#a0a2a8);font-size:12px;font-weight:400}
 .rag-result{padding:16px 0;border-top:1px solid var(--border,#34363b)}
 .rag-result-meta{display:flex;gap:12px;align-items:center;color:var(--text-secondary,#a0a2a8);font-size:12px}
 .rag-result h3{margin:8px 0 4px;font-size:16px}

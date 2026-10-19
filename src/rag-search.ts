@@ -18,6 +18,11 @@ const HARNESS_LABELS = { codex: "Codex", zcode: "ZCode", opencode: "OpenCode" } 
 type Harness = keyof typeof HARNESS_LABELS;
 type Options = { enabled: boolean; harnesses: Record<Harness, boolean> };
 type Hit = { id: string; score: number; payload: Record<string, unknown> };
+type SearchProgress =
+  | { type: "phase"; stage: "exact" | "semantic" }
+  | { type: "results"; source: "exact" | "semantic"; results: Array<Record<string, unknown>>; elapsedMs: number }
+  | { type: "complete"; exactMs: number; semanticMs?: number; totalMs: number }
+  | { type: "error"; message: string };
 type Persisted = {
   options: Options;
   checkpoints: Record<string, number>;
@@ -220,12 +225,16 @@ export class AgentHerderRag {
     return this.getSettings();
   }
 
-  async search(query: string, filters: { harnesses?: Harness[]; from?: string; to?: string; project?: string; limit?: number } = {}, resolveSession?: (harness: Harness, id: string) => Promise<{ title?: string; cwd?: string } | undefined>): Promise<Record<string, unknown>> {
+  async searchProgressively(
+    query: string,
+    filters: { harnesses?: Harness[]; from?: string; to?: string; project?: string; limit?: number } = {},
+    onProgress: (progress: SearchProgress) => void | Promise<void> = () => {},
+    resolveSession?: (harness: Harness, id: string) => Promise<{ title?: string; cwd?: string } | undefined>,
+  ): Promise<Record<string, unknown>> {
     const state = await this.load();
     if (!state.options.enabled) throw new Error("semantic search is off; enable it in Agent Herder settings");
     const clean = scrubSecrets(query.trim()).slice(0, 1000);
     if (!clean) throw new Error("query is required");
-    const [vector] = await embed([clean]);
     const must: unknown[] = [];
     const harnesses = (filters.harnesses ?? []).filter((item) => item in HARNESS_LABELS);
     if (harnesses.length) must.push({ key: "harness", match: { any: harnesses } });
@@ -234,24 +243,70 @@ export class AgentHerderRag {
     const lte = filters.to ? Date.parse(filters.to) : NaN;
     if (Number.isFinite(gte) || Number.isFinite(lte)) must.push({ key: "timestamp_ms", range: { ...(Number.isFinite(gte) ? { gte } : {}), ...(Number.isFinite(lte) ? { lte: lte + 86_399_999 } : {}) } });
     const requestedLimit = Math.max(1, Math.min(50, filters.limit ?? 12));
-    const data = await requestJson(`${QDRANT}/collections/${COLLECTION}/points/search`, {
+
+    const startedAt = Date.now();
+    await onProgress({ type: "phase", stage: "exact" });
+    const exactStartedAt = Date.now();
+    const exactData = await requestJson(`${QDRANT}/collections/${COLLECTION}/points/scroll`, {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ vector, limit: Math.min(100, requestedLimit * 10), with_payload: true, ...(must.length ? { filter: { must } } : {}) }),
+      body: JSON.stringify({
+        limit: Math.min(200, Math.max(50, requestedLimit * 10)),
+        with_payload: true,
+        filter: { must: [...must, { key: "text", match: { text: clean } }] },
+      }),
     });
     const seen = new Set<string>();
-    const results = (Array.isArray(data?.result) ? data.result : []).flatMap((hit: Hit) => {
-      const key = `${hit.payload.harness}:${hit.payload.session_id}`;
-      if (seen.has(key)) return [];
-      seen.add(key);
-      return [{ score: hit.score, ...hit.payload }];
+    const exactResults = (Array.isArray(exactData?.result?.points) ? exactData.result.points : []).flatMap((hit: Hit) => {
+      const payload = object(hit.payload);
+      const harness = text(payload.harness);
+      const sessionId = text(payload.session_id);
+      if (!harness || !sessionId || seen.has(`${harness}:${sessionId}`)) return [];
+      seen.add(`${harness}:${sessionId}`);
+      return [{ score: 1, ...payload, source: "exact" }];
     }).slice(0, requestedLimit);
-    if (resolveSession) await Promise.all(results.map(async (hit: Record<string, any>) => {
+    if (resolveSession) await Promise.all(exactResults.map(async (hit: Record<string, any>) => {
       if (hit.harness !== "codex" || !String(hit.title || "").startsWith("rollout-")) return;
       const session = await resolveSession(hit.harness, String(hit.session_id)).catch(() => undefined);
       if (session?.title) hit.title = session.title;
       if (!hit.directory && session?.cwd) hit.directory = session.cwd;
     }));
-    return { results, run: state.run ?? null };
+    const exactMs = Date.now() - exactStartedAt;
+    await onProgress({ type: "results", source: "exact", results: exactResults, elapsedMs: exactMs });
+
+    if (exactResults.length >= requestedLimit) {
+      const totalMs = Date.now() - startedAt;
+      await onProgress({ type: "complete", exactMs, totalMs });
+      return { results: exactResults, run: state.run ?? null, timings: { exactMs, totalMs } };
+    }
+
+    await onProgress({ type: "phase", stage: "semantic" });
+    const semanticStartedAt = Date.now();
+    const [vector] = await embed([clean]);
+    const data = await requestJson(`${QDRANT}/collections/${COLLECTION}/points/search`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ vector, limit: Math.min(100, requestedLimit * 10), with_payload: true, ...(must.length ? { filter: { must } } : {}) }),
+    });
+    const semanticResults = (Array.isArray(data?.result) ? data.result : []).flatMap((hit: Hit) => {
+      const payload = object(hit.payload);
+      const key = `${payload.harness}:${payload.session_id}`;
+      if (!payload.harness || !payload.session_id || seen.has(key)) return [];
+      seen.add(key);
+      return [{ score: hit.score, ...payload, source: "semantic" }];
+    }).slice(0, Math.max(0, requestedLimit - exactResults.length));
+    if (resolveSession) await Promise.all(semanticResults.map(async (hit: Record<string, any>) => {
+      if (hit.harness !== "codex" || !String(hit.title || "").startsWith("rollout-")) return;
+      const session = await resolveSession(hit.harness, String(hit.session_id)).catch(() => undefined);
+      if (session?.title) hit.title = session.title;
+      if (!hit.directory && session?.cwd) hit.directory = session.cwd;
+    }));
+    const semanticMs = Date.now() - semanticStartedAt;
+    await onProgress({ type: "results", source: "semantic", results: semanticResults, elapsedMs: semanticMs });
+    await onProgress({ type: "complete", exactMs, semanticMs, totalMs: Date.now() - startedAt });
+    return { results: [...exactResults, ...semanticResults], run: state.run ?? null, timings: { exactMs, semanticMs, totalMs: Date.now() - startedAt } };
+  }
+
+  async search(query: string, filters: { harnesses?: Harness[]; from?: string; to?: string; project?: string; limit?: number } = {}, resolveSession?: (harness: Harness, id: string) => Promise<{ title?: string; cwd?: string } | undefined>): Promise<Record<string, unknown>> {
+    return this.searchProgressively(query, filters, () => {}, resolveSession);
   }
 
   private startIndex(reset: boolean): void {
@@ -443,6 +498,28 @@ export class AgentHerderRag {
         const body = await readBody(request);
         const harnesses = Array.isArray(body.harnesses) ? body.harnesses.filter((item): item is Harness => typeof item === "string" && item in HARNESS_LABELS) : undefined;
         return void send(response, 200, await this.search(text(body.query), { harnesses, from: text(body.from), to: text(body.to), project: text(body.project), limit: Number(body.limit) || 12 }, resolveSession)), true;
+      }
+      if (url.pathname === "/api/rag/search/stream" && request.method === "POST") {
+        const body = await readBody(request);
+        const harnesses = Array.isArray(body.harnesses) ? body.harnesses.filter((item): item is Harness => typeof item === "string" && item in HARNESS_LABELS) : undefined;
+        response.writeHead(200, {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-cache, no-transform",
+          connection: "keep-alive",
+          "x-accel-buffering": "no",
+        });
+        response.flushHeaders();
+        const emit = (progress: SearchProgress): void => {
+          if (!response.destroyed) response.write(`data: ${JSON.stringify(progress)}\n\n`);
+        };
+        try {
+          await this.searchProgressively(text(body.query), { harnesses, from: text(body.from), to: text(body.to), project: text(body.project), limit: Number(body.limit) || 12 }, emit, resolveSession);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "search failed";
+          emit({ type: "error", message: message.slice(0, 400) });
+        }
+        response.end();
+        return true;
       }
       return void send(response, 404, { error: "not_found" }), true;
     } catch (error) {

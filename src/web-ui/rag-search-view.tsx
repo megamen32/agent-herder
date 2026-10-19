@@ -2,8 +2,9 @@ import * as React from "react";
 import { readAdvancedSearchPreferences, writeAdvancedSearchPreferences, type SearchHarness } from "./search-preferences.js";
 
 type Harness = SearchHarness;
-type SearchHit = { harness: Harness; session_id: string; message_id: string; role: string; title: string; directory: string; project: string; timestamp: string; text: string; score: number };
+type SearchHit = { harness: Harness; session_id: string; message_id: string; role: string; title: string; directory: string; project: string; timestamp: string; text: string; score: number; source?: "exact" | "semantic" };
 type RagSettings = { enabled: boolean; harnesses: Record<Harness, boolean>; model: string; dimensions: number; run?: { status: string; processed?: number; indexed?: number; current?: string; error?: string } };
+type SearchTimings = { exactMs?: number; semanticMs?: number; totalMs?: number };
 const labels: Record<Harness, string> = { codex: "Codex", zcode: "ZCode", opencode: "OpenCode" };
 
 async function api(path: string, method = "GET", body?: unknown): Promise<any> {
@@ -23,6 +24,8 @@ export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSessi
   const [project, setProject] = React.useState(savedPreferences.project);
   const [results, setResults] = React.useState<SearchHit[]>([]);
   const [busy, setBusy] = React.useState(false);
+  const [searchStage, setSearchStage] = React.useState<"exact" | "semantic" | null>(null);
+  const [timings, setTimings] = React.useState<SearchTimings>();
   const [error, setError] = React.useState("");
 
   React.useEffect(() => {
@@ -54,12 +57,53 @@ export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSessi
     finally { setBusy(false); }
   };
   const search = async (event: React.FormEvent) => {
-    event.preventDefault(); setBusy(true); setError("");
+    event.preventDefault(); setBusy(true); setSearchStage("exact"); setTimings(undefined); setResults([]); setError("");
     try {
-      const value = await api("/api/rag/search", "POST", { query, harnesses: selected, from: from || undefined, to: to || undefined, project: project || undefined, limit: 20 });
-      setResults(value.results || []);
+      const response = await fetch("/api/rag/search/stream", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "text/event-stream" },
+        body: JSON.stringify({ query, harnesses: selected, from: from || undefined, to: to || undefined, project: project || undefined, limit: 20 }),
+      });
+      if (!response.ok) {
+        const value = await response.json().catch(() => ({}));
+        throw new Error(value.error || `HTTP ${response.status}`);
+      }
+      if (!response.body) throw new Error("Сервер не открыл поток результатов");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      const consume = (block: string) => {
+        const data = block.split(/\r?\n/).find((line) => line.startsWith("data:"))?.slice(5).trim();
+        if (!data) return;
+        const progress = JSON.parse(data);
+        if (progress.type === "phase") {
+          setSearchStage(progress.stage === "semantic" ? "semantic" : "exact");
+        } else if (progress.type === "results") {
+          const incoming = Array.isArray(progress.results) ? progress.results as SearchHit[] : [];
+          setResults((current) => {
+            const keys = new Set(current.map((hit) => `${hit.harness}:${hit.session_id}`));
+            return [...current, ...incoming.filter((hit) => !keys.has(`${hit.harness}:${hit.session_id}`))];
+          });
+          setTimings((current) => ({ ...current, [progress.source === "semantic" ? "semanticMs" : "exactMs"]: progress.elapsedMs }));
+        } else if (progress.type === "complete") {
+          setTimings({ exactMs: progress.exactMs, semanticMs: progress.semanticMs, totalMs: progress.totalMs });
+        } else if (progress.type === "error") {
+          setError(progress.message || "Поиск не выполнен");
+        }
+      };
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        const blocks = buffer.split(/\r?\n\r?\n/);
+        buffer = blocks.pop() || "";
+        for (const block of blocks) consume(block);
+        if (done) {
+          if (buffer.trim()) consume(buffer);
+          break;
+        }
+      }
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Поиск не выполнен"); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setSearchStage(null); }
   };
   const reindex = async () => {
     setBusy(true); setError("");
@@ -95,11 +139,12 @@ export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSessi
           <label>С проекта<input value={project} onChange={(event) => setProject(event.target.value)} placeholder="Папка проекта" /></label>
           <label>С даты<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
           <label>По дату<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
-          <button className="primary-button" disabled={busy || !query.trim()}>{busy ? "Ищем…" : "Найти"}</button>
+          <button className="primary-button" disabled={busy || !query.trim()}>{busy ? searchStage === "semantic" ? "Ищем по смыслу…" : "Ищем в тексте…" : "Найти"}</button>
         </div>
       </form>
-      {results.length > 0 && <div className="rag-results" aria-live="polite"><h2>Результаты · {results.length}</h2>{results.map((hit, index) => <article className="rag-result" key={`${hit.harness}:${hit.session_id}:${hit.message_id}:${index}`}><div className="rag-result-meta"><span>{labels[hit.harness] || hit.harness}</span><time>{hit.timestamp ? new Date(hit.timestamp).toLocaleDateString("ru-RU") : ""}</time></div><h3><button className="rag-result-open" onClick={() => onOpenSession?.(hit.harness, hit.session_id)}>{hit.title || hit.session_id} ↗</button></h3>{hit.directory && <small>{hit.directory}</small>}<p>{hit.text}</p></article>)}</div>}
-      {!results.length && !busy && <p className="rag-empty">Введите запрос, чтобы найти похожие темы и решения.</p>}
+      {busy && <p className="rag-empty" role="status">{searchStage === "semantic" ? "Совпадения по тексту уже показаны. Подбираю похожие по смыслу…" : "Ищу в тексте…"}</p>}
+      {results.length > 0 && <div className="rag-results" aria-live="polite"><h2>Результаты · {results.length}{timings && <small className="rag-search-timings">Текст {timings.exactMs ?? "…"} мс · RAG {timings.semanticMs === undefined ? timings.totalMs === undefined ? "…" : "не запускался" : `${timings.semanticMs} мс`} · всего {timings.totalMs ?? "…"} мс</small>}</h2>{results.map((hit, index) => <article className="rag-result" key={`${hit.harness}:${hit.session_id}:${hit.message_id}:${index}`}><div className="rag-result-meta"><span>{labels[hit.harness] || hit.harness}{hit.source ? ` · ${hit.source === "exact" ? "по тексту" : "по смыслу"}` : ""}</span><time>{hit.timestamp ? new Date(hit.timestamp).toLocaleDateString("ru-RU") : ""}</time></div><h3><button className="rag-result-open" onClick={() => onOpenSession?.(hit.harness, hit.session_id)}>{hit.title || hit.session_id} ↗</button></h3>{hit.directory && <small>{hit.directory}</small>}<p>{hit.text}</p></article>)}</div>}
+      {!results.length && !busy && <p className="rag-empty">{timings ? "Совпадений не найдено." : "Введите запрос, чтобы найти точные совпадения и похожие темы."}</p>}
     </>}
     {error && <p className="rag-index-error" role="alert">{error}</p>}
     <footer className="rag-search-footer">Векторная модель {settings?.model || "qwen3-embedding:4b"} · {settings?.dimensions || 2048} измерения · отдельная коллекция Qdrant.</footer>
