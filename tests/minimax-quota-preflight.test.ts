@@ -31,9 +31,9 @@ it("recognizes the exact subscription quota code, coalesces concurrent probes, a
   expect(await Promise.all([probe(MINIMAX_SUBSCRIPTION_MODEL), probe(MINIMAX_SUBSCRIPTION_MODEL)])).toEqual(["quota_exhausted", "quota_exhausted"]);
   expect(fetchImpl).toHaveBeenCalledTimes(1);
   const [url, request] = fetchImpl.mock.calls[0];
-  expect(url).toBe("https://api.minimax.io/anthropic/v1/messages");
-  expect(JSON.parse(request.body as string)).toMatchObject({ model: "MiniMax-M3.1-Flash", max_tokens: 1, messages: [{ role: "user", content: "Reply OK." }] });
-  expect(JSON.parse(request.body as string).tools).toBeUndefined();
+  expect(url).toBe("https://www.minimax.io/v1/token_plan/remains");
+  expect(request.method).toBe("GET");
+  expect(request.body).toBeUndefined();
   now = 31;
   expect(await probe(MINIMAX_SUBSCRIPTION_MODEL)).toBe("quota_exhausted");
   expect(fetchImpl).toHaveBeenCalledTimes(2);
@@ -41,7 +41,6 @@ it("recognizes the exact subscription quota code, coalesces concurrent probes, a
 
 it.each([
   { error: { code: 2056 } },
-  { error: { message: "Token Plan usage limit exceeded (2056)" } },
   { base_resp: { status_code: 4292056 } },
 ])("recognizes verified HTTP429 MiniMax quota envelope %j", async (body) => {
   const probe = createMiniMaxQuotaPreflight({ token: "fixture-key", fetchImpl: vi.fn(async () => new Response(JSON.stringify(body), { status: 429 })) });
@@ -84,4 +83,23 @@ it("leaves an unconfigured OpenCode default explicit and never probes or falls b
   const result = await dispatchProjectLaunch({ policy: f.policy, project: "card", message: "business task", operationId: "unknown" }, f.log, namedSessionRunner(f.adapters, "unknown", unknown));
   expect(result.outcome).toBe("admission_unknown");
   expect(f.adapters.get("zcode")!.createSession).not.toHaveBeenCalled();
+});
+
+it.each([
+ [0, 69, "quota_exhausted"], [99, 69, "available"], [50, 0, "quota_exhausted"], [undefined, undefined, "unknown"],
+])("uses readonly general allowance %s/%s and never a model call", async (interval, weekly, expected) => {
+ const fetchImpl = vi.fn(async () => Response.json({ model_remains: [
+  { model_name: "general", current_interval_remaining_percent: interval, current_weekly_remaining_percent: weekly },
+  { model_name: "video", current_interval_remaining_percent: 0 },
+ ] }));
+ expect(await createMiniMaxQuotaPreflight({ token: "fixture", fetchImpl })(MINIMAX_SUBSCRIPTION_MODEL)).toBe(expected);
+ const [url, request] = fetchImpl.mock.calls[0];
+ expect(String(url)).toContain("/token_plan/remains");
+ expect(request.method).toBe("GET");
+ expect(request.body).toBeUndefined();
+});
+
+it("keeps a message-only quota assertion unknown on the read-only endpoint", async () => {
+ const probe = createMiniMaxQuotaPreflight({ token: "fixture", fetchImpl: async () => Response.json({ error: { message: "Token Plan usage limit exceeded (2056)" } }, { status: 429 }) });
+ expect(await probe(MINIMAX_SUBSCRIPTION_MODEL)).toBe("unknown");
 });

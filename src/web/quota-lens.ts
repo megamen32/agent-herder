@@ -73,6 +73,14 @@ function jwtClaim(jwt: string, claim: string): string {
   }
 }
 
+// Preserve absent windows as null and keep provider seconds unchanged.
+function quotaWindow(value: any): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null;
+  return Object.fromEntries(["used_percent", "limit_window_seconds", "reset_after_seconds", "reset_at"]
+    .filter((key) => typeof value[key] === "number" && Number.isFinite(value[key]))
+    .map((key) => [key, value[key]]));
+}
+
 export async function readCodexUsage(): Promise<Record<string, unknown>> {
   const { token, accountId } = localCodexAuth();
   if (!token) return { error: "no local ~/.codex/auth.json" };
@@ -86,15 +94,23 @@ export async function readCodexUsage(): Promise<Record<string, unknown>> {
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) return { error: `HTTP ${response.status}` };
-    const data = response.json() as Promise<any>;
-    const rl = (await data).rate_limit ?? {};
+    const data = await response.json() as any;
+    const rl = data.rate_limit ?? {};
     return {
-      plan: (await data).plan_type,
-      email: (await data).email,
+      plan: data.plan_type,
+      email: data.email,
       primary_used: rl.primary_window?.used_percent,
       primary_reset_s: rl.primary_window?.reset_after_seconds,
       secondary_used: rl.secondary_window?.used_percent,
       limit_reached: rl.limit_reached,
+      allowed: rl.allowed,
+      primary_window_seconds: rl.primary_window?.limit_window_seconds,
+      primary_reset_at: rl.primary_window?.reset_at,
+      secondary_window_seconds: rl.secondary_window?.limit_window_seconds,
+      secondary_reset_s: rl.secondary_window?.reset_after_seconds,
+      secondary_reset_at: rl.secondary_window?.reset_at,
+      primary_window: quotaWindow(rl.primary_window),
+      secondary_window: quotaWindow(rl.secondary_window),
     };
   } catch (error) {
     return { error: String((error as Error).message).slice(0, 160) };
