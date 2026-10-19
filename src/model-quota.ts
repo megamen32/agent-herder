@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { readCodexUsage } from "./web/quota-lens.js";
 
 export type ModelQuotaState = "reported" | "quota_exhausted" | "unknown";
@@ -58,9 +59,9 @@ function hasQuotaMeasurement(value: unknown): boolean {
   return false;
 }
 
-async function providerRequest(provider: "glm" | "minimax", endpoint: string, token: string | undefined, fetchImpl: typeof fetch, now: () => number): Promise<ProviderQuota> {
+async function providerRequest(provider: "glm" | "minimax", endpoint: string, token: string | undefined, fetchImpl: typeof fetch, now: () => number, credentialError?: string): Promise<ProviderQuota> {
   const checkedAt = new Date(now()).toISOString();
-  if (!token?.trim()) return { provider, state: "unknown", checkedAt, error: "credential_not_configured" };
+  if (!token?.trim()) return { provider, state: "unknown", checkedAt, error: credentialError ?? "credential_not_configured" };
   try {
     const response = await fetchImpl(endpoint, {
       method: "GET",
@@ -88,14 +89,28 @@ async function providerRequest(provider: "glm" | "minimax", endpoint: string, to
   }
 }
 
+async function readGlmCredential(env: NodeJS.ProcessEnv): Promise<{ token?: string; error?: string }> {
+  const directToken = [env.ANTHROPIC_AUTH_TOKEN, env.ZAI_API_KEY, env.GLM_API_KEY].find((value) => value?.trim());
+  if (directToken) return { token: directToken };
+  const tokenFile = env.AGENT_HERDER_GLM_TOKEN_FILE?.trim();
+  if (!tokenFile) return { error: "credential_not_configured" };
+  try {
+    const token = (await readFile(tokenFile, "utf8")).trim();
+    return token ? { token } : { error: "credential_file_unavailable" };
+  } catch {
+    return { error: "credential_file_unavailable" };
+  }
+}
+
 export async function readModelQuotas(deps: QuotaDeps = {}): Promise<{ checkedAt: string; providers: ProviderQuota[] }> {
   const env = deps.env ?? process.env;
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
   const codexQuota = deps.codexQuota ?? readCodexUsage;
   const checkedAt = new Date(now()).toISOString();
+  const glmCredential = await readGlmCredential(env);
   const [glm, minimax, codex] = await Promise.all([
-    providerRequest("glm", "https://api.z.ai/api/monitor/usage/quota/limit", env.ANTHROPIC_AUTH_TOKEN ?? env.ZAI_API_KEY ?? env.GLM_API_KEY, fetchImpl, now),
+    providerRequest("glm", "https://api.z.ai/api/monitor/usage/quota/limit", glmCredential.token, fetchImpl, now, glmCredential.error),
     providerRequest("minimax", "https://www.minimax.io/v1/token_plan/remains", env.MINIMAX_API_KEY, fetchImpl, now),
     codexQuota().then((details): ProviderQuota => {
       const used = typeof details.primary_used === "number" ? details.primary_used : undefined;
