@@ -91,7 +91,7 @@ describe("mobile chat and session controls", () => {
     expect(header).toContain('aria-label="Настройки сессии"');
     expect(header).toContain('aria-label="Меню чата"');
     for (const label of ['>Машины<', '>Задачи<', '>Статистика<', '>Автопилот<', '>Автопродолжение<']) expect(header).not.toContain(label);
-    expect(main).toContain('onMachines={() => { setFleetCreationMode(false);setShowFleet(true)');
+    expect(main).toContain('onMachines={() => { setShowSearch(false); setFleetCreationMode(false);setShowFleet(true)');
     expect(main).toContain('>Автопилот</button>');
     expect(main).toContain('>Автопродолжение</button>');
     expect(menu).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
@@ -138,7 +138,7 @@ describe("mobile chat and session controls", () => {
     const list = main.slice(main.indexOf("function SessionList("), main.indexOf("function App("));
     expect(list).toContain('className="quiet-button sessions-machines-button" onClick={onMachines}>Машины</button>');
     const render = main.slice(main.indexOf('<SessionList '));
-    expect(render).toContain('onMachines={() => { setFleetCreationMode(false); setShowFleet(true); setAutomationSettings(undefined); }}');
+    expect(render).toContain('onMachines={() => { setShowSearch(false); setFleetCreationMode(false); setShowFleet(true); setAutomationSettings(undefined); }}');
   });
 
   it("keeps the existing chat menu available throughout mobile and tablet widths", () => {

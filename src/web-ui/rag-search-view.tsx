@@ -1,6 +1,7 @@
 import * as React from "react";
+import { readAdvancedSearchPreferences, writeAdvancedSearchPreferences, type SearchHarness } from "./search-preferences.js";
 
-type Harness = "codex" | "zcode" | "opencode";
+type Harness = SearchHarness;
 type SearchHit = { harness: Harness; session_id: string; message_id: string; role: string; title: string; directory: string; project: string; timestamp: string; text: string; score: number };
 type RagSettings = { enabled: boolean; harnesses: Record<Harness, boolean>; model: string; dimensions: number; run?: { status: string; processed?: number; indexed?: number; current?: string; error?: string } };
 const labels: Record<Harness, string> = { codex: "Codex", zcode: "ZCode", opencode: "OpenCode" };
@@ -12,16 +13,26 @@ async function api(path: string, method = "GET", body?: unknown): Promise<any> {
   return value;
 }
 
-export function RagSearchView({ initialQuery = "", onOpenSession }: { initialQuery?: string; onOpenSession?: (harness: Harness, sessionId: string) => void }) {
+export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSession }: { initialQuery?: string; onInitialQueryApplied?: () => void; onOpenSession?: (harness: Harness, sessionId: string) => void }) {
+  const [savedPreferences] = React.useState(() => readAdvancedSearchPreferences(window.localStorage));
   const [settings, setSettings] = React.useState<RagSettings>();
-  const [query, setQuery] = React.useState(initialQuery);
-  const [selected, setSelected] = React.useState<Harness[]>(["codex", "zcode", "opencode"]);
-  const [from, setFrom] = React.useState("");
-  const [to, setTo] = React.useState("");
-  const [project, setProject] = React.useState("");
+  const [query, setQuery] = React.useState(initialQuery ?? savedPreferences.query);
+  const [selected, setSelected] = React.useState<Harness[]>(savedPreferences.harnesses);
+  const [from, setFrom] = React.useState(savedPreferences.from);
+  const [to, setTo] = React.useState(savedPreferences.to);
+  const [project, setProject] = React.useState(savedPreferences.project);
   const [results, setResults] = React.useState<SearchHit[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
+
+  React.useEffect(() => {
+    if (initialQuery === undefined) return;
+    setQuery(initialQuery);
+    onInitialQueryApplied?.();
+  }, [initialQuery, onInitialQueryApplied]);
+  React.useEffect(() => {
+    writeAdvancedSearchPreferences(window.localStorage, { query, harnesses: selected, from, to, project });
+  }, [query, selected, from, to, project]);
 
   const refresh = React.useCallback(async () => {
     try { setSettings(await api("/api/rag/settings")); }
