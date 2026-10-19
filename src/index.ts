@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 
 import { HarnessAdapter } from "./types/index.js";
-import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, ChatGptAdapter } from "./adapters/index.js";
+import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, ChatGptAdapter, MinimaxCodeAdapter } from "./adapters/index.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
@@ -79,6 +79,7 @@ const ENABLE_QODER = parseEnvBool(process.env.ENABLE_QODER, true);
 const ENABLE_HERMES = parseEnvBool(process.env.ENABLE_HERMES, true);
 const ENABLE_ZCODE = parseEnvBool(process.env.ENABLE_ZCODE, true);
 const ENABLE_FAST_AGENT = parseEnvBool(process.env.ENABLE_FAST_AGENT, false);
+const ENABLE_MINIMAX_CODE = parseEnvBool(process.env.ENABLE_MINIMAX_CODE, true);
 const ACP_AGENT_COMMAND = process.env.ACP_AGENT_COMMAND;
 const LAZY_ADAPTERS = new Set(["codex", "hermes", "zcode"]);
 
@@ -190,6 +191,10 @@ function configureAdapterRegistry(): void {
     home: process.env.FAST_AGENT_HOME || join(homedir(), ".fast-agent"),
     cwd: process.env.FAST_AGENT_CWD || process.cwd(),
   }));
+  adapterFactories.set("minimax-code", () => new MinimaxCodeAdapter({
+    sessionStore: process.env.MINIMAX_CODE_SESSION_STORE,
+    cwd: process.env.MINIMAX_CODE_CWD,
+  }));
   for (const definition of [
     ["opencode", "OpenCode", "OpenCode HTTP control adapter", ENABLE_OPENCODE],
     ["claude", "Claude", "Claude SDK or CLI adapter", ENABLE_CLAUDE],
@@ -199,6 +204,7 @@ function configureAdapterRegistry(): void {
     ["zcode", "ZCode", "ZCode app-server adapter", ENABLE_ZCODE],
     ["fast-agent", "Fast Agent", "Fast Agent persisted session observer and launcher", ENABLE_FAST_AGENT],
     ["chatgpt", "ChatGPT", "Existing ChatGPT conversations on the one owned BrowserClaw page", true],
+    ["minimax-code", "MiniMax Code", "MiniMax Code local-runtime session observer", ENABLE_MINIMAX_CODE],
   ] as const) {
     const [id, name, description, defaultEnabled] = definition;
     adapterRegistry.register({ id, name, description, defaultEnabled, factory: adapterFactories.get(id) });
@@ -366,6 +372,19 @@ async function initAdapters() {
       console.error(`[agent-herder] ZCode adapter failed to init: ${(err as Error).message}`);
       adapters.delete("zcode");
     });
+  }
+
+  if (adapterRegistry.shouldEnable("minimax-code", ENABLE_MINIMAX_CODE)) {
+    const adapter = new MinimaxCodeAdapter({
+      sessionStore: process.env.MINIMAX_CODE_SESSION_STORE,
+      cwd: process.env.MINIMAX_CODE_CWD,
+    });
+    adapters.set("minimax-code", adapter);
+    adapterRegistry.registerActive(adapter);
+    inits.push(adapter.init().catch((err) => {
+      console.error(`[agent-herder] MiniMax Code observer failed to init: ${(err as Error).message}`);
+      adapters.delete("minimax-code");
+    }));
   }
 
   if (adapterRegistry.shouldEnable("fast-agent", ENABLE_FAST_AGENT)) {

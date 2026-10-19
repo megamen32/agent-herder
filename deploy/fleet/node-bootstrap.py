@@ -33,9 +33,9 @@ if sys.platform.startswith('linux'):
     if int(mem['MemAvailable'].split()[0]) * 1024 < 4 * 1024**3:
         sys.exit('Fleet node requires 4GiB host memory reserve')
 harnesses = config['harnesses']
-if not set(harnesses) <= {'codex', 'zcode', 'opencode'}:
+if not set(harnesses) <= {'codex', 'zcode', 'opencode', 'minimax-code'}:
     sys.exit('Unsupported fleet node adapter')
-for name in ['CODEX', 'ZCODE', 'OPENCODE', 'CLAUDE', 'QODER', 'HERMES', 'FAST_AGENT']:
+for name in ['CODEX', 'ZCODE', 'OPENCODE', 'CLAUDE', 'QODER', 'HERMES', 'FAST_AGENT', 'MINIMAX_CODE']:
     env['ENABLE_' + name] = 'true' if name.lower().replace('_', '-') in harnesses else 'false'
 if 'codex' in harnesses:
     pointer = Path(config['codexSocket'])
@@ -65,7 +65,7 @@ if 'zcode' in harnesses:
     env['ZCODE_SERVER_ENTRY'] = config['zcodeEntry']
     env['ZCODE_CWD'] = str(Path.home())
 registry = state / 'adapters.json'
-registry.write_text(json.dumps({'version': 1, 'enabled': {name: name in harnesses for name in ['codex', 'opencode', 'zcode', 'claude', 'qoder', 'hermes', 'fast-agent', 'chatgpt']}}))
+registry.write_text(json.dumps({'version': 1, 'enabled': {name: name in harnesses for name in ['codex', 'opencode', 'zcode', 'claude', 'qoder', 'hermes', 'fast-agent', 'chatgpt', 'minimax-code']}}))
 env.update(AGENT_HERDER_WEB_PORT=str(config.get('webPort', 18789)), AGENT_HERDER_WEB_HOST='0.0.0.0', AGENT_HERDER_ADAPTER_REGISTRY=str(registry), AGENT_HERDER_AUTOPILOT_STATE_DIR=str(state / 'autopilot'),
            AGENT_HERDER_HUMAN_REQUEST_STORE=str(state / 'human-requests.json'),
            AGENT_HERDER_SINGLETON_LOCK=str(runtime / 'node.lock'), TMPDIR=str(temp))

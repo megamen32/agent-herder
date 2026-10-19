@@ -12,6 +12,7 @@ const expectedGates = [
   "ENABLE_HERMES",
   "ENABLE_ZCODE",
   "ENABLE_FAST_AGENT",
+  "ENABLE_MINIMAX_CODE",
 ];
 
 function parseGateValue(source: string): (value: string | undefined, fallback: boolean) => boolean {
@@ -38,6 +39,7 @@ describe("adapter enable gates", () => {
       ENABLE_HERMES: "true",
       ENABLE_ZCODE: "true",
       ENABLE_FAST_AGENT: "false",
+      ENABLE_MINIMAX_CODE: "true",
     });
     const parseEnvBool = parseGateValue(source);
     for (const gate of expectedGates) {

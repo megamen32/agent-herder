@@ -768,7 +768,7 @@ def prepare(base,config,artifact_cache=None):
     entry=verify_manifest(base,config['sourceSha'])
     node=executable(config['nodeBin'])
     harnesses=config['harnesses']
-    if not isinstance(harnesses,list) or not harnesses or not set(harnesses)<={'codex','zcode','opencode'}:
+    if not isinstance(harnesses,list) or not harnesses or not set(harnesses)<={'codex','zcode','opencode','minimax-code'}:
         raise Refused('unsupported_node_harnesses')
     native={}
     if 'codex' in harnesses:native.update(codex_environment(config))
