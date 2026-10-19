@@ -1,7 +1,7 @@
 type: agent
 name: herder_minimax
 default: true
-model: anthropic.MiniMax-M3.1-Flash-Preview
+model: anthropic.MiniMax-M3.1-Flash
 instruction: Follow the user task and the workspace instructions. Verify changes through the real consumer.
 servers: []
 request_params:

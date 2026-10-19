@@ -40,14 +40,14 @@ describe("judge provider diagnostics", () => {
   });
   it("captures a MiniMax native quota error even in an HTTP200 envelope", async () => {
     const url = "https://api.minimax.io/anthropic/v1/messages";
-    const t = new JudgeRequestTrace({ endpoint: url, model: "MiniMax-M3.1-Flash-Preview", operation: "batch-plan" });
+    const t = new JudgeRequestTrace({ endpoint: url, model: "MiniMax-M3.1-Flash", operation: "batch-plan" });
     const r = await t.fetch(async () => Response.json({ base_resp: { status_code: 2056, status_msg: "usage limit exceeded" } }), url, {});
     expect((await errorOf(t.json(r))).diagnostic).toMatchObject({ httpStatus: 200, providerCode: "2056", kind: "quota_exhausted" });
   });
   it("keeps an Anthropic SSE error native code, model and request id", async () => {
-    const judge = createAnthropicCompatibleSessionCompletionJudge({ baseUrl: "https://api.minimax.io/anthropic", model: "MiniMax-M3.1-Flash-Preview", token: "secret-test-token", fetchImpl: async () => new Response('data: {"type":"error","error":{"code":"2056","message":"usage limit exceeded"}}\n\n', { headers: { "content-type": "text/event-stream", "request-id": "stream-123" } }) });
+    const judge = createAnthropicCompatibleSessionCompletionJudge({ baseUrl: "https://api.minimax.io/anthropic", model: "MiniMax-M3.1-Flash", token: "secret-test-token", fetchImpl: async () => new Response('data: {"type":"error","error":{"code":"2056","message":"usage limit exceeded"}}\n\n', { headers: { "content-type": "text/event-stream", "request-id": "stream-123" } }) });
     const e = await errorOf(judge.plan!({ sessions: [] }));
-    expect(e.diagnostic).toMatchObject({ kind: "quota_exhausted", providerCode: "2056", requestId: "stream-123", model: "MiniMax-M3.1-Flash-Preview", httpStatus: 200 });
+    expect(e.diagnostic).toMatchObject({ kind: "quota_exhausted", providerCode: "2056", requestId: "stream-123", model: "MiniMax-M3.1-Flash", httpStatus: 200 });
   });
   it("preserves malformed-reconciliation classification for the bounded repair path", async () => {
     const judge = createOpenAICompatibleSessionCompletionJudge({ baseUrl: "https://api.z.ai/api/coding/paas/v4", model: "glm-5.3-flash", fetchImpl: async () => new Response("invalid private body") });

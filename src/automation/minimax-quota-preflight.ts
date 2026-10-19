@@ -1,4 +1,4 @@
-export const MINIMAX_SUBSCRIPTION_MODEL = "minimax-coding-plan/MiniMax-M3.1-Flash-Preview";
+export const MINIMAX_SUBSCRIPTION_MODEL = "minimax-coding-plan/MiniMax-M3.1-Flash";
 export type MiniMaxQuotaAvailability = "available" | "quota_exhausted" | "unknown";
 export type MiniMaxQuotaPreflight = (model: string) => Promise<MiniMaxQuotaAvailability>;
 
@@ -30,7 +30,7 @@ export function createMiniMaxQuotaPreflight(options: {
         const response = await fetchImpl("https://api.minimax.io/anthropic/v1/messages", {
           method: "POST", signal: controller.signal,
           headers: { "x-api-key": token, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model: "MiniMax-M3.1-Flash-Preview", max_tokens: 1, output_config: { effort: "low" }, messages: [{ role: "user", content: "Reply OK." }] }),
+          body: JSON.stringify({ model: "MiniMax-M3.1-Flash", max_tokens: 1, output_config: { effort: "low" }, messages: [{ role: "user", content: "Reply OK." }] }),
         });
         const reader = response.body?.getReader();
         if (!reader) return "unknown";

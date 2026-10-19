@@ -1445,7 +1445,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     const model = healthModelForHarness(harness, execution);
     if (harness === "opencode") {
-      if (execution.provider !== "minimax-coding-plan" || model !== "minimax-coding-plan/MiniMax-M3.1-Flash-Preview") {
+      if (execution.provider !== "minimax-coding-plan" || model !== "minimax-coding-plan/MiniMax-M3.1-Flash") {
         return sendJson(response, 409, { error: "Noticeplace incidents require OpenCode / MiniMax по подписке; no provider fallback" });
       }
       const catalog = await supervisor.getModels("opencode");

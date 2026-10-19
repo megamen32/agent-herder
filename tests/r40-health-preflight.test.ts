@@ -7,7 +7,7 @@ it('rejects unavailable native subscription model before creating a session',asy
  const server=createWebServer({adapters:new Map([['opencode',adapter]]),converter:{async convert(){throw new Error('unused')}}});
  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
  try {const addr=server.address();if(!addr||typeof addr==='string')throw Error('bind');
- const response=await fetch(`http://127.0.0.1:${addr.port}/api/health/remediation`,{method:'POST',body:JSON.stringify({incident_id:'r40-preflight',plan_id:'repair',harness:'opencode',name:'r40',cwd:'/tmp',message:'Read only.',execution:{runtime:'opencode',provider:'minimax-coding-plan',model:'MiniMax-M3.1-Flash-Preview',reasoning:'default',topic:'health'}})});
+ const response=await fetch(`http://127.0.0.1:${addr.port}/api/health/remediation`,{method:'POST',body:JSON.stringify({incident_id:'r40-preflight',plan_id:'repair',harness:'opencode',name:'r40',cwd:'/tmp',message:'Read only.',execution:{runtime:'opencode',provider:'minimax-coding-plan',model:'MiniMax-M3.1-Flash',reasoning:'default',topic:'health'}})});
  expect(response.status).toBe(409);expect((await response.json()).error).toContain('no provider fallback');expect(creates).toBe(0);
  }finally{await new Promise<void>(r=>server.close(()=>r()));}
 });

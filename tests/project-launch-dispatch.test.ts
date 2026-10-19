@@ -47,7 +47,7 @@ const policy = validateAutomationLaunchPolicy({
   version: 1,
   allowedHarnesses: ["codex", "zcode", "opencode"],
   preferredHarness: "codex",
-  models: { codex: "gpt-6.1-sol", zcode: "account:zai-individual-coding-plan/GLM-5.3-Flash$high", opencode: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview" },
+  models: { codex: "gpt-6.1-sol", zcode: "account:zai-individual-coding-plan/GLM-5.3-Flash$high", opencode: "minimax-coding-plan/MiniMax-M3.1-Flash" },
   projectRoutes: {
     "/home/roomhacker/PycharmProjects/TelegramAuto": { harnesses: ["opencode", "zcode"], aliases: ["tg-commentator", "autotelegramviews"] },
     "/home/roomhacker/PycharmProjects/AutoFindClient": { harnesses: ["codex", "zcode", "opencode"] },
@@ -291,7 +291,7 @@ describe("project launch dispatch", () => {
       cwd: profileCwd,
       message: "Исправить инцидент",
       harness: "opencode",
-      model: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview",
+      model: "minimax-coding-plan/MiniMax-M3.1-Flash",
       operationId: "op-profile",
     }, log, namedSessionRunner(adapters, "af-profile"));
 
@@ -304,7 +304,7 @@ describe("project launch dispatch", () => {
     expect(result.routingReason).toContain(`рабочую папку ${routeCwd}`);
     expect(result.routingReason).toContain("Профиль предлагал OpenCode");
     expect(result.routingReason).toContain("маршрут проекта выбирает Codex");
-    expect(result.routingReason).toContain("Модель профиля minimax-coding-plan/MiniMax-M3.1-Flash-Preview проигнорирована");
+    expect(result.routingReason).toContain("Модель профиля minimax-coding-plan/MiniMax-M3.1-Flash проигнорирована");
     expect(attempts.map((entry) => entry.harness)).toEqual(["codex"]);
   });
 
@@ -324,11 +324,11 @@ describe("project launch dispatch", () => {
       cwd,
       message: "Исправить инцидент",
       harness: "opencode",
-      model: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview",
+      model: "minimax-coding-plan/MiniMax-M3.1-Flash",
       operationId: "op-unconfigured",
     }, log, namedSessionRunner(adapters, "other"));
 
-    expect(result).toMatchObject({ outcome: "accepted", selectedHarness: "opencode", model: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview" });
+    expect(result).toMatchObject({ outcome: "accepted", selectedHarness: "opencode", model: "minimax-coding-plan/MiniMax-M3.1-Flash" });
     expect(result.routingReason).toContain("используется профиль OpenCode");
   });
 
@@ -393,7 +393,7 @@ describe("project launch dispatch", () => {
     expect(secondResult).toMatchObject({ outcome: "in_flight", selectedHarness: "opencode" });
     expect(secondResult.routingReason).toMatch(/уже зарезервирован|уже выполняется другим вызовом/);
     expect(firstResult).toMatchObject({ outcome: "accepted", selectedHarness: "opencode" });
-    expect(firstResult.attempts).toMatchObject([{ harness: "opencode", created: true, model: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview", mode: "sync" }]);
+    expect(firstResult.attempts).toMatchObject([{ harness: "opencode", created: true, model: "minimax-coding-plan/MiniMax-M3.1-Flash", mode: "sync" }]);
   });
 
   it("replays the full receipt of a completed attempt", async () => {

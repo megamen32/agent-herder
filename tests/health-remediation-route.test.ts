@@ -155,11 +155,11 @@ describe("health remediation route harness guard", () => {
       body: JSON.stringify({
         incident_id: "inc-fast-agent-minimax", plan_id: "repair", harness: "fast-agent",
         name: "health_fast_agent", cwd: "/tmp", message: "Read-only diagnostic canary.",
-        execution: { runtime: "fast-agent", provider: "minimax", model: "MiniMax-M3.1-Flash-Preview", reasoning: "default", topic: "health" },
+        execution: { runtime: "fast-agent", provider: "minimax", model: "MiniMax-M3.1-Flash", reasoning: "default", topic: "health" },
       }),
     });
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ ok: true, model: "anthropic.MiniMax-M3.1-Flash-Preview" });
+    expect(await response.json()).toMatchObject({ ok: true, model: "anthropic.MiniMax-M3.1-Flash" });
     expect(tracked.createCalls).toBe(1);
   });
 

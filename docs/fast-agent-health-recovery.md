@@ -5,10 +5,10 @@ Agent Herder observes existing Fast Agent conversations from `/home/roomhacker/.
 POST the local REST endpoint `http://127.0.0.1:18787/api/health/remediation` with the usual incident/plan/name/cwd/message fields and:
 
 ```json
-{"harness":"fast-agent","execution":{"runtime":"fast-agent","provider":"minimax","model":"MiniMax-M3.1-Flash-Preview","reasoning":"default","topic":"health"}}
+{"harness":"fast-agent","execution":{"runtime":"fast-agent","provider":"minimax","model":"MiniMax-M3.1-Flash","reasoning":"default","topic":"health"}}
 ```
 
-The model maps to `anthropic.MiniMax-M3.1-Flash-Preview`. This dedicated profile uses the native shell tool and selects no MCP servers. Responses must be checked through the returned native conversation details; accepted queue delivery is not proof of completed repair.
+The model maps to `anthropic.MiniMax-M3.1-Flash`. This dedicated profile uses the native shell tool and selects no MCP servers. Responses must be checked through the returned native conversation details; accepted queue delivery is not proof of completed repair.
 
 ## Named sessions and ordinary jobs
 
@@ -26,7 +26,7 @@ Put recovery artifacts under the canonical administration checkout's ignored `.t
 
 ## Direct MiniMax channel
 
-The dedicated deploy/fast-agent-minimax.yaml template installs at /home/roomhacker/.config/agent-herder/fast-agent-minimax.yaml (mode 0600). Direct native models anthropic.MiniMax-* select this config; the child receives ANTHROPIC_API_KEY from existing protected MINIMAX_API_KEY. Ordinary generic sessions retain their gateway settings. No credential is stored in Git. The direct Anthropic endpoint returned HTTP 200 for exact MiniMax-M3.1-Flash-Preview on 2026-10-07; the local generic gateway rejected that model because its catalog is incomplete.
+The dedicated deploy/fast-agent-minimax.yaml template installs at /home/roomhacker/.config/agent-herder/fast-agent-minimax.yaml (mode 0600). Direct native models anthropic.MiniMax-* select this config; the child receives ANTHROPIC_API_KEY from existing protected MINIMAX_API_KEY. Ordinary generic sessions retain their gateway settings. No credential is stored in Git. The direct Anthropic endpoint returned HTTP 200 for exact MiniMax-M3.1-Flash on 2026-10-07; the local generic gateway rejected that model because its catalog is incomplete.
 
 The matching deploy/fast-agent-minimax-card.yaml installs mode0600 at the same configuration directory. Its native request_params.max_tokens=524288 supplies the Anthropic SDK mandatory field for this custom model. Child-only ANTHROPIC_BASE_URL is fixed to the subscription endpoint and ANTHROPIC_AUTH_TOKEN is cleared. The canonical credential was privately proven equal to OpenCode provider minimax-coding-plan; no PAYG fallback is allowed.
 

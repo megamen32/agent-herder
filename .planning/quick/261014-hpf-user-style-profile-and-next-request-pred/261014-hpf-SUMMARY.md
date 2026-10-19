@@ -68,7 +68,7 @@ preserved; no accepted/unknown native task was retried.
 
 Actual provider snapshot 14.10 ~13:08 MSK, isolated inference/no native dispatch:
 - Existing MiniMax one-token quota probe: HTTP200, returned exact
-  MiniMax-M3.1-Flash-Preview,698ms. This proves admission, not a full business turn.
+  MiniMax-M3.1-Flash,698ms. This proves admission, not a full business turn.
 - Actual configured GLM Stop judge: HTTP200, headers after33365ms, valid completed
   verdict after33418ms. The previous failures had a35s client deadline. The new
   sample supports slow-response latency near that deadline; it does not prove

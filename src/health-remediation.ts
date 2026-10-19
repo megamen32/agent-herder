@@ -1,14 +1,14 @@
 export interface HealthExecutionProfile {
   runtime: "zcode" | "hermes" | "fast-agent" | "opencode";
   provider: "account:zai-individual-coding-plan" | "openai-codex" | "minimax" | "minimax-coding-plan";
-  model: "GLM-5.3-Flash" | "gpt-5.6-luna" | "MiniMax-M3.1-Flash-Preview";
+  model: "GLM-5.3-Flash" | "gpt-5.6-luna" | "MiniMax-M3.1-Flash";
   reasoning: "high" | "default";
   topic: "health";
 }
 
 const CANONICAL_PROFILES: Record<HealthExecutionProfile["runtime"], HealthExecutionProfile> = {
-  opencode: { runtime: "opencode", provider: "minimax-coding-plan", model: "MiniMax-M3.1-Flash-Preview", reasoning: "default", topic: "health" },
-  "fast-agent": { runtime: "fast-agent", provider: "minimax", model: "MiniMax-M3.1-Flash-Preview", reasoning: "default", topic: "health" },
+  opencode: { runtime: "opencode", provider: "minimax-coding-plan", model: "MiniMax-M3.1-Flash", reasoning: "default", topic: "health" },
+  "fast-agent": { runtime: "fast-agent", provider: "minimax", model: "MiniMax-M3.1-Flash", reasoning: "default", topic: "health" },
   zcode: {
     runtime: "zcode",
     provider: "account:zai-individual-coding-plan",

@@ -305,7 +305,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
   }
 
   async listModels(): Promise<string[]> {
-    const models: string[] = ["anthropic.MiniMax-M3.1-Flash-Preview"];
+    const models: string[] = ["anthropic.MiniMax-M3.1-Flash"];
     const add = (value: unknown) => {
       if (typeof value !== "string") return;
       const model = value.trim().replace(/^['"]|['"]$/g, "");

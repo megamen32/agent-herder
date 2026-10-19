@@ -139,10 +139,10 @@ it("accepts explicit incident context through the production arm HTTP handler", 
 it("reads the execution model from the native OpenCode assistant receipt", async () => {
  const { OpenCodeAdapter } = await import("../src/adapters/opencode.js");
  vi.stubGlobal("fetch", vi.fn(async (url: string) => Response.json(String(url).includes("/message?") ? [
-  { info: { id: "native-message", role: "assistant", providerID: "minimax-coding-plan", modelID: "MiniMax-M3.1-Flash-Preview" }, parts: [{ type: "text", text: "Исправление проверено" }] },
+  { info: { id: "native-message", role: "assistant", providerID: "minimax-coding-plan", modelID: "MiniMax-M3.1-Flash" }, parts: [{ type: "text", text: "Исправление проверено" }] },
  ] : { id: hook.session_id, directory: hook.cwd })));
  try {
   const adapter = new OpenCodeAdapter({ baseUrl: "http://native-fixture", protocol: "v1" });
-  expect((await adapter.getSessionMessages(hook.session_id, 12))?.at(-1)?.model).toBe("minimax-coding-plan/MiniMax-M3.1-Flash-Preview");
+  expect((await adapter.getSessionMessages(hook.session_id, 12))?.at(-1)?.model).toBe("minimax-coding-plan/MiniMax-M3.1-Flash");
  } finally { vi.unstubAllGlobals(); }
 });

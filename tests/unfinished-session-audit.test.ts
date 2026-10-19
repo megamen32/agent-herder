@@ -75,7 +75,7 @@ describe("explicit unfinished inventory pure contracts", () => {
             transcriptTail: `ПЕРВЫЙ ПОЛЬЗОВАТЕЛЬСКИЙ ЗАПРОС:\nцель-${index}\n\nПОСЛЕДНИЙ СМЫСЛОВОЙ КОНТЕКСТ:\n${hostile}`,
         }));
         const buildRequest = (packed: typeof sessions) => ({
-            model: "MiniMax-M3.1-Flash-Preview",
+            model: "MiniMax-M3.1-Flash",
             system: [{ type: "text", text: "planner" }],
             messages: [{ role: "user", content: JSON.stringify({ sessions: packed.map((candidate) => ({
                             id: candidate.session.id,
@@ -156,7 +156,7 @@ describe("explicit unfinished inventory pure contracts", () => {
         let requestBody: Record<string, unknown> = {};
         const judge = createAnthropicCompatibleSessionCompletionJudge({
             baseUrl: "https://api.minimax.io/anthropic/",
-            model: "MiniMax-M3.1-Flash-Preview",
+            model: "MiniMax-M3.1-Flash",
             token: "test-token",
             fetchImpl: async (_url, init) => {
                 requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -222,7 +222,7 @@ describe("explicit unfinished inventory pure contracts", () => {
     it("accepts bounded numeric and decimal-string aliases when MiniMax strips the S prefix", async () => {
         const judge = createAnthropicCompatibleSessionCompletionJudge({
             baseUrl: "https://api.minimax.io/anthropic/",
-            model: "MiniMax-M3.1-Flash-Preview",
+            model: "MiniMax-M3.1-Flash",
             token: "test-token",
             fetchImpl: async () => {
                 const text = JSON.stringify({ groups: [{
@@ -247,7 +247,7 @@ describe("explicit unfinished inventory pure contracts", () => {
     });
     it("rejects a numeric-string alias that collides with a different native session id", async () => {
         const judge = createAnthropicCompatibleSessionCompletionJudge({
-            baseUrl: "https://api.minimax.io/anthropic/", model: "MiniMax-M3.1-Flash-Preview", token: "test-token",
+            baseUrl: "https://api.minimax.io/anthropic/", model: "MiniMax-M3.1-Flash", token: "test-token",
             fetchImpl: async () => {
                 const text = JSON.stringify({ groups: [{
                             source_session_ids: ["1"], primary_session_id: "1", verdict: "completed",
@@ -266,7 +266,7 @@ describe("explicit unfinished inventory pure contracts", () => {
     });
     it("keeps a JSON number positional even when its text collides with another native id", async () => {
         const judge = createAnthropicCompatibleSessionCompletionJudge({
-            baseUrl: "https://api.minimax.io/anthropic/", model: "MiniMax-M3.1-Flash-Preview", token: "test-token",
+            baseUrl: "https://api.minimax.io/anthropic/", model: "MiniMax-M3.1-Flash", token: "test-token",
             fetchImpl: async () => {
                 const text = JSON.stringify({ groups: [{
                             source_session_ids: [1], primary_session_id: 1, verdict: "completed",
@@ -289,7 +289,7 @@ describe("explicit unfinished inventory pure contracts", () => {
     it("rejects a compact reconciliation that omits a chunk group", async () => {
         const judge = createAnthropicCompatibleSessionCompletionJudge({
             baseUrl: "https://api.minimax.io/anthropic/",
-            model: "MiniMax-M3.1-Flash-Preview",
+            model: "MiniMax-M3.1-Flash",
             token: "test-token",
             fetchImpl: async () => {
                 const text = JSON.stringify({ clusters: [["G1"]] });
@@ -437,7 +437,7 @@ describe("explicit unfinished inventory pure contracts", () => {
             movePinnedOnRollover: false,
             inventoryWindowHours: 48,
             evidenceMessageCount: 200,
-            judgeModel: "MiniMax-M3.1-Flash-Preview",
+            judgeModel: "MiniMax-M3.1-Flash",
             autopilotJudgeModel: "MiniMax-M3",
             harnesses: [],
         });
@@ -450,14 +450,14 @@ describe("explicit unfinished inventory pure contracts", () => {
         const path = join(root, "settings.json");
         await writeFile(path, JSON.stringify({
             version: 3, enabled: true, inventoryWindowHours: 48, evidenceMessageCount: 4,
-            judgeModel: "MiniMax-M3.1-Flash-Preview", autopilotJudgeModel: "MiniMax-M3", harnesses: [], sessions: [],
+            judgeModel: "MiniMax-M3.1-Flash", autopilotJudgeModel: "MiniMax-M3", harnesses: [], sessions: [],
         }));
         const settingsStore = new SessionAutostartStore(path, {});
         await expect(settingsStore.getSettings()).resolves.toMatchObject({ version: 7, pinActiveSessions: true, rolloverExpiredCache: false, movePinnedOnRollover: false, evidenceMessageCount: 200, source: "persisted" });
         await settingsStore.setRuntimeSettings({
             inventoryWindowHours: 48,
             evidenceMessageCount: 4,
-            judgeModel: "MiniMax-M3.1-Flash-Preview",
+            judgeModel: "MiniMax-M3.1-Flash",
             autopilotJudgeModel: "MiniMax-M3",
             pinActiveSessions: false,
             rolloverExpiredCache: false,
@@ -478,7 +478,7 @@ describe("explicit unfinished inventory pure contracts", () => {
             watchdogEnabled: true,
             watchdogIntervalSeconds: 10,
             stalledTurnMinutes: 2,
-            judgeModel: "MiniMax-M3.1-Flash-Preview",
+            judgeModel: "MiniMax-M3.1-Flash",
             autopilotJudgeModel: "MiniMax-M3",
             harnesses: [],
             sessions: [],

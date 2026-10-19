@@ -28,7 +28,7 @@ const policy = {
   models: {
     codex: "gpt-6.1-sol",
     zcode: "account:zai-individual-coding-plan/GLM-5.3-Flash$high",
-    opencode: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview",
+    opencode: "minimax-coding-plan/MiniMax-M3.1-Flash",
   },
   projectRoutes: {
     // The real cards carry their own service identifier, so the route declares it.
@@ -121,7 +121,7 @@ describe("per-project ordered harness routes", () => {
     const project = "/home/roomhacker/PycharmProjects/TelegramAuto";
 
     expect(resolveProjectLaunch(validated, { project })).toMatchObject({
-      kind: "launch", harness: "opencode", model: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview", mode: "create",
+      kind: "launch", harness: "opencode", model: "minimax-coding-plan/MiniMax-M3.1-Flash", mode: "create",
     });
     expect(resolveProjectLaunch(validated, { project, attempted: ["opencode"], outcome: "unavailable" }))
       .toMatchObject({ kind: "launch", harness: "zcode", model: "account:zai-individual-coding-plan/GLM-5.3-Flash$high" });
@@ -158,7 +158,7 @@ describe("per-project ordered harness routes", () => {
     const validated = validateAutomationLaunchPolicy(policy);
     // TGC cards are created with the service project id, not the checkout path.
     expect(resolveProjectLaunch(validated, { project: "tg-commentator" })).toMatchObject({
-      kind: "launch", harness: "opencode", model: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview", mode: "create",
+      kind: "launch", harness: "opencode", model: "minimax-coding-plan/MiniMax-M3.1-Flash", mode: "create",
     });
     expect(resolveProjectLaunch(validated, { project: "autotelegramviews" })).toMatchObject({ kind: "launch", harness: "opencode" });
     expect(resolveProjectLaunch(validated, { project: "TG-Commentator" })).toMatchObject({ kind: "launch", harness: "opencode" });
@@ -221,9 +221,9 @@ describe("project route editing", () => {
     expect(ui.normalizeProjectKey("/home/user/project/")).toBe("/home/user/project");
 
     expect(ui.parseProjectRoutes({
-      "/home/user/project": { harnesses: ["opencode", "zcode"], models: { opencode: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview" } },
+      "/home/user/project": { harnesses: ["opencode", "zcode"], models: { opencode: "minimax-coding-plan/MiniMax-M3.1-Flash" } },
     })).toEqual({
-      "/home/user/project": { harnesses: ["opencode", "zcode"], models: { opencode: "minimax-coding-plan/MiniMax-M3.1-Flash-Preview" } },
+      "/home/user/project": { harnesses: ["opencode", "zcode"], models: { opencode: "minimax-coding-plan/MiniMax-M3.1-Flash" } },
     });
     expect(() => ui.parseProjectRoutes({ "relative": { harnesses: ["codex"] } })).toThrow("абсолютным путём");
     expect(() => ui.parseProjectRoutes({ "/x": { harnesses: [] } })).toThrow("должен содержать среды");

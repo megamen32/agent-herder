@@ -90,13 +90,13 @@ describe("planner failure notice names the configured route", () => {
                 notify: async (notice) => { notices.push(notice); },
                 judge: {
                     async decide() { return { verdict: "unfinished", reason: "work remains", confidence: 1 }; },
-                    async plan() { throw judgeTransportFailure("MiniMax-M3.1-Flash-Preview", "https://api.minimax.io/anthropic"); },
+                    async plan() { throw judgeTransportFailure("MiniMax-M3.1-Flash", "https://api.minimax.io/anthropic"); },
                 },
             });
             await launcher.runAutopilotCycle();
             await launcher.runAutopilotCycle();
             expect(notices.length).toBe(1);
-            expect(notices[0]!.body).toContain("MiniMax-M3.1-Flash-Preview");
+            expect(notices[0]!.body).toContain("MiniMax-M3.1-Flash");
             expect(notices[0]!.body).toContain("api.minimax.io");
         } finally {
             await rm(root, { recursive: true, force: true });

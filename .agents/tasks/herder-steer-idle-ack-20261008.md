@@ -140,7 +140,7 @@ The existing executor created one isolated native test session01a11fe5-f05f-73f1
 
 Independent FastAgent consumer completed ONE blankContinue in the original same demo2610071904-5rlge7: native history grew4→6 with exactly one new userMessage and one assistant response, execution exit0. Final headed screenshot .tmp/fast-agent-cards-continuation/fastagent-second-response-final-20261009.jpg was independently visually inspected: actual second response and readable composer/Continue controls are visible. This is this specific desktop journey, not a full viewport/focus-group claim. Shared SDK version remained0.10.42.
 
-R40 owner saved the separate incidentExecution setting; publisher GET readback confirmed runtime=opencode, provider=minimax-coding-plan, model=MiniMax-M3.1-Flash-Preview, reasoning=default, topic=health, preserving global policy. Quiet diagnosis and complete composer queue/reload/stop UI acceptance remain with their assigned existing owners; this ledger does not substitute these outcomes with tests. No source/build rerun is required for these unchanged runtime bytes.
+R40 owner saved the separate incidentExecution setting; publisher GET readback confirmed runtime=opencode, provider=minimax-coding-plan, model=MiniMax-M3.1-Flash, reasoning=default, topic=health, preserving global policy. Quiet diagnosis and complete composer queue/reload/stop UI acceptance remain with their assigned existing owners; this ledger does not substitute these outcomes with tests. No source/build rerun is required for these unchanged runtime bytes.
 
 ## ZCode V4 and actual cold-session consumer — 2026-10-09
 

@@ -1,5 +1,5 @@
 # Dedicated direct provider config. Runtime token stays in canonical MINIMAX_API_KEY.
-default_model: anthropic.MiniMax-M3.1-Flash-Preview
+default_model: anthropic.MiniMax-M3.1-Flash
 anthropic:
   base_url: https://api.minimax.io/anthropic
 mcp:

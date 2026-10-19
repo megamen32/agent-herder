@@ -673,7 +673,7 @@ A NoticePlace consumer that launches work for a project reads
 project is configured there:
 
 ```json
-{ "kind": "launch", "harness": "opencode", "model": "minimax-coding-plan/MiniMax-M3.1-Flash-Preview", "mode": "create" }
+{ "kind": "launch", "harness": "opencode", "model": "minimax-coding-plan/MiniMax-M3.1-Flash", "mode": "create" }
 ```
 
 Documented presets (`PROJECT_ROUTE_PRESETS`, applied only when an operator saves
@@ -692,7 +692,7 @@ declared alias is never bound to a route, and no other service is mapped without
 a confirmed match.
 
 `kind: "unconfigured"` means the project keeps the default incident runtime
-(OpenCode with `minimax-coding-plan/MiniMax-M3.1-Flash-Preview`); `kind:
+(OpenCode with `minimax-coding-plan/MiniMax-M3.1-Flash`); `kind:
 "exhausted"` with reason `accepted` or `admission_unknown` means an executor
 already exists or may exist and no fallback is allowed.
 
@@ -742,7 +742,7 @@ POST /api/automation/project-launch
 - Only a definite pre-admission rejection (`pre_admission_rejected`,
   `quota_exhausted` or `unavailable`) advances to the next harness of the route.
 - For an explicit project route selecting OpenCode and exact model
-  `minimax-coding-plan/MiniMax-M3.1-Flash-Preview`, the production named runner
+  `minimax-coding-plan/MiniMax-M3.1-Flash`, the production named runner
   performs one minimal direct MiniMax probe before creating or messaging a
   session. It reuses the protected `MINIMAX_API_KEY` already loaded by the
   service and the existing direct Anthropic endpoint. Timeout is five seconds,

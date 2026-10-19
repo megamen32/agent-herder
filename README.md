@@ -246,14 +246,14 @@ The common switches are:
 | `CODEX_APP_SERVER_SOCKET` | — | Join the existing managed Codex daemon through its Unix WebSocket endpoint so Desktop and Herder share native thread/turn control |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Direct MiniMax Anthropic-compatible classifier endpoint; avoids an extra gateway hop |
 | `AGENT_HERDER_UNFINISHED_JUDGE_PROTOCOL` / `AGENT_HERDER_UNFINISHED_JUDGE_BASE_URL` / `AGENT_HERDER_UNFINISHED_JUDGE_TOKEN_FILE` | `anthropic` / provider default / — | Select an OpenAI-compatible direct judge and load its credential from an operator-owned file without copying it into tracked configuration |
-| `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash-Preview` | Default classifier model; the Web UI runtime selection overrides it and reads `MINIMAX_API_KEY` from the protected service environment |
+| `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash` | Default classifier model; the Web UI runtime selection overrides it and reads `MINIMAX_API_KEY` from the protected service environment |
 | `AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS` | `600000` | Timeout for explicit semantic audit; its result cannot authorize recovery |
 | `AGENT_HERDER_UNFINISHED_BATCH_SESSIONS_PER_REQUEST` | derived from output limit, up to `32` | Optional independent cap for sessions in one semantic-planner request; keeps evidence batches small when a forced-thinking provider needs a larger output allowance |
 | `AGENT_HERDER_UNFINISHED_JUDGE_REASONING_EFFORT` | provider default | Optional OpenAI-compatible reasoning effort (`low`, `high`, or `max`); use `low` for bounded JSON classification on forced-thinking GLM models |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ENABLED` | `true` | Enable MiniMax for explicit semantic audit only, not crash recovery |
 | `AGENT_HERDER_CODEX_STATE_CACHE_MS` | `60000` | Share one persisted Codex rollout scan across dashboard, observation, and recovery callers |
 | `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | Make cache handoff available; replacement also requires the persisted `rolloverExpiredCache` opt-in, which defaults off |
-| `AGENT_HERDER_HANDOFF_MODEL` | `MiniMax-M3.1-Flash-Preview` | Direct MiniMax model used only to summarize stale sessions; Fast Agent is the fallback when `MINIMAX_API_KEY` is absent |
+| `AGENT_HERDER_HANDOFF_MODEL` | `MiniMax-M3.1-Flash` | Direct MiniMax model used only to summarize stale sessions; Fast Agent is the fallback when `MINIMAX_API_KEY` is absent |
 | `AGENT_HERDER_CACHE_TTL_MINUTES` | `{}` | JSON exact overrides such as `{"zcode:provider/model":30}`; unknown provider TTLs are never guessed |
 | `AGENT_HERDER_UNFINISHED_DISCOVERY_IDLE_MS` | `60000` | Explicit inventory audit delay; crash recovery does not scan unfinished tasks |
 | `AGENT_HERDER_WEB_PORT` | — | Serve the web UI + MCP over HTTP (singleton daemon mode) |

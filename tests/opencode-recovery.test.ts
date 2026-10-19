@@ -48,7 +48,7 @@ describe("OpenCode native recovery controls", () => {
           connected: ["omniroute", "minimax-coding-plan"],
           all: [
             { id: "omniroute", models: { "zc/glm-5.3-flash": {}, "gpt-5.6-sol": {} } },
-            { id: "minimax-coding-plan", models: { "MiniMax-M3.1-Flash-Preview": {} } },
+            { id: "minimax-coding-plan", models: { "MiniMax-M3.1-Flash": {} } },
             { id: "disconnected", models: { hidden: {} } },
           ],
         }));
@@ -64,15 +64,15 @@ describe("OpenCode native recovery controls", () => {
     expect(await adapter.listModels()).toEqual([
       "omniroute/zc/glm-5.3-flash",
       "omniroute/gpt-5.6-sol",
-      "minimax-coding-plan/MiniMax-M3.1-Flash-Preview",
+      "minimax-coding-plan/MiniMax-M3.1-Flash",
     ]);
   });
 
   it("normalizes array-shaped provider catalogs without duplicates", () => {
     expect(openCodeConnectedModels({
       connected: ["minimax-coding-plan"],
-      all: [{ id: "minimax-coding-plan", models: [{ id: "MiniMax-M3.1-Flash-Preview" }, { id: "MiniMax-M3.1-Flash-Preview" }] }],
-    })).toEqual(["minimax-coding-plan/MiniMax-M3.1-Flash-Preview"]);
+      all: [{ id: "minimax-coding-plan", models: [{ id: "MiniMax-M3.1-Flash" }, { id: "MiniMax-M3.1-Flash" }] }],
+    })).toEqual(["minimax-coding-plan/MiniMax-M3.1-Flash"]);
   });
 
   it("lists children, forks, and queues a recovery prompt", async () => {

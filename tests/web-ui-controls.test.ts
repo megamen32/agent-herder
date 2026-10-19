@@ -333,7 +333,7 @@ describe("две темы оформления", () => {
 
 describe("чип модели в композере", () => {
   it("подписан коротким именем и помечает отсутствие явного выбора", () => {
-    expect(shortModelLabel("anthropic.MiniMax-M3.1-Flash-Preview")).toBe("MiniMax-M3.1-Flash-Preview");
+    expect(shortModelLabel("anthropic.MiniMax-M3.1-Flash")).toBe("MiniMax-M3.1-Flash");
     // точка внутри имени модели значима: версия не отбрасывается
     expect(shortModelLabel("gpt-6.1-sol")).toBe("gpt-6.1-sol");
     expect(shortModelLabel(undefined)).toBe("Модель по умолчанию");

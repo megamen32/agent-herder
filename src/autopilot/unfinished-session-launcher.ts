@@ -3877,7 +3877,7 @@ function defaultAutostartFile(env: NodeJS.ProcessEnv): SessionAutostartFile {
     watchdogEnabled: env.AGENT_HERDER_UNFINISHED_WATCHDOG === "true",
     watchdogIntervalSeconds: boundedInteger(Number(env.AGENT_HERDER_UNFINISHED_WATCHDOG_INTERVAL_SECONDS || 10), 5, 300, "watchdogIntervalSeconds"),
     stalledTurnMinutes: boundedInteger(Number(env.AGENT_HERDER_UNFINISHED_STALLED_TURN_MINUTES || 2), 1, 120, "stalledTurnMinutes"),
-    judgeModel: env.AGENT_HERDER_UNFINISHED_JUDGE_MODEL?.trim() || "MiniMax-M3.1-Flash-Preview",
+    judgeModel: env.AGENT_HERDER_UNFINISHED_JUDGE_MODEL?.trim() || "MiniMax-M3.1-Flash",
     autopilotJudgeModel: env.AGENT_HERDER_AUTOPILOT_JUDGE_MODEL?.trim() || "MiniMax-M3",
     harnesses: [],
     sessions: [],

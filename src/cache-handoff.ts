@@ -9,7 +9,7 @@ import { spawnIsolatedWorkload } from "./workload-launcher.js";
 
 const MAX_SOURCE_CHARS = 120_000;
 const MAX_SUMMARY_CHARS = 16_000;
-const DEFAULT_MINIMAX_MODEL = "generic.minimax/MiniMax-M3.1-Flash-Preview";
+const DEFAULT_MINIMAX_MODEL = "generic.minimax/MiniMax-M3.1-Flash";
 
 export interface CacheWindow {
   ttlMs?: number;
@@ -65,7 +65,7 @@ export class AnthropicMiniMaxSummarizer implements SessionSummarizer {
   constructor(
     private readonly token: string,
     private readonly baseUrl = process.env.AGENT_HERDER_HANDOFF_ANTHROPIC_BASE_URL || "https://api.minimax.io/anthropic",
-    private readonly model = process.env.AGENT_HERDER_HANDOFF_MODEL?.replace(/^generic\.minimax\//, "") || "MiniMax-M3.1-Flash-Preview",
+    private readonly model = process.env.AGENT_HERDER_HANDOFF_MODEL?.replace(/^generic\.minimax\//, "") || "MiniMax-M3.1-Flash",
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 

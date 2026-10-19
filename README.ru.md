@@ -186,12 +186,12 @@ Streamable HTTP:
 | `AGENT_HERDER_UNFINISHED_EVIDENCE_MESSAGES` | `200` | Максимум свежих смысловых сообщений, читаемых на сессию перед честной упаковкой в общий бюджет; первый запрос и свежий хвост пользователя/модели сохраняются обязательно |
 | `AGENT_HERDER_UNFINISHED_BATCH_MAX_TOKENS` | `16384` | Жёсткий output-лимит единого полного плана; effort планировщика закреплён на `low` |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL` | `https://api.minimax.io/anthropic` | Прямой Anthropic-совместимый endpoint MiniMax без дополнительного шлюза |
-| `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash-Preview` | Модель по умолчанию; runtime-выбор из веб-морды имеет приоритет, ключ читается из защищённого окружения `MINIMAX_API_KEY` |
+| `AGENT_HERDER_UNFINISHED_JUDGE_MODEL` | `MiniMax-M3.1-Flash` | Модель по умолчанию; runtime-выбор из веб-морды имеет приоритет, ключ читается из защищённого окружения `MINIMAX_API_KEY` |
 | `AGENT_HERDER_UNFINISHED_BATCH_TIMEOUT_MS` | `600000` | Таймаут отдельного semantic audit; его результат не разрешает recovery |
 | `AGENT_HERDER_UNFINISHED_JUDGE_ENABLED` | `true` | Включает MiniMax только для отдельного явного аудита; не для recovery |
 | `AGENT_HERDER_CODEX_STATE_CACHE_MS` | `60000` | Общий кэш одного чтения Codex rollout-файлов для UI, наблюдения и recovery-цикла |
 | `AGENT_HERDER_CACHE_HANDOFF_ENABLED` | `true` | Доступность передачи контекста; новая сессия требует явно включённого `rolloverExpiredCache`, который по умолчанию выключен |
-| `AGENT_HERDER_HANDOFF_MODEL` | `MiniMax-M3.1-Flash-Preview` | Прямая модель MiniMax только для суммаризации; Fast Agent — резерв при отсутствии `MINIMAX_API_KEY` |
+| `AGENT_HERDER_HANDOFF_MODEL` | `MiniMax-M3.1-Flash` | Прямая модель MiniMax только для суммаризации; Fast Agent — резерв при отсутствии `MINIMAX_API_KEY` |
 | `AGENT_HERDER_CACHE_TTL_MINUTES` | `{}` | JSON с точными override, например `{"zcode:provider/model":30}`; неизвестный TTL не угадывается |
 | `AGENT_HERDER_UNFINISHED_DISCOVERY_IDLE_MS` | `60000` | Задержка отдельного аудита инвентаря; crash recovery не сканирует все незавершённые задачи |
 | `AGENT_HERDER_WEB_PORT` | — | Web UI + MCP поверх HTTP (режим демона) |

@@ -158,7 +158,7 @@ describe("Fast Agent persisted observer", () => {
     cleanups.push(home);
     const directory = join(home, "sessions", "direct");
     await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, "session.json"), JSON.stringify({ session_id: "direct", continuation: { cwd: home, active_agent: "herder_minimax", agents: { dev: { model: "unrelated" }, herder_minimax: { model: "MiniMax-M3.1-Flash-Preview" } } }, metadata: { extras: { model: "anthropic.MiniMax-M3.1-Flash-Preview", herderManaged: true, healthRecovery: false } } }));
+    await writeFile(join(directory, "session.json"), JSON.stringify({ session_id: "direct", continuation: { cwd: home, active_agent: "herder_minimax", agents: { dev: { model: "unrelated" }, herder_minimax: { model: "MiniMax-M3.1-Flash" } } }, metadata: { extras: { model: "anthropic.MiniMax-M3.1-Flash", herderManaged: true, healthRecovery: false } } }));
     const config = join(home, "direct.yaml");
     await writeFile(config, "anthropic:\n  base_url: https://api.minimax.io/anthropic\n");
     const bin = join(home, "capture.sh");
@@ -176,7 +176,7 @@ describe("Fast Agent persisted observer", () => {
     expect(launch.mock.calls[0][2].resourceProperties).toEqual(["CPUQuota=100%", "MemoryHigh=384M", "MemoryMax=768M", "MemorySwapMax=0", "TasksMax=64", "IOWeight=25"]);
 
     const args = (await readFile(argsPath, "utf8")).split("\n");
-    expect(args).toEqual(expect.arrayContaining(["--name", "herder_minimax", "--config-path", config, "--agent-cards", "--model", "anthropic.MiniMax-M3.1-Flash-Preview", "--shell", "--timeout", "300"]));
+    expect(args).toEqual(expect.arrayContaining(["--name", "herder_minimax", "--config-path", config, "--agent-cards", "--model", "anthropic.MiniMax-M3.1-Flash", "--shell", "--timeout", "300"]));
     expect(args.join(" ")).not.toContain("test-private-token");
     expect(await readFile(envPath, "utf8")).toBe("test-private-token\n\nhttps://api.minimax.io/anthropic");
   });
@@ -193,14 +193,14 @@ describe("Fast Agent persisted observer", () => {
     await mkdir(directory, { recursive: true });
     await writeFile(join(directory, "session.json"), JSON.stringify({
       session_id: "direct-identity",
-      metadata: { extras: { model: "anthropic.MiniMax-M3.1-Flash-Preview", healthRecovery: true } },
-      continuation: { active_agent: "herder_minimax", agents: { dev: { model: "different-model" }, herder_minimax: { model: "MiniMax-M3.1-Flash-Preview" } } },
+      metadata: { extras: { model: "anthropic.MiniMax-M3.1-Flash", healthRecovery: true } },
+      continuation: { active_agent: "herder_minimax", agents: { dev: { model: "different-model" }, herder_minimax: { model: "MiniMax-M3.1-Flash" } } },
     }));
     const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: "/bin/true" });
-    expect(await adapter.getSession("fast-agent:direct-identity")).toMatchObject({ model: "anthropic.MiniMax-M3.1-Flash-Preview" });
+    expect(await adapter.getSession("fast-agent:direct-identity")).toMatchObject({ model: "anthropic.MiniMax-M3.1-Flash" });
     await writeFile(join(directory, "session.json"), JSON.stringify({
       session_id: "direct-identity",
-      metadata: { extras: { model: "anthropic.MiniMax-M3.1-Flash-Preview" } },
+      metadata: { extras: { model: "anthropic.MiniMax-M3.1-Flash" } },
       continuation: { active_agent: "herder_minimax", agents: { dev: { model: "old-model" }, herder_minimax: { model: "MiniMax-M3" } } },
     }));
     expect(await adapter.getSession("fast-agent:direct-identity")).toMatchObject({ model: "MiniMax-M3" });
@@ -268,12 +268,12 @@ describe("Fast Agent persisted observer", () => {
     const sessionDir = join(home, "sessions", "native-empty");
     await mkdir(sessionDir, { recursive: true });
     await writeFile(join(sessionDir, "session.json"), JSON.stringify({
-      session_id: "native-empty", metadata: { title: "Independent recovery", extras: { model: "anthropic.MiniMax-M3.1-Flash-Preview", healthRecovery: true } },
+      session_id: "native-empty", metadata: { title: "Independent recovery", extras: { model: "anthropic.MiniMax-M3.1-Flash", healthRecovery: true } },
       continuation: { cwd: "/actual/workspace", agents: {} },
     }));
     const adapter = new FastAgentFileAdapter({ home, cwd: "/fallback", fastAgentBin: "/usr/bin/true" });
     expect(await adapter.getSession("fast-agent:native-empty")).toMatchObject({
-      cwd: "/actual/workspace", model: "anthropic.MiniMax-M3.1-Flash-Preview", messageCount: 0, meta: { healthRecovery: true },
+      cwd: "/actual/workspace", model: "anthropic.MiniMax-M3.1-Flash", messageCount: 0, meta: { healthRecovery: true },
     });
   });
 

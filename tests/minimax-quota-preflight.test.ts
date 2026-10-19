@@ -32,7 +32,7 @@ it("recognizes the exact subscription quota code, coalesces concurrent probes, a
   expect(fetchImpl).toHaveBeenCalledTimes(1);
   const [url, request] = fetchImpl.mock.calls[0];
   expect(url).toBe("https://api.minimax.io/anthropic/v1/messages");
-  expect(JSON.parse(request.body as string)).toMatchObject({ model: "MiniMax-M3.1-Flash-Preview", max_tokens: 1, messages: [{ role: "user", content: "Reply OK." }] });
+  expect(JSON.parse(request.body as string)).toMatchObject({ model: "MiniMax-M3.1-Flash", max_tokens: 1, messages: [{ role: "user", content: "Reply OK." }] });
   expect(JSON.parse(request.body as string).tools).toBeUndefined();
   now = 31;
   expect(await probe(MINIMAX_SUBSCRIPTION_MODEL)).toBe("quota_exhausted");

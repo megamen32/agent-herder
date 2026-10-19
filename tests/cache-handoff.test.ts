@@ -37,16 +37,16 @@ describe("cache-aware session handoff", () => {
       requests.push({ url: String(input), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
       return new Response(JSON.stringify({ content: [{ type: "text", text: "Короткий handoff" }] }), { status: 200 });
     };
-    const summarizer = new AnthropicMiniMaxSummarizer("secret", "https://api.minimax.io/anthropic", "MiniMax-M3.1-Flash-Preview", fetchImpl);
+    const summarizer = new AnthropicMiniMaxSummarizer("secret", "https://api.minimax.io/anthropic", "MiniMax-M3.1-Flash", fetchImpl);
     await expect(summarizer.summarize("ПОЛЬЗОВАТЕЛЬ: продолжи")).resolves.toBe("Короткий handoff");
-    expect(requests[0]).toMatchObject({ url: "https://api.minimax.io/anthropic/v1/messages", body: { model: "MiniMax-M3.1-Flash-Preview" } });
+    expect(requests[0]).toMatchObject({ url: "https://api.minimax.io/anthropic/v1/messages", body: { model: "MiniMax-M3.1-Flash" } });
     expect(JSON.stringify(requests[0].body)).toContain("ПОЛЬЗОВАТЕЛЬ: продолжи");
   });
 
   it("uses the documented 30 minute window only for current OpenAI Codex models", () => {
     expect(cacheWindowFor({ harness: "codex", model: "gpt-5.6-sol" })).toEqual({ ttlMs: 1_800_000, source: "openai-30m" });
     expect(cacheWindowFor({ harness: "zcode", model: "account:zai-individual-coding-plan/GLM-5.3-Flash" })).toEqual({ source: "unknown" });
-    expect(cacheWindowFor({ harness: "opencode", model: "minimax/MiniMax-M3.1-Flash-Preview" })).toEqual({ ttlMs: 300_000, source: "minimax-dynamic-5m" });
+    expect(cacheWindowFor({ harness: "opencode", model: "minimax/MiniMax-M3.1-Flash" })).toEqual({ ttlMs: 300_000, source: "minimax-dynamic-5m" });
     expect(cacheWindowFor({ harness: "opencode", model: "minimax/MiniMax-M3" }, { AGENT_HERDER_CACHE_TTL_MINUTES: '{"opencode:minimax/MiniMax-M3":12}' })).toEqual({ ttlMs: 720_000, source: "configured" });
   });
 
@@ -248,13 +248,13 @@ describe("cache-aware session handoff", () => {
 
   it("selects the original OpenCode model before delivering the handoff", async () => {
     const fixture = adapter([{ id: "u", role: "user", text: "Доделай", parts: [{ type: "text", text: "Доделай" }] }], "opencode");
-    const openCodeSession = { ...oldSession, harness: "opencode" as const, model: "minimax/MiniMax-M3.1-Flash-Preview" };
+    const openCodeSession = { ...oldSession, harness: "opencode" as const, model: "minimax/MiniMax-M3.1-Flash" };
     fixture.createSession.mockResolvedValue({ ...openCodeSession, id: "new", model: undefined, status: "idle" });
     const changeModel = vi.fn(async () => ({ ok: true }));
     fixture.value.changeModel = changeModel;
     const service = new CacheHandoffService(new Map([["opencode", fixture.value]]), { summarize: async () => "handoff" });
     expect((await service.maybeRollover(openCodeSession, new Date("2026-10-03T10:06:00Z"))).kind).toBe("rolled_over");
-    expect(changeModel).toHaveBeenCalledWith("new", "minimax/MiniMax-M3.1-Flash-Preview");
+    expect(changeModel).toHaveBeenCalledWith("new", "minimax/MiniMax-M3.1-Flash");
     expect(changeModel.mock.invocationCallOrder[0]).toBeLessThan(fixture.sendMessage.mock.invocationCallOrder[0]);
   });
 });
