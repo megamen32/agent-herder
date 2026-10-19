@@ -102,7 +102,7 @@ export const CreateSessionSchema = NamedSessionBaseSchema;
 export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
   inputId: z.string().min(1).max(256).optional(),
   fallbackModels: z.array(z.string().trim().min(1).max(MAX_MODEL_LENGTH).regex(/^[^\u0000-\u001f\u007f]*$/)).max(8).optional()
-    .describe("Ordered same-harness models explicitly allowed only after a provider-specific hard quota rejection before admission."),
+    .describe("Ordered same-harness models explicitly allowed after a definite pre-admission HTTP 429 or provider quota rejection."),
   humanRequested: z.boolean().optional().describe("True only for an explicit human continuation request; never inferred by an automated planner."),
   message: z.string().trim().min(1).describe("Message delivered to the created or reused session."),
   mode: z.enum(["queue", "sync"]).optional().default("sync").describe(
@@ -255,7 +255,6 @@ export const toolDefinitions: Tool[] = [
         name: { type: "string", description: "Stable session name, for example repair_100" },
         cwd: { type: "string", description: "Absolute working directory" },
         model: { type: "string", maxLength: MAX_MODEL_LENGTH, description: "Optional model selected before first delivery" },
-        fallbackModels: { type: "array", maxItems: 8, items: { type: "string", maxLength: MAX_MODEL_LENGTH }, description: "Ordered same-harness models allowed after a definite pre-admission HTTP 429 or provider quota rejection." },
       },
       required: ["harness", "name", "cwd"],
     },
@@ -272,6 +271,7 @@ export const toolDefinitions: Tool[] = [
         message: { type: "string", description: "Message to deliver" },
         mode: { type: "string", enum: ["queue", "sync"], default: "sync", description: "Delivery mode" },
         model: { type: "string", maxLength: MAX_MODEL_LENGTH, description: "Optional model selected before first delivery" },
+        fallbackModels: { type: "array", maxItems: 8, items: { type: "string", maxLength: MAX_MODEL_LENGTH }, description: "Ordered same-harness models allowed after a definite pre-admission HTTP 429 or provider quota rejection." },
       },
       required: ["harness", "name", "cwd", "message"],
     },
