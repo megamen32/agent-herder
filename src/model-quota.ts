@@ -8,6 +8,8 @@ export type ProviderQuota = {
   checkedAt: string;
   details?: unknown;
   error?: string;
+  /** Known provider deadline in Unix milliseconds; not a reservation or cache TTL. */
+  validUntilMs?: number;
 };
 
 type QuotaDeps = {
@@ -56,10 +58,18 @@ const percent = (value: unknown): value is number => finite(value) && value >= 0
 const records = (value: unknown): Record<string, unknown>[] => Array.isArray(value)
   ? value.filter((row): row is Record<string, unknown> => !!row && typeof row === "object" && !Array.isArray(row)) : [];
 
+const miniMaxTextRows = (data: Record<string, unknown>) => records(data.model_remains).filter((row) => row.model_name === "general"
+  || row.model === "MiniMax-M3.1-Flash" || row.model_name === "MiniMax-M3.1-Flash");
+
+function miniMaxDeadline(data: Record<string, unknown>): number | undefined {
+  // These provider fields are milliseconds. Null/missing is unknown, never epoch zero.
+  const deadlines = miniMaxTextRows(data).flatMap((row) => [row.end_time, row.weekly_end_time]).filter(finite);
+  return deadlines.length ? Math.min(...deadlines) : undefined;
+}
+
 function textQuotaState(provider: "glm" | "minimax", data: Record<string, unknown>): ModelQuotaState {
   if (provider === "minimax") {
-    const rows = records(data.model_remains).filter((row) => row.model_name === "general"
-      || row.model === "MiniMax-M3.1-Flash" || row.model_name === "MiniMax-M3.1-Flash");
+    const rows = miniMaxTextRows(data);
     if (!rows.length) return "unknown";
     const states = rows.map((row): ModelQuotaState => {
       const interval = row.current_interval_remaining_percent;
@@ -104,8 +114,12 @@ async function providerRequest(provider: "glm" | "minimax", endpoint: string, to
     const successCodes = provider === "glm" ? ["0", "200"] : ["0"];
     if (!response.ok || (code && !successCodes.includes(code))) return { provider, state: "unknown", checkedAt, details: safeDetails(nested), error: `provider_http_${response.status}${/^\d{1,8}$/u.test(code) ? `_code_${code}` : ""}` };
     const details = safeDetails(nested);
-    const state = textQuotaState(provider, nested);
-    return { provider, state, checkedAt, details, ...(state === "unknown" ? { error: "quota_fields_missing" } : {}) };
+    let state = textQuotaState(provider, nested);
+    const validUntilMs = provider === "minimax" ? miniMaxDeadline(nested) : undefined;
+    const expired = state === "reported" && validUntilMs !== undefined && now() >= validUntilMs;
+    if (expired) state = "unknown";
+    return { provider, state, checkedAt, details, ...(validUntilMs !== undefined ? { validUntilMs } : {}),
+      ...(state === "unknown" ? { error: expired ? "quota_snapshot_expired" : "quota_fields_missing" } : {}) };
   } catch (error) {
     const name = (error as { name?: string })?.name;
     return { provider, state: "unknown", checkedAt, error: name === "TimeoutError" ? "provider_timeout" : "provider_unavailable" };

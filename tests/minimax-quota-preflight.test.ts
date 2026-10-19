@@ -8,6 +8,66 @@ import { validateAutomationLaunchPolicy } from "../src/automation-launch-policy.
 import type { AgentSession, HarnessAdapter } from "../src/types/index.js";
 
 const dirs: string[] = [];
+
+it.each(["end_time", "weekly_end_time"])("refreshes positive cache at the exact %s reset instead of reusing expired allowance", async (resetField) => {
+  let now = 10_000;
+  const fetchImpl = vi.fn(async () => Response.json({ model_remains: [{ model_name: "general",
+    current_interval_remaining_percent: 50, current_weekly_remaining_percent: 69,
+    end_time: 999_999, weekly_end_time: 999_999, [resetField]: 11_000,
+  }] }));
+  const probe = createMiniMaxQuotaPreflight({ token: "fixture", fetchImpl, now: () => now, cacheMs: 30_000 });
+  expect(await probe(MINIMAX_SUBSCRIPTION_MODEL)).toBe("available");
+  now = 10_999;
+  expect(await probe(MINIMAX_SUBSCRIPTION_MODEL)).toBe("available");
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+  now = 11_000;
+  expect(await probe(MINIMAX_SUBSCRIPTION_MODEL)).toBe("unknown");
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
+});
+
+it("does not turn a freshly read expired positive payload into available", async () => {
+  const probe = createMiniMaxQuotaPreflight({ token: "fixture", now: () => 40_000,
+    fetchImpl: async () => Response.json({ model_remains: [{ model_name: "general", end_time: 11_000, weekly_end_time: 999_999,
+      current_interval_remaining_percent: 50, current_weekly_remaining_percent: 69 }] }),
+  });
+  expect(await probe(MINIMAX_SUBSCRIPTION_MODEL)).toBe("unknown");
+});
+
+it("rereads a new window after reset and still bounds its positive cache by TTL", async () => {
+  let now = 10_000;
+  const fetchImpl = vi.fn(async () => Response.json({ model_remains: [{ model_name: "general",
+    end_time: now + 100_000, weekly_end_time: now + 1_000,
+    current_interval_remaining_percent: 50, current_weekly_remaining_percent: 69,
+  }] }));
+  const probe = createMiniMaxQuotaPreflight({ token: "fixture", fetchImpl, now: () => now, cacheMs: 500 });
+  expect(await probe(MINIMAX_SUBSCRIPTION_MODEL)).toBe("available");
+  now = 10_500; // TTL first
+  expect(await probe(MINIMAX_SUBSCRIPTION_MODEL)).toBe("available");
+  now = 11_500; // window reset too; fresh GET returns a new future deadline
+  expect(await probe(MINIMAX_SUBSCRIPTION_MODEL)).toBe("available");
+  expect(fetchImpl).toHaveBeenCalledTimes(3);
+});
+
+it("evaluates freshness after a slow GET finishes, not when it started", async () => {
+  let now = 10_000;
+  const probe = createMiniMaxQuotaPreflight({ token: "fixture", now: () => now, fetchImpl: async () => {
+    now = 12_000;
+    return Response.json({ model_remains: [{ model_name: "general", end_time: 11_000,
+      current_interval_remaining_percent: 50, current_weekly_remaining_percent: 69 }] });
+  } });
+  expect(await probe(MINIMAX_SUBSCRIPTION_MODEL)).toBe("unknown");
+});
+
+it("does not reuse a positive cache entry after the clock moves backwards", async () => {
+  let now = 10_000;
+  const fetchImpl = vi.fn(async () => Response.json({ model_remains: [{ model_name: "general", end_time: null, weekly_end_time: null,
+    current_interval_remaining_percent: 50, current_weekly_remaining_percent: 69 }] }));
+  const probe = createMiniMaxQuotaPreflight({ token: "fixture", fetchImpl, now: () => now });
+  expect(await probe(MINIMAX_SUBSCRIPTION_MODEL)).toBe("available");
+  now = 9_000;
+  expect(await probe(MINIMAX_SUBSCRIPTION_MODEL)).toBe("available");
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
+});
 afterEach(async () => { vi.unstubAllEnvs(); await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
 async function fixture() {
   const cwd = await mkdtemp(join(tmpdir(), "herder-quota-preflight-"));
