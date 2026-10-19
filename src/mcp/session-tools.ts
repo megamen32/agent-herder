@@ -140,7 +140,7 @@ export function registerSessionTools(server: McpServer, deps: {
     const result = await handleCreateSession(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("new_or_resume", { description: "Reuse the exact named session for harness+CWD or create it, then deliver one message. For quota-aware routing, call model_quotas and provide only explicitly allowed same-harness fallbackModels in priority order. Fallback is attempted after HTTP 429 or provider-specific quota rejection before admission; unknown/accepted delivery and manual stops never trigger it.", inputSchema: NewOrResumeSchema }, async (args) => {
+  server.registerTool("new_or_resume", { description: "Reuse the exact named session for harness+CWD or create it, then deliver one message. OpenCode GLM 5.3 Flash uses MiniMax M3.1 Flash as its default fallback after a pre-admission HTTP 429 or provider quota rejection; fallbackModels overrides that route. Unknown/accepted delivery and manual stops never trigger fallback. Call model_quotas to inspect current provider allowances.", inputSchema: NewOrResumeSchema }, async (args) => {
     const result = await handleNewOrResume(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });

@@ -30,7 +30,7 @@ describe("canonical MCP harness definitions", () => {
       .toEqual(["generic.MiniMax-M3.1-Flash"]);
     expect(toolDefinitions.find((tool) => tool.name === "model_quotas")).toBeTruthy();
     expect(toolDefinitions.find((tool) => tool.name === "new_or_resume")?.description).toContain("model_quotas");
-    expect(toolDefinitions.find((tool) => tool.name === "new_or_resume")?.description).toContain("HTTP 429");
+    expect(toolDefinitions.find((tool) => tool.name === "new_or_resume")?.description).toContain("MiniMax M3.1 Flash");
     expect(toolDefinitions.find((tool) => tool.name === "new_or_resume")?.inputSchema.properties?.fallbackModels?.description).toContain("HTTP 429");
   });
 

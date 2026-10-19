@@ -21,7 +21,7 @@ export interface NamedSessionRequest {
   name: string;
   cwd: string;
   model?: string;
-  /** Ordered, same-harness models explicitly approved for definite quota failures. */
+  /** Ordered same-harness models for definite pre-admission 429/quota failures; when omitted, a known model route may supply its default. */
   fallbackModels?: string[];
 }
 
@@ -186,7 +186,7 @@ export async function newOrResumeNamedSession(
       queue: mode === "queue",
   });
   const tried = new Set([request.model].filter((model): model is string => typeof model === "string"));
-  for (const fallbackModel of request.fallbackModels ?? []) {
+  for (const fallbackModel of request.fallbackModels ?? defaultFallbackModels(request.harness, request.model)) {
     if (delivery.ok || delivery.admitted || delivery.admissionUnknown || !isFallbackEligibleRejection(delivery.error)) break;
     if (!request.model || !resolved.adapter.changeModel || tried.has(fallbackModel)) continue;
     tried.add(fallbackModel);
@@ -250,6 +250,18 @@ export async function newOrResumeNamedSession(
 /** Provider quota exhaustion and HTTP 429 authorize retry on an explicit fallback. */
 function isFallbackEligibleRejection(error: string | undefined): boolean {
   return isConfirmedQuotaExhaustion(error) || /\b429\b/u.test(error ?? "");
+}
+
+function defaultFallbackModels(harness: string, model: string | undefined): string[] {
+  const glmFlashModels = new Set([
+    "omniroute/zc/glm-5.3-flash",
+    "zai-coding-plan/glm-5.3-flash",
+    "opencode/glm-5.3-flash",
+  ]);
+  if (harness === "opencode" && glmFlashModels.has(model?.trim().toLowerCase() ?? "")) {
+    return ["omniroute/minimax/MiniMax-M3.1-Flash"];
+  }
+  return [];
 }
 
 function isConfirmedQuotaExhaustion(error: string | undefined): boolean {

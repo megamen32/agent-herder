@@ -134,6 +134,17 @@ describe("named session creation and reuse", () => {
     }
   });
 
+  it.each(["omniroute/zc/glm-5.3-flash", "zai-coding-plan/glm-5.3-flash", "opencode/glm-5.3-flash"])("uses the configured MiniMax fallback for OpenCode GLM Flash route %s when none is supplied", async (model) => {
+    const cwd = await workspace();
+    const fake = fakeAdapter("opencode");
+    fake.failNextDeliveryWithError("HTTP 429 too many requests");
+    const result = await newOrResumeNamedSession(new Map([["opencode", fake.adapter]]), {
+      harness: "opencode", name: "glm-default-fallback", cwd, model, message: "work",
+    });
+    expect(result).toMatchObject({ ok: true, model: "omniroute/minimax/MiniMax-M3.1-Flash", fallbackFrom: model });
+    expect(fake.deliveries).toHaveLength(2);
+  });
+
   it("creates and reuses the exact Fast Agent named session through MCP handlers", async () => {
     const cwd = await workspace();
     const fake = fakeAdapter("fast-agent");

@@ -102,7 +102,7 @@ export const CreateSessionSchema = NamedSessionBaseSchema;
 export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
   inputId: z.string().min(1).max(256).optional(),
   fallbackModels: z.array(z.string().trim().min(1).max(MAX_MODEL_LENGTH).regex(/^[^\u0000-\u001f\u007f]*$/)).max(8).optional()
-    .describe("Ordered same-harness models explicitly allowed after a definite pre-admission HTTP 429 or provider quota rejection."),
+    .describe("Optional ordered same-harness fallback models. When omitted, OpenCode GLM 5.3 Flash defaults to MiniMax M3.1 Flash. Used only after a definite pre-admission HTTP 429 or provider quota rejection."),
   humanRequested: z.boolean().optional().describe("True only for an explicit human continuation request; never inferred by an automated planner."),
   message: z.string().trim().min(1).describe("Message delivered to the created or reused session."),
   mode: z.enum(["queue", "sync"]).optional().default("sync").describe(
@@ -261,7 +261,7 @@ export const toolDefinitions: Tool[] = [
   },
   {
     name: "new_or_resume",
-    description: "Reuse the exact named session for harness+CWD or create it, then deliver one message. For quota-aware routing, call model_quotas and provide only explicitly allowed same-harness fallbackModels in priority order. Fallback is attempted after HTTP 429 or provider-specific quota rejection before admission; unknown/accepted delivery and manual stops never trigger fallback.",
+    description: "Reuse the exact named session for harness+CWD or create it, then deliver one message. OpenCode GLM 5.3 Flash uses MiniMax M3.1 Flash as its default fallback after a pre-admission HTTP 429 or provider quota rejection; fallbackModels overrides that route. Unknown/accepted delivery and manual stops never trigger fallback. Call model_quotas to inspect current provider allowances.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -271,7 +271,7 @@ export const toolDefinitions: Tool[] = [
         message: { type: "string", description: "Message to deliver" },
         mode: { type: "string", enum: ["queue", "sync"], default: "sync", description: "Delivery mode" },
         model: { type: "string", maxLength: MAX_MODEL_LENGTH, description: "Optional model selected before first delivery" },
-        fallbackModels: { type: "array", maxItems: 8, items: { type: "string", maxLength: MAX_MODEL_LENGTH }, description: "Ordered same-harness models allowed after a definite pre-admission HTTP 429 or provider quota rejection." },
+        fallbackModels: { type: "array", maxItems: 8, items: { type: "string", maxLength: MAX_MODEL_LENGTH }, description: "Optional ordered same-harness fallbacks; if omitted, OpenCode GLM 5.3 Flash defaults to MiniMax M3.1 Flash. Used only after a definite pre-admission HTTP 429 or provider quota rejection." },
       },
       required: ["harness", "name", "cwd", "message"],
     },
