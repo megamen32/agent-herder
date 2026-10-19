@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -199,5 +199,37 @@ describe("MinimaxCodeAdapter", () => {
 
     await expect(adapter.init()).resolves.toBeUndefined();
     expect(await adapter.listSessions()).toEqual([]);
+  });
+
+  it("serves a repeated enumeration from the content cache", async () => {
+    const root = await store();
+    const dir = await writeSession(root, "mvs_0000000000000000000000000000cafe", {
+      messages: [{ message_id: "m1", turn_id: "t1", message: { role: "user", content: "вопрос" } }],
+    });
+
+    const adapter = new MinimaxCodeAdapter({ sessionStore: root });
+    expect((await adapter.listSessions())[0]?.title).toBe("вопрос");
+
+    // The transcript becomes unreadable while its stamp stays the same, so a
+    // pass that still resolves the title proves the content cache answered.
+    await chmod(join(dir, "messages.jsonl"), 0o000);
+    expect((await adapter.listSessions())[0]?.title).toBe("вопрос");
+  });
+
+  it("re-reads a session when its message log changed", async () => {
+    const root = await store();
+    const dir = await writeSession(root, "mvs_0000000000000000000000000000beef", {
+      messages: [{ message_id: "m1", turn_id: "t1", message: { role: "user", content: "вопрос" } }],
+    });
+
+    const adapter = new MinimaxCodeAdapter({ sessionStore: root });
+    expect((await adapter.listSessions())[0]?.lastMessage).toBe("вопрос");
+
+    await writeFile(
+      join(dir, "messages.jsonl"),
+      `${JSON.stringify({ message_id: "m1", turn_id: "t1", message: { role: "user", content: "вопрос" } })}\n${JSON.stringify({ message_id: "m2", turn_id: "t1", message: { role: "assistant", content: "ответ" } })}\n`,
+    );
+
+    expect((await adapter.listSessions())[0]?.lastMessage).toBe("ответ");
   });
 });

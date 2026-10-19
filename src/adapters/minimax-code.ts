@@ -1,6 +1,7 @@
 import { open, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import type {
   AgentSession,
   ControlResult,
@@ -24,13 +25,25 @@ export const MINIMAX_CODE_HARNESS_CWD = join(homedir(), ".minimax");
 
 const MAX_MANIFEST_BYTES = 64 * 1024;
 const MAX_MODEL_BYTES = 512 * 1024;
-const MAX_HEAD_BYTES = 96 * 1024;
-const MAX_TAIL_BYTES = 96 * 1024;
+/** Head window used to find the first user message that becomes the title. */
+const TITLE_WINDOW_BYTES = 64 * 1024;
+const TITLE_FALLBACK_BYTES = 256 * 1024;
+/** Tail window used to find the last message of a session. */
+const TAIL_WINDOW_BYTES = 32 * 1024;
+const TAIL_FALLBACK_BYTES = [128 * 1024, 512 * 1024];
+/** Upper bound of transcript bytes read from the message log. */
 const MAX_TRANSCRIPT_BYTES = 8 * 1024 * 1024;
+/** Upper bound of transcript text kept in memory. */
+const MAX_TRANSCRIPT_TEXT = 2 * 1024 * 1024;
+/** Upper bound of one rendered message. */
+const MAX_MESSAGE_CHARS = 64 * 1024;
+/** Upper bound of all retained message text. */
+const MAX_RETAINED_CHARS = 4 * 1024 * 1024;
+const MAX_MESSAGE_LIMIT = 5_000;
 const MAX_TITLE_LENGTH = 120;
 const MAX_LAST_MESSAGE_LENGTH = 400;
 /** The session index is re-read at most this often. */
-const INDEX_TTL_MS = 5_000;
+const INDEX_TTL_MS = 10_000;
 
 export interface MinimaxCodeAdapterOptions {
   /** Root of the MiniMax Code local-runtime session store. */
@@ -107,32 +120,79 @@ async function readTextWindow(path: string, maxBytes: number, fromEnd: boolean):
   }
 }
 
-function parseRecords(window: string): MinimaxMessageRecord[] {
-  const records: MinimaxMessageRecord[] = [];
-  for (const line of window.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("{")) continue;
-    try {
-      records.push(JSON.parse(trimmed) as MinimaxMessageRecord);
-    } catch {
-      // A truncated or partially written record is skipped, never fatal.
-    }
+/**
+ * Streams complete lines of a file without ever holding the whole file in
+ * memory. The fleet node runs under a hard RSS contract, so a 17MiB message
+ * log must never become one 17MiB buffer.
+ */
+async function* readLines(path: string, maxBytes: number): AsyncGenerator<string> {
+  let handle;
+  try {
+    handle = await open(path, "r");
+  } catch {
+    return;
   }
-  return records;
+  try {
+    const info = await handle.stat();
+    const total = Math.min(maxBytes, info.size);
+    if (total <= 0) return;
+    const chunk = Buffer.allocUnsafe(64 * 1024);
+    const decoder = new StringDecoder("utf8");
+    let position = 0;
+    let pending = "";
+    while (position < total) {
+      const wanted = Math.min(chunk.length, total - position);
+      const { bytesRead } = await handle.read(chunk, 0, wanted, position);
+      if (bytesRead <= 0) break;
+      position += bytesRead;
+      pending += decoder.write(chunk.subarray(0, bytesRead));
+      let start = 0;
+      let index = pending.indexOf("\n");
+      while (index >= 0) {
+        yield pending.slice(start, index);
+        start = index + 1;
+        index = pending.indexOf("\n", start);
+      }
+      pending = start > 0 ? pending.slice(start) : pending;
+    }
+    pending += decoder.end();
+    if (pending.length > 0) yield pending;
+  } catch {
+    return;
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
 }
 
-function extractText(content: unknown): string {
-  if (typeof content === "string") return content;
+function parseRecord(line: string): MinimaxMessageRecord | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("{")) return null;
+  try {
+    return JSON.parse(trimmed) as MinimaxMessageRecord;
+  } catch {
+    // A truncated or partially written record is skipped, never fatal.
+    return null;
+  }
+}
+
+function extractText(content: unknown, maxLength = Number.MAX_SAFE_INTEGER): string {
+  if (typeof content === "string") return content.length > maxLength ? content.slice(0, maxLength) : content;
   if (!Array.isArray(content)) return "";
   const parts: string[] = [];
+  let total = 0;
   for (const part of content) {
+    if (total >= maxLength) break;
     if (typeof part === "string") {
       parts.push(part);
+      total += part.length;
       continue;
     }
     if (part && typeof part === "object") {
       const text = (part as { text?: unknown }).text;
-      if (typeof text === "string") parts.push(text);
+      if (typeof text === "string") {
+        parts.push(text);
+        total += text.length;
+      }
     }
   }
   return parts.join("\n");
@@ -146,6 +206,20 @@ function stripRuntimeReminders(text: string): string {
 function truncate(value: string, limit: number): string {
   const flat = value.replace(/\s+/g, " ").trim();
   return flat.length > limit ? `${flat.slice(0, limit - 1)}…` : flat;
+}
+
+interface FileStamp {
+  mtimeMs: number;
+  size: number;
+}
+
+async function stampFile(path: string): Promise<FileStamp | null> {
+  try {
+    const info = await stat(path);
+    return { mtimeMs: info.mtimeMs, size: info.size };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -205,6 +279,11 @@ async function collectSessionDirectories(root: string, limit: number): Promise<s
  * CLI resume can reach a running desktop session. The control transport for
  * the next revision is the CLI JSON-lines RPC mode (`pi --mode rpc`) together
  * with the OAuth lease broker.
+ *
+ * Enumeration cost is bounded on purpose. The fleet node is supervised under
+ * a hard RSS contract, so a poll must not re-read and re-parse every message
+ * log: the index is cached, the rendered session is cached against the file
+ * stamp of its own transcript, and transcripts are streamed line by line.
  */
 export class MinimaxCodeAdapter implements HarnessAdapter {
   readonly type = "minimax-code" as const;
@@ -227,6 +306,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
   private readonly cwd: string;
   private readonly maxSessions: number;
   private indexCache: { at: number; entries: MinimaxStoredSession[] } | null = null;
+  private contentCache = new Map<string, { stamp: string; session: AgentSession }>();
 
   constructor(options: MinimaxCodeAdapterOptions = {}) {
     this.sessionStore = options.sessionStore || MINIMAX_CODE_SESSION_STORE;
@@ -273,33 +353,42 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     const stored = await this.readStoredSessions();
     const entry = stored.find((candidate) => candidate.id === id);
     if (!entry) return null;
-    const window = await readTextWindow(join(entry.dir, "messages.jsonl"), MAX_TRANSCRIPT_BYTES, false);
-    if (!window.trim()) return "";
-    const lines: string[] = [];
-    for (const record of parseRecords(window)) {
+    const blocks: string[] = [];
+    let size = 0;
+    for await (const line of readLines(join(entry.dir, "messages.jsonl"), MAX_TRANSCRIPT_BYTES)) {
+      const record = parseRecord(line);
+      if (!record) continue;
       const message = record.message;
       if (!message?.role) continue;
-      const text = extractText(message.content).trim();
+      const text = extractText(message.content, MAX_MESSAGE_CHARS).trim();
       if (!text) continue;
-      lines.push(`## ${message.role}\n${text}`);
+      const block = `## ${message.role}\n${text}`;
+      blocks.push(block);
+      size += block.length;
+      if (size >= MAX_TRANSCRIPT_TEXT) break;
     }
-    return lines.join("\n\n");
+    return blocks.join("\n\n");
   }
 
   async getSessionMessages(id: string, limit = 100): Promise<SessionMessageView[] | null> {
     const stored = await this.readStoredSessions();
     const entry = stored.find((candidate) => candidate.id === id);
     if (!entry) return null;
-    const window = await readTextWindow(join(entry.dir, "messages.jsonl"), MAX_TRANSCRIPT_BYTES, false);
     const views: SessionMessageView[] = [];
-    for (const record of parseRecords(window)) {
+    const keep = limit > 0 ? limit : MAX_MESSAGE_LIMIT;
+    let retained = 0;
+    let total = 0;
+    for await (const line of readLines(join(entry.dir, "messages.jsonl"), MAX_TRANSCRIPT_BYTES)) {
+      const record = parseRecord(line);
+      if (!record) continue;
       const message = record.message;
       const role = message?.role;
       if (!role) continue;
-      const text = extractText(message.content);
+      const text = extractText(message.content, MAX_MESSAGE_CHARS);
       if (!text.trim()) continue;
+      total += 1;
       views.push({
-        id: record.message_id || `${entry.id}:${views.length}`,
+        id: record.message_id || `${entry.id}:${total}`,
         role: role === "user" || role === "assistant" || role === "tool" ? role : "system",
         turnId: record.turn_id,
         timestamp: message.timestamp,
@@ -307,8 +396,13 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
         text,
         parts: [{ type: "text", text }],
       });
+      retained += text.length;
+      while (views.length > keep || (retained > MAX_RETAINED_CHARS && views.length > 1)) {
+        const dropped = views.shift();
+        retained -= dropped?.text?.length ?? 0;
+      }
     }
-    return limit > 0 ? views.slice(-limit) : views;
+    return views;
   }
 
   async sendMessage(_id: string, _options: SendMessageOptions): Promise<SendMessageResult> {
@@ -345,16 +439,23 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     }
     sessions.sort((left, right) => right.updatedAtMs - left.updatedAtMs);
     this.indexCache = { at: now, entries: sessions };
+    const live = new Set(sessions.map((session) => session.id));
+    for (const id of this.contentCache.keys()) {
+      if (!live.has(id)) this.contentCache.delete(id);
+    }
     return sessions;
   }
 
   private async toSession(entry: MinimaxStoredSession): Promise<AgentSession> {
+    const stamp = await this.transcriptStamp(entry);
+    const cached = this.contentCache.get(entry.id);
+    if (cached && cached.stamp === stamp) return cached.session;
     const [title, lastMessage, model] = await Promise.all([
       this.readTitle(entry),
       this.readLastMessage(entry),
       this.readModel(entry),
     ]);
-    return {
+    const session: AgentSession = {
       id: entry.id,
       harness: "minimax-code",
       status: "idle",
@@ -373,28 +474,49 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
         sessionDir: entry.dir,
       },
     };
+    this.contentCache.set(entry.id, { stamp, session });
+    return session;
+  }
+
+  /** Fingerprint of the files a rendered session is derived from. */
+  private async transcriptStamp(entry: MinimaxStoredSession): Promise<string> {
+    const messages = await stampFile(join(entry.dir, "messages.jsonl"));
+    const call = await stampFile(join(entry.dir, "llm-call.json"));
+    return `${messages?.mtimeMs ?? 0}:${messages?.size ?? 0}:${call?.mtimeMs ?? 0}:${call?.size ?? 0}`;
   }
 
   private async readTitle(entry: MinimaxStoredSession): Promise<string> {
-    const window = await readTextWindow(join(entry.dir, "messages.jsonl"), MAX_HEAD_BYTES, false);
-    for (const record of parseRecords(window)) {
-      if (record.message?.role !== "user") continue;
-      const text = stripRuntimeReminders(extractText(record.message.content));
-      if (!text) continue;
-      return truncate(text, MAX_TITLE_LENGTH);
+    const path = join(entry.dir, "messages.jsonl");
+    for (const size of [TITLE_WINDOW_BYTES, TITLE_FALLBACK_BYTES]) {
+      const window = await readTextWindow(path, size, false);
+      for (const line of window.split("\n")) {
+        const record = parseRecord(line);
+        if (!record) continue;
+        if (record.message?.role !== "user") continue;
+        const text = stripRuntimeReminders(extractText(record.message.content, 4096));
+        if (!text) continue;
+        return truncate(text, MAX_TITLE_LENGTH);
+      }
+      if (window.length < size) break;
     }
     return `MiniMax Code session ${entry.id.slice(-8)}`;
   }
 
   private async readLastMessage(entry: MinimaxStoredSession): Promise<string | undefined> {
-    const window = await readTextWindow(join(entry.dir, "messages.jsonl"), MAX_TAIL_BYTES, true);
-    const records = parseRecords(window);
-    for (let index = records.length - 1; index >= 0; index -= 1) {
-      const message = records[index]?.message;
-      if (!message?.role) continue;
-      const text = extractText(message.content).trim();
-      if (!text) continue;
-      return truncate(text, MAX_LAST_MESSAGE_LENGTH);
+    const path = join(entry.dir, "messages.jsonl");
+    for (const size of [TAIL_WINDOW_BYTES, ...TAIL_FALLBACK_BYTES]) {
+      const window = await readTextWindow(path, size, true);
+      const lines = window.split("\n");
+      for (let index = lines.length - 1; index >= 0; index -= 1) {
+        const record = parseRecord(lines[index]);
+        if (!record) continue;
+        const message = record.message;
+        if (!message?.role) continue;
+        const text = extractText(message.content, 4096).trim();
+        if (!text) continue;
+        return truncate(text, MAX_LAST_MESSAGE_LENGTH);
+      }
+      if (window.length < size) break;
     }
     return undefined;
   }

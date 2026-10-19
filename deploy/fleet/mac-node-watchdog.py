@@ -919,7 +919,7 @@ def main():
     with (base/'run/watchdog.lock').open('a') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:raise Refused('owned_watchdog_already_running') from None
-        atomic_json(state/'adapters.json',{'version':1,'enabled':{name:env['ENABLE_'+name.upper().replace('-','_')]=='true' for name in ('codex','zcode','opencode','claude','qoder','hermes','fast-agent','chatgpt')}})
+        atomic_json(state/'adapters.json',{'version':1,'enabled':{name:env['ENABLE_'+name.upper().replace('-','_')]=='true' for name in ('codex','zcode','opencode','claude','qoder','hermes','fast-agent','chatgpt','minimax-code')}})
         child=subprocess.Popen([str(node),str(entry)],cwd=entry.parent.parent,env=env,start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
         started=previous=time.monotonic();previous_cpu={};cpu_samples=[];observed=[];sample={};soft=None;reason='node_exit';failed=[]
         stderr_reader=None
