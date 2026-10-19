@@ -348,9 +348,10 @@ export class AgentHerderRag {
       }
     }
     let indexed = 0;
-    for (let offset = 0; offset < points.length; offset += 8) {
+    const batchSize = 16;
+    for (let offset = 0; offset < points.length; offset += batchSize) {
       if (!this.state?.options.enabled) break;
-      const batch = points.slice(offset, offset + 8);
+      const batch = points.slice(offset, offset + batchSize);
       const vectors = await embed(batch.map((point) => point.text));
       await requestJson(`${QDRANT}/collections/${COLLECTION}/points?wait=true`, {
         method: "PUT", headers: { "content-type": "application/json" },
