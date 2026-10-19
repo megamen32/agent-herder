@@ -120,4 +120,50 @@ describe("Agent Herder progressive search", () => {
     expect(response.body).toContain("Семантическое совпадение");
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/v1/embeddings"))).toBe(true);
   });
+
+  it("returns exact candidates and a Codex session-list fallback when semantic Qdrant search fails", async () => {
+    const fetchMock = vi.fn(async (input: URL | RequestInfo) => {
+      const url = String(input);
+      if (url.endsWith("/points/scroll")) {
+        return Response.json({ result: { points: [point("exact-session", "owner recovery")], next_page_offset: null } });
+      }
+      if (url.includes("/v1/embeddings")) return Response.json({ data: [{ embedding: Array(2048).fill(0.1) }] });
+      if (url.endsWith("/points/search")) return new Response(JSON.stringify({ status: { error: "bad filter" } }), { status: 400 });
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const rag = new AgentHerderRag();
+    (rag as unknown as { state: unknown }).state = {
+      options: { enabled: true, harnesses: { codex: true, zcode: true, opencode: true } }, checkpoints: {},
+    };
+    const result = await rag.search("owner recovery", { harnesses: ["codex"] }, undefined, async () => [
+      { id: "wanted-session", title: "Owner recovery investigation", cwd: "/projects/agent-herder", lastMessage: "Find owner session" },
+      { id: "unrelated-session", title: "Other project", cwd: "/projects/other" },
+    ]);
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]).toMatchObject({ session_id: "exact-session", source: "exact" });
+    expect(result.searchError).toContain("HTTP 400");
+    expect(result.searchError).toContain("bad filter");
+    expect(result.fallback).toMatchObject({ source: "codex-session-list" });
+    expect(result.fallback.candidates).toEqual([expect.objectContaining({ id: "wanted-session" })]);
+  });
+
+  it("uses the Codex session list when the exact Qdrant request itself returns HTTP 400", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: { error: "invalid session_id filter" } }), { status: 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const rag = new AgentHerderRag();
+    (rag as unknown as { state: unknown }).state = {
+      options: { enabled: true, harnesses: { codex: true, zcode: true, opencode: true } }, checkpoints: {},
+    };
+
+    const result = await rag.search("target rollout", { harnesses: ["codex"] }, undefined, async () => [
+      { id: "target-rollout", title: "Target rollout", cwd: "/projects/agent-herder" },
+    ]);
+    expect(result.results).toEqual([]);
+    expect(result.searchError).toContain("HTTP 400");
+    expect(result.searchError).toContain("invalid session_id filter");
+    expect(result.fallback.candidates).toEqual([expect.objectContaining({ id: "target-rollout" })]);
+  });
 });

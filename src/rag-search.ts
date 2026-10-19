@@ -64,7 +64,10 @@ function splitText(value: string): string[] {
 
 async function requestJson(url: string, init?: RequestInit): Promise<any> {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(180_000) });
-  if (!response.ok) throw new Error(`${new URL(url).pathname} returned HTTP ${response.status}`);
+  if (!response.ok) {
+    const detail = scrubSecrets((await response.text().catch(() => "")).replace(/\s+/g, " ").trim()).slice(0, 300);
+    throw new Error(`${new URL(url).pathname} returned HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+  }
   return response.json();
 }
 
@@ -229,6 +232,7 @@ export class AgentHerderRag {
     filters: { harnesses?: Harness[]; from?: string; to?: string; project?: string; limit?: number } = {},
     onProgress: (progress: SearchProgress) => void | Promise<void> = () => {},
     resolveSession?: (harness: Harness, id: string) => Promise<{ title?: string; cwd?: string } | undefined>,
+    listCodexSessions?: () => Promise<Array<{ id: string; title?: string; cwd?: string; lastMessage?: string }>>,
   ): Promise<Record<string, unknown>> {
     const state = await this.load();
     if (!state.options.enabled) throw new Error("semantic search is off; enable it in Agent Herder settings");
@@ -246,14 +250,20 @@ export class AgentHerderRag {
     const startedAt = Date.now();
     await onProgress({ type: "phase", stage: "exact" });
     const exactStartedAt = Date.now();
-    const exactData = await requestJson(`${QDRANT}/collections/${COLLECTION}/points/scroll`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        limit: Math.min(200, Math.max(50, requestedLimit * 10)),
-        with_payload: true,
-        filter: { must: [...must, { key: "text", match: { text: clean } }] },
-      }),
-    });
+    let searchError: string | undefined;
+    let exactData: any;
+    try {
+      exactData = await requestJson(`${QDRANT}/collections/${COLLECTION}/points/scroll`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          limit: Math.min(200, Math.max(50, requestedLimit * 10)),
+          with_payload: true,
+          filter: { must: [...must, { key: "text", match: { text: clean } }] },
+        }),
+      });
+    } catch (error) {
+      searchError = error instanceof Error ? error.message : String(error);
+    }
     const seen = new Set<string>();
     const exactResults = (Array.isArray(exactData?.result?.points) ? exactData.result.points : []).flatMap((hit: Hit) => {
       const payload = object(hit.payload);
@@ -274,11 +284,17 @@ export class AgentHerderRag {
 
     await onProgress({ type: "phase", stage: "semantic" });
     const semanticStartedAt = Date.now();
-    const [vector] = await embed([clean]);
-    const data = await requestJson(`${QDRANT}/collections/${COLLECTION}/points/search`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ vector, limit: Math.min(100, requestedLimit * 10), with_payload: true, ...(must.length ? { filter: { must } } : {}) }),
-    });
+    let data: any;
+    try {
+      const [vector] = await embed([clean]);
+      data = await requestJson(`${QDRANT}/collections/${COLLECTION}/points/search`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ vector, limit: Math.min(100, requestedLimit * 10), with_payload: true, ...(must.length ? { filter: { must } } : {}) }),
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      searchError = searchError ? `${searchError}; ${detail}` : detail;
+    }
     const semanticSeen = new Set<string>();
     const semanticResults = (Array.isArray(data?.result) ? data.result : []).flatMap((hit: Hit) => {
       const payload = object(hit.payload);
@@ -295,12 +311,32 @@ export class AgentHerderRag {
     }));
     const semanticMs = Date.now() - semanticStartedAt;
     await onProgress({ type: "results", source: "semantic", results: semanticResults, elapsedMs: semanticMs });
+    if (searchError) await onProgress({ type: "error", message: searchError.slice(0, 400) });
     await onProgress({ type: "complete", exactMs, semanticMs, totalMs: Date.now() - startedAt });
-    return { results: [...exactResults, ...semanticResults], run: state.run ?? null, timings: { exactMs, semanticMs, totalMs: Date.now() - startedAt } };
+    const result: Record<string, unknown> = { results: [...exactResults, ...semanticResults], run: state.run ?? null, timings: { exactMs, semanticMs, totalMs: Date.now() - startedAt } };
+    if (searchError) {
+      result.searchError = searchError;
+      if (listCodexSessions && (!harnesses.length || harnesses.includes("codex"))) {
+        try {
+          const terms = clean.toLocaleLowerCase().split(/\s+/).filter((term) => term.length >= 2);
+          const candidates = (await listCodexSessions()).map((session) => {
+            const haystack = `${session.id} ${session.title || ""} ${session.cwd || ""} ${session.lastMessage || ""}`.toLocaleLowerCase();
+            return { ...session, matchCount: terms.filter((term) => haystack.includes(term)).length };
+          }).filter((session) => session.matchCount > 0)
+            .sort((a, b) => b.matchCount - a.matchCount || a.id.localeCompare(b.id))
+            .slice(0, Math.min(20, requestedLimit));
+          result.fallback = { source: "codex-session-list", candidates };
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          result.fallback = { source: "codex-session-list", error: detail.slice(0, 300), candidates: [] };
+        }
+      }
+    }
+    return result;
   }
 
-  async search(query: string, filters: { harnesses?: Harness[]; from?: string; to?: string; project?: string; limit?: number } = {}, resolveSession?: (harness: Harness, id: string) => Promise<{ title?: string; cwd?: string } | undefined>): Promise<Record<string, unknown>> {
-    return this.searchProgressively(query, filters, () => {}, resolveSession);
+  async search(query: string, filters: { harnesses?: Harness[]; from?: string; to?: string; project?: string; limit?: number } = {}, resolveSession?: (harness: Harness, id: string) => Promise<{ title?: string; cwd?: string } | undefined>, listCodexSessions?: () => Promise<Array<{ id: string; title?: string; cwd?: string; lastMessage?: string }>>): Promise<Record<string, unknown>> {
+    return this.searchProgressively(query, filters, () => {}, resolveSession, listCodexSessions);
   }
 
   private startIndex(reset: boolean): void {

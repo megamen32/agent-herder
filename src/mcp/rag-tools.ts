@@ -16,7 +16,12 @@ export function registerRagTools(server: McpServer, adapters?: Map<string, Harne
     }),
   }, async (input) => {
     try {
-      const result = await agentHerderRag().search(input.query, input, async (harness, id) => (await adapters?.get(harness)?.getSession(id)) || undefined);
+      const result = await agentHerderRag().search(
+        input.query,
+        input,
+        async (harness, id) => (await adapters?.get(harness)?.getSession(id)) || undefined,
+        async () => (await adapters?.get("codex")?.listSessions({ limit: 100 }) || []).map(({ id, title, cwd, lastMessage }) => ({ id, title, cwd, lastMessage })),
+      );
       return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result };
     } catch (error) {
       const message = error instanceof Error ? error.message : "semantic search failed";
