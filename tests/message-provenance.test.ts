@@ -69,9 +69,9 @@ describe("send_message sender provenance", () => {
 
     const expectedUrl = `https://agent.bezrabotnyi.com/#/session/${encodeURIComponent(`codex:${sender.id}`)}`;
     expect(received[0]?.id).toBe(target.id);
-    expect(received[0]?.options.message).toContain(`Codex ${sender.id}`);
+    expect(received[0]?.options.message).toContain("[Codex]");
     expect(received[0]?.options.message).toContain(expectedUrl);
-    expect(received[0]?.options.message).toContain("без ACK");
+    expect(received[0]?.options.message).not.toContain("Ответ нужен");
     expect(received[0]?.options.message).toContain("Please inspect this.");
     expect(received[0]?.options.message!.length).toBeLessThan(550);
 

@@ -21,8 +21,9 @@ export function sessionInventoryPage(hostId:string,snapshot:LocalInventorySnapsh
  const sessions:InventorySession[]=[];
  for(const {row} of selected){
   try{
-   const activeCwd=coordinationNotes.activeWorkspaceForSession(row.id);
-   const projected=activeCwd?{...row,cwd:activeCwd,meta:{...row.meta,launchCwd:row.meta?.launchCwd??row.cwd,activeCwd,projectSource:'coordination_activity'}}:row;
+   const workspace=coordinationNotes.cachedWorkspaceObservation(row.id);
+   const activeCwd=workspace?.cwd??coordinationNotes.activeWorkspaceForSession(row.id);
+   const projected=activeCwd?{...row,cwd:activeCwd,meta:{...row.meta,launchCwd:row.meta?.launchCwd??row.cwd,activeCwd,workspaceHostId:workspace?.hostId??hostId,workspaceExpiresAt:workspace?.expiresAt,projectSource:workspace?.source??'coordination_activity'}}:row;
    const s=projectPeerSession(compactSession(hostId,projected),hostId);if(!s){partial=true;continue;}
    const key=addressKey(s.address);if(keys.has(key)){partial=true;continue;}keys.add(key);
    const parent=row.meta?.parentSessionKey;let parentAddress:MeshAddress|undefined;

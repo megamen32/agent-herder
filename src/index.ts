@@ -59,6 +59,8 @@ import { registerCdpTools } from "./mcp/cdp-tools.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
 import { registerResourceOwnershipTools } from "./mcp/resource-ownership-tools.js";
 import { registerHarnessMeshTools } from "./mesh/register-tools.js";
+import { FleetDirectTransport, directFleetPeers } from "./mesh/fleet-direct-transport.js";
+import { registerWorkspaceTools } from "./mesh/workspace-tools.js";
 import { registerBackgroundTools } from "./mcp/background-tools.js";
 import { registerRagTools } from "./mcp/rag-tools.js";
 import { loadCdpChatDriver } from "./cdp-chat-mcp.js";
@@ -574,7 +576,9 @@ function registerTools(
   registerSessionTools(server, { adapters, jobs, events });
   registerRagTools(server, adapters);
   registerResourceOwnershipTools(server);
-  registerHarnessMeshTools(server, { adapters });
+  const workspaceTransport = new FleetDirectTransport(directFleetPeers.filter(peer => peer.hostId !== "MacBook-Pro-User.local"));
+  registerHarnessMeshTools(server, { adapters, gptadmin: workspaceTransport });
+  registerWorkspaceTools(server, { transport: workspaceTransport });
   registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined });
 }
 

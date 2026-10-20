@@ -13,7 +13,7 @@ export function registerHarnessMeshTools(server:McpServer,deps:{adapters:Map<str
  server.registerTool("mesh_deliver",{description:"Deliver one bounded work delta to exact host+harness+nativeSessionID. Stable inputId, durable intent and 6/pair 12/target limits. UNKNOWN must never be replayed.",inputSchema:delivery},async args=>result(await local.deliver(args)));
  if(deps.gptadmin){
   const mesh=new GptAdminMesh(deps.gptadmin);
-  server.registerTool("mesh_discover",{description:"Discover registered native mesh peers through the authenticated GPTAdmin profile, with compact partial host receipts.",inputSchema:z.object({limit:z.number().int().min(1).max(12).default(12)})},async args=>result(await mesh.discover(args.limit)));
-  server.registerTool("mesh_route",{description:"Address one discovered remote native peer via GPTAdmin. Never retries uncertain admission.",inputSchema:delivery},async args=>result(await mesh.deliver(args)));
+  server.registerTool("mesh_discover",{description:"Discover registered native mesh peers through the existing authenticated fleet transport, with compact partial host receipts.",inputSchema:z.object({limit:z.number().int().min(1).max(12).default(12)})},async args=>result(await mesh.discover(args.limit)));
+  server.registerTool("mesh_route",{description:"Address one discovered remote native peer via the existing fleet transport. Never retries uncertain admission.",inputSchema:delivery},async args=>result(await mesh.deliver(args)));
  }
 }

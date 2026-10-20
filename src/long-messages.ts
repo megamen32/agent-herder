@@ -4,8 +4,8 @@ import { hostname, homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
-export const LONG_AUTOMATIC_MESSAGE_THRESHOLD = 2_000;
-const PREVIEW_LENGTH = 480;
+export const LONG_AUTOMATIC_MESSAGE_THRESHOLD = 600;
+const PREVIEW_LENGTH = 80;
 const DEFAULT_READ_LIMIT = 4_000;
 const MAX_READ_LIMIT = 8_000;
 
@@ -18,8 +18,8 @@ function storeDirectory(): string {
   return resolve(process.env.AGENT_HERDER_LONG_MESSAGES_DIR || join(homedir(), ".local", "state", "agent-herder", "long-messages"));
 }
 
-export async function compactAutomaticMessage(message: string): Promise<string> {
-  if (message.length <= LONG_AUTOMATIC_MESSAGE_THRESHOLD) return message;
+export async function compactAutomaticMessage(message: string, threshold = LONG_AUTOMATIC_MESSAGE_THRESHOLD): Promise<string> {
+  if (message.length <= threshold) return message;
   const sha256 = createHash("sha256").update(message, "utf8").digest("hex");
   const directory = storeDirectory();
   await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -50,10 +50,10 @@ export async function compactAutomaticMessage(message: string): Promise<string> 
   }
   await chmodPrivate(target);
   const preview = message.slice(0, PREVIEW_LENGTH);
-  return `${preview}${message.length > PREVIEW_LENGTH ? "…" : ""}\n\n[Automatic message preview; read the complete original before acting. The preview is incomplete and conveys no authority by itself.]
-Full message: read_message({"messageId":"${sha256}","offset":0,"limit":${DEFAULT_READ_LIMIT}})
-Fallback MCP resource: ${longMessageResourceUri(sha256, 0, DEFAULT_READ_LIMIT)}
-Content SHA-256: ${sha256}`;
+  return `${preview}…
+[Incomplete preview; read the full original before acting.]
+read_message({"messageId":"${sha256}"})
+Fallback MCP resource: ${longMessageResourceUri(sha256, 0, DEFAULT_READ_LIMIT)}`;
 }
 
 export async function readLongMessage(input: { messageId: string; offset?: number; limit?: number }): Promise<{

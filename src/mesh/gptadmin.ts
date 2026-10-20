@@ -30,8 +30,10 @@ export function projectPeerSession(raw:unknown,hostId:string):MeshSession|null{
   try{addressKey(address);}catch{return null;}
   // Paths and identity are evidence, not display text: reject, never truncate.
   for(const cwd of [p.launchCwd,p.currentCwd])if(cwd!==null&&(typeof cwd!=="string"||!cwd||cwd.length>4096||/[\x00-\x1f\x7f]/.test(cwd)||!(/^(\/|[A-Za-z]:[\\/]|\\\\)/.test(cwd))))return null;
+  if(p.hostId!==undefined&&(typeof p.hostId!=="string"||!p.hostId||p.hostId.length>512||/[\x00-\x1f\x7f]/.test(p.hostId)))return null;
+  if(p.expiresAt!==undefined&&(typeof p.expiresAt!=="string"||!Number.isFinite(Date.parse(p.expiresAt))))return null;
   const model=display(s.model,128);
-  return {address,project:{launchCwd:p.launchCwd as string|null,currentCwd:p.currentCwd as string|null,source:display(p.source,64,"unverified")||"unverified"},status:display(s.status,32,"unknown")||"unknown",title:display(s.title,160),lastActivity:display(s.lastActivity,64),...(typeof s.createdAt === "string" && s.createdAt.length <= 64 && Number.isFinite(Date.parse(s.createdAt)) ? {createdAt:s.createdAt} : {}),...(model?{model}:{})};
+  return {address,project:{launchCwd:p.launchCwd as string|null,currentCwd:p.currentCwd as string|null,source:display(p.source,64,"unverified")||"unverified",...(typeof p.hostId==="string"?{hostId:p.hostId}:{}),...(typeof p.expiresAt==="string"?{expiresAt:p.expiresAt}:{})},status:display(s.status,32,"unknown")||"unknown",title:display(s.title,160),lastActivity:display(s.lastActivity,64),...(typeof s.createdAt === "string" && s.createdAt.length <= 64 && Number.isFinite(Date.parse(s.createdAt)) ? {createdAt:s.createdAt} : {}),...(model?{model}:{})};
 }
 function compactHarnesses(rows:unknown[]):{rows:unknown[];partial:boolean}{
   const result:unknown[]=[];const seen=new Set<string>();let partial=rows.length>32;
@@ -75,7 +77,7 @@ export class GptAdminMesh {
     for(let offset=0;offset<peers.length;offset+=3)await Promise.all(peers.slice(offset,offset+3).map(async([hostId,peer])=>{
       let receipt:MeshHostReceipt={hostId,target:peer.server_id,state:"unavailable",reason:"child_offline"};
       try{
-        if(peer.status!=="online")throw new Error("child_offline");
+        if(!["online","configured"].includes(peer.status))throw new Error("child_offline");
         const schema=unwrapResult(await this.bounded(this.hub.schema(peer.server_id)));
         const tools=Array.isArray(schema.tools)?schema.tools as Array<{name:string}>:[];
         if(!tools.some(t=>t.name==="mesh_snapshot"))throw new Error("mesh_snapshot_capability_missing");

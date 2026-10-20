@@ -50,11 +50,11 @@ export function registerHerderResources(server: McpServer, deps: {
 
   server.registerResource("coordination", "herder://coordination", { title: "Active coordination notes", mimeType: "application/json" }, async (uri) => jsonContent(events, uri, await coordination.list()));
   server.registerResource("coordination-note", new ResourceTemplate("herder://coordination/notes/{noteId}", { list: undefined }), { title: "Coordination note", mimeType: "application/json" }, async (uri, variables) => jsonContent(events, uri, await coordination.get(String(variables.noteId))));
-  server.registerResource("coordination-workspace", new ResourceTemplate("herder://coordination/workspaces/{cwd}", { list: undefined }), { title: "Workspace coordination notes", mimeType: "application/json" }, async (uri, variables) => jsonContent(events, uri, await coordination.list({ cwd: decodeURIComponent(String(variables.cwd)) })));
+  server.registerResource("coordination-workspace", new ResourceTemplate("herder://coordination/workspaces/{cwd}", { list: undefined }), { title: "Workspace coordination notes", mimeType: "application/json" }, async (uri, variables) => jsonContent(events, uri, await coordination.list(parseWorkspaceResource(variables.cwd))));
 
   server.registerResource("presence", "herder://presence", { title: "Agent workspace presence", mimeType: "application/json" }, async (uri) => jsonContent(events, uri, coordination.presenceSnapshot()));
   server.registerResource("presence-session", new ResourceTemplate("herder://presence/{sessionId}", { list: undefined }), { title: "Agent presence", mimeType: "application/json" }, async (uri, variables) => jsonContent(events, uri, coordination.presenceForSession(decodeURIComponent(String(variables.sessionId)))));
-  server.registerResource("presence-workspace", new ResourceTemplate("herder://presence/workspaces/{cwd}", { list: undefined }), { title: "Workspace presence", mimeType: "application/json" }, async (uri, variables) => jsonContent(events, uri, coordination.presenceForWorkspace(decodeURIComponent(String(variables.cwd)))));
+  server.registerResource("presence-workspace", new ResourceTemplate("herder://presence/workspaces/{cwd}", { list: undefined }), { title: "Workspace presence", mimeType: "application/json" }, async (uri, variables) => jsonContent(events, uri, coordination.presenceForWorkspace(parseWorkspaceResource(variables.cwd).cwd, parseWorkspaceResource(variables.cwd).hostId)));
 
   server.registerResource("adapters", "herder://adapters", { title: "Harness native event sources", mimeType: "application/json" }, async (uri) => jsonContent(events, uri, eventHealth.list()));
   server.registerResource("adapter", new ResourceTemplate("herder://adapters/{harness}", { list: undefined, complete: { harness: () => [...adapters.keys()] } }), { title: "Harness native event source", mimeType: "application/json" }, async (uri, variables) => {
@@ -81,4 +81,12 @@ function parseResourceInteger(value: unknown, name: string): number {
   const parsed = Number(text);
   if (!Number.isSafeInteger(parsed)) throw new Error(`${name} is out of range`);
   return parsed;
+}
+
+function parseWorkspaceResource(value: unknown): { cwd: string; hostId?: string } {
+  const decoded = decodeURIComponent(String(value));
+  if (!decoded.startsWith("[")) return { cwd: decoded };
+  const pair: unknown = JSON.parse(decoded);
+  if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== "string" || typeof pair[1] !== "string") throw new Error("Invalid workspace resource");
+  return { hostId: pair[0], cwd: pair[1] };
 }

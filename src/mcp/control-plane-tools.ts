@@ -81,7 +81,7 @@ export function registerControlPlaneTools(server: McpServer, deps: {
   server.registerTool("coordination_note_create", {
     description: "Publish a TTL coordination note for agents in the same workspace. Active notes are injected automatically into later Agent Herder-delivered turns.",
     inputSchema: z.object({
-      authorSessionId: z.string().trim().min(1).max(256), authorHarness: z.string().trim().min(1).max(64).optional(), cwd: z.string().min(1),
+      authorSessionId: z.string().trim().min(1).max(256), authorHarness: z.string().trim().min(1).max(64).optional(), cwd: z.string().min(1), hostId: z.string().min(1).max(512).optional(),
       paths: z.array(z.string().min(1).max(4096)).max(64).default([]), kind: z.enum(["working", "avoid", "handoff", "info"]),
       message: z.string().trim().min(1).max(4000), ttlSeconds: z.number().int().min(60).max(604800).optional(),
     }),
@@ -90,7 +90,7 @@ export function registerControlPlaneTools(server: McpServer, deps: {
 
   server.registerTool("coordination_note_list", {
     description: "List active coordination notes explicitly. Agent Herder also injects matching notes into new turns automatically.",
-    inputSchema: z.object({ cwd: z.string().optional(), path: z.string().optional(), authorSessionId: z.string().optional() }),
+    inputSchema: z.object({ cwd: z.string().optional(), hostId: z.string().min(1).max(512).optional(), path: z.string().optional(), authorSessionId: z.string().optional() }),
     outputSchema: z.object({ notes: z.array(coordinationNoteSchema) }),
   }, async (args) => structuredResult({ notes: await coordination.list(args) }, true));
 

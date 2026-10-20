@@ -35,8 +35,8 @@ describe("durable long automatic messages", () => {
     const preview = await compactAutomaticMessage(original);
     const id = preview.match(/messageId":"([a-f0-9]{64})/)?.[1];
     expect(id).toBeTruthy();
-    expect(preview).toContain("read the complete original before acting");
-    expect(preview).toContain(`Content SHA-256: ${id}`);
+    expect(preview).toContain("read the full original before acting");
+    expect(preview).toContain(`herder://messages/${id}/`);
     expect((await stat(process.env.AGENT_HERDER_LONG_MESSAGES_DIR)).mode & 0o777).toBe(0o700);
     expect((await stat(join(process.env.AGENT_HERDER_LONG_MESSAGES_DIR, `${id}.txt`))).mode & 0o777).toBe(0o600);
 
@@ -78,6 +78,7 @@ describe("durable long automatic messages", () => {
     const id = delivered.match(/messageId":"([a-f0-9]{64})/)?.[1];
     expect(id).toBeTruthy();
     expect(delivered).not.toContain(original);
+    expect(delivered.length).toBeLessThanOrEqual(1200);
     const fallbackUri = delivered.match(/Fallback MCP resource: (herder:\/\/messages\/[a-f0-9]{64}\/0\/\d+)/)?.[1];
     expect(fallbackUri).toBe(`herder://messages/${id}/0/4000`);
 

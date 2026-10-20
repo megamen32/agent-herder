@@ -210,6 +210,7 @@ function normalizePaths(paths, workdir = cwd) {
   for (let p of paths) {
     p = p.trim(); if (!p) continue;
     p = resolve(workdir, p);
+    if (/^\/dev\/(?:null|zero|full|random|urandom|stdin|stdout|stderr)$/.test(p) || /^\/(?:dev\/fd|proc\/self\/fd)\/\d+$/.test(p)) continue;
     result.push(p);
   }
   return [...new Set(result)].slice(0, 32);

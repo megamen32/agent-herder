@@ -1,7 +1,7 @@
 # Context economy
 
 Agent Herder keeps full reports out of automatic prompt delivery when they exceed
-2,000 characters. The recipient gets a short preview, content ID and an explicit
+600 characters. The recipient gets a short preview, content ID and an explicit
 `read_message({"messageId":"…","offset":0,"limit":4000})` instruction. Read the
 complete original before acting on an incomplete preview; the preview grants no
 authority. Follow `nextOffset` until it is null. Limits are characters (UTF-16
@@ -66,7 +66,7 @@ and the message files retain private original content and should stay private.
 A fixed private historical snapshot with 117 incoming reports and 446 passive peer
 blocks measured 275,774 ->78,650 estimated incoming tokens (71.48% less). Reading
 every long report increases the latter to 79,389 (71.21% less). Only one report
-exceeded the 2,000-character threshold; the principal saving is passive roster
+exceeded the then-current 2,000-character threshold in the0.2.4 replay; the principal saving is passive roster
 noise. Manual coordination and conflict text was left unchanged in this comparison.
 On-demand ownership reads add tokens; there is no claim of equivalent billed-cost
 savings or identical model decisions. All 117 report bodies remained exactly
@@ -103,3 +103,9 @@ Context Mode 1.0.169 confines `ctx_execute_file` to its project root. Export to
 that actual project root, not the Herder private store or a different host's
 path. Agent Herder uses Context Mode's existing interface; it does not require
 it as a dependency, auto-index every report, install it, or change its runtime.
+
+The0.2.5 follow-up also compacts manual working-note deltas, removes repeated
+reply instructions, and caps composed automatic send/deliver messages at1200
+characters after adding context. Bodies over600 characters use an80-character
+preview with tool/resource references. Device sinks are rejected both by the
+hook and by the receiving store, protecting against stale hook clients.

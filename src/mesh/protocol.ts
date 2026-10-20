@@ -1,6 +1,6 @@
 /** Stable native address. Project is observed state, never an address component. */
 export interface MeshAddress { hostId: string; harness: string; nativeSessionId: string }
-export interface ProjectObservation { launchCwd: string | null; currentCwd: string | null; source: string }
+export interface ProjectObservation { launchCwd: string | null; currentCwd: string | null; source: string; hostId?: string; expiresAt?: string }
 export interface MeshSession { address: MeshAddress; project: ProjectObservation; status: string; title: string; lastActivity: string; createdAt?: string; model?: string }
 export interface NativeReceipt { state: "admitted" | "not_attempted" | "unknown"; inputId: string; turnId?: string; retryable: boolean; reason?:string; retryAfterMs?:number }
 type SessionInput = { id: string; harness: string; cwd: string; status: string; title: string; lastActivity: string; model?: string; meta?: Record<string, unknown> };
@@ -12,7 +12,7 @@ export function projectObservation(session: {cwd:string;meta?:Record<string,unkn
   const meta=session.meta || {};
   const launchCwd=typeof meta.launchCwd==="string" ? meta.launchCwd : session.cwd || null;
   const currentCwd=typeof meta.activeCwd==="string" && typeof meta.projectSource==="string" ? meta.activeCwd : null;
-  return {launchCwd,currentCwd,source:currentCwd ? String(meta.projectSource) : "unverified"};
+  return {launchCwd,currentCwd,source:currentCwd ? String(meta.projectSource) : "unverified",...(currentCwd&&typeof meta.workspaceHostId==="string"?{hostId:meta.workspaceHostId}:{}),...(currentCwd&&typeof meta.workspaceExpiresAt==="string"?{expiresAt:meta.workspaceExpiresAt}:{})};
 }
 export function compactSession(hostId:string,session:SessionInput): MeshSession {
   const address={hostId,harness:session.harness,nativeSessionId:typeof session.meta?.nativeSessionId==="string" ? session.meta.nativeSessionId : session.id};

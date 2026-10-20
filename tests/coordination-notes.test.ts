@@ -6,6 +6,20 @@ import { CoordinationNoteStore, autoTtlSeconds } from "../src/coordination-notes
 import { HerderEventBus } from "../src/herder-events.js";
 
 describe("coordination notes", () => {
+  it("reads remote-host notes by their globally unique note ID", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "herder-remote-note-"));
+    const store = new CoordinationNoteStore(join(dir, "notes.json"));
+    const note = await store.create({kind:"avoid",authorSessionId:"remote",cwd:"/project",hostId:"host88",paths:["x.ts"],message:"remote hazard"});
+    expect(await store.get(note.id)).toMatchObject({hostId:"host88",message:"remote hazard"});
+    expect(await store.list({cwd:"/project"})).toEqual([]);
+  });
+  it("refuses device sinks even from stale hook clients", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "herder-device-sinks-"));
+    const store = new CoordinationNoteStore(join(dir, "notes.json"));
+    const result = await store.reservePaths({harness:"codex",sessionId:"old-hook",cwd:"/repo",paths:["/dev/null","/dev/stderr"]});
+    expect(result.reservations).toEqual([]);
+    expect(await store.list({cwd:"/repo"})).toEqual([]);
+  });
   it("creates, injects, updates, and deletes owned TTL notes", async () => {
     const dir = await mkdtemp(join(tmpdir(), "agent-herder-notes-"));
     const store = new CoordinationNoteStore(join(dir, "notes.json"));
@@ -34,6 +48,66 @@ describe("coordination notes", () => {
     const refreshed = await store.reservePaths({ harness: "codex", sessionId: "a", cwd: "/repo", paths: ["src/parser.ts"], ttlSeconds: 300 });
     expect(refreshed.reservations[0].id).toBe(first.reservations[0].id);
     expect(refreshed.reservations[0].source).toBe("hook");
+  });
+
+  it("isolates identical paths by host while detecting same-host conflicts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent-herder-host-notes-"));
+    const store = new CoordinationNoteStore(join(dir, "notes.json"));
+    await store.create({ hostId: "host-88", kind: "working", message: "remote owner", cwd: "/srv/project", paths: ["src/a.ts"], authorSessionId: "remote" });
+
+    expect(await store.list({ hostId: "host-100", cwd: "/srv/project" })).toHaveLength(0);
+    expect(await store.list({ hostId: "host-88", cwd: "/srv/project" })).toHaveLength(1);
+    expect((await store.reservePaths({ hostId: "host-100", harness: "codex", sessionId: "local", cwd: "/srv/project", paths: ["src/a.ts"] })).conflicts).toHaveLength(0);
+    expect((await store.reservePaths({ hostId: "host-88", harness: "codex", sessionId: "same-host", cwd: "/srv/project", paths: ["src/a.ts"] })).conflicts).toHaveLength(1);
+  });
+
+  it("persists a bounded explicit workspace and keeps it above local hook activity until clear or expiry", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent-herder-workspace-declaration-"));
+    const path = join(dir, "notes.json");
+    const first = new CoordinationNoteStore(path);
+    const declared = await first.declareWorkspace({ sessionId: "session", harness: "codex", hostId: "host-88", cwd: "/srv/a/../project", ttlSeconds: 60 });
+    expect(declared.cwd).toBe("/srv/project");
+    expect(first.cachedWorkspaceObservation("session")).toMatchObject({ hostId: "host-88", cwd: "/srv/project", source: "declared" });
+    await first.reservePaths({ harness: "codex", sessionId: "session", cwd: "/launch", paths: ["local.ts"] });
+    expect(await first.activeWorkspaceObservation("session")).toMatchObject({ hostId: "host-88", cwd: "/srv/project", source: "declared" });
+    expect(first.activeWorkspaceForSession("session")).toBe("/launch");
+
+    const restarted = new CoordinationNoteStore(path);
+    expect(await restarted.activeWorkspaceObservation("session")).toMatchObject({ hostId: "host-88", cwd: "/srv/project", source: "declared", expiresAt: declared.expiresAt });
+    expect(restarted.activeWorkspaceForSession("session")).toBeUndefined();
+    expect(restarted.cachedWorkspaceObservation("session")).toMatchObject({ hostId: "host-88", cwd: "/srv/project", source: "declared" });
+
+    expect(await restarted.clearWorkspace("session")).toBe(true);
+    expect(await restarted.activeWorkspaceObservation("session")).toBeUndefined();
+    expect(await first.activeWorkspaceObservation("session")).toMatchObject({ hostId: first.localHostId, cwd: "/launch", source: "coordination_activity" });
+    await restarted.declareWorkspace({ sessionId: "expiring", harness: "codex", hostId: "host-88", cwd: "/srv/expiring", ttlSeconds: 60 });
+    const file = JSON.parse(await (await import("node:fs/promises")).readFile(path, "utf8"));
+    file.workspaceDeclarations.find((row: { sessionId: string }) => row.sessionId === "expiring").expiresAt = new Date(Date.now() - 1).toISOString();
+    await (await import("node:fs/promises")).writeFile(path, JSON.stringify(file));
+    expect(await restarted.activeWorkspaceObservation("expiring")).toBeUndefined();
+  });
+
+  it("defaults legacy notes and workspace operations to the local host and rejects invalid remote identities", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent-herder-host-default-"));
+    const store = new CoordinationNoteStore(join(dir, "notes.json"));
+    await store.create({ kind: "working", message: "legacy local", cwd: "/repo", paths: ["a.ts"], authorSessionId: "local" });
+    expect((await store.list({ cwd: "/repo" }))[0]?.hostId).toBe((await import("node:os")).hostname());
+    await expect(store.declareWorkspace({ sessionId: "bad", harness: "codex", hostId: "bad\nhost", cwd: "/repo" })).rejects.toThrow(/hostId/);
+    await expect(store.declareWorkspace({ sessionId: "bad-path", harness: "codex", hostId: "host-88", cwd: "~other/project" })).rejects.toThrow(/absolute/);
+  });
+
+  it("renders declared remote workspace ownership without mixing a same-path local board", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent-herder-remote-render-"));
+    const store = new CoordinationNoteStore(join(dir, "notes.json"));
+    await store.create({ hostId: "host-88", kind: "avoid", message: "remote migration", cwd: "/srv/project", paths: ["src/db.ts"], authorSessionId: "remote-owner" });
+    await store.create({ hostId: store.localHostId, kind: "avoid", message: "local migration", cwd: "/srv/project", paths: ["src/db.ts"], authorSessionId: "local-owner" });
+    await store.declareWorkspace({ sessionId: "launched-on-100", harness: "codex", hostId: "host-88", cwd: "/srv/project" });
+
+    const rendered = await store.renderForSession({ id: "launched-on-100", harness: "codex", cwd: "/launch/path" });
+    expect(rendered).toContain("remote migration");
+    expect(rendered).not.toContain("local migration");
+    expect(rendered).toContain('board="host-88:/srv/project"');
+    expect(rendered).toContain("herder://coordination/workspaces/%5B%22host-88%22%2C%22%2Fsrv%2Fproject%22%5D");
   });
 
   it("heartbeats all hook reservations owned by an active session", async () => {
@@ -69,7 +143,11 @@ describe("coordination note injection dedup", () => {
 
     const first = await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" });
     expect(first).toContain("agent-herder-coordination");
-    expect(first).toContain("src/parser.ts");
+    expect(first).toContain("Ownership changes: 1 active, 0 released");
+    expect(first).toContain('coordination_note_list({cwd: "/repo"})');
+    expect(first).not.toContain("src/parser.ts");
+    expect(first).not.toContain("refactoring parser");
+    expect(first).not.toContain("sess-b");
 
     // Same roster again — nothing new, no injection.
     expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
@@ -81,8 +159,10 @@ describe("coordination note injection dedup", () => {
     // Material change: a second author appears — inject.
     await store.create({ kind: "working", message: "migrating schema", cwd: "/repo", paths: ["db/migration.sql"], authorHarness: "codex", authorSessionId: "sess-c", source: "manual" });
     const second = await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" });
-    expect(second).toContain("db/migration.sql");
-    expect(second).toContain("sess-c");
+    expect(second).toContain("Ownership changes: 1 active, 0 released");
+    expect(second).not.toContain("db/migration.sql");
+    expect(second).not.toContain("sess-c");
+    expect(second).not.toContain("migrating schema");
   });
 
   it("shares the dedup slot across channels: the peers roster does not repeat the notes block", async () => {
@@ -132,6 +212,42 @@ describe("coordination note injection dedup", () => {
     expect(active).toContain("Do not edit the migration until the review completes");
     expect(active).toContain("db/migration.sql");
     expect(active).not.toContain("automatic file activity");
+  });
+
+  it("summarizes mixed hook and manual working notes but keeps avoid decisions actionable", async () => {
+    const store = await freshStore();
+    await store.create({ kind: "working", message: "shell wrote /dev/null details", cwd: "/repo", paths: ["src/auto.ts"], authorHarness: "codex", authorSessionId: "hook-uuid", source: "hook" });
+    await store.create({ kind: "working", message: "long manual task prose", cwd: "/repo", paths: ["private/path.ts"], authorHarness: "zcode", authorSessionId: "manual-uuid", source: "manual" });
+
+    const working = await store.renderForSession({ id: "reader", harness: "codex", cwd: "/repo" });
+    expect(working).toContain("Ownership changes: 2 active, 0 released");
+    expect(working).toContain('coordination_note_list({cwd: "/repo"})');
+    expect(working).not.toContain("/dev/null");
+    expect(working).not.toContain("private/path.ts");
+    expect(working).not.toContain("hook-uuid");
+    expect(working).not.toContain("manual-uuid");
+    expect(working).not.toContain("long manual task prose");
+    expect(working).not.toContain("Details: coordination_note_get");
+
+    const avoid = await store.create({ kind: "avoid", message: "Do not change the migration yet", cwd: "/repo", paths: ["db/migration.sql"], authorHarness: "codex", authorSessionId: "owner", source: "manual" });
+    const actionable = await store.renderForSession({ id: "reader", harness: "codex", cwd: "/repo" });
+    expect(actionable).toContain("Do not change the migration yet");
+    expect(actionable).toContain("db/migration.sql");
+    expect(actionable).toContain(avoid.id);
+  });
+
+  it("reports released working ownership by count without exposing previous roster details", async () => {
+    const store = await freshStore();
+    const note = await store.create({ kind: "working", message: "private task text", cwd: "/repo", paths: ["secret/path.ts"], authorSessionId: "owner-uuid", source: "manual" });
+    expect(await store.renderForSession({ id: "reader", harness: "codex", cwd: "/repo" })).toContain("Ownership changes: 1 active, 0 released");
+    await store.delete(note.id, "owner-uuid");
+    const released = await store.renderForSession({ id: "reader", harness: "codex", cwd: "/repo" });
+    expect(released).toContain("Ownership changes: 0 active, 1 released");
+    expect(released).toContain('coordination_note_list({cwd: "/repo"})');
+    expect(released).not.toContain("secret/path.ts");
+    expect(released).not.toContain("private task text");
+    expect(released).not.toContain("owner-uuid");
+    expect(released).not.toContain("Details: coordination_note_get");
   });
 
   it("shows a hook reservation promoted to avoid immediately in active context", async () => {
@@ -189,8 +305,11 @@ describe("coordination note injection dedup", () => {
     await store.reservePaths({ harness: "zcode", sessionId: "sess-a", cwd: "/repoB", paths: ["b2.ts"] });
 
     const turn = await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repoA" });
-    expect(turn).toContain("repoA work");
-    expect(turn).toContain("repoB work");
+    expect(turn).toContain("Ownership changes: 1 active, 0 released");
+    expect(turn).toContain('coordination_note_list({cwd: "/repoA"})');
+    expect(turn).toContain('coordination_note_list({cwd: "/repoB"})');
+    expect(turn).not.toContain("repoA work");
+    expect(turn).not.toContain("repoB work");
     expect(turn).toContain('board="repoB"');
   });
 

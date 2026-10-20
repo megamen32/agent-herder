@@ -8,7 +8,7 @@ import {MeshDeliveryLedger} from "./delivery-ledger.js";
 import {inventoryHarnesses} from "./inventory.js";
 import {coordinationNotes,type CoordinationNoteStore} from "../coordination-notes.js";
 export interface HarnessMeshCapability {harness:string;discovery:"available"|"unavailable";delivery:"available"|"unsupported";reason?:string}
-type Dependencies={hostId?:string;adapters:Map<string,HarnessAdapter>;send?:(args:Record<string,unknown>)=>Promise<unknown>;ledgerPath?:string;readDeadlineMs?:number;projectStore?:Pick<CoordinationNoteStore,"activeWorkspaceForSession">};
+type Dependencies={hostId?:string;adapters:Map<string,HarnessAdapter>;send?:(args:Record<string,unknown>)=>Promise<unknown>;ledgerPath?:string;readDeadlineMs?:number;projectStore?:Pick<CoordinationNoteStore,"activeWorkspaceForSession"> & Partial<Pick<CoordinationNoteStore,"activeWorkspaceObservation">>};
 export class LocalHarnessMesh {
  readonly hostId:string;
  private readonly ids=new Map<string,string>();
@@ -36,8 +36,10 @@ export class LocalHarnessMesh {
     if(receipt?.exhaustive!==true||rows.length>adapterLimit||receipt?.reason==="bounded_native_page")complete=false;
     if(rows.length>adapterLimit||receipt?.reason==="bounded_native_page"||adapterLimit<limit&&receipt?.exhaustive!==true)limited=true;
     for(const row of rows.slice(0,adapterLimit)){
-     const activeCwd=(this.deps.projectStore??coordinationNotes).activeWorkspaceForSession(row.id);
-     const projected=activeCwd?{...row,cwd:activeCwd,meta:{...row.meta,launchCwd:row.meta?.launchCwd??row.cwd,activeCwd,projectSource:"coordination_activity"}}:row;
+     const store=this.deps.projectStore??coordinationNotes;
+     const workspace=await store.activeWorkspaceObservation?.(row.id);
+     const activeCwd=workspace?.cwd??store.activeWorkspaceForSession(row.id);
+     const projected=activeCwd?{...row,cwd:activeCwd,meta:{...row.meta,launchCwd:row.meta?.launchCwd??row.cwd,activeCwd,workspaceHostId:workspace?.hostId??this.hostId,workspaceExpiresAt:workspace?.expiresAt,projectSource:workspace?.source??"coordination_activity"}}:row;
      const session=compactSession(this.hostId,projected);sessions.push(session);freshIds.set(addressKey(session.address),row.id);
     }
     // Existing API implementations do not all provide native admission proof.

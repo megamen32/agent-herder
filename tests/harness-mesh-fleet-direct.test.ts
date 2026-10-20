@@ -38,6 +38,14 @@ describe('owner direct route local logic only',()=>{
  it('cannot route arbitrary hosts or native tools',()=>{
   const t=new FleetDirectTransport([peer]);expect(()=>t.schema('mcp:shell:foreign:AgentHerder')).toThrow('direct_target');expect(()=>t.call('mcp:shell:roomhacker-server-88:AgentHerder','shell_exec',{})).toThrow('direct_tool');
  });
+ it('routes bounded mesh and workspace calls without allowing forged source hosts',async()=>{
+  const t=new FleetDirectTransport([peer]);
+  await t.call('mcp:shell:roomhacker-server-88:AgentHerder','workspace_probe',{cwd:'/repo'});
+  await t.call('mcp:shell:roomhacker-server-88:AgentHerder','mesh_deliver',{sender:{hostId:state.host},inputId:'once'});
+  expect(state.spawns.at(-1).body.params.name).toBe('mesh_deliver');
+  expect(()=>t.call('mcp:shell:roomhacker-server-88:AgentHerder','mesh_deliver',{sender:{hostId:'forged'}})).toThrow('direct_sender_host_mismatch');
+  expect(()=>t.call('mcp:shell:roomhacker-server-88:AgentHerder','workspace_reserve',{owner:{hostId:'forged'}})).toThrow('direct_sender_host_mismatch');
+ });
  it('mutation requires exact durable receiver intent and never forwards retryable raw create_session',async()=>{
   const t=new FleetDirectTransport([peer]);expect(()=>t.call('mcp:shell:roomhacker-server-88:AgentHerder','create_session',{})).toThrow('direct_create_identity');
   await t.call('mcp:shell:roomhacker-server-88:AgentHerder','create_session',{harness:'codex',name:'empty',cwd:'/home/roomhacker'},'a'.repeat(64));expect(state.spawns[0].body.params.name).toBe('fleet_create_session');expect(state.spawns[0].body.params.arguments.inputId).toBe('a'.repeat(64));

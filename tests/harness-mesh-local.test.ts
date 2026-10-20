@@ -9,6 +9,14 @@ import {coordinationNotes} from "../src/coordination-notes.js";
 import {randomUUID} from "node:crypto";
 const base={id:"n",harness:"codex",status:"running",cwd:"/launch",title:"t",lastActivity:new Date().toISOString(),needsPermission:false,meta:{activeCwd:"/actual",launchCwd:"/launch",projectSource:"native"}};
 describe("local mesh capabilities (focused integration; expected 5s, maximum 30s)",()=>{
+ it("keeps the native100 address while projecting a declared workspace on88",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"herder-remote-mesh-"));try{
+   const store=new CoordinationNoteStore(join(dir,"notes.json"));await store.declareWorkspace({sessionId:"n",harness:"codex",hostId:"host88",cwd:"/remote/project"});
+   const adapter={listSessions:async()=>[{...base,meta:{},cwd:"/launch100"}],isReady:()=>true};
+   const snapshot=await new LocalHarnessMesh({hostId:"host100",projectStore:store,adapters:new Map([["codex",adapter]]) as any}).snapshot(3);
+   expect(snapshot.sessions[0]).toMatchObject({address:{hostId:"host100",nativeSessionId:"n"},project:{launchCwd:"/launch100",currentCwd:"/remote/project",hostId:"host88",source:"declared"}});
+  }finally{await rm(dir,{recursive:true,force:true});}
+ });
  it("marks an empty/disconnected adapter registry partial instead of complete",async()=>{
   const empty=new LocalHarnessMesh({hostId:"h",adapters:new Map()});expect((await empty.snapshot(1)).complete).toBe(false);
   const disconnected={type:"codex",lazyStart:true,isReady:()=>false,listSessions:vi.fn()};
@@ -36,7 +44,7 @@ describe("local mesh capabilities (focused integration; expected 5s, maximum 30s
    const store=new CoordinationNoteStore(join(dir,"notes.json"),new HerderEventBus());await store.heartbeatSession({sessionId:"n",cwd:"/work"});
    const row={...base,meta:undefined,cwd:"/launch"};const adapter={type:"codex",listSessions:async()=>[row],isReady:()=>true};
    const m=new LocalHarnessMesh({hostId:"h",adapters:new Map([['codex',adapter]]) as any,projectStore:store});
-   expect((await m.snapshot()).sessions[0]?.project).toEqual({launchCwd:"/launch",currentCwd:"/work",source:"coordination_activity"});
+   expect((await m.snapshot()).sessions[0]?.project).toEqual({launchCwd:"/launch",currentCwd:"/work",source:"coordination_activity",hostId:store.localHostId});
   }finally{await rm(dir,{recursive:true,force:true});}
  });
  it("returns durable admission before reading a disappeared or stopped target",async()=>{

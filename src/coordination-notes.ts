@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import { homedir } from "node:os";
+import { basename, dirname, isAbsolute, relative, resolve, sep, posix } from "node:path";
+import { homedir, hostname } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { AgentSession } from "./types/index.js";
 import { herderEvents, type HerderEventBus } from "./herder-events.js";
@@ -13,6 +13,7 @@ export interface CoordinationNote {
   kind: CoordinationNoteKind;
   message: string;
   cwd: string;
+  hostId: string;
   paths: string[];
   authorHarness?: string;
   authorSessionId: string;
@@ -23,8 +24,10 @@ export interface CoordinationNote {
   expiresAt: string;
 }
 
-type NoteFile = { version: 1; notes: CoordinationNote[] };
-export type CoordinationNoteCreate = Omit<CoordinationNote, "id" | "createdAt" | "updatedAt" | "expiresAt"> & { ttlSeconds?: number };
+export interface WorkspaceDeclaration { sessionId: string; harness: string; hostId: string; cwd: string; expiresAt: string }
+export interface WorkspaceObservation { hostId: string; cwd: string; source: "declared" | "coordination_activity"; expiresAt?: string }
+type NoteFile = { version: 1; notes: CoordinationNote[]; workspaceDeclarations?: WorkspaceDeclaration[] };
+export type CoordinationNoteCreate = Omit<CoordinationNote, "id" | "createdAt" | "updatedAt" | "expiresAt" | "hostId"> & { hostId?: string; ttlSeconds?: number };
 export interface CoordinationConflict {
   path: string;
   note: CoordinationNote;
@@ -53,40 +56,44 @@ export class CoordinationNoteStore {
   /** sessionId -> board cwd -> last activity ms. Tracks every workspace a
    * session has actually touched, so turn-start awareness covers all of
    * them, not just the launch directory. */
-  private presence = new Map<string, Map<string, number>>();
+  private presence = new Map<string, Map<string, { hostId: string; cwd: string; at: number }>>();
+  private workspaceCache = new Map<string, WorkspaceDeclaration>();
+  readonly localHostId = hostname();
   constructor(private readonly filePath = defaultCoordinationNotePath(), private readonly events: HerderEventBus = herderEvents) {}
 
   private publishNote(note: CoordinationNote, action: "created" | "updated" | "deleted" | "changed"): void {
     this.events.publish({ kind: "coordination", uri: "herder://coordination", action, id: note.id });
     this.events.publish({ kind: "coordination", uri: coordinationNoteResourceUri(note.id), action, id: note.id });
-    this.events.publish({ kind: "coordination", uri: coordinationWorkspaceResourceUri(note.cwd), action: "changed", id: note.id });
+    this.events.publish({ kind: "coordination", uri: coordinationWorkspaceResourceUri(workspaceResourcePath(note.hostId, note.cwd, this.localHostId)), action: "changed", id: note.id });
   }
 
-  private publishPresence(sessionId: string, cwd?: string, action: "created" | "updated" | "deleted" | "changed" = "changed"): void {
+  private publishPresence(sessionId: string, cwd?: string, hostId = this.localHostId, action: "created" | "updated" | "deleted" | "changed" = "changed"): void {
     this.events.publish({ kind: "presence", uri: "herder://presence", action: "changed", id: sessionId });
     this.events.publish({ kind: "presence", uri: presenceSessionResourceUri(sessionId), action, id: sessionId });
-    if (cwd) this.events.publish({ kind: "presence", uri: presenceWorkspaceResourceUri(cwd), action: "changed", id: sessionId });
+    if (cwd) this.events.publish({ kind: "presence", uri: presenceWorkspaceResourceUri(workspaceResourcePath(hostId, cwd, this.localHostId)), action: "changed", id: sessionId });
   }
 
-  private touchPresence(sessionId: string, board: string): void {
-    const boards = this.presence.get(sessionId) ?? new Map<string, number>();
-    boards.set(board, Date.now());
+  private touchPresence(sessionId: string, hostId: string, board: string): void {
+    const boards = this.presence.get(sessionId) ?? new Map<string, { hostId: string; cwd: string; at: number }>();
+    boards.set(workspaceKey(hostId, board), { hostId, cwd: board, at: Date.now() });
     this.presence.set(sessionId, boards);
   }
 
   /** Boards a session has touched recently, launch directory first. */
-  private boardsForSession(sessionId: string, fallbackCwd: string): string[] {
+  private boardsForSession(sessionId: string, fallbackCwd: string, fallbackHostId = this.localHostId): Array<{ hostId: string; cwd: string }> {
     const now = Date.now();
     const boards = this.presence.get(sessionId);
-    const recent: string[] = [];
+    const recent: Array<{ hostId: string; cwd: string }> = [];
     if (boards) {
-      for (const [board, seen] of [...boards.entries()].sort((x, y) => y[1] - x[1])) {
-        if (now - seen > 24 * 60 * 60 * 1000) { boards.delete(board); continue; }
-        recent.push(board);
+      for (const [key, board] of [...boards.entries()].sort((x, y) => y[1].at - x[1].at)) {
+        if (now - board.at > 24 * 60 * 60 * 1000) { boards.delete(key); continue; }
+        recent.push({ hostId: board.hostId, cwd: board.cwd });
       }
     }
-    const fallback = resolve(fallbackCwd);
-    return [fallback, ...recent.filter((board) => board !== fallback)].slice(0, 10);
+    const fallback = { hostId: fallbackHostId, cwd: normalizeWorkspaceCwd(fallbackCwd, fallbackHostId, this.localHostId) };
+    const unique = new Map<string, { hostId: string; cwd: string }>([[workspaceKey(fallback.hostId, fallback.cwd), fallback]]);
+    for (const board of recent) unique.set(workspaceKey(board.hostId, board.cwd), board);
+    return [...unique.values()].slice(0, 10);
   }
 
   async create(input: CoordinationNoteCreate): Promise<CoordinationNote> {
@@ -94,13 +101,15 @@ export class CoordinationNoteStore {
       const file = await this.readAndPrune();
       const now = new Date();
       const ttl = boundedTtl(input.ttlSeconds);
-      const cwd = canonicalCwd(input.cwd);
+      const hostId = normalizeHostId(input.hostId ?? this.localHostId);
+      const cwd = normalizeWorkspaceCwd(input.cwd, hostId, this.localHostId);
       const note: CoordinationNote = {
         id: randomUUID(),
         kind: input.kind,
         message: boundedMessage(input.message),
         cwd,
-        paths: normalizePathsForCwd(input.paths, cwd),
+        hostId,
+        paths: normalizePathsForCwd(input.paths, cwd, hostId !== this.localHostId),
         ...(input.authorHarness ? { authorHarness: input.authorHarness } : {}),
         authorSessionId: requiredText(input.authorSessionId, "authorSessionId", 256),
         ...(input.source ? { source: input.source } : {}),
@@ -110,20 +119,22 @@ export class CoordinationNoteStore {
         expiresAt: new Date(now.getTime() + ttl * 1000).toISOString(),
       };
       file.notes.push(note);
-      if (note.kind === "working") this.touchPresence(note.authorSessionId, cwd);
+      if (note.kind === "working") this.touchPresence(note.authorSessionId, hostId, cwd);
       await this.write(file);
       this.publishNote(note, "created");
-      this.publishPresence(note.authorSessionId, note.cwd);
+      this.publishPresence(note.authorSessionId, note.cwd, note.hostId);
       return note;
     });
   }
 
-  async list(filters: { cwd?: string; path?: string; authorSessionId?: string; includeExpired?: boolean } = {}): Promise<CoordinationNote[]> {
+  async list(filters: { cwd?: string; hostId?: string; path?: string; authorSessionId?: string; includeExpired?: boolean } = {}): Promise<CoordinationNote[]> {
     return this.serial(async () => {
       const file = filters.includeExpired ? await this.read() : await this.readAndPrune();
-      const cwd = filters.cwd ? canonicalCwd(filters.cwd) : undefined;
+      const hostId = normalizeHostId(filters.hostId ?? this.localHostId);
+      const cwd = filters.cwd ? normalizeWorkspaceCwd(filters.cwd, hostId, this.localHostId) : undefined;
       const path = filters.path?.trim();
       return file.notes
+        .filter((note) => note.hostId === hostId)
         .filter((note) => !filters.authorSessionId || note.authorSessionId === filters.authorSessionId)
         .filter((note) => !cwd || sameWorkspace(note.cwd, cwd))
         .filter((note) => !path || note.paths.length === 0 || note.paths.some((candidate) => pathMatches(candidate, path)))
@@ -132,8 +143,7 @@ export class CoordinationNoteStore {
   }
 
   async get(id: string): Promise<CoordinationNote | null> {
-    const notes = await this.list();
-    return notes.find((note) => note.id === id) ?? null;
+    return this.serial(async () => (await this.readAndPrune()).notes.find((note) => note.id === id) ?? null);
   }
 
   async update(id: string, authorSessionId: string, patch: CoordinationNoteUpdate): Promise<CoordinationNote> {
@@ -144,12 +154,12 @@ export class CoordinationNoteStore {
       assertOwner(note, authorSessionId);
       if (patch.kind) note.kind = patch.kind;
       if (patch.message !== undefined) note.message = boundedMessage(patch.message);
-      if (patch.paths !== undefined) note.paths = normalizePathsForCwd(patch.paths, note.cwd);
+      if (patch.paths !== undefined) note.paths = normalizePathsForCwd(patch.paths, note.cwd, note.hostId !== this.localHostId);
       if (patch.ttlSeconds !== undefined) note.expiresAt = new Date(Date.now() + boundedTtl(patch.ttlSeconds) * 1000).toISOString();
       note.updatedAt = new Date().toISOString();
       await this.write(file);
       this.publishNote(note, "updated");
-      this.publishPresence(note.authorSessionId, note.cwd);
+      this.publishPresence(note.authorSessionId, note.cwd, note.hostId);
       return note;
     });
   }
@@ -163,31 +173,32 @@ export class CoordinationNoteStore {
       const [removed] = file.notes.splice(index, 1);
       await this.write(file);
       this.publishNote(removed, "deleted");
-      this.publishPresence(removed.authorSessionId, removed.cwd);
+      this.publishPresence(removed.authorSessionId, removed.cwd, removed.hostId);
       return true;
     });
   }
 
-  async reservePaths(input: { harness: string; sessionId: string; cwd: string; paths: string[]; ttlSeconds?: number }): Promise<CoordinationReservationResult> {
+  async reservePaths(input: { harness: string; sessionId: string; cwd: string; hostId?: string; paths: string[]; ttlSeconds?: number }): Promise<CoordinationReservationResult> {
     return this.serial(async () => {
       const file = await this.readAndPrune();
-      const cwd = canonicalCwd(input.cwd);
-      this.touchPresence(input.sessionId, cwd);
-      const paths = normalizePathsForCwd(input.paths, cwd);
+      const hostId = normalizeHostId(input.hostId ?? this.localHostId);
+      const cwd = normalizeWorkspaceCwd(input.cwd, hostId, this.localHostId);
+      this.touchPresence(input.sessionId, hostId, cwd);
+      const paths = normalizePathsForCwd(input.paths, cwd, hostId !== this.localHostId).filter(path => !isDeviceSink(path));
       const ttl = boundedTtl(input.ttlSeconds ?? autoTtlSeconds());
       const now = new Date();
       const conflicts: CoordinationConflict[] = [];
       const reservations: CoordinationNote[] = [];
       for (const path of paths) {
         for (const note of file.notes) {
-          if (note.authorSessionId === input.sessionId || !sameWorkspace(note.cwd, cwd)) continue;
+          if (note.authorSessionId === input.sessionId || note.hostId !== hostId || !sameWorkspace(note.cwd, cwd)) continue;
           if (note.paths.some((candidate) => pathMatches(candidate, path))) conflicts.push({ path, note });
         }
-        const activityKey = `hook:${input.sessionId}:${path}`;
+        const activityKey = `hook:${JSON.stringify([hostId, input.sessionId, cwd, path])}`;
         let note = file.notes.find((candidate) => candidate.activityKey === activityKey);
         if (!note) {
           note = {
-            id: randomUUID(), kind: "working", message: `Auto-reserved after file activity: ${path}`, cwd, paths: [path],
+            id: randomUUID(), kind: "working", message: `Auto-reserved after file activity: ${path}`, cwd, hostId, paths: [path],
             authorHarness: input.harness, authorSessionId: requiredText(input.sessionId, "sessionId", 256),
             source: "hook", activityKey, createdAt: now.toISOString(), updatedAt: now.toISOString(),
             expiresAt: new Date(now.getTime() + ttl * 1000).toISOString(),
@@ -203,23 +214,24 @@ export class CoordinationNoteStore {
       if (paths.length > 0) {
         await this.write(file);
         this.events.publish({ kind: "coordination", uri: "herder://coordination", action: "changed", id: input.sessionId });
-        this.events.publish({ kind: "coordination", uri: coordinationWorkspaceResourceUri(cwd), action: "changed", id: input.sessionId });
-        this.publishPresence(input.sessionId, cwd);
+        this.events.publish({ kind: "coordination", uri: coordinationWorkspaceResourceUri(workspaceResourcePath(hostId, cwd, this.localHostId)), action: "changed", id: input.sessionId });
+        this.publishPresence(input.sessionId, cwd, hostId);
       }
       return { reservations, conflicts: dedupeConflicts(conflicts) };
     });
   }
 
-  async heartbeatSession(input: { sessionId: string; cwd: string; ttlSeconds?: number }): Promise<CoordinationNote[]> {
+  async heartbeatSession(input: { sessionId: string; cwd: string; hostId?: string; ttlSeconds?: number }): Promise<CoordinationNote[]> {
     return this.serial(async () => {
       const file = await this.readAndPrune();
-      const cwd = canonicalCwd(input.cwd);
-      this.touchPresence(input.sessionId, cwd);
+      const hostId = normalizeHostId(input.hostId ?? this.localHostId);
+      const cwd = normalizeWorkspaceCwd(input.cwd, hostId, this.localHostId);
+      this.touchPresence(input.sessionId, hostId, cwd);
       const ttl = boundedTtl(input.ttlSeconds ?? autoTtlSeconds());
       const now = new Date();
       const touched: CoordinationNote[] = [];
       for (const note of file.notes) {
-        if (note.source !== "hook" || note.authorSessionId !== input.sessionId || !sameWorkspace(note.cwd, cwd)) continue;
+        if (note.source !== "hook" || note.authorSessionId !== input.sessionId || note.hostId !== hostId || !sameWorkspace(note.cwd, cwd)) continue;
         note.updatedAt = now.toISOString();
         note.expiresAt = new Date(now.getTime() + ttl * 1000).toISOString();
         touched.push(note);
@@ -227,17 +239,18 @@ export class CoordinationNoteStore {
       if (touched.length > 0) {
         await this.write(file);
         this.events.publish({ kind: "coordination", uri: "herder://coordination", action: "changed", id: input.sessionId });
-        this.events.publish({ kind: "coordination", uri: coordinationWorkspaceResourceUri(cwd), action: "changed", id: input.sessionId });
-        this.publishPresence(input.sessionId, cwd);
+        this.events.publish({ kind: "coordination", uri: coordinationWorkspaceResourceUri(workspaceResourcePath(hostId, cwd, this.localHostId)), action: "changed", id: input.sessionId });
+        this.publishPresence(input.sessionId, cwd, hostId);
       }
       return touched;
     });
   }
 
-  async findConflicts(input: { sessionId: string; cwd: string; paths: string[] }): Promise<CoordinationConflict[]> {
-    const cwd = canonicalCwd(input.cwd);
-    const paths = normalizePathsForCwd(input.paths, cwd);
-    const notes = await this.list({ cwd });
+  async findConflicts(input: { sessionId: string; cwd: string; hostId?: string; paths: string[] }): Promise<CoordinationConflict[]> {
+    const hostId = normalizeHostId(input.hostId ?? this.localHostId);
+    const cwd = normalizeWorkspaceCwd(input.cwd, hostId, this.localHostId);
+    const paths = normalizePathsForCwd(input.paths, cwd, hostId !== this.localHostId).filter(path => !isDeviceSink(path));
+    const notes = await this.list({ hostId, cwd });
     const conflicts: CoordinationConflict[] = [];
     for (const path of paths) for (const note of notes) {
       if (note.authorSessionId === input.sessionId) continue;
@@ -246,9 +259,14 @@ export class CoordinationNoteStore {
     return dedupeConflicts(conflicts);
   }
 
-  async renderForSession(session: { id: string; harness: string; cwd: string }): Promise<string | null> {
+  async renderForSession(session: { id: string; harness: string; cwd: string; hostId?: string }): Promise<string | null> {
     const blocks: string[] = [];
-    for (const board of this.boardsForSession(session.id, session.cwd)) {
+    const declared = await this.activeWorkspaceObservation(session.id);
+    const fallbackHost = session.hostId ?? this.localHostId;
+    const boards = declared
+      ? [{ hostId: declared.hostId, cwd: declared.cwd }, ...this.boardsForSession(session.id, declared.cwd, declared.hostId).filter((board) => board.hostId === declared.hostId && !sameWorkspace(board.cwd, declared.cwd))]
+      : this.boardsForSession(session.id, session.cwd, fallbackHost);
+    for (const board of boards) {
       const block = await this.renderBoard(session, board, "agent-herder-coordination");
       if (block) blocks.push(block);
     }
@@ -259,17 +277,19 @@ export class CoordinationNoteStore {
    * Passive file-activity signal. Full current owners and paths remain in
    * coordination_note_list; this avoids repeating a roster on every edit.
    */
-  async renderWorkspacePeers(session: { id: string; harness: string; cwd: string }): Promise<string | null> {
-    return this.renderBoard(session, session.cwd, "agent-herder-repo-peers");
+  async renderWorkspacePeers(session: { id: string; harness: string; cwd: string; hostId?: string }): Promise<string | null> {
+    const hostId = session.hostId ?? this.localHostId;
+    const cwd = session.cwd;
+    return this.renderBoard(session, { hostId, cwd }, "agent-herder-repo-peers");
   }
 
   private async renderBoard(
     session: { id: string; harness: string },
-    board: string,
+    board: { hostId: string; cwd: string },
     tag: string,
   ): Promise<string | null> {
-    const notes = (await this.list({ cwd: board })).filter((note) => note.authorSessionId !== session.id);
-    const key = `${session.id}#${board}`;
+    const notes = (await this.list({ cwd: board.cwd, hostId: board.hostId })).filter((note) => note.authorSessionId !== session.id);
+    const key = `${session.id}#${workspaceKey(board.hostId, board.cwd)}`;
     const previous = this.injectionState.get(key);
     const fingerprint = (note: CoordinationNote) => JSON.stringify({ authorSessionId: note.authorSessionId, authorHarness: note.authorHarness || "agent", kind: note.kind, message: note.message, paths: note.paths, source: note.source || "manual" });
     const known = previous?.notes ?? new Map<string, string>();
@@ -280,7 +300,7 @@ export class CoordinationNoteStore {
       const removed = [...known.entries()].filter(([id, value]) => snapshotSource(value) === "hook" && !passiveIds.has(id));
       if (changed.length === 0 && removed.length === 0) return null;
       if (previous && Date.now() - previous.at < 60_000 && changed.length > 0 && removed.length === 0) return null;
-      const output = `<agent-herder-repo-peers board="${basename(board)}">Workspace ownership changed. Check current ownership before editing: coordination_note_list({cwd: ${JSON.stringify(board)}}).</agent-herder-repo-peers>`;
+      const output = `<agent-herder-repo-peers board="${displayWorkspace(board, this.localHostId)}">Ownership changes: ${changed.length} active, ${removed.length} released. Read coordination_note_list(${noteListCall(board, this.localHostId)}).</agent-herder-repo-peers>`;
       const acknowledged = new Map(known);
       // The note list is the authoritative full snapshot. Acknowledge all hook
       // ownership notes represented by that snapshot, while leaving manual
@@ -292,10 +312,19 @@ export class CoordinationNoteStore {
     }
     if (notes.length === 0) {
       if (!previous?.notes?.size) return null;
-      const lines = [...previous.notes.entries()].map(([id, value]) => `- Ownership released author=${releasedAuthor(value)} noteId=${id}.`);
-      const output = boundedCoordinationContext([`<${tag} board="${basename(board)}">`, ...lines, "Details: coordination_note_get(noteId).", `Workspace: ${coordinationWorkspaceResourceUri(board)}</${tag}>`].join("\n"));
+      const oldNotes = [...previous.notes.entries()];
+      const releasedWorking = oldNotes.filter(([, value]) => snapshotKind(value) === "working");
+      const releasedActionable = oldNotes.filter(([, value]) => snapshotKind(value) !== "working");
+      const lines = releasedWorking.length > 0
+        ? [`- Ownership changes: 0 active, ${releasedWorking.length} released. Read coordination_note_list(${noteListCall(board, this.localHostId)}).`]
+        : [];
+      lines.push(...releasedActionable.map(([id, value]) => `- Ownership released ${releasedAuthor(value)} noteId=${id}.`));
+      const actionableDetails = releasedActionable.length > 0
+        ? ["Details: coordination_note_get(noteId).", `Workspace: ${coordinationWorkspaceResourceUri(workspaceResourcePath(board.hostId, board.cwd, this.localHostId))}`]
+        : [];
+      const output = boundedCoordinationContext([`<${tag} board="${displayWorkspace(board, this.localHostId)}">`, ...lines, ...actionableDetails, `</${tag}>`].join("\n"));
       const delivered = new Map(previous.notes);
-      for (const [id] of previous.notes) if (output.includes(`noteId=${id}`)) delivered.delete(id);
+      for (const [id, value] of previous.notes) if (snapshotKind(value) === "working" || output.includes(`noteId=${id}`)) delivered.delete(id);
       this.injectionState.set(key, { signature:"", at:delivered.size ? previous.at : Date.now(), notes:delivered });
       return output;
     }
@@ -305,26 +334,30 @@ export class CoordinationNoteStore {
     const removed = [...known.entries()].filter(([id]) => !notes.some(note => note.id === id));
     if (changed.length === 0 && removed.length === 0) return null;
     if (previous && Date.now() - previous.at < 60_000 && changed.length > 0 && changed.every(note => note.source === "hook" && note.kind === "working") && removed.length === 0) return null;
-    const declared = (await this.list({ cwd: board, authorSessionId: session.id })).some((note) => note.source !== "hook");
-    const declaration = previous || declared
-      ? []
-      : ["You have not declared your own task yet — do it now with one note (Agent Herder coordination_note_create: kind=\"working\", message=<one line: what you are doing>, paths=<files you own>) and update it when your goal changes."];
+    const changedWorking = changed.filter(note => note.kind === "working");
+    const changedActionable = changed.filter(note => note.kind !== "working");
+    const removedWorking = removed.filter(([, value]) => snapshotKind(value) === "working");
+    const removedActionable = removed.filter(([, value]) => snapshotKind(value) !== "working");
+    const workingChanged = changedWorking.length > 0 || removedWorking.length > 0;
+    const lines: string[] = [];
+    if (workingChanged) lines.push(`- Ownership changes: ${changedWorking.length} active, ${removedWorking.length} released. Read coordination_note_list(${noteListCall(board, this.localHostId)}).`);
+    lines.push(...removedActionable.map(([id, value]) => `- Ownership released ${releasedAuthor(value)} noteId=${id}.`));
+    lines.push(...changedActionable.map((note) => {
+      const paths = note.paths.length ? ` paths=${note.paths.slice(0, 4).join(",").slice(0, 90)}` : "";
+      const author = `${note.authorHarness || "agent"}:${note.authorSessionId}`;
+      return `- [${note.kind}] author=${author}${paths} noteId=${note.id} :: ${note.message.slice(0, Math.max(40, Math.min(100, Math.floor(1600 / Math.max(1,changedActionable.length)))))}`;
+    }));
     const output = boundedCoordinationContext([
-      `<agent-herder-coordination board="${basename(board)}">`,
-      ...(previous ? [] : [`Coordination changes in ${basename(board)}. Respect ownership. Use send_message only for necessary decisions, conflicts or verified results; no routine ACK replies. Details: ${coordinationWorkspaceResourceUri(board)}`]),
-      ...declaration,
-      ...removed.map(([id, value]) => `- Ownership released author=${releasedAuthor(value)} noteId=${id}.`),
-      ...changed.map((note) => {
-        const paths = note.paths.length ? ` paths=${note.paths.slice(0, 4).join(",").slice(0, 90)}` : "";
-        const author = `${note.authorHarness || "agent"}:${note.authorSessionId}`;
-        return `- [${note.kind}] author=${author}${paths} noteId=${note.id} :: ${note.message.slice(0, Math.max(40, Math.min(100, Math.floor(1600 / Math.max(1,changed.length)))))}`;
-      }),
-      "Details: coordination_note_get(noteId).",
+      `<agent-herder-coordination board="${displayWorkspace(board, this.localHostId)}">`,
+      ...lines,
+      ...(changedActionable.length > 0 || removedActionable.length > 0
+        ? ["Details: coordination_note_get(noteId).", `Workspace: ${coordinationWorkspaceResourceUri(workspaceResourcePath(board.hostId, board.cwd, this.localHostId))}`]
+        : []),
       "</agent-herder-coordination>",
     ].join("\n"));
-    const renderedNotes = new Set(changed.filter(note => output.includes(`noteId=${note.id}`)).map(note=>note.id));
-    const renderedRemoved = new Set(removed.filter(([id])=>output.includes(`noteId=${id}`)).map(([id])=>id));
-    this.saveInjectionState(key, known, changed, removed.filter(([id])=>renderedRemoved.has(id)), renderedNotes, notes, fingerprint);
+    const renderedNotes = new Set(changed.filter(note => note.kind === "working" ? workingChanged : output.includes(`noteId=${note.id}`)).map(note=>note.id));
+    const renderedRemoved = new Set(removed.filter(([id, value]) => snapshotKind(value) === "working" ? workingChanged : output.includes(`noteId=${id}`)).map(([id])=>id));
+    this.saveInjectionState(key, known, changed.filter(note => renderedNotes.has(note.id)), removed.filter(([id])=>renderedRemoved.has(id)), renderedNotes, notes, fingerprint);
     return output;
   }
 
@@ -351,12 +384,15 @@ export class CoordinationNoteStore {
       const before = file.notes.length;
       file.notes = file.notes.filter((note) => !(note.authorSessionId === sessionId && note.source === "hook"));
       const removed = before - file.notes.length;
-      if (removed > 0) await this.write(file);
-      const boards = [...(this.presence.get(sessionId)?.keys() ?? [])];
+      const beforeDeclarations = file.workspaceDeclarations?.length ?? 0;
+      file.workspaceDeclarations = (file.workspaceDeclarations ?? []).filter((entry) => entry.sessionId !== sessionId);
+      for (const key of [...this.workspaceCache.keys()]) if (key === sessionId) this.workspaceCache.delete(key);
+      if (removed > 0 || beforeDeclarations !== file.workspaceDeclarations.length) await this.write(file);
+      const boards = [...(this.presence.get(sessionId)?.values() ?? [])];
       this.presence.delete(sessionId);
       if (removed > 0) this.events.publish({ kind: "coordination", uri: "herder://coordination", action: "changed", id: sessionId });
-      this.publishPresence(sessionId, undefined, "deleted");
-      for (const cwd of boards) this.events.publish({ kind: "presence", uri: presenceWorkspaceResourceUri(cwd), action: "changed", id: sessionId });
+      this.publishPresence(sessionId, undefined, this.localHostId, "deleted");
+      for (const board of boards) this.events.publish({ kind: "presence", uri: presenceWorkspaceResourceUri(workspaceResourcePath(board.hostId, board.cwd, this.localHostId)), action: "changed", id: sessionId });
       for (const key of [...this.injectionState.keys()]) {
         if (key.startsWith(`${sessionId}#`)) this.injectionState.delete(key);
       }
@@ -365,31 +401,97 @@ export class CoordinationNoteStore {
   }
 
   activeWorkspaceForSession(sessionId: string): string | undefined {
-    return this.presenceForSession(sessionId)?.boards[0]?.cwd;
+    const now = Date.now();
+    const boards = this.presence.get(sessionId);
+    if (!boards) return undefined;
+    for (const [key, board] of [...boards.entries()].sort((a, b) => b[1].at - a[1].at)) {
+      if (now - board.at > 5 * 60 * 1000) { boards.delete(key); continue; }
+      if (board.hostId === this.localHostId) return board.cwd;
+    }
+    if (!boards.size) this.presence.delete(sessionId);
+    return undefined;
   }
 
-  presenceSnapshot(): Array<{ sessionId: string; boards: Array<{ cwd: string; lastSeenAt: string }> }> {
+  cachedWorkspaceObservation(sessionId: string): WorkspaceObservation | undefined {
+    const declaration = this.workspaceCache.get(sessionId);
+    if (declaration && Date.parse(declaration.expiresAt) > Date.now()) return { hostId: declaration.hostId, cwd: declaration.cwd, source: "declared", expiresAt: declaration.expiresAt };
+    if (declaration) this.workspaceCache.delete(sessionId);
+    const cwd = this.activeWorkspaceForSession(sessionId);
+    return cwd ? { hostId: this.localHostId, cwd, source: "coordination_activity" } : undefined;
+  }
+
+  async activeWorkspaceObservation(sessionId: string): Promise<WorkspaceObservation | undefined> {
+    return this.serial(async () => {
+      const file = await this.readAndPrune();
+      const declaration = file.workspaceDeclarations?.find((entry) => entry.sessionId === requiredText(sessionId, "sessionId", 256));
+      if (declaration && Date.parse(declaration.expiresAt) > Date.now()) {
+        this.workspaceCache.set(sessionId, declaration);
+        return { hostId: declaration.hostId, cwd: declaration.cwd, source: "declared", expiresAt: declaration.expiresAt };
+      }
+      this.workspaceCache.delete(sessionId);
+      const cwd = this.activeWorkspaceForSession(sessionId);
+      return cwd ? { hostId: this.localHostId, cwd, source: "coordination_activity" } : undefined;
+    });
+  }
+
+  async declareWorkspace(input: { sessionId: string; harness: string; hostId?: string; cwd: string; ttlSeconds?: number }): Promise<WorkspaceDeclaration> {
+    return this.serial(async () => {
+      const file = await this.readAndPrune();
+      const sessionId = requiredText(input.sessionId, "sessionId", 256);
+      const harness = requiredText(input.harness, "harness", 64);
+      const hostId = normalizeHostId(input.hostId ?? this.localHostId);
+      const cwd = normalizeWorkspaceCwd(input.cwd, hostId, this.localHostId);
+      const expiresAt = new Date(Date.now() + boundedTtl(input.ttlSeconds) * 1000).toISOString();
+      const declaration = { sessionId, harness, hostId, cwd, expiresAt };
+      file.workspaceDeclarations = (file.workspaceDeclarations ?? []).filter((entry) => entry.sessionId !== sessionId);
+      file.workspaceDeclarations.push(declaration);
+      await this.write(file);
+      this.workspaceCache.set(sessionId, declaration);
+      this.events.publish({ kind: "coordination", uri: "herder://coordination", action: "updated", id: sessionId });
+      this.events.publish({ kind: "coordination", uri: coordinationWorkspaceResourceUri(workspaceResourcePath(hostId, cwd, this.localHostId)), action: "changed", id: sessionId });
+      return declaration;
+    });
+  }
+
+  async clearWorkspace(sessionId: string): Promise<boolean> {
+    return this.serial(async () => {
+      sessionId = requiredText(sessionId, "sessionId", 256);
+      const file = await this.readAndPrune();
+      const before = file.workspaceDeclarations?.length ?? 0;
+      file.workspaceDeclarations = (file.workspaceDeclarations ?? []).filter((entry) => entry.sessionId !== sessionId);
+      const cleared = before !== file.workspaceDeclarations.length;
+      this.workspaceCache.delete(sessionId);
+      if (cleared) {
+        await this.write(file);
+        this.events.publish({ kind: "coordination", uri: "herder://coordination", action: "updated", id: sessionId });
+      }
+      return cleared;
+    });
+  }
+
+  presenceSnapshot(): Array<{ sessionId: string; boards: Array<{ hostId: string; cwd: string; lastSeenAt: string }> }> {
     const now = Date.now();
     for (const [sessionId, boards] of this.presence) {
-      for (const [board, seen] of boards) if (now - seen > 5 * 60 * 1000) boards.delete(board);
+      for (const [board, seen] of boards) if (now - seen.at > 5 * 60 * 1000) boards.delete(board);
       if (!boards.size) this.presence.delete(sessionId);
     }
     return [...this.presence.entries()].map(([sessionId, boards]) => ({
       sessionId,
       boards: [...boards.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([cwd, seen]) => ({ cwd, lastSeenAt: new Date(seen).toISOString() })),
+        .sort((a, b) => b[1].at - a[1].at)
+        .map(([, board]) => ({ hostId: board.hostId, cwd: board.cwd, lastSeenAt: new Date(board.at).toISOString() })),
     }));
   }
 
-  presenceForSession(sessionId: string): { sessionId: string; boards: Array<{ cwd: string; lastSeenAt: string }> } | null {
+  presenceForSession(sessionId: string): { sessionId: string; boards: Array<{ hostId: string; cwd: string; lastSeenAt: string }> } | null {
     return this.presenceSnapshot().find((entry) => entry.sessionId === sessionId) ?? null;
   }
 
-  presenceForWorkspace(cwd: string): Array<{ sessionId: string; lastSeenAt: string }> {
-    const canonical = canonicalCwd(cwd);
+  presenceForWorkspace(cwd: string, hostId = this.localHostId): Array<{ sessionId: string; lastSeenAt: string }> {
+    const canonicalHost = normalizeHostId(hostId);
+    const canonical = normalizeWorkspaceCwd(cwd, canonicalHost, this.localHostId);
     return this.presenceSnapshot()
-      .flatMap((entry) => entry.boards.filter((board) => sameWorkspace(board.cwd, canonical)).map((board) => ({ sessionId: entry.sessionId, lastSeenAt: board.lastSeenAt })))
+      .flatMap((entry) => entry.boards.filter((board) => board.hostId === canonicalHost && sameWorkspace(board.cwd, canonical)).map((board) => ({ sessionId: entry.sessionId, lastSeenAt: board.lastSeenAt })))
       .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
   }
 
@@ -397,13 +499,13 @@ export class CoordinationNoteStore {
    * re-trigger an injection; only the informative content counts. */
   private noteSignature(notes: CoordinationNote[]): string {
     return notes
-      .map((note) => `${note.authorSessionId}|${note.kind}|${note.message}|${note.paths.join(",")}`)
+      .map((note) => `${note.hostId}|${note.cwd}|${note.authorSessionId}|${note.kind}|${note.message}|${note.paths.join(",")}`)
       .sort()
       .join("\n");
   }
 
-  async inject(session: { id: string; harness: string; cwd: string }, message: string): Promise<string> {
-    if (!this.activeWorkspaceForSession(session.id)) await this.heartbeatSession({ sessionId: session.id, cwd: session.cwd });
+  async inject(session: { id: string; harness: string; cwd: string; hostId?: string }, message: string): Promise<string> {
+    if (!this.activeWorkspaceForSession(session.id)) await this.heartbeatSession({ sessionId: session.id, cwd: session.cwd, hostId: session.hostId });
     if (/<agent-herder-(?:coordination|repo-peers)(?:\s|>)/.test(message)) return message;
     const context = await this.renderForSession(session);
     return context ? `${context}\n\n${message}` : message;
@@ -442,9 +544,19 @@ export class CoordinationNoteStore {
   private async read(): Promise<NoteFile> {
     try {
       const parsed = JSON.parse(await readFile(this.filePath, "utf8")) as NoteFile;
-      return { version: 1, notes: Array.isArray(parsed.notes) ? parsed.notes : [] };
+      const notes = (Array.isArray(parsed.notes) ? parsed.notes : []).map((note) => ({ ...note, hostId: normalizeHostId(note.hostId ?? this.localHostId) }));
+      const declarations = (Array.isArray(parsed.workspaceDeclarations) ? parsed.workspaceDeclarations : []).flatMap((entry) => {
+        try {
+          const hostId = normalizeHostId(entry.hostId);
+          const cwd = normalizeWorkspaceCwd(entry.cwd, hostId, this.localHostId);
+          const sessionId = requiredText(entry.sessionId, "sessionId", 256);
+          const harness = requiredText(entry.harness, "harness", 64);
+          return [{ sessionId, harness, hostId, cwd, expiresAt: entry.expiresAt }];
+        } catch { return []; }
+      });
+      return { version: 1, notes, workspaceDeclarations: declarations };
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, notes: [] };
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, notes: [], workspaceDeclarations: [] };
       throw error;
     }
   }
@@ -452,10 +564,15 @@ export class CoordinationNoteStore {
   private async readAndPrune(): Promise<NoteFile> {
     const file = await this.read();
     const now = Date.now();
-    const active = file.notes.filter((note) => Date.parse(note.expiresAt) > now);
-    if (active.length !== file.notes.length) {
+    const active = file.notes.filter((note) => Date.parse(note.expiresAt) > now && !(note.source === "hook" && note.paths.length > 0 && note.paths.every(isDeviceSink)));
+    const activeDeclarations = (file.workspaceDeclarations ?? []).filter((entry) => Date.parse(entry.expiresAt) > now);
+    if (active.length !== file.notes.length || activeDeclarations.length !== (file.workspaceDeclarations ?? []).length) {
       file.notes = active;
+      file.workspaceDeclarations = activeDeclarations;
       await this.write(file);
+    }
+    for (const [sessionId, cached] of this.workspaceCache) {
+      if (Date.parse(cached.expiresAt) <= now || !activeDeclarations.some((entry) => entry.sessionId === sessionId)) this.workspaceCache.delete(sessionId);
     }
     return file;
   }
@@ -489,6 +606,11 @@ function requiredText(value: string, field: string, max: number): string {
   return text;
 }
 function boundedMessage(value: string): string { return requiredText(value, "message", 4000); }
+function normalizeHostId(value: string): string {
+  const hostId = requiredText(value, "hostId", 512);
+  if (/[\s\x00-\x1f\x7f/\\]/u.test(hostId)) throw new Error("hostId contains invalid characters");
+  return hostId;
+}
 function releasedAuthor(value: string): string {
   try {
     const note = JSON.parse(value) as { authorHarness?: string; authorSessionId?: string; kind?: string; paths?: string[]; message?: string };
@@ -499,16 +621,34 @@ function snapshotSource(value: string): string | undefined {
   try { return (JSON.parse(value) as { source?: string }).source; }
   catch { return undefined; }
 }
+function snapshotKind(value: string): CoordinationNoteKind | undefined {
+  try {
+    const kind = (JSON.parse(value) as { kind?: unknown }).kind;
+    return kind === "working" || kind === "avoid" || kind === "handoff" || kind === "info" ? kind : undefined;
+  } catch { return undefined; }
+}
 function canonicalCwd(value: string): string {
   const text = requiredText(value, "cwd", 4096).replace(/^~(?=\/|$)/, homedir());
   if (!isAbsolute(text)) throw new Error("cwd must be absolute or home-relative");
   return resolve(text);
 }
+function normalizeWorkspaceCwd(value: string, hostId: string, localHostId: string): string {
+  if (hostId === localHostId) return canonicalCwd(value);
+  const cwd = requiredText(value, "cwd", 4096);
+  if (/[\x00-\x1f\x7f]/u.test(cwd) || !posix.isAbsolute(cwd) || cwd.startsWith("~")) throw new Error("cwd must be an absolute POSIX path for a remote host");
+  return posix.normalize(cwd);
+}
 function normalizePaths(paths: string[]): string[] {
   return [...new Set((paths ?? []).map((path) => path.trim()).filter(Boolean).slice(0, 64))];
 }
-function normalizePathsForCwd(paths: string[], cwd: string): string[] {
+function normalizePathsForCwd(paths: string[], cwd: string, remotePosix = false): string[] {
   return normalizePaths(paths).map((path) => {
+    if (remotePosix) {
+      const normalized = posix.isAbsolute(path) ? posix.normalize(path) : path.replace(/^\.\//, "");
+      if (!posix.isAbsolute(normalized)) return normalized;
+      const rel = posix.relative(cwd, normalized);
+      return rel && rel !== ".." && !rel.startsWith("../") ? rel : normalized;
+    }
     const expanded = path.replace(/^~(?=\/|$)/, homedir());
     if (!isAbsolute(expanded)) return expanded.replace(/^\.\//, "");
     const rel = relative(cwd, resolve(expanded));
@@ -516,7 +656,16 @@ function normalizePathsForCwd(paths: string[], cwd: string): string[] {
   });
 }
 function sameWorkspace(a: string, b: string): boolean {
+  if (posix.isAbsolute(a) && posix.isAbsolute(b)) return posix.normalize(a) === posix.normalize(b);
   return resolve(a) === resolve(b);
+}
+function workspaceKey(hostId: string, cwd: string): string { return JSON.stringify([hostId, cwd]); }
+function workspaceResourcePath(hostId: string, cwd: string, localHostId: string): string { return hostId === localHostId ? cwd : workspaceKey(hostId, cwd); }
+function displayWorkspace(board: { hostId: string; cwd: string }, localHostId: string): string { return board.hostId === localHostId ? basename(board.cwd) : `${board.hostId}:${board.cwd}`; }
+function noteListCall(board: { hostId: string; cwd: string }, localHostId: string): string {
+  return board.hostId === localHostId
+    ? `{cwd: ${JSON.stringify(board.cwd)}}`
+    : `{cwd: ${JSON.stringify(board.cwd)}, hostId: ${JSON.stringify(board.hostId)}}`;
 }
 
 function pathMatches(candidate: string, target: string): boolean {
@@ -551,4 +700,8 @@ export function boundedCoordinationContext(value: string): string {
     result += line + "\n";
   }
   return result + "Context incomplete: additional owners or conflicts may exist. Read the workspace resource before editing an unlisted path.\n" + closing;
+}
+
+function isDeviceSink(path: string): boolean {
+  return /^\/dev\/(?:null|zero|full|random|urandom|stdin|stdout|stderr)$/.test(path) || /^\/(?:dev\/fd|proc\/self\/fd)\/\d+$/.test(path);
 }

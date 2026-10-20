@@ -83,6 +83,8 @@ describe("coordination hook activity reservations", () => {
     ["rename", "mv /repo/old.ts /repo/new.ts", ["/repo/old.ts", "/repo/new.ts"]],
     ["git rename", "git mv /repo/old.ts /repo/new.ts", ["/repo/old.ts", "/repo/new.ts"]],
     ["redirection", "printf ok > /repo/output.txt", ["/repo/output.txt"]],
+    ["discarded output", "printf ok > /dev/null", []],
+    ["device output", "printf ok > /dev/stderr", []],
   ])("retains the exact targets for shell %s events", async (_name, command, expected) => {
     const activity = await runHook({
       hook_event_name: "PostToolUse", session_id: "writer", cwd: "/repo",
