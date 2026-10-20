@@ -25,27 +25,182 @@ function isWriteActivity(toolName, toolInput) {
   if (/(?:write|edit|patch|apply_patch|create_file|delete_file|move_file|rename_file)/.test(name)) return true;
   if (!/(?:bash|shell|terminal|exec|command)/.test(name)) return false;
   const command = stringCommand(toolInput);
-  return [
+  const codeInput = toolInput && typeof toolInput === "object" && typeof toolInput.code === "string";
+  const rawExecInput = typeof toolInput === "string" && /(?:^|\.)exec$/.test(name);
+  const nested = codeInput ? embeddedCommands(toolInput.code) : embeddedCommands(command);
+  const commands = codeInput || rawExecInput ? nested : [command, ...nested];
+  if ((codeInput || rawExecInput) && commands.length === 0) return false;
+  return commands.some((candidate) => [
     /(?:^|[;&|\s])sed\s+-[^\n;]*\bi[^\n;]*/,
     /(?:^|[;&|\s])perl\s+-[^\n;]*\bi[^\n;]*/,
     /(?:^|[;&|\s])(?:tee|cp|mv|rm|touch|mkdir|truncate|install)(?:\s|$)/,
     /(?:^|[;&|\s])git\s+(?:checkout|restore|apply|mv|rm)(?:\s|$)/,
     /(?:^|[^<])>{1,2}\s*[^&]/,
-  ].some((pattern) => pattern.test(command));
+  ].some((pattern) => pattern.test(candidate)));
 }
-function collectPaths(value, out = new Set()) {
+function addPatchTargets(text, out) {
+  for (const match of text.matchAll(/^\*\*\* (?:Update|Add|Delete) File:\s*([^\n]+)/gm)) out.add(match[1].trim());
+  for (const match of text.matchAll(/^\*\*\* Move to:\s*([^\n]+)/gm)) out.add(match[1].trim());
+}
+function shellWords(text) {
+  return [...text.matchAll(/"((?:\\.|[^"])*)"|'([^']*)'|([^\s;&|]+)/g)]
+    .map((match) => (match[1] ?? match[2] ?? match[3] ?? "").replace(/\\(["'\\])/g, "$1"));
+}
+function splitShellSegments(command) {
+  const segments = [];
+  let start = 0;
+  let quote = "";
+  let escaped = false;
+  for (let index = 0; index < command.length; index += 1) {
+    const char = command[index];
+    if (escaped) { escaped = false; continue; }
+    if (char === "\\" && quote !== "'") { escaped = true; continue; }
+    if (quote) { if (char === quote) quote = ""; continue; }
+    if (char === "'" || char === '"') { quote = char; continue; }
+    if (char === ";" || char === "|" || (char === "&" && command[index - 1] !== ">" && command[index - 1] !== "<") || char === "\n") {
+      segments.push(command.slice(start, index));
+      if ((char === "|" || char === "&") && command[index + 1] === char) index += 1;
+      start = index + 1;
+    }
+  }
+  segments.push(command.slice(start));
+  return segments;
+}
+function withoutRedirections(words) {
+  const result = [];
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index];
+    if (/^(?:\d+)?(?:>{1,2}|<{1,2})$/.test(word)) { index += 1; continue; }
+    if (/^(?:\d+)?(?:>{1,2}|<{1,2})(?:&(?:\d+|-)|.+)$/.test(word)) continue;
+    result.push(word);
+  }
+  return result;
+}
+// This is intentionally a bounded operand reader, not a shell interpreter:
+// recognize a command only at the start of an unquoted segment, with simple
+// sudo/env wrappers and leading NAME=value assignments.
+function commandAtStart(words) {
+  const clean = withoutRedirections(words);
+  let index = 0;
+  while (index < clean.length) {
+    const word = clean[index];
+    if (/^[A-Za-z_][\w]*=.*/.test(word)) { index += 1; continue; }
+    if (word === "sudo") {
+      index += 1;
+      while (index < clean.length && /^-/.test(clean[index])) {
+        const option = clean[index++];
+        if (["-u", "-g", "-h", "-p", "-C", "-T", "--user", "--group", "--host", "--prompt", "--chdir", "--close-from"].includes(option) && index < clean.length) index += 1;
+      }
+      continue;
+    }
+    if (word === "env") {
+      index += 1;
+      while (index < clean.length) {
+        if (/^[A-Za-z_][\w]*=.*/.test(clean[index])) { index += 1; continue; }
+        if (/^-[iu0]$/.test(clean[index])) { index += 1; continue; }
+        if (["-u", "--unset", "-C", "--chdir"].includes(clean[index]) && index + 1 < clean.length) { index += 2; continue; }
+        break;
+      }
+      continue;
+    }
+    return { verb: word, args: clean.slice(index + 1) };
+  }
+  return undefined;
+}
+function addShellTargets(command, out) {
+  // Here-doc bodies are content, not file operands, even when they mention paths.
+  const source = command.replace(/<<-?\s*(['"]?)([A-Za-z_][\w]*)\1[^\n]*\n[\s\S]*?\n\2(?=\s|$)/g, "");
+  for (const segment of splitShellSegments(source)) {
+    const words = shellWords(segment);
+    if (!words.length) continue;
+    const invocation = commandAtStart(words);
+    if (invocation) {
+      const { verb } = invocation;
+      const args = invocation.args.filter((word) => word && !word.startsWith("-"));
+      let targets = [];
+      if (["mv", "rm", "touch", "mkdir", "truncate", "tee"].includes(verb)) targets = args;
+      else if (["cp", "install"].includes(verb)) targets = args.slice(-1);
+      else if (["sed", "perl"].includes(verb) && /(?:^|\s)-[^\s]*i/.test(segment)) targets = args.slice(-1);
+      for (const target of targets) if (target !== "--" && !target.includes("://")) out.add(target);
+    }
+    if (invocation?.verb === "git" && ["mv", "rm", "checkout", "restore"].includes(invocation.args[0])) {
+      const subcommand = invocation.args[0];
+      const args = invocation.args.slice(1).filter((word) => word && !word.startsWith("-"));
+      const targets = ["mv", "rm"].includes(subcommand) ? args
+        : invocation.args.includes("--") ? invocation.args.slice(invocation.args.lastIndexOf("--") + 1).filter((word) => word && !word.startsWith("-")) : [];
+      for (const target of targets) if (target !== "--" && !target.includes("://")) out.add(target);
+    }
+    // Output redirection is an explicit write target; do not scan other command text.
+    for (const target of redirectionTargets(segment)) if (!target.includes("://")) out.add(target);
+  }
+}
+function redirectionTargets(segment) {
+  const targets = [];
+  let quote = "";
+  let escaped = false;
+  for (let index = 0; index < segment.length; index += 1) {
+    const char = segment[index];
+    if (escaped) { escaped = false; continue; }
+    if (char === "\\" && quote !== "'") { escaped = true; continue; }
+    if (quote) { if (char === quote) quote = ""; continue; }
+    if (char === "'" || char === '"') { quote = char; continue; }
+    if (char !== ">" || segment[index - 1] === "<") continue;
+    if (segment[index + 1] === "&") {
+      let fd = index + 2;
+      if (segment[fd] === "-") fd += 1;
+      else while (/\d/.test(segment[fd] || "")) fd += 1;
+      index = fd - 1;
+      continue;
+    }
+    let cursor = index + 1;
+    if (segment[cursor] === ">") cursor += 1;
+    while (/\s/.test(segment[cursor] || "")) cursor += 1;
+    const opener = segment[cursor];
+    if (opener === "'" || opener === '"') {
+      const closer = segment.indexOf(opener, cursor + 1);
+      if (closer > cursor + 1) targets.push(segment.slice(cursor + 1, closer));
+      index = closer > cursor ? closer : cursor;
+      continue;
+    }
+    let end = cursor;
+    while (end < segment.length && !/[\s;&|]/.test(segment[end])) end += 1;
+    if (end > cursor) targets.push(segment.slice(cursor, end));
+    index = end - 1;
+  }
+  return targets;
+}
+function addEmbeddedCommands(code, out) {
+  for (const command of embeddedCommands(code)) addShellTargets(command, out);
+}
+function embeddedCommands(code) {
+  const commands = [];
+  for (const match of code.matchAll(/(?:cmd|command)\s*:\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)')/g)) {
+    commands.push((match[1] ?? match[2] ?? "").replace(/\\(["'\\])/g, "$1"));
+  }
+  return commands;
+}
+function collectPaths(value, out = new Set(), field = "") {
   if (typeof value === "string") {
-    for (const re of [/\*\*\* (?:Update|Add|Delete) File:\s*([^\n]+)/g, /(?:^|\s)(\.?\.?\/[\w@%+.,~\-\/]+|\/[\w@%+.,~\-\/]+)/g, /(?:>{1,2}|tee(?:\s+-\S+)*|sed\s+-[^\n;]*i\s+(?:[^\s]+\s+)?)\s*["']?([\w@%+.,~\-]+(?:\/[\w@%+.,~\-]+)+|[\w@%+.,~\-]+\.[A-Za-z0-9_-]+)["']?/g]) {
-      for (const match of value.matchAll(re)) { const p = (match[1] || "").trim().replace(/["'`,;:)]+$/g, ""); if (p && !p.includes('://')) out.add(p); }
+    if (/^(?:patch|diff|unified_diff)$/i.test(field) || (!field && /^\s*\*\*\* Begin Patch\b/m.test(value))) addPatchTargets(value, out);
+    else if (/^(?:command|cmd|script)$/i.test(field)) addShellTargets(value, out);
+    else if (/^code$/i.test(field)) addEmbeddedCommands(value, out);
+    else if (!field) {
+      const embedded = embeddedCommands(value);
+      if (embedded.length) for (const command of embedded) addShellTargets(command, out);
+      else addShellTargets(value, out);
     }
     return out;
   }
-  if (Array.isArray(value)) { for (const item of value) collectPaths(item, out); return out; }
+  if (Array.isArray(value)) { for (const item of value) collectPaths(item, out, field); return out; }
   if (value && typeof value === "object") {
     for (const [key, item] of Object.entries(value)) {
-      if (/^(path|file|file_path|filepath|filename)$/i.test(key) && typeof item === "string") out.add(item);
-      else if (/^(paths|files)$/i.test(key) && Array.isArray(item)) for (const p of item) if (typeof p === "string") out.add(p);
-      if (!/^(cwd|workdir|directory)$/i.test(key)) collectPaths(item, out);
+      if (/^(path|file|file_path|filepath|filename)$/i.test(key) && typeof item === "string") {
+        out.add(item);
+      } else if (/^(paths|files)$/i.test(key) && Array.isArray(item)) {
+        for (const p of item) if (typeof p === "string") out.add(p);
+      } else if (!/^(cwd|workdir|directory)$/i.test(key)) {
+        collectPaths(item, out, key);
+      }
     }
   }
   return out;

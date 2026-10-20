@@ -49,7 +49,7 @@ export class CoordinationNoteStore {
    * All injection channels share these slots so the same information never
    * enters a session twice — only material changes re-inject. Keyed per
    * board because different boards carry different information. */
-  private injectionState = new Map<string, { signature: string; at: number; notes?: Set<string> }>();
+  private injectionState = new Map<string, { signature: string; at: number; notes: Map<string, string> }>();
   /** sessionId -> board cwd -> last activity ms. Tracks every workspace a
    * session has actually touched, so turn-start awareness covers all of
    * them, not just the launch directory. */
@@ -256,11 +256,8 @@ export class CoordinationNoteStore {
   }
 
   /**
-   * Roster of other agents recently active on one board (a workspace), for
-   * file-activity injection: who they are and which paths they are touching.
-   * Shares the per-board injection-dedup slot with renderForSession so the
-   * same information never enters a session twice — only material changes
-   * (author/kind/message/paths set) or the staleness window re-inject.
+   * Passive file-activity signal. Full current owners and paths remain in
+   * coordination_note_list; this avoids repeating a roster on every edit.
    */
   async renderWorkspacePeers(session: { id: string; harness: string; cwd: string }): Promise<string | null> {
     return this.renderBoard(session, session.cwd, "agent-herder-repo-peers");
@@ -272,59 +269,74 @@ export class CoordinationNoteStore {
     tag: string,
   ): Promise<string | null> {
     const notes = (await this.list({ cwd: board })).filter((note) => note.authorSessionId !== session.id);
-    if (notes.length === 0) {
-      const key = `${session.id}#${board}`;
-      const previous = this.injectionState.get(key);
-      if (!previous?.notes?.size) return null;
-      this.injectionState.set(key, {signature:"", at:Date.now(), notes:new Set()});
-      return `<${tag} board="${basename(board)}">Ownership released: ${[...previous.notes].map(value=>`${value.split("|")[0]}:${value.split("|").at(-1)}`).join(",").slice(0,1000)}</${tag}>`;
-    }
     const key = `${session.id}#${board}`;
     const previous = this.injectionState.get(key);
-    // Auto file activity is coalesced; explicit manual ownership/decisions
-    // remain immediate. Conflicts use their independent activity response.
-    if (previous && Date.now() - previous.at < 60_000 && notes.every(note=>note.source === "hook")) return null;
-    if (!this.shouldInject(key, this.noteSignature(notes))) return null;
-    const fingerprint = (note: CoordinationNote) => this.noteSignature([note]);
-    const reshow = !previous || Date.now() - previous.at >= injectionReshowMs();
-    const changed = reshow ? notes : notes.filter(note => !previous.notes?.has(fingerprint(note)));
-    const removed = previous?.notes ? [...previous.notes].filter(value => !notes.some(note => fingerprint(note) === value)).length : 0;
-    this.injectionState.get(key)!.notes = new Set(notes.map(fingerprint));
-    const byAuthor = new Map<string, { harness: string; paths: string[] }>();
-    for (const note of notes) {
-      const entry = byAuthor.get(note.authorSessionId) ?? { harness: note.authorHarness || "agent", paths: [] };
-      entry.harness = note.authorHarness || entry.harness;
-      for (const path of note.paths) if (!entry.paths.includes(path)) entry.paths.push(path);
-      byAuthor.set(note.authorSessionId, entry);
+    const fingerprint = (note: CoordinationNote) => JSON.stringify({ authorSessionId: note.authorSessionId, authorHarness: note.authorHarness || "agent", kind: note.kind, message: note.message, paths: note.paths, source: note.source || "manual" });
+    const known = previous?.notes ?? new Map<string, string>();
+    if (tag === "agent-herder-repo-peers") {
+      const passiveNotes = notes.filter(note => note.source === "hook" && note.kind === "working");
+      const passiveIds = new Set(passiveNotes.map(note => note.id));
+      const changed = passiveNotes.filter(note => known.get(note.id) !== fingerprint(note));
+      const removed = [...known.entries()].filter(([id, value]) => snapshotSource(value) === "hook" && !passiveIds.has(id));
+      if (changed.length === 0 && removed.length === 0) return null;
+      if (previous && Date.now() - previous.at < 60_000 && changed.length > 0 && removed.length === 0) return null;
+      const output = `<agent-herder-repo-peers board="${basename(board)}">Workspace ownership changed. Check current ownership before editing: coordination_note_list({cwd: ${JSON.stringify(board)}}).</agent-herder-repo-peers>`;
+      const acknowledged = new Map(known);
+      // The note list is the authoritative full snapshot. Acknowledge all hook
+      // ownership notes represented by that snapshot, while leaving manual
+      // decisions/avoid notes for the detailed active renderForSession path.
+      for (const note of passiveNotes) acknowledged.set(note.id, fingerprint(note));
+      for (const [id] of removed) acknowledged.delete(id);
+      this.injectionState.set(key, { signature: this.noteSignature(notes), at: Date.now(), notes: acknowledged });
+      return output;
     }
-    const peers = [...byAuthor.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([authorSessionId, info]) => `- [${info.harness}] ${authorSessionId} :: ${info.paths.slice(0, 8).join(", ") || "(workspace-level)"}`);
+    if (notes.length === 0) {
+      if (!previous?.notes?.size) return null;
+      const lines = [...previous.notes.entries()].map(([id, value]) => `- Ownership released author=${releasedAuthor(value)} noteId=${id}.`);
+      const output = boundedCoordinationContext([`<${tag} board="${basename(board)}">`, ...lines, "Details: coordination_note_get(noteId).", `Workspace: ${coordinationWorkspaceResourceUri(board)}</${tag}>`].join("\n"));
+      const delivered = new Map(previous.notes);
+      for (const [id] of previous.notes) if (output.includes(`noteId=${id}`)) delivered.delete(id);
+      this.injectionState.set(key, { signature:"", at:delivered.size ? previous.at : Date.now(), notes:delivered });
+      return output;
+    }
+    // TTL-only updates are deliberately invisible. Keep the state per note so
+    // one changed owner does not cause the full roster to be injected again.
+    const changed = notes.filter(note => known.get(note.id) !== fingerprint(note));
+    const removed = [...known.entries()].filter(([id]) => !notes.some(note => note.id === id));
+    if (changed.length === 0 && removed.length === 0) return null;
+    if (previous && Date.now() - previous.at < 60_000 && changed.length > 0 && changed.every(note => note.source === "hook" && note.kind === "working") && removed.length === 0) return null;
     const declared = (await this.list({ cwd: board, authorSessionId: session.id })).some((note) => note.source !== "hook");
-    const declaration = declared
+    const declaration = previous || declared
       ? []
       : ["You have not declared your own task yet — do it now with one note (Agent Herder coordination_note_create: kind=\"working\", message=<one line: what you are doing>, paths=<files you own>) and update it when your goal changes."];
-    if (tag === "agent-herder-repo-peers") {
-      return boundedCoordinationContext([
-        `<agent-herder-repo-peers board="${basename(board)}">`,
-        "Other agents recently active in this repo. Contact via send_message only for conflicting ownership or a necessary decision; do not acknowledge routine messages.",
-        ...declaration,
-        ...peers.map(line => line.slice(0, 220)),
-        "</agent-herder-repo-peers>",
-      ].join("\n"));
-    }
-    return boundedCoordinationContext([
+    const output = boundedCoordinationContext([
       `<agent-herder-coordination board="${basename(board)}">`,
-      `Coordination changes in ${basename(board)}. Respect ownership. Use send_message only for necessary decisions, conflicts or verified results; no routine ACK replies. Details: ${coordinationWorkspaceResourceUri(board)}`,
+      ...(previous ? [] : [`Coordination changes in ${basename(board)}. Respect ownership. Use send_message only for necessary decisions, conflicts or verified results; no routine ACK replies. Details: ${coordinationWorkspaceResourceUri(board)}`]),
       ...declaration,
-      ...(removed ? [`- ${removed} prior note(s) changed or expired.`] : []),
+      ...removed.map(([id, value]) => `- Ownership released author=${releasedAuthor(value)} noteId=${id}.`),
       ...changed.map((note) => {
         const paths = note.paths.length ? ` paths=${note.paths.slice(0, 4).join(",").slice(0, 90)}` : "";
         const author = `${note.authorHarness || "agent"}:${note.authorSessionId}`;
-        return `- [${note.kind}] author=${author}${paths} :: ${note.message.slice(0, Math.max(40, Math.min(100, Math.floor(1600 / Math.max(1,changed.length)))))}`;
+        return `- [${note.kind}] author=${author}${paths} noteId=${note.id} :: ${note.message.slice(0, Math.max(40, Math.min(100, Math.floor(1600 / Math.max(1,changed.length)))))}`;
       }),
+      "Details: coordination_note_get(noteId).",
       "</agent-herder-coordination>",
     ].join("\n"));
+    const renderedNotes = new Set(changed.filter(note => output.includes(`noteId=${note.id}`)).map(note=>note.id));
+    const renderedRemoved = new Set(removed.filter(([id])=>output.includes(`noteId=${id}`)).map(([id])=>id));
+    this.saveInjectionState(key, known, changed, removed.filter(([id])=>renderedRemoved.has(id)), renderedNotes, notes, fingerprint);
+    return output;
+  }
+
+  private saveInjectionState(
+    key: string, known: Map<string, string>, changed: CoordinationNote[], removed: Array<[string, string]>,
+    rendered: Set<string>, notes: CoordinationNote[], fingerprint: (note: CoordinationNote) => string,
+  ): void {
+    const delivered = new Map(known);
+    for (const note of changed) if (rendered.has(note.id)) delivered.set(note.id, fingerprint(note));
+    for (const [id] of removed) delivered.delete(id);
+    const madeProgress = rendered.size > 0 || removed.length > 0;
+    this.injectionState.set(key, { signature: this.noteSignature(notes), at: madeProgress ? Date.now() : (this.injectionState.get(key)?.at ?? Date.now()), notes: delivered });
   }
 
   /**
@@ -379,17 +391,6 @@ export class CoordinationNoteStore {
     return this.presenceSnapshot()
       .flatMap((entry) => entry.boards.filter((board) => sameWorkspace(board.cwd, canonical)).map((board) => ({ sessionId: entry.sessionId, lastSeenAt: board.lastSeenAt })))
       .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
-  }
-
-  /** True when this roster differs from what the session last saw, or the
-   * last injection is old enough that context compaction may have eaten it. */
-  private shouldInject(sessionId: string, signature: string): boolean {
-    const previous = this.injectionState.get(sessionId);
-    const now = Date.now();
-    const reshowMs = injectionReshowMs();
-    if (previous && previous.signature === signature && now - previous.at < reshowMs) return false;
-    this.injectionState.set(sessionId, { signature, at: now });
-    return true;
   }
 
   /** Volatile-field-free fingerprint: TTL refreshes and id churn must not
@@ -488,6 +489,16 @@ function requiredText(value: string, field: string, max: number): string {
   return text;
 }
 function boundedMessage(value: string): string { return requiredText(value, "message", 4000); }
+function releasedAuthor(value: string): string {
+  try {
+    const note = JSON.parse(value) as { authorHarness?: string; authorSessionId?: string; kind?: string; paths?: string[]; message?: string };
+    return `[${note.authorHarness || "agent"}] ${note.authorSessionId || "unknown"} ${note.kind || "note"} ${note.paths?.slice(0, 4).join(",") || "(workspace-level)"} :: ${(note.message || "").slice(0, 60)}`;
+  } catch { return "previous note"; }
+}
+function snapshotSource(value: string): string | undefined {
+  try { return (JSON.parse(value) as { source?: string }).source; }
+  catch { return undefined; }
+}
 function canonicalCwd(value: string): string {
   const text = requiredText(value, "cwd", 4096).replace(/^~(?=\/|$)/, homedir());
   if (!isAbsolute(text)) throw new Error("cwd must be absolute or home-relative");

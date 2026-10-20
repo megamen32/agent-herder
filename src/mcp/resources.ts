@@ -7,6 +7,7 @@ import type { HerderJobRegistry } from "../herder-jobs.js";
 import type { HarnessEventHealthRegistry } from "../harness-event-health.js";
 import { handleListAgents } from "../mcp-tools/handlers.js";
 import { decodeResourceComponent } from "../herder-resource-uris.js";
+import { longMessageResourceUri, readLongMessage } from "../long-messages.js";
 
 function resourceMeta(events: HerderEventBus, uri: string): Record<string, unknown> {
   return {
@@ -38,6 +39,14 @@ export function registerHerderResources(server: McpServer, deps: {
     const adapter = adapters.get(decodeResourceComponent(variables.harness));
     return jsonContent(events, uri, adapter?.getSessionMessages ? await adapter.getSessionMessages(decodeResourceComponent(variables.sessionId), 100) : []);
   });
+  server.registerResource("long-message", new ResourceTemplate("herder://messages/{messageId}/{offset}/{limit}", { list: undefined }), { title: "Long automatic message page", mimeType: "application/json" }, async (uri, variables) => {
+    const messageId = decodeURIComponent(String(variables.messageId));
+    const offset = parseResourceInteger(variables.offset, "offset");
+    const limit = parseResourceInteger(variables.limit, "limit");
+    const page = await readLongMessage({ messageId, offset, limit });
+    const nextResourceUri = page.nextOffset === null ? null : longMessageResourceUri(messageId, page.nextOffset, limit);
+    return jsonContent(events, uri, { ...page, nextResourceUri });
+  });
 
   server.registerResource("coordination", "herder://coordination", { title: "Active coordination notes", mimeType: "application/json" }, async (uri) => jsonContent(events, uri, await coordination.list()));
   server.registerResource("coordination-note", new ResourceTemplate("herder://coordination/notes/{noteId}", { list: undefined }), { title: "Coordination note", mimeType: "application/json" }, async (uri, variables) => jsonContent(events, uri, await coordination.get(String(variables.noteId))));
@@ -64,4 +73,12 @@ export function registerHerderResources(server: McpServer, deps: {
     const oldestSequence = events.oldestSequence();
     return jsonContent(events, uri, { afterSequence, latestSequence: events.latestSequence(), oldestSequence, truncated: oldestSequence !== null && afterSequence < oldestSequence - 1, events: events.listAfter(afterSequence, 500) });
   });
+}
+
+function parseResourceInteger(value: unknown, name: string): number {
+  const text = String(value);
+  if (!/^(?:0|[1-9]\d*)$/.test(text)) throw new Error(`${name} must be a non-negative integer`);
+  const parsed = Number(text);
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${name} is out of range`);
+  return parsed;
 }

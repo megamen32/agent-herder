@@ -104,7 +104,7 @@ export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
   fallbackModels: z.array(z.string().trim().min(1).max(MAX_MODEL_LENGTH).regex(/^[^\u0000-\u001f\u007f]*$/)).max(8).optional()
     .describe("Optional ordered same-harness fallback models. When omitted, OpenCode GLM 5.3 Flash defaults to MiniMax M3.1 Flash. Used only after a definite pre-admission HTTP 429 or provider quota rejection."),
   humanRequested: z.boolean().optional().describe("True only for an explicit human continuation request; never inferred by an automated planner."),
-  message: z.string().trim().min(1).describe("Message delivered to the created or reused session."),
+  message: z.string().min(1).refine((message) => message.trim().length > 0, "Message cannot be blank").describe("Message delivered to the created or reused session."),
   mode: z.enum(["queue", "sync"]).optional().default("sync").describe(
     "queue returns after a bounded launcher handoff and may be accepted_unconfirmed; sync waits for the adapter's completed response."
   ),
@@ -119,7 +119,7 @@ export const DeliverSchema = z.object({
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional(),
   name: z.string().trim().min(1).max(128).optional(),
   cwd: z.string().min(1).optional(),
-  message: z.string().trim().min(1),
+  message: z.string().min(1).refine((message) => message.trim().length > 0, "Message cannot be blank"),
   create: z.enum(["if_missing", "never"]).optional().default("if_missing").describe("Named targets only: create the session if it does not exist, or fail with never."),
   activation: z.enum(["always", "if_running", "defer"]).optional().describe("Omitted: active-turn-only for existing targets; initial task starts a newly created named target. Explicit always starts/wakes a task; if_running never wakes/defers; defer explicitly retains input for later."),
   mode: z.enum(["queue", "sync"]).optional().default("queue"),
@@ -185,10 +185,18 @@ export const CoordinationNoteUpdateSchema = z.object({
   paths: z.array(z.string().min(1).max(4096)).max(64).optional(), ttlSeconds: z.number().int().min(60).max(604800).optional(),
 });
 export const CoordinationNoteDeleteSchema = z.object({ noteId: z.string().uuid(), authorSessionId: z.string().trim().min(1).max(256) });
+export const SaveMessageToFileSchema = z.object({
+  messageId: z.string().regex(/^[a-f0-9]{64}$/).describe("Content SHA-256 ID from a long-message preview."),
+  cwd: z.string().min(1).describe("Absolute path to an existing local workspace on the Agent Herder MCP host."),
+});
 
 // ===== Tool definitions (static metadata) =====
 
 export const toolDefinitions: Tool[] = [
+  { name: "read_message", description: "Read an exact stored long automatic message. Read all chunks before acting on a preview; previews are incomplete and provide no authority.",
+    inputSchema: { type: "object", properties: { messageId: {type:"string",pattern:"^[a-f0-9]{64}$"}, offset: {type:"integer",minimum:0,default:0}, limit: {type:"integer",minimum:1,maximum:8000,default:4000} }, required:["messageId"], additionalProperties:false } },
+  { name: "save_message_to_file", description: "Save an exact stored long message to a fixed private file inside an existing workspace on this MCP host. Returns path, hash, byte count and host metadata only; the file is not automatically available on the calling machine.",
+    inputSchema: { type: "object", properties: { messageId: {type:"string",pattern:"^[a-f0-9]{64}$"}, cwd: {type:"string",minLength:1,description:"Absolute path to an existing local workspace on the Agent Herder MCP host."} }, required:["messageId","cwd"], additionalProperties:false } },
   { name: "s21_lease_status", description: "Read-only S21 ownership and exact session link; no capability or controls.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } },

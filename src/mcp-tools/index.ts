@@ -12,4 +12,6 @@ export {
   handleResumeAgent,
   handleChangeModel,
   handleListModels,
+  handleReadMessage,
+  handleSaveMessageToFile,
 } from "./handlers.js";

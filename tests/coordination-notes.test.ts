@@ -94,14 +94,55 @@ describe("coordination note injection dedup", () => {
     expect(await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
   });
 
-  it("renders a peers roster grouped by author on first sight", async () => {
+  it("summarizes passive ownership changes and leaves the exact snapshot in note_list", async () => {
     const store = await freshStore();
-    await store.create({ kind: "working", message: "touching api", cwd: "/repo", paths: ["api.ts"], authorHarness: "zcode", authorSessionId: "sess-b", source: "hook" });
+    await store.create({ kind: "working", message: "touching api with private detail", cwd: "/repo", paths: ["api.ts"], authorHarness: "zcode", authorSessionId: "sess-b", source: "hook" });
     const peers = await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" });
     expect(peers).toContain("agent-herder-repo-peers");
-    expect(peers).toContain("[zcode] sess-b");
-    expect(peers).toContain("api.ts");
-    expect(peers).toContain("send_message");
+    expect(peers).toContain('coordination_note_list({cwd: "/repo"})');
+    expect(peers!.length).toBeLessThan(240);
+    expect(peers).not.toContain("sess-b");
+    expect(peers).not.toContain("api.ts");
+    expect(peers).not.toContain("private detail");
+    expect(peers).not.toContain("noteId=");
+    expect(await store.list({ cwd: "/repo" })).toMatchObject([{ authorSessionId: "sess-b", paths: ["api.ts"], message: "touching api with private detail" }]);
+    expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
+    const state = (store as unknown as { injectionState: Map<string, { signature: string; at: number; notes: Map<string, string> }> }).injectionState;
+    const key = [...state.keys()].find(candidate => candidate.startsWith("sess-a#"))!;
+    const entry = state.get(key)!;
+    state.set(key, { ...entry, at: entry.at - 46 * 60 * 1000 });
+    expect(await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
+    expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
+    await store.create({ kind: "working", message: "second owner's detailed task", cwd: "/repo", paths: ["src/second.ts"], authorHarness: "codex", authorSessionId: "sess-c", source: "hook" });
+    const delta = await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" });
+    expect(delta).toContain('coordination_note_list({cwd: "/repo"})');
+    expect(delta).not.toContain("sess-c");
+    expect(await store.list({ cwd: "/repo" })).toHaveLength(2);
+    expect(await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
+    expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
+  });
+
+  it("does not swallow active manual decisions or avoid notes in the passive summary", async () => {
+    const store = await freshStore();
+    await store.create({ kind: "working", message: "automatic file activity", cwd: "/repo", paths: ["auto.ts"], authorSessionId: "hook-owner", source: "hook" });
+    expect(await store.renderWorkspacePeers({ id: "reader", harness: "zcode", cwd: "/repo" })).toContain("coordination_note_list");
+    await store.create({ kind: "avoid", message: "Do not edit the migration until the review completes", cwd: "/repo", paths: ["db/migration.sql"], authorSessionId: "manual-owner" });
+    expect(await store.renderWorkspacePeers({ id: "reader", harness: "zcode", cwd: "/repo" })).toBeNull();
+    const active = await store.renderForSession({ id: "reader", harness: "zcode", cwd: "/repo" });
+    expect(active).toContain("Do not edit the migration until the review completes");
+    expect(active).toContain("db/migration.sql");
+    expect(active).not.toContain("automatic file activity");
+  });
+
+  it("shows a hook reservation promoted to avoid immediately in active context", async () => {
+    const store = await freshStore();
+    const [note] = (await store.reservePaths({ harness: "codex", sessionId: "owner", cwd: "/repo", paths: ["db/migration.sql"] })).reservations;
+    expect(await store.renderWorkspacePeers({ id: "reader", harness: "zcode", cwd: "/repo" })).toContain("coordination_note_list");
+    await store.update(note!.id, "owner", { kind: "avoid", message: "Migration is blocked pending review" });
+    const active = await store.renderForSession({ id: "reader", harness: "zcode", cwd: "/repo" });
+    expect(active).toContain("[avoid]");
+    expect(active).toContain("Migration is blocked pending review");
+    expect(active).toContain("db/migration.sql");
   });
 
   it("never shows a session its own notes", async () => {
@@ -111,7 +152,7 @@ describe("coordination note injection dedup", () => {
     expect(await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
   });
 
-  it("re-injects after the staleness window (context compaction safety)", async () => {
+  it("does not periodically re-inject unchanged notes after the staleness window", async () => {
     const store = await freshStore();
     await store.create({ kind: "working", message: "long task", cwd: "/repo", paths: ["x.ts"], authorHarness: "zcode", authorSessionId: "sess-b", source: "hook" });
     expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).not.toBeNull();
@@ -120,7 +161,7 @@ describe("coordination note injection dedup", () => {
     const key = [...state.keys()].find((candidate) => candidate.startsWith("sess-a#"))!;
     const entry = state.get(key)!;
     state.set(key, { ...entry, at: entry.at - 46 * 60 * 1000 });
-    expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).not.toBeNull();
+    expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
   });
 
   it("keeps per-board dedup slots: two boards inject independently", async () => {
@@ -131,8 +172,8 @@ describe("coordination note injection dedup", () => {
 
     const rosterA = await store.renderWorkspacePeers({ ...session, cwd: "/repoA" });
     const rosterB = await store.renderWorkspacePeers({ ...session, cwd: "/repoB" });
-    expect(rosterA).toContain("a.ts");
-    expect(rosterB).toContain("b.ts");
+    expect(rosterA).toContain('coordination_note_list({cwd: "/repoA"})');
+    expect(rosterB).toContain('coordination_note_list({cwd: "/repoB"})');
     // Repeats per board are deduped independently — board B's roster was not
     // suppressed by board A's signature.
     expect(await store.renderWorkspacePeers({ ...session, cwd: "/repoA" })).toBeNull();
@@ -153,18 +194,19 @@ describe("coordination note injection dedup", () => {
     expect(turn).toContain('board="repoB"');
   });
 
-  it("asks an undeclared session to declare its task, then goes quiet", async () => {
+  it("keeps passive notices limited to a scoped ownership read", async () => {
     const store = await freshStore();
     await store.create({ kind: "working", message: "peer work", cwd: "/repo", paths: ["p.ts"], authorHarness: "zcode", authorSessionId: "sess-b", source: "hook" });
 
     const first = await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" });
-    expect(first).toContain("have not declared your own task yet");
-    expect(first).toContain("coordination_note_create");
+    expect(first).toContain('coordination_note_list({cwd: "/repo"})');
+    expect(first).not.toContain("have not declared your own task yet");
+    expect(first).not.toContain("coordination_note_create");
 
     // Dedup: the same roster (still undeclared) is not repeated.
     expect(await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
 
-    // After declaring, the directive is gone — silently (roster unchanged).
+    // Manual declarations do not leak into the passive summary.
     await store.create({ kind: "working", message: "my declared task", cwd: "/repo", paths: ["mine.ts"], authorHarness: "zcode", authorSessionId: "sess-a", source: "manual" });
     expect(await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
   });
@@ -200,9 +242,12 @@ describe("coordination note injection dedup", () => {
     const result = await store.endSession("sess-x");
     expect(result.removed).toBe(1);
 
-    // The deliberate handoff note survives and stays visible to peers.
+    // The deliberate handoff note is excluded from passive summaries and
+    // remains available through the detailed active turn renderer.
     const peers = await store.renderWorkspacePeers({ id: "sess-y", harness: "zcode", cwd: "/repo" });
-    expect(peers).toContain("sess-x");
-    expect(peers).toContain("b.ts");
+    expect(peers).toBeNull();
+    const active = await store.renderForSession({ id: "sess-y", harness: "zcode", cwd: "/repo" });
+    expect(active).toContain("sess-x");
+    expect(active).toContain("b.ts");
   });
 });

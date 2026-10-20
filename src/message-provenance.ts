@@ -10,7 +10,7 @@ const SENDER_LOOKUP_TIMEOUT_MS = 2_000;
 export async function buildMessageProvenanceHeader(
   adapters: Map<string, HarnessAdapter>,
   declaration: SenderDeclaration,
-  target: AgentSession,
+  _target: AgentSession,
 ): Promise<string> {
   const senderId = declaration.fromSessionId?.trim();
   if (!senderId) return "🤖 Сообщение от AI-сессии\nОтправитель неизвестен: сессия не указана.";
@@ -51,7 +51,7 @@ export async function buildMessageProvenanceHeader(
 
   const sender = result.matches[0]!;
   const chatUrl = `https://agent.bezrabotnyi.com/#/session/${encodeURIComponent(`${sender.harness}:${sender.id}`)}`;
-  return `🤖 ${readableHarness(sender.harness)} ${sender.id} · ${chatUrl}\nОтвет нужен только для решения, ошибки или результата. send_message(sessionId="${sender.id}", harness="${sender.harness}", fromSessionId="${target.id}", fromHarness="${target.harness}"); без ACK.`;
+  return `🤖 ${readableHarness(sender.harness)} ${sender.id} · ${chatUrl}\nОтвет нужен только для решения, ошибки или результата. без ACK.`;
 }
 
 function readableHarness(harness: string): string {
