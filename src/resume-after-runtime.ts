@@ -29,12 +29,27 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
         return !session || session.status==="running" || session.status==="needs_input" || session.needsPermission;
       }catch{return true;}
     },
+    readDependency:async ref=>{
+      const session=await adapters.get(ref.harness)?.getSession(ref.sessionId);
+      if(!session)throw new Error("Exact dependency unavailable");
+      const string=(value:unknown)=>typeof value==="string" && value.trim()?value:undefined;
+      const meta=session.meta??{};
+      const active=string(meta.activeTurnId)??string(meta.nativeActiveTurnId);
+      const last=meta.nativeLastTurn && typeof meta.nativeLastTurn==="object"?meta.nativeLastTurn as Record<string,unknown>:{};
+      const busy=Boolean(active || session.status==="running" || session.status==="needs_input" || session.needsPermission);
+      const turnId=active??(!busy || ["inProgress","running"].includes(String(last.status))?string(last.turnId):undefined);
+      const outcome=last.status==="completed"?"turn.completed":["failed","error","cancelled","interrupted"].includes(String(last.status))?"turn.failed":undefined;
+      return {busy,turnId,...(!busy && turnId && outcome?{completion:{outcome,at:new Date().toISOString()}}:{})};
+    },
     deliver:async wait=>{
       const result=await supervisor.sendMessage(wait.owner.harness,wait.owner.sessionId,
         {message:wait.message,origin:"automation",inputId:inputId(wait),queue:true});
       if(result.admissionUnknown || result.delivery==="deferred")return {status:"ambiguous",reason:result.error??"Native delivery is not confirmed"};
       if(result.admitted || result.ok)return {status:"accepted"};
-      return {status:result.notSubmitted?"rejected":"failed",reason:result.error};
+      // This supervisor refusal is definitively before adapter.sendMessage.
+      // Other failures without non-submission proof must never become retryable.
+      const rejected=result.notSubmitted || (result.nonRetryable && result.error==="Fleet admission holds automatic delivery");
+      return {status:rejected?"rejected":"failed",reason:result.error,receipt:{...result}};
     },
     queryReceipt:async wait=>{
       const adapter=adapters.get(wait.owner.harness);
