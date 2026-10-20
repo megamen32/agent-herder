@@ -455,7 +455,9 @@ export async function handleSendMessage(adapters: Map<string, HarnessAdapter>, a
 
 export async function handleReadMessage(args: unknown): Promise<string> {
   const parsed = z.object({ messageId: z.string(), offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(8000).optional() }).parse(args);
-  return JSON.stringify(await readLongMessage(parsed));
+  const page = await readLongMessage(parsed);
+  const {sha256: _privateDigest, ...compact} = page;
+  return JSON.stringify(parsed.messageId.length < 64 ? compact : page);
 }
 
 export async function handleSaveMessageToFile(args: unknown): Promise<{ path: string; sha256: string; bytes: number; host: { name: string; note: string } }> {
@@ -478,7 +480,7 @@ async function sendMessageOnce(
   if (!parsed.humanRequested && !isCoordinationActive(found.session)) return skippedCoordination(found.session);
 
   const provenanceHeader = parsed.meshSender
-    ? `🤖 Сообщение от AI-сессии\nОбъявленный источник: ${parsed.meshSender.hostId} / ${parsed.meshSender.harness} / ${parsed.meshSender.nativeSessionId}.\nАтрибуция объявлена; личность отправителя не подтверждена.`
+    ? `🤖 ${parsed.meshSender.harness}@${parsed.meshSender.hostId} ${parsed.meshSender.nativeSessionId}`
     : await buildMessageProvenanceHeader(adapters, parsed, found.session);
   const deliveredBody = parsed.humanRequested ? parsed.message : await compactAutomaticMessage(parsed.message);
   const baseMessage = `${provenanceHeader}\n\n${deliveredBody}`;
