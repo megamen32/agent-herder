@@ -20,7 +20,9 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
     validateDependency:async(ref:SessionRef)=>{
       const adapter=adapters.get(ref.harness);
       if(!adapter?.subscribeEvents)
-        throw new Error(`Harness ${ref.harness} does not publish native turn events, so a resume-after dependency on it can never confirm completion; wait on an event-capable harness (opencode, codex, zcode, hermes, qoder) instead`);
+        throw new Error(`Harness ${ref.harness} does not publish native turn events required for resume_after`);
+      if(ref.harness!=='codex' && ref.harness!=='zcode')
+        throw new Error(`Harness ${ref.harness} does not expose an exact native turn identity required for resume_after; use Codex or ZCode`);
     },
     isHeld:async ref=>await held(ref.harness,ref.sessionId) || await supervisor.isAutomationHeld(ref.harness,ref.sessionId),
     isBusy:async ref=>{
@@ -43,7 +45,7 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
       const turnId=active??(!busy || ["inProgress","running"].includes(String(last.status))?string(last.turnId):undefined);
       const outcome=last.status==="completed"?"turn.completed":["failed","error","cancelled","interrupted"].includes(String(last.status))?"turn.failed":undefined;
       const completedAt=string(last.completedAt);
-      return {busy,turnId,...(!busy && turnId && outcome?{completion:{outcome,at:completedAt??new Date().toISOString()}}:{})};
+      return {busy,turnId,...(!busy && turnId && outcome && completedAt?{completion:{outcome,at:completedAt}}:{})};
     },
     deliver:async wait=>{
       const result=await supervisor.sendMessage(wait.owner.harness,wait.owner.sessionId,

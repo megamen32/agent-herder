@@ -40,6 +40,39 @@ describe('bounded native Codex discovery',()=>{
   const raw=new CodexAdapter({codexDir:folder});
   await expect(raw.getNativeLineageForId('unindexed-thread')).resolves.toEqual({available:false,childThreadIds:[]});
  });
+ it('does not report a complete empty lineage when bounded header candidates are truncated',async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'truncated-codex-lineage-'));folders.push(folder);
+  const db=new DatabaseSync(join(folder,'state_5.sqlite'));
+  db.exec('create table threads(id text primary key,rollout_path text,thread_source text,updated_at_ms integer);create table thread_spawn_edges(child_thread_id text primary key,parent_thread_id text)');
+  const row=db.prepare('insert into threads values(?,?,?,?)');
+  db.exec('begin');
+  row.run('parent',null,'cli',1);
+  for(let i=0;i<256;i++)row.run(`recent-${i}`,`/missing/recent-${i}`,'subagent',1000-i);
+  row.run('older-real-child','/missing/older-real-child','subagent',-1);
+  db.exec('commit');
+  db.close();
+  const raw=new CodexAdapter({codexDir:folder});
+  await expect(raw.getNativeLineageForId('parent',{includeHeaderChildren:true})).resolves.toEqual({available:false,childThreadIds:[]});
+ },20000);
+ it('reports lineage unavailable when an indexed subagent header cannot be verified',async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'unreadable-codex-lineage-'));folders.push(folder);
+  const db=new DatabaseSync(join(folder,'state_5.sqlite'));
+  db.exec('create table threads(id text primary key,rollout_path text,thread_source text,updated_at_ms integer);create table thread_spawn_edges(child_thread_id text primary key,parent_thread_id text)');
+  db.prepare('insert into threads values(?,?,?,?)').run('parent',null,'cli',1);
+  db.prepare('insert into threads values(?,?,?,?)').run('missing-child','/missing/rollout.jsonl','subagent',0);
+  db.close();
+  const raw=new CodexAdapter({codexDir:folder});
+  await expect(raw.getNativeLineageForId('parent',{includeHeaderChildren:true})).resolves.toEqual({available:false,childThreadIds:[]});
+ });
+ it('does not report an indexed target as a proven root when its own rollout header is unreadable',async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'unreadable-target-lineage-'));folders.push(folder);
+  const db=new DatabaseSync(join(folder,'state_5.sqlite'));
+  db.exec('create table threads(id text primary key,rollout_path text not null,thread_source text,updated_at_ms integer);create table thread_spawn_edges(child_thread_id text primary key,parent_thread_id text)');
+  db.prepare('insert into threads values(?,?,?,?)').run('child','/missing/child.jsonl','subagent',2);
+  db.close();
+  const raw=new CodexAdapter({codexDir:folder});
+  await expect(raw.getNativeLineageForId('child')).resolves.toEqual({available:false,childThreadIds:[]});
+ });
  it('keeps MCP lineage responses structured when a native child or parent cannot be read',async()=>{
   const session={id:'parent',harness:'codex',title:'Parent',cwd:'/workspace',status:'idle',lastActivity:new Date().toISOString(),needsPermission:false} as const;
   const adapter={type:'codex',name:'Codex fixture',async getSession(){return session;},

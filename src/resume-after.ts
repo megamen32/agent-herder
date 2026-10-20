@@ -109,13 +109,16 @@ export class ResumeAfterService {
       };
       if(dependencies.some(ref=>reaches(key(ref),key(input.owner)))) throw new Error("Dependency cycle");
       for(const ref of [input.owner]) await this.options.validateRef?.(ref);
+      // Capability is a request-level precondition, not a property of whichever
+      // dependency happens to be inspected first. Validate every dependency
+      // before HumanStop handling or a terminal runtime snapshot can short-circuit.
+      for(const ref of dependencies) await this.options.validateDependency?.(ref);
       const wait:ResumeAfterWait={id,owner:{...input.owner},dependencies,message,createdAt:new Date().toISOString(),state:"waiting",completed:{}};
       if(await this.options.isHeld(wait.owner)){
         wait.state="cancelled";wait.reason="requester was stopped";
       } else for(const ref of dependencies) {
-        // Capability errors are explicit API refusals. An unavailable exact
-        // dependency is a durable blocker, so retry cannot silently re-arm it.
-        await this.options.validateDependency?.(ref);
+        // An unavailable exact dependency is a durable blocker, so retry
+        // cannot silently re-arm it. Capability refusals were preflighted above.
         try { await this.options.validateRef?.(ref); }
         catch {
           wait.state="delivery_failed";wait.reason=`Dependency ${ref.harness}:${ref.sessionId}: native turn completion is unavailable (exact session unavailable)`;

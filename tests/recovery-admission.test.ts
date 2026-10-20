@@ -196,6 +196,25 @@ describe("fleet admission authority", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it("does not bypass a fresh resource denial while the retired snapshot cache is populated concurrently", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fleet-admission-retired-cold-race-"));
+    const path = join(root, "state.json");
+    try {
+      await writeFile(path, JSON.stringify({ utc: new Date(now).toISOString(), heavy: { admission: "DENIED" }, registry: {} }));
+      const gate = createFleetRecoveryAdmissionGate(path, () => now, { AGENT_HERDER_FLEET_ADMISSION: "retired" });
+      const results = await Promise.all(Array.from({ length: 32 }, (_, index) =>
+        gate({ id: `fixture-${index}`, harness: "codex" } as never, "send")));
+      expect(results.every(result => !result.allowed)).toBe(true);
+      expect(results.every(result => result.allowed === false && result.reason === "Existing fleet resource admission is denied")).toBe(true);
+
+      await writeFile(path, JSON.stringify({ utc: new Date(now).toISOString(), registry: { owned: { taskState: "active", stdioBlocker: "owner decision remains" } } }));
+      const sessionGate = createFleetRecoveryAdmissionGate(path, () => now, { AGENT_HERDER_FLEET_ADMISSION: "retired" });
+      const sessionResults = await Promise.all(Array.from({ length: 32 }, () =>
+        sessionGate({ id: "owned", harness: "codex" } as never, "send")));
+      expect(sessionResults.every(result => result.allowed === false && result.reason === "Fleet task retains stdioBlocker")).toBe(true);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it.each([
     ["stdioBlocker", "owner-confirmation-required"],
     ["recoveryBlockedReason", "recovery-authority-held"],

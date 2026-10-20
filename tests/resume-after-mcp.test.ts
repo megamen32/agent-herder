@@ -45,8 +45,9 @@ async function nativeFixture() {
   async function complete(id:string) {
     const session=sessions.get(id)!;
     const turnId=session.meta!.activeTurnId as string;
-    session.status="idle";session.meta={nativeLastTurn:{turnId,status:"completed"}};
-    await emit(id,"turn.completed",turnId);
+    const completedAt=new Date().toISOString();
+    session.status="idle";session.meta={nativeLastTurn:{turnId,status:"completed",completedAt}};
+    await runtime.service.observe({...ref(id),kind:"turn.completed",at:completedAt,data:{turnId}});
   }
   return {directory,adapters,runtime,makeRuntime,sessions,sent,request,emit,complete,hold:()=>{held=true;},setDelivery:(value:typeof delivery)=>{delivery=value;}};
 }
@@ -146,6 +147,31 @@ describe("exact native turn registration",()=>{
     expect(wait.state).toBe("resumed");expect(f.sent).toHaveLength(1);
     expect(Object.values(wait.completed).map(value=>value.turnId).sort()).toEqual(["a-current","b-current"]);
     expect(Object.values(wait.completed).every(value=>value.at==="2026-10-20T09:59:00.000Z")).toBe(true);
+  });
+  it("does not synthesize a native completion timestamp for a Codex summary",async()=>{
+    const f=await nativeFixture();
+    for(const id of ["a","b"]){
+      f.sessions.get(id)!.status="idle";
+      f.sessions.get(id)!.meta={nativeLastTurn:{turnId:id+"-current",status:"completed"}};
+    }
+    const wait=await f.makeRuntime().service.register(f.request);
+    expect(wait.state).toBe("delivery_failed");
+    expect(wait.reason).toMatch(/native turn completion is unavailable/i);
+    expect(f.sent).toHaveLength(0);
+  });
+  it("blocks a running dependency when its native turn identity cannot be verified",async()=>{
+    const f=await nativeFixture();
+    f.sessions.get("a")!.meta={};
+    const wait=await f.runtime.service.register(f.request);
+    expect(wait.state).toBe("delivery_failed");
+    expect(wait.reason).toMatch(/native turn identity is unavailable/i);
+    f.sessions.get("a")!.meta={activeTurnId:"a-current"};
+    await f.emit("a","turn.started","a-current");
+    await f.complete("a");
+    expect(f.sent).toHaveLength(0);
+    await f.complete("b");
+    expect((await f.runtime.service.get(wait.id))?.state).toBe("delivery_failed");
+    expect(f.sent).toHaveLength(0);
   });
   it("blocks when a previously observed Codex turn becomes unreadable",async()=>{
     const f=await nativeFixture();
@@ -317,5 +343,35 @@ describe("MCP dependency wait through native adapter events",()=>{
     const call=await client.callTool({name:"resume_after",arguments:{owner:ref("owner"),dependencies:[{harness:"claude",sessionId:"c"}]}});
     expect(call.isError).toBe(true);
     expect(JSON.stringify(call.content)).toContain("does not publish native turn events");
+  });
+  it("refuses an OpenCode dependency without an exact execution identity at registration",async()=>{
+    const directory=await mkdtemp(join(process.cwd(),".tmp/resume-after-mcp-"));
+    cleanup.push(()=>rm(directory,{recursive:true,force:true}));
+    const session=(id:string,status:"idle"|"running"):AgentSession=>({id,harness:"opencode",title:id,cwd:process.cwd(),status,lastActivity:new Date().toISOString(),needsPermission:false});
+    const adapter={type:"opencode",name:"OpenCode fixture",async getSession(id:string){return session(id,id==="dependency"?"running":"idle");},
+      subscribeEvents(){return()=>{};}} as unknown as HarnessAdapter;
+    const runtime=createResumeAfterRuntime(new Map([["opencode",adapter]]),{
+      isAutomationHeld:async()=>false,sendMessage:async()=>{throw new Error("must not deliver");},
+    },async()=>false,directory);
+    await expect(runtime.service.register({owner:{harness:"opencode",sessionId:"owner"},dependencies:[{harness:"opencode",sessionId:"dependency"}],requestId:"unsupported-exact-identity"}))
+      .rejects.toThrow(/does not expose an exact native turn identity/i);
+  });
+  it.each([false,true])("preflights every dependency before persisting a wait, even if an earlier dependency or owner is terminal",async held=>{
+    const f=await nativeFixture();
+    f.sessions.get("a")!.meta={};
+    const unsupported:HarnessAdapter={
+      ...f.adapters.get("codex")!,type:"opencode",name:"OpenCode fixture",
+      async getSession(id){return {id,harness:"opencode",title:id,cwd:process.cwd(),status:"running",lastActivity:new Date().toISOString(),needsPermission:false};},
+      subscribeEvents(){return()=>{};},
+    };
+    const adapters=new Map(f.adapters);adapters.set("opencode",unsupported);
+    const runtime=createResumeAfterRuntime(adapters,{
+      isAutomationHeld:async()=>false,sendMessage:async()=>{throw new Error("must not deliver");},
+    },async()=>false,f.directory);
+    if(held)f.hold();
+    await expect(runtime.service.register({owner:ref("owner"),dependencies:[ref("a"),{harness:"opencode",sessionId:"unsupported"}],requestId:`preflight-${held}`}))
+      .rejects.toThrow(/does not expose an exact native turn identity/i);
+    expect(await runtime.service.list()).toHaveLength(0);
+    expect(f.sent).toHaveLength(0);
   });
 });

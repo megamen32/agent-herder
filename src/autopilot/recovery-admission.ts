@@ -55,7 +55,8 @@ export function createFleetRecoveryAdmissionGate(
 ): RecoveryAdmissionGate {
   const mode = fleetAdmissionMode(env);
   let warnedAt = 0;
-  let retiredCache: { signature: string; state?: Record<string, unknown> } | undefined;
+  type RetiredSnapshotRead = { state?: Record<string, unknown>; blockedReason?: string };
+  let retiredCache: { signature: string; state?: Record<string, unknown>; blockedReason?: string; loading?: Promise<RetiredSnapshotRead> } | undefined;
   // A stale or missing snapshot silently defers every affected session, so the
   // reason is reported at most once per interval instead of being invisible.
   const reportSilentHold = (reason: string): void => {
@@ -81,27 +82,43 @@ export function createFleetRecoveryAdmissionGate(
       try {
         const metadata = await stat(path, { bigint: true });
         const signature = [metadata.dev, metadata.ino, metadata.size, metadata.mtimeNs, metadata.ctimeNs].join(":");
-        let state = retiredCache?.signature === signature ? retiredCache.state : undefined;
-        if (retiredCache?.signature !== signature) {
-          state = undefined;
-          // Cache failed parses too: an unchanged corrupt snapshot should not
-          // trigger another full-file read and parse on every admission call.
-          retiredCache = { signature };
-          if (metadata.size > 0n && metadata.size <= BigInt(MAX_STATE_BYTES)) {
-            file = await open(path, "r");
-            const opened = await file.stat({ bigint: true });
-            const openedSignature = [opened.dev, opened.ino, opened.size, opened.mtimeNs, opened.ctimeNs].join(":");
-            if (openedSignature === signature) {
+        let cache = retiredCache;
+        if (!cache || cache.signature !== signature) {
+          // Share the in-flight bounded read. A cache entry with no state is
+          // ambiguous until this promise settles; followers must never treat
+          // it as a completed failed parse and allow through a fresh DENIED.
+          cache = { signature };
+          retiredCache = cache;
+          cache.loading = (async (): Promise<RetiredSnapshotRead> => {
+            if (metadata.size < 1n || metadata.size > BigInt(MAX_STATE_BYTES)) return {};
+            let retiredFile: Awaited<ReturnType<typeof open>> | undefined;
+            try {
+              retiredFile = await open(path, "r");
+              const opened = await retiredFile.stat({ bigint: true });
+              const openedSignature = [opened.dev, opened.ino, opened.size, opened.mtimeNs, opened.ctimeNs].join(":");
+              if (openedSignature !== signature) return { blockedReason: "Fleet admission state changed during read" };
               const bytes = Buffer.alloc(Number(opened.size) + 1);
-              const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
-              if (bytesRead === Number(opened.size)) {
-                const parsed: unknown = JSON.parse(bytes.subarray(0, bytesRead).toString("utf8"));
-                if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) state = parsed as Record<string, unknown>;
-              }
+              const { bytesRead } = await retiredFile.read(bytes, 0, bytes.length, 0);
+              if (bytesRead !== Number(opened.size)) return { blockedReason: "Fleet admission state changed during read" };
+              const parsed: unknown = JSON.parse(bytes.subarray(0, bytesRead).toString("utf8"));
+              return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+                ? { state: parsed as Record<string, unknown> } : {};
+            } catch {
+              return {};
+            } finally {
+              await retiredFile?.close();
             }
-          }
-          retiredCache = { signature, state };
+          })();
         }
+        if (cache.loading) {
+          const pending = cache.loading;
+          const loaded = await pending;
+          cache.state = loaded.state;
+          cache.blockedReason = loaded.blockedReason;
+          if (cache.loading === pending) delete cache.loading;
+        }
+        if (cache.blockedReason) return { allowed: false, reason: cache.blockedReason };
+        const state = cache.state;
         const observed = typeof state?.utc === "string" ? Date.parse(state.utc) : NaN;
         const stamp = now();
         const fresh = Number.isFinite(observed) && stamp - observed <= MAX_STATE_AGE_MS && observed <= stamp + 60_000;

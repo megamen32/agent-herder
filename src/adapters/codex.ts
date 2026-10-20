@@ -335,13 +335,13 @@ export class CodexAdapter implements HarnessAdapter {
           if (threadColumns.has("id") && threadColumns.has("rollout_path")) {
             if (!parentThreadId) {
               const own = db.prepare("select rollout_path from threads where id = ? limit 1").get(id) as { rollout_path?: unknown } | undefined;
-              if (typeof own?.rollout_path === "string" && own.rollout_path) {
-                const header = await this.readSessionHeader(own.rollout_path).catch(() => "");
-                if (this.getHeaderSessionId(header) === id) {
-                  const headerParent = this.extractLineage(header).parentThreadId;
-                  if (headerParent && headerParent !== id) parentThreadId = headerParent;
-                }
-              }
+              if (typeof own?.rollout_path !== "string" || !own.rollout_path || !existsSync(own.rollout_path))
+                return { available: false, childThreadIds: [] };
+              const header = await this.readSessionHeader(own.rollout_path).catch(() => "");
+              if (!header || this.getHeaderSessionId(header) !== id) return { available: false, childThreadIds: [] };
+              const headerParent = this.extractLineage(header).parentThreadId;
+              if (headerParent === id) return { available: false, childThreadIds: [] };
+              if (headerParent) parentThreadId = headerParent;
             }
             // Some native indexes contain the thread but not its spawn edge.
             // Inspect only rows explicitly indexed as subagents (or all
@@ -358,12 +358,18 @@ export class CodexAdapter implements HarnessAdapter {
                 left join thread_spawn_edges e on e.child_thread_id = t.id
                 where t.thread_source = 'subagent' and e.child_thread_id is null
                   and t.id <> ? and t.rollout_path is not null
-                ${orderByRecent} limit 256
+                ${orderByRecent} limit 257
               `).all(id) as Array<{ id?: unknown; rollout_path?: unknown }>;
+              // A full candidate page is not proof that the omitted tail is
+              // unrelated. Refuse an incomplete fallback instead of claiming
+              // a complete, empty descendant list.
+              if (candidates.length > 256) return { available: false, childThreadIds: [] };
               for (const candidate of candidates) {
-                if (typeof candidate.id !== "string" || candidate.id === id || typeof candidate.rollout_path !== "string" || !candidate.rollout_path || !existsSync(candidate.rollout_path)) continue;
+                if (typeof candidate.id !== "string" || candidate.id === id || typeof candidate.rollout_path !== "string" || !candidate.rollout_path || !existsSync(candidate.rollout_path)) {
+                  return { available: false, childThreadIds: [] };
+                }
                 const header = await this.readSessionHeader(candidate.rollout_path).catch(() => "");
-                if (this.getHeaderSessionId(header) !== candidate.id) continue;
+                if (!header || this.getHeaderSessionId(header) !== candidate.id) return { available: false, childThreadIds: [] };
                 const headerParent = this.extractLineage(header).parentThreadId;
                 if (headerParent === id) childThreadIds.add(candidate.id);
               }
