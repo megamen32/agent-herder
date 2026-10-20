@@ -38,6 +38,42 @@ seam.
 - Checkpoints are monotonically sequenced per attempt. Equal-sequence updates
   must carry the same cursor.
 
+Each newly prepared attempt also stores a stable project scope: project ID,
+opaque H31 root identity, policy revision, canonical root path/device/inode,
+host, harness/version, and the native data-home path/device/inode. The app-server
+and transcript-reader homes must be equal before the scope is persisted. Fresh
+H31 runtime-instance IDs are verified through the existing `runtimeOwner` on
+every prepare and address recovery, but are not persisted as durable scope.
+Fallback may change host and that host's native data-home; project, root, and
+policy remain stable across all scoped attempts.
+
+Old v1/v2 rows migrate for diagnostics with their original addresses, receipts,
+and input IDs intact, but receive no inferred scope. An accepted legacy address
+is never exposed by the admission wrapper. The wrapper returns unresolved
+UNKNOWN with no binding/address when scope is absent or current evidence does
+not match. Every unresolved UNKNOWN response is address-free, including wrong
+harness, intent, unknown receipt and admission/journal errors; it carries neither
+the durable binding nor an H33 receipt that could contain a native address.
+The source store may still be used directly for internal diagnostic reads.
+
+After an attempt reservation is durably claimed, the wrapper resolves and
+validates current owner/H31 evidence again before returning the prepared input
+ID to H33. The second observation must match the pre-reservation stable scope
+and H33 execution binding. If the H31 proof expires, owner scope changes, or
+revalidation fails while `reserve` waits on the journal lock, the durable intent
+is retained without a receipt and no native create or host fallback occurs.
+That intent remains non-replayable after restart.
+
+The optional server-owned resolver is exported as
+`IntegratorSessionScopeOwnerPort` in `src/integrator-session-admission.ts` and
+returns `IntegratorCurrentProjectScopeEvidence` from that same module. Its
+`resolveCurrentProjectScope({ projectId, rootIdentity, policyRevision, hostId,
+harness })` method returns current H31 binding, canonical root identity,
+harness version, and app-server plus transcript-reader data-home identities, or
+`null`. The provider is absent from production composition today, so default
+behavior is deny. Test fakes establish only source behavior; no live owner
+observation, runtime wiring, or native session persistence is claimed.
+
 The JSON store uses a per-path `proper-lockfile` lock, atomic temp-file rename,
 mode `0600` for data/lock files, and mode `0700` for its parent directory. A
 malformed or incompatible file fails closed; it is never treated as empty.

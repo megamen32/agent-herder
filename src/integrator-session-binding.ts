@@ -14,6 +14,18 @@ export interface IntegratorLaunchCheckpoint {
   cursor: string;
 }
 
+/** Stable owner-observed identities pinned to one actual host attempt. */
+export interface IntegratorAttemptScope {
+  projectId: string;
+  rootIdentity: string;
+  policyRevision: string;
+  hostId: string;
+  harness: IntegratorHarness;
+  harnessVersion: string;
+  canonicalRoot: { path: string; device: number; inode: number };
+  nativeDataHome: { path: string; device: number; inode: number };
+}
+
 /** Receipt shape returned by the existing fleet owner create seam. */
 export type IntegratorLaunchReceipt = FleetCreateReceipt;
 
@@ -22,6 +34,8 @@ export interface IntegratorLaunchAttempt {
   inputId: string;
   /** Host is immutable for this launch attempt; a retryable refusal may select another host. */
   hostId: string;
+  /** Absent only on preserved pre-scope journal rows; those rows cannot recover addresses. */
+  scope?: IntegratorAttemptScope;
   state: IntegratorLaunchState;
   startedAt: string;
   updatedAt: string;
@@ -39,6 +53,11 @@ export interface IntegratorOperationBinding {
 }
 
 interface BindingFile {
+  version: 3;
+  operations: Record<string, IntegratorOperationBinding>;
+}
+
+interface VersionTwoBindingFile {
   version: 2;
   operations: Record<string, IntegratorOperationBinding>;
 }
@@ -124,6 +143,18 @@ function validateBinding(binding: IntegratorOperationBinding): IntegratorOperati
       throw new Error("integrator_session_binding_invalid_attempt");
     }
     requiredText(attempt.hostId, "attempt_host_id");
+    if (attempt.scope) {
+      validateAttemptScope(attempt.scope);
+      if (attempt.scope.hostId !== attempt.hostId || attempt.scope.harness !== binding.harness) {
+        throw new Error("integrator_session_binding_scope_attempt_conflict");
+      }
+      const firstScoped = binding.attempts.slice(0, index).find(candidate => candidate.scope)?.scope;
+      if (firstScoped && (firstScoped.projectId !== attempt.scope.projectId
+        || firstScoped.rootIdentity !== attempt.scope.rootIdentity
+        || firstScoped.policyRevision !== attempt.scope.policyRevision)) {
+        throw new Error("integrator_session_binding_operation_scope_conflict");
+      }
+    }
     if (!Number.isFinite(Date.parse(attempt.startedAt)) || !Number.isFinite(Date.parse(attempt.updatedAt))) {
       throw new Error("integrator_session_binding_invalid_attempt_time");
     }
@@ -154,6 +185,28 @@ function validateBinding(binding: IntegratorOperationBinding): IntegratorOperati
   return clone(binding);
 }
 
+function validateIdentity(value: unknown, field: string): asserts value is { path: string; device: number; inode: number } {
+  if (!value || typeof value !== "object") throw new Error(`integrator_session_binding_invalid_${field}`);
+  const identity = value as { path?: unknown; device?: unknown; inode?: unknown };
+  requiredText(identity.path, `${field}_path`);
+  if (!Number.isSafeInteger(identity.device) || (identity.device as number) < 0
+    || !Number.isSafeInteger(identity.inode) || (identity.inode as number) <= 0) {
+    throw new Error(`integrator_session_binding_invalid_${field}_identity`);
+  }
+}
+
+function validateAttemptScope(scope: IntegratorAttemptScope): IntegratorAttemptScope {
+  requiredText(scope?.projectId, "scope_project_id");
+  requiredText(scope.rootIdentity, "scope_root_identity");
+  requiredText(scope.policyRevision, "scope_policy_revision");
+  requiredText(scope.hostId, "scope_host_id");
+  requiredText(scope.harness, "scope_harness");
+  requiredText(scope.harnessVersion, "scope_harness_version");
+  validateIdentity(scope.canonicalRoot, "scope_canonical_root");
+  validateIdentity(scope.nativeDataHome, "scope_native_data_home");
+  return clone(scope);
+}
+
 /**
  * Durable, file-backed intent and session binding for one integrator operation.
  * This store records evidence only; callers own native launch and reconciliation.
@@ -180,6 +233,7 @@ export class IntegratorSessionBindingStore {
     operationId: string;
     hostId: string;
     harness: IntegratorHarness;
+    scope?: IntegratorAttemptScope;
     /** Snapshot identity required to advance an existing retryable refusal. */
     expectedPriorAttempt?: ExpectedPriorIntegratorAttempt;
   }): Promise<ReserveIntegratorAttemptResult> {
@@ -205,10 +259,16 @@ export class IntegratorSessionBindingStore {
           || input.hostId === previousAttempt.hostId) {
           return { claimed: false, binding, attempt: clone(previousAttempt) };
         }
+        if (previousAttempt.scope && (!input.scope || previousAttempt.scope.projectId !== input.scope.projectId
+          || previousAttempt.scope.rootIdentity !== input.scope.rootIdentity
+          || previousAttempt.scope.policyRevision !== input.scope.policyRevision)) {
+          return { claimed: false, binding, attempt: clone(previousAttempt) };
+        }
         const now = new Date().toISOString();
         const attempt = binding.attempts.length + 1;
         const next: IntegratorLaunchAttempt = {
           attempt, inputId: attemptInputId(input.operationId, attempt), hostId: input.hostId,
+          ...(input.scope ? { scope: validateAttemptScope(input.scope) } : {}),
           state: "intent", startedAt: now, updatedAt: now,
         };
         binding.attempts.push(next);
@@ -224,6 +284,7 @@ export class IntegratorSessionBindingStore {
         harness: input.harness,
         state: "intent",
         attempts: [{ attempt: 1, inputId: attemptInputId(input.operationId, 1), hostId: input.hostId,
+          ...(input.scope ? { scope: validateAttemptScope(input.scope) } : {}),
           state: "intent", startedAt: now, updatedAt: now }],
       };
       file.operations[input.operationId] = binding;
@@ -322,18 +383,18 @@ export class IntegratorSessionBindingStore {
 
   private async read(): Promise<BindingFile> {
     try {
-      const parsed = JSON.parse(await readFile(this.options.persistencePath, "utf8")) as BindingFile | LegacyBindingFile;
+      const parsed = JSON.parse(await readFile(this.options.persistencePath, "utf8")) as BindingFile | LegacyBindingFile | VersionTwoBindingFile;
       if (parsed.version === 1) return this.migrateLegacy(parsed);
-      if (parsed.version !== 2 || !parsed.operations || typeof parsed.operations !== "object" || Array.isArray(parsed.operations)) {
+      if ((parsed.version !== 2 && parsed.version !== 3) || !parsed.operations || typeof parsed.operations !== "object" || Array.isArray(parsed.operations)) {
         throw new Error("integrator_session_binding_store_invalid");
       }
       for (const [key, binding] of Object.entries(parsed.operations)) {
         const checked = validateBinding(binding);
         if (checked.operationId !== key) throw new Error("integrator_session_binding_key_mismatch");
       }
-      return parsed;
+      return { version: 3, operations: parsed.operations };
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 2, operations: {} };
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 3, operations: {} };
       throw error;
     }
   }
@@ -356,11 +417,11 @@ export class IntegratorSessionBindingStore {
       if (checked.operationId !== key) throw new Error("integrator_session_binding_key_mismatch");
       operations[key] = checked;
     }
-    return { version: 2, operations };
+    return { version: 3, operations };
   }
 
   private async write(file: BindingFile): Promise<void> {
-    file.version = 2;
+    file.version = 3;
     await mkdir(dirname(this.options.persistencePath), { recursive: true, mode: 0o700 });
     const temporary = `${this.options.persistencePath}.${randomUUID()}.tmp`;
     try {

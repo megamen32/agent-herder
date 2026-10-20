@@ -239,4 +239,29 @@ describe("integrator session binding store", () => {
     await writeFile(f.path, "{broken", "utf8");
     await expect(new IntegratorSessionBindingStore({ persistencePath: f.path }).get("task-op-corrupt")).rejects.toThrow();
   });
+
+  it("reads v2 rows as unscoped diagnostics without changing their native receipt or input ID", async () => {
+    const f = await fixture();
+    const operationId = "task-op-v2-legacy";
+    const inputId = operationInputId(operationId, 1);
+    const oldReceipt = receipt(inputId, "created", {
+      address: { hostId: "server-100", harness: "codex", nativeSessionId: "legacy-native" },
+    });
+    await writeFile(f.path, JSON.stringify({
+      version: 2,
+      operations: {
+        [operationId]: {
+          operationId, harness: "codex", state: "accepted",
+          attempts: [{ attempt: 1, inputId, hostId: "server-100", state: "accepted",
+            startedAt: "2026-10-20T12:00:00.000Z", updatedAt: "2026-10-20T12:01:00.000Z",
+            address: oldReceipt.address, receipt: oldReceipt }],
+        },
+      },
+    }), "utf8");
+
+    const legacy = await new IntegratorSessionBindingStore({ persistencePath: f.path }).get(operationId);
+    expect(legacy?.attempts[0]?.scope).toBeUndefined();
+    expect(legacy?.attempts[0]?.inputId).toBe(inputId);
+    expect(legacy?.attempts[0]?.receipt).toEqual(oldReceipt);
+  });
 });
