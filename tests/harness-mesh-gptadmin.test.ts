@@ -3,6 +3,12 @@ import { GptAdminMesh } from "../src/mesh/gptadmin.js";
 const a={hostId:"100",harness:"codex",nativeSessionId:"native"};
 function hub(){return {discover:vi.fn(async()=>({servers:[{server_id:"mcp:shell:100:Herder",kind:"child_mcp",status:"online"},{server_id:"shell:mac",kind:"virtual_shell",status:"online"}]})),schema:vi.fn(async()=>({tools:[{name:"mesh_snapshot"},{name:"mesh_deliver"}]})),call:vi.fn(async(_target:string,name:string,args:Record<string,unknown>)=>name==="mesh_snapshot"?{hostId:"100",sessions:[{address:a,project:{launchCwd:"/launch",currentCwd:"/actual",source:"native"},status:"running",title:"test",lastActivity:"now"}],harnesses:[],complete:true}:{state:"admitted",inputId:args.inputId,turnId:"turn",retryable:false})};}
 describe("GPTAdmin native mesh (focused integration; expected 5s, maximum 30s)",()=>{
+ it("re-resolves a route after stateless MCP recreates the server between calls",async()=>{
+  const h=hub();await new GptAdminMesh(h).discover();
+  const fresh=new GptAdminMesh(h);
+  expect((await fresh.deliver({target:a,sender:{...a,nativeSessionId:"source"},inputId:"after-mcp-reconnect",message:"necessary delta"})).state).toBe("admitted");
+  expect(h.call.mock.calls.filter(call=>call[1]==="mesh_deliver")).toHaveLength(1);
+ });
  it("projects oversized external capability diagnostics into known bounded fields",async()=>{
   const h=hub();
   const project={launchCwd:"/launch",currentCwd:null,source:"unverified"};

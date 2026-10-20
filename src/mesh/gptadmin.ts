@@ -113,7 +113,10 @@ export class GptAdminMesh {
     const previous=this.inputs.get(key);
     if(previous)return previous.digest===digest?previous.result:{state:"not_attempted",inputId:request.inputId,retryable:false,reason:"input_id_conflict"};
     if(this.inputs.size>=4096)return {state:"not_attempted",inputId:request.inputId,retryable:true,reason:"mesh_input_capacity"};
-    const route=this.routes.get(request.target.hostId);
+    let route=this.routes.get(request.target.hostId);
+    // Stateless MCP may recreate this service between discovery and delivery.
+    // Re-resolve read-only identity/schema; never retry a native mutation here.
+    if(!route){try{await this.discover(12);route=this.routes.get(request.target.hostId);}catch{/* unavailable remains explicit */}}
     if(!route)return {state:"not_attempted",inputId:request.inputId,retryable:true,reason:"mesh_route_unavailable"};
     const result=this.budget.run({target:addressKey(request.target),sender:addressKey(request.sender),inputId:request.inputId,message:request.message},async()=>{
       try{
