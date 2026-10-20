@@ -460,7 +460,7 @@ export async function handleReadMessage(args: unknown): Promise<string> {
   return JSON.stringify(parsed.messageId.length < 64 ? compact : page);
 }
 
-export async function handleSaveMessageToFile(args: unknown): Promise<{ path: string; sha256: string; bytes: number; host: { name: string; note: string } }> {
+export async function handleSaveMessageToFile(args: unknown): Promise<{ path: string; sha256?: string; bytes: number; host: { name: string; note?: string } }> {
   const parsed = SaveMessageToFileSchema.parse(args);
   return saveLongMessageToWorkspace(parsed);
 }

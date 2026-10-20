@@ -153,10 +153,12 @@ describe("durable long automatic messages", () => {
     const exportedResult = await client.callTool({ name: "save_message_to_file", arguments: { messageId: id, cwd: root } });
     expect(exportedResult.isError).not.toBe(true);
     const exported = exportedResult.structuredContent as { path: string; sha256: string; bytes: number; host: { name: string; note: string } };
-    const expectedPath = join(root!, ".agent-herder", "messages", `${digest}.txt`);
-    expect(Object.keys(exported).sort()).toEqual(["bytes", "host", "path", "sha256"]);
-    expect(exported).toMatchObject({ path: expectedPath, sha256: digest, bytes: Buffer.byteLength(original), host: { name: hostname() } });
-    expect(exported.host.note).toContain("not automatically available on the calling machine");
+    const expectedPath = join(root!, ".agent-herder", "messages", `${id}.txt`);
+    expect(Object.keys(exported).sort()).toEqual(["bytes", "host", "path"]);
+    expect(exported).not.toHaveProperty("sha256");
+    expect(exported.host).not.toHaveProperty("note");
+    expect(exported).toMatchObject({ path: expectedPath, bytes: Buffer.byteLength(original), host: { name: hostname() } });
+    expect((await client.listTools()).tools.find(tool => tool.name === "save_message_to_file")?.description).toContain("not automatically available on the calling machine");
     expect(Buffer.from(await readFile(expectedPath))).toEqual(Buffer.from(original, "utf8"));
     expect((await stat(expectedPath)).mode & 0o777).toBe(0o600);
     expect((await stat(join(root!, ".agent-herder"))).mode & 0o777).toBe(0o700);
@@ -167,7 +169,7 @@ describe("durable long automatic messages", () => {
 
     const mismatchWorkspace = join(root!, "mismatch-workspace");
     await mkdir(mismatchWorkspace);
-    const mismatchTarget = join(mismatchWorkspace, ".agent-herder", "messages", `${digest}.txt`);
+    const mismatchTarget = join(mismatchWorkspace, ".agent-herder", "messages", `${id}.txt`);
     await mkdir(join(mismatchWorkspace, ".agent-herder", "messages"), { recursive: true });
     await writeFile(mismatchTarget, "unrelated content", { mode: 0o600 });
     expect((await client.callTool({ name: "save_message_to_file", arguments: { messageId: id, cwd: mismatchWorkspace } })).isError).toBe(true);
@@ -185,7 +187,7 @@ describe("durable long automatic messages", () => {
     const externalFile = join(outside, "external.txt");
     await mkdir(join(linkedTargetWorkspace, ".agent-herder", "messages"), { recursive: true });
     await writeFile(externalFile, "external sentinel", { mode: 0o600 });
-    await symlink(externalFile, join(linkedTargetWorkspace, ".agent-herder", "messages", `${digest}.txt`));
+    await symlink(externalFile, join(linkedTargetWorkspace, ".agent-herder", "messages", `${id}.txt`));
     expect((await client.callTool({ name: "save_message_to_file", arguments: { messageId: id, cwd: linkedTargetWorkspace } })).isError).toBe(true);
     expect(await readFile(externalFile, "utf8")).toBe("external sentinel");
     expect((await client.callTool({ name: "save_message_to_file", arguments: { messageId: "../secret", cwd: root } })).isError).toBe(true);

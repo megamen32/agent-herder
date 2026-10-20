@@ -300,7 +300,7 @@ export class CoordinationNoteStore {
       const removed = [...known.entries()].filter(([id, value]) => snapshotSource(value) === "hook" && !passiveIds.has(id));
       if (changed.length === 0 && removed.length === 0) return null;
       if (previous && Date.now() - previous.at < 60_000 && changed.length > 0 && removed.length === 0) return null;
-      const output = `<agent-herder-repo-peers board="${displayWorkspace(board, this.localHostId)}">Ownership changes: ${changed.length} active, ${removed.length} released. Read coordination_note_list(${noteListCall(board, this.localHostId)}).</agent-herder-repo-peers>`;
+      const output = `<agent-herder-repo-peers board="${displayWorkspace(board, this.localHostId)}">Owners +${changed.length}, -${removed.length}.</agent-herder-repo-peers>`;
       const acknowledged = new Map(known);
       // The note list is the authoritative full snapshot. Acknowledge all hook
       // ownership notes represented by that snapshot, while leaving manual
@@ -316,7 +316,7 @@ export class CoordinationNoteStore {
       const releasedWorking = oldNotes.filter(([, value]) => snapshotKind(value) === "working");
       const releasedActionable = oldNotes.filter(([, value]) => snapshotKind(value) !== "working");
       const lines = releasedWorking.length > 0
-        ? [`- Ownership changes: 0 active, ${releasedWorking.length} released. Read coordination_note_list(${noteListCall(board, this.localHostId)}).`]
+        ? [`- Owners +0, -${releasedWorking.length}.`]
         : [];
       lines.push(...releasedActionable.map(([id, value]) => `- Ownership released ${releasedAuthor(value)} noteId=${id}.`));
       const actionableDetails = releasedActionable.length > 0
@@ -340,7 +340,7 @@ export class CoordinationNoteStore {
     const removedActionable = removed.filter(([, value]) => snapshotKind(value) !== "working");
     const workingChanged = changedWorking.length > 0 || removedWorking.length > 0;
     const lines: string[] = [];
-    if (workingChanged) lines.push(`- Ownership changes: ${changedWorking.length} active, ${removedWorking.length} released. Read coordination_note_list(${noteListCall(board, this.localHostId)}).`);
+    if (workingChanged) lines.push(`- Owners +${changedWorking.length}, -${removedWorking.length}.`);
     lines.push(...removedActionable.map(([id, value]) => `- Ownership released ${releasedAuthor(value)} noteId=${id}.`));
     lines.push(...changedActionable.map((note) => {
       const paths = note.paths.length ? ` paths=${note.paths.slice(0, 4).join(",").slice(0, 90)}` : "";
@@ -662,11 +662,7 @@ function sameWorkspace(a: string, b: string): boolean {
 function workspaceKey(hostId: string, cwd: string): string { return JSON.stringify([hostId, cwd]); }
 function workspaceResourcePath(hostId: string, cwd: string, localHostId: string): string { return hostId === localHostId ? cwd : workspaceKey(hostId, cwd); }
 function displayWorkspace(board: { hostId: string; cwd: string }, localHostId: string): string { return board.hostId === localHostId ? basename(board.cwd) : `${board.hostId}:${board.cwd}`; }
-function noteListCall(board: { hostId: string; cwd: string }, localHostId: string): string {
-  return board.hostId === localHostId
-    ? `{cwd: ${JSON.stringify(board.cwd)}}`
-    : `{cwd: ${JSON.stringify(board.cwd)}, hostId: ${JSON.stringify(board.hostId)}}`;
-}
+
 
 function pathMatches(candidate: string, target: string): boolean {
   const c = candidate.replace(/^\.\//, ""); const t = target.replace(/^\.\//, "");

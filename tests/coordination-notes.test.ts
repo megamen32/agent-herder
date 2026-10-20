@@ -143,8 +143,8 @@ describe("coordination note injection dedup", () => {
 
     const first = await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" });
     expect(first).toContain("agent-herder-coordination");
-    expect(first).toContain("Ownership changes: 1 active, 0 released");
-    expect(first).toContain('coordination_note_list({cwd: "/repo"})');
+    expect(first).toContain("Owners +1, -0");
+    expect(first).not.toContain('coordination_note_list({cwd: "/repo"})');
     expect(first).not.toContain("src/parser.ts");
     expect(first).not.toContain("refactoring parser");
     expect(first).not.toContain("sess-b");
@@ -159,7 +159,7 @@ describe("coordination note injection dedup", () => {
     // Material change: a second author appears — inject.
     await store.create({ kind: "working", message: "migrating schema", cwd: "/repo", paths: ["db/migration.sql"], authorHarness: "codex", authorSessionId: "sess-c", source: "manual" });
     const second = await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" });
-    expect(second).toContain("Ownership changes: 1 active, 0 released");
+    expect(second).toContain("Owners +1, -0");
     expect(second).not.toContain("db/migration.sql");
     expect(second).not.toContain("sess-c");
     expect(second).not.toContain("migrating schema");
@@ -179,7 +179,7 @@ describe("coordination note injection dedup", () => {
     await store.create({ kind: "working", message: "touching api with private detail", cwd: "/repo", paths: ["api.ts"], authorHarness: "zcode", authorSessionId: "sess-b", source: "hook" });
     const peers = await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" });
     expect(peers).toContain("agent-herder-repo-peers");
-    expect(peers).toContain('coordination_note_list({cwd: "/repo"})');
+    expect(peers).not.toContain('coordination_note_list({cwd: "/repo"})');
     expect(peers!.length).toBeLessThan(240);
     expect(peers).not.toContain("sess-b");
     expect(peers).not.toContain("api.ts");
@@ -195,7 +195,7 @@ describe("coordination note injection dedup", () => {
     expect(await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
     await store.create({ kind: "working", message: "second owner's detailed task", cwd: "/repo", paths: ["src/second.ts"], authorHarness: "codex", authorSessionId: "sess-c", source: "hook" });
     const delta = await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" });
-    expect(delta).toContain('coordination_note_list({cwd: "/repo"})');
+    expect(delta).not.toContain('coordination_note_list({cwd: "/repo"})');
     expect(delta).not.toContain("sess-c");
     expect(await store.list({ cwd: "/repo" })).toHaveLength(2);
     expect(await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" })).toBeNull();
@@ -205,7 +205,7 @@ describe("coordination note injection dedup", () => {
   it("does not swallow active manual decisions or avoid notes in the passive summary", async () => {
     const store = await freshStore();
     await store.create({ kind: "working", message: "automatic file activity", cwd: "/repo", paths: ["auto.ts"], authorSessionId: "hook-owner", source: "hook" });
-    expect(await store.renderWorkspacePeers({ id: "reader", harness: "zcode", cwd: "/repo" })).toContain("coordination_note_list");
+    expect(await store.renderWorkspacePeers({ id: "reader", harness: "zcode", cwd: "/repo" })).not.toContain("coordination_note_list");
     await store.create({ kind: "avoid", message: "Do not edit the migration until the review completes", cwd: "/repo", paths: ["db/migration.sql"], authorSessionId: "manual-owner" });
     expect(await store.renderWorkspacePeers({ id: "reader", harness: "zcode", cwd: "/repo" })).toBeNull();
     const active = await store.renderForSession({ id: "reader", harness: "zcode", cwd: "/repo" });
@@ -220,8 +220,8 @@ describe("coordination note injection dedup", () => {
     await store.create({ kind: "working", message: "long manual task prose", cwd: "/repo", paths: ["private/path.ts"], authorHarness: "zcode", authorSessionId: "manual-uuid", source: "manual" });
 
     const working = await store.renderForSession({ id: "reader", harness: "codex", cwd: "/repo" });
-    expect(working).toContain("Ownership changes: 2 active, 0 released");
-    expect(working).toContain('coordination_note_list({cwd: "/repo"})');
+    expect(working).toContain("Owners +2, -0");
+    expect(working).not.toContain('coordination_note_list({cwd: "/repo"})');
     expect(working).not.toContain("/dev/null");
     expect(working).not.toContain("private/path.ts");
     expect(working).not.toContain("hook-uuid");
@@ -239,11 +239,11 @@ describe("coordination note injection dedup", () => {
   it("reports released working ownership by count without exposing previous roster details", async () => {
     const store = await freshStore();
     const note = await store.create({ kind: "working", message: "private task text", cwd: "/repo", paths: ["secret/path.ts"], authorSessionId: "owner-uuid", source: "manual" });
-    expect(await store.renderForSession({ id: "reader", harness: "codex", cwd: "/repo" })).toContain("Ownership changes: 1 active, 0 released");
+    expect(await store.renderForSession({ id: "reader", harness: "codex", cwd: "/repo" })).toContain("Owners +1, -0");
     await store.delete(note.id, "owner-uuid");
     const released = await store.renderForSession({ id: "reader", harness: "codex", cwd: "/repo" });
-    expect(released).toContain("Ownership changes: 0 active, 1 released");
-    expect(released).toContain('coordination_note_list({cwd: "/repo"})');
+    expect(released).toContain("Owners +0, -1");
+    expect(released).not.toContain('coordination_note_list({cwd: "/repo"})');
     expect(released).not.toContain("secret/path.ts");
     expect(released).not.toContain("private task text");
     expect(released).not.toContain("owner-uuid");
@@ -253,7 +253,7 @@ describe("coordination note injection dedup", () => {
   it("shows a hook reservation promoted to avoid immediately in active context", async () => {
     const store = await freshStore();
     const [note] = (await store.reservePaths({ harness: "codex", sessionId: "owner", cwd: "/repo", paths: ["db/migration.sql"] })).reservations;
-    expect(await store.renderWorkspacePeers({ id: "reader", harness: "zcode", cwd: "/repo" })).toContain("coordination_note_list");
+    expect(await store.renderWorkspacePeers({ id: "reader", harness: "zcode", cwd: "/repo" })).not.toContain("coordination_note_list");
     await store.update(note!.id, "owner", { kind: "avoid", message: "Migration is blocked pending review" });
     const active = await store.renderForSession({ id: "reader", harness: "zcode", cwd: "/repo" });
     expect(active).toContain("[avoid]");
@@ -288,8 +288,8 @@ describe("coordination note injection dedup", () => {
 
     const rosterA = await store.renderWorkspacePeers({ ...session, cwd: "/repoA" });
     const rosterB = await store.renderWorkspacePeers({ ...session, cwd: "/repoB" });
-    expect(rosterA).toContain('coordination_note_list({cwd: "/repoA"})');
-    expect(rosterB).toContain('coordination_note_list({cwd: "/repoB"})');
+    expect(rosterA).not.toContain('coordination_note_list({cwd: "/repoA"})');
+    expect(rosterB).not.toContain('coordination_note_list({cwd: "/repoB"})');
     // Repeats per board are deduped independently — board B's roster was not
     // suppressed by board A's signature.
     expect(await store.renderWorkspacePeers({ ...session, cwd: "/repoA" })).toBeNull();
@@ -305,9 +305,9 @@ describe("coordination note injection dedup", () => {
     await store.reservePaths({ harness: "zcode", sessionId: "sess-a", cwd: "/repoB", paths: ["b2.ts"] });
 
     const turn = await store.renderForSession({ id: "sess-a", harness: "zcode", cwd: "/repoA" });
-    expect(turn).toContain("Ownership changes: 1 active, 0 released");
-    expect(turn).toContain('coordination_note_list({cwd: "/repoA"})');
-    expect(turn).toContain('coordination_note_list({cwd: "/repoB"})');
+    expect(turn).toContain("Owners +1, -0");
+    expect(turn).not.toContain('coordination_note_list({cwd: "/repoA"})');
+    expect(turn).not.toContain('coordination_note_list({cwd: "/repoB"})');
     expect(turn).not.toContain("repoA work");
     expect(turn).not.toContain("repoB work");
     expect(turn).toContain('board="repoB"');
@@ -318,7 +318,7 @@ describe("coordination note injection dedup", () => {
     await store.create({ kind: "working", message: "peer work", cwd: "/repo", paths: ["p.ts"], authorHarness: "zcode", authorSessionId: "sess-b", source: "hook" });
 
     const first = await store.renderWorkspacePeers({ id: "sess-a", harness: "zcode", cwd: "/repo" });
-    expect(first).toContain('coordination_note_list({cwd: "/repo"})');
+    expect(first).not.toContain('coordination_note_list({cwd: "/repo"})');
     expect(first).not.toContain("have not declared your own task yet");
     expect(first).not.toContain("coordination_note_create");
 

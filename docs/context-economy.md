@@ -24,7 +24,8 @@ service restarts; they are not automatically expired with inbox acknowledgements
 Passive file-activity awareness uses a short ownership-change notice and the
 existing `coordination_note_list({"cwd":"…"})` API. Read current ownership before
 editing; use a `path` filter when relevant. Unchanged awareness is silent across
-channels and time. Manual coordination still carries material note changes and
+channels and time. Working ownership uses only board-scoped +N/-N counts; lookup instructions
+live in MCP hints. Avoid/decision notes still carry material changes and
 releases; immediate path-conflict responses remain visible. Full current notes
 are available by `coordination_note_get` and existing MCP resources. TTL-only
 heartbeat updates do not count as new information.
@@ -63,21 +64,19 @@ and the message files retain private original content and should stay private.
 
 ## Measured local replay
 
-A fixed private historical snapshot with 117 incoming reports and 446 passive peer
-blocks measured 275,774 ->78,650 estimated incoming tokens (71.48% less). Reading
-every long report increases the latter to 79,389 (71.21% less). Only one report
-exceeded the then-current 2,000-character threshold in the0.2.4 replay; the principal saving is passive roster
-noise. Manual coordination and conflict text was left unchanged in this comparison.
-On-demand ownership reads add tokens; there is no claim of equivalent billed-cost
-savings or identical model decisions. All 117 report bodies remained exactly
-recoverable. Raw private transcripts are not included in the repository.
+A fixed private historical snapshot contains117 incoming reports and446 passive
+peer blocks. The current replay preserves every report exactly; its result
+separates initial prompt volume from the cost if every long report is read.
+See the task evidence for the measured revision and numbers. On-demand ownership
+reads add tokens. No equivalent billed-cost savings or identical model decisions
+are claimed. Raw transcripts are not included in the repository.
 
 ## Context Mode: use files rather than repeating message text
 
 `save_message_to_file({"messageId":"…","cwd":"/absolute/workspace"})`
 materializes the verified original inside that existing workspace under
-`.agent-herder/messages/<sha256>.txt`. The response contains only the absolute
-path, digest, byte count and server host. It does not echo the report body.
+`.agent-herder/messages/<id>.txt`. The response contains only the absolute
+path, byte count and server host. Short-ID exports omit duplicate hashes and warnings; legacy full-ID exports keep their older metadata contract. It does not echo the report body.
 Existing identical exports are reused; conflicting contents and symlink escapes
 are refused. The directory/file permissions are 0700/0600.
 
@@ -85,7 +84,7 @@ Use the returned path with Context Mode on the **same host and filesystem**:
 
 ```js
 ctx_execute_file({
-  path: "/absolute/workspace/.agent-herder/messages/<sha256>.txt",
+  path: "/absolute/workspace/.agent-herder/messages/<id>.txt",
   language: "javascript",
   code: "const lines = FILE_CONTENT.split('\\n'); console.log(JSON.stringify({unknownLines: lines.filter(l => /UNKNOWN/.test(l)).length}));"
 })
@@ -104,22 +103,10 @@ that actual project root, not the Herder private store or a different host's
 path. Agent Herder uses Context Mode's existing interface; it does not require
 it as a dependency, auto-index every report, install it, or change its runtime.
 
-The earlier0.2.5 follow-up also compacts manual working-note deltas, removes repeated
-reply instructions, and caps composed automatic send/deliver messages at1200
-characters after adding context. The earlier version used bodies over600 characters with an80-character
-preview with tool/resource references. Device sinks are rejected both by the
-hook and by the receiving store, protecting against stale hook clients.
-
-Short-reference follow-up: notification bodies now contain one320-character
-preview and one tiny ↗ resource link (normally8 hex characters), without a full
-SHA, repeated ID, JSON tool call or duplicate fallback URL. Exact stored bytes
-and private SHA integrity verification remain unchanged. Short-ID tool/resource
-reads omit the private digest from response metadata; legacy IDs remain valid.
-
-The current policy keeps messages up to1200 characters inline and truncates only
-when the resulting delivery is shorter. Notification bodies contain no reading
-instructions, fallback block, JSON or duplicate references. The once-per-MCP
-instructions and read_message description explain how to read ↗ links before
-acting. Verified sender headers retain only harness and session ID, without a
-repeated URL or reply instructions. This keeps semantic text larger than the
-preview's service wrapper and avoids an extra fetch for ordinary short reports.
+Current notification policy: ordinary messages remain complete. Long messages
+use320 characters of semantic preview plus a26-character short link, normally
+with an8-character collision-checked ID. Per-message SHA, JSON call, duplicate
+fallback link, reading instructions and reply boilerplate are absent. Reading
+rules live in compact MCP hints. The complete report remains exact and privately
+verified. Full composed messages are bounded after adding ownership context;
+original message text, rather than service metadata, supplies a capped preview.

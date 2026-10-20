@@ -68,7 +68,7 @@ export async function readLongMessage(input: { messageId: string; offset?: numbe
 }
 
 export async function saveLongMessageToWorkspace(input: { messageId: string; cwd: string }): Promise<{
-  path: string; sha256: string; bytes: number; host: { name: string; note: string };
+  path: string; sha256?: string; bytes: number; host: { name: string; note?: string };
 }> {
   const stored = await readStoredLongMessage(input.messageId);
   if (typeof input.cwd !== "string" || !input.cwd.trim() || !isAbsolute(input.cwd)) throw new Error("cwd must be an absolute path to an existing workspace");
@@ -81,7 +81,7 @@ export async function saveLongMessageToWorkspace(input: { messageId: string; cwd
 
   const privateRoot = await ensureWorkspaceDirectory(workspace, ".agent-herder");
   const messageDirectory = await ensureWorkspaceDirectory(privateRoot, "messages");
-  const target = join(messageDirectory, `${stored.sha256}.txt`);
+  const target = join(messageDirectory, `${input.messageId}.txt`);
   const existing = await lstat(target).catch((error) => {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
@@ -96,9 +96,9 @@ export async function saveLongMessageToWorkspace(input: { messageId: string; cwd
   }
   return {
     path: target,
-    sha256: stored.sha256,
+    ...(input.messageId.length === 64 ? {sha256: stored.sha256} : {}),
     bytes: stored.bytes.length,
-    host: { name: hostname(), note: "This path is on the Agent Herder MCP host; it is not automatically available on the calling machine." },
+    host: { name: hostname(), ...(input.messageId.length === 64 ? {note: "This path is on the Agent Herder MCP host; it is not automatically available on the calling machine."} : {}) },
   };
 }
 

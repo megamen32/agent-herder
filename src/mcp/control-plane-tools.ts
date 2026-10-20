@@ -46,9 +46,9 @@ export function registerControlPlaneTools(server: McpServer, deps: {
   });
 
   server.registerTool("save_message_to_file", {
-    description: "Save an exact stored long message to a fixed private file inside an existing workspace on this MCP host. Returns path, hash, byte count and host metadata only; the path is not automatically available on the calling machine.",
+    description: "Save an exact stored long message to a fixed private file inside an existing workspace on this MCP host. Returns only path, byte count and host; the path is not automatically available on the calling machine.",
     inputSchema: z.object({ messageId: z.string().regex(/^[a-f0-9]{8,64}$/), cwd: z.string().min(1) }),
-    outputSchema: z.object({ path: z.string(), sha256: z.string(), bytes: z.number().int().nonnegative(), host: z.object({ name: z.string(), note: z.string() }) }),
+    outputSchema: z.object({ path: z.string(), sha256: z.string().optional(), bytes: z.number().int().nonnegative(), host: z.object({ name: z.string(), note: z.string().optional() }) }),
   }, async (args) => structuredResult(await handleSaveMessageToFile(args)));
 
   server.registerTool("job_list", {
