@@ -345,6 +345,15 @@ export interface HarnessAdapter {
   /** Archive a completed native session while preserving its history. */
   archiveSession?(id: string): Promise<ControlResult>;
 
+  /**
+   * Restore an archived native session so a blocked recovery can resume it again.
+   *
+   * Archiving is reversible: the native store keeps the thread and its rollout.
+   * A recovery that refuses an archived thread can therefore repair the cause
+   * itself instead of escalating an alarm the operator cannot act on.
+   */
+  unarchiveSession?(id: string): Promise<ControlResult>;
+
   /** Compact native model context in place; never send a task prompt or replace the session. */
   compactSession?(id: string, options: CompactSessionOptions): Promise<ControlResult>;
 

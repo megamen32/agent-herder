@@ -808,6 +808,18 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
   }
 
+  async unarchiveSession(id: string): Promise<ControlResult> {
+    try {
+      await this.ensureReady();
+      await this.request("thread/unarchive", { threadId: id });
+      this.threads.delete(id);
+      this.emitEvent({ kind: "session.updated", harness: "codex", sessionId: id, nativeType: "thread/unarchive" });
+      return { ok: true, sessionId: id };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
+  }
+
   async resumeSession(id: string): Promise<ControlResult> {
     try {
       await this.ensureReady();

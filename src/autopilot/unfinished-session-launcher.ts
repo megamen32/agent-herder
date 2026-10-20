@@ -121,6 +121,18 @@ function isSubagentSession(session: AgentSession | null | undefined): boolean {
   return session?.meta?.threadSource === "subagent";
 }
 
+/**
+ * A native store that archived the session refuses to resume it and names the
+ * exact repair in its own error text.
+ *
+ * The refusal repeats identically on every attempt, so it is a deterministic
+ * condition rather than a transient failure: it must be repaired or reported
+ * precisely, never retried as if another attempt could change the outcome.
+ */
+export function isArchivedSessionFailure(error: unknown): boolean {
+  return typeof error === "string" && /\bis archived\b/i.test(error);
+}
+
 type NativeLastTurn = {
   turnId?: string;
   status?: string;
@@ -1179,6 +1191,36 @@ export class UnfinishedSessionStore {
     }, (record) => record !== null);
   }
 
+  /**
+   * Record a deterministic failure without consuming the retry budget.
+   *
+   * A deterministic refusal repeats identically, so charging it against the
+   * retry budget only hides the one action that actually repairs it. The record
+   * stays armed and is probed again on the next cycle, with the operator-facing
+   * reason kept in the durable ledger.
+   */
+  async markDeterministicFailure(
+    harness: HarnessType,
+    sessionId: string,
+    error: string,
+    nextAttemptAt: Date,
+    now = new Date(),
+    cwd?: string,
+  ): Promise<UnfinishedSessionRecord | null> {
+    return this.mutate((file) => {
+      const record = findUnfinishedRecord(file.sessions, harness, sessionId, cwd);
+      if (!record) return null;
+      // Give the reserved attempt back only when one was actually reserved.
+      const reserved = record.state === "recovering";
+      record.state = "active";
+      if (reserved) record.attempts = Math.max(0, record.attempts - 1);
+      record.lastError = bounded(error, "error");
+      record.nextAttemptAt = nextAttemptAt.toISOString();
+      record.updatedAt = now.toISOString();
+      return { ...record };
+    }, (record) => record !== null);
+  }
+
   async markNotified(harness: HarnessType, sessionId: string, now = new Date(), cwd?: string): Promise<void> {
     await this.mutate((file) => {
       const record = findUnfinishedRecord(file.sessions, harness, sessionId, cwd);
@@ -1225,6 +1267,8 @@ export interface UnfinishedSessionLauncherOptions {
   admissionGate?: RecoveryAdmissionGate;
   maxAttempts?: number;
   retryDelayMs?: number;
+  /** Backoff before a deterministic refusal that repeats identically is probed again. */
+  deterministicRetryDelayMs?: number;
   /** Pause before the single safe retry of a transient batch-planner transport failure. */
   plannerTransportRetryDelayMs?: number;
   reconcileIntervalMs?: number;
@@ -1264,6 +1308,7 @@ export interface UnfinishedSessionLauncherOptions {
 export class UnfinishedSessionLauncher {
   private readonly maxAttempts: number;
   private readonly retryDelayMs: number;
+  private readonly deterministicRetryDelayMs: number;
   private readonly reconcileIntervalMs: number;
   private readonly discoveryIdleMs: number;
   private readonly maxJudgementsPerCycle: number;
@@ -1319,6 +1364,10 @@ export class UnfinishedSessionLauncher {
   constructor(private readonly options: UnfinishedSessionLauncherOptions) {
     this.maxAttempts = positiveInteger(options.maxAttempts ?? Number(process.env.AGENT_HERDER_AUTOSTART_MAX_ATTEMPTS || 3), 3);
     this.retryDelayMs = nonNegativeInteger(options.retryDelayMs ?? Number(process.env.AGENT_HERDER_AUTOSTART_RETRY_DELAY_MS || 5_000), 5_000);
+    this.deterministicRetryDelayMs = positiveInteger(
+      options.deterministicRetryDelayMs ?? Number(process.env.AGENT_HERDER_DETERMINISTIC_RETRY_DELAY_MS || 60_000),
+      60_000,
+    );
     this.plannerTransportRetryDelayMs = nonNegativeInteger(
       options.plannerTransportRetryDelayMs ?? TRANSIENT_PLANNER_RETRY_DELAY_MS,
       TRANSIENT_PLANNER_RETRY_DELAY_MS,
@@ -1917,7 +1966,8 @@ export class UnfinishedSessionLauncher {
     const records = await this.options.store.list();
     if (!this.lifecycleActive(lifecycleEpoch)) return;
     records.sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt));
-    for (const record of records) {
+    for (const snapshot of records) {
+      let record = snapshot;
       if (!this.lifecycleActive(lifecycleEpoch)) break;
       if (!isAutocontinueInventoryHarness(record.harness)) continue;
       const recordKey = unfinishedRecordKey(record);
@@ -2009,8 +2059,15 @@ export class UnfinishedSessionLauncher {
         }
       }
       if (record.state === "exhausted") {
-        await this.notifyExhausted(record);
-        continue;
+        // Exhausted is not a dead end: the archived refusal that exhausted the
+        // record is reversible, so a restored thread re-arms the record and the
+        // interrupted turn continues instead of being stranded.
+        const rearmed = await this.rearmExhaustedArchivedRecord(adapter, record, session);
+        if (!rearmed) {
+          await this.notifyExhausted(record);
+          continue;
+        }
+        record = rearmed;
       }
       const urgent = this.urgentSessions.has(recordKey) || this.urgentSessions.has(sessionKey(record.harness, record.sessionId));
       if (record.nonRetryableAdmission) {
@@ -2383,8 +2440,8 @@ export class UnfinishedSessionLauncher {
         if(await this.pendingQuestionBlocks(record.harness,record.sessionId,record.cwd)
           ||await this.options.humanStopStore?.isHeld(record.harness,record.sessionId)){await this.options.store.cancelAttempt(attempt);return;}
       }
-      const resumed = adapter.resumeSession ? await adapter.resumeSession(record.sessionId) : { ok: true };
-      if (!resumed.ok) throw new Error(resumed.error || "возобновление отклонено");
+      const resumed = await this.resumeRestorableSession(adapter, record);
+      if (!resumed.ok) throw new Error(resumed.error);
       if (!this.lifecycleActive(lifecycleEpoch)) {
         await this.options.store.cancelAttempt(attempt);
         return;
@@ -3731,6 +3788,10 @@ export class UnfinishedSessionLauncher {
   }
 
   private async fail(record: UnfinishedSessionRecord, error: string): Promise<void> {
+    if (isArchivedSessionFailure(error)) {
+      await this.failDeterministically(record, error);
+      return;
+    }
     let attempted = record;
     if (record.state !== "recovering") {
       const begun = await this.options.store.beginAttempt(
@@ -3746,6 +3807,39 @@ export class UnfinishedSessionLauncher {
     if (failed?.state === "exhausted") await this.notifyExhausted(failed);
   }
 
+  /**
+   * A deterministic refusal is not a retry: the same attempt repeats the same
+   * answer. The record stays armed, the operator gets one actionable notice
+   * naming the exact repair, and no critical alarm hides that repair.
+   */
+  private async failDeterministically(record: UnfinishedSessionRecord, error: string): Promise<void> {
+    const blocked = await this.options.store.markDeterministicFailure(
+      record.harness,
+      record.sessionId,
+      error,
+      new Date(Date.now() + this.deterministicRetryDelayMs),
+      new Date(),
+      record.workspaceIdentity || record.cwd,
+    );
+    console.error(`[agent-herder] восстановление ${record.harness}:${record.sessionId} остановлено детерминированной ошибкой: ${error}`);
+    if (blocked) await this.notifyDeterministicBlock(blocked);
+  }
+
+  private async notifyDeterministicBlock(record: UnfinishedSessionRecord): Promise<void> {
+    if (!this.options.notify || record.notifiedAt) return;
+    const harness = displayHarness(record.harness);
+    await this.options.notify({
+      severity: "notice",
+      title: `${harness}: восстановление прерванного хода ждёт оператора`,
+      body: `Сессия ${record.sessionId} (${record.title || record.cwd}) архивирована, поэтому Agent Herder не может продолжить прерванный ход. Данные сессии сохранены, автопродолжение приостановлено и не расходует попытки. Требуется действие: выполните \`codex unarchive ${record.sessionId}\` — после этого Agent Herder сам продолжит ход.`,
+      dedupKey: `agent-herder:unfinished-session:blocked:${unfinishedRecordKey(record)}`,
+      correlationId: `unfinished-${unfinishedRecordKey(record)}-${record.startedAt}`,
+      sourceId: "agent-herder-autostart",
+      signalType: "unfinished-session-archived",
+    });
+    await this.options.store.markNotified(record.harness, record.sessionId, new Date(), record.workspaceIdentity || record.cwd);
+  }
+
   private async notifyExhausted(record: UnfinishedSessionRecord): Promise<void> {
     if (!this.options.notify || record.notifiedAt) return;
     const harness = displayHarness(record.harness);
@@ -3758,6 +3852,56 @@ export class UnfinishedSessionLauncher {
       signalType: "unfinished-session-autostart-failed",
     });
     await this.options.store.markNotified(record.harness, record.sessionId, new Date(), record.workspaceIdentity || record.cwd);
+  }
+
+  /**
+   * Resume a native thread and repair an archived store when the native
+   * refusal names it.
+   *
+   * Archiving keeps the thread and its rollout, so the refusal is reversible
+   * without operator input. A thread that is already restored resumes directly
+   * and is never touched by the archive repair.
+   */
+  private async resumeRestorableSession(
+    adapter: HarnessAdapter,
+    record: UnfinishedSessionRecord,
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    const resume = async () => (adapter.resumeSession ? await adapter.resumeSession(record.sessionId) : { ok: true });
+    const resumed = await resume();
+    if (resumed.ok) return { ok: true };
+    const refusal = resumed.error || "";
+    if (!isArchivedSessionFailure(refusal)) return { ok: false, error: refusal || "возобновление отклонено" };
+    const unarchive = adapter.unarchiveSession;
+    if (!unarchive) return { ok: false, error: refusal };
+    const restored = await unarchive.call(adapter, record.sessionId).catch((cause: unknown) => ({ ok: false, error: errorText(cause) }));
+    if (!restored.ok) {
+      console.error(`[agent-herder] восстановление архива ${record.harness}:${record.sessionId} не выполнено: ${restored.error}`);
+      return { ok: false, error: refusal };
+    }
+    const retried = await resume();
+    if (!retried.ok) return { ok: false, error: retried.error || refusal };
+    console.error(`[agent-herder] архивированная сессия ${record.harness}:${record.sessionId} восстановлена и возобновлена`);
+    return { ok: true };
+  }
+
+  /**
+   * Re-arm an exhausted record whose only cause was a reversible native refusal.
+   *
+   * Exhausting the retry budget must not strand unfinished work: when the
+   * thread becomes resumable again, the durable record returns to the armed
+   * state and the ordinary recovery continues the interrupted turn.
+   */
+  private async rearmExhaustedArchivedRecord(
+    adapter: HarnessAdapter,
+    record: UnfinishedSessionRecord,
+    session: AgentSession,
+  ): Promise<UnfinishedSessionRecord | null> {
+    if (!isArchivedSessionFailure(record.lastError ?? "")) return null;
+    const resumed = await this.resumeRestorableSession(adapter, record);
+    if (!resumed.ok) return null;
+    const rearmed = await this.options.store.markStarted(session, this.generationId, new Date(), true);
+    console.error(`[agent-herder] запись ${record.harness}:${record.sessionId} перевзведена: архив восстановлен, прерванный ход продолжится`);
+    return rearmed;
   }
 
   private async groupAdmissionAllowed(sessions: AgentSession[], operation: RecoveryOperation): Promise<boolean> {

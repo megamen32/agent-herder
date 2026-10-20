@@ -675,4 +675,111 @@ describe("original task completion evidence", () => {
         expect((await store.listInventory())[0]?.verdict?.verdict).toBe("needs_human");
         expect(calls).toEqual({ resumes: 0, messages: [] });
     });
+
+    // Fast unit: an archived native store refuses to resume the thread, but the
+    // refusal is reversible. Expected <2s, maximum 10s; no native app, database
+    // or LLM is launched by these fixtures.
+    it("restores an archived native session and continues the interrupted turn", async () => {
+        const root = await mkdtemp(join(tmpdir(), "archived-repair-"));
+        try {
+            const current = fixture("error", "codex", "archived-session");
+            const calls = { resumes: 0, unarchives: 0, messages: [] as string[] };
+            let archived = true;
+            const adapter = fakeAdapter(() => current, calls);
+            adapter.resumeSession = async (id: string) => {
+                calls.resumes += 1;
+                if (archived) return { ok: false, error: `session ${id} is archived. Run \`codex unarchive ${id}\` to unarchive it first.` };
+                return { ok: true };
+            };
+            adapter.unarchiveSession = async (id: string) => {
+                calls.unarchives += 1;
+                archived = false;
+                return { ok: true, sessionId: id };
+            };
+            const notices: UnfinishedSessionNotice[] = [];
+            const store = new UnfinishedSessionStore(join(root, "state.json"));
+            await store.markRecoveryEligible(current, "turn.failed", { turnId: "t1" });
+            const launcher = new UnfinishedSessionLauncher({
+                adapters: new Map([["codex", adapter]]), store,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+                discoveryIdleMs: 1,
+                notify: async (notice: UnfinishedSessionNotice) => { notices.push(notice); },
+            });
+            await launcher.recoverPending();
+            expect(calls.unarchives).toBe(1);
+            expect(calls.messages).toHaveLength(1);
+            expect(notices.map((notice) => notice.signalType)).not.toContain("unfinished-session-autostart-failed");
+            expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps an unrepairable archived session armed and reports one actionable notice", async () => {
+        const root = await mkdtemp(join(tmpdir(), "archived-blocked-"));
+        try {
+            const current = fixture("error", "codex", "archived-blocked");
+            const calls = { resumes: 0, messages: [] as string[] };
+            const adapter = fakeAdapter(() => current, calls);
+            adapter.resumeSession = async (id: string) => ({
+                ok: false,
+                error: `session ${id} is archived. Run \`codex unarchive ${id}\` to unarchive it first.`,
+            });
+            const notices: UnfinishedSessionNotice[] = [];
+            const store = new UnfinishedSessionStore(join(root, "state.json"));
+            await store.markRecoveryEligible(current, "turn.failed", { turnId: "t1" });
+            const launcher = new UnfinishedSessionLauncher({
+                adapters: new Map([["codex", adapter]]), store,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+                discoveryIdleMs: 1,
+                notify: async (notice: UnfinishedSessionNotice) => { notices.push(notice); },
+            });
+            await launcher.recoverPending();
+            const record = (await store.list())[0];
+            // A refusal that repeats identically is not a retry: the record stays
+            // armed and the retry budget is untouched.
+            expect(record).toMatchObject({ state: "active", attempts: 0 });
+            expect(record.lastError).toContain("is archived");
+            expect(notices).toHaveLength(1);
+            expect(notices[0].severity).toBe("notice");
+            expect(notices[0].signalType).toBe("unfinished-session-archived");
+            expect(notices[0].body).toContain(`codex unarchive ${current.id}`);
+            expect(calls.messages).toHaveLength(0);
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
+    it("re-arms an exhausted archived record and continues the interrupted turn", async () => {
+        const root = await mkdtemp(join(tmpdir(), "archived-exhausted-"));
+        try {
+            const current = fixture("error", "codex", "archived-exhausted");
+            const calls = { resumes: 0, messages: [] as string[] };
+            const adapter = fakeAdapter(() => current, calls);
+            const store = new UnfinishedSessionStore(join(root, "state.json"));
+            await store.markRecoveryEligible(current, "turn.failed", { turnId: "t1" });
+            const archivedRefusal = `session ${current.id} is archived. Run \`codex unarchive ${current.id}\` to unarchive it first.`;
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+                const reserved = await store.beginAttempt("codex", current.id, 3, 0, new Date(), current.cwd);
+                if (!reserved) break;
+                await store.markFailure("codex", current.id, archivedRefusal, 3, new Date(), current.cwd);
+            }
+            expect((await store.list())[0]).toMatchObject({ state: "exhausted", attempts: 3 });
+            const notices: UnfinishedSessionNotice[] = [];
+            const launcher = new UnfinishedSessionLauncher({
+                adapters: new Map([["codex", adapter]]), store,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+                discoveryIdleMs: 1,
+                notify: async (notice: UnfinishedSessionNotice) => { notices.push(notice); },
+            });
+            await launcher.recoverPending();
+            // The restored thread is resumable again, so the exhausted record
+            // returns to the armed state and the turn continues.
+            expect(calls.messages).toHaveLength(1);
+            expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
+            expect(notices.map((notice) => notice.signalType)).not.toContain("unfinished-session-autostart-failed");
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
 });

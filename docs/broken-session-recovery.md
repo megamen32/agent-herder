@@ -86,3 +86,25 @@ missing identities remain admission_unknown. Neither result automatically replay
 This distinction has a failing-first regression and 11 focused control/observer
 tests passed. A prior receipt that discarded the native error cannot be promoted
 to definitive rejection from timing or idle inventory alone.
+
+## Archived-thread refusal
+
+A native store that archived a session refuses to resume it and names the exact
+repair in its own error text (`session <id> is archived. Run \`codex unarchive
+<id>\``). That refusal is deterministic: every attempt returns the same answer.
+
+Recovery therefore does not treat it as a transient failure. The launcher
+restores the archived thread itself (`thread/unarchive`) and resumes it again,
+so the interrupted turn continues without operator input. When the thread cannot
+be restored, the refusal is recorded without consuming the retry budget, the
+record stays armed and is probed again, and the operator receives one notice of
+severity `notice` naming the exact command. A critical alarm is reserved for
+failures that actually exhausted the retry budget.
+
+An exhausted record is not a dead end. When the cause of an exhausted archived
+refusal is gone, the record returns to the armed state and the ordinary recovery
+continues the interrupted turn.
+
+Regression coverage lives in `tests/unfinished-session-launcher.test.ts`:
+self-repair, an unrepairable archive that stays armed, and re-arming of an
+exhausted archived record.
