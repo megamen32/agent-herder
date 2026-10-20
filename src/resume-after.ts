@@ -32,8 +32,8 @@ export interface ResumeAfterWait {
 type Delivery = { status: "accepted" | "rejected" | "failed" | "ambiguous"; reason?: string; receipt?: Record<string, unknown> };
 export interface ResumeAfterOptions {
   directory: string;
-  /** Exact legacy wait IDs held from automatic delivery by an operator-managed maintenance config. */
-  heldWaitIds?: ReadonlySet<string>;
+  /** Snapshot current waiting IDs before serving requests, for a controlled maintenance rollout. */
+  holdExistingWaitingAtStartup?: boolean;
   deliver: (wait: ResumeAfterWait) => Promise<Delivery>;
   queryReceipt?: (wait: ResumeAfterWait) => Promise<Delivery>;
   isHeld: (ref: SessionRef) => Promise<boolean>;
@@ -52,6 +52,7 @@ const defaultMessage = "Указанные сессии закончили вы�
 /** One process-owned, durable join. No model polling and no extra agent. */
 export class ResumeAfterService {
   private queue: Promise<unknown> = Promise.resolve();
+  private readonly startupHeldWaitIds = new Set<string>();
   // Retain events received before registration. After a cold start, adapters
   // must prove the last native turn or registration records a terminal blocker.
   private readonly observations = new Map<string, TurnObservation>();
@@ -86,6 +87,17 @@ export class ResumeAfterService {
       const row=await this.get(name.slice(0,-5)); if(row) rows.push(row);
     }
     return rows;
+  }
+  async captureStartupHold():Promise<number>{
+    return this.serialized(async()=>{
+      if(!this.options.holdExistingWaitingAtStartup)return 0;
+      const waits=await this.list();
+      for(const wait of waits)if(wait.state==="waiting")this.startupHeldWaitIds.add(wait.id);
+      return this.startupHeldWaitIds.size;
+    });
+  }
+  private isMaintenanceHeld(wait:ResumeAfterWait):boolean{
+    return this.options.holdExistingWaitingAtStartup===true && this.startupHeldWaitIds.has(wait.id);
   }
   register(input: ResumeAfterRequest): Promise<ResumeAfterWait> {
     return this.serialized(async()=>{
@@ -160,7 +172,7 @@ export class ResumeAfterService {
         if(key(wait.owner)===key(ref) && event.data?.automationStop){
           wait.state="cancelled";wait.reason="requester was stopped";await this.save(wait);continue;
         }
-        if(this.options.heldWaitIds?.has(wait.id))continue;
+        if(this.isMaintenanceHeld(wait))continue;
         if(!wait.dependencies.some(d=>key(d)===key(ref)))continue;
         const expected=wait.dependencyTurns?.[key(ref)];
         if(event.kind!=="turn.started" && event.kind!=="session.deleted" && expected && turnId!==expected)continue;
@@ -220,7 +232,7 @@ export class ResumeAfterService {
       }
       // Explicit maintenance holds never cancel or rewrite a user wait. HumanStop
       // remains authoritative above, and receipt reconciliation below is never held.
-      if(wait.state==="waiting" && this.options.heldWaitIds?.has(wait.id))continue;
+      if(wait.state==="waiting" && this.isMaintenanceHeld(wait))continue;
       if(wait.state==="dispatching" || wait.state==="delivery_unknown"){
         // A restart or a dropped receipt is not permission to replay an action.
         const receipt=await this.options.queryReceipt?.(wait);

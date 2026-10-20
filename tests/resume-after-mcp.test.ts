@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createAgentHerderMcpServer } from "../src/index.js";
-import { createResumeAfterRuntime, parseResumeAfterHoldWaitIds } from "../src/resume-after-runtime.js";
+import { createResumeAfterRuntime, parseResumeAfterStartupHold } from "../src/resume-after-runtime.js";
 import { SessionSupervisor } from "../src/session-supervisor.js";
 import { createFleetRecoveryAdmissionGate } from "../src/autopilot/recovery-admission.js";
 import type { AgentSession, HarnessAdapter, HarnessEvent } from "../src/types/index.js";
@@ -34,9 +34,9 @@ async function nativeFixture() {
     async stopSession(){return {ok:true};},async respondPermission(){return {ok:true};},async setPermissions(){return {ok:true};},
   };
   const adapters=new Map([["codex",adapter]]);
-  const makeRuntime=()=>createResumeAfterRuntime(adapters,{
+  const makeRuntime=(holdExistingWaitingAtStartup=false)=>createResumeAfterRuntime(adapters,{
     isAutomationHeld:async()=>held,sendMessage:async(_h,id,options)=>adapter.sendMessage(id,options),
-  },async()=>false,directory);
+  },async()=>false,directory,holdExistingWaitingAtStartup);
   const runtime=makeRuntime();
   const request={owner:ref("owner"),dependencies:[ref("a"),ref("b")],message:"join exact native turns",requestId:"turn-join"};
   async function emit(id:string,kind:HarnessEvent["kind"],turnId?:string,at?:string) {
@@ -53,6 +53,26 @@ async function nativeFixture() {
 }
 
 describe("exact native turn registration",()=>{
+  it("captures existing waits before startup sweep and still delivers a new wait once",async()=>{
+    const f=await nativeFixture();
+    const legacy=await f.runtime.service.register(f.request);
+    await f.complete("a");
+    const bytes=JSON.stringify(await f.runtime.service.get(legacy.id));
+    const heldRuntime=f.makeRuntime(true);
+    const stop=await heldRuntime.start();cleanup.push(async()=>stop());
+    expect(JSON.stringify(await heldRuntime.service.get(legacy.id))).toBe(bytes);
+    f.sessions.get("b")!.status="idle";
+    f.sessions.get("b")!.meta={nativeLastTurn:{turnId:"b-current",status:"completed",completedAt:new Date().toISOString()}};
+    await heldRuntime.service.observe({...ref("b"),kind:"turn.completed",at:new Date().toISOString(),data:{turnId:"b-current"}});
+    expect(JSON.stringify(await heldRuntime.service.get(legacy.id))).toBe(bytes);
+    expect(f.sent).toHaveLength(0);
+
+    const fresh=await heldRuntime.service.register({...f.request,dependencies:[ref("a")],message:"fresh after startup",requestId:"fresh-after-startup"});
+    expect(fresh.state).toBe("resumed");
+    expect(f.sent).toHaveLength(1);
+    expect(f.sent[0]).toMatchObject({id:"owner",inputId:"resume-after:"+fresh.id});
+    expect(JSON.stringify(await heldRuntime.service.get(legacy.id))).toBe(bytes);
+  });
   it.each(["dispatching","delivery_unknown"] as const)("recovers a persisted definitive pre-send refusal from %s without an adapter send",async state=>{
     const f=await nativeFixture();
     const wait=await f.runtime.service.register(f.request);
@@ -299,12 +319,12 @@ describe("exact native turn registration",()=>{
 });
 
 describe("MCP dependency wait through native adapter events",()=>{
-  it("parses only exact unique maintenance-held wait IDs and fails closed on malformed config",()=>{
-    expect([...parseResumeAfterHoldWaitIds("wait_0123456789abcdef0123456789abcdef,wait_fedcba9876543210fedcba9876543210")])
-      .toEqual(["wait_0123456789abcdef0123456789abcdef","wait_fedcba9876543210fedcba9876543210"]);
-    for(const value of ["","wait_bad","wait_0123456789abcdef0123456789abcdef,wait_0123456789abcdef0123456789abcdef"])
-      expect(()=>parseResumeAfterHoldWaitIds(value)).toThrow(/AGENT_HERDER_RESUME_AFTER_HOLD_IDS/);
-    expect([...parseResumeAfterHoldWaitIds(undefined)]).toEqual([]);
+  it("parses the explicit startup maintenance mode and fails closed on malformed config",()=>{
+    expect(parseResumeAfterStartupHold(undefined)).toBe(false);
+    expect(parseResumeAfterStartupHold("enabled")).toBe(true);
+    expect(parseResumeAfterStartupHold("disabled")).toBe(false);
+    for(const value of ["","true","maybe"])
+      expect(()=>parseResumeAfterStartupHold(value)).toThrow(/AGENT_HERDER_RESUME_AFTER_STARTUP_HOLD/);
   });
   it("registers over real MCP, joins both workers and uses one native continuation",async()=>{
     const directory=await mkdtemp(join(process.cwd(),".tmp/resume-after-mcp-"));
@@ -324,7 +344,7 @@ describe("MCP dependency wait through native adapter events",()=>{
       isAutomationHeld:async()=>false,
       sendMessage:async(_h,id,options)=>adapter.sendMessage(id,options),
     },async()=>false,directory);
-    const stop=runtime.start();cleanup.push(async()=>stop());
+    const stop=await runtime.start();cleanup.push(async()=>stop());
     const [clientTransport,serverTransport]=InMemoryTransport.createLinkedPair();
     const server=createAgentHerderMcpServer(undefined,{resumeAfter:runtime.service});
     const client=new Client({name:"resume-after-canary",version:"1"},{versionNegotiation:{mode:"auto"}});

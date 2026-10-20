@@ -58,7 +58,7 @@ describe("resume after exact sessions", () => {
     await done(f.service); await f.service.sweep();
     expect((await f.service.get(wait.id))?.state).toBe("delivery_unknown");
   });
-  it("holds only explicitly listed legacy waits across startup while new waits still resume once", async () => {
+  it("holds only waiting records captured at startup while new waits still resume once", async () => {
     await mkdir(join(process.cwd(), ".tmp"), {recursive:true});
     const directory = await mkdtemp(join(process.cwd(), ".tmp/resume-after-hold-")); dirs.push(directory);
     const deliver = vi.fn(async () => ({status:"accepted" as const}));
@@ -70,7 +70,8 @@ describe("resume after exact sessions", () => {
     const legacyBytes = JSON.stringify(await original.get(legacy.id));
     originalOwnerBusy = false;
     const resumed = new ResumeAfterService({directory, deliver, isHeld:async()=>false, isBusy:async()=>false,
-      heldWaitIds: new Set([legacy.id])} as ResumeAfterOptions);
+      holdExistingWaitingAtStartup:true});
+    expect(await resumed.captureStartupHold()).toBe(1);
     await resumed.sweep();
     expect(JSON.stringify(await resumed.get(legacy.id))).toBe(legacyBytes);
     expect(deliver).not.toHaveBeenCalled();
@@ -102,7 +103,8 @@ describe("resume after exact sessions", () => {
     const legacy = await original.register({owner,dependencies:[a],requestId:"legacy-stop"});
     await done(original,a);
     const resumed = new ResumeAfterService({directory, deliver, isHeld:async()=>held, isBusy:async()=>false,
-      heldWaitIds:new Set([legacy.id])} as ResumeAfterOptions);
+      holdExistingWaitingAtStartup:true});
+    expect(await resumed.captureStartupHold()).toBe(1);
     held = true;
     await resumed.observe({harness:owner.harness,sessionId:owner.sessionId,kind:"turn.completed",at:new Date().toISOString(),data:{automationStop:true,turnId:"owner-turn"}});
     expect((await resumed.get(legacy.id))?.state).toBe("cancelled");

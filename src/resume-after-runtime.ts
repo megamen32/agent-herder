@@ -7,22 +7,20 @@ interface Supervisor {
   sendMessage(harness:string,id:string,options:{message:string;origin:"automation";inputId:string;queue:boolean}):Promise<SendMessageResult & {delivery?:string}>;
   isAutomationHeld(harness:string,id:string):Promise<boolean>;
 }
-const waitIdPattern=/^wait_[a-f0-9]{32}$/;
-export function parseResumeAfterHoldWaitIds(value:string|undefined=process.env.AGENT_HERDER_RESUME_AFTER_HOLD_IDS):ReadonlySet<string>{
-  if(value===undefined)return new Set();
-  const ids=value.split(",").map(id=>id.trim());
-  if(!value.trim() || ids.some(id=>!waitIdPattern.test(id)) || new Set(ids).size!==ids.length)
-    throw new Error("AGENT_HERDER_RESUME_AFTER_HOLD_IDS must be a comma-separated list of unique wait_<32 lowercase hex> IDs");
-  return new Set(ids);
+export function parseResumeAfterStartupHold(value:string|undefined=process.env.AGENT_HERDER_RESUME_AFTER_STARTUP_HOLD):boolean{
+  if(value===undefined)return false;
+  if(value==="enabled")return true;
+  if(value==="disabled")return false;
+  throw new Error("AGENT_HERDER_RESUME_AFTER_STARTUP_HOLD must be exactly 'enabled' or 'disabled'");
 }
 /** Reuse the existing native adapters and admission. No CLI, model or daemon. */
 export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,supervisor:Supervisor,
-  held:(harness:string,id:string)=>Promise<boolean>,directory=process.env.AGENT_HERDER_RESUME_AFTER_DIR ?? join(homedir(),".local/state/agent-herder/resume-after")) {
-  const heldWaitIds=parseResumeAfterHoldWaitIds();
+  held:(harness:string,id:string)=>Promise<boolean>,directory=process.env.AGENT_HERDER_RESUME_AFTER_DIR ?? join(homedir(),".local/state/agent-herder/resume-after"),
+  holdExistingWaitingAtStartup=parseResumeAfterStartupHold()) {
   const inputId=(wait:ResumeAfterWait)=>"resume-after:"+wait.id;
   const service=new ResumeAfterService({
     directory,
-    heldWaitIds,
+    holdExistingWaitingAtStartup,
     validateRef:async(ref:SessionRef)=>{
       if(!adapters.has(ref.harness) || !await adapters.get(ref.harness)!.getSession(ref.sessionId))
         throw new Error(`Exact session unavailable: ${ref.harness}:${ref.sessionId}`);
@@ -92,9 +90,10 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
   let subscriptions:Array<()=>void>=[];
   let lastError="";
   const report=(error:unknown)=>{const message=String(error);if(message!==lastError)console.error(`[agent-herder] resume-after: ${message}`);lastError=message;};
-  return {service,start():()=>void{
+  return {service,async start():Promise<()=>void>{
     if(timer)return ()=>{};
-    if(heldWaitIds.size)console.warn(`[agent-herder] resume-after maintenance hold active for ${heldWaitIds.size} explicit wait IDs`);
+    const heldCount=await service.captureStartupHold();
+    if(holdExistingWaitingAtStartup)console.warn(`[agent-herder] resume-after startup maintenance hold active for ${heldCount} existing waiting records`);
     subscriptions=[...adapters.values()].flatMap(adapter=>adapter.subscribeEvents?
       [adapter.subscribeEvents(event=>{void service.observe({...event,harness:adapter.type}).catch(report);})]:[]);
     timer=setInterval(()=>{void service.sweep().then(()=>{lastError="";}).catch(report);},5000);
