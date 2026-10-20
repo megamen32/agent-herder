@@ -8,6 +8,7 @@ import { createServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { WebSocketServer } from "ws";
 import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
+import { createCodexProjectRuntimePolicy } from "../src/project-runtime-policy.js";
 import { CodexAdapter } from "../src/adapters/codex.js";
 import { getHumanStopStore } from "../src/human-stop-store.js";
 import { createNamedSession } from "../src/named-session.js";
@@ -15,6 +16,216 @@ import { createNamedSession } from "../src/named-session.js";
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
 
 describe("Codex app-server adapter", () => {
+  it("keeps project policy constructor-only and refuses shared or caller-overridden transports", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-policy-"));
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "test-project", projectRoot: root });
+    try {
+      expect(() => new CodexAppServerAdapter({ codexBin: "/unused", projectRuntimePolicy: policy, socketPath: join(root, "shared.sock") }))
+        .toThrow("requires its own app-server process");
+      expect(() => new CodexAppServerAdapter({ codexBin: "/unused", projectRuntimePolicy: policy, args: ["app-server", "--config", "anything=1"] }))
+        .toThrow("requires its own app-server process");
+      expect(() => new CodexAppServerAdapter({ codexBin: "/unused", projectToolDenyList: { mcpServerIds: [], appIds: [], pluginIds: [] } }))
+        .toThrow("require a trusted project runtime policy");
+      const scoped = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+      expect((scoped as unknown as { processArgs: string[] }).processArgs).toContain("apps._default.enabled=false");
+      expect((scoped as unknown as { processArgs: string[] }).processArgs).not.toContain("mcp_servers={}");
+      const denied = new CodexAppServerAdapter({
+        codexBin: "codex", projectRuntimePolicy: policy, cwd: root,
+        projectToolDenyList: { mcpServerIds: ["mcp-one"], appIds: ["app-one"], pluginIds: ["plugin@market"] },
+      });
+      const args = (denied as unknown as { processArgs: string[] }).processArgs.join(" ");
+      expect(args).toContain("mcp_servers.mcp-one.enabled=false");
+      expect(args).toContain("apps.app-one.enabled=false");
+      expect(args).toContain("plugins.plugin@market.enabled=false");
+      await scoped.dispose();
+      await denied.dispose();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps ephemeral project thread naming in adapter memory without metadata RPCs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-ephemeral-"));
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "ephemeral-test", projectRoot: root });
+    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const calls: string[] = [];
+    const internals = adapter as unknown as {
+      ensureReady: () => Promise<void>;
+      assertEffectiveProjectToolIsolation: (threadId?: string) => Promise<void>;
+      listModels: () => Promise<string[]>;
+      request: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+    };
+    internals.ensureReady = async () => undefined;
+    internals.assertEffectiveProjectToolIsolation = async () => undefined;
+    internals.listModels = async () => ["gpt-6-luna"];
+    internals.request = async (method) => {
+      calls.push(method);
+      if (method !== "thread/start") throw new Error(`unexpected RPC ${method}`);
+      return {
+        activePermissionProfile: { id: policy.permissionProfileId },
+        runtimeWorkspaceRoots: [root],
+        thread: { id: "ephemeral-thread", cwd: root, model: "gpt-6-luna", status: "idle" },
+      };
+    };
+    try {
+      const session = await adapter.createSession({ name: "project-local label", cwd: root, model: "gpt-6-luna" });
+      expect(session.title).toBe("project-local label");
+      expect(calls).toEqual(["thread/start"]);
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects foreign project resume and recover before native RPC and preserves owned provenance", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-resume-admission-"));
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "resume-admission-test", projectRoot: root });
+    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = [];
+    let readyCalls = 0;
+    const internals = adapter as unknown as {
+      projectThreadIds: Set<string>;
+      ensureReady: () => Promise<void>;
+      request: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+    };
+    internals.ensureReady = async () => { readyCalls++; };
+    internals.request = async (method, params) => {
+      calls.push({ method, params });
+      return {
+        thread: { id: params?.threadId as string, cwd: root },
+        activePermissionProfile: { id: policy.permissionProfileId },
+        runtimeWorkspaceRoots: [root],
+      };
+    };
+    try {
+      await expect(adapter.resumeSession("foreign-thread")).resolves.toMatchObject({ ok: false, nonRetryable: true });
+      await expect(adapter.recover("foreign-thread", "must not fork")).resolves.toMatchObject({ ok: false, nonRetryable: true });
+      expect(readyCalls).toBe(0);
+      expect(calls).toEqual([]);
+
+      internals.projectThreadIds.add("owned-project-thread");
+      await expect(adapter.resumeSession("owned-project-thread")).resolves.toEqual({ ok: true });
+      expect(calls).toEqual([{
+        method: "thread/resume",
+        params: {
+          threadId: "owned-project-thread",
+          permissions: policy.permissionProfileId,
+          runtimeWorkspaceRoots: [root],
+        },
+      }]);
+      expect(readyCalls).toBe(1);
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a stale project root before initializing or resuming", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-stale-resume-root-"));
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "stale-resume-root-test", projectRoot: root });
+    const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
+    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+    const calls: string[] = [];
+    let readyCalls = 0;
+    const internals = adapter as unknown as {
+      projectThreadIds: Set<string>;
+      ensureReady: () => Promise<void>;
+      request: (method: string) => Promise<unknown>;
+    };
+    internals.projectThreadIds.add("owned-project-thread");
+    internals.ensureReady = async () => { readyCalls++; };
+    internals.request = async (method) => { calls.push(method); return {}; };
+    try {
+      await expect(adapter.resumeSession("owned-project-thread")).resolves.toMatchObject({ ok: false, nonRetryable: true });
+      await expect(adapter.recover("owned-project-thread")).resolves.toMatchObject({ ok: false, nonRetryable: true });
+      expect(readyCalls).toBe(0);
+      expect(calls).toEqual([]);
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("uses fresh native state for an owned ephemeral thread before its first rollout exists", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-ephemeral-state-"));
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "ephemeral-state-test", projectRoot: root });
+    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const threadId = "ephemeral-before-first-turn";
+    const internals = adapter as unknown as {
+      ensureReady: () => Promise<void>;
+      request: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+      initialized: boolean;
+      child: { killed: boolean; kill: () => void };
+      projectThreadIds: Set<string>;
+      projectLiveMessages: Map<string, import("../src/types/index.js").SessionMessageView[]>;
+      assertEffectiveProjectToolIsolation: (threadId?: string) => Promise<void>;
+      consumeMessage: (message: { method: string; params: Record<string, unknown> }) => void;
+      rawTranscriptAdapter: {
+        getSessionObservation: (id: string) => Promise<never>;
+        getSessionMessages: (id: string, limit: number) => Promise<never>;
+      };
+    };
+    internals.ensureReady = async () => undefined;
+    internals.initialized = true;
+    internals.child = { killed: false, kill: () => undefined };
+    internals.projectThreadIds.add(threadId);
+    internals.projectLiveMessages.set(threadId, []);
+    internals.assertEffectiveProjectToolIsolation = async () => undefined;
+    const calls: string[] = [];
+    internals.request = async (method, params) => {
+      calls.push(method);
+      if (method === "thread/read") return { thread: {
+        id: threadId, cwd: root, model: "gpt-6-luna", status: "idle", ephemeral: true,
+        ...(params?.includeTurns ? { turns: [{ id: "turn-ephemeral", status: "completed", items: [
+          { id: "user-item", type: "userMessage", content: [{ type: "text", text: "harmless fixture" }] },
+          { id: "assistant-item", type: "agentMessage", phase: "final_answer", text: "done" },
+        ] }] } : {}),
+      } };
+      if (method === "thread/turns/list") return { data: [] };
+      if (method === "turn/start") {
+        internals.consumeMessage({ method: "item/commandExecution/outputDelta", params: {
+          threadId, turnId: "turn-ephemeral", itemId: "command-item", delta: "{\"inside_read\":false}",
+        } });
+        internals.consumeMessage({ method: "item/completed", params: {
+          threadId, turnId: "turn-ephemeral", item: { id: "command-item", type: "commandExecution", aggregatedOutput: "" },
+        } });
+        internals.consumeMessage({ method: "item/completed", params: {
+          threadId, turnId: "turn-ephemeral", item: { id: "assistant-item", type: "agentMessage", phase: "final_answer", text: "done" },
+        } });
+        return { turn: { id: "turn-ephemeral", status: "completed" } };
+      }
+      throw new Error(`unexpected RPC ${method}`);
+    };
+    internals.rawTranscriptAdapter.getSessionObservation = async () => {
+      throw new Error(`no rollout found for thread id ${threadId}`);
+    };
+    internals.rawTranscriptAdapter.getSessionMessages = async () => {
+      throw new Error(`no rollout found for thread id ${threadId}`);
+    };
+    try {
+      await expect(adapter.getSession(threadId)).resolves.toMatchObject({
+        id: threadId,
+        model: "gpt-6-luna",
+        cwd: root,
+        status: "idle",
+      });
+      const sent = await adapter.sendMessage(threadId, {
+        model: "gpt-6-luna", message: "harmless fixture", origin: "human", queue: true,
+      });
+      expect(sent).toMatchObject({ ok: true, turnId: "turn-ephemeral" });
+      expect(calls).toContain("turn/start");
+      expect(calls).not.toContain("thread/resume");
+      await expect(adapter.getSessionMessages(threadId)).resolves.toEqual([
+        { id: "turn-ephemeral:user", role: "user", turnId: "turn-ephemeral", text: "harmless fixture", parts: [{ type: "text", text: "harmless fixture" }] },
+        { id: "command-item", role: "tool", turnId: "turn-ephemeral", text: "{\"inside_read\":false}", parts: [{ type: "tool_result", output: "{\"inside_read\":false}" }] },
+        { id: "assistant-item", role: "assistant", turnId: "turn-ephemeral", phase: "final_answer", text: "done", parts: [{ type: "text", text: "done" }] },
+      ]);
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("bounds a Unix socket that accepts but never upgrades the WebSocket", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-unix-timeout-"));
     const socketPath = join(tempDir, "app-server.sock");

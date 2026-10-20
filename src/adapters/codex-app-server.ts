@@ -7,6 +7,20 @@ import WebSocket from "ws";
 import { getHumanStopStore } from "../human-stop-store.js";
 import { CodexAdapter, type CodexAutomationStop, type CodexNativeAutomationMetadata } from "./codex.js";
 import { spawnIsolatedWorkload } from "../workload-launcher.js";
+import {
+  assertCodexProjectRoot,
+  codexProjectAppServerArgs,
+  codexProjectIntegrationFeatureDeny,
+  codexProjectFilesystemProfileDeny,
+  codexProjectDiscoveryDenyList,
+  codexProjectPermissionObserved,
+  codexProjectResumeParams,
+  codexProjectThreadParams,
+  codexProjectTurnParams,
+  CODEX_PROJECT_MODEL_ID,
+  type CodexProjectToolDenyList,
+  type CodexProjectRuntimePolicy,
+} from "../project-runtime-policy.js";
 import type {
   AgentSession,
   ControlResult,
@@ -49,6 +63,8 @@ interface CodexThread {
 interface CodexThreadPermissionState {
   approvalPolicy?: unknown;
   sandbox?: { type?: unknown };
+  activePermissionProfile?: { id?: unknown } | null;
+  runtimeWorkspaceRoots?: unknown;
 }
 
 /** Native terminal evidence, not a Stop invocation or a business verdict. */
@@ -57,6 +73,23 @@ export interface CodexTrackedTurnCompletion {
   turnId: string;
   fingerprint: string;
   transcriptTail: string;
+}
+
+interface CodexProjectToolInventory {
+  complete: boolean;
+  denyList: CodexProjectToolDenyList;
+  active: boolean;
+  summary: string;
+}
+
+interface CodexProjectCommandReceipt {
+  itemId: string;
+  turnId: string;
+  command: string;
+  cwd: string;
+  status?: string;
+  exitCode?: number | null;
+  output: string;
 }
 
 function hasCodexFullAccess(state: CodexThreadPermissionState): boolean {
@@ -135,6 +168,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly cwd: string;
   private readonly socketPath?: string;
   private readonly modelIds: string[];
+  private readonly projectRuntimePolicy?: CodexProjectRuntimePolicy;
+  private readonly projectToolDenyList?: CodexProjectToolDenyList;
   private readonly rawTranscriptAdapter: CodexAdapter;
   private readonly requestTimeoutMs: number;
   private readonly deliveryReceipts: CodexDeliveryReceipts;
@@ -146,7 +181,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private nextRequestId = 1;
   private readonly pending = new Map<number, PendingRequest>();
   private readonly threads = new Map<string, CodexThread>();
+  private readonly projectLiveMessages = new Map<string, SessionMessageView[]>();
+  private readonly projectCommandReceipts = new Map<string, CodexProjectCommandReceipt[]>();
   private readonly fullAccessThreads = new Set<string>();
+  private readonly projectThreadIds = new Set<string>();
   private readonly activeTurns = new Map<string, string>();
   private readonly lastNativeTurns = new Map<string, { turnId: string; status: string }>();
   private readonly completions = new Map<string, TurnCompletion>();
@@ -173,9 +211,21 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     requestTimeoutMs?: number;
     /** Codex's local data root holding native rollout JSONL files. */
     codexDir?: string;
+    /** Trusted, per-attempt policy. Forces a dedicated app-server process. */
+    projectRuntimePolicy?: CodexProjectRuntimePolicy;
+    /** Generated only from in-process, non-secret integration metadata. */
+    projectToolDenyList?: CodexProjectToolDenyList;
   } = {}) {
     this.codexBin = config.codexBin || process.env.CODEX_BIN || "codex";
-    this.processArgs = config.args || ["app-server"];
+    this.projectRuntimePolicy = config.projectRuntimePolicy;
+    this.projectToolDenyList = config.projectToolDenyList;
+    if (this.projectToolDenyList && !this.projectRuntimePolicy) {
+      throw new Error("project tool deny overlays require a trusted project runtime policy");
+    }
+    if (this.projectRuntimePolicy && (config.socketPath || process.env.CODEX_APP_SERVER_SOCKET || config.args)) {
+      throw new Error("project-scoped Codex requires its own app-server process and generated policy arguments");
+    }
+    this.processArgs = this.projectRuntimePolicy ? codexProjectAppServerArgs(this.projectToolDenyList, this.codexBin) : (config.args || ["app-server"]);
     this.cwd = config.cwd || process.cwd();
     this.socketPath = config.socketPath ?? process.env.CODEX_APP_SERVER_SOCKET;
     if (this.socketPath && (!isAbsolute(this.socketPath) || this.socketPath.includes(":") || this.socketPath.includes("?"))) {
@@ -185,6 +235,56 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     this.requestTimeoutMs = config.requestTimeoutMs || 30_000;
     this.deliveryReceipts = new CodexDeliveryReceipts(config.codexDir);
     this.rawTranscriptAdapter = new CodexAdapter({ codexBin: this.codexBin, codexDir: config.codexDir });
+  }
+
+  /**
+   * Discover only IDs/flags in a first owned child, then start a second child
+   * with explicit per-ID denies. No thread or model turn exists in discovery.
+   */
+  static async createProjectScoped(config: {
+    policy: CodexProjectRuntimePolicy;
+    codexBin?: string;
+    cwd?: string;
+    requestTimeoutMs?: number;
+    codexDir?: string;
+  }): Promise<CodexAppServerAdapter> {
+    const discovery = new CodexAppServerAdapter({
+      codexBin: config.codexBin,
+      cwd: config.cwd || config.policy.rootPath,
+      requestTimeoutMs: config.requestTimeoutMs,
+      codexDir: config.codexDir,
+      projectRuntimePolicy: config.policy,
+    });
+    let inventory: CodexProjectToolInventory;
+    try {
+      await discovery.init();
+      inventory = await discovery.readProjectToolInventory(undefined, true);
+    } finally {
+      await discovery.dispose();
+    }
+    if (!inventory.complete) {
+      throw new Error(`Codex project deny discovery incomplete (${inventory.summary})`);
+    }
+
+    const isolated = new CodexAppServerAdapter({
+      codexBin: config.codexBin,
+      cwd: config.cwd || config.policy.rootPath,
+      requestTimeoutMs: config.requestTimeoutMs,
+      codexDir: config.codexDir,
+      projectRuntimePolicy: config.policy,
+      projectToolDenyList: inventory.denyList,
+    });
+    try {
+      await isolated.init();
+      const effective = await isolated.readProjectToolInventory();
+      if (!effective.complete || effective.active) {
+        throw new Error(`Codex project deny overlay did not isolate effective tools (${effective.summary})`);
+      }
+      return isolated;
+    } catch (error) {
+      await isolated.dispose();
+      throw error;
+    }
   }
 
   async init(): Promise<void> {
@@ -450,6 +550,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       catch (error) {
         // Native thread/start can allocate a rollout path before its first turn creates the file.
         // Preserve only freshly verified native metadata; never hide permission/other archive failures.
+        if (base && this.projectRuntimePolicy && this.projectThreadIds.has(id) && !this.lastNativeTurns.has(id)
+          && !this.activeTurns.has(id) && /no rollout found for thread id/.test((error as Error).message)) {
+          return null;
+        }
         if (base && (error as NodeJS.ErrnoException).code === "ENOENT") {
           // A thread with proven native turn history must keep its rollout tail observable:
           // the tail carries stop evidence and message archive, so mutation may not proceed blindly.
@@ -494,18 +598,53 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
     await this.ensureReady();
+    if (this.projectRuntimePolicy) {
+      await assertCodexProjectRoot(this.projectRuntimePolicy, options.cwd);
+      if (options.fullAccess) throw new Error("project-scoped Codex does not permit full access");
+      if (options.model && options.model !== this.projectRuntimePolicy.modelId) {
+        throw new Error(`project-scoped Codex is pinned to ${this.projectRuntimePolicy.modelId}`);
+      }
+      await this.assertEffectiveProjectToolIsolation();
+    }
     const result = await this.request("thread/start", {
       cwd: options.cwd,
-      ...(options.model ? { model: options.model } : {}),
+      ...(this.projectRuntimePolicy ? { model: this.projectRuntimePolicy.modelId } : options.model ? { model: options.model } : {}),
       ...(options.fullAccess ? { approvalPolicy: "never", sandbox: "danger-full-access" } : {}),
+      ...(this.projectRuntimePolicy ? codexProjectThreadParams(this.projectRuntimePolicy) : {}),
     }) as { thread?: CodexThread } & CodexThreadPermissionState;
     const thread = result.thread;
     if (!thread?.id) throw new Error("Codex thread/start did not return a thread id");
+    if (this.projectRuntimePolicy && !codexProjectPermissionObserved(result, this.projectRuntimePolicy)) {
+      await this.request("thread/archive", { threadId: thread.id }).catch(() => undefined);
+      throw new Error("Codex did not confirm the requested project permission profile and exact runtime root");
+    }
+    if (this.projectRuntimePolicy) {
+      this.projectThreadIds.add(thread.id);
+      this.projectLiveMessages.set(thread.id, []);
+      this.projectCommandReceipts.set(thread.id, []);
+      try {
+        await this.assertEffectiveProjectToolIsolation(thread.id);
+        if (!(await this.listModels()).includes(CODEX_PROJECT_MODEL_ID)) {
+          throw new Error(`Codex project runtime does not advertise the required model ${CODEX_PROJECT_MODEL_ID}`);
+        }
+      }
+      catch (error) {
+        this.projectThreadIds.delete(thread.id);
+        this.projectLiveMessages.delete(thread.id);
+        this.projectCommandReceipts.delete(thread.id);
+        await this.request("thread/archive", { threadId: thread.id }).catch(() => undefined);
+        throw error;
+      }
+    }
     if (options.fullAccess) {
       if (!hasCodexFullAccess(result)) throw new Error("Codex app-server did not confirm the requested full-access thread settings");
       this.fullAccessThreads.add(thread.id);
     }
-    await this.request("thread/name/set", { threadId: thread.id, name: options.name });
+    // Codex ephemeral threads are not persisted and reject all metadata updates.
+    // The project-scoped session name is local presentation state only.
+    if (!this.projectRuntimePolicy) {
+      await this.request("thread/name/set", { threadId: thread.id, name: options.name });
+    }
     thread.name = options.name;
     thread.cwd = thread.cwd || options.cwd;
     this.threads.set(thread.id, thread);
@@ -565,8 +704,18 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private async sendNativeMessage(id: string, options: SendMessageOptions, release: () => void, startRaceRetries = 1): Promise<ControlResult> {
+    if (this.projectRuntimePolicy && !this.projectThreadIds.has(id)) {
+      return { ok: false, nonRetryable: true, error: "project-scoped Codex can only address a thread created by this runtime instance" };
+    }
+    if (this.projectRuntimePolicy && options.model && options.model !== this.projectRuntimePolicy.modelId) {
+      return { ok: false, nonRetryable: true, error: `project-scoped Codex is pinned to ${this.projectRuntimePolicy.modelId}` };
+    }
     if (options.activeTurnOnly && !this.socketPath && !this.isReady()) return {ok:false,notSubmitted:true,nonRetryable:true,error:"Current-turn transport is unavailable; coordination was not delivered"};
     await this.ensureReady();
+    if (this.projectRuntimePolicy) {
+      await assertCodexProjectRoot(this.projectRuntimePolicy, this.projectRuntimePolicy.rootPath);
+      await this.assertEffectiveProjectToolIsolation(id);
+    }
     let session: AgentSession | null;
     try { session = await this.getSession(id); }
     catch (error) {
@@ -622,7 +771,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     // Never convert an explicit no-active rejection into a new turn/start.
     if (options.activeTurnOnly) return {ok:false,notSubmitted:true,nonRetryable:true,error:"skipped_inactive: native current-turn admission is no longer available"};
-    const resumed = await this.resumeSession(id);
+    // Project-owned threads are created as ephemeral and are already selected in
+    // this dedicated app-server. Codex has no durable rollout for thread/resume.
+    const resumed: ControlResult = this.projectRuntimePolicy && this.projectThreadIds.has(id)
+      ? { ok: true }
+      : await this.resumeSession(id);
     if (!resumed.ok) {
       if (steerActive && startRaceRetries > 0 && /already has an active writer/i.test(resumed.error ?? "")) {
         const fresh = await this.getSession(id);
@@ -646,7 +799,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const result = await this.request("turn/start", {
         threadId: id,
         input: [{ type: "text", text: options.message }, ...(options.images ?? []).map((image) => ({ type: "localImage", path: image.path }))],
-        model: options.model ?? session.model ?? null,
+        model: this.projectRuntimePolicy?.modelId ?? options.model ?? session.model ?? null,
+        ...(this.projectRuntimePolicy ? codexProjectTurnParams(this.projectRuntimePolicy) : {}),
       }) as { turn?: { id?: string; status?: string } };
       const turnId = result.turn?.id;
       if (typeof turnId !== "string" || !turnId.trim()) {
@@ -654,6 +808,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         return { ok: false, admitted: true, admissionUnknown: true, nonRetryable: true,
           error: "Codex accepted turn/start without a verifiable turn ID; do not replay",
           ...(options.inputId ? { inputId: options.inputId } : {}) };
+      }
+      if (this.projectRuntimePolicy && this.projectThreadIds.has(id)) {
+        this.recordProjectUserMessage(id, turnId, options.message);
       }
       if (generatedPrompt && turnId) {
         try {
@@ -821,14 +978,28 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async resumeSession(id: string): Promise<ControlResult> {
+    if (this.projectRuntimePolicy) {
+      if (!this.projectThreadIds.has(id)) {
+        return { ok: false, nonRetryable: true, error: "project-scoped Codex cannot resume a thread it did not create in this runtime instance" };
+      }
+      try {
+        await assertCodexProjectRoot(this.projectRuntimePolicy, this.projectRuntimePolicy.rootPath);
+      } catch (error) {
+        return { ok: false, nonRetryable: true, error: (error as Error).message };
+      }
+    }
     try {
       await this.ensureReady();
       const result = await this.request("thread/resume", {
         threadId: id,
+        ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
         ...(this.fullAccessThreads.has(id) ? { approvalPolicy: "never", sandbox: "danger-full-access" } : {}),
       }) as { thread?: CodexThread } & CodexThreadPermissionState;
       if (!result.thread?.id) throw new Error("Codex thread/resume did not return a thread id");
       if (result.thread.id !== id) throw new Error(`Codex thread/resume returned a different thread id (${result.thread.id})`);
+      if (this.projectRuntimePolicy && !codexProjectPermissionObserved(result, this.projectRuntimePolicy)) {
+        throw new Error("Codex resume did not confirm the project permission profile and exact runtime root");
+      }
       if (hasCodexFullAccess(result)) this.fullAccessThreads.add(id);
       if (this.fullAccessThreads.has(id) && !hasCodexFullAccess(result)) {
         throw new Error("Codex app-server did not preserve the full-access thread settings on resume");
@@ -841,6 +1012,16 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async recover(id: string, message?: string): Promise<ControlResult> {
+    if (this.projectRuntimePolicy) {
+      if (!this.projectThreadIds.has(id)) {
+        return { ok: false, nonRetryable: true, error: "project-scoped Codex cannot recover a thread it did not create in this runtime instance" };
+      }
+      try {
+        await assertCodexProjectRoot(this.projectRuntimePolicy, this.projectRuntimePolicy.rootPath);
+      } catch (error) {
+        return { ok: false, nonRetryable: true, error: (error as Error).message };
+      }
+    }
     const resumed = await this.resumeSession(id);
     if (!resumed.ok) {
       const forked = await this.forkSession(id, message);
@@ -850,6 +1031,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async forkSession(id: string, message?: string): Promise<ControlResult> {
+    if (this.projectRuntimePolicy) return { ok: false, nonRetryable: true, error: "project-scoped Codex threads cannot be forked outside the trusted admission path" };
     try {
       await this.ensureReady();
       const result = await this.request("thread/fork", { threadId: id }) as { thread?: CodexThread };
@@ -868,14 +1050,20 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   async changeModel(sessionId: string, model: string): Promise<ControlResult> {
     if (!sessionId) return { ok: false, error: "Codex model changes require a session id with app-server" };
+    if (this.projectRuntimePolicy && model !== this.projectRuntimePolicy.modelId) return { ok: false, nonRetryable: true, error: `project-scoped Codex is pinned to ${this.projectRuntimePolicy.modelId}` };
+    if (this.projectRuntimePolicy && !this.projectThreadIds.has(sessionId)) return { ok: false, nonRetryable: true, error: "project-scoped Codex cannot change a foreign thread" };
     try {
       await this.ensureReady();
       const result = await this.request("thread/resume", {
         threadId: sessionId,
         model,
+        ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
         ...(this.fullAccessThreads.has(sessionId) ? { approvalPolicy: "never", sandbox: "danger-full-access" } : {}),
       }) as { thread?: CodexThread } & CodexThreadPermissionState;
       if (hasCodexFullAccess(result)) this.fullAccessThreads.add(sessionId);
+      if (this.projectRuntimePolicy && !codexProjectPermissionObserved(result, this.projectRuntimePolicy)) {
+        throw new Error("Codex model switch did not confirm the project permission profile and exact runtime root");
+      }
       if (this.fullAccessThreads.has(sessionId) && !hasCodexFullAccess(result)) {
         throw new Error("Codex app-server did not preserve the full-access thread settings on model switch");
       }
@@ -896,8 +1084,23 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async getSessionMessages(id: string, limit = 12): Promise<SessionMessageView[] | null> {
-    try { return await this.rawTranscriptAdapter.getSessionMessages(id, limit); }
+    try {
+      const messages = await this.rawTranscriptAdapter.getSessionMessages(id, limit);
+      if (!this.projectRuntimePolicy || !this.projectThreadIds.has(id)) return messages;
+      const live = this.projectLiveMessages.get(id) ?? [];
+      if (messages !== null && (messages.length > 0 || live.length === 0)) return messages;
+      // Ephemeral project threads have no durable rollout. This bounded in-memory
+      // fallback is neither paged nor shared across threads and is deleted with
+      // the owning adapter; it must never be described as archived history.
+      return live.slice(-Math.max(1, Math.min(Math.floor(limit), 50)));
+    }
     catch (error) {
+      const projectEphemeral = this.projectRuntimePolicy && this.projectThreadIds.has(id);
+      if (projectEphemeral) {
+        const noRollout = /no rollout found for thread id/.test((error as Error).message);
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT" && !noRollout) throw error;
+        return this.projectLiveMessages.get(id)?.slice(-Math.max(1, Math.min(Math.floor(limit), 50))) ?? [];
+      }
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       await this.ensureReady();
       const result = await this.request("thread/read", { threadId: id, includeTurns: true }) as {
@@ -908,6 +1111,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       throw error;
     }
   }
+
 
   async getFirstUserMessage(id: string): Promise<SessionMessageView | null> {
     return this.rawTranscriptAdapter.getFirstUserMessage(id);
@@ -963,6 +1167,219 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       });
     }
     await this.initialization;
+  }
+
+  private async assertEffectiveProjectToolIsolation(threadId?: string): Promise<void> {
+    const inventory = await this.readProjectToolInventory(threadId);
+    if (!inventory.complete || inventory.active) {
+      throw new Error(`project-scoped Codex tool isolation is not proven (${inventory.summary})`);
+    }
+  }
+
+  private async readProjectToolInventory(threadId?: string, discovery = false): Promise<CodexProjectToolInventory> {
+    if (!this.projectRuntimePolicy) throw new Error("project tool inventory requires a trusted project policy");
+    type Page = { rows: unknown[]; pages: number; complete: boolean; statusCode?: number };
+    const pageAll = async (method: string): Promise<Page> => {
+      const rows: unknown[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 100; page++) {
+        let response: { data?: unknown[]; nextCursor?: string | null };
+        try {
+          response = await this.request(method, { limit: 100, ...(threadId ? { threadId } : {}), ...(cursor ? { cursor } : {}) }) as { data?: unknown[]; nextCursor?: string | null };
+        } catch (error) {
+          const match = (error as Error).message.match(/status\s+(\d{3})\s+/i);
+          return { rows, pages: page, complete: false, ...(match ? { statusCode: Number(match[1]) } : {}) };
+        }
+        if (!Array.isArray(response.data)) return { rows, pages: page + 1, complete: false };
+        rows.push(...response.data);
+        if (!response.nextCursor) return { rows, pages: page + 1, complete: true };
+        cursor = response.nextCursor;
+      }
+      return { rows, pages: 100, complete: false };
+    };
+    const [mcpResult, configResult] = await Promise.all([
+      pageAll("mcpServerStatus/list"),
+      this.request("config/read", {
+      cwd: this.projectRuntimePolicy.rootPath,
+      includeLayers: false,
+      }).then((value) => value as {
+        config?: {
+          features?: Record<string, unknown>;
+          permissions?: Record<string, unknown>;
+          apps?: Record<string, { enabled?: unknown } | null> | null;
+          plugins?: Record<string, { enabled?: unknown } | null> | null;
+          mcp_servers?: Record<string, { enabled?: unknown } | null> | null;
+        };
+        origins?: Record<string, { name?: { type?: unknown } } | undefined>;
+      }).catch(() => null),
+    ]);
+    const mcpRows = mcpResult.rows as Array<{ name?: unknown; runtimeStatus?: unknown; tools?: unknown }>;
+    const featureDeny = codexProjectIntegrationFeatureDeny(configResult);
+    const filesystemDeny = codexProjectFilesystemProfileDeny(configResult, this.codexBin);
+    const appConfig = configResult?.config?.apps;
+    const pluginConfig = configResult?.config?.plugins;
+    const mcpConfig = configResult?.config?.mcp_servers;
+    const configuredAppIds = appConfig && typeof appConfig === "object" ? Object.keys(appConfig).filter((id) => id !== "_default") : [];
+    const configuredPluginIds = pluginConfig && typeof pluginConfig === "object" ? Object.keys(pluginConfig) : [];
+    const configuredMcpIds = mcpConfig && typeof mcpConfig === "object" ? Object.keys(mcpConfig) : [];
+    const discoveryDeny = codexProjectDiscoveryDenyList({
+      mcpStatusNames: mcpRows.map((server) => server.name),
+      configuredMcpIds,
+      configuredAppIds,
+      configuredPluginIds,
+    });
+    const mcpStatusesNotDisabled = mcpRows.filter((server) => typeof server.runtimeStatus === "string" && server.runtimeStatus !== "disabled").length;
+    const mcpStatusesUnknown = mcpRows.length - mcpRows.filter((server) => typeof server.runtimeStatus === "string").length;
+    const mcpToolCount = mcpRows.reduce((total, server) => total + Object.keys(server.tools ?? {}).length, 0);
+    const mcpConfigDisabled = mcpRows.filter((server) => typeof server.name === "string"
+      && mcpConfig?.[server.name]?.enabled === false).length;
+    const mcpConfigEnabled = Object.values(mcpConfig ?? {}).filter((server) => server?.enabled === true).length;
+    const mcpConfigAllDisabled = !!mcpConfig && typeof mcpConfig === "object"
+      && mcpConfigDisabled === mcpRows.length
+      && Object.values(mcpConfig).every((server) => !!server && server.enabled === false);
+    const pluginConfigAllDisabled = !!pluginConfig && typeof pluginConfig === "object"
+      && Object.values(pluginConfig).every((plugin) => !!plugin && plugin.enabled === false);
+    const mcpExposureSafe = threadId
+      ? mcpStatusesUnknown === 0 && mcpStatusesNotDisabled === 0 && mcpToolCount === 0
+      : mcpConfigAllDisabled && mcpToolCount === 0 && mcpStatusesNotDisabled === 0;
+    const mcpStates = mcpRows.reduce<Record<string, number>>((counts, server) => {
+      const state = typeof server.runtimeStatus === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(server.runtimeStatus)
+        ? server.runtimeStatus : "unknown";
+      counts[state] = (counts[state] ?? 0) + 1;
+      return counts;
+    }, {});
+    const activeApps = featureDeny.complete ? 0 : 1;
+    const activePlugins = pluginConfigAllDisabled ? 0 : 1;
+    const idsComplete = discoveryDeny.complete;
+    const flagsComplete = discovery || (mcpRows.every((server) => !!server.tools
+      && typeof server.tools === "object" && !Array.isArray(server.tools)) && mcpExposureSafe);
+    const complete = mcpResult.complete && configResult !== null && featureDeny.complete && filesystemDeny.complete && idsComplete && flagsComplete
+      && (discovery || (mcpConfigAllDisabled && pluginConfigAllDisabled));
+    const denyList = discoveryDeny.denyList;
+    const active = !discovery && (!mcpExposureSafe || !pluginConfigAllDisabled) || activeApps > 0 || activePlugins > 0;
+    const summary = JSON.stringify({
+      phase: discovery ? "discovery" : threadId ? "scoped" : "effective",
+      mcpRows: mcpRows.length, mcpStatusesNotDisabled, mcpStatusesUnknown, mcpTools: mcpToolCount, mcpPages: mcpResult.pages,
+      mcpStates, mcpConfigKeys: configuredMcpIds.length, mcpConfigExplicitDisabled: mcpConfigDisabled,
+      mcpConfigExplicitEnabled: mcpConfigEnabled, mcpConfigAllDisabled,
+      pluginConfigAllDisabled,
+      apps: { featureDisabled: featureDeny.complete, configuredKeys: featureDeny.appConfiguredKeys, explicitEnabled: featureDeny.appExplicitEnabled,
+        defaultDisabled: featureDeny.appDefaultDisabled },
+      plugins: { featureDisabled: featureDeny.complete, configuredKeys: featureDeny.pluginConfiguredKeys,
+        explicitEnabled: featureDeny.pluginExplicitEnabled },
+      filesystemProfile: { exactRules: filesystemDeny.exactRules, configuredPaths: filesystemDeny.configuredPaths,
+        unexpectedRules: filesystemDeny.unexpectedRules, depthMetadataShape: filesystemDeny.depthMetadataShape },
+      admissionChecks: {
+        statusPageComplete: mcpResult.complete,
+        configReadbackPresent: configResult !== null,
+        identityRowsComplete: idsComplete,
+        rowsWithToolMaps: mcpRows.filter((server) => !!server.tools && typeof server.tools === "object" && !Array.isArray(server.tools)).length,
+        discoveryDenyIds: discoveryDeny.denyList.mcpServerIds.length,
+        featurePolicyComplete: featureDeny.complete,
+        filesystemPolicyComplete: filesystemDeny.complete,
+      },
+      featureOriginsVerified: featureDeny.complete, complete,
+    });
+    return { complete, denyList, active, summary };
+  }
+
+  private recordProjectUserMessage(threadId: string, turnId: string, text: string): void {
+    const messages = this.projectLiveMessages.get(threadId);
+    if (!messages || messages.some((message) => message.role === "user" && message.turnId === turnId)) return;
+    const message: SessionMessageView = {
+      id: `${turnId}:user`, role: "user", turnId, text, parts: [{ type: "text", text }],
+    };
+    const turnIndex = messages.findIndex((item) => item.turnId === turnId);
+    messages.splice(turnIndex >= 0 ? turnIndex : messages.length, 0, message);
+    if (messages.length > 200) messages.splice(0, messages.length - 200);
+  }
+
+  private recordProjectAssistantDelta(threadId: string, turnId: string, itemId: string | undefined, delta: string): void {
+    const messages = this.projectLiveMessages.get(threadId);
+    if (!messages || !delta) return;
+    const id = itemId || `${turnId}:assistant`;
+    let message = messages.find((item) => item.role === "assistant" && item.turnId === turnId && item.id === id);
+    if (!message) {
+      message = { id, role: "assistant", turnId, text: "", parts: [{ type: "text", text: "" }] };
+      messages.push(message);
+    }
+    const combined = `${message.text ?? ""}${delta}`;
+    if (combined.length > 1_000_000) return;
+    message.text = combined;
+    message.parts = [{ type: "text", text: combined }];
+  }
+
+  private recordProjectCompletedItem(threadId: string, turnId: string, item: Record<string, unknown>): void {
+    const messages = this.projectLiveMessages.get(threadId);
+    if (!messages || typeof item.id !== "string") return;
+    if (item.type === "agentMessage" && typeof item.text === "string" && item.text.trim() && item.text.length <= 1_000_000) {
+      let message = messages.find((candidate) => candidate.role === "assistant" && candidate.turnId === turnId && candidate.id === item.id);
+      if (!message) {
+        message = { id: item.id, role: "assistant", turnId, text: item.text, parts: [{ type: "text", text: item.text }] };
+        messages.push(message);
+      } else {
+        message.text = item.text;
+        message.parts = [{ type: "text", text: item.text }];
+      }
+      if (typeof item.phase === "string") message.phase = item.phase;
+    } else if (item.type === "commandExecution" && typeof item.aggregatedOutput === "string"
+      && item.aggregatedOutput.length <= 1_000_000) {
+      const prior = messages.find((candidate) => candidate.role === "tool" && candidate.turnId === turnId && candidate.id === item.id);
+      if (!item.aggregatedOutput && prior?.text) return;
+      const message: SessionMessageView = {
+        id: item.id, role: "tool", turnId, text: item.aggregatedOutput,
+        parts: [{ type: "tool_result", output: item.aggregatedOutput }],
+      };
+      const index = messages.findIndex((candidate) => candidate.role === "tool" && candidate.turnId === turnId && candidate.id === item.id);
+      if (index >= 0) messages[index] = message;
+      else messages.push(message);
+    }
+    if (messages.length > 200) messages.splice(0, messages.length - 200);
+  }
+
+  private recordProjectToolOutputDelta(threadId: string, turnId: string, itemId: string, delta: string): void {
+    const messages = this.projectLiveMessages.get(threadId);
+    if (!messages || !delta) return;
+    let message = messages.find((item) => item.role === "tool" && item.turnId === turnId && item.id === itemId);
+    if (!message) {
+      message = { id: itemId, role: "tool", turnId, text: "", parts: [{ type: "tool_result", output: "" }] };
+      messages.push(message);
+    }
+    const combined = `${message.text ?? ""}${delta}`;
+    if (combined.length > 1_000_000) return;
+    message.text = combined;
+    message.parts = [{ type: "tool_result", output: combined }];
+    if (messages.length > 200) messages.splice(0, messages.length - 200);
+  }
+
+  private recordProjectCommandItem(threadId: string, turnId: string, item: Record<string, unknown>): void {
+    if (item.type !== "commandExecution" || typeof item.id !== "string") return;
+    const receipts = this.projectCommandReceipts.get(threadId);
+    if (!receipts) return;
+    let receipt = receipts.find((candidate) => candidate.turnId === turnId && candidate.itemId === item.id);
+    if (!receipt) {
+      receipt = { itemId: item.id, turnId, command: "", cwd: "", output: "" };
+      receipts.push(receipt);
+    }
+    if (typeof item.command === "string" && item.command.length <= 16_384) receipt.command = item.command;
+    if (typeof item.cwd === "string" && item.cwd.length <= 4_096) receipt.cwd = item.cwd;
+    if (typeof item.status === "string") receipt.status = item.status;
+    if (item.exitCode === null || typeof item.exitCode === "number" && Number.isInteger(item.exitCode)) receipt.exitCode = item.exitCode;
+    if (typeof item.aggregatedOutput === "string" && item.aggregatedOutput.length <= 1_000_000
+      && (item.aggregatedOutput.length > 0 || receipt.output.length === 0)) receipt.output = item.aggregatedOutput;
+    if (receipts.length > 50) receipts.splice(0, receipts.length - 50);
+  }
+
+  private recordProjectCommandOutputDelta(threadId: string, turnId: string, itemId: string, delta: string): void {
+    const receipts = this.projectCommandReceipts.get(threadId);
+    if (!receipts || !delta) return;
+    let receipt = receipts.find((candidate) => candidate.turnId === turnId && candidate.itemId === itemId);
+    if (!receipt) {
+      receipt = { itemId, turnId, command: "", cwd: "", output: "" };
+      receipts.push(receipt);
+    }
+    const combined = `${receipt.output}${delta}`;
+    if (combined.length <= 1_000_000) receipt.output = combined;
   }
 
   private async initializeTransport(): Promise<void> {
@@ -1060,7 +1477,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       this.handleTransportDisconnect(child, error, { error: error.message });
     };
     const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
-      this.handleTransportDisconnect(child, new Error("Codex app-server exited"), { code: code ?? undefined, signal: signal ?? undefined });
+      const detail = this.stderrTail ? `; stderr: ${this.stderrTail}` : "";
+      this.handleTransportDisconnect(child, new Error(`Codex app-server exited${detail}`), { code: code ?? undefined, signal: signal ?? undefined });
     };
     child.stdout.on("data", onStdout);
     child.stderr.on("data", onStderr);
@@ -1220,7 +1638,24 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (message.method === "item/agentMessage/delta" && threadId && typeof params.delta === "string") {
       const thread = this.threads.get(threadId);
       if (thread) thread.preview = params.delta;
+      const turnId = typeof params.turnId === "string" ? params.turnId : undefined;
+      const itemId = typeof params.itemId === "string" ? params.itemId : undefined;
+      if (this.projectRuntimePolicy && this.projectThreadIds.has(threadId) && turnId) {
+        this.recordProjectAssistantDelta(threadId, turnId, itemId, params.delta);
+      }
       this.emitEvent({ kind: "message.updated", harness: "codex", sessionId: threadId, nativeType: message.method });
+    }
+    if (threadId && this.projectRuntimePolicy && this.projectThreadIds.has(threadId)) {
+      const turnId = typeof params.turnId === "string" ? params.turnId : undefined;
+      const item = params.item && typeof params.item === "object" ? params.item as Record<string, unknown> : undefined;
+      if (turnId && (message.method === "item/started" || message.method === "item/completed") && item) {
+        this.recordProjectCommandItem(threadId, turnId, item);
+        if (message.method === "item/completed") this.recordProjectCompletedItem(threadId, turnId, item);
+      } else if (turnId && message.method === "item/commandExecution/outputDelta"
+        && typeof params.itemId === "string" && typeof params.delta === "string") {
+        this.recordProjectToolOutputDelta(threadId, turnId, params.itemId, params.delta);
+        this.recordProjectCommandOutputDelta(threadId, turnId, params.itemId, params.delta);
+      }
     }
     if (message.method === "turn/completed" && threadId) {
       this.activeTurns.delete(threadId);
