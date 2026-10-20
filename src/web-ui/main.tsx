@@ -14,7 +14,7 @@ import "./interface-polish.css";
 import { CodexNavigation } from "./codex-navigation.js";
 import {useFleetDirectory} from './fleet/use-directory.js';
 import {directorySession} from './fleet/session-directory.js';
-import {RemoteSessionView} from './fleet/RemoteSessionView.js';
+import {RemoteSessionView,TranscriptRequestOwner,fetchIntegratorTranscriptPage,integratorEventDisplay,localTranscriptAddressFor,mergeTranscriptPageIfCurrent,transcriptForAddress,transcriptValueIfCurrent,type TranscriptView} from './fleet/RemoteSessionView.js';
 import {SessionViewCache,indexedViewCacheStore,readViewCacheSettings,writeViewCacheSettings,type ViewCacheSettings} from './fleet/view-cache.js';
 import type {MeshAddress} from '../mesh/protocol.js';
 import { FleetCabinet } from "./fleet/FleetCabinet.js";
@@ -1122,6 +1122,31 @@ function App() {
   }, [activeKey, details?.messages.length, details?.children?.length, outbox, showReasoning, showTools, jsonRendering]);
 
   const activeSession = details?.session && keyOf(details.session) === activeKey ? details.session : sessions.find((session) => keyOf(session) === activeKey);
+  const localTranscriptAddress=React.useMemo<MeshAddress|undefined>(()=>localTranscriptAddressFor(directory.localHostId,activeSession,remoteSelection),[activeSession?.harness,activeSession?.id,activeSession?.remote,directory.localHostId,remoteSelection]);
+  const localTranscriptKey=localTranscriptAddress?JSON.stringify([localTranscriptAddress.hostId,localTranscriptAddress.harness,localTranscriptAddress.nativeSessionId]):"";
+  const localTranscriptOwnerRef=React.useRef<TranscriptRequestOwner|null>(null);if(!localTranscriptOwnerRef.current)localTranscriptOwnerRef.current=new TranscriptRequestOwner(localTranscriptKey);localTranscriptOwnerRef.current.setSession(localTranscriptKey);
+  const [localTranscript,setLocalTranscript]=React.useState<TranscriptView>(),[localTranscriptError,setLocalTranscriptError]=React.useState(""),[localTranscriptLoading,setLocalTranscriptLoading]=React.useState(false);
+  const readLocalTranscript=React.useCallback(async(cursor?:string,reset=false)=>{
+    const address=localTranscriptAddress;if(!address)return;
+    const key=JSON.stringify([address.hostId,address.harness,address.nativeSessionId]),owner=localTranscriptOwnerRef.current!;
+    if(reset)owner.cancel(key);
+    const token=owner.begin(key);if(!token)return;
+    const owns=()=>owner.isCurrent(token);
+    setLocalTranscriptError("");setLocalTranscriptLoading(true);
+    try{
+      const response=await fetchIntegratorTranscriptPage({address,expectedHostId:address.hostId,cursor});
+      if(!owns())return;
+      setLocalTranscript(current=>mergeTranscriptPageIfCurrent(current,response.transcript,owner,token,reset));
+    }catch(error){if(owns()){const message=error instanceof Error?error.message:"Свежая история сессии недоступна.";setLocalTranscriptError(current=>transcriptValueIfCurrent(current,message,owner,token));}}
+    finally{if(owner.finish(token))setLocalTranscriptLoading(current=>transcriptValueIfCurrent(current,false,owner,token));}
+  },[localTranscriptAddress]);
+  React.useEffect(()=>{
+    setLocalTranscript(undefined);setLocalTranscriptError("");
+    if(!localTranscriptAddress)return;
+    void readLocalTranscript(undefined,true);
+    return()=>localTranscriptOwnerRef.current?.cancel(localTranscriptKey);
+  },[localTranscriptKey,readLocalTranscript]);
+  const currentLocalTranscript=localTranscriptAddress?transcriptForAddress(localTranscript,localTranscriptAddress):undefined;
   React.useEffect(() => {
     if (!activeSession || !["codex", "opencode", "claude", "hermes", "zcode"].includes(activeSession.harness)) {
       setAutopilotSession(undefined);
@@ -1883,7 +1908,14 @@ function App() {
           {detailsLoading && !details && <div className="session-loading-chat" aria-live="polite"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Загружаю свежие сообщения</strong><small>Начинаем с последних ходов; остальным Agent Herder можно пользоваться дальше.</small></div>}
           {!detailsLoading && !details && <div className="empty-chat">{detailsError || "Выберите сессию, чтобы открыть переписку."}</div>}
           {detailsHydrating && details && <div className="history-loading-banner"><span className="inline-loading-dot" /> Последние {formatLoadTiming(latestTimingMs)} · подгружаю историю и метрики…</div>}
-          {groupSessionMessages(chatDelivery.messages).map((group, groupIndex, groups) => {
+          {localTranscriptAddress&&<div className="local-transcript-controls"><button type="button" className="quiet-button" disabled={localTranscriptLoading} onClick={()=>void readLocalTranscript(undefined,true)}>Обновить историю</button>{localTranscriptLoading&&<span role="status">Загружаю историю сессии…</span>}</div>}
+          {localTranscriptError&&<p role="alert" className="remote-chat-error">{localTranscriptError}</p>}
+          {currentLocalTranscript ? currentLocalTranscript.events.map((event,index)=>{
+            const {message,attribution,visualRole}=integratorEventDisplay(event);
+            if(!hasVisibleMessage(message,showReasoning,showTools))return null;
+            const noteLabel=serviceNoteLabel(message);
+            return <article className={`message ${visualRole}`} key={message.id??index}><div className="message-meta"><span>{attribution}</span><time>{formatTime(message.timestamp||"")}</time></div>{noteLabel?<ServiceNote label={noteLabel} message={message}/>:<CollapsibleMessage message={message} showReasoning={showReasoning} showTools={showTools} jsonRendering={jsonRendering} collapseLongMessages={collapseLongMessages}/>}</article>;
+          }) : groupSessionMessages(chatDelivery.messages).map((group, groupIndex, groups) => {
             const visible = group.messages.filter((message) => hasVisibleMessage(message, showReasoning, showTools));
             if (visible.length === 0) return null;
             const isLastAssistant = group.role === "assistant" && groupIndex === groups.length - 1;
@@ -1892,6 +1924,7 @@ function App() {
               return noteLabel ? <ServiceNote key={message.id} label={noteLabel} message={message} /> : <CollapsibleMessage key={message.id} message={message} showReasoning={showReasoning} showTools={showTools} jsonRendering={jsonRendering} collapseLongMessages={collapseLongMessages} forceExpanded={isLastAssistant && index === visible.length - 1} />;
             })}</article>;
           })}
+          {currentLocalTranscript?.nextCursor&&<button type="button" className="quiet-button" disabled={localTranscriptLoading} onClick={()=>void readLocalTranscript(currentLocalTranscript.nextCursor??undefined)}>Загрузить следующую страницу истории</button>}
         </div>
       </div>}
       {!showCreateSession && !showStatistics && !showJobs && !showQuota && showScrollToLatest && <button className="scroll-latest" aria-label="Прокрутить к последним" onClick={scrollToBottom}>↓</button>}

@@ -14,6 +14,10 @@ type View={hostId:string;details:{session:{id:string;harness:string;title?:strin
 export type TranscriptView={scope:{hostId:string;harness:string;nativeSessionId:string};events:NativeTranscriptEvent[];totalEvents:number;nextCursor:string|null;complete:boolean;source:string};
 type TranscriptRouteResponse={session:{id:string;harness:string;status:string;lastActivity:string};transcript:TranscriptView;steerEndpoint:string};
 type DisplayMessage={message:SessionMessageView;attribution:string;visualRole:string};
+export function localTranscriptAddressFor(hostId:string|undefined,session:{harness:string;id:string;remote?:boolean}|undefined,remoteSelection?:MeshAddress):MeshAddress|undefined{
+ if(!hostId||!session||session.remote||remoteSelection)return undefined;
+ return {hostId,harness:session.harness,nativeSessionId:session.id};
+}
 export type TranscriptRequestToken={readonly sessionKey:string;readonly generation:number;readonly id:symbol};
 export class TranscriptRequestOwner{
  private sessionKey:string;
@@ -30,6 +34,15 @@ export class TranscriptRequestOwner{
  isCurrent(token:TranscriptRequestToken):boolean{return this.sessionKey===token.sessionKey&&this.generation===token.generation;}
  finish(token:TranscriptRequestToken):boolean{if(!this.isCurrent(token)||this.active!==token)return false;this.active=undefined;return true;}
  cancel(sessionKey:string):void{if(this.sessionKey!==sessionKey)return;this.generation++;this.active=undefined;}
+}
+export function mergeTranscriptPageIfCurrent(current:TranscriptView|undefined,incoming:TranscriptView,owner:TranscriptRequestOwner,token:TranscriptRequestToken,reset:boolean):TranscriptView|undefined{
+ if(!owner.isCurrent(token))return current;
+ if(reset||!current||current.scope.hostId!==incoming.scope.hostId||current.scope.harness!==incoming.scope.harness||current.scope.nativeSessionId!==incoming.scope.nativeSessionId)return incoming;
+ const seen=new Set(current.events.map(event=>event.eventId));
+ return {...incoming,events:[...current.events,...incoming.events.filter(event=>!seen.has(event.eventId))]};
+}
+export function transcriptValueIfCurrent<T>(current:T,incoming:T,owner:TranscriptRequestOwner,token:TranscriptRequestToken):T{
+ return owner.isCurrent(token)?incoming:current;
 }
 const client=createFleetClient();
 
