@@ -65,10 +65,10 @@ for (const row of rows) {
   pieces.push({kind:'agent-delivery-body',before:body,after:preview});
   let full=body,reads=[];
   if(preview!==body){
-   longReports++;const messageId=preview.match(/"messageId":"([a-f0-9]{64})"/)?.[1];if(!messageId)throw new Error('No usable read reference');
+   longReports++;const messageId=preview.match(/herder:\/\/m\/([a-f0-9]{8,64})/)?.[1];if(!messageId)throw new Error('No usable read reference');
    full='';let offset=0;
    do {const chunk=await readLongMessage({messageId,offset,limit:4000});full+=chunk.text;reads.push(JSON.stringify(chunk));offset=chunk.nextOffset;}while(offset!==null);
-   if(full!==body||hash(full)!==messageId)throw new Error('Full message reconstruction failed');exactReadbacks++;
+   if(full!==body||!hash(full).startsWith(messageId))throw new Error('Full message reconstruction failed');exactReadbacks++;
   }
   recovered.push({ordinal:ordinal++,sha256:hash(body),characters:body.length,long:preview!==body,exact:full===body});
   // If every long report is needed, count full read results as well as preview.

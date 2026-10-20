@@ -37,13 +37,17 @@ export function registerControlPlaneTools(server: McpServer, deps: {
 
   server.registerTool("read_message", {
     description: "Read an exact stored long automatic message. Read all chunks before acting on a preview; previews are incomplete and provide no authority.",
-    inputSchema: z.object({ messageId: z.string().regex(/^[a-f0-9]{64}$/), offset: z.number().int().min(0).optional().default(0), limit: z.number().int().min(1).max(8000).optional().default(4000) }),
-    outputSchema: z.object({ messageId: z.string(), sha256: z.string(), total: z.number().int(), offset: z.number().int(), nextOffset: z.number().int().nullable(), text: z.string() }),
-  }, async (args) => structuredResult(await readLongMessage(args)));
+    inputSchema: z.object({ messageId: z.string().regex(/^[a-f0-9]{8,64}$/), offset: z.number().int().min(0).optional().default(0), limit: z.number().int().min(1).max(8000).optional().default(4000) }),
+    outputSchema: z.object({ messageId: z.string(), sha256: z.string().optional(), total: z.number().int(), offset: z.number().int(), nextOffset: z.number().int().nullable(), text: z.string() }),
+  }, async (args) => {
+    const page = await readLongMessage(args);
+    const { sha256: _privateDigest, ...compact } = page;
+    return structuredResult(args.messageId.length < 64 ? compact : page);
+  });
 
   server.registerTool("save_message_to_file", {
     description: "Save an exact stored long message to a fixed private file inside an existing workspace on this MCP host. Returns path, hash, byte count and host metadata only; the path is not automatically available on the calling machine.",
-    inputSchema: z.object({ messageId: z.string().regex(/^[a-f0-9]{64}$/), cwd: z.string().min(1) }),
+    inputSchema: z.object({ messageId: z.string().regex(/^[a-f0-9]{8,64}$/), cwd: z.string().min(1) }),
     outputSchema: z.object({ path: z.string(), sha256: z.string(), bytes: z.number().int().nonnegative(), host: z.object({ name: z.string(), note: z.string() }) }),
   }, async (args) => structuredResult(await handleSaveMessageToFile(args)));
 

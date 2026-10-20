@@ -4,13 +4,13 @@ import { hostname, homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
-export const LONG_AUTOMATIC_MESSAGE_THRESHOLD = 600;
-const PREVIEW_LENGTH = 80;
+export const LONG_AUTOMATIC_MESSAGE_THRESHOLD = 1200;
+const PREVIEW_LENGTH = 320;
 const DEFAULT_READ_LIMIT = 4_000;
 const MAX_READ_LIMIT = 8_000;
 
 export function longMessageResourceUri(messageId: string, offset = 0, limit = DEFAULT_READ_LIMIT): string {
-  if (!/^[a-f0-9]{64}$/.test(messageId)) throw new Error("Unknown long message ID");
+  if (!/^[a-f0-9]{8,64}$/.test(messageId)) throw new Error("Unknown long message ID");
   return `herder://messages/${messageId}/${offset}/${limit}`;
 }
 
@@ -18,7 +18,7 @@ function storeDirectory(): string {
   return resolve(process.env.AGENT_HERDER_LONG_MESSAGES_DIR || join(homedir(), ".local", "state", "agent-herder", "long-messages"));
 }
 
-export async function compactAutomaticMessage(message: string, threshold = LONG_AUTOMATIC_MESSAGE_THRESHOLD): Promise<string> {
+export async function compactAutomaticMessage(message: string, threshold = LONG_AUTOMATIC_MESSAGE_THRESHOLD, previewText = message): Promise<string> {
   if (message.length <= threshold) return message;
   const sha256 = createHash("sha256").update(message, "utf8").digest("hex");
   const directory = storeDirectory();
@@ -49,17 +49,15 @@ export async function compactAutomaticMessage(message: string, threshold = LONG_
     }
   }
   await chmodPrivate(target);
-  const preview = message.slice(0, PREVIEW_LENGTH);
-  return `${preview}…
-[Incomplete preview; read the full original before acting.]
-read_message({"messageId":"${sha256}"})
-Fallback MCP resource: ${longMessageResourceUri(sha256, 0, DEFAULT_READ_LIMIT)}`;
+  const messageId = await shortMessageId(sha256);
+  const preview = `${previewText.slice(0, PREVIEW_LENGTH)}… [↗](herder://m/${messageId})`;
+  return preview.length < message.length ? preview : message;
 }
 
 export async function readLongMessage(input: { messageId: string; offset?: number; limit?: number }): Promise<{
   messageId: string; sha256: string; total: number; offset: number; nextOffset: number | null; text: string;
 }> {
-  if (!/^[a-f0-9]{64}$/.test(input.messageId)) throw new Error("Unknown long message ID");
+  if (!/^[a-f0-9]{8,64}$/.test(input.messageId)) throw new Error("Unknown long message ID");
   const offset = input.offset ?? 0;
   const limit = input.limit ?? DEFAULT_READ_LIMIT;
   if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("offset must be a non-negative integer");
@@ -83,7 +81,7 @@ export async function saveLongMessageToWorkspace(input: { messageId: string; cwd
 
   const privateRoot = await ensureWorkspaceDirectory(workspace, ".agent-herder");
   const messageDirectory = await ensureWorkspaceDirectory(privateRoot, "messages");
-  const target = join(messageDirectory, `${input.messageId}.txt`);
+  const target = join(messageDirectory, `${stored.sha256}.txt`);
   const existing = await lstat(target).catch((error) => {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
@@ -105,15 +103,21 @@ export async function saveLongMessageToWorkspace(input: { messageId: string; cwd
 }
 
 async function readStoredLongMessage(messageId: string): Promise<{ bytes: Buffer; text: string; sha256: string }> {
-  if (!/^[a-f0-9]{64}$/.test(messageId)) throw new Error("Unknown long message ID");
+  if (!/^[a-f0-9]{8,64}$/.test(messageId)) throw new Error("Unknown long message ID");
+  let digest = messageId;
+  if (messageId.length < 64) {
+    try { digest = (await readFile(join(storeDirectory(), `ref-${messageId}`), "utf8")).trim(); }
+    catch { throw new Error("Unknown long message ID"); }
+    if (!/^[a-f0-9]{64}$/.test(digest) || !digest.startsWith(messageId)) throw new Error("Invalid message reference");
+  }
   let bytes: Buffer;
-  try { bytes = await readFile(join(storeDirectory(), `${messageId}.txt`)); }
+  try { bytes = await readFile(join(storeDirectory(), `${digest}.txt`)); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new Error("Unknown long message ID");
     throw error;
   }
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  if (sha256 !== messageId) throw new Error("Stored long message failed integrity check");
+  if (sha256 !== digest) throw new Error("Stored long message failed integrity check");
   return { bytes, text: bytes.toString("utf8"), sha256 };
 }
 
@@ -158,4 +162,24 @@ async function chmodPrivate(path: string): Promise<void> {
   const info = await stat(path).catch(() => undefined);
   if (info?.isDirectory()) await chmod(path, 0o700);
   else if (info) await chmod(path, 0o600);
+}
+
+/** Short public references, collision checked; full digests stay in private storage. */
+async function shortMessageId(digest: string): Promise<string> {
+  for (let length = 8; length <= 64; length += 2) {
+    const id = digest.slice(0, length);
+    const path = join(storeDirectory(), `ref-${id}`);
+    try {
+      const file = await open(path, "wx", 0o600);
+      try { await file.writeFile(digest, "utf8"); await file.sync(); }
+      finally { await file.close(); }
+      const directory = await open(storeDirectory(), constants.O_RDONLY);
+      try { await directory.sync(); } finally { await directory.close(); }
+      return id;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if ((await readFile(path, "utf8")).trim() === digest) return id;
+    }
+  }
+  throw new Error("Message reference collision");
 }

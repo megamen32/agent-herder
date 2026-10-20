@@ -659,6 +659,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     capabilities: { resources: { subscribe: true, listChanged: true } },
     instructions: [
       "Use Agent Herder whenever you need to inspect or communicate with another coding-agent session.",
+      "A message ending in ↗ (herder://m/ID) is an incomplete preview: read that MCP resource or read_message({messageId:ID}) before acting. Paging continues until nextOffset is null. Full hashes are private; legacy message links still work.",
       "Prefer deliver for agent communication and activation policy; list_agents finds existing sessions, including ChatGPT conversations.",
       "Before editing files that another agent may also touch, publish a coordination_note_create with your session ID, workspace CWD, relevant paths, and a bounded TTL (30 minutes is a good default).",
       "Active coordination notes are automatically injected into new turns delivered through Agent Herder, so agents do not need to poll coordination_note_list on every turn.",

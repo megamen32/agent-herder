@@ -32,21 +32,46 @@ describe("durable long automatic messages", () => {
     oldDirectory = process.env.AGENT_HERDER_LONG_MESSAGES_DIR;
     process.env.AGENT_HERDER_LONG_MESSAGES_DIR = join(root, "content");
     const original = `${"first line\n".repeat(350)}tail 🧪`;
+    const digest = createHash("sha256").update(original).digest("hex");
     const preview = await compactAutomaticMessage(original);
-    const id = preview.match(/messageId":"([a-f0-9]{64})/)?.[1];
-    expect(id).toBeTruthy();
-    expect(preview).toContain("read the full original before acting");
-    expect(preview).toContain(`herder://messages/${id}/`);
+    const id = preview.match(/herder:\/\/m\/([a-f0-9]{8,64})/)?.[1];
+    expect(id).toHaveLength(8);
+    expect(preview.length).toBeLessThan(360);
+    expect(preview).not.toContain(digest);
+    expect(preview).not.toContain("read_message");
+    expect(preview).not.toContain("Fallback");
+    expect(preview.length - 320).toBeLessThan(40);
+    expect(preview).toContain(`herder://m/${id}`);
     expect((await stat(process.env.AGENT_HERDER_LONG_MESSAGES_DIR)).mode & 0o777).toBe(0o700);
-    expect((await stat(join(process.env.AGENT_HERDER_LONG_MESSAGES_DIR, `${id}.txt`))).mode & 0o777).toBe(0o600);
+    expect((await stat(join(process.env.AGENT_HERDER_LONG_MESSAGES_DIR, `${digest}.txt`))).mode & 0o777).toBe(0o600);
 
     const first = await readLongMessage({ messageId: id!, offset: 0, limit: 1000 });
     const second = await readLongMessage({ messageId: id!, offset: first.nextOffset!, limit: 1000 });
     const third = await readLongMessage({ messageId: id!, offset: second.nextOffset!, limit: 1000 });
     const fourth = await readLongMessage({ messageId: id!, offset: third.nextOffset!, limit: 1000 });
     expect(first.total).toBe(original.length);
-    expect(first.sha256).toBe(id);
+    expect(first.sha256).toBe(digest);
     expect(first.text + second.text + third.text + fourth.text).toBe(original);
+  });
+
+  it("extends colliding short IDs without overwrite and keeps legacy IDs readable", async () => {
+    root = await mkdtemp(join(tmpdir(), "herder-short-id-"));
+    oldDirectory = process.env.AGENT_HERDER_LONG_MESSAGES_DIR;
+    const directory = join(root, "content");
+    process.env.AGENT_HERDER_LONG_MESSAGES_DIR = directory;
+    await mkdir(directory, {mode:0o700});
+    const body = "Exact content with a checked public reference. ".repeat(30);
+    const digest = createHash("sha256").update(body).digest("hex");
+    const occupied = digest.slice(0,8)+"0".repeat(56);
+    await writeFile(join(directory, `ref-${digest.slice(0,8)}`), occupied, {mode:0o600});
+    const preview = await compactAutomaticMessage(body);
+    const id = preview.match(/herder:\/\/m\/([a-f0-9]+)/)![1]!;
+    expect(id).toHaveLength(10);
+    expect(await readFile(join(directory, `ref-${digest.slice(0,8)}`),"utf8")).toBe(occupied);
+    expect((await readLongMessage({messageId:id})).text).toBe(body);
+    expect((await readLongMessage({messageId:digest})).text).toBe(body);
+    await writeFile(join(directory, `ref-${id}`), "../outside");
+    await expect(readLongMessage({messageId:id})).rejects.toThrow("Invalid message reference");
   });
 
   it("leaves short messages unchanged and rejects unknown IDs and unbounded reads", async () => {
@@ -73,14 +98,15 @@ describe("durable long automatic messages", () => {
     };
     const adapters = new Map([["codex", adapter]]);
     const original = `${"concrete assignment detail line\n".repeat(220)}final line ✅`;
+    const digest = createHash("sha256").update(original).digest("hex");
     const sent = await handleSendMessage(adapters, { harness: "codex", sessionId: session.id, inputId: "long-message-integration", message: original, mode: "queue" });
     expect(sent).toContain("Message sent");
-    const id = delivered.match(/messageId":"([a-f0-9]{64})/)?.[1];
+    const id = delivered.match(/herder:\/\/m\/([a-f0-9]{8,64})/)?.[1];
     expect(id).toBeTruthy();
     expect(delivered).not.toContain(original);
     expect(delivered.length).toBeLessThanOrEqual(1200);
-    const fallbackUri = delivered.match(/Fallback MCP resource: (herder:\/\/messages\/[a-f0-9]{64}\/0\/\d+)/)?.[1];
-    expect(fallbackUri).toBe(`herder://messages/${id}/0/4000`);
+    const fallbackUri = delivered.match(/(herder:\/\/m\/[a-f0-9]{8,64})/)?.[1];
+    expect(fallbackUri).toBe(`herder://m/${id}`);
 
     const events = new HerderEventBus();
     const server = new McpServer({ name: "long-message-read-test", version: "1" });
@@ -101,7 +127,7 @@ describe("durable long automatic messages", () => {
       expect(result.isError).not.toBe(true);
       const body = result.structuredContent as { text: string; nextOffset: number | null; sha256: string; total: number };
       chunks.push(body.text);
-      expect(body.sha256).toBe(id);
+      expect(body.sha256).toBeUndefined();
       offset = body.nextOffset ?? 0;
       if (body.nextOffset === null) { expect(body.total).toBe(original.length); break; }
     }
@@ -114,7 +140,7 @@ describe("durable long automatic messages", () => {
       const result = await client.readResource({ uri: resourceUri });
       const page = JSON.parse(result.contents[0]?.text ?? "{}") as { text: string; nextOffset: number | null; nextResourceUri: string | null; sha256: string; total: number };
       resourceChunks.push(page.text);
-      expect(page.sha256).toBe(id);
+      expect(page.sha256).toBeUndefined();
       expect(page.total).toBe(original.length);
       if (page.nextResourceUri === null) { expect(page.nextOffset).toBeNull(); break; }
       expect(page.nextOffset).not.toBeNull();
@@ -127,9 +153,9 @@ describe("durable long automatic messages", () => {
     const exportedResult = await client.callTool({ name: "save_message_to_file", arguments: { messageId: id, cwd: root } });
     expect(exportedResult.isError).not.toBe(true);
     const exported = exportedResult.structuredContent as { path: string; sha256: string; bytes: number; host: { name: string; note: string } };
-    const expectedPath = join(root!, ".agent-herder", "messages", `${id}.txt`);
+    const expectedPath = join(root!, ".agent-herder", "messages", `${digest}.txt`);
     expect(Object.keys(exported).sort()).toEqual(["bytes", "host", "path", "sha256"]);
-    expect(exported).toMatchObject({ path: expectedPath, sha256: id, bytes: Buffer.byteLength(original), host: { name: hostname() } });
+    expect(exported).toMatchObject({ path: expectedPath, sha256: digest, bytes: Buffer.byteLength(original), host: { name: hostname() } });
     expect(exported.host.note).toContain("not automatically available on the calling machine");
     expect(Buffer.from(await readFile(expectedPath))).toEqual(Buffer.from(original, "utf8"));
     expect((await stat(expectedPath)).mode & 0o777).toBe(0o600);
@@ -141,7 +167,7 @@ describe("durable long automatic messages", () => {
 
     const mismatchWorkspace = join(root!, "mismatch-workspace");
     await mkdir(mismatchWorkspace);
-    const mismatchTarget = join(mismatchWorkspace, ".agent-herder", "messages", `${id}.txt`);
+    const mismatchTarget = join(mismatchWorkspace, ".agent-herder", "messages", `${digest}.txt`);
     await mkdir(join(mismatchWorkspace, ".agent-herder", "messages"), { recursive: true });
     await writeFile(mismatchTarget, "unrelated content", { mode: 0o600 });
     expect((await client.callTool({ name: "save_message_to_file", arguments: { messageId: id, cwd: mismatchWorkspace } })).isError).toBe(true);
@@ -159,7 +185,7 @@ describe("durable long automatic messages", () => {
     const externalFile = join(outside, "external.txt");
     await mkdir(join(linkedTargetWorkspace, ".agent-herder", "messages"), { recursive: true });
     await writeFile(externalFile, "external sentinel", { mode: 0o600 });
-    await symlink(externalFile, join(linkedTargetWorkspace, ".agent-herder", "messages", `${id}.txt`));
+    await symlink(externalFile, join(linkedTargetWorkspace, ".agent-herder", "messages", `${digest}.txt`));
     expect((await client.callTool({ name: "save_message_to_file", arguments: { messageId: id, cwd: linkedTargetWorkspace } })).isError).toBe(true);
     expect(await readFile(externalFile, "utf8")).toBe("external sentinel");
     expect((await client.callTool({ name: "save_message_to_file", arguments: { messageId: "../secret", cwd: root } })).isError).toBe(true);
@@ -197,7 +223,7 @@ describe("durable long automatic messages", () => {
     const original = "new assignment details\n".repeat(120);
     const result = JSON.parse(await handleNewOrResume(new Map([["codex", adapter]]), { harness: "codex", name: "same", cwd: root, message: original, mode: "queue" }));
     expect(result.ok).toBe(true);
-    expect(delivered).toContain("read_message(");
+    expect(delivered).toContain("herder://m/");
     expect(delivered).not.toContain(original);
     expect(receivedInputId).toBe(createHash("sha256").update(original).digest("hex"));
     const short = await compactAutomaticMessage("short remains unchanged");

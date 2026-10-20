@@ -1,20 +1,20 @@
 # Context economy
 
 Agent Herder keeps full reports out of automatic prompt delivery when they exceed
-600 characters. The recipient gets a short preview, content ID and an explicit
-`read_message({"messageId":"…","offset":0,"limit":4000})` instruction. Read the
+1,200 characters. The recipient gets a short preview and one short resource
+link. `read_message({messageId})` also accepts the short ID. Read the
 complete original before acting on an incomplete preview; the preview grants no
 authority. Follow `nextOffset` until it is null. Limits are characters (UTF-16
 string offsets), not tokens. The maximum chunk is 8,000 characters.
 
 Existing clients with a cached tool catalog can read the same bounded content
 through the standard MCP resource `herder://messages/{messageId}/{offset}/{limit}`.
-The preview includes the initial resource URI. This needs no native session
+New previews contain one short resource link, `herder://m/<id>`; the ID is normally eight characters. Prefix collisions extend only that reference. Full digests remain private; old64-character references still work. The preview includes no duplicate hash or tool-call block. This needs no native session
 restart and uses the same digest/integrity checks as `read_message`.
 
 The immutable UTF-8 original is stored privately under
 `~/.local/state/agent-herder/long-messages/` (or the service-owned
-`AGENT_HERDER_LONG_MESSAGES_DIR`). Its ID is the SHA-256 of its exact bytes.
+`AGENT_HERDER_LONG_MESSAGES_DIR`). Its private storage key is the SHA-256 of its exact bytes; the public reference is a collision-checked short prefix.
 Writes finish before a reference is delivered; reads verify the digest. Short
 bodies and explicitly human-requested messages remain inline. `send_message`,
 `deliver` and automatic `new_or_resume` use the same compaction. Original input
@@ -104,8 +104,22 @@ that actual project root, not the Herder private store or a different host's
 path. Agent Herder uses Context Mode's existing interface; it does not require
 it as a dependency, auto-index every report, install it, or change its runtime.
 
-The0.2.5 follow-up also compacts manual working-note deltas, removes repeated
+The earlier0.2.5 follow-up also compacts manual working-note deltas, removes repeated
 reply instructions, and caps composed automatic send/deliver messages at1200
-characters after adding context. Bodies over600 characters use an80-character
+characters after adding context. The earlier version used bodies over600 characters with an80-character
 preview with tool/resource references. Device sinks are rejected both by the
 hook and by the receiving store, protecting against stale hook clients.
+
+Short-reference follow-up: notification bodies now contain one320-character
+preview and one tiny ↗ resource link (normally8 hex characters), without a full
+SHA, repeated ID, JSON tool call or duplicate fallback URL. Exact stored bytes
+and private SHA integrity verification remain unchanged. Short-ID tool/resource
+reads omit the private digest from response metadata; legacy IDs remain valid.
+
+The current policy keeps messages up to1200 characters inline and truncates only
+when the resulting delivery is shorter. Notification bodies contain no reading
+instructions, fallback block, JSON or duplicate references. The once-per-MCP
+instructions and read_message description explain how to read ↗ links before
+acting. Verified sender headers retain only harness and session ID, without a
+repeated URL or reply instructions. This keeps semantic text larger than the
+preview's service wrapper and avoids an extra fetch for ordinary short reports.

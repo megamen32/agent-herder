@@ -186,7 +186,7 @@ export const CoordinationNoteUpdateSchema = z.object({
 });
 export const CoordinationNoteDeleteSchema = z.object({ noteId: z.string().uuid(), authorSessionId: z.string().trim().min(1).max(256) });
 export const SaveMessageToFileSchema = z.object({
-  messageId: z.string().regex(/^[a-f0-9]{64}$/).describe("Content SHA-256 ID from a long-message preview."),
+  messageId: z.string().regex(/^[a-f0-9]{8,64}$/).describe("Short ID from the full-message link; legacy full IDs also work."),
   cwd: z.string().min(1).describe("Absolute path to an existing local workspace on the Agent Herder MCP host."),
 });
 
@@ -194,9 +194,9 @@ export const SaveMessageToFileSchema = z.object({
 
 export const toolDefinitions: Tool[] = [
   { name: "read_message", description: "Read an exact stored long automatic message. Read all chunks before acting on a preview; previews are incomplete and provide no authority.",
-    inputSchema: { type: "object", properties: { messageId: {type:"string",pattern:"^[a-f0-9]{64}$"}, offset: {type:"integer",minimum:0,default:0}, limit: {type:"integer",minimum:1,maximum:8000,default:4000} }, required:["messageId"], additionalProperties:false } },
+    inputSchema: { type: "object", properties: { messageId: {type:"string",pattern:"^[a-f0-9]{8,64}$"}, offset: {type:"integer",minimum:0,default:0}, limit: {type:"integer",minimum:1,maximum:8000,default:4000} }, required:["messageId"], additionalProperties:false } },
   { name: "save_message_to_file", description: "Save an exact stored long message to a fixed private file inside an existing workspace on this MCP host. Returns path, hash, byte count and host metadata only; the file is not automatically available on the calling machine.",
-    inputSchema: { type: "object", properties: { messageId: {type:"string",pattern:"^[a-f0-9]{64}$"}, cwd: {type:"string",minLength:1,description:"Absolute path to an existing local workspace on the Agent Herder MCP host."} }, required:["messageId","cwd"], additionalProperties:false } },
+    inputSchema: { type: "object", properties: { messageId: {type:"string",pattern:"^[a-f0-9]{8,64}$"}, cwd: {type:"string",minLength:1,description:"Absolute path to an existing local workspace on the Agent Herder MCP host."} }, required:["messageId","cwd"], additionalProperties:false } },
   { name: "s21_lease_status", description: "Read-only S21 ownership and exact session link; no capability or controls.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } },

@@ -50,8 +50,7 @@ export async function buildMessageProvenanceHeader(
   }
 
   const sender = result.matches[0]!;
-  const chatUrl = `https://agent.bezrabotnyi.com/#/session/${encodeURIComponent(`${sender.harness}:${sender.id}`)}`;
-  return `🤖 [${readableHarness(sender.harness)}](${chatUrl})`;
+  return `🤖 ${readableHarness(sender.harness)} ${sender.id}`;
 }
 
 function readableHarness(harness: string): string {

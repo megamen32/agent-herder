@@ -484,7 +484,7 @@ async function sendMessageOnce(
   const baseMessage = `${provenanceHeader}\n\n${deliveredBody}`;
   const pending = await withDeferred(parsed.sessionId, baseMessage);
   const injected = await coordinationNotes.inject(found.session, pending.message);
-  const injectedMessage = parsed.humanRequested ? injected : await compactAutomaticMessage(injected, 1200);
+  const injectedMessage = parsed.humanRequested ? injected : await compactAutomaticMessage(injected, 1200, parsed.message);
   if (await automaticDeliveryHeld(found.session, false, found.adapter)) return HUMAN_STOP_MESSAGE;
   const options = {
     origin: parsed.humanRequested ? "human" as const : "automation" as const,
@@ -575,7 +575,7 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
     const modelError = await selectDeliveryModel(found.adapter,fresh,parsed.model);
     if (modelError) return JSON.stringify({ok:false,sessionId:fresh.id,delivery:"not_attempted",activated:false,error:modelError});
     const pending = await withDeferred(fresh.id, deliveredMessage);
-    const injected = await compactAutomaticMessage(await coordinationNotes.inject(fresh, pending.message), 1200);
+    const injected = await compactAutomaticMessage(await coordinationNotes.inject(fresh, pending.message), 1200, parsed.message);
     if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
     const options = {message:injected,model:parsed.model,retainedInboxIds:pending.ids,queue:parsed.mode==="queue",inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),origin:"automation" as const};
     const sent = activation === 'if_running' ? await sendCurrentTurnOnly(found.adapter,fresh.id,options) : await found.adapter.sendMessage(fresh.id,options);

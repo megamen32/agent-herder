@@ -39,13 +39,21 @@ export function registerHerderResources(server: McpServer, deps: {
     const adapter = adapters.get(decodeResourceComponent(variables.harness));
     return jsonContent(events, uri, adapter?.getSessionMessages ? await adapter.getSessionMessages(decodeResourceComponent(variables.sessionId), 100) : []);
   });
+  server.registerResource("short-message", new ResourceTemplate("herder://m/{messageId}", { list: undefined }), { title: "Full message", mimeType: "application/json" }, async (uri, variables) => {
+    const messageId = decodeURIComponent(String(variables.messageId));
+    const page = await readLongMessage({ messageId });
+    const { sha256: _privateDigest, ...publicPage } = page;
+    return jsonContent(events, uri, { ...publicPage, nextResourceUri: page.nextOffset === null ? null : longMessageResourceUri(messageId, page.nextOffset) });
+  });
+
   server.registerResource("long-message", new ResourceTemplate("herder://messages/{messageId}/{offset}/{limit}", { list: undefined }), { title: "Long automatic message page", mimeType: "application/json" }, async (uri, variables) => {
     const messageId = decodeURIComponent(String(variables.messageId));
     const offset = parseResourceInteger(variables.offset, "offset");
     const limit = parseResourceInteger(variables.limit, "limit");
     const page = await readLongMessage({ messageId, offset, limit });
     const nextResourceUri = page.nextOffset === null ? null : longMessageResourceUri(messageId, page.nextOffset, limit);
-    return jsonContent(events, uri, { ...page, nextResourceUri });
+    const { sha256: _privateDigest, ...compact } = page;
+    return jsonContent(events, uri, { ...(messageId.length < 64 ? compact : page), nextResourceUri });
   });
 
   server.registerResource("coordination", "herder://coordination", { title: "Active coordination notes", mimeType: "application/json" }, async (uri) => jsonContent(events, uri, await coordination.list()));
