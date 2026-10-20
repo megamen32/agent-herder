@@ -3202,7 +3202,30 @@ export class ZcodeAdapter implements HarnessAdapter {
         if (configured) return configured;
       } catch { /* local CLI config is optional */ }
     }
-    return parseModelName(model, currentProviderId);
+    const requested = parseModelName(model, currentProviderId);
+    if (!requested) return undefined;
+
+    // A listed model may use a configured provider name while the native
+    // registry requires its stable provider ID. Resolve that name against the
+    // same registry used for model discovery; preserve explicit native IDs.
+    try {
+      await this.client.start();
+      const view = record(await this.client.call("model-selection", "getView", []));
+      const providers = Array.isArray(view.providers) ? view.providers.map(record) : [];
+      const aliasMatches = providers.flatMap((provider) => {
+        const providerId = nonEmptyString(provider.providerId);
+        const providerName = nonEmptyString(provider.providerName);
+        if (!providerId || !providerName || providerName.toLowerCase() !== requested.providerId.toLowerCase()) return [];
+        const models = Array.isArray(provider.models) ? provider.models.map(record) : [];
+        return models.some((entry) => nonEmptyString(entry.modelId) === requested.modelId && record(entry.config).enabled !== false)
+          ? [{ ...requested, providerId }]
+          : [];
+      });
+      if (aliasMatches.length === 1) return aliasMatches[0];
+      if (aliasMatches.length > 1) return undefined;
+    } catch { /* Registry lookup is optional for explicit provider IDs. */ }
+
+    return requested;
   }
 
   private async callTask(method: string, ...args: unknown[]): Promise<unknown> {
