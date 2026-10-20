@@ -9,7 +9,7 @@ const operations: Record<string, string> = {
 };
 const harnessNames: Record<string, string> = {
   codex: "Codex", claude: "Claude", opencode: "OpenCode", hermes: "Hermes",
-  zcode: "ZCode", "fast-agent": "Fast Agent", qoder: "Qoder", chatgpt: "ChatGPT",
+  zcode: "ZCode", "fast-agent": "Fast Agent", qoder: "Qoder", chatgpt: "ChatGPT", "minimax-code": "MiniMax Code",
 };
 
 export function s21OwnershipView(value: S21Ownership | null) {

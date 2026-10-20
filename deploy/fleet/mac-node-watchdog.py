@@ -768,7 +768,7 @@ def prepare(base,config,artifact_cache=None):
     entry=verify_manifest(base,config['sourceSha'])
     node=executable(config['nodeBin'])
     harnesses=config['harnesses']
-    if not isinstance(harnesses,list) or not harnesses or not set(harnesses)<={'codex','zcode','opencode'}:
+    if not isinstance(harnesses,list) or not harnesses or not set(harnesses)<={'codex','zcode','opencode','minimax-code'}:
         raise Refused('unsupported_node_harnesses')
     native={}
     if 'codex' in harnesses:native.update(codex_environment(config))
@@ -919,7 +919,7 @@ def main():
     with (base/'run/watchdog.lock').open('a') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:raise Refused('owned_watchdog_already_running') from None
-        atomic_json(state/'adapters.json',{'version':1,'enabled':{name:env['ENABLE_'+name.upper().replace('-','_')]=='true' for name in ('codex','zcode','opencode','claude','qoder','hermes','fast-agent','chatgpt')}})
+        atomic_json(state/'adapters.json',{'version':1,'enabled':{name:env['ENABLE_'+name.upper().replace('-','_')]=='true' for name in ('codex','zcode','opencode','claude','qoder','hermes','fast-agent','chatgpt','minimax-code')}})
         child=subprocess.Popen([str(node),str(entry)],cwd=entry.parent.parent,env=env,start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
         started=previous=time.monotonic();previous_cpu={};cpu_samples=[];observed=[];sample={};soft=None;reason='node_exit';failed=[]
         stderr_reader=None
