@@ -32,7 +32,7 @@ Before any new node starts, record its exact finite RAM/CPU/tasks/swap/temp/disk
 
 ## Delivery and acceptance
 
-55 is the sole Herder100 integration/deploy executor. The existing mesh worktree produces new files; preserved UI/OpenCode WIP is integrated and checked before deployment. Publish the reviewed candidate, deploy that exact source/artifact, retain a backup and rollback receipt, and read back actual running identity and bounds.
+Herder100 integration/deploy ownership is the owner named by the active task and verified against a live native session and runtime resource; the historical numeric label `55` alone is not an owner identity. The existing mesh worktree produces new files; preserved UI/OpenCode WIP is integrated and checked before deployment. Publish the reviewed candidate, deploy that exact source/artifact, retain a backup and rollback receipt, and read back actual running identity and bounds.
 
 New ingress ownership is limited to the four new agent44/88/Mac vhosts. Canonical nginx-dev workflow is refresh, enable, check, scoped main push and the existing timer's per-site apply. Preserve the existing agent100 vhost, GPTAdmin cookie authorization, wildcard TLS and separate Airlock route. Publish only after real upstream node identity has been proved.
 
