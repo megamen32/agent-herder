@@ -160,6 +160,7 @@ export class ResumeAfterService {
         if(key(wait.owner)===key(ref) && event.data?.automationStop){
           wait.state="cancelled";wait.reason="requester was stopped";await this.save(wait);continue;
         }
+        if(this.options.heldWaitIds?.has(wait.id))continue;
         if(!wait.dependencies.some(d=>key(d)===key(ref)))continue;
         const expected=wait.dependencyTurns?.[key(ref)];
         if(event.kind!=="turn.started" && event.kind!=="session.deleted" && expected && turnId!==expected)continue;

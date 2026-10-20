@@ -74,6 +74,15 @@ describe("resume after exact sessions", () => {
     await resumed.sweep();
     expect(JSON.stringify(await resumed.get(legacy.id))).toBe(legacyBytes);
     expect(deliver).not.toHaveBeenCalled();
+    for (const event of [
+      {kind:"turn.started",turnId:"new-turn"},
+      {kind:"turn.completed",turnId:"new-turn"},
+      {kind:"session.deleted",turnId:"new-turn"},
+    ]) {
+      await resumed.observe({harness:a.harness,sessionId:a.sessionId,kind:event.kind,at:new Date().toISOString(),data:{turnId:event.turnId}});
+      expect(JSON.stringify(await resumed.get(legacy.id))).toBe(legacyBytes);
+    }
+    expect(deliver).not.toHaveBeenCalled();
 
     const fresh = await resumed.register({owner:{harness:"codex",sessionId:"new-owner"},dependencies:[b],message:"fresh task",requestId:"fresh"});
     await resumed.observe({harness:b.harness,sessionId:b.sessionId,kind:"turn.completed",at:new Date().toISOString(),data:{turnId:"fresh-turn"}});
@@ -95,7 +104,7 @@ describe("resume after exact sessions", () => {
     const resumed = new ResumeAfterService({directory, deliver, isHeld:async()=>held, isBusy:async()=>false,
       heldWaitIds:new Set([legacy.id])} as ResumeAfterOptions);
     held = true;
-    await resumed.sweep();
+    await resumed.observe({harness:owner.harness,sessionId:owner.sessionId,kind:"turn.completed",at:new Date().toISOString(),data:{automationStop:true,turnId:"owner-turn"}});
     expect((await resumed.get(legacy.id))?.state).toBe("cancelled");
     expect(deliver).not.toHaveBeenCalled();
   });
