@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { HarnessAdapter, SendMessageResult } from "./types/index.js";
+import type { HarnessAdapter, MessageAdmissionResult, SendMessageResult } from "./types/index.js";
 import { ResumeAfterService, type ResumeAfterWait, type SessionRef } from "./resume-after.js";
 
 interface Supervisor {
@@ -57,8 +57,17 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
     },
     queryReceipt:async wait=>{
       const adapter=adapters.get(wait.owner.harness);
-      const result=await adapter?.getMessageAdmission?.(wait.owner.sessionId,inputId(wait));
-      return result?.state==="admitted"?{status:"accepted"}:{status:"ambiguous",reason:result?.error??"Native receipt is unknown; not replaying"};
+      // Receipt-aware adapters preserve the original native result. A generic
+      // failed status or error text alone is not proof of non-submission.
+      const result:(MessageAdmissionResult & {receipt?:SendMessageResult})|undefined=
+        await adapter?.getMessageAdmission?.(wait.owner.sessionId,inputId(wait));
+      const receipt=result?.receipt;
+      if(result?.state==="unknown" || receipt?.admissionUnknown)
+        return {status:"ambiguous",reason:receipt?.error??result?.error??"Native receipt is unknown; not replaying"};
+      if(result?.state==="admitted" || receipt?.admitted || receipt?.ok)return {status:"accepted"};
+      if(result?.state==="failed" && receipt?.ok===false && receipt.notSubmitted===true)
+        return {status:"rejected",reason:receipt.error??result.error,receipt:{...receipt}};
+      return {status:"ambiguous",reason:result?.error??"Native receipt is unknown; not replaying"};
     },
   });
   let timer:NodeJS.Timeout|undefined;

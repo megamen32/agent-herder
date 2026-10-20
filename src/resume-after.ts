@@ -215,7 +215,11 @@ export class ResumeAfterService {
       if(wait.state==="dispatching" || wait.state==="delivery_unknown"){
         // A restart or a dropped receipt is not permission to replay an action.
         const receipt=await this.options.queryReceipt?.(wait);
-        wait.state=receipt?.status==="accepted"?"resumed":"delivery_unknown";
+        wait.state=receipt?.status==="accepted"?"resumed":receipt?.status==="rejected"?"delivery_blocked":"delivery_unknown";
+        if(receipt){
+          wait.delivery=receipt;
+          if(receipt.reason!==undefined)wait.reason=receipt.reason;
+        }
         await this.save(wait);continue;
       }
       const before=JSON.stringify(wait);

@@ -1,5 +1,5 @@
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createAgentHerderMcpServer } from "../src/index.js";
@@ -52,6 +52,48 @@ async function nativeFixture() {
 }
 
 describe("exact native turn registration",()=>{
+  it.each(["dispatching","delivery_unknown"] as const)("recovers a persisted definitive pre-send refusal from %s without an adapter send",async state=>{
+    const f=await nativeFixture();
+    const wait=await f.runtime.service.register(f.request);
+    // Simulate the crash gap: native refusal is durable, but the wait's final
+    // delivery state was not saved. No native send is made by this fixture.
+    await writeFile(join(f.directory,wait.id+".json"),JSON.stringify({...wait,state}));
+    const receipt={ok:false,notSubmitted:true,nonRetryable:true,error:"Exact native pre-send refusal",inputId:"resume-after:"+wait.id};
+    const receiptPath=join(f.directory,"native-refusal.json");
+    await writeFile(receiptPath,JSON.stringify(receipt));
+    const reads:Array<{id:string;inputId:string}>=[];
+    f.adapters.get("codex")!.getMessageAdmission=async(id,inputId)=>{
+      reads.push({id,inputId});
+      const stored=JSON.parse(await readFile(receiptPath,"utf8"));
+      return {state:"failed",error:stored.error,receipt:stored};
+    };
+    const restored=f.makeRuntime();await restored.service.sweep();
+    expect(await restored.service.get(wait.id)).toMatchObject({state:"delivery_blocked",reason:receipt.error,delivery:{status:"rejected",reason:receipt.error,receipt}});
+    expect(f.sent).toHaveLength(0);
+    await restored.service.sweep();
+    expect((await f.makeRuntime().service.register(f.request)).state).toBe("delivery_blocked");
+    await f.makeRuntime().service.sweep();
+    expect(reads).toEqual([{id:"owner",inputId:receipt.inputId}]);
+    expect(f.sent).toHaveLength(0);
+  });
+  it.each(["admitted","unknown","failed"] as const)("does not replay a recovered %s receipt without definitive refusal proof",async state=>{
+    const f=await nativeFixture();
+    const wait=await f.runtime.service.register(f.request);
+    await writeFile(join(f.directory,wait.id+".json"),JSON.stringify({...wait,state:"dispatching"}));
+    f.adapters.get("codex")!.getMessageAdmission=async()=>({state,error:"Persisted native outcome"});
+    const restored=f.makeRuntime();await restored.service.sweep();await restored.service.sweep();
+    expect((await restored.service.register(f.request)).state).toBe(state==="admitted"?"resumed":"delivery_unknown");
+    expect(f.sent).toHaveLength(0);
+  });
+  it.each(["admitted","admissionUnknown"] as const)("preserves recovered %s evidence over conflicting rejection flags",async flag=>{
+    const f=await nativeFixture();
+    const wait=await f.runtime.service.register(f.request);
+    await writeFile(join(f.directory,wait.id+".json"),JSON.stringify({...wait,state:"dispatching"}));
+    f.adapters.get("codex")!.getMessageAdmission=async()=>({state:"failed",receipt:{ok:false,notSubmitted:true,nonRetryable:true,[flag]:true,error:"Conflicting native receipt"}});
+    const restored=f.makeRuntime();await restored.service.sweep();await restored.service.sweep();
+    expect((await restored.service.register(f.request)).state).toBe(flag==="admitted"?"resumed":"delivery_unknown");
+    expect(f.sent).toHaveLength(0);
+  });
   it("joins a completion observed before registration, persists its turn and retries without a second continuation",async()=>{
     const f=await nativeFixture();
     // Event-only proof: idle alone is not the completion receipt.
