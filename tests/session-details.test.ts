@@ -196,11 +196,13 @@ describe("SessionSupervisor details", () => {
   it("projects native Codex parent_thread_id records into the session tree", async () => {
     const rootSession: AgentSession = { ...session, harness: "codex", id: "codex-root", meta: { nativeSessionId: "codex-root" } };
     const childSession: AgentSession = { ...rootSession, id: "codex-child", title: "Worker", meta: { nativeSessionId: "codex-child", parentThreadId: "codex-root", threadSource: "subagent", agentRole: "worker" } };
+    let nativeChildReads = 0;
     const codexAdapter: HarnessAdapter = {
       ...adapter(),
       type: "codex",
       async listSessions() { return [rootSession, childSession]; },
       async getSession(id) { return id === rootSession.id ? rootSession : null; },
+      async listChildren(id) { nativeChildReads += 1; return id === rootSession.id ? [childSession] : []; },
     };
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-native-lineage-"));
     cleanups.push(() => rm(root, { recursive: true, force: true }));
@@ -218,5 +220,6 @@ describe("SessionSupervisor details", () => {
     const details = await supervisor.getSessionDetails("codex", rootSession.id);
     expect(details.children).toHaveLength(1);
     expect(details.children[0]).toMatchObject({ id: childSession.id });
+    expect(nativeChildReads).toBe(1);
   });
 });

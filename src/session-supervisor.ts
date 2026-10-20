@@ -1,4 +1,4 @@
-import type { RecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
+import type { RecoveryAdmission, RecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
 import type { ContentPart, Conversation, ConversionResult, HarnessType, Message } from "session-convert";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -350,9 +350,10 @@ export class SessionSupervisor {
     return sessionGroups.flat();
   }
 
-  async getSession(harness: string, id: string, expectedCwd?: string, options?: {includeMetrics?:boolean}): Promise<AgentSession | null> {
+  async getSession(harness: string, id: string, expectedCwd?: string, options?: {includeMetrics?:boolean;includeModelOptions?:boolean}): Promise<AgentSession | null> {
+    const { includeModelOptions, ...adapterOptions } = options ?? {};
     const read = async (adapter: HarnessAdapter): Promise<AgentSession | null> => {
-      if (!expectedCwd) return adapter.getSession(id, options);
+      if (!expectedCwd) return adapter.getSession(id, adapterOptions);
       const cwd = resolve(expectedCwd);
       const sessions = await adapter.listSessions({ cwd });
       return sessions.find((session) => session.id === id && session.harness === harness && resolve(session.cwd) === cwd) ?? null;
@@ -361,7 +362,7 @@ export class SessionSupervisor {
     if (direct) {
       const session = await read(direct);
       const humanStopHeld = session && (harness === "codex" || harness === "zcode") ? await this.humanStops.observe(session) : false;
-      const modelOptions = direct.listModels ? await direct.listModels() : [];
+      const modelOptions = includeModelOptions === false ? [] : direct.listModels ? await direct.listModels() : [];
       return session
         ? { ...session, meta: { ...session.meta, humanStopHeld, provider: harness, controlCapabilities: getHarnessCapabilities(direct), modelOptions } }
         : null;
@@ -442,7 +443,11 @@ export class SessionSupervisor {
 
   async sendMessage(harness: string, id: string, options: SendMessageOptions, expectedCwd?: string): Promise<SendMessageResult & { sessionId?: string; delivery?: "deferred" }> {
     const adapter = this.requireAdapter(harness);
-    if (options.origin !== "human" && !await this.automaticNativeAdmissionAllowed(adapter, id, options.automationPurpose === "autopilot" ? "autopilot-send" : "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic delivery" };
+    const operation = options.automationPurpose === "autopilot" ? "autopilot-send" : "send";
+    if (options.origin !== "human") {
+      const admission = await this.automaticNativeAdmission(adapter, id, operation);
+      if (!admission.allowed) return { ok: false, notSubmitted: true, nonRetryable: true, error: admission.reason };
+    }
     let session: AgentSession | null;
     if (expectedCwd) {
       const canonicalCwd = resolve(expectedCwd);
@@ -468,11 +473,15 @@ export class SessionSupervisor {
     }
     const message = session ? await coordinationNotes.inject(session, options.message) : options.message;
     if (await this.isAutomationHeld(harness, id)) return { ok: false, nonRetryable: true, error: "Чат явно остановлен. Требуется новое сообщение человека или явное продолжение." };
-    if (options.origin !== "human" && !await this.automaticNativeAdmissionAllowed(adapter, id, options.automationPurpose === "autopilot" ? "autopilot-send" : "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic delivery" };
+    if (options.origin !== "human") {
+      const admission = await this.automaticNativeAdmission(adapter, id, operation);
+      if (!admission.allowed) return { ok: false, notSubmitted: true, nonRetryable: true, error: admission.reason };
+    }
     const result = await adapter.sendMessage(id, { ...options, message });
     if (!result.ok && options.origin !== "human" && !result.nonRetryable
       && !result.admitted && !result.admissionUnknown && isBusyCodexWriter(harness, result.error)) {
-      if (!await this.automaticNativeAdmissionAllowed(adapter, id, options.automationPurpose === "autopilot" ? "autopilot-send" : "send")) return { ok: false, nonRetryable: true, error: "Fleet admission holds automatic deferred delivery" };
+      const admission = await this.automaticNativeAdmission(adapter, id, operation);
+      if (!admission.allowed) return { ok: false, notSubmitted: true, nonRetryable: true, error: admission.reason };
       await deferredMessages.add(id, options.message);
       return { ok: true, sessionId: id, delivery: "deferred" };
     }
@@ -552,10 +561,13 @@ export class SessionSupervisor {
     return result;
   }
 
-  async recoverSession(harness: string, id: string, message?: string, signal?: AbortSignal, humanRequested = false): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
+  async recoverSession(harness: string, id: string, message?: string, signal?: AbortSignal, humanRequested = false): Promise<ControlResult> {
     throwIfAborted(signal);
     const adapter = this.requireAdapter(harness);
-    if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "create")) return { ok: false, error: "Fleet admission holds automatic native work" };
+    if (!humanRequested) {
+      const admission = await this.automaticNativeAdmission(adapter, id, "create");
+      if (!admission.allowed) return this.automaticAdmissionRefusal(admission);
+    }
     if (humanRequested) await this.releaseHumanStop(harness, id);
     else if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат явно остановлен; автоматическое восстановление запрещено." };
     let cancelling = false;
@@ -571,7 +583,10 @@ export class SessionSupervisor {
     let result: ControlResult;
     try {
       throwIfAborted(signal); // A stop may arrive while the persistent human gate is read.
-      if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "create")) return { ok: false, error: "Fleet admission holds automatic recovery replacement" };
+      if (!humanRequested) {
+        const admission = await this.automaticNativeAdmission(adapter, id, "create");
+        if (!admission.allowed) return this.automaticAdmissionRefusal(admission);
+      }
       result = await (adapter.recover
         ? adapter.recover(id, message, signal)
         : Promise.resolve({ ok: false, error: `${adapter.name} does not expose native recovery` }));
@@ -611,12 +626,18 @@ export class SessionSupervisor {
     return result;
   }
 
-  async forkSession(harness: string, id: string, message?: string, humanRequested = false): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
+  async forkSession(harness: string, id: string, message?: string, humanRequested = false): Promise<ControlResult> {
     const adapter = this.requireAdapter(harness);
-    if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "create")) return { ok: false, error: "Fleet admission holds automatic native work" };
+    if (!humanRequested) {
+      const admission = await this.automaticNativeAdmission(adapter, id, "create");
+      if (!admission.allowed) return this.automaticAdmissionRefusal(admission);
+    }
     if (humanRequested) await this.releaseHumanStop(harness, id);
     else if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат явно остановлен; автоматическое создание копии запрещено." };
-    if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "create")) return { ok: false, error: "Fleet admission holds automatic fork" };
+    if (!humanRequested) {
+      const admission = await this.automaticNativeAdmission(adapter, id, "create");
+      if (!admission.allowed) return this.automaticAdmissionRefusal(admission);
+    }
     const result: Promise<ControlResult> = adapter.forkSession
       ? adapter.forkSession(id, message)
       : Promise.resolve({ ok: false, error: `${adapter.name} does not expose native session forking` });
@@ -650,7 +671,10 @@ export class SessionSupervisor {
 
   async resumeSession(harness: string, id: string, message?: string, humanRequested = false, inputId?: string): Promise<ControlResult> {
     const adapter = this.requireAdapter(harness);
-    if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "resume")) return { ok: false, error: "Fleet admission holds automatic native work" };
+    if (!humanRequested) {
+      const admission = await this.automaticNativeAdmission(adapter, id, "resume");
+      if (!admission.allowed) return this.automaticAdmissionRefusal(admission);
+    }
     if (humanRequested) await this.releaseHumanStop(harness, id);
     else if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат явно остановлен; автоматическое продолжение запрещено." };
     // Explicit no-message resume may enroll an externally started active Codex
@@ -671,7 +695,10 @@ export class SessionSupervisor {
     const loadedZcode = harness === "zcode" ? await adapter.getSession(id) : undefined;
     if (loadedZcode?.meta?.nativeLoaded === true && !message) return { ok: true };
     if (adapter.resumeSession && loadedZcode?.meta?.nativeLoaded !== true) {
-      if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "resume")) return { ok: false, error: "Fleet admission holds automatic resume" };
+      if (!humanRequested) {
+        const admission = await this.automaticNativeAdmission(adapter, id, "resume");
+        if (!admission.allowed) return this.automaticAdmissionRefusal(admission);
+      }
       const resumed = await adapter.resumeSession(id);
       if (!resumed.ok || !message) {
         if (resumed.ok) this.publishSessionChanged(harness, id, "changed");
@@ -679,11 +706,17 @@ export class SessionSupervisor {
       }
     }
     if (!message) return { ok: false, error: `${adapter.name} does not expose a native resume operation` };
-    if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "send")) return { ok: false, error: "Fleet admission holds automatic delivery" };
+    if (!humanRequested) {
+      const admission = await this.automaticNativeAdmission(adapter, id, "send");
+      if (!admission.allowed) return this.automaticAdmissionRefusal(admission);
+    }
     const session = await adapter.getSession(id);
     const injected = session ? await coordinationNotes.inject(session, message) : message;
     if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат снова остановлен; автоматическое продолжение запрещено." };
-    if (!humanRequested && !await this.automaticNativeAdmissionAllowed(adapter, id, "send")) return { ok: false, error: "Fleet admission holds automatic delivery" };
+    if (!humanRequested) {
+      const admission = await this.automaticNativeAdmission(adapter, id, "send");
+      if (!admission.allowed) return this.automaticAdmissionRefusal(admission);
+    }
     // Control APIs acknowledge native admission; they must not wait for task completion.
     const result = await adapter.sendMessage(id, { message: injected, origin: humanRequested ? "human" : "automation", queue: true, ...(inputId ? { inputId } : {}) });
     if (result.ok || result.admitted === true) {
@@ -716,12 +749,17 @@ export class SessionSupervisor {
   }
 
   async getSessionDetails(provider: string, id: string, options: SessionDetailOptions = {}): Promise<SessionDetails> {
-    const cachedSessions = (provider === "codex" || options.quick) ? await this.listSessions({ harness: provider }) : undefined;
+    const cachedSessions = options.quick
+      ? provider === "codex"
+        ? this.sessionSnapshot?.sessions.filter((session) => session.harness === provider)
+          ?? await this.adapters.get(provider)?.listSessions().catch(() => undefined)
+        : await this.listSessions({ harness: provider })
+      : provider === "codex" ? await this.listSessions({ harness: provider }) : undefined;
     const cachedSession = cachedSessions?.find((candidate) => candidate.id === id || nativeSessionId(candidate) === id);
     // ZCode list rows can omit native model options after a picker change.
     // Keep metrics cheap, but read the selected session's actual control state.
     const rawSession = options.quick
-      ? provider === "zcode" ? await this.getSession(provider, id) || cachedSession : cachedSession || await this.getSession(provider, id)
+      ? provider === "zcode" ? await this.getSession(provider, id) || cachedSession : provider === "codex" ? cachedSession || await this.getSession(provider, id, undefined, {includeModelOptions:false}) : cachedSession || await this.getSession(provider, id)
       : await this.getSession(provider, id, undefined, {includeMetrics:true}) || cachedSession;
     if (!rawSession) throw new SessionNotFoundError(provider, id);
     const session = options.quick ? rawSession : await this.pricing.enrich(rawSession);
@@ -734,14 +772,20 @@ export class SessionSupervisor {
       ? { kind: parentKey ? "subagent" : "root", parentId: parentKey, role: record.role, task: record.task }
       : parentKey ? { kind: "subagent", parentId: parentKey, role: nativeRole } : { kind: "external" };
     const childRecords = options.quick ? [] : await this.lineage.children(sessionKey(provider, id));
+    const codexAdapter = provider === "codex" ? this.adapters.get(provider) : undefined;
     const nativeChildren = !options.quick && provider === "codex"
-      ? (cachedSessions || []).filter((candidate) => nativeSessionId(candidate) !== nativeSessionId(session) && candidate.meta?.parentSessionKey === sessionKey(provider, nativeSessionId(session)))
+      ? codexAdapter?.listChildren
+        ? await codexAdapter.listChildren(nativeSessionId(session))
+        : (cachedSessions || []).filter((candidate) => nativeSessionId(candidate) !== nativeSessionId(session) && candidate.meta?.parentSessionKey === sessionKey(provider, nativeSessionId(session)))
       : [];
-    const childKeys = new Map(childRecords.map((child) => [child.sessionKey, child]));
+    const childKeys = new Map(childRecords.map((child) => [child.sessionKey, {
+      sessionKey: child.sessionKey, provider: child.provider, nativeSessionId: child.nativeSessionId,
+    }]));
     const nativeChildSessions = new Map(nativeChildren.map((child) => [sessionKey(provider, nativeSessionId(child)), child]));
-    for (const child of nativeChildren) childKeys.set(sessionKey(provider, nativeSessionId(child)), {
-      sessionKey: sessionKey(provider, nativeSessionId(child)), provider, nativeSessionId: nativeSessionId(child), createdAt: new Date().toISOString(), source: "acp-meta",
-    });
+    for (const child of nativeChildren) {
+      const key = sessionKey(provider, nativeSessionId(child));
+      if (!childKeys.has(key)) childKeys.set(key, { sessionKey: key, provider, nativeSessionId: nativeSessionId(child) });
+    }
     const resolvedChildren = await Promise.all([...childKeys.values()].map(async (child) => {
       const childId = child.sessionKey.startsWith(`${child.provider}:`)
         ? child.sessionKey.slice(child.provider.length + 1) : undefined;
@@ -961,8 +1005,10 @@ export class SessionSupervisor {
   ): Promise<void> {
     const key = sessionKey(provider, sessionId);
     if (this.automaticResumes.get(key) !== state || state.inFlight) return;
-    if (!await this.automaticNativeAdmissionAllowed(adapter, sessionId, "resume")) {
+    const initialAdmission = await this.automaticNativeAdmission(adapter, sessionId, "resume");
+    if (!initialAdmission.allowed) {
       this.clearAutomaticResume(provider, sessionId);
+      console.error("[agent-herder] automatic resume blocked before native submission for " + provider + ":" + sessionId + ": " + initialAdmission.reason);
       return;
     }
     if (this.automaticResumes.get(key) !== state || state.inFlight) return;
@@ -976,9 +1022,11 @@ export class SessionSupervisor {
       }
       // Native resume preserves the session identity and its persisted model;
       // automatic recovery must never fork or silently switch providers.
-      if (!await this.automaticNativeAdmissionAllowed(adapter, sessionId, "resume")) {
+      const finalAdmission = await this.automaticNativeAdmission(adapter, sessionId, "resume");
+      if (!finalAdmission.allowed) {
         state.attempts = Math.max(0, state.attempts - 1);
         this.clearAutomaticResume(provider, sessionId);
+        console.error("[agent-herder] automatic resume blocked before native submission for " + provider + ":" + sessionId + ": " + finalAdmission.reason);
         return;
       }
       if (this.automaticResumes.get(key) !== state) return;
@@ -999,12 +1047,22 @@ export class SessionSupervisor {
     this.scheduleAutomaticResume(provider, sessionId);
   }
 
-  private async automaticNativeAdmissionAllowed(adapter: HarnessAdapter, sessionId: string, operation: "resume" | "send" | "autopilot-send" | "create"): Promise<boolean> {
-    if (!this.admissionGate) return true;
+  private async automaticNativeAdmission(adapter: HarnessAdapter, sessionId: string, operation: "resume" | "send" | "autopilot-send" | "create"): Promise<RecoveryAdmission> {
+    if (!this.admissionGate) return { allowed: true };
     try {
-      return (await this.admissionGate({ id: sessionId, harness: adapter.type,
-        cwd: "", title: "", status: "error", lastActivity: new Date().toISOString(), needsPermission: false }, operation)).allowed;
-    } catch { return false; }
+      return await this.admissionGate({ id: sessionId, harness: adapter.type,
+        cwd: "", title: "", status: "error", lastActivity: new Date().toISOString(), needsPermission: false }, operation);
+    } catch (error) {
+      return { allowed: false, reason: error instanceof Error ? error.message : "Fleet admission check failed before native work" };
+    }
+  }
+
+  private async automaticNativeAdmissionAllowed(adapter: HarnessAdapter, sessionId: string, operation: "resume" | "send" | "autopilot-send" | "create"): Promise<boolean> {
+    return (await this.automaticNativeAdmission(adapter, sessionId, operation)).allowed;
+  }
+
+  private automaticAdmissionRefusal(admission: Extract<RecoveryAdmission, { allowed: false }>): ControlResult {
+    return { ok: false, notSubmitted: true, nonRetryable: true, error: admission.reason };
   }
 
   private clearAutomaticResume(provider: string, sessionId: string): void {

@@ -7,8 +7,13 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { WebSocketServer } from "ws";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
+import { McpServer } from "@modelcontextprotocol/server";
 import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
 import { CodexAdapter } from "../src/adapters/codex.js";
+import { registerSessionTools } from "../src/mcp/session-tools.js";
+import { HerderEventBus } from "../src/herder-events.js";
+import { HerderJobRegistry } from "../src/herder-jobs.js";
 import { getHumanStopStore } from "../src/human-stop-store.js";
 import { createNamedSession } from "../src/named-session.js";
 
@@ -520,6 +525,129 @@ describe("Codex app-server adapter", () => {
         id: "thread-db", status: "idle", cwd: "/workspace-db", model: "gpt-test",
         meta: { parentThreadId: "parent-db", threadSource: "subagent", agentRole: "worker" },
       }]);
+    } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("lists Codex children and parent only from native lineage metadata", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-lineage-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "20");
+    await mkdir(sessionDir, { recursive: true });
+    const parentPath = join(sessionDir, "rollout-parent-native.jsonl");
+    const childPath = join(sessionDir, "rollout-child-native.jsonl");
+    const unrelatedPath = join(sessionDir, "rollout-unrelated-subagent.jsonl");
+    await writeFile(parentPath, JSON.stringify({ type: "session_meta", payload: { id: "parent-native", cwd: "/workspace" } }) + "\n");
+    await writeFile(childPath, JSON.stringify({ type: "session_meta", payload: { id: "child-native", parent_thread_id: "parent-native", thread_source: "subagent", cwd: "/workspace" } }) + "\n");
+    await writeFile(unrelatedPath, JSON.stringify({ type: "session_meta", payload: { id: "unrelated-subagent", thread_source: "subagent", cwd: "/workspace" } }) + "\n");
+    const db = new DatabaseSync(join(codexDir, "state_5.sqlite"));
+    db.exec("create table threads (id text, rollout_path text, cwd text, model text, preview text, updated_at_ms integer, thread_source text, agent_role text, is_pinned integer)");
+    db.exec("create table thread_spawn_edges (child_thread_id text, parent_thread_id text)");
+    for (const [id, path, source] of [
+      ["parent-native", parentPath, null],
+      ["child-native", childPath, "subagent"],
+      ["unrelated-subagent", unrelatedPath, "subagent"],
+    ] as const) {
+      db.prepare("insert into threads values (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(id, path, "/workspace", null, "", Date.now(), source, null, 0);
+    }
+    db.prepare("insert into thread_spawn_edges values (?, ?)").run("child-native", "parent-native");
+    db.close();
+    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    const lineageAdapter = adapter as unknown as {
+      getParent(id: string): Promise<{ id: string; meta?: Record<string, unknown> } | null>;
+      listChildren(id: string): Promise<Array<{ id: string; meta?: Record<string, unknown> }>>;
+    };
+    try {
+      const children = await lineageAdapter.listChildren("parent-native");
+      expect(children.map(child => child.id)).toEqual(["child-native"]);
+      expect(children[0]?.meta?.parentThreadId).toBe("parent-native");
+      await expect(lineageAdapter.getParent("child-native")).resolves.toMatchObject({ id: "parent-native" });
+      await expect(lineageAdapter.getParent("unrelated-subagent")).resolves.toBeNull();
+    } finally {
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses Codex app-server thread/list parentThreadId before local index fallback", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-native-lineage-"));
+    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    const parent = { id: "native-parent", harness: "codex" as const, status: "idle" as const, title: "Parent", cwd: "/workspace", lastActivity: new Date(0).toISOString(), needsPermission: false, meta: {} };
+    const child = { id: "native-child", harness: "codex" as const, status: "idle" as const, title: "Child", cwd: "/workspace", lastActivity: new Date(0).toISOString(), needsPermission: false, meta: { parentThreadId: "native-parent" } };
+    const archivedChild = { id: "native-archived-child", harness: "codex" as const, status: "idle" as const, title: "Archived child", cwd: "/workspace", lastActivity: new Date(0).toISOString(), needsPermission: false, meta: { parentThreadId: "native-parent", archived: true } };
+    const unrelated = { id: "native-unrelated", harness: "codex" as const, status: "idle" as const, title: "Unrelated", cwd: "/workspace", lastActivity: new Date(0).toISOString(), needsPermission: false, meta: {} };
+    const internals = adapter as unknown as {
+      ensureReady(): Promise<void>;
+      request(method: string, params: unknown): Promise<unknown>;
+      getSession(id: string): Promise<typeof parent | typeof child | typeof unrelated | null>;
+    };
+    vi.spyOn(internals, "ensureReady").mockResolvedValue(undefined);
+    const request = vi.spyOn(internals, "request").mockImplementation(async (method, params) => {
+      expect(method).toBe("thread/list");
+      const query = params as { parentThreadId?: string; archived?: boolean };
+      expect(query.parentThreadId).toBe("native-parent");
+      return { data: query.archived
+        ? [{ id: "native-archived-child", parentThreadId: "native-parent" }]
+        : [{ id: "native-child", parentThreadId: "native-parent" }] };
+    });
+    vi.spyOn(internals, "getSession").mockImplementation(async id => ({
+      "native-parent": parent,
+      "native-child": child,
+      "native-archived-child": archivedChild,
+      "native-unrelated": unrelated,
+    })[id] ?? null);
+    const events = new HerderEventBus();
+    const server = new McpServer({ name: "codex-lineage-consumer", version: "1" });
+    registerSessionTools(server, { adapters: new Map([["codex", adapter]]), events, jobs: new HerderJobRegistry(events) });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "codex-lineage-consumer-test", version: "1" }, { versionNegotiation: { mode: "auto" } });
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      const children = await client.callTool({ name: "list_children", arguments: { harness: "codex", sessionId: "native-parent" } });
+      expect(children.structuredContent).toMatchObject({ supported: true, session: { id: "native-parent" }, children: [
+        { id: "native-child", meta: { parentThreadId: "native-parent" } },
+        { id: "native-archived-child", meta: { parentThreadId: "native-parent", archived: true } },
+      ] });
+      const foundParent = await client.callTool({ name: "find_parent", arguments: { harness: "codex", sessionId: "native-child" } });
+      expect(foundParent.structuredContent).toMatchObject({ supported: true, session: { id: "native-child" }, parent: { id: "native-parent" } });
+      expect(request.mock.calls.map(([, params]) => (params as { archived?: boolean }).archived)).toEqual([false, true]);
+    } finally {
+      await client.close();
+      await server.close();
+      await adapter.dispose();
+      await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to exact parent_thread_id headers when Codex has no lineage index", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-lineage-header-"));
+    const sessionDir = join(codexDir, "sessions", "2026", "10", "20");
+    await mkdir(sessionDir, { recursive: true });
+    const parentPath = join(sessionDir, "rollout-header-parent.jsonl");
+    const childPath = join(sessionDir, "rollout-header-child.jsonl");
+    const indexedChildPath = join(sessionDir, "rollout-indexed-child.jsonl");
+    await writeFile(parentPath, JSON.stringify({ type: "session_meta", payload: { id: "header-parent", cwd: "/workspace" } }) + "\n");
+    await writeFile(childPath, JSON.stringify({ type: "session_meta", payload: { id: "header-child", parent_thread_id: "header-parent", thread_source: "subagent", cwd: "/workspace" } }) + "\n");
+    await writeFile(indexedChildPath, JSON.stringify({ type: "session_meta", payload: { id: "indexed-child", parent_thread_id: "header-parent", thread_source: "subagent", cwd: "/workspace" } }) + "\n");
+    const db = new DatabaseSync(join(codexDir, "state_5.sqlite"));
+    db.exec("create table threads (id text, rollout_path text, thread_source text)");
+    db.exec("create table thread_spawn_edges (child_thread_id text, parent_thread_id text)");
+    db.prepare("insert into threads values (?, ?, ?)").run("header-parent", parentPath, null);
+    db.prepare("insert into threads values (?, ?, ?)").run("header-child", childPath, "subagent");
+    db.prepare("insert into threads values (?, ?, ?)").run("indexed-child", indexedChildPath, "subagent");
+    db.prepare("insert into thread_spawn_edges values (?, ?)").run("indexed-child", "header-parent");
+    db.close();
+    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    const lineageAdapter = adapter as unknown as {
+      listChildren(id: string): Promise<Array<{ id: string; meta?: Record<string, unknown> }>>;
+    };
+    try {
+      const children = await lineageAdapter.listChildren("header-parent");
+      expect(children.map(child => child.id)).toEqual(["header-child", "indexed-child"]);
+      expect(children[0]?.meta?.parentThreadId).toBe("header-parent");
+      await expect(lineageAdapter.getParent("header-child")).resolves.toMatchObject({ id: "header-parent" });
     } finally {
       await adapter.dispose();
       await rm(codexDir, { recursive: true, force: true });
@@ -1195,4 +1323,22 @@ it("sends a local image through Codex native turn/start", async () => {
   const requests=(await readFile(logPath,"utf8")).trim().split("\n").map(line=>JSON.parse(line));
   expect(requests.find(row=>row.kind==="request"&&row.method==="turn/start").params.input).toEqual([{type:"text",text:"describe"},{type:"localImage",path:"/protected/image.png"}]);
  }finally {await adapter.dispose();if(previous===undefined)delete process.env.CODEX_APP_SERVER_LOG;else process.env.CODEX_APP_SERVER_LOG=previous;await rm(codexDir,{recursive:true,force:true});}
+});
+
+it("reads exact native Codex turn status without relying on this process event history", async () => {
+ const adapter=new CodexAppServerAdapter({codexBin:"/not-started",socketPath:"/tmp/codex-turn-state-fixture.sock"});
+ const internals=adapter as unknown as {ensureReady():Promise<void>;request(method:string,params:unknown):Promise<unknown>};
+ vi.spyOn(internals,"ensureReady").mockResolvedValue(undefined);
+ const request=vi.spyOn(internals,"request").mockResolvedValue({thread:{
+  id:"external-thread",cwd:"/external/worktree",status:{type:"idle",activeFlags:[]},
+  turns:[{id:"older",status:"completed",completedAt:"2026-10-20T09:58:00.000Z"},
+   {id:"external-turn",status:"completed",completedAt:"2026-10-20T09:59:00.000Z"}],
+ }});
+ try {
+  await expect(adapter.readNativeTurnState("external-thread","/external/worktree")).resolves.toEqual({
+   busy:false,turnId:"external-turn",completion:{outcome:"turn.completed",at:"2026-10-20T09:59:00.000Z"},
+  });
+  expect(request).toHaveBeenCalledWith("thread/read",{threadId:"external-thread",includeTurns:true});
+  await expect(adapter.readNativeTurnState("external-thread","/wrong/worktree")).resolves.toBeNull();
+ } finally {await adapter.dispose();}
 });

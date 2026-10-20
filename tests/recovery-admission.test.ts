@@ -2,7 +2,7 @@ import { deferredMessages } from "../src/deferred-messages.js";
 import { vi } from "vitest";
 import { SessionSupervisor } from "../src/session-supervisor.js";
 import type { HarnessAdapter } from "../src/types/index.js";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -69,15 +69,19 @@ describe("fleet admission authority", () => {
     let gateChecks = 0;
     const supervisor = new SessionSupervisor(new Map([["codex", adapter]]), { async convert() { return { success: true }; } } as never, undefined,
       { humanStopStore: { async isHeld() { return false; }, async observe() { return false; } } as never,
-        admissionGate: async () => ++gateChecks >= heldCheck ? ({ allowed: false, reason: "existing fleet hold" }) : ({ allowed: true }) });
+        admissionGate: async () => ++gateChecks >= heldCheck ? ({ allowed: false, reason: "unique automatic resume blocker" }) : ({ allowed: true }) });
+    const reported = vi.spyOn(console, "error").mockImplementation(() => {});
     const pending = { attempts: 0, inFlight: false };
     const internal = supervisor as unknown as { automaticResumes: Map<string, typeof pending>; runAutomaticResume(provider: string, id: string, adapter: HarnessAdapter, state: typeof pending): Promise<void> };
     internal.automaticResumes.set("codex:owned", pending);
-    await internal.runAutomaticResume("codex", "owned", adapter, pending);
-    expect(gateChecks).toBe(heldCheck);
-    expect(resumes).toBe(0);
-    expect(pending.attempts).toBe(0);
-    expect(pending.inFlight).toBe(false);
+    try {
+      await internal.runAutomaticResume("codex", "owned", adapter, pending);
+      expect(gateChecks).toBe(heldCheck);
+      expect(resumes).toBe(0);
+      expect(pending.attempts).toBe(0);
+      expect(pending.inFlight).toBe(false);
+      expect(reported.mock.calls.flat().join(" ")).toContain("unique automatic resume blocker");
+    } finally { reported.mockRestore(); }
   });
   it.each(["create", "rollover"] as const)("holds automatic %s while allowing authorized same-session resume", async (operation) => {
     const root = await mkdtemp(join(tmpdir(), "fleet-admission-"));
@@ -164,6 +168,84 @@ describe("fleet admission authority", () => {
     for (const operation of ["create", "rollover"] as const) {
       expect((await retired({ id: "foreign", harness: "codex" } as never, operation)).allowed).toBe(false);
     }
+  });
+
+  it("ignores stale campaign resource observations after retirement but preserves a fresh explicit denial", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fleet-admission-retired-stale-"));
+    const path = join(root, "state.json");
+    const retired = createFleetRecoveryAdmissionGate(path, () => now, { AGENT_HERDER_FLEET_ADMISSION: "retired" });
+    try {
+      await writeFile(path, JSON.stringify({ utc: new Date(now - 11 * 24 * 60 * 60_000).toISOString(), heavy: { admission: "DENIED" }, registry: {} }));
+      await utimes(path, new Date(now), new Date(now - 60_000));
+      expect(await retired({ id: "foreign", harness: "codex" } as never, "send")).toEqual({ allowed: true });
+
+      await writeFile(path, JSON.stringify({ utc: new Date(now).toISOString(), heavy: { admission: "DENIED" }, registry: {} }));
+      await utimes(path, new Date(now), new Date(now));
+      expect(await retired({ id: "foreign", harness: "codex" } as never, "send")).toEqual({ allowed: false, reason: "Existing fleet resource admission is denied" });
+
+      await writeFile(path, JSON.stringify({ utc: new Date(now - 11 * 24 * 60 * 60_000).toISOString(), heavy: { admission: "DENIED_UNLESS_FRESH_EXACT_CASE" }, registry: {} }));
+      await utimes(path, new Date(now), new Date(now + 60_000));
+      let submissions = 0;
+      const existing = { id: "continued", harness: "codex" as const, status: "idle" as const, title: "Existing", cwd: "/workspace", lastActivity: new Date(now).toISOString(), needsPermission: false };
+      const adapter = { type: "codex", async getSession() { return existing; }, async sendMessage() { submissions += 1; return { ok: true, admitted: true, turnId: "fixture-turn" }; } } as unknown as HarnessAdapter;
+      const supervisor = new SessionSupervisor(new Map([["codex", adapter]]), { async convert() { return { success: true }; } } as never, undefined,
+        { humanStopStore: { async isHeld() { return false; }, async observe() { return false; } } as never, admissionGate: retired });
+      const result = await supervisor.sendMessage("codex", "continued", { message: "one dependency continuation", origin: "automation" });
+      expect(result).toMatchObject({ ok: true, admitted: true, turnId: "fixture-turn" });
+      expect(submissions).toBe(1);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each([
+    ["stdioBlocker", "owner-confirmation-required"],
+    ["recoveryBlockedReason", "recovery-authority-held"],
+    ["resourceBlockedReason", "resource-owner-denied"],
+  ] as const)("preserves a fresh per-session %s denial after campaign retirement", async (field, value) => {
+    const root = await mkdtemp(join(tmpdir(), "fleet-admission-retired-session-blocker-"));
+    const path = join(root, "state.json");
+    const gate = createFleetRecoveryAdmissionGate(path, () => now, { AGENT_HERDER_FLEET_ADMISSION: "retired" });
+    try {
+      await writeFile(path, JSON.stringify({ utc: new Date(now).toISOString(), registry: { owned: { taskState: "active", [field]: value } } }));
+      expect(await gate({ id: "owned", harness: "codex" } as never, "send")).toEqual({
+        allowed: false,
+        reason: `Fleet task retains ${field}`,
+      });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("returns exact pre-send admission provenance from resume, recovery and fork APIs", async () => {
+    const reason = "Fleet task retains stdioBlocker";
+    let native = 0;
+    const adapter = { type: "codex", async getSession() { native++; return null; },
+      async resumeSession() { native++; return { ok: true }; }, async recover() { native++; return { ok: true }; },
+      async forkSession() { native++; return { ok: true }; } } as unknown as HarnessAdapter;
+    const supervisor = new SessionSupervisor(new Map([["codex", adapter]]), {} as never, undefined,
+      { humanStopStore: { async isHeld() { return false; }, async observe() { return false; } } as never,
+        admissionGate: async () => ({ allowed: false, reason }) });
+
+    for (const result of [
+      await supervisor.resumeSession("codex", "owned", "continue"),
+      await supervisor.recoverSession("codex", "owned"),
+      await supervisor.forkSession("codex", "owned"),
+    ]) {
+      expect(result).toMatchObject({ ok: false, notSubmitted: true, nonRetryable: true, error: reason });
+    }
+    expect(native).toBe(0);
+  });
+
+  it("returns exact pre-send admission refusal and proves no native submission occurred", async () => {
+    const reason = "Fleet admission observation is stale or invalid";
+    let submissions = 0;
+    const session = { id: "owned", harness: "codex", status: "idle", title: "Owned", cwd: "/workspace", lastActivity: new Date(now).toISOString(), needsPermission: false } as const;
+    const adapter = { type: "codex", async getSession() { return session; }, async sendMessage() { submissions += 1; return { ok: true, admitted: true }; } } as unknown as HarnessAdapter;
+    const supervisor = new SessionSupervisor(new Map([["codex", adapter]]), { async convert() { return { success: true }; } } as never, undefined,
+      { humanStopStore: { async isHeld() { return false; }, async observe() { return false; } } as never,
+        admissionGate: async () => ({ allowed: false, reason }) });
+
+    const result = await supervisor.sendMessage("codex", "owned", { message: "bounded continuation", origin: "automation" });
+
+    expect(result).toMatchObject({ ok: false, notSubmitted: true, nonRetryable: true, error: reason });
+    expect(submissions).toBe(0);
   });
 
   it("reports a silent campaign hold once per interval instead of denying without a trace", async () => {

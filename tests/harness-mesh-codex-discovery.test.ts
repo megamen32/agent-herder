@@ -121,6 +121,7 @@ describe('bounded native Codex discovery',()=>{
   expect(details.session).toMatchObject({id:'empty-44',title:'Accepted empty',cwd:'/actual'});
   expect(details.history).toMatchObject({source:'unavailable',complete:false,warning:expect.stringContaining('missing source rollout')});
   expect(details.messages).toEqual([]);
+  expect(request.mock.calls.some(([method])=>method==='model/list')).toBe(false);
   expect(request.mock.calls.some(([method])=>/start|resume|steer/.test(method))).toBe(false);
  });
  it('bounds the separate index page, excludes archived/materialized rows and reports its cap',async()=>{

@@ -30,8 +30,19 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
       }catch{return true;}
     },
     readDependency:async ref=>{
-      const session=await adapters.get(ref.harness)?.getSession(ref.sessionId);
+      const adapter=adapters.get(ref.harness);
+      const session=await adapter?.getSession(ref.sessionId);
       if(!session)throw new Error("Exact dependency unavailable");
+      if(ref.harness==="codex"){
+        const native=adapter as HarnessAdapter & {readNativeTurnState?:(id:string,cwd:string)=>Promise<{
+          busy:boolean;turnId?:string;completion?:{outcome:"turn.completed"|"turn.failed";at:string}
+        }|null>};
+        if(native.readNativeTurnState){
+          const state=await native.readNativeTurnState(ref.sessionId,session.cwd);
+          if(!state)return {busy:true};
+          return {busy:state.busy,turnId:state.turnId,...(state.completion?{completion:state.completion}:{})};
+        }
+      }
       const string=(value:unknown)=>typeof value==="string" && value.trim()?value:undefined;
       const meta=session.meta??{};
       const active=string(meta.activeTurnId)??string(meta.nativeActiveTurnId);
@@ -48,7 +59,7 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
       if(result.admitted || result.ok)return {status:"accepted"};
       // This supervisor refusal is definitively before adapter.sendMessage.
       // Other failures without non-submission proof must never become retryable.
-      const rejected=result.notSubmitted || (result.nonRetryable && result.error==="Fleet admission holds automatic delivery");
+      const rejected=result.notSubmitted===true;
       return {status:rejected?"rejected":"failed",reason:result.error,receipt:{...result}};
     },
     queryReceipt:async wait=>{

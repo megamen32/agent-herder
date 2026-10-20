@@ -23,6 +23,7 @@ async function nativeFixture() {
   }]));
   const sent:Array<{id:string;inputId?:string}>=[];
   const listeners=new Set<(event:HarnessEvent)=>void>();
+  const nativeStates=new Map<string,{busy:boolean;turnId?:string;completion?:{outcome:"turn.completed"|"turn.failed";at:string}}>();
   let held=false;
   let delivery={ok:true,admitted:true} as Awaited<ReturnType<HarnessAdapter["sendMessage"]>>;
   const adapter:HarnessAdapter={
@@ -48,7 +49,7 @@ async function nativeFixture() {
     session.status="idle";session.meta={nativeLastTurn:{turnId,status:"completed"}};
     await emit(id,"turn.completed",turnId);
   }
-  return {directory,adapters,runtime,makeRuntime,sessions,sent,request,emit,complete,hold:()=>{held=true;},setDelivery:(value:typeof delivery)=>{delivery=value;}};
+  return {directory,adapters,runtime,makeRuntime,sessions,sent,request,emit,complete,nativeStates,hold:()=>{held=true;},setDelivery:(value:typeof delivery)=>{delivery=value;}};
 }
 
 describe("exact native turn registration",()=>{
@@ -103,6 +104,23 @@ describe("exact native turn registration",()=>{
     const wait=await f.makeRuntime().service.register(f.request);
     expect(wait.state).toBe("resumed");expect(f.sent).toHaveLength(1);
     expect(Object.values(wait.completed).map(value=>value.turnId).sort()).toEqual(["a-current","b-current"]);
+  });
+  it("reads the Codex native thread turns when this app-server missed their events",async()=>{
+    const f=await nativeFixture();
+    for(const id of ["a","b"]){
+      f.sessions.get(id)!.status="idle";
+      f.sessions.get(id)!.meta={};
+      f.nativeStates.set(id,{busy:false,turnId:id+"-external",completion:{outcome:"turn.completed",at:"2026-10-20T09:59:00.000Z"}});
+    }
+    Object.assign(f.adapters.get("codex"),{async readNativeTurnState(id:string,cwd:string){
+      const session=f.sessions.get(id);
+      return session?.cwd===cwd?f.nativeStates.get(id)??null:null;
+    }});
+    const wait=await f.makeRuntime().service.register(f.request);
+    expect(wait.state).toBe("resumed");
+    expect(Object.values(wait.completed).map(value=>value.turnId).sort()).toEqual(["a-external","b-external"]);
+    expect(Object.values(wait.completed).every(value=>value.at==="2026-10-20T09:59:00.000Z")).toBe(true);
+    expect(f.sent).toHaveLength(1);
   });
   it("persists an unavailable exact dependency as a terminal blocker",async()=>{
     const f=await nativeFixture();f.sessions.delete("a");
@@ -190,7 +208,7 @@ describe("exact native turn registration",()=>{
       await runtime.service.observe({...ref(id),kind:"turn.completed",data:{turnId:id+"-current"}});
     }
     await runtime.service.sweep();
-    expect(await runtime.service.get(wait.id)).toMatchObject({state:"delivery_blocked",reason:"Fleet admission holds automatic delivery",delivery:{status:"rejected",receipt:{ok:false,nonRetryable:true,error:"Fleet admission holds automatic delivery"}}});
+    expect(await runtime.service.get(wait.id)).toMatchObject({state:"delivery_blocked",reason:"Existing fleet resource admission is denied",delivery:{status:"rejected",receipt:{ok:false,nonRetryable:true,error:"Existing fleet resource admission is denied"}}});
     // Even a later service instance with an open gate cannot replay this wait.
     const restored=f.makeRuntime();await restored.service.sweep();
     expect((await restored.service.register(f.request)).state).toBe("delivery_blocked");
