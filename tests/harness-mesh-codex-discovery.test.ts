@@ -45,10 +45,18 @@ describe('bounded native Codex discovery',()=>{
   const db=new DatabaseSync(join(folder,'state_5.sqlite'));
   db.exec('create table threads(id text primary key,rollout_path text,thread_source text,updated_at_ms integer);create table thread_spawn_edges(child_thread_id text primary key,parent_thread_id text)');
   const row=db.prepare('insert into threads values(?,?,?,?)');
+  const parentPath=join(folder,'parent.jsonl');
+  await writeFile(parentPath,JSON.stringify({type:'session_meta',payload:{id:'parent'}})+'\n');
   db.exec('begin');
-  row.run('parent',null,'cli',1);
-  for(let i=0;i<256;i++)row.run(`recent-${i}`,`/missing/recent-${i}`,'subagent',1000-i);
-  row.run('older-real-child','/missing/older-real-child','subagent',-1);
+  row.run('parent',parentPath,'cli',1);
+  for(let i=0;i<256;i++){
+   const path=join(folder,`recent-${i}.jsonl`);
+   await writeFile(path,JSON.stringify({type:'session_meta',payload:{id:`recent-${i}`}})+'\n');
+   row.run(`recent-${i}`,path,'subagent',1000-i);
+  }
+  const childPath=join(folder,'older-real-child.jsonl');
+  await writeFile(childPath,JSON.stringify({type:'session_meta',payload:{id:'older-real-child',parent_thread_id:'parent'}})+'\n');
+  row.run('older-real-child',childPath,'subagent',-1);
   db.exec('commit');
   db.close();
   const raw=new CodexAdapter({codexDir:folder});
@@ -58,7 +66,9 @@ describe('bounded native Codex discovery',()=>{
   const folder=await mkdtemp(join(tmpdir(),'unreadable-codex-lineage-'));folders.push(folder);
   const db=new DatabaseSync(join(folder,'state_5.sqlite'));
   db.exec('create table threads(id text primary key,rollout_path text,thread_source text,updated_at_ms integer);create table thread_spawn_edges(child_thread_id text primary key,parent_thread_id text)');
-  db.prepare('insert into threads values(?,?,?,?)').run('parent',null,'cli',1);
+  const parentPath=join(folder,'parent.jsonl');
+  await writeFile(parentPath,JSON.stringify({type:'session_meta',payload:{id:'parent'}})+'\n');
+  db.prepare('insert into threads values(?,?,?,?)').run('parent',parentPath,'cli',1);
   db.prepare('insert into threads values(?,?,?,?)').run('missing-child','/missing/rollout.jsonl','subagent',0);
   db.close();
   const raw=new CodexAdapter({codexDir:folder});

@@ -359,6 +359,7 @@ describe("MCP dependency wait through native adapter events",()=>{
   it.each([false,true])("preflights every dependency before persisting a wait, even if an earlier dependency or owner is terminal",async held=>{
     const f=await nativeFixture();
     f.sessions.get("a")!.meta={};
+    let heldChecks=0;
     const unsupported:HarnessAdapter={
       ...f.adapters.get("codex")!,type:"opencode",name:"OpenCode fixture",
       async getSession(id){return {id,harness:"opencode",title:id,cwd:process.cwd(),status:"running",lastActivity:new Date().toISOString(),needsPermission:false};},
@@ -367,10 +368,10 @@ describe("MCP dependency wait through native adapter events",()=>{
     const adapters=new Map(f.adapters);adapters.set("opencode",unsupported);
     const runtime=createResumeAfterRuntime(adapters,{
       isAutomationHeld:async()=>false,sendMessage:async()=>{throw new Error("must not deliver");},
-    },async()=>false,f.directory);
-    if(held)f.hold();
+    },async()=>{heldChecks++;return held;},f.directory);
     await expect(runtime.service.register({owner:ref("owner"),dependencies:[ref("a"),{harness:"opencode",sessionId:"unsupported"}],requestId:`preflight-${held}`}))
       .rejects.toThrow(/does not expose an exact native turn identity/i);
+    expect(heldChecks).toBe(0);
     expect(await runtime.service.list()).toHaveLength(0);
     expect(f.sent).toHaveLength(0);
   });
