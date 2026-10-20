@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { newOrResumeNamedSession } from "../src/named-session.js";
+import { deliverNamedSession, newOrResumeNamedSession } from "../src/named-session.js";
 import type { AgentSession, CreateSessionOptions, HarnessAdapter, SendMessageOptions } from "../src/types/index.js";
 
 const tempDirs: string[] = [];
@@ -33,7 +33,7 @@ function fakeAdapter(cwd: string) {
   return { adapter, sent };
 }
 
-describe("new_or_resume relay provenance", () => {
+describe("Agent Herder relay provenance", () => {
   it.each([false, true])("marks the prompt as an AI relay when humanRequested=%s without changing the body or delivery identity", async (humanRequested) => {
     const cwd = await mkdtemp(join(tmpdir(), "agent-herder-relay-"));
     tempDirs.push(cwd);
@@ -50,5 +50,23 @@ describe("new_or_resume relay provenance", () => {
       "🤖 Сообщение от ИИ через Agent Herder\n<agent-herder-origin version=\"1\" kind=\"agent-relay\" transport=\"new_or_resume\" />\n\n" + body,
     );
     expect(fake.sent[0]).toMatchObject({ inputId: "stable-relay-input", origin: humanRequested ? "human" : "automation" });
+  });
+
+  it("marks the prompt as an AI relay on the deliver path without changing the body or input ID", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "agent-herder-deliver-relay-"));
+    tempDirs.push(cwd);
+    const fake = fakeAdapter(cwd);
+    const body = "Continue the assigned work.\nPreserve this exact body.";
+    const result = await deliverNamedSession(new Map([["codex", fake.adapter]]), {
+      harness: "codex", name: "deliver-relay", cwd, message: body,
+      inputId: "stable-deliver-input", activation: "always", mode: "queue",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(fake.sent).toHaveLength(1);
+    expect(fake.sent[0]?.message).toBe(
+      "🤖 Сообщение от ИИ через Agent Herder\n<agent-herder-origin version=\"1\" kind=\"agent-relay\" transport=\"deliver\" />\n\n" + body,
+    );
+    expect(fake.sent[0]).toMatchObject({ inputId: "stable-deliver-input", origin: "automation" });
   });
 });

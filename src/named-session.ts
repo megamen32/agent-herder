@@ -456,7 +456,7 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     if (activation==="defer" && fresh.status!=="running") { await deferredMessages.add(fresh.id,request.message); return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"deferred",activated:false,...normalized}; }
     const modelError = await selectDeliveryModel(adapter,fresh,request.model);
     if (modelError) return {...failed(normalized,modelError,"not_attempted"),sessionId:fresh.id,activated:false};
-    const pending=await withDeferred(fresh.id,request.message); const injected=await coordinationNotes.inject(fresh,pending.message);
+    const pending=await withDeferred(fresh.id,agentRelayEnvelope(request.message, "deliver")); const injected=await coordinationNotes.inject(fresh,pending.message);
     if (await sourceHeldNow(request) || await automaticDeliveryHeld(fresh, false, adapter)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: fresh.id, activated: false };
     const options={message:injected,model:request.model,retainedInboxIds:pending.ids,queue:(request.mode||"queue")==="queue",inputId:request.inputId ?? createHash("sha256").update(request.message).digest("hex"),origin:"automation" as const};
     const sent=activation==='if_running'?await sendCurrentTurnOnly(adapter,fresh.id,options):await adapter.sendMessage(fresh.id,options);
