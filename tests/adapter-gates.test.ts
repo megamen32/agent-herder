@@ -3,6 +3,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const indexPath = fileURLToPath(new URL("../src/index.ts", import.meta.url));
+const commonPath = fileURLToPath(new URL("../src/types/common.ts", import.meta.url));
+const stopStorePath = fileURLToPath(new URL("../src/human-stop-store.ts", import.meta.url));
+const definitionsPath = fileURLToPath(new URL("../src/mcp-tools/definitions.ts", import.meta.url));
 const expectedGates = [
   "ENABLE_OPENCODE",
   "ENABLE_CLAUDE",
@@ -48,5 +51,80 @@ describe("adapter enable gates", () => {
       expect(parseEnvBool(undefined, defaultEnabled), `${gate} default`).toBe(defaultEnabled);
       expect(parseEnvBool("false", defaultEnabled), `${gate}=false`).toBe(false);
     }
+  });
+});
+
+// ===== Harness delivery gates =====
+
+/** HarnessType is the single source of truth for which harnesses exist. */
+async function declaredHarnesses(): Promise<string[]> {
+  const source = await readFile(commonPath, "utf8");
+  const match = source.match(/export type HarnessType = ([^;]+);/);
+  if (!match) throw new Error("HarnessType not found");
+  return [...match[1].matchAll(/"([^"]+)"/g)].map(([, value]) => value);
+}
+
+/** Slices one declaration out of a source file so nested fields stay distinguishable. */
+function blockOf(source: string, marker: string): string {
+  const start = source.indexOf(marker);
+  if (start === -1) throw new Error(`marker not found: ${marker}`);
+  const rest = source.slice(start + marker.length);
+  const next = rest.search(/\n(?:export )?(?:const|function|class)\s/);
+  return next === -1 ? source.slice(start) : source.slice(start, start + marker.length + next);
+}
+
+/** Top level harness selectors only: nested ones live inside other fields. */
+const HARNESS_FIELD = /^ {2}harness:\s*z\s*\.enum\(\[([^\]]*)\]\)/gm;
+const FROM_HARNESS_FIELD = /^ {2}fromHarness:\s*z\s*\.enum\(\[([^\]]*)\]\)/gm;
+
+const ADDRESSING_SCHEMAS = [
+  "ListAgentsSchema",
+  "AgentInfoSchema",
+  "FindParentSchema",
+  "ListChildrenSchema",
+  "ExportTranscriptSchema",
+  "SendMessageSchema",
+  "DeliverSchema",
+  "StopAgentSchema",
+];
+
+describe("harness delivery gates", () => {
+  it("lets every declared harness pass the delivery receipt gate", async () => {
+    const source = await readFile(stopStorePath, "utf8");
+    const match = source.match(/(\[[^\]]*\])\s*as string\[\]\)\.includes\(harness\)/);
+    if (!match) throw new Error("normalizeHarness whitelist not found");
+    const accepted = JSON.parse(match[1]) as string[];
+    expect([...accepted].sort()).toEqual([...(await declaredHarnesses())].sort());
+  });
+
+  it("lets every declared harness be addressed by the MCP tools", async () => {
+    const source = await readFile(definitionsPath, "utf8");
+    const harnesses = await declaredHarnesses();
+    for (const schema of ADDRESSING_SCHEMAS) {
+      const block = blockOf(source, `export const ${schema} =`);
+      const fields = [...block.matchAll(HARNESS_FIELD)].map((match) => match[1]);
+      expect(fields.length, schema).toBe(1);
+      for (const harness of harnesses) {
+        expect(fields[0], `${schema} -> ${harness}`).toContain(`"${harness}"`);
+      }
+    }
+  });
+
+  it("lets every declared harness declare itself as the message sender", async () => {
+    const source = await readFile(definitionsPath, "utf8");
+    const block = blockOf(source, "export const SendMessageSchema =");
+    const fields = [...block.matchAll(FROM_HARNESS_FIELD)].map((match) => match[1]);
+    expect(fields.length).toBe(1);
+    for (const harness of await declaredHarnesses()) {
+      expect(fields[0], `fromHarness -> ${harness}`).toContain(`"${harness}"`);
+    }
+  });
+
+  it("keeps session creation closed to harnesses that cannot create sessions", async () => {
+    const source = await readFile(definitionsPath, "utf8");
+    const block = blockOf(source, "const NamedSessionBaseSchema =");
+    const fields = [...block.matchAll(HARNESS_FIELD)].map((match) => match[1]);
+    expect(fields.length).toBe(1);
+    expect(fields[0]).not.toContain('"minimax-code"');
   });
 });

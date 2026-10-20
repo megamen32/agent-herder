@@ -539,7 +539,7 @@ function bounded(value: unknown, label: string, maxLength: number): string {
 
 function normalizeHarness(value: unknown): AgentSession["harness"] {
   const harness = bounded(value, "harness", MAX_ID_LENGTH);
-  if (!(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"] as string[]).includes(harness)) {
+  if (!(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"] as string[]).includes(harness)) {
     throw new Error("invalid harness");
   }
   return harness as AgentSession["harness"];

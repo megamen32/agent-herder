@@ -38,7 +38,7 @@ import {
 import { startJobResult } from "./results.js";
 import { readModelQuotas } from "../model-quota.js";
 
-const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]);
+const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]);
 
 const sessionSchema = z.object({
   id: z.string(), harness: harnessSchema, status: z.enum(["running", "idle", "needs_input", "stopped", "error"]), title: z.string(), cwd: z.string(), lastActivity: z.string(),
@@ -55,7 +55,7 @@ export function registerSessionTools(server: McpServer, deps: {
   const publishSessionsChanged = () => events.publish({ kind: "sessions", uri: "herder://sessions", action: "changed" });
 
   server.registerTool("list_agents", { description: "List all coding agent sessions, including ZCode. Filter by harness, status, age (maxAge seconds), or folder (CWD prefix like ~/apps). Can show last message preview.", inputSchema: z.object({
-    harness: z.enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().default("all"),
+    harness: z.enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().default("all"),
     status: z.enum(["all", "running", "idle", "needs_input", "stopped", "error"]).optional().default("all"),
     limit: z.number().int().min(1).max(100).optional().default(20), maxAge: z.number().int().min(0).optional(), folder: z.string().optional(), includeLastMessage: z.boolean().optional().default(false),
   }), outputSchema: z.object({

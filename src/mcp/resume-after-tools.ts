@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { ResumeAfterService } from "../resume-after.js";
 import { structuredResult } from "./results.js";
-const ref=z.object({harness:z.enum(["opencode","claude","codex","qoder","hermes","zcode","fast-agent","chatgpt"]),sessionId:z.string().trim().min(1).max(512)});
+const ref=z.object({harness:z.enum(["opencode","claude","codex","qoder","hermes","zcode","fast-agent","chatgpt","minimax-code"]),sessionId:z.string().trim().min(1).max(512)});
 export function registerResumeAfterTools(server:McpServer,service?:ResumeAfterService):void{
   const requireService=()=>{if(!service)throw new Error("Resume-after requires the process-owned Herder service");return service;};
   server.registerTool("resume_after",{

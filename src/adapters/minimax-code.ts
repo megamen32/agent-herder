@@ -319,7 +319,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
       steer: live,
       cancelTurn: live,
       detach: false,
-      resume: live,
+      resume: false,
       terminate: false,
       recover: false,
       fork: false,

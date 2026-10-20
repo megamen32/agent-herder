@@ -194,6 +194,7 @@ describe("MinimaxCodeAdapter", () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain("local runtime");
     expect(adapter.controlCapabilities.steer).toBe(false);
+    expect(adapter.controlCapabilities.resume).toBe(false);
     expect(adapter.controlCapabilities.cancelTurn).toBe(false);
   });
 
@@ -283,6 +284,7 @@ describe("MinimaxCodeAdapter with the published desktop transport", () => {
     await adapter.init();
 
     expect(adapter.controlCapabilities.steer).toBe(true);
+    expect(adapter.controlCapabilities.resume).toBe(false);
 
     const sent = await adapter.sendMessage("mvs_0000000000000000000000000000aaa1", { message: "привет" });
     expect(sent.ok).toBe(true);

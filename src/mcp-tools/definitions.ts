@@ -6,7 +6,7 @@ import { MAX_MODEL_LENGTH } from "../automation-launch-policy.js";
 
 export const ListAgentsSchema = z.object({
   harness: z
-    .enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"])
+    .enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"])
     .optional()
     .default("all")
     .describe("Filter by harness. 'all' lists from every connected harness."),
@@ -40,7 +40,7 @@ export const AuditWorktreesSchema = z.object({
 export const AgentInfoSchema = z.object({
   sessionId: z.string().describe("The session ID to inspect."),
   harness: z
-    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"])
+    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"])
     .optional()
     .describe("Which harness the session belongs to. If omitted, searches all."),
 });
@@ -48,7 +48,7 @@ export const AgentInfoSchema = z.object({
 export const FindParentSchema = z.object({
   sessionId: z.string().describe("The child session ID whose parent should be found."),
   harness: z
-    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"])
+    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"])
     .optional()
     .describe("Which harness owns the session. If omitted, searches all."),
 });
@@ -56,14 +56,14 @@ export const FindParentSchema = z.object({
 export const ListChildrenSchema = z.object({
   sessionId: z.string().describe("The parent session ID whose children should be listed."),
   harness: z
-    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"])
+    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"])
     .optional()
     .describe("Which harness owns the session. If omitted, searches all."),
 });
 
 export const ExportTranscriptSchema = z.object({
   sessionId: z.string().describe("The session ID whose raw source should be exported."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Which harness owns the session. If omitted, searches all."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().describe("Which harness owns the session. If omitted, searches all."),
 });
 
 const meshIdentity = (max:number) => z.string().min(1).max(max).regex(/^[^\x00-\x1f\x7f]*$/);
@@ -77,10 +77,10 @@ export const SendMessageSchema = z.object({
   inputId: z.string().min(1).max(256).optional().describe("Stable delivery ID. Retry with the same ID; Codex deduplicates native admission for 24 hours."),
   humanRequested: z.boolean().optional().describe("True only for an explicit human new task/send/resume. Otherwise coordination is active-turn-only and never wakes or defers to an inactive chat."),
   sessionId: z.string().describe("Target session ID."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Harness (optional if ID is unique)."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().describe("Harness (optional if ID is unique)."),
   message: z.string().describe("Message to send to the agent."),
   fromSessionId: z.string().optional().describe("Supply your full native sender session ID for AI messages. Herder checks that session for reply attribution; this does not authenticate the caller. Omitted/unverified sources are labelled unknown."),
-  fromHarness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Declared sender harness for checked reply attribution, not caller authentication."),
+  fromHarness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().describe("Declared sender harness for checked reply attribution, not caller authentication."),
   meshSender: MeshSenderSchema.optional().describe("Declared remote mesh sender for the full-address automatic budget and attribution; not authentication. Takes precedence over legacy sender fields without local sender lookup. Cannot claim humanRequested."),
   mode: z.enum(["queue", "steer", "sync"]).optional().default("sync").describe(
     "queue = fire-and-forget, steer = redirect agent, sync = wait for response"
@@ -116,7 +116,7 @@ export const DeliverSchema = z.object({
   sourceSessionId: z.string().min(1).max(512).optional().describe("Original native ID for an automatic continuation/replacement; stopped sources prohibit it."),
   sourceHarness: z.enum(["codex", "zcode", "opencode", "fast-agent"]).optional(),
   sessionId: z.string().optional().describe("Exact target session ID. Use either sessionId or harness+name+cwd."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional(),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional(),
   name: z.string().trim().min(1).max(128).optional(),
   cwd: z.string().min(1).optional(),
   message: z.string().trim().min(1),
@@ -132,7 +132,7 @@ export const DeliverSchema = z.object({
 
 export const StopAgentSchema = z.object({
   sessionId: z.string().describe("Session ID to stop."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe("Harness (optional if ID is unique)."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().describe("Harness (optional if ID is unique)."),
 });
 
 export const RespondPermissionSchema = z.object({
