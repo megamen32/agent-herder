@@ -90,7 +90,8 @@ export function sessionKeyFromHash(hash: string): string | undefined {
 export function selectionAfterSessionRefresh(current: string | undefined, linked: string | undefined, sessions: Array<Pick<SessionListSession, "harness" | "id">>): string | undefined {
   // A quick active list is not evidence that an explicitly linked historical
   // session disappeared. Its details are fetched independently by the chat.
-  return current && (current === linked || sessions.some((session) => sessionKey(session) === current)) ? current : undefined;
+  if (linked) return linked;
+  return current && sessions.some((session) => sessionKey(session) === current) ? current : undefined;
 }
 
 export function matchesSessionQuery(session: Pick<SessionListSession, "id" | "harness" | "title" | "cwd" | "lastMessage">, query: string): boolean {

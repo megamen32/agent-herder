@@ -13,6 +13,13 @@ describe("session selection after quick-list refresh", () => {
     expect(selectionAfterSessionRefresh(linked, linked, [{ harness: "codex", id: "other-running" }])).toBe(linked);
     expect(selectionAfterSessionRefresh(linked, linked, [])).toBe(linked);
   });
+  it("keeps a cold deep link when quick-list hydration has no current selection", () => {
+    const linked = "codex:existing-native-session";
+    expect(sessionKeyFromHash("#/session/codex%3Aexisting-native-session")).toBe(linked);
+    expect(sessionKeyFromHash("#/session/codex:existing-native-session")).toBe(linked);
+    expect(selectionAfterSessionRefresh(undefined, linked, [])).toBe(linked);
+    expect(selectionAfterSessionRefresh("codex:previous-session", linked, [{ harness: "codex", id: "previous-session" }])).toBe(linked);
+  });
   it("keeps a listed session but clears a missing unlinked selection", () => {
     const listed = [{ harness: "zcode", id: "running" }];
     expect(selectionAfterSessionRefresh("zcode:running", undefined, listed)).toBe("zcode:running");
