@@ -9,6 +9,7 @@ import { deferredMessages, isBusyCodexWriter, withDeferred } from "./deferred-me
 import { getHumanStopStore } from "./human-stop-store.js";
 import { automaticDeliveryHeld, HUMAN_STOP_MESSAGE } from "./human-stop-actions.js";
 import { isCoordinationActive, sendCurrentTurnOnly, previousCoordinationReceipt } from "./coordination-active-delivery.js";
+import { agentRelayEnvelope } from "./agent-relay-envelope.js";
 
 export type NamedSessionMode = "queue" | "sync";
 
@@ -169,7 +170,7 @@ export async function newOrResumeNamedSession(
       };
     }
   }
-  const pending = await withDeferred(resolved.target.id, request.message);
+  const pending = await withDeferred(resolved.target.id, agentRelayEnvelope(request.message));
   const injectedMessage = await coordinationNotes.inject(resolved.target, pending.message);
   if (await sourceHeldNow(request) || await automaticDeliveryHeld(resolved.target, false, resolved.adapter)) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created };
   const inputId = request.inputId ?? (request.humanRequested ? undefined : createHash("sha256").update(request.message).digest("hex"));

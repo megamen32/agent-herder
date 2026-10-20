@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { createNamedSession, newOrResumeNamedSession, deliverNamedSession } from "../src/named-session.js";
+import { agentRelayEnvelope } from "../src/agent-relay-envelope.js";
 import { toolDefinitions } from "../src/mcp-tools/definitions.js";
 import { handleCreateSession, handleNewOrResume, handleDeliver, handleResumeAgent } from "../src/mcp-tools/handlers.js";
 import type { AgentSession, CreateSessionOptions, HarnessAdapter, SendMessageOptions } from "../src/types/index.js";
@@ -307,7 +308,7 @@ describe("named session creation and reuse", () => {
     expect([first.created, second.created].sort()).toEqual([false, true]);
     expect(first).toMatchObject({ ok: true, sessionId: "opencode-1", delivery: "accepted" });
     expect(second).toMatchObject({ ok: true, sessionId: "opencode-1", delivery: "accepted" });
-    expect(fake.deliveries.map((item) => item.options.message).sort()).toEqual(["disk 95%", "disk 96%"]);
+    expect(fake.deliveries.map((item) => item.options.message).sort()).toEqual([agentRelayEnvelope("disk 95%"), agentRelayEnvelope("disk 96%")]);
   });
 
   it("reuses a just-created session while provider discovery is eventually consistent", async () => {
