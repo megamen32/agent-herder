@@ -103,7 +103,7 @@ describe("readIntegratorTranscriptPage", () => {
     await expect(readIntegratorTranscriptPage({ scope, cursor: first.nextCursor!, reader: async () => page("cursor-1", [toolCall], 1, "cursor-1") })).rejects.toThrow(/repeated its cursor/);
   });
 
-  it("pages the actual complete Codex adapter JSONL export, including tools beyond its 50-message preview", async () => {
+  it("pages the actual complete Codex adapter JSONL export with native custom tool call/result records", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "herder-integrator-transcript-"));
     roots.push(codexDir);
     const sessionDir = join(codexDir, "sessions", "2026", "10", "20");
@@ -116,7 +116,17 @@ describe("readIntegratorTranscriptPage", () => {
       const text = index === 19 ? "Привет 🌍" : `body-${index}`;
       transcript.push(record("response_item", { type: "message", id: `message-${index}`, role, content: [{ type: role === "user" ? "input_text" : "output_text", text }] }));
     }
-    for (let index = 0; index < 4; index++) {
+    for (let index = 0; index < 2; index++) {
+      transcript.push(record("response_item", {
+        type: "custom_tool_call", id: `call-event-${index}`, status: "completed", call_id: `call-${index}`,
+        name: "shell_exec", input: JSON.stringify({ command: "pwd" }), internal_chat_message_metadata_passthrough: { turn_id: `tool-turn-${index}` },
+      }));
+      transcript.push(record("response_item", {
+        type: "custom_tool_call_output", id: `result-event-${index}`, call_id: `call-${index}`, output: "/workspace",
+        internal_chat_message_metadata_passthrough: { turn_id: `tool-turn-${index}` },
+      }));
+    }
+    for (let index = 2; index < 4; index++) {
       transcript.push(record("response_item", { type: "function_call", id: `call-event-${index}`, call_id: `call-${index}`, name: "shell_exec", arguments: JSON.stringify({ command: "pwd" }) }));
       transcript.push(record("response_item", { type: "function_call_output", id: `result-event-${index}`, call_id: `call-${index}`, output: "/workspace" }));
     }
@@ -144,7 +154,16 @@ describe("readIntegratorTranscriptPage", () => {
     ]);
     expect(events[0]).toMatchObject({ author: { kind: "unknown", sourceRole: "user" }, nativeEventId: "message-0" });
     expect(events[19]?.text).toBe("Привет 🌍");
-    expect(events[52]).toMatchObject({ kind: "tool_call", toolName: "shell_exec", toolCallId: "call-0" });
+    expect(events[52]).toMatchObject({
+      kind: "tool_call", nativeEventId: "call-event-0", toolName: "shell_exec", toolCallId: "call-0",
+      turnId: "tool-turn-0", payload: { status: "completed", input: '{"command":"pwd"}' },
+    });
+    expect(events[53]).toMatchObject({
+      kind: "tool_result", nativeEventId: "result-event-0", toolName: "shell_exec", toolCallId: "call-0",
+      turnId: "tool-turn-0", payload: "/workspace",
+    });
+    expect(events[56]).toMatchObject({ kind: "tool_call", nativeEventId: "call-event-2", toolCallId: "call-2" });
+    expect(events[57]).toMatchObject({ kind: "tool_result", nativeEventId: "result-event-2", toolCallId: "call-2", toolName: "shell_exec" });
     expect(events.some((event) => event.eventId === "appended-1" || event.eventId === "appended-2")).toBe(false);
     const freshSnapshot = await readIntegratorTranscriptPage({ scope, limit: 100, reader });
     expect(freshSnapshot.totalEvents).toBe(62);

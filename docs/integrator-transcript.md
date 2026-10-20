@@ -9,10 +9,14 @@ transcript, register an MCP tool, or connect sessions to an integrator runtime.
 
 The reader accepts complete `jsonl` exports from `native-file` or `native-api`
 sources for Codex, Claude, and Qoder, up to 16 MiB. It normalizes Codex
-`response_item` messages and function/MCP tool events, plus Claude-compatible
-JSONL user/assistant messages and `tool_use` / `tool_result` blocks. Unsupported
-formats/harnesses, observed-only or incomplete exports, malformed complete
-records, mismatched native session metadata, and oversized exports fail closed.
+`response_item` messages and both legacy function/MCP and native
+`custom_tool_call` / `custom_tool_call_output` records. The native custom tool
+call status, call ID, name, input and passthrough turn ID are preserved from
+their source record; matching results keep their native output, IDs, and turn
+ID. Claude-compatible JSONL user/assistant messages and `tool_use` /
+`tool_result` blocks are also supported. Unsupported formats/harnesses,
+observed-only or incomplete exports, malformed complete records, mismatched
+native session metadata, and oversized exports fail closed.
 An incomplete trailing JSONL write is excluded from the current snapshot until
 it becomes a valid complete event. Other native JSON formats need an explicit
 normalizer before they can be paged.
@@ -60,7 +64,9 @@ No shared-session ACL or end-user visibility is claimed here.
 ## Verification boundary
 
 Focused tests use the actual `CodexAdapter.getRawTranscript()` fixture with 52
-messages plus eight tool events. They prove appends between every page leave
+messages plus eight native custom tool call/result records shaped like the
+measured Codex export. They verify preserved status, native IDs, tool names,
+input/output and turn identity, and prove appends between every page leave
 the original 60-event snapshot complete and duplicate-free; a fresh cursor
 then includes both appended events. Tests also cover cursor replay, coordinated
 sequence tampering, restart expiry, valid incomplete multibyte EOF versus

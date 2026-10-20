@@ -294,24 +294,37 @@ function normalizeCodexRecord(row: Record<string, unknown>, line: string, record
       payload: { content: payload.content },
     }];
   }
-  if (type === "function_call" || type === "mcp_tool_call") {
+  if (type === "function_call" || type === "mcp_tool_call" || type === "custom_tool_call") {
     const toolCallId = payload.call_id ?? payload.tool_call_id;
     const toolName = payload.name ?? payload.tool_name;
     if (!validId(toolCallId, MAX_EVENT_ID_LENGTH) || !validId(toolName, 512)) return fail("unsupported native Codex tool-call identity");
+    if (payload.status !== undefined && (typeof payload.status !== "string" || !validId(payload.status, 128))) {
+      return fail("unsupported native Codex tool-call status");
+    }
     const id = sourceEventId(line, recordIndex, payload.event_id ?? payload.id ?? toolCallId);
+    const passthrough = payload.internal_chat_message_metadata_passthrough && typeof payload.internal_chat_message_metadata_passthrough === "object"
+      ? payload.internal_chat_message_metadata_passthrough as Record<string, unknown> : undefined;
+    const turnId = payload.turn_id ?? passthrough?.turn_id;
+    const input = payload.arguments ?? payload.input;
+    const toolPayload = type === "custom_tool_call"
+      ? { ...(typeof payload.status === "string" ? { status: payload.status } : {}), ...(input !== undefined ? { input } : {}) }
+      : input ?? payload;
     return [{
       sequence, ...id, kind: "tool_call", author: { kind: "assistant", sourceRole: "assistant" },
-      ...(at ? { timestamp: at } : {}), toolName, toolCallId,
-      payload: payload.arguments ?? payload.input ?? payload,
+      ...(typeof turnId === "string" ? { turnId } : {}), ...(at ? { timestamp: at } : {}), toolName, toolCallId,
+      payload: toolPayload,
     }];
   }
-  if (type === "function_call_output") {
+  if (type === "function_call_output" || type === "custom_tool_call_output") {
     const toolCallId = payload.call_id ?? payload.tool_call_id;
     if (!validId(toolCallId, MAX_EVENT_ID_LENGTH)) return fail("unsupported native Codex tool-result identity");
     const id = sourceEventId(line, recordIndex, payload.event_id ?? payload.id ?? `${toolCallId}:result`);
+    const passthrough = payload.internal_chat_message_metadata_passthrough && typeof payload.internal_chat_message_metadata_passthrough === "object"
+      ? payload.internal_chat_message_metadata_passthrough as Record<string, unknown> : undefined;
+    const turnId = payload.turn_id ?? passthrough?.turn_id;
     return [{
       sequence, ...id, kind: "tool_result", author: { kind: "unknown", sourceRole: "tool" },
-      ...(at ? { timestamp: at } : {}), toolCallId,
+      ...(typeof turnId === "string" ? { turnId } : {}), ...(at ? { timestamp: at } : {}), toolCallId,
       ...(typeof payload.name === "string" ? { toolName: payload.name } : {}),
       payload: payload.output,
     }];
