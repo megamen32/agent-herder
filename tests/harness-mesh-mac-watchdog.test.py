@@ -55,7 +55,11 @@ class MacWatchdogTests(unittest.TestCase):
 
     def test_host_memory_unknown_or_invalid_percentage_refuses(self):
         for text in ('101', '-1', 'private unexpected output'):
-            with patch.object(w,'command',return_value=text):
+            def query(argv):
+                if argv==['/usr/sbin/sysctl','-n','hw.memsize']:return str(8*w.GIB)
+                if argv==['/usr/sbin/sysctl','-n','kern.memorystatus_level']:return text
+                raise AssertionError(argv)
+            with patch.object(w,'command',side_effect=query):
                 with self.assertRaises(w.Refused) as caught:w.host_available_kib()
                 self.assertEqual(str(caught.exception),'host_memory_unverified')
 
