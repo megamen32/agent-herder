@@ -130,11 +130,35 @@ export class MinimaxCodeControl {
     return this.stream("POST", `/session/${encodeURIComponent(id)}/message`, body);
   }
 
-  /** Steer the turn that is running right now. */
+  /**
+   * Steer the turn that is running right now.
+   *
+   * The runtime steers a queued item, not free text: the message is queued
+   * first and the queue item is then addressed. When the runtime already
+   * consumed that item and started a turn with it, the steer target is gone
+   * and the message is delivered anyway.
+   */
   async steer(id: string, content: string, options: { queueItemId?: string } = {}): Promise<MinimaxControlResult> {
-    const body: Record<string, unknown> = { content };
-    if (options.queueItemId) body.queue_item_id = options.queueItemId;
-    return this.call("POST", `/session/${encodeURIComponent(id)}/steer`, body);
+    if (options.queueItemId) {
+      const body: Record<string, unknown> = { content, queue_item_id: options.queueItemId };
+      return this.call("POST", `/session/${encodeURIComponent(id)}/steer`, body);
+    }
+    const queued = await this.enqueue(id, content);
+    if (!queued.ok) return queued;
+    const itemId = (queued.body as { item_id?: string } | null)?.item_id;
+    if (!itemId) return queued;
+    const steered = await this.call("POST", `/session/${encodeURIComponent(id)}/steer`, {
+      content,
+      queue_item_id: itemId,
+    });
+    if (!steered.ok && steered.status === 404) {
+      return {
+        ok: true,
+        status: queued.status,
+        body: { ...((queued.body ?? {}) as Record<string, unknown>), steered: false },
+      };
+    }
+    return steered;
   }
 
   /** Enqueue a prompt for the next turn. */

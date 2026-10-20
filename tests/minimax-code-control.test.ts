@@ -55,19 +55,43 @@ async function publishControl(
 }
 
 describe("MinimaxCodeControl", () => {
-  it("steers the running turn of a session", async () => {
-    const { control, recorded } = await publishControl((_request, response) => {
+  it("steers the running turn of a session through its queued item", async () => {
+    const { control, recorded } = await publishControl((request, response) => {
       response.writeHead(200, { "content-type": "application/json" });
+      if (request.url?.endsWith("/queue")) {
+        response.end(JSON.stringify({ item_id: "queue-1", status: "queued" }));
+        return;
+      }
       response.end(JSON.stringify({ success: true, turn_id: "turn-7" }));
     });
 
     const result = await control.steer("mvs_1", "свернись");
 
     expect(result.ok).toBe(true);
-    expect(recorded[0]?.method).toBe("POST");
-    expect(recorded[0]?.url).toBe("/minimax-desktop/api/v1/session/mvs_1/steer");
+    expect(recorded.map((call) => call.url)).toEqual([
+      "/minimax-desktop/api/v1/session/mvs_1/queue",
+      "/minimax-desktop/api/v1/session/mvs_1/steer",
+    ]);
     expect(JSON.parse(recorded[0]?.body ?? "{}")).toEqual({ content: "свернись" });
+    expect(JSON.parse(recorded[1]?.body ?? "{}")).toEqual({ content: "свернись", queue_item_id: "queue-1" });
     expect((result.body as { turn_id?: string }).turn_id).toBe("turn-7");
+  });
+
+  it("keeps a steer that lost its queue item, because the message was delivered anyway", async () => {
+    const { control } = await publishControl((request, response) => {
+      if (request.url?.endsWith("/queue")) {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ item_id: "queue-2", status: "queued" }));
+        return;
+      }
+      response.writeHead(404, { "content-type": "application/json" });
+      response.end(JSON.stringify({ code: 404, key: "local_queue_item_not_found", message: "No queued item is available" }));
+    });
+
+    const result = await control.steer("mvs_2", "свернись");
+
+    expect(result.ok).toBe(true);
+    expect((result.body as { item_id?: string }).item_id).toBe("queue-2");
   });
 
   it("enqueues a message for the next turn", async () => {

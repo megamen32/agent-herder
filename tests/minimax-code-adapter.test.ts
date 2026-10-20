@@ -308,6 +308,7 @@ describe("MinimaxCodeAdapter with the published desktop transport", () => {
 
     expect(calls.map((call) => call.url)).toEqual([
       "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/message",
+      "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/queue",
       "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/steer",
       "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/queue",
       "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/abort",

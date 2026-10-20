@@ -435,8 +435,8 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     if (options.steer === true) {
       const result = await control.steer(id, options.message);
       if (!result.ok) return { ok: false, error: result.error };
-      const body = (result.body ?? {}) as { success?: boolean; turn_id?: string };
-      return { ok: true, admitted: true, turnId: body.turn_id };
+      const body = (result.body ?? {}) as { success?: boolean; turn_id?: string; item_id?: string };
+      return { ok: true, admitted: true, turnId: body.turn_id ?? body.item_id };
     }
     if (options.queue === true) {
       const result = await control.enqueue(id, options.message);
@@ -445,7 +445,15 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
       return { ok: true, admitted: true, turnId: body.item_id };
     }
     const result = await control.sendMessage(id, options.message);
-    if (!result.ok) return { ok: false, error: result.error };
+    if (!result.ok) {
+      // A running turn owns the session: the desktop app queues such a message
+      // instead of failing the delivery.
+      if (!/busy|active turn/i.test(result.error ?? "")) return { ok: false, error: result.error };
+      const queued = await control.enqueue(id, options.message);
+      if (!queued.ok) return { ok: false, error: queued.error };
+      const body = (queued.body ?? {}) as { item_id?: string };
+      return { ok: true, admitted: true, turnId: body.item_id };
+    }
     const body = (result.body ?? {}) as { turn_id?: string; id?: string };
     return { ok: true, admitted: true, turnId: body.turn_id ?? body.id };
   }
