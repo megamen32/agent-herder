@@ -41,20 +41,20 @@ SPEC.loader.exec_module(w)
 
 class MacWatchdogTests(unittest.TestCase):
     def test_host_memory_quiet_query_preserves_percentage_without_vm_stats(self):
-        # Fast unit <1s/max2s: old default query fails on the unused VM-stat
-        # stage; quiet output must retain the identical reserve calculation.
+        # Use the kernel's read-only level directly, avoiding memory_pressure's
+        # unrelated report path while preserving the same reserve calculation.
         def query(argv):
-            if argv==['/usr/bin/memory_pressure','-Q']:
-                return 'System-wide memory free percentage: 68%\n'
             if argv==['/usr/sbin/sysctl','-n','hw.memsize']:
                 return str(32*w.GIB)
+            if argv==['/usr/sbin/sysctl','-n','kern.memorystatus_level']:
+                return '68\n'
             raise w.Refused('native_observation_deadline')
         with patch.object(w,'command',side_effect=query) as probe:
             self.assertEqual(w.host_available_kib(),(32*w.GIB//1024)*68//100)
-        self.assertEqual(probe.call_args_list[0].args[0],['/usr/bin/memory_pressure','-Q'])
+        self.assertEqual(probe.call_args_list[1].args[0],['/usr/sbin/sysctl','-n','kern.memorystatus_level'])
 
     def test_host_memory_unknown_or_invalid_percentage_refuses(self):
-        for text in ('System-wide memory free percentage: 101%', 'System-wide memory free percentage: -1%', 'private unexpected output'):
+        for text in ('101', '-1', 'private unexpected output'):
             with patch.object(w,'command',return_value=text):
                 with self.assertRaises(w.Refused) as caught:w.host_available_kib()
                 self.assertEqual(str(caught.exception),'host_memory_unverified')
@@ -772,7 +772,7 @@ class MacWatchdogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             home=Path(folder);base=home/'.local/share/agent-herder/fleet';state=home/'state';temp=base/'run/tmp'
             config={'sourceSha':'a'*40,'hostId':'fixture','harnesses':['codex']}
-            env={};env.update({'ENABLE_'+name.upper().replace('-','_'):'false' for name in ('codex','zcode','opencode','claude','qoder','hermes','fast-agent','chatgpt')})
+            env={};env.update({'ENABLE_'+name.upper().replace('-','_'):'false' for name in ('codex','zcode','opencode','claude','qoder','hermes','fast-agent','chatgpt','minimax-code')})
             native_popen=w.subprocess.Popen;children=[]
             def fake_child(*args,**kwargs):
                 self.assertEqual(kwargs['stderr'],w.subprocess.PIPE)

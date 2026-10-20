@@ -651,13 +651,17 @@ def violations(sample,policy,elapsed,soft_since=None):
     return [name for name,failed in rules if failed]
 
 def host_available_kib():
-    # Apple's quiet query retains the same kernel percentage and skips the
-    # unrelated VM statistics query. No allocation/pressure simulation flags.
-    pressure=command(['/usr/bin/memory_pressure','-Q'])
-    match=re.search(r'System-wide memory free percentage:\s*(\d+)%',pressure)
-    if not match or not 0<=int(match[1])<=100:raise Refused('host_memory_unverified')
-    total=int(command(['/usr/sbin/sysctl','-n','hw.memsize']))//1024
-    return total*int(match[1])//100
+    # Read the same kernel memorystatus_level directly. Unlike memory_pressure,
+    # this bounded scalar sysctl avoids the helper's unrelated report path.
+    try:
+        total=int(command(['/usr/sbin/sysctl','-n','hw.memsize']).strip())//1024
+        level=command(['/usr/sbin/sysctl','-n','kern.memorystatus_level']).strip()
+        if total<=0 or not re.fullmatch(r'\d{1,3}',level):raise ValueError('invalid host memory sample')
+        percentage=int(level)
+        if not 0<=percentage<=100:raise ValueError('invalid host memory percentage')
+    except (ValueError,TypeError):
+        raise Refused('host_memory_unverified') from None
+    return total*percentage//100
 
 def release_closure(base):
     root=base/'releases'
