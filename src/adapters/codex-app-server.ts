@@ -1,7 +1,9 @@
-import { type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFile, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
-import { isAbsolute } from "node:path";
-import { realpath } from "node:fs/promises";
+import { promisify } from "node:util";
+import { isAbsolute, join, resolve } from "node:path";
+import { realpath, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { CodexDeliveryReceipts } from "./codex-delivery-receipts.js";
 import WebSocket from "ws";
 import { getHumanStopStore } from "../human-stop-store.js";
@@ -35,6 +37,16 @@ import type {
   SessionMessageView,
   SessionSnapshotReceipt,
 } from "../types/index.js";
+import type { IntegratorCurrentProjectScopeEvidence } from "../integrator-session-admission.js";
+import type { IntegratorHarness } from "../integrator-session-binding.js";
+
+const execFileAsync = promisify(execFile);
+
+interface ProjectScopeDirectoryIdentity {
+  path: string;
+  device: number;
+  inode: number;
+}
 
 interface RpcResponse {
   id?: number;
@@ -168,6 +180,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly cwd: string;
   private readonly socketPath?: string;
   private readonly modelIds: string[];
+  private readonly appServerDataHome: string;
+  private readonly transcriptReaderDataHome: string;
   private readonly projectRuntimePolicy?: CodexProjectRuntimePolicy;
   private readonly projectToolDenyList?: CodexProjectToolDenyList;
   private readonly rawTranscriptAdapter: CodexAdapter;
@@ -227,6 +241,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     this.processArgs = this.projectRuntimePolicy ? codexProjectAppServerArgs(this.projectToolDenyList, this.codexBin) : (config.args || ["app-server"]);
     this.cwd = config.cwd || process.cwd();
+    this.appServerDataHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
+    this.transcriptReaderDataHome = resolve(config.codexDir || process.env.CODEX_DATA_DIR || join(homedir(), ".codex"));
     this.socketPath = config.socketPath ?? process.env.CODEX_APP_SERVER_SOCKET;
     if (this.socketPath && (!isAbsolute(this.socketPath) || this.socketPath.includes(":") || this.socketPath.includes("?"))) {
       throw new Error("CODEX_APP_SERVER_SOCKET must be an absolute Unix socket path without ':' or '?' characters");
@@ -234,7 +250,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     this.modelIds = config.modelIds || [];
     this.requestTimeoutMs = config.requestTimeoutMs || 30_000;
     this.deliveryReceipts = new CodexDeliveryReceipts(config.codexDir);
-    this.rawTranscriptAdapter = new CodexAdapter({ codexBin: this.codexBin, codexDir: config.codexDir });
+    this.rawTranscriptAdapter = new CodexAdapter({
+      codexBin: this.codexBin,
+      codexDir: this.projectRuntimePolicy ? this.transcriptReaderDataHome : config.codexDir,
+    });
   }
 
   /**
@@ -327,6 +346,33 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async listSessions(options: {limit?: number} = {}): Promise<AgentSession[]> {
+    if (this.projectRuntimePolicy) {
+      if (!(await this.hasCurrentProjectRoot())) {
+        this.sessionSnapshotReceipt = {
+          exhaustive: false,
+          observedAt: new Date().toISOString(),
+          source: "codex-app-server",
+          reason: "project_root_identity_changed",
+        };
+        return [];
+      }
+      const ownedThreads = [...this.projectThreadIds].flatMap((id) => {
+        const thread = this.threads.get(id);
+        return thread?.id === id && thread.cwd === this.projectRuntimePolicy!.rootPath ? [thread] : [];
+      }).sort((a, b) =>
+        Date.parse(threadTimestamp(b.updatedAt) || threadTimestamp(b.createdAt) || new Date(0).toISOString())
+        - Date.parse(threadTimestamp(a.updatedAt) || threadTimestamp(a.createdAt) || new Date(0).toISOString())
+        || a.id.localeCompare(b.id));
+      const limit = options.limit ? Math.max(1, Math.min(Math.floor(options.limit), 100)) : undefined;
+      const bounded = limit !== undefined && ownedThreads.length > limit;
+      this.sessionSnapshotReceipt = {
+        exhaustive: !bounded,
+        observedAt: new Date().toISOString(),
+        source: "codex-app-server",
+        reason: bounded ? "bounded_project_owned_page" : "project_owned_threads_only",
+      };
+      return (limit === undefined ? ownedThreads : ownedThreads.slice(0, limit)).map((thread) => this.toSession(thread));
+    }
     this.sessionSnapshotReceipt = {
       exhaustive: false,
       observedAt: new Date().toISOString(),
@@ -454,6 +500,17 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {
+    if (this.projectRuntimePolicy) {
+      if (!(await this.hasCurrentProjectRoot()) || cwd !== this.projectRuntimePolicy.rootPath) return [];
+      const matches: AgentSession[] = [];
+      for (const id of this.projectThreadIds) {
+        const thread = this.threads.get(id);
+        if (thread?.id === id && thread.name === name && thread.cwd === this.projectRuntimePolicy.rootPath) {
+          matches.push(this.toSession(thread));
+        }
+      }
+      return matches;
+    }
     await this.ensureReady();
     const nativeThreads = await this.rawTranscriptAdapter.findNativeNamedThreads(name, cwd);
     const threads: CodexThread[] = [];
@@ -483,6 +540,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   /** Reconcile an already tracked turn after observation loss. This public
    * read never loads/subscribes a thread and never starts a model request. */
   async readTrackedTurnCompletion(id: string, turnId: string, cwd: string): Promise<CodexTrackedTurnCompletion | null> {
+    if (!(await this.canReadProjectHistory(id))) return null;
     if (!this.socketPath && !this.isReady()) return null;
     await this.ensureReady();
     const result = await this.request("thread/read", { threadId: id, includeTurns: true }) as { thread?: Record<string, unknown> };
@@ -522,6 +580,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async getSession(id: string, options: { includeMetrics?: boolean } = {}): Promise<AgentSession | null> {
+    if (!(await this.canReadProjectHistory(id))) return null;
     let base: AgentSession | null = null;
     if (this.socketPath || this.isReady()) {
       await this.ensureReady();
@@ -658,7 +717,94 @@ export class CodexAppServerAdapter implements HarnessAdapter {
    * display text from RPC events.
    */
   async getRawTranscript(id: string): Promise<RawTranscriptExport | null> {
+    if (!(await this.canReadProjectHistory(id))) return null;
     return this.rawTranscriptAdapter.getRawTranscript(id);
+  }
+
+  /** Project history is readable only for a thread admitted by this adapter
+   * instance while its bound root identity still matches. */
+  private async canReadProjectHistory(id: string): Promise<boolean> {
+    if (!this.projectRuntimePolicy) return true;
+    if (!this.projectThreadIds.has(id)) return false;
+    return this.hasCurrentProjectRoot();
+  }
+
+  private async hasCurrentProjectRoot(): Promise<boolean> {
+    if (!this.projectRuntimePolicy) return true;
+    try {
+      await assertCodexProjectRoot(this.projectRuntimePolicy, this.projectRuntimePolicy.rootPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Resolve current adapter-owned scope evidence for a trusted server caller.
+   * Caller identifiers are compared with the frozen policy; they never supply
+   * the returned binding, paths, filesystem identities, or native version. */
+  async resolveCurrentProjectScope(input: {
+    projectId: string;
+    rootIdentity: string;
+    policyRevision: string;
+    hostId: string;
+    harness: IntegratorHarness;
+  }): Promise<IntegratorCurrentProjectScopeEvidence | null> {
+    const policy = this.projectRuntimePolicy;
+    if (!policy || input.harness !== this.type
+      || input.projectId !== policy.binding.projectId
+      || input.rootIdentity !== policy.binding.rootIdentity
+      || input.policyRevision !== policy.binding.policyRevision
+      || input.hostId !== policy.binding.hostId) return null;
+    try {
+      await assertCodexProjectRoot(policy, policy.rootPath);
+      const canonicalRoot = await this.directoryIdentity(policy.rootPath);
+      const currentRootIdentity = `${canonicalRoot.path}\0${canonicalRoot.device}:${canonicalRoot.inode}`;
+      if (canonicalRoot.path !== policy.rootPath || canonicalRoot.device !== policy.rootDevice
+        || canonicalRoot.inode !== policy.rootInode || currentRootIdentity !== policy.binding.rootIdentity) return null;
+
+      const [appServerDataHome, transcriptReaderDataHome, harnessVersion] = await Promise.all([
+        this.directoryIdentity(this.appServerDataHome),
+        this.directoryIdentity(this.transcriptReaderDataHome),
+        this.verifiedNativeHarnessVersion(),
+      ]);
+      if (!harnessVersion) return null;
+      return {
+        binding: { ...policy.binding },
+        canonicalRoot,
+        harnessVersion,
+        appServerDataHome,
+        transcriptReaderDataHome,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private async directoryIdentity(path: string): Promise<ProjectScopeDirectoryIdentity> {
+    const canonicalPath = await realpath(path);
+    const details = await stat(canonicalPath);
+    if (!details.isDirectory()) throw new Error("project runtime evidence path is not a directory");
+    return { path: canonicalPath, device: details.dev, inode: details.ino };
+  }
+
+  private async verifiedNativeHarnessVersion(): Promise<string | null> {
+    try {
+      const { stdout } = await execFileAsync(this.codexBin, ["--version"], {
+        cwd: this.cwd,
+        env: this.projectChildEnvironment(),
+        timeout: 10_000,
+        maxBuffer: 16 * 1024,
+      });
+      const version = stdout.trim();
+      return version && version.length <= 128 && !/[\x00-\x1f\x7f]/.test(version) ? version : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private projectChildEnvironment(): NodeJS.ProcessEnv | undefined {
+    if (!this.projectRuntimePolicy) return undefined;
+    return { ...process.env, CODEX_HOME: this.appServerDataHome };
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<ControlResult> {
@@ -1084,6 +1230,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async getSessionMessages(id: string, limit = 12): Promise<SessionMessageView[] | null> {
+    if (!(await this.canReadProjectHistory(id))) return null;
     try {
       const messages = await this.rawTranscriptAdapter.getSessionMessages(id, limit);
       if (!this.projectRuntimePolicy || !this.projectThreadIds.has(id)) return messages;
@@ -1114,6 +1261,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
 
   async getFirstUserMessage(id: string): Promise<SessionMessageView | null> {
+    if (!(await this.canReadProjectHistory(id))) return null;
     return this.rawTranscriptAdapter.getFirstUserMessage(id);
   }
 
@@ -1458,6 +1606,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       label: "codex-app-server",
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "pipe"],
+      env: this.projectChildEnvironment(),
     }) as ChildProcessWithoutNullStreams;
     this.child = child;
     this.stderrTail = "";

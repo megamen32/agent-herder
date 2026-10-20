@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { mkdir, mkdtemp, rm, readFile, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -14,6 +14,67 @@ import { getHumanStopStore } from "../src/human-stop-store.js";
 import { createNamedSession } from "../src/named-session.js";
 
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
+
+type ScopedCollectionThread = { id: string; name?: string; cwd?: string; status?: string };
+
+function stubScopedCollectionReads(adapter: CodexAppServerAdapter, options: {
+  root: string;
+  ready: boolean;
+  listedThreads?: ScopedCollectionThread[];
+  loadedIds?: string[];
+  unmaterializedIds?: string[];
+  namedThreads?: ScopedCollectionThread[];
+}) {
+  const calls = { ready: 0, rpc: [] as string[], rawList: 0, rawIndex: 0, rawMetadata: 0, rawNamed: 0 };
+  const internals = adapter as unknown as {
+    projectThreadIds: Set<string>;
+    threads: Map<string, ScopedCollectionThread>;
+    isReady: () => boolean;
+    ensureReady: () => Promise<void>;
+    request: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+    rawTranscriptAdapter: {
+      listSessions: () => Promise<unknown[]>;
+      getNativeUnmaterializedThreadIds: (limit: number) => Promise<{ available: boolean; ids: string[]; limited: boolean }>;
+      getNativeSessionMetadataForIds: (ids: string[]) => Promise<{ available: boolean; metadata: Map<string, unknown> }>;
+      getNativeSessionMetadata: () => Promise<Map<string, unknown>>;
+      findNativeNamedThreads: (name: string, cwd: string) => Promise<ScopedCollectionThread[] | null>;
+    };
+  };
+  internals.isReady = () => options.ready;
+  internals.ensureReady = async () => { calls.ready++; };
+  internals.request = async (method, params) => {
+    calls.rpc.push(method);
+    if (method === "thread/list") return { data: options.listedThreads ?? [], nextCursor: null };
+    if (method === "thread/loaded/list") return { data: options.loadedIds ?? [], nextCursor: null };
+    if (method === "thread/read") {
+      const id = String(params?.threadId ?? "missing");
+      const thread = [...(options.listedThreads ?? []), ...(options.namedThreads ?? [])].find((candidate) => candidate.id === id);
+      return { thread: thread ?? { id, cwd: options.root, name: `foreign-${id}`, status: "idle" } };
+    }
+    return {};
+  };
+  internals.rawTranscriptAdapter.listSessions = async () => {
+    calls.rawList++;
+    return (options.listedThreads ?? []).map((thread) => ({ ...thread, harness: "codex" }));
+  };
+  internals.rawTranscriptAdapter.getNativeUnmaterializedThreadIds = async () => {
+    calls.rawIndex++;
+    return { available: true, ids: options.unmaterializedIds ?? [], limited: false };
+  };
+  internals.rawTranscriptAdapter.getNativeSessionMetadataForIds = async () => {
+    calls.rawMetadata++;
+    return { available: true, metadata: new Map() };
+  };
+  internals.rawTranscriptAdapter.getNativeSessionMetadata = async () => {
+    calls.rawMetadata++;
+    return new Map();
+  };
+  internals.rawTranscriptAdapter.findNativeNamedThreads = async () => {
+    calls.rawNamed++;
+    return options.namedThreads ?? [];
+  };
+  return { calls, internals };
+}
 
 describe("Codex app-server adapter", () => {
   it("keeps project policy constructor-only and refuses shared or caller-overridden transports", async () => {
@@ -143,6 +204,334 @@ describe("Codex app-server adapter", () => {
     } finally {
       await adapter.dispose();
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses foreign project history reads before transcript access, initialization, or RPC", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-foreign-history-"));
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "foreign-history-test", projectRoot: root });
+    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const calls = { transcript: 0, observation: 0, session: 0, messages: 0, firstUser: 0, ready: 0, rpc: [] as string[] };
+    type TranscriptReads = {
+      getRawTranscript: (id: string) => Promise<unknown>;
+      getSessionObservation: (id: string) => Promise<unknown>;
+      getSession: (id: string) => Promise<unknown>;
+      getSessionMessages: (id: string, limit?: number) => Promise<unknown>;
+      getFirstUserMessage: (id: string) => Promise<unknown>;
+    };
+    const internals = adapter as unknown as {
+      isReady: () => boolean;
+      ensureReady: () => Promise<void>;
+      request: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+      rawTranscriptAdapter: TranscriptReads;
+    };
+    internals.isReady = () => true;
+    internals.ensureReady = async () => { calls.ready++; };
+    internals.request = async (method) => { calls.rpc.push(method); return {}; };
+    internals.rawTranscriptAdapter.getRawTranscript = async () => { calls.transcript++; return null; };
+    internals.rawTranscriptAdapter.getSessionObservation = async () => { calls.observation++; return null; };
+    internals.rawTranscriptAdapter.getSession = async () => { calls.session++; return null; };
+    internals.rawTranscriptAdapter.getSessionMessages = async () => { calls.messages++; return null; };
+    internals.rawTranscriptAdapter.getFirstUserMessage = async () => { calls.firstUser++; return null; };
+    try {
+      await expect(adapter.getRawTranscript("foreign-thread")).resolves.toBeNull();
+      await expect(adapter.getSessionMessages("foreign-thread")).resolves.toBeNull();
+      await expect(adapter.getFirstUserMessage("foreign-thread")).resolves.toBeNull();
+      await expect(adapter.getSession("foreign-thread")).resolves.toBeNull();
+      await expect(adapter.getSession("foreign-thread", { includeMetrics: true })).resolves.toBeNull();
+      await expect(adapter.readTrackedTurnCompletion("foreign-thread", "foreign-turn", root)).resolves.toBeNull();
+      expect(calls).toEqual({ transcript: 0, observation: 0, session: 0, messages: 0, firstUser: 0, ready: 0, rpc: [] });
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses owned project history reads after the bound root becomes stale", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-stale-history-"));
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "stale-history-test", projectRoot: root });
+    const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
+    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+    const calls = { transcript: 0, observation: 0, session: 0, messages: 0, firstUser: 0, ready: 0, rpc: [] as string[] };
+    type TranscriptReads = {
+      getRawTranscript: (id: string) => Promise<unknown>;
+      getSessionObservation: (id: string) => Promise<unknown>;
+      getSession: (id: string) => Promise<unknown>;
+      getSessionMessages: (id: string, limit?: number) => Promise<unknown>;
+      getFirstUserMessage: (id: string) => Promise<unknown>;
+    };
+    const internals = adapter as unknown as {
+      projectThreadIds: Set<string>;
+      isReady: () => boolean;
+      ensureReady: () => Promise<void>;
+      request: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+      rawTranscriptAdapter: TranscriptReads;
+    };
+    internals.projectThreadIds.add("owned-thread");
+    internals.isReady = () => true;
+    internals.ensureReady = async () => { calls.ready++; };
+    internals.request = async (method) => { calls.rpc.push(method); return {}; };
+    internals.rawTranscriptAdapter.getRawTranscript = async () => { calls.transcript++; return null; };
+    internals.rawTranscriptAdapter.getSessionObservation = async () => { calls.observation++; return null; };
+    internals.rawTranscriptAdapter.getSession = async () => { calls.session++; return null; };
+    internals.rawTranscriptAdapter.getSessionMessages = async () => { calls.messages++; return null; };
+    internals.rawTranscriptAdapter.getFirstUserMessage = async () => { calls.firstUser++; return null; };
+    try {
+      await expect(adapter.getRawTranscript("owned-thread")).resolves.toBeNull();
+      await expect(adapter.getSessionMessages("owned-thread")).resolves.toBeNull();
+      await expect(adapter.getFirstUserMessage("owned-thread")).resolves.toBeNull();
+      await expect(adapter.getSession("owned-thread")).resolves.toBeNull();
+      await expect(adapter.getSession("owned-thread", { includeMetrics: true })).resolves.toBeNull();
+      await expect(adapter.readTrackedTurnCompletion("owned-thread", "turn-1", root)).resolves.toBeNull();
+      expect(calls).toEqual({ transcript: 0, observation: 0, session: 0, messages: 0, firstUser: 0, ready: 0, rpc: [] });
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("permits owned project history reads while the bound root remains current", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-owned-history-"));
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "owned-history-test", projectRoot: root });
+    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const calls = { transcript: 0, observation: 0, session: 0, messages: 0, firstUser: 0, rpc: [] as string[] };
+    type TranscriptReads = {
+      getRawTranscript: (id: string) => Promise<unknown>;
+      getSessionObservation: (id: string) => Promise<unknown>;
+      getSession: (id: string) => Promise<unknown>;
+      getSessionMessages: (id: string, limit?: number) => Promise<unknown>;
+      getFirstUserMessage: (id: string) => Promise<unknown>;
+    };
+    const internals = adapter as unknown as {
+      projectThreadIds: Set<string>;
+      isReady: () => boolean;
+      ensureReady: () => Promise<void>;
+      request: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+      rawTranscriptAdapter: TranscriptReads;
+    };
+    internals.projectThreadIds.add("owned-thread");
+    internals.isReady = () => true;
+    internals.ensureReady = async () => undefined;
+    internals.request = async (method, params) => {
+      calls.rpc.push(method);
+      if (method === "thread/read") return { thread: { id: params?.threadId, cwd: root, status: "idle" } };
+      if (method === "thread/turns/list") return { data: [] };
+      return {};
+    };
+    internals.rawTranscriptAdapter.getRawTranscript = async () => { calls.transcript++; return null; };
+    internals.rawTranscriptAdapter.getSessionObservation = async () => { calls.observation++; return null; };
+    internals.rawTranscriptAdapter.getSession = async () => { calls.session++; return null; };
+    internals.rawTranscriptAdapter.getSessionMessages = async () => { calls.messages++; return []; };
+    internals.rawTranscriptAdapter.getFirstUserMessage = async () => { calls.firstUser++; return null; };
+    try {
+      await expect(adapter.getRawTranscript("owned-thread")).resolves.toBeNull();
+      await expect(adapter.getSessionMessages("owned-thread")).resolves.toEqual([]);
+      await expect(adapter.getFirstUserMessage("owned-thread")).resolves.toBeNull();
+      await expect(adapter.getSession("owned-thread", { includeMetrics: true })).resolves.toMatchObject({ id: "owned-thread", cwd: root });
+      await expect(adapter.readTrackedTurnCompletion("owned-thread", "turn-1", root)).resolves.toBeNull();
+      expect(calls).toEqual({ transcript: 1, observation: 1, session: 1, messages: 1, firstUser: 1, rpc: ["thread/read", "thread/turns/list", "thread/read"] });
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("scoped cold session listing never delegates to the global transcript index", async () => {
+    const root = process.cwd();
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "cold-scoped-list-test", projectRoot: root });
+    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const { calls } = stubScopedCollectionReads(adapter, {
+      root,
+      ready: false,
+      listedThreads: [{ id: "foreign-archive", name: "foreign", cwd: root, status: "idle" }],
+    });
+    try {
+      await expect(adapter.listSessions()).resolves.toEqual([]);
+      expect(calls).toEqual({ ready: 0, rpc: [], rawList: 0, rawIndex: 0, rawMetadata: 0, rawNamed: 0 });
+    } finally {
+      await adapter.dispose();
+    }
+  });
+
+  it("scoped ready session listing returns only in-memory owned IDs", async () => {
+    const root = process.cwd();
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "ready-scoped-list-test", projectRoot: root });
+    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const { calls, internals } = stubScopedCollectionReads(adapter, {
+      root,
+      ready: true,
+      listedThreads: [{ id: "foreign-native", name: "foreign", cwd: root, status: "idle" }],
+      loadedIds: ["foreign-loaded"],
+      unmaterializedIds: ["foreign-indexed"],
+    });
+    internals.projectThreadIds.add("owned-thread");
+    internals.threads.set("owned-thread", { id: "owned-thread", name: "owned", cwd: root, status: "idle" });
+    internals.threads.set("foreign-cached", { id: "foreign-cached", name: "foreign cached", cwd: root, status: "idle" });
+    try {
+      await expect(adapter.listSessions()).resolves.toMatchObject([{ id: "owned-thread", title: "owned", cwd: root }]);
+      expect(calls).toEqual({ ready: 0, rpc: [], rawList: 0, rawIndex: 0, rawMetadata: 0, rawNamed: 0 });
+    } finally {
+      await adapter.dispose();
+    }
+  });
+
+  it("stale project root empties scoped session listing before readiness or reads", async () => {
+    const root = process.cwd();
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "stale-scoped-list-test", projectRoot: root });
+    const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
+    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+    const { calls, internals } = stubScopedCollectionReads(adapter, {
+      root,
+      ready: false,
+      listedThreads: [{ id: "foreign-archive", name: "foreign", cwd: root, status: "idle" }],
+    });
+    internals.projectThreadIds.add("owned-thread");
+    internals.threads.set("owned-thread", { id: "owned-thread", name: "owned", cwd: root, status: "idle" });
+    try {
+      await expect(adapter.listSessions()).resolves.toEqual([]);
+      expect(calls).toEqual({ ready: 0, rpc: [], rawList: 0, rawIndex: 0, rawMetadata: 0, rawNamed: 0 });
+    } finally {
+      await adapter.dispose();
+    }
+  });
+
+  it("scoped named lookup ignores foreign index candidates before native reads", async () => {
+    const root = process.cwd();
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "foreign-scoped-name-test", projectRoot: root });
+    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const { calls } = stubScopedCollectionReads(adapter, {
+      root,
+      ready: true,
+      namedThreads: [{ id: "foreign-named", name: "repair", cwd: root, status: "idle" }],
+    });
+    try {
+      await expect(adapter.findNamedSessions("repair", root)).resolves.toEqual([]);
+      expect(calls).toEqual({ ready: 0, rpc: [], rawList: 0, rawIndex: 0, rawMetadata: 0, rawNamed: 0 });
+    } finally {
+      await adapter.dispose();
+    }
+  });
+
+  it("stale project root empties scoped named lookup before readiness or reads", async () => {
+    const root = process.cwd();
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "stale-scoped-name-test", projectRoot: root });
+    const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
+    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+    const { calls, internals } = stubScopedCollectionReads(adapter, {
+      root,
+      ready: true,
+      namedThreads: [{ id: "owned-thread", name: "repair", cwd: root, status: "idle" }],
+    });
+    internals.projectThreadIds.add("owned-thread");
+    internals.threads.set("owned-thread", { id: "owned-thread", name: "repair", cwd: root, status: "idle" });
+    try {
+      await expect(adapter.findNamedSessions("repair", root)).resolves.toEqual([]);
+      expect(calls).toEqual({ ready: 0, rpc: [], rawList: 0, rawIndex: 0, rawMetadata: 0, rawNamed: 0 });
+    } finally {
+      await adapter.dispose();
+    }
+  });
+
+  it("scoped collection reads preserve positive access to locally owned threads", async () => {
+    const root = process.cwd();
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "owned-scoped-collection-test", projectRoot: root });
+    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const { calls, internals } = stubScopedCollectionReads(adapter, {
+      root,
+      ready: false,
+      listedThreads: [{ id: "foreign-native", name: "repair", cwd: root, status: "idle" }],
+      namedThreads: [{ id: "foreign-named", name: "repair", cwd: root, status: "idle" }],
+    });
+    internals.projectThreadIds.add("owned-thread");
+    internals.threads.set("owned-thread", { id: "owned-thread", name: "repair", cwd: root, status: "idle" });
+    try {
+      await expect(adapter.listSessions()).resolves.toMatchObject([{ id: "owned-thread", title: "repair", cwd: root }]);
+      await expect(adapter.findNamedSessions("repair", root)).resolves.toMatchObject([{ id: "owned-thread", title: "repair", cwd: root }]);
+      expect(calls).toEqual({ ready: 0, rpc: [], rawList: 0, rawIndex: 0, rawMetadata: 0, rawNamed: 0 });
+    } finally {
+      await adapter.dispose();
+    }
+  });
+
+  it("resolves only server-owned current project scope, homes, root identity, and native version", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-scope-root-"));
+    const appHome = await mkdtemp(join(tmpdir(), "agent-herder-codex-app-home-"));
+    const readerHome = await mkdtemp(join(tmpdir(), "agent-herder-codex-reader-home-"));
+    const previousCodexHome = process.env.CODEX_HOME;
+    const previousCodexDataDir = process.env.CODEX_DATA_DIR;
+    process.env.CODEX_HOME = appHome;
+    process.env.CODEX_DATA_DIR = readerHome;
+    const restoreEnvironment = () => {
+      if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = previousCodexHome;
+      if (previousCodexDataDir === undefined) delete process.env.CODEX_DATA_DIR;
+      else process.env.CODEX_DATA_DIR = previousCodexDataDir;
+    };
+    let adapter: CodexAppServerAdapter | undefined;
+    try {
+      const policy = await createCodexProjectRuntimePolicy({ projectId: "current-scope-evidence-test", projectRoot: root });
+      adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+      const calls = { version: 0, rpc: [] as string[] };
+      const internals = adapter as unknown as {
+        verifiedNativeHarnessVersion: () => Promise<string | null>;
+        projectChildEnvironment: () => NodeJS.ProcessEnv | undefined;
+        transcriptReaderDataHome: string;
+        rawTranscriptAdapter: { codexDir: string };
+        request: (method: string) => Promise<unknown>;
+      };
+      internals.verifiedNativeHarnessVersion = async () => { calls.version++; return "codex-cli 0.162.1-test"; };
+      internals.request = async (method) => { calls.rpc.push(method); return {}; };
+      const input = {
+        projectId: policy.binding.projectId,
+        rootIdentity: policy.binding.rootIdentity,
+        policyRevision: policy.binding.policyRevision,
+        hostId: policy.binding.hostId,
+        harness: "codex" as const,
+      };
+
+      await expect(adapter.resolveCurrentProjectScope({ ...input, rootIdentity: "caller-asserted-wrong-root" })).resolves.toBeNull();
+      expect(calls).toEqual({ version: 0, rpc: [] });
+
+      const evidence = await adapter.resolveCurrentProjectScope(input);
+      expect(evidence).not.toBeNull();
+      expect(evidence).toMatchObject({
+        binding: policy.binding,
+        canonicalRoot: { path: policy.rootPath, device: policy.rootDevice, inode: policy.rootInode },
+        harnessVersion: "codex-cli 0.162.1-test",
+        appServerDataHome: { path: appHome },
+        transcriptReaderDataHome: { path: readerHome },
+      });
+      expect(internals.transcriptReaderDataHome).toBe(readerHome);
+      expect(internals.rawTranscriptAdapter.codexDir).toBe(readerHome);
+      expect(internals.projectChildEnvironment()?.CODEX_HOME).toBe(appHome);
+      expect((await stat(appHome)).dev).toBe(evidence?.appServerDataHome.device);
+      expect((await stat(appHome)).ino).toBe(evidence?.appServerDataHome.inode);
+      expect((await stat(readerHome)).dev).toBe(evidence?.transcriptReaderDataHome.device);
+      expect((await stat(readerHome)).ino).toBe(evidence?.transcriptReaderDataHome.inode);
+      expect(calls).toEqual({ version: 1, rpc: [] });
+
+      const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
+      const staleAdapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+      const staleInternals = staleAdapter as unknown as {
+        verifiedNativeHarnessVersion: () => Promise<string | null>;
+        request: (method: string) => Promise<unknown>;
+      };
+      staleInternals.verifiedNativeHarnessVersion = async () => { calls.version++; return "codex-cli 0.162.1-test"; };
+      staleInternals.request = async (method) => { calls.rpc.push(method); return {}; };
+      try {
+        await expect(staleAdapter.resolveCurrentProjectScope(input)).resolves.toBeNull();
+        expect(calls).toEqual({ version: 1, rpc: [] });
+      } finally {
+        await staleAdapter.dispose();
+      }
+    } finally {
+      await adapter?.dispose();
+      restoreEnvironment();
+      await Promise.all([
+        rm(root, { recursive: true, force: true }),
+        rm(appHome, { recursive: true, force: true }),
+        rm(readerHome, { recursive: true, force: true }),
+      ]);
     }
   });
 
