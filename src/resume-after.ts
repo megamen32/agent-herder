@@ -32,6 +32,8 @@ export interface ResumeAfterWait {
 type Delivery = { status: "accepted" | "rejected" | "failed" | "ambiguous"; reason?: string; receipt?: Record<string, unknown> };
 export interface ResumeAfterOptions {
   directory: string;
+  /** Exact legacy wait IDs held from automatic delivery by an operator-managed maintenance config. */
+  heldWaitIds?: ReadonlySet<string>;
   deliver: (wait: ResumeAfterWait) => Promise<Delivery>;
   queryReceipt?: (wait: ResumeAfterWait) => Promise<Delivery>;
   isHeld: (ref: SessionRef) => Promise<boolean>;
@@ -215,6 +217,9 @@ export class ResumeAfterService {
       if(await this.options.isHeld(wait.owner)){
         wait.state="cancelled";wait.reason="requester was stopped";await this.save(wait);continue;
       }
+      // Explicit maintenance holds never cancel or rewrite a user wait. HumanStop
+      // remains authoritative above, and receipt reconciliation below is never held.
+      if(wait.state==="waiting" && this.options.heldWaitIds?.has(wait.id))continue;
       if(wait.state==="dispatching" || wait.state==="delivery_unknown"){
         // A restart or a dropped receipt is not permission to replay an action.
         const receipt=await this.options.queryReceipt?.(wait);

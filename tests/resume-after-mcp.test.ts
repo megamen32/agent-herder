@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createAgentHerderMcpServer } from "../src/index.js";
-import { createResumeAfterRuntime } from "../src/resume-after-runtime.js";
+import { createResumeAfterRuntime, parseResumeAfterHoldWaitIds } from "../src/resume-after-runtime.js";
 import { SessionSupervisor } from "../src/session-supervisor.js";
 import { createFleetRecoveryAdmissionGate } from "../src/autopilot/recovery-admission.js";
 import type { AgentSession, HarnessAdapter, HarnessEvent } from "../src/types/index.js";
@@ -299,6 +299,13 @@ describe("exact native turn registration",()=>{
 });
 
 describe("MCP dependency wait through native adapter events",()=>{
+  it("parses only exact unique maintenance-held wait IDs and fails closed on malformed config",()=>{
+    expect([...parseResumeAfterHoldWaitIds("wait_0123456789abcdef0123456789abcdef,wait_fedcba9876543210fedcba9876543210")])
+      .toEqual(["wait_0123456789abcdef0123456789abcdef","wait_fedcba9876543210fedcba9876543210"]);
+    for(const value of ["","wait_bad","wait_0123456789abcdef0123456789abcdef,wait_0123456789abcdef0123456789abcdef"])
+      expect(()=>parseResumeAfterHoldWaitIds(value)).toThrow(/AGENT_HERDER_RESUME_AFTER_HOLD_IDS/);
+    expect([...parseResumeAfterHoldWaitIds(undefined)]).toEqual([]);
+  });
   it("registers over real MCP, joins both workers and uses one native continuation",async()=>{
     const directory=await mkdtemp(join(process.cwd(),".tmp/resume-after-mcp-"));
     cleanup.push(()=>rm(directory,{recursive:true,force:true}));
