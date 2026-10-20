@@ -148,6 +148,27 @@ describe("exact native turn registration",()=>{
     expect(Object.values(wait.completed).map(value=>value.turnId).sort()).toEqual(["a-current","b-current"]);
     expect(Object.values(wait.completed).every(value=>value.at==="2026-10-20T09:59:00.000Z")).toBe(true);
   });
+  it("normalizes a numeric native ZCode completion timestamp",async()=>{
+    const f=await nativeFixture();
+    const completedAt=Date.parse("2026-10-20T09:59:00.000Z");
+    for(const id of ["a","b"])f.sessions.get(id)!.status="idle";
+    const codex=f.adapters.get("codex")!;
+    const zcode:HarnessAdapter={...codex,type:"zcode",async getSession(id){
+      const session=await codex.getSession(id);
+      return session?{...session,harness:"zcode",meta:{nativeLastTurn:{turnId:id+"-current",status:"completed",completedAt}}}:null;
+    }};
+    const adapters=new Map(f.adapters);adapters.set("zcode",zcode);
+    let sends=0;
+    const runtime=createResumeAfterRuntime(adapters,{
+      isAutomationHeld:async()=>false,sendMessage:async()=>{sends++;return {ok:true,admitted:true};},
+    },async()=>false,f.directory);
+    const wait=await runtime.service.register({owner:ref("owner"),dependencies:[
+      {harness:"zcode",sessionId:"a"},{harness:"zcode",sessionId:"b"},
+    ],requestId:"zcode-number-completion"});
+    expect(wait.state).toBe("resumed");
+    expect(Object.values(wait.completed).map(value=>value.at)).toEqual(["2026-10-20T09:59:00.000Z","2026-10-20T09:59:00.000Z"]);
+    expect(sends).toBe(1);
+  });
   it("does not synthesize a native completion timestamp for a Codex summary",async()=>{
     const f=await nativeFixture();
     for(const id of ["a","b"]){

@@ -36,6 +36,12 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
       const session=await adapter?.getSession(ref.sessionId);
       if(!session)throw new Error("Exact dependency unavailable");
       const string=(value:unknown)=>typeof value==="string" && value.trim()?value:undefined;
+      const nativeTimestamp=(value:unknown):string|undefined=>{
+        const millis=typeof value==="number"&&Number.isFinite(value)?value
+          :typeof value==="string"&&value.trim()?Date.parse(value):Number.NaN;
+        if(!Number.isFinite(millis))return undefined;
+        try{return new Date(millis).toISOString();}catch{return undefined;}
+      };
       const meta=session.meta??{};
       if(ref.harness==="codex" && (meta.nativeTurnStateUnavailable===true || meta.nativeStateObserved===false))
         throw new Error("Codex native turn state is unavailable");
@@ -44,7 +50,7 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
       const busy=Boolean(active || session.status==="running" || session.status==="needs_input" || session.needsPermission);
       const turnId=active??(!busy || ["inProgress","running"].includes(String(last.status))?string(last.turnId):undefined);
       const outcome=last.status==="completed"?"turn.completed":["failed","error","cancelled","interrupted"].includes(String(last.status))?"turn.failed":undefined;
-      const completedAt=string(last.completedAt);
+      const completedAt=nativeTimestamp(last.completedAt);
       return {busy,turnId,...(!busy && turnId && outcome && completedAt?{completion:{outcome,at:completedAt}}:{})};
     },
     deliver:async wait=>{
