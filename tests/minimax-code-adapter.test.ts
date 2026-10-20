@@ -1,10 +1,13 @@
 import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MinimaxCodeAdapter } from "../src/adapters/minimax-code.js";
+import { MinimaxCodeControl } from "../src/adapters/minimax-code-control.js";
 
 const created: string[] = [];
+const servers: Server[] = [];
 
 async function store(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "minimax-code-adapter-"));
@@ -64,6 +67,13 @@ async function writeSession(
 }
 
 afterEach(async () => {
+  while (servers.length > 0) {
+    const server = servers.pop();
+    if (server) {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
   while (created.length > 0) {
     const dir = created.pop();
     if (dir) await rm(dir, { recursive: true, force: true });
@@ -231,5 +241,96 @@ describe("MinimaxCodeAdapter", () => {
     );
 
     expect((await adapter.listSessions())[0]?.lastMessage).toBe("ответ");
+  });
+});
+
+describe("MinimaxCodeAdapter with the published desktop transport", () => {
+  it("delivers, steers, queues and aborts through the live runtime", async () => {
+    const root = await store();
+    await writeSession(root, "mvs_0000000000000000000000000000aaa1", {
+      messages: [{ message_id: "m1", turn_id: "t1", message: { role: "user", content: "вопрос" } }],
+    });
+
+    const calls: { url: string; body: string }[] = [];
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        calls.push({ url: request.url ?? "", body: Buffer.concat(chunks).toString("utf8") });
+        if (request.url?.endsWith("/message")) {
+          response.writeHead(200, { "content-type": "text/event-stream" });
+          response.write(`data: ${JSON.stringify({ type: "turn_started", turn_id: "turn-1" })}\n\n`);
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ success: true, turn_id: "turn-1", item_id: "queue-1" }));
+      });
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+
+    const manifestDir = await mkdtemp(join(tmpdir(), "minimax-code-manifest-"));
+    created.push(manifestDir);
+    const manifestPath = join(manifestDir, "mcode-diagnostic.json");
+    await writeFile(manifestPath, JSON.stringify({ port, host: "127.0.0.1", pid: process.pid }));
+
+    const adapter = new MinimaxCodeAdapter({
+      sessionStore: root,
+      control: new MinimaxCodeControl({ manifestPath, manifestTtlMs: 0 }),
+    });
+    await adapter.init();
+
+    expect(adapter.controlCapabilities.steer).toBe(true);
+
+    const sent = await adapter.sendMessage("mvs_0000000000000000000000000000aaa1", { message: "привет" });
+    expect(sent.ok).toBe(true);
+    expect(sent.admitted).toBe(true);
+    expect(sent.turnId).toBe("turn-1");
+
+    const steered = await adapter.sendMessage("mvs_0000000000000000000000000000aaa1", {
+      message: "свернись",
+      steer: true,
+    });
+    expect(steered.ok).toBe(true);
+    expect(steered.turnId).toBe("turn-1");
+
+    const queued = await adapter.sendMessage("mvs_0000000000000000000000000000aaa1", {
+      message: "в очередь",
+      queue: true,
+    });
+    expect(queued.ok).toBe(true);
+    expect(queued.turnId).toBe("queue-1");
+
+    const aborted = await adapter.stopSession("mvs_0000000000000000000000000000aaa1");
+    expect(aborted.ok).toBe(true);
+
+    expect(calls.map((call) => call.url)).toEqual([
+      "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/message",
+      "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/steer",
+      "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/queue",
+      "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/abort",
+    ]);
+  });
+
+  it("keeps the store-only refusal while the desktop app publishes no transport", async () => {
+    const root = await store();
+    await writeSession(root, "mvs_0000000000000000000000000000bbb1", {
+      messages: [{ message_id: "m1", turn_id: "t1", message: { role: "user", content: "вопрос" } }],
+    });
+    const manifestDir = await mkdtemp(join(tmpdir(), "minimax-code-manifest-"));
+    created.push(manifestDir);
+
+    const adapter = new MinimaxCodeAdapter({
+      sessionStore: root,
+      control: new MinimaxCodeControl({ manifestPath: join(manifestDir, "missing.json") }),
+    });
+    await adapter.init();
+
+    expect(adapter.controlCapabilities.steer).toBe(false);
+    const result = await adapter.sendMessage("mvs_0000000000000000000000000000bbb1", { message: "привет" });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("local runtime");
   });
 });

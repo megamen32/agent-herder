@@ -2,6 +2,7 @@ import { open, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { MinimaxCodeControl } from "./minimax-code-control.js";
 import type {
   AgentSession,
   ControlResult,
@@ -52,6 +53,8 @@ export interface MinimaxCodeAdapterOptions {
   cwd?: string;
   /** Upper bound for one enumeration pass. */
   maxSessions?: number;
+  /** Live control transport published by the desktop app. */
+  control?: MinimaxCodeControl;
 }
 
 interface MinimaxManifest {
@@ -273,12 +276,12 @@ async function collectSessionDirectories(root: string, limit: number): Promise<s
  * Each session directory owns a `manifest.json` with the native identity, a
  * `llm-call.json` with the last model, and a `messages.jsonl` transcript.
  *
- * Delivery is deliberately not implemented: the desktop runtime owns live
- * sessions in memory, and the standalone agent CLI stores sessions in a
- * different layout (`<agentDir>/sessions/<cwd>`), so neither a file write nor a
- * CLI resume can reach a running desktop session. The control transport for
- * the next revision is the CLI JSON-lines RPC mode (`pi --mode rpc`) together
- * with the OAuth lease broker.
+ * Delivery is implemented against the live runtime of the desktop app. The app
+ * publishes that runtime on loopback HTTP while it runs, and the transport
+ * reaches the very session the app is showing, so a prompt can steer the
+ * running turn, sit in the queue for the next turn, or start a turn outright.
+ * The store on disk stays the enumeration source: it survives a closed app and
+ * it never writes into a session the app owns.
  *
  * Enumeration cost is bounded on purpose. The fleet node is supervised under
  * a hard RSS contract, so a poll must not re-read and re-parse every message
@@ -288,30 +291,42 @@ async function collectSessionDirectories(root: string, limit: number): Promise<s
 export class MinimaxCodeAdapter implements HarnessAdapter {
   readonly type = "minimax-code" as const;
   readonly name = "MiniMax Code";
-  readonly controlCapabilities: HarnessCapabilities = {
-    steer: false,
-    cancelTurn: false,
-    detach: false,
-    resume: false,
-    terminate: false,
-    recover: false,
-    fork: false,
-    modelSwitch: false,
-    subagents: false,
-    events: false,
-  };
   readonly lazyDiscovery = true;
 
   private readonly sessionStore: string;
   private readonly cwd: string;
   private readonly maxSessions: number;
+  private readonly control: MinimaxCodeControl;
   private indexCache: { at: number; entries: MinimaxStoredSession[] } | null = null;
   private contentCache = new Map<string, { stamp: string; session: AgentSession }>();
+  private liveControlAvailable = false;
 
   constructor(options: MinimaxCodeAdapterOptions = {}) {
     this.sessionStore = options.sessionStore || MINIMAX_CODE_SESSION_STORE;
     this.cwd = options.cwd || MINIMAX_CODE_HARNESS_CWD;
     this.maxSessions = options.maxSessions || 500;
+    this.control = options.control || new MinimaxCodeControl();
+  }
+
+  /**
+   * Native controls of the live transport. They exist only while the desktop
+   * app publishes its runtime, so the gate follows the transport instead of
+   * promising a write that would fail.
+   */
+  get controlCapabilities(): HarnessCapabilities {
+    const live = this.liveControlAvailable;
+    return {
+      steer: live,
+      cancelTurn: live,
+      detach: false,
+      resume: live,
+      terminate: false,
+      recover: false,
+      fork: false,
+      modelSwitch: false,
+      subagents: false,
+      events: false,
+    };
   }
 
   async init(): Promise<void> {
@@ -324,10 +339,14 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
       if (error instanceof Error && error.message.startsWith("MiniMax Code session store is not")) throw error;
       throw new Error(`MiniMax Code session store not found at ${this.sessionStore}`);
     }
+    this.liveControlAvailable = await this.control.available();
   }
 
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
     if (options.cwd && options.cwd !== this.cwd) return [];
+    // The live transport can appear or disappear with the desktop app, so the
+    // capability gate follows it instead of the process start.
+    void this.liveControl();
     const stored = await this.readStoredSessions();
     const limited = options.limit ? stored.slice(0, options.limit) : stored;
     const sessions: AgentSession[] = [];
@@ -405,23 +424,68 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     return views;
   }
 
-  async sendMessage(_id: string, _options: SendMessageOptions): Promise<SendMessageResult> {
+  async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
+    const control = await this.liveControl();
+    if (!control) {
+      return {
+        ok: false,
+        error: "MiniMax Code desktop sessions are owned by the local runtime; publish the desktop control transport to deliver messages",
+      };
+    }
+    if (options.steer === true) {
+      const result = await control.steer(id, options.message);
+      if (!result.ok) return { ok: false, error: result.error };
+      const body = (result.body ?? {}) as { success?: boolean; turn_id?: string };
+      return { ok: true, admitted: true, turnId: body.turn_id };
+    }
+    if (options.queue === true) {
+      const result = await control.enqueue(id, options.message);
+      if (!result.ok) return { ok: false, error: result.error };
+      const body = (result.body ?? {}) as { item_id?: string; status?: string };
+      return { ok: true, admitted: true, turnId: body.item_id };
+    }
+    const result = await control.sendMessage(id, options.message);
+    if (!result.ok) return { ok: false, error: result.error };
+    const body = (result.body ?? {}) as { turn_id?: string; id?: string };
+    return { ok: true, admitted: true, turnId: body.turn_id ?? body.id };
+  }
+
+  async stopSession(id: string): Promise<ControlResult> {
+    const control = await this.liveControl();
+    if (!control) {
+      return { ok: false, error: "MiniMax Code turn cancellation needs the desktop control transport" };
+    }
+    const result = await control.abort(id);
+    if (!result.ok) return { ok: false, error: result.error };
+    const body = (result.body ?? {}) as { success?: boolean };
+    return { ok: body.success !== false, sessionId: id };
+  }
+
+  async cancelTurn(id: string): Promise<ControlResult> {
+    return this.stopSession(id);
+  }
+
+  async respondPermission(
+    _sessionId: string,
+    _permissionId: string,
+    _response: "allow" | "deny",
+    _remember?: boolean,
+  ): Promise<{ ok: boolean; error?: string }> {
     return {
       ok: false,
-      error: "MiniMax Code desktop sessions are owned by the local runtime; Herder cannot write to them",
+      error: "MiniMax Code permission replies are addressed to a pending request of the desktop runtime; Herder has no request identity yet",
     };
-  }
-
-  async stopSession(): Promise<ControlResult> {
-    return { ok: false, error: "MiniMax Code turn cancellation is not exposed to external readers" };
-  }
-
-  async respondPermission(): Promise<{ ok: boolean; error?: string }> {
-    return { ok: false, error: "MiniMax Code permission prompts are handled inside the desktop runtime" };
   }
 
   async setPermissions(_sessionId: string, _options: SetPermissionsOptions): Promise<{ ok: boolean; error?: string }> {
     return { ok: false, error: "MiniMax Code permissions are controlled by the MiniMax Code product surface" };
+  }
+
+  /** Live control transport of the desktop app, when it publishes one. */
+  private async liveControl(): Promise<MinimaxCodeControl | null> {
+    const available = await this.control.available();
+    this.liveControlAvailable = available;
+    return available ? this.control : null;
   }
 
   private async readStoredSessions(): Promise<MinimaxStoredSession[]> {

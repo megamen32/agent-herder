@@ -332,3 +332,28 @@ native children inherit the new cap.100 already has unlimited file size and
 is not reduced. No database deletion, manual checkpoint or prompt replay.
 Acceptance includes real SQLite RED/GREEN, sparse database-growth RED/GREEN,
 and native ZCode completion. Task: `.agents/tasks/20261015-native-sqlite-file-budget.md`.
+
+## MiniMax Code: транспорт управления живым рантаймом
+
+Харнесс `minimax-code` читает сессии из локального хранилища рантайма
+(`~/.minimax/v2/sessions`) и, когда приложение публикует свой рантайм, может
+управлять теми же живыми сессиями. Приложение держит сессии в рантайме внутри
+своего процесса: рендерер говорит с ним через MessagePort. Диагностический
+сайдкар приложения публикует тот же рантайм на loopback HTTP и пишет манифест,
+поэтому внешний контроллер рулит именно теми сессиями, которые видно в
+приложении, а не копией хранилища.
+
+Маршруты — сгенерированный thrift-контракт DesktopService:
+`POST /minimax-desktop/api/v1/session/:id/message` (событийный поток),
+`POST /minimax-desktop/api/v1/session/:id/steer` (свернуть идущий ход),
+`POST /minimax-desktop/api/v1/session/:id/queue` (поставить в очередь),
+`POST /minimax-desktop/api/v1/session/:id/abort` (остановить ход).
+
+Включение: `deploy/fleet/enable-minimax-code-control.sh` выставляет
+`MAVIS_ELECTRON_ENABLE_DIAGNOSTIC_SIDECAR=1`, путь манифеста и порт через
+`launchctl setenv`; флаг читается один раз при старте, поэтому приложение
+нужно перезапустить. Транспорт без аутентификации и слушает только loopback:
+пока приложение живо, любой локальный процесс может им пользоваться.
+
+Пока приложение не перезапущено или не публикует транспорт, адаптер остаётся
+read-only по доставке и честно отвечает отказом с причиной.
