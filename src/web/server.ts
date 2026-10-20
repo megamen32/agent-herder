@@ -44,6 +44,7 @@ import { getS21Ownership } from "../s21-resource-ownership.js";
 import { getHumanStopStore } from "../human-stop-store.js";
 import { deferredMessages, renderDeferredMessages } from "../deferred-messages.js";
 import { agentHerderRag } from "../rag-search.js";
+import { handleIntegratorSessionTranscript } from "../integrator-session-route.js";
 
 export interface WebDependencies {
   sessionImageStore?: SessionImageStore;
@@ -1527,6 +1528,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!session) return sendJson(response, 404, { error: "Session not found" });
     return sendJson(response, 200, { session });
   }
+  if (await handleIntegratorSessionTranscript(request, response, url, adapters)) return;
   const detailsMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/details$/);
   if (detailsMatch && request.method === "GET") {
     const limitValue = Number(url.searchParams.get("limit") || "3");
