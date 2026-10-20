@@ -367,17 +367,23 @@ export async function handleAgentInfo(adapters: Map<string, HarnessAdapter>, arg
   return session ? formatSession(session, true) : `Session '${parsed.sessionId}' not found.`;
 }
 
-export async function findParentResult(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<{ session: AgentSession | null; parent: AgentSession | null; supported: boolean }> {
+export async function findParentResult(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<{ session: AgentSession | null; parent: AgentSession | null; supported: boolean; error?: string }> {
   const parsed = FindParentSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return { session: null, parent: null, supported: false };
   if (!found.adapter.getParent) return { session: found.session, parent: null, supported: false };
-  return { session: found.session, parent: await found.adapter.getParent(parsed.sessionId), supported: true };
+  try {
+    return { session: found.session, parent: await found.adapter.getParent(parsed.sessionId), supported: true };
+  } catch (error) {
+    return { session: found.session, parent: null, supported: false, error: error instanceof Error ? error.message : "Native parent lineage could not be verified" };
+  }
 }
 
-export function formatFindParentResult(sessionId: string, result: { session: AgentSession | null; parent: AgentSession | null; supported: boolean }): string {
+export function formatFindParentResult(sessionId: string, result: { session: AgentSession | null; parent: AgentSession | null; supported: boolean; error?: string }): string {
   if (!result.session) return `Session '${sessionId}' not found.`;
-  if (!result.supported) return `Finding a parent is not supported by the ${result.session.harness} adapter.`;
+  if (!result.supported) return result.error
+    ? "Native parent lineage for [" + result.session.harness + "] " + sessionId + " could not be verified: " + result.error
+    : `Finding a parent is not supported by the ${result.session.harness} adapter.`;
   if (!result.parent) return `No parent found for [${result.session.harness}] ${sessionId}.`;
   return [`Parent of [${result.session.harness}] ${sessionId}:`, "", formatSession(result.parent, true)].join("\n");
 }
@@ -388,17 +394,23 @@ export async function handleFindParent(adapters: Map<string, HarnessAdapter>, ar
   return formatFindParentResult(parsed.sessionId, result);
 }
 
-export async function listChildrenResult(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<{ session: AgentSession | null; children: AgentSession[]; supported: boolean }> {
+export async function listChildrenResult(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<{ session: AgentSession | null; children: AgentSession[]; supported: boolean; error?: string }> {
   const parsed = ListChildrenSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return { session: null, children: [], supported: false };
   if (!found.adapter.listChildren) return { session: found.session, children: [], supported: false };
-  return { session: found.session, children: await found.adapter.listChildren(parsed.sessionId), supported: true };
+  try {
+    return { session: found.session, children: await found.adapter.listChildren(parsed.sessionId), supported: true };
+  } catch (error) {
+    return { session: found.session, children: [], supported: false, error: error instanceof Error ? error.message : "Native child lineage could not be verified" };
+  }
 }
 
-export function formatListChildrenResult(sessionId: string, result: { session: AgentSession | null; children: AgentSession[]; supported: boolean }): string {
+export function formatListChildrenResult(sessionId: string, result: { session: AgentSession | null; children: AgentSession[]; supported: boolean; error?: string }): string {
   if (!result.session) return `Session '${sessionId}' not found.`;
-  if (!result.supported) return `Listing children is not supported by the ${result.session.harness} adapter.`;
+  if (!result.supported) return result.error
+    ? "Native child lineage for [" + result.session.harness + "] " + sessionId + " could not be verified: " + result.error
+    : `Listing children is not supported by the ${result.session.harness} adapter.`;
   if (result.children.length === 0) return `No children found for [${result.session.harness}] ${sessionId}.`;
   return [`Children of [${result.session.harness}] ${sessionId} (${result.children.length}):`, "", ...result.children.map((child) => formatSession(child, true))].join("\n");
 }

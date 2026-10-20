@@ -33,24 +33,17 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
       const adapter=adapters.get(ref.harness);
       const session=await adapter?.getSession(ref.sessionId);
       if(!session)throw new Error("Exact dependency unavailable");
-      if(ref.harness==="codex"){
-        const native=adapter as HarnessAdapter & {readNativeTurnState?:(id:string,cwd:string)=>Promise<{
-          busy:boolean;turnId?:string;completion?:{outcome:"turn.completed"|"turn.failed";at:string}
-        }|null>};
-        if(native.readNativeTurnState){
-          const state=await native.readNativeTurnState(ref.sessionId,session.cwd);
-          if(!state)return {busy:true};
-          return {busy:state.busy,turnId:state.turnId,...(state.completion?{completion:state.completion}:{})};
-        }
-      }
       const string=(value:unknown)=>typeof value==="string" && value.trim()?value:undefined;
       const meta=session.meta??{};
+      if(ref.harness==="codex" && (meta.nativeTurnStateUnavailable===true || meta.nativeStateObserved===false))
+        throw new Error("Codex native turn state is unavailable");
       const active=string(meta.activeTurnId)??string(meta.nativeActiveTurnId);
       const last=meta.nativeLastTurn && typeof meta.nativeLastTurn==="object"?meta.nativeLastTurn as Record<string,unknown>:{};
       const busy=Boolean(active || session.status==="running" || session.status==="needs_input" || session.needsPermission);
       const turnId=active??(!busy || ["inProgress","running"].includes(String(last.status))?string(last.turnId):undefined);
       const outcome=last.status==="completed"?"turn.completed":["failed","error","cancelled","interrupted"].includes(String(last.status))?"turn.failed":undefined;
-      return {busy,turnId,...(!busy && turnId && outcome?{completion:{outcome,at:new Date().toISOString()}}:{})};
+      const completedAt=string(last.completedAt);
+      return {busy,turnId,...(!busy && turnId && outcome?{completion:{outcome,at:completedAt??new Date().toISOString()}}:{})};
     },
     deliver:async wait=>{
       const result=await supervisor.sendMessage(wait.owner.harness,wait.owner.sessionId,

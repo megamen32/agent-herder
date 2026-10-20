@@ -221,6 +221,8 @@ export interface MessageAdmissionResult {
   pending?: boolean;
   state: "not_found" | "admitted" | "failed" | "unknown";
   error?: string;
+  /** Original durable native receipt, present when a terminal failure is proven. */
+  receipt?: ControlResult;
 }
 
 export interface CreateSessionOptions {

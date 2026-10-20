@@ -1325,20 +1325,95 @@ it("sends a local image through Codex native turn/start", async () => {
  }finally {await adapter.dispose();if(previous===undefined)delete process.env.CODEX_APP_SERVER_LOG;else process.env.CODEX_APP_SERVER_LOG=previous;await rm(codexDir,{recursive:true,force:true});}
 });
 
-it("reads exact native Codex turn status without relying on this process event history", async () => {
+it("reads only the latest Codex turn summary when this process missed its events", async () => {
  const adapter=new CodexAppServerAdapter({codexBin:"/not-started",socketPath:"/tmp/codex-turn-state-fixture.sock"});
- const internals=adapter as unknown as {ensureReady():Promise<void>;request(method:string,params:unknown):Promise<unknown>};
- vi.spyOn(internals,"ensureReady").mockResolvedValue(undefined);
- const request=vi.spyOn(internals,"request").mockResolvedValue({thread:{
-  id:"external-thread",cwd:"/external/worktree",status:{type:"idle",activeFlags:[]},
-  turns:[{id:"older",status:"completed",completedAt:"2026-10-20T09:58:00.000Z"},
-   {id:"external-turn",status:"completed",completedAt:"2026-10-20T09:59:00.000Z"}],
- }});
+ const internals=adapter as unknown as {request(method:string,params:unknown):Promise<unknown>;refreshActiveTurnId(id:string):Promise<void>;toSession(thread:unknown):{meta?:Record<string,unknown>}};
+ const request=vi.spyOn(internals,"request").mockResolvedValue({data:[{id:"external-turn",status:"completed",completedAt:"2026-10-20T09:59:00.000Z",items:[]}]});
  try {
-  await expect(adapter.readNativeTurnState("external-thread","/external/worktree")).resolves.toEqual({
-   busy:false,turnId:"external-turn",completion:{outcome:"turn.completed",at:"2026-10-20T09:59:00.000Z"},
-  });
-  expect(request).toHaveBeenCalledWith("thread/read",{threadId:"external-thread",includeTurns:true});
-  await expect(adapter.readNativeTurnState("external-thread","/wrong/worktree")).resolves.toBeNull();
+  await internals.refreshActiveTurnId("external-thread");
+  const session=internals.toSession({id:"external-thread",cwd:"/external/worktree",status:{type:"idle"}});
+  expect(session.meta?.nativeLastTurn).toEqual({turnId:"external-turn",status:"completed",completedAt:"2026-10-20T09:59:00.000Z"});
+  expect(request).toHaveBeenCalledWith("thread/turns/list",{threadId:"external-thread",limit:1,sortDirection:"desc",itemsView:"notLoaded"});
+  expect(JSON.stringify(request.mock.calls)).not.toContain("itemsView\":\"full");
+ } finally {await adapter.dispose();}
+});
+
+it("marks current Codex turn metadata unavailable instead of retaining a stale turn", async () => {
+ const adapter=new CodexAppServerAdapter({codexBin:"/not-started",socketPath:"/tmp/codex-turn-state-fixture.sock"});
+ const internals=adapter as unknown as {request(method:string,params:unknown):Promise<unknown>;refreshActiveTurnId(id:string):Promise<void>;toSession(thread:unknown):{meta?:Record<string,unknown>}};
+ const request=vi.spyOn(internals,"request");
+ try {
+  request.mockResolvedValueOnce({data:[{id:"old-turn",status:"inProgress",items:[]}]});
+  await internals.refreshActiveTurnId("external-thread");
+  request.mockRejectedValueOnce(new Error("rollout removed"));
+  await internals.refreshActiveTurnId("external-thread");
+  const session=internals.toSession({id:"external-thread",cwd:"/external/worktree",status:{type:"idle"}});
+  expect(session.meta?.nativeTurnStateUnavailable).toBe(true);
+  expect(session.meta?.nativeLastTurn).toBeUndefined();
+ } finally {await adapter.dispose();}
+});
+
+it("drops summary-only terminal metadata after a failed stdio refresh but retains a live started event", async () => {
+ const adapter=new CodexAppServerAdapter({codexBin:"/not-started"});
+ const internals=adapter as unknown as {
+  request(method:string,params:unknown):Promise<unknown>;
+  refreshActiveTurnId(id:string):Promise<void>;
+  toSession(thread:unknown):{meta?:Record<string,unknown>};
+  consumeMessage(message:unknown):void;
+ };
+ const request=vi.spyOn(internals,"request");
+ try {
+  request.mockResolvedValueOnce({data:[{id:"summary-old",status:"completed",completedAt:"2026-10-20T09:59:00.000Z"}]});
+  await internals.refreshActiveTurnId("stdio-thread");
+  request.mockRejectedValueOnce(new Error("native summary unavailable"));
+  await internals.refreshActiveTurnId("stdio-thread");
+  const stale=internals.toSession({id:"stdio-thread",cwd:"/workspace",status:{type:"idle"}});
+  expect(stale.meta?.nativeTurnStateUnavailable).toBe(true);
+  expect(stale.meta?.nativeLastTurn).toBeUndefined();
+
+  internals.consumeMessage({method:"turn/started",params:{threadId:"stdio-thread",turn:{id:"event-current"}}});
+  request.mockRejectedValueOnce(new Error("native summary unavailable"));
+  await internals.refreshActiveTurnId("stdio-thread");
+  const live=internals.toSession({id:"stdio-thread",cwd:"/workspace",status:{type:"idle"}});
+  expect(live.meta?.nativeTurnStateUnavailable).toBeUndefined();
+  expect(live.meta?.activeTurnId).toBe("event-current");
+ } finally {await adapter.dispose();}
+});
+
+it("returns schema-valid lineage errors through the real MCP client", async () => {
+ const session={id:"native-parent",harness:"codex" as const,status:"idle" as const,title:"Parent",cwd:"/workspace",lastActivity:new Date().toISOString(),needsPermission:false};
+ const adapter={type:"codex",name:"Codex fixture",async getSession(){return session;},async getParent(){throw new Error("parent rollout unreadable");},async listChildren(){throw new Error("child rollout unreadable");}} as never;
+ const events=new HerderEventBus();
+ const server=new McpServer({name:"lineage-error-schema",version:"1"});
+ registerSessionTools(server,{adapters:new Map([["codex",adapter]]),events,jobs:new HerderJobRegistry(events)});
+ const [clientTransport,serverTransport]=InMemoryTransport.createLinkedPair();
+ const client=new Client({name:"lineage-error-schema-test",version:"1"},{versionNegotiation:{mode:"auto"}});
+ try {
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const parent=await client.callTool({name:"find_parent",arguments:{harness:"codex",sessionId:"native-parent"}});
+  expect(parent.structuredContent).toMatchObject({supported:false,error:"parent rollout unreadable",parent:null});
+  const children=await client.callTool({name:"list_children",arguments:{harness:"codex",sessionId:"native-parent"}});
+  expect(children.structuredContent).toMatchObject({supported:false,error:"child rollout unreadable",children:[]});
+ } finally {
+  await client.close();
+  await server.close();
+ }
+});
+
+it("recovers a durable proven pre-send refusal as failed while admitted and ambiguous receipts retain precedence", async () => {
+ const adapter=new CodexAppServerAdapter({codexBin:"/not-started"});
+ const internals=adapter as unknown as {deliveryReceipts:{find(id:string,inputId:string):Promise<unknown>}};
+ const find=vi.spyOn(internals.deliveryReceipts,"find");
+ try {
+  const rejected={ok:false,notSubmitted:true,nonRetryable:true,error:"exact admission reason"};
+  find.mockResolvedValueOnce(rejected);
+  await expect(adapter.getMessageAdmission("thread","input")).resolves.toEqual({state:"failed",error:"exact admission reason",receipt:rejected});
+  const accepted={ok:false,admitted:true,notSubmitted:true,nonRetryable:true,error:"accepted wins"};
+  find.mockResolvedValueOnce(accepted);
+  await expect(adapter.getMessageAdmission("thread","accepted")).resolves.toEqual({state:"admitted"});
+  const unknown={ok:false,admissionUnknown:true,notSubmitted:true,nonRetryable:true,error:"ambiguous wins"};
+  find.mockResolvedValueOnce(unknown);
+  await expect(adapter.getMessageAdmission("thread","unknown")).resolves.toEqual({state:"unknown",error:"ambiguous wins"});
  } finally {await adapter.dispose();}
 });

@@ -60,12 +60,6 @@ export interface CodexTrackedTurnCompletion {
   transcriptTail: string;
 }
 
-export interface CodexNativeTurnState {
-  busy: boolean;
-  turnId?: string;
-  completion?: { outcome: "turn.completed" | "turn.failed"; at: string };
-}
-
 function hasCodexFullAccess(state: CodexThreadPermissionState): boolean {
   return state.approvalPolicy === "never" && state.sandbox?.type === "dangerFullAccess";
 }
@@ -155,7 +149,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly threads = new Map<string, CodexThread>();
   private readonly fullAccessThreads = new Set<string>();
   private readonly activeTurns = new Map<string, string>();
-  private readonly lastNativeTurns = new Map<string, { turnId: string; status: string }>();
+  private readonly eventStartedTurns = new Set<string>();
+  private readonly lastNativeTurns = new Map<string, { turnId: string; status: string; completedAt?: string }>();
+  private readonly unavailableNativeTurnStates = new Set<string>();
   private readonly completions = new Map<string, TurnCompletion>();
   private readonly internalInterrupts = new Map<string, { turnId: string; expiresAt: number }>();
   private readonly transportCleanups = new WeakMap<ChildProcessWithoutNullStreams, () => void>();
@@ -229,6 +225,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       this.rejectPending(new Error("Codex app-server disposed"));
       this.failCompletions(new Error("Codex app-server disposed"));
       this.activeTurns.clear();
+      this.eventStartedTurns.clear();
       this.initialized = false;
     }
   }
@@ -390,37 +387,6 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       matches.push(this.toSession(thread));
     }
     return matches;
-  }
-
-  /** Reconcile an already tracked turn after observation loss. This public
-   * read never loads/subscribes a thread and never starts a model request. */
-  async readNativeTurnState(id: string, cwd: string): Promise<CodexNativeTurnState | null> {
-    if (!this.socketPath && !this.isReady()) return null;
-    await this.ensureReady();
-    const result = await this.request("thread/read", { threadId: id, includeTurns: true }) as { thread?: Record<string, unknown> };
-    const thread = result?.thread;
-    if (!thread || thread.id !== id || thread.cwd !== cwd) return null;
-    const status = thread.status as { type?: unknown; activeFlags?: unknown } | undefined;
-    if (!status || (status.activeFlags !== undefined && !Array.isArray(status.activeFlags))) return null;
-    const turns = Array.isArray(thread.turns) ? thread.turns as Array<Record<string, unknown>> : [];
-    const latest = turns.at(-1);
-    if (turns.some(turn => !turn || typeof turn !== "object" || typeof turn.status !== "string")) return null;
-    const active = turns.some(turn => turn.status === "inProgress");
-    const busy = active || !["idle", "notLoaded"].includes(String(status.type))
-      || (Array.isArray(status.activeFlags) && status.activeFlags.length > 0);
-    if (!latest || typeof latest.id !== "string") return { busy };
-    if (latest.status === "inProgress") return { busy: true, turnId: latest.id };
-    if (busy) return { busy, turnId: latest.id };
-    const terminal = new Set(["completed", "failed", "interrupted", "cancelled"]);
-    if (!terminal.has(String(latest.status))) return { busy: false, turnId: latest.id };
-    return {
-      busy: false,
-      turnId: latest.id,
-      completion: {
-        outcome: latest.status === "completed" ? "turn.completed" : "turn.failed",
-        at: threadTimestamp(latest.completedAt as string | number | undefined) || new Date().toISOString(),
-      },
-    };
   }
 
   async readTrackedTurnCompletion(id: string, turnId: string, cwd: string): Promise<CodexTrackedTurnCompletion | null> {
@@ -665,7 +631,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     if (!receipt) return { state: "unknown" };
     if (receipt.ok || receipt.admitted) return { state: "admitted", ...(receipt.turnId ? { error: receipt.turnId } : {}) };
-    if (receipt.nonRetryable || receipt.admissionUnknown) return { state: "unknown", error: receipt.error };
+    if (receipt.admissionUnknown) return { state: "unknown", error: receipt.error };
+    if (receipt.notSubmitted === true && receipt.nonRetryable === true) {
+      return { state: "failed", error: receipt.error, receipt };
+    }
+    if (receipt.nonRetryable) return { state: "unknown", error: receipt.error };
     return { state: "failed", error: receipt.error };
   }
 
@@ -848,17 +818,31 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         limit: 1,
         sortDirection: "desc",
         itemsView: "notLoaded",
-      }) as { data?: Array<{ id?: string; status?: string }> };
-      if (!Array.isArray(result.data)) return; // Unsupported metadata is not evidence of an ended turn.
+      }) as { data?: Array<{ id?: string; status?: string; completedAt?: string | number | null }> };
+      if (!Array.isArray(result.data)) throw new Error("Codex native turn list is unavailable");
+      this.unavailableNativeTurnStates.delete(id);
+      this.eventStartedTurns.delete(id);
       const turn = result.data?.find((candidate) => candidate.status === "inProgress" && typeof candidate.id === "string");
       const latest = result.data?.[0];
       if (typeof latest?.id === "string" && typeof latest.status === "string") {
-        this.lastNativeTurns.set(id, { turnId: latest.id, status: latest.status });
+        this.lastNativeTurns.set(id, {
+          turnId: latest.id,
+          status: latest.status,
+          ...(threadTimestamp(latest.completedAt ?? undefined) ? { completedAt: threadTimestamp(latest.completedAt ?? undefined) } : {}),
+        });
       } else this.lastNativeTurns.delete(id);
       if (turn?.id) this.activeTurns.set(id, turn.id);
       else this.activeTurns.delete(id);
     } catch {
-      // Keep the read-only session view available when turn metadata is unavailable.
+      // Do not let a stale observed turn look like the current native turn.
+      // A failed read invalidates summary-only cache for every transport.
+      // Preserve only a running turn whose start event this live stdio process
+      // observed; terminal summary/event cache cannot rule out a newer turn.
+      if (this.socketPath || !this.eventStartedTurns.has(id)) {
+        this.activeTurns.delete(id);
+        this.lastNativeTurns.delete(id);
+        this.unavailableNativeTurnStates.add(id);
+      }
     }
   }
 
@@ -1194,6 +1178,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private clearTransportState(error: Error, data: Record<string, unknown>, failActiveTurns: boolean): void {
     const interruptedSessions = [...this.activeTurns.entries()];
     this.activeTurns.clear();
+    this.eventStartedTurns.clear();
     this.failCompletions(error);
     this.rejectPending(error);
     // Loss of the control socket is observation loss, not proof of daemon
@@ -1300,6 +1285,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (message.method === "turn/started" && threadId) {
       const turn = params.turn as { id?: string } | undefined;
       if (turn?.id) {
+        this.unavailableNativeTurnStates.delete(threadId);
+        this.eventStartedTurns.add(threadId);
         this.activeTurns.set(threadId, turn.id);
         this.lastNativeTurns.set(threadId, { turnId: turn.id, status: "inProgress" });
         const completion = this.completions.get(threadId);
@@ -1316,9 +1303,17 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       this.emitEvent({ kind: "message.updated", harness: "codex", sessionId: threadId, nativeType: message.method });
     }
     if (message.method === "turn/completed" && threadId) {
+      this.eventStartedTurns.delete(threadId);
       this.activeTurns.delete(threadId);
       const completedTurn = params.turn as { id?: string; status?: string; completedAt?: string | number } | undefined;
-      if (completedTurn?.id && completedTurn.status) this.lastNativeTurns.set(threadId, { turnId: completedTurn.id, status: completedTurn.status });
+      if (completedTurn?.id && completedTurn.status) {
+        this.unavailableNativeTurnStates.delete(threadId);
+        this.lastNativeTurns.set(threadId, {
+          turnId: completedTurn.id,
+          status: completedTurn.status,
+          ...(threadTimestamp(completedTurn.completedAt) ? { completedAt: threadTimestamp(completedTurn.completedAt) } : {}),
+        });
+      }
       const ownInterrupt = this.internalInterrupts.get(threadId);
       const isOwnInterrupt = completedTurn?.status === "interrupted"
         && typeof completedTurn.id === "string"
@@ -1457,6 +1452,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         transport: "codex-app-server",
         activeTurnId: this.activeTurns.get(thread.id),
         ...(this.lastNativeTurns.has(thread.id) ? { nativeLastTurn: this.lastNativeTurns.get(thread.id) } : {}),
+        ...(this.unavailableNativeTurnStates.has(thread.id) ? { nativeTurnStateUnavailable: true } : {}),
         ...(typeof thread.parentThreadId === "string" && thread.parentThreadId !== thread.id ? { parentThreadId: thread.parentThreadId } : {}),
         modelProvider: thread.modelProvider,
       },

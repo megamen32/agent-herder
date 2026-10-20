@@ -318,6 +318,10 @@ export class CodexAdapter implements HarnessAdapter {
         db.exec("pragma busy_timeout=100");
         const columns = new Set((db.prepare("pragma table_info(thread_spawn_edges)").all() as Array<{ name?: string }>).map(row => row.name));
         if (columns.has("child_thread_id") && columns.has("parent_thread_id")) {
+          const threadColumns = new Set((db.prepare("pragma table_info(threads)").all() as Array<{ name?: string }>).map(row => row.name));
+          const indexedTarget = threadColumns.has("id")
+            && Boolean(db.prepare("select 1 as found from threads where id = ? limit 1").get(id));
+          if (indexedTarget) {
           const parent = db.prepare("select parent_thread_id from thread_spawn_edges where child_thread_id = ? limit 1")
             .get(id) as { parent_thread_id?: unknown } | undefined;
           const children = db.prepare("select child_thread_id from thread_spawn_edges where parent_thread_id = ?")
@@ -328,7 +332,6 @@ export class CodexAdapter implements HarnessAdapter {
           const childThreadIds = new Set(children
             .map(row => row.child_thread_id)
             .filter((childId): childId is string => typeof childId === "string" && childId !== id && childId.length <= 512 && !/[\x00-\x1f\x7f]/.test(childId)));
-          const threadColumns = new Set((db.prepare("pragma table_info(threads)").all() as Array<{ name?: string }>).map(row => row.name));
           if (threadColumns.has("id") && threadColumns.has("rollout_path")) {
             if (!parentThreadId) {
               const own = db.prepare("select rollout_path from threads where id = ? limit 1").get(id) as { rollout_path?: unknown } | undefined;
@@ -367,6 +370,7 @@ export class CodexAdapter implements HarnessAdapter {
             }
           }
           return { available: true, ...(parentThreadId ? { parentThreadId } : {}), childThreadIds: [...childThreadIds].sort() };
+          }
         }
       } catch {
         // Older or unavailable state databases fall through to exact native headers.
@@ -375,7 +379,9 @@ export class CodexAdapter implements HarnessAdapter {
       }
     }
     const states = await this.getSessionStates();
-    const parentThreadId = states.get(id)?.parentThreadId;
+    const target = states.get(id);
+    if (!target) return { available: false, childThreadIds: [] };
+    const parentThreadId = target.parentThreadId;
     const childThreadIds = [...states.entries()]
       .filter(([, state]) => state.parentThreadId === id)
       .map(([childId]) => childId)
