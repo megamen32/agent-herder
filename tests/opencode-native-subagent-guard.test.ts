@@ -37,7 +37,7 @@ function installRouteProof(options: {
 function makeContext(options: {
   sessions?: Record<string, unknown>;
   agents?: Record<string, unknown>;
-  models?: Array<{ providerID: string; id: string }>;
+  models?: Array<{ providerID: string; id: string; modelID?: string }>;
 } = {}) {
   let permissionHook: ((event: any) => Promise<void> | void) | undefined;
   let modelHook: ((event: any) => Promise<void> | void) | undefined;
@@ -151,6 +151,26 @@ describe("OpenCode V2 restricted native child admission", () => {
     })).resolves.toBeUndefined();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(process.env.OMNIROUTE_API_KEY).toBe("");
+    await cleanup();
+  });
+
+  it("asks the route proof about the provider-facing model id of the catalog entry", async () => {
+    installRouteProof({
+      nativeModelId: "omniroute/minimax-combo-m3",
+      leaves: [
+        { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3" },
+        { providerId: "minimax", modelId: "minimax/MiniMax-M3" },
+      ],
+    });
+    const context = makeContext({
+      models: [{ providerID: "omniroute", id: "minimax/MiniMax-M3", modelID: "minimax-combo-m3" }],
+    });
+    const cleanup = await setup(context);
+    await expect(context.modelHook({
+      sessionID: "root", model: { providerID: "omniroute", id: "minimax/MiniMax-M3" },
+    })).resolves.toBeUndefined();
+    const [input] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(new URL(String(input)).searchParams.get("modelId")).toBe("omniroute/minimax-combo-m3");
     await cleanup();
   });
 

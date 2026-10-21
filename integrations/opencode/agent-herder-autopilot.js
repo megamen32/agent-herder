@@ -141,10 +141,16 @@ async function resolveNativeModelLeaves(ctx, value) {
   const model = nativeModelRef(value)
   if (!model || typeof ctx.model?.list !== "function") return undefined
   const available = responseData(await ctx.model.list())
-  if (!Array.isArray(available) || !available.some(entry => entry?.providerID === model.providerID && entry?.id === model.id)) return undefined
+  if (!Array.isArray(available)) return undefined
+  const entry = available.find(item => item?.providerID === model.providerID && item?.id === model.id)
+  if (!entry) return undefined
   if (model.providerID !== "omniroute") return [{ providerId: model.providerID, modelId: model.id }]
   if (typeof fetch !== "function") return undefined
-  const nativeModelId = `${model.providerID}/${model.id}`
+  // The catalog id is the OpenCode-side name of the model. The route proof is
+  // about the provider-facing model id that the gateway receives upstream, and
+  // that is the id the gateway catalog and its mappings are keyed by.
+  const modelID = typeof entry.modelID === "string" && entry.modelID.trim() ? entry.modelID.trim() : model.id
+  const nativeModelId = `${model.providerID}/${modelID}`
   let url
   try {
     const endpoint = process.env.AGENT_HERDER_URL || coordinationEndpoint
