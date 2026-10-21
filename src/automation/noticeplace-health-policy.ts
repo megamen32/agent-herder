@@ -12,6 +12,7 @@ import { isHealthPlanId, type HealthPlanId } from "../autopilot/notice-incident.
  */
 export const NOTICEPLACE_HEALTH_MODELS: readonly string[] = [
   "omniroute/minimax-combo-m3.1",
+  "omniroute/glm-5.3-flash-minimax-m3.1",
 ];
 
 /** True only for an approved Notice Place health model. */
