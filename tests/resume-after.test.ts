@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ResumeAfterService, type ResumeAfterOptions } from "../src/resume-after.js";
@@ -9,6 +9,7 @@ const owner = { harness: "codex", sessionId: "parent" };
 const a = { harness: "codex", sessionId: "a" };
 const b = { harness: "opencode", sessionId: "b" };
 async function fixture(overrides: Partial<ResumeAfterOptions> = {}) {
+  await mkdir(join(process.cwd(), ".tmp"), {recursive:true});
   const directory = await mkdtemp(join(process.cwd(), ".tmp/resume-after-")); dirs.push(directory);
   const deliver = vi.fn(async () => ({status:"accepted" as const}));
   const service = new ResumeAfterService({directory, deliver, isHeld:async()=>false, isBusy:async()=>false, ...overrides});
@@ -56,6 +57,58 @@ describe("resume after exact sessions", () => {
     const wait=await f.service.register({owner,dependencies:[a]});
     await done(f.service); await f.service.sweep();
     expect((await f.service.get(wait.id))?.state).toBe("delivery_unknown");
+  });
+  it("holds only waiting records captured at startup while new waits still resume once", async () => {
+    await mkdir(join(process.cwd(), ".tmp"), {recursive:true});
+    const directory = await mkdtemp(join(process.cwd(), ".tmp/resume-after-hold-")); dirs.push(directory);
+    const deliver = vi.fn(async () => ({status:"accepted" as const}));
+    let originalOwnerBusy = true;
+    const original = new ResumeAfterService({directory, deliver, isHeld:async()=>false,
+      isBusy:async ref=>ref.sessionId==="parent"?originalOwnerBusy:false});
+    const legacy = await original.register({owner,dependencies:[a],message:"legacy task",requestId:"legacy"});
+    await done(original,a);
+    const legacyBytes = JSON.stringify(await original.get(legacy.id));
+    originalOwnerBusy = false;
+    const resumed = new ResumeAfterService({directory, deliver, isHeld:async()=>false, isBusy:async()=>false,
+      holdExistingWaitingAtStartup:true});
+    expect(await resumed.captureStartupHold()).toBe(1);
+    await resumed.sweep();
+    expect(JSON.stringify(await resumed.get(legacy.id))).toBe(legacyBytes);
+    expect(deliver).not.toHaveBeenCalled();
+    for (const event of [
+      {kind:"turn.started",turnId:"new-turn"},
+      {kind:"turn.completed",turnId:"new-turn"},
+      {kind:"session.deleted",turnId:"new-turn"},
+    ]) {
+      await resumed.observe({harness:a.harness,sessionId:a.sessionId,kind:event.kind,at:new Date().toISOString(),data:{turnId:event.turnId}});
+      expect(JSON.stringify(await resumed.get(legacy.id))).toBe(legacyBytes);
+    }
+    expect(deliver).not.toHaveBeenCalled();
+
+    const fresh = await resumed.register({owner:{harness:"codex",sessionId:"new-owner"},dependencies:[b],message:"fresh task",requestId:"fresh"});
+    await resumed.observe({harness:b.harness,sessionId:b.sessionId,kind:"turn.completed",at:new Date().toISOString(),data:{turnId:"fresh-turn"}});
+    await resumed.sweep();
+    expect(deliver).toHaveBeenCalledTimes(1);
+    expect((await resumed.get(fresh.id))?.state).toBe("resumed");
+    expect((await resumed.get(legacy.id))?.state).toBe("waiting");
+  });
+  it("still honors HumanStop for an explicitly held legacy wait", async () => {
+    await mkdir(join(process.cwd(), ".tmp"), {recursive:true});
+    const directory = await mkdtemp(join(process.cwd(), ".tmp/resume-after-hold-stop-")); dirs.push(directory);
+    let held = false;
+    const deliver = vi.fn(async () => ({status:"accepted" as const}));
+    let originalOwnerBusy = true;
+    const original = new ResumeAfterService({directory, deliver, isHeld:async()=>false,
+      isBusy:async ref=>ref.sessionId==="parent"?originalOwnerBusy:false});
+    const legacy = await original.register({owner,dependencies:[a],requestId:"legacy-stop"});
+    await done(original,a);
+    const resumed = new ResumeAfterService({directory, deliver, isHeld:async()=>held, isBusy:async()=>false,
+      holdExistingWaitingAtStartup:true});
+    expect(await resumed.captureStartupHold()).toBe(1);
+    held = true;
+    await resumed.observe({harness:owner.harness,sessionId:owner.sessionId,kind:"turn.completed",at:new Date().toISOString(),data:{automationStop:true,turnId:"owner-turn"}});
+    expect((await resumed.get(legacy.id))?.state).toBe("cancelled");
+    expect(deliver).not.toHaveBeenCalled();
   });
   it("rejects self-dependencies, conflicting retry ids and cycles", async () => {
     const {service}=await fixture();

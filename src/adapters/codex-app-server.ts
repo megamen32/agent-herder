@@ -64,6 +64,7 @@ class CodexRpcError extends Error {
 
 interface CodexThread {
   id: string;
+  parentThreadId?: string;
   cwd?: string;
   path?: string;
   name?: string;
@@ -237,7 +238,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly fullAccessThreads = new Set<string>();
   private readonly projectThreadIds = new Set<string>();
   private readonly activeTurns = new Map<string, string>();
-  private readonly lastNativeTurns = new Map<string, { turnId: string; status: string }>();
+  private readonly eventStartedTurns = new Set<string>();
+  private readonly lastNativeTurns = new Map<string, { turnId: string; status: string; completedAt?: string }>();
+  private readonly unavailableNativeTurnStates = new Set<string>();
   private readonly completions = new Map<string, TurnCompletion>();
   private readonly internalInterrupts = new Map<string, { turnId: string; expiresAt: number }>();
   private readonly transportCleanups = new WeakMap<ChildProcessWithoutNullStreams, () => void>();
@@ -453,6 +456,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       this.rejectPending(new Error("Codex app-server disposed"));
       this.failCompletions(new Error("Codex app-server disposed"));
       this.activeTurns.clear();
+      this.eventStartedTurns.clear();
+      this.initialized = false;
     }
     await pendingInitialization?.catch(() => undefined);
   }
@@ -548,14 +553,19 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         if (indexedMetadata?.available === false) session.meta = { ...session.meta, nativeIndexMetadata: "unavailable" };
         const nativeMeta = nativeMetadata.get(thread.id);
         if (!nativeMeta) return session;
-        const { status: nativeStatus, ...nativeMetadataFields } = nativeMeta;
+        const { status: nativeStatus, parentThreadId: indexedParentThreadId, ...nativeMetadataFields } = nativeMeta;
         const automation = this.externalAutomationMetadata(thread.id, nativeMeta);
         delete nativeMetadataFields.automationStop;
         if (automation.automationStop) nativeMetadataFields.automationStop = automation.automationStop;
         return {
           ...session,
           status: !this.socketPath && nativeStatus === "running" ? "running" : session.status,
-          meta: { ...session.meta, ...nativeMetadataFields, ...(!this.socketPath && nativeStatus ? { status: nativeStatus } : {}) },
+          meta: {
+            ...session.meta,
+            ...nativeMetadataFields,
+            ...(!thread.parentThreadId && indexedParentThreadId ? { parentThreadId: indexedParentThreadId } : {}),
+            ...(!this.socketPath && nativeStatus ? { status: nativeStatus } : {}),
+          },
         };
       });
       this.sessionSnapshotReceipt = {
@@ -649,8 +659,6 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     return matches;
   }
 
-  /** Reconcile an already tracked turn after observation loss. This public
-   * read never loads/subscribes a thread and never starts a model request. */
   async readTrackedTurnCompletion(id: string, turnId: string, cwd: string): Promise<CodexTrackedTurnCompletion | null> {
     if (!(await this.canReadProjectHistory(id))) return null;
     if (!this.socketPath && !this.isReady()) return null;
@@ -756,15 +764,79 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     const rawMeta = { ...raw.meta };
     if (this.socketPath) delete rawMeta.status;
     delete rawMeta.automationStop;
+    const mergedMeta = { ...base.meta, ...rawMeta };
+    if (typeof base.meta?.parentThreadId === "string") mergedMeta.parentThreadId = base.meta.parentThreadId;
     const session: AgentSession = {
       ...base,
       messageCount: raw.messageCount,
       durationSec: raw.durationSec,
       costUsd: raw.costUsd,
       lastMessage: raw.lastMessage || base.lastMessage,
-      meta: mergeAutomationMetadata({ ...base.meta, ...rawMeta }, nativeAutomation),
+      meta: mergeAutomationMetadata(mergedMeta, nativeAutomation),
     };
     return withKnownModel(session, typeof base.model === "string" ? base.model : raw.model);
+  }
+
+  async getParent(id: string): Promise<AgentSession | null> {
+    const child = await this.getSession(id);
+    if (!child) throw new Error("Codex session became unavailable during native parent lookup");
+    const metadataParent = typeof child.meta?.parentThreadId === "string" ? child.meta.parentThreadId : undefined;
+    const lineage = metadataParent ? undefined : await this.rawTranscriptAdapter.getNativeLineageForId(id);
+    if (!metadataParent && lineage?.available === false) throw new Error("Codex native parent lineage is unavailable from the app-server and session index");
+    const parentId = metadataParent ?? lineage?.parentThreadId;
+    if (!parentId || parentId === id) return null;
+    const parent = await this.getSession(parentId);
+    if (!parent) throw new Error(`Codex native parent session ${parentId} could not be read`);
+    return parent;
+  }
+
+  async listChildren(id: string): Promise<AgentSession[]> {
+    if (!await this.getSession(id)) throw new Error("Codex parent session became unavailable during native child lookup");
+    let nativeChildren: CodexThread[] | undefined;
+    try {
+      // Query by exact native parent ID. Separate archived and active pages:
+      // Codex's default archived:null view omits archived descendants.
+      await this.ensureReady();
+      const found = new Map<string, CodexThread>();
+      for (const archived of [false, true]) {
+        const seenCursors = new Set<string>();
+        let cursor: string | undefined;
+        do {
+          const page = await this.request("thread/list", {
+            limit: 200,
+            parentThreadId: id,
+            archived,
+            ...(cursor ? { cursor } : {}),
+          }) as { data?: CodexThread[]; nextCursor?: string | null };
+          for (const thread of page.data || []) {
+            if (typeof thread.id === "string" && thread.id !== id && thread.parentThreadId === id) found.set(thread.id, thread);
+          }
+          const nextCursor = typeof page.nextCursor === "string" && page.nextCursor.length ? page.nextCursor : undefined;
+          if (nextCursor && seenCursors.has(nextCursor)) throw new Error("Codex parent-filtered thread/list returned a repeated pagination cursor");
+          if (nextCursor) seenCursors.add(nextCursor);
+          cursor = nextCursor;
+        } while (cursor);
+      }
+      nativeChildren = [...found.values()];
+    } catch {
+      // Older app-server versions may not accept a parent-filtered query.
+    }
+    let childIds: string[];
+    if (nativeChildren !== undefined) {
+      childIds = nativeChildren.map(thread => thread.id);
+    } else {
+      const lineage = await this.rawTranscriptAdapter.getNativeLineageForId(id, { includeHeaderChildren: true });
+      if (!lineage.available) throw new Error("Codex native child lineage is unavailable from the app-server and session index");
+      childIds = lineage.childThreadIds;
+    }
+    const children = await Promise.all(childIds.map(async childId => {
+      const child = await this.getSession(childId);
+      if (!child) throw new Error(`Codex native child session ${childId} could not be read`);
+      const metadataParent = typeof child.meta?.parentThreadId === "string" ? child.meta.parentThreadId : undefined;
+      if (metadataParent && metadataParent !== id) throw new Error(`Codex child ${childId} has conflicting native parent ${metadataParent}`);
+      return metadataParent ? child : { ...child, meta: { ...child.meta, parentThreadId: id } };
+    }));
+    return children.filter((child): child is AgentSession => child !== null);
   }
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
@@ -1145,7 +1217,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     if (!receipt) return { state: "unknown" };
     if (receipt.ok || receipt.admitted) return { state: "admitted", ...(receipt.turnId ? { error: receipt.turnId } : {}) };
-    if (receipt.nonRetryable || receipt.admissionUnknown) return { state: "unknown", error: receipt.error };
+    if (receipt.admissionUnknown) return { state: "unknown", error: receipt.error };
+    if (receipt.notSubmitted === true && receipt.nonRetryable === true) {
+      return { state: "failed", error: receipt.error, receipt };
+    }
+    if (receipt.nonRetryable) return { state: "unknown", error: receipt.error };
     return { state: "failed", error: receipt.error };
   }
 
@@ -1358,17 +1434,31 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         limit: 1,
         sortDirection: "desc",
         itemsView: "notLoaded",
-      }) as { data?: Array<{ id?: string; status?: string }> };
-      if (!Array.isArray(result.data)) return; // Unsupported metadata is not evidence of an ended turn.
+      }) as { data?: Array<{ id?: string; status?: string; completedAt?: string | number | null }> };
+      if (!Array.isArray(result.data)) throw new Error("Codex native turn list is unavailable");
+      this.unavailableNativeTurnStates.delete(id);
+      this.eventStartedTurns.delete(id);
       const turn = result.data?.find((candidate) => candidate.status === "inProgress" && typeof candidate.id === "string");
       const latest = result.data?.[0];
       if (typeof latest?.id === "string" && typeof latest.status === "string") {
-        this.lastNativeTurns.set(id, { turnId: latest.id, status: latest.status });
+        this.lastNativeTurns.set(id, {
+          turnId: latest.id,
+          status: latest.status,
+          ...(threadTimestamp(latest.completedAt ?? undefined) ? { completedAt: threadTimestamp(latest.completedAt ?? undefined) } : {}),
+        });
       } else this.lastNativeTurns.delete(id);
       if (turn?.id) this.activeTurns.set(id, turn.id);
       else this.activeTurns.delete(id);
     } catch {
-      // Keep the read-only session view available when turn metadata is unavailable.
+      // Do not let a stale observed turn look like the current native turn.
+      // A failed read invalidates summary-only cache for every transport.
+      // Preserve only a running turn whose start event this live stdio process
+      // observed; terminal summary/event cache cannot rule out a newer turn.
+      if (this.socketPath || !this.eventStartedTurns.has(id)) {
+        this.activeTurns.delete(id);
+        this.lastNativeTurns.delete(id);
+        this.unavailableNativeTurnStates.add(id);
+      }
     }
   }
 
@@ -2017,6 +2107,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private clearTransportState(error: Error, data: Record<string, unknown>, failActiveTurns: boolean): void {
     const interruptedSessions = [...this.activeTurns.entries()];
     this.activeTurns.clear();
+    this.eventStartedTurns.clear();
     this.failCompletions(error);
     this.rejectPending(error);
     // Loss of the control socket is observation loss, not proof of daemon
@@ -2125,6 +2216,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (message.method === "turn/started" && threadId) {
       const turn = params.turn as { id?: string } | undefined;
       if (turn?.id) {
+        this.unavailableNativeTurnStates.delete(threadId);
+        this.eventStartedTurns.add(threadId);
         this.activeTurns.set(threadId, turn.id);
         this.lastNativeTurns.set(threadId, { turnId: turn.id, status: "inProgress" });
         const completion = this.completions.get(threadId);
@@ -2158,9 +2251,17 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       }
     }
     if (message.method === "turn/completed" && threadId) {
+      this.eventStartedTurns.delete(threadId);
       this.activeTurns.delete(threadId);
       const completedTurn = params.turn as { id?: string; status?: string; completedAt?: string | number } | undefined;
-      if (completedTurn?.id && completedTurn.status) this.lastNativeTurns.set(threadId, { turnId: completedTurn.id, status: completedTurn.status });
+      if (completedTurn?.id && completedTurn.status) {
+        this.unavailableNativeTurnStates.delete(threadId);
+        this.lastNativeTurns.set(threadId, {
+          turnId: completedTurn.id,
+          status: completedTurn.status,
+          ...(threadTimestamp(completedTurn.completedAt) ? { completedAt: threadTimestamp(completedTurn.completedAt) } : {}),
+        });
+      }
       const ownInterrupt = this.internalInterrupts.get(threadId);
       const isOwnInterrupt = completedTurn?.status === "interrupted"
         && typeof completedTurn.id === "string"
@@ -2299,6 +2400,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         transport: "codex-app-server",
         activeTurnId: this.activeTurns.get(thread.id),
         ...(this.lastNativeTurns.has(thread.id) ? { nativeLastTurn: this.lastNativeTurns.get(thread.id) } : {}),
+        ...(this.unavailableNativeTurnStates.has(thread.id) ? { nativeTurnStateUnavailable: true } : {}),
+        ...(typeof thread.parentThreadId === "string" && thread.parentThreadId !== thread.id ? { parentThreadId: thread.parentThreadId } : {}),
         modelProvider: thread.modelProvider,
       },
     };

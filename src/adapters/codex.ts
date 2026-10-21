@@ -28,6 +28,12 @@ export interface CodexNativeAutomationMetadata {
   automationStop?: CodexAutomationStop;
 }
 
+export interface CodexNativeLineage {
+  available: boolean;
+  parentThreadId?: string;
+  childThreadIds: string[];
+}
+
 interface CodexSessionState {
   title?: string;
   cwd?: string;
@@ -296,6 +302,98 @@ export class CodexAdapter implements HarnessAdapter {
       // No stale cache/global scan substitutes for an unreadable index.
       return { available: false, metadata: new Map() };
     } finally { db?.close(); }
+  }
+
+  /** Read exact Codex lineage edges, falling back only to native session headers. */
+  async getNativeLineageForId(id: string, options: { includeHeaderChildren?: boolean } = {}): Promise<CodexNativeLineage> {
+    if (typeof id !== "string" || !id || id.length > 512 || /[\x00-\x1f\x7f]/.test(id)) {
+      throw new Error("Invalid native Codex thread ID");
+    }
+    const databasePath = join(this.codexDir, "state_5.sqlite");
+    if (existsSync(databasePath)) {
+      let db: import("node:sqlite").DatabaseSync | undefined;
+      try {
+        const { DatabaseSync } = await import("node:sqlite");
+        db = new DatabaseSync(databasePath, { readOnly: true });
+        db.exec("pragma busy_timeout=100");
+        const columns = new Set((db.prepare("pragma table_info(thread_spawn_edges)").all() as Array<{ name?: string }>).map(row => row.name));
+        if (columns.has("child_thread_id") && columns.has("parent_thread_id")) {
+          const threadColumns = new Set((db.prepare("pragma table_info(threads)").all() as Array<{ name?: string }>).map(row => row.name));
+          const indexedTarget = threadColumns.has("id")
+            && Boolean(db.prepare("select 1 as found from threads where id = ? limit 1").get(id));
+          if (indexedTarget) {
+          const parent = db.prepare("select parent_thread_id from thread_spawn_edges where child_thread_id = ? limit 1")
+            .get(id) as { parent_thread_id?: unknown } | undefined;
+          const children = db.prepare("select child_thread_id from thread_spawn_edges where parent_thread_id = ?")
+            .all(id) as Array<{ child_thread_id?: unknown }>;
+          let parentThreadId = typeof parent?.parent_thread_id === "string" && parent.parent_thread_id !== id
+            ? parent.parent_thread_id
+            : undefined;
+          const childThreadIds = new Set(children
+            .map(row => row.child_thread_id)
+            .filter((childId): childId is string => typeof childId === "string" && childId !== id && childId.length <= 512 && !/[\x00-\x1f\x7f]/.test(childId)));
+          if (threadColumns.has("id") && threadColumns.has("rollout_path")) {
+            if (!parentThreadId) {
+              const own = db.prepare("select rollout_path from threads where id = ? limit 1").get(id) as { rollout_path?: unknown } | undefined;
+              if (typeof own?.rollout_path !== "string" || !own.rollout_path || !existsSync(own.rollout_path))
+                return { available: false, childThreadIds: [] };
+              const header = await this.readSessionHeader(own.rollout_path).catch(() => "");
+              if (!header || this.getHeaderSessionId(header) !== id) return { available: false, childThreadIds: [] };
+              const headerParent = this.extractLineage(header).parentThreadId;
+              if (headerParent === id) return { available: false, childThreadIds: [] };
+              if (headerParent) parentThreadId = headerParent;
+            }
+            // Some native indexes contain the thread but not its spawn edge.
+            // Inspect only rows explicitly indexed as subagents (or all
+            // unlinked rows when that index column is absent), and trust the
+            // relation only when the exact native session header confirms it.
+            // Header-only children need an explicit native subagent index. Do
+            // not turn an older schema without that discriminator into a scan
+            // of every rollout file. The app-server RPC remains the complete
+            // source on current Codex versions; this is a bounded legacy join.
+            if (options.includeHeaderChildren && threadColumns.has("thread_source")) {
+              const orderByRecent = threadColumns.has("updated_at_ms") ? "order by t.updated_at_ms desc" : "";
+              const candidates = db.prepare(`
+                select t.id, t.rollout_path from threads t
+                left join thread_spawn_edges e on e.child_thread_id = t.id
+                where t.thread_source = 'subagent' and e.child_thread_id is null
+                  and t.id <> ? and t.rollout_path is not null
+                ${orderByRecent} limit 257
+              `).all(id) as Array<{ id?: unknown; rollout_path?: unknown }>;
+              // A full candidate page is not proof that the omitted tail is
+              // unrelated. Refuse an incomplete fallback instead of claiming
+              // a complete, empty descendant list.
+              if (candidates.length > 256) return { available: false, childThreadIds: [] };
+              for (const candidate of candidates) {
+                if (typeof candidate.id !== "string" || candidate.id === id || typeof candidate.rollout_path !== "string" || !candidate.rollout_path || !existsSync(candidate.rollout_path)) {
+                  return { available: false, childThreadIds: [] };
+                }
+                const header = await this.readSessionHeader(candidate.rollout_path).catch(() => "");
+                if (!header || this.getHeaderSessionId(header) !== candidate.id) return { available: false, childThreadIds: [] };
+                const headerParent = this.extractLineage(header).parentThreadId;
+                if (headerParent === id) childThreadIds.add(candidate.id);
+              }
+            }
+          }
+          return { available: true, ...(parentThreadId ? { parentThreadId } : {}), childThreadIds: [...childThreadIds].sort() };
+          }
+        }
+      } catch {
+        // Older or unavailable state databases fall through to exact native headers.
+      } finally {
+        db?.close();
+      }
+    }
+    const states = await this.getSessionStates();
+    const target = states.get(id);
+    if (!target) return { available: false, childThreadIds: [] };
+    const parentThreadId = target.parentThreadId;
+    const childThreadIds = [...states.entries()]
+      .filter(([, state]) => state.parentThreadId === id)
+      .map(([childId]) => childId)
+      .filter(childId => childId !== id)
+      .sort();
+    return { available: true, ...(parentThreadId && parentThreadId !== id ? { parentThreadId } : {}), childThreadIds };
   }
 
   /** A bounded candidate page for allocated threads omitted by persistent
