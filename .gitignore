@@ -29,3 +29,10 @@ trash/
 
 # Finder view metadata; preserve locally without treating it as source work
 .DS_Store
+
+# Build, report, and snapshot artifacts that are not source work
+dist.pre-release-*/
+.vitest-reports/
+.agents/shared-session/learning/
+*.bak-*
+*.bak.mavis-*
