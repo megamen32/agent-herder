@@ -1096,6 +1096,8 @@ describe("terminal quota recovery", () => {
       });
       expect(result).toMatchObject({ outcome: "enrolled" });
       expect((await settings.getEffective("opencode", session.id, session.cwd)).waitForQuota).toBe(false);
+      await launcher.reconcileQuotaRecoverySettings();
+      expect((await store.list())[0]?.quotaRecovery).toMatchObject({ state: "waiting", evidence: { classification: "operator_continuation" } });
       await launcher.recoverPending();
       expect(sent).toHaveLength(1);
       expect(sent[0]?.model).toBe(session.model);

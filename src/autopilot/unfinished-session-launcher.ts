@@ -2818,7 +2818,8 @@ export class UnfinishedSessionLauncher {
       if (!record.quotaRecovery || record.quotaRecovery.state !== "waiting") continue;
       const effective = await this.options.settingsStore.getEffective(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
       const operatorIntent = isOperatorRecoveryEvidence(record.quotaRecovery.evidence);
-      if ((!operatorIntent && !effective.enabled) || !effective.waitForQuota || (!operatorIntent && !runtime.recoverOnFailure)) {
+      const oneShotOperatorContinuation = record.quotaRecovery.evidence.classification === "operator_continuation";
+      if (!oneShotOperatorContinuation && ((!operatorIntent && !effective.enabled) || !effective.waitForQuota || (!operatorIntent && !runtime.recoverOnFailure))) {
         await this.options.store.clearWaitingQuotaRecovery(record);
       }
     }
