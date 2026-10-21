@@ -83,6 +83,42 @@ describe("session autostart settings HTTP", () => {
     await expect((await fetch(zcodeHarness, { method: "DELETE" })).json()).resolves.toMatchObject({ enabled: false, source: "global" });
   });
 
+  it("serves only the exact read-only OpenCode OmniRoute leaf proof from the process-owned adapter", async () => {
+    const resolver = {
+      async resolveModelProviderLeaves(nativeModelId: string) {
+        return {
+          nativeHarness: "opencode",
+          nativeModelId,
+          resolvedProviderLeaves: [
+            { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
+            { providerId: "minimax", modelId: "minimax/MiniMax-M3.1-Flash" },
+          ],
+        };
+      },
+    };
+    const server = createWebServer({
+      adapters: new Map([["opencode", resolver as never]]),
+      converter: { async convert() { throw new Error("unused"); } },
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const url = `http://127.0.0.1:${address.port}/api/native-model-route-proof?modelId=${encodeURIComponent("omniroute/minimax-combo-m3.1")}`;
+    const response = await fetch(url);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      nativeHarness: "opencode",
+      nativeModelId: "omniroute/minimax-combo-m3.1",
+      resolvedProviderLeaves: [
+        { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
+        { providerId: "minimax", modelId: "minimax/MiniMax-M3.1-Flash" },
+      ],
+    });
+    const invalid = await fetch(`http://127.0.0.1:${address.port}/api/native-model-route-proof?modelId=${encodeURIComponent("openai-codex/codex-mini")}`);
+    expect(invalid.status).toBe(400);
+  });
+
   it("exposes inherited waitForQuota settings independently and serves exact-session wait state", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-quota-http-"));
     directories.push(root);

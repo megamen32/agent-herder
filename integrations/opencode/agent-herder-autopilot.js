@@ -134,69 +134,8 @@ function hasRestrictedProviderLeaf(leaves) {
   return leaves.some(leaf => restrictedModelToken.test(`${leaf.providerId}/${leaf.modelId}`))
 }
 
-function omniRouteUrls(baseValue) {
-  try {
-    const url = new URL(baseValue)
-    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined
-    const path = url.pathname.replace(/\/+$/u, "").replace(/\/v1$/u, "")
-    const base = `${url.origin}${path}`.replace(/\/+$/u, "")
-    return { api: `${base}/api`, models: `${base}/v1/models` }
-  } catch { return undefined }
-}
-
-function parseNativeGatewayModels(value) {
-  const body = value
-  if (!plainObject(body) || !Array.isArray(body.data)) return undefined
-  const entries = []
-  const seen = new Set()
-  for (const raw of body.data) {
-    if (!plainObject(raw) || typeof raw.id !== "string" || !raw.id
-      || typeof raw.owned_by !== "string" || !raw.owned_by || seen.has(raw.id)) return undefined
-    seen.add(raw.id)
-    const root = typeof raw.root === "string" && raw.root ? raw.root : undefined
-    const parent = raw.parent === null || typeof raw.parent === "string" ? raw.parent : undefined
-    if (raw.parent !== undefined && parent === undefined) return undefined
-    entries.push({ id: raw.id, owner: raw.owned_by, ...(root ? { root } : {}), ...(parent !== undefined ? { parent } : {}) })
-  }
-  return entries
-}
-
-function parseNativeCombos(value) {
-  const body = responseData(value)
-  if (!plainObject(body) || !Array.isArray(body.combos) || body.total !== body.combos.length) return undefined
-  const rows = []
-  const ids = new Set()
-  const names = new Set()
-  for (const raw of body.combos) {
-    if (!plainObject(raw) || typeof raw.id !== "string" || !raw.id || ids.has(raw.id)
-      || typeof raw.name !== "string" || !raw.name || names.has(raw.name) || !Array.isArray(raw.models)) return undefined
-    ids.add(raw.id); names.add(raw.name)
-    const models = []
-    for (const member of raw.models) {
-      if (!plainObject(member) || typeof member.providerId !== "string" || !member.providerId
-        || typeof member.model !== "string" || !member.model) return undefined
-      models.push({ providerId: member.providerId, model: member.model })
-    }
-    rows.push({ id: raw.id, name: raw.name, models })
-  }
-  return rows
-}
-
-function parseNativeAliases(value) {
-  const body = responseData(value)
-  if (!plainObject(body) || !plainObject(body.aliases)) return undefined
-  const rows = []
-  for (const [alias, target] of Object.entries(body.aliases)) {
-    if (!alias.trim() || typeof target !== "string" || !target.trim()) return undefined
-    rows.push([alias, target])
-  }
-  return rows
-}
-
-function nativeAliasesIntersect(aliases, modelIds) {
-  const selected = new Set(modelIds)
-  return aliases.some(([alias, target]) => selected.has(alias) || selected.has(target))
-}
+const PLUGIN_BUILD_ID = "native-route-proof-v1"
+const HERDER_ROUTE_PROOF_URL = "http://127.0.0.1:18787/api/native-model-route-proof"
 
 async function resolveNativeModelLeaves(ctx, value) {
   const model = nativeModelRef(value)
@@ -204,95 +143,32 @@ async function resolveNativeModelLeaves(ctx, value) {
   const available = responseData(await ctx.model.list())
   if (!Array.isArray(available) || !available.some(entry => entry?.providerID === model.providerID && entry?.id === model.id)) return undefined
   if (model.providerID !== "omniroute") return [{ providerId: model.providerID, modelId: model.id }]
-
-  const apiKey = process.env.OMNIROUTE_API_KEY
-  const urls = omniRouteUrls(process.env.AGENT_HERDER_OMNIROUTE_BASE_URL || "http://127.0.0.1:20128")
-  if (!apiKey || !urls || typeof fetch !== "function") return undefined
-  const request = async url => {
+  if (typeof fetch !== "function") return undefined
+  const nativeModelId = `${model.providerID}/${model.id}`
+  const url = `${HERDER_ROUTE_PROOF_URL}?modelId=${encodeURIComponent(nativeModelId)}`
+  try {
     const response = await fetch(url, {
       method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
       cache: "no-store",
       redirect: "error",
       signal: AbortSignal.timeout(5_000),
     })
-    if (!response.ok) throw new Error("route catalog unavailable")
-    return response.json()
-  }
-  try {
-    const [catalogResponse, mappingsResponse, aliasesResponse] = await Promise.all([
-      request(urls.models), request(`${urls.api}/model-combo-mappings`), request(`${urls.api}/models/alias`),
-    ])
-    const catalog = parseNativeGatewayModels(catalogResponse)
-    const mappings = responseData(mappingsResponse)
-    const aliases = parseNativeAliases(aliasesResponse)
-    const selected = catalog?.find(entry => entry.id === model.id)
-    if (!catalog || !plainObject(mappings) || !Array.isArray(mappings.mappings)
-      || mappings.total !== mappings.mappings.length || !aliases || !selected?.root
-      || nativeAliasesIntersect(aliases, [`${model.providerID}/${model.id}`, model.id, selected.root])) return undefined
-    const mappingRows = []
-    const seenMappingIds = new Set()
-    for (const value of mappings.mappings) {
-      if (!plainObject(value) || typeof value.id !== "string" || !value.id.trim()
-        || typeof value.comboId !== "string" || !value.comboId.trim()
-        || typeof value.comboName !== "string" || !value.comboName.trim()
-        || typeof value.pattern !== "string" || !value.pattern.trim()
-        || typeof value.enabled !== "boolean" || seenMappingIds.has(value.id)) return undefined
-      seenMappingIds.add(value.id)
-      mappingRows.push({ id: value.id, comboId: value.comboId, comboName: value.comboName, pattern: value.pattern, enabled: value.enabled })
+    if (!response.ok) return undefined
+    const proof = responseData(await response.json())
+    const leaves = proof?.resolvedProviderLeaves
+    if (!plainObject(proof) || proof.nativeHarness !== "opencode" || proof.nativeModelId !== nativeModelId
+      || !Array.isArray(leaves) || leaves.length === 0 || leaves.length > 64) return undefined
+    const result = []
+    const seen = new Set()
+    for (const leaf of leaves) {
+      if (!plainObject(leaf) || typeof leaf.providerId !== "string" || !leaf.providerId.trim()
+        || typeof leaf.modelId !== "string" || !leaf.modelId.trim()) return undefined
+      const key = `${leaf.providerId}\0${leaf.modelId}`
+      if (seen.has(key)) return undefined
+      seen.add(key)
+      result.push({ providerId: leaf.providerId, modelId: leaf.modelId })
     }
-    if (selected.owner !== "combo") {
-      if (mappingRows.some(row => row.enabled)) return undefined
-      return [{ providerId: selected.owner, modelId: selected.root }]
-    }
-    if (selected.root !== model.id || selected.parent !== null) return undefined
-
-    const comboCatalog = parseNativeCombos(await request(`${urls.api}/combos`))
-    if (!comboCatalog) return undefined
-    const comboNames = new Map()
-    for (const combo of comboCatalog) {
-      if (comboNames.has(combo.name) || comboNames.has(combo.id)) return undefined
-      comboNames.set(combo.name, combo); comboNames.set(combo.id, combo)
-    }
-    const roots = comboCatalog.filter(combo => combo.name === model.id)
-    if (roots.length !== 1) return undefined
-    const root = roots[0]
-    const relevantMappings = mappingRows.filter(row => row.enabled && (
-      row.comboId === root.id || row.comboName === root.name || row.pattern.startsWith(`${root.name}/`)
-    ))
-    if (relevantMappings.length > 1) return undefined
-    const byId = new Map(catalog.map(entry => [entry.id, entry]))
-    const expand = (combo, parents) => {
-      if (parents.has(combo.id) || !combo.models.length) return undefined
-      const next = new Set(parents); next.add(combo.id)
-      const leaves = []
-      for (const member of combo.models) {
-        const item = byId.get(member.model)
-        if (!item?.root) return undefined
-        if (item.owner === "combo") {
-          const nested = comboNames.get(member.model)
-          if (!nested || !["combo", "omniroute", nested.name, nested.id].includes(member.providerId)) return undefined
-          const expanded = expand(nested, next)
-          if (!expanded) return undefined
-          leaves.push(...expanded)
-        } else {
-          if (item.owner !== member.providerId) return undefined
-          leaves.push({ providerId: member.providerId, modelId: member.model })
-        }
-      }
-      return leaves.length ? leaves : undefined
-    }
-    const leaves = expand(root, new Set())
-    if (!leaves?.length) return undefined
-    const uniqueLeaves = [...new Map(leaves.map(leaf => [`${leaf.providerId}\0${leaf.modelId}`, leaf])).values()]
-    if (nativeAliasesIntersect(aliases, uniqueLeaves.map(leaf => leaf.modelId))) return undefined
-    if (relevantMappings.length === 1) {
-      const mapping = relevantMappings[0]
-      const identityModels = [...new Set(uniqueLeaves.map(leaf => leaf.modelId.split("/").at(-1)).filter(Boolean))]
-      if (mapping.comboId !== root.id || mapping.comboName !== root.name
-        || identityModels.length !== 1 || mapping.pattern !== `${root.name}/${identityModels[0]}`) return undefined
-    }
-    return uniqueLeaves
+    return result
   } catch { return undefined }
 }
 
@@ -589,6 +465,7 @@ async function createV1Hooks({ directory, $, client }, options = {}) {
 export default {
   id: "agent-herder-autopilot",
   async setup(ctx) {
+    console.info(`[agent-herder-autopilot] build=${PLUGIN_BUILD_ID}`)
     const cleanupRestrictedGuards = await installRestrictedProviderGuards(ctx)
     const cleanupQuotaObserver = installV2QuotaEventObserver(ctx)
     return async () => {

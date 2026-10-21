@@ -1023,6 +1023,42 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) });
     }
   }
+  if (url.pathname === "/api/native-model-route-proof" && request.method === "GET") {
+    response.setHeader("cache-control", "no-store");
+    const remoteAddress = request.socket.remoteAddress;
+    if (remoteAddress !== "127.0.0.1" && remoteAddress !== "::1" && remoteAddress !== "::ffff:127.0.0.1") {
+      return sendJson(response, 403, { error: "Route proof is available only to local harness plugins" });
+    }
+    const nativeModelId = url.searchParams.get("modelId")?.trim() ?? "";
+    if (!nativeModelId.startsWith("omniroute/") || nativeModelId.length > 512 || /[\u0000-\u001f\u007f]/u.test(nativeModelId)) {
+      return sendJson(response, 400, { error: "A fully qualified OmniRoute modelId is required" });
+    }
+    const adapter = adapters.get("opencode") as (HarnessAdapter & {
+      resolveModelProviderLeaves?: (modelId: string) => Promise<{
+        nativeHarness: string;
+        nativeModelId: string;
+        resolvedProviderLeaves: Array<{ providerId: string; modelId: string }>;
+      } | null>;
+    }) | undefined;
+    if (!adapter?.resolveModelProviderLeaves) return sendJson(response, 503, { error: "OpenCode route resolver is unavailable" });
+    try {
+      const proof = await adapter.resolveModelProviderLeaves(nativeModelId);
+      const leaves = proof?.resolvedProviderLeaves;
+      if (!proof || proof.nativeHarness !== "opencode" || proof.nativeModelId !== nativeModelId
+        || !Array.isArray(leaves) || leaves.length === 0 || leaves.length > 64
+        || leaves.some((leaf) => !leaf || typeof leaf.providerId !== "string" || !leaf.providerId.trim()
+          || typeof leaf.modelId !== "string" || !leaf.modelId.trim())) {
+        return sendJson(response, 409, { error: "The complete native provider route could not be verified" });
+      }
+      return sendJson(response, 200, {
+        nativeHarness: "opencode",
+        nativeModelId,
+        resolvedProviderLeaves: leaves.map(({ providerId, modelId }) => ({ providerId, modelId })),
+      });
+    } catch {
+      return sendJson(response, 503, { error: "The complete native provider route could not be verified" });
+    }
+  }
   if (url.pathname === "/api/human-stop/status" && request.method === "GET") {
     response.setHeader("cache-control", "no-store");
     const harness = url.searchParams.get("harness")?.trim();

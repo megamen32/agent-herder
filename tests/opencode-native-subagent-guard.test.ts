@@ -8,38 +8,27 @@ function session(id: string, directory: string, parentID?: string, model: unknow
   return { id, directory, ...(parentID ? { parentID } : {}), model };
 }
 
-function response(body: unknown) {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+function response(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-function installComboCatalog(options: {
-  members: Array<{ providerId: string; model: string }>;
-  mappings?: unknown[];
-  aliases?: Record<string, string>;
+function installRouteProof(options: {
+  nativeModelId?: string;
+  leaves: Array<{ providerId: string; modelId: string }>;
+  status?: number;
 }) {
-  const comboId = "combo-minimax-m31";
-  const comboName = "minimax-combo-m3.1";
-  const identityModel = options.members[0]?.model.split("/").at(-1) || "MiniMax-M3.1-Flash";
-  const mappings = options.mappings ?? [
-    { id: "map-target", comboId, comboName, pattern: `${comboName}/${identityModel}`, enabled: true },
-    { id: "map-unrelated-a", comboId: "combo-glm", comboName: "glm-5.3-flash-minimax-m3.1", pattern: "glm-5.3-flash-minimax-m3.1/glm-5.3-flash", enabled: true },
-    { id: "map-unrelated-b", comboId: "combo-m3", comboName: "minimax-combo-m3", pattern: "minimax-combo-m3/MiniMax-M3", enabled: true },
-  ];
-  vi.stubEnv("OMNIROUTE_API_KEY", "test-key");
-  vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
-    const url = String(input);
-    if (url.endsWith("/v1/models")) return response({ data: [
-      { id: comboName, owned_by: "combo", root: comboName, parent: null },
-      ...options.members.map(member => ({
-        id: member.model, owned_by: member.providerId, root: member.model.split("/").at(-1), parent: null,
-      })),
-    ] });
-    if (url.endsWith("/model-combo-mappings")) return response({ mappings, total: mappings.length });
-    if (url.endsWith("/models/alias")) return response({ aliases: options.aliases ?? {} });
-    if (url.endsWith("/combos")) return response({ total: 1, combos: [
-      { id: comboId, name: comboName, models: options.members },
-    ] });
-    return new Response(null, { status: 404 });
+  vi.stubEnv("OMNIROUTE_API_KEY", "");
+  vi.stubGlobal("fetch", vi.fn(async (input: string | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.origin !== "http://127.0.0.1:18787" || url.pathname !== "/api/native-model-route-proof") {
+      return new Response(null, { status: 404 });
+    }
+    expect(new Headers(init?.headers).has("authorization")).toBe(false);
+    return response({
+      nativeHarness: "opencode",
+      nativeModelId: options.nativeModelId ?? "omniroute/minimax-combo-m3.1",
+      resolvedProviderLeaves: options.leaves,
+    }, options.status ?? 200);
   }));
 }
 
@@ -103,23 +92,10 @@ describe("OpenCode V2 restricted native child admission", () => {
     await cleanup();
   });
 
-  it("expands nested OmniRoute combos and denies a hidden Claude leaf", async () => {
-    vi.stubEnv("OMNIROUTE_API_KEY", "test-key");
-    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
-      const url = String(input);
-      if (url.endsWith("/v1/models")) return response({ data: [
-        { id: "outer", owned_by: "combo", root: "outer", parent: null },
-        { id: "inner", owned_by: "combo", root: "inner", parent: "outer" },
-        { id: "claude-sonnet", owned_by: "anthropic", root: "claude-sonnet", parent: null },
-      ] });
-      if (url.endsWith("/model-combo-mappings")) return response({ mappings: [], total: 0 });
-      if (url.endsWith("/models/alias")) return response({ aliases: {} });
-      if (url.endsWith("/combos")) return response({ total: 2, combos: [
-        { id: "combo-outer", name: "outer", models: [{ providerId: "combo", model: "inner" }] },
-        { id: "combo-inner", name: "inner", models: [{ providerId: "anthropic", model: "claude-sonnet" }] },
-      ] });
-      return new Response(null, { status: 404 });
-    }));
+  it("denies a hidden Claude leaf returned by the local Herder route resolver", async () => {
+    installRouteProof({ nativeModelId: "omniroute/outer", leaves: [
+      { providerId: "anthropic", modelId: "claude-sonnet" },
+    ] });
     const context = makeContext({
       agents: { child: { id: "child", model: "omniroute/outer" } },
       models: [{ providerID: "omniroute", id: "outer" }],
@@ -128,7 +104,7 @@ describe("OpenCode V2 restricted native child admission", () => {
     const decision: Record<string, unknown> = { action: "subagent", resources: ["child"], sessionID: "root" };
     await context.permissionHook(decision);
     expect(decision.effect).toBe("deny");
-    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch).toHaveBeenCalledTimes(1);
     await cleanup();
   });
 
@@ -162,19 +138,17 @@ describe("OpenCode V2 restricted native child admission", () => {
   });
 
   it("allows the exact MiniMax combo on root model.request with unrelated active mappings and aliases", async () => {
-    const aliases = Object.fromEntries(Array.from({ length: 819 }, (_, index) => [
-      `unrelated-alias-${index}`, `provider/model-${index}`,
-    ]));
-    installComboCatalog({ members: [
-      { providerId: "minimax-code", model: "mmcode/MiniMax-M3.1-Flash" },
-      { providerId: "minimax", model: "minimax/MiniMax-M3.1-Flash" },
-    ], aliases });
+    installRouteProof({ leaves: [
+      { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
+      { providerId: "minimax", modelId: "minimax/MiniMax-M3.1-Flash" },
+    ] });
     const context = makeContext({ models: [{ providerID: "omniroute", id: "minimax-combo-m3.1" }] });
     const cleanup = await setup(context);
     await expect(context.modelHook({
       sessionID: "root", model: { providerID: "omniroute", id: "minimax-combo-m3.1" },
     })).resolves.toBeUndefined();
-    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(process.env.OMNIROUTE_API_KEY).toBe("");
     await cleanup();
   });
 
@@ -182,9 +156,9 @@ describe("OpenCode V2 restricted native child admission", () => {
     ["anthropic", "anthropic/MiniMax-M3.1-Flash"],
     ["openai-codex", "openai-codex/MiniMax-M3.1-Flash"],
   ])("denies a combo root request when its resolved leaf is forbidden (%s)", async (providerId, model) => {
-    installComboCatalog({ members: [
-      { providerId: "minimax-code", model: "mmcode/MiniMax-M3.1-Flash" },
-      { providerId, model },
+    installRouteProof({ leaves: [
+      { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
+      { providerId, modelId: model },
     ] });
     const context = makeContext({ models: [{ providerID: "omniroute", id: "minimax-combo-m3.1" }] });
     const cleanup = await setup(context);
@@ -194,30 +168,19 @@ describe("OpenCode V2 restricted native child admission", () => {
     await cleanup();
   });
 
-  it("fails closed on an alias or ambiguous mapping that overlaps the selected combo", async () => {
-    const targetComboId = "combo-minimax-m31";
-    const targetComboName = "minimax-combo-m3.1";
-    const identityMapping = {
-      id: "map-target", comboId: targetComboId, comboName: targetComboName,
-      pattern: `${targetComboName}/MiniMax-M3.1-Flash`, enabled: true,
-    };
-    for (const options of [
-      { aliases: { [targetComboName]: "other-route" }, mappings: [identityMapping] },
-      { aliases: {}, mappings: [identityMapping, { ...identityMapping, id: "map-duplicate" }] },
-      { aliases: {}, mappings: [{ ...identityMapping, pattern: `${targetComboName}/rewritten` }] },
-      { aliases: {}, mappings: [{
-        id: "map-overlap", comboId: "other-combo", comboName: "other-combo",
-        pattern: `${targetComboName}/MiniMax-M3.1-Flash`, enabled: true,
-      }] },
+  it("fails closed when the local route proof is unavailable, mismatched, or malformed", async () => {
+    for (const proof of [
+      { nativeModelId: "omniroute/another-model", leaves: [{ providerId: "minimax-code", modelId: "safe" }] },
+      { nativeModelId: "omniroute/minimax-combo-m3.1", leaves: [] },
+      { nativeModelId: "omniroute/minimax-combo-m3.1", leaves: [
+        { providerId: "minimax", modelId: "duplicate" }, { providerId: "minimax", modelId: "duplicate" },
+      ] },
     ]) {
-      installComboCatalog({ members: [
-        { providerId: "minimax-code", model: "mmcode/MiniMax-M3.1-Flash" },
-        { providerId: "minimax", model: "minimax/MiniMax-M3.1-Flash" },
-      ], ...options });
-      const context = makeContext({ models: [{ providerID: "omniroute", id: targetComboName }] });
+      installRouteProof(proof);
+      const context = makeContext({ models: [{ providerID: "omniroute", id: "minimax-combo-m3.1" }] });
       const cleanup = await setup(context);
       await expect(context.modelHook({
-        sessionID: "root", model: { providerID: "omniroute", id: targetComboName },
+        sessionID: "root", model: { providerID: "omniroute", id: "minimax-combo-m3.1" },
       })).rejects.toThrow("Agent Herder blocked this model request");
       await cleanup();
     }

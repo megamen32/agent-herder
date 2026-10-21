@@ -495,3 +495,73 @@ and authorized runtime promotion.
   provider completion. Hold the other eight restricted entries until the
   combo's auth-classified failure is resolved or a separately configured and
   verified fallback is selected; no further enrollment was sent.
+
+## Restricted-first terminal diagnosis and plugin rollout (2026-10-21)
+
+- Correction to the preceding classification: the first restricted attempt
+  was **not** provider authentication. Auth classification came from a loose
+  text heuristic. Fresh authenticated native readback of the exact session
+  reports `outcome=failed`; latest idle record
+  `msg_15ca9b93c001CXilKWuX1NG20b` has `error.type=unknown`, no status code,
+  and the exact local message `Agent Herder blocked this model request: the
+  complete native provider route is forbidden or could not be verified for
+  this project.` The preceding native user record
+  `msg_15ca9b506001ikwvM8wXJK89Ci` contains only its stable Herder input ID;
+  no assistant message exists after this request. This is the Agent Herder
+  OpenCode plugin route guard, before a provider request.
+- Read-only OmniRoute request-log inspection of the exact native failure
+  window found no request mentioning the selected model, combo, input or
+  receipt. Read-only catalog evidence returned HTTP 200 and showed the exact
+  native model `omniroute/minimax-combo.m3.1`, root owner `combo`, and ordered
+  leaves `minimax-code/mmcode/MiniMax-M3.1-Flash` then
+  `minimax/minimax/MiniMax-M3.1-Flash`. The target combo has one exact enabled
+  identity mapping; two other enabled mappings belong to separate combos.
+  Alias response is an object map with 819 unrelated entries and no alias
+  intersecting the selected model or either leaf. No credential value was
+  displayed or copied.
+- Plugin owner published commit `3ab161bf14d861eff1961d71da0c2f20a722396b`
+  containing only `integrations/opencode/agent-herder-autopilot.js` and its
+  focused guard tests. The fix validates only mappings and aliases intersecting
+  the selected route, accepts the one exact target mapping, ignores valid
+  mappings for separate combos, and rejects ambiguous/rewritten target rows.
+  Owner reports 12/12 focused tests, root TypeScript, and diff-check green.
+- Source-pinned runtime promotion: published plugin SHA-256
+  `5cc436208b1e7891771b392253418b679e486a478d13f922a0cbe31a3e806347` was
+  atomically installed at
+  `/home/roomhacker/.config/opencode/plugins/agent-herder-autopilot.js`;
+  previous file was preserved as `.pre-3ab161b`. Official `opencode reload
+  --server http://127.0.0.1:4095` returned `Configuration reloaded`. OpenCode
+  PID 4145783 remained unchanged. Project-scoped `/api/plugin` readback for
+  TelegramAuto reports this exact plugin path `active`, `error=null`, and the
+  installed hash matches the published source.
+- The accepted native input remains untouched; no provider request was made.
+  The wait remains `accepted` with `attempts=1` after the terminal plugin
+  rejection. The native failure has no assistant/turn record, so its idle frame
+  ID is not treated as a native turn ID. Controls is running the isolated
+  restricted-root positive/forbidden-leaf regression against this plugin
+  candidate. Do not add a retry path for either terminal decline.
+
+## Restricted route-proof credential boundary (2026-10-21)
+
+- A second independently enrolled restricted session failed with the same
+  local guard message and no upstream request; no old input was replayed.
+  Secret-safe `/proc` environment-name inspection found `OMNIROUTE_API_KEY`
+  present in the Agent Herder process and absent in the OpenCode process. The
+  plugin source had been fetching OmniRoute management APIs directly and
+  returned unknown when the key was absent; its previous base URL also defaulted
+  to port 20128 while the verified process-owned resolver was in Herder.
+  Therefore this was a management API credential/base routing mismatch, not
+  provider authentication. The OpenCode process received no secret.
+- The owned source fix routes OpenCode's read-only request to the local Herder
+  endpoint `/api/native-model-route-proof`, restricted to loopback, exact
+  `omniroute/` model IDs, and returning only the exact resolver leaves. Herder
+  uses its existing authenticated adapter and does not disclose credentials.
+  The plugin no longer calls OmniRoute or reads its key. The plugin includes a
+  build marker for runtime loader verification. Focused tests (16/16), root
+  TypeScript, and scoped diff-check pass.
+- At the time of this update, live Herder still returned 404 for the new route,
+  confirming the built-in service has not yet received this source change. The
+  source-pinned route/plugin candidate is next to publish and deploy; then verify
+  exact route leaves and the loaded plugin build marker. Keep the two terminal
+  declines separate, keep seven entries held, and make no further enrollment
+  until those read-only runtime proofs succeed.
