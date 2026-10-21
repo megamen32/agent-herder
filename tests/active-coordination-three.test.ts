@@ -51,7 +51,7 @@ it('OpenCode only reads native busy/root-user identity and current plugin contex
  try{
   expect(await adapter.sendActiveMessage(id,{message:'ACTIVE unpredictable fixture text',inputId:'once'})).toMatchObject({admitted:true,pending:true});
   expect((await withDeferred(id,'new explicit task')).message).toBe('new explicit task');
-  const hooks=await plugin({directory:'/workspace',$:undefined} as any);
+  const hooks=await plugin.server({directory:'/workspace',$:undefined} as any);
   const output={messages:[{info:{id:root,sessionID:id,role:'user'},parts:[{type:'text',text:'initial'}]}]};
   await hooks['experimental.chat.messages.transform']({},output);
   expect(JSON.stringify(output)).toContain('ACTIVE unpredictable fixture text');

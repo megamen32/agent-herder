@@ -173,17 +173,64 @@ function createQuotaProofWriter(client) {
   }
 }
 
+function createQuotaEventHandler(client) {
+  const quotaCandidates = new Map()
+  const writeQuotaProof = createQuotaProofWriter(client)
+  return async event => {
+    if (event.type === "message.updated") {
+      const info = event.properties?.info
+      const sessionID = info?.sessionID || event.properties?.sessionID
+      const metadata = plainObject(info?.metadata) ? info.metadata : {}
+      const model = nativeProviderModel(info)
+      if (sessionID && nativeRole(info) === "assistant" && typeof info.id === "string"
+        && typeof info.parentID === "string" && typeof model.providerId === "string"
+        && typeof model.modelId === "string" && explicitQuotaError(info.error)) {
+        quotaCandidates.set(sessionID, {
+          sessionID,
+          assistantMessageId: info.id,
+          userMessageId: info.parentID,
+          ...(typeof metadata.agentHerderInputId === "string" ? { inputId: metadata.agentHerderInputId } : {}),
+          providerId: model.providerId,
+          modelId: model.modelId,
+        })
+      }
+      return
+    }
+    if (event.type !== "session.idle") return
+    const sessionID = event.properties?.sessionID
+    if (!sessionID) return
+    const quotaCandidate = quotaCandidates.get(sessionID)
+    quotaCandidates.delete(sessionID)
+    if (quotaCandidate) {
+      try { await writeQuotaProof(quotaCandidate) } catch { /* missing or changed native proof stays absent */ }
+    }
+  }
+}
+
+function installV2QuotaEventObserver(ctx) {
+  const handleEvent = createQuotaEventHandler(ctx)
+  const controller = new AbortController()
+  const events = ctx.event.subscribe({ signal: controller.signal })
+  const consumer = (async () => {
+    for await (const event of events) await handleEvent(event)
+  })()
+  void consumer.catch(() => { /* OpenCode owns event stream errors and plugin teardown */ })
+  return async () => {
+    controller.abort()
+    await consumer.catch(() => {})
+  }
+}
+
 async function invoke($, payload) {
   const result = await $`env PLUGIN_ROOT=${root} bash ${root}/scripts/autopilot-command-launcher.sh ${JSON.stringify(payload)}`.quiet()
   return JSON.parse(result.text())
 }
 
-export default async function AgentHerderAutopilot({ directory, $, client }, options = {}) {
+async function createV1Hooks({ directory, $, client }, options = {}) {
   const contextFetch = (path, fetchOptions) => coordinationFetch(path, fetchOptions, options.observeContextFetch)
   const enabled = new Set()
   const controlTurns = new Set()
-  const quotaCandidates = new Map()
-  const writeQuotaProof = createQuotaProofWriter(client)
+  const handleQuotaEvent = createQuotaEventHandler(client)
   return {
     // Supported native loop context hook. No prompt endpoint or persisted user message.
     "experimental.chat.messages.transform": async (_input,output)=>{
@@ -238,33 +285,10 @@ export default async function AgentHerderAutopilot({ directory, $, client }, opt
     },
 
     event: async ({ event }) => {
-      if (event.type === "message.updated") {
-        const info = event.properties?.info
-        const sessionID = info?.sessionID || event.properties?.sessionID
-        const metadata = plainObject(info?.metadata) ? info.metadata : {}
-        const model = nativeProviderModel(info)
-        if (sessionID && nativeRole(info) === "assistant" && typeof info.id === "string"
-          && typeof info.parentID === "string" && typeof model.providerId === "string"
-          && typeof model.modelId === "string" && explicitQuotaError(info.error)) {
-          quotaCandidates.set(sessionID, {
-            sessionID,
-            assistantMessageId: info.id,
-            userMessageId: info.parentID,
-            ...(typeof metadata.agentHerderInputId === "string" ? { inputId: metadata.agentHerderInputId } : {}),
-            providerId: model.providerId,
-            modelId: model.modelId,
-          })
-        }
-        return
-      }
+      await handleQuotaEvent(event)
       if (event.type !== "session.idle") return
       const sessionID = event.properties?.sessionID
       if (!sessionID) return
-      const quotaCandidate = quotaCandidates.get(sessionID)
-      quotaCandidates.delete(sessionID)
-      if (quotaCandidate) {
-        try { await writeQuotaProof(quotaCandidate) } catch { /* missing or changed native proof stays absent */ }
-      }
       if (controlTurns.delete(sessionID)) return
       if (!enabled.has(sessionID)) {
         const status = await invoke($, { command: "status", harness: "opencode", sessionId: sessionID, cwd: directory })
@@ -280,4 +304,14 @@ export default async function AgentHerderAutopilot({ directory, $, client }, opt
       })
     },
   }
+}
+
+export default {
+  id: "agent-herder-autopilot",
+  async setup(ctx) {
+    return installV2QuotaEventObserver(ctx)
+  },
+  async server(input, options = {}) {
+    return createV1Hooks(input, options)
+  },
 }

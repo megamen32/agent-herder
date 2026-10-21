@@ -69,7 +69,7 @@ it('three delayed native reads fit the unchanged 1200ms plugin body deadline', a
   try {
     await deferredMessages.addActive('opencode', id, root, 'once', 'ACTIVE-body-must-be-read');
     delay = 450;
-    const hooks = await plugin({directory:'/workspace'} as any);
+    const hooks = await plugin.server({directory:'/workspace'} as any);
     const output = {messages:[{info:{id:root,sessionID:id,role:'user'},parts:[{type:'text',text:'initial'}]}]};
     await hooks['experimental.chat.messages.transform']({}, output);
     expect(JSON.stringify(output)).toContain('ACTIVE-body-must-be-read');
