@@ -43,7 +43,8 @@ interface OpenCodeMessagePayload {
   role?: string;
   type?: string;
   text?: string;
-  info?: { id?: string; parentID?: string; sessionID?: string; role?: string; providerID?: string; modelID?: string; inputId?: string; turnId?: string; metadata?: Record<string, unknown>; error?: OpenCodeMessagePayload["error"]; time?: { created?: number } };
+  time?: { created?: number; completed?: number };
+  info?: { id?: string; parentID?: string; sessionID?: string; role?: string; providerID?: string; modelID?: string; inputId?: string; turnId?: string; metadata?: Record<string, unknown>; error?: OpenCodeMessagePayload["error"]; time?: { created?: number; completed?: number } };
   metadata?: Record<string, unknown>;
   model?: { providerID?: string; id?: string };
   finish?: string;
@@ -111,16 +112,29 @@ export type OpenCodeEvent = {
 };
 
 export interface OpenCodeTerminalFailureContext {
+  sessionId: string;
   status: "failed";
   nativeTurnId: string;
+  assistantMessageId: string;
   inputId: string;
   providerId: string;
   modelId: string;
+  completedAt?: number;
   errorType?: string;
   errorCode?: string;
   errorMessage?: string;
   statusCode?: number;
   resetAt?: string;
+}
+
+export interface OpenCodeTerminalTurnContext {
+  sessionId: string;
+  status: "failed";
+  turnId: string;
+  assistantMessageId: string;
+  providerId: string;
+  modelId: string;
+  completedAt: number;
 }
 
 /** Where a session keeps the identity Agent Herder announced to it. */
@@ -555,6 +569,78 @@ export class OpenCodeClient implements HarnessClient {
   }
 
   /**
+   * Read a fresh exact native failed-turn snapshot for operator-authorized
+   * continuation. This deliberately does not classify quota or depend on the
+   * Agent Herder metadata plugin: the stable assistant message identity,
+   * native model/provider and terminal completion timestamp are sufficient.
+   * A status-frame ID is never promoted to a turn ID.
+   */
+  async getTerminalTurnContext(id: string): Promise<OpenCodeTerminalTurnContext | null> {
+    await this.probeProtocol();
+    if (!this.isV2) return null;
+    try {
+      const session = await this.fetchJson<OpenCodeSessionPayload>(this.api(`/session/${encodeURIComponent(id)}`));
+      if (session.id !== id || session.outcome !== "failed") return null;
+      const [active, permissions] = await Promise.all([
+        this.fetchJson<Record<string, { type?: string; status?: string }>>(this.api("/session/active")),
+        this.fetchJson<OpenCodePermissionRequest[]>(this.api("/permission/request")),
+      ]);
+      if (!active || typeof active !== "object" || Array.isArray(active) || !Array.isArray(permissions)) return null;
+      const activeSession = active[id];
+      const activeType = activeSession?.type ?? activeSession?.status;
+      if ((activeSession !== undefined && activeType !== "idle") || permissions.some((request) => request?.sessionID === id)) return null;
+
+      const fetched = await this.fetchJson<OpenCodeMessagePayload[]>(this.api(`/session/${encodeURIComponent(id)}/message?limit=150&order=desc`));
+      if (!Array.isArray(fetched)) return null;
+      const messages = [...fetched].reverse();
+      const statusFrames = messages
+        .map((message, index) => ({ message, index }))
+        .filter(({ message }) => isOpenCodeTurnStatusFrame(message));
+      const latest = statusFrames.at(-1);
+      if (!latest || !latest.message.id || latest.message.outcome !== "failed") return null;
+      if (messages.slice(latest.index + 1).some((message) =>
+        openCodeMessageRole(message) === "user" || openCodeMessageRole(message) === "assistant")) return null;
+
+      // The latest native conversation message before the exact failed status
+      // must be an assistant. Its native ID, not its body or timestamp, is the
+      // fallback stable turn identity when OpenCode omits an explicit turnId.
+      const lastActor = messages
+        .map((message, index) => ({ message, index }))
+        .filter(({ message, index }) => index < latest.index
+          && ["user", "assistant"].includes(openCodeMessageRole(message) || ""))
+        .at(-1);
+      if (!lastActor || openCodeMessageRole(lastActor.message) !== "assistant") return null;
+      const assistant = lastActor.message;
+      const assistantError = assistant.error ?? assistant.info?.error;
+      if (!assistantError && assistant.finish !== "error" && !latest.message.error) return null;
+      const assistantMessageId = openCodeMessageId(assistant);
+      if (!assistantMessageId || messages.filter((message) => openCodeMessageId(message) === assistantMessageId).length !== 1) return null;
+
+      const assistantMetadata = assistant.metadata ?? assistant.info?.metadata;
+      const statusMetadata = latest.message.metadata ?? latest.message.info?.metadata;
+      const assistantTurnId = stringValue(assistant.turnId, assistant.info?.turnId, assistantMetadata?.turnId);
+      const statusTurnId = stringValue(latest.message.turnId, latest.message.info?.turnId, statusMetadata?.turnId);
+      if (assistantTurnId && statusTurnId && assistantTurnId !== statusTurnId) return null;
+      const turnId = assistantTurnId || statusTurnId || assistantMessageId;
+
+      const providerId = stringValue(assistant.model?.providerID, assistant.info?.providerID);
+      const modelId = stringValue(assistant.model?.id, assistant.info?.modelID);
+      if (!providerId || !modelId) return null;
+      const assistantCompletedAt = assistant.time?.completed ?? assistant.info?.time?.completed;
+      const terminalCompletedAt = latest.message.time?.created ?? latest.message.info?.time?.created;
+      const completedAt = typeof assistantCompletedAt === "number" && Number.isFinite(assistantCompletedAt)
+        ? assistantCompletedAt
+        : typeof terminalCompletedAt === "number" && Number.isFinite(terminalCompletedAt)
+          ? terminalCompletedAt : undefined;
+      if (completedAt === undefined) return null;
+
+      return { sessionId: id, status: "failed", turnId, assistantMessageId, providerId, modelId, completedAt };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Read the exact v2 terminal failure represented by one native event. The
    * event ID must still be the newest persisted failed status frame, the
    * session must be terminal and permission-free, and the failed assistant
@@ -667,8 +753,15 @@ export class OpenCodeClient implements HarnessClient {
         && Number.isFinite(Date.parse(resetAtValue))
         ? new Date(resetAtValue).toISOString()
         : undefined;
+      const assistantCompletedAt = failedAssistant.time?.completed ?? failedAssistant.info?.time?.completed;
+      const terminalCompletedAt = latest.message.time?.created ?? latest.message.info?.time?.created;
+      const completedAt = typeof assistantCompletedAt === "number" && Number.isFinite(assistantCompletedAt)
+        ? assistantCompletedAt
+        : typeof terminalCompletedAt === "number" && Number.isFinite(terminalCompletedAt)
+          ? terminalCompletedAt : undefined;
       return {
-        status: "failed", nativeTurnId, inputId, ...model,
+        sessionId: id, status: "failed", nativeTurnId, assistantMessageId, inputId, ...model,
+        ...(completedAt !== undefined ? { completedAt } : {}),
         ...(errorType ? { errorType } : {}),
         ...(errorCode ? { errorCode } : {}),
         ...(errorMessage ? { errorMessage } : {}),

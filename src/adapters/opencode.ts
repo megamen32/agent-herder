@@ -16,6 +16,95 @@ import { terminalQuotaFailure } from "./quota-failure.js";
 export { normalizeOpenCodeEvent, openCodeConnectedModels, openCodeMessageParts, openCodeModelCatalogEntries, parseOpenCodeServerCommand, unwrapEnvelope } from "agent-resume-mcp";
 export type { OpenCodeEvent } from "agent-resume-mcp";
 
+export interface OpenCodeProviderLeaf {
+  providerId: string;
+  modelId: string;
+}
+
+export interface OpenCodeModelProviderResolution {
+  nativeHarness: "opencode";
+  nativeModelId: string;
+  providerId: string;
+  modelId: string;
+  resolvedProviderLeaves: OpenCodeProviderLeaf[];
+}
+
+export interface OpenCodeModelProviderResolverOptions {
+  /** Optional explicit OmniRoute origin; defaults to the existing local route. */
+  omniRouteBaseUrl?: string;
+  /** Read-only catalog auth. Never included in the resolution result or errors. */
+  omniRouteApiKey?: string;
+  /** Test seam for the supported GET-only catalog calls. */
+  fetcher?: typeof fetch;
+}
+
+type OmniRouteCombo = { id: string; name: string; models: Array<{ providerId: string; model: string }> };
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function omniRouteCatalogUrls(baseValue: string): { api: string; models: string } | undefined {
+  try {
+    const url = new URL(baseValue);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    const path = url.pathname.replace(/\/+$/u, "").replace(/\/v1$/u, "");
+    const root = `${url.origin}${path}`.replace(/\/+$/u, "");
+    return { api: `${root}/api`, models: `${root}/v1/models` };
+  } catch {
+    return undefined;
+  }
+}
+
+function parseOmniRouteComboCatalog(value: unknown): OmniRouteCombo[] | undefined {
+  const body = objectRecord(value);
+  if (!body || !Array.isArray(body.combos) || !Number.isInteger(body.total) || body.total !== body.combos.length) return undefined;
+  const combos: OmniRouteCombo[] = [];
+  const ids = new Set<string>();
+  const names = new Set<string>();
+  for (const raw of body.combos) {
+    const row = objectRecord(raw);
+    const id = nonEmptyString(row?.id);
+    const name = nonEmptyString(row?.name);
+    if (!row || !id || !name || ids.has(id) || names.has(name) || !Array.isArray(row.models)) return undefined;
+    ids.add(id);
+    names.add(name);
+    const models: OmniRouteCombo["models"] = [];
+    for (const rawMember of row.models) {
+      const member = objectRecord(rawMember);
+      const providerId = nonEmptyString(member?.providerId);
+      const model = nonEmptyString(member?.model);
+      if (!providerId || !model) return undefined;
+      models.push({ providerId, model });
+    }
+    combos.push({ id, name, models });
+  }
+  return combos;
+}
+
+function parseOpenAIModelCatalog(value: unknown): Array<{ id: string; owner: string; root?: string; parent?: string | null }> | undefined {
+  const body = objectRecord(value);
+  if (!body || !Array.isArray(body.data)) return undefined;
+  const result: Array<{ id: string; owner: string; root?: string; parent?: string | null }> = [];
+  const seen = new Set<string>();
+  for (const raw of body.data) {
+    const row = objectRecord(raw);
+    const id = nonEmptyString(row?.id);
+    const owner = nonEmptyString(row?.owned_by);
+    if (!row || !id || !owner || seen.has(id)) return undefined;
+    seen.add(id);
+    const root = nonEmptyString(row.root);
+    const parent = row.parent === null || typeof row.parent === "string" ? row.parent : undefined;
+    if (row.parent !== undefined && parent === undefined) return undefined;
+    result.push({ id, owner, ...(root ? { root } : {}), ...(parent !== undefined ? { parent } : {}) });
+  }
+  return result;
+}
+
 /**
  * Agent Herder's OpenCode adapter: orchestration on top of the shared core.
  *
@@ -81,35 +170,51 @@ export class OpenCodeAdapter implements HarnessAdapter {
       result.lastMessage = last.text || (tool ? `Инструмент: ${tool.name || "tool"}` : undefined);
       if (last.timestamp && last.timestamp > result.lastActivity) result.lastActivity = last.timestamp;
     }
-    const nativeFailure = detail.status === "error" ? await this.client.getTerminalFailureContext(id) : null;
-    if (nativeFailure) {
-      const quotaFailure = terminalQuotaFailure({
-        terminal: true,
-        status: nativeFailure.status,
-        nativeTurnId: nativeFailure.nativeTurnId,
-        inputId: nativeFailure.inputId,
-        providerId: nativeFailure.providerId,
-        modelId: nativeFailure.modelId,
-        errorType: nativeFailure.errorType,
-        errorCode: nativeFailure.errorCode,
-        errorMessage: nativeFailure.errorMessage,
-        statusCode: nativeFailure.statusCode,
-        resetAt: nativeFailure.resetAt,
-      });
-      if (quotaFailure) {
-        const meta = result.meta ?? {};
-        result.meta = {
-          ...meta,
-          nativeLastTurn: {
-            ...((meta.nativeLastTurn && typeof meta.nativeLastTurn === "object") ? meta.nativeLastTurn as Record<string, unknown> : {}),
-            turnId: quotaFailure.nativeTurnId,
-            inputId: quotaFailure.inputId,
-            status: quotaFailure.status,
-            quotaFailure,
-          },
-        };
-      }
+    const nativeTurn = detail.status === "error" ? await this.client.getTerminalTurnContext(id) : null;
+    const nativeFailure = nativeTurn ? await this.client.getTerminalFailureContext(id) : null;
+    const sameNativeTurn = Boolean(nativeTurn && nativeFailure
+      && nativeFailure.sessionId === nativeTurn.sessionId
+      && nativeFailure.nativeTurnId === nativeTurn.turnId
+      && nativeFailure.assistantMessageId === nativeTurn.assistantMessageId
+      && nativeFailure.providerId === nativeTurn.providerId
+      && nativeFailure.modelId === nativeTurn.modelId
+      && (nativeFailure.completedAt === undefined || nativeFailure.completedAt === nativeTurn.completedAt));
+    const quotaFailure = sameNativeTurn && nativeFailure ? terminalQuotaFailure({
+      terminal: true,
+      status: nativeFailure.status,
+      nativeTurnId: nativeFailure.nativeTurnId,
+      inputId: nativeFailure.inputId,
+      providerId: nativeFailure.providerId,
+      modelId: nativeFailure.modelId,
+      errorType: nativeFailure.errorType,
+      errorCode: nativeFailure.errorCode,
+      errorMessage: nativeFailure.errorMessage,
+      statusCode: nativeFailure.statusCode,
+      resetAt: nativeFailure.resetAt,
+    }) : null;
+    const meta = { ...(result.meta ?? {}) };
+    const previousNativeLastTurn = meta.nativeLastTurn && typeof meta.nativeLastTurn === "object"
+      ? meta.nativeLastTurn as Record<string, unknown> : {};
+    const retainedNativeLastTurn = { ...previousNativeLastTurn };
+    delete retainedNativeLastTurn.quotaFailure;
+    delete retainedNativeLastTurn.inputId;
+    if (nativeTurn) {
+      meta.nativeLastTurn = {
+        ...retainedNativeLastTurn,
+        sessionId: nativeTurn.sessionId,
+        turnId: nativeTurn.turnId,
+        assistantMessageId: nativeTurn.assistantMessageId,
+        providerId: nativeTurn.providerId,
+        modelId: nativeTurn.modelId,
+        status: nativeTurn.status,
+        completedAt: nativeTurn.completedAt,
+        ...(sameNativeTurn && nativeFailure ? { inputId: nativeFailure.inputId } : {}),
+        ...(quotaFailure ? { quotaFailure } : {}),
+      };
+    } else {
+      delete meta.nativeLastTurn;
     }
+    result.meta = Object.keys(meta).length ? meta : undefined;
     return result;
   }
 
@@ -354,6 +459,113 @@ export class OpenCodeAdapter implements HarnessAdapter {
 
   async listModels(): Promise<string[]> {
     return this.client.listModels();
+  }
+
+  /**
+   * Resolve an exact selectable OpenCode ID to its concrete provider leaves.
+   * Direct native providers have one leaf. OmniRoute aliases are resolved from
+   * its supported read-only model/combos APIs; uncertain or incomplete trees
+   * return null so launch policy can deny before create/send/fallback.
+   */
+  async resolveModelProviderLeaves(
+    nativeModelId: string,
+    options: OpenCodeModelProviderResolverOptions = {},
+  ): Promise<OpenCodeModelProviderResolution | null> {
+    try {
+      const separator = nativeModelId.indexOf("/");
+      if (separator <= 0 || separator === nativeModelId.length - 1 || nativeModelId.trim() !== nativeModelId) return null;
+      const providerId = nativeModelId.slice(0, separator);
+      const modelId = nativeModelId.slice(separator + 1);
+      // The native catalog is the authority for whether this exact model ID
+      // is selectable in this OpenCode instance.
+      const nativeModels = await this.client.listModels();
+      if (!this.client.isV2 || !nativeModels.includes(nativeModelId)) return null;
+      const base = { nativeHarness: "opencode" as const, nativeModelId, providerId, modelId };
+      if (providerId !== "omniroute") {
+        return { ...base, resolvedProviderLeaves: [{ providerId, modelId }] };
+      }
+
+      const apiKey = options.omniRouteApiKey ?? process.env.OMNIROUTE_API_KEY;
+      if (!apiKey) return null;
+      const urls = omniRouteCatalogUrls(options.omniRouteBaseUrl
+        ?? process.env.AGENT_HERDER_OMNIROUTE_BASE_URL
+        ?? "http://127.0.0.1:20128");
+      if (!urls) return null;
+      const fetcher = options.fetcher ?? globalThis.fetch;
+      const headers = { Authorization: `Bearer ${apiKey}` };
+      const request = async (url: string): Promise<unknown> => {
+        const response = await fetcher(url, {
+          method: "GET", headers, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(5_000),
+        });
+        if (!response.ok) throw new Error("catalog unavailable");
+        return response.json();
+      };
+
+      const [modelCatalogResponse, mappingResponse, aliasResponse] = await Promise.all([
+        request(urls.models),
+        request(`${urls.api}/model-combo-mappings`),
+        request(`${urls.api}/models/alias`),
+      ]);
+      const modelCatalog = parseOpenAIModelCatalog(modelCatalogResponse);
+      if (!modelCatalog) return null;
+      const selected = modelCatalog.find((entry) => entry.id === modelId);
+      if (!selected || !selected.root) return null;
+      const mappings = objectRecord(mappingResponse);
+      const aliases = objectRecord(aliasResponse);
+      if (!Array.isArray(mappings?.mappings)
+        || !Number.isInteger(mappings.total) || mappings.total !== mappings.mappings.length
+        || mappings.mappings.some((entry) => !objectRecord(entry) || objectRecord(entry)?.enabled !== false)
+        || !Array.isArray(aliases?.aliases) || aliases.aliases.length > 0) return null;
+      if (selected.owner !== "combo") {
+        return { ...base, resolvedProviderLeaves: [{ providerId: selected.owner, modelId: selected.root }] };
+      }
+      // This model is an actual top-level combo only when the native gateway
+      // catalog says so. A child/alias route needs a separately understood map.
+      if (selected.root !== modelId || selected.parent !== null) return null;
+
+      const comboResponse = await request(`${urls.api}/combos`);
+      const combos = parseOmniRouteComboCatalog(comboResponse);
+      if (!combos) return null;
+
+      const combosByNameOrId = new Map<string, OmniRouteCombo>();
+      for (const combo of combos) {
+        if ((combosByNameOrId.has(combo.name) && combosByNameOrId.get(combo.name)?.id !== combo.id)
+          || (combosByNameOrId.has(combo.id) && combosByNameOrId.get(combo.id)?.id !== combo.id)) return null;
+        combosByNameOrId.set(combo.name, combo);
+        combosByNameOrId.set(combo.id, combo);
+      }
+      const rootCandidates = combos.filter((combo) => combo.name === modelId);
+      if (rootCandidates.length !== 1) return null;
+      const catalogById = new Map(modelCatalog.map((entry) => [entry.id, entry]));
+      const expand = (combo: OmniRouteCombo, ancestors: ReadonlySet<string>): OpenCodeProviderLeaf[] | null => {
+        if (ancestors.has(combo.id) || combo.models.length === 0) return null;
+        const nextAncestors = new Set(ancestors);
+        nextAncestors.add(combo.id);
+        const leaves: OpenCodeProviderLeaf[] = [];
+        for (const member of combo.models) {
+          const listedModel = catalogById.get(member.model);
+          if (!listedModel || !listedModel.root) return null;
+          if (listedModel.owner === "combo") {
+            const child = combosByNameOrId.get(member.model);
+            if (!child || (member.providerId !== "combo" && member.providerId !== "omniroute"
+              && member.providerId !== child.name && member.providerId !== child.id)) return null;
+            const childLeaves = expand(child, nextAncestors);
+            if (!childLeaves) return null;
+            leaves.push(...childLeaves);
+            continue;
+          }
+          if (listedModel.owner !== member.providerId) return null;
+          leaves.push({ providerId: member.providerId, modelId: member.model });
+        }
+        return leaves.length ? leaves : null;
+      };
+      const leaves = expand(rootCandidates[0]!, new Set());
+      if (!leaves) return null;
+      const uniqueLeaves = [...new Map(leaves.map((leaf) => [`${leaf.providerId}\0${leaf.modelId}`, leaf])).values()];
+      return { ...base, resolvedProviderLeaves: uniqueLeaves };
+    } catch {
+      return null;
+    }
   }
 
   async getSessionMessages(id: string, limit = 3): Promise<SessionMessageView[] | null> {

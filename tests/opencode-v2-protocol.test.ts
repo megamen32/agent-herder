@@ -270,6 +270,97 @@ it("reads OmniRoute models from the native catalog and confirms a session model 
   }
 });
 
+it("resolves the exact OpenCode combo ID into its complete configured OmniRoute provider leaves", async () => {
+  const state = sessionFixture();
+  state.models = [{ id: "minimax-combo-m3.1", modelID: "minimax-combo-m3.1", providerID: "omniroute" }];
+  const server = v2Fixture(state);
+  const calls: Array<{ url: string; method?: string; authorization: string | null }> = [];
+  const gatewayModels = [
+    { id: "minimax-combo-m3.1", owned_by: "combo", root: "minimax-combo-m3.1", parent: null },
+    { id: "mmcode/MiniMax-M3.1-Flash", owned_by: "minimax-code", root: "MiniMax-M3.1-Flash", parent: null },
+    { id: "minimax/MiniMax-M3.1-Flash", owned_by: "minimax", root: "MiniMax-M3.1-Flash", parent: null },
+  ];
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(typeof input === "string" ? input : input.toString());
+    calls.push({ url: `${url.origin}${url.pathname}`, method: init?.method, authorization: new Headers(init?.headers).get("authorization") });
+    const payload = url.pathname === "/v1/models"
+      ? { object: "list", data: gatewayModels }
+      : url.pathname === "/api/combos"
+        ? { total: 1, combos: [{ id: "combo-uuid", name: "minimax-combo-m3.1", strategy: "priority", models: [
+          { providerId: "minimax-code", model: "mmcode/MiniMax-M3.1-Flash" },
+          { providerId: "minimax", model: "minimax/MiniMax-M3.1-Flash" },
+        ] }] }
+        : url.pathname === "/api/model-combo-mappings"
+          ? { total: 0, mappings: [] }
+          : { aliases: [], catalogVersion: "fixture" };
+    return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3.1", {
+      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", fetcher,
+    })).resolves.toEqual({
+      nativeHarness: "opencode",
+      nativeModelId: "omniroute/minimax-combo-m3.1",
+      providerId: "omniroute",
+      modelId: "minimax-combo-m3.1",
+      resolvedProviderLeaves: [
+        { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
+        { providerId: "minimax", modelId: "minimax/MiniMax-M3.1-Flash" },
+      ],
+    });
+    expect(calls.map(({ url, method }) => [url, method])).toEqual(expect.arrayContaining([
+      ["http://omniroute.test/v1/models", "GET"],
+      ["http://omniroute.test/api/combos", "GET"],
+      ["http://omniroute.test/api/model-combo-mappings", "GET"],
+      ["http://omniroute.test/api/models/alias", "GET"],
+    ]));
+    expect(calls.every((call) => call.authorization === "Bearer fixture-key")).toBe(true);
+  } finally {
+    server.close();
+  }
+});
+
+it("recursively resolves nested configured OmniRoute combos and fails closed on incomplete trees", async () => {
+  const state = sessionFixture();
+  state.models = [{ id: "outer-combo", modelID: "outer-combo", providerID: "omniroute" }];
+  const server = v2Fixture(state);
+  const makeFetcher = (total: number, rows: unknown[]): typeof fetch => async (input) => {
+    const path = new URL(typeof input === "string" ? input : input.toString()).pathname;
+    const payload = path === "/v1/models"
+      ? { data: [
+        { id: "outer-combo", owned_by: "combo", root: "outer-combo", parent: null },
+        { id: "inner-combo", owned_by: "combo", root: "inner-combo", parent: null },
+        { id: "mmcode/MiniMax-M3.1-Flash", owned_by: "minimax-code", root: "MiniMax-M3.1-Flash", parent: null },
+        { id: "minimax/MiniMax-M3.1-Flash", owned_by: "minimax", root: "MiniMax-M3.1-Flash", parent: null },
+      ] }
+      : path === "/api/combos" ? { total, combos: rows }
+        : path === "/api/model-combo-mappings" ? { total: 0, mappings: [] }
+          : { aliases: [] };
+    return new Response(JSON.stringify(payload), { status: 200 });
+  };
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  const tree = [
+    { id: "outer-id", name: "outer-combo", models: [{ providerId: "combo", model: "inner-combo" }] },
+    { id: "inner-id", name: "inner-combo", models: [
+      { providerId: "minimax-code", model: "mmcode/MiniMax-M3.1-Flash" },
+      { providerId: "minimax", model: "minimax/MiniMax-M3.1-Flash" },
+    ] },
+  ];
+  try {
+    const options = { omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key" };
+    await expect(adapter.resolveModelProviderLeaves("omniroute/outer-combo", { ...options, fetcher: makeFetcher(2, tree) }))
+      .resolves.toMatchObject({ resolvedProviderLeaves: [
+        { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
+        { providerId: "minimax", modelId: "minimax/MiniMax-M3.1-Flash" },
+      ] });
+    await expect(adapter.resolveModelProviderLeaves("omniroute/outer-combo", { ...options, fetcher: makeFetcher(3, tree) }))
+      .resolves.toBeNull();
+  } finally {
+    server.close();
+  }
+});
+
 it("steers a live v2 turn natively and records the once-only receipt", async () => {
   const state = sessionFixture();
   // Unique identity: the durable receipt store outlives a single test run.
@@ -517,12 +608,14 @@ it("correlates an exact terminal event to the native root input and persists the
         info: {
           id: "assistant_native_1", parentID: "user_native_1", role: "assistant", sessionID: "ses_failed",
           providerID: "omniroute", modelID: "minimax/MiniMax-M3.1-Flash",
+          time: { created: 1_700_000_010_000, completed: 1_700_000_090_000 },
           error: { type: "QuotaExceeded", code: "quota_exhausted", status: 400, message: "Weekly/Monthly Limit Exhausted" },
         },
         finish: "error", parts: [],
       },
       {
         id: "evt_native_failed_1", turnId: "turn_native_1", type: "idle", outcome: "failed",
+        time: { created: 1_700_000_090_000 },
         error: { type: "QuotaExceeded", code: "quota_exhausted", status: 400, message: "Weekly/Monthly Limit Exhausted" },
       },
     ],
@@ -592,6 +685,49 @@ it("correlates an exact terminal event to the native root input and persists the
   }
 });
 
+it("projects exact failed-turn identity for operator continuation without quota or plugin metadata proof", async () => {
+  const state = sessionFixture();
+  state.sessions.ses_operator_continue = {
+    id: "ses_operator_continue",
+    title: "Historical provider failure",
+    location: { directory: "/tmp/project" },
+    outcome: "failed",
+    messages: [
+      { id: "user_native_exact", type: "user", info: { id: "user_native_exact", role: "user" }, parts: [] },
+      {
+        id: "assistant_native_exact",
+        type: "assistant",
+        info: {
+          id: "assistant_native_exact", role: "assistant", providerID: "minimax-code",
+          modelID: "MiniMax-M3.1-Flash", time: { created: 1_798_000_000_000, completed: 1_798_000_000_250 },
+          error: { type: "ProviderError", message: "Native provider request failed" },
+        },
+        finish: "error", parts: [],
+      },
+      { id: "idle_native_exact", type: "idle", outcome: "failed", time: { created: 1_798_000_000_250 } },
+    ],
+  };
+  state.active.ses_operator_continue = { type: "idle" };
+  const server = v2Fixture(state);
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    await adapter.init();
+    const session = await adapter.getSession("ses_operator_continue");
+    expect(session?.meta?.nativeLastTurn).toEqual({
+      sessionId: "ses_operator_continue",
+      turnId: "assistant_native_exact",
+      assistantMessageId: "assistant_native_exact",
+      providerId: "minimax-code",
+      modelId: "MiniMax-M3.1-Flash",
+      status: "failed",
+      completedAt: 1_798_000_000_250,
+    });
+    expect(session?.meta?.nativeLastTurn).not.toHaveProperty("quotaFailure");
+  } finally {
+    server.close();
+  }
+});
+
 it("projects metadata proof only when both native message IDs and parent link match fresh terminal records", async () => {
   const state = sessionFixture();
   state.sessions.ses_proof = {
@@ -604,8 +740,8 @@ it("projects metadata proof only when both native message IDs and parent link ma
     } } },
     messages: [
       { id: "user_exact", role: "user" },
-      { id: "assistant_exact", role: "assistant", finish: "error" },
-      { id: "status_exact", type: "idle", outcome: "failed" },
+      { id: "assistant_exact", role: "assistant", model: { providerID: "omniroute", id: "minimax/MiniMax-M3.1-Flash" }, finish: "error", time: { completed: 1_700_000_000_100 } },
+      { id: "status_exact", type: "idle", outcome: "failed", time: { created: 1_700_000_000_100 } },
     ],
   };
   state.active.ses_proof = { type: "idle" };
