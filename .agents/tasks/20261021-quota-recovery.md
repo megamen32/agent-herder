@@ -383,3 +383,44 @@ and authorized runtime promotion.
   the next 18 exact entries from Controls, which owns the frozen ledger; no
   duplicate inventory and no restricted-nine enrollment. Bounded ramp continues
   after each durable accepted/native-work receipt; UNKNOWN is never retried.
+- 2026-10-21 03:50 UTC: Read-only handoff ledger
+  `.tmp/quota-recovery/business-recovery-20261021/ledger.jsonl` was consumed
+  as the existing candidate list; no new cohort inventory or business source
+  reads were done. The already-accepted first entry
+  `ses_ea3bf238fffe4ezSGA5Ht2iWTX` was excluded. For the other 18 unrestricted
+  entries, each attempted enrollment used fresh Herder/native status and
+  HumanStop checks; the product endpoint re-read exact native terminal
+  identity, active state, policy and admission before creating a wait.
+  **11/18 accepted by the engine, attempts=1, each with a distinct durable
+  Herder input ID plus exact `dispatchNativeInputId`; all 11 were freshly
+  observed running without permission on `omniroute/minimax-combo-m3.1` at
+  03:50 UTC.** Receipts:
+
+  | OpenCode session | durable Herder input | exact native input |
+  | --- | --- | --- |
+  | `ses_ea543460bffeV0xzqNsSW4ZxbS` | `herder-quota:2e5ddfa6-7051-4170-9bb6-794e563d6c0e` | `msg_15c907bb8001q8z9IbpxbnAK0T` |
+  | `ses_ea51c5577ffeHO238bvFjUC70x` | `herder-quota:fff25d6e-ef31-4a6c-8c1f-6fc127f57cf8` | `msg_15c91d3a1001QA9w60ek54Tf7I` |
+  | `ses_eaaacd771ffebkE0v5DFnYi3r6` | `herder-quota:0b2eb326-bd72-4564-9a78-ccc4e984a746` | `msg_15c91ea4b001xjMr4ECE80JWPz` |
+  | `ses_ea4abdcf6ffeXtvf9ugTagpBWK` | `herder-quota:d209fdf8-b992-48e5-b1a8-d2671345713e` | `msg_15c91dfb5001KUB91mip2ggYrC` |
+  | `ses_ea62b2402ffeVaPgKHLGX61B9D` | `herder-quota:9d1b1d05-3a78-46bf-b789-0431fbdfbd68` | `msg_15c926372001cM8tELOCwIEZBr` |
+  | `ses_ea404b594ffegC1QgFg1ZcyHNi` | `herder-quota:547218b7-1b8f-466b-9fdf-c1d5c6d20bcd` | `msg_15c92a40c001SwsV4he6kS8iqY` |
+  | `ses_ea4e2a42cffeexJNnv5LXmMlSL` | `herder-quota:9a3bbb21-c9cf-49aa-8b5e-34be21cfd4a8` | `msg_15c927120001bAA41gek2Miavr` |
+  | `ses_ea4e6f474ffe5rtO789TIXs9db` | `herder-quota:01e06a90-6c47-419f-a004-14f9595a1ded` | `msg_15c938b93001RwpTHgD6PQuZzX` |
+  | `ses_ea49d54dfffe9g5O3XPFTCk940` | `herder-quota:31505bc8-650e-4ad2-92a5-786e34b695f3` | `msg_15c937e87001HUzOZcfzLnepQy` |
+  | `ses_ea4cd982bffeSzvEcGO64u8gIi` | `herder-quota:cd6d0d8a-bb96-428f-8ad5-7c41f168b715` | `msg_15c936c0d0016sKSSgpnlF0cqF` |
+  | `ses_ea404b58fffeN05LT3qCDLCg4g` | `herder-quota:2e391f34-e43d-4614-bb2e-aab0c83a7916` | `msg_15c94af98001aRj1leBKvzKjMN` |
+
+  The other 7 unrestricted rows returned `ineligible: session_not_idle_root_opencode`
+  from the engine's fresh native checks and were not sent or retried:
+  `ses_ea4d4f5b7ffehHQvCoHa5XzcpG`, `ses_eb42368a0ffea4iXCVYl5Z4XNR`,
+  `ses_ea73cf083ffe0abss76TeU7jkc`, `ses_ea4c2a0f4ffeDuDyqS2mCnq8w1`,
+  `ses_ea62c59c8ffe6CE6xUHixFa70J`, `ses_ea3d0111effeOEA4lbMoByUhtT`,
+  and `ses_ea3e255a3ffeEDyOduY6meLjyX`. Two ledger rows briefly failed
+  enrollment during races: one was later safely accepted after a fresh idle
+  check; one incorrect expected `modelId` was rejected before any send, then
+  corrected from the same exact ledger/native projection and accepted. No
+  accepted or UNKNOWN attempt was replayed. Restricted nine remain held:
+  Controls' isolated plugin proof passed, but this does not establish the
+  production OpenCode runtime has loaded that guard or verify combo leaf
+  resolution; no restricted entry was enrolled. The originally accepted first
+  business session remains read-only observed, running on the combo model.
