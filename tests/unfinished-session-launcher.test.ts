@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { completionEvidence, createAnthropicCompatibleSessionCompletionJudge, fitBatchContext, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type UnfinishedSessionNotice } from "../src/autopilot/unfinished-session-launcher.js";
 import { AutopilotPolicyStore } from "../src/autopilot/policy-store.js";
 import { AutopilotSessionStore } from "../src/autopilot/session-store.js";
+import { AutomationLaunchPolicyStore } from "../src/automation-launch-policy.js";
 import { getHumanStopStore, HumanStopStore } from "../src/human-stop-store.js";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "../src/types/index.js";
 function fixture(status: AgentSession["status"] = "idle", harness: "codex" | "zcode" = "codex", id = "session-1"): AgentSession {
@@ -852,6 +853,78 @@ describe("terminal quota recovery", () => {
       await launcher.recoverPending();
       expect(sent).toHaveLength(1);
       expect(sent[0]?.model).toBe("omniroute/anthropic/fallback");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("enrolls an explicitly authorized failed session from exact native terminal identity and dispatches only the configured fallback", async () => {
+    const root = await mkdtemp(join(tmpdir(), "operator-cohort-quota-recovery-"));
+    try {
+      const failedAt = new Date(Date.now() - 30_000).toISOString();
+      let current: AgentSession = {
+        ...fixture("idle", "opencode", "operator-session"), model: "zai-coding-plan/glm-5.3-flash",
+        meta: { nativeLastTurn: {
+          sessionId: "operator-session", turnId: "native-turn-42", assistantMessageId: "assistant-42",
+          providerId: "zai-coding-plan", modelId: "glm-5.3-flash", status: "failed", completedAt: failedAt,
+        } },
+      };
+      const sent: Array<{ model?: string; inputId?: string }> = [];
+      const adapter = quotaAdapter(() => current, sent, ["omniroute/minimax-combo-m3.1"]);
+      const settings = new SessionAutostartStore(join(root, "settings.json"), {});
+      await settings.setGlobalOptions({ enabled: false });
+      const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+      const projectLaunchPolicyStore = new AutomationLaunchPolicyStore(join(root, "launch-policy.json"));
+      await projectLaunchPolicyStore.replace({ version: 1, allowedHarnesses: ["opencode"], preferredHarness: "opencode",
+        models: { opencode: "omniroute/minimax-combo-m3.1" },
+        fallbackModels: { opencode: ["omniroute/minimax-combo-m3.1"] },
+        projectRoutes: { [current.cwd]: { harnesses: ["opencode"] } },
+      });
+      const launcher = new UnfinishedSessionLauncher({
+        adapters: new Map([["opencode", adapter]]), store, settingsStore: settings,
+        fallbackModelsForHarness: async () => ["omniroute/minimax-combo-m3.1"],
+        projectLaunchPolicyStore,
+      });
+      const evidence = {
+        nativeTurnId: "native-turn-42", assistantMessageId: "assistant-42", providerId: "zai-coding-plan",
+        modelId: "glm-5.3-flash", completedAt: failedAt,
+      };
+      const enrolled = await launcher.enrollOperatorCohortEntry("operator-batch-2026-10-21-01", {
+        sessionId: current.id, cwd: current.cwd, expected: evidence,
+      });
+      expect(enrolled).toMatchObject({ outcome: "enrolled", wait: { origin: "operator_cohort", state: "waiting", currentModel: "glm-5.3-flash" } });
+      await expect(launcher.enrollOperatorCohortEntry("operator-batch-2026-10-21-01", {
+        sessionId: current.id, cwd: current.cwd, expected: evidence,
+      })).resolves.toMatchObject({ outcome: "already_enrolled", wait: { origin: "operator_cohort", state: "waiting" } });
+      expect(await settings.getEffective("opencode", current.id, current.cwd)).toMatchObject({ enabled: false, waitForQuota: true, waitForQuotaSource: "session" });
+      await launcher.recoverPending();
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toMatchObject({ model: "omniroute/minimax-combo-m3.1" });
+      expect((await store.list())[0]?.quotaRecovery).toMatchObject({ state: "accepted", evidence: { classification: "operator_cohort", authorizationId: "operator-batch-2026-10-21-01" } });
+      expect((await store.list())[0]?.recoveryCause).toBeUndefined();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("rejects stale or mismatched operator identity without opting the session in", async () => {
+    const root = await mkdtemp(join(tmpdir(), "operator-cohort-stale-identity-"));
+    try {
+      const current: AgentSession = {
+        ...fixture("idle", "opencode", "operator-session-stale"), model: "zai-coding-plan/glm-5.3-flash",
+        meta: { nativeLastTurn: {
+          sessionId: "operator-session-stale", turnId: "native-turn-new", assistantMessageId: "assistant-new",
+          providerId: "zai-coding-plan", modelId: "glm-5.3-flash", status: "failed", completedAt: new Date().toISOString(),
+        } },
+      };
+      const settings = new SessionAutostartStore(join(root, "settings.json"), {});
+      const launcher = new UnfinishedSessionLauncher({
+        adapters: new Map([["opencode", fakeAdapter(() => current, { resumes: 0, messages: [] })]]),
+        store: new UnfinishedSessionStore(join(root, "unfinished.json")), settingsStore: settings,
+        fallbackModelsForHarness: async () => ["omniroute/minimax-combo-m3.1"],
+      });
+      const result = await launcher.enrollOperatorCohortEntry("operator-batch-2026-10-21-02", {
+        sessionId: current.id, cwd: current.cwd,
+        expected: { nativeTurnId: "native-turn-old", assistantMessageId: "assistant-old", providerId: "zai-coding-plan", modelId: "glm-5.3-flash", completedAt: new Date().toISOString() },
+      });
+      expect(result).toMatchObject({ outcome: "ineligible", reason: "native_terminal_identity_mismatch" });
+      expect((await settings.getEffective("opencode", current.id, current.cwd)).waitForQuota).toBe(false);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

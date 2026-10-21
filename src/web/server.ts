@@ -27,8 +27,8 @@ import { parseNoticeIncident } from "../autopilot/notice-incident.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import type { AutoCompactService, AutoCompactStore } from "../autocontinue/auto-compact.js";
-import type { SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
-import { AutomationLaunchPolicyStore, LaunchPolicyConflictError, MAX_MODEL_LENGTH, validateAutomationLaunchPolicy } from "../automation-launch-policy.js";
+import type { OperatorCohortEnrollmentTarget, SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
+import { AutomationLaunchPolicyStore, LaunchPolicyConflictError, MAX_MODEL_LENGTH, findProjectRoute, validateAutomationLaunchPolicy } from "../automation-launch-policy.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { boundedCoordinationContext, coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
 import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
@@ -1022,6 +1022,79 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     } catch (error) {
       return sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) });
     }
+  }
+  if (url.pathname === "/api/human-stop/status" && request.method === "GET") {
+    response.setHeader("cache-control", "no-store");
+    const harness = url.searchParams.get("harness")?.trim();
+    const sessionId = url.searchParams.get("sessionId")?.trim();
+    if (!harness || !sessionId) return sendJson(response, 400, { error: "harness and sessionId are required" });
+    if (!["opencode", "zcode", "codex", "claude", "qoder", "hermes", "fast-agent", "chatgpt", "minimax-code"].includes(harness)) return sendJson(response, 400, { error: "unknown harness" });
+    return sendJson(response, 200, { harness, sessionId, held: await getHumanStopStore().isHeld(harness, sessionId) });
+  }
+  if (url.pathname === "/api/quota-recovery/operator-cohort/enroll" && request.method === "POST") {
+    if (!automationLaunchPolicyStore) return sendJson(response, 503, { error: "Project launch policy is unavailable" });
+    const loadedLaunchPolicy = await automationLaunchPolicyStore.load();
+    if (loadedLaunchPolicy.kind !== "valid") return sendJson(response, 503, { error: "Project launch policy is not valid" });
+    const body = await readJson(request);
+    const authorizationId = typeof body.authorizationId === "string" ? body.authorizationId.trim() : "";
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,255}$/u.test(authorizationId)) {
+      return sendJson(response, 400, { error: "authorizationId must be a stable operator enrollment ID" });
+    }
+    if (!Array.isArray(body.entries) || body.entries.length === 0 || body.entries.length > 64) {
+      return sendJson(response, 400, { error: "entries must contain 1 to 64 exact OpenCode session selections" });
+    }
+    const entries: OperatorCohortEnrollmentTarget[] = [];
+    const keys = new Set<string>();
+    for (const value of body.entries) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return sendJson(response, 400, { error: "invalid cohort entry" });
+      const item = value as Record<string, unknown>;
+      const expected = item.expected;
+      if (!expected || typeof expected !== "object" || Array.isArray(expected)) return sendJson(response, 400, { error: "each entry requires exact expected native terminal identity" });
+      const identity = expected as Record<string, unknown>;
+      const sessionId = typeof item.sessionId === "string" ? item.sessionId.trim() : "";
+      const cwd = typeof item.cwd === "string" ? item.cwd.trim() : "";
+      if (!sessionId || sessionId.length > 512 || !cwd || cwd.length > 4096
+        || [identity.nativeTurnId, identity.assistantMessageId, identity.providerId, identity.modelId].some((part) => typeof part !== "string" || !part.trim() || part.length > 512)
+        || !(typeof identity.completedAt === "string" || typeof identity.completedAt === "number")) {
+        return sendJson(response, 400, { error: "invalid exact terminal identity in cohort entry" });
+      }
+      const key = `${sessionId}\u0000${cwd}`;
+      if (keys.has(key)) return sendJson(response, 400, { error: "duplicate session selection" });
+      keys.add(key);
+      const completedAtDate = typeof identity.completedAt === "number"
+        ? new Date(identity.completedAt)
+        : new Date(identity.completedAt);
+      if (!Number.isFinite(completedAtDate.getTime())) return sendJson(response, 400, { error: "invalid terminal completion time" });
+      const completedAt = completedAtDate.toISOString();
+      entries.push({ sessionId, cwd, expected: {
+        nativeTurnId: (identity.nativeTurnId as string).trim(),
+        assistantMessageId: (identity.assistantMessageId as string).trim(),
+        providerId: (identity.providerId as string).trim(),
+        modelId: (identity.modelId as string).trim(),
+        completedAt,
+      } });
+    }
+    const results = [];
+    for (const entry of entries) {
+      const route = findProjectRoute(loadedLaunchPolicy.policy, entry.cwd);
+      const configuredFallbacks = loadedLaunchPolicy.policy.fallbackModels?.opencode ?? [];
+      if (route && !route.harnesses.includes("opencode")) {
+        results.push({ sessionId: entry.sessionId, outcome: "ineligible" as const, reason: "project_policy_disallows_opencode" });
+        continue;
+      }
+      if (!configuredFallbacks.length) {
+        results.push({ sessionId: entry.sessionId, outcome: "ineligible" as const, reason: "project_policy_has_no_configured_fallback" });
+        continue;
+      }
+      results.push(await supervisor.enrollOperatorCohortEntry(authorizationId, entry));
+    }
+    const enrolled = results.filter((result) => result.outcome === "enrolled" || result.outcome === "already_enrolled").length;
+    return sendJson(response, enrolled === results.length ? 200 : 207, {
+      authorizationId,
+      selected: results.length,
+      enrolled,
+      results,
+    });
   }
   if (url.pathname === "/api/session-autostart" && (request.method === "GET" || request.method === "PUT")) {
     if (!sessionAutostartStore) return sendJson(response, 503, { error: "Session autostart settings are disabled" });

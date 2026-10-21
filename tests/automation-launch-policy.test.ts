@@ -4,7 +4,7 @@ import { mkdtemp, readFile, stat, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ABSENT_LAUNCH_POLICY_ETAG, AutomationLaunchPolicyStore, validateAutomationLaunchPolicy } from "../src/automation-launch-policy.js";
+import { ABSENT_LAUNCH_POLICY_ETAG, AutomationLaunchPolicyStore, operatorCohortRecoveryAllowed, validateAutomationLaunchPolicy } from "../src/automation-launch-policy.js";
 import { createWebServer } from "../src/web/server.js";
 
 const servers: Server[] = [];
@@ -22,6 +22,32 @@ afterEach(async () => {
 });
 
 describe("automation launch policy", () => {
+  it("fails closed for operator cohort recovery on the restricted TelegramAuto route only", () => {
+    const configured = validateAutomationLaunchPolicy({
+      version: 1,
+      allowedHarnesses: ["opencode", "zcode"],
+      preferredHarness: "opencode",
+      models: { opencode: "omniroute/minimax-combo-m3.1", zcode: "omniroute/minimax-combo-m3.1" },
+      fallbackModels: { opencode: ["omniroute/minimax-combo-m3.1"] },
+      projectRoutes: {
+        "/home/roomhacker/PycharmProjects/TelegramAuto": {
+          harnesses: ["opencode", "zcode"], aliases: ["tg-commentator", "autotelegramviews"],
+        },
+        "/home/roomhacker/PycharmProjects/video_watching": { harnesses: ["opencode"] },
+        "/projects/ordinary": { harnesses: ["opencode"] },
+        "/projects/explicit-deny": { harnesses: ["opencode"], operatorCohortRecovery: "deny" },
+        "/projects/no-opencode": { harnesses: ["zcode"] },
+      },
+    });
+    expect(operatorCohortRecoveryAllowed(configured, "/home/roomhacker/PycharmProjects/TelegramAuto")).toBe(false);
+    expect(operatorCohortRecoveryAllowed(configured, "tg-commentator")).toBe(false);
+    expect(operatorCohortRecoveryAllowed(configured, "/home/roomhacker/PycharmProjects/video_watching")).toBe(false);
+    expect(operatorCohortRecoveryAllowed(configured, "/projects/ordinary")).toBe(true);
+    expect(operatorCohortRecoveryAllowed(configured, "/projects/unconfigured")).toBe(true);
+    expect(operatorCohortRecoveryAllowed(configured, "/projects/explicit-deny")).toBe(false);
+    expect(operatorCohortRecoveryAllowed(configured, "/projects/no-opencode")).toBe(false);
+  });
+
   it("validates the allowlist and supports an intentional empty disable policy", () => {
     expect(validateAutomationLaunchPolicy(policy)).toEqual(policy);
     expect(validateAutomationLaunchPolicy({ version: 1, allowedHarnesses: [], preferredHarness: "codex", models: {} }))
@@ -53,12 +79,13 @@ describe("automation launch policy", () => {
     const validated = validateAutomationLaunchPolicy({
       ...policy,
       fallbackModels: {
-        opencode: ["omniroute/openai/gpt-5.6", " OmniRoute/OpenAI/GPT-5.6 ", "omniroute/anthropic/claude", "omniroute/google/gemini", "omniroute/meta/llama", "omniroute/mistral/mistral-large", "omniroute/qwen/qwen3", "omniroute/deepseek/deepseek-v4", "omniroute/openai/gpt-5.6"],
+        opencode: ["omniroute/openai/gpt-5.6", " OmniRoute/OpenAI/GPT-5.6 ", "omniroute/anthropic/claude", "omniroute/google/gemini", "omniroute/meta/llama", "omniroute/mistral/mistral-large", "omniroute/qwen/qwen3", "omniroute/deepseek/deepseek-v4", "omniroute/minimax-combo-m3.1", "omniroute/openai/gpt-5.6"],
       },
     });
     expect(validated.fallbackModels?.opencode).toEqual([
       "omniroute/openai/gpt-5.6", "omniroute/anthropic/claude", "omniroute/google/gemini", "omniroute/meta/llama",
       "omniroute/mistral/mistral-large", "omniroute/qwen/qwen3", "omniroute/deepseek/deepseek-v4",
+      "omniroute/minimax-combo-m3.1",
     ]);
   });
 
@@ -84,6 +111,21 @@ describe("automation launch policy", () => {
     expect(legacy.policy.fallbackModels?.zcode).toEqual(["omniroute/openai/gpt-5.6"]);
     const cleared = await store.replace({ ...legacy.policy, fallbackModels: {} }, { ifMatch: legacy.etag });
     expect(cleared.policy.fallbackModels).toEqual({});
+  });
+
+  it("preserves operator cohort route guards when a legacy editor rewrites project routes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "launch-route-guard-")); directories.push(root);
+    const store = new AutomationLaunchPolicyStore(join(root, "policy.json"));
+    const routePolicy = validateAutomationLaunchPolicy({
+      version: 1, allowedHarnesses: ["opencode"], preferredHarness: "opencode", models: { opencode: "omniroute/minimax-combo-m3.1" },
+      projectRoutes: { "/projects/restricted": { harnesses: ["opencode"], operatorCohortRecovery: "deny" } },
+    });
+    const initial = await store.replace(routePolicy);
+    const legacy = await store.replace({
+      ...routePolicy,
+      projectRoutes: { "/projects/restricted": { harnesses: ["opencode"] } },
+    }, { ifMatch: initial.etag });
+    expect(legacy.policy.projectRoutes?.["/projects/restricted"]?.operatorCohortRecovery).toBe("deny");
   });
 
   it("fails closed when absent and validates HTTP writes before persistence", async () => {

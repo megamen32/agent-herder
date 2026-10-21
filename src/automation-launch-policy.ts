@@ -16,6 +16,8 @@ import type { HarnessType } from "./types/common.js";
 export interface ProjectLaunchRoute {
   harnesses: HarnessType[];
   models?: Partial<Record<HarnessType, string>>;
+  /** Operator-authorized historical recovery is withheld until provider and descendant policy is enforced. */
+  operatorCohortRecovery?: "deny";
   /**
    * Additional project identifiers that resolve to this route, matched
    * case-insensitively. Real cards carry their own service identifier, for
@@ -126,6 +128,24 @@ export function findProjectRoute(
     if (route.aliases?.some((alias) => foldProjectKey(alias) === folded)) return route;
   }
   return undefined;
+}
+
+/** Historical operator enrollment has stricter scope than ordinary launch routing. */
+export function operatorCohortRecoveryAllowed(policy: AutomationLaunchPolicy, project: string): boolean {
+  const route = findProjectRoute(policy, project);
+  if (route && (!route.harnesses.includes("opencode") || route.operatorCohortRecovery === "deny")) return false;
+  const key = foldProjectKey(project);
+  // These two product projects are the explicitly restricted cohort; keep
+  // historical enrollment closed until resolved-provider/child checks land.
+  if (key === foldProjectKey("/home/roomhacker/PycharmProjects/video_watching")) return false;
+  for (const [presetPath, preset] of Object.entries(PROJECT_ROUTE_PRESETS)) {
+    if (presetPath !== "/home/roomhacker/PycharmProjects/TelegramAuto") continue;
+    if (foldProjectKey(presetPath) === key || preset.aliases?.some((alias) => foldProjectKey(alias) === key)) return false;
+  }
+  // No launch route means no ordinary automation authority, but this helper is
+  // only for a human-authorized exact-session cohort enrollment. The separate
+  // global ordered fallback and native terminal checks still apply.
+  return true;
 }
 
 /** Case-folded comparison key for a project path or a declared alias. */
@@ -258,7 +278,7 @@ function validateFallbackModels(value: unknown): Partial<Record<"opencode" | "zc
       if (typeof model !== "string") throw new Error(`fallbackModels.${harness} entries must be model IDs`);
       const normalized = model.trim();
       if (normalized.length === 0 || normalized.length > MAX_MODEL_LENGTH || /[\u0000-\u0020\u007f]/u.test(normalized)
-        || !/^omniroute\/[A-Za-z0-9._-]+\/[^/\\]+(?:\/[^/\\]+)*$/iu.test(normalized)) {
+      || !/^omniroute\/[A-Za-z0-9._-]+(?:\/[^/\\]+(?:\/[^/\\]+)*)?$/iu.test(normalized)) {
         throw new Error(`fallbackModels.${harness} entries must be fully qualified OmniRoute model IDs`);
       }
       const key = normalized.toLocaleLowerCase("en-US");
@@ -346,10 +366,14 @@ function validateProjectRoutes(
         aliases.push(normalized);
       }
     }
+    if (input.operatorCohortRecovery !== undefined && input.operatorCohortRecovery !== "deny") {
+      throw new Error(`Project route '${project}' operatorCohortRecovery must be 'deny' when present`);
+    }
     routes[key] = {
       harnesses,
       ...(routeModels && Object.keys(routeModels).length > 0 ? { models: routeModels } : {}),
       ...(aliases ? { aliases } : {}),
+      ...(input.operatorCohortRecovery === "deny" ? { operatorCohortRecovery: "deny" as const } : {}),
     };
   }
   return routes;
@@ -420,6 +444,22 @@ export class AutomationLaunchPolicyStore {
           if (current.kind === "valid" && current.policy.fallbackModels !== undefined) {
             policy = { ...policy, fallbackModels: current.policy.fallbackModels };
           }
+        }
+        // Older project-route editors reconstruct route objects without
+        // operator cohort guard metadata. Keep that guard unless the route is
+        // explicitly removed; callers cannot clear it accidentally.
+        const currentPolicy = await this.load();
+        if (currentPolicy.kind === "valid" && currentPolicy.policy.projectRoutes && policy.projectRoutes) {
+          const routes = { ...policy.projectRoutes };
+          let changed = false;
+          for (const [project, route] of Object.entries(routes)) {
+            const old = currentPolicy.policy.projectRoutes[project];
+            if (old?.operatorCohortRecovery === "deny" && route.operatorCohortRecovery === undefined) {
+              routes[project] = { ...route, operatorCohortRecovery: "deny" };
+              changed = true;
+            }
+          }
+          if (changed) policy = { ...policy, projectRoutes: routes };
         }
         const bytes = Buffer.from(`${JSON.stringify(policy, null, 2)}\n`, "utf8");
         const handle = await open(temporary, "wx", 0o600);

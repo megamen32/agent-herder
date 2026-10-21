@@ -14,7 +14,7 @@ import type { HumanRequestRegistry } from "../human-request/registry.js";
 import type { CodexTrackedTurnCompletion } from "../adapters/codex-app-server.js";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, normalize } from "node:path";
+import { dirname, join, normalize } from "node:path";
 import lockfile from "proper-lockfile";
 
 import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessType, SendMessageResult, SessionMessageView } from "../types/index.js";
@@ -24,6 +24,8 @@ import { deferredMessages, isBusyCodexWriter, type DeferredMessageStore } from "
 import { effectivePolicyAllowsTarget, type EffectivePolicy } from "./policy.js";
 import type { AutopilotPolicyStore } from "./policy-store.js";
 import type { AutopilotSessionStore } from "./session-store.js";
+import { AutomationLaunchPolicyStore, operatorCohortRecoveryAllowed } from "../automation-launch-policy.js";
+import { resolveAutopilotStateDir } from "./state-dir.js";
 
 const SUPPORTED_HARNESSES: readonly HarnessType[] = ["codex", "opencode", "claude", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
 const DEFAULT_CONTINUATION = "Продолжи незавершённую задачу с того места, где выполнение было прервано. Сначала проверь текущее состояние и не повторяй уже завершённые действия.";
@@ -144,10 +146,23 @@ export type QuotaFailureEvidence = {
   resetAt?: string;
 };
 
+/** A human-authorized cohort entry backed by a fresh native terminal snapshot. */
+export type OperatorCohortEvidence = {
+  classification: "operator_cohort";
+  authorizationId: string;
+  nativeTurnId: string;
+  assistantMessageId: string;
+  providerId: string;
+  modelId: string;
+  completedAt: string;
+};
+
+export type QuotaRecoveryEvidence = QuotaFailureEvidence | OperatorCohortEvidence;
+
 export type QuotaRecoveryState = "waiting" | "dispatching" | "accepted" | "held" | "exhausted";
 
 export type QuotaRecoveryRecord = {
-  evidence: QuotaFailureEvidence;
+  evidence: QuotaRecoveryEvidence;
   state: QuotaRecoveryState;
   nextAttemptAt: string;
   candidateModels: string[];
@@ -168,6 +183,7 @@ export type QuotaRecoveryWaitStatus = {
   sessionId: string;
   cwd: string;
   state: QuotaRecoveryState;
+  origin: "native_quota" | "operator_cohort";
   reason: string;
   nextAttemptAt: string;
   resetAt?: string;
@@ -176,8 +192,25 @@ export type QuotaRecoveryWaitStatus = {
   attempts: number;
 };
 
+export type OperatorCohortEnrollmentTarget = {
+  sessionId: string;
+  cwd: string;
+  expected: Pick<OperatorCohortEvidence, "nativeTurnId" | "assistantMessageId" | "providerId" | "modelId" | "completedAt">;
+};
+
+export type OperatorCohortEnrollmentResult = {
+  sessionId: string;
+  outcome: "enrolled" | "already_enrolled" | "ineligible";
+  reason?: string;
+  wait?: QuotaRecoveryWaitStatus;
+};
+
 type NativeLastTurn = {
+  sessionId?: string;
   turnId?: string;
+  assistantMessageId?: string;
+  providerId?: string;
+  modelId?: string;
   inputId?: string;
   status?: string;
   startedAt?: string;
@@ -208,7 +241,11 @@ function nativeLastTurn(session: AgentSession | null | undefined): NativeLastTur
   const value = session?.meta?.nativeLastTurn;
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
+  const sessionId = nonEmptyText(record.sessionId);
   const turnId = nonEmptyText(record.turnId);
+  const assistantMessageId = nonEmptyText(record.assistantMessageId);
+  const providerId = nonEmptyText(record.providerId);
+  const modelId = nonEmptyText(record.modelId);
   const status = nonEmptyText(record.status);
   const startedAt = nativeTimestamp(record.startedAt);
   const completedAt = nativeTimestamp(record.completedAt);
@@ -219,6 +256,8 @@ function nativeLastTurn(session: AgentSession | null | undefined): NativeLastTur
   const errorCode = nonEmptyText(record.errorCode);
   const blockedReason = nonEmptyText(record.blockedReason);
   return turnId || status ? {
+    ...(sessionId ? { sessionId } : {}), ...(assistantMessageId ? { assistantMessageId } : {}),
+    ...(providerId ? { providerId } : {}), ...(modelId ? { modelId } : {}),
     ...(turnId ? { turnId } : {}), ...(status ? { status } : {}),
     ...(inputId ? { inputId } : {}),
     ...(startedAt ? { startedAt } : {}), ...(completedAt ? { completedAt } : {}),
@@ -253,6 +292,41 @@ function normalizeQuotaFailureEvidence(value: unknown): QuotaFailureEvidence | u
   return { classification: "quota_exhausted", nativeTurnId, inputId, providerId, modelId, ...(resetAt ? { resetAt } : {}) };
 }
 
+function normalizeOperatorCohortEvidence(value: unknown): OperatorCohortEvidence | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const input = value as Record<string, unknown>;
+  if (input.classification !== "operator_cohort") return undefined;
+  const authorizationId = nonEmptyText(input.authorizationId);
+  const nativeTurnId = nonEmptyText(input.nativeTurnId);
+  const assistantMessageId = nonEmptyText(input.assistantMessageId);
+  const providerId = nonEmptyText(input.providerId);
+  const modelId = nonEmptyText(input.modelId);
+  const completedAt = nativeTimestamp(input.completedAt);
+  if (!authorizationId || !nativeTurnId || !assistantMessageId || !providerId || !modelId || !completedAt
+    || [authorizationId, nativeTurnId, assistantMessageId, providerId, modelId].some((part) => /[\u0000-\u001f\u007f]/u.test(part) || part.length > 512)) return undefined;
+  return { classification: "operator_cohort", authorizationId, nativeTurnId, assistantMessageId, providerId, modelId, completedAt };
+}
+
+function normalizeQuotaRecoveryEvidence(value: unknown): QuotaRecoveryEvidence | undefined {
+  return normalizeQuotaFailureEvidence(value) ?? normalizeOperatorCohortEvidence(value);
+}
+
+function recoveryEvidenceTurnId(evidence: QuotaRecoveryEvidence): string { return evidence.nativeTurnId; }
+function recoveryEvidenceInputId(evidence: QuotaRecoveryEvidence): string | undefined {
+  return evidence.classification === "quota_exhausted" ? evidence.inputId : undefined;
+}
+function recoveryEvidenceModelId(evidence: QuotaRecoveryEvidence): string {
+  return evidence.classification === "quota_exhausted" ? quotaModelId(evidence) ?? evidence.modelId : evidence.modelId;
+}
+
+function sameRecoveryEvidence(left: QuotaRecoveryEvidence | undefined, right: QuotaRecoveryEvidence | undefined): boolean {
+  if (!left || !right || left.classification !== right.classification || left.nativeTurnId !== right.nativeTurnId) return false;
+  if (left.classification === "quota_exhausted" && right.classification === "quota_exhausted") return sameQuotaFailure(left, right);
+  return left.classification === "operator_cohort" && right.classification === "operator_cohort"
+    && left.authorizationId === right.authorizationId && left.assistantMessageId === right.assistantMessageId
+    && left.providerId === right.providerId && left.modelId === right.modelId && left.completedAt === right.completedAt;
+}
+
 function sameQuotaFailure(left: QuotaFailureEvidence | undefined, right: QuotaFailureEvidence | undefined): boolean {
   return Boolean(left && right
     && left.nativeTurnId === right.nativeTurnId
@@ -279,8 +353,19 @@ function exactTerminalQuotaSnapshot(session: AgentSession | null | undefined, ev
     && sameQuotaFailure(last.quotaFailure, evidence));
 }
 
-function quotaCandidateModels(fallbackModels: readonly string[], currentModel: string): string[] {
-  const seen = new Set<string>([currentModel.toLocaleLowerCase("en-US")]);
+function exactTerminalRecoverySnapshot(session: AgentSession | null | undefined, evidence: QuotaRecoveryEvidence): boolean {
+  if (evidence.classification === "quota_exhausted") return exactTerminalQuotaSnapshot(session, evidence);
+  const last = nativeLastTurn(session);
+  return Boolean(session && last && last.sessionId === session.id
+    && (last.status === "failed" || last.status === "error") && last.cancelledByUser !== true
+    && last.turnId === evidence.nativeTurnId && last.assistantMessageId === evidence.assistantMessageId
+    && last.providerId === evidence.providerId && last.modelId === evidence.modelId
+    && last.completedAt && Date.parse(last.completedAt) === Date.parse(evidence.completedAt));
+}
+
+function quotaCandidateModels(fallbackModels: readonly string[], currentModel: string | readonly string[]): string[] {
+  const currentModels = typeof currentModel === "string" ? [currentModel] : [...currentModel];
+  const seen = new Set<string>(currentModels.map((model) => model.toLocaleLowerCase("en-US")));
   const candidates: string[] = [];
   for (const raw of fallbackModels) {
     const model = typeof raw === "string" ? raw.trim() : "";
@@ -291,8 +376,13 @@ function quotaCandidateModels(fallbackModels: readonly string[], currentModel: s
     candidates.push(model);
     if (candidates.length >= 8) break;
   }
-  candidates.push(currentModel);
+  candidates.push(...currentModels);
   return candidates;
+}
+
+function operatorFallbackCandidates(fallbackModels: readonly string[], currentModels: readonly string[]): string[] {
+  const current = new Set(currentModels.map((model) => model.toLocaleLowerCase("en-US")));
+  return quotaCandidateModels(fallbackModels, currentModels).filter((model) => !current.has(model.toLocaleLowerCase("en-US")));
 }
 
 function quotaBackoffMs(attempts: number): number {
@@ -311,7 +401,10 @@ function quotaNextAttemptAt(evidence: QuotaFailureEvidence, now: Date): Date {
 }
 
 function quotaRecoveryReason(quota: QuotaRecoveryRecord): string {
-  if (quota.state === "waiting") return quota.evidence.resetAt
+  if (quota.evidence.classification === "operator_cohort" && quota.state === "waiting") {
+    return "Ожидает разрешённого продолжения; перед отправкой Herder повторно проверит точный завершённый сбой и ограничения сессии.";
+  }
+  if (quota.state === "waiting") return quota.evidence.classification === "quota_exhausted" && quota.evidence.resetAt
     ? "Ожидает срока сброса квоты; затем проверит точную нативную сессию перед продолжением."
     : "Ожидает ограниченной повторной попытки; неизвестная квота не считается доступной.";
   if (quota.state === "dispatching" && quota.reasonCode === "delivery_unknown") return "Квитанция отправки пока не подтверждена; повторная отправка запрещена, идёт точная сверка.";
@@ -1061,6 +1154,7 @@ export class UnfinishedSessionStore {
       const index = file.sessions.findIndex((record) => unfinishedRecordKey(record) === key);
       const existing = index < 0 ? undefined : file.sessions[index];
       if (existing?.quotaRecovery
+        && existing.quotaRecovery.evidence.classification === "quota_exhausted"
         && existing.quotaRecovery.evidence.nativeTurnId === evidence.nativeTurnId
         && existing.quotaRecovery.evidence.inputId === evidence.inputId) return { ...existing };
       const quotaRecovery: QuotaRecoveryRecord = {
@@ -1099,6 +1193,71 @@ export class UnfinishedSessionStore {
       delete record.activeTurnStartedAt;
       delete record.activeTurnId;
       delete record.activeInputId;
+      delete record.recoveryBlockedReason;
+      delete record.lastError;
+      if (index < 0) file.sessions.push(record);
+      else file.sessions[index] = record;
+      sortRecords(file.sessions);
+      return { ...record };
+    });
+  }
+
+  /** Persist one explicitly authorized cohort continuation, separate from quota proof. */
+  async markOperatorCohortEligible(
+    session: AgentSession,
+    evidence: OperatorCohortEvidence,
+    fallbackModels: readonly string[],
+    generationId = "operator-cohort",
+    now = new Date(),
+  ): Promise<UnfinishedSessionRecord> {
+    const normalizedEvidence = normalizeOperatorCohortEvidence(evidence);
+    const currentModel = normalizedEvidence?.modelId;
+    if (!normalizedEvidence || session.harness !== "opencode" || !currentModel) throw new Error("invalid operator cohort evidence");
+    const normalized = normalizeRecordTarget({ harness: "opencode", sessionId: session.id, cwd: session.cwd,
+      model: session.model, title: session.title, threadSource: nonEmptyText(session.meta?.threadSource) });
+    const candidates = operatorFallbackCandidates(fallbackModels, [currentModel, session.model ?? ""]);
+    if (!candidates.length) throw new Error("no configured fallback candidate is available for this operator cohort session");
+    const nowIso = now.toISOString();
+    return this.mutate((file) => {
+      const workspaceIdentity = sessionWorkspaceIdentity(session);
+      const key = sessionKey("opencode", session.id, workspaceIdentity);
+      const index = file.sessions.findIndex((record) => unfinishedRecordKey(record) === key);
+      const existing = index < 0 ? undefined : file.sessions[index];
+      const previous = existing?.quotaRecovery;
+      if (previous?.evidence.classification === "operator_cohort"
+        && previous.evidence.authorizationId === normalizedEvidence.authorizationId
+        && sameRecoveryEvidence(previous.evidence, normalizedEvidence)) return { ...existing! };
+      if (previous && (["waiting", "dispatching", "accepted"].includes(previous.state)
+        || previous.state === "held" && previous.reasonCode === "delivery_unknown")) {
+        throw new Error("session already has pending, in-flight, accepted, or unknown quota recovery");
+      }
+      const quotaRecovery: QuotaRecoveryRecord = {
+        evidence: normalizedEvidence,
+        state: "waiting",
+        nextAttemptAt: nowIso,
+        candidateModels: candidates,
+        candidateIndex: 0,
+        attempts: 0,
+        revision: (previous?.revision ?? 0) + 1,
+        updatedAt: nowIso,
+        reasonCode: "quota_waiting",
+      };
+      const record: UnfinishedSessionRecord = {
+        ...(existing ?? { ...normalized, workspaceIdentity, startedAt: nowIso, generationId: bounded(generationId, "generationId"), attempts: 0, state: "active" as const }),
+        ...normalized,
+        workspaceIdentity,
+        updatedAt: nowIso,
+        state: "active",
+        quotaRecovery,
+        nextAttemptAt: nowIso,
+      };
+      delete record.activeTurnStartedAt;
+      delete record.activeTurnId;
+      delete record.activeInputId;
+      delete record.recoveryCause;
+      delete record.recoveryTurnId;
+      delete record.recoveryInputId;
+      delete record.recoveryObservedAt;
       delete record.recoveryBlockedReason;
       delete record.lastError;
       if (index < 0) file.sessions.push(record);
@@ -1223,7 +1382,7 @@ export class UnfinishedSessionStore {
       const record = file.sessions.find((item) => unfinishedRecordKey(item) === unfinishedRecordKey(snapshot));
       if (!record?.quotaRecovery || record.quotaRecovery.state !== "waiting"
         || record.quotaRecovery.revision !== snapshot.quotaRecovery?.revision
-        || !sameQuotaFailure(record.quotaRecovery.evidence, snapshot.quotaRecovery?.evidence)) return false;
+        || !sameRecoveryEvidence(record.quotaRecovery.evidence, snapshot.quotaRecovery?.evidence)) return false;
       delete record.quotaRecovery;
       delete record.recoveryCause;
       delete record.recoveryTurnId;
@@ -1247,13 +1406,20 @@ export class UnfinishedSessionStore {
       sessionId: record.sessionId,
       cwd: record.cwd,
       state: quota.state,
+      origin: quota.evidence.classification === "operator_cohort" ? "operator_cohort" : "native_quota",
       reason: quotaRecoveryReason(quota),
       nextAttemptAt: quota.nextAttemptAt,
-      ...(quota.evidence.resetAt ? { resetAt: quota.evidence.resetAt } : {}),
-      currentModel: quotaModelId(quota.evidence) ?? quota.evidence.modelId,
+      ...(quota.evidence.classification === "quota_exhausted" && quota.evidence.resetAt ? { resetAt: quota.evidence.resetAt } : {}),
+      currentModel: recoveryEvidenceModelId(quota.evidence),
       ...(quota.selectedModel ? { selectedModel: quota.selectedModel } : {}),
       attempts: quota.attempts,
     };
+  }
+
+  async getQuotaRecoveryRecord(harness: string, sessionId: string, cwd: string): Promise<QuotaRecoveryRecord | null> {
+    const normalizedHarness = harnessType(harness);
+    const record = findUnfinishedRecord(await this.read().then((file) => file.sessions), normalizedHarness, sessionId, cwd);
+    return record?.quotaRecovery ? cloneQuotaRecovery(record.quotaRecovery) : null;
   }
 
   async ingestColdFailure(
@@ -1727,6 +1893,8 @@ export interface UnfinishedSessionLauncherOptions {
   store: UnfinishedSessionStore;
   settingsStore: SessionAutostartStore;
   fallbackModelsForHarness?: (harness: "opencode" | "zcode") => Promise<string[]>;
+  /** Existing project launch policy is the authority for operator-cohort model admission. */
+  projectLaunchPolicyStore?: Pick<AutomationLaunchPolicyStore, "load">;
   /** Rechecks owning fleet authorization before any automatic native work. */
   admissionGate?: RecoveryAdmissionGate;
   maxAttempts?: number;
@@ -1783,6 +1951,7 @@ export class UnfinishedSessionLauncher {
   private readonly watchdogIntervalOverrideMs?: number;
   private readonly stalledTurnOverrideMs?: number;
   private readonly acceptedAdmissionTimeoutMs: number;
+  private readonly projectLaunchPolicyStore: Pick<AutomationLaunchPolicyStore, "load">;
   private readonly plannerTransportRetryDelayMs: number;
   private readonly pendingQuestions?: PendingQuestionGate;
   private recovering: Promise<void> | null = null;
@@ -1826,6 +1995,8 @@ export class UnfinishedSessionLauncher {
   private readonly continuedThisRecovery = new Set<string>();
 
   constructor(private readonly options: UnfinishedSessionLauncherOptions) {
+    this.projectLaunchPolicyStore = options.projectLaunchPolicyStore
+      ?? new AutomationLaunchPolicyStore(join(resolveAutopilotStateDir(), "automation-launch-policy.json"));
     this.maxAttempts = positiveInteger(options.maxAttempts ?? Number(process.env.AGENT_HERDER_AUTOSTART_MAX_ATTEMPTS || 3), 3);
     this.retryDelayMs = nonNegativeInteger(options.retryDelayMs ?? Number(process.env.AGENT_HERDER_AUTOSTART_RETRY_DELAY_MS || 5_000), 5_000);
     this.deterministicRetryDelayMs = positiveInteger(
@@ -2037,7 +2208,9 @@ export class UnfinishedSessionLauncher {
           || identity.inputId === quotaSnapshot.quotaRecovery.dispatchNativeInputId)) {
         await this.options.store.settleQuotaRecoveryAttempt(quotaSnapshot, "accepted", { ...(identity.turnId ? { turnId: identity.turnId } : {}) });
       } else if (quotaSnapshot?.quotaRecovery?.state === "waiting"
-        && (identity.turnId !== quotaSnapshot.quotaRecovery.evidence.nativeTurnId || identity.inputId !== quotaSnapshot.quotaRecovery.evidence.inputId)) {
+        && (identity.turnId !== recoveryEvidenceTurnId(quotaSnapshot.quotaRecovery.evidence)
+          || (recoveryEvidenceInputId(quotaSnapshot.quotaRecovery.evidence) !== undefined
+            && identity.inputId !== recoveryEvidenceInputId(quotaSnapshot.quotaRecovery.evidence)))) {
         await this.options.store.clearWaitingQuotaRecovery(quotaSnapshot);
       }
       await this.options.store.markNativeTurnStarted(session, identity, this.generationId);
@@ -2141,12 +2314,72 @@ export class UnfinishedSessionLauncher {
     return this.options.store.getQuotaRecoveryWaitStatus(harness, sessionId, cwd);
   }
 
+  /** Enroll one operator-approved session; all subsequent sends remain engine-owned. */
+  async enrollOperatorCohortEntry(authorizationId: string, target: OperatorCohortEnrollmentTarget): Promise<OperatorCohortEnrollmentResult> {
+    const sessionId = typeof target.sessionId === "string" ? target.sessionId.trim() : "";
+    const cwd = typeof target.cwd === "string" ? target.cwd.trim() : "";
+    const expected = normalizeOperatorCohortEvidence({ classification: "operator_cohort", authorizationId, ...target.expected });
+    const ineligible = (reason: string): OperatorCohortEnrollmentResult => ({ sessionId, outcome: "ineligible", reason });
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,255}$/u.test(authorizationId) || !sessionId || sessionId.length > 512
+      || !cwd || cwd.length > 4096 || !expected) return ineligible("invalid_enrollment_identity");
+    const adapter = this.options.adapters.get("opencode");
+    if (!adapter?.getSession || !this.options.fallbackModelsForHarness) return ineligible("recovery_runtime_unavailable");
+    let session: AgentSession | null;
+    try { session = await adapter.getSession(sessionId); } catch { return ineligible("native_snapshot_unavailable"); }
+    if (!session || session.id !== sessionId || session.harness !== "opencode" || normalize(session.cwd) !== normalize(cwd)
+      || session.status !== "idle" || session.needsPermission || isSubagentSession(session)) return ineligible("session_not_idle_root_opencode");
+    const last = nativeLastTurn(session);
+    if (!exactTerminalRecoverySnapshot(session, expected) || last?.status !== "failed" && last?.status !== "error") {
+      return ineligible("native_terminal_identity_mismatch");
+    }
+    if (await this.suppressIfHumanStopped("opencode", sessionId, cwd, session)) return ineligible("human_stop_active");
+    if (await this.pendingQuestionBlocks("opencode", sessionId, cwd)) return ineligible("pending_human_input");
+    if (!await this.admissionAllowed(session, "resume")) {
+      return ineligible("session_recovery_not_admitted");
+    }
+    const fallbackModels = await this.options.fallbackModelsForHarness("opencode");
+    const candidates = operatorFallbackCandidates(fallbackModels, [expected.modelId, session.model ?? ""]);
+    if (!candidates.length) return ineligible("no_configured_fallback_models");
+    let admittedModel = false;
+    for (const model of candidates) if (await this.operatorProjectModelAllowed(session, model)) { admittedModel = true; break; }
+    if (!admittedModel) return ineligible("project_policy_disallows_fallback_model");
+    const existing = await this.options.store.getQuotaRecoveryRecord("opencode", sessionId, cwd);
+    if (existing) {
+      const sameEnrollment = existing.evidence.classification === "operator_cohort"
+        && existing.evidence.authorizationId === authorizationId && sameRecoveryEvidence(existing.evidence, expected);
+      if (sameEnrollment && existing.state !== "held" && existing.state !== "exhausted") {
+        return { sessionId, outcome: "already_enrolled", wait: (await this.options.store.getQuotaRecoveryWaitStatus("opencode", sessionId, cwd)) ?? undefined };
+      }
+      if (["waiting", "dispatching", "accepted"].includes(existing.state)
+        || existing.state === "held" && existing.reasonCode === "delivery_unknown") {
+        return ineligible("recovery_already_pending_or_delivery_unknown");
+      }
+    }
+    const settings = await this.options.settingsStore.getEffective("opencode", sessionId, cwd);
+    // The explicit operator enrollment sets only this independent opt-in. It
+    // does not modify the general session autostart enabled flag.
+    if (settings.waitForQuotaOverride !== true) await this.options.settingsStore.setSessionWaitForQuota({ harness: "opencode", sessionId, cwd }, true);
+    const evidence: OperatorCohortEvidence = { ...expected, classification: "operator_cohort", authorizationId };
+    let stored: UnfinishedSessionRecord;
+    try { stored = await this.options.store.markOperatorCohortEligible(session, evidence, fallbackModels, this.generationId); }
+    catch { return ineligible("recovery_already_pending_or_delivery_unknown"); }
+    this.queueUrgentSession(sessionSourceKey(session));
+    this.scheduleUrgentRecovery(0);
+    const wait = await this.options.store.getQuotaRecoveryWaitStatus("opencode", sessionId, cwd);
+    const matchingEnrollment = stored.quotaRecovery?.evidence.classification === "operator_cohort"
+      && stored.quotaRecovery.evidence.authorizationId === authorizationId;
+    return { sessionId, outcome: matchingEnrollment
+      ? stored.quotaRecovery?.state === "waiting" ? "enrolled" : "already_enrolled"
+      : "ineligible", ...(wait ? { wait } : {}) };
+  }
+
   async reconcileQuotaRecoverySettings(): Promise<void> {
     const runtime = await this.options.settingsStore.getSettings();
     for (const record of await this.options.store.list()) {
       if (!record.quotaRecovery || record.quotaRecovery.state !== "waiting") continue;
       const effective = await this.options.settingsStore.getEffective(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
-      if (!effective.enabled || !effective.waitForQuota || !runtime.recoverOnFailure) {
+      const operatorCohort = record.quotaRecovery.evidence.classification === "operator_cohort";
+      if ((!operatorCohort && !effective.enabled) || !effective.waitForQuota || (!operatorCohort && !runtime.recoverOnFailure)) {
         await this.options.store.clearWaitingQuotaRecovery(record);
       }
     }
@@ -2699,6 +2932,7 @@ export class UnfinishedSessionLauncher {
     const quota = snapshot.quotaRecovery;
     if (!quota || snapshot.harness !== "opencode" && snapshot.harness !== "zcode") return;
     const harness = snapshot.harness;
+    const operatorCohort = quota.evidence.classification === "operator_cohort";
     if (quota.state === "dispatching") {
       const claimedAt = quota.claimedAt ? Date.parse(quota.claimedAt) : Number.NaN;
       if (!Number.isFinite(claimedAt) || Date.now() - claimedAt < QUOTA_DISPATCH_CLAIM_LEASE_MS) return;
@@ -2724,7 +2958,7 @@ export class UnfinishedSessionLauncher {
         this.options.settingsStore.getEffective(harness, snapshot.sessionId, snapshot.workspaceIdentity || snapshot.cwd),
         this.options.settingsStore.getSettings(),
       ]);
-      return effective.enabled && effective.waitForQuota && runtime.recoverOnFailure;
+      return effective.waitForQuota && (operatorCohort || effective.enabled && runtime.recoverOnFailure);
     };
     if (!await enabled()) {
       await this.options.store.clearWaitingQuotaRecovery(snapshot);
@@ -2739,22 +2973,25 @@ export class UnfinishedSessionLauncher {
     if (!session) return;
     const observedLast = nativeLastTurn(session);
     const workspaceChanged = session.harness !== harness || normalize(session.cwd) !== normalize(snapshot.workspaceIdentity || snapshot.cwd);
+    const expectedInputId = recoveryEvidenceInputId(quota.evidence);
     const newTurnObserved = session.status === "running"
-      || Boolean(observedLast?.turnId && observedLast.turnId !== quota.evidence.nativeTurnId)
-      || Boolean(observedLast?.inputId && observedLast.inputId !== quota.evidence.inputId);
+      || Boolean(observedLast?.turnId && observedLast.turnId !== recoveryEvidenceTurnId(quota.evidence))
+      || Boolean(expectedInputId && observedLast?.inputId && observedLast.inputId !== expectedInputId);
     if (workspaceChanged || newTurnObserved) {
       await this.options.store.clearWaitingQuotaRecovery(snapshot);
       return;
     }
-    if (session.needsPermission || session.status === "needs_input" || !exactTerminalQuotaSnapshot(session, quota.evidence)) return;
+    if (session.needsPermission || session.status === "needs_input" || !exactTerminalRecoverySnapshot(session, quota.evidence)) return;
     if (await this.suppressIfHumanStopped(harness, session.id, session.cwd, session)
       || !await this.admissionAllowed(session, "resume")) return;
     const models = await adapter.listModels();
-    if (!models.includes(quota.candidateModels[quota.candidateIndex]!)) {
+    const selectedModel = quota.candidateModels[quota.candidateIndex]!;
+    const currentPolicyModels = await this.options.fallbackModelsForHarness(harness);
+    if (!currentPolicyModels.includes(selectedModel) || !models.includes(selectedModel)
+      || operatorCohort && !await this.operatorProjectModelAllowed(session, selectedModel)) {
       await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
       return;
     }
-    const selectedModel = quota.candidateModels[quota.candidateIndex]!;
     if (session.model !== selectedModel) {
       const changed = await adapter.changeModel(session.id, selectedModel);
       if (!changed.ok) {
@@ -2766,18 +3003,23 @@ export class UnfinishedSessionLauncher {
     try { verified = await adapter.getSession(snapshot.sessionId); } catch { return; }
     const verifiedLast = nativeLastTurn(verified);
     if (verified && (verified.status === "running"
-      || Boolean(verifiedLast?.turnId && verifiedLast.turnId !== quota.evidence.nativeTurnId)
-      || Boolean(verifiedLast?.inputId && verifiedLast.inputId !== quota.evidence.inputId))) {
+      || Boolean(verifiedLast?.turnId && verifiedLast.turnId !== recoveryEvidenceTurnId(quota.evidence))
+      || Boolean(expectedInputId && verifiedLast?.inputId && verifiedLast.inputId !== expectedInputId))) {
       await this.options.store.clearWaitingQuotaRecovery(snapshot);
       return;
     }
-    if (!verified || verified.model !== selectedModel || !exactTerminalQuotaSnapshot(verified, quota.evidence)
+    if (!verified || verified.model !== selectedModel || !exactTerminalRecoverySnapshot(verified, quota.evidence)
       || verified.needsPermission
       || await this.suppressIfHumanStopped(harness, verified.id, verified.cwd, verified)
       || !await enabled() || await this.pendingQuestionBlocks(harness, verified.id, verified.cwd)
       || !this.lifecycleActive(epoch) || !await this.admissionAllowed(verified, "resume")) return;
     const last = nativeLastTurn(verified);
-    if (!last?.userMessageId || !last.completedAt) {
+    if (!last || !last.completedAt || (quota.evidence.classification === "quota_exhausted" && !last.userMessageId)) {
+      await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
+      return;
+    }
+    if (!(await this.options.fallbackModelsForHarness(harness)).includes(selectedModel)
+      || operatorCohort && !await this.operatorProjectModelAllowed(verified, selectedModel)) {
       await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
       return;
     }
@@ -2788,8 +3030,10 @@ export class UnfinishedSessionLauncher {
     // any uncertainty becomes held and can only be reconciled by receipt.
     let current: AgentSession | null;
     try { current = await adapter.getSession(snapshot.sessionId); } catch { current = null; }
-    if (!current || current.model !== selectedModel || !exactTerminalQuotaSnapshot(current, quota.evidence)
+    if (!current || current.model !== selectedModel || !exactTerminalRecoverySnapshot(current, quota.evidence)
       || current.status === "running" || current.needsPermission
+      || !(await this.options.fallbackModelsForHarness(harness)).includes(selectedModel)
+      || operatorCohort && !await this.operatorProjectModelAllowed(current, selectedModel)
       || !await enabled() || await this.suppressIfHumanStopped(harness, snapshot.sessionId, snapshot.cwd, current)
       || await this.pendingQuestionBlocks(harness, snapshot.sessionId, snapshot.cwd)
       || !this.lifecycleActive(epoch) || !await this.admissionAllowed(current, "resume")) {
@@ -2804,7 +3048,7 @@ export class UnfinishedSessionLauncher {
         model: selectedModel,
         inputId: claimedQuota.dispatchInputId,
         origin: "automation",
-        recoveryBoundary: { turnId: quota.evidence.nativeTurnId, userMessageId: last.userMessageId, completedAt: Date.parse(last.completedAt) },
+        ...(last.userMessageId ? { recoveryBoundary: { turnId: recoveryEvidenceTurnId(quota.evidence), userMessageId: last.userMessageId, completedAt: Date.parse(last.completedAt) } } : {}),
       });
     } catch {
       await this.options.store.settleQuotaRecoveryAttempt(claimed, "unknown");
@@ -4612,6 +4856,18 @@ export class UnfinishedSessionLauncher {
     }
   }
 
+  private async operatorProjectModelAllowed(session: AgentSession, model: string): Promise<boolean> {
+    if (session.harness !== "opencode") return false;
+    try {
+      const loaded = await this.projectLaunchPolicyStore.load();
+      if (loaded.kind !== "valid") return false;
+      return Boolean(operatorCohortRecoveryAllowed(loaded.policy, session.cwd)
+        && loaded.policy.fallbackModels?.opencode?.includes(model));
+    } catch {
+      return false;
+    }
+  }
+
   /** The durable switch only. A pending question is a deferral, never a disable. */
   private async isEnabled(harness: HarnessType, sessionId: string, cwd: string): Promise<boolean> {
     return (await this.options.settingsStore.getEffective(harness, sessionId, cwd)).enabled;
@@ -5209,7 +5465,7 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
 function parseQuotaRecovery(value: unknown): QuotaRecoveryRecord | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
-  const evidence = normalizeQuotaFailureEvidence(record.evidence);
+  const evidence = normalizeQuotaRecoveryEvidence(record.evidence);
   if (!evidence || !["waiting", "dispatching", "accepted", "held", "exhausted"].includes(String(record.state))) return undefined;
   if (!Array.isArray(record.candidateModels) || !record.candidateModels.length || record.candidateModels.length > 9
     || !record.candidateModels.every((item) => typeof item === "string" && item.startsWith("omniroute/"))) return undefined;

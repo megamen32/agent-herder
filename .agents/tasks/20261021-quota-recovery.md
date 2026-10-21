@@ -205,3 +205,79 @@ and authorized runtime promotion.
   queue/restart/native-reply evidence; record a concrete safe blocker if native
   terminal proof cannot be produced; then reconcile controls' browser result
   and ZCode's separately owned socket result without duplicating their work.
+
+## Operator cohort enrollment checkpoint (2026-10-21 02:52 UTC)
+
+- Direction now prioritizes OpenCode and the frozen 28-entry operator-approved
+  failure cohort. Controls owns cohort inventory and its output canary; the
+  engine, never a controller loop or agent, owns durable enrollment, fallback,
+  native admission, and receipt reconciliation. No cohort entry has been
+  staged or sent from this session.
+- Added `POST /api/quota-recovery/operator-cohort/enroll` and
+  `GET /api/human-stop/status`. Enrollment accepts a stable authorization ID
+  and exact selected native terminal identity; it checks the fresh session,
+  root OpenCode status, exact failed assistant/model/provider/completion,
+  HumanStop, pending human input, existing launch-policy project route, and
+  configured fallback. It sets only the selected session's independent
+  `waitForQuota=true`; it does not change general Autocontinue `enabled`.
+- Durable evidence is explicitly `operator_cohort`, never fabricated
+  `quotaFailure`. The existing engine rechecks the exact native terminal
+  snapshot, live project route/harness permission, configured ordered fallback,
+  native catalog and HumanStop before claim, after model change, and immediately
+  before send. Stable input IDs and accepted/UNKNOWN no-replay behavior remain
+  the existing queue path. Retry after a definite pre-admission quota response
+  advances only through still-configured candidates.
+- Exact route evidence now identifies the supported OpenCode model ID as
+  `omniroute/minimax-combo-m3.1`, mapped to OmniRoute wire model
+  `minimax-combo-m3.1`. The launch-policy validator accepts this exact native
+  model ID. This is independent of the aggregated MiniMax account quota; the
+  Oct 25 plan-expiry claim remains operator-supplied and unverified. A prior
+  successful `OK` response was an ordinary earlier prompt, not a quota recovery
+  canary. The separate length-limited combo probe was not a successful reply.
+- Focused verification: `npx vitest run tests/unfinished-session-launcher.test.ts
+  tests/session-autostart-http.test.ts tests/automation-launch-policy.test.ts`
+  passed (3 files, 58 tests); root TypeScript and `git diff --check` passed.
+  Includes exact-identity enrollment, stale identity rejection, project policy
+  gate, independent `enabled` setting, engine dispatch, and the product HTTP
+  routes.
+- Source remains uncommitted and undeployed. `src/web/server.ts` and several
+  other paths still contain foreign WIP; no full-file commit/deploy is safe.
+  Adapter's native snapshot/mapping source is also still local to its owner and
+  not yet published. Existing deployed runtime is not claimed to contain this
+  enrollment API. The historical accepted canary was not replayed; no new
+  provider prompt was sent here.
+- Progress since 02:07 UTC: about 45 minutes wall time; active time within that
+  interval is not fully tracked. This implementation/test slice took about
+  20 minutes. Next 15-minute slice: reconcile the adapter's published exact
+  snapshot/mapping with this API, selectively publish only owned core hunks
+  without absorbing dirty `src/web/server.ts` WIP, source-pin/build/deploy the
+  combined candidate, then let Controls enroll its exact frozen ledger and
+  verify the engine-owned reply/receipt. Do not stage a cohort before the
+  published runtime contains the adapter contract and exact model mapping.
+- 2026-10-21 03:02 UTC: Addressed Controls' restricted-project blocker in the
+  existing project-launch policy seam. Operator cohort enrollment now fails
+  closed for the TelegramAuto canonical root and aliases, the video_watching
+  root, and any project without a configured route; unrelated configured
+  projects remain eligible. Legacy full-document policy writes preserve an
+  explicit route deny. Focused backend run passed 3 files / 60 tests, and root
+  TypeScript plus `git diff --check` passed. This does not claim resolved-leaf
+  or child admission enforcement for the restricted nine; they remain excluded.
+- Sent Controls one scoped request to review only this guard and select one
+  unrestricted entry from its existing frozen ledger; no rescan or enrollment
+  was performed. Asked the adapter owner to publish its exact `nativeLastTurn`
+  source delta before building the combined runtime. Both peer replies remain
+  partial; work continues independently. Controls approved the guard diff and
+  returned its first unrestricted ledger candidate, but that session has no
+  configured serving project route/fallback and the reported native snapshot
+  lacks an exact completion/turn receipt, so it was rejected without policy
+  mutation or enrollment. Controls is selecting the next already-route-eligible
+  entry with a fresh exact snapshot. `src/web/server.ts` contains foreign
+  WIP alongside the owned enrollment endpoint and must be published by
+  path/hunk, never as a full-file change. The primary checkout has no
+  `.agents/TEST_ACCESS.md`; no new test account or external credentials were
+  used for the focused local checks.
+- Progress since the 02:52 checkpoint: 10 minutes wall time tracked; active
+  implementation/check time about 7 minutes. Next: finish scoped source review,
+  obtain the exact published adapter input, then publish/build/deploy the
+  combined source pin and enroll only the first unrestricted ledger entry via
+  Herder's API. Elapsed time before checkpoints remains unknown.

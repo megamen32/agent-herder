@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore } from "../src/autopilot/unfinished-session-launcher.js";
+import { AutomationLaunchPolicyStore } from "../src/automation-launch-policy.js";
 import { SessionSupervisor } from "../src/session-supervisor.js";
 import { createWebServer } from "../src/web/server.js";
 
@@ -108,5 +109,68 @@ describe("session autostart settings HTTP", () => {
     await fetch(sessionSettings, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ waitForQuota: false, cwd: session.cwd }) });
     await expect((await fetch(sessionSettings)).json()).resolves.toMatchObject({ enabled: true, waitForQuota: false, waitForQuotaSource: "session", waitForQuotaOverride: false });
     await expect((await fetch(statusUrl)).json()).resolves.toEqual({ wait: null });
+  });
+
+  it("exposes a product enrollment route and read-only HumanStop state for exact sessions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-operator-cohort-http-"));
+    directories.push(root);
+    const settings = new SessionAutostartStore(join(root, "settings.json"), {});
+    const launchPolicy = new AutomationLaunchPolicyStore(join(root, "launch-policy.json"));
+    const configuredModel = "omniroute/minimax-combo-m3.1";
+    await launchPolicy.replace({
+      version: 1, allowedHarnesses: ["opencode"], preferredHarness: "opencode", models: { opencode: configuredModel },
+      fallbackModels: { opencode: [configuredModel] },
+    });
+    let current = {
+      id: "operator-api-session", harness: "opencode" as const, cwd: "/workspace/quota", title: "Cohort task",
+      model: "zai-coding-plan/glm-5.3-flash", status: "idle" as const, lastActivity: new Date().toISOString(), needsPermission: false,
+      meta: { nativeLastTurn: {
+        sessionId: "operator-api-session", turnId: "native-turn-api", assistantMessageId: "assistant-api",
+        providerId: "zai-coding-plan", modelId: "glm-5.3-flash", status: "failed", completedAt: Date.now() - 30_000,
+      } },
+    };
+    const messages: Array<{ model?: string; inputId?: string }> = [];
+    const adapter = {
+      type: "opencode",
+      async init() {},
+      async listSessions() { return [current]; },
+      async getSession(id: string) { return id === current.id ? current : null; },
+      async listModels() { return ["omniroute/minimax-combo-m3.1"]; },
+      async changeModel(_id: string, model: string) { current = { ...current, model }; return { ok: true }; },
+      async sendMessage(_id: string, options: { model?: string; inputId?: string }) {
+        messages.push({ model: options.model, inputId: options.inputId });
+        return { ok: true, admitted: true, inputId: options.inputId };
+      },
+    } as unknown as import("../src/types/index.js").HarnessAdapter;
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["opencode", adapter]]), store: new UnfinishedSessionStore(join(root, "unfinished.json")), settingsStore: settings,
+      fallbackModelsForHarness: async () => ["omniroute/minimax-combo-m3.1"],
+      projectLaunchPolicyStore: launchPolicy,
+    });
+    const supervisor = new SessionSupervisor(new Map([["opencode", adapter]]), { async convert() { throw new Error("unused"); } }, undefined, { unfinishedSessions: launcher });
+    const server = createWebServer({ adapters: new Map([["opencode", adapter]]), converter: { async convert() { throw new Error("unused"); } }, sessionAutostartStore: settings, automationLaunchPolicyStore: launchPolicy, supervisor });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const origin = `http://127.0.0.1:${address.port}`;
+    const response = await fetch(`${origin}/api/quota-recovery/operator-cohort/enroll`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ authorizationId: "operator-api-authorization-01", entries: [{
+        sessionId: current.id, cwd: current.cwd, expected: {
+          nativeTurnId: "native-turn-api", assistantMessageId: "assistant-api", providerId: "zai-coding-plan",
+          modelId: "glm-5.3-flash", completedAt: current.meta.nativeLastTurn.completedAt,
+        },
+      }] }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ selected: 1, enrolled: 1, results: [{ outcome: "enrolled", wait: { origin: "operator_cohort", state: "waiting" } }] });
+    await expect((await fetch(`${origin}/api/session-autostart/sessions/opencode/${current.id}?cwd=${encodeURIComponent(current.cwd)}`)).json())
+      .resolves.toMatchObject({ waitForQuota: true, waitForQuotaSource: "session", enabled: true });
+    await expect((await fetch(`${origin}/api/human-stop/status?harness=opencode&sessionId=${current.id}`)).json())
+      .resolves.toMatchObject({ harness: "opencode", sessionId: current.id, held: false });
+    await launcher.recoverPending();
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ model: "omniroute/minimax-combo-m3.1" });
   });
 });

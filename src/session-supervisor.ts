@@ -1,4 +1,5 @@
 import type { RecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
+import type { OperatorCohortEnrollmentResult, OperatorCohortEnrollmentTarget } from "./autopilot/unfinished-session-launcher.js";
 import type { ContentPart, Conversation, ConversionResult, HarnessType, Message } from "session-convert";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -73,7 +74,7 @@ export interface SessionSupervisorOptions {
   /** Initial retry delay; subsequent failed resumes use exponential backoff. */
   autoResumeDelayMs?: number;
   /** Durable restart launcher for unfinished turns; independent from autopilot. */
-  unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook" | "getQuotaRecoveryWaitStatus" | "reconcileQuotaRecoverySettings">>);
+  unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook" | "getQuotaRecoveryWaitStatus" | "reconcileQuotaRecoverySettings" | "enrollOperatorCohortEntry">>);
   /** Native compact maintenance outcomes; never a task prompt or a resume. */
   autoCompact?: Pick<AutoCompactService, "observe">;
 }
@@ -125,7 +126,7 @@ export class SessionSupervisor {
   private readonly automaticResumes = new Map<string, AutomaticResumeState>();
   private readonly humanStops: HumanStopStore;
   private readonly immediateStops = new Set<string>();
-  private readonly unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook" | "getQuotaRecoveryWaitStatus" | "reconcileQuotaRecoverySettings">>);
+  private readonly unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook" | "getQuotaRecoveryWaitStatus" | "reconcileQuotaRecoverySettings" | "enrollOperatorCohortEntry">>);
   private readonly autoCompact?: Pick<AutoCompactService, "observe">;
 
   constructor(
@@ -160,6 +161,11 @@ export class SessionSupervisor {
 
   async getQuotaRecoveryWaitStatus(harness: string, sessionId: string, cwd: string) {
     return this.unfinishedSessions?.getQuotaRecoveryWaitStatus?.(harness, sessionId, cwd) ?? null;
+  }
+
+  async enrollOperatorCohortEntry(authorizationId: string, target: OperatorCohortEnrollmentTarget): Promise<OperatorCohortEnrollmentResult> {
+    if (!this.unfinishedSessions?.enrollOperatorCohortEntry) return { sessionId: target.sessionId, outcome: "ineligible", reason: "recovery_runtime_unavailable" };
+    return this.unfinishedSessions.enrollOperatorCohortEntry(authorizationId, target);
   }
 
   async reconcileQuotaRecoverySettings(): Promise<void> {
