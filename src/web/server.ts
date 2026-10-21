@@ -2,8 +2,8 @@ import type { BackgroundAutopilotStop } from "../autopilot/background-stop.js";
 import type { AutopilotRunnerInput } from "../autopilot-runner.js";
 import { projectSessionInventory } from "./session-inventory.js";
 import { SessionImageStore } from "../session-images.js";
-import { homedir } from "node:os";
-import { UserMessageDelivery } from "../user-message-delivery.js";
+import { homedir, hostname } from "node:os";
+import { UserMessageDelivery, type UserMessageRoute } from "../user-message-delivery.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { execFile } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
@@ -17,6 +17,7 @@ import type { AgentSession, HarnessAdapter, SessionDetails } from "../types/inde
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "../session-convert.js";
 import { askHuman, HumanRequestLockUnavailableError, HumanRequestRegistry, resumeHumanRequestOnce } from "../human-request/index.js";
 import type { ProjectLaunchDispatcher } from "../automation/project-launch-dispatch.js";
+import type { IntegratorFleetRuntime } from "../integrator-fleet-runtime.js";
 import { buildSessionProgress } from "../health-progress.js";
 import { healthModelForHarness, normalizeHealthExecution } from "../health-remediation.js";
 import { convertHermesExport } from "../hermes-conversion.js";
@@ -76,6 +77,10 @@ export interface WebDependencies {
   jobs?: HerderJobRegistry;
   /** Reuse the process-owned supervisor when the daemon starts observation before HTTP. */
   supervisor?: SessionSupervisor;
+  /** Resolve exact H34-bound native addresses before owner-HTTP session access. */
+  integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">;
+  /** Build an ordinary supervisor facade over a request-owned adapter map. */
+  scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor;
   /** Disable local observer lifecycle when a process-owned supervisor already manages it. */
   sessionObservationManagedExternally?: boolean;
   /** Optional profile-scoped fleet API; its handler authenticates each request. */
@@ -636,7 +641,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
       if (dependencies.fleetHttpGuard && await dependencies.fleetHttpGuard(request, response)) return;
       if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
       if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -708,8 +713,20 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
+  const resolveSessionRoute = async (harness: string, sessionId: string) => {
+    if (!integratorRuntime) return { kind: "ordinary" as const, adapters };
+    let resolution: Awaited<ReturnType<IntegratorFleetRuntime["adapterForSession"]>>;
+    try { resolution = await integratorRuntime.adapterForSession({ hostId: hostname(), harness: harness as "codex" | "zcode" | "opencode", nativeSessionId: sessionId }); }
+    catch { return { kind: "deny" as const, reason: "binding_lookup_failed" }; }
+    if (resolution.kind === "ordinary") return { kind: "ordinary" as const, adapters };
+    if (resolution.kind === "deny") return resolution;
+    const scopedAdapters = new Map(adapters);
+    scopedAdapters.set(harness, resolution.adapter);
+    return { kind: "scoped" as const, adapter: resolution.adapter, adapters: scopedAdapters,
+      supervisor: scopedSupervisorFactory?.(scopedAdapters) };
+  };
   if (url.pathname === "/api/resources/s21-lease" && request.method === "GET") {
     response.setHeader("cache-control", "no-store");
     return sendJson(response, 200, await getS21Ownership());
@@ -1703,24 +1720,51 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   if (messageStatusMatch && request.method === "GET") {
     const inputId = url.searchParams.get("inputId");
     if (!inputId || inputId.length > 512) return sendJson(response, 400, { error: "inputId is required" });
-    const receipt = await userMessageDelivery?.reconcile(decodeURIComponent(messageStatusMatch[1]), decodeURIComponent(messageStatusMatch[2]), inputId);
+    const harness = decodeURIComponent(messageStatusMatch[1]), sessionId = decodeURIComponent(messageStatusMatch[2]);
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    const receipt = await userMessageDelivery?.reconcile(harness, sessionId, inputId, route.kind === "scoped" ? route.adapter : undefined);
     return sendJson(response, receipt ? 200 : 404, receipt || { error: "Доставка сообщения не найдена; автоматический повтор запрещён" });
   }
   const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
   if (sessionMatch && request.method === "GET") {
-    const session = await supervisor.getSession(decodeURIComponent(sessionMatch[1]), decodeURIComponent(sessionMatch[2]));
+    const harness = decodeURIComponent(sessionMatch[1]), sessionId = decodeURIComponent(sessionMatch[2]);
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    const session = route.kind === "scoped" ? await route.adapter.getSession(sessionId) : await supervisor.getSession(harness, sessionId);
+    if (session && (session.id !== sessionId || session.harness !== harness)) return sendJson(response, 409, { error: "Exact native session identity mismatch." });
     if (!session) return sendJson(response, 404, { error: "Session not found" });
     return sendJson(response, 200, { session });
   }
-  if (await handleIntegratorSessionTranscript(request, response, url, adapters)) return;
+  const transcriptMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/transcript$/u);
+  if (transcriptMatch && request.method === "GET") {
+    let harness: string, sessionId: string;
+    try { harness = decodeURIComponent(transcriptMatch[1]); sessionId = decodeURIComponent(transcriptMatch[2]); }
+    catch { return void await handleIntegratorSessionTranscript(request, response, url, adapters); }
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    return void await handleIntegratorSessionTranscript(request, response, url, route.adapters);
+  }
   const detailsMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/details$/);
   if (detailsMatch && request.method === "GET") {
+    const harness = decodeURIComponent(detailsMatch[1]), sessionId = decodeURIComponent(detailsMatch[2]);
     const limitValue = Number(url.searchParams.get("limit") || "3");
     const history = url.searchParams.get("history") as "auto" | "acp" | "files" | null;
     const quick = url.searchParams.get("quick") === "1" || url.searchParams.get("quick") === "true";
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
+    if (route.kind === "scoped") {
+      const details = await route.supervisor!.getSessionDetails(
+        harness, sessionId,
+        { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto", quick },
+      );
+      if (details.session.id !== sessionId || details.session.harness !== harness) return sendJson(response, 409, { error: "Exact native session identity mismatch." });
+      return sendJson(response, 200, details);
+    }
     const details = await supervisor.getSessionDetails(
-      decodeURIComponent(detailsMatch[1]),
-      decodeURIComponent(detailsMatch[2]),
+      harness,
+      sessionId,
       { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto", quick },
     );
     return sendJson(response, 200, details);
@@ -1730,7 +1774,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const harness = decodeURIComponent(visualizationMatch[1]);
     const sessionId = decodeURIComponent(visualizationMatch[2]);
     if (!sessionVisualizer) return sendJson(response, 503, { error: "session visualization is disabled" });
-    const details = await supervisor.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" });
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
+    const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" })
+      : await supervisor.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" });
     const html = await sessionVisualizer(details);
     response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     response.end(html);
@@ -1738,13 +1786,16 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
   const progressMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/progress$/);
   if (progressMatch && request.method === "GET") {
+    const harness = decodeURIComponent(progressMatch[1]);
+    const sessionId = decodeURIComponent(progressMatch[2]);
     const limitValue = Number(url.searchParams.get("limit") || "5");
     const history = url.searchParams.get("history") as "auto" | "acp" | "files" | null;
-    const details = await supervisor.getSessionDetails(
-      decodeURIComponent(progressMatch[1]),
-      decodeURIComponent(progressMatch[2]),
-      { limit: Number.isFinite(limitValue) ? limitValue : 5, history: history || "auto" },
-    );
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
+    const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId,
+      { limit: Number.isFinite(limitValue) ? limitValue : 5, history: history || "auto" })
+      : await supervisor.getSessionDetails(harness, sessionId, { limit: Number.isFinite(limitValue) ? limitValue : 5, history: history || "auto" });
     return sendJson(response, 200, buildSessionProgress(details, Number.isFinite(limitValue) ? limitValue : 5));
   }
   const actionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/(resume|message|stop|terminate|cancel|recover|fork|archive|compact|model|permissions\/([^/]+))$/);
@@ -1754,15 +1805,21 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const id = decodeURIComponent(actionMatch[2]);
     const action = actionMatch[3];
     if (body.humanRequested !== undefined && typeof body.humanRequested !== "boolean") return sendJson(response, 400, { error: "humanRequested must be boolean" });
+    const route = await resolveSessionRoute(harness, id);
+    if (route.kind === "deny") return sendJson(response, 409, { ok: false, state: "not_attempted", nonRetryable: true, error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { ok: false, state: "not_attempted", nonRetryable: true, error: "Scoped session control port is unavailable." });
+    if (route.kind === "scoped" && !["message", "resume", "stop"].includes(action)) return sendJson(response, 409, { ok: false, state: "not_attempted", nonRetryable: true, error: "This project-scoped control is not supported." });
+    const sessionSupervisor = route.kind === "scoped" ? route.supervisor! : supervisor;
     if (["stop", "cancel", "terminate"].includes(action)) userMessageDelivery?.cancelSession(harness, id);
     if (action === "resume") {
       if (body.inputId !== undefined && (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512)) {
         return sendJson(response, 400, { error: "inputId must be a non-empty string of at most 512 characters" });
       }
-      return sendOperationResult(response, await supervisor.resumeSession(harness, id, optionalString(body.message), body.humanRequested === true, optionalString(body.inputId)));
+      if (route.kind === "scoped" && (!body.inputId || body.humanRequested !== true)) return sendJson(response, 400, { error: "Scoped resume requires explicit human intent and a stable inputId." });
+      return sendOperationResult(response, await sessionSupervisor.resumeSession(harness, id, optionalString(body.message), body.humanRequested === true, optionalString(body.inputId)));
     }
     if (action === "stop") {
-      return sendOperationResult(response, await supervisor.stopSession(harness, id));
+      return sendOperationResult(response, await sessionSupervisor.stopSession(harness, id));
     }
     if (action === "terminate") {
       return sendOperationResult(response, await supervisor.terminateSession(harness, id));
@@ -1819,21 +1876,25 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     if (body.mode !== undefined && (typeof body.mode !== "string" || !["queue", "steer", "sync"].includes(body.mode))) return sendJson(response, 400, { error: "invalid delivery mode" });
     if (body.inputId !== undefined && (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512)) return sendJson(response, 400, { error: "invalid inputId" });
+    if (route.kind === "scoped" && (body.humanRequested !== true || typeof body.inputId !== "string" || !["queue", "steer"].includes(String(body.mode)))) {
+      return sendJson(response, 400, { error: "Project-scoped message requires explicit human intent, stable inputId, and queue or steer mode." });
+    }
     let images: import("../types/index.js").MessageImage[];
     try {
-      if (body.imageIds !== undefined && !adapters.get(harness)?.controlCapabilities?.imageInput) throw new Error("Эта среда пока не принимает изображения.");
+      if (body.imageIds !== undefined && !(route.kind === "scoped" ? route.adapter : adapters.get(harness))?.controlCapabilities?.imageInput) throw new Error("Эта среда пока не принимает изображения.");
       images = await sessionImages!.resolve(harness, id, body.imageIds);
     } catch (error) { return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
-    if (body.humanRequested === true && (body.mode === "queue" || body.mode === "steer") && body.inputId !== undefined) {
+    if (route.kind === "scoped" || (body.humanRequested === true && (body.mode === "queue" || body.mode === "steer") && body.inputId !== undefined)) {
       if (!userMessageDelivery) return sendJson(response, 503, { error: "Надёжная очередь сообщений недоступна" });
+      const deliveryRoute: UserMessageRoute | undefined = route.kind === "scoped" ? { adapter: route.adapter, supervisor: sessionSupervisor } : undefined;
       try {
-        const receipt = userMessageDelivery.submit({ harness, sessionId: id, inputId: body.inputId as string, message: body.message, mode: body.mode, images });
+        const receipt = userMessageDelivery.submit({ harness, sessionId: id, inputId: body.inputId as string, message: body.message, mode: body.mode as "queue" | "steer", images }, deliveryRoute);
         return sendJson(response, receipt.pending ? 202 : receipt.ok ? 200 : 502, receipt);
       } catch (error) {
         return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
       }
     }
-    return sendOperationResult(response, await supervisor.sendMessage(harness, id, {
+    return sendOperationResult(response, await sessionSupervisor.sendMessage(harness, id, {
       message: body.message,
       origin: body.humanRequested === true ? "human" : "automation",
       images,

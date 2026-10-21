@@ -169,4 +169,17 @@ exec(compile(source,'owned-http-bridge','exec'))`;
   registerFleetNodeTools(server as any,deps);const args={inputId:'a'.repeat(64),harness:'codex',name:'empty',cwd:'/home/roomhacker'};const first=await callback(args);registerFleetNodeTools(server as any,deps);expect(await callback(args)).toEqual(first);expect(create).toHaveBeenCalledOnce();
   create.mockRejectedValueOnce(new Error('native socket closed'));const lost={...args,inputId:'b'.repeat(64)};const unknown=await callback(lost);registerFleetNodeTools(server as any,deps);expect(await callback(lost)).toEqual(unknown);expect(create).toHaveBeenCalledTimes(2);expect(JSON.parse(unknown.content[0].text).state).toBe('unknown');
  });
+ it('registered Fleet node forwards the exact project selector only to the scoped Codex runtime',async()=>{
+  let callback:any;let schema:any;const create=vi.fn(async(input:any)=>({state:'created',inputId:input.inputId,address:{hostId:state.host,harness:'codex',nativeSessionId:'scoped-native'},launchCwd:'/configured/root',retryable:false}));
+  const runtime={create,validateReadiness:vi.fn(async()=>true)};const ownerJournal={once:vi.fn(async(_request:any,operation:()=>Promise<any>)=>operation())};
+  const server={registerTool:(name:string,spec:any,fn:any)=>{if(name==='fleet_create_session'){schema=spec;callback=fn;}}};
+  registerFleetNodeTools(server as any,{adapters:new Map(),integratorRuntime:runtime as any,ownerJournal:ownerJournal as any});
+  expect(schema.inputSchema.shape.project).toBeDefined();
+  const projectReadiness={state:'ready',projectId:'project-alpha',projectRoot:'/configured/root',rootIdentity:'root-identity',policyRevision:'policy-v1',hostId:state.host,harness:'codex',harnessVersion:'codex-test',model:'gpt-6-luna',requiredTools:[],availableTools:[],availableModels:['gpt-6-luna'],resourceReady:true,runtimeInstanceId:'runtime-1',cwd:'/caller/cwd',pathResolution:{requestedCwd:'/caller/cwd',canonicalCwd:'/caller/cwd',rootPath:'/configured/root',contained:true,identityMatches:true},observedAtMs:Date.now()};
+  const input={inputId:'e'.repeat(64),harness:'codex',name:'scoped task',cwd:'/caller/cwd',project:'project-alpha',projectReadinessContract:'integrator-host-readiness-v1',projectReadiness};
+  const result=await callback(input);expect(ownerJournal.once).toHaveBeenCalledWith({...input,hostId:state.host},expect.any(Function));
+  expect(runtime.validateReadiness).toHaveBeenCalledOnce();
+  expect(create).toHaveBeenCalledWith({inputId:input.inputId,name:input.name,cwd:input.cwd,project:input.project,projectReadinessContract:input.projectReadinessContract,projectReadiness:input.projectReadiness});
+  expect(JSON.parse(result.content[0].text)).toMatchObject({ok:true,sessionId:'scoped-native',cwd:'/configured/root'});
+ });
 });

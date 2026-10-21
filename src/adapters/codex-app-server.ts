@@ -13,6 +13,7 @@ import {
   assertCodexProjectRoot,
   codexProjectAppServerArgs,
   codexProjectIntegrationFeatureDeny,
+  codexProjectNativeWebSearch,
   codexProjectFilesystemProfileDeny,
   codexProjectDiscoveryDenyList,
   codexProjectPermissionObserved,
@@ -38,7 +39,9 @@ import type {
   SessionSnapshotReceipt,
 } from "../types/index.js";
 import type { IntegratorCurrentProjectScopeEvidence } from "../integrator-session-admission.js";
-import type { IntegratorHarness } from "../integrator-session-binding.js";
+import { IntegratorSessionBindingStore, type IntegratorAttemptScope, type IntegratorHarness } from "../integrator-session-binding.js";
+import { resolveProjectExecutionScope, type TrustedRuntimeOwnerResolver } from "../project-execution-scope.js";
+import type { ProjectExecutionBinding } from "../project-execution-scope.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -91,7 +94,15 @@ interface CodexProjectToolInventory {
   complete: boolean;
   denyList: CodexProjectToolDenyList;
   active: boolean;
+  nativeWebSearch: { complete: boolean; mode: string; origin: string };
   summary: string;
+}
+
+export interface CodexProjectReadinessEvidence {
+  isolated: boolean;
+  nativeWebSearch: { complete: boolean; mode: string; origin: string };
+  availableModels: string[];
+  harnessVersion: string | null;
 }
 
 interface CodexProjectCommandReceipt {
@@ -102,6 +113,24 @@ interface CodexProjectCommandReceipt {
   status?: string;
   exitCode?: number | null;
   output: string;
+}
+
+/** Nonsecret, immediately observable materialization checkpoint. */
+export interface CodexMaterializationProgress {
+  phase: "reserved" | "native_created" | "accepted" | "turn_admitted" | "command_observed" | "command_completed"
+    | "restore_preflight" | "restore_read" | "restore_resumed" | "failure";
+  operationId: string;
+  inputId?: string;
+  threadId?: string;
+  turnId?: string;
+  itemId?: string;
+  cwd?: string;
+  commandSha256?: string;
+  outputSha256?: string;
+  status?: string;
+  exitCode?: number | null;
+  failureStage?: string;
+  failureType?: string;
 }
 
 function hasCodexFullAccess(state: CodexThreadPermissionState): boolean {
@@ -184,6 +213,14 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly transcriptReaderDataHome: string;
   private readonly projectRuntimePolicy?: CodexProjectRuntimePolicy;
   private readonly projectToolDenyList?: CodexProjectToolDenyList;
+  private readonly integratorSessionBindingStore?: IntegratorSessionBindingStore;
+  private readonly projectRuntimeOwner?: TrustedRuntimeOwnerResolver;
+  private readonly onMaterializationProgress?: (progress: CodexMaterializationProgress) => void;
+  private readonly lifecycleSignal?: AbortSignal;
+  private readonly abortListener: () => void;
+  private disposed = false;
+  private disposal?: Promise<void>;
+  private materializationObserverFailed = false;
   private readonly rawTranscriptAdapter: CodexAdapter;
   private readonly requestTimeoutMs: number;
   private readonly deliveryReceipts: CodexDeliveryReceipts;
@@ -229,17 +266,39 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     projectRuntimePolicy?: CodexProjectRuntimePolicy;
     /** Generated only from in-process, non-secret integration metadata. */
     projectToolDenyList?: CodexProjectToolDenyList;
+    /** Trusted composition-root H34 journal and fresh H31 proof resolver. */
+    integratorSessionBindingStore?: IntegratorSessionBindingStore;
+    projectRuntimeOwner?: TrustedRuntimeOwnerResolver;
+    onMaterializationProgress?: (progress: CodexMaterializationProgress) => void;
+    signal?: AbortSignal;
   } = {}) {
     this.codexBin = config.codexBin || process.env.CODEX_BIN || "codex";
     this.projectRuntimePolicy = config.projectRuntimePolicy;
     this.projectToolDenyList = config.projectToolDenyList;
+    this.integratorSessionBindingStore = config.integratorSessionBindingStore;
+    this.projectRuntimeOwner = config.projectRuntimeOwner;
+    this.onMaterializationProgress = config.onMaterializationProgress;
+    this.lifecycleSignal = config.signal;
+    this.abortListener = () => {
+      void this.dispose().catch((error: unknown) => {
+        this.emitEvent({ kind: "process.disconnected", harness: "codex", data: {
+          transport: "app-server", reason: "owned-child-cleanup-unconfirmed",
+          error: error instanceof Error ? error.name : "Error",
+        } });
+      });
+    };
     if (this.projectToolDenyList && !this.projectRuntimePolicy) {
       throw new Error("project tool deny overlays require a trusted project runtime policy");
     }
     if (this.projectRuntimePolicy && (config.socketPath || process.env.CODEX_APP_SERVER_SOCKET || config.args)) {
       throw new Error("project-scoped Codex requires its own app-server process and generated policy arguments");
     }
-    this.processArgs = this.projectRuntimePolicy ? codexProjectAppServerArgs(this.projectToolDenyList, this.codexBin) : (config.args || ["app-server"]);
+    if (this.projectRuntimePolicy?.materialized && (!this.integratorSessionBindingStore || !this.projectRuntimeOwner)) {
+      throw new Error("materialized project Codex requires the trusted H34 journal and H31 runtime owner");
+    }
+    this.processArgs = this.projectRuntimePolicy ? codexProjectAppServerArgs(
+      this.projectToolDenyList, this.codexBin, this.projectRuntimePolicy.nativeWebSearchMode,
+    ) : (config.args || ["app-server"]);
     this.cwd = config.cwd || process.cwd();
     this.appServerDataHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
     this.transcriptReaderDataHome = resolve(config.codexDir || process.env.CODEX_DATA_DIR || join(homedir(), ".codex"));
@@ -254,6 +313,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       codexBin: this.codexBin,
       codexDir: this.projectRuntimePolicy ? this.transcriptReaderDataHome : config.codexDir,
     });
+    if (this.lifecycleSignal?.aborted) this.disposed = true;
+    else this.lifecycleSignal?.addEventListener("abort", this.abortListener, { once: true });
+    if (this.disposed) void this.dispose();
   }
 
   /**
@@ -266,21 +328,36 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     cwd?: string;
     requestTimeoutMs?: number;
     codexDir?: string;
+    integratorSessionBindingStore?: IntegratorSessionBindingStore;
+    projectRuntimeOwner?: TrustedRuntimeOwnerResolver;
+    onMaterializationProgress?: (progress: CodexMaterializationProgress) => void;
+    signal?: AbortSignal;
+    /** Called synchronously as soon as each factory-owned child adapter exists. */
+    onOwnedAdapter?: (adapter: CodexAppServerAdapter) => void;
   }): Promise<CodexAppServerAdapter> {
+    throwIfSignalAborted(config.signal);
     const discovery = new CodexAppServerAdapter({
       codexBin: config.codexBin,
       cwd: config.cwd || config.policy.rootPath,
       requestTimeoutMs: config.requestTimeoutMs,
       codexDir: config.codexDir,
       projectRuntimePolicy: config.policy,
+      integratorSessionBindingStore: config.integratorSessionBindingStore,
+      projectRuntimeOwner: config.projectRuntimeOwner,
+      onMaterializationProgress: config.onMaterializationProgress,
+      signal: config.signal,
     });
     let inventory: CodexProjectToolInventory;
     try {
+      config.onOwnedAdapter?.(discovery);
       await discovery.init();
+      discovery.assertLifecycleActive();
       inventory = await discovery.readProjectToolInventory(undefined, true);
+      discovery.assertLifecycleActive();
     } finally {
       await discovery.dispose();
     }
+    throwIfSignalAborted(config.signal);
     if (!inventory.complete) {
       throw new Error(`Codex project deny discovery incomplete (${inventory.summary})`);
     }
@@ -292,10 +369,17 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       codexDir: config.codexDir,
       projectRuntimePolicy: config.policy,
       projectToolDenyList: inventory.denyList,
+      integratorSessionBindingStore: config.integratorSessionBindingStore,
+      projectRuntimeOwner: config.projectRuntimeOwner,
+      onMaterializationProgress: config.onMaterializationProgress,
+      signal: config.signal,
     });
     try {
+      config.onOwnedAdapter?.(isolated);
       await isolated.init();
+      isolated.assertLifecycleActive();
       const effective = await isolated.readProjectToolInventory();
+      isolated.assertLifecycleActive();
       if (!effective.complete || effective.active) {
         throw new Error(`Codex project deny overlay did not isolate effective tools (${effective.summary})`);
       }
@@ -308,6 +392,24 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   async init(): Promise<void> {
     await this.ensureReady();
+  }
+
+  /** Read-only host capability evidence; this does not create a thread or run a model turn. */
+  async readProjectReadinessEvidence(): Promise<CodexProjectReadinessEvidence> {
+    if (!this.projectRuntimePolicy) throw new Error("project readiness requires a trusted project policy");
+    this.assertLifecycleActive();
+    const [inventory, models, harnessVersion] = await Promise.all([
+      this.readProjectToolInventory(),
+      this.listModels(),
+      this.verifiedNativeHarnessVersion(),
+    ]);
+    this.assertLifecycleActive();
+    return {
+      isolated: inventory.complete && !inventory.active,
+      nativeWebSearch: inventory.nativeWebSearch,
+      availableModels: models,
+      harnessVersion,
+    };
   }
 
   isReady(): boolean {
@@ -327,22 +429,32 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async dispose(): Promise<void> {
+    if (!this.disposal) this.disposal = this.disposeOwned();
+    return this.disposal;
+  }
+
+  private async disposeOwned(): Promise<void> {
+    this.disposed = true;
+    this.lifecycleSignal?.removeEventListener("abort", this.abortListener);
+    this.initialized = false;
+    const pendingInitialization = this.initialization;
     const socket = this.socket;
     if (socket) {
       this.handleSocketDisconnect(socket, new Error("Codex app-server disposed"), { reason: "disposed" });
+      const closed = waitForSocketClose(socket, 1_000);
       socket.close();
-      return;
+      await closed;
     }
     const child = this.child;
     if (child) {
       this.handleTransportDisconnect(child, new Error("Codex app-server disposed"), { reason: "disposed" });
-      child.kill();
+      await terminateOwnedChild(child);
     } else {
       this.rejectPending(new Error("Codex app-server disposed"));
       this.failCompletions(new Error("Codex app-server disposed"));
       this.activeTurns.clear();
-      this.initialized = false;
     }
+    await pendingInitialization?.catch(() => undefined);
   }
 
   async listSessions(options: {limit?: number} = {}): Promise<AgentSession[]> {
@@ -657,13 +769,24 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
     await this.ensureReady();
+    this.assertLifecycleActive();
     if (this.projectRuntimePolicy) {
       await assertCodexProjectRoot(this.projectRuntimePolicy, options.cwd);
+      this.assertLifecycleActive();
       if (options.fullAccess) throw new Error("project-scoped Codex does not permit full access");
       if (options.model && options.model !== this.projectRuntimePolicy.modelId) {
         throw new Error(`project-scoped Codex is pinned to ${this.projectRuntimePolicy.modelId}`);
       }
       await this.assertEffectiveProjectToolIsolation();
+      this.assertLifecycleActive();
+    }
+    const reservation = this.projectRuntimePolicy?.materialized ? await this.reserveMaterializedOperation() : undefined;
+    let observedThreadId: string | undefined;
+    let materializationStage = "thread_start_not_sent";
+    try {
+    this.assertLifecycleActive();
+    if (reservation) {
+      materializationStage = "thread_start_sent";
     }
     const result = await this.request("thread/start", {
       cwd: options.cwd,
@@ -673,6 +796,17 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }) as { thread?: CodexThread } & CodexThreadPermissionState;
     const thread = result.thread;
     if (!thread?.id) throw new Error("Codex thread/start did not return a thread id");
+    observedThreadId = thread.id;
+    materializationStage = "thread_start_observed";
+    if (reservation) {
+      this.reportMaterializationProgress({ phase: "native_created", operationId: reservation.operationId,
+        inputId: reservation.inputId, threadId: thread.id, cwd: thread.cwd || options.cwd });
+      this.assertLifecycleActive();
+      if (this.materializationObserverFailed) throw new Error("materialization progress receipt could not be persisted after native create");
+    }
+    if (this.projectRuntimePolicy?.materialized && (thread as CodexThread & { ephemeral?: boolean }).ephemeral !== false) {
+      throw new Error("Codex did not materialize the required non-ephemeral project thread");
+    }
     if (this.projectRuntimePolicy && !codexProjectPermissionObserved(result, this.projectRuntimePolicy)) {
       await this.request("thread/archive", { threadId: thread.id }).catch(() => undefined);
       throw new Error("Codex did not confirm the requested project permission profile and exact runtime root");
@@ -695,6 +829,22 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         throw error;
       }
     }
+    if (reservation && this.integratorSessionBindingStore) {
+      await this.integratorSessionBindingStore.record({
+        operationId: reservation.operationId,
+        attempt: reservation.attempt,
+        receipt: {
+          state: "created",
+          inputId: reservation.inputId,
+          address: { hostId: reservation.hostId, harness: "codex", nativeSessionId: thread.id },
+          launchCwd: this.projectRuntimePolicy!.rootPath,
+          retryable: false,
+        },
+      });
+      materializationStage = "h34_accepted";
+      this.reportMaterializationProgress({ phase: "accepted", operationId: reservation.operationId,
+        inputId: reservation.inputId, threadId: thread.id, cwd: thread.cwd || options.cwd });
+    }
     if (options.fullAccess) {
       if (!hasCodexFullAccess(result)) throw new Error("Codex app-server did not confirm the requested full-access thread settings");
       this.fullAccessThreads.add(thread.id);
@@ -709,6 +859,153 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     this.threads.set(thread.id, thread);
     this.emitEvent({ kind: "session.created", harness: "codex", sessionId: thread.id, status: "idle" });
     return this.toSession(thread);
+    } catch (error) {
+      if (reservation && this.integratorSessionBindingStore) {
+        await this.integratorSessionBindingStore.record({
+          operationId: reservation.operationId,
+          attempt: reservation.attempt,
+          receipt: { state: "unknown", inputId: reservation.inputId,
+            ...(observedThreadId ? { address: { hostId: reservation.hostId, harness: "codex" as const, nativeSessionId: observedThreadId } } : {}),
+            retryable: false,
+            reason: "native_materialization_outcome_uncertain" },
+        }).catch(() => undefined);
+      }
+      if (reservation) this.reportMaterializationProgress({ phase: "failure", operationId: reservation.operationId,
+        inputId: reservation.inputId, ...(observedThreadId ? { threadId: observedThreadId } : {}),
+        failureStage: materializationStage, failureType: error instanceof Error ? error.name : "unknown" });
+      throw error;
+    }
+  }
+
+  /** Restore only the exact accepted H34 ID after fresh H32/H31 scope proof. */
+  async restoreMaterializedSession(): Promise<ControlResult> {
+    this.assertLifecycleActive();
+    const policy = this.projectRuntimePolicy;
+    const accepted = policy?.acceptedSession;
+    const store = this.integratorSessionBindingStore;
+    const owner = this.projectRuntimeOwner;
+    if (!policy?.materialized || !accepted || !store || !owner) {
+      return { ok: false, nonRetryable: true, error: "materialized Codex restore requires an accepted H34 operation" };
+    }
+    const evidence = await this.resolveCurrentProjectScope({
+      projectId: policy.binding.projectId, rootIdentity: policy.binding.rootIdentity,
+      policyRevision: policy.binding.policyRevision, hostId: policy.binding.hostId, harness: "codex",
+    });
+    this.assertLifecycleActive();
+    if (!evidence || !sameProjectExecutionBinding(evidence.binding, policy.binding)
+      || !sameScopeDirectoryIdentity(evidence.appServerDataHome, evidence.transcriptReaderDataHome)) {
+      return { ok: false, nonRetryable: true, error: "materialized Codex current scope is unavailable" };
+    }
+    const trusted = await resolveProjectExecutionScope(policy.binding, owner);
+    this.assertLifecycleActive();
+    if (!trusted.eligible) return { ok: false, nonRetryable: true, error: "materialized Codex runtime owner proof is unavailable" };
+    let binding;
+    try { binding = await store.get(accepted.operationId); }
+    catch { return { ok: false, nonRetryable: true, error: "materialized Codex H34 record is unreadable" }; }
+    this.assertLifecycleActive();
+    const attempt = binding?.attempts.at(-1);
+    const scope = attempt?.scope;
+    if (!binding || binding.state !== "accepted" || binding.operationId !== policy.binding.attemptId
+      || binding.harness !== "codex" || attempt?.state !== "accepted" || attempt.receipt?.state !== "created"
+      || attempt.address?.nativeSessionId !== accepted.address.nativeSessionId
+      || attempt.address?.hostId !== policy.binding.hostId || attempt.address?.harness !== "codex"
+      || !scope || scope.projectId !== policy.binding.projectId || scope.rootIdentity !== policy.binding.rootIdentity
+      || scope.policyRevision !== policy.binding.policyRevision || scope.hostId !== policy.binding.hostId
+      || scope.harness !== "codex" || scope.harnessVersion !== evidence.harnessVersion
+      || !sameScopeDirectoryIdentity(scope.canonicalRoot, evidence.canonicalRoot)
+      || !sameScopeDirectoryIdentity(scope.nativeDataHome, evidence.appServerDataHome)) {
+      return { ok: false, nonRetryable: true, error: "materialized Codex H34 scope or receipt does not match current runtime" };
+    }
+    const id = accepted.address.nativeSessionId;
+    this.reportMaterializationProgress({ phase: "restore_preflight", operationId: accepted.operationId,
+      threadId: id });
+    try {
+      await assertCodexProjectRoot(policy, policy.rootPath);
+      this.assertLifecycleActive();
+      await this.ensureReady();
+      this.assertLifecycleActive();
+      await this.assertEffectiveProjectToolIsolation();
+      this.assertLifecycleActive();
+      const read = await this.request("thread/read", { threadId: id, includeTurns: true }) as {
+        thread?: CodexThread;
+      } & CodexThreadPermissionState;
+      if (read.thread?.id !== id || read.thread.cwd !== policy.rootPath
+        || (read.thread as (CodexThread & { ephemeral?: boolean }) | undefined)?.ephemeral !== false) {
+        return { ok: false, nonRetryable: true, error: "native materialized thread readback does not match accepted project scope" };
+      }
+      this.reportMaterializationProgress({ phase: "restore_read", operationId: accepted.operationId, threadId: id });
+      this.assertLifecycleActive();
+      this.projectThreadIds.add(id);
+      this.projectLiveMessages.set(id, []);
+      this.projectCommandReceipts.set(id, []);
+      const resumed = await this.resumeSession(id);
+      this.assertLifecycleActive();
+      if (!resumed.ok) {
+        this.projectThreadIds.delete(id);
+        this.projectLiveMessages.delete(id);
+        this.projectCommandReceipts.delete(id);
+        return resumed;
+      }
+      this.reportMaterializationProgress({ phase: "restore_resumed", operationId: accepted.operationId, threadId: id });
+      this.threads.set(id, read.thread);
+      return { ok: true, sessionId: id };
+    } catch (error) {
+      this.projectThreadIds.delete(id);
+      this.projectLiveMessages.delete(id);
+      this.projectCommandReceipts.delete(id);
+      this.reportMaterializationProgress({ phase: "failure", operationId: accepted.operationId, threadId: id,
+        failureStage: "restore_read_or_resume", failureType: error instanceof Error ? error.name : "unknown" });
+      return { ok: false, nonRetryable: true, error: (error as Error).message };
+    }
+  }
+
+  private async reserveMaterializedOperation(): Promise<{ operationId: string; attempt: number; inputId: string; hostId: string }> {
+    const policy = this.projectRuntimePolicy;
+    const store = this.integratorSessionBindingStore;
+    const owner = this.projectRuntimeOwner;
+    if (!policy?.materialized || !store || !owner) throw new Error("materialized Codex H34 admission is unavailable");
+    const evidence = await this.resolveCurrentProjectScope({
+      projectId: policy.binding.projectId, rootIdentity: policy.binding.rootIdentity,
+      policyRevision: policy.binding.policyRevision, hostId: policy.binding.hostId, harness: "codex",
+    });
+    this.assertLifecycleActive();
+    if (!evidence || !sameProjectExecutionBinding(evidence.binding, policy.binding)
+      || !sameScopeDirectoryIdentity(evidence.appServerDataHome, evidence.transcriptReaderDataHome)) {
+      throw new Error("materialized Codex current scope is unavailable");
+    }
+    const trusted = await resolveProjectExecutionScope(policy.binding, owner);
+    this.assertLifecycleActive();
+    if (!trusted.eligible) throw new Error("materialized Codex runtime owner proof is unavailable");
+    const scope: IntegratorAttemptScope = {
+      projectId: policy.binding.projectId, rootIdentity: policy.binding.rootIdentity,
+      policyRevision: policy.binding.policyRevision, hostId: policy.binding.hostId, harness: "codex",
+      harnessVersion: evidence.harnessVersion, canonicalRoot: evidence.canonicalRoot,
+      nativeDataHome: evidence.appServerDataHome,
+    };
+    const reservation = await store.reserve({ operationId: policy.binding.attemptId,
+      hostId: policy.binding.hostId, harness: "codex", scope });
+    if (!reservation.claimed) throw new Error("materialized Codex operation is already reserved or terminal; no create replay permitted");
+    this.reportMaterializationProgress({ phase: "reserved", operationId: policy.binding.attemptId, inputId: reservation.attempt.inputId });
+    if (this.lifecycleSignal?.aborted || this.disposed) {
+      await store.record({ operationId: policy.binding.attemptId, attempt: reservation.attempt.attempt,
+        receipt: { state: "unknown", inputId: reservation.attempt.inputId, retryable: false,
+          reason: "operation_aborted_after_durable_reservation" } });
+      throw operationAbortedError();
+    }
+    if (this.materializationObserverFailed) {
+      await store.record({ operationId: policy.binding.attemptId, attempt: reservation.attempt.attempt,
+        receipt: { state: "unknown", inputId: reservation.attempt.inputId, retryable: false,
+          reason: "materialization_progress_receipt_unavailable" } });
+      throw new Error("materialization progress receipt could not be persisted after H34 reservation");
+    }
+    return { operationId: policy.binding.attemptId, attempt: reservation.attempt.attempt,
+      inputId: reservation.attempt.inputId, hostId: reservation.attempt.hostId };
+  }
+
+  private reportMaterializationProgress(progress: CodexMaterializationProgress): void {
+    if (!this.projectRuntimePolicy?.materialized || !this.onMaterializationProgress) return;
+    try { this.onMaterializationProgress({ ...progress }); }
+    catch { this.materializationObserverFailed = true; }
   }
 
   /**
@@ -758,7 +1055,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     try {
       await assertCodexProjectRoot(policy, policy.rootPath);
       const canonicalRoot = await this.directoryIdentity(policy.rootPath);
-      const currentRootIdentity = `${canonicalRoot.path}\0${canonicalRoot.device}:${canonicalRoot.inode}`;
+      const currentRootIdentity = JSON.stringify([canonicalRoot.path, canonicalRoot.device, canonicalRoot.inode]);
       if (canonicalRoot.path !== policy.rootPath || canonicalRoot.device !== policy.rootDevice
         || canonicalRoot.inode !== policy.rootInode || currentRootIdentity !== policy.binding.rootIdentity) return null;
 
@@ -792,6 +1089,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const { stdout } = await execFileAsync(this.codexBin, ["--version"], {
         cwd: this.cwd,
         env: this.projectChildEnvironment(),
+        signal: this.lifecycleSignal,
         timeout: 10_000,
         maxBuffer: 16 * 1024,
       });
@@ -809,12 +1107,14 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<ControlResult> {
     const operation = async () => {
+      this.assertLifecycleActive();
       const previous = this.deliveryTails.get(id) ?? Promise.resolve();
       let release!: () => void;
       const admission = new Promise<void>(resolve => { release = resolve; });
       const tail = previous.then(() => admission);
       this.deliveryTails.set(id, tail);
       await previous;
+      this.assertLifecycleActive();
       try { return await this.sendNativeMessage(id, options, release); }
       finally {
         release();
@@ -850,6 +1150,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private async sendNativeMessage(id: string, options: SendMessageOptions, release: () => void, startRaceRetries = 1): Promise<ControlResult> {
+    this.assertLifecycleActive();
     if (this.projectRuntimePolicy && !this.projectThreadIds.has(id)) {
       return { ok: false, nonRetryable: true, error: "project-scoped Codex can only address a thread created by this runtime instance" };
     }
@@ -858,15 +1159,19 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     if (options.activeTurnOnly && !this.socketPath && !this.isReady()) return {ok:false,notSubmitted:true,nonRetryable:true,error:"Current-turn transport is unavailable; coordination was not delivered"};
     await this.ensureReady();
+    this.assertLifecycleActive();
     if (this.projectRuntimePolicy) {
       await assertCodexProjectRoot(this.projectRuntimePolicy, this.projectRuntimePolicy.rootPath);
+      this.assertLifecycleActive();
       await this.assertEffectiveProjectToolIsolation(id);
+      this.assertLifecycleActive();
     }
     let session: AgentSession | null;
     try { session = await this.getSession(id); }
     catch (error) {
       return { ok: false, admitted: false, error: `Codex session preflight failed: ${(error as Error).message}` };
     }
+    this.assertLifecycleActive();
     if (!session) return { ok: false, error: `Session ${id} not found` };
     if (session.meta?.nativeStateObserved === false) return { ok: false, admitted: false, nonRetryable: true, error: "Codex native thread state could not be verified; prompt was not delivered" };
     if (options.activeTurnOnly && session.status !== "running") {
@@ -905,6 +1210,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         if (attempt === 0 && error instanceof CodexRpcError && error.code === -32600
           && /expected active turn id .*but found|expected.*turn.*(?:match|mismatch)|no active turn/i.test(error.message)) {
           const fresh = await this.getSession(id);
+          this.assertLifecycleActive();
           if (!fresh) return { ok: false, nonRetryable: true, error: "Codex thread disappeared during steer refresh" };
           session = fresh;
           if (session.status === "needs_input") return { ok: false, nonRetryable: true, error: "Codex now requires human input" };
@@ -917,11 +1223,12 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     // Never convert an explicit no-active rejection into a new turn/start.
     if (options.activeTurnOnly) return {ok:false,notSubmitted:true,nonRetryable:true,error:"skipped_inactive: native current-turn admission is no longer available"};
-    // Project-owned threads are created as ephemeral and are already selected in
-    // this dedicated app-server. Codex has no durable rollout for thread/resume.
+    // Ephemeral project threads are already selected in this dedicated server;
+    // materialized threads are resumed only after the accepted H34 restore path.
     const resumed: ControlResult = this.projectRuntimePolicy && this.projectThreadIds.has(id)
       ? { ok: true }
       : await this.resumeSession(id);
+    this.assertLifecycleActive();
     if (!resumed.ok) {
       if (steerActive && startRaceRetries > 0 && /already has an active writer/i.test(resumed.error ?? "")) {
         const fresh = await this.getSession(id);
@@ -955,6 +1262,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
           error: "Codex accepted turn/start without a verifiable turn ID; do not replay",
           ...(options.inputId ? { inputId: options.inputId } : {}) };
       }
+      if (this.projectRuntimePolicy?.materialized) {
+        this.reportMaterializationProgress({ phase: "turn_admitted", operationId: this.projectRuntimePolicy.binding.attemptId,
+          threadId: id, turnId });
+      }
+      this.assertLifecycleActive();
       if (this.projectRuntimePolicy && this.projectThreadIds.has(id)) {
         this.recordProjectUserMessage(id, turnId, options.message);
       }
@@ -1124,18 +1436,22 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async resumeSession(id: string): Promise<ControlResult> {
+    try { this.assertLifecycleActive(); }
+    catch (error) { return { ok: false, nonRetryable: true, error: (error as Error).message }; }
     if (this.projectRuntimePolicy) {
       if (!this.projectThreadIds.has(id)) {
         return { ok: false, nonRetryable: true, error: "project-scoped Codex cannot resume a thread it did not create in this runtime instance" };
       }
       try {
         await assertCodexProjectRoot(this.projectRuntimePolicy, this.projectRuntimePolicy.rootPath);
+        this.assertLifecycleActive();
       } catch (error) {
         return { ok: false, nonRetryable: true, error: (error as Error).message };
       }
     }
     try {
       await this.ensureReady();
+      this.assertLifecycleActive();
       const result = await this.request("thread/resume", {
         threadId: id,
         ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
@@ -1308,6 +1624,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private async ensureReady(): Promise<void> {
+    this.assertLifecycleActive();
     if (this.isReady()) return;
     if (!this.initialization) {
       this.initialization = this.initializeTransport().finally(() => {
@@ -1315,6 +1632,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       });
     }
     await this.initialization;
+    this.assertLifecycleActive();
+  }
+
+  private assertLifecycleActive(): void {
+    if (this.disposed || this.lifecycleSignal?.aborted) throw operationAbortedError();
   }
 
   private async assertEffectiveProjectToolIsolation(threadId?: string): Promise<void> {
@@ -1353,6 +1675,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       }).then((value) => value as {
         config?: {
           features?: Record<string, unknown>;
+          web_search?: unknown;
           permissions?: Record<string, unknown>;
           apps?: Record<string, { enabled?: unknown } | null> | null;
           plugins?: Record<string, { enabled?: unknown } | null> | null;
@@ -1363,6 +1686,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     ]);
     const mcpRows = mcpResult.rows as Array<{ name?: unknown; runtimeStatus?: unknown; tools?: unknown }>;
     const featureDeny = codexProjectIntegrationFeatureDeny(configResult);
+    const nativeWebSearch = codexProjectNativeWebSearch(configResult, this.projectRuntimePolicy.nativeWebSearchMode);
     const filesystemDeny = codexProjectFilesystemProfileDeny(configResult, this.codexBin);
     const appConfig = configResult?.config?.apps;
     const pluginConfig = configResult?.config?.plugins;
@@ -1402,6 +1726,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     const flagsComplete = discovery || (mcpRows.every((server) => !!server.tools
       && typeof server.tools === "object" && !Array.isArray(server.tools)) && mcpExposureSafe);
     const complete = mcpResult.complete && configResult !== null && featureDeny.complete && filesystemDeny.complete && idsComplete && flagsComplete
+      && nativeWebSearch.complete
       && (discovery || (mcpConfigAllDisabled && pluginConfigAllDisabled));
     const denyList = discoveryDeny.denyList;
     const active = !discovery && (!mcpExposureSafe || !pluginConfigAllDisabled) || activeApps > 0 || activePlugins > 0;
@@ -1427,8 +1752,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         filesystemPolicyComplete: filesystemDeny.complete,
       },
       featureOriginsVerified: featureDeny.complete, complete,
+      nativeWebSearch,
     });
-    return { complete, denyList, active, summary };
+    return { complete, denyList, active, nativeWebSearch, summary };
   }
 
   private recordProjectUserMessage(threadId: string, turnId: string, text: string): void {
@@ -1516,6 +1842,17 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (typeof item.aggregatedOutput === "string" && item.aggregatedOutput.length <= 1_000_000
       && (item.aggregatedOutput.length > 0 || receipt.output.length === 0)) receipt.output = item.aggregatedOutput;
     if (receipts.length > 50) receipts.splice(0, receipts.length - 50);
+    if (this.projectRuntimePolicy?.materialized) {
+      this.reportMaterializationProgress({
+        phase: item.status === "completed" ? "command_completed" : "command_observed",
+        operationId: this.projectRuntimePolicy.binding.attemptId, threadId, turnId, itemId: receipt.itemId,
+        cwd: receipt.cwd,
+        ...(receipt.command ? { commandSha256: createHash("sha256").update(receipt.command).digest("hex") } : {}),
+        ...(receipt.output ? { outputSha256: createHash("sha256").update(receipt.output).digest("hex") } : {}),
+        ...(receipt.status ? { status: receipt.status } : {}),
+        ...(receipt.exitCode !== undefined ? { exitCode: receipt.exitCode } : {}),
+      });
+    }
   }
 
   private recordProjectCommandOutputDelta(threadId: string, turnId: string, itemId: string, delta: string): void {
@@ -1528,18 +1865,30 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     const combined = `${receipt.output}${delta}`;
     if (combined.length <= 1_000_000) receipt.output = combined;
+    if (this.projectRuntimePolicy?.materialized) {
+      this.reportMaterializationProgress({ phase: "command_observed", operationId: this.projectRuntimePolicy.binding.attemptId,
+        threadId, turnId, itemId, cwd: receipt.cwd,
+        ...(receipt.command ? { commandSha256: createHash("sha256").update(receipt.command).digest("hex") } : {}),
+        outputSha256: createHash("sha256").update(receipt.output).digest("hex"),
+        ...(receipt.status ? { status: receipt.status } : {}),
+        ...(receipt.exitCode !== undefined ? { exitCode: receipt.exitCode } : {}),
+      });
+    }
   }
 
   private async initializeTransport(): Promise<void> {
+    this.assertLifecycleActive();
     if (this.socketPath) {
       if (!this.socket || this.socket.readyState >= WebSocket.CLOSING) await this.startSocket();
     } else if (!this.child || this.child.killed) {
       this.startProcess();
     }
+    this.assertLifecycleActive();
     await this.request("initialize", {
       clientInfo: { name: "agent-herder", title: "Agent Herder", version: "0.1.0" },
       capabilities: { experimentalApi: true },
     });
+    this.assertLifecycleActive();
     this.notify("initialized", {});
     this.initialized = true;
   }
@@ -1691,6 +2040,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private request(method: string, params: unknown, stage = method): Promise<unknown> {
+    try { this.assertLifecycleActive(); }
+    catch (error) { return Promise.reject(error); }
     if (!this.isTransportWritable()) return Promise.reject(new Error("Codex app-server is not connected"));
     const id = this.nextRequestId++;
     return new Promise((resolve, reject) => {
@@ -1978,4 +2329,64 @@ function redactSensitive(value: string): string {
     .replace(/(bearer\s+)[^\s,;]+/gi, "$1[redacted]")
     .replace(/\b(api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|credential)\s*[:=]\s*([^\s,;]+)/gi, "$1=[redacted]")
     .replace(/([?&](?:token|key|secret|password|signature)=)[^&\s]+/gi, "$1[redacted]");
+}
+
+function throwIfSignalAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw operationAbortedError();
+}
+
+function operationAbortedError(): Error {
+  const error = new Error("Codex adapter operation aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+async function terminateOwnedChild(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const wait = (milliseconds: number): Promise<boolean> => new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) { resolve(true); return; }
+    let settled = false;
+    const finish = (exited: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.off("exit", onExit);
+      child.off("error", onError);
+      resolve(exited);
+    };
+    const onExit = () => finish(true);
+    const onError = () => finish(true);
+    const timer = setTimeout(() => finish(child.exitCode !== null || child.signalCode !== null), milliseconds);
+    timer.unref?.();
+    child.once("exit", onExit);
+    child.once("error", onError);
+  });
+  try { child.kill("SIGTERM"); } catch { /* owned child may be exiting */ }
+  if (await wait(1_000)) return;
+  try { child.kill("SIGKILL"); } catch { /* owned child may exit between checks */ }
+  if (!await wait(1_000)) {
+    const error = new Error("Codex app-server child termination could not be confirmed");
+    error.name = "OwnedChildTerminationUnconfirmedError";
+    throw error;
+  }
+}
+
+async function waitForSocketClose(socket: WebSocket, milliseconds: number): Promise<void> {
+  if (socket.readyState === WebSocket.CLOSED) return;
+  await new Promise<void>((resolve) => {
+    const finish = () => { clearTimeout(timer); socket.off("close", finish); resolve(); };
+    const timer = setTimeout(finish, milliseconds);
+    timer.unref?.();
+    socket.once("close", finish);
+  });
+}
+
+function sameProjectExecutionBinding(left: ProjectExecutionBinding, right: ProjectExecutionBinding): boolean {
+  return left.projectId === right.projectId && left.rootIdentity === right.rootIdentity
+    && left.policyRevision === right.policyRevision && left.attemptId === right.attemptId
+    && left.hostId === right.hostId && left.runtimeInstanceId === right.runtimeInstanceId;
+}
+
+function sameScopeDirectoryIdentity(left: ProjectScopeDirectoryIdentity, right: ProjectScopeDirectoryIdentity): boolean {
+  return left.path === right.path && left.device === right.device && left.inode === right.inode;
 }

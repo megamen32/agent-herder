@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { accessSync, constants as fsConstants, realpathSync } from "node:fs";
-import { mkdtemp, mkdir, realpath, rm, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { homedir } from "node:os";
+import { hostname } from "node:os";
 import { delimiter, join } from "node:path";
 import {
   CODEX_PROJECT_PERMISSION_PROFILE,
@@ -10,6 +11,7 @@ import {
   assertCodexProjectRoot,
   codexProjectAppServerArgs,
   codexProjectIntegrationFeatureDeny,
+  codexProjectNativeWebSearch,
   codexProjectDiscoveryDenyList,
   codexProjectFilesystemProfileDeny,
   codexProjectPermissionObserved,
@@ -17,7 +19,9 @@ import {
   codexProjectThreadParams,
   codexProjectTurnParams,
   createCodexProjectRuntimePolicy,
+  restoreCodexProjectRuntimePolicy,
 } from "../src/project-runtime-policy.js";
+import { IntegratorSessionBindingStore } from "../src/integrator-session-binding.js";
 
 const temporaryRoots: string[] = [];
 
@@ -39,7 +43,7 @@ describe("native Codex project runtime policy", () => {
     expect(policy.binding).toMatchObject({
       projectId: "project-a",
       rootIdentity: expect.stringContaining(await realpath(root)),
-      policyRevision: "codex-native-project-v1",
+      policyRevision: "codex-native-project-v2",
       hostId: expect.any(String),
       runtimeInstanceId: expect.any(String),
       attemptId: expect.any(String),
@@ -47,6 +51,101 @@ describe("native Codex project runtime policy", () => {
     expect(policy.permissionProfileId).toBe(CODEX_PROJECT_PERMISSION_PROFILE);
     expect(policy.modelId).toBe(CODEX_PROJECT_MODEL_ID);
     await expect(assertCodexProjectRoot(policy, root)).resolves.toBeUndefined();
+  });
+
+  it("restores a stable H34 operation only from its accepted matching scope and gives it a fresh runtime instance", async () => {
+    const root = await temporaryRoot();
+    const home = await temporaryRoot();
+    const store = new IntegratorSessionBindingStore({ persistencePath: join(root, "journal.json") });
+    const first = await createCodexProjectRuntimePolicy({ projectId: "restart-project", projectRoot: root, materialized: true });
+    const rootStat = await stat(root);
+    const homeStat = await stat(home);
+    const scope = {
+      projectId: first.binding.projectId,
+      rootIdentity: first.binding.rootIdentity,
+      policyRevision: first.binding.policyRevision,
+      hostId: hostname(),
+      harness: "codex" as const,
+      harnessVersion: "codex-test-version",
+      canonicalRoot: { path: root, device: rootStat.dev, inode: rootStat.ino },
+      nativeDataHome: { path: home, device: homeStat.dev, inode: homeStat.ino },
+    };
+    const reservation = await store.reserve({ operationId: first.binding.attemptId, hostId: hostname(), harness: "codex", scope });
+    await store.record({ operationId: first.binding.attemptId, attempt: reservation.attempt.attempt,
+      receipt: { state: "created", inputId: reservation.attempt.inputId,
+        address: { hostId: hostname(), harness: "codex", nativeSessionId: "native-restart-id" },
+        launchCwd: root, retryable: false } });
+
+    const restored = await restoreCodexProjectRuntimePolicy({ projectId: "restart-project", projectRoot: root,
+      operationId: first.binding.attemptId, store, nativeDataHome: home });
+    expect(restored.binding.attemptId).toBe(first.binding.attemptId);
+    expect(restored.binding.runtimeInstanceId).not.toBe(first.binding.runtimeInstanceId);
+    expect(restored.materialized).toBe(true);
+    expect(restored.acceptedSession).toMatchObject({ operationId: first.binding.attemptId,
+      address: { nativeSessionId: "native-restart-id", harness: "codex" } });
+
+    await expect(restoreCodexProjectRuntimePolicy({ projectId: "other-project", projectRoot: root,
+      operationId: first.binding.attemptId, store, nativeDataHome: home })).rejects.toThrow("no matching accepted scoped H34 record");
+    await expect(restoreCodexProjectRuntimePolicy({ projectId: "restart-project", projectRoot: root,
+      operationId: "caller-chosen-id", store, nativeDataHome: home })).rejects.toThrow("no matching accepted scoped H34 record");
+  });
+
+  it("persists live-search policy in H34 scope and rejects restore after the mode changes", async () => {
+    const root = await temporaryRoot();
+    const home = await temporaryRoot();
+    const store = new IntegratorSessionBindingStore({ persistencePath: join(root, "search-journal.json") });
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "integrator-search", projectRoot: root,
+      materialized: true, nativeWebSearchMode: "live" });
+    const rootStat = await stat(root);
+    const homeStat = await stat(home);
+    const reservation = await store.reserve({ operationId: policy.binding.attemptId, hostId: hostname(), harness: "codex",
+      scope: { projectId: policy.binding.projectId, rootIdentity: policy.binding.rootIdentity,
+        policyRevision: policy.binding.policyRevision, hostId: hostname(), harness: "codex", harnessVersion: "codex-test-version",
+        canonicalRoot: { path: root, device: rootStat.dev, inode: rootStat.ino },
+        nativeDataHome: { path: home, device: homeStat.dev, inode: homeStat.ino } } });
+    await store.record({ operationId: policy.binding.attemptId, attempt: reservation.attempt.attempt,
+      receipt: { state: "created", inputId: reservation.attempt.inputId,
+        address: { hostId: hostname(), harness: "codex", nativeSessionId: "live-search-thread" }, launchCwd: root, retryable: false } });
+    const restored = await restoreCodexProjectRuntimePolicy({ projectId: "integrator-search", projectRoot: root,
+      operationId: policy.binding.attemptId, store, nativeDataHome: home, nativeWebSearchMode: "live" });
+    expect(restored.binding.policyRevision).toBe("codex-native-project-v2-web-search-live");
+    expect(restored.nativeWebSearchMode).toBe("live");
+    await expect(restoreCodexProjectRuntimePolicy({ projectId: "integrator-search", projectRoot: root,
+      operationId: policy.binding.attemptId, store, nativeDataHome: home }))
+      .rejects.toThrow("no matching accepted scoped H34 record");
+  });
+
+  it("rejects accepted H34 records with foreign root, revision, host, harness, home or legacy unscoped scope", async () => {
+    for (const mismatch of ["root", "revision", "host", "harness", "home", "legacy"] as const) {
+      const root = await temporaryRoot();
+      const home = await temporaryRoot();
+      const otherHome = await temporaryRoot();
+      const store = new IntegratorSessionBindingStore({ persistencePath: join(root, `journal-${mismatch}.json`) });
+      const policy = await createCodexProjectRuntimePolicy({ projectId: "mismatch-project", projectRoot: root, materialized: true });
+      const rootStat = await stat(root);
+      const homeStat = await stat(home);
+      const hostId = mismatch === "host" ? "foreign-host" : hostname();
+      const harness = mismatch === "harness" ? "opencode" as const : "codex" as const;
+      const scope = {
+        projectId: policy.binding.projectId,
+        rootIdentity: mismatch === "root" ? JSON.stringify([root, rootStat.dev, rootStat.ino + 1]) : policy.binding.rootIdentity,
+        policyRevision: mismatch === "revision" ? "codex-native-project-v1" : policy.binding.policyRevision,
+        hostId,
+        harness,
+        harnessVersion: "codex-test-version",
+        canonicalRoot: { path: root, device: rootStat.dev, inode: mismatch === "root" ? rootStat.ino + 1 : rootStat.ino },
+        nativeDataHome: mismatch === "home"
+          ? { path: otherHome, device: (await stat(otherHome)).dev, inode: (await stat(otherHome)).ino }
+          : { path: home, device: homeStat.dev, inode: homeStat.ino },
+      };
+      const reservation = await store.reserve({ operationId: policy.binding.attemptId, hostId, harness,
+        ...(mismatch === "legacy" ? {} : { scope }) });
+      await store.record({ operationId: policy.binding.attemptId, attempt: reservation.attempt.attempt,
+        receipt: { state: "created", inputId: reservation.attempt.inputId,
+          address: { hostId, harness, nativeSessionId: `native-${mismatch}` }, launchCwd: root, retryable: false } });
+      await expect(restoreCodexProjectRuntimePolicy({ projectId: "mismatch-project", projectRoot: root,
+        operationId: policy.binding.attemptId, store, nativeDataHome: home })).rejects.toThrow("no matching accepted scoped H34 record");
+    }
   });
 
   it("rejects relative, symlinked and substituted roots", async () => {
@@ -90,6 +189,26 @@ describe("native Codex project runtime policy", () => {
     expect(joined).not.toContain("apps={}");
     expect(joined).not.toContain("plugins={}");
     expect(joined).not.toContain("danger-full-access");
+    expect(joined).not.toContain("web_search=");
+  });
+
+  it("adds live hosted search only when the trusted project policy explicitly opts in", () => {
+    const args = codexProjectAppServerArgs({ mcpServerIds: [], appIds: [], pluginIds: [] }, "codex", "live");
+    const joined = args.join(" ");
+    expect(joined).toContain('--config web_search="live"');
+    expect(joined).toContain("permissions.agent_herder_project_v1.network.enabled=false");
+    expect(joined).toContain("--disable apps");
+    expect(joined).toContain("--disable enable_mcp_apps");
+    expect(joined).toContain("--disable plugins");
+    expect(joined).not.toContain("network.enabled=true");
+  });
+
+  it("requires readback of live mode with this process's config origin and skips unrequested mode", () => {
+    const correct = { config: { web_search: "live" }, origins: { web_search: { name: { type: "sessionFlags" } } } };
+    expect(codexProjectNativeWebSearch(correct, "live")).toEqual({ complete: true, mode: "live", origin: "sessionFlags" });
+    expect(codexProjectNativeWebSearch({ config: { web_search: "live" }, origins: { web_search: { name: { type: "user" } } } }, "live").complete).toBe(false);
+    expect(codexProjectNativeWebSearch({ config: { web_search: "cached" } }, "live").complete).toBe(false);
+    expect(codexProjectNativeWebSearch({}, undefined)).toEqual({ complete: true, mode: "not_requested", origin: "not_requested" });
   });
 
   it("emits explicit per-id app, MCP and plugin denies without exposing the ids elsewhere", () => {

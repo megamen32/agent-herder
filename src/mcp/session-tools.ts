@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/server";
+import { hostname } from "node:os";
 import { z } from "zod";
 import type { HarnessAdapter } from "../types/index.js";
 import { sessionIdentity } from "../session-identity.js";
@@ -37,6 +38,7 @@ import {
 } from "../mcp-tools/handlers.js";
 import { startJobResult } from "./results.js";
 import { readModelQuotas } from "../model-quota.js";
+import type { IntegratorFleetRuntime } from "../integrator-fleet-runtime.js";
 
 const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]);
 
@@ -50,8 +52,19 @@ export function registerSessionTools(server: McpServer, deps: {
   adapters: Map<string, HarnessAdapter>;
   jobs: HerderJobRegistry;
   events: HerderEventBus;
+  integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">;
 }): void {
   const { adapters, jobs, events } = deps;
+  async function sessionRoute<T extends { sessionId?: string; harness?: string }>(args: T) {
+    if (!args.sessionId || !deps.integratorRuntime) return { adapters, args, denied: false };
+    const resolution = await deps.integratorRuntime.adapterForSession({ hostId: hostname(), harness: "codex", nativeSessionId: args.sessionId });
+    if (resolution.kind === "deny") return { adapters, args, denied: true };
+    if (resolution.kind === "ordinary") return { adapters, args, denied: false };
+    if (args.harness && args.harness !== "codex") return { adapters, args, denied: true };
+    const routed = new Map(adapters);
+    routed.set("codex", resolution.adapter);
+    return { adapters: routed, args: { ...args, harness: "codex" } as T, denied: false };
+  }
   const publishSessionsChanged = () => events.publish({ kind: "sessions", uri: "herder://sessions", action: "changed" });
 
   server.registerTool("list_agents", { description: "List all coding agent sessions, including ZCode. Filter by harness, status, age (maxAge seconds), or folder (CWD prefix like ~/apps). Can show last message preview.", inputSchema: z.object({
@@ -76,7 +89,9 @@ export function registerSessionTools(server: McpServer, deps: {
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
   });
   server.registerTool("agent_info", { description: "Get detailed info about a specific session. Always shows model and last message.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }), outputSchema: z.object({ session: sessionSchema.nullable() }) }, async (args) => {
-    const session = await agentInfoResult(adapters, args);
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    const session = await agentInfoResult(route.adapters, route.args);
     return { content: [{ type: "text" as const, text: session ? formatSession(session, true) : `Session '${args.sessionId}' not found.` }], structuredContent: { session } };
   });
   server.registerTool("session_identity", {
@@ -94,10 +109,12 @@ export function registerSessionTools(server: McpServer, deps: {
       status: z.string().optional(), announced: z.boolean().optional(), reason: z.string().optional(),
     }).nullable(),
   }, async (args) => {
-    const harness = args.harness ? [args.harness] : [...adapters.keys()];
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    const harness = route.args.harness ? [route.args.harness] : [...route.adapters.keys()];
     let owned: HarnessAdapter | undefined;
     for (const name of harness) {
-      const adapter = adapters.get(name);
+      const adapter = route.adapters.get(name);
       if (!adapter) continue;
       if (await adapter.getSession(args.sessionId).catch(() => null)) { owned = adapter; break; }
     }
@@ -122,18 +139,30 @@ export function registerSessionTools(server: McpServer, deps: {
     return { content: [{ type: "text" as const, text: formatFindParentResult(args.sessionId, result) }], structuredContent: result };
   });
   server.registerTool("list_children", { description: "List the native child sessions of an agent session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }), outputSchema: z.object({ session: sessionSchema.nullable(), children: z.array(sessionSchema), supported: z.boolean() }) }, async (args) => {
-    const result = await listChildrenResult(adapters, args);
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    const result = await listChildrenResult(route.adapters, route.args);
     return { content: [{ type: "text" as const, text: formatListChildrenResult(args.sessionId, result) }], structuredContent: result };
   });
 
-  server.registerTool("export_transcript", { description: "Export the raw adapter-owned transcript and return a filesystem navigation card.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }) }, async (args) => ({ content: [{ type: "text" as const, text: await handleExportTranscript(adapters, args) }] }));
-  server.registerTool("export_transcript_async", { description: "Export a raw adapter-owned transcript as a Herder background job.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), ownerSessionId: z.string().optional() }) }, async (args) => startJobResult(jobs, "transcript-export", async (signal, progress) => {
-    progress(0.1, "Exporting transcript");
-    return handleExportTranscript(adapters, args, undefined, signal);
-  }, args.ownerSessionId));
+  server.registerTool("export_transcript", { description: "Export the raw adapter-owned transcript and return a filesystem navigation card.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }) }, async (args) => {
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    return { content: [{ type: "text" as const, text: await handleExportTranscript(route.adapters, route.args) }] };
+  });
+  server.registerTool("export_transcript_async", { description: "Export a raw adapter-owned transcript as a Herder background job.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), ownerSessionId: z.string().optional() }) }, async (args) => {
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    return startJobResult(jobs, "transcript-export", async (signal, progress) => {
+      progress(0.1, "Exporting transcript");
+      return handleExportTranscript(route.adapters, route.args, undefined, signal);
+    }, args.ownerSessionId);
+  });
 
   server.registerTool("send_message", { description: "Send a message to an agent. Ordinary coordination is active-turn-only, including queue mode: inactive/completed targets return skipped_inactive without new turns or deferred debt. Explicit humanRequested=true permits a human new task/send/resume. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. Modes: sync (wait), queue (fire-and-forget), steer (redirect).", inputSchema: SendMessageSchema }, async (args) => {
-    const result = await handleSendMessage(adapters, args); publishSessionsChanged();
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    const result = await handleSendMessage(route.adapters, route.args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("create_session", { description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory.", inputSchema: CreateSessionSchema }, async (args) => {
@@ -144,19 +173,33 @@ export function registerSessionTools(server: McpServer, deps: {
     const result = await handleNewOrResume(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed.", inputSchema: DeliverSchema }, async(args)=>{ const result=await handleDeliver(adapters,args); publishSessionsChanged(); return {content:[{type:"text" as const,text:result}]}; });
+  server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed.", inputSchema: DeliverSchema }, async(args)=>{ const route=await sessionRoute(args);if(route.denied)throw new Error("project_session_scope_unavailable");const result=await handleDeliver(route.adapters,route.args);publishSessionsChanged();return {content:[{type:"text" as const,text:result}]}; });
   server.registerTool("stop_agent", { description: "Stop / abort a running agent session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }) }, async (args) => {
-    const result = await handleStopAgent(adapters, args); publishSessionsChanged();
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    const result = await handleStopAgent(route.adapters, route.args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("respond_permission", { description: "Respond to a pending permission request (allow/deny). OpenCode, Claude SDK, and ZCode support this.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), permissionId: z.string(), response: z.enum(["allow", "deny"]), remember: z.boolean().optional() }) }, async (args) => ({ content: [{ type: "text" as const, text: await handleRespondPermission(adapters, args) }] }));
-  server.registerTool("set_permissions", { description: "Set permissions for an agent. Claude/Codex set these at launch time.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), allowedTools: z.string().optional(), mode: z.string().optional() }) }, async (args) => ({ content: [{ type: "text" as const, text: await handleSetPermissions(adapters, args) }] }));
+  server.registerTool("respond_permission", { description: "Respond to a pending permission request (allow/deny). OpenCode, Claude SDK, and ZCode support this.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), permissionId: z.string(), response: z.enum(["allow", "deny"]), remember: z.boolean().optional() }) }, async (args) => {
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    return { content: [{ type: "text" as const, text: await handleRespondPermission(route.adapters, route.args) }] };
+  });
+  server.registerTool("set_permissions", { description: "Set permissions for an agent. Claude/Codex set these at launch time.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), allowedTools: z.string().optional(), mode: z.string().optional() }) }, async (args) => {
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    return { content: [{ type: "text" as const, text: await handleSetPermissions(route.adapters, route.args) }] };
+  });
   server.registerTool("resume_agent", { description: "Resume a stopped agent session. Optionally provide a message.", inputSchema: ResumeAgentSchema }, async (args) => {
-    const result = await handleResumeAgent(adapters, args); publishSessionsChanged();
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    const result = await handleResumeAgent(route.adapters, route.args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("change_model", { description: "Change the AI model for a harness. For OpenCode: per-session or global. For Claude/Codex/Qoder/ZCode: per-session where supported by the harness.", inputSchema: z.object({ sessionId: z.string().optional(), harness: harnessSchema, model: z.string() }) }, async (args) => {
-    const result = await handleChangeModel(adapters, args); publishSessionsChanged();
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    const result = await handleChangeModel(route.adapters, route.args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("list_models", { description: "List available AI models for each harness.", inputSchema: z.object({ harness: harnessSchema.optional() }), outputSchema: z.object({ harnesses: z.array(z.object({ harness: z.string(), name: z.string(), models: z.array(z.string()), defaultModel: z.string().optional() })) }) }, async (args) => {

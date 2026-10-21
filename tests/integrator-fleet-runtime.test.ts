@@ -1,0 +1,276 @@
+import { mkdtemp, mkdir, rm, stat } from "node:fs/promises";
+import { tmpdir, hostname } from "node:os";
+import { join, resolve } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
+import { McpServer } from "@modelcontextprotocol/server";
+import { registerFleetNodeTools } from "../src/mesh/fleet-node.js";
+import { AutomationLaunchPolicyStore } from "../src/automation-launch-policy.js";
+import { IntegratorFleetRuntime } from "../src/integrator-fleet-runtime.js";
+import { IntegratorSessionBindingStore, type IntegratorLaunchReceipt } from "../src/integrator-session-binding.js";
+import { CODEX_PROJECT_MODEL_ID } from "../src/project-runtime-policy.js";
+import type { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
+
+const roots: string[] = [];
+
+async function setup() {
+  const root = await mkdtemp(join(tmpdir(), "herder-integrator-fleet-"));
+  roots.push(root);
+  const projectRoot = join(root, "project");
+  const secondProjectRoot = join(root, "second-project");
+  const integratorRoot = join(root, "integrator-research");
+  const nativeHome = join(root, "codex-home");
+  await Promise.all([mkdir(projectRoot), mkdir(secondProjectRoot), mkdir(integratorRoot), mkdir(nativeHome)]);
+  const policyStore = new AutomationLaunchPolicyStore(join(root, "launch-policy.json"));
+  await policyStore.replace({
+    version: 1,
+    allowedHarnesses: ["codex"],
+    preferredHarness: "codex",
+    models: { codex: CODEX_PROJECT_MODEL_ID },
+    projectRoutes: {
+      [projectRoot]: { harnesses: ["codex"], aliases: ["project-alpha"], models: { codex: CODEX_PROJECT_MODEL_ID } },
+      [secondProjectRoot]: { harnesses: ["codex"], aliases: ["project-beta"], models: { codex: CODEX_PROJECT_MODEL_ID } },
+      [integratorRoot]: { harnesses: ["codex"], aliases: ["Олег и Никита"], models: { codex: CODEX_PROJECT_MODEL_ID }, nativeWebSearch: "live" },
+    },
+  });
+  const bindingStore = new IntegratorSessionBindingStore({ persistencePath: join(root, "h34.json") });
+  const runtime = new IntegratorFleetRuntime({ policyStore, bindingStore, codexDataHome: nativeHome });
+  return { root, projectRoot, secondProjectRoot, integratorRoot, nativeHome, policyStore, bindingStore, runtime };
+}
+
+afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
+
+function fakeScopedFactory(bindingStore: IntegratorSessionBindingStore, nativeHome: string) {
+  const created: string[] = [];
+  const restored: string[] = [];
+  const factory = vi.fn(async (config: any) => {
+    const policy = config.policy;
+    const nativeIdentity = async (path: string) => {
+      const canonical = resolve(path);
+      const details = await stat(canonical);
+      return { path: canonical, device: details.dev, inode: details.ino };
+    };
+    const address = { hostId: hostname(), harness: "codex", nativeSessionId: `native-${policy.binding.attemptId}` } as const;
+    const adapter = {
+      type: "codex",
+      readProjectReadinessEvidence: vi.fn(async () => ({
+        isolated: true,
+        nativeWebSearch: policy.nativeWebSearchMode === "live"
+          ? { complete: true, mode: "live", origin: "sessionFlags" }
+          : { complete: true, mode: "not_requested", origin: "not_requested" },
+        availableModels: [CODEX_PROJECT_MODEL_ID],
+        harnessVersion: "codex-cli 0.162.1",
+      })),
+      createSession: vi.fn(async () => {
+        created.push(policy.binding.attemptId);
+        const ownerProof = await config.projectRuntimeOwner.resolve(policy.binding);
+        expect(ownerProof?.kind).toBe("trusted");
+        const canonicalRoot = await nativeIdentity(policy.rootPath);
+        const nativeDataHome = await nativeIdentity(nativeHome);
+        const reserved = await bindingStore.reserve({ operationId: policy.binding.attemptId, hostId: hostname(), harness: "codex",
+          scope: { projectId: policy.binding.projectId, rootIdentity: policy.binding.rootIdentity,
+            policyRevision: policy.binding.policyRevision, hostId: hostname(), harness: "codex", harnessVersion: "codex-cli 0.162.1",
+            canonicalRoot, nativeDataHome } });
+        const receipt: IntegratorLaunchReceipt = { state: "created", inputId: reserved.attempt.inputId,
+          address, launchCwd: policy.rootPath, retryable: false };
+        await bindingStore.record({ operationId: policy.binding.attemptId, attempt: reserved.attempt.attempt, receipt });
+        return { id: address.nativeSessionId, harness: "codex", cwd: policy.rootPath };
+      }),
+      restoreMaterializedSession: vi.fn(async () => { restored.push(policy.binding.attemptId); return { ok: true, sessionId: address.nativeSessionId }; }),
+      resolveCurrentProjectScope: vi.fn(async () => ({ binding: policy.binding,
+        canonicalRoot: await nativeIdentity(policy.rootPath), harnessVersion: "codex-cli 0.162.1",
+        appServerDataHome: await nativeIdentity(nativeHome), transcriptReaderDataHome: await nativeIdentity(nativeHome) })),
+      sendMessage: vi.fn(async () => ({ ok: true, admitted: true })),
+      getSession: vi.fn(async () => ({ id: address.nativeSessionId, harness: "codex", cwd: policy.rootPath })),
+      dispose: vi.fn(async () => undefined),
+    };
+    return adapter as unknown as CodexAppServerAdapter;
+  });
+  return { factory, created, restored };
+}
+
+describe("integrator Fleet runtime", () => {
+  async function readyRequest(runtime: IntegratorFleetRuntime, project: string, inputId: string, name = "task", cwd?: string) {
+    const readiness = await runtime.readiness(project);
+    return { project, inputId, name, ...(cwd ? { cwd } : {}), projectReadinessContract: "integrator-host-readiness-v1" as const,
+      projectReadiness: readiness, cwd: cwd ?? readiness.cwd, model: CODEX_PROJECT_MODEL_ID };
+  }
+
+  it("preflights actual scoped readiness and rejects stale CWD/policy before create", async () => {
+    const f = await setup();
+    const fake = fakeScopedFactory(f.bindingStore, f.nativeHome);
+    const runtime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, createScopedAdapter: fake.factory });
+    const missing = await runtime.readiness("unconfigured-project");
+    expect(missing).toMatchObject({ state: "not_ready", reason: "project_route_unconfigured" });
+    expect(fake.factory).not.toHaveBeenCalled();
+    const readiness = await runtime.readiness("Олег и Никита");
+    expect(readiness).toMatchObject({ state: "ready", projectId: "Олег и Никита", projectRoot: f.integratorRoot,
+      requiredTools: ["web_search"], availableTools: ["web_search"], availableModels: [CODEX_PROJECT_MODEL_ID],
+      cwd: f.integratorRoot, pathResolution: { contained: true, identityMatches: true } });
+    const base = { project: "Олег и Никита", inputId: "9".repeat(64), name: "research",
+      projectReadinessContract: "integrator-host-readiness-v1" as const, projectReadiness: readiness };
+    expect(await runtime.validateReadiness({ ...base, cwd: "/tmp/foreign" })).toBe(false);
+    await f.policyStore.replace({
+      version: 1, allowedHarnesses: ["codex"], preferredHarness: "codex", models: { codex: CODEX_PROJECT_MODEL_ID },
+      projectRoutes: { [f.integratorRoot]: { harnesses: ["codex"], aliases: ["Олег и Никита"],
+        models: { codex: CODEX_PROJECT_MODEL_ID }, nativeWebSearch: "live" } },
+    });
+    expect(await runtime.validateReadiness({ ...base, cwd: f.integratorRoot })).toBe(false);
+    expect(fake.created).toEqual([]);
+    await runtime.dispose();
+  });
+
+  it("rejects stale, malformed, and future readiness before durable Fleet intent", async () => {
+    const f = await setup();
+    const runtime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, createScopedAdapter: vi.fn() as any });
+    const document = await f.policyStore.readDocument();
+    expect(document.kind).toBe("valid");
+    if (document.kind !== "valid") throw new Error("test policy unavailable");
+    const rootStat = await stat(f.integratorRoot);
+    const base = {
+      state: "ready" as const, projectId: "Олег и Никита", projectRoot: f.integratorRoot,
+      rootIdentity: JSON.stringify([f.integratorRoot, rootStat.dev, rootStat.ino]), policyRevision: document.etag,
+      hostId: hostname(), harness: "codex" as const, harnessVersion: "codex-cli test", model: CODEX_PROJECT_MODEL_ID,
+      requiredTools: ["web_search"], availableTools: ["web_search"], availableModels: [CODEX_PROJECT_MODEL_ID],
+      resourceReady: true, runtimeInstanceId: "test-runtime", cwd: f.integratorRoot,
+      pathResolution: { requestedCwd: f.integratorRoot, canonicalCwd: f.integratorRoot, rootPath: f.integratorRoot,
+        contained: true, identityMatches: true }, observedAtMs: Date.now(),
+    };
+    const ownerJournal = { once: vi.fn(async () => ({ state: "not_attempted" as const, inputId: "unexpected", retryable: false })) };
+    const server = new McpServer({ name: "local-herder", version: "test" });
+    registerFleetNodeTools(server, { adapters: new Map(), integratorRuntime: runtime, ownerJournal: ownerJournal as any });
+    const client = new Client({ name: "fleet-test", version: "test" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const stale = { ...base, observedAtMs: Date.now() - 24 * 60 * 60 * 1000 };
+      const tooFarFuture = { ...base, observedAtMs: Date.now() + 60_000 };
+      expect(await runtime.validateReadiness({ project: "Олег и Никита", inputId: "4".repeat(64), name: "research",
+        cwd: f.integratorRoot, projectReadinessContract: "integrator-host-readiness-v1", projectReadiness: stale })).toBe(false);
+      for (const [index, projectReadiness] of [stale, tooFarFuture].entries()) {
+        const result = await client.callTool({ name: "fleet_create_session", arguments: {
+          inputId: String(index + 1).repeat(64), harness: "codex", name: "research", cwd: f.integratorRoot,
+          model: CODEX_PROJECT_MODEL_ID, project: "Олег и Никита", projectReadinessContract: "integrator-host-readiness-v1",
+          projectReadiness,
+        } });
+        expect(result.structuredContent, JSON.stringify(result)).toMatchObject({ state: "not_attempted", reason: "project_readiness_not_validated" });
+      }
+      expect(await runtime.validateReadiness({ project: "Олег и Никита", inputId: "3".repeat(64), name: "research",
+        cwd: f.integratorRoot, projectReadinessContract: "integrator-host-readiness-v1", projectReadiness: { ...base, observedAtMs: Number.NaN } })).toBe(false);
+      expect(ownerJournal.once).not.toHaveBeenCalled();
+    } finally {
+      await client.close();
+      await server.close();
+      await runtime.dispose();
+    }
+  });
+
+  it("uses only the configured root despite caller cwd and requires the exact Luna model", async () => {
+    const f = await setup();
+    const fake = fakeScopedFactory(f.bindingStore, f.nativeHome);
+    const runtime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, createScopedAdapter: fake.factory });
+    const callerCwd = await runtime.create(await readyRequest(runtime, "project-alpha", "a".repeat(64), "task", f.projectRoot));
+    const wrongModel = await runtime.create({ project: "project-alpha", inputId: "b".repeat(64), name: "task", model: "gpt-6-luna-other" });
+    const unconfigured = await runtime.create({ project: "not-configured", inputId: "c".repeat(64), name: "task" });
+    expect(callerCwd).toMatchObject({ state: "created", launchCwd: f.projectRoot });
+    expect(wrongModel).toMatchObject({ state: "not_attempted", reason: "project_route_conflict" });
+    expect(unconfigured).toMatchObject({ state: "not_attempted", reason: "project_route_unconfigured" });
+    expect(fake.factory).toHaveBeenCalledTimes(2);
+
+    const created = await runtime.create(await readyRequest(runtime, "project-alpha", "d".repeat(64), "task", f.projectRoot));
+    expect(created).toMatchObject({ state: "created", inputId: "d".repeat(64), launchCwd: f.projectRoot,
+      address: { hostId: hostname(), harness: "codex", nativeSessionId: `native-${"d".repeat(64)}` } });
+    expect(fake.factory).toHaveBeenCalledTimes(4);
+    expect(fake.factory.mock.calls.at(-1)?.[0]).toMatchObject({ cwd: f.projectRoot, policy: { rootPath: f.projectRoot, modelId: CODEX_PROJECT_MODEL_ID, materialized: true } });
+    await runtime.dispose();
+  });
+
+  it("deduplicates the exact operation, routes through its scoped adapter, and restores from exact H34 address after process recreation", async () => {
+    const f = await setup();
+    const firstFactory = fakeScopedFactory(f.bindingStore, f.nativeHome);
+    const first = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, createScopedAdapter: firstFactory.factory });
+    const request = await readyRequest(first, "project-alpha", "e".repeat(64), "task");
+    const created = await first.create(request);
+    expect(created.state).toBe("created");
+    const repeated = await first.create(request);
+    expect(repeated).toEqual(created);
+    expect(firstFactory.created).toEqual([request.inputId]);
+
+    const address = created.address!;
+    expect(await first.adapterForSession(address)).toMatchObject({ kind: "scoped" });
+    await first.dispose();
+
+    const secondFactory = fakeScopedFactory(f.bindingStore, f.nativeHome);
+    const second = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, createScopedAdapter: secondFactory.factory });
+    const selected = await second.adapterForSession(address);
+    expect(selected.kind).toBe("scoped");
+    expect(secondFactory.created).toEqual([]);
+    expect(secondFactory.restored).toEqual([request.inputId]);
+    await second.dispose();
+  });
+
+  it("binds live native search only to the exact named route and refuses that H34 restore after route downgrade", async () => {
+    const f = await setup();
+    const factory = fakeScopedFactory(f.bindingStore, f.nativeHome);
+    const runtime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, createScopedAdapter: factory.factory });
+    const ordinary = await runtime.create(await readyRequest(runtime, "project-alpha", "1".repeat(64), "ordinary"));
+    const target = await runtime.create(await readyRequest(runtime, "Олег и Никита", "2".repeat(64), "research"));
+    expect(ordinary.state).toBe("created");
+    expect(factory.factory.mock.calls.find(call => call[0].policy.binding.projectId === f.projectRoot)?.[0].policy).not.toHaveProperty("nativeWebSearchMode");
+    expect(target.state).toBe("created");
+    expect(factory.factory.mock.calls.find(call => call[0].policy.binding.projectId === f.integratorRoot)?.[0].policy).toMatchObject({ nativeWebSearchMode: "live",
+      binding: { policyRevision: "codex-native-project-v2-web-search-live" } });
+    const address = target.address!;
+    await f.policyStore.replace({ version: 1, allowedHarnesses: ["codex"], preferredHarness: "codex",
+      models: { codex: CODEX_PROJECT_MODEL_ID }, projectRoutes: {
+        [f.integratorRoot]: { harnesses: ["codex"], aliases: ["Олег и Никита"], models: { codex: CODEX_PROJECT_MODEL_ID } },
+      } });
+    expect(await runtime.adapterForSession(address)).toMatchObject({ kind: "deny", reason: "project_session_current_route_mismatch" });
+    await runtime.dispose();
+  });
+
+  it("does not replay a live accepted address as created for a different project or a changed route", async () => {
+    const f = await setup();
+    const fake = fakeScopedFactory(f.bindingStore, f.nativeHome);
+    const runtime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, createScopedAdapter: fake.factory });
+    const original = await runtime.create(await readyRequest(runtime, "project-alpha", "f".repeat(64), "task"));
+    expect(original.state).toBe("created");
+    const otherProject = await runtime.create({ project: "project-beta", inputId: "f".repeat(64), name: "task" });
+    expect(otherProject).toMatchObject({ state: "not_attempted", reason: "project_operation_conflict" });
+    expect(otherProject).not.toHaveProperty("address");
+    await f.policyStore.replace({
+      version: 1, allowedHarnesses: ["codex"], preferredHarness: "codex", models: { codex: CODEX_PROJECT_MODEL_ID },
+      projectRoutes: { [f.secondProjectRoot]: { harnesses: ["codex"], aliases: ["project-alpha"], models: { codex: CODEX_PROJECT_MODEL_ID } } },
+    });
+    const changedRoute = await runtime.create({ project: "project-alpha", inputId: "f".repeat(64), name: "task" });
+    expect(changedRoute).toMatchObject({ state: "not_attempted", reason: "project_operation_conflict" });
+    expect(changedRoute).not.toHaveProperty("launchCwd");
+    expect(fake.created).toEqual(["f".repeat(64)]);
+    await runtime.dispose();
+  });
+
+  it("never creates for an existing unknown operation and never falls through an unresolved scoped address", async () => {
+    const f = await setup();
+    const reserved = await f.bindingStore.reserve({ operationId: "f".repeat(64), hostId: hostname(), harness: "codex" });
+    const unknownAddress = { hostId: hostname(), harness: "codex", nativeSessionId: "unknown-session" };
+    await f.bindingStore.record({ operationId: "f".repeat(64), attempt: 1,
+      receipt: { state: "unknown", inputId: reserved.attempt.inputId, address: unknownAddress, retryable: false } });
+    const fake = fakeScopedFactory(f.bindingStore, f.nativeHome);
+    const runtime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, createScopedAdapter: fake.factory });
+    expect(await runtime.create({ project: "project-alpha", inputId: "f".repeat(64), name: "task" }))
+      .toMatchObject({ state: "unknown", retryable: false });
+    expect(fake.factory).not.toHaveBeenCalled();
+    expect(await runtime.adapterForSession({ hostId: hostname(), harness: "codex", nativeSessionId: "unknown-session" }))
+      .toMatchObject({ kind: "deny", reason: "binding_not_accepted" });
+    await runtime.dispose();
+  });
+});

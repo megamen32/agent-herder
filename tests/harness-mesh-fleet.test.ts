@@ -1,5 +1,8 @@
 import {describe,it,expect,vi} from "vitest";
+import {createHash} from "node:crypto";
+import {writeFile} from "node:fs/promises";
 import {FleetCabinetService} from "../src/mesh/fleet-service.js";
+import {FleetCreateJournal} from "../src/mesh/fleet-create-journal.js";
 const hosts=[{hostId:"100",label:"Сервер100"},{hostId:"44",label:"Сервер44"},{hostId:"mac",label:"Mac M1"}];
 const row=(hostId:string)=>({address:{hostId,harness:"codex",nativeSessionId:"same-id"},project:{launchCwd:"/launch",currentCwd:null,source:"unverified"},status:"unknown",title:"t",lastActivity:"now"});
 function transport(){return {
@@ -36,6 +39,17 @@ describe("fleet cabinet registry/read API (focused integration; expected 3s, max
 });
 
 describe('fleet native creation intent (focused integration; expected 3s, maximum 30s)',()=>{
+ it('reads a pre-project ordinary journal entry with its original digest unchanged',async()=>{
+  const {mkdtemp,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+  const directory=await mkdtemp(join(tmpdir(),'fleet-legacy-digest-'));try{
+   const scope={profileId:'p',userId:'u'};const request={hostId:'100',harness:'codex' as const,name:'legacy',cwd:'/work',inputId:'legacy-id'};
+   const key=createHash('sha256').update(JSON.stringify([scope.profileId,scope.userId,request.hostId,request.inputId])).digest('hex');
+   const receipt={state:'created' as const,inputId:request.inputId,address:{hostId:'100',harness:'codex' as const,nativeSessionId:'already-created'},launchCwd:'/work',retryable:false};
+   const path=join(directory,'legacy.json');await writeFile(path,JSON.stringify({[key]:{digest:createHash('sha256').update(JSON.stringify(request)).digest('hex'),receipt}}));
+   const operation=vi.fn(async()=>({state:'unknown' as const,inputId:request.inputId,retryable:false}));
+   expect(await new FleetCreateJournal(path,scope).once(request,operation)).toEqual(receipt);expect(operation).not.toHaveBeenCalled();
+  }finally{await rm(directory,{recursive:true,force:true});}
+ });
  it('persists native creation and returns it after restart before any reads when the host disappears',async()=>{
   const {mkdtemp,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
   const directory=await mkdtemp(join(tmpdir(),'fleet-create-'));try{
@@ -45,6 +59,20 @@ describe('fleet native creation intent (focused integration; expected 3s, maximu
    t.call.mockClear();t.discover.mockClear();t.schema.mockClear();t.discover.mockRejectedValue(new Error('offline'));
    expect(await new FleetCabinetService(deps).create(request)).toEqual(result);expect(t.discover).not.toHaveBeenCalled();expect(t.call).not.toHaveBeenCalled();
    expect((await new FleetCabinetService(deps).create({...request,name:'different'})).reason).toBe('input_id_conflict');
+  }finally{await rm(directory,{recursive:true,force:true});}
+ });
+ it('carries a configured-project selector through the existing Fleet peer call and binds it to once identity',async()=>{
+  const {mkdtemp,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+  const directory=await mkdtemp(join(tmpdir(),'fleet-project-selector-'));try{
+   const t=transport(),deps={hosts,scope:{profileId:'p',userId:'u'},transportFactory:()=>t,journalPath:join(directory,'intents.json')};
+   const request={hostId:'100',harness:'codex' as const,name:'scoped',cwd:'/wrong-caller-cwd',project:'project-alpha',inputId:'project-input'};
+   expect((await new FleetCabinetService(deps).create(request)).state).toBe('created');
+   expect(t.call.mock.calls.find(call=>call[1]==='create_session')?.[2]).toMatchObject({project:'project-alpha',cwd:'/wrong-caller-cwd'});
+   expect((await new FleetCabinetService(deps).create({...request,project:'project-beta'})).reason).toBe('input_id_conflict');
+   const ordinary={...request,inputId:'ordinary-input'};delete (ordinary as Partial<typeof ordinary>).project;
+   expect((await new FleetCabinetService(deps).create(ordinary)).state).toBe('created');
+   const ordinaryArgs=t.call.mock.calls.filter(call=>call[1]==='create_session').at(-1)?.[2];
+   expect(ordinaryArgs).not.toHaveProperty('project');
   }finally{await rm(directory,{recursive:true,force:true});}
  });
  it('lost native creation receipt remains UNKNOWN across restart with no replay, even if the target is available',async()=>{

@@ -52,6 +52,11 @@ export interface IntegratorOperationBinding {
   attempts: IntegratorLaunchAttempt[];
 }
 
+export type IntegratorAddressLookup =
+  | { state: "not_found" }
+  | { state: "accepted"; binding: IntegratorOperationBinding; attempt: IntegratorLaunchAttempt }
+  | { state: "unresolved"; reason: "address_ambiguous" | "binding_not_accepted" | "scope_missing"; binding?: IntegratorOperationBinding };
+
 interface BindingFile {
   version: 3;
   operations: Record<string, IntegratorOperationBinding>;
@@ -225,6 +230,35 @@ export class IntegratorSessionBindingStore {
     return this.inProcess(async () => {
       const binding = (await this.read()).operations[operationId];
       return binding ? validateBinding(binding) : null;
+    });
+  }
+
+  /** Resolve one native address only from the current durable H34 journal. */
+  async findByNativeAddress(address: IntegratorNativeAddress): Promise<IntegratorAddressLookup> {
+    const exact = validAddress(address);
+    return this.inProcess(async () => {
+      const file = await this.read();
+      const matches: Array<{ binding: IntegratorOperationBinding; attempt: IntegratorLaunchAttempt }> = [];
+      for (const [key, value] of Object.entries(file.operations)) {
+        const binding = validateBinding(value);
+        if (binding.operationId !== key) throw new Error("integrator_session_binding_key_mismatch");
+        for (const attempt of binding.attempts) {
+          if (attempt.address && attempt.address.hostId === exact.hostId
+            && attempt.address.harness === exact.harness
+            && attempt.address.nativeSessionId === exact.nativeSessionId) {
+            matches.push({ binding, attempt });
+          }
+        }
+      }
+      if (matches.length === 0) return { state: "not_found" };
+      if (matches.length !== 1) return { state: "unresolved", reason: "address_ambiguous" };
+      const { binding, attempt } = matches[0]!;
+      if (binding.state !== "accepted" || attempt.state !== "accepted"
+        || attempt.receipt?.state !== "created") {
+        return { state: "unresolved", reason: "binding_not_accepted", binding: clone(binding) };
+      }
+      if (!attempt.scope) return { state: "unresolved", reason: "scope_missing", binding: clone(binding) };
+      return { state: "accepted", binding: clone(binding), attempt: clone(attempt) };
     });
   }
 

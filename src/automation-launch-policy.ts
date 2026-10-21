@@ -16,6 +16,8 @@ import type { HarnessType } from "./types/common.js";
 export interface ProjectLaunchRoute {
   harnesses: HarnessType[];
   models?: Partial<Record<HarnessType, string>>;
+  /** First-party hosted web search is granted only to the named integrator project route. */
+  nativeWebSearch?: "live";
   /** Operator-authorized historical recovery is withheld until provider and descendant policy is enforced. */
   operatorCohortRecovery?: "deny";
   /**
@@ -366,6 +368,16 @@ function validateProjectRoutes(
         aliases.push(normalized);
       }
     }
+    if (input.nativeWebSearch !== undefined) {
+      if (input.nativeWebSearch !== "live") {
+        throw new Error(`Project route '${project}' nativeWebSearch must be 'live' when present`);
+      }
+      if (!harnesses.includes("codex") || harnesses.length !== 1
+        || (routeModels?.codex ?? models.codex) !== "gpt-6-luna"
+        || !aliases?.includes("Олег и Никита")) {
+        throw new Error(`Project route '${project}' live native web search is restricted to the Codex GPT-6 Luna 'Олег и Никита' route`);
+      }
+    }
     if (input.operatorCohortRecovery !== undefined && input.operatorCohortRecovery !== "deny") {
       throw new Error(`Project route '${project}' operatorCohortRecovery must be 'deny' when present`);
     }
@@ -373,6 +385,7 @@ function validateProjectRoutes(
       harnesses,
       ...(routeModels && Object.keys(routeModels).length > 0 ? { models: routeModels } : {}),
       ...(aliases ? { aliases } : {}),
+      ...(input.nativeWebSearch === "live" ? { nativeWebSearch: "live" as const } : {}),
       ...(input.operatorCohortRecovery === "deny" ? { operatorCohortRecovery: "deny" as const } : {}),
     };
   }
