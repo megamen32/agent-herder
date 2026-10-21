@@ -6,7 +6,7 @@ const ref=z.object({harness:z.enum(["opencode","claude","codex","qoder","hermes"
 export function registerResumeAfterTools(server:McpServer,service?:ResumeAfterService):void{
   const requireService=()=>{if(!service)throw new Error("Resume-after requires the process-owned Herder service");return service;};
   server.registerTool("resume_after",{
-    description:"Resume this exact session once after ALL named sessions finish their current native execution. Keep doing independent work; do not stop yourself. Idle, a permission prompt or lost transport is not completion. A later human Stop cancels the wake. Use the same requestId on retry.",
+    description:"Resume this exact session once after ALL named sessions finish their current native execution. Exact turn joins currently support Codex and ZCode; other harnesses are refused at registration until they expose a native turn identity. Keep doing independent work; do not stop yourself. Idle, a permission prompt or lost transport is not completion. A later human Stop cancels the wake. Retry an uncertain request with the same requestId. delivery_blocked and delivery_failed are terminal and never replay; after fixing the cause, a newly authorized continuation needs a new requestId.",
     inputSchema:z.object({owner:ref,dependencies:z.array(ref).min(1).max(32),message:z.string().trim().min(1).max(16000).optional(),requestId:z.string().trim().min(1).max(256).optional()}),
   },async args=>structuredResult({wait:await requireService().register(args)}));
   server.registerTool("resume_after_status",{

@@ -3,6 +3,12 @@ import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export interface SessionRef { harness: string; sessionId: string }
+interface TurnObservation { at: string; kind: string; turnId?: string }
+export interface DependencySnapshot {
+  busy: boolean;
+  turnId?: string;
+  completion?: { at: string; outcome: string };
+}
 export interface ResumeAfterRequest {
   owner: SessionRef;
   dependencies: SessionRef[];
@@ -16,19 +22,25 @@ export interface ResumeAfterWait {
   dependencies: SessionRef[];
   message: string;
   createdAt: string;
-  state: "waiting" | "dispatching" | "resumed" | "cancelled" | "delivery_unknown" | "delivery_failed";
-  completed: Record<string, { at: string; outcome: string }>;
+  state: "waiting" | "dispatching" | "resumed" | "cancelled" | "delivery_unknown" | "delivery_failed" | "delivery_blocked";
+  completed: Record<string, { at: string; outcome: string; turnId?: string }>;
   reason?: string;
-  observed?: Record<string, { at: string; kind: string }>;
+  observed?: Record<string, TurnObservation>;
+  dependencyTurns?: Record<string, string>;
+  delivery?: Delivery;
 }
-type Delivery = { status: "accepted" | "rejected" | "failed" | "ambiguous"; reason?: string };
+type Delivery = { status: "accepted" | "rejected" | "failed" | "ambiguous"; reason?: string; receipt?: Record<string, unknown> };
 export interface ResumeAfterOptions {
   directory: string;
+  /** Snapshot current waiting IDs before serving requests, for a controlled maintenance rollout. */
+  holdExistingWaitingAtStartup?: boolean;
   deliver: (wait: ResumeAfterWait) => Promise<Delivery>;
   queryReceipt?: (wait: ResumeAfterWait) => Promise<Delivery>;
   isHeld: (ref: SessionRef) => Promise<boolean>;
   /** Unknown/unavailable state returns true, not guessed completion. */
   isBusy: (ref: SessionRef) => Promise<boolean>;
+  /** Native current/last turn proof, never completion inferred from idle. */
+  readDependency?: (ref: SessionRef) => Promise<DependencySnapshot>;
   validateRef?: (ref: SessionRef) => Promise<void>;
   /** Extra dependency-only checks, e.g. a harness without a native event stream can never prove completion. */
   validateDependency?: (ref: SessionRef) => Promise<void>;
@@ -40,6 +52,10 @@ const defaultMessage = "Указанные сессии закончили вы�
 /** One process-owned, durable join. No model polling and no extra agent. */
 export class ResumeAfterService {
   private queue: Promise<unknown> = Promise.resolve();
+  private readonly startupHeldWaitIds = new Set<string>();
+  // Retain events received before registration. After a cold start, adapters
+  // must prove the last native turn or registration records a terminal blocker.
+  private readonly observations = new Map<string, TurnObservation>();
   constructor(private readonly options: ResumeAfterOptions) {}
 
   private serialized<T>(fn: () => Promise<T>): Promise<T> {
@@ -72,6 +88,17 @@ export class ResumeAfterService {
     }
     return rows;
   }
+  async captureStartupHold():Promise<number>{
+    return this.serialized(async()=>{
+      if(!this.options.holdExistingWaitingAtStartup)return 0;
+      const waits=await this.list();
+      for(const wait of waits)if(wait.state==="waiting")this.startupHeldWaitIds.add(wait.id);
+      return this.startupHeldWaitIds.size;
+    });
+  }
+  private isMaintenanceHeld(wait:ResumeAfterWait):boolean{
+    return this.options.holdExistingWaitingAtStartup===true && this.startupHeldWaitIds.has(wait.id);
+  }
   register(input: ResumeAfterRequest): Promise<ResumeAfterWait> {
     return this.serialized(async()=>{
       const valid=(ref:SessionRef)=>ref && typeof ref.harness==="string" && ref.harness.trim() && typeof ref.sessionId==="string" && ref.sessionId.trim() && ref.sessionId.length<=512;
@@ -96,13 +123,27 @@ export class ResumeAfterService {
       };
       if(dependencies.some(ref=>reaches(key(ref),key(input.owner)))) throw new Error("Dependency cycle");
       for(const ref of [input.owner]) await this.options.validateRef?.(ref);
-      for(const ref of dependencies){
-        await this.options.validateRef?.(ref);
-        await this.options.validateDependency?.(ref);
-      }
+      // Capability is a request-level precondition, not a property of whichever
+      // dependency happens to be inspected first. Validate every dependency
+      // before HumanStop handling or a terminal runtime snapshot can short-circuit.
+      for(const ref of dependencies) await this.options.validateDependency?.(ref);
       const wait:ResumeAfterWait={id,owner:{...input.owner},dependencies,message,createdAt:new Date().toISOString(),state:"waiting",completed:{}};
+      if(await this.options.isHeld(wait.owner)){
+        wait.state="cancelled";wait.reason="requester was stopped";
+      } else for(const ref of dependencies) {
+        // An unavailable exact dependency is a durable blocker, so retry
+        // cannot silently re-arm it. Capability refusals were preflighted above.
+        try { await this.options.validateRef?.(ref); }
+        catch {
+          wait.state="delivery_failed";wait.reason=`Dependency ${ref.harness}:${ref.sessionId}: native turn completion is unavailable (exact session unavailable)`;
+          break;
+        }
+        await this.refreshDependency(wait,ref);
+        if(wait.state!=="waiting")break;
+      }
       await this.save(wait);
-      return wait;
+      await this.sweepUnlocked();
+      return (await this.get(id))!;
     });
   }
   cancel(id:string,owner:SessionRef):Promise<ResumeAfterWait|null>{
@@ -119,47 +160,104 @@ export class ResumeAfterService {
       const ref={harness:event.harness,sessionId:event.sessionId};
       const at=event.at??new Date().toISOString();
       if(!Number.isFinite(Date.parse(at)))return;
+      const turnId=typeof event.data?.turnId==="string" && event.data.turnId.trim()?event.data.turnId:undefined;
+      const observation={at,kind:event.kind,...(turnId?{turnId}:{})};
+      const latest=this.observations.get(key(ref));
+      if((event.kind==="turn.started" || terminal.has(event.kind))
+        && (!latest || Date.parse(at)>=Date.parse(latest.at))
+        && !(event.kind!=="turn.started" && event.kind!=="session.deleted" && latest?.turnId && latest.turnId!==turnId))
+        this.observations.set(key(ref),observation);
       for(const wait of await this.list()){
         if(wait.state!=="waiting")continue;
         if(key(wait.owner)===key(ref) && event.data?.automationStop){
           wait.state="cancelled";wait.reason="requester was stopped";await this.save(wait);continue;
         }
-        if(Date.parse(at)<Date.parse(wait.createdAt) || !wait.dependencies.some(d=>key(d)===key(ref)))continue;
+        if(this.isMaintenanceHeld(wait))continue;
+        if(!wait.dependencies.some(d=>key(d)===key(ref)))continue;
+        const expected=wait.dependencyTurns?.[key(ref)];
+        if(event.kind!=="turn.started" && event.kind!=="session.deleted" && expected && turnId!==expected)continue;
+        if(Date.parse(at)<Date.parse(wait.createdAt) && !(expected && turnId===expected))continue;
         const previous=wait.observed?.[key(ref)] ?? wait.completed[key(ref)];
         if(previous && Date.parse(at)<Date.parse(previous.at))continue;
-        if(terminal.has(event.kind)) wait.completed[key(ref)]={at,outcome:event.kind};
+        if(terminal.has(event.kind)) {
+          if(this.options.readDependency && event.kind!=="session.deleted" && !turnId)continue;
+          wait.completed[key(ref)]={at,outcome:event.kind,...(turnId?{turnId}:{})};
+        }
         else if(event.kind==="turn.started") delete wait.completed[key(ref)];
         else continue;
-        (wait.observed ??= {})[key(ref)]={at,kind:event.kind};
+        if(turnId)(wait.dependencyTurns ??= {})[key(ref)]=turnId;
+        else if(event.kind==="turn.started")delete wait.dependencyTurns?.[key(ref)];
+        (wait.observed ??= {})[key(ref)]=observation;
         await this.save(wait);
       }
       await this.sweepUnlocked();
     });
   }
+  private async refreshDependency(wait:ResumeAfterWait,ref:SessionRef):Promise<boolean>{
+    const id=key(ref);
+    const latest=this.observations.get(id);
+    let snapshot:DependencySnapshot|undefined;
+    if(this.options.readDependency) {
+      try { snapshot=await this.options.readDependency(ref); }
+      catch {
+        wait.state="delivery_failed";wait.reason=`Dependency ${ref.harness}:${ref.sessionId}: native turn state is unavailable`;
+        return true;
+      }
+    }
+    const turnId=snapshot?.turnId ?? (latest && (!snapshot?.busy || latest.kind==="turn.started")?latest.turnId:undefined);
+    if(turnId && wait.dependencyTurns?.[id]!==turnId){
+      (wait.dependencyTurns ??= {})[id]=turnId;
+      delete wait.completed[id];
+    }
+    if(snapshot?.completion && turnId && wait.completed[id]?.turnId!==turnId) {
+      wait.completed[id]={...snapshot.completion,turnId};
+    } else if(latest && terminal.has(latest.kind) && !snapshot?.busy
+      && (!this.options.readDependency || latest.kind==="session.deleted" || latest.turnId)
+      && (!turnId || latest.turnId===turnId)) {
+      wait.completed[id]={at:latest.at,outcome:latest.kind,...(latest.turnId?{turnId:latest.turnId}:{})};
+      (wait.observed ??= {})[id]=latest;
+    }
+    if(snapshot && ((!snapshot.busy && !wait.completed[id]) || (snapshot.busy && !turnId))){
+      wait.state="delivery_failed";
+      wait.reason=`Dependency ${ref.harness}:${ref.sessionId}: native turn ${snapshot.busy?"identity":"completion"} is unavailable; idle alone is not completion`;
+    }
+    return snapshot?.busy ?? await this.options.isBusy(ref);
+  }
   sweep():Promise<void>{return this.serialized(()=>this.sweepUnlocked());}
   private async sweepUnlocked():Promise<void>{
     for(const wait of await this.list()){
-      if(["resumed","cancelled","delivery_failed"].includes(wait.state))continue;
+      if(["resumed","cancelled","delivery_failed","delivery_blocked"].includes(wait.state))continue;
       if(await this.options.isHeld(wait.owner)){
         wait.state="cancelled";wait.reason="requester was stopped";await this.save(wait);continue;
       }
+      // Explicit maintenance holds never cancel or rewrite a user wait. HumanStop
+      // remains authoritative above, and receipt reconciliation below is never held.
+      if(wait.state==="waiting" && this.isMaintenanceHeld(wait))continue;
       if(wait.state==="dispatching" || wait.state==="delivery_unknown"){
         // A restart or a dropped receipt is not permission to replay an action.
         const receipt=await this.options.queryReceipt?.(wait);
-        wait.state=receipt?.status==="accepted"?"resumed":"delivery_unknown";
+        wait.state=receipt?.status==="accepted"?"resumed":receipt?.status==="rejected"?"delivery_blocked":"delivery_unknown";
+        if(receipt){
+          wait.delivery=receipt;
+          if(receipt.reason!==undefined)wait.reason=receipt.reason;
+        }
         await this.save(wait);continue;
       }
-      if(!wait.dependencies.every(ref=>Boolean(wait.completed[key(ref)])))continue;
-      if(await this.options.isBusy(wait.owner))continue;
+      const before=JSON.stringify(wait);
       let busy=false;
       for(const ref of wait.dependencies){
-        if(wait.completed[key(ref)].outcome!=="session.deleted" && await this.options.isBusy(ref)){busy=true;break;}
+        if(wait.completed[key(ref)]?.outcome!=="session.deleted" && await this.refreshDependency(wait,ref))busy=true;
+        if(wait.state!=="waiting")break;
       }
+      if(JSON.stringify(wait)!==before)await this.save(wait);
+      if(wait.state!=="waiting" || !wait.dependencies.every(ref=>Boolean(wait.completed[key(ref)])))continue;
+      if(await this.options.isBusy(wait.owner))continue;
       if(busy)continue;
       wait.state="dispatching";await this.save(wait);
       try{
         const receipt=await this.options.deliver(wait);
-        wait.state=receipt.status==="accepted"?"resumed":receipt.status==="ambiguous"?"delivery_unknown":"delivery_failed";
+        wait.delivery=receipt;
+        wait.state=receipt.status==="accepted"?"resumed":receipt.status==="ambiguous"?"delivery_unknown":receipt.status==="rejected"?"delivery_blocked":"delivery_failed";
         if(receipt.reason)wait.reason=receipt.reason;
       }catch(error){wait.state="delivery_unknown";wait.reason=String(error);}
       await this.save(wait);

@@ -856,7 +856,7 @@ async function main() {
     autoCompact: autoCompactService, admissionGate: recoveryAdmissionGate,
   });
   const resumeAfterRuntime = createResumeAfterRuntime(adapters, processSupervisor, (harness,id) => humanStopStore.isHeld(harness,id));
-  const stopResumeAfter = resumeAfterRuntime.start();
+  const stopResumeAfter = await resumeAfterRuntime.start();
   process.once("exit", stopResumeAfter);
   const stopAutoCompact = autoCompactService.start();
   process.once("exit", stopAutoCompact);

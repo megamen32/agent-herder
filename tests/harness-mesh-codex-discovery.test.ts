@@ -7,6 +7,7 @@ import {CodexAdapter} from '../src/adapters/codex.js';
 import {CodexAppServerAdapter} from '../src/adapters/codex-app-server.js';
 import {HumanStopStore} from '../src/human-stop-store.js';
 import {SessionSupervisor} from '../src/session-supervisor.js';
+import {findParentResult,listChildrenResult} from '../src/mcp-tools/handlers.js';
 
 // Fast unit: expected2s/max20s. Detects bounded native pages triggering global
 // rollout/history/open-writer scans; fixtures never launch native Codex or LLMs.
@@ -34,6 +35,67 @@ function fixture(folder:string){
  return {adapter,raw:internals.rawTranscriptAdapter,request};
 }
 describe('bounded native Codex discovery',()=>{
+ it('reports lineage unavailable when neither the exact index row nor native rollout header exists',async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'missing-codex-lineage-'));folders.push(folder);
+  const raw=new CodexAdapter({codexDir:folder});
+  await expect(raw.getNativeLineageForId('unindexed-thread')).resolves.toEqual({available:false,childThreadIds:[]});
+ });
+ it('does not report a complete empty lineage when bounded header candidates are truncated',async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'truncated-codex-lineage-'));folders.push(folder);
+  const db=new DatabaseSync(join(folder,'state_5.sqlite'));
+  db.exec('create table threads(id text primary key,rollout_path text,thread_source text,updated_at_ms integer);create table thread_spawn_edges(child_thread_id text primary key,parent_thread_id text)');
+  const row=db.prepare('insert into threads values(?,?,?,?)');
+  const parentPath=join(folder,'parent.jsonl');
+  await writeFile(parentPath,JSON.stringify({type:'session_meta',payload:{id:'parent'}})+'\n');
+  db.exec('begin');
+  row.run('parent',parentPath,'cli',1);
+  for(let i=0;i<256;i++){
+   const path=join(folder,`recent-${i}.jsonl`);
+   await writeFile(path,JSON.stringify({type:'session_meta',payload:{id:`recent-${i}`}})+'\n');
+   row.run(`recent-${i}`,path,'subagent',1000-i);
+  }
+  const childPath=join(folder,'older-real-child.jsonl');
+  await writeFile(childPath,JSON.stringify({type:'session_meta',payload:{id:'older-real-child',parent_thread_id:'parent'}})+'\n');
+  row.run('older-real-child',childPath,'subagent',-1);
+  db.exec('commit');
+  db.close();
+  const raw=new CodexAdapter({codexDir:folder});
+  await expect(raw.getNativeLineageForId('parent',{includeHeaderChildren:true})).resolves.toEqual({available:false,childThreadIds:[]});
+ },20000);
+ it('reports lineage unavailable when an indexed subagent header cannot be verified',async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'unreadable-codex-lineage-'));folders.push(folder);
+  const db=new DatabaseSync(join(folder,'state_5.sqlite'));
+  db.exec('create table threads(id text primary key,rollout_path text,thread_source text,updated_at_ms integer);create table thread_spawn_edges(child_thread_id text primary key,parent_thread_id text)');
+  const parentPath=join(folder,'parent.jsonl');
+  await writeFile(parentPath,JSON.stringify({type:'session_meta',payload:{id:'parent'}})+'\n');
+  db.prepare('insert into threads values(?,?,?,?)').run('parent',parentPath,'cli',1);
+  db.prepare('insert into threads values(?,?,?,?)').run('missing-child','/missing/rollout.jsonl','subagent',0);
+  db.close();
+  const raw=new CodexAdapter({codexDir:folder});
+  await expect(raw.getNativeLineageForId('parent',{includeHeaderChildren:true})).resolves.toEqual({available:false,childThreadIds:[]});
+ });
+ it('does not report an indexed target as a proven root when its own rollout header is unreadable',async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'unreadable-target-lineage-'));folders.push(folder);
+  const db=new DatabaseSync(join(folder,'state_5.sqlite'));
+  db.exec('create table threads(id text primary key,rollout_path text not null,thread_source text,updated_at_ms integer);create table thread_spawn_edges(child_thread_id text primary key,parent_thread_id text)');
+  db.prepare('insert into threads values(?,?,?,?)').run('child','/missing/child.jsonl','subagent',2);
+  db.close();
+  const raw=new CodexAdapter({codexDir:folder});
+  await expect(raw.getNativeLineageForId('child')).resolves.toEqual({available:false,childThreadIds:[]});
+ });
+ it('keeps MCP lineage responses structured when a native child or parent cannot be read',async()=>{
+  const session={id:'parent',harness:'codex',title:'Parent',cwd:'/workspace',status:'idle',lastActivity:new Date().toISOString(),needsPermission:false} as const;
+  const adapter={type:'codex',name:'Codex fixture',async getSession(){return session;},
+   async getParent(){throw new Error('parent rollout is unreadable');},
+   async listChildren(){throw new Error('one child rollout is unreadable');}} as never;
+  const adapters=new Map([['codex',adapter]]);
+  await expect(findParentResult(adapters,{sessionId:'parent',harness:'codex'})).resolves.toMatchObject({
+   session:{id:'parent'},parent:null,supported:false,error:'parent rollout is unreadable',
+  });
+  await expect(listChildrenResult(adapters,{sessionId:'parent',harness:'codex'})).resolves.toMatchObject({
+   session:{id:'parent'},children:[],supported:false,error:'one child rollout is unreadable',
+  });
+ });
  it('projects one native page without global metadata, history, or writer inspection',async()=>{
   const folder=await index();const {adapter,raw,request}=fixture(folder);
   const global=vi.spyOn(raw,'getNativeSessionMetadata').mockRejectedValue(new Error('global_metadata_must_not_run'));
@@ -121,6 +183,7 @@ describe('bounded native Codex discovery',()=>{
   expect(details.session).toMatchObject({id:'empty-44',title:'Accepted empty',cwd:'/actual'});
   expect(details.history).toMatchObject({source:'unavailable',complete:false,warning:expect.stringContaining('missing source rollout')});
   expect(details.messages).toEqual([]);
+  expect(request.mock.calls.some(([method])=>method==='model/list')).toBe(false);
   expect(request.mock.calls.some(([method])=>/start|resume|steer/.test(method))).toBe(false);
  });
  it('bounds the separate index page, excludes archived/materialized rows and reports its cap',async()=>{
