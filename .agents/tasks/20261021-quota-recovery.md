@@ -424,3 +424,37 @@ and authorized runtime promotion.
   production OpenCode runtime has loaded that guard or verify combo leaf
   resolution; no restricted entry was enrolled. The originally accepted first
   business session remains read-only observed, running on the combo model.
+- 2026-10-21 04:02 UTC: Isolated native descendant guard proof from Controls
+  passed on OpenCode 2.0.31 with a loopback stub: restricted child model
+  override failed before any provider request (stub request count 0), while an
+  ordinary safe child returned `CHILD_STUB_OK`. The exact committed plugin
+  source from `e091499` was installed atomically at the supported global local
+  plugin path `~/.config/opencode/plugins/agent-herder-autopilot.js`; its
+  SHA-256 matches source (`d61919a7efb9d0a2b29417a802bcf482f25dfbf4b8589a49a5a526b7a3e19a68`).
+  One authenticated official `opencode reload --server http://127.0.0.1:4095`
+  succeeded. No OpenCode service restart occurred: PID 4145783 and service
+  start time remained unchanged. Authenticated project-scoped `GET /api/plugin`
+  for both exact restricted roots returned `agent-herder-autopilot`,
+  `state.status=active`, `error=null`, from that exact local file. The first
+  unrestricted session and all 11 new accepted sessions still read as
+  `running`, no permission, on `omniroute/minimax-combo-m3.1` after reload.
+- Published core commit `ccbac9780ba58e82ac08cc6638d8cddb29bb1da4` adds the
+  engine-side restricted cohort fence: it reuses the configured ordered model,
+  requires the exact OpenCode adapter resolver result, and admits only complete
+  MiniMax or GLM provider-leaf sets with no Codex/Claude leaf; root and
+  descendant project paths are covered. Explicit project deny/OpenCode deny
+  still wins. Focused `tests/unfinished-session-launcher.test.ts` passed 56/56
+  and root `npx tsc --noEmit --pretty false` passed before publication.
+- Restricted nine remain un-enrolled. A fresh call to the existing
+  `resolveModelProviderLeaves("omniroute/minimax-combo-m3.1")` returned `null`
+  with the service's existing protected OpenCode/OmniRoute environment present.
+  The resolver source rejects any enabled combo-mapping row; prior exact route
+  evidence includes the selected combo's identity mapping, so the current
+  resolver contract is too strict for this exact approved route. A narrowly
+  scoped follow-up was sent to the existing adapter owner for the resolver and
+  its tests only; no new agent/session, model call, gateway write, restricted
+  enrollment, or prompt was created. Next: require a non-null live resolver
+  result with exactly the verified MiniMax-code then MiniMax API leaves, then
+  enroll one restricted entry through the durable Herder API and verify its
+  exact acceptance before any further restricted entries. If the resolver
+  still returns null, retain the nine held with that exact blocker.
