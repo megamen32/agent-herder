@@ -182,6 +182,22 @@ function parseNativeCombos(value) {
   return rows
 }
 
+function parseNativeAliases(value) {
+  const body = responseData(value)
+  if (!plainObject(body) || !plainObject(body.aliases)) return undefined
+  const rows = []
+  for (const [alias, target] of Object.entries(body.aliases)) {
+    if (!alias.trim() || typeof target !== "string" || !target.trim()) return undefined
+    rows.push([alias, target])
+  }
+  return rows
+}
+
+function nativeAliasesIntersect(aliases, modelIds) {
+  const selected = new Set(modelIds)
+  return aliases.some(([alias, target]) => selected.has(alias) || selected.has(target))
+}
+
 async function resolveNativeModelLeaves(ctx, value) {
   const model = nativeModelRef(value)
   if (!model || typeof ctx.model?.list !== "function") return undefined
@@ -209,13 +225,26 @@ async function resolveNativeModelLeaves(ctx, value) {
     ])
     const catalog = parseNativeGatewayModels(catalogResponse)
     const mappings = responseData(mappingsResponse)
-    const aliases = responseData(aliasesResponse)
+    const aliases = parseNativeAliases(aliasesResponse)
+    const selected = catalog?.find(entry => entry.id === model.id)
     if (!catalog || !plainObject(mappings) || !Array.isArray(mappings.mappings)
-      || mappings.total !== mappings.mappings.length || mappings.mappings.some(row => !plainObject(row) || row.enabled !== false)
-      || !plainObject(aliases) || !Array.isArray(aliases.aliases) || aliases.aliases.length) return undefined
-    const selected = catalog.find(entry => entry.id === model.id)
-    if (!selected?.root) return undefined
-    if (selected.owner !== "combo") return [{ providerId: selected.owner, modelId: selected.root }]
+      || mappings.total !== mappings.mappings.length || !aliases || !selected?.root
+      || nativeAliasesIntersect(aliases, [`${model.providerID}/${model.id}`, model.id, selected.root])) return undefined
+    const mappingRows = []
+    const seenMappingIds = new Set()
+    for (const value of mappings.mappings) {
+      if (!plainObject(value) || typeof value.id !== "string" || !value.id.trim()
+        || typeof value.comboId !== "string" || !value.comboId.trim()
+        || typeof value.comboName !== "string" || !value.comboName.trim()
+        || typeof value.pattern !== "string" || !value.pattern.trim()
+        || typeof value.enabled !== "boolean" || seenMappingIds.has(value.id)) return undefined
+      seenMappingIds.add(value.id)
+      mappingRows.push({ id: value.id, comboId: value.comboId, comboName: value.comboName, pattern: value.pattern, enabled: value.enabled })
+    }
+    if (selected.owner !== "combo") {
+      if (mappingRows.some(row => row.enabled)) return undefined
+      return [{ providerId: selected.owner, modelId: selected.root }]
+    }
     if (selected.root !== model.id || selected.parent !== null) return undefined
 
     const comboCatalog = parseNativeCombos(await request(`${urls.api}/combos`))
@@ -227,6 +256,11 @@ async function resolveNativeModelLeaves(ctx, value) {
     }
     const roots = comboCatalog.filter(combo => combo.name === model.id)
     if (roots.length !== 1) return undefined
+    const root = roots[0]
+    const relevantMappings = mappingRows.filter(row => row.enabled && (
+      row.comboId === root.id || row.comboName === root.name || row.pattern.startsWith(`${root.name}/`)
+    ))
+    if (relevantMappings.length > 1) return undefined
     const byId = new Map(catalog.map(entry => [entry.id, entry]))
     const expand = (combo, parents) => {
       if (parents.has(combo.id) || !combo.models.length) return undefined
@@ -248,8 +282,17 @@ async function resolveNativeModelLeaves(ctx, value) {
       }
       return leaves.length ? leaves : undefined
     }
-    const leaves = expand(roots[0], new Set())
-    return leaves?.length ? [...new Map(leaves.map(leaf => [`${leaf.providerId}\0${leaf.modelId}`, leaf])).values()] : undefined
+    const leaves = expand(root, new Set())
+    if (!leaves?.length) return undefined
+    const uniqueLeaves = [...new Map(leaves.map(leaf => [`${leaf.providerId}\0${leaf.modelId}`, leaf])).values()]
+    if (nativeAliasesIntersect(aliases, uniqueLeaves.map(leaf => leaf.modelId))) return undefined
+    if (relevantMappings.length === 1) {
+      const mapping = relevantMappings[0]
+      const identityModels = [...new Set(uniqueLeaves.map(leaf => leaf.modelId.split("/").at(-1)).filter(Boolean))]
+      if (mapping.comboId !== root.id || mapping.comboName !== root.name
+        || identityModels.length !== 1 || mapping.pattern !== `${root.name}/${identityModels[0]}`) return undefined
+    }
+    return uniqueLeaves
   } catch { return undefined }
 }
 

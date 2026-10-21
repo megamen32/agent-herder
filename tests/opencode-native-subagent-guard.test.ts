@@ -12,6 +12,37 @@ function response(body: unknown) {
   return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
 }
 
+function installComboCatalog(options: {
+  members: Array<{ providerId: string; model: string }>;
+  mappings?: unknown[];
+  aliases?: Record<string, string>;
+}) {
+  const comboId = "combo-minimax-m31";
+  const comboName = "minimax-combo-m3.1";
+  const identityModel = options.members[0]?.model.split("/").at(-1) || "MiniMax-M3.1-Flash";
+  const mappings = options.mappings ?? [
+    { id: "map-target", comboId, comboName, pattern: `${comboName}/${identityModel}`, enabled: true },
+    { id: "map-unrelated-a", comboId: "combo-glm", comboName: "glm-5.3-flash-minimax-m3.1", pattern: "glm-5.3-flash-minimax-m3.1/glm-5.3-flash", enabled: true },
+    { id: "map-unrelated-b", comboId: "combo-m3", comboName: "minimax-combo-m3", pattern: "minimax-combo-m3/MiniMax-M3", enabled: true },
+  ];
+  vi.stubEnv("OMNIROUTE_API_KEY", "test-key");
+  vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/models")) return response({ data: [
+      { id: comboName, owned_by: "combo", root: comboName, parent: null },
+      ...options.members.map(member => ({
+        id: member.model, owned_by: member.providerId, root: member.model.split("/").at(-1), parent: null,
+      })),
+    ] });
+    if (url.endsWith("/model-combo-mappings")) return response({ mappings, total: mappings.length });
+    if (url.endsWith("/models/alias")) return response({ aliases: options.aliases ?? {} });
+    if (url.endsWith("/combos")) return response({ total: 1, combos: [
+      { id: comboId, name: comboName, models: options.members },
+    ] });
+    return new Response(null, { status: 404 });
+  }));
+}
+
 function makeContext(options: {
   sessions?: Record<string, unknown>;
   agents?: Record<string, unknown>;
@@ -82,7 +113,7 @@ describe("OpenCode V2 restricted native child admission", () => {
         { id: "claude-sonnet", owned_by: "anthropic", root: "claude-sonnet", parent: null },
       ] });
       if (url.endsWith("/model-combo-mappings")) return response({ mappings: [], total: 0 });
-      if (url.endsWith("/models/alias")) return response({ aliases: [] });
+      if (url.endsWith("/models/alias")) return response({ aliases: {} });
       if (url.endsWith("/combos")) return response({ total: 2, combos: [
         { id: "combo-outer", name: "outer", models: [{ providerId: "combo", model: "inner" }] },
         { id: "combo-inner", name: "inner", models: [{ providerId: "anthropic", model: "claude-sonnet" }] },
@@ -128,6 +159,68 @@ describe("OpenCode V2 restricted native child admission", () => {
     await expect(context.modelHook({ sessionID: "root", model: { providerID: "openai-codex", id: "codex-mini" } }))
       .rejects.toThrow("Agent Herder blocked this model request");
     await cleanup();
+  });
+
+  it("allows the exact MiniMax combo on root model.request with unrelated active mappings and aliases", async () => {
+    const aliases = Object.fromEntries(Array.from({ length: 819 }, (_, index) => [
+      `unrelated-alias-${index}`, `provider/model-${index}`,
+    ]));
+    installComboCatalog({ members: [
+      { providerId: "minimax-code", model: "mmcode/MiniMax-M3.1-Flash" },
+      { providerId: "minimax", model: "minimax/MiniMax-M3.1-Flash" },
+    ], aliases });
+    const context = makeContext({ models: [{ providerID: "omniroute", id: "minimax-combo-m3.1" }] });
+    const cleanup = await setup(context);
+    await expect(context.modelHook({
+      sessionID: "root", model: { providerID: "omniroute", id: "minimax-combo-m3.1" },
+    })).resolves.toBeUndefined();
+    expect(fetch).toHaveBeenCalledTimes(4);
+    await cleanup();
+  });
+
+  it.each([
+    ["anthropic", "anthropic/MiniMax-M3.1-Flash"],
+    ["openai-codex", "openai-codex/MiniMax-M3.1-Flash"],
+  ])("denies a combo root request when its resolved leaf is forbidden (%s)", async (providerId, model) => {
+    installComboCatalog({ members: [
+      { providerId: "minimax-code", model: "mmcode/MiniMax-M3.1-Flash" },
+      { providerId, model },
+    ] });
+    const context = makeContext({ models: [{ providerID: "omniroute", id: "minimax-combo-m3.1" }] });
+    const cleanup = await setup(context);
+    await expect(context.modelHook({
+      sessionID: "root", model: { providerID: "omniroute", id: "minimax-combo-m3.1" },
+    })).rejects.toThrow("Agent Herder blocked this model request");
+    await cleanup();
+  });
+
+  it("fails closed on an alias or ambiguous mapping that overlaps the selected combo", async () => {
+    const targetComboId = "combo-minimax-m31";
+    const targetComboName = "minimax-combo-m3.1";
+    const identityMapping = {
+      id: "map-target", comboId: targetComboId, comboName: targetComboName,
+      pattern: `${targetComboName}/MiniMax-M3.1-Flash`, enabled: true,
+    };
+    for (const options of [
+      { aliases: { [targetComboName]: "other-route" }, mappings: [identityMapping] },
+      { aliases: {}, mappings: [identityMapping, { ...identityMapping, id: "map-duplicate" }] },
+      { aliases: {}, mappings: [{ ...identityMapping, pattern: `${targetComboName}/rewritten` }] },
+      { aliases: {}, mappings: [{
+        id: "map-overlap", comboId: "other-combo", comboName: "other-combo",
+        pattern: `${targetComboName}/MiniMax-M3.1-Flash`, enabled: true,
+      }] },
+    ]) {
+      installComboCatalog({ members: [
+        { providerId: "minimax-code", model: "mmcode/MiniMax-M3.1-Flash" },
+        { providerId: "minimax", model: "minimax/MiniMax-M3.1-Flash" },
+      ], ...options });
+      const context = makeContext({ models: [{ providerID: "omniroute", id: targetComboName }] });
+      const cleanup = await setup(context);
+      await expect(context.modelHook({
+        sessionID: "root", model: { providerID: "omniroute", id: targetComboName },
+      })).rejects.toThrow("Agent Herder blocked this model request");
+      await cleanup();
+    }
   });
 
   it("keeps ordinary projects outside the restricted roots unchanged", async () => {
