@@ -186,15 +186,15 @@ describe("named session creation and reuse", () => {
     fake.failNextDeliveryWithError("GLM 5.3 Flash HTTP 429 provider code 1310 quota exhausted");
     const result = await newOrResumeNamedSession(new Map([["opencode", fake.adapter]]), {
       harness: "opencode", name: "quota-fallback", cwd, model: "omniroute/zc/glm-5.3-flash",
-      fallbackModels: ["omniroute/minimax/MiniMax-M3.1-Flash"], message: "work", inputId: "quota-fallback-input",
+      fallbackModels: ["omniroute/minimax-combo-m3.1"], message: "work", inputId: "quota-fallback-input",
     });
     expect(fake.modelChanges).toEqual([
       { id: "opencode-1", model: "omniroute/zc/glm-5.3-flash" },
-      { id: "opencode-1", model: "omniroute/minimax/MiniMax-M3.1-Flash" },
+      { id: "opencode-1", model: "omniroute/minimax-combo-m3.1" },
     ]);
     expect(fake.deliveries).toHaveLength(2);
     expect(fake.deliveries.map((delivery) => delivery.options.inputId)).toEqual(["quota-fallback-input", "quota-fallback-input"]);
-    expect(result).toMatchObject({ ok: true, model: "omniroute/minimax/MiniMax-M3.1-Flash", requestedModel: "omniroute/zc/glm-5.3-flash", fallbackFrom: "omniroute/zc/glm-5.3-flash" });
+    expect(result).toMatchObject({ ok: true, model: "omniroute/minimax-combo-m3.1", requestedModel: "omniroute/zc/glm-5.3-flash", fallbackFrom: "omniroute/zc/glm-5.3-flash" });
   });
 
   it("switches on generic HTTP 429 but never retries an unknown or admitted delivery", async () => {
@@ -233,7 +233,7 @@ describe("named session creation and reuse", () => {
     const result = await newOrResumeNamedSession(new Map([["opencode", fake.adapter]]), {
       harness: "opencode", name: "glm-default-fallback", cwd, model, message: "work",
     });
-    expect(result).toMatchObject({ ok: true, model: "omniroute/minimax/MiniMax-M3.1-Flash", fallbackFrom: model });
+    expect(result).toMatchObject({ ok: true, model: "omniroute/minimax-combo-m3.1", fallbackFrom: model });
     expect(fake.deliveries).toHaveLength(2);
   });
 

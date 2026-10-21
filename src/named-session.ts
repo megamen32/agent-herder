@@ -260,7 +260,7 @@ function defaultFallbackModels(harness: string, model: string | undefined): stri
     "opencode/glm-5.3-flash",
   ]);
   if (harness === "opencode" && glmFlashModels.has(model?.trim().toLowerCase() ?? "")) {
-    return ["omniroute/minimax/MiniMax-M3.1-Flash"];
+    return ["omniroute/minimax-combo-m3.1"];
   }
   return [];
 }

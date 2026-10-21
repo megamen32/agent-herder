@@ -49,7 +49,7 @@ describe("Projects page form", () => {
   it("explains the allowed harnesses and how to set the model of a route", () => {
     expect(page).toContain("РАЗРЕШЁННЫЕ СРЕДЫ");
     expect(page).toContain("В маршрут проекта попадают только эти среды");
-    expect(page).toContain("omniroute/minimax/MiniMax-M3.1-Flash");
+    expect(page).toContain("omniroute/minimax-combo-m3.1");
     expect(page).toContain("Пустое поле берёт общую модель среды");
   });
 

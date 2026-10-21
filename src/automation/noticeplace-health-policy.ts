@@ -6,14 +6,12 @@ import { isHealthPlanId, type HealthPlanId } from "../autopilot/notice-incident.
  * The analysis of an incident and the repair of an incident must be able to
  * run on the same approved models, otherwise a repair can be refused for a
  * reason that the analysis never had. The list holds exactly the approved
- * MiniMax routes: the official subscription route and the OmniRoute gateway
- * route to the same upstream model. No other provider is allowed, and there
- * is no automatic fallback.
+ * OmniRoute gateway routes to MiniMax. The paid subscription route is not
+ * approved: M3.1 is free inside MM Code. No other provider is allowed, and
+ * there is no automatic fallback.
  */
 export const NOTICEPLACE_HEALTH_MODELS: readonly string[] = [
-  "omniroute/minimax/MiniMax-M3.1-Flash",
-  "minimax-coding-plan/MiniMax-M3.1-Flash",
-  "omniroute/glm-5.3-flash-minimax-m3.1",
+  "omniroute/minimax-combo-m3.1",
 ];
 
 /** True only for an approved Notice Place health model. */

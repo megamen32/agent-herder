@@ -221,13 +221,12 @@ describe("Notice Place health launch policy", () => {
     }
     // No other provider is allowed on either path.
     expect(validateNoticeplaceHealthLaunch({ harness: "opencode", model: "zai/GLM-4.6", operationId: "op" })).toBeTruthy();
-    // The allowlist is an exact set, not a prefix rule: the approved routes are
-    // the official subscription route, the OmniRoute gateway route and the
-    // GLM 5.3 Flash combo with the MiniMax M3.1 fallback of the OpenCode route.
+    // The allowlist is an exact set, not a prefix rule: the only approved route
+    // is the OmniRoute gateway route to the MiniMax M3.1 Flash combo. The paid
+    // subscription route is not approved.
     expect([...NOTICEPLACE_HEALTH_MODELS].sort()).toEqual([
-      "minimax-coding-plan/MiniMax-M3.1-Flash",
-      "omniroute/glm-5.3-flash-minimax-m3.1",
-      "omniroute/minimax/MiniMax-M3.1-Flash",
+      "omniroute/minimax-combo-m3.1",
     ]);
+    expect(NOTICEPLACE_HEALTH_MODELS).not.toContain("minimax-coding-plan/MiniMax-M3.1-Flash");
   });
 });

@@ -126,7 +126,7 @@ export function ProjectRoutesEditor({
     </fieldset>
     <fieldset className="projects-fieldset" disabled={disabled}>
       <legend>Модель маршрута</legend>
-      <p className="projects-help">Укажите модель, которую Herder отдаст этой среде для этого проекта. Например, <code>omniroute/minimax/MiniMax-M3.1-Flash</code> для OpenCode. Пустое поле берёт общую модель среды.</p>
+      <p className="projects-help">Укажите модель, которую Herder отдаст этой среде для этого проекта. Например, <code>omniroute/minimax-combo-m3.1</code> для OpenCode. Пустое поле берёт общую модель среды.</p>
       {route.harnesses.map((harness) => <div className="projects-field" key={`${project}-${harness}`}>
         <label htmlFor={routeInputId(project, harness)}>Модель · {labelFor(harness, runtimes)}</label>
         <input id={routeInputId(project, harness)} type="text" maxLength={256} list={routeInputId(project, harness)}

@@ -1,13 +1,13 @@
 export interface HealthExecutionProfile {
   runtime: "zcode" | "hermes" | "fast-agent" | "opencode";
-  provider: "account:zai-individual-coding-plan" | "openai-codex" | "minimax" | "minimax-coding-plan";
-  model: "GLM-5.3-Flash" | "gpt-5.6-luna" | "MiniMax-M3.1-Flash";
+  provider: "account:zai-individual-coding-plan" | "openai-codex" | "minimax" | "omniroute";
+  model: "GLM-5.3-Flash" | "gpt-5.6-luna" | "MiniMax-M3.1-Flash" | "minimax/MiniMax-M3.1-Flash" | "minimax-combo-m3.1";
   reasoning: "high" | "default";
   topic: "health";
 }
 
 const CANONICAL_PROFILES: Record<HealthExecutionProfile["runtime"], HealthExecutionProfile> = {
-  opencode: { runtime: "opencode", provider: "minimax-coding-plan", model: "MiniMax-M3.1-Flash", reasoning: "default", topic: "health" },
+  opencode: { runtime: "opencode", provider: "omniroute", model: "minimax-combo-m3.1", reasoning: "default", topic: "health" },
   "fast-agent": { runtime: "fast-agent", provider: "minimax", model: "MiniMax-M3.1-Flash", reasoning: "default", topic: "health" },
   zcode: {
     runtime: "zcode",
@@ -68,6 +68,6 @@ export function healthModelForHarness(harness: string, execution: HealthExecutio
 export const INCIDENT_EXECUTION: HealthExecutionProfile = { ...CANONICAL_PROFILES.opencode };
 export function normalizeIncidentExecution(value: unknown): HealthExecutionProfile {
   const profile = normalizeHealthExecution(value);
-  if (profile.runtime !== "opencode") throw new Error("Incident execution must use OpenCode / MiniMax по подписке; no provider fallback");
+  if (profile.runtime !== "opencode") throw new Error("Incident execution must use OpenCode / OmniRoute MiniMax M3.1 Flash; no provider fallback");
   return profile;
 }

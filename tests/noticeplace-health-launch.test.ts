@@ -9,7 +9,7 @@ import type { AutomationLaunchPolicy } from "../src/automation-launch-policy.js"
 import { AutomationLaunchPolicyStore } from "../src/automation-launch-policy.js";
 
 const purpose = "noticeplace.health-analysis";
-const model = "omniroute/minimax/MiniMax-M3.1-Flash";
+const model = "omniroute/minimax-combo-m3.1";
 const token = "test-only-health-launch-token";
 let directory: string;
 let servers: Server[];
@@ -70,7 +70,7 @@ describe("Notice Place health-launch HTTP admission", () => {
     expect((await post()).status).toBe(401);
     expect(run).not.toHaveBeenCalled();
   });
-  it.each(["other/model", `${model} `, "minimax/MiniMax-M3.1-Flash"])("rejects non-allowlisted exact model %s", async invalid => {
+  it.each(["other/model", `${model} `, "omniroute/minimax/MiniMax-M3.1-Flash", "omniroute/glm-5.3-flash-minimax-m3.1"])("rejects non-allowlisted exact model %s", async invalid => {
     const { post, run } = await fixture();
     expect((await post({ model: invalid })).status).toBe(400);
     expect(run).not.toHaveBeenCalled();
@@ -81,7 +81,7 @@ describe("Notice Place health-launch HTTP admission", () => {
     expect((await post({ operation_id: " " })).status).toBe(400);
     expect(run).not.toHaveBeenCalled();
   });
-  it.each([model, "minimax-coding-plan/MiniMax-M3.1-Flash"])("overrides the model only, retaining route CWD for %s", async approved => {
+  it.each([model])("overrides the model only, retaining route CWD for %s", async approved => {
     const { post, run } = await fixture(policy(["codex", "opencode"]));
     const response = await post({ model: approved });
     expect(response.status).toBe(200);
@@ -124,7 +124,7 @@ describe("Notice Place health-launch HTTP admission", () => {
   it.each(["accepted", "unknown"] as const)("replays %s receipt without another executor", async outcome => {
     const { post, run } = await fixture(policy(), outcome);
     const first = await (await post()).json();
-    const replay = await (await post({ model: "minimax-coding-plan/MiniMax-M3.1-Flash" })).json();
+    const replay = await (await post({ model })).json();
     expect(replay).toEqual(first);
     expect(run).toHaveBeenCalledTimes(1);
   });
