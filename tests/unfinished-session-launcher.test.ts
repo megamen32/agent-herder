@@ -1095,6 +1095,7 @@ describe("terminal quota recovery", () => {
         priorAccepted: { dispatchInputId: previous.dispatchInputId!, nativeInputMessageId: "native-old-input" },
       });
       expect(result).toMatchObject({ outcome: "enrolled" });
+      expect((await settings.getEffective("opencode", session.id, session.cwd)).waitForQuota).toBe(false);
       await launcher.recoverPending();
       expect(sent).toHaveLength(1);
       expect(sent[0]?.model).toBe(session.model);

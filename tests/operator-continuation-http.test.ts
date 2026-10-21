@@ -87,6 +87,7 @@ describe("new operator continuation HTTP", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ intent: "new_operator_continuation", enrolled: 1,
       results: [{ outcome: "enrolled", wait: { origin: "operator_cohort", state: "waiting" } }] });
+    expect((await settings.getEffective("opencode", sessionId, cwd)).waitForQuota).toBe(false);
     await launcher.recoverPending();
     expect(sends).toHaveLength(1);
     expect(sends[0]).toMatchObject({ model, inputId: expect.stringMatching(/^herder-quota:/u) });

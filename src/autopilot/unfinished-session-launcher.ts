@@ -2788,8 +2788,6 @@ export class UnfinishedSessionLauncher {
       this.operatorProjectModelAllowed(session, nativeSnapshot.modelId),
     ]);
     if (!listedModels.includes(nativeSnapshot.modelId) || !projectAllowed) return ineligible("project_policy_disallows_current_provider_route");
-    const settings = await this.options.settingsStore.getEffective("opencode", sessionId, cwd);
-    if (settings.waitForQuotaOverride !== true) await this.options.settingsStore.setSessionWaitForQuota({ harness: "opencode", sessionId, cwd }, true);
     const evidence: OperatorContinuationEvidence = {
       classification: "operator_continuation",
       authorizationId,
@@ -3425,7 +3423,9 @@ export class UnfinishedSessionLauncher {
         this.options.settingsStore.getEffective(harness, snapshot.sessionId, snapshot.workspaceIdentity || snapshot.cwd),
         this.options.settingsStore.getSettings(),
       ]);
-      return effective.waitForQuota && (operatorIntent || effective.enabled && runtime.recoverOnFailure);
+      // This is a one-shot operator authorization, not persistent auto-wait
+      // enrollment; do not mutate or require the independent waitForQuota flag.
+      return Boolean(operatorContinuation) || effective.waitForQuota && (operatorIntent || effective.enabled && runtime.recoverOnFailure);
     };
     if (!await enabled()) {
       if (operatorContinuation) {
