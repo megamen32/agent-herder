@@ -1,7 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { newOrResumeNamedSession } from "../../dist/named-session.js";
+import { pathToFileURL } from "node:url";
 
-const [storePath, cwd, message] = process.argv.slice(2);
+// The compiled module is given by the test: it lives outside the sources of
+// this fixture.
+const [storePath, cwd, message, modulePath] = process.argv.slice(2);
+const { newOrResumeNamedSession } = await import(
+  modulePath ? pathToFileURL(modulePath).href : new URL("../../dist/named-session.js", import.meta.url).href,
+);
 
 async function readSessions() {
   try {

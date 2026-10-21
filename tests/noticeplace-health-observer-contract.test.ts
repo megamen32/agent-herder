@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NoticeplaceHealthObserver, type NoticeplaceHealthTarget } from "../src/automation/noticeplace-health-observer.js";
@@ -12,6 +12,9 @@ import type { AgentStatus, SessionDetails } from "../src/types/index.js";
 let directory: string;
 
 beforeEach(async () => {
+  // The fixtures live in the ignored .tmp tree of the checkout, which a fresh
+  // clone does not have yet.
+  await mkdir(join(process.cwd(), ".tmp"), { recursive: true });
   directory = await mkdtemp(join(process.cwd(), ".tmp/noticeplace-observer-test-"));
   vi.stubEnv("GPTADMIN_HEALTH_CALLBACK_FILE", join(directory, "health-callback.json"));
   await writeFile(join(directory, "health-callback.json"), JSON.stringify({ url: "http://127.0.0.1:19999", tokens: { project: "project-token" } }), { mode: 0o600 });
@@ -218,6 +221,13 @@ describe("Notice Place health launch policy", () => {
     }
     // No other provider is allowed on either path.
     expect(validateNoticeplaceHealthLaunch({ harness: "opencode", model: "zai/GLM-4.6", operationId: "op" })).toBeTruthy();
-    expect(NOTICEPLACE_HEALTH_MODELS.every(model => model.startsWith("omniroute/minimax/") || model.startsWith("minimax-coding-plan/"))).toBe(true);
+    // The allowlist is an exact set, not a prefix rule: the approved routes are
+    // the official subscription route, the OmniRoute gateway route and the
+    // GLM 5.3 Flash combo with the MiniMax M3.1 fallback of the OpenCode route.
+    expect([...NOTICEPLACE_HEALTH_MODELS].sort()).toEqual([
+      "minimax-coding-plan/MiniMax-M3.1-Flash",
+      "omniroute/glm-5.3-flash-minimax-m3.1",
+      "omniroute/minimax/MiniMax-M3.1-Flash",
+    ]);
   });
 });

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { cleanupDistBuild, ensureDist } from "./fixtures/ensure-dist.mjs";
 
 // Since the Stop judging moved into the process-owned background consumer,
 // the hook's only job is a fast, lossless notification of /api/autopilot/stop.
@@ -13,6 +14,7 @@ import { afterEach, describe, expect, it } from "vitest";
 const temporaryRoots: string[] = [];
 
 afterEach(async () => {
+  cleanupDistBuild();
   await Promise.all(
     temporaryRoots.splice(0).map((path) => rm(path, { recursive: true, force: true })),
   );
@@ -79,11 +81,11 @@ describe("autopilot hook concurrency", () => {
         server.close((error) => error ? reject(error) : resolve());
       });
     }
-  }, 10_000);
+  }, 120_000);
 });
 
 async function runHook(sessionId: string, env: NodeJS.ProcessEnv): Promise<unknown> {
-  const child = spawn(process.execPath, [join(process.cwd(), "dist", "autopilot-hook.js")], {
+  const child = spawn(process.execPath, [ensureDist("autopilot-hook.js")], {
     env,
     stdio: ["pipe", "pipe", "pipe"],
   });

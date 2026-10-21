@@ -3,6 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// The runner starts the real daemon evaluation, so this file needs more than
+// the default timeout of 5s under the load of the full suite.
+vi.setConfig({ testTimeout: 30_000 });
+
 describe("autopilot runner", () => {
   beforeEach(async () => {
     vi.resetModules();

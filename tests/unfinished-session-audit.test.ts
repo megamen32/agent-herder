@@ -391,9 +391,13 @@ describe("explicit unfinished inventory pure contracts", () => {
             harness: "opencode", sessionId: "recent-opencode", cwd: "/tmp", title: "Recent OpenCode", status: "idle",
             lastActivity: new Date(now - 1 * 60 * 60000).toISOString(), transcriptTail: "recent", observedAt: new Date(now).toISOString(),
         });
-        await expect(store.pruneAutocontinueScope(new Date(now - 48 * 60 * 60000))).resolves.toEqual({ sessions: 1, inventory: 3 });
+        // The opencode inventory stays inside the audit window on purpose: only
+        // its turn records are out of scope, the inventory of the opencode
+        // runtime is still observed. The old codex and the fast-agent records
+        // leave the inventory.
+        await expect(store.pruneAutocontinueScope(new Date(now - 48 * 60 * 60000))).resolves.toEqual({ sessions: 1, inventory: 2 });
         expect((await store.list()).map((record) => record.sessionId)).toEqual(["kept-codex"]);
-        expect((await store.listInventory()).map((record) => record.sessionId)).toEqual(["recent"]);
+        expect((await store.listInventory()).map((record) => record.sessionId).sort()).toEqual(["recent", "recent-opencode"]);
     });
     it("is independent from autopilot, defaults on, and supports a per-session opt-out", async () => {
         const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-setting-"));

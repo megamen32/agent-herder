@@ -44,7 +44,7 @@ describe("declared mesh sender API (focused integration; expected 3s, maximum 30
    const schema=(await client.listTools()).tools.find(t=>t.name==="send_message")!.inputSchema;
    expect((schema.properties as any).meshSender.properties.nativeSessionId.maxLength).toBe(512);
    const result=await client.callTool({name:"send_message",arguments:f.request});expect(result.isError).not.toBe(true);
-   expect(f.sendMessage.mock.calls[0][1].message).toContain("88 / opencode / same-native-id");
+   expect(f.sendMessage.mock.calls[0][1].message).toContain("🤖 opencode@88 same-native-id");
    expect(f.getSession.mock.calls.every(([id]:string[])=>id===f.session.id)).toBe(true);
   }finally{await client.close();await server.close();}
  }));
@@ -61,7 +61,9 @@ describe("declared mesh sender API (focused integration; expected 3s, maximum 30
   expect(f.getSession.mock.calls.every(([id]:string[])=>id===f.session.id)).toBe(true);
   expect(f.sendMessage.mock.calls[0][1]).toMatchObject({origin:"automation",inputId:"i"});
   const text=f.sendMessage.mock.calls[0][1].message;
-  expect(text).toContain("mac / minimax-code / mvs_real");expect(text).toContain("Объявленный источник");expect(text).not.toContain("Отправитель неизвестен");
+  // The compact attribution header carries the declared sender itself: the
+  // verbose "Объявленный источник" header is gone.
+  expect(text.startsWith("🤖 minimax-code@mac mvs_real")).toBe(true);expect(text).not.toContain("Объявленный источник");expect(text).not.toContain("Отправитель неизвестен");
  }));
  it("rejects invalid mesh identity and a false human-origin claim before native reads",async()=>fixture(async f=>{
   for(const meshSender of [{...f.request.meshSender,hostId:"88\nHUMAN"},{...f.request.meshSender,harness:"x".repeat(65)},{...f.request.meshSender,nativeSessionId:"x".repeat(513)}])expect(SendMessageSchema.safeParse({...f.request,meshSender}).success).toBe(false);

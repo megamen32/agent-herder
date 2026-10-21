@@ -3,6 +3,7 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
+import { cleanupDistBuild, ensureDist } from "./fixtures/ensure-dist.mjs";
 import { createNamedSession, newOrResumeNamedSession, deliverNamedSession } from "../src/named-session.js";
 import { agentRelayEnvelope } from "../src/agent-relay-envelope.js";
 import { getHumanStopStore } from "../src/human-stop-store.js";
@@ -13,6 +14,7 @@ import type { AgentSession, CreateSessionOptions, HarnessAdapter, SendMessageOpt
 const cleanups: string[] = [];
 
 afterEach(async () => {
+  cleanupDistBuild();
   await Promise.all(cleanups.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -257,9 +259,11 @@ describe("named session creation and reuse", () => {
     const lockDir = join(cwd, "locks");
     await writeFile(storePath, "[]");
     const fixture = join(process.cwd(), "tests/fixtures/named-session-process.mjs");
+    // The fixture runs in a second process and therefore imports the built module.
+    const modulePath = ensureDist("named-session.js");
 
     const run = (message: string) => new Promise<Record<string, unknown>>((resolve, reject) => {
-      const child = spawn(process.execPath, [fixture, storePath, cwd, message], {
+      const child = spawn(process.execPath, [fixture, storePath, cwd, message, modulePath], {
         env: { ...process.env, AGENT_HERDER_LOCK_DIR: lockDir },
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -280,7 +284,7 @@ describe("named session creation and reuse", () => {
     expect(first.sessionId).toBe("session-1");
     expect(second.sessionId).toBe("session-1");
     expect([first.created, second.created].sort()).toEqual([false, true]);
-  });
+  }, 120_000);
 
   it("keeps create_session and new_or_resume in the MCP contract", async () => {
     const cwd = await workspace();

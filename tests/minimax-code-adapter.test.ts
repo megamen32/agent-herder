@@ -187,7 +187,12 @@ describe("MinimaxCodeAdapter", () => {
   it("refuses delivery because desktop sessions are runtime owned", async () => {
     const root = await store();
     await writeSession(root, "mvs_0000000000000000000000000000ffff");
-    const adapter = new MinimaxCodeAdapter({ sessionStore: root });
+    // The control must not see the manifest of a live desktop runtime of the
+    // host: the refusal of the store-only transport is the subject here.
+    const adapter = new MinimaxCodeAdapter({
+      sessionStore: root,
+      control: new MinimaxCodeControl({ manifestPath: join(root, "no-manifest.json") }),
+    });
 
     const result = await adapter.sendMessage("mvs_0000000000000000000000000000ffff", { message: "привет" });
 
