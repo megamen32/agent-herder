@@ -31,8 +31,9 @@ trash/
 .DS_Store
 
 # Build, report, and snapshot artifacts that are not source work
-dist.pre-release-*/
+dist.pre-*/
 .vitest-reports/
 .agents/shared-session/learning/
 *.bak-*
 *.bak.mavis-*
+integrations/opencode/*.release-*.js
