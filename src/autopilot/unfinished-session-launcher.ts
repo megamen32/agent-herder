@@ -24,7 +24,7 @@ import { deferredMessages, isBusyCodexWriter, type DeferredMessageStore } from "
 import { effectivePolicyAllowsTarget, type EffectivePolicy } from "./policy.js";
 import type { AutopilotPolicyStore } from "./policy-store.js";
 import type { AutopilotSessionStore } from "./session-store.js";
-import { AutomationLaunchPolicyStore, operatorCohortRecoveryAllowed } from "../automation-launch-policy.js";
+import { AutomationLaunchPolicyStore, findProjectRoute, operatorCohortRecoveryAllowed } from "../automation-launch-policy.js";
 import { resolveAutopilotStateDir } from "./state-dir.js";
 
 const SUPPORTED_HARNESSES: readonly HarnessType[] = ["codex", "opencode", "claude", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
@@ -50,6 +50,10 @@ const MAX_REPAIRED_CHUNKS = 6;
 /** Enough to leave a dead pooled connection behind, short enough to keep the phase budget. */
 const TRANSIENT_PLANNER_RETRY_DELAY_MS = 5_000;
 const QUOTA_DISPATCH_CLAIM_LEASE_MS = 30_000;
+const CODEX_CLAUDE_RESTRICTED_PROJECT_ROOTS = [
+  "/home/roomhacker/PycharmProjects/TelegramAuto",
+  "/home/roomhacker/PycharmProjects/video_watching",
+] as const;
 const MAX_OMISSION_DECISION_CONCURRENCY = 4;
 const MAX_PERSISTENT_OMISSION_DECISIONS = 4;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
@@ -119,6 +123,43 @@ function nativeTurnFenceKey(harness: string, sessionId: string, identity: { turn
 
 function nonEmptyText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+type OpenCodeResolvedProviderLeaf = { providerId: string; modelId: string };
+type OpenCodeModelProviderResolution = {
+  nativeHarness: string;
+  nativeModelId: string;
+  resolvedProviderLeaves: OpenCodeResolvedProviderLeaf[];
+};
+
+function isCodexClaudeRestrictedCohortProject(cwd: string): boolean {
+  const project = normalize(cwd).replace(/\\/gu, "/").replace(/\/+$/u, "").toLocaleLowerCase("en-US");
+  return CODEX_CLAUDE_RESTRICTED_PROJECT_ROOTS.some((root) => {
+    const canonicalRoot = normalize(root).replace(/\\/gu, "/").replace(/\/+$/u, "").toLocaleLowerCase("en-US");
+    return project === canonicalRoot || project.startsWith(`${canonicalRoot}/`);
+  });
+}
+
+function isAllowedRestrictedProviderLeaf(leaf: OpenCodeResolvedProviderLeaf): boolean {
+  const providerId = leaf.providerId.trim().toLocaleLowerCase("en-US");
+  const modelId = leaf.modelId.trim().toLocaleLowerCase("en-US");
+  if (!providerId || !modelId || /codex|claude/u.test(`${providerId}/${modelId}`)) return false;
+  const allowedMiniMax = new Set(["minimax", "minimax-code", "minimax-coding-plan"]);
+  const allowedGlm = new Set(["glm", "zai", "zai-coding-plan", "zhipu"]);
+  const isMiniMax = allowedMiniMax.has(providerId) && /minimax|mmcode/u.test(modelId);
+  const isGlm = allowedGlm.has(providerId) && /(^|[/_-])glm([-_/]|$)/u.test(modelId);
+  return isMiniMax || isGlm;
+}
+
+function isAllowedRestrictedProviderResolution(
+  resolution: OpenCodeModelProviderResolution | null | undefined,
+  requestedModel: string,
+): boolean {
+  return resolution?.nativeHarness === "opencode"
+    && resolution.nativeModelId === requestedModel
+    && Array.isArray(resolution.resolvedProviderLeaves)
+    && resolution.resolvedProviderLeaves.length > 0
+    && resolution.resolvedProviderLeaves.every((leaf) => isAllowedRestrictedProviderLeaf(leaf));
 }
 
 function isSubagentSession(session: AgentSession | null | undefined): boolean {
@@ -4865,8 +4906,18 @@ export class UnfinishedSessionLauncher {
     try {
       const loaded = await this.projectLaunchPolicyStore.load();
       if (loaded.kind !== "valid") return false;
-      return Boolean(operatorCohortRecoveryAllowed(loaded.policy, session.cwd)
-        && loaded.policy.fallbackModels?.opencode?.includes(model));
+      const route = findProjectRoute(loaded.policy, session.cwd);
+      if (route && (!route.harnesses.includes("opencode") || route.operatorCohortRecovery === "deny")) return false;
+      if (!loaded.policy.fallbackModels?.opencode?.includes(model)) return false;
+      if (!isCodexClaudeRestrictedCohortProject(session.cwd)) {
+        return operatorCohortRecoveryAllowed(loaded.policy, session.cwd);
+      }
+      const adapter = this.options.adapters.get("opencode") as (HarnessAdapter & {
+        resolveModelProviderLeaves?: (nativeModelId: string) => Promise<OpenCodeModelProviderResolution | null>;
+      }) | undefined;
+      if (!adapter?.resolveModelProviderLeaves) return false;
+      const resolved = await adapter.resolveModelProviderLeaves(model);
+      return isAllowedRestrictedProviderResolution(resolved, model);
     } catch {
       return false;
     }

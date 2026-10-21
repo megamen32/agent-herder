@@ -903,6 +903,124 @@ describe("terminal quota recovery", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it.each([
+    { cwd: "/home/roomhacker/PycharmProjects/TelegramAuto", model: "omniroute/minimax-combo-m3.1", leaves: [
+      { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
+      { providerId: "minimax", modelId: "minimax/MiniMax-M3.1-Flash" },
+    ] },
+    { cwd: "/home/roomhacker/PycharmProjects/TelegramAuto/ATV", model: "omniroute/minimax-combo-m3.1", leaves: [
+      { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
+      { providerId: "minimax", modelId: "minimax/MiniMax-M3.1-Flash" },
+    ] },
+    { cwd: "/home/roomhacker/PycharmProjects/video_watching", model: "omniroute/minimax-combo-m3.1", leaves: [
+      { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
+      { providerId: "minimax", modelId: "minimax/MiniMax-M3.1-Flash" },
+    ] },
+    { cwd: "/home/roomhacker/PycharmProjects/video_watching/worker", model: "omniroute/minimax-combo-m3.1", leaves: [
+      { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
+      { providerId: "minimax", modelId: "minimax/MiniMax-M3.1-Flash" },
+    ] },
+    { cwd: "/home/roomhacker/PycharmProjects/TelegramAuto", model: "omniroute/zai-coding-plan/glm-5.3-flash", leaves: [
+      { providerId: "zai-coding-plan", modelId: "glm-5.3-flash" },
+    ] },
+  ])("admits a restricted cohort session only when the exact fallback resolves to allowed provider leaves (%s)", async ({ cwd, model, leaves }) => {
+    const root = await mkdtemp(join(tmpdir(), "operator-cohort-resolved-safe-leaves-"));
+    try {
+      const failedAt = new Date(Date.now() - 30_000).toISOString();
+      const current: AgentSession = {
+        ...fixture("error", "opencode", "restricted-session"), cwd, model: "minimax-coding-plan/MiniMax-M3.1-Flash",
+        meta: { nativeLastTurn: {
+          sessionId: "restricted-session", turnId: "restricted-native-turn", assistantMessageId: "restricted-assistant",
+          providerId: "minimax-coding-plan", modelId: "MiniMax-M3.1-Flash", status: "failed", completedAt: failedAt,
+        } },
+      };
+      const sent: Array<{ model?: string; inputId?: string }> = [];
+      const baseAdapter = quotaAdapter(() => current, sent, [model]);
+      const adapter = {
+        ...baseAdapter,
+        async resolveModelProviderLeaves(nativeModelId: string) {
+          return {
+            nativeHarness: "opencode",
+            nativeModelId,
+            resolvedProviderLeaves: leaves,
+          };
+        },
+      };
+      const settings = new SessionAutostartStore(join(root, "settings.json"), {});
+      await settings.setGlobalOptions({ enabled: false });
+      const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+      const projectLaunchPolicyStore = new AutomationLaunchPolicyStore(join(root, "launch-policy.json"));
+      await projectLaunchPolicyStore.replace({ version: 1, allowedHarnesses: ["opencode"], preferredHarness: "opencode",
+        models: { opencode: model },
+        fallbackModels: { opencode: [model] },
+      });
+      const launcher = new UnfinishedSessionLauncher({
+        adapters: new Map([["opencode", adapter]]), store, settingsStore: settings,
+        fallbackModelsForHarness: async () => [model], projectLaunchPolicyStore,
+      });
+      const enrolled = await launcher.enrollOperatorCohortEntry("operator-restricted-2026-10-21-01", {
+        sessionId: current.id, cwd, expected: {
+          nativeTurnId: "restricted-native-turn", assistantMessageId: "restricted-assistant",
+          providerId: "minimax-coding-plan", modelId: "MiniMax-M3.1-Flash", completedAt: failedAt,
+        },
+      });
+      expect(enrolled).toMatchObject({ outcome: "enrolled", wait: { state: "waiting", origin: "operator_cohort" } });
+      await launcher.recoverPending();
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toMatchObject({ model });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each([
+    { providerId: "openai", modelId: "gpt-5-codex" },
+    { providerId: "anthropic", modelId: "claude-sonnet" },
+  ])("fails closed for a restricted cohort when a resolved fallback contains forbidden provider leaf %s", async (forbiddenLeaf) => {
+    const root = await mkdtemp(join(tmpdir(), "operator-cohort-resolved-forbidden-leaf-"));
+    try {
+      const failedAt = new Date(Date.now() - 30_000).toISOString();
+      const current: AgentSession = {
+        ...fixture("error", "opencode", "restricted-forbidden-session"),
+        cwd: "/home/roomhacker/PycharmProjects/TelegramAuto", model: "minimax-coding-plan/MiniMax-M3.1-Flash",
+        meta: { nativeLastTurn: {
+          sessionId: "restricted-forbidden-session", turnId: "restricted-native-turn", assistantMessageId: "restricted-assistant",
+          providerId: "minimax-coding-plan", modelId: "MiniMax-M3.1-Flash", status: "failed", completedAt: failedAt,
+        } },
+      };
+      const baseAdapter = quotaAdapter(() => current, [], ["omniroute/minimax-combo-m3.1"]);
+      const adapter = {
+        ...baseAdapter,
+        async resolveModelProviderLeaves(nativeModelId: string) {
+          return {
+            nativeHarness: "opencode",
+            nativeModelId,
+            resolvedProviderLeaves: [
+              { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
+              forbiddenLeaf,
+            ],
+          };
+        },
+      };
+      const settings = new SessionAutostartStore(join(root, "settings.json"), {});
+      const projectLaunchPolicyStore = new AutomationLaunchPolicyStore(join(root, "launch-policy.json"));
+      await projectLaunchPolicyStore.replace({ version: 1, allowedHarnesses: ["opencode"], preferredHarness: "opencode",
+        models: { opencode: "omniroute/minimax-combo-m3.1" },
+        fallbackModels: { opencode: ["omniroute/minimax-combo-m3.1"] },
+      });
+      const launcher = new UnfinishedSessionLauncher({
+        adapters: new Map([["opencode", adapter]]), store: new UnfinishedSessionStore(join(root, "unfinished.json")), settingsStore: settings,
+        fallbackModelsForHarness: async () => ["omniroute/minimax-combo-m3.1"], projectLaunchPolicyStore,
+      });
+      const result = await launcher.enrollOperatorCohortEntry("operator-restricted-2026-10-21-02", {
+        sessionId: current.id, cwd: current.cwd, expected: {
+          nativeTurnId: "restricted-native-turn", assistantMessageId: "restricted-assistant",
+          providerId: "minimax-coding-plan", modelId: "MiniMax-M3.1-Flash", completedAt: failedAt,
+        },
+      });
+      expect(result).toMatchObject({ outcome: "ineligible", reason: "project_policy_disallows_fallback_model" });
+      expect((await settings.getEffective("opencode", current.id, current.cwd)).waitForQuota).toBe(false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("rejects stale or mismatched operator identity without opting the session in", async () => {
     const root = await mkdtemp(join(tmpdir(), "operator-cohort-stale-identity-"));
     try {
