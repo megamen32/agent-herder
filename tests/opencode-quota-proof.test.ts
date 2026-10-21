@@ -13,7 +13,8 @@ function nativeClient(options: { metadata?: Record<string, unknown>; status?: nu
     { info: {
       id: "msg_assistant", parentID: "msg_user", sessionID: session.id, role: "assistant",
       providerID: "omniroute", modelID: "minimax/MiniMax-M3.1-Flash",
-      error: { code: "quota_exhausted", status: options.status ?? 429, message: "Weekly limit exhausted; Bearer secret-token-value" },
+      statusCode: options.status ?? 429,
+      error: { code: "quota_exhausted", message: "Weekly limit exhausted; Bearer secret-token-value" },
     }, parts: [] },
   ];
   return {
@@ -66,7 +67,7 @@ it("V2 setup subscribes to native events and persists exact quota proof through 
     { type: "message.updated", properties: { info: {
       id: "msg_assistant", parentID: "msg_user", sessionID: "ses_quota", role: "assistant",
       providerID: "omniroute", modelID: "minimax/MiniMax-M3.1-Flash",
-      metadata: {}, error: { code: "quota_exhausted", statusCode: 429, message: "Weekly limit exhausted" },
+      metadata: {}, statusCode: 429, error: { code: "quota_exhausted", message: "Weekly limit exhausted" },
     } } },
     { type: "session.idle", properties: { sessionID: "ses_quota" } },
   ];

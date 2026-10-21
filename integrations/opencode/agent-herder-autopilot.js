@@ -135,8 +135,11 @@ function createQuotaProofWriter(client) {
       const assistant = messages.map(item => item?.info || item).find(item => item?.id === candidate.assistantMessageId)
       const user = messages.map(item => item?.info || item).find(item => item?.id === candidate.userMessageId)
       const assistantModel = nativeProviderModel(assistant)
+      const assistantError = plainObject(assistant?.error)
+        ? { ...assistant.error, statusCode: assistant.statusCode ?? assistant.error.statusCode ?? assistant.error.status ?? candidate.statusCode }
+        : assistant?.error
       if (!assistant || !user || nativeRole(assistant) !== "assistant" || nativeRole(user) !== "user"
-        || assistant.parentID !== user.id || !explicitQuotaError(assistant.error)
+        || assistant.parentID !== user.id || !explicitQuotaError(assistantError)
         || assistantModel.providerId !== candidate.providerId || assistantModel.modelId !== candidate.modelId) return false
       const assistantIndex = messages.findIndex(item => (item?.info || item)?.id === assistant.id)
       if (messages.slice(assistantIndex + 1).some(item => ["assistant", "user"].includes(nativeRole(item?.info || item)))) return false
@@ -154,7 +157,7 @@ function createQuotaProofWriter(client) {
         nativeTurnId: assistant.id,
         providerId: candidate.providerId,
         modelId: candidate.modelId,
-        ...safeQuotaProofError(assistant.error),
+        ...safeQuotaProofError(assistantError),
       }
       const metadata = session.metadata
       if (!plainObject(metadata)) return false
@@ -182,9 +185,15 @@ function createQuotaEventHandler(client) {
       const sessionID = info?.sessionID || event.properties?.sessionID
       const metadata = plainObject(info?.metadata) ? info.metadata : {}
       const model = nativeProviderModel(info)
+      const nativeError = plainObject(info?.error)
+        ? { ...info.error, statusCode: info.statusCode ?? info.error.statusCode ?? info.error.status }
+        : info?.error
+      const statusCode = typeof info?.statusCode === "number" ? info.statusCode
+        : typeof info?.error?.statusCode === "number" ? info.error.statusCode
+          : typeof info?.error?.status === "number" ? info.error.status : undefined
       if (sessionID && nativeRole(info) === "assistant" && typeof info.id === "string"
         && typeof info.parentID === "string" && typeof model.providerId === "string"
-        && typeof model.modelId === "string" && explicitQuotaError(info.error)) {
+        && typeof model.modelId === "string" && explicitQuotaError(nativeError)) {
         quotaCandidates.set(sessionID, {
           sessionID,
           assistantMessageId: info.id,
@@ -192,6 +201,7 @@ function createQuotaEventHandler(client) {
           ...(typeof metadata.agentHerderInputId === "string" ? { inputId: metadata.agentHerderInputId } : {}),
           providerId: model.providerId,
           modelId: model.modelId,
+          ...(statusCode !== undefined ? { statusCode } : {}),
         })
       }
       return
