@@ -336,3 +336,17 @@ and authorized runtime promotion.
   engine-owned successful response, then enroll the next unrestricted entry.
   Restricted nine remain excluded until Controls approves the guard. Do not
   restart global OpenCode or enroll another entry before these checks.
+- 2026-10-21 03:27 UTC: Adapter accepted a bounded extension for
+  `packages/agent-resume/src/harness/opencode/client.ts` and
+  `tests/opencode-v2-protocol.test.ts`: retain the latest explicit failed
+  terminal frame when a later status-only idle frame follows model selection,
+  while rejecting later user/assistant records or conflicting terminal
+  outcomes and keeping the original failed assistant/provider/model identity.
+  No prompt or send is allowed in this fix. Controls reviewed guard commit
+  `e091499` and returned REVISE: permission evaluate sees child Agent ID but
+  may miss a parent-supplied model override; the mock only proves a thrown
+  `session.model.request` callback, not zero provider HTTP. Controls is doing
+  the already-authorized isolated OpenCode 2.0.31 local-stub proof with a safe
+  ordinary-project control. Global plugin install/restart is held pending that
+  proof. The first operator-cohort wait remains waiting/attempts=0; no response
+  has been delivered and no further entries were enrolled.
