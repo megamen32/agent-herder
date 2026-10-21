@@ -67,7 +67,8 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
   const resultWithReadiness=request.project===undefined?result:{...result,projectReadinessContract:'integrator-host-readiness-v1',projectExecution:receipt.state==='created'?receipt.projectExecution:undefined};
   return {structuredContent:resultWithReadiness,content:[{type:'text' as const,text:JSON.stringify(resultWithReadiness)}]};
  });
- server.registerTool('fleet_node_info',{description:'Read actual local Herder host/user identity and configured session-creation capability; project readiness is an explicit host-owned scoped preflight.',inputSchema:z.object({project:z.string().trim().min(1).max(512).optional()}).strict()},async({project})=>{
+ server.registerTool('fleet_node_info',{description:'Read actual local Herder host/user identity and configured session-creation capability; project readiness is an explicit host-owned scoped preflight.',inputSchema:z.object({project:z.string().trim().min(1).max(512).optional()}).strict()},async(request?:{project?:string})=>{
+  const project=request?.project;
   const snapshot={hostId:hostname(),nativeUser:userInfo().username,platform:platform(),generation,createHarnesses:fleetHarnesses.filter(h=>typeof deps.adapters.get(h)?.createSession==='function')};
   if(project===undefined)return {structuredContent:snapshot,content:[{type:'text' as const,text:JSON.stringify(snapshot)}]};
   const readiness=deps.integratorRuntime?await deps.integratorRuntime.readiness(project):undefined;

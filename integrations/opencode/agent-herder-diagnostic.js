@@ -4,8 +4,16 @@ import AgentHerderAutopilot from './agent-herder-autopilot.js?diagnostic=2026101
 import {appendFile,stat} from 'node:fs/promises'
 import {join} from 'node:path'
 
+// The autopilot plugin exports an object with server(); the legacy shape was a
+// plain function. Both are accepted so the probe keeps working across versions.
+async function invokeAgentHerderPlugin(plugin, input, options = {}) {
+  if (plugin && typeof plugin.server === 'function') return await plugin.server(input, options)
+  if (typeof plugin === 'function') return await plugin(input, options)
+  throw new TypeError('Agent Herder plugin export must be a function or an object with server()')
+}
+
 export default async function AgentHerderDiagnostic(input, options = {}) {
-  if (options.diagnostics !== true || typeof options.diagnosticSessionId !== 'string') return AgentHerderAutopilot(input)
+  if (options.diagnostics !== true || typeof options.diagnosticSessionId !== 'string') return invokeAgentHerderPlugin(AgentHerderAutopilot, input)
   const file = join(input.directory, '.agent-herder-opencode-diagnostic.jsonl')
   let count = 0
   async function record(value) {
@@ -18,7 +26,7 @@ export default async function AgentHerderDiagnostic(input, options = {}) {
   }
   if (options.implementationUrl && (typeof options.implementationUrl !== 'string' || !options.implementationUrl.startsWith('file://'))) throw new TypeError('Diagnostic implementation must use an explicit file URL')
   const implementation = options.implementationUrl ? (await import(options.implementationUrl)).default : AgentHerderAutopilot
-  const hooks = await implementation(input, {observeContextFetch: async value=>{
+  const hooks = await invokeAgentHerderPlugin(implementation, input, {observeContextFetch: async value=>{
     if (value.sessionId === options.diagnosticSessionId) await record({phase:'fetch',...value})
   }})
   await record({phase:'factory',directory:input.directory,hooks:Object.keys(hooks)})
