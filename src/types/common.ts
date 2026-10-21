@@ -113,6 +113,8 @@ export interface SendMessageResult {
   turnId?: string;
   /** Caller-supplied stable operation identity; distinct attempts need distinct IDs. */
   inputId?: string;
+  /** Native OpenCode input message ID returned by POST /api/session/:id/prompt. */
+  nativeInputMessageId?: string;
   error?: string;
   /** The native harness accepted this exact prompt, so callers must not submit it again. */
   admitted?: boolean;

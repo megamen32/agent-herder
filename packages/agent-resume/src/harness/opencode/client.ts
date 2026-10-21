@@ -31,18 +31,24 @@ interface OpenCodeSessionPayload {
   model?: string | { providerID?: string; id?: string };
   cost?: number;
   parentID?: string;
+  metadata?: Record<string, unknown>;
   outcome?: "succeeded" | "failed" | "interrupted";
 }
 
 interface OpenCodeMessagePayload {
   id?: string;
+  parentID?: string;
+  inputId?: string;
+  turnId?: string;
   role?: string;
   type?: string;
   text?: string;
-  info?: { id?: string; sessionID?: string; role?: string; providerID?: string; modelID?: string; time?: { created?: number } };
+  info?: { id?: string; parentID?: string; sessionID?: string; role?: string; providerID?: string; modelID?: string; inputId?: string; turnId?: string; metadata?: Record<string, unknown>; error?: OpenCodeMessagePayload["error"]; time?: { created?: number } };
+  metadata?: Record<string, unknown>;
   model?: { providerID?: string; id?: string };
   finish?: string;
-  error?: { type?: string; message?: string; status?: number };
+  error?: { type?: string; code?: string; message?: string; status?: number; statusCode?: number; resetAt?: string; reset_at?: string };
+  outcome?: "succeeded" | "failed" | "interrupted";
   content?: string | Array<Record<string, unknown>>;
   parts?: Array<Record<string, unknown>>;
 }
@@ -104,6 +110,19 @@ export type OpenCodeEvent = {
   data?: Record<string, unknown>;
 };
 
+export interface OpenCodeTerminalFailureContext {
+  status: "failed";
+  nativeTurnId: string;
+  inputId: string;
+  providerId: string;
+  modelId: string;
+  errorType?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  statusCode?: number;
+  resetAt?: string;
+}
+
 /** Where a session keeps the identity Agent Herder announced to it. */
 export const SESSION_IDENTITY_ENTRY_KEY = "agent.herder.identity";
 
@@ -149,6 +168,26 @@ function stringValue(...values: unknown[]): string | undefined {
   return values.find((value): value is string => typeof value === "string" && value.length > 0);
 }
 
+function openCodeMessageRole(message: OpenCodeMessagePayload): string | undefined {
+  return stringValue(message.role, message.info?.role, message.metadata?.role, message.type);
+}
+
+function openCodeMessageId(message: OpenCodeMessagePayload): string | undefined {
+  return stringValue(message.id, message.info?.id);
+}
+
+function safeEventError(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  return value.trim()
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted-private-key]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [redacted]")
+    .replace(/\b(?:sk|rk|pk|ghp|glpat|xox[baprs])-[-A-Za-z0-9_]{8,}\b/gi, "[redacted-key]")
+    .replace(/(["']?)(api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|credential)\1\s*:\s*("[^"]*"|'[^']*'|[^\s,;}]+)/gi, "$1$2$1:[redacted]")
+    .replace(/((?:api[_-]?key|token|password|secret)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi, "$1[redacted]")
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .slice(0, 384);
+}
+
 export function unwrapEnvelope<T>(value: unknown): T {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value as T;
   const record = value as Record<string, unknown>;
@@ -174,7 +213,7 @@ function isHtmlResponse(response: Response): boolean {
 const openCodeConversationTypes = new Set(["user", "assistant", "system", "tool"]);
 
 function isOpenCodeTurnStatusFrame(message: OpenCodeMessagePayload): boolean {
-  if (typeof message.role === "string") return false;
+  if (typeof message.role === "string" || typeof message.info?.role === "string" || typeof message.metadata?.role === "string") return false;
   const type = typeof message.type === "string" ? message.type : "";
   return type.length > 0 && !openCodeConversationTypes.has(type);
 }
@@ -246,8 +285,39 @@ export function normalizeOpenCodeEvent(raw: unknown): OpenCodeEvent | null {
   const data: Record<string, unknown> = { nativeType };
   const nativeEventId = stringValue(properties.id, event.id);
   if (nativeEventId) data.nativeEventId = nativeEventId;
+  const infoMetadata = info?.metadata && typeof info.metadata === "object" ? info.metadata as Record<string, unknown> : undefined;
+  const observedTurnId = stringValue(properties.turnId, properties.turnID, info?.turnId, payload?.turnId);
+  const observedInputId = stringValue(properties.inputId, properties.inputID, info?.inputId, payload?.inputId, infoMetadata?.agentHerderInputId);
+  if (observedTurnId) data.turnId = observedTurnId;
+  if (observedInputId) data.inputId = observedInputId;
+  const nativeParentMessageId = stringValue(info?.parentID, properties.parentID);
+  if (nativeParentMessageId) data.nativeParentMessageId = nativeParentMessageId;
+  if (info?.id) data.nativeMessageId = info.id;
+  if (info?.role) data.nativeMessageRole = info.role;
+  const infoModel = info?.model && typeof info.model === "object" ? info.model as Record<string, unknown> : undefined;
+  const nativeProviderId = stringValue(info?.providerID, infoModel?.providerID);
+  const nativeModelId = stringValue(info?.modelID, infoModel?.id);
+  if (nativeProviderId) data.nativeProviderId = nativeProviderId;
+  if (nativeModelId) data.nativeModelId = nativeModelId;
+  const errorValue = payload?.error ?? info?.error ?? properties.error ?? event.error;
+  const error = errorValue && typeof errorValue === "object" ? errorValue as Record<string, unknown> : undefined;
+  const errorType = stringValue(error?.type, error?.name);
+  const errorCode = stringValue(error?.code);
+  const errorMessage = safeEventError(typeof errorValue === "string" ? errorValue : error?.message);
+  const statusCodeValue = error?.status ?? error?.statusCode ?? payload?.statusCode;
+  const statusCode = typeof statusCodeValue === "number" && Number.isInteger(statusCodeValue) ? statusCodeValue : undefined;
+  const resetAtValue = stringValue(error?.resetAt, error?.reset_at, payload?.resetAt);
+  const resetAt = resetAtValue && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(resetAtValue)
+    && Number.isFinite(Date.parse(resetAtValue)) ? new Date(resetAtValue).toISOString() : undefined;
+  if (errorType && /^[A-Za-z0-9_.-]{1,96}$/.test(errorType)) data.nativeErrorType = errorType;
+  if (errorCode && /^[A-Za-z0-9_.-]{1,96}$/.test(errorCode)) data.nativeErrorCode = errorCode;
+  if (errorMessage) data.nativeErrorMessage = errorMessage;
+  if (statusCode !== undefined) data.nativeErrorStatus = statusCode;
+  if (resetAt) data.nativeErrorResetAt = resetAt;
   if (directory) data.directory = directory;
   const messageId = stringValue(properties.messageID, properties.messageId, info?.id, payload?.messageID, payload?.messageId, payload?.inboxID);
+  const inboxId = stringValue(payload?.inboxID, payload?.inboxId);
+  if (inboxId) data.nativeInputMessageId = inboxId;
   const permissionId = stringValue(properties.permissionID, properties.permissionId, properties.id, payload?.permissionID, payload?.requestID);
   const statusRaw = stringValue(properties.status, properties.type);
   const status = statusRaw
@@ -484,6 +554,135 @@ export class OpenCodeClient implements HarnessClient {
     }
   }
 
+  /**
+   * Read the exact v2 terminal failure represented by one native event. The
+   * event ID must still be the newest persisted failed status frame, the
+   * session must be terminal and permission-free, and the failed assistant
+   * message must identify its provider/model. Older v1 APIs cannot prove this
+   * correlation and intentionally return no evidence.
+   */
+  async getTerminalFailureContext(
+    id: string,
+    terminalEventId?: string,
+    observedTurnId?: string,
+    observedInputId?: string,
+  ): Promise<OpenCodeTerminalFailureContext | null> {
+    await this.probeProtocol();
+    if (!this.isV2) return null;
+    try {
+      const session = await this.fetchJson<OpenCodeSessionPayload>(this.api(`/session/${encodeURIComponent(id)}`));
+      if (session.id !== id || session.outcome !== "failed") return null;
+      const [active, permissions] = await Promise.all([
+        this.fetchJson<Record<string, { type?: string; status?: string }>>(this.api("/session/active")),
+        this.fetchJson<OpenCodePermissionRequest[]>(this.api("/permission/request")),
+      ]);
+      if (!active || typeof active !== "object" || Array.isArray(active) || !Array.isArray(permissions)) return null;
+      const activeType = active[id]?.type ?? active[id]?.status;
+      if ((activeType !== undefined && activeType !== "idle") || permissions.some((request) => request?.sessionID === id)) return null;
+
+      const fetched = await this.fetchJson<OpenCodeMessagePayload[]>(this.api(`/session/${encodeURIComponent(id)}/message?limit=150&order=desc`));
+      if (!Array.isArray(fetched)) return null;
+      const messages = [...fetched].reverse();
+      const statusFrames = messages
+        .map((message, index) => ({ message, index }))
+        .filter(({ message }) => isOpenCodeTurnStatusFrame(message));
+      const latest = statusFrames.at(-1);
+      if (!latest || !latest.message.id || (terminalEventId && latest.message.id !== terminalEventId) || latest.message.outcome !== "failed") return null;
+      if (messages.slice(latest.index + 1).some((message) =>
+        openCodeMessageRole(message) === "user" || openCodeMessageRole(message) === "assistant")) return null;
+      const user = messages
+        .map((message, index) => ({ message, index }))
+        .filter(({ message, index }) => index < latest.index && openCodeMessageRole(message) === "user")
+        .at(-1);
+      if (!user) return null;
+      const statusMetadata = latest.message.metadata ?? latest.message.info?.metadata;
+      const userMetadata = user.message.metadata ?? user.message.info?.metadata;
+      const sessionProofNamespace = session.metadata?.agentHerder;
+      const sessionProof = sessionProofNamespace && typeof sessionProofNamespace === "object" && !Array.isArray(sessionProofNamespace)
+        ? (sessionProofNamespace as Record<string, unknown>).quotaFailure as Record<string, unknown> | undefined
+        : undefined;
+      const persistedInputId = stringValue(latest.message.inputId, latest.message.info?.inputId, statusMetadata?.agentHerderInputId);
+      const userInputId = stringValue(user.message.inputId, user.message.info?.inputId, userMetadata?.agentHerderInputId);
+      const proofInputId = typeof sessionProof?.inputId === "string" ? sessionProof.inputId : undefined;
+      const knownInputIds = [persistedInputId, observedInputId, userInputId, proofInputId].filter((value): value is string => Boolean(value));
+      if (new Set(knownInputIds).size > 1) return null;
+      const inputId = stringValue(persistedInputId, observedInputId, userInputId, proofInputId);
+      if (!inputId) return null;
+      const persistedTurnId = stringValue(latest.message.turnId, latest.message.info?.turnId, statusMetadata?.turnId);
+      if (persistedTurnId && observedTurnId && persistedTurnId !== observedTurnId) return null;
+
+      const failedAssistant = messages
+        .map((message, index) => ({ message, index }))
+        .filter(({ message, index }) => index > user.index && index < latest.index
+          && openCodeMessageRole(message) === "assistant")
+        .at(-1)?.message;
+      if (!failedAssistant || (!failedAssistant.error && !failedAssistant.info?.error && failedAssistant.finish !== "error" && !latest.message.error
+        && sessionProof?.assistantMessageId !== openCodeMessageId(failedAssistant))) return null;
+      const userMessageId = openCodeMessageId(user.message);
+      const assistantMessageId = openCodeMessageId(failedAssistant);
+      if (!userMessageId || !assistantMessageId) return null;
+      const proofLinked = sessionProof?.status === "failed"
+        && sessionProof.userMessageId === userMessageId
+        && sessionProof.parentMessageId === userMessageId
+        && sessionProof.assistantMessageId === assistantMessageId
+        && sessionProof.nativeTurnId === assistantMessageId
+        && sessionProof.inputId === inputId;
+      const assistantMetadata = failedAssistant.metadata ?? failedAssistant.info?.metadata;
+      const assistantInputId = stringValue(failedAssistant.inputId, failedAssistant.info?.inputId, assistantMetadata?.agentHerderInputId);
+      if (assistantInputId && assistantInputId !== inputId) return null;
+      const assistantParentId = stringValue(failedAssistant.parentID, failedAssistant.info?.parentID, assistantMetadata?.parentID);
+      // OpenCode's assistant message is the native turn identity when this
+      // transcript does not expose a turnId, but only with an exact parent
+      // link to the submitted user message. A status-frame ID is never a turn ID.
+      const parentLinked = assistantParentId === userMessageId;
+      const inputLinked = assistantInputId === inputId
+        && (persistedInputId === inputId || observedInputId === inputId);
+      if (!parentLinked && !inputLinked && !proofLinked) return null;
+      const assistantTurnId = stringValue(failedAssistant.turnId, failedAssistant.info?.turnId, assistantMetadata?.turnId);
+      if (persistedTurnId && assistantTurnId && persistedTurnId !== assistantTurnId) return null;
+      if (observedTurnId && assistantTurnId && observedTurnId !== assistantTurnId) return null;
+      const nativeTurnId = stringValue(persistedTurnId, observedTurnId, assistantTurnId,
+        proofLinked && typeof sessionProof.nativeTurnId === "string" ? sessionProof.nativeTurnId : undefined,
+        assistantMessageId);
+      if (!nativeTurnId) return null;
+      const model = failedAssistant.model?.providerID && failedAssistant.model.id
+        ? { providerId: failedAssistant.model.providerID, modelId: failedAssistant.model.id }
+        : failedAssistant.info?.providerID && failedAssistant.info.modelID
+          ? { providerId: failedAssistant.info.providerID, modelId: failedAssistant.info.modelID }
+          : proofLinked && typeof sessionProof.providerId === "string" && typeof sessionProof.modelId === "string"
+            ? { providerId: sessionProof.providerId, modelId: sessionProof.modelId }
+            : undefined;
+      if (!model?.providerId || !model.modelId) return null;
+      if (proofLinked && (sessionProof.providerId !== model.providerId || sessionProof.modelId !== model.modelId)) return null;
+      const error = latest.message.error ?? failedAssistant.error ?? failedAssistant.info?.error;
+      const errorMessage = safeEventError(error?.message);
+      const errorType = typeof error?.type === "string" && /^[A-Za-z0-9_.-]{1,96}$/.test(error.type) ? error.type : undefined;
+      const errorCode = typeof error?.code === "string" && /^[A-Za-z0-9_.-]{1,96}$/.test(error.code) ? error.code : undefined;
+      const statusCodeValue = error?.status ?? error?.statusCode;
+      const statusCode = typeof statusCodeValue === "number" && Number.isInteger(statusCodeValue) ? statusCodeValue : undefined;
+      const resetAtValue = (error as Record<string, unknown> | undefined)?.resetAt
+        ?? (error as Record<string, unknown> | undefined)?.reset_at;
+      const resetAt = typeof resetAtValue === "string"
+        && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(resetAtValue)
+        && Number.isFinite(Date.parse(resetAtValue))
+        ? new Date(resetAtValue).toISOString()
+        : undefined;
+      return {
+        status: "failed", nativeTurnId, inputId, ...model,
+        ...(errorType ? { errorType } : {}),
+        ...(errorCode ? { errorCode } : {}),
+        ...(errorMessage ? { errorMessage } : {}),
+        ...(statusCode !== undefined ? { statusCode } : {}),
+        ...(resetAt ? { resetAt } : {}),
+        ...(proofLinked && typeof sessionProof.errorCode === "string" ? { errorCode: sessionProof.errorCode } : {}),
+        ...(proofLinked && typeof sessionProof.errorMessage === "string" ? { errorMessage: sessionProof.errorMessage } : {}),
+        ...(proofLinked && typeof sessionProof.statusCode === "number" ? { statusCode: sessionProof.statusCode } : {}),
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async send(id: string, request: HarnessSendRequest): Promise<HarnessSendResult> {
     await this.probeProtocol();
     if (!this.isV2) {
@@ -504,9 +703,20 @@ export class OpenCodeClient implements HarnessClient {
     try {
       const res = await this.fetch(this.api(`/session/${encodeURIComponent(id)}/prompt`), {
         method: "POST",
-        body: JSON.stringify({ text: request.message, delivery: request.delivery }),
+        body: JSON.stringify({
+          text: request.message,
+          delivery: request.delivery,
+          ...(request.inputId ? { metadata: { agentHerderInputId: request.inputId } } : {}),
+        }),
       });
-      if (res.ok) return { ok: true, admitted: true };
+      if (res.ok) {
+        const body = await res.json().catch(() => undefined) as unknown;
+        const receipt = unwrapEnvelope<Record<string, unknown>>(body);
+        const nativeInputMessageId = typeof receipt?.id === "string" && /^msg_[A-Za-z0-9]+$/.test(receipt.id)
+          ? receipt.id
+          : undefined;
+        return { ok: true, admitted: true, ...(nativeInputMessageId ? { nativeInputMessageId } : {}) };
+      }
       const hint = await this.errorHint(res);
       return { ok: false, error: `HTTP ${res.status}${hint}` };
     } catch (error) {

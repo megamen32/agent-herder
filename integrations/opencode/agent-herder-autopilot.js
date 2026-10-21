@@ -67,15 +67,123 @@ function actionOf(value) {
   return ["on", "status", "off"].includes(action) ? action : "on"
 }
 
+function plainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+function responseData(value) {
+  return value && typeof value === "object" && "data" in value ? value.data : value
+}
+
+function nativeRole(message) {
+  return message?.role || message?.type
+}
+
+function nativeProviderModel(message) {
+  return {
+    providerId: message?.providerID || message?.model?.providerID,
+    modelId: message?.modelID || message?.model?.id,
+  }
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`
+  if (!plainObject(value)) return JSON.stringify(value)
+  return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`
+}
+
+function explicitQuotaError(error) {
+  if (!plainObject(error)) return false
+  const statusCode = Number(error.statusCode ?? error.status)
+  if ([401, 403, 502].includes(statusCode)) return false
+  const code = String(error.code || error.name || error.type || "").toLowerCase()
+  const message = String(error.message || "").toLowerCase()
+  return /quota|usage[_ -]?limit|limit[_ -]?exceeded/.test(code)
+    || /quota exhausted|quota exceeded|weekly limit|monthly limit|usage limit|plan limit|limit exceeded|plan exhausted/.test(message)
+}
+
+function safeQuotaProofError(error) {
+  const code = String(error.code || error.name || error.type || "").trim()
+  const safeCode = /^[A-Za-z0-9_.-]{1,96}$/.test(code) ? code : undefined
+  const message = String(error.message || "").trim()
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted-private-key]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [redacted]")
+    .replace(/\b(?:sk|rk|pk|ghp|glpat|xox[baprs])-[-A-Za-z0-9_]{8,}\b/gi, "[redacted-key]")
+    .replace(/((?:api[_-]?key|token|password|secret)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi, "$1[redacted]")
+    .replace(/\s+/g, " ").slice(0, 320)
+  const statusValue = Number(error.statusCode ?? error.status)
+  const statusCode = Number.isInteger(statusValue) && statusValue >= 100 && statusValue <= 599 ? statusValue : undefined
+  return {
+    ...(safeCode ? { errorCode: safeCode } : {}),
+    ...(message ? { errorMessage: message } : {}),
+    ...(statusCode !== undefined ? { statusCode } : {}),
+  }
+}
+
+function createQuotaProofWriter(client) {
+  const writes = new Map()
+  return async candidate => {
+    const previous = writes.get(candidate.sessionID) || Promise.resolve()
+    const next = previous.catch(() => {}).then(async () => {
+      const [sessionResponse, messagesResponse] = await Promise.all([
+        client.session.get({ path: { id: candidate.sessionID } }),
+        client.session.messages({ path: { id: candidate.sessionID }, query: { order: "asc", limit: 150 } }),
+      ])
+      const session = responseData(sessionResponse)
+      const messages = responseData(messagesResponse)
+      if (!plainObject(session) || session.id !== candidate.sessionID || session.outcome !== "failed" || !Array.isArray(messages)) return false
+      const assistant = messages.map(item => item?.info || item).find(item => item?.id === candidate.assistantMessageId)
+      const user = messages.map(item => item?.info || item).find(item => item?.id === candidate.userMessageId)
+      const assistantModel = nativeProviderModel(assistant)
+      if (!assistant || !user || nativeRole(assistant) !== "assistant" || nativeRole(user) !== "user"
+        || assistant.parentID !== user.id || !explicitQuotaError(assistant.error)
+        || assistantModel.providerId !== candidate.providerId || assistantModel.modelId !== candidate.modelId) return false
+      const assistantIndex = messages.findIndex(item => (item?.info || item)?.id === assistant.id)
+      if (messages.slice(assistantIndex + 1).some(item => ["assistant", "user"].includes(nativeRole(item?.info || item)))) return false
+      const userMetadata = plainObject(user.metadata) ? user.metadata : {}
+      const stableInputId = typeof userMetadata.agentHerderInputId === "string" && userMetadata.agentHerderInputId
+        ? userMetadata.agentHerderInputId : user.id
+      if (candidate.inputId && candidate.inputId !== stableInputId) return false
+      const proof = {
+        version: 1,
+        status: "failed",
+        inputId: stableInputId,
+        userMessageId: user.id,
+        parentMessageId: assistant.parentID,
+        assistantMessageId: assistant.id,
+        nativeTurnId: assistant.id,
+        providerId: candidate.providerId,
+        modelId: candidate.modelId,
+        ...safeQuotaProofError(assistant.error),
+      }
+      const metadata = session.metadata
+      if (!plainObject(metadata)) return false
+      const namespace = metadata.agentHerder
+      if (namespace !== undefined && !plainObject(namespace)) return false
+      const expected = {
+        ...metadata,
+        agentHerder: { ...(namespace || {}), quotaFailure: proof },
+      }
+      await client.session.update({ path: { id: candidate.sessionID }, body: { metadata: expected } })
+      const readback = responseData(await client.session.get({ path: { id: candidate.sessionID } }))
+      return plainObject(readback?.metadata) && stableJson(readback.metadata) === stableJson(expected)
+    })
+    writes.set(candidate.sessionID, next)
+    try { return await next } finally { if (writes.get(candidate.sessionID) === next) writes.delete(candidate.sessionID) }
+  }
+}
+
 async function invoke($, payload) {
   const result = await $`env PLUGIN_ROOT=${root} bash ${root}/scripts/autopilot-command-launcher.sh ${JSON.stringify(payload)}`.quiet()
   return JSON.parse(result.text())
 }
 
-export default async function AgentHerderAutopilot({ directory, $ }, options = {}) {
+export default async function AgentHerderAutopilot({ directory, $, client }, options = {}) {
   const contextFetch = (path, fetchOptions) => coordinationFetch(path, fetchOptions, options.observeContextFetch)
   const enabled = new Set()
   const controlTurns = new Set()
+  const quotaCandidates = new Map()
+  const writeQuotaProof = createQuotaProofWriter(client)
   return {
     // Supported native loop context hook. No prompt endpoint or persisted user message.
     "experimental.chat.messages.transform": async (_input,output)=>{
@@ -130,9 +238,33 @@ export default async function AgentHerderAutopilot({ directory, $ }, options = {
     },
 
     event: async ({ event }) => {
+      if (event.type === "message.updated") {
+        const info = event.properties?.info
+        const sessionID = info?.sessionID || event.properties?.sessionID
+        const metadata = plainObject(info?.metadata) ? info.metadata : {}
+        const model = nativeProviderModel(info)
+        if (sessionID && nativeRole(info) === "assistant" && typeof info.id === "string"
+          && typeof info.parentID === "string" && typeof model.providerId === "string"
+          && typeof model.modelId === "string" && explicitQuotaError(info.error)) {
+          quotaCandidates.set(sessionID, {
+            sessionID,
+            assistantMessageId: info.id,
+            userMessageId: info.parentID,
+            ...(typeof metadata.agentHerderInputId === "string" ? { inputId: metadata.agentHerderInputId } : {}),
+            providerId: model.providerId,
+            modelId: model.modelId,
+          })
+        }
+        return
+      }
       if (event.type !== "session.idle") return
       const sessionID = event.properties?.sessionID
       if (!sessionID) return
+      const quotaCandidate = quotaCandidates.get(sessionID)
+      quotaCandidates.delete(sessionID)
+      if (quotaCandidate) {
+        try { await writeQuotaProof(quotaCandidate) } catch { /* missing or changed native proof stays absent */ }
+      }
       if (controlTurns.delete(sessionID)) return
       if (!enabled.has(sessionID)) {
         const status = await invoke($, { command: "status", harness: "opencode", sessionId: sessionID, cwd: directory })

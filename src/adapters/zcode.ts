@@ -30,6 +30,7 @@ import { ownedShutdownMatches, ownedZcodeActiveInput, zcodeRecoveryBoundaryCurre
 import { configuredGptAdminMcp } from "./zcode-gptadmin-mcp.js";
 import { captureZcodeInput, validateRetainedInput, zcodeUndeliveredFence, zcodeRetainedAttemptReceipt, sameRetainedModel, type ZcodeRetainedInput } from "./zcode-undelivered.js";
 import {workspaceInputBoundary, workspaceCrashCurrent, workspaceProcessProbe, nativeHookTurn, nativeOwnerCrashCurrent, nativeOwnerCancellationMatches, type NativeOwnerProof, type NativeHookTurn, type WorkspaceProcessProbe, type WorkspaceCrash, type WorkspaceProcess} from './zcode-workspace-lifecycle.js';
+import { normalizeQuotaResetAt, splitProviderModel, terminalQuotaFailure, type TerminalQuotaFailure } from "./quota-failure.js";
 
 interface ZcodeWorkspaceRef {
   workspacePath: string;
@@ -136,7 +137,10 @@ interface TurnStartResult {
 
 interface NativeTurnFailure {
   code?: string;
+  type?: string;
   message?: string;
+  status?: number;
+  resetAt?: string;
 }
 
 interface ZcodeCommand {
@@ -419,6 +423,7 @@ function nativeTurnFailure(value: unknown): NativeTurnFailure | undefined {
       || nativeFailureCode(root.errorCode),
     96,
   );
+  const type = safeNativeFailureField(nonEmptyString(error.type) || nonEmptyString(error.name), 96);
   const message = safeNativeFailureField(
     typeof errorValue === "string"
       ? errorValue
@@ -427,7 +432,12 @@ function nativeTurnFailure(value: unknown): NativeTurnFailure | undefined {
         || nonEmptyString(root.errorMessage),
     384,
   );
-  return code || message ? { ...(code ? { code } : {}), ...(message ? { message } : {}) } : undefined;
+  const statusValue = error.status ?? error.statusCode ?? payload.statusCode ?? root.statusCode;
+  const status = typeof statusValue === "number" && Number.isInteger(statusValue) ? statusValue : undefined;
+  const resetAt = normalizeQuotaResetAt(error.resetAt) || normalizeQuotaResetAt(error.reset_at) || normalizeQuotaResetAt(payload.resetAt);
+  return code || type || message || status !== undefined || resetAt
+    ? { ...(code ? { code } : {}), ...(type ? { type } : {}), ...(message ? { message } : {}), ...(status !== undefined ? { status } : {}), ...(resetAt ? { resetAt } : {}) }
+    : undefined;
 }
 
 function nativeTurnFailureDetail(value: unknown): string | undefined {
@@ -646,6 +656,12 @@ function snapshotMessages(payload: unknown): ZcodeMessage[] {
   return [];
 }
 
+function nativeInputIdForTurn(snapshotValue: unknown, turn: NativeLastTurn | undefined): string | undefined {
+  if (!turn?.userMessageId) return undefined;
+  const user = snapshotMessages(snapshotValue).find((message) => nonEmptyString(record(message.info).messageId) === turn.userMessageId);
+  return nonEmptyString(record(record(user?.info).metadata).inputId);
+}
+
 function snapshotConfirmsPromptTurnStarted(
   current: ZcodeSnapshot,
   baseline: ZcodeSnapshot,
@@ -732,7 +748,10 @@ function normalizeZcodeTaskEvent(sessionId: string, payload: unknown): HarnessEv
       ...(nonEmptyString(payloadData.inputSource) ? { inputSource: nonEmptyString(payloadData.inputSource) } : {}),
       ...(nonEmptyString(payloadData.messageId) ? { messageId: nonEmptyString(payloadData.messageId) } : {}),
       ...(failure?.code ? { nativeErrorCode: failure.code } : {}),
+      ...(failure?.type ? { nativeErrorType: failure.type } : {}),
       ...(failure?.message ? { nativeErrorMessage: failure.message } : {}),
+      ...(failure?.status !== undefined ? { nativeErrorStatus: failure.status } : {}),
+      ...(failure?.resetAt ? { nativeErrorResetAt: failure.resetAt } : {}),
     },
   };
 }
@@ -776,7 +795,9 @@ export interface NativeTurnUsageRow {
 
 export interface NativeLastTurn {
   turnId?: string;
+  inputId?: string;
   status?: string;
+  quotaFailure?: TerminalQuotaFailure;
   userMessageId?: string;
   sourceCommandId?: string;
   startedAt?: number;
@@ -802,6 +823,69 @@ export interface NativeLastTurn {
   blockedReason?: string;
   /** Exact native runtime-shutdown evidence, or a detached remote SSH task still expected to run. Human-stop receipts remain authoritative. */
   transportLost?: boolean;
+}
+
+/**
+ * Correlate a ZCode terminal event to the persisted native turn and exact
+ * accepted user input before exposing quota-recovery evidence to the backend.
+ */
+export function zcodeQuotaFailureFromSnapshot(
+  sessionId: string,
+  snapshotValue: unknown,
+  turn: NativeLastTurn | undefined,
+  event?: HarnessEvent,
+): TerminalQuotaFailure | undefined {
+  if (!turn || (event && (event.harness !== "zcode" || event.kind !== "turn.failed" || event.sessionId !== sessionId))) return undefined;
+  const data = record(event?.data);
+  const nativeTurnId = nonEmptyString(turn.turnId);
+  const eventTurnId = nonEmptyString(data.turnId);
+  if (!nativeTurnId || (event && (!eventTurnId || eventTurnId !== nativeTurnId))) return undefined;
+  if (!turn.userMessageId || !["error", "failed"].includes(turn.status ?? "")
+    || turn.cancelledByUser === true || turn.pendingInput === true || turn.requiresHuman === true
+    || turn.assistantSucceeded === true || turn.progressedAfterFailure === true) return undefined;
+
+  const snapshot = record(snapshotValue) as ZcodeSnapshot;
+  if (sessionInfoFromPayload(snapshotValue)?.sessionId !== sessionId) return undefined;
+  const runtime = record(snapshot.runtime);
+  if (nonEmptyString(runtime.activeTurnId) || nonEmptyString(runtime.activeTurnKind)
+    || (Array.isArray(runtime.pendingRequestIds) && runtime.pendingRequestIds.length > 0)) return undefined;
+  const nativeStatus = nonEmptyString(sessionInfoFromPayload(snapshotValue)?.status)?.toLowerCase();
+  if (nativeStatus && !["idle", "error", "failed", "stopped", "completed"].includes(nativeStatus)) return undefined;
+
+  const messages = snapshotMessages(snapshotValue);
+  const turnUser = messages.find((message) => nonEmptyString(record(message.info).messageId) === turn.userMessageId);
+  if (!turnUser || record(turnUser.info).role !== "user") return undefined;
+  const messageInputId = nonEmptyString(record(record(turnUser.info).metadata).inputId);
+  const eventInputId = nonEmptyString(data.inputId);
+  if (!messageInputId || (event && (!eventInputId || eventInputId !== messageInputId))) return undefined;
+  const latestUser = [...messages].reverse().find((message) => record(message.info).role === "user");
+  if (nonEmptyString(record(record(latestUser).info).messageId) !== turn.userMessageId) return undefined;
+
+  const failedAssistant = [...messages].reverse().find((message) => {
+    const info = record(message.info);
+    return info.role === "assistant" && nonEmptyString(info.parentMessageId) === turn.userMessageId;
+  });
+  const model = modelName(record(record(failedAssistant).info).model as ZcodeModelRef | undefined);
+  const modelRef = splitProviderModel(model);
+  if (!modelRef) return undefined;
+
+  const modelErrorType = nonEmptyString(turn.modelErrorType);
+  const eventCode = nonEmptyString(data.nativeErrorCode);
+  return terminalQuotaFailure({
+    terminal: true,
+    status: turn.status as "error" | "failed",
+    nativeTurnId,
+    inputId: messageInputId,
+    providerId: modelRef.providerId,
+    modelId: modelRef.modelId,
+    statusCode: typeof data.nativeErrorStatus === "number" ? data.nativeErrorStatus : undefined,
+    // `turn_usage.error_code` can be a generic wrapper (UNKNOWN_ERROR) even
+    // when the exact model_usage row retains the provider's quota response.
+    ...(modelErrorType ? {} : { errorCode: eventCode || nonEmptyString(turn.errorCode) }),
+    ...(modelErrorType ? { modelErrorType } : (nonEmptyString(data.nativeErrorType) ? { errorType: nonEmptyString(data.nativeErrorType) } : {})),
+    errorMessage: nonEmptyString(turn.errorMessage) || nonEmptyString(data.nativeErrorMessage),
+    resetAt: data.nativeErrorResetAt,
+  });
 }
 
 /** Latest durable turn for one session, or undefined when the rows are stale
@@ -1807,6 +1891,12 @@ export class ZcodeAdapter implements HarnessAdapter {
         const lastTurn = [...nativeEvents].reverse().find((event) =>
           (event.type === "turn.started" || event.type === "turn.completed" || event.type === "turn.failed") && nonEmptyString(event.turnId));
         const persisted = await this.readLocalTurnBoundary(id);
+        const persistedInputId = nativeInputIdForTurn(snapshot, persisted?.turn);
+        if (persisted?.turn && persistedInputId) persisted.turn = { ...persisted.turn, inputId: persistedInputId };
+        const quotaFailure = persisted?.turn ? zcodeQuotaFailureFromSnapshot(id, snapshot, persisted.turn) : undefined;
+        if (quotaFailure && persisted?.turn) {
+          persisted.turn = { ...persisted.turn, inputId: quotaFailure.inputId, quotaFailure };
+        }
         if (persisted?.turn?.status === 'cancelled' && (await getHumanStopStore().ownedZcodeShutdowns()).some(
           proof => proof.sessionId === id && proof.turnId === persisted.turn?.turnId)) {
           const cold = (await this.listPersistedSessions({cwd:workspace.workspacePath})).find(s => s.id === id);
@@ -2833,6 +2923,18 @@ export class ZcodeAdapter implements HarnessAdapter {
           if (!active) return;
           const event = normalizeZcodeTaskEvent(sessionId, payload);
           if (event) {
+            if (event.kind === "turn.failed" && this.useLocalTurnMetadata) {
+              const [snapshot, boundary] = await Promise.all([
+                this.readCurrentSnapshot(sessionId),
+                this.readLocalTurnBoundary(sessionId),
+              ]);
+              const quotaFailure = snapshot
+                ? zcodeQuotaFailureFromSnapshot(sessionId, snapshot, boundary?.turn, event)
+                : undefined;
+              if (quotaFailure) {
+                event.data = { ...event.data, turnId: quotaFailure.nativeTurnId, inputId: quotaFailure.inputId, quotaFailure };
+              }
+            }
             const inputId = nonEmptyString(record(event.data).inputId);
             const nativeResultType = nonEmptyString(record(event.data).nativeResultType);
             const cancelled = nativeResultType === "cancelled";

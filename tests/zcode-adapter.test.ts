@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { ZcodeClientLike } from "../src/adapters/zcode-protocol.js";
-import { ZcodeAdapter, resolveConfiguredZcodeModel, zcodeConfiguredModels } from "../src/adapters/zcode.js";
+import { ZcodeAdapter, resolveConfiguredZcodeModel, zcodeConfiguredModels, zcodeQuotaFailureFromSnapshot } from "../src/adapters/zcode.js";
 import { markLifecycleEvent } from "../src/session-lifecycle.js";
 import { getHumanStopStore } from "../src/human-stop-store.js";
 
@@ -120,6 +120,155 @@ class FakeClient implements ZcodeClientLike {
     throw new Error(`unexpected fake call ${channel}.${method}`);
   }
 }
+
+describe("ZCode terminal quota evidence", () => {
+  const quotaSnapshot = {
+    ...snapshot,
+    session: { ...session, status: "error" },
+    settings: { model: { current: { providerId: "omniroute", modelId: "minimax/MiniMax-M3.1-Flash" } } },
+    runtime: { eventSeq: 5, stateRevision: 6, pendingRequestIds: [] },
+    messages: [
+      {
+        info: {
+          messageId: "user-root-1", sessionId: "session-1", role: "user",
+          time: { created: 1_700_000_000_000 }, metadata: { inputId: "native-input-1" },
+        },
+        parts: [],
+      },
+      {
+        info: {
+          messageId: "assistant-failed-1", sessionId: "session-1", role: "assistant",
+          parentMessageId: "user-root-1", model: { providerId: "omniroute", modelId: "minimax/MiniMax-M3.1-Flash" },
+        },
+        parts: [],
+      },
+    ],
+  };
+  const failedTurn = {
+    turnId: "turn-native-1", userMessageId: "user-root-1", status: "error",
+    cancelledByUser: false, pendingInput: false, modelErrorType: "rate_limited",
+    errorMessage: "Weekly/Monthly Limit Exhausted. Your limit resets later.",
+  } as const;
+
+  it("emits only exact terminal snapshot-correlated quota evidence", () => {
+    const event = {
+      kind: "turn.failed", harness: "zcode", sessionId: "session-1",
+      data: { turnId: "turn-native-1", inputId: "native-input-1", nativeErrorStatus: 400 },
+    } as const;
+    expect(zcodeQuotaFailureFromSnapshot("session-1", quotaSnapshot, failedTurn, event as any)).toEqual({
+      classification: "quota_exhausted", status: "error", nativeTurnId: "turn-native-1",
+      inputId: "native-input-1", providerId: "omniroute", modelId: "minimax/MiniMax-M3.1-Flash",
+    });
+    expect(zcodeQuotaFailureFromSnapshot("session-1", quotaSnapshot, failedTurn)).toEqual({
+      classification: "quota_exhausted", status: "error", nativeTurnId: "turn-native-1",
+      inputId: "native-input-1", providerId: "omniroute", modelId: "minimax/MiniMax-M3.1-Flash",
+    });
+    expect(zcodeQuotaFailureFromSnapshot("session-1", quotaSnapshot, failedTurn, {
+      ...event, data: { turnId: "different-turn", inputId: "native-input-1" },
+    } as any)).toBeUndefined();
+    expect(zcodeQuotaFailureFromSnapshot("session-1", quotaSnapshot, failedTurn, {
+      ...event, data: { turnId: "turn-native-1", inputId: "different-input" },
+    } as any)).toBeUndefined();
+    expect(zcodeQuotaFailureFromSnapshot("session-1", {
+      ...quotaSnapshot, runtime: { ...quotaSnapshot.runtime, activeTurnId: "new-turn" },
+    }, failedTurn)).toBeUndefined();
+    expect(zcodeQuotaFailureFromSnapshot("session-1", quotaSnapshot, failedTurn, {
+      ...event, data: { turnId: "turn-native-1", inputId: "native-input-1", nativeErrorStatus: 429 },
+    } as any)).toMatchObject({ classification: "quota_exhausted", nativeTurnId: "turn-native-1" });
+    expect(zcodeQuotaFailureFromSnapshot("session-1", quotaSnapshot, {
+      ...failedTurn, errorMessage: "Too many requests",
+    }, {
+      ...event, data: { turnId: "turn-native-1", inputId: "native-input-1", nativeErrorStatus: 429 },
+    } as any)).toBeUndefined();
+  });
+
+  it("exposes the same proof on getSession for startup reconciliation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-quota-proof-"));
+    const path = join(root, "native.sqlite");
+    const db = new DatabaseSync(path);
+    db.exec(`create table turn_usage (session_id text, turn_id text, user_message_id text, status text, started_at integer, completed_at integer, cancelled_by_user integer, error_type text, error_code text);
+      create table model_usage (session_id text, turn_id text, completed_at integer, error_type text, error_message text);
+      create table message (session_id text, data text);`);
+    db.prepare("insert into turn_usage values (?, ?, ?, ?, ?, ?, ?, ?, ?)").run("session-1", "turn-native-1", "user-root-1", "error", 100, 200, 0, "unknown_error", "UNKNOWN_ERROR");
+    db.prepare("insert into model_usage values (?, ?, ?, ?, ?)").run("session-1", "turn-native-1", 200, "rate_limited", "Weekly/Monthly Limit Exhausted");
+    db.prepare("insert into message values (?, ?)").run("session-1", JSON.stringify({ role: "user", semantics: { origin: "real_user", kind: "user_prompt" } }));
+    db.close();
+    class QuotaClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSession") return quotaSnapshot;
+        if (channel === "zcode-agent" && method === "readSessionEvents") return { events: [] };
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new QuotaClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client, localDbPath: path });
+    const events: Array<{ kind: string; data?: Record<string, unknown> }> = [];
+    const unsubscribe = adapter.subscribeEvents((event) => events.push(event));
+    await adapter.init();
+    try {
+      expect((await adapter.getSession("session-1"))?.meta?.nativeLastTurn).toMatchObject({
+        turnId: "turn-native-1", inputId: "native-input-1", status: "error",
+        quotaFailure: {
+          classification: "quota_exhausted", nativeTurnId: "turn-native-1", inputId: "native-input-1",
+          providerId: "omniroute", modelId: "minimax/MiniMax-M3.1-Flash", status: "error",
+        },
+      });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const listener = client.listeners.find((entry) => entry.event === "onDynamicSessionEvent");
+      expect(listener).toBeDefined();
+      listener!.handler({ type: "session.event", event: {
+        type: "turn.failed", eventId: "native-failed-event", sessionId: "session-1",
+        turnId: "turn-native-1", seq: 7, timestamp: 300,
+        payload: { inputId: "native-input-1", error: { type: "rate_limited", status: 400, message: "Weekly/Monthly Limit Exhausted" } },
+      } });
+      await Promise.all([...(adapter as unknown as { sessionEventTasks: Set<Promise<void>> }).sessionEventTasks]);
+      expect(events.find((event) => event.kind === "turn.failed")?.data).toMatchObject({
+        turnId: "turn-native-1", inputId: "native-input-1",
+        quotaFailure: { classification: "quota_exhausted", providerId: "omniroute", modelId: "minimax/MiniMax-M3.1-Flash" },
+      });
+    } finally { unsubscribe(); await adapter.dispose(); await rm(root, { recursive: true, force: true }); }
+  });
+});
+
+it("lists OmniRoute models from the native catalog and reads back a confirmed model switch", async () => {
+  class OmniRouteModelClient extends FakeClient {
+    currentModel = { providerId: "omniroute", modelId: "openrouter/old-model" };
+    override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+      if (channel === "zcode-agent" && method === "readSession") {
+        this.calls.push({ channel, method, args });
+        return {
+          ...snapshot,
+          session: { ...session, status: "idle", model: this.currentModel },
+          settings: { model: { current: this.currentModel, available: [{ ref: this.currentModel }] } },
+          runtime: { ...snapshot.runtime, activeTurnId: undefined, activeTurnKind: undefined },
+        };
+      }
+      if (channel === "model-selection" && method === "getView") {
+        this.calls.push({ channel, method, args });
+        return { providers: [{ providerId: "omniroute", models: [{ modelId: "minimax/MiniMax-M3.1-Flash", config: { enabled: true } }] }] };
+      }
+      if (channel === "zcode-agent" && method === "setModel") {
+        this.calls.push({ channel, method, args });
+        this.currentModel = (args[0] as { model: typeof this.currentModel }).model;
+        return { ...snapshot, settings: { model: { current: this.currentModel } } };
+      }
+      return super.call(channel, method, args);
+    }
+  }
+  const client = new OmniRouteModelClient();
+  const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+  await adapter.init();
+  try {
+    const fallback = "omniroute/minimax/MiniMax-M3.1-Flash";
+    expect(await adapter.listModels()).toContain(fallback);
+    expect(await adapter.changeModel("session-1", fallback)).toEqual({ ok: true });
+    expect((await adapter.getSession("session-1"))?.model).toBe(fallback);
+    expect(client.calls.find((call) => call.method === "setModel")?.args[0]).toMatchObject({
+      sessionId: "session-1",
+      model: { providerId: "omniroute", modelId: "minimax/MiniMax-M3.1-Flash" },
+    });
+  } finally { await adapter.dispose(); }
+});
 
 describe("native compact admission (focused integration, expected 1s/max 10s)", () => {
   it("reads omitted terminal receipts and counts only real human messages from native history", async () => {

@@ -11,6 +11,7 @@ import {
 import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, HarnessEvent, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SendMessageResult, SetPermissionsOptions, SessionMessagePart, SessionMessageView } from "../types/index.js";
 import { randomUUID } from "node:crypto";
 import { throwIfAborted } from "../abort-utils.js";
+import { terminalQuotaFailure } from "./quota-failure.js";
 
 export { normalizeOpenCodeEvent, openCodeConnectedModels, openCodeMessageParts, openCodeModelCatalogEntries, parseOpenCodeServerCommand, unwrapEnvelope } from "agent-resume-mcp";
 export type { OpenCodeEvent } from "agent-resume-mcp";
@@ -41,6 +42,8 @@ export class OpenCodeAdapter implements HarnessAdapter {
   };
 
   private readonly client: OpenCodeClient;
+  /** Native v2 emits the inbox delivery before execution.started, whose frame has no input ID. */
+  private readonly deliveredInboxBySession = new Map<string, string | null>();
 
   constructor(config: { baseUrl?: string; password?: string; protocol?: "auto" | "v1" | "v2" } = {}) {
     this.client = new OpenCodeClient({
@@ -71,9 +74,41 @@ export class OpenCodeAdapter implements HarnessAdapter {
     const last = (await this.getSessionMessages(id, 1))?.at(-1);
     if (last) {
       const tool = [...last.parts].reverse().find((part) => part.type === "tool_call" || part.type === "tool_result");
-      if (last.model) result.model = last.model;
+      // The session model endpoint is the supported readback for a just-issued
+      // model switch. A historical assistant message can report the previous
+      // model and must not mask that current native setting.
+      if (last.model && !result.model) result.model = last.model;
       result.lastMessage = last.text || (tool ? `Инструмент: ${tool.name || "tool"}` : undefined);
       if (last.timestamp && last.timestamp > result.lastActivity) result.lastActivity = last.timestamp;
+    }
+    const nativeFailure = detail.status === "error" ? await this.client.getTerminalFailureContext(id) : null;
+    if (nativeFailure) {
+      const quotaFailure = terminalQuotaFailure({
+        terminal: true,
+        status: nativeFailure.status,
+        nativeTurnId: nativeFailure.nativeTurnId,
+        inputId: nativeFailure.inputId,
+        providerId: nativeFailure.providerId,
+        modelId: nativeFailure.modelId,
+        errorType: nativeFailure.errorType,
+        errorCode: nativeFailure.errorCode,
+        errorMessage: nativeFailure.errorMessage,
+        statusCode: nativeFailure.statusCode,
+        resetAt: nativeFailure.resetAt,
+      });
+      if (quotaFailure) {
+        const meta = result.meta ?? {};
+        result.meta = {
+          ...meta,
+          nativeLastTurn: {
+            ...((meta.nativeLastTurn && typeof meta.nativeLastTurn === "object") ? meta.nativeLastTurn as Record<string, unknown> : {}),
+            turnId: quotaFailure.nativeTurnId,
+            inputId: quotaFailure.inputId,
+            status: quotaFailure.status,
+            quotaFailure,
+          },
+        };
+      }
     }
     return result;
   }
@@ -201,14 +236,83 @@ export class OpenCodeAdapter implements HarnessAdapter {
   subscribeEvents(onEvent: (event: HarnessEvent) => void): () => void {
     return this.client.subscribe(
       (event) => {
-        const normalized = this.toHarnessEvent(event);
-        if (normalized) onEvent(normalized);
+        const correlated = this.correlateInboxStart(event);
+        void this.toQuotaAwareHarnessEvent(correlated).then((normalized) => {
+          if (normalized) onEvent(normalized);
+        }).catch(() => {
+          const normalized = this.toHarnessEvent(event);
+          if (normalized) onEvent(normalized);
+        });
       },
       {
         onConnected: () => onEvent({ kind: "process.connected", harness: "opencode", data: { transport: "sse" } }),
         onDisconnected: (error) => onEvent({ kind: "process.disconnected", harness: "opencode", data: { transport: "sse", ...(error ? { error } : {}) } }),
       },
     );
+  }
+
+  /** Carry only the exact native Inbox.User ID across the adjacent delivery/start lifecycle. */
+  private correlateInboxStart(event: OpenCodeEvent): OpenCodeEvent {
+    const sessionId = event.sessionId;
+    if (!sessionId) return event;
+    const data = event.data ?? {};
+    if (event.nativeType === "session.inbox.delivered") {
+      const inboxId = typeof data.nativeInputMessageId === "string" ? data.nativeInputMessageId : undefined;
+      const previous = this.deliveredInboxBySession.get(sessionId);
+      this.deliveredInboxBySession.set(sessionId, inboxId && previous === undefined ? inboxId : null);
+      return event;
+    }
+    if (event.kind === "turn.started") {
+      const inboxId = this.deliveredInboxBySession.get(sessionId);
+      this.deliveredInboxBySession.delete(sessionId);
+      if (typeof data.inputId === "string" || !inboxId) return event;
+      return { ...event, data: { ...data, inputId: inboxId, nativeInputMessageId: inboxId } };
+    }
+    if (event.kind === "turn.completed" || event.kind === "turn.failed") {
+      this.deliveredInboxBySession.delete(sessionId);
+    }
+    return event;
+  }
+
+  private async toQuotaAwareHarnessEvent(event: OpenCodeEvent): Promise<HarnessEvent | null> {
+    const normalized = this.toHarnessEvent(event);
+    if (!normalized || normalized.kind !== "turn.failed" || !normalized.sessionId) return normalized;
+    const data = normalized.data ?? {};
+    const terminalEventId = typeof data.nativeEventId === "string" ? data.nativeEventId : undefined;
+    if (!terminalEventId) return normalized;
+    const observedTurnId = typeof data.turnId === "string" ? data.turnId : undefined;
+    const observedInputId = typeof data.inputId === "string" ? data.inputId : undefined;
+    const nativeFailure = await this.client.getTerminalFailureContext(
+      normalized.sessionId,
+      terminalEventId,
+      observedTurnId,
+      observedInputId,
+    );
+    if (!nativeFailure) return normalized;
+    const quotaFailure = terminalQuotaFailure({
+      terminal: true,
+      status: nativeFailure.status,
+      nativeTurnId: nativeFailure.nativeTurnId,
+      inputId: nativeFailure.inputId,
+      providerId: nativeFailure.providerId,
+      modelId: nativeFailure.modelId,
+      errorType: typeof data.nativeErrorType === "string" ? data.nativeErrorType : nativeFailure.errorType,
+      errorCode: typeof data.nativeErrorCode === "string" ? data.nativeErrorCode : nativeFailure.errorCode,
+      errorMessage: typeof data.nativeErrorMessage === "string" ? data.nativeErrorMessage : nativeFailure.errorMessage,
+      statusCode: typeof data.nativeErrorStatus === "number" ? data.nativeErrorStatus : nativeFailure.statusCode,
+      resetAt: data.nativeErrorResetAt ?? nativeFailure.resetAt,
+    });
+    if (!quotaFailure) return normalized;
+    return {
+      ...normalized,
+      status: "error",
+      data: {
+        ...data,
+        turnId: quotaFailure.nativeTurnId,
+        inputId: quotaFailure.inputId,
+        quotaFailure,
+      },
+    };
   }
 
   async forkSession(id: string, message?: string): Promise<ControlResult> {

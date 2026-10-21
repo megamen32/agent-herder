@@ -14,6 +14,7 @@ function v2Fixture(state: {
   active: Record<string, any>;
   permissions: any[];
   calls: Call[];
+  models?: any[];
 }) {
   const html = (response: any, path: string) => {
     response.setHeader("content-type", "text/html");
@@ -37,7 +38,7 @@ function v2Fixture(state: {
 
       if (url.pathname === "/api/config") return json(response, { data: [{ type: "document", path: "/tmp/project/opencode.json" }] });
       if (url.pathname === "/api/model") {
-        return json(response, { location: { directory: "/tmp/project" }, data: [
+        return json(response, { location: { directory: "/tmp/project" }, data: state.models ?? [
           { id: "gpt-4.1", modelID: "gpt-4.1", providerID: "openrouter" },
           { id: "flash", modelID: "flash", providerID: "minimax-coding-plan" },
         ] });
@@ -87,8 +88,8 @@ function v2Fixture(state: {
         }
         if (rest === "prompt" && request.method === "POST") {
           const parsed = JSON.parse(body || "{}");
-          const inbox = { id: `msg_${parsed.delivery}`, sessionID: id, type: "user", payload: { text: parsed.text }, delivery: parsed.delivery };
-          session.messages = [...(session.messages ?? []), { id: `msg_user_${(session.messages ?? []).length}`, type: "user", text: parsed.text }];
+          const inbox = { id: `msg_${parsed.delivery}`, sessionID: id, type: "user", payload: { text: parsed.text, metadata: parsed.metadata }, delivery: parsed.delivery };
+          session.messages = [...(session.messages ?? []), { id: inbox.id, type: "user", metadata: parsed.metadata, text: parsed.text }];
           return json(response, { data: inbox });
         }
         if (rest === "interrupt") return json(response, { data: { interrupted: true } });
@@ -97,7 +98,12 @@ function v2Fixture(state: {
           state.sessions[forked.id] = forked;
           return json(response, { data: forked });
         }
-        if (rest === "model" && request.method === "POST") return json(response, undefined) ?? void 0, response.statusCode = 204, void response.end();
+        if (rest === "model" && request.method === "POST") {
+          const parsed = JSON.parse(body || "{}");
+          session.model = parsed.model;
+          response.statusCode = 204;
+          return response.end();
+        }
         if (rest === "wait") { response.statusCode = 204; return response.end(); }
         if (rest === "permission") {
           const reply = rest === "permission" && url.pathname.endsWith("/reply");
@@ -177,6 +183,29 @@ it("detects the v2 protocol and never treats the SPA shell as JSON", async () =>
   }
 });
 
+it("returns the exact native inbox input id and carries the stable Herder input id as metadata", async () => {
+  const state = sessionFixture();
+  const server = v2Fixture(state);
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    await adapter.init();
+    const sent = await adapter.sendMessage("ses_running", {
+      message: "reply OK",
+      queue: true,
+      inputId: "quota-recovery-input-123",
+    });
+    expect(sent).toMatchObject({ ok: true, admitted: true, nativeInputMessageId: "msg_queue" });
+    const call = state.calls.find((entry) => entry.method === "POST" && entry.path === "/api/session/ses_running/prompt")!;
+    expect(JSON.parse(call.body!)).toMatchObject({
+      text: "reply OK",
+      delivery: "queue",
+      metadata: { agentHerderInputId: "quota-recovery-input-123" },
+    });
+  } finally {
+    server.close();
+  }
+});
+
 it("reads v2 permission requests as pending session input", async () => {
   const state = sessionFixture();
   state.active = { ses_running: { type: "running" } };
@@ -211,6 +240,31 @@ it("creates v2 sessions with a native location and admits queued and steering pr
     expect(await adapter.sendMessage("ses_idle", { message: "steer me" })).toMatchObject({ ok: true, admitted: true });
     const prompts = state.calls.filter((call) => call.path === "/api/session/ses_idle/prompt");
     expect(prompts.map((call) => JSON.parse(call.body!).delivery)).toEqual(["queue", "steer"]);
+  } finally {
+    server.close();
+  }
+});
+
+it("reads OmniRoute models from the native catalog and confirms a session model switch", async () => {
+  const state = sessionFixture();
+  state.models = [
+    { id: "glm", modelID: "glm/MiniMax-M3.1-Flash", providerID: "omniroute" },
+  ];
+  state.sessions.ses_idle.model = { providerID: "openrouter", id: "old-model" };
+  state.sessions.ses_idle.messages = [
+    { id: "old-assistant", role: "assistant", type: "assistant", model: { providerID: "openrouter", id: "old-model" }, content: [{ type: "text", text: "previous run" }] },
+  ];
+  const server = v2Fixture(state);
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    await adapter.init();
+    const fallback = "omniroute/glm/MiniMax-M3.1-Flash";
+    expect(await adapter.listModels()).toEqual([fallback]);
+    expect(await adapter.changeModel("ses_idle", fallback)).toEqual({ ok: true });
+    const session = await adapter.getSession("ses_idle");
+    expect(session?.model).toBe(fallback);
+    const call = state.calls.find((entry) => entry.path === "/api/session/ses_idle/model" && entry.method === "POST");
+    expect(JSON.parse(call!.body!)).toEqual({ model: { providerID: "omniroute", id: "glm/MiniMax-M3.1-Flash" } });
   } finally {
     server.close();
   }
@@ -388,9 +442,187 @@ it("normalizes native v2 event frames", () => {
   expect(started).toMatchObject({ kind: "turn.started", sessionId: "ses_1", nativeType: "session.execution.started" });
   expect(started.data).toMatchObject({ nativeEventId: "evt_2" });
   expect(normalizeOpenCodeEvent({ type: "provider.updated", data: {} })?.kind).toBe("unknown");
+  const failed = normalizeOpenCodeEvent({
+    id: "evt_failed",
+    type: "session.execution.failed",
+    data: {
+      sessionID: "ses_1",
+      turnId: "turn_native_1",
+      inputId: "input_native_1",
+      error: {
+        type: "QuotaExceeded",
+        code: "quota_exhausted",
+        status: 400,
+        message: "Weekly/Monthly Limit Exhausted; Authorization: Bearer sk-abcdefghijklmnop",
+      },
+    },
+  })!;
+  expect(failed.data).toMatchObject({
+    nativeEventId: "evt_failed",
+    turnId: "turn_native_1",
+    inputId: "input_native_1",
+    nativeErrorType: "QuotaExceeded",
+    nativeErrorCode: "quota_exhausted",
+    nativeErrorStatus: 400,
+  });
+  expect(failed.data?.nativeErrorMessage).toContain("Weekly/Monthly Limit Exhausted");
+  expect(JSON.stringify(failed)).not.toContain("sk-abcdefghijklmnop");
   // Legacy frames keep working unchanged.
-  expect(normalizeOpenCodeEvent({ type: "message.updated", properties: { info: { sessionID: "ses_2", id: "msg_2" } } }))
-    .toMatchObject({ kind: "message.updated", sessionId: "ses_2", messageId: "msg_2" });
+  expect(normalizeOpenCodeEvent({ type: "message.updated", properties: { info: {
+    sessionID: "ses_2", id: "msg_2", parentID: "msg_user_2", role: "assistant",
+    providerID: "omniroute", modelID: "minimax/MiniMax-M3.1-Flash",
+    metadata: { agentHerderInputId: "input_2" },
+  } } })).toMatchObject({
+    kind: "message.updated", sessionId: "ses_2", messageId: "msg_2",
+    data: {
+      nativeMessageId: "msg_2", nativeMessageRole: "assistant",
+      nativeParentMessageId: "msg_user_2", nativeProviderId: "omniroute",
+      nativeModelId: "minimax/MiniMax-M3.1-Flash", inputId: "input_2",
+    },
+  });
+});
+
+it("maps an exact delivered inbox ID onto the following native started event without inventing a turn ID", async () => {
+  const adapter = new OpenCodeAdapter({ protocol: "v2" });
+  const correlate = (adapter as unknown as { correlateInboxStart: (event: ReturnType<typeof normalizeOpenCodeEvent>) => ReturnType<typeof normalizeOpenCodeEvent> })
+    .correlateInboxStart.bind(adapter);
+  const delivered = normalizeOpenCodeEvent({ type: "session.inbox.delivered", data: { sessionID: "ses_1", inboxID: "msg_exact_1" } })!;
+  const started = normalizeOpenCodeEvent({ type: "session.execution.started", data: { sessionID: "ses_1" } })!;
+  correlate(delivered);
+  expect(correlate(started)?.data).toMatchObject({ inputId: "msg_exact_1", nativeInputMessageId: "msg_exact_1" });
+  expect(correlate(started)?.data).not.toHaveProperty("turnId");
+});
+
+it("fails closed when multiple native inbox deliveries make the following start ambiguous", () => {
+  const adapter = new OpenCodeAdapter({ protocol: "v2" });
+  const correlate = (adapter as unknown as { correlateInboxStart: (event: ReturnType<typeof normalizeOpenCodeEvent>) => ReturnType<typeof normalizeOpenCodeEvent> })
+    .correlateInboxStart.bind(adapter);
+  correlate(normalizeOpenCodeEvent({ type: "session.inbox.delivered", data: { sessionID: "ses_1", inboxID: "msg_1" } })!);
+  correlate(normalizeOpenCodeEvent({ type: "session.inbox.delivered", data: { sessionID: "ses_1", inboxID: "msg_2" } })!);
+  const started = normalizeOpenCodeEvent({ type: "session.execution.started", data: { sessionID: "ses_1" } })!;
+  expect(correlate(started)?.data).not.toHaveProperty("inputId");
+});
+
+it("correlates an exact terminal event to the native root input and persists the same quota proof on getSession", async () => {
+  const state = sessionFixture();
+  state.sessions.ses_failed = {
+    id: "ses_failed",
+    title: "Failed quota session",
+    location: { directory: "/tmp/project" },
+    outcome: "failed",
+    time: { created: 1_700_000_000_000, updated: 1_700_000_090_000 },
+    messages: [
+      { info: { id: "user_native_1", role: "user", sessionID: "ses_failed", metadata: { agentHerderInputId: "input_native_1" } }, parts: [{ type: "text", text: "resume controlled task" }] },
+      {
+        info: {
+          id: "assistant_native_1", parentID: "user_native_1", role: "assistant", sessionID: "ses_failed",
+          providerID: "omniroute", modelID: "minimax/MiniMax-M3.1-Flash",
+          error: { type: "QuotaExceeded", code: "quota_exhausted", status: 400, message: "Weekly/Monthly Limit Exhausted" },
+        },
+        finish: "error", parts: [],
+      },
+      {
+        id: "evt_native_failed_1", turnId: "turn_native_1", type: "idle", outcome: "failed",
+        error: { type: "QuotaExceeded", code: "quota_exhausted", status: 400, message: "Weekly/Monthly Limit Exhausted" },
+      },
+    ],
+  };
+  state.active.ses_failed = { type: "idle" };
+  const server = v2Fixture(state);
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    await adapter.init();
+    const session = await adapter.getSession("ses_failed");
+    expect(session?.meta?.nativeLastTurn).toMatchObject({
+      turnId: "turn_native_1",
+      inputId: "input_native_1",
+      status: "failed",
+      quotaFailure: {
+        classification: "quota_exhausted",
+        nativeTurnId: "turn_native_1",
+        inputId: "input_native_1",
+        providerId: "omniroute",
+        modelId: "minimax/MiniMax-M3.1-Flash",
+        status: "failed",
+      },
+    });
+    state.sessions.ses_no_turn_id = {
+      ...state.sessions.ses_failed,
+      id: "ses_no_turn_id",
+      messages: state.sessions.ses_failed.messages.map((message: any) =>
+        message.type === "idle" ? { ...message, id: "evt_without_turn_id", turnId: undefined }
+          : message.info?.id === "assistant_native_1" ? { ...message, info: { ...message.info, turnId: undefined } } : message),
+    };
+    state.active.ses_no_turn_id = { type: "idle" };
+    expect((await adapter.getSession("ses_no_turn_id"))?.meta?.nativeLastTurn?.quotaFailure).toMatchObject({
+      nativeTurnId: "assistant_native_1",
+      inputId: "input_native_1",
+    });
+    state.sessions.ses_missing_parent = {
+      ...state.sessions.ses_no_turn_id,
+      id: "ses_missing_parent",
+      messages: state.sessions.ses_no_turn_id.messages.map((message: any) =>
+        message.info?.id === "assistant_native_1" ? { ...message, info: { ...message.info, parentID: undefined } } : message),
+    };
+    state.active.ses_missing_parent = { type: "idle" };
+    expect((await adapter.getSession("ses_missing_parent"))?.meta?.nativeLastTurn?.quotaFailure).toBeUndefined();
+
+    const event = normalizeOpenCodeEvent({
+      id: "evt_native_failed_1",
+      type: "session.execution.failed",
+      data: { sessionID: "ses_failed", error: { type: "QuotaExceeded", code: "quota_exhausted", status: 400, message: "Weekly/Monthly Limit Exhausted" } },
+    })!;
+    const normalized = await (adapter as unknown as { toQuotaAwareHarnessEvent(event: unknown): Promise<any> }).toQuotaAwareHarnessEvent(event);
+    expect(normalized?.data).toMatchObject({
+      turnId: "turn_native_1",
+      inputId: "input_native_1",
+      quotaFailure: { classification: "quota_exhausted", providerId: "omniroute", modelId: "minimax/MiniMax-M3.1-Flash" },
+    });
+
+    const conflict = normalizeOpenCodeEvent({
+      id: "evt_native_failed_1", type: "session.execution.failed",
+      data: { sessionID: "ses_failed", turnId: "other-turn", error: { type: "QuotaExceeded", status: 400, message: "Weekly/Monthly Limit Exhausted" } },
+    })!;
+    expect((await (adapter as unknown as { toQuotaAwareHarnessEvent(event: unknown): Promise<any> }).toQuotaAwareHarnessEvent(conflict))?.data?.quotaFailure).toBeUndefined();
+    state.sessions.ses_failed.messages.push({ id: "new-user-after-failure", type: "user", role: "user", text: "new task" });
+    const afterNewInput = await adapter.getSession("ses_failed");
+    expect(afterNewInput?.meta?.nativeLastTurn?.quotaFailure).toBeUndefined();
+  } finally {
+    server.close();
+  }
+});
+
+it("projects metadata proof only when both native message IDs and parent link match fresh terminal records", async () => {
+  const state = sessionFixture();
+  state.sessions.ses_proof = {
+    id: "ses_proof", title: "Metadata proof", location: { directory: "/tmp/project" }, outcome: "failed",
+    metadata: { agentHerder: { quotaFailure: {
+      version: 1, status: "failed", inputId: "stable_input", userMessageId: "user_exact",
+      parentMessageId: "user_exact", assistantMessageId: "assistant_exact", nativeTurnId: "assistant_exact",
+      providerId: "omniroute", modelId: "minimax/MiniMax-M3.1-Flash",
+      errorCode: "quota_exhausted", errorMessage: "Weekly limit exhausted", statusCode: 429,
+    } } },
+    messages: [
+      { id: "user_exact", role: "user" },
+      { id: "assistant_exact", role: "assistant", finish: "error" },
+      { id: "status_exact", type: "idle", outcome: "failed" },
+    ],
+  };
+  state.active.ses_proof = { type: "idle" };
+  const server = v2Fixture(state);
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    await adapter.init();
+    const session = await adapter.getSession("ses_proof");
+    expect(session?.meta?.nativeLastTurn).toMatchObject({
+      turnId: "assistant_exact", inputId: "stable_input", status: "failed",
+      quotaFailure: { classification: "quota_exhausted", nativeTurnId: "assistant_exact", inputId: "stable_input" },
+    });
+    state.sessions.ses_proof.metadata.agentHerder.quotaFailure.parentMessageId = "different_user";
+    expect((await adapter.getSession("ses_proof"))?.meta?.nativeLastTurn?.quotaFailure).toBeUndefined();
+  } finally {
+    server.close();
+  }
 });
 
 it("the adapter adds Herder's orchestration shape on top of the core event", () => {
