@@ -673,7 +673,7 @@ A NoticePlace consumer that launches work for a project reads
 project is configured there:
 
 ```json
-{ "kind": "launch", "harness": "opencode", "model": "minimax-coding-plan/MiniMax-M3.1-Flash", "mode": "create" }
+{ "kind": "launch", "harness": "opencode", "model": "omniroute/minimax-combo-m3.1", "mode": "create" }
 ```
 
 Documented presets (`PROJECT_ROUTE_PRESETS`, applied only when an operator saves
@@ -692,7 +692,7 @@ declared alias is never bound to a route, and no other service is mapped without
 a confirmed match.
 
 `kind: "unconfigured"` means the project keeps the default incident runtime
-(OpenCode with `minimax-coding-plan/MiniMax-M3.1-Flash`); `kind:
+(OpenCode with `omniroute/minimax-combo-m3.1`); `kind:
 "exhausted"` with reason `accepted` or `admission_unknown` means an executor
 already exists or may exist and no fallback is allowed.
 

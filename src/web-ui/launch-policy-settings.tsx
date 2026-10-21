@@ -619,22 +619,22 @@ export function LaunchPolicySettings({ onOpenProjects }: { onOpenProjects?: () =
         <label className="launch-policy-field"><span>Среда локального маршрута Herder</span>
           <select aria-label="Среда локального маршрута Herder" value={policy.incidentExecution?.runtime ?? ""} onChange={() => {
             draft.edit({ ...policy, incidentExecution: { ...INCIDENT_EXECUTION } }, "incidentExecution");
-          }}><option value="" disabled>Выберите среду</option><option value="opencode">OpenCode · MiniMax по подписке</option></select>
+          }}><option value="" disabled>Выберите среду</option><option value="opencode">OpenCode · MiniMax через OmniRoute</option></select>
         </label>
-        <label className="launch-policy-field"><span>Модель локального маршрута Herder · MiniMax по подписке</span>
+        <label className="launch-policy-field"><span>Модель локального маршрута Herder · MiniMax M3.1 через OmniRoute</span>
           <select aria-label="Модель локального маршрута Herder" value={policy.incidentExecution ? `${policy.incidentExecution.provider}/${policy.incidentExecution.model}` : ""}
             onChange={() => { draft.edit({ ...policy, incidentExecution: { ...INCIDENT_EXECUTION } }, "incidentExecution"); }}>
             <option value="" disabled>Выберите доступную модель</option>
-            <option value="minimax-coding-plan/MiniMax-M3.1-Flash" disabled={!(modelOptions.opencode ?? []).includes("minimax-coding-plan/MiniMax-M3.1-Flash")}>
-              {`MiniMax-M3.1-Flash · MiniMax по подписке${(modelOptions.opencode ?? []).includes("minimax-coding-plan/MiniMax-M3.1-Flash") ? "" : " · доступность не подтверждена"}`}
+            <option value="omniroute/minimax-combo-m3.1" disabled={!(modelOptions.opencode ?? []).includes("omniroute/minimax-combo-m3.1")}>
+              {`MiniMax M3.1 Flash · OmniRoute${(modelOptions.opencode ?? []).includes("omniroute/minimax-combo-m3.1") ? "" : " · доступность не подтверждена"}`}
             </option>
           </select>
         </label>
-        <p className="settings-help" role="status">Модель: MiniMax-M3.1-Flash · {(modelOptions.opencode ?? []).includes("minimax-coding-plan/MiniMax-M3.1-Flash") ? "есть в списке OpenCode" : "доступность не подтверждена"}.</p>
-        <small>Провайдер: minimax-coding-plan. При отказе запуск сохраняет причину и не меняет провайдера.</small>
+        <p className="settings-help" role="status">Модель: MiniMax M3.1 Flash · OmniRoute · {(modelOptions.opencode ?? []).includes("omniroute/minimax-combo-m3.1") ? "есть в списке OpenCode" : "доступность не подтверждена"}.</p>
+        <small>Провайдер: omniroute. При отказе запуск сохраняет причину и не меняет провайдера.</small>
         {!policy.incidentExecution && <p role="status">Маршрут инцидентов ещё не сохранён.</p>}
-        {policy.incidentExecution && !(modelOptions.opencode ?? []).includes("minimax-coding-plan/MiniMax-M3.1-Flash") &&
-          <p role="alert">Подписочная модель пока не подтверждена OpenCode. Запуск будет отклонён без смены провайдера.</p>}
+        {policy.incidentExecution && !(modelOptions.opencode ?? []).includes("omniroute/minimax-combo-m3.1") &&
+          <p role="alert">Маршрут OmniRoute к MiniMax M3.1 пока не подтверждён OpenCode. Запуск будет отклонён без смены провайдера.</p>}
       </fieldset>
       </details>
       <fieldset className="settings-group" disabled={saving || Boolean(loadError)}>
