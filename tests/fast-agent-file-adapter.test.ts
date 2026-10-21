@@ -167,7 +167,11 @@ describe("Fast Agent persisted observer", () => {
     await writeFile(bin, `#!/bin/sh\nprintf '%s\n' "$@" > '${argsPath}'\nprintf '%s\n%s\n%s' "$ANTHROPIC_API_KEY" "$ANTHROPIC_AUTH_TOKEN" "$ANTHROPIC_BASE_URL" > '${envPath}'\n`);
     await chmod(bin, 0o755);
     vi.stubEnv("FAST_AGENT_MINIMAX_CONFIG", config);
-    vi.stubEnv("MINIMAX_API_KEY", "test-private-token");
+    // The direct MiniMax route goes through the OmniRoute gateway: its token
+    // and its base URL replace the direct MiniMax credentials.
+    vi.stubEnv("OMNIROUTE_API_KEY", "test-private-token");
+    vi.stubEnv("AGENT_HERDER_OMNIROUTE_BASE_URL", "http://127.0.0.1:20128");
+    vi.stubEnv("MINIMAX_API_KEY", "unrelated-minimax-token");
     vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "unrelated-payg-token");
     vi.stubEnv("ANTHROPIC_BASE_URL", "https://unrelated.example");
     const adapter = new FastAgentFileAdapter({ home, cwd: home, fastAgentBin: bin });
@@ -176,9 +180,11 @@ describe("Fast Agent persisted observer", () => {
     expect(launch.mock.calls[0][2].resourceProperties).toEqual(["CPUQuota=100%", "MemoryHigh=384M", "MemoryMax=768M", "MemorySwapMax=0", "TasksMax=64", "IOWeight=25"]);
 
     const args = (await readFile(argsPath, "utf8")).split("\n");
-    expect(args).toEqual(expect.arrayContaining(["--name", "herder_minimax", "--config-path", config, "--agent-cards", "--model", "anthropic.MiniMax-M3.1-Flash", "--shell", "--timeout", "300"]));
+    expect(args).toEqual(expect.arrayContaining(["--name", "herder_minimax", "--config-path", config, "--agent-cards", "--model", "anthropic.minimax/MiniMax-M3.1-Flash", "--shell", "--timeout", "300"]));
     expect(args.join(" ")).not.toContain("test-private-token");
-    expect(await readFile(envPath, "utf8")).toBe("test-private-token\n\nhttps://api.minimax.io/anthropic");
+    // The child process gets the OmniRoute token, an empty auth token and the
+    // OmniRoute base URL instead of the direct MiniMax ones.
+    expect(await readFile(envPath, "utf8")).toBe("test-private-token\n\nhttp://127.0.0.1:20128");
   });
 
 
