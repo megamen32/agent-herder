@@ -573,6 +573,10 @@ export class OpenCodeClient implements HarnessClient {
    * continuation. This deliberately does not classify quota or depend on the
    * Agent Herder metadata plugin: the stable assistant message identity,
    * native model/provider and terminal completion timestamp are sufficient.
+   * The live Session.Info outcome and newest native assistant are read fresh.
+   * Status-only frames added by selecting a fallback model do not replace the
+   * failed assistant identity or its original model. A later conversation turn
+   * or conflicting explicit terminal outcome still invalidates the snapshot.
    * A status-frame ID is never promoted to a turn ID.
    */
   async getTerminalTurnContext(id: string): Promise<OpenCodeTerminalTurnContext | null> {
@@ -596,30 +600,34 @@ export class OpenCodeClient implements HarnessClient {
       const statusFrames = messages
         .map((message, index) => ({ message, index }))
         .filter(({ message }) => isOpenCodeTurnStatusFrame(message));
-      const latest = statusFrames.at(-1);
-      if (!latest || !latest.message.id || latest.message.outcome !== "failed") return null;
-      if (messages.slice(latest.index + 1).some((message) =>
+      const failedStatus = statusFrames
+        .filter(({ message }) => message.outcome === "failed")
+        .at(-1);
+      const latestExplicitOutcome = statusFrames
+        .filter(({ message }) => typeof message.outcome === "string")
+        .at(-1);
+      if (!failedStatus || latestExplicitOutcome?.message.outcome !== "failed") return null;
+      if (messages.slice(failedStatus.index + 1).some((message) =>
         openCodeMessageRole(message) === "user" || openCodeMessageRole(message) === "assistant")) return null;
 
-      // The latest native conversation message before the exact failed status
-      // must be an assistant. Its native ID, not its body or timestamp, is the
-      // fallback stable turn identity when OpenCode omits an explicit turnId.
+      // Keep identity on the exact last native assistant record. Do not link it
+      // to a status-frame ID, neighboring input, or the session's current model.
       const lastActor = messages
-        .map((message, index) => ({ message, index }))
-        .filter(({ message, index }) => index < latest.index
-          && ["user", "assistant"].includes(openCodeMessageRole(message) || ""))
+        .map((message) => ({ message }))
+        .filter(({ message }) => ["user", "assistant"].includes(openCodeMessageRole(message) || ""))
         .at(-1);
       if (!lastActor || openCodeMessageRole(lastActor.message) !== "assistant") return null;
       const assistant = lastActor.message;
       const assistantError = assistant.error ?? assistant.info?.error;
-      if (!assistantError && assistant.finish !== "error" && !latest.message.error) return null;
+      const failedStatusError = failedStatus.message.error ?? failedStatus.message.info?.error;
+      if (!assistantError && assistant.finish !== "error" && !failedStatusError) return null;
       const assistantMessageId = openCodeMessageId(assistant);
       if (!assistantMessageId || messages.filter((message) => openCodeMessageId(message) === assistantMessageId).length !== 1) return null;
 
       const assistantMetadata = assistant.metadata ?? assistant.info?.metadata;
-      const statusMetadata = latest.message.metadata ?? latest.message.info?.metadata;
+      const statusMetadata = failedStatus.message.metadata ?? failedStatus.message.info?.metadata;
       const assistantTurnId = stringValue(assistant.turnId, assistant.info?.turnId, assistantMetadata?.turnId);
-      const statusTurnId = stringValue(latest.message.turnId, latest.message.info?.turnId, statusMetadata?.turnId);
+      const statusTurnId = stringValue(failedStatus.message.turnId, failedStatus.message.info?.turnId, statusMetadata?.turnId);
       if (assistantTurnId && statusTurnId && assistantTurnId !== statusTurnId) return null;
       const turnId = assistantTurnId || statusTurnId || assistantMessageId;
 
@@ -627,11 +635,8 @@ export class OpenCodeClient implements HarnessClient {
       const modelId = stringValue(assistant.model?.id, assistant.info?.modelID);
       if (!providerId || !modelId) return null;
       const assistantCompletedAt = assistant.time?.completed ?? assistant.info?.time?.completed;
-      const terminalCompletedAt = latest.message.time?.created ?? latest.message.info?.time?.created;
       const completedAt = typeof assistantCompletedAt === "number" && Number.isFinite(assistantCompletedAt)
-        ? assistantCompletedAt
-        : typeof terminalCompletedAt === "number" && Number.isFinite(terminalCompletedAt)
-          ? terminalCompletedAt : undefined;
+        ? assistantCompletedAt : undefined;
       if (completedAt === undefined) return null;
 
       return { sessionId: id, status: "failed", turnId, assistantMessageId, providerId, modelId, completedAt };

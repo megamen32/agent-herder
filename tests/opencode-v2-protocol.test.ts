@@ -728,6 +728,75 @@ it("projects exact failed-turn identity for operator continuation without quota 
   }
 });
 
+it("keeps the exact failed native snapshot after a current-model change and status-only idle frame", async () => {
+  const state = sessionFixture();
+  state.sessions.ses_ea3bf238fffe4ezSGA5Ht2iWTX = {
+    id: "ses_ea3bf238fffe4ezSGA5Ht2iWTX",
+    title: "Failed session after fallback model selection",
+    location: { directory: "/tmp/project" },
+    outcome: "failed",
+    model: { providerID: "omniroute", id: "minimax-combo-m3.1" },
+    time: { created: 1_792_549_117_064, updated: 1_792_552_783_256, idle: 1_792_549_118_697 },
+    messages: [
+      {
+        id: "msg_15c40dcca001ueFTuK9EQED9NG", type: "user",
+        info: { id: "msg_15c40dcca001ueFTuK9EQED9NG", role: "user" },
+        time: { created: 1_792_549_117_497 }, parts: [],
+      },
+      {
+        id: "msg_15c40de46001ejIlGoK2JiYJ7c",
+        type: "assistant",
+        info: {
+          id: "msg_15c40de46001ejIlGoK2JiYJ7c", role: "assistant",
+          providerID: "minimax-coding-plan", modelID: "MiniMax-M3.1-Flash",
+          time: { created: 1_792_549_117_771, completed: 1_792_549_118_685 },
+        },
+        // The exact failed idle frame carries the terminal error signal; the
+        // assistant record itself has no error/finish marker in this fixture.
+        parts: [],
+      },
+      {
+        id: "msg_15c40e2e9001HgWtdyb2qH9TXS", type: "idle", outcome: "failed",
+        error: { type: "provider.quota", status: 429 }, time: { created: 1_792_549_118_697 },
+      },
+      // This is the exact later native row from the live readback: model
+      // selection appends a nonterminal status frame after the failure.
+      {
+        id: "msg_15c78cd98001PFBveo704dY7gO", type: "model-switched",
+        model: { providerID: "omniroute", id: "minimax-combo-m3.1", variant: "default" },
+        time: { created: 1_792_552_783_256 },
+      },
+    ],
+  };
+  state.active.ses_ea3bf238fffe4ezSGA5Ht2iWTX = { type: "idle" };
+  const server = v2Fixture(state);
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    await adapter.init();
+    const session = await adapter.getSession("ses_ea3bf238fffe4ezSGA5Ht2iWTX");
+    expect(session?.status).toBe("error");
+    expect(session?.model).toBe("omniroute/minimax-combo-m3.1");
+    expect(session?.meta?.nativeLastTurn).toMatchObject({
+      sessionId: "ses_ea3bf238fffe4ezSGA5Ht2iWTX",
+      turnId: "msg_15c40de46001ejIlGoK2JiYJ7c",
+      assistantMessageId: "msg_15c40de46001ejIlGoK2JiYJ7c",
+      providerId: "minimax-coding-plan",
+      modelId: "MiniMax-M3.1-Flash",
+      status: "failed",
+      completedAt: 1_792_549_118_685,
+    });
+    state.sessions.ses_ea3bf238fffe4ezSGA5Ht2iWTX.messages.push({ id: "user_after_original_failure", type: "user", role: "user", parts: [] });
+    expect((await adapter.getSession("ses_ea3bf238fffe4ezSGA5Ht2iWTX"))?.meta?.nativeLastTurn).toBeUndefined();
+    state.sessions.ses_ea3bf238fffe4ezSGA5Ht2iWTX.messages.pop();
+    state.sessions.ses_ea3bf238fffe4ezSGA5Ht2iWTX.messages.push({
+      id: "idle_conflicting_outcome", type: "idle", outcome: "succeeded", time: { created: 1_792_552_783_500 },
+    });
+    expect((await adapter.getSession("ses_ea3bf238fffe4ezSGA5Ht2iWTX"))?.meta?.nativeLastTurn).toBeUndefined();
+  } finally {
+    server.close();
+  }
+});
+
 it("projects metadata proof only when both native message IDs and parent link match fresh terminal records", async () => {
   const state = sessionFixture();
   state.sessions.ses_proof = {
