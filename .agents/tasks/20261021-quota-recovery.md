@@ -150,3 +150,58 @@ and authorized runtime promotion.
   or process kill has occurred.
 - Progress since previous recorded checkpoint (01:44 UTC): 5 minutes verified;
   elapsed time before tracked checkpoints remains unknown.
+
+## Updated delivery checkpoint (2026-10-21 02:07 UTC)
+
+- Published reviewed source candidate is `410a591fbc1e516cb0a098fcc4a60ba0a5411d2d`;
+  `origin/main` matches. Adapter source is published at `0d3bb234`, and UI
+  source is included in the core commit after the safe join. This checkout still
+  has unrelated dirty WIP; the source-pinned build receipt records its exact
+  dirty-path list and no clean-tree claim is made.
+- Built from the isolated tracked-source snapshot of that exact published
+  commit, not the mixed checkout. Receipt:
+  `.tmp/remote-workspaces/quota-recovery-410a591fbc1e/build-provenance.json`
+  (SHA-256 `89b035c966cddeb4e892d347cb4326d22ddcb16d249a4d9fc3f437decd93b4de`).
+  It records 238 source/config inputs, exact source hashes, output hashes, and
+  the 34 unrelated dirty paths observed at snapshot time.
+- Runtime overlay is source-pinned and active on server-100, PID 1517601. The
+  first attempted start exposed a missing generated web runtime module after
+  static-overlay; service was stopped, full published `dist/web` modules were
+  restored before static assets, import was verified, and the service now
+  serves schema-v8 settings. Runtime receipt and pre-overlay backups are under
+  `/home/roomhacker/.local/state/agent-herder/release-backups/quota-recovery-410a591/`.
+  Verified hashes include `dist/index.js` `3665b703…592154b`,
+  `dist/web/server.js` `5c066357…afba00`,
+  `dist/autopilot/unfinished-session-launcher.js` `3dba7d48…d5ca7`,
+  `dist/adapters/opencode.js` `a10c4cf4…122498`, and
+  `dist/adapters/zcode.js` `433cc9a7…d1fe7`.
+- The published static UI is installed at
+  `/var/www/agent-herder-ui/410a591fbc1e516cb0a098fcc4a60ba0a5411d2d`.
+  Its Nginx source pin was committed to ServersAdministration as
+  `48f2577321931a650f122690892260da1b9333f5` and applied via the documented
+  site-scoped transaction. The repository's unrelated divergent checkout
+  prevents its sync timer from fast-forwarding; do not reset/rebase that checkout.
+  Public UI redirects to SSO; controls owns the local browser persistence/status
+  check and this lead has stopped duplicate browser work.
+- Current real consumer state is not yet a quota-recovery PASS. The earlier
+  dedicated OpenCode `OK` reply proves ordinary native response only. Adapter
+  peer has one precise bounded task for a new OpenCode canary: exact terminal
+  quota proof, durable waiting across Herder restart, one fallback continuation,
+  and live provider reply, without exhausting quota or touching old accepted
+  sessions. No proof or trigger has yet been claimed for that new canary.
+- ZCode remains pending user-requested manual cleanup or supported guard
+  diagnosis: socket inode 385415 is not kernel-bound and DCG one-use remains
+  unconsumed. No unlink, process kill, bypass, or ZCode prompt was sent here.
+- Deployment scope verified so far: Agent Herder runtime on server-100 and its
+  public static UI pin. No rollout to other fleet nodes is claimed; no separate
+  Agent Herder runtime instance on another node has been established in this
+  checkpoint. OpenCode's global plugin is absent from the running global plugin
+  directory, and a global OpenCode restart is not safe while unrelated sessions
+  are active.
+- Elapsed since the 01:49 UTC checkpoint: 18 minutes wall time; active time
+  inside that interval is unknown. Completed: source-pinned build/runtime
+  identity, repaired scoped runtime overlay, Nginx site pin/apply, and exact
+  OpenCode canary dispatch. Next 15-minute slice: receive the canary's durable
+  queue/restart/native-reply evidence; record a concrete safe blocker if native
+  terminal proof cannot be produced; then reconcile controls' browser result
+  and ZCode's separately owned socket result without duplicating their work.
