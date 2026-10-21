@@ -255,29 +255,51 @@ and authorized runtime promotion.
   verify the engine-owned reply/receipt. Do not stage a cohort before the
   published runtime contains the adapter contract and exact model mapping.
 - 2026-10-21 03:02 UTC: Addressed Controls' restricted-project blocker in the
-  existing project-launch policy seam. Operator cohort enrollment now fails
-  closed for the TelegramAuto canonical root and aliases, the video_watching
-  root, and any project without a configured route; unrelated configured
-  projects remain eligible. Legacy full-document policy writes preserve an
+  existing project-launch policy seam. Operator cohort enrollment fails closed
+  for TelegramAuto root/aliases, video_watching root, explicit route deny, or
+  a route that excludes OpenCode. Controls reviewed this guard and passed. A
+  later direct user clarification authorizes an exact per-session human cohort
+  enrollment without a project route; the engine still requires the configured
+  global ordered fallback, exact fresh terminal snapshot, HumanStop/admission
+  checks, and the same durable receipt path. Ordinary launches and persistent
+  project routes remain unchanged. Legacy full-document policy writes preserve
   explicit route deny. Focused backend run passed 3 files / 60 tests, and root
-  TypeScript plus `git diff --check` passed. This does not claim resolved-leaf
-  or child admission enforcement for the restricted nine; they remain excluded.
+  TypeScript plus `git diff --check` passed. Restricted nine remain excluded;
+  no resolved-leaf or child admission support is claimed for them.
 - Sent Controls one scoped request to review only this guard and select one
   unrestricted entry from its existing frozen ledger; no rescan or enrollment
   was performed. Asked the adapter owner to publish its exact `nativeLastTurn`
   source delta before building the combined runtime. Both peer replies remain
-  partial; work continues independently. Controls approved the guard diff and
-  returned its first unrestricted ledger candidate, but that session has no
-  configured serving project route/fallback and the reported native snapshot
-  lacks an exact completion/turn receipt, so it was rejected without policy
-  mutation or enrollment. Controls is selecting the next already-route-eligible
-  entry with a fresh exact snapshot. `src/web/server.ts` contains foreign
+  partial; work continues independently. Controls returned its first
+  unrestricted ledger candidate. The live policy has no global OpenCode
+  fallback; the user explicitly authorized a supported ETag-guarded policy
+  PUT for the exact combo route, preserving all other settings. The candidate
+  was not enrolled because it still requires a fresh `nativeLastTurn`
+  projection and terminal identity recheck after deployment. The first ledger
+  candidate remains the first exact-session trial. `src/web/server.ts` contains foreign
   WIP alongside the owned enrollment endpoint and must be published by
   path/hunk, never as a full-file change. The primary checkout has no
   `.agents/TEST_ACCESS.md`; no new test account or external credentials were
   used for the focused local checks.
-- Progress since the 02:52 checkpoint: 10 minutes wall time tracked; active
-  implementation/check time about 7 minutes. Next: finish scoped source review,
-  obtain the exact published adapter input, then publish/build/deploy the
-  combined source pin and enroll only the first unrestricted ledger entry via
-  Herder's API. Elapsed time before checkpoints remains unknown.
+- Progress since the 02:52 checkpoint: 14 minutes wall time tracked; active
+  implementation/check time about 10 minutes. Next: finish the scoped review
+  of no-route human-authorized enrollment, publish/build/deploy the combined
+  source pin, configure only the exact OpenCode combo fallback through the
+  ETag API, then read the first ledger session's current native projection and
+  enroll only that session through Herder. Elapsed time before checkpoints
+  remains unknown.
+- 2026-10-21 03:17 UTC: Published source pin `cd0c3684d47983a4ec02abac3f18bae13d03271d`
+  is on `origin/main`. A source-pinned core runtime overlay was built with
+  provenance SHA256 `b524c2f28389b12fe9a186e98ef12d1c3f20bf2cb120598ee3c2061b51f82995`;
+  six changed modules were overlaid while preserving `dist/index.js`, unrelated
+  runtime modules, and the existing static UI release. The Herder user service
+  restarted successfully (PID 2385028) and policy/session/HumanStop/wait APIs
+  returned HTTP 200. Live `getSession` now exposes the exact candidate's
+  `nativeLastTurn`, but exposed a status mapping mismatch: OpenCode's terminal
+  native failure maps to `AgentSession.status="error"`, while enrollment had
+  required `"idle"`. The owned admission check now permits that `"error"` only
+  when the exact fresh native failed-turn evidence matches; the enrollment
+  regression now uses the real status. Focused launcher tests pass 49/49 and
+  root TypeScript passes. This narrow fix still needs scoped publication and a
+  source-pinned launcher overlay/restart before enrollment. No candidate has
+  been enrolled and no new prompt sent.

@@ -861,7 +861,7 @@ describe("terminal quota recovery", () => {
     try {
       const failedAt = new Date(Date.now() - 30_000).toISOString();
       let current: AgentSession = {
-        ...fixture("idle", "opencode", "operator-session"), model: "zai-coding-plan/glm-5.3-flash",
+        ...fixture("error", "opencode", "operator-session"), model: "zai-coding-plan/glm-5.3-flash",
         meta: { nativeLastTurn: {
           sessionId: "operator-session", turnId: "native-turn-42", assistantMessageId: "assistant-42",
           providerId: "zai-coding-plan", modelId: "glm-5.3-flash", status: "failed", completedAt: failedAt,

@@ -2326,8 +2326,12 @@ export class UnfinishedSessionLauncher {
     if (!adapter?.getSession || !this.options.fallbackModelsForHarness) return ineligible("recovery_runtime_unavailable");
     let session: AgentSession | null;
     try { session = await adapter.getSession(sessionId); } catch { return ineligible("native_snapshot_unavailable"); }
+    // OpenCode maps a terminal native provider failure to AgentSession.status
+    // "error". That state is safe here only with the exact fresh native
+    // failed-turn proof checked immediately below; live/running sessions stay
+    // ineligible.
     if (!session || session.id !== sessionId || session.harness !== "opencode" || normalize(session.cwd) !== normalize(cwd)
-      || session.status !== "idle" || session.needsPermission || isSubagentSession(session)) return ineligible("session_not_idle_root_opencode");
+      || (session.status !== "idle" && session.status !== "error") || session.needsPermission || isSubagentSession(session)) return ineligible("session_not_idle_root_opencode");
     const last = nativeLastTurn(session);
     if (!exactTerminalRecoverySnapshot(session, expected) || last?.status !== "failed" && last?.status !== "error") {
       return ineligible("native_terminal_identity_mismatch");
