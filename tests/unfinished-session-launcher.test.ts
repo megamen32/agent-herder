@@ -6,6 +6,7 @@ import { completionEvidence, createAnthropicCompatibleSessionCompletionJudge, fi
 import { AutopilotPolicyStore } from "../src/autopilot/policy-store.js";
 import { AutopilotSessionStore } from "../src/autopilot/session-store.js";
 import { AutomationLaunchPolicyStore } from "../src/automation-launch-policy.js";
+import { HumanRequestRegistry } from "../src/human-request/registry.js";
 import { getHumanStopStore, HumanStopStore } from "../src/human-stop-store.js";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "../src/types/index.js";
 function fixture(status: AgentSession["status"] = "idle", harness: "codex" | "zcode" = "codex", id = "session-1"): AgentSession {
@@ -833,6 +834,7 @@ describe("terminal quota recovery", () => {
       expect((await store.list())[0]?.quotaRecovery?.state).toBe("waiting");
       await launcher.recoverPending();
       await launcher.recoverPending();
+      expect((await store.list())[0]?.quotaRecovery).toMatchObject({ state: "accepted" });
       expect(sent).toHaveLength(1);
       expect(sent[0]).toMatchObject({ model: "omniroute/anthropic/fallback" });
       expect(sent[0]?.inputId).toMatch(/^herder-quota:/u);
@@ -1043,6 +1045,106 @@ describe("terminal quota recovery", () => {
       });
       expect(result).toMatchObject({ outcome: "ineligible", reason: "native_terminal_identity_mismatch" });
       expect((await settings.getEffective("opencode", current.id, current.cwd)).waitForQuota).toBe(false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("archives an accepted input unchanged and dispatches a distinct operator continuation only from a fresh safe snapshot", async () => {
+    const root = await mkdtemp(join(tmpdir(), "operator-continuation-safe-new-intent-"));
+    try {
+      const session: AgentSession = {
+        ...fixture("error", "opencode", "operator-continuation-session"), model: "omniroute/minimax-combo-m3.1",
+        meta: { nativeLastTurn: { status: "failed", completedAt: new Date(Date.now() - 20_000).toISOString() } },
+      };
+      const oldEvidence = {
+        classification: "operator_cohort" as const, authorizationId: "operator-old-authorization-01",
+        nativeTurnId: "old-turn", assistantMessageId: "old-assistant", providerId: "minimax-code",
+        modelId: "mmcode/MiniMax-M3.1-Flash", completedAt: new Date(Date.now() - 60_000).toISOString(),
+      };
+      const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+      const originalSession = { ...session, model: "minimax-coding-plan/MiniMax-M3.1-Flash" };
+      const seeded = await store.markOperatorCohortEligible(originalSession, oldEvidence, [session.model!]);
+      const claimed = await store.claimQuotaRecoveryAttempt(seeded, session.model!);
+      expect(claimed?.quotaRecovery?.dispatchInputId).toBeTruthy();
+      await store.settleQuotaRecoveryAttempt(claimed!, "accepted", { nativeInputMessageId: "native-old-input" });
+      const previous = (await store.list())[0]!.quotaRecovery!;
+      expect(previous).toMatchObject({ state: "accepted", selectedModel: session.model, dispatchNativeInputId: "native-old-input" });
+      const authorizationId = "operator-new-continuation-01";
+      const snapshot = {
+        sessionId: session.id, cwd: session.cwd, modelId: session.model!, outcome: "failed" as const,
+        active: "absent" as const, permissionCount: 0 as const, inboxIds: [] as [],
+        latestUserMessageId: "native-old-input", latestUserInputId: previous.dispatchInputId!,
+        latestTerminalEventId: "latest-idle-frame", terminalAt: new Date().toISOString(), snapshotToken: "a".repeat(64),
+      };
+      const sent: Array<{ model?: string; inputId?: string }> = [];
+      const adapter = quotaAdapter(() => session, sent, [session.model!]);
+      const settings = new SessionAutostartStore(join(root, "settings.json"), {});
+      const policy = new AutomationLaunchPolicyStore(join(root, "launch-policy.json"));
+      await policy.replace({ version: 1, allowedHarnesses: ["opencode"], preferredHarness: "opencode",
+        models: { opencode: session.model! }, fallbackModels: { opencode: [session.model!] },
+        projectRoutes: { [session.cwd]: { harnesses: ["opencode"] } },
+      });
+      const launcher = new UnfinishedSessionLauncher({
+        adapters: new Map([["opencode", adapter]]), store, settingsStore: settings,
+        fallbackModelsForHarness: async () => [session.model!], projectLaunchPolicyStore: policy,
+        humanRequests: new HumanRequestRegistry(join(root, "human-requests.json")), humanStopStore: new HumanStopStore(join(root, "human-stops.json")),
+        admissionGate: async () => ({ allowed: true }),
+        operatorContinuationSnapshotReader: async () => snapshot,
+      });
+      const result = await launcher.enrollOperatorContinuationEntry(authorizationId, {
+        sessionId: session.id, cwd: session.cwd,
+        priorAccepted: { dispatchInputId: previous.dispatchInputId!, nativeInputMessageId: "native-old-input" },
+      });
+      expect(result).toMatchObject({ outcome: "enrolled" });
+      await launcher.recoverPending();
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.model).toBe(session.model);
+      expect(sent[0]?.inputId).toMatch(/^herder-quota:/u);
+      expect(sent[0]?.inputId).not.toBe(previous.dispatchInputId);
+      const updated = (await new UnfinishedSessionStore(join(root, "unfinished.json")).list())[0]!;
+      expect(updated.quotaRecoveryHistory?.[0]?.quotaRecovery).toEqual(previous);
+      expect(updated.quotaRecovery).toMatchObject({ state: "accepted", evidence: {
+        classification: "operator_continuation", authorizationId, providerExecution: "unknown",
+      } });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("holds a new operator intent when its native snapshot changes after claim and never sends", async () => {
+    const root = await mkdtemp(join(tmpdir(), "operator-continuation-snapshot-race-"));
+    try {
+      const session: AgentSession = { ...fixture("error", "opencode", "operator-continuation-race"), model: "omniroute/minimax-combo-m3.1" };
+      const oldEvidence = { classification: "operator_cohort" as const, authorizationId: "operator-old-race-01",
+        nativeTurnId: "old-turn", assistantMessageId: "old-assistant", providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash",
+        completedAt: new Date(Date.now() - 60_000).toISOString() };
+      const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+      const originalSession = { ...session, model: "minimax-coding-plan/MiniMax-M3.1-Flash" };
+      const seeded = await store.markOperatorCohortEligible(originalSession, oldEvidence, [session.model!]);
+      const claimed = await store.claimQuotaRecoveryAttempt(seeded, session.model!);
+      await store.settleQuotaRecoveryAttempt(claimed!, "accepted", { nativeInputMessageId: "native-old-race-input" });
+      const previous = (await store.list())[0]!.quotaRecovery!;
+      const base = { sessionId: session.id, cwd: session.cwd, modelId: session.model!, outcome: "failed" as const,
+        active: "absent" as const, permissionCount: 0 as const, inboxIds: [] as [], latestUserMessageId: "native-old-race-input",
+        latestUserInputId: previous.dispatchInputId!, latestTerminalEventId: "race-terminal", terminalAt: new Date().toISOString(),
+        snapshotToken: "b".repeat(64) };
+      let reads = 0;
+      const sent: Array<{ model?: string; inputId?: string }> = [];
+      const settings = new SessionAutostartStore(join(root, "settings.json"), {});
+      const policy = new AutomationLaunchPolicyStore(join(root, "launch-policy.json"));
+      await policy.replace({ version: 1, allowedHarnesses: ["opencode"], preferredHarness: "opencode",
+        models: { opencode: session.model! }, fallbackModels: { opencode: [session.model!] } });
+      const launcher = new UnfinishedSessionLauncher({
+        adapters: new Map([["opencode", quotaAdapter(() => session, sent, [session.model!])]]), store, settingsStore: settings,
+        fallbackModelsForHarness: async () => [session.model!], projectLaunchPolicyStore: policy,
+        humanRequests: new HumanRequestRegistry(join(root, "human-requests.json")), humanStopStore: new HumanStopStore(join(root, "human-stops.json")),
+        admissionGate: async () => ({ allowed: true }),
+        operatorContinuationSnapshotReader: async () => ++reads >= 4 ? { ...base, snapshotToken: "c".repeat(64), active: "idle" } : base,
+      });
+      await launcher.enrollOperatorContinuationEntry("operator-new-race-01", {
+        sessionId: session.id, cwd: session.cwd,
+        priorAccepted: { dispatchInputId: previous.dispatchInputId!, nativeInputMessageId: "native-old-race-input" },
+      });
+      await launcher.recoverPending();
+      expect(sent).toEqual([]);
+      expect((await store.list())[0]?.quotaRecovery).toMatchObject({ state: "held", reasonCode: "native_snapshot_changed" });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

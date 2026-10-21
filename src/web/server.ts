@@ -27,7 +27,7 @@ import { parseNoticeIncident } from "../autopilot/notice-incident.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import type { AutoCompactService, AutoCompactStore } from "../autocontinue/auto-compact.js";
-import type { OperatorCohortEnrollmentTarget, SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
+import type { OperatorCohortEnrollmentTarget, OperatorContinuationEnrollmentTarget, SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
 import { AutomationLaunchPolicyStore, LaunchPolicyConflictError, MAX_MODEL_LENGTH, findProjectRoute, validateAutomationLaunchPolicy } from "../automation-launch-policy.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { boundedCoordinationContext, coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
@@ -1073,42 +1073,54 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (loadedLaunchPolicy.kind !== "valid") return sendJson(response, 503, { error: "Project launch policy is not valid" });
     const body = await readJson(request);
     const authorizationId = typeof body.authorizationId === "string" ? body.authorizationId.trim() : "";
+    const operatorContinuation = body.intent === "new_operator_continuation";
+    if (body.intent !== undefined && !operatorContinuation) return sendJson(response, 400, { error: "unknown operator enrollment intent" });
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,255}$/u.test(authorizationId)) {
       return sendJson(response, 400, { error: "authorizationId must be a stable operator enrollment ID" });
     }
     if (!Array.isArray(body.entries) || body.entries.length === 0 || body.entries.length > 64) {
       return sendJson(response, 400, { error: "entries must contain 1 to 64 exact OpenCode session selections" });
     }
-    const entries: OperatorCohortEnrollmentTarget[] = [];
+    const entries: Array<OperatorCohortEnrollmentTarget | OperatorContinuationEnrollmentTarget> = [];
     const keys = new Set<string>();
     for (const value of body.entries) {
       if (!value || typeof value !== "object" || Array.isArray(value)) return sendJson(response, 400, { error: "invalid cohort entry" });
       const item = value as Record<string, unknown>;
-      const expected = item.expected;
-      if (!expected || typeof expected !== "object" || Array.isArray(expected)) return sendJson(response, 400, { error: "each entry requires exact expected native terminal identity" });
-      const identity = expected as Record<string, unknown>;
       const sessionId = typeof item.sessionId === "string" ? item.sessionId.trim() : "";
       const cwd = typeof item.cwd === "string" ? item.cwd.trim() : "";
-      if (!sessionId || sessionId.length > 512 || !cwd || cwd.length > 4096
-        || [identity.nativeTurnId, identity.assistantMessageId, identity.providerId, identity.modelId].some((part) => typeof part !== "string" || !part.trim() || part.length > 512)
-        || !(typeof identity.completedAt === "string" || typeof identity.completedAt === "number")) {
-        return sendJson(response, 400, { error: "invalid exact terminal identity in cohort entry" });
-      }
+      if (!sessionId || sessionId.length > 512 || !cwd || cwd.length > 4096) return sendJson(response, 400, { error: "invalid exact OpenCode session selection" });
       const key = `${sessionId}\u0000${cwd}`;
       if (keys.has(key)) return sendJson(response, 400, { error: "duplicate session selection" });
       keys.add(key);
-      const completedAtDate = typeof identity.completedAt === "number"
-        ? new Date(identity.completedAt)
-        : new Date(identity.completedAt);
-      if (!Number.isFinite(completedAtDate.getTime())) return sendJson(response, 400, { error: "invalid terminal completion time" });
-      const completedAt = completedAtDate.toISOString();
-      entries.push({ sessionId, cwd, expected: {
-        nativeTurnId: (identity.nativeTurnId as string).trim(),
-        assistantMessageId: (identity.assistantMessageId as string).trim(),
-        providerId: (identity.providerId as string).trim(),
-        modelId: (identity.modelId as string).trim(),
-        completedAt,
-      } });
+      if (operatorContinuation) {
+        const prior = item.priorAccepted;
+        if (!prior || typeof prior !== "object" || Array.isArray(prior)) return sendJson(response, 400, { error: "new operator continuation requires the exact prior accepted receipt" });
+        const receipt = prior as Record<string, unknown>;
+        if ([receipt.dispatchInputId, receipt.nativeInputMessageId].some((part) => typeof part !== "string" || !part.trim() || part.length > 512)) {
+          return sendJson(response, 400, { error: "invalid prior accepted input receipt" });
+        }
+        entries.push({ sessionId, cwd, priorAccepted: {
+          dispatchInputId: (receipt.dispatchInputId as string).trim(),
+          nativeInputMessageId: (receipt.nativeInputMessageId as string).trim(),
+        } });
+      } else {
+        const expected = item.expected;
+        if (!expected || typeof expected !== "object" || Array.isArray(expected)) return sendJson(response, 400, { error: "each entry requires exact expected native terminal identity" });
+        const identity = expected as Record<string, unknown>;
+        if ([identity.nativeTurnId, identity.assistantMessageId, identity.providerId, identity.modelId].some((part) => typeof part !== "string" || !part.trim() || part.length > 512)
+          || !(typeof identity.completedAt === "string" || typeof identity.completedAt === "number")) {
+          return sendJson(response, 400, { error: "invalid exact terminal identity in cohort entry" });
+        }
+        const completedAtDate = new Date(identity.completedAt as string | number);
+        if (!Number.isFinite(completedAtDate.getTime())) return sendJson(response, 400, { error: "invalid terminal completion time" });
+        entries.push({ sessionId, cwd, expected: {
+          nativeTurnId: (identity.nativeTurnId as string).trim(),
+          assistantMessageId: (identity.assistantMessageId as string).trim(),
+          providerId: (identity.providerId as string).trim(),
+          modelId: (identity.modelId as string).trim(),
+          completedAt: completedAtDate.toISOString(),
+        } });
+      }
     }
     const results = [];
     for (const entry of entries) {
@@ -1122,11 +1134,14 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         results.push({ sessionId: entry.sessionId, outcome: "ineligible" as const, reason: "project_policy_has_no_configured_fallback" });
         continue;
       }
-      results.push(await supervisor.enrollOperatorCohortEntry(authorizationId, entry));
+      results.push(operatorContinuation
+        ? await supervisor.enrollOperatorContinuationEntry(authorizationId, entry as OperatorContinuationEnrollmentTarget)
+        : await supervisor.enrollOperatorCohortEntry(authorizationId, entry as OperatorCohortEnrollmentTarget));
     }
     const enrolled = results.filter((result) => result.outcome === "enrolled" || result.outcome === "already_enrolled").length;
     return sendJson(response, enrolled === results.length ? 200 : 207, {
       authorizationId,
+      ...(operatorContinuation ? { intent: "new_operator_continuation" } : {}),
       selected: results.length,
       enrolled,
       results,

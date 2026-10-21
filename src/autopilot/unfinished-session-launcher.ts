@@ -198,7 +198,26 @@ export type OperatorCohortEvidence = {
   completedAt: string;
 };
 
-export type QuotaRecoveryEvidence = QuotaFailureEvidence | OperatorCohortEvidence;
+/**
+ * A new operator-authorized continuation from a fresh failed native-session
+ * snapshot. The old accepted input remains UNKNOWN as to provider execution;
+ * this record deliberately does not claim that its terminal frame belongs to
+ * that input or that the provider did not execute it.
+ */
+export type OperatorContinuationEvidence = {
+  classification: "operator_continuation";
+  authorizationId: string;
+  priorDispatchInputId: string;
+  priorNativeInputMessageId: string;
+  priorSelectedModel: string;
+  snapshotToken: string;
+  latestUserMessageId: string;
+  latestTerminalEventId: string;
+  terminalAt: string;
+  providerExecution: "unknown";
+};
+
+export type QuotaRecoveryEvidence = QuotaFailureEvidence | OperatorCohortEvidence | OperatorContinuationEvidence;
 
 export type QuotaRecoveryState = "waiting" | "dispatching" | "accepted" | "held" | "exhausted";
 
@@ -216,7 +235,15 @@ export type QuotaRecoveryRecord = {
   dispatchTurnId?: string;
   claimedAt?: string;
   updatedAt: string;
-  reasonCode?: "quota_waiting" | "quota_probe_due" | "dispatching" | "delivery_unknown" | "model_unavailable" | "candidate_exhausted" | "recovery_disabled";
+  reasonCode?: "quota_waiting" | "quota_probe_due" | "dispatching" | "delivery_unknown" | "model_unavailable" | "candidate_exhausted" | "recovery_disabled" | "native_snapshot_changed" | "human_stop_active";
+};
+
+export type QuotaRecoveryHistoryEntry = {
+  quotaRecovery: QuotaRecoveryRecord;
+  acceptedAt?: string;
+  admissionPhase?: UnfinishedSessionRecord["admissionPhase"];
+  terminalReason?: UnfinishedSessionRecord["terminalReason"];
+  terminalObservedAt?: string;
 };
 
 export type QuotaRecoveryWaitStatus = {
@@ -237,6 +264,15 @@ export type OperatorCohortEnrollmentTarget = {
   sessionId: string;
   cwd: string;
   expected: Pick<OperatorCohortEvidence, "nativeTurnId" | "assistantMessageId" | "providerId" | "modelId" | "completedAt">;
+};
+
+export type OperatorContinuationEnrollmentTarget = {
+  sessionId: string;
+  cwd: string;
+  priorAccepted: {
+    dispatchInputId: string;
+    nativeInputMessageId: string;
+  };
 };
 
 export type OperatorCohortEnrollmentResult = {
@@ -270,6 +306,23 @@ type NativeLastTurn = {
   errorCode?: string;
   transportLost?: boolean;
   quotaFailure?: QuotaFailureEvidence;
+};
+
+type OpenCodeNativeContinuationReader = (sessionId: string, cwd: string) => Promise<OpenCodeOperatorContinuationSnapshot | null>;
+
+export type OpenCodeOperatorContinuationSnapshot = {
+  sessionId: string;
+  cwd: string;
+  modelId: string;
+  outcome: "failed";
+  active: "absent" | "idle";
+  permissionCount: 0;
+  inboxIds: [];
+  latestUserMessageId: string;
+  latestUserInputId: string;
+  latestTerminalEventId: string;
+  terminalAt: string;
+  snapshotToken: string;
 };
 
 function nativeTimestamp(value: unknown): string | undefined {
@@ -348,24 +401,64 @@ function normalizeOperatorCohortEvidence(value: unknown): OperatorCohortEvidence
   return { classification: "operator_cohort", authorizationId, nativeTurnId, assistantMessageId, providerId, modelId, completedAt };
 }
 
-function normalizeQuotaRecoveryEvidence(value: unknown): QuotaRecoveryEvidence | undefined {
-  return normalizeQuotaFailureEvidence(value) ?? normalizeOperatorCohortEvidence(value);
+function normalizeOperatorContinuationEvidence(value: unknown): OperatorContinuationEvidence | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const input = value as Record<string, unknown>;
+  if (input.classification !== "operator_continuation" || input.providerExecution !== "unknown") return undefined;
+  const authorizationId = nonEmptyText(input.authorizationId);
+  const priorDispatchInputId = nonEmptyText(input.priorDispatchInputId);
+  const priorNativeInputMessageId = nonEmptyText(input.priorNativeInputMessageId);
+  const priorSelectedModel = nonEmptyText(input.priorSelectedModel);
+  const snapshotToken = nonEmptyText(input.snapshotToken);
+  const latestUserMessageId = nonEmptyText(input.latestUserMessageId);
+  const latestTerminalEventId = nonEmptyText(input.latestTerminalEventId);
+  const terminalAt = nativeTimestamp(input.terminalAt);
+  const ids = [authorizationId, priorDispatchInputId, priorNativeInputMessageId, priorSelectedModel,
+    snapshotToken, latestUserMessageId, latestTerminalEventId].filter((value): value is string => Boolean(value));
+  if (ids.length !== 7 || !terminalAt || ids.some((part) => /[\u0000-\u001f\u007f]/u.test(part) || part.length > 512)
+    || !/^[a-f0-9]{64}$/iu.test(snapshotToken!)) return undefined;
+  return {
+    classification: "operator_continuation", authorizationId: authorizationId!, priorDispatchInputId: priorDispatchInputId!,
+    priorNativeInputMessageId: priorNativeInputMessageId!, priorSelectedModel: priorSelectedModel!, snapshotToken: snapshotToken!,
+    latestUserMessageId: latestUserMessageId!, latestTerminalEventId: latestTerminalEventId!, terminalAt,
+    providerExecution: "unknown",
+  };
 }
 
-function recoveryEvidenceTurnId(evidence: QuotaRecoveryEvidence): string { return evidence.nativeTurnId; }
+function normalizeQuotaRecoveryEvidence(value: unknown): QuotaRecoveryEvidence | undefined {
+  return normalizeQuotaFailureEvidence(value) ?? normalizeOperatorCohortEvidence(value) ?? normalizeOperatorContinuationEvidence(value);
+}
+
+function recoveryEvidenceTurnId(evidence: QuotaRecoveryEvidence): string | undefined {
+  return evidence.classification === "operator_continuation" ? undefined : evidence.nativeTurnId;
+}
 function recoveryEvidenceInputId(evidence: QuotaRecoveryEvidence): string | undefined {
-  return evidence.classification === "quota_exhausted" ? evidence.inputId : undefined;
+  return evidence.classification === "quota_exhausted" ? evidence.inputId
+    : evidence.classification === "operator_continuation" ? evidence.priorDispatchInputId : undefined;
 }
 function recoveryEvidenceModelId(evidence: QuotaRecoveryEvidence): string {
-  return evidence.classification === "quota_exhausted" ? quotaModelId(evidence) ?? evidence.modelId : evidence.modelId;
+  return evidence.classification === "quota_exhausted" ? quotaModelId(evidence) ?? evidence.modelId
+    : evidence.classification === "operator_continuation" ? evidence.priorSelectedModel : evidence.modelId;
+}
+
+function isOperatorRecoveryEvidence(evidence: QuotaRecoveryEvidence): evidence is OperatorCohortEvidence | OperatorContinuationEvidence {
+  return evidence.classification !== "quota_exhausted";
 }
 
 function sameRecoveryEvidence(left: QuotaRecoveryEvidence | undefined, right: QuotaRecoveryEvidence | undefined): boolean {
-  if (!left || !right || left.classification !== right.classification || left.nativeTurnId !== right.nativeTurnId) return false;
+  if (!left || !right || left.classification !== right.classification) return false;
   if (left.classification === "quota_exhausted" && right.classification === "quota_exhausted") return sameQuotaFailure(left, right);
-  return left.classification === "operator_cohort" && right.classification === "operator_cohort"
-    && left.authorizationId === right.authorizationId && left.assistantMessageId === right.assistantMessageId
-    && left.providerId === right.providerId && left.modelId === right.modelId && left.completedAt === right.completedAt;
+  if (left.classification === "operator_cohort" && right.classification === "operator_cohort") {
+    return left.nativeTurnId === right.nativeTurnId && left.authorizationId === right.authorizationId
+      && left.assistantMessageId === right.assistantMessageId && left.providerId === right.providerId
+      && left.modelId === right.modelId && left.completedAt === right.completedAt;
+  }
+  return left.classification === "operator_continuation" && right.classification === "operator_continuation"
+    && left.authorizationId === right.authorizationId && left.priorDispatchInputId === right.priorDispatchInputId
+    && left.priorNativeInputMessageId === right.priorNativeInputMessageId && left.priorSelectedModel === right.priorSelectedModel
+    && left.snapshotToken === right.snapshotToken && left.latestUserMessageId === right.latestUserMessageId
+    && left.latestTerminalEventId === right.latestTerminalEventId && left.terminalAt === right.terminalAt
+    && left.providerExecution === right.providerExecution;
 }
 
 function sameQuotaFailure(left: QuotaFailureEvidence | undefined, right: QuotaFailureEvidence | undefined): boolean {
@@ -395,6 +488,7 @@ function exactTerminalQuotaSnapshot(session: AgentSession | null | undefined, ev
 }
 
 function exactTerminalRecoverySnapshot(session: AgentSession | null | undefined, evidence: QuotaRecoveryEvidence): boolean {
+  if (evidence.classification === "operator_continuation") return false;
   if (evidence.classification === "quota_exhausted") return exactTerminalQuotaSnapshot(session, evidence);
   const last = nativeLastTurn(session);
   return Boolean(session && last && last.sessionId === session.id
@@ -426,6 +520,124 @@ function operatorFallbackCandidates(fallbackModels: readonly string[], currentMo
   return quotaCandidateModels(fallbackModels, currentModels).filter((model) => !current.has(model.toLocaleLowerCase("en-US")));
 }
 
+function operatorContinuationModelCandidates(fallbackModels: readonly string[], currentModel: string): string[] {
+  const exact = new Set(fallbackModels.map((value) => value.trim()).filter(Boolean));
+  return exact.has(currentModel) && currentModel.startsWith("omniroute/") ? [currentModel] : [];
+}
+
+function openCodeEnvelope(value: unknown): unknown {
+  return value && typeof value === "object" && !Array.isArray(value) && "data" in value
+    ? (value as Record<string, unknown>).data : value;
+}
+
+function openCodeRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function openCodeCreatedAt(value: unknown): number | undefined {
+  const record = openCodeRecord(value);
+  return typeof record?.created === "number" && Number.isFinite(record.created) ? record.created : undefined;
+}
+
+/**
+ * Read-only native snapshot used only for a fresh operator continuation. The
+ * terminal frame and prior accepted input are recorded as co-snapshot values;
+ * this function intentionally does not claim the frame is input-bound or that
+ * the provider did not execute the prior input.
+ */
+async function readOpenCodeOperatorContinuationSnapshot(
+  sessionId: string,
+  cwd: string,
+): Promise<OpenCodeOperatorContinuationSnapshot | null> {
+  const base = process.env.OPENCODE_URL?.trim() || "http://127.0.0.1:4095";
+  let origin: URL;
+  try {
+    origin = new URL(base);
+    if (!/^https?:$/u.test(origin.protocol) || origin.username || origin.password || origin.search || origin.hash
+      || !["127.0.0.1", "localhost", "[::1]", "::1"].includes(origin.hostname)) return null;
+  } catch { return null; }
+  const username = process.env.OPENCODE_SERVER_USERNAME?.trim() || "opencode";
+  const password = process.env.OPENCODE_SERVER_PASSWORD;
+  const headers: Record<string, string> = { accept: "application/json" };
+  if (password) headers.authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
+  const prefix = `${origin.origin}/api`;
+  const signal = AbortSignal.timeout(8_000);
+  const get = async (path: string): Promise<unknown> => {
+    const response = await fetch(`${prefix}${path}`, { method: "GET", headers, redirect: "error", signal });
+    if (!response.ok) throw new Error("OpenCode operator snapshot read refused");
+    return response.json() as Promise<unknown>;
+  };
+  try {
+    const encoded = encodeURIComponent(sessionId);
+    const [sessionValue, activeValue, permissionValue, inboxValue, messagesValue] = await Promise.all([
+      get(`/session/${encoded}`), get("/session/active"), get("/permission/request"), get(`/session/${encoded}/inbox`),
+      get(`/session/${encoded}/message?limit=150&order=desc`),
+    ]);
+    const session = openCodeRecord(openCodeEnvelope(sessionValue));
+    const activeMap = openCodeRecord(openCodeEnvelope(activeValue));
+    const permissions = openCodeEnvelope(permissionValue);
+    const inbox = openCodeEnvelope(inboxValue);
+    const fetchedMessages = openCodeEnvelope(messagesValue);
+    if (!session || session.id !== sessionId || !activeMap || !Array.isArray(permissions) || !Array.isArray(inbox)
+      || !Array.isArray(fetchedMessages) || session.outcome !== "failed") return null;
+    const directory = nonEmptyText(openCodeRecord(session.location)?.directory) || nonEmptyText(session.directory);
+    if (!directory || normalize(directory) !== normalize(cwd)) return null;
+    const model = openCodeRecord(session.model);
+    const provider = nonEmptyText(model?.providerID);
+    const modelIdPart = nonEmptyText(model?.id);
+    if (!provider || !modelIdPart) return null;
+    const modelId = `${provider}/${modelIdPart}`;
+    const activeEntry = openCodeRecord(activeMap[sessionId]);
+    const activeType = nonEmptyText(activeEntry?.type) || nonEmptyText(activeEntry?.status);
+    if (activeEntry && activeType !== "idle") return null;
+    const pendingPermissions = permissions.filter((item) => openCodeRecord(item)?.sessionID === sessionId);
+    if (pendingPermissions.length) return null;
+    if (inbox.length) return null;
+    const messages = fetchedMessages.map(openCodeRecord).filter((item): item is Record<string, unknown> => Boolean(item));
+    if (!messages.length || messages.some((item) => !nonEmptyText(item.id) || item.sessionID && item.sessionID !== sessionId)) return null;
+    const chronological = [...messages].reverse();
+    const actors = chronological.filter((item) => item.type === "user" || item.type === "assistant");
+    const latestActor = actors.at(-1);
+    if (!latestActor || latestActor.type !== "user") return null;
+    const metadata = openCodeRecord(latestActor.metadata);
+    const latestUserMessageId = nonEmptyText(latestActor.id);
+    const latestUserInputId = nonEmptyText(metadata?.agentHerderInputId);
+    if (!latestUserMessageId || !latestUserInputId) return null;
+    const terminalFrames = chronological.filter((item) => item.type === "idle" && item.outcome === "failed");
+    const terminal = terminalFrames.at(-1);
+    const latestTerminalEventId = nonEmptyText(terminal?.id);
+    const terminalAtNumber = openCodeCreatedAt(terminal?.time);
+    const userAt = openCodeCreatedAt(latestActor.time);
+    if (!terminal || !latestTerminalEventId || terminalAtNumber === undefined || userAt === undefined || terminalAtNumber < userAt) return null;
+    const safeMessages = chronological.map((item) => {
+      const itemMetadata = openCodeRecord(item.metadata);
+      const itemModel = openCodeRecord(item.model);
+      return {
+        id: item.id,
+        type: item.type,
+        outcome: item.outcome,
+        time: openCodeCreatedAt(item.time),
+        inputId: nonEmptyText(itemMetadata?.agentHerderInputId),
+        providerId: nonEmptyText(itemModel?.providerID),
+        modelId: nonEmptyText(itemModel?.id),
+        errorType: nonEmptyText(openCodeRecord(item.error)?.type),
+      };
+    });
+    const activeState: OpenCodeOperatorContinuationSnapshot["active"] = activeEntry ? "idle" : "absent";
+    const snapshotToken = createHash("sha256").update(JSON.stringify({
+      sessionId, cwd: normalize(directory), outcome: session.outcome, modelId,
+      active: activeState, permissionCount: pendingPermissions.length, inboxIds: [], messages: safeMessages,
+    })).digest("hex");
+    return {
+      sessionId, cwd: normalize(directory), modelId, outcome: "failed", active: activeState,
+      permissionCount: 0, inboxIds: [], latestUserMessageId, latestUserInputId, latestTerminalEventId,
+      terminalAt: new Date(terminalAtNumber).toISOString(), snapshotToken,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function quotaBackoffMs(attempts: number): number {
   return Math.min(5 * 60_000, 30_000 * (2 ** Math.max(0, Math.min(3, attempts - 1))));
 }
@@ -442,6 +654,18 @@ function quotaNextAttemptAt(evidence: QuotaFailureEvidence, now: Date): Date {
 }
 
 function quotaRecoveryReason(quota: QuotaRecoveryRecord): string {
+  if (quota.state === "held" && quota.reasonCode === "human_stop_active") {
+    return "HumanStop активен; новое операторское продолжение удержано.";
+  }
+  if (quota.state === "held" && quota.reasonCode === "native_snapshot_changed") {
+    return "Снимок native-сессии изменился после операторского разрешения; отправка удержана.";
+  }
+  if (quota.evidence.classification === "operator_continuation" && quota.state === "waiting") {
+    return "Ожидает нового операторского продолжения; исполнение прежнего принятого ввода остаётся неизвестным, повтор прежнего ввода запрещён.";
+  }
+  if (quota.evidence.classification === "operator_continuation" && quota.state === "accepted") {
+    return "Новый операторский ввод принят; исполнение прежнего принятого ввода остаётся неизвестным.";
+  }
   if (quota.evidence.classification === "operator_cohort" && quota.state === "waiting") {
     return "Ожидает разрешённого продолжения; перед отправкой Herder повторно проверит точный завершённый сбой и ограничения сессии.";
   }
@@ -828,6 +1052,8 @@ export interface UnfinishedSessionRecord {
   recoveryTurnId?: string;
   recoveryInputId?: string;
   quotaRecovery?: QuotaRecoveryRecord;
+  /** Immutable snapshots of accepted/unknown attempts superseded by a new operator intent. */
+  quotaRecoveryHistory?: QuotaRecoveryHistoryEntry[];
   activeNativeOwner?: NativeOwnerProof;
   activeTurnStartedAt?: string;
   activeTurnId?: string;
@@ -1308,6 +1534,93 @@ export class UnfinishedSessionStore {
     });
   }
 
+  /** Replace only an exactly matched accepted/unknown receipt with a new, audited operator continuation. */
+  async markOperatorContinuationEligible(
+    session: AgentSession,
+    rawEvidence: OperatorContinuationEvidence,
+    now = new Date(),
+  ): Promise<UnfinishedSessionRecord> {
+    const evidence = normalizeOperatorContinuationEvidence(rawEvidence);
+    const currentModel = session.model?.trim();
+    if (!evidence || session.harness !== "opencode" || !currentModel || currentModel !== evidence.priorSelectedModel) {
+      throw new Error("invalid operator continuation snapshot");
+    }
+    const normalized = normalizeRecordTarget({ harness: "opencode", sessionId: session.id, cwd: session.cwd,
+      model: session.model, title: session.title, threadSource: nonEmptyText(session.meta?.threadSource) });
+    const nowIso = now.toISOString();
+    return this.mutate((file) => {
+      const workspaceIdentity = sessionWorkspaceIdentity(session);
+      const key = sessionKey("opencode", session.id, workspaceIdentity);
+      const index = file.sessions.findIndex((record) => unfinishedRecordKey(record) === key);
+      const existing = index < 0 ? undefined : file.sessions[index];
+      const previous = existing?.quotaRecovery;
+      if (previous?.evidence.classification === "operator_continuation"
+        && sameRecoveryEvidence(previous.evidence, evidence) && previous.state !== "held" && previous.state !== "exhausted") {
+        return { ...existing! };
+      }
+      if (!existing || !previous || !["accepted", "held"].includes(previous.state)
+        || previous.state === "held" && previous.reasonCode !== "delivery_unknown"
+        || previous.dispatchInputId !== evidence.priorDispatchInputId
+        || previous.dispatchNativeInputId !== evidence.priorNativeInputMessageId
+        || previous.selectedModel !== evidence.priorSelectedModel) {
+        throw new Error("prior accepted/unknown receipt does not exactly match this operator continuation");
+      }
+      const history = [...(existing.quotaRecoveryHistory ?? []), {
+        quotaRecovery: cloneQuotaRecovery(previous),
+        ...(existing.acceptedAt ? { acceptedAt: existing.acceptedAt } : {}),
+        ...(existing.admissionPhase ? { admissionPhase: existing.admissionPhase } : {}),
+        ...(existing.terminalReason ? { terminalReason: existing.terminalReason } : {}),
+        ...(existing.terminalObservedAt ? { terminalObservedAt: existing.terminalObservedAt } : {}),
+      }].slice(-16);
+      const quotaRecovery: QuotaRecoveryRecord = {
+        evidence,
+        state: "waiting",
+        nextAttemptAt: nowIso,
+        candidateModels: [evidence.priorSelectedModel],
+        candidateIndex: 0,
+        attempts: 0,
+        revision: previous.revision + 1,
+        updatedAt: nowIso,
+        reasonCode: "quota_waiting",
+      };
+      const record: UnfinishedSessionRecord = {
+        ...existing,
+        ...normalized,
+        workspaceIdentity,
+        updatedAt: nowIso,
+        state: "active",
+        quotaRecoveryHistory: history,
+        quotaRecovery,
+        nextAttemptAt: nowIso,
+      };
+      delete record.acceptedAt;
+      delete record.acceptedFingerprint;
+      delete record.progressObservedAt;
+      delete record.deliveryPending;
+      delete record.admissionPhase;
+      delete record.lastProgressFingerprint;
+      delete record.lastNativeProgressAt;
+      delete record.terminalReason;
+      delete record.terminalObservedAt;
+      delete record.terminalAssistantObserved;
+      delete record.terminalRetryCount;
+      delete record.nonRetryableAdmission;
+      delete record.activeTurnStartedAt;
+      delete record.activeTurnId;
+      delete record.activeInputId;
+      delete record.recoveryCause;
+      delete record.recoveryTurnId;
+      delete record.recoveryInputId;
+      delete record.recoveryObservedAt;
+      delete record.recoveryBlockedReason;
+      delete record.lastError;
+      if (index < 0) file.sessions.push(record);
+      else file.sessions[index] = record;
+      sortRecords(file.sessions);
+      return { ...record };
+    });
+  }
+
   /** Atomically claim one due model attempt across all service processes. */
   async claimQuotaRecoveryAttempt(snapshot: UnfinishedSessionRecord, selectedModel: string, now = new Date()): Promise<UnfinishedSessionRecord | null> {
     return this.mutate((file) => {
@@ -1447,7 +1760,7 @@ export class UnfinishedSessionStore {
       sessionId: record.sessionId,
       cwd: record.cwd,
       state: quota.state,
-      origin: quota.evidence.classification === "operator_cohort" ? "operator_cohort" : "native_quota",
+      origin: quota.evidence.classification === "quota_exhausted" ? "native_quota" : "operator_cohort",
       reason: quotaRecoveryReason(quota),
       nextAttemptAt: quota.nextAttemptAt,
       ...(quota.evidence.classification === "quota_exhausted" && quota.evidence.resetAt ? { resetAt: quota.evidence.resetAt } : {}),
@@ -1936,6 +2249,8 @@ export interface UnfinishedSessionLauncherOptions {
   fallbackModelsForHarness?: (harness: "opencode" | "zcode") => Promise<string[]>;
   /** Existing project launch policy is the authority for operator-cohort model admission. */
   projectLaunchPolicyStore?: Pick<AutomationLaunchPolicyStore, "load">;
+  /** Read-only OpenCode session/active/permission/Inbox/transcript CAS snapshot for explicit operator continuations. */
+  operatorContinuationSnapshotReader?: OpenCodeNativeContinuationReader;
   /** Rechecks owning fleet authorization before any automatic native work. */
   admissionGate?: RecoveryAdmissionGate;
   maxAttempts?: number;
@@ -2249,6 +2564,9 @@ export class UnfinishedSessionLauncher {
           || identity.inputId === quotaSnapshot.quotaRecovery.dispatchNativeInputId)) {
         await this.options.store.settleQuotaRecoveryAttempt(quotaSnapshot, "accepted", { ...(identity.turnId ? { turnId: identity.turnId } : {}) });
       } else if (quotaSnapshot?.quotaRecovery?.state === "waiting"
+        && quotaSnapshot.quotaRecovery.evidence.classification === "operator_continuation") {
+        await this.options.store.holdQuotaRecovery(quotaSnapshot, "native_snapshot_changed");
+      } else if (quotaSnapshot?.quotaRecovery?.state === "waiting"
         && (identity.turnId !== recoveryEvidenceTurnId(quotaSnapshot.quotaRecovery.evidence)
           || (recoveryEvidenceInputId(quotaSnapshot.quotaRecovery.evidence) !== undefined
             && identity.inputId !== recoveryEvidenceInputId(quotaSnapshot.quotaRecovery.evidence)))) {
@@ -2377,7 +2695,7 @@ export class UnfinishedSessionLauncher {
     if (!exactTerminalRecoverySnapshot(session, expected) || last?.status !== "failed" && last?.status !== "error") {
       return ineligible("native_terminal_identity_mismatch");
     }
-    if (await this.suppressIfHumanStopped("opencode", sessionId, cwd, session)) return ineligible("human_stop_active");
+    if (await this.options.humanStopStore?.isHeld("opencode", sessionId)) return ineligible("human_stop_active");
     if (await this.pendingQuestionBlocks("opencode", sessionId, cwd)) return ineligible("pending_human_input");
     if (!await this.admissionAllowed(session, "resume")) {
       return ineligible("session_recovery_not_admitted");
@@ -2418,13 +2736,91 @@ export class UnfinishedSessionLauncher {
       : "ineligible", ...(wait ? { wait } : {}) };
   }
 
+  /**
+   * Enroll a distinct, human-authorized continuation from a fresh terminal
+   * session snapshot. The previous provider execution remains UNKNOWN and its
+   * accepted receipt is archived byte-for-byte before a new claim is created.
+   */
+  async enrollOperatorContinuationEntry(
+    authorizationId: string,
+    target: OperatorContinuationEnrollmentTarget,
+  ): Promise<OperatorCohortEnrollmentResult> {
+    const sessionId = typeof target.sessionId === "string" ? target.sessionId.trim() : "";
+    const cwd = typeof target.cwd === "string" ? target.cwd.trim() : "";
+    const priorDispatchInputId = nonEmptyText(target.priorAccepted?.dispatchInputId);
+    const priorNativeInputMessageId = nonEmptyText(target.priorAccepted?.nativeInputMessageId);
+    const ineligible = (reason: string): OperatorCohortEnrollmentResult => ({ sessionId, outcome: "ineligible", reason });
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,255}$/u.test(authorizationId) || !sessionId || sessionId.length > 512
+      || !cwd || cwd.length > 4096 || !priorDispatchInputId || !priorNativeInputMessageId) return ineligible("invalid_operator_continuation_identity");
+    if (!this.options.humanStopStore || !this.pendingQuestions || !this.options.admissionGate) return ineligible("safety_gate_unavailable");
+    const adapter = this.options.adapters.get("opencode");
+    if (!adapter?.getSession || !adapter.listModels || !this.options.fallbackModelsForHarness) return ineligible("recovery_runtime_unavailable");
+    let session: AgentSession | null;
+    try { session = await adapter.getSession(sessionId); } catch { return ineligible("native_snapshot_unavailable"); }
+    if (!session || session.id !== sessionId || session.harness !== "opencode" || normalize(session.cwd) !== normalize(cwd)
+      || session.status !== "error" || session.needsPermission || isSubagentSession(session)) return ineligible("session_not_terminal_idle_root_opencode");
+    if (await this.suppressIfHumanStopped("opencode", sessionId, cwd, session)) return ineligible("human_stop_active");
+    if (await this.operatorContinuationPendingQuestionBlocks(sessionId, cwd)) return ineligible("pending_human_input");
+    if (!await this.admissionAllowed(session, "resume")) return ineligible("session_recovery_not_admitted");
+    const existing = await this.options.store.getQuotaRecoveryRecord("opencode", sessionId, cwd);
+    if (!existing || !["accepted", "held"].includes(existing.state)
+      || existing.state === "held" && existing.reasonCode !== "delivery_unknown"
+      || existing.dispatchInputId !== priorDispatchInputId || existing.dispatchNativeInputId !== priorNativeInputMessageId
+      || !existing.selectedModel || session.model !== existing.selectedModel
+      || existing.evidence.classification !== "operator_cohort") {
+      return ineligible("prior_accepted_or_unknown_receipt_mismatch");
+    }
+    if (existing.evidence.authorizationId === authorizationId) return ineligible("new_operator_authorization_required");
+    const reader = this.options.operatorContinuationSnapshotReader ?? readOpenCodeOperatorContinuationSnapshot;
+    const nativeSnapshot = await reader(sessionId, cwd);
+    if (!nativeSnapshot || nativeSnapshot.sessionId !== sessionId || normalize(nativeSnapshot.cwd) !== normalize(cwd)
+      || nativeSnapshot.modelId !== existing.selectedModel || nativeSnapshot.outcome !== "failed"
+      || (nativeSnapshot.active !== "absent" && nativeSnapshot.active !== "idle")
+      || nativeSnapshot.permissionCount !== 0 || nativeSnapshot.inboxIds.length !== 0
+      || nativeSnapshot.latestUserMessageId !== priorNativeInputMessageId
+      || nativeSnapshot.latestUserInputId !== priorDispatchInputId
+      || !nativeSnapshot.latestTerminalEventId || !nativeSnapshot.snapshotToken) return ineligible("native_operator_snapshot_not_safe");
+    const fallbackModels = await this.options.fallbackModelsForHarness("opencode");
+    const candidates = operatorContinuationModelCandidates(fallbackModels, nativeSnapshot.modelId);
+    if (!candidates.length) return ineligible("current_model_not_explicitly_configured_for_continuation");
+    const [listedModels, projectAllowed] = await Promise.all([
+      adapter.listModels(),
+      this.operatorProjectModelAllowed(session, nativeSnapshot.modelId),
+    ]);
+    if (!listedModels.includes(nativeSnapshot.modelId) || !projectAllowed) return ineligible("project_policy_disallows_current_provider_route");
+    const settings = await this.options.settingsStore.getEffective("opencode", sessionId, cwd);
+    if (settings.waitForQuotaOverride !== true) await this.options.settingsStore.setSessionWaitForQuota({ harness: "opencode", sessionId, cwd }, true);
+    const evidence: OperatorContinuationEvidence = {
+      classification: "operator_continuation",
+      authorizationId,
+      priorDispatchInputId,
+      priorNativeInputMessageId,
+      priorSelectedModel: nativeSnapshot.modelId,
+      snapshotToken: nativeSnapshot.snapshotToken,
+      latestUserMessageId: nativeSnapshot.latestUserMessageId,
+      latestTerminalEventId: nativeSnapshot.latestTerminalEventId,
+      terminalAt: nativeSnapshot.terminalAt,
+      providerExecution: "unknown",
+    };
+    let stored: UnfinishedSessionRecord;
+    try { stored = await this.options.store.markOperatorContinuationEligible(session, evidence); }
+    catch { return ineligible("prior_receipt_changed_or_operator_intent_pending"); }
+    this.queueUrgentSession(sessionSourceKey(session));
+    this.scheduleUrgentRecovery(0);
+    const wait = await this.options.store.getQuotaRecoveryWaitStatus("opencode", sessionId, cwd);
+    const matching = stored.quotaRecovery?.evidence.classification === "operator_continuation"
+      && sameRecoveryEvidence(stored.quotaRecovery.evidence, evidence);
+    return { sessionId, outcome: matching ? stored.quotaRecovery?.state === "waiting" ? "enrolled" : "already_enrolled" : "ineligible",
+      ...(wait ? { wait } : {}) };
+  }
+
   async reconcileQuotaRecoverySettings(): Promise<void> {
     const runtime = await this.options.settingsStore.getSettings();
     for (const record of await this.options.store.list()) {
       if (!record.quotaRecovery || record.quotaRecovery.state !== "waiting") continue;
       const effective = await this.options.settingsStore.getEffective(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
-      const operatorCohort = record.quotaRecovery.evidence.classification === "operator_cohort";
-      if ((!operatorCohort && !effective.enabled) || !effective.waitForQuota || (!operatorCohort && !runtime.recoverOnFailure)) {
+      const operatorIntent = isOperatorRecoveryEvidence(record.quotaRecovery.evidence);
+      if ((!operatorIntent && !effective.enabled) || !effective.waitForQuota || (!operatorIntent && !runtime.recoverOnFailure)) {
         await this.options.store.clearWaitingQuotaRecovery(record);
       }
     }
@@ -2973,11 +3369,37 @@ export class UnfinishedSessionLauncher {
     }
   }
 
+  private async operatorContinuationSnapshotMatches(
+    session: AgentSession | null | undefined,
+    evidence: OperatorContinuationEvidence,
+    expectedSessionId: string,
+    expectedCwd: string,
+  ): Promise<boolean> {
+    if (!session || session.id !== expectedSessionId || session.harness !== "opencode"
+      || normalize(session.cwd) !== normalize(expectedCwd) || session.status !== "error"
+      || session.needsPermission || isSubagentSession(session) || session.model !== evidence.priorSelectedModel) return false;
+    const reader = this.options.operatorContinuationSnapshotReader ?? readOpenCodeOperatorContinuationSnapshot;
+    let current: OpenCodeOperatorContinuationSnapshot | null;
+    try { current = await reader(expectedSessionId, expectedCwd); } catch { return false; }
+    return Boolean(current && current.sessionId === expectedSessionId && normalize(current.cwd) === normalize(expectedCwd)
+      && current.modelId === evidence.priorSelectedModel && current.outcome === "failed"
+      && (current.active === "absent" || current.active === "idle") && current.permissionCount === 0 && current.inboxIds.length === 0
+      && current.latestUserMessageId === evidence.priorNativeInputMessageId
+      && current.latestUserInputId === evidence.priorDispatchInputId
+      && current.latestTerminalEventId === evidence.latestTerminalEventId
+      && current.terminalAt === evidence.terminalAt && current.snapshotToken === evidence.snapshotToken);
+  }
+
   private async processQuotaRecovery(snapshot: UnfinishedSessionRecord, epoch: number): Promise<void> {
     const quota = snapshot.quotaRecovery;
     if (!quota || snapshot.harness !== "opencode" && snapshot.harness !== "zcode") return;
     const harness = snapshot.harness;
-    const operatorCohort = quota.evidence.classification === "operator_cohort";
+    const operatorIntent = isOperatorRecoveryEvidence(quota.evidence);
+    const operatorContinuation = quota.evidence.classification === "operator_continuation" ? quota.evidence : undefined;
+    if (operatorContinuation && (!this.options.humanStopStore || !this.pendingQuestions || !this.options.admissionGate)) {
+      await this.options.store.holdQuotaRecovery(snapshot, "native_snapshot_changed");
+      return;
+    }
     if (quota.state === "dispatching") {
       const claimedAt = quota.claimedAt ? Date.parse(quota.claimedAt) : Number.NaN;
       if (!Number.isFinite(claimedAt) || Date.now() - claimedAt < QUOTA_DISPATCH_CLAIM_LEASE_MS) return;
@@ -3003,41 +3425,70 @@ export class UnfinishedSessionLauncher {
         this.options.settingsStore.getEffective(harness, snapshot.sessionId, snapshot.workspaceIdentity || snapshot.cwd),
         this.options.settingsStore.getSettings(),
       ]);
-      return effective.waitForQuota && (operatorCohort || effective.enabled && runtime.recoverOnFailure);
+      return effective.waitForQuota && (operatorIntent || effective.enabled && runtime.recoverOnFailure);
     };
     if (!await enabled()) {
+      if (operatorContinuation) {
+        await this.options.store.holdQuotaRecovery(snapshot, "recovery_disabled");
+        return;
+      }
       await this.options.store.clearWaitingQuotaRecovery(snapshot);
       return;
     }
     if (Date.parse(quota.nextAttemptAt) > Date.now()) return;
     const adapter = this.options.adapters.get(harness);
     if (!adapter?.getSession || !adapter.changeModel || !adapter.listModels || !this.options.fallbackModelsForHarness) return;
-    if (!this.lifecycleActive(epoch) || await this.pendingQuestionBlocks(harness, snapshot.sessionId, snapshot.cwd)) return;
+    if (!this.lifecycleActive(epoch)) return;
+    if (operatorContinuation
+      ? await this.operatorContinuationPendingQuestionBlocks(snapshot.sessionId, snapshot.cwd)
+      : await this.pendingQuestionBlocks(harness, snapshot.sessionId, snapshot.cwd)) {
+      if (operatorContinuation) await this.options.store.holdQuotaRecovery(snapshot, "native_snapshot_changed");
+      return;
+    }
     let session: AgentSession | null;
     try { session = await adapter.getSession(snapshot.sessionId); } catch { return; }
     if (!session) return;
     const observedLast = nativeLastTurn(session);
     const workspaceChanged = session.harness !== harness || normalize(session.cwd) !== normalize(snapshot.workspaceIdentity || snapshot.cwd);
     const expectedInputId = recoveryEvidenceInputId(quota.evidence);
+    const expectedTurnId = recoveryEvidenceTurnId(quota.evidence);
     const newTurnObserved = session.status === "running"
-      || Boolean(observedLast?.turnId && observedLast.turnId !== recoveryEvidenceTurnId(quota.evidence))
+      || Boolean(observedLast?.turnId && expectedTurnId && observedLast.turnId !== expectedTurnId)
       || Boolean(expectedInputId && observedLast?.inputId && observedLast.inputId !== expectedInputId);
     if (workspaceChanged || newTurnObserved) {
+      if (operatorContinuation) {
+        await this.options.store.holdQuotaRecovery(snapshot, "native_snapshot_changed");
+        return;
+      }
       await this.options.store.clearWaitingQuotaRecovery(snapshot);
       return;
     }
-    if (session.needsPermission || session.status === "needs_input" || !exactTerminalRecoverySnapshot(session, quota.evidence)) return;
-    if (await this.suppressIfHumanStopped(harness, session.id, session.cwd, session)
-      || !await this.admissionAllowed(session, "resume")) return;
+    const terminalSnapshotMatches = operatorContinuation
+      ? await this.operatorContinuationSnapshotMatches(session, operatorContinuation, snapshot.sessionId, snapshot.cwd)
+      : exactTerminalRecoverySnapshot(session, quota.evidence);
+    if (session.needsPermission || session.status === "needs_input" || !terminalSnapshotMatches) {
+      if (operatorContinuation) await this.options.store.holdQuotaRecovery(snapshot, "native_snapshot_changed");
+      return;
+    }
+    if (operatorContinuation && await this.options.humanStopStore?.isHeld(harness, session.id)) {
+      await this.options.store.holdQuotaRecovery(snapshot, "human_stop_active");
+      return;
+    }
+    if (!operatorContinuation && await this.suppressIfHumanStopped(harness, session.id, session.cwd, session)) return;
+    if (!await this.admissionAllowed(session, "resume")) return;
     const models = await adapter.listModels();
     const selectedModel = quota.candidateModels[quota.candidateIndex]!;
     const currentPolicyModels = await this.options.fallbackModelsForHarness(harness);
     if (!currentPolicyModels.includes(selectedModel) || !models.includes(selectedModel)
-      || operatorCohort && !await this.operatorProjectModelAllowed(session, selectedModel)) {
+      || operatorIntent && !await this.operatorProjectModelAllowed(session, selectedModel)) {
       await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
       return;
     }
     if (session.model !== selectedModel) {
+      if (operatorContinuation) {
+        await this.options.store.holdQuotaRecovery(snapshot, "native_snapshot_changed");
+        return;
+      }
       const changed = await adapter.changeModel(session.id, selectedModel);
       if (!changed.ok) {
         await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
@@ -3048,23 +3499,44 @@ export class UnfinishedSessionLauncher {
     try { verified = await adapter.getSession(snapshot.sessionId); } catch { return; }
     const verifiedLast = nativeLastTurn(verified);
     if (verified && (verified.status === "running"
-      || Boolean(verifiedLast?.turnId && verifiedLast.turnId !== recoveryEvidenceTurnId(quota.evidence))
+      || Boolean(verifiedLast?.turnId && expectedTurnId && verifiedLast.turnId !== expectedTurnId)
       || Boolean(expectedInputId && verifiedLast?.inputId && verifiedLast.inputId !== expectedInputId))) {
+      if (operatorContinuation) {
+        await this.options.store.holdQuotaRecovery(snapshot, "native_snapshot_changed");
+        return;
+      }
       await this.options.store.clearWaitingQuotaRecovery(snapshot);
       return;
     }
-    if (!verified || verified.model !== selectedModel || !exactTerminalRecoverySnapshot(verified, quota.evidence)
+    const verifiedTerminalSnapshotMatches = operatorContinuation
+      ? await this.operatorContinuationSnapshotMatches(verified, operatorContinuation, snapshot.sessionId, snapshot.cwd)
+      : exactTerminalRecoverySnapshot(verified, quota.evidence);
+    if (!verified || verified.model !== selectedModel || !verifiedTerminalSnapshotMatches
       || verified.needsPermission
-      || await this.suppressIfHumanStopped(harness, verified.id, verified.cwd, verified)
-      || !await enabled() || await this.pendingQuestionBlocks(harness, verified.id, verified.cwd)
-      || !this.lifecycleActive(epoch) || !await this.admissionAllowed(verified, "resume")) return;
+      || (!operatorContinuation && await this.suppressIfHumanStopped(harness, verified.id, verified.cwd, verified))
+      || !await enabled() || !this.lifecycleActive(epoch) || !await this.admissionAllowed(verified, "resume")) {
+      if (operatorContinuation) await this.options.store.holdQuotaRecovery(snapshot, "native_snapshot_changed");
+      return;
+    }
+    if (operatorContinuation
+      ? await this.operatorContinuationPendingQuestionBlocks(verified.id, verified.cwd)
+      : await this.pendingQuestionBlocks(harness, verified.id, verified.cwd)) {
+      if (operatorContinuation) await this.options.store.holdQuotaRecovery(snapshot, "native_snapshot_changed");
+      return;
+    }
+    if (operatorContinuation && await this.options.humanStopStore?.isHeld(harness, verified.id)) {
+      await this.options.store.holdQuotaRecovery(snapshot, "human_stop_active");
+      return;
+    }
     const last = nativeLastTurn(verified);
-    if (!last || !last.completedAt || (quota.evidence.classification === "quota_exhausted" && !last.userMessageId)) {
+    if ((!operatorContinuation && (!last || !last.completedAt))
+      || (quota.evidence.classification === "quota_exhausted" && (!last || !last.userMessageId))
+      || operatorContinuation && (!operatorContinuation.terminalAt || operatorContinuation.providerExecution !== "unknown")) {
       await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
       return;
     }
     if (!(await this.options.fallbackModelsForHarness(harness)).includes(selectedModel)
-      || operatorCohort && !await this.operatorProjectModelAllowed(verified, selectedModel)) {
+      || operatorIntent && !await this.operatorProjectModelAllowed(verified, selectedModel)) {
       await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
       return;
     }
@@ -3075,14 +3547,29 @@ export class UnfinishedSessionLauncher {
     // any uncertainty becomes held and can only be reconciled by receipt.
     let current: AgentSession | null;
     try { current = await adapter.getSession(snapshot.sessionId); } catch { current = null; }
-    if (!current || current.model !== selectedModel || !exactTerminalRecoverySnapshot(current, quota.evidence)
+    const currentTerminalSnapshotMatches = operatorContinuation
+      ? await this.operatorContinuationSnapshotMatches(current, operatorContinuation, snapshot.sessionId, snapshot.cwd)
+      : exactTerminalRecoverySnapshot(current, quota.evidence);
+    if (!current || current.model !== selectedModel || !currentTerminalSnapshotMatches
       || current.status === "running" || current.needsPermission
       || !(await this.options.fallbackModelsForHarness(harness)).includes(selectedModel)
-      || operatorCohort && !await this.operatorProjectModelAllowed(current, selectedModel)
-      || !await enabled() || await this.suppressIfHumanStopped(harness, snapshot.sessionId, snapshot.cwd, current)
-      || await this.pendingQuestionBlocks(harness, snapshot.sessionId, snapshot.cwd)
+      || operatorIntent && !await this.operatorProjectModelAllowed(current, selectedModel)
+      || !await enabled() || (!operatorContinuation && await this.suppressIfHumanStopped(harness, snapshot.sessionId, snapshot.cwd, current))
+      || (operatorContinuation
+        ? await this.operatorContinuationPendingQuestionBlocks(snapshot.sessionId, snapshot.cwd)
+        : await this.pendingQuestionBlocks(harness, snapshot.sessionId, snapshot.cwd))
       || !this.lifecycleActive(epoch) || !await this.admissionAllowed(current, "resume")) {
-      await this.options.store.holdQuotaRecovery(claimed, "recovery_disabled");
+      await this.options.store.holdQuotaRecovery(claimed, operatorContinuation ? "native_snapshot_changed" : "recovery_disabled");
+      return;
+    }
+    if (operatorContinuation
+      ? await this.operatorContinuationPendingQuestionBlocks(snapshot.sessionId, snapshot.cwd)
+      : await this.pendingQuestionBlocks(harness, snapshot.sessionId, snapshot.cwd)) {
+      await this.options.store.holdQuotaRecovery(claimed, operatorContinuation ? "native_snapshot_changed" : "recovery_disabled");
+      return;
+    }
+    if (operatorContinuation && await this.options.humanStopStore?.isHeld(harness, snapshot.sessionId)) {
+      await this.options.store.holdQuotaRecovery(claimed, "human_stop_active");
       return;
     }
     let result;
@@ -3093,7 +3580,8 @@ export class UnfinishedSessionLauncher {
         model: selectedModel,
         inputId: claimedQuota.dispatchInputId,
         origin: "automation",
-        ...(last.userMessageId ? { recoveryBoundary: { turnId: recoveryEvidenceTurnId(quota.evidence), userMessageId: last.userMessageId, completedAt: Date.parse(last.completedAt) } } : {}),
+        ...(last?.userMessageId && last.completedAt && recoveryEvidenceTurnId(quota.evidence)
+          ? { recoveryBoundary: { turnId: recoveryEvidenceTurnId(quota.evidence)!, userMessageId: last.userMessageId, completedAt: Date.parse(last.completedAt) } } : {}),
       });
     } catch {
       await this.options.store.settleQuotaRecoveryAttempt(claimed, "unknown");
@@ -4934,6 +5422,14 @@ export class UnfinishedSessionLauncher {
     return await this.pendingQuestions.blocks(harness, sessionId, cwd);
   }
 
+  /** Operator continuations must bypass the ordinary TTL cache at each send fence. */
+  private async operatorContinuationPendingQuestionBlocks(sessionId: string, cwd: string): Promise<boolean> {
+    if (!this.pendingQuestions) return true;
+    this.pendingQuestions.invalidate();
+    try { return await this.pendingQuestions.blocks("opencode", sessionId, cwd); }
+    catch { return true; }
+  }
+
   /**
    * Whether Herder may work on this session right now.
    *
@@ -5500,6 +5996,9 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
     ...(record.recoveryCause === "turn.failed" || record.recoveryCause === "process.disconnected" || record.recoveryCause === "stalled" || record.recoveryCause === "quota_exhausted"
       ? { recoveryCause: record.recoveryCause } : {}),
     ...(parseQuotaRecovery(record.quotaRecovery) ? { quotaRecovery: parseQuotaRecovery(record.quotaRecovery)! } : {}),
+    ...(Array.isArray(record.quotaRecoveryHistory)
+      ? { quotaRecoveryHistory: record.quotaRecoveryHistory.map(parseQuotaRecoveryHistoryEntry).filter((entry): entry is QuotaRecoveryHistoryEntry => Boolean(entry)).slice(-16) }
+      : {}),
     ...(record.recoveryBlockedReason ? { recoveryBlockedReason: bounded(record.recoveryBlockedReason, "recoveryBlockedReason") } : {}),
     ...(record.recoveryObservedAt ? { recoveryObservedAt: isoDate(record.recoveryObservedAt, "recoveryObservedAt") } : {}),
     ...(record.recoveryTurnId ? { recoveryTurnId: bounded(record.recoveryTurnId, "recoveryTurnId") } : {}),
@@ -5528,7 +6027,7 @@ function parseQuotaRecovery(value: unknown): QuotaRecoveryRecord | undefined {
   const attempts = nonNegativeInteger(record.attempts, -1);
   const revision = positiveInteger(record.revision, -1);
   if (candidateIndex < 0 || candidateIndex >= record.candidateModels.length || attempts < 0 || revision < 1) return undefined;
-  const reasonCode = ["quota_waiting", "quota_probe_due", "dispatching", "delivery_unknown", "model_unavailable", "candidate_exhausted", "recovery_disabled"].includes(String(record.reasonCode))
+  const reasonCode = ["quota_waiting", "quota_probe_due", "dispatching", "delivery_unknown", "model_unavailable", "candidate_exhausted", "recovery_disabled", "native_snapshot_changed", "human_stop_active"].includes(String(record.reasonCode))
     ? record.reasonCode as QuotaRecoveryRecord["reasonCode"] : undefined;
   return {
     evidence,
@@ -5548,12 +6047,33 @@ function parseQuotaRecovery(value: unknown): QuotaRecoveryRecord | undefined {
   };
 }
 
+function parseQuotaRecoveryHistoryEntry(value: unknown): QuotaRecoveryHistoryEntry | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const item = value as Record<string, unknown>;
+  const quotaRecovery = parseQuotaRecovery(item.quotaRecovery);
+  if (!quotaRecovery) return undefined;
+  const admissionPhase = item.admissionPhase === "accepted_pending" || item.admissionPhase === "in_progress" || item.admissionPhase === "terminal_observed"
+    ? item.admissionPhase : undefined;
+  const terminalReason = item.terminalReason === "turn.completed" || item.terminalReason === "turn.failed" ? item.terminalReason : undefined;
+  return {
+    quotaRecovery,
+    ...(item.acceptedAt ? { acceptedAt: isoDate(item.acceptedAt, "quotaRecoveryHistory.acceptedAt") } : {}),
+    ...(admissionPhase ? { admissionPhase } : {}),
+    ...(terminalReason ? { terminalReason } : {}),
+    ...(item.terminalObservedAt ? { terminalObservedAt: isoDate(item.terminalObservedAt, "quotaRecoveryHistory.terminalObservedAt") } : {}),
+  };
+}
+
 function cloneQuotaRecovery(record: QuotaRecoveryRecord): QuotaRecoveryRecord {
   return { ...record, evidence: { ...record.evidence }, candidateModels: [...record.candidateModels] };
 }
 
 function cloneUnfinishedSessionRecord(record: UnfinishedSessionRecord): UnfinishedSessionRecord {
-  return { ...record, ...(record.quotaRecovery ? { quotaRecovery: cloneQuotaRecovery(record.quotaRecovery) } : {}) };
+  return {
+    ...record,
+    ...(record.quotaRecovery ? { quotaRecovery: cloneQuotaRecovery(record.quotaRecovery) } : {}),
+    ...(record.quotaRecoveryHistory ? { quotaRecoveryHistory: record.quotaRecoveryHistory.map((entry) => ({ ...entry, quotaRecovery: cloneQuotaRecovery(entry.quotaRecovery) })) } : {}),
+  };
 }
 
 function normalizeRecordTarget(input: { harness: HarnessType; sessionId: string; cwd: string; model?: string; title?: string; threadSource?: string }) {
