@@ -389,11 +389,16 @@ function isHumanHold(error: string | undefined): boolean {
 /** Build the production runner over the existing named-session seam. */
 export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: string, quotaPreflight?: MiniMaxQuotaPreflight): ProjectLaunchRunner {
   return async (request) => {
-    // These policy lists are OmniRoute-only. Do not turn an unrelated
-    // provider's definite pre-admission rejection into a cross-provider retry.
-    const omniRouteFallbacks = typeof request.model === "string" && /^omniroute\//iu.test(request.model)
-      ? request.fallbackModels
-      : undefined;
+    // OpenCode uses its native provider/model catalog, so an explicitly
+    // configured OmniRoute candidate may follow a failure on any provider.
+    // ZCode's catalog is OmniRoute-backed and stays scoped to that namespace.
+    // Passing [] for OpenCode without a saved list also disables legacy
+    // implicit defaults: recovery only follows an operator-configured policy.
+    const configuredFallbacks = request.harness === "opencode"
+      ? request.fallbackModels ?? []
+      : request.harness === "zcode" && typeof request.model === "string" && /^omniroute\//iu.test(request.model)
+        ? request.fallbackModels
+        : undefined;
     if (request.configuredRoute && request.harness === "opencode" && request.model === MINIMAX_SUBSCRIPTION_MODEL
       && quotaPreflight && await quotaPreflight(request.model).catch(() => "unknown") === "quota_exhausted") {
       return {
@@ -409,7 +414,7 @@ export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: 
       message: request.message,
       mode: request.mode,
       ...(request.model ? { model: request.model } : {}),
-      ...(omniRouteFallbacks ? { fallbackModels: omniRouteFallbacks } : {}),
+      ...(configuredFallbacks ? { fallbackModels: configuredFallbacks } : {}),
       ...(request.inputId ? { inputId: request.inputId } : {}),
     });
   };

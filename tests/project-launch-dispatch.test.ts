@@ -89,19 +89,71 @@ function nativeAdapter(type: "opencode" | "zcode" | "codex", outcome: Outcome, l
 }
 
 describe("project launch dispatch", () => {
-  it("does not apply OmniRoute policy fallbacks to a non-OmniRoute model", async () => {
+  it("uses an explicit OpenCode fallback after a different provider's definite quota rejection", async () => {
     const cwd = await workspace();
     const attempts: Array<{ harness: string; inputId?: string }> = [];
-    const run = namedSessionRunner(new Map([
-      ["opencode", nativeAdapter("opencode", "quota", attempts, cwd)],
-    ]), "non-omni-route");
+    const adapter = nativeAdapter("opencode", "quota", attempts, cwd);
+    const selectedModels: string[] = [];
+    const nativeSend = adapter.sendMessage.bind(adapter);
+    let sendCount = 0;
+    adapter.changeModel = async (_id, model) => {
+      if (model) selectedModels.push(model);
+      return { ok: true };
+    };
+    adapter.sendMessage = async (id, options) => {
+      const result = await nativeSend(id, options);
+      sendCount += 1;
+      return sendCount === 1 ? result : { ok: true };
+    };
+    const run = namedSessionRunner(new Map([["opencode", adapter]]), "cross-provider-fallback");
+    const primaryModel = "zai-coding-plan/glm-5.3-flash";
+    const fallbackModel = "omniroute/opencode/glm-5.3-flash-free";
     const result = await run({
-      harness: "opencode", cwd, message: "check safely", mode: "sync", model: "anthropic/claude-sonnet",
-      fallbackModels: ["omniroute/openai/fallback"], inputId: "non-omni-route-input", configuredRoute: true,
+      harness: "opencode", cwd, message: "check safely", mode: "sync", model: primaryModel,
+      fallbackModels: [fallbackModel], inputId: "cross-provider-fallback-input", configuredRoute: true,
+    });
+
+    expect(attempts).toHaveLength(2);
+    expect(selectedModels).toEqual([primaryModel, fallbackModel]);
+    expect(result).toMatchObject({ delivery: "completed", model: fallbackModel, fallbackFrom: primaryModel });
+  });
+
+  it("does not silently use an OpenCode fallback when no policy list is configured", async () => {
+    const cwd = await workspace();
+    const attempts: Array<{ harness: string; inputId?: string }> = [];
+    const adapter = nativeAdapter("opencode", "quota", attempts, cwd);
+    const selectedModels: string[] = [];
+    adapter.changeModel = async (_id, model) => {
+      if (model) selectedModels.push(model);
+      return { ok: true };
+    };
+    const result = await namedSessionRunner(new Map([["opencode", adapter]]), "no-fallback-policy")({
+      harness: "opencode", cwd, message: "check safely", mode: "sync", model: "zai-coding-plan/glm-5.3-flash",
+      inputId: "no-fallback-policy-input",
     });
 
     expect(attempts).toHaveLength(1);
-    expect(result).toMatchObject({ delivery: "failed", model: "anthropic/claude-sonnet" });
+    expect(selectedModels).toEqual(["zai-coding-plan/glm-5.3-flash"]);
+    expect(result).toMatchObject({ delivery: "failed", model: "zai-coding-plan/glm-5.3-flash" });
+  });
+
+  it("keeps ZCode fallback scoped to an OmniRoute current model", async () => {
+    const cwd = await workspace();
+    const attempts: Array<{ harness: string; inputId?: string }> = [];
+    const adapter = nativeAdapter("zcode", "quota", attempts, cwd);
+    const selectedModels: string[] = [];
+    adapter.changeModel = async (_id, model) => {
+      if (model) selectedModels.push(model);
+      return { ok: true };
+    };
+    const result = await namedSessionRunner(new Map([["zcode", adapter]]), "zcode-non-omniroute")({
+      harness: "zcode", cwd, message: "check safely", mode: "sync", model: "zai-coding-plan/glm-5.3-flash",
+      fallbackModels: ["omniroute/zc/glm-5.3-flash"], inputId: "zcode-non-omniroute-input",
+    });
+
+    expect(attempts).toHaveLength(1);
+    expect(selectedModels).toEqual(["zai-coding-plan/glm-5.3-flash"]);
+    expect(result).toMatchObject({ delivery: "failed", model: "zai-coding-plan/glm-5.3-flash" });
   });
 
   it.each([
