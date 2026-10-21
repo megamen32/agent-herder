@@ -548,10 +548,11 @@ and authorized runtime promotion.
   Secret-safe `/proc` environment-name inspection found `OMNIROUTE_API_KEY`
   present in the Agent Herder process and absent in the OpenCode process. The
   plugin source had been fetching OmniRoute management APIs directly and
-  returned unknown when the key was absent; its previous base URL also defaulted
-  to port 20128 while the verified process-owned resolver was in Herder.
-  Therefore this was a management API credential/base routing mismatch, not
-  provider authentication. The OpenCode process received no secret.
+  returned unknown when the key was absent. Its default management base
+  `http://127.0.0.1:20128` matched the process-owned resolver and was not the
+  failing part. Therefore the root cause was a management credential-scope
+  mismatch, not provider authentication or a base URL error. The OpenCode
+  process received no secret.
 - The owned source fix routes OpenCode's read-only request to the local Herder
   endpoint `/api/native-model-route-proof`, restricted to loopback, exact
   `omniroute/` model IDs, and returning only the exact resolver leaves. Herder
@@ -580,5 +581,41 @@ and authorized runtime promotion.
   boundary instead of creating a second auth scheme. The OpenCode config and
   Herder launch policy are both owned by uid 1000; the loopback API already
   trusts local callers. No separate local-process security redesign was added.
-  Focused tests are 17/17 and root TypeScript passes. This follow-up plugin URL
-  change still needs scoped publication/reload proof.
+  Focused tests are 17/17 and root TypeScript passes. At the time of this
+  checkpoint, this follow-up plugin URL change still needed publication and
+  reload proof; that proof is recorded in the next section.
+
+## Endpoint configuration and live proof (2026-10-21)
+
+- Follow-up commit `eedb7d8` is published on `main`. Plugin now derives the
+  route-proof URL from the existing `AGENT_HERDER_URL` coordination endpoint
+  setting, with the established local default, and sends no authorization
+  header. URL scheme is restricted to HTTP(S), embedded credentials are
+  rejected, and the endpoint accepts loopback only.
+- Existing trust policy is explicit: Agent Herder binds to `127.0.0.1` by
+  default and requires `AGENT_HERDER_HTTP_TOKEN` when configured non-loopback.
+  OpenCode and Herder run as uid 1000; the native config and launch policy are
+  owned by that same operator. Other loopback clients already share the web
+  API trust boundary, including its existing control routes. The new endpoint
+  does not widen that trust boundary, so no second auth mechanism was added.
+- Exact management readbacks using the already-present Herder credential:
+  `/v1/models`, `/api/model-combo-mappings`, `/api/models/alias`, and
+  `/api/combos` all returned HTTP 200. The selected combo resolved to the
+  ordered leaves `minimax-code/mmcode/MiniMax-M3.1-Flash` then
+  `minimax/minimax/MiniMax-M3.1-Flash`. The real endpoint returned HTTP 200
+  for exact native ID `omniroute/minimax-combo-m3.1`; the earlier 409 probe
+  used the wrong dotted spelling.
+- Plugin source SHA-256
+  `3e170269bb7dfc7bf6c36e85c5347501073c9dcfe49c8ca41b48e508453756c3` was
+  installed at the existing global plugin path; the prior file is preserved
+  as `.pre-eedb7d8`. Official authenticated `opencode reload --server
+  http://127.0.0.1:4095` succeeded without changing the OpenCode PID. A
+  project-scoped GET `/api/plugin` returned HTTP 200, `agent-herder-autopilot`
+  state `active`, and the exact installed local source path. The OpenCode
+  2.0.31 loader source-backed review confirms that a changed plugin digest
+  invalidates the same-path module cache. The console build marker was not
+  present in journald, so load evidence is the changed digest + supported
+  cache invalidation + successful reload + active plugin API readback.
+- No cohort enrollment, prompt, or native send occurred during diagnosis or
+  rollout. The two terminal declines remain separate and unreplayed; the
+  remaining seven stay held pending an explicitly allowed engine-owned action.
