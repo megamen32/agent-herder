@@ -300,6 +300,39 @@ and authorized runtime promotion.
   required `"idle"`. The owned admission check now permits that `"error"` only
   when the exact fresh native failed-turn evidence matches; the enrollment
   regression now uses the real status. Focused launcher tests pass 49/49 and
-  root TypeScript passes. This narrow fix still needs scoped publication and a
-  source-pinned launcher overlay/restart before enrollment. No candidate has
-  been enrolled and no new prompt sent.
+  root TypeScript passes. At this checkpoint the fix still needed publication
+  and runtime overlay; no candidate had been enrolled and no new prompt sent.
+- 2026-10-21 03:24 UTC: Published the terminal-status enrollment fix as
+  `1153ba419f929b13d15947234c62532c760108ac`; `origin/main` matches. A
+  source-pinned artifact with provenance SHA256
+  `145a27301372676e4c7ec6fc97e39d0eac379f825266c2f048a3a52efbd4f0fb`
+  deployed only `dist/autopilot/unfinished-session-launcher.js`; all other
+  runtime modules and the previous static release were preserved. Service
+  restart succeeded (PID 2426350). API reads for policy, exact session,
+  HumanStop and wait returned HTTP 200. ETag PUT set only
+  `fallbackModels.opencode=["omniroute/minimax-combo-m3.1"]`; readback showed
+  all other policy fields unchanged.
+- The first unrestricted entry was enrolled once through the product endpoint
+  under `quota-cohort-20261021-opencode-01`; Herder persisted a waiting record
+  with attempts=0 and changed the model to `omniroute/minimax-combo-m3.1`. No
+  prompt was sent. After model change the exact session still reads status
+  `error`, but `meta.nativeLastTurn` is absent, so the post-change exact fence
+  correctly withheld dispatch. The latest safe Herder message projection still
+  shows the exact user and failed assistant IDs; it omits native status frames,
+  turnId, parentID and active-state details. Direct OpenCode GETs without auth
+  return 401; no credential was inspected. The native transcript route returns
+  422 for this adapter's JSON export format. Adapter worker received the exact
+  mismatch and is inspecting its owned snapshot seam; this queue is not retried
+  manually.
+- OpenCode restricted descendant guard source was integrated and pushed as
+  `e091499a6265679f4c34b64bbad4dd6e6816f4a4`, limited to three plugin/test
+  paths. Focused guard/quota/protocol tests passed 36/36, plus root TypeScript
+  and `node --check`. It has not been installed into or restarted in the global
+  OpenCode runtime. Controls has been asked for an independent guard review and
+  isolated V2 hook proof first.
+- Progress since 03:17 UTC: about 7 minutes wall time, roughly 6 active. Next:
+  receive and verify adapter's fresh native terminal readback after model
+  change, reconcile the existing waiting claim without replay, observe one
+  engine-owned successful response, then enroll the next unrestricted entry.
+  Restricted nine remain excluded until Controls approves the guard. Do not
+  restart global OpenCode or enroll another entry before these checks.
