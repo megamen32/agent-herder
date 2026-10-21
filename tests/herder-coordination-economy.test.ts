@@ -21,7 +21,10 @@ describe('bounded coordination context', () => {
     expect(first!.length).toBeLessThanOrEqual(4000);
     await s.update(notes[0]!.id, 'peer-0', {message:'changed-unique-task'});
     const delta=await s.renderForSession(session);
-    expect(delta).toContain('changed-unique-task');
+    // A working note is summarized by count: the task text and the roster of
+    // the peers stay in the note list instead of the injected context.
+    expect(delta).toContain('Owners +1, -0');
+    expect(delta).not.toContain('changed-unique-task');
     expect(delta).not.toContain('peer-1 ');
     expect(await s.renderForSession(session)).toBeNull();
   });
@@ -31,8 +34,9 @@ describe('bounded coordination context', () => {
     expect(s.activeWorkspaceForSession('agent')).toBe('/actual-project');
     await s.inject({id:'agent',harness:'codex',cwd:'/launch'}, 'message');
     expect(s.activeWorkspaceForSession('agent')).toBe('/actual-project');
-    const presence=(s as unknown as {presence: Map<string,Map<string,number>>}).presence;
-    presence.get('agent')!.set('/actual-project', Date.now()-25*60*60*1000);
+    // A presence entry holds the board of the session and its last activity.
+    const presence=(s as unknown as {presence: Map<string,Map<string,{hostId:string;cwd:string;at:number}>>}).presence;
+    for (const board of presence.get('agent')!.values()) board.at=Date.now()-25*60*60*1000;
     expect(s.presenceForSession('agent')).toBeNull();
   });
 });
@@ -42,7 +46,7 @@ it('reports release of the final owner once',async()=>{
  const n=await s.create({kind:'working',message:'editing',cwd:'/repo',paths:['owned.ts'],authorSessionId:'peer'});
  const session={id:'reader',harness:'codex',cwd:'/repo'};
  await s.renderForSession(session);await s.delete(n.id,'peer');
- expect(await s.renderForSession(session)).toContain('Ownership released');
+ expect(await s.renderForSession(session)).toContain('Owners +0, -1');
  expect(await s.renderForSession(session)).toBeNull();
 });
 it('does not inject sibling project ownership from a parent launch directory',async()=>{
@@ -54,9 +58,10 @@ it('coalesces automatic file roster changes within one minute without discarding
  const s=new CoordinationNoteStore(join(await mkdtemp(join(tmpdir(),'herder-auto-context-')),'notes.json'));
  await s.reservePaths({harness:'codex',sessionId:'peer',cwd:'/repo',paths:['one.ts']});
  const session={id:'reader',harness:'codex',cwd:'/repo'};
- expect(await s.renderForSession(session)).toContain('one.ts');
+ expect(await s.renderForSession(session)).toContain('Owners +1, -0');
  await s.reservePaths({harness:'codex',sessionId:'peer',cwd:'/repo',paths:['two.ts']});
  expect(await s.renderForSession(session)).toBeNull();
  const state=(s as any).injectionState;const key=[...state.keys()][0];state.get(key).at-=61000;
- expect(await s.renderForSession(session)).toContain('two.ts');
+ // The coalesced change is delivered after the minute window, still as a count.
+ expect(await s.renderForSession(session)).toContain('Owners +1, -0');
 });
