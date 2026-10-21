@@ -368,3 +368,18 @@ and authorized runtime promotion.
   copied into source, task notes, or follow-up messages and was not used; treat
   it as exposed and replace it if active. No further `Environment` property
   dumps were run.
+- 2026-10-21 03:39 UTC: User confirms the first business session has met the
+  resume acceptance bar without waiting for its independent project to finish.
+  Durable Herder record is `accepted`, attempts=1, selected model
+  `omniroute/minimax-combo-m3.1`;
+  the accepted stable Herder input ID maps to native user message
+  `msg_15c88a1e4001M0bwBLu2sgzUNU`, and subsequent native assistant messages
+  are on the selected combo while the session is running. This is engine-owned
+  continuation evidence; no manual send/replay occurred. Read-only Herder
+  status at 03:37:55Z still showed that session running, permission-free.
+  User directed to enroll the remaining eligible unrestricted cohort entries
+  through the same operator API with fresh exact native identity, HumanStop,
+  and no-active checks, while observing this first session read-only. Requested
+  the next 18 exact entries from Controls, which owns the frozen ledger; no
+  duplicate inventory and no restricted-nine enrollment. Bounded ramp continues
+  after each durable accepted/native-work receipt; UNKNOWN is never retried.
