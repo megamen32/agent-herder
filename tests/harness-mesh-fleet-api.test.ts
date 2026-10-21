@@ -15,6 +15,24 @@ describe('fleet HTTP and native MCP envelopes (focused integration; expected 3s,
    const result=unwrapResult(await client.callTool({name:'fleet_node_info',arguments:{}}));expect(result.hostId).toBe(hostname());expect(result.nativeUser).toBe(userInfo().username);expect(result.createHarnesses).toEqual(['codex']);expect(adapter.createSession).not.toHaveBeenCalled();expect(adapter.listSessions).not.toHaveBeenCalled();
   }finally{await client.close();await server.close();}
  });
+ it('returns project readiness in both MCP envelopes and refuses unready project create before durable intent',async()=>{
+  const readiness={state:'ready',projectId:'Олег и Никита',projectRoot:'/work/integrator',rootIdentity:'["/work/integrator",1,2]',policyRevision:'etag-1',hostId:hostname(),harness:'codex',harnessVersion:'codex-cli 0.162.1',model:'gpt-6-luna',requiredTools:['web_search'],availableTools:['web_search'],availableModels:['gpt-6-luna'],resourceReady:true,runtimeInstanceId:'runtime-1',cwd:'/work/integrator',pathResolution:{requestedCwd:'/work/integrator',canonicalCwd:'/work/integrator',rootPath:'/work/integrator',contained:true,identityMatches:true},observedAtMs:Date.now()};
+  const runtime={readiness:vi.fn(async()=>readiness),validateReadiness:vi.fn(async()=>false),create:vi.fn()};
+  const ownerJournal={once:vi.fn()};
+  const server=new McpServer({name:'local-herder',version:'1'});
+  registerFleetNodeTools(server,{adapters:new Map(),integratorRuntime:runtime as any,ownerJournal:ownerJournal as any});
+  const client=new Client({name:'fleet-consumer',version:'1'});const [ct,st]=InMemoryTransport.createLinkedPair();
+  await server.connect(st);await client.connect(ct);try{
+   const projectResult=await client.callTool({name:'fleet_node_info',arguments:{project:'Олег и Никита'}});
+   expect(projectResult.structuredContent).toMatchObject({projectReadinessContract:'integrator-host-readiness-v1',projectReadiness:readiness});
+   expect(JSON.parse((projectResult.content[0] as any).text)).toEqual(projectResult.structuredContent);
+   const ordinary=await client.callTool({name:'fleet_node_info',arguments:{}});
+   expect(ordinary.structuredContent).not.toHaveProperty('projectReadinessContract');
+   const create=await client.callTool({name:'fleet_create_session',arguments:{inputId:'a'.repeat(64),harness:'codex',name:'research',cwd:'/work/integrator',model:'gpt-6-luna',project:'Олег и Никита',projectReadinessContract:'integrator-host-readiness-v1',projectReadiness:readiness}});
+   expect(create.structuredContent).toMatchObject({state:'not_attempted',reason:'project_readiness_not_validated'});
+   expect(ownerJournal.once).not.toHaveBeenCalled();expect(runtime.create).not.toHaveBeenCalled();
+  }finally{await client.close();await server.close();}
+ });
  it('HTTP reads are GET-only, default host is local and body cannot select an auth profile or user',async()=>{
   const service={snapshot:vi.fn(async()=>({hosts:[],sessions:[],limited:false,complete:false})),create:vi.fn(async(request)=>({state:'unknown',inputId:request.inputId,retryable:false}))};
   const handler=createFleetApiHandler(service as any,'88');
@@ -26,6 +44,9 @@ describe('fleet HTTP and native MCP envelopes (focused integration; expected 3s,
    const request={hostId:'88',harness:'codex',name:'n',cwd:'/work',inputId:'one'};
    expect((await fetch(base+'/api/fleet/create',{method:'POST',body:JSON.stringify({...request,profileId:'admin'})})).status).toBe(400);expect(service.create).not.toHaveBeenCalled();
    const response=await fetch(base+'/api/fleet/create',{method:'POST',body:JSON.stringify(request)});expect(response.status).toBe(202);expect((await response.json()).state).toBe('unknown');expect(service.create).toHaveBeenCalledTimes(1);
+   const scoped={...request,inputId:'b'.repeat(64),project:'project-alpha'};
+   expect((await fetch(base+'/api/fleet/create',{method:'POST',body:JSON.stringify(scoped)})).status).toBe(202);
+   expect(service.create).toHaveBeenLastCalledWith(scoped);
   }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
  });
 });

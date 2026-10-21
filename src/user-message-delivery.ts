@@ -7,6 +7,7 @@ import type { ZcodeRetainedInput } from "./adapters/zcode-undelivered.js";
 
 export type UserMessageInput = { harness: string; sessionId: string; inputId: string; message: string; mode: "queue" | "steer"; images?: MessageImage[] };
 export type UserMessageReceipt = SendMessageResult & { delivery?: "deferred"; job?: HerderJob<SendMessageResult> };
+export type UserMessageRoute = { adapter: HarnessAdapter; supervisor: Pick<SessionSupervisor, "sendMessage"> };
 
 /** Process-owned human queue. Coordination continues through its native steer path. */
 export class UserMessageDelivery {
@@ -72,12 +73,13 @@ export class UserMessageDelivery {
     return adapter;
   }
 
-  submit(input: UserMessageInput): UserMessageReceipt {
+  submit(input: UserMessageInput, route?: UserMessageRoute): UserMessageReceipt {
     if (Buffer.byteLength(input.message, "utf8") > 256 * 1024) throw new Error("Сообщение слишком большое для очереди отправки");
-    if (input.mode === "steer" && input.harness !== "codex" && this.adapters.get(input.harness)?.controlCapabilities?.steer !== true) {
+    const targetAdapter = route?.adapter ?? this.adapters.get(input.harness);
+    if (input.mode === "steer" && input.harness !== "codex" && targetAdapter?.controlCapabilities?.steer !== true) {
       throw new Error("Вставка в текущий ход для этого агента пока не поддерживается. Выберите «После ответа».");
     }
-    if (!this.adapters.has(input.harness)) throw new Error("Агент недоступен");
+    if (!targetAdapter) throw new Error("Агент недоступен");
     const key = `${input.harness}\0${input.sessionId}\0${input.inputId}`;
     const fingerprint = createHash("sha256").update(`${input.mode}\0${input.message}\0${JSON.stringify(input.images ?? [])}`).digest("hex");
     const humanRequestedAt = Date.now();
@@ -116,7 +118,7 @@ export class UserMessageDelivery {
           try {
             waiting(input.mode === "queue" ? "Ожидает окончания ответа" : "Вставляется в текущий ход");
             if (previous) await Promise.race([previous, delay(this.options.maxWaitMs, undefined, { signal: combined })]);
-            const adapter = this.adapters.get(input.harness)!;
+            const adapter = targetAdapter;
             while (true) {
               combined.throwIfAborted();
               const session = await this.withSlot(combined, () => adapter.getSession(input.sessionId));
@@ -128,7 +130,8 @@ export class UserMessageDelivery {
               combined.throwIfAborted();
               progress(0.5, "Отправляется агенту");
               attempted = true;
-              const result = await this.withSlot(combined, () => this.supervisor.sendMessage(input.harness, input.sessionId, {
+              const supervisor = route?.supervisor ?? this.supervisor;
+              const result = await this.withSlot(combined, () => supervisor.sendMessage(input.harness, input.sessionId, {
                 message: input.message, origin: "human", inputId: input.inputId, images: input.images,
                 humanRequestedAt,
                 steer: input.mode === "steer", queue: ["codex", "opencode", "zcode"].includes(input.harness),
@@ -180,11 +183,11 @@ export class UserMessageDelivery {
     return job ? this.receipt(job, inputId) : null;
   }
 
-  async reconcile(harness: string, sessionId: string, inputId: string): Promise<UserMessageReceipt | null> {
+  async reconcile(harness: string, sessionId: string, inputId: string, routedAdapter?: HarnessAdapter): Promise<UserMessageReceipt | null> {
     const receipt = this.get(harness, sessionId, inputId);
     const job = receipt?.job;
     if (!job || job.state !== "completed" || !job.result?.pending || job.result.admissionUnknown) return receipt;
-    const adapter = this.adapters.get(harness);
+    const adapter = routedAdapter ?? this.adapters.get(harness);
     if (adapter?.getMessageAdmission) {
       const native = await this.withSlot(AbortSignal.timeout(30_000), () => adapter.getMessageAdmission!(sessionId, inputId));
       if (native.state === "admitted" || native.state === "failed") {

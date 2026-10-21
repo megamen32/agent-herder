@@ -81,6 +81,138 @@ async function connectHumanStopConsumer(session: AgentSession) {
 }
 
 describe("session tool DTOs", () => {
+  it("routes exact scoped session sends through a per-call adapter and denies unresolved scope without ordinary fallback", async () => {
+    const session = { ...fixtureSession("scoped-1"), harness: "codex" as const, status: "running" as const, cwd: process.cwd() };
+    const ordinarySend = vi.fn(async () => ({ ok: true }));
+    const scopedSend = vi.fn(async () => ({ ok: true, admitted: true, inputId: "delivery-1" }));
+    const ordinaryResume = vi.fn(async () => ({ ok: true }));
+    const scopedResume = vi.fn(async () => ({ ok: true }));
+    const ordinaryGet = vi.fn(async (id: string) => id === session.id ? session : null);
+    const scopedGet = vi.fn(async (id: string) => id === session.id ? session : null);
+    const ordinaryRaw = vi.fn(async () => null);
+    const scopedRaw = vi.fn(async () => null);
+    const adapter = (sendMessage: typeof ordinarySend, resumeSession: typeof ordinaryResume): HarnessAdapter => ({
+      type: "codex", name: "Codex fixture", async init() {}, async listSessions() { return [session]; },
+      getSession: sendMessage === ordinarySend ? ordinaryGet : scopedGet,
+      getRawTranscript: sendMessage === ordinarySend ? ordinaryRaw : scopedRaw,
+      sendMessage, resumeSession,
+      async stopSession() { return { ok: true }; }, async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+    });
+    const resolver = { adapterForSession: vi.fn(async () => ({ kind: "scoped" as const, adapter: adapter(scopedSend, scopedResume) })) };
+    const events = new HerderEventBus();
+    const server = new McpServer({ name: "session-scoped-routing-test", version: "1" });
+    registerSessionTools(server, { adapters: new Map([["codex", adapter(ordinarySend, ordinaryResume)]]), jobs: new HerderJobRegistry(events), events, integratorRuntime: resolver as any });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "session-scoped-routing-client", version: "1" }, { versionNegotiation: { mode: "auto" } });
+    await server.connect(serverTransport); await client.connect(clientTransport);
+    try {
+      await client.callTool({ name: "send_message", arguments: { sessionId: "scoped-1", message: "continue", humanRequested: true, inputId: "delivery-1" } });
+      expect(resolver.adapterForSession).toHaveBeenCalledWith({ hostId: expect.any(String), harness: "codex", nativeSessionId: "scoped-1" });
+      expect(scopedSend).toHaveBeenCalledOnce(); expect(ordinarySend).not.toHaveBeenCalled();
+      await client.callTool({ name: "resume_agent", arguments: { sessionId: "scoped-1", humanRequested: true } });
+      expect(scopedResume).toHaveBeenCalledOnce(); expect(ordinaryResume).not.toHaveBeenCalled();
+      await client.callTool({ name: "deliver", arguments: { sessionId: "scoped-1", message: "observe existing task", activation: "if_running" } });
+      expect(scopedGet).toHaveBeenCalled(); expect(ordinaryGet).not.toHaveBeenCalled(); expect(ordinarySend).not.toHaveBeenCalled();
+      await client.callTool({ name: "export_transcript", arguments: { sessionId: "scoped-1" } });
+      expect(scopedRaw).toHaveBeenCalledOnce(); expect(ordinaryRaw).not.toHaveBeenCalled();
+      resolver.adapterForSession.mockResolvedValueOnce({ kind: "deny", reason: "binding_unresolved" });
+      const denied = await client.callTool({ name: "stop_agent", arguments: { sessionId: "scoped-1" } });
+      expect(denied.isError).toBe(true); expect(ordinarySend).not.toHaveBeenCalled();
+    } finally { await client.close(); await server.close(); }
+  });
+
+  it("routes all session-affine MCP tools through the scoped adapter and preserves ordinary sessions", async () => {
+    const scopedSession = { ...fixtureSession("scoped-affine"), harness: "codex" as const };
+    const ordinarySession = { ...fixtureSession("ordinary-affine"), harness: "codex" as const };
+    const child = { ...fixtureSession("scoped-child"), harness: "codex" as const };
+    const makeAdapter = (session: AgentSession, children: AgentSession[]) => ({
+      type: "codex" as const, name: `adapter-${session.id}`,
+      init: vi.fn(async () => {}),
+      listSessions: vi.fn(async () => [session]),
+      getSession: vi.fn(async (id: string) => id === session.id ? session : null),
+      listChildren: vi.fn(async () => children),
+      respondPermission: vi.fn(async () => ({ ok: true })),
+      setPermissions: vi.fn(async () => ({ ok: false, error: "Codex app-server permissions must be configured at thread start" })),
+      changeModel: vi.fn(async (id: string, model: string) => id === session.id && model === "gpt-6-luna"
+        ? ({ ok: true }) : ({ ok: false, error: "project-scoped Codex model is pinned" })),
+      sendMessage: vi.fn(async () => ({ ok: true })),
+      stopSession: vi.fn(async () => ({ ok: true })),
+    }) as unknown as HarnessAdapter;
+    const scoped = makeAdapter(scopedSession, [child]);
+    const ordinary = makeAdapter(ordinarySession, []);
+    const denied = new Map([
+      ["unresolved-affine", "binding_unresolved"],
+      ["wrong-root-affine", "project_session_current_route_mismatch"],
+      ["wrong-address-affine", "project_session_host_or_harness_mismatch"],
+    ]);
+    const resolver = { adapterForSession: vi.fn(async ({ nativeSessionId }: { nativeSessionId: string }) => {
+      if (nativeSessionId === scopedSession.id) return { kind: "scoped" as const, adapter: scoped };
+      if (denied.has(nativeSessionId)) return { kind: "deny" as const, reason: denied.get(nativeSessionId)! };
+      return { kind: "ordinary" as const };
+    }) };
+    const events = new HerderEventBus();
+    const server = new McpServer({ name: "session-affine-scoped-routing-test", version: "1" });
+    registerSessionTools(server, {
+      adapters: new Map([["codex", ordinary]]), jobs: new HerderJobRegistry(events), events,
+      integratorRuntime: resolver as any,
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "session-affine-scoped-routing-client", version: "1" }, { versionNegotiation: { mode: "auto" } });
+    await server.connect(serverTransport); await client.connect(clientTransport);
+    const callAffineTools = async (sessionId: string, harness = "codex") => Promise.all([
+      client.callTool({ name: "session_identity", arguments: { sessionId, harness } }),
+      client.callTool({ name: "list_children", arguments: { sessionId, harness } }),
+      client.callTool({ name: "respond_permission", arguments: { sessionId, harness, permissionId: "permission-1", response: "deny" } }),
+      client.callTool({ name: "set_permissions", arguments: { sessionId, harness, allowedTools: "read", mode: "safe" } }),
+      client.callTool({ name: "change_model", arguments: { sessionId, harness, model: "gpt-6-luna" } }),
+    ]);
+    try {
+      const scopedResults = await callAffineTools(scopedSession.id);
+      expect(scopedResults.every((result) => result.isError !== true)).toBe(true);
+      expect((scoped as any).getSession).toHaveBeenCalledTimes(5);
+      expect((scoped as any).listChildren).toHaveBeenCalledOnce();
+      expect((scoped as any).respondPermission).toHaveBeenCalledOnce();
+      expect((scoped as any).setPermissions).toHaveBeenCalledOnce();
+      expect((scoped as any).changeModel).toHaveBeenCalledOnce();
+      expect((ordinary as any).getSession).not.toHaveBeenCalled();
+      expect((ordinary as any).listChildren).not.toHaveBeenCalled();
+      expect((ordinary as any).respondPermission).not.toHaveBeenCalled();
+      expect((ordinary as any).setPermissions).not.toHaveBeenCalled();
+      expect((ordinary as any).changeModel).not.toHaveBeenCalled();
+
+      const ordinaryResults = await callAffineTools(ordinarySession.id);
+      expect(ordinaryResults.every((result) => result.isError !== true)).toBe(true);
+      expect((ordinary as any).getSession).toHaveBeenCalledTimes(5);
+      expect((ordinary as any).listChildren).toHaveBeenCalledOnce();
+      expect((ordinary as any).respondPermission).toHaveBeenCalledOnce();
+      expect((ordinary as any).setPermissions).toHaveBeenCalledOnce();
+      expect((ordinary as any).changeModel).toHaveBeenCalledOnce();
+
+      const countsBeforeDenied = [
+        (ordinary as any).getSession.mock.calls.length, (ordinary as any).listChildren.mock.calls.length,
+        (ordinary as any).respondPermission.mock.calls.length, (ordinary as any).setPermissions.mock.calls.length,
+        (ordinary as any).changeModel.mock.calls.length, (scoped as any).getSession.mock.calls.length,
+        (scoped as any).listChildren.mock.calls.length, (scoped as any).respondPermission.mock.calls.length,
+        (scoped as any).setPermissions.mock.calls.length, (scoped as any).changeModel.mock.calls.length,
+      ];
+      for (const sessionId of denied.keys()) {
+        const results = await callAffineTools(sessionId);
+        expect(results.every((result) => result.isError === true)).toBe(true);
+      }
+      const wrongHarness = await client.callTool({ name: "list_children", arguments: { sessionId: scopedSession.id, harness: "opencode" } });
+      expect(wrongHarness.isError).toBe(true);
+      expect([
+        (ordinary as any).getSession.mock.calls.length, (ordinary as any).listChildren.mock.calls.length,
+        (ordinary as any).respondPermission.mock.calls.length, (ordinary as any).setPermissions.mock.calls.length,
+        (ordinary as any).changeModel.mock.calls.length, (scoped as any).getSession.mock.calls.length,
+        (scoped as any).listChildren.mock.calls.length, (scoped as any).respondPermission.mock.calls.length,
+        (scoped as any).setPermissions.mock.calls.length, (scoped as any).changeModel.mock.calls.length,
+      ]).toEqual(countsBeforeDenied);
+      expect((scoped as any).init).not.toHaveBeenCalled();
+      expect((ordinary as any).init).not.toHaveBeenCalled();
+    } finally { await client.close(); await server.close(); }
+  });
+
   it("publishes output schemas and structured session results", async () => {
     const client = await connect();
     const tools = (await client.listTools()).tools;

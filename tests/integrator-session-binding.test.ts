@@ -94,6 +94,40 @@ describe("integrator session binding store", () => {
     })).rejects.toThrow("address_conflict");
   });
 
+  it("resolves one exact accepted scoped address and fails closed for unknown, legacy, or duplicate addresses", async () => {
+    const f = await fixture();
+    const address = { hostId: "server-100", harness: "codex", nativeSessionId: "scoped-session" };
+    const scope = { projectId: "/work/project", rootIdentity: '["/work/project",1,2]', policyRevision: "codex-native-project-v2",
+      hostId: "server-100", harness: "codex" as const, harnessVersion: "codex-cli 0.162.1",
+      canonicalRoot: { path: "/work/project", device: 1, inode: 2 }, nativeDataHome: { path: "/home/user/.codex", device: 1, inode: 3 } };
+    const reserve = await f.store.reserve({ operationId: "address-accepted", hostId: "server-100", harness: "codex", scope });
+    await f.store.record({ operationId: "address-accepted", attempt: 1,
+      receipt: receipt(reserve.attempt.inputId, "created", { address, launchCwd: scope.canonicalRoot.path }) });
+    expect(await f.store.findByNativeAddress(address)).toMatchObject({ state: "accepted", binding: { operationId: "address-accepted" }, attempt: { scope } });
+    expect(await f.store.findByNativeAddress({ ...address, nativeSessionId: "absent" })).toEqual({ state: "not_found" });
+
+    const legacyAddress = { ...address, nativeSessionId: "legacy-unscoped" };
+    const legacy = await f.store.reserve({ operationId: "address-legacy", hostId: "server-100", harness: "codex" });
+    await f.store.record({ operationId: "address-legacy", attempt: 1,
+      receipt: receipt(legacy.attempt.inputId, "created", { address: legacyAddress }) });
+    expect(await f.store.findByNativeAddress(legacyAddress)).toMatchObject({ state: "unresolved", reason: "scope_missing" });
+
+    const unknownAddress = { ...address, nativeSessionId: "unknown-address" };
+    const unknown = await f.store.reserve({ operationId: "address-unknown", hostId: "server-100", harness: "codex", scope });
+    await f.store.record({ operationId: "address-unknown", attempt: 1,
+      receipt: receipt(unknown.attempt.inputId, "unknown", { address: unknownAddress }) });
+    expect(await f.store.findByNativeAddress(unknownAddress)).toMatchObject({ state: "unresolved", reason: "binding_not_accepted" });
+
+    const duplicateAddress = { ...address, nativeSessionId: "duplicate-address" };
+    const duplicate = await f.store.reserve({ operationId: "address-duplicate-a", hostId: "server-100", harness: "codex", scope });
+    await f.store.record({ operationId: "address-duplicate-a", attempt: 1,
+      receipt: receipt(duplicate.attempt.inputId, "created", { address: duplicateAddress }) });
+    const duplicateOther = await f.store.reserve({ operationId: "address-duplicate-b", hostId: "server-100", harness: "codex", scope });
+    await f.store.record({ operationId: "address-duplicate-b", attempt: 1,
+      receipt: receipt(duplicateOther.attempt.inputId, "created", { address: duplicateAddress }) });
+    expect(await f.store.findByNativeAddress(duplicateAddress)).toEqual({ state: "unresolved", reason: "address_ambiguous" });
+  });
+
   it("accepts only matching owner reconciliation for uncertain launch and preserves the exact address", async () => {
     const f = await fixture();
     const reserved = await f.store.reserve({ operationId: "task-op-reconcile", hostId: "mac-mini", harness: "opencode" });

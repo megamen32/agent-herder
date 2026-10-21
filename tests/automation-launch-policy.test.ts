@@ -22,6 +22,37 @@ afterEach(async () => {
 });
 
 describe("automation launch policy", () => {
+  it("accepts live hosted search only for the exact Codex Luna integrator route", () => {
+    const routed = validateAutomationLaunchPolicy({
+      ...policy,
+      projectRoutes: {
+        "/existing/task/workspace": {
+          harnesses: ["codex"], aliases: ["Олег и Никита"],
+          models: { codex: "gpt-6-luna" }, nativeWebSearch: "live",
+        },
+      },
+    });
+    expect(routed.projectRoutes?.["/existing/task/workspace"]).toMatchObject({ nativeWebSearch: "live" });
+
+    const invalidRoutes = [
+      { harnesses: ["codex"], aliases: ["other"], models: { codex: "gpt-6-luna" }, nativeWebSearch: "live" },
+      { harnesses: ["codex"], aliases: ["Олег и Никита"], models: { codex: "gpt-5.6-sol" }, nativeWebSearch: "live" },
+      { harnesses: ["codex", "zcode"], aliases: ["Олег и Никита"], models: { codex: "gpt-6-luna", zcode: "z" }, nativeWebSearch: "live" },
+      { harnesses: ["codex"], aliases: ["Олег и Никита"], models: { codex: "gpt-6-luna" }, nativeWebSearch: "cached" },
+    ];
+    for (const route of invalidRoutes) {
+      expect(() => validateAutomationLaunchPolicy({
+        version: 1, allowedHarnesses: ["codex", "zcode"], preferredHarness: "codex",
+        models: { codex: "gpt-6-luna", zcode: "z" }, projectRoutes: { "/task": route },
+      })).toThrow(/native web search|nativeWebSearch/);
+    }
+
+    const ordinary = validateAutomationLaunchPolicy({ ...policy,
+      projectRoutes: { "/ordinary": { harnesses: ["codex"] } },
+    });
+    expect(ordinary.projectRoutes?.["/ordinary"]).not.toHaveProperty("nativeWebSearch");
+  });
+
   it("fails closed for operator cohort recovery on the restricted TelegramAuto route only", () => {
     const configured = validateAutomationLaunchPolicy({
       version: 1,

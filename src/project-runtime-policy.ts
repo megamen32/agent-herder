@@ -4,11 +4,19 @@ import { realpath, stat } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
 import { basename, delimiter, isAbsolute, join, resolve } from "node:path";
 import type { ProjectExecutionBinding } from "./project-execution-scope.js";
+import type { IntegratorSessionBindingStore } from "./integrator-session-binding.js";
+import type { IntegratorNativeAddress } from "./integrator-session-binding.js";
 
 /** Fixed native Codex profile. Callers cannot choose a weaker profile. */
 export const CODEX_PROJECT_PERMISSION_PROFILE = "agent_herder_project_v1" as const;
-export const CODEX_PROJECT_POLICY_REVISION = "codex-native-project-v1" as const;
+export const CODEX_PROJECT_POLICY_REVISION = "codex-native-project-v2" as const;
+export const CODEX_PROJECT_WEB_SEARCH_POLICY_REVISION = "codex-native-project-v2-web-search-live" as const;
 export const CODEX_PROJECT_MODEL_ID = "gpt-6-luna" as const;
+export type CodexProjectNativeWebSearchMode = "live";
+
+export function codexProjectPolicyRevision(nativeWebSearchMode?: CodexProjectNativeWebSearchMode): string {
+  return nativeWebSearchMode === "live" ? CODEX_PROJECT_WEB_SEARCH_POLICY_REVISION : CODEX_PROJECT_POLICY_REVISION;
+}
 
 export interface CodexProjectRuntimePolicy {
   readonly binding: Readonly<ProjectExecutionBinding>;
@@ -17,6 +25,10 @@ export interface CodexProjectRuntimePolicy {
   readonly rootInode: number;
   readonly permissionProfileId: typeof CODEX_PROJECT_PERMISSION_PROFILE;
   readonly modelId: typeof CODEX_PROJECT_MODEL_ID;
+  readonly materialized: boolean;
+  readonly nativeWebSearchMode?: CodexProjectNativeWebSearchMode;
+  /** Present only on a policy rebuilt from an accepted H34 record. */
+  readonly acceptedSession?: Readonly<{ operationId: string; address: IntegratorNativeAddress }>;
 }
 
 export interface CodexProjectToolDenyList {
@@ -49,7 +61,12 @@ export function codexProjectDiscoveryDenyList(input: {
 export async function createCodexProjectRuntimePolicy(input: {
   projectId: string;
   projectRoot: string;
+  materialized?: boolean;
+  nativeWebSearchMode?: CodexProjectNativeWebSearchMode;
 }): Promise<CodexProjectRuntimePolicy> {
+  if (input.nativeWebSearchMode !== undefined && input.nativeWebSearchMode !== "live") {
+    throw new Error("unsupported native Codex web-search mode");
+  }
   if (!input.projectId.trim() || !isAbsolute(input.projectRoot) || resolve(input.projectRoot) !== input.projectRoot) {
     throw new Error("project runtime requires a project id and normalized absolute root");
   }
@@ -59,8 +76,8 @@ export async function createCodexProjectRuntimePolicy(input: {
   if (!rootStat.isDirectory()) throw new Error("project runtime root must be a directory");
   const binding = Object.freeze({
     projectId: input.projectId,
-    rootIdentity: `${canonicalRoot}\0${rootStat.dev}:${rootStat.ino}`,
-    policyRevision: CODEX_PROJECT_POLICY_REVISION,
+    rootIdentity: codexProjectRootIdentity(canonicalRoot, rootStat.dev, rootStat.ino),
+    policyRevision: codexProjectPolicyRevision(input.nativeWebSearchMode),
     attemptId: randomUUID(),
     hostId: hostname(),
     runtimeInstanceId: randomUUID(),
@@ -72,7 +89,70 @@ export async function createCodexProjectRuntimePolicy(input: {
     rootInode: rootStat.ino,
     permissionProfileId: CODEX_PROJECT_PERMISSION_PROFILE,
     modelId: CODEX_PROJECT_MODEL_ID,
+    materialized: input.materialized === true,
+    ...(input.nativeWebSearchMode ? { nativeWebSearchMode: input.nativeWebSearchMode } : {}),
   });
+}
+
+/** Restore a stable H34 operation only from its accepted, scoped native receipt. */
+export async function restoreCodexProjectRuntimePolicy(input: {
+  projectId: string;
+  projectRoot: string;
+  operationId: string;
+  store: IntegratorSessionBindingStore;
+  nativeDataHome: string;
+  nativeWebSearchMode?: CodexProjectNativeWebSearchMode;
+}): Promise<CodexProjectRuntimePolicy> {
+  if (input.nativeWebSearchMode !== undefined && input.nativeWebSearchMode !== "live") {
+    throw new Error("unsupported native Codex web-search mode");
+  }
+  if (!input.operationId.trim()) throw new Error("materialized Codex restore requires an operation id");
+  const canonicalRoot = await realpath(input.projectRoot);
+  const rootStat = await stat(canonicalRoot);
+  if (canonicalRoot !== input.projectRoot || !rootStat.isDirectory()) throw new Error("project runtime root identity changed");
+  const homePath = await realpath(input.nativeDataHome);
+  const homeStat = await stat(homePath);
+  if (!homeStat.isDirectory()) throw new Error("project runtime native data home is not a directory");
+  const record = await input.store.get(input.operationId);
+  const attempt = record?.attempts.at(-1);
+  const scope = attempt?.scope;
+  const address = attempt?.address;
+  const rootIdentity = codexProjectRootIdentity(canonicalRoot, rootStat.dev, rootStat.ino);
+  if (!record || record.operationId !== input.operationId || record.state !== "accepted"
+    || record.harness !== "codex" || attempt?.state !== "accepted" || attempt.receipt?.state !== "created"
+    || !address || address.nativeSessionId !== attempt.receipt.address?.nativeSessionId
+    || !scope || scope.projectId !== input.projectId || scope.rootIdentity !== rootIdentity
+    || scope.policyRevision !== codexProjectPolicyRevision(input.nativeWebSearchMode) || scope.hostId !== hostname()
+    || scope.harness !== "codex" || scope.canonicalRoot.path !== canonicalRoot
+    || scope.canonicalRoot.device !== rootStat.dev || scope.canonicalRoot.inode !== rootStat.ino
+    || scope.nativeDataHome.path !== homePath || scope.nativeDataHome.device !== homeStat.dev
+    || scope.nativeDataHome.inode !== homeStat.ino) {
+    throw new Error("materialized Codex restore has no matching accepted scoped H34 record");
+  }
+  const binding = Object.freeze({
+    projectId: input.projectId,
+    rootIdentity,
+    policyRevision: codexProjectPolicyRevision(input.nativeWebSearchMode),
+    attemptId: input.operationId,
+    hostId: scope.hostId,
+    runtimeInstanceId: randomUUID(),
+  });
+  return Object.freeze({
+    binding,
+    rootPath: canonicalRoot,
+    rootDevice: rootStat.dev,
+    rootInode: rootStat.ino,
+    permissionProfileId: CODEX_PROJECT_PERMISSION_PROFILE,
+    modelId: CODEX_PROJECT_MODEL_ID,
+    materialized: true,
+    ...(input.nativeWebSearchMode ? { nativeWebSearchMode: input.nativeWebSearchMode } : {}),
+    acceptedSession: Object.freeze({ operationId: record.operationId, address: Object.freeze({ ...address }) }),
+  });
+}
+
+function codexProjectRootIdentity(path: string, device: number, inode: number): string {
+  // H34 persists identities as validated text; JSON tuple encoding is stable and control-character free.
+  return JSON.stringify([path, device, inode]);
 }
 
 /** Re-check the exact root before every native create/resume/turn operation. */
@@ -93,7 +173,11 @@ export async function assertCodexProjectRoot(policy: CodexProjectRuntimePolicy, 
 export function codexProjectAppServerArgs(
   denyList: CodexProjectToolDenyList = { mcpServerIds: [], appIds: [], pluginIds: [] },
   codexBin = "codex",
+  nativeWebSearchMode?: CodexProjectNativeWebSearchMode,
 ): string[] {
+  if (nativeWebSearchMode !== undefined && nativeWebSearchMode !== "live") {
+    throw new Error("unsupported native Codex web-search mode");
+  }
   const profile = CODEX_PROJECT_PERMISSION_PROFILE;
   const userHome = homedir();
   const codexHome = resolve(process.env.CODEX_HOME || join(userHome, ".codex"));
@@ -132,6 +216,7 @@ export function codexProjectAppServerArgs(
     `shell_environment_policy.ignore_default_excludes=false`,
     `shell_environment_policy.experimental_use_profile=false`,
     `shell_environment_policy.set.PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"`,
+    ...(nativeWebSearchMode === "live" ? [`web_search=\"live\"`] : []),
     ...validateIds(denyList.mcpServerIds, "MCP server").map((id) => `mcp_servers.${id}.enabled=false`),
     ...validateIds(denyList.appIds, "app").map((id) => `apps.${id}.enabled=false`),
     ...validateIds(denyList.pluginIds, "plugin").map((id) => `plugins.${id}.enabled=false`),
@@ -209,6 +294,22 @@ export function codexProjectIntegrationFeatureDeny(readback: unknown): {
   };
 }
 
+/** Verify an explicitly requested hosted-search mode came from this child process's CLI override. */
+export function codexProjectNativeWebSearch(readback: unknown, expected?: CodexProjectNativeWebSearchMode): {
+  complete: boolean;
+  mode: string;
+  origin: string;
+} {
+  if (!expected) return { complete: true, mode: "not_requested", origin: "not_requested" };
+  const response = readback && typeof readback === "object"
+    ? readback as { config?: { web_search?: unknown }; origins?: Record<string, { name?: { type?: unknown } } | undefined> }
+    : {};
+  const mode = typeof response.config?.web_search === "string" ? response.config.web_search : "unknown";
+  const origin = typeof response.origins?.web_search?.name?.type === "string"
+    ? response.origins.web_search.name.type : "unknown";
+  return { complete: mode === expected && origin === "sessionFlags", mode, origin };
+}
+
 /** Require the process-local profile to be the complete, closed filesystem policy we supplied. */
 export function codexProjectFilesystemProfileDeny(readback: unknown, codexBin = "codex"): {
   complete: boolean;
@@ -258,7 +359,7 @@ export function codexProjectThreadParams(policy: CodexProjectRuntimePolicy): Rec
   return {
     permissions: policy.permissionProfileId,
     runtimeWorkspaceRoots: [policy.rootPath],
-    ephemeral: true,
+    ephemeral: !policy.materialized,
   };
 }
 

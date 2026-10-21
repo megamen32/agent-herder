@@ -1,21 +1,31 @@
 import { describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, rm, readFile, stat, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import { createServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { WebSocketServer } from "ws";
 import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
-import { createCodexProjectRuntimePolicy } from "../src/project-runtime-policy.js";
+import { createCodexProjectRuntimePolicy, restoreCodexProjectRuntimePolicy } from "../src/project-runtime-policy.js";
 import { CodexAdapter } from "../src/adapters/codex.js";
 import { getHumanStopStore } from "../src/human-stop-store.js";
 import { createNamedSession } from "../src/named-session.js";
+import { IntegratorSessionBindingStore } from "../src/integrator-session-binding.js";
 
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
 
 type ScopedCollectionThread = { id: string; name?: string; cwd?: string; status?: string };
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
 
 function stubScopedCollectionReads(adapter: CodexAppServerAdapter, options: {
   root: string;
@@ -77,6 +87,334 @@ function stubScopedCollectionReads(adapter: CodexAppServerAdapter, options: {
 }
 
 describe("Codex app-server adapter", () => {
+  it("aborts a project factory during deferred discovery init and awaits every registered adapter disposal", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-abort-factory-"));
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "abort-factory", projectRoot: root });
+    const controller = new AbortController();
+    const initGate = deferred<void>();
+    const owned = new Set<CodexAppServerAdapter>();
+    const init = vi.spyOn(CodexAppServerAdapter.prototype as unknown as { initializeTransport: () => Promise<void> },
+      "initializeTransport").mockImplementation(async () => initGate.promise);
+    const inventory = vi.spyOn(CodexAppServerAdapter.prototype as unknown as { readProjectToolInventory: () => Promise<unknown> },
+      "readProjectToolInventory").mockResolvedValue({ complete: true, denyList: { mcpServerIds: [], appIds: [], pluginIds: [] }, active: false, summary: "closed" });
+    try {
+      const factory = CodexAppServerAdapter.createProjectScoped({ policy, codexBin: process.execPath, cwd: root,
+        signal: controller.signal, onOwnedAdapter: adapter => owned.add(adapter) });
+      const factoryOutcome = expect(factory).rejects.toMatchObject({ name: "AbortError" });
+      expect(owned.size).toBe(1);
+      controller.abort();
+      let disposalSettled = false;
+      const disposal = Promise.all([...owned].map(adapter => adapter.dispose())).then(() => { disposalSettled = true; });
+      await Promise.resolve();
+      expect(disposalSettled).toBe(false);
+      initGate.resolve();
+      await disposal;
+      await factoryOutcome;
+      expect(inventory).not.toHaveBeenCalled();
+      expect(owned.size).toBe(1);
+    } finally {
+      init.mockRestore();
+      inventory.mockRestore();
+      await Promise.all([...owned].map(adapter => adapter.dispose()));
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("awaits termination of its owned child while initialization is deferred", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-abort-child-"));
+    const controller = new AbortController();
+    const initGate = deferred<void>();
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, signal: controller.signal });
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
+    const internals = adapter as unknown as { child?: ChildProcessWithoutNullStreams; initializeTransport: () => Promise<void> };
+    internals.child = child;
+    internals.initializeTransport = () => initGate.promise;
+    const initialization = adapter.init();
+    const initializationOutcome = expect(initialization).rejects.toMatchObject({ name: "AbortError" });
+    try {
+      controller.abort();
+      let disposalSettled = false;
+      const disposal = adapter.dispose().then(() => { disposalSettled = true; });
+      await Promise.resolve();
+      expect(disposalSettled).toBe(false);
+      initGate.resolve();
+      await disposal;
+      expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
+      await initializationOutcome;
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects disposal when the final SIGKILL wait cannot confirm owned-child exit", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-unconfirmed-child-"));
+    const controller = new AbortController();
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, signal: controller.signal });
+    const fakeChildEvents = new EventEmitter();
+    const child = Object.assign(fakeChildEvents, {
+      exitCode: null as number | null,
+      signalCode: null as NodeJS.Signals | null,
+      stdin: new PassThrough(),
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      kill: vi.fn(() => true),
+    }) as unknown as ChildProcessWithoutNullStreams;
+    const events: Array<Record<string, unknown>> = [];
+    const internals = adapter as unknown as {
+      child?: ChildProcessWithoutNullStreams;
+      emitEvent: (event: Record<string, unknown>) => void;
+    };
+    internals.child = child;
+    vi.spyOn(internals, "emitEvent").mockImplementation(event => events.push(event));
+    vi.useFakeTimers();
+    try {
+      controller.abort();
+      const disposal = adapter.dispose();
+      const disposalOutcome = expect(disposal).rejects.toMatchObject({ name: "OwnedChildTerminationUnconfirmedError" });
+      await vi.advanceTimersByTimeAsync(2_000);
+      await disposalOutcome;
+      expect(events).toContainEqual(expect.objectContaining({ kind: "process.disconnected",
+        data: expect.objectContaining({ reason: "owned-child-cleanup-unconfirmed", error: "OwnedChildTerminationUnconfirmedError" }) }));
+      expect(child.kill).toHaveBeenNthCalledWith(1, "SIGTERM");
+      expect(child.kill).toHaveBeenNthCalledWith(2, "SIGKILL");
+      expect(child.exitCode).toBeNull();
+      expect(child.signalCode).toBeNull();
+    } finally {
+      vi.useRealTimers();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("records a late deferred H34 reservation UNKNOWN and never starts a thread after abort", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-abort-reserve-"));
+    const nativeHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
+    const store = new IntegratorSessionBindingStore({ persistencePath: join(root, "integrator-bindings.json") });
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "abort-reserve", projectRoot: root, materialized: true });
+    const controller = new AbortController();
+    const reserveStarted = deferred<void>();
+    const reserveGate = deferred<void>();
+    const originalReserve = store.reserve.bind(store);
+    vi.spyOn(store, "reserve").mockImplementation(async (input) => {
+      reserveStarted.resolve();
+      await reserveGate.promise;
+      return originalReserve(input);
+    });
+    const owner = { resolve: async (binding: typeof policy.binding) => ({ kind: "trusted" as const,
+      binding, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 10_000 }) };
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, codexDir: nativeHome,
+      projectRuntimePolicy: policy, integratorSessionBindingStore: store, projectRuntimeOwner: owner,
+      signal: controller.signal });
+    const calls: string[] = [];
+    const internals = adapter as unknown as { ensureReady: () => Promise<void>;
+      assertEffectiveProjectToolIsolation: () => Promise<void>; request: (method: string) => Promise<unknown> };
+    internals.ensureReady = async () => undefined;
+    internals.assertEffectiveProjectToolIsolation = async () => undefined;
+    internals.request = async method => { calls.push(method); return {}; };
+    try {
+      const create = adapter.createSession({ name: "abort-reserve", cwd: root, model: "gpt-6-luna" });
+      await reserveStarted.promise;
+      controller.abort();
+      reserveGate.resolve();
+      await expect(create).rejects.toMatchObject({ name: "AbortError" });
+      expect(calls).toEqual([]);
+      expect(await store.get(policy.binding.attemptId)).toMatchObject({ state: "unknown",
+        attempts: [{ state: "unknown", receipt: { state: "unknown", reason: "operation_aborted_after_durable_reservation" } }] });
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not resume after a deferred readiness await resolves past abort", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-abort-resume-"));
+    const nativeHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "abort-resume", projectRoot: root, materialized: true });
+    const store = new IntegratorSessionBindingStore({ persistencePath: join(root, "integrator-bindings.json") });
+    const owner = { resolve: async (binding: typeof policy.binding) => ({ kind: "trusted" as const,
+      binding, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 10_000 }) };
+    const controller = new AbortController();
+    const readiness = deferred<void>();
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, codexDir: nativeHome,
+      projectRuntimePolicy: policy, integratorSessionBindingStore: store, projectRuntimeOwner: owner,
+      signal: controller.signal });
+    const calls: string[] = [];
+    const internals = adapter as unknown as { projectThreadIds: Set<string>; ensureReady: () => Promise<void>;
+      request: (method: string) => Promise<unknown> };
+    internals.projectThreadIds.add("owned-thread-before-resume");
+    internals.ensureReady = () => readiness.promise;
+    internals.request = async method => { calls.push(method); return {}; };
+    try {
+      const resume = adapter.resumeSession("owned-thread-before-resume");
+      controller.abort();
+      readiness.resolve();
+      await expect(resume).resolves.toMatchObject({ ok: false, error: "Codex adapter operation aborted" });
+      expect(calls).toEqual([]);
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("captures a late native turn ID after abort and sends no follow-up RPC", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-abort-turn-"));
+    const nativeHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "abort-turn", projectRoot: root, materialized: true });
+    const store = new IntegratorSessionBindingStore({ persistencePath: join(root, "integrator-bindings.json") });
+    const controller = new AbortController();
+    const turnStarted = deferred<void>();
+    const turnGate = deferred<unknown>();
+    const progress: Array<Record<string, unknown>> = [];
+    const owner = { resolve: async (binding: typeof policy.binding) => ({ kind: "trusted" as const,
+      binding, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 10_000 }) };
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, codexDir: nativeHome,
+      projectRuntimePolicy: policy, integratorSessionBindingStore: store, projectRuntimeOwner: owner,
+      signal: controller.signal, onMaterializationProgress: event => progress.push({ ...event }) });
+    const calls: string[] = [];
+    const internals = adapter as unknown as { projectThreadIds: Set<string>; ensureReady: () => Promise<void>;
+      assertEffectiveProjectToolIsolation: () => Promise<void>; getSession: () => Promise<unknown>;
+      request: (method: string) => Promise<unknown> };
+    internals.projectThreadIds.add("owned-materialized-thread");
+    internals.ensureReady = async () => undefined;
+    internals.assertEffectiveProjectToolIsolation = async () => undefined;
+    internals.getSession = async () => ({ id: "owned-materialized-thread", harness: "codex", status: "idle", cwd: root,
+      title: "test", lastActivity: new Date().toISOString(), model: "gpt-6-luna", meta: {} });
+    internals.request = async method => {
+      calls.push(method);
+      if (method === "turn/start") { turnStarted.resolve(); return turnGate.promise; }
+      return {};
+    };
+    try {
+      const send = adapter.sendMessage("owned-materialized-thread", { message: "one bounded turn", origin: "human", model: "gpt-6-luna" });
+      await turnStarted.promise;
+      controller.abort();
+      turnGate.resolve({ turn: { id: "late-turn-id", status: "inProgress" } });
+      const result = await send;
+      expect(result).toMatchObject({ ok: false, admissionUnknown: true, nonRetryable: true });
+      expect(calls).toEqual(["turn/start"]);
+      expect(progress).toContainEqual(expect.objectContaining({ phase: "turn_admitted", turnId: "late-turn-id" }));
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("materializes once into the H34 journal and restores the accepted same ID with fresh scope proof", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-materialized-"));
+    const journal = join(root, "integrator-bindings.json");
+    const nativeHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
+    const store = new IntegratorSessionBindingStore({ persistencePath: journal });
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "materialized-test", projectRoot: root, materialized: true });
+    const progress: Array<Record<string, unknown>> = [];
+    const runtimeOwner = { resolve: async (binding: typeof policy.binding) => ({
+      kind: "trusted" as const, binding, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 10_000,
+    }) };
+    const first = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, codexDir: nativeHome,
+      projectRuntimePolicy: policy, projectToolDenyList: { mcpServerIds: [], appIds: [], pluginIds: [] },
+      integratorSessionBindingStore: store, projectRuntimeOwner: runtimeOwner,
+      onMaterializationProgress: event => progress.push({ ...event }) });
+    const firstCalls: Array<{ method: string; params?: Record<string, unknown> }> = [];
+    const firstInternals = first as unknown as {
+      ensureReady: () => Promise<void>;
+      assertEffectiveProjectToolIsolation: (id?: string) => Promise<void>;
+      listModels: () => Promise<string[]>;
+      request: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+    };
+    firstInternals.ensureReady = async () => undefined;
+    firstInternals.assertEffectiveProjectToolIsolation = async () => undefined;
+    firstInternals.listModels = async () => ["gpt-6-luna"];
+    firstInternals.request = async (method, params) => {
+      firstCalls.push({ method, params });
+      return {
+        activePermissionProfile: { id: policy.permissionProfileId },
+        runtimeWorkspaceRoots: [root],
+        thread: { id: "h34-materialized-native-id", cwd: root, ephemeral: false, model: "gpt-6-luna", status: "idle" },
+      };
+    };
+    try {
+      const created = await first.createSession({ name: "materialized", cwd: root, model: "gpt-6-luna" });
+      expect(created.id).toBe("h34-materialized-native-id");
+      expect(firstCalls.map(call => call.method)).toEqual(["thread/start"]);
+      expect(firstCalls[0]?.params).toMatchObject({ ephemeral: false, model: "gpt-6-luna", runtimeWorkspaceRoots: [root] });
+      expect(progress.map(event => event.phase)).toEqual(["reserved", "native_created", "accepted"]);
+      const accepted = await store.get(policy.binding.attemptId);
+      expect(accepted).toMatchObject({ state: "accepted", operationId: policy.binding.attemptId,
+        attempts: [{ state: "accepted", address: { nativeSessionId: created.id }, receipt: { state: "created" } }] });
+      expect(progress).toContainEqual(expect.objectContaining({ phase: "native_created", operationId: policy.binding.attemptId,
+        inputId: accepted?.attempts.at(-1)?.inputId, threadId: created.id }));
+      await expect(first.createSession({ name: "must-not-duplicate", cwd: root, model: "gpt-6-luna" }))
+        .rejects.toThrow("already reserved or terminal; no create replay permitted");
+      expect(firstCalls.map(call => call.method)).toEqual(["thread/start"]);
+      await first.dispose();
+
+      const restoredPolicy = await restoreCodexProjectRuntimePolicy({ projectId: "materialized-test", projectRoot: root,
+        operationId: policy.binding.attemptId, store, nativeDataHome: nativeHome });
+      expect(restoredPolicy.binding.attemptId).toBe(policy.binding.attemptId);
+      expect(restoredPolicy.binding.runtimeInstanceId).not.toBe(policy.binding.runtimeInstanceId);
+      const second = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, codexDir: nativeHome,
+        projectRuntimePolicy: restoredPolicy, projectToolDenyList: { mcpServerIds: [], appIds: [], pluginIds: [] },
+        integratorSessionBindingStore: store, projectRuntimeOwner: runtimeOwner });
+      const secondCalls: Array<{ method: string; params?: Record<string, unknown> }> = [];
+      const secondInternals = second as unknown as {
+        ensureReady: () => Promise<void>;
+        assertEffectiveProjectToolIsolation: (id?: string) => Promise<void>;
+        request: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+      };
+      secondInternals.ensureReady = async () => undefined;
+      secondInternals.assertEffectiveProjectToolIsolation = async () => undefined;
+      secondInternals.request = async (method, params) => {
+        secondCalls.push({ method, params });
+        return {
+          activePermissionProfile: { id: restoredPolicy.permissionProfileId },
+          runtimeWorkspaceRoots: [root],
+          thread: { id: "h34-materialized-native-id", cwd: root, ephemeral: false, model: "gpt-6-luna", status: "idle" },
+        };
+      };
+      await expect(second.restoreMaterializedSession()).resolves.toEqual({ ok: true, sessionId: created.id });
+      expect(secondCalls.map(call => call.method)).toEqual(["thread/read", "thread/resume"]);
+      expect(secondCalls.every(call => call.params?.threadId === created.id)).toBe(true);
+      expect(await store.get(policy.binding.attemptId)).toMatchObject({ state: "accepted", attempts: [{ address: { nativeSessionId: created.id } }] });
+      await second.dispose();
+    } finally {
+      await first.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses materialized UNKNOWN operation reuse before any native create", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-materialized-unknown-"));
+    const nativeHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
+    const store = new IntegratorSessionBindingStore({ persistencePath: join(root, "integrator-bindings.json") });
+    const policy = await createCodexProjectRuntimePolicy({ projectId: "unknown-test", projectRoot: root, materialized: true });
+    const rootStat = await stat(root);
+    const homeStat = await stat(nativeHome);
+    const reservation = await store.reserve({ operationId: policy.binding.attemptId, hostId: policy.binding.hostId, harness: "codex",
+      scope: { projectId: policy.binding.projectId, rootIdentity: policy.binding.rootIdentity,
+        policyRevision: policy.binding.policyRevision, hostId: policy.binding.hostId, harness: "codex",
+        harnessVersion: "test-version", canonicalRoot: { path: root, device: rootStat.dev, inode: rootStat.ino },
+        nativeDataHome: { path: nativeHome, device: homeStat.dev, inode: homeStat.ino } } });
+    await store.record({ operationId: policy.binding.attemptId, attempt: reservation.attempt.attempt,
+      receipt: { state: "unknown", inputId: reservation.attempt.inputId, retryable: false, reason: "test-unknown" } });
+    const owner = { resolve: async (binding: typeof policy.binding) => ({ kind: "trusted" as const,
+      binding, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 10_000 }) };
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, codexDir: nativeHome,
+      projectRuntimePolicy: policy, integratorSessionBindingStore: store, projectRuntimeOwner: owner });
+    const calls: string[] = [];
+    const internals = adapter as unknown as { ensureReady: () => Promise<void>; assertEffectiveProjectToolIsolation: () => Promise<void>;
+      request: (method: string) => Promise<unknown> };
+    internals.ensureReady = async () => undefined;
+    internals.assertEffectiveProjectToolIsolation = async () => undefined;
+    internals.request = async method => { calls.push(method); return {}; };
+    try {
+      await expect(adapter.createSession({ name: "must-not-replay", cwd: root, model: "gpt-6-luna" }))
+        .rejects.toThrow("already reserved or terminal; no create replay permitted");
+      expect(calls).toEqual([]);
+      expect((await store.get(policy.binding.attemptId))?.state).toBe("unknown");
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it("keeps project policy constructor-only and refuses shared or caller-overridden transports", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-policy-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "test-project", projectRoot: root });

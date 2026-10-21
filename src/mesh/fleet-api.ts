@@ -3,7 +3,7 @@ import type {IncomingMessage,ServerResponse} from 'node:http';
 import {z} from 'zod';
 import type {FleetCabinetService} from './fleet-service.js';
 import {fleetSessionControlSchema} from './fleet-session-control.js';
-const createSchema=z.object({hostId:z.string().min(1).max(512),harness:z.enum(['codex','zcode','opencode']),name:z.string().trim().min(1).max(128),cwd:z.string().min(1).max(4096),model:z.string().min(1).max(128).optional(),inputId:z.string().min(1).max(256)}).strict();
+const createSchema=z.object({hostId:z.string().min(1).max(512),harness:z.enum(['codex','zcode','opencode']),name:z.string().trim().min(1).max(128),cwd:z.string().min(1).max(4096),model:z.string().min(1).max(128).optional(),inputId:z.string().min(1).max(256),project:z.string().trim().min(1).max(512).optional()}).strict();
 /** Invoke AFTER the existing HTTP authentication guard. Resolver binds the authenticated profile/user. */
 export function createFleetApiHandler(resolve:FleetCabinetService|((request:IncomingMessage)=>FleetCabinetService|Promise<FleetCabinetService>),localHostId=hostname()){
  return async(request:IncomingMessage,response:ServerResponse):Promise<boolean>=>{
