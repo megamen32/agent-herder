@@ -80,7 +80,11 @@ it("V2 setup subscribes to native events and persists exact quota proof through 
         }
       },
     })) },
-    session: client.session,
+    permission: { hook: vi.fn(async () => ({ dispose: vi.fn() })) },
+    session: {
+      ...client.session,
+      hook: vi.fn(async () => ({ dispose: vi.fn() })),
+    },
   };
   const dispose = await plugin.setup(ctx);
   await vi.waitFor(() => expect(client.session.update).toHaveBeenCalledTimes(1));

@@ -2,6 +2,16 @@ const root = process.env.AGENT_HERDER_ROOT || new URL("../../", import.meta.url)
 
 const coordinationEndpoint = process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787"
 
+// These are the only project roots covered by the human's restricted9 rule.
+// Native child sessions are associated through Session.Info.parentID, not cwd
+// text, prompt contents, or an agent-authored project label.
+const restrictedProjectRoots = new Set([
+  "/home/roomhacker/PycharmProjects/TelegramAuto",
+  "/home/roomhacker/PycharmProjects/video_watching",
+])
+const restrictedModelToken = /(^|[^a-z0-9])(codex|claude|anthropic)([^a-z0-9]|$)/i
+const MAX_NATIVE_SESSION_DEPTH = 64
+
 async function coordinationFetch(path, options = {}, observe) {
   const started = performance.now()
   let status
@@ -73,6 +83,223 @@ function plainObject(value) {
 
 function responseData(value) {
   return value && typeof value === "object" && "data" in value ? value.data : value
+}
+
+function nativeSessionDirectory(session) {
+  const value = session?.directory || session?.location?.directory || session?.cwd
+  return typeof value === "string" && value.trim() ? value.replace(/\\/g, "/").replace(/\/+$/, "") : undefined
+}
+
+function nativeSessionParent(session) {
+  const value = session?.parentID ?? session?.parentId
+  return typeof value === "string" && value.trim() ? value : undefined
+}
+
+async function restrictedNativeRoot(ctx, sessionID) {
+  if (typeof sessionID !== "string" || !sessionID || typeof ctx.session?.get !== "function") return { known: false }
+  const visited = new Set()
+  let currentId = sessionID
+  let current
+  for (let depth = 0; depth < MAX_NATIVE_SESSION_DEPTH; depth += 1) {
+    if (visited.has(currentId)) return { known: false }
+    visited.add(currentId)
+    current = responseData(await ctx.session.get({ sessionID: currentId }))
+    if (!plainObject(current) || current.id !== currentId) return { known: false }
+    const parentID = nativeSessionParent(current)
+    if (!parentID) {
+      const directory = nativeSessionDirectory(current)
+      return directory && restrictedProjectRoots.has(directory)
+        ? { known: true, restricted: true, root: current }
+        : directory ? { known: true, restricted: false, root: current } : { known: false }
+    }
+    currentId = parentID
+  }
+  return { known: false }
+}
+
+function nativeModelRef(value) {
+  if (typeof value === "string") {
+    const slash = value.indexOf("/")
+    if (slash <= 0 || slash === value.length - 1 || value.trim() !== value) return undefined
+    return { providerID: value.slice(0, slash), id: value.slice(slash + 1) }
+  }
+  if (!plainObject(value)) return undefined
+  const providerID = value.providerID || value.providerId
+  const id = value.id || value.model
+  return typeof providerID === "string" && providerID && typeof id === "string" && id
+    ? { providerID, id } : undefined
+}
+
+function hasRestrictedProviderLeaf(leaves) {
+  return leaves.some(leaf => restrictedModelToken.test(`${leaf.providerId}/${leaf.modelId}`))
+}
+
+function omniRouteUrls(baseValue) {
+  try {
+    const url = new URL(baseValue)
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined
+    const path = url.pathname.replace(/\/+$/u, "").replace(/\/v1$/u, "")
+    const base = `${url.origin}${path}`.replace(/\/+$/u, "")
+    return { api: `${base}/api`, models: `${base}/v1/models` }
+  } catch { return undefined }
+}
+
+function parseNativeGatewayModels(value) {
+  const body = value
+  if (!plainObject(body) || !Array.isArray(body.data)) return undefined
+  const entries = []
+  const seen = new Set()
+  for (const raw of body.data) {
+    if (!plainObject(raw) || typeof raw.id !== "string" || !raw.id
+      || typeof raw.owned_by !== "string" || !raw.owned_by || seen.has(raw.id)) return undefined
+    seen.add(raw.id)
+    const root = typeof raw.root === "string" && raw.root ? raw.root : undefined
+    const parent = raw.parent === null || typeof raw.parent === "string" ? raw.parent : undefined
+    if (raw.parent !== undefined && parent === undefined) return undefined
+    entries.push({ id: raw.id, owner: raw.owned_by, ...(root ? { root } : {}), ...(parent !== undefined ? { parent } : {}) })
+  }
+  return entries
+}
+
+function parseNativeCombos(value) {
+  const body = responseData(value)
+  if (!plainObject(body) || !Array.isArray(body.combos) || body.total !== body.combos.length) return undefined
+  const rows = []
+  const ids = new Set()
+  const names = new Set()
+  for (const raw of body.combos) {
+    if (!plainObject(raw) || typeof raw.id !== "string" || !raw.id || ids.has(raw.id)
+      || typeof raw.name !== "string" || !raw.name || names.has(raw.name) || !Array.isArray(raw.models)) return undefined
+    ids.add(raw.id); names.add(raw.name)
+    const models = []
+    for (const member of raw.models) {
+      if (!plainObject(member) || typeof member.providerId !== "string" || !member.providerId
+        || typeof member.model !== "string" || !member.model) return undefined
+      models.push({ providerId: member.providerId, model: member.model })
+    }
+    rows.push({ id: raw.id, name: raw.name, models })
+  }
+  return rows
+}
+
+async function resolveNativeModelLeaves(ctx, value) {
+  const model = nativeModelRef(value)
+  if (!model || typeof ctx.model?.list !== "function") return undefined
+  const available = responseData(await ctx.model.list())
+  if (!Array.isArray(available) || !available.some(entry => entry?.providerID === model.providerID && entry?.id === model.id)) return undefined
+  if (model.providerID !== "omniroute") return [{ providerId: model.providerID, modelId: model.id }]
+
+  const apiKey = process.env.OMNIROUTE_API_KEY
+  const urls = omniRouteUrls(process.env.AGENT_HERDER_OMNIROUTE_BASE_URL || "http://127.0.0.1:20128")
+  if (!apiKey || !urls || typeof fetch !== "function") return undefined
+  const request = async url => {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(5_000),
+    })
+    if (!response.ok) throw new Error("route catalog unavailable")
+    return response.json()
+  }
+  try {
+    const [catalogResponse, mappingsResponse, aliasesResponse] = await Promise.all([
+      request(urls.models), request(`${urls.api}/model-combo-mappings`), request(`${urls.api}/models/alias`),
+    ])
+    const catalog = parseNativeGatewayModels(catalogResponse)
+    const mappings = responseData(mappingsResponse)
+    const aliases = responseData(aliasesResponse)
+    if (!catalog || !plainObject(mappings) || !Array.isArray(mappings.mappings)
+      || mappings.total !== mappings.mappings.length || mappings.mappings.some(row => !plainObject(row) || row.enabled !== false)
+      || !plainObject(aliases) || !Array.isArray(aliases.aliases) || aliases.aliases.length) return undefined
+    const selected = catalog.find(entry => entry.id === model.id)
+    if (!selected?.root) return undefined
+    if (selected.owner !== "combo") return [{ providerId: selected.owner, modelId: selected.root }]
+    if (selected.root !== model.id || selected.parent !== null) return undefined
+
+    const comboCatalog = parseNativeCombos(await request(`${urls.api}/combos`))
+    if (!comboCatalog) return undefined
+    const comboNames = new Map()
+    for (const combo of comboCatalog) {
+      if (comboNames.has(combo.name) || comboNames.has(combo.id)) return undefined
+      comboNames.set(combo.name, combo); comboNames.set(combo.id, combo)
+    }
+    const roots = comboCatalog.filter(combo => combo.name === model.id)
+    if (roots.length !== 1) return undefined
+    const byId = new Map(catalog.map(entry => [entry.id, entry]))
+    const expand = (combo, parents) => {
+      if (parents.has(combo.id) || !combo.models.length) return undefined
+      const next = new Set(parents); next.add(combo.id)
+      const leaves = []
+      for (const member of combo.models) {
+        const item = byId.get(member.model)
+        if (!item?.root) return undefined
+        if (item.owner === "combo") {
+          const nested = comboNames.get(member.model)
+          if (!nested || !["combo", "omniroute", nested.name, nested.id].includes(member.providerId)) return undefined
+          const expanded = expand(nested, next)
+          if (!expanded) return undefined
+          leaves.push(...expanded)
+        } else {
+          if (item.owner !== member.providerId) return undefined
+          leaves.push({ providerId: member.providerId, modelId: member.model })
+        }
+      }
+      return leaves.length ? leaves : undefined
+    }
+    const leaves = expand(roots[0], new Set())
+    return leaves?.length ? [...new Map(leaves.map(leaf => [`${leaf.providerId}\0${leaf.modelId}`, leaf])).values()] : undefined
+  } catch { return undefined }
+}
+
+async function enforceRestrictedSubagent(ctx, event) {
+  if (event.action !== "subagent") return
+  let lineage
+  try { lineage = await restrictedNativeRoot(ctx, event.sessionID) } catch { lineage = { known: false } }
+  if (!lineage.known) {
+    event.effect = "deny"
+    event.message = "Agent Herder cannot verify this session's project lineage, so child-agent admission is denied."
+    return
+  }
+  if (!lineage.restricted) return
+  const target = Array.isArray(event.resources) && event.resources.length === 1 ? event.resources[0] : undefined
+  if (typeof target !== "string" || !target || typeof ctx.agent?.get !== "function") {
+    event.effect = "deny"
+    event.message = "Agent Herder requires one exact child-agent identity and verifiable model route in this project."
+    return
+  }
+  try {
+    const parentSession = responseData(await ctx.session.get({ sessionID: event.sessionID }))
+    const configured = responseData(await ctx.agent.get({ agentID: target }))
+    const model = configured?.model ?? parentSession?.model
+    const leaves = await resolveNativeModelLeaves(ctx, model)
+    if (leaves?.length && !hasRestrictedProviderLeaf(leaves)) return
+  } catch { /* unknown route stays denied */ }
+  event.effect = "deny"
+  event.message = "Agent Herder blocked this child: its complete native provider route is forbidden or could not be verified for this project."
+}
+
+async function enforceRestrictedModelRequest(ctx, event) {
+  let lineage
+  try { lineage = await restrictedNativeRoot(ctx, event.sessionID) } catch { lineage = { known: false } }
+  if (!lineage.known) throw new Error("Agent Herder cannot verify the native session lineage; model request is denied.")
+  if (!lineage.restricted) return
+  const leaves = await resolveNativeModelLeaves(ctx, event.model)
+  if (!leaves?.length || hasRestrictedProviderLeaf(leaves)) {
+    throw new Error("Agent Herder blocked this model request: the complete native provider route is forbidden or could not be verified for this project.")
+  }
+}
+
+async function installRestrictedProviderGuards(ctx) {
+  if (typeof ctx.permission?.hook !== "function" || typeof ctx.session?.hook !== "function") {
+    throw new Error("Agent Herder restricted-provider guard requires OpenCode V2 permission.evaluate and session.model.request hooks")
+  }
+  const permission = await ctx.permission.hook("evaluate", event => enforceRestrictedSubagent(ctx, event))
+  const model = await ctx.session.hook("model.request", event => enforceRestrictedModelRequest(ctx, event))
+  return async () => {
+    await Promise.allSettled([permission?.dispose?.(), model?.dispose?.()])
+  }
 }
 
 function nativeRole(message) {
@@ -319,7 +546,11 @@ async function createV1Hooks({ directory, $, client }, options = {}) {
 export default {
   id: "agent-herder-autopilot",
   async setup(ctx) {
-    return installV2QuotaEventObserver(ctx)
+    const cleanupRestrictedGuards = await installRestrictedProviderGuards(ctx)
+    const cleanupQuotaObserver = installV2QuotaEventObserver(ctx)
+    return async () => {
+      await Promise.allSettled([cleanupQuotaObserver(), cleanupRestrictedGuards()])
+    }
   },
   async server(input, options = {}) {
     return createV1Hooks(input, options)
