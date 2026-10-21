@@ -458,3 +458,40 @@ and authorized runtime promotion.
   enroll one restricted entry through the durable Herder API and verify its
   exact acceptance before any further restricted entries. If the resolver
   still returns null, retain the nine held with that exact blocker.
+- 2026-10-21 04:07-04:14 UTC: Adapter owner fixed the exact mapping contract in
+  scoped commit `2305e03299ea3df625dfc6b4bbcca3c5335a40b5` (only
+  `src/adapters/opencode.ts` and `tests/opencode-v2-protocol.test.ts`) and pushed
+  it to `origin/main`. Focused OpenCode protocol + native-subagent guard tests
+  passed 30/30; root TypeScript check and `git diff --check` passed. The live
+  resolver returned exactly `minimax-code/mmcode/MiniMax-M3.1-Flash` followed
+  by `minimax/minimax/MiniMax-M3.1-Flash`; all four supported OmniRoute catalog
+  GETs returned HTTP 200. Separate enabled mappings remained isolated, while
+  a changed, duplicate, overlapping target mapping or selected-route alias
+  returned null.
+- Source-pinned release artifact was built from commit
+  `2305e03299ea3df625dfc6b4bbcca3c5335a40b5`; its `remoteMain` matched. Full
+  source and runtime-module hashes are in
+  `.tmp/remote-workspaces/quota-recovery-2305e03299ea/build-provenance.json`.
+  The four runtime modules that differed from this published build
+  (`dist/index.js`, `dist/automation-launch-policy.js`,
+  `dist/automation/project-launch-dispatch.js`, `dist/web/server.js`) were
+  backed up and atomically replaced from that artifact; the other five listed
+  runtime modules and all unlisted runtime modules were left unchanged. The
+  deployment manifest records old/new hashes and backup paths.
+- A first exact operator enrollment against the still-running old process
+  returned `207 ineligible/project_policy_disallows_fallback_model`; wait was
+  null and there was no send. After restarting only `agent-herder.service`
+  (new PID 3188104 at 07:12 MSK; OpenCode PID 4145783 remained unchanged), the
+  same exact enrollment ID was accepted by the engine. It created one durable
+  attempt (`attempts=1`, selected model `omniroute/minimax-combo-m3.1`) and
+  OpenCode persisted the exact Herder input ID
+  `herder-quota:a1786e18-4bf0-44cc-9c7b-b8d7a441003a` as native user message
+  `msg_15ca9b506001ikwvM8wXJK89Ci`. OpenCode then produced a failed idle frame
+  `msg_15ca9b93c001CXilKWuX1NG20b`; its unstructured native error text
+  classified as auth-related, with no structured status code. The wait remains
+  `accepted`, HumanStop is false, and the session is in error on the combo.
+  This accepted attempt is not replayed. The first restricted business resume
+  therefore proves engine admission and exact native receipt, but not successful
+  provider completion. Hold the other eight restricted entries until the
+  combo's auth-classified failure is resolved or a separately configured and
+  verified fallback is selected; no further enrollment was sent.
