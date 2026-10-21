@@ -5,6 +5,10 @@ import { expect, it, vi } from "vitest";
 import { createAutopilotCore, drainPendingNotices, loadReceiptStore, persistReceiptStore, type StopHookInput } from "../src/autopilot/index.js";
 import { AutopilotSessionStore } from "../src/autopilot/session-store.js";
 
+// The arm handler starts the real observer over HTTP, so this file needs more
+// than the default timeout of 5s under the load of the full suite.
+vi.setConfig({ testTimeout: 30_000 });
+
 const hook: StopHookInput = { hook_event_name: "Stop", harness: "opencode", session_id: "ses_real_opencode", cwd: "/workspace/Admin", turn_id: "evt_done", model: "minimax-coding-plan/MiniMax-M2.5", last_assistant_message: "Исправление проверено", transcript_path: null, stop_hook_active: false };
 const binding = { incidentId: "inc_original", project: "admin" };
 
