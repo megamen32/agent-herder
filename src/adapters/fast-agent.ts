@@ -192,11 +192,12 @@ export class FastAgentFileAdapter implements HarnessAdapter {
     const config = process.env.FAST_AGENT_MINIMAX_CONFIG || join(homedir(), ".config/agent-herder/fast-agent-minimax.yaml");
     if (directMiniMax) {
       await stat(config);
-      if (!process.env.MINIMAX_API_KEY) return { ok: false, error: "Direct MiniMax recovery credential is not configured" };
+      if (!process.env.OMNIROUTE_API_KEY) return { ok: false, error: "OmniRoute credential for the MiniMax combo is not configured" };
       args.push("--name", "herder_minimax", "--config-path", config, "--agent-cards", process.env.FAST_AGENT_MINIMAX_CARD || join(homedir(), ".config/agent-herder/fast-agent-minimax-card.yaml"));
     }
-    const childEnv = { ...process.env, FAST_AGENT_HOME: this.home, ...(directMiniMax ? { ANTHROPIC_API_KEY: process.env.MINIMAX_API_KEY, ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_BASE_URL: "https://api.minimax.io/anthropic" } : {}) };
-    if (session.model) args.push("--model", session.model);
+    const childEnv = { ...process.env, FAST_AGENT_HOME: this.home, ...(directMiniMax ? { ANTHROPIC_API_KEY: process.env.OMNIROUTE_API_KEY, ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_BASE_URL: process.env.AGENT_HERDER_OMNIROUTE_BASE_URL || "http://127.0.0.1:20128" } : {}) };
+    if (session.model)
+      args.push("--model", directMiniMax ? `anthropic.minimax/${session.model.slice("anthropic.".length)}` : session.model);
     if (options.queue) {
       try {
         const record = await this.findRecord(id);

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { chmod, mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -68,6 +69,8 @@ function parseOwnedShutdownId(id: string): OwnedZcodeShutdownProof | undefined {
 }
 
 type HumanStopFile = { version: 1; sessions: HumanStopRecord[]; generatedInputs?: GeneratedPromptRecord[] };
+type AdmissionContext = { file: HumanStopFile; active: boolean; dirty: boolean };
+const admissionContext = new AsyncLocalStorage<AdmissionContext>();
 const stores = new Map<string, HumanStopStore>();
 
 /** Durable fence for explicit human interruptions; independent from automation opt-ins. */
@@ -194,6 +197,31 @@ export class HumanStopStore {
     )));
     const file = await this.read();
     return file.sessions.some((record) => record.active && keys.has(sessionKey(record.harness, record.id)));
+  }
+
+  /** Serialize the final native admission with HumanStop writes for its ancestors. */
+  async withSourcesUnheld<T>(
+    sources: Array<{ harness: string; sessionId: string }>,
+    operation: () => Promise<T>,
+  ): Promise<{ allowed: false } | { allowed: true; value: T }> {
+    if (!Array.isArray(sources) || sources.length > 32) throw new Error("sources must contain at most 32 sessions");
+    if (sources.length === 0) return { allowed: true, value: await operation() };
+    const keys = new Set(sources.map(({ harness, sessionId }) => sessionKey(
+      normalizeHarness(harness), bounded(sessionId, "sessionId", MAX_ID_LENGTH),
+    )));
+    return this.withLockedFile(async (file) => {
+      if (file.sessions.some((record) => record.active && keys.has(sessionKey(record.harness, record.id)))) {
+        return { allowed: false } as const;
+      }
+      const context: AdmissionContext = { file, active: true, dirty: false };
+      try {
+        const value = await admissionContext.run(context, operation);
+        return { allowed: true, value } as const;
+      } finally {
+        context.active = false;
+        if (context.dirty) await this.write(file);
+      }
+    });
   }
 
   /** Store only a digest for a Herder-generated native prompt, never its text. */
@@ -326,6 +354,8 @@ export class HumanStopStore {
   }
 
   private async read(): Promise<HumanStopFile> {
+    const context = admissionContext.getStore();
+    if (context?.active) return context.file;
     const pending = this.operation;
     await pending;
     return this.readUnsafe();
@@ -341,6 +371,20 @@ export class HumanStopStore {
   }
 
   private async mutate<T>(operation: (file: HumanStopFile) => T | Promise<T>, shouldWrite: (result: T) => boolean = () => true): Promise<T> {
+    const context = admissionContext.getStore();
+    if (context?.active) {
+      const result = await operation(context.file);
+      if (shouldWrite(result)) context.dirty = true;
+      return result;
+    }
+    return this.withLockedFile(async (file) => {
+      const result = await operation(file);
+      if (shouldWrite(result)) await this.write(file);
+      return result;
+    });
+  }
+
+  private async withLockedFile<T>(operation: (file: HumanStopFile) => Promise<T>): Promise<T> {
     const previous = this.operation;
     let releaseOperation!: () => void;
     this.operation = new Promise<void>((resolvePromise) => { releaseOperation = resolvePromise; });
@@ -356,9 +400,7 @@ export class HumanStopStore {
       });
       try {
         const file = await this.readUnsafe();
-        const result = await operation(file);
-        if (shouldWrite(result)) await this.write(file);
-        return result;
+        return await operation(file);
       } finally {
         await releaseFileLock();
       }

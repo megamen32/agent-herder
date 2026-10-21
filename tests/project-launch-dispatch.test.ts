@@ -503,10 +503,12 @@ describe("project launch dispatch", () => {
     ]);
     const log = new ProjectLaunchAttemptLog(join(dir, "attempts.json"));
 
+    const admittedSources: unknown[] = [];
     const server = createWebServer({
       adapters,
       converter: { async convert() { throw new Error("unused"); } },
       projectLaunchDispatch: async (request) => {
+        admittedSources.push(request.sourceSessions);
         const result = await dispatchProjectLaunch(
           { policy, ...request, name: request.name ?? "tg-http" },
           log,
@@ -524,7 +526,7 @@ describe("project launch dispatch", () => {
     const response = await fetch(`http://127.0.0.1:${address.port}/api/automation/project-launch`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ project: "tg-commentator", cwd, message: "Исправить инцидент", operation_id: "op-http" }),
+      body: JSON.stringify({ project: "tg-commentator", cwd, message: "Исправить инцидент", operation_id: "op-http", sourceSessions: [] }),
     });
 
     expect(response.status).toBe(200);
@@ -538,15 +540,42 @@ describe("project launch dispatch", () => {
     expect(body.routingReason).toMatch(/OpenCode[\s\S]*ZCode|ZCode/);
     expect(body.attempts.map((attempt) => [attempt.harness, attempt.outcome])).toEqual([["opencode", "pre_admission_rejected"], ["zcode", "accepted"]]);
     expect(attempts.map((entry) => entry.harness)).toEqual(["opencode", "zcode"]);
+    expect(admittedSources).toEqual([[]]);
 
     // Repeating the same operation is answered from the durable attempt log.
     const repeat = await fetch(`http://127.0.0.1:${address.port}/api/automation/project-launch`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ project: "tg-commentator", cwd, message: "Исправить инцидент", operation_id: "op-http" }),
+      body: JSON.stringify({ project: "tg-commentator", cwd, message: "Исправить инцидент", operation_id: "op-http", sourceSessions: [] }),
     });
     expect(repeat.status).toBe(200);
     await expect(repeat.json()).resolves.toMatchObject({ outcome: "accepted", selectedHarness: "zcode" });
     expect(attempts).toHaveLength(2);
+    expect(admittedSources).toEqual([[], []]);
+  });
+
+  it("preserves host-qualified source identity in the native runner request", async () => {
+    const dir = await root();
+    const cwd = await workspace();
+    const log = new ProjectLaunchAttemptLog(join(dir, "attempts.json"));
+    const sources = [{ harness: "codex" as const, sessionId: "source-native-id", hostId: "server-44" }];
+    let admittedSources: typeof sources | undefined;
+    const result = await dispatchProjectLaunch({
+      policy,
+      project: "autotelegramviews",
+      cwd,
+      message: "Исправить инцидент",
+      operationId: "op-source-host",
+      sourceSessions: sources,
+    }, log, async (request) => {
+      admittedSources = request.sourceSessions;
+      return {
+        ok: true, created: true, harness: request.harness, name: "source-host", cwd: request.cwd,
+        sessionId: "repair-session", delivery: "completed",
+      };
+    });
+
+    expect(result).toMatchObject({ outcome: "accepted", sessionId: "repair-session" });
+    expect(admittedSources).toEqual(sources);
   });
 });

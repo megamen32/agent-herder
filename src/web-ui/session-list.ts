@@ -76,7 +76,7 @@ export const sessionKey = (session: Pick<SessionListSession, "harness" | "id" | 
 
 export function sessionKeyFromHash(hash: string): string | undefined {
   try {
-    const canonical = hash.match(/^#\/session\/(.+)$/);
+    const canonical = hash.match(/^#\/session\/([^?]+)(?:\?.*)?$/);
     if (canonical) return decodeURIComponent(canonical[1]);
     // Keep previously delivered Notice Place links useful after the React UI
     // replaced the older #<harness>/<session> route.
@@ -84,6 +84,24 @@ export function sessionKeyFromHash(hash: string): string | undefined {
     return legacy ? `${decodeURIComponent(legacy[1])}:${decodeURIComponent(legacy[2])}` : undefined;
   } catch {
     return undefined;
+  }
+}
+
+export type SessionTurnLink = Readonly<{ sessionKey: string; turnId?: string }>;
+
+/** A turn deep link is only a locator; it carries no author or access claim. */
+export function sessionTurnLinkFromHash(hash: string): SessionTurnLink | undefined {
+  const sessionKey = sessionKeyFromHash(hash);
+  if (!sessionKey) return undefined;
+  try {
+    const queryAt = hash.indexOf("?");
+    if (queryAt < 0) return { sessionKey };
+    const turnId = new URLSearchParams(hash.slice(queryAt + 1)).get("turn");
+    return turnId && turnId.length <= 512 && !/[\x00-\x1f\x7f]/.test(turnId)
+      ? { sessionKey, turnId }
+      : { sessionKey };
+  } catch {
+    return { sessionKey };
   }
 }
 

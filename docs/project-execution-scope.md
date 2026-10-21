@@ -23,11 +23,30 @@ tool surface are proven and H34 wires admission and receipt ownership.
 The H32 Codex candidate in `src/project-runtime-policy.ts` creates a
 constructor-only trusted policy and `CodexAppServerAdapter` launches a dedicated
 stdio app-server with an explicit permission profile, one runtime root, and
-process-local app default deny plus per-thread MCP/apps/plugin flag gates. The
-current inventory contains active or unknown global integrations, so session
-creation fails closed before a model turn. This candidate is not production
-wiring or an eligibility proof. No shared Codex auth/config or app-server is
-changed.
+process-local app default deny plus per-thread MCP/apps/plugin flag gates. Its
+optional materialized mode reserves a stable operation in the H34 journal
+before native creation, records the returned native ID only after the exact
+profile and closed tool inventory are observed, and restores only an accepted
+scoped record after fresh root/home/version and H31 owner proof. The default
+project policy remains ephemeral. H32 root identities use the v2 JSON tuple
+encoding accepted by H34's durable text validator; v1 NUL-delimited records are
+not promoted. UNKNOWN and intent records block any new create. This candidate
+is not production wiring or an eligibility proof until the bounded real
+materialized restart canary and independent review pass. Its trusted progress
+observer atomically stores only nonsecret operation/input/thread/turn/item IDs,
+phase, command/output hashes and result status outside the project-root cleanup.
+The test retains its project and H34 journal on failure or UNKNOWN and removes
+them only after terminal native archive verification. No shared Codex auth/config
+or app-server is changed.
+
+The owned project factory accepts the caller's actual AbortSignal and registers
+each child adapter before initialization begins. Abort rejects pending RPCs,
+awaits initialization unwind and owned child termination, and is rechecked after
+deferred root, inventory, H34 reserve, session lookup and native completion
+boundaries before any subsequent create/send/resume RPC. A reserved H34 intent
+that completes after abort is retained as UNKNOWN; a late native ID/turn receipt
+is recorded before stopping follow-up work. The integration deadline precedes
+the outer test timeout, so runner rejection is not used as cancellation.
 
 H32 must prove the actual supported runtime on each eligible host against
 sibling project files, symlink escapes, parent-directory files, host sockets,

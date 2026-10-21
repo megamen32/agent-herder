@@ -879,9 +879,10 @@ async function main() {
         const native = await deliverAutopilotGoal(input, goal, inputId, {
           adapter: adapters.get("opencode") as OpenCodeAdapter | undefined,
         });
-        if (native.status === "delivered") return native;
-        return await resumeSelectedTarget({ target: { agent: input.harness as "codex", session_id: input.sessionId, cwd: input.cwd },
-          goal, prompt: goal, result_ref: `agent-herder://autopilot/stop/${inputId}`, idempotency_key: inputId }, processSupervisor, "automation", false, "autopilot");
+        // deliverAutopilotGoal owns the durable Agent Resume fallback too.
+        // Falling through here after a failed/unknown receipt can admit the same
+        // continuation a second time through the process supervisor.
+        return native;
       }
       return resumeSelectedTarget({ target: { agent: input.harness as "codex", session_id: input.sessionId, cwd: input.cwd },
         goal, prompt: goal, result_ref: `agent-herder://autopilot/stop/${inputId}`, idempotency_key: inputId }, processSupervisor, "automation", false, "autopilot");

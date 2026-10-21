@@ -137,6 +137,17 @@ export interface OpenCodeTerminalTurnContext {
   completedAt: number;
 }
 
+export interface OpenCodeNativeRejectedAttemptContext {
+  sessionId: string;
+  nativeInputMessageId: string;
+  inputId: string;
+  terminalEventId: string;
+  status: "failed";
+  errorType: string;
+  errorMessage: string;
+  terminalAt: number;
+}
+
 /** Where a session keeps the identity Agent Herder announced to it. */
 export const SESSION_IDENTITY_ENTRY_KEY = "agent.herder.identity";
 
@@ -173,6 +184,7 @@ const textLimit = 16_384;
 const thinkingLimit = 2_048;
 const toolOutputLimit = 4_096;
 const toolInputLimit = 4_096;
+const restrictedModelRequestFailureMessage = "Agent Herder blocked this model request: the complete native provider route is forbidden or could not be verified for this project.";
 
 function boundedText(value: unknown, limit: number): string | undefined {
   return typeof value === "string" && value.length > 0 ? value.slice(0, limit) : undefined;
@@ -640,6 +652,78 @@ export class OpenCodeClient implements HarnessClient {
       if (completedAt === undefined) return null;
 
       return { sessionId: id, status: "failed", turnId, assistantMessageId, providerId, modelId, completedAt };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Read one native OpenCode rejection made by Agent Herder's pre-provider
+   * model.request guard. This is an admission-rejection receipt, not a turn:
+   * it never creates a turn ID or qualifies the prior input for replay.
+   */
+  async getTerminalRejectedAttemptContext(id: string): Promise<OpenCodeNativeRejectedAttemptContext | null> {
+    await this.probeProtocol();
+    if (!this.isV2) return null;
+    try {
+      const session = await this.fetchJson<OpenCodeSessionPayload>(this.api(`/session/${encodeURIComponent(id)}`));
+      if (session.id !== id || session.outcome !== "failed") return null;
+      const [active, permissions] = await Promise.all([
+        this.fetchJson<Record<string, { type?: string; status?: string }>>(this.api("/session/active")),
+        this.fetchJson<OpenCodePermissionRequest[]>(this.api("/permission/request")),
+      ]);
+      if (!active || typeof active !== "object" || Array.isArray(active) || !Array.isArray(permissions)) return null;
+      const activeSession = active[id];
+      const activeType = activeSession?.type ?? activeSession?.status;
+      if ((activeSession !== undefined && activeType !== "idle") || permissions.some((request) => request?.sessionID === id)) return null;
+
+      const fetched = await this.fetchJson<OpenCodeMessagePayload[]>(this.api(`/session/${encodeURIComponent(id)}/message?limit=150&order=desc`));
+      if (!Array.isArray(fetched) || fetched.length === 0) return null;
+      const messages = [...fetched].reverse();
+      const terminalIndex = messages.length - 1;
+      const terminal = messages[terminalIndex]!;
+      if (!isOpenCodeTurnStatusFrame(terminal) || terminal.type !== "idle" || terminal.outcome !== "failed") return null;
+      if (terminal.info?.sessionID && terminal.info.sessionID !== id) return null;
+
+      const terminalIds = [terminal.id, terminal.info?.id].filter((value): value is string => typeof value === "string" && value.length > 0);
+      const terminalEventId = openCodeMessageId(terminal);
+      if (!terminalEventId || new Set(terminalIds).size !== 1
+        || messages.filter((message) => openCodeMessageId(message) === terminalEventId).length !== 1) return null;
+
+      const lastActor = messages
+        .slice(0, terminalIndex)
+        .map((message) => ({ message }))
+        .filter(({ message }) => ["user", "assistant"].includes(openCodeMessageRole(message) || ""))
+        .at(-1);
+      if (!lastActor || openCodeMessageRole(lastActor.message) !== "user") return null;
+      const user = lastActor.message;
+      if (user.info?.sessionID && user.info.sessionID !== id) return null;
+      const userIds = [user.id, user.info?.id].filter((value): value is string => typeof value === "string" && value.length > 0);
+      const nativeInputMessageId = openCodeMessageId(user);
+      if (!nativeInputMessageId || new Set(userIds).size !== 1
+        || messages.filter((message) => openCodeMessageId(message) === nativeInputMessageId).length !== 1) return null;
+
+      const inputIds = [user.metadata?.agentHerderInputId, user.info?.metadata?.agentHerderInputId]
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+      if (new Set(inputIds).size !== 1) return null;
+      const inputId = inputIds[0]!;
+
+      const error = terminal.error ?? terminal.info?.error;
+      if (error?.type !== "unknown" || error.message !== restrictedModelRequestFailureMessage
+        || error.status !== undefined || error.statusCode !== undefined) return null;
+      const terminalAt = terminal.time?.created ?? terminal.info?.time?.created;
+      if (typeof terminalAt !== "number" || !Number.isFinite(terminalAt)) return null;
+
+      return {
+        sessionId: id,
+        nativeInputMessageId,
+        inputId,
+        terminalEventId,
+        status: "failed",
+        errorType: "unknown",
+        errorMessage: safeEventError(error.message)!,
+        terminalAt,
+      };
     } catch {
       return null;
     }

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { createNamedSession, newOrResumeNamedSession, deliverNamedSession } from "../src/named-session.js";
 import { agentRelayEnvelope } from "../src/agent-relay-envelope.js";
+import { getHumanStopStore } from "../src/human-stop-store.js";
 import { toolDefinitions } from "../src/mcp-tools/definitions.js";
 import { handleCreateSession, handleNewOrResume, handleDeliver, handleResumeAgent } from "../src/mcp-tools/handlers.js";
 import type { AgentSession, CreateSessionOptions, HarnessAdapter, SendMessageOptions } from "../src/types/index.js";
@@ -89,6 +90,94 @@ function fakeAdapter(harness: "opencode" | "codex" | "fast-agent", initial: Agen
 }
 
 describe("named session creation and reuse", () => {
+  it("rechecks source HumanStop atomically at native admission after a stale preflight result", async () => {
+    const cwd = await workspace();
+    const stopPath = join(await workspace(), "human-stop.json");
+    const previousPath = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+    process.env.AGENT_HERDER_HUMAN_STOP_STORE = stopPath;
+    const source = session("source-1", "original source", cwd);
+    const fake = fakeAdapter("opencode", [source]);
+    const store = getHumanStopStore();
+    const originalAnyHeld = store.anyHeld;
+    let checks = 0;
+    store.anyHeld = async (sources) => {
+      const observed = await originalAnyHeld.call(store, sources);
+      checks += 1;
+      if (checks === 3) {
+        await store.hold({ harness: "opencode", id: "source-1" }, {
+          id: "human-stop-after-preflight", at: new Date().toISOString(), reason: "explicit human stop",
+        });
+      }
+      return observed;
+    };
+    try {
+      const result = await newOrResumeNamedSession(new Map([["opencode", fake.adapter]]), {
+        harness: "opencode", name: "child-repair", cwd, message: "repair", inputId: "child-repair-1",
+        sourceSessions: [{ harness: "opencode", sessionId: "source-1" }],
+      });
+      expect(result).toMatchObject({ ok: false, delivery: "not_attempted" });
+      expect(result.error).toContain("явно остановлен");
+      expect(fake.deliveries).toHaveLength(0);
+      expect(checks).toBe(3);
+    } finally {
+      store.anyHeld = originalAnyHeld;
+      if (previousPath === undefined) delete process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+      else process.env.AGENT_HERDER_HUMAN_STOP_STORE = previousPath;
+    }
+  });
+
+  it("allows native HumanStop reads and generated-prompt writes inside the admission fence", async () => {
+    const cwd = await workspace();
+    const stopPath = join(await workspace(), "human-stop-reentrant.json");
+    const previousPath = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+    process.env.AGENT_HERDER_HUMAN_STOP_STORE = stopPath;
+    const source = session("source-reentrant", "original source", cwd);
+    const fake = fakeAdapter("opencode", [source]);
+    fake.adapter.sendMessage = async (id, options) => {
+      const store = getHumanStopStore();
+      expect(await store.isHeld("opencode", "source-reentrant")).toBe(false);
+      await store.rememberGeneratedPrompt("opencode", id, options.message, options.inputId);
+      return { ok: true };
+    };
+    try {
+      const result = await newOrResumeNamedSession(new Map([["opencode", fake.adapter]]), {
+        harness: "opencode", name: "reentrant-repair", cwd, message: "repair", inputId: "reentrant-repair-1",
+        sourceSessions: [{ harness: "opencode", sessionId: "source-reentrant" }],
+      });
+      expect(result).toMatchObject({ ok: true, delivery: "completed" });
+      const stored = JSON.parse(await readFile(stopPath, "utf8")) as { generatedInputs?: Array<{ id: string }> };
+      expect(stored.generatedInputs?.map(({ id }) => id)).toContain("opencode-1");
+    } finally {
+      if (previousPath === undefined) delete process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+      else process.env.AGENT_HERDER_HUMAN_STOP_STORE = previousPath;
+    }
+  });
+
+  it("does not alias a source session ID from another host to a local session", async () => {
+    const cwd = await workspace();
+    const stopPath = join(await workspace(), "human-stop-host.json");
+    const previousPath = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+    const previousHost = process.env.NOTICEPLACE_MESH_HOST_ID;
+    process.env.AGENT_HERDER_HUMAN_STOP_STORE = stopPath;
+    process.env.NOTICEPLACE_MESH_HOST_ID = "server-44";
+    const fake = fakeAdapter("opencode", [session("shared-id", "local alias", cwd)]);
+    try {
+      const result = await newOrResumeNamedSession(new Map([["opencode", fake.adapter]]), {
+        harness: "opencode", name: "remote-source-repair", cwd, message: "repair", inputId: "remote-source-1",
+        sourceSessions: [{ harness: "opencode", sessionId: "shared-id", hostId: "server-100" }],
+      });
+      expect(result).toMatchObject({ ok: false, delivery: "not_attempted" });
+      expect(result.error).toContain("другому");
+      expect(fake.creates()).toBe(0);
+      expect(fake.deliveries).toHaveLength(0);
+    } finally {
+      if (previousPath === undefined) delete process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+      else process.env.AGENT_HERDER_HUMAN_STOP_STORE = previousPath;
+      if (previousHost === undefined) delete process.env.NOTICEPLACE_MESH_HOST_ID;
+      else process.env.NOTICEPLACE_MESH_HOST_ID = previousHost;
+    }
+  });
+
   it("switches to an explicitly allowed fallback after a definite quota rejection and retries the same input once", async () => {
     const cwd = await workspace();
     const fake = fakeAdapter("opencode");

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  ABSENT_LAUNCH_POLICY_ETAG,
   AutomationLaunchPolicyStore,
   canonicalProjectKey,
   resolveProjectLaunch,
@@ -66,7 +67,7 @@ describe("per-project ordered harness routes", () => {
 
     const saved = await fetch(url, {
       method: "PUT",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "if-match": ABSENT_LAUNCH_POLICY_ETAG },
       body: JSON.stringify(policy),
     });
     expect(saved.status).toBe(200);
@@ -94,7 +95,7 @@ describe("per-project ordered harness routes", () => {
 
     const rejected = await fetch(url, {
       method: "PUT",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "if-match": ABSENT_LAUNCH_POLICY_ETAG },
       body: JSON.stringify({ ...policy, allowedHarnesses: ["codex"], models: { codex: "c" }, projectRoutes: { "/workspace/x": { harnesses: ["zcode"] } } }),
     });
     expect(rejected.status).toBe(400);
@@ -185,6 +186,62 @@ describe("per-project ordered harness routes", () => {
     expect(resolveProjectLaunch(validated, { project: "/home/roomhacker/PycharmProjects/TelegramAuto/" }).kind).toBe("launch");
   });
 });
+describe("concurrent project route writes", () => {
+  it("rejects a stale full-document write instead of overwriting a newer route", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-project-routes-cas-"));
+    directories.push(root);
+    const url = await startServer(new AutomationLaunchPolicyStore(join(root, "launch-policy.json")));
+
+    const first = await fetch(url, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "if-match": ABSENT_LAUNCH_POLICY_ETAG },
+      body: JSON.stringify(policy),
+    });
+    expect(first.status).toBe(200);
+    const etag = first.headers.get("etag");
+    expect(etag).toBeTruthy();
+
+    // Another tab reads the document and writes its own project route.
+    const second = await fetch(url, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "if-match": etag! },
+      body: JSON.stringify({ ...policy, projectRoutes: { ...policy.projectRoutes, "/workspace/other": { harnesses: ["codex"] } } }),
+    });
+    expect(second.status).toBe(200);
+
+    // The first tab still holds the old version: its write must not be applied.
+    const stale = await fetch(url, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "if-match": etag! },
+      body: JSON.stringify(policy),
+    });
+    expect(stale.status).toBe(412);
+    await expect(stale.json()).resolves.toMatchObject({ state: "conflict" });
+
+    const stored = await (await fetch(url)).json() as AutomationLaunchPolicy;
+    expect(stored.projectRoutes?.["/workspace/other"]).toEqual({ harnesses: ["codex"] });
+  });
+
+  it("keeps the document identity stable across a read and a write", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-project-routes-etag-"));
+    directories.push(root);
+    const url = await startServer(new AutomationLaunchPolicyStore(join(root, "launch-policy.json")));
+
+    const read = await fetch(url);
+    expect(read.headers.get("etag")).toBe(ABSENT_LAUNCH_POLICY_ETAG);
+    const written = await fetch(url, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "if-match": ABSENT_LAUNCH_POLICY_ETAG },
+      body: JSON.stringify(policy),
+    });
+    expect(written.status).toBe(200);
+    const etag = written.headers.get("etag")!;
+    expect(etag).not.toBe(ABSENT_LAUNCH_POLICY_ETAG);
+    const reread = await fetch(url);
+    expect(reread.headers.get("etag")).toBe(etag);
+  });
+});
+
 describe("documented project route presets", () => {
   it("uses the verified real roots and the real card identifiers", async () => {
     const { PROJECT_ROUTE_PRESETS } = await import("../src/automation-launch-policy.js");

@@ -765,6 +765,67 @@ it("projects exact failed-turn identity for operator continuation without quota 
   }
 });
 
+it("projects a separately identified rejected OpenCode admission without creating nativeLastTurn", async () => {
+  const state = sessionFixture();
+  const sessionId = "ses_guard_rejected";
+  const nativeInputMessageId = "msg_15ca9b506001ikwvM8wXJK89Ci";
+  const inputId = "herder-quota:a1786e18-4bf0-44cc-9c7b-b8d7a441003a";
+  const terminalEventId = "msg_15ca9b93c001CXilKWuX1NG20b";
+  const errorMessage = "Agent Herder blocked this model request: the complete native provider route is forbidden or could not be verified for this project.";
+  state.sessions[sessionId] = {
+    id: sessionId,
+    title: "Rejected restricted model request",
+    location: { directory: "/tmp/project" },
+    outcome: "failed",
+    time: { created: 1_700_000_000_000, updated: 1_700_000_010_000 },
+    messages: [
+      {
+        id: nativeInputMessageId, type: "user", role: "user",
+        metadata: { agentHerderInputId: inputId }, time: { created: 1_700_000_001_000 }, parts: [],
+      },
+      {
+        id: terminalEventId, type: "idle", outcome: "failed",
+        error: { type: "unknown", message: errorMessage }, time: { created: 1_700_000_002_000 },
+      },
+    ],
+  };
+  state.active[sessionId] = { type: "idle" };
+  const server = v2Fixture(state);
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    await adapter.init();
+    const session = await adapter.getSession(sessionId);
+    expect(session?.meta?.nativeRejectedAttempt).toEqual({
+      sessionId,
+      nativeInputMessageId,
+      inputId,
+      terminalEventId,
+      status: "failed",
+      errorType: "unknown",
+      errorMessage,
+      terminalAt: 1_700_000_002_000,
+    });
+    expect(session?.meta?.nativeLastTurn).toBeUndefined();
+
+    state.sessions[sessionId].messages.push({ id: "assistant_after_rejection", type: "assistant", role: "assistant", parts: [] });
+    expect((await adapter.getSession(sessionId))?.meta?.nativeRejectedAttempt).toBeUndefined();
+    state.sessions[sessionId].messages.pop();
+    const exactTerminal = state.sessions[sessionId].messages[1];
+    state.sessions[sessionId].messages[1] = {
+      ...exactTerminal, error: { type: "unknown", message: "different failure" },
+    };
+    expect((await adapter.getSession(sessionId))?.meta?.nativeRejectedAttempt).toBeUndefined();
+    state.sessions[sessionId].messages[1] = exactTerminal;
+    state.sessions[sessionId].messages.push({ id: "new_user_after_rejection", type: "user", role: "user", parts: [] });
+    expect((await adapter.getSession(sessionId))?.meta?.nativeRejectedAttempt).toBeUndefined();
+    state.sessions[sessionId].messages.pop();
+    state.active[sessionId] = { type: "running" };
+    expect((await adapter.getSession(sessionId))?.meta?.nativeRejectedAttempt).toBeUndefined();
+  } finally {
+    server.close();
+  }
+});
+
 it("keeps the exact failed native snapshot after a current-model change and status-only idle frame", async () => {
   const state = sessionFixture();
   state.sessions.ses_ea3bf238fffe4ezSGA5Ht2iWTX = {
@@ -875,4 +936,99 @@ it("the adapter adds Herder's orchestration shape on top of the core event", () 
   expect(harnessEvent).toMatchObject({ kind: "turn.started", harness: "opencode" });
   expect(typeof harnessEvent?.at).toBe("string");
   expect((adapter as unknown as { toHarnessEvent(event: unknown): unknown }).toHarnessEvent({ kind: "unknown" })).toBeNull();
+});
+
+it("fails closed on a combo whose legs carry different model identities", async () => {
+  const state = sessionFixture();
+  state.models = [{ id: "minimax/MiniMax-M3.1-Flash", modelID: "minimax-combo-m3.1", providerID: "omniroute" }];
+  const server = v2Fixture(state);
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(typeof input === "string" ? input : input.toString());
+    const payload = url.pathname === "/v1/models"
+      ? { object: "list", data: [
+        { id: "minimax-combo-m3.1", owned_by: "combo", root: "minimax-combo-m3.1", parent: null },
+        { id: "mmcode/MiniMax-M3.1-Flash", owned_by: "minimax-code", root: "MiniMax-M3.1-Flash", parent: null },
+        { id: "minimax/MiniMax-M3", owned_by: "minimax", root: "MiniMax-M3", parent: null },
+      ] }
+      : url.pathname === "/api/combos"
+        ? { total: 1, combos: [{ id: "combo-uuid", name: "minimax-combo-m3.1", strategy: "priority", models: [
+          { providerId: "minimax-code", model: "mmcode/MiniMax-M3.1-Flash" },
+          { providerId: "minimax", model: "minimax/MiniMax-M3" },
+        ] }] }
+        : url.pathname === "/api/model-combo-mappings"
+          ? { total: 1, mappings: [{ id: "mapping-target", comboId: "combo-uuid", comboName: "minimax-combo-m3.1", pattern: "minimax-combo-m3.1/MiniMax-M3.1-Flash", enabled: true }] }
+          : { aliases: {} };
+    return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3.1", {
+      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", fetcher,
+    })).resolves.toBeNull();
+  } finally {
+    server.close();
+  }
+});
+
+it("keeps a combo route verifiable when another enabled mapping serves the same combo under an unrelated name", async () => {
+  const state = sessionFixture();
+  state.models = [{ id: "minimax/MiniMax-M3", modelID: "minimax-combo-m3", providerID: "omniroute" }];
+  const server = v2Fixture(state);
+  const gatewayModels = [
+    { id: "minimax-combo-m3", owned_by: "combo", root: "minimax-combo-m3", parent: null },
+    { id: "mmcode/MiniMax-M3", owned_by: "minimax-code", root: "MiniMax-M3", parent: null },
+    { id: "minimax/MiniMax-M3", owned_by: "minimax", root: "MiniMax-M3", parent: null },
+  ];
+  let modelMappings = [
+    { id: "mapping-target", comboId: "combo-uuid", comboName: "minimax-combo-m3", pattern: "minimax-combo-m3/MiniMax-M3", enabled: true },
+    { id: "mapping-other", comboId: "other-uuid", comboName: "glm-combo", pattern: "glm-combo/glm-5.3-flash", enabled: true },
+    { id: "mapping-preview", comboId: "combo-uuid", comboName: "minimax-combo-m3", pattern: "MiniMax-M3.1-Flash-Preview", enabled: true },
+  ];
+  let modelAliases: Record<string, string> = { "gemini-2.5-flash": "minimax/MiniMax-M3" };
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(typeof input === "string" ? input : input.toString());
+    const payload = url.pathname === "/v1/models"
+      ? { object: "list", data: gatewayModels }
+      : url.pathname === "/api/combos"
+        ? { total: 1, combos: [{ id: "combo-uuid", name: "minimax-combo-m3", strategy: "priority", models: [
+          { providerId: "minimax-code", model: "mmcode/MiniMax-M3" },
+          { providerId: "minimax", model: "minimax/MiniMax-M3" },
+        ] }] }
+        : url.pathname === "/api/model-combo-mappings"
+          ? { total: modelMappings.length, mappings: modelMappings }
+          : { aliases: modelAliases, catalogVersion: "fixture" };
+    return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  const options = { omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", fetcher };
+  try {
+    await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3", options)).resolves.toMatchObject({
+      nativeModelId: "omniroute/minimax-combo-m3",
+      resolvedProviderLeaves: [
+        { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3" },
+        { providerId: "minimax", modelId: "minimax/MiniMax-M3" },
+      ],
+    });
+
+    // An alias name that shadows a leaf id stays a conflict.
+    modelAliases = { "minimax/MiniMax-M3": "other-model" };
+    await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3", options)).resolves.toBeNull();
+
+    // A mapping that rewrites a sibling name inside the combo namespace stays a conflict.
+    modelAliases = {};
+    modelMappings = [
+      modelMappings[0]!,
+      { id: "mapping-rewrite", comboId: "combo-uuid", comboName: "minimax-combo-m3", pattern: "minimax-combo-m3/rewritten", enabled: true },
+    ];
+    await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3", options)).resolves.toBeNull();
+
+    // A second enabled mapping that claims the same identity for another combo stays a conflict.
+    modelMappings = [
+      modelMappings[0]!,
+      { id: "mapping-overlap", comboId: "other-uuid", comboName: "other-combo", pattern: "minimax-combo-m3/MiniMax-M3", enabled: true },
+    ];
+    await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3", options)).resolves.toBeNull();
+  } finally {
+    server.close();
+  }
 });

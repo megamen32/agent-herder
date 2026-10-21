@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { NativeTranscriptEvent } from "../src/integrator-transcript.js";
-import { fallbackSessionAttribution, fetchIntegratorTranscriptPage, integratorEventDisplay, TranscriptRequestOwner, transcriptForAddress, type TranscriptView } from "../src/web-ui/fleet/RemoteSessionView.js";
+import { fallbackSessionAttribution, fetchIntegratorTranscriptPage, firstEventIndexForTurn, integratorEventDisplay, TranscriptRequestOwner, transcriptForAddress, type TranscriptView } from "../src/web-ui/fleet/RemoteSessionView.js";
 
 const address = { hostId: "roomhacker-server-100", harness: "codex", nativeSessionId: "thread/1" } as const;
 
@@ -54,6 +54,16 @@ describe("RemoteSessionView native transcript integration", () => {
     expect(transcriptForAddress(transcript, { ...address, hostId: "other-host" })).toBeUndefined();
     expect(transcriptForAddress(transcript, { ...address, harness: "opencode" })).toBeUndefined();
     expect(transcriptForAddress(transcript, { ...address, nativeSessionId: "thread/2" })).toBeUndefined();
+  });
+
+  it("locates only an exact turn and never falls back to another event", () => {
+    const events: NativeTranscriptEvent[] = [
+      {sequence:0,eventId:"e1",kind:"message",author:{kind:"unknown",sourceRole:"user"},turnId:"turn-a"},
+      {sequence:1,eventId:"e2",kind:"message",author:{kind:"assistant"},turnId:"turn-b"},
+    ];
+    expect(firstEventIndexForTurn(events,"turn-b")).toBe(1);
+    expect(firstEventIndexForTurn(events,"turn-missing")).toBeUndefined();
+    expect(firstEventIndexForTurn(events,undefined)).toBeUndefined();
   });
 
   it("ignores delayed session A completion without releasing session B's request owner", async () => {
