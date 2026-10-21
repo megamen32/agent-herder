@@ -512,7 +512,7 @@ and authorized runtime promotion.
 - Read-only OmniRoute request-log inspection of the exact native failure
   window found no request mentioning the selected model, combo, input or
   receipt. Read-only catalog evidence returned HTTP 200 and showed the exact
-  native model `omniroute/minimax-combo.m3.1`, root owner `combo`, and ordered
+  native model `omniroute/minimax-combo-m3.1`, root owner `combo`, and ordered
   leaves `minimax-code/mmcode/MiniMax-M3.1-Flash` then
   `minimax/minimax/MiniMax-M3.1-Flash`. The target combo has one exact enabled
   identity mapping; two other enabled mappings belong to separate combos.
@@ -565,3 +565,20 @@ and authorized runtime promotion.
   exact route leaves and the loaded plugin build marker. Keep the two terminal
   declines separate, keep seven entries held, and make no further enrollment
   until those read-only runtime proofs succeed.
+- Published route `8c651d9` now serves 200 for the configured exact model and
+  returns the two verified leaves. A diagnostic probe using the mistyped model
+  ID `omniroute/minimax-combo.m3.1` returned 409; the actual configured ID is
+  `omniroute/minimax-combo-m3.1`. All four read-only OmniRoute management GETs
+  returned 200 using Herder's existing key and base `http://127.0.0.1:20128`.
+- Controls review found the plugin had hardcoded Herder port 18787. The source
+  now derives the route-proof URL from its existing `AGENT_HERDER_URL` /
+  coordination endpoint setting, accepts only HTTP(S) and no embedded
+  credentials, and sends no Authorization header. The Herder endpoint accepts
+  only loopback requests. Existing policy in `src/index.ts` binds the default
+  web host to 127.0.0.1 and requires `AGENT_HERDER_HTTP_TOKEN` for non-loopback
+  hosts; therefore this endpoint inherits the existing trusted-local API
+  boundary instead of creating a second auth scheme. The OpenCode config and
+  Herder launch policy are both owned by uid 1000; the loopback API already
+  trusts local callers. No separate local-process security redesign was added.
+  Focused tests are 17/17 and root TypeScript passes. This follow-up plugin URL
+  change still needs scoped publication/reload proof.

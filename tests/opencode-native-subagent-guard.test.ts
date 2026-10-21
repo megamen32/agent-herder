@@ -16,11 +16,13 @@ function installRouteProof(options: {
   nativeModelId?: string;
   leaves: Array<{ providerId: string; modelId: string }>;
   status?: number;
+  endpoint?: string;
 }) {
   vi.stubEnv("OMNIROUTE_API_KEY", "");
+  if (options.endpoint) vi.stubEnv("AGENT_HERDER_URL", options.endpoint);
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
-    if (url.origin !== "http://127.0.0.1:18787" || url.pathname !== "/api/native-model-route-proof") {
+    if (url.origin !== (options.endpoint || "http://127.0.0.1:18787") || url.pathname !== "/api/native-model-route-proof") {
       return new Response(null, { status: 404 });
     }
     expect(new Headers(init?.headers).has("authorization")).toBe(false);
@@ -149,6 +151,23 @@ describe("OpenCode V2 restricted native child admission", () => {
     })).resolves.toBeUndefined();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(process.env.OMNIROUTE_API_KEY).toBe("");
+    await cleanup();
+  });
+
+  it("uses the configured Agent Herder endpoint without forwarding credentials", async () => {
+    installRouteProof({
+      endpoint: "http://127.0.0.1:19876",
+      leaves: [{ providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" }],
+    });
+    const context = makeContext({ models: [{ providerID: "omniroute", id: "minimax-combo-m3.1" }] });
+    const cleanup = await setup(context);
+    await expect(context.modelHook({
+      sessionID: "root", model: { providerID: "omniroute", id: "minimax-combo-m3.1" },
+    })).resolves.toBeUndefined();
+    const [input, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(new URL(String(input)).origin).toBe("http://127.0.0.1:19876");
+    expect(new URL(String(input)).pathname).toBe("/api/native-model-route-proof");
+    expect(new Headers((init as RequestInit).headers).has("authorization")).toBe(false);
     await cleanup();
   });
 

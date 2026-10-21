@@ -135,7 +135,7 @@ function hasRestrictedProviderLeaf(leaves) {
 }
 
 const PLUGIN_BUILD_ID = "native-route-proof-v1"
-const HERDER_ROUTE_PROOF_URL = "http://127.0.0.1:18787/api/native-model-route-proof"
+const HERDER_ROUTE_PROOF_PATH = "/api/native-model-route-proof"
 
 async function resolveNativeModelLeaves(ctx, value) {
   const model = nativeModelRef(value)
@@ -145,7 +145,13 @@ async function resolveNativeModelLeaves(ctx, value) {
   if (model.providerID !== "omniroute") return [{ providerId: model.providerID, modelId: model.id }]
   if (typeof fetch !== "function") return undefined
   const nativeModelId = `${model.providerID}/${model.id}`
-  const url = `${HERDER_ROUTE_PROOF_URL}?modelId=${encodeURIComponent(nativeModelId)}`
+  let url
+  try {
+    const endpoint = process.env.AGENT_HERDER_URL || coordinationEndpoint
+    url = new URL(HERDER_ROUTE_PROOF_PATH, endpoint)
+    if (!(["http:", "https:"].includes(url.protocol)) || url.username || url.password) return undefined
+    url.searchParams.set("modelId", nativeModelId)
+  } catch { return undefined }
   try {
     const response = await fetch(url, {
       method: "GET",
