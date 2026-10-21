@@ -375,10 +375,23 @@ def native_text_identity(pid,claimed,*,admission=True):
     if pids!={str(pid)} or str(claimed) not in names:
         raise Refused('managed_codex_owner_unverified')
 
-def verify_codex_owner(config,*,admission=False):
+def managed_codex_socket(config):
+    # The managed Codex socket stays inside the native control directory.
+    # The canonical endpoint is the default. A fleet-owned sibling
+    # (herder-fleet-*.sock) is accepted when a vendor-managed daemon already
+    # owns the canonical path, so the fleet keeps its own owned child instead
+    # of adopting a foreign socket. Any other path is refused. Ownership,
+    # identity and generation checks are unchanged.
     pointer=Path(config['codexSocket'])
-    if pointer!=Path.home()/'.codex/app-server-control/app-server-control.sock':
-        raise Refused('managed_codex_owner_unverified')
+    control=Path.home()/'.codex/app-server-control'
+    canonical=control/'app-server-control.sock'
+    fleet_owned=pointer.parent==control and pointer.name.startswith('herder-fleet-')
+    if pointer!=canonical and not fleet_owned:
+        raise Refused('managed_codex_socket_path_unverified')
+    return pointer
+
+def verify_codex_owner(config,*,admission=False):
+    pointer=managed_codex_socket(config)
     pid=config.get('codexOwnerPid');expected=config.get('codexOwnerStartedAt');binary=config.get('codexOwnerBin')
     if type(pid)!=int or pid<=1 or not isinstance(expected,str) or not isinstance(binary,str):
         raise Refused('managed_codex_owner_unverified')

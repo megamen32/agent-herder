@@ -3,7 +3,9 @@
 
 This is NOT a per-harness stdio writer or automatic node fallback. Mini's existing
 shared socket needs no manager. Config: fleet/native-codex-config.json with exact
-hostId, sourceSha, installed codexBin/codexSha256 and canonical codexSocket.
+hostId, sourceSha, installed codexBin/codexSha256 and the managed codexSocket
+(canonical, or a fleet-owned herder-fleet-*.sock sibling when a vendor-managed
+daemon already owns the canonical path).
 No install, daemon bootstrap/background updater, remote-control, CODEX_HOME change,
 auth/config/history copy or external helper adoption. Any existing socket/path
 (including stale/unknown) refuses startup; no unlink or forced takeover.
@@ -130,9 +132,7 @@ def prepare(base,config):
     w.verify_launcher_hashes(base,config,['mac-node-watchdog.py','mac-codex-watchdog.py','mac-codex-owner-probe'])
     w.verify_manifest(base,config['sourceSha'])
     binary=binary_identity(config['codexBin'],config.get('codexSha256'))
-    pointer=Path(config['codexSocket'])
-    canonical=Path.home()/'.codex/app-server-control/app-server-control.sock'
-    if pointer!=canonical:raise w.Refused('native_canonical_socket_required')
+    pointer=w.managed_codex_socket(config)
     refuse_existing_socket(pointer)
     state=Path.home()/'.local/state/agent-herder/fleet-native-codex';temp=base/'run/native-codex-tmp'
     if w.host_available_kib()<NativePolicy.host_reserve_kib or w.shutil.disk_usage(base).free<2*w.GIB:
