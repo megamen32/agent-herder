@@ -1,17 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { validateAutomationLaunchPolicy } from '../src/automation-launch-policy.js';
 import { normalizeHealthExecution, healthModelForHarness } from '../src/health-remediation.js';
-const incidentExecution = {runtime:'opencode', provider:'minimax-coding-plan', model:'MiniMax-M3.1-Flash', reasoning:'default', topic:'health'};
+const incidentExecution = {runtime:'opencode', provider:'omniroute', model:'minimax-combo-m3.1', reasoning:'default', topic:'health'};
 const general = {version:1, allowedHarnesses:['codex'], preferredHarness:'codex', models:{codex:'gpt-6.1-sol'}};
-describe('R40 incident subscription policy',()=>{
+describe('R40 incident OmniRoute combo policy',()=>{
  it('persists a separate incident route while preserving general routes',()=>{
   expect(validateAutomationLaunchPolicy({...general,incidentExecution})).toEqual({...general,incidentExecution});
  });
- it('rejects OmniRoute and Codex for incident execution',()=>{
-  for (const provider of ['omniroute','auto','openai-codex']) expect(()=>validateAutomationLaunchPolicy({...general,incidentExecution:{...incidentExecution,provider}})).toThrow();
+ it('rejects the paid subscription and Codex for incident execution',()=>{
+  for (const provider of ['minimax-coding-plan','auto','openai-codex']) expect(()=>validateAutomationLaunchPolicy({...general,incidentExecution:{...incidentExecution,provider}})).toThrow();
  });
- it('maps OpenCode to exact native subscription model',()=>{
-  const profile=normalizeHealthExecution(incidentExecution); expect(healthModelForHarness('opencode',profile)).toBe('minimax-coding-plan/MiniMax-M3.1-Flash');
+ it('maps OpenCode to exact native OmniRoute combo model',()=>{
+  const profile=normalizeHealthExecution(incidentExecution); expect(healthModelForHarness('opencode',profile)).toBe('omniroute/minimax-combo-m3.1');
  });
 });
 
