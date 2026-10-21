@@ -280,6 +280,12 @@ it("resolves the exact OpenCode combo ID into its complete configured OmniRoute 
     { id: "mmcode/MiniMax-M3.1-Flash", owned_by: "minimax-code", root: "MiniMax-M3.1-Flash", parent: null },
     { id: "minimax/MiniMax-M3.1-Flash", owned_by: "minimax", root: "MiniMax-M3.1-Flash", parent: null },
   ];
+  let modelMappings = [
+    { id: "mapping-target", comboId: "combo-uuid", comboName: "minimax-combo-m3.1", pattern: "minimax-combo-m3.1/MiniMax-M3.1-Flash", enabled: true },
+    { id: "mapping-other-a", comboId: "other-a", comboName: "glm-5.3-flash-minimax-m3.1", pattern: "glm-5.3-flash-minimax-m3.1/glm-5.3-flash", enabled: true },
+    { id: "mapping-other-b", comboId: "other-b", comboName: "minimax-combo-m3", pattern: "minimax-combo-m3/MiniMax-M3", enabled: true },
+  ];
+  let modelAliases: Record<string, string> = {};
   const fetcher: typeof fetch = async (input, init) => {
     const url = new URL(typeof input === "string" ? input : input.toString());
     calls.push({ url: `${url.origin}${url.pathname}`, method: init?.method, authorization: new Headers(init?.headers).get("authorization") });
@@ -291,8 +297,8 @@ it("resolves the exact OpenCode combo ID into its complete configured OmniRoute 
           { providerId: "minimax", model: "minimax/MiniMax-M3.1-Flash" },
         ] }] }
         : url.pathname === "/api/model-combo-mappings"
-          ? { total: 0, mappings: [] }
-          : { aliases: [], catalogVersion: "fixture" };
+          ? { total: modelMappings.length, mappings: modelMappings }
+          : { aliases: modelAliases, catalogVersion: "fixture" };
     return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
   };
   const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
@@ -316,6 +322,37 @@ it("resolves the exact OpenCode combo ID into its complete configured OmniRoute 
       ["http://omniroute.test/api/models/alias", "GET"],
     ]));
     expect(calls.every((call) => call.authorization === "Bearer fixture-key")).toBe(true);
+
+    modelAliases = { "minimax-combo-m3.1": "other-combo" };
+    await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3.1", {
+      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", fetcher,
+    })).resolves.toBeNull();
+    modelAliases = {};
+
+    modelMappings = [
+      { ...modelMappings[0]!, pattern: "minimax-combo-m3.1/rewritten-model" },
+      ...modelMappings.slice(1),
+    ];
+    await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3.1", {
+      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", fetcher,
+    })).resolves.toBeNull();
+
+    modelMappings = [
+      { id: "mapping-target-duplicate", comboId: "combo-uuid", comboName: "minimax-combo-m3.1", pattern: "minimax-combo-m3.1/MiniMax-M3.1-Flash", enabled: true },
+      ...modelMappings,
+    ];
+    await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3.1", {
+      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", fetcher,
+    })).resolves.toBeNull();
+
+    modelMappings = [
+      { id: "mapping-overlap", comboId: "other-combo", comboName: "other-combo", pattern: "minimax-combo-m3.1/MiniMax-M3.1-Flash", enabled: true },
+      { id: "mapping-other-a", comboId: "other-a", comboName: "glm-5.3-flash-minimax-m3.1", pattern: "glm-5.3-flash-minimax-m3.1/glm-5.3-flash", enabled: true },
+      { id: "mapping-other-b", comboId: "other-b", comboName: "minimax-combo-m3", pattern: "minimax-combo-m3/MiniMax-M3", enabled: true },
+    ];
+    await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3.1", {
+      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", fetcher,
+    })).resolves.toBeNull();
   } finally {
     server.close();
   }
@@ -336,7 +373,7 @@ it("recursively resolves nested configured OmniRoute combos and fails closed on 
       ] }
       : path === "/api/combos" ? { total, combos: rows }
         : path === "/api/model-combo-mappings" ? { total: 0, mappings: [] }
-          : { aliases: [] };
+          : { aliases: {} };
     return new Response(JSON.stringify(payload), { status: 200 });
   };
   const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });

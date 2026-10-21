@@ -105,6 +105,25 @@ function parseOpenAIModelCatalog(value: unknown): Array<{ id: string; owner: str
   return result;
 }
 
+function parseOpenAIModelAliases(value: unknown): Record<string, string> | undefined {
+  const body = objectRecord(value);
+  const aliases = objectRecord(body?.aliases);
+  if (!aliases) return undefined;
+  const result: Record<string, string> = {};
+  for (const [alias, target] of Object.entries(aliases)) {
+    const normalizedAlias = nonEmptyString(alias);
+    const normalizedTarget = nonEmptyString(target);
+    if (!normalizedAlias || !normalizedTarget) return undefined;
+    result[normalizedAlias] = normalizedTarget;
+  }
+  return result;
+}
+
+function aliasesIntersect(aliases: Record<string, string>, modelIds: readonly string[]): boolean {
+  const targets = new Set(modelIds);
+  return Object.entries(aliases).some(([alias, target]) => targets.has(alias) || targets.has(target));
+}
+
 /**
  * Agent Herder's OpenCode adapter: orchestration on top of the shared core.
  *
@@ -507,16 +526,28 @@ export class OpenCodeAdapter implements HarnessAdapter {
         request(`${urls.api}/models/alias`),
       ]);
       const modelCatalog = parseOpenAIModelCatalog(modelCatalogResponse);
-      if (!modelCatalog) return null;
+      const modelAliases = parseOpenAIModelAliases(aliasResponse);
+      if (!modelCatalog || !modelAliases) return null;
       const selected = modelCatalog.find((entry) => entry.id === modelId);
       if (!selected || !selected.root) return null;
       const mappings = objectRecord(mappingResponse);
-      const aliases = objectRecord(aliasResponse);
       if (!Array.isArray(mappings?.mappings)
         || !Number.isInteger(mappings.total) || mappings.total !== mappings.mappings.length
-        || mappings.mappings.some((entry) => !objectRecord(entry) || objectRecord(entry)?.enabled !== false)
-        || !Array.isArray(aliases?.aliases) || aliases.aliases.length > 0) return null;
+        || aliasesIntersect(modelAliases, [nativeModelId, modelId, selected.root])) return null;
+      const mappingRows: Array<{ id: string; comboId: string; comboName: string; pattern: string; enabled: boolean }> = [];
+      const seenMappingIds = new Set<string>();
+      for (const value of mappings.mappings) {
+        const row = objectRecord(value);
+        const id = nonEmptyString(row?.id);
+        const comboId = nonEmptyString(row?.comboId);
+        const comboName = nonEmptyString(row?.comboName);
+        const pattern = nonEmptyString(row?.pattern);
+        if (!row || !id || !comboId || !comboName || !pattern || typeof row.enabled !== "boolean" || seenMappingIds.has(id)) return null;
+        seenMappingIds.add(id);
+        mappingRows.push({ id, comboId, comboName, pattern, enabled: row.enabled });
+      }
       if (selected.owner !== "combo") {
+        if (mappingRows.some((row) => row.enabled)) return null;
         return { ...base, resolvedProviderLeaves: [{ providerId: selected.owner, modelId: selected.root }] };
       }
       // This model is an actual top-level combo only when the native gateway
@@ -536,6 +567,11 @@ export class OpenCodeAdapter implements HarnessAdapter {
       }
       const rootCandidates = combos.filter((combo) => combo.name === modelId);
       if (rootCandidates.length !== 1) return null;
+      const rootCombo = rootCandidates[0]!;
+      const relevantMappings = mappingRows.filter((row) => row.enabled && (
+        row.comboId === rootCombo.id || row.comboName === rootCombo.name || row.pattern.startsWith(`${rootCombo.name}/`)
+      ));
+      if (relevantMappings.length > 1) return null;
       const catalogById = new Map(modelCatalog.map((entry) => [entry.id, entry]));
       const expand = (combo: OmniRouteCombo, ancestors: ReadonlySet<string>): OpenCodeProviderLeaf[] | null => {
         if (ancestors.has(combo.id) || combo.models.length === 0) return null;
@@ -559,9 +595,16 @@ export class OpenCodeAdapter implements HarnessAdapter {
         }
         return leaves.length ? leaves : null;
       };
-      const leaves = expand(rootCandidates[0]!, new Set());
+      const leaves = expand(rootCombo, new Set());
       if (!leaves) return null;
       const uniqueLeaves = [...new Map(leaves.map((leaf) => [`${leaf.providerId}\0${leaf.modelId}`, leaf])).values()];
+      if (aliasesIntersect(modelAliases, uniqueLeaves.map((leaf) => leaf.modelId))) return null;
+      if (relevantMappings.length === 1) {
+        const mapping = relevantMappings[0]!;
+        const identityModels = [...new Set(uniqueLeaves.map((leaf) => leaf.modelId.split("/").at(-1)!).filter(Boolean))];
+        if (mapping.comboId !== rootCombo.id || mapping.comboName !== rootCombo.name
+          || identityModels.length !== 1 || mapping.pattern !== `${rootCombo.name}/${identityModels[0]}`) return null;
+      }
       return { ...base, resolvedProviderLeaves: uniqueLeaves };
     } catch {
       return null;
