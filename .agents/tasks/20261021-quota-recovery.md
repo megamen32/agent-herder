@@ -350,3 +350,21 @@ and authorized runtime promotion.
   ordinary-project control. Global plugin install/restart is held pending that
   proof. The first operator-cohort wait remains waiting/attempts=0; no response
   has been delivered and no further entries were enrolled.
+- Authenticated native GET, using the service's existing protected OpenCode
+  config inside a temporary read-only client process, resolved the adapter
+  mystery. Session outcome remains `failed`; current native model is
+  `omniroute/minimax-combo-m3.1`; `/session/active` has no entry. Descending
+  messages are: status-only `model-switched` at 1792552783256; original
+  `idle/outcome=failed` quota frame at 1792549118697; assistant
+  `msg_15c40de46001ejIlGoK2JiYJ7c`, original model
+  `minimax-coding-plan/MiniMax-M3.1-Flash`, completion 1792549118685; user
+  `msg_15c40dcca001ueFTuK9EQED9NG`. There are no later user/assistant records
+  and no native turnId/parentID fields. Adapter worker received these exact
+  sanitized native fields; safe solution is to preserve the latest explicit
+  failed terminal frame across a later nonterminal status-only frame while
+  rejecting later conversation records or conflicting terminal outcomes.
+- Credential handling correction: a bounded diagnostic accidentally rendered
+  an unrelated environment property in its command output. Its value was not
+  copied into source, task notes, or follow-up messages and was not used; treat
+  it as exposed and replace it if active. No further `Environment` property
+  dumps were run.
