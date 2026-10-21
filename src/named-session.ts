@@ -15,7 +15,8 @@ export type NamedSessionMode = "queue" | "sync";
 
 export interface NamedSessionRequest {
   healthRecovery?: boolean;
-  sourceSessions?: Array<{ harness: string; sessionId: string }>;
+  requireSourceHostId?: boolean;
+  sourceSessions?: Array<{ harness: string; sessionId: string; hostId?: string }>;
   sourceSessionId?: string;
   sourceHarness?: string;
   harness: string;
@@ -60,7 +61,7 @@ type NamedSessionResolution =
   | { kind: "error"; result: NamedSessionResult }
   | { kind: "resolved"; adapter: HarnessAdapter; target: AgentSession; created: boolean; normalized: NamedSessionRequest };
 
-const canonicalSources = new WeakMap<NamedSessionRequest, Array<{ harness: string; sessionId: string }>>();
+const canonicalSources = new WeakMap<NamedSessionRequest, Array<{ harness: string; sessionId: string; hostId?: string }>>();
 const queues = new Map<string, Promise<void>>();
 const recentNamedSessions = new Map<string, { session: AgentSession; seenAt: number }>();
 const recentNamedDeliveries = new Map<string, { result: NamedSessionResult; seenAt: number }>();
@@ -176,8 +177,8 @@ export async function newOrResumeNamedSession(
   const inputId = request.inputId ?? (request.humanRequested ? undefined : createHash("sha256").update(request.message).digest("hex"));
   let selectedModel = request.model;
   let fallbackFrom: string | undefined;
-  let delivery = await resolved.adapter.sendMessage(resolved.target.id, {
-      model: request.model,
+  const send = (model?: string) => sendWithSourceAdmission(request, () => resolved.adapter.sendMessage(resolved.target.id, {
+      model,
       origin: request.humanRequested ? "human" : "automation",
       inputId,
       ...(resolved.target.harness === "hermes" && resolved.target.meta?.taskBinding
@@ -185,7 +186,10 @@ export async function newOrResumeNamedSession(
         : {}),
       message: injectedMessage,
       queue: mode === "queue",
-  });
+  }));
+  const firstSend = await send(request.model);
+  if (!firstSend.allowed) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created };
+  let delivery = firstSend.value;
   const tried = new Set([request.model].filter((model): model is string => typeof model === "string"));
   for (const fallbackModel of request.fallbackModels ?? defaultFallbackModels(request.harness, request.model)) {
     if (delivery.ok || delivery.admitted || delivery.admissionUnknown || !isFallbackEligibleRejection(delivery.error)) break;
@@ -199,16 +203,12 @@ export async function newOrResumeNamedSession(
     }
     fallbackFrom ??= request.model;
     selectedModel = fallbackModel;
-    delivery = await resolved.adapter.sendMessage(resolved.target.id, {
-      model: fallbackModel,
-      origin: request.humanRequested ? "human" : "automation",
-      inputId,
-      ...(resolved.target.harness === "hermes" && resolved.target.meta?.taskBinding
-        ? { expectedTaskBinding: resolved.target.meta.taskBinding as { name: string; cwd: string; generation: string } }
-        : {}),
-      message: injectedMessage,
-      queue: mode === "queue",
-    });
+    const retrySend = await send(fallbackModel);
+    if (!retrySend.allowed) {
+      return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created,
+        ...(request.model ? { requestedModel: request.model, model: request.model } : {}) };
+    }
+    delivery = retrySend.value;
   }
   if (!delivery.ok) {
     const result: NamedSessionResult = {
@@ -372,22 +372,33 @@ async function acquireFileLock(key: string): Promise<() => Promise<void>> {
 
 function launchSources(request: NamedSessionRequest) {
   const refs = [...(request.sourceSessions ?? []), ...(request.sourceSessionId ? [{ harness: request.sourceHarness || request.harness, sessionId: request.sourceSessionId }] : [])];
-  return [...new Map(refs.map((ref) => [`${ref.harness}:${ref.sessionId}`, ref])).values()];
+  return [...new Map(refs.map((ref) => [`${ref.hostId ?? ""}:${ref.harness}:${ref.sessionId}`, ref])).values()];
 }
 async function sourceHeldNow(request: NamedSessionRequest): Promise<boolean> {
   return getHumanStopStore().anyHeld(canonicalSources.get(request) ?? launchSources(request));
+}
+
+async function sendWithSourceAdmission<T>(request: NamedSessionRequest, operation: () => Promise<T>): Promise<{ allowed: false } | { allowed: true; value: T }> {
+  return getHumanStopStore().withSourcesUnheld(canonicalSources.get(request) ?? launchSources(request), operation);
 }
 
 async function namedAutomationError(adapters: Map<string, HarnessAdapter>, request: NamedSessionRequest, normalized: NamedSessionRequest): Promise<string | undefined> {
   const store = getHumanStopStore();
   const refs = launchSources(request);
   if (refs.length > 32) return "Слишком много исходных чатов; автоматическое создание запрещено.";
-  const canonical: Array<{ harness: string; sessionId: string }> = [];
+  const canonical: Array<{ harness: string; sessionId: string; hostId?: string }> = [];
+  const localHostId = process.env.NOTICEPLACE_MESH_HOST_ID || process.env.AGENT_HERDER_HOST_ID || "";
   for (const ref of refs) {
+    if (request.requireSourceHostId && !ref.hostId) {
+      return "Исходный чат не содержит подтверждённую идентичность узла; автоматически создавать замену запрещено.";
+    }
+    if (ref.hostId && (!localHostId || ref.hostId !== localHostId)) {
+      return "Исходный чат принадлежит другому или неизвестному узлу; автоматически создавать замену запрещено.";
+    }
     const source = await adapters.get(ref.harness)?.getSession(ref.sessionId);
     if (source) {
       if (await store.observe(source)) return HUMAN_STOP_MESSAGE;
-      canonical.push({ harness: source.harness, sessionId: source.id });
+      canonical.push({ harness: source.harness, sessionId: source.id, ...(ref.hostId ? { hostId: ref.hostId } : {}) });
     } else {
       if (await store.isHeld(ref.harness, ref.sessionId)) return HUMAN_STOP_MESSAGE;
       return "Исходный чат недоступен; автоматически создавать замену запрещено.";

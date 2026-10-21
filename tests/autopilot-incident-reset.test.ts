@@ -90,7 +90,9 @@ it.each(["opencode", "codex"] as const)("resets policy inheritance while retaini
    }
   };
   const url = `http://127.0.0.1:${(server.address() as any).port}/api/autopilot/sessions/${harness}/ses_reset`;
-  const binding = { incidentId: "inc_original", project: "admin" };
+  // The center accepts progress only for the selected plan of the incident,
+  // so the binding carries that plan.
+  const binding = { incidentId: "inc_original", project: "admin", planId: "repair" };
   expect((await fetch(url, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: false, cwd: "/workspace/Admin", noticeIncident: binding }), signal: AbortSignal.timeout(1_000) })).status).toBe(200);
   const reset = await fetch(url, { method: "DELETE", signal: AbortSignal.timeout(1_000) });
   expect(reset.status).toBe(200);

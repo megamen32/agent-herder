@@ -14,6 +14,7 @@ import type { HarnessAdapter, HarnessType } from "../types/common.js";
 import { newOrResumeNamedSession, type NamedSessionMode, type NamedSessionResult } from "../named-session.js";
 import { HUMAN_STOP_MESSAGE } from "../human-stop-actions.js";
 import { MINIMAX_SUBSCRIPTION_MODEL, type MiniMaxQuotaPreflight } from "./minimax-quota-preflight.js";
+import { NOTICEPLACE_HEALTH_AUTHORIZED, validateNoticeplaceHealthLaunch } from "./noticeplace-health-launch.js";
 
 /**
  * One recorded attempt of one operation on one harness.
@@ -57,6 +58,13 @@ export interface ProjectLaunchDispatchResult extends Partial<NamedSessionResult>
   error?: string;
 }
 
+export interface ProjectLaunchSourceSession {
+  harness: HarnessType;
+  sessionId: string;
+  /** Stable Herder host identity prevents cross-node session ID aliasing. */
+  hostId: string;
+}
+
 /** The actual native call. It is the only place that may create an executor. */
 export type ProjectLaunchRunner = (request: {
   harness: HarnessType;
@@ -70,11 +78,14 @@ export type ProjectLaunchRunner = (request: {
   inputId: string;
   /** Only an explicit project route may authorize subscription quota fallback. */
   configuredRoute?: boolean;
+  sourceSessions?: ProjectLaunchSourceSession[];
+  requireSourceHostId?: boolean;
 }) => Promise<NamedSessionResult>;
 
 /** The production dispatch port injected into the web seam. */
 export interface ProjectLaunchDispatcher {
   (input: {
+    [NOTICEPLACE_HEALTH_AUTHORIZED]?: true;
     project: string;
     cwd: string;
     message: string;
@@ -83,10 +94,13 @@ export interface ProjectLaunchDispatcher {
     mode?: NamedSessionMode;
     operationId?: string;
     name?: string;
+    sourceSessions?: ProjectLaunchSourceSession[];
   }): Promise<ProjectLaunchDispatchResult>;
 }
 
 export interface ProjectLaunchDispatchInput {
+  /** Set only after dedicated Notice Place bearer verification in HTTP. */
+  [NOTICEPLACE_HEALTH_AUTHORIZED]?: true;
   policy: AutomationLaunchPolicy;
   /** Canonical project root or the identifier a real card carries. */
   project: string;
@@ -104,6 +118,7 @@ export interface ProjectLaunchDispatchInput {
   operationId?: string;
   /** Human-readable session name used by the existing named-session seam. */
   name?: string;
+  sourceSessions?: ProjectLaunchSourceSession[];
 }
 
 /** Human-readable harness names for the routing reason a person reads. */
@@ -143,6 +158,15 @@ export async function dispatchProjectLaunch(
   const operationId = input.operationId?.trim() || randomUUID();
   const mode: NamedSessionMode = input.mode ?? "sync";
   let cwd = input.cwd ?? "";
+  const healthAnalysis = input[NOTICEPLACE_HEALTH_AUTHORIZED] === true;
+  const routeKey = routeKeyOf(input.policy, input.project);
+  const healthRoute = routeKey ? input.policy.projectRoutes?.[routeKey] : undefined;
+  if (healthAnalysis) {
+    const error = validateNoticeplaceHealthLaunch(input)
+      ?? (!input.policy.allowedHarnesses.includes("opencode") || (healthRoute && !healthRoute.harnesses.includes("opencode"))
+        ? "Политика проекта не разрешает OpenCode для анализа инцидента; переключение среды запрещено." : undefined);
+    if (error) return { operationId, project, attempts: [], outcome: "no_harness", routingReason: error, error };
+  }
   const attempts = await log.attempts(project, operationId);
 
   if (attempts.some((attempt) => attempt.outcome === "in_flight")) {
@@ -164,8 +188,19 @@ export async function dispatchProjectLaunch(
   }
 
   const attempted = attempts.map((attempt) => attempt.harness);
+  if (healthAnalysis && attempted.includes("opencode")) {
+    return {
+      operationId, project, attempts, outcome: "no_harness",
+      routingReason: "Попытка анализа инцидента уже завершилась отказом. Переключение среды и провайдера запрещено.",
+    };
+  }
   const previous = attempts[attempts.length - 1];
-  const resolution = resolveProjectLaunch(input.policy, {
+  // A health request selects only the allowed OpenCode entry; it never walks
+  // the ordinary fallback chain. The original policy remains unchanged.
+  const resolutionPolicy = healthAnalysis && routeKey && healthRoute
+    ? { ...input.policy, projectRoutes: { ...input.policy.projectRoutes, [routeKey]: { ...healthRoute, harnesses: ["opencode" as const] } } }
+    : input.policy;
+  const resolution = resolveProjectLaunch(resolutionPolicy, {
     project,
     ...(attempted.length > 0 ? { attempted } : {}),
     ...(previous && previous.outcome !== "human_hold" ? { outcome: previous.outcome as LaunchOutcome } : {}),
@@ -205,7 +240,7 @@ export async function dispatchProjectLaunch(
     // A configured project is authoritative: the route decides harness, model
     // and workspace. A profile value is reported as overridden, never rejected.
     harness = resolution.harness;
-    model = resolution.model;
+    model = healthAnalysis ? input.model : resolution.model;
     const routeProject = routeKeyOf(input.policy, input.project);
     let prefix = "";
     if (routeProject?.startsWith("/")) {
@@ -216,10 +251,10 @@ export async function dispatchProjectLaunch(
     } else if (!cwd) {
       prefix = `Для маршрута ${routeProject ?? project} нужна рабочая папка. `;
     }
-    if (input.harness && input.harness !== harness) {
+    if (!healthAnalysis && input.harness && input.harness !== harness) {
       prefix += `Профиль предлагал ${harnessLabel(input.harness)}, но маршрут проекта выбирает ${harnessLabel(harness)}. `;
     }
-    if (input.model && input.model !== model) {
+    if (!healthAnalysis && input.model && input.model !== model) {
       prefix += `Модель профиля ${input.model} проигнорирована: маршрут задаёт ${model ?? "модель по умолчанию"}. `;
     }
     if (resolution.mode === "handoff" && !attempted.includes(harness)) {
@@ -273,7 +308,7 @@ export async function dispatchProjectLaunch(
 
   const nativeResult = await run({ harness, cwd, message: input.message, ...(model ? { model } : {}), mode, inputId,
     ...(input.policy.fallbackModels?.[harness as "opencode" | "zcode"] ? { fallbackModels: input.policy.fallbackModels[harness as "opencode" | "zcode"] } : {}),
-    configuredRoute: resolution.kind === "launch" });
+    configuredRoute: resolution.kind === "launch", ...(input.sourceSessions ? { sourceSessions: input.sourceSessions } : {}) });
   // Optional undefined fields disappear in JSON. Project the same durable shape
   // on the first response so a restart cannot change its receipt or model.
   const result = Object.fromEntries(Object.entries(nativeResult).filter(([, value]) => value !== undefined)) as NamedSessionResult;
@@ -283,7 +318,9 @@ export async function dispatchProjectLaunch(
     outcome,
     reason: outcome === "accepted"
       ? (attempts.length === 0 ? routingReason : `${routingReason} Среда ${harnessLabel(harness)} приняла запуск${result.error ? `: ${result.error}` : ""}.`)
-      : routingDetail(harness, outcome, result),
+      : healthAnalysis
+        ? `OpenCode: анализ инцидента не подтвердил приём${result.error ? `: ${result.error}` : ""}. Переключение среды и провайдера запрещено.`
+        : routingDetail(harness, outcome, result),
     at: reservation.record.at,
     atCompleted: new Date().toISOString(),
     inputId,
@@ -303,14 +340,16 @@ export async function dispatchProjectLaunch(
   }
   // A definite pre-admission failure: continue down the ordered route.
   const next = resolveProjectLaunch(input.policy, { project, attempted: [...attempted, harness], outcome: outcome as LaunchOutcome });
-  if (next.kind === "launch") return dispatchProjectLaunch({ ...input, operationId }, log, run);
+  if (!healthAnalysis && next.kind === "launch") return dispatchProjectLaunch({ ...input, operationId }, log, run);
   return {
     ...result,
     operationId,
     project,
     attempts: recorded,
     outcome: "no_harness",
-    routingReason: `${attempt.reason} Других сред в маршруте нет.`,
+    routingReason: healthAnalysis
+      ? "OpenCode не подтвердил запуск анализа инцидента. Переключение среды и провайдера запрещено."
+      : `${attempt.reason} Других сред в маршруте нет.`,
     ...(result.error ? { error: result.error } : {}),
   };
 }
@@ -416,6 +455,8 @@ export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: 
       ...(request.model ? { model: request.model } : {}),
       ...(configuredFallbacks ? { fallbackModels: configuredFallbacks } : {}),
       ...(request.inputId ? { inputId: request.inputId } : {}),
+      ...(request.sourceSessions ? { sourceSessions: request.sourceSessions } : {}),
+      requireSourceHostId: true,
     });
   };
 }

@@ -51,6 +51,8 @@ export interface HarnessSendRequest {
 export interface HarnessSendResult {
   ok: boolean;
   admitted?: boolean;
+  /** Native OpenCode inbox/user-message ID returned by its prompt endpoint. */
+  nativeInputMessageId?: string;
   error?: string;
 }
 

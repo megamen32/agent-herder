@@ -14,6 +14,15 @@ const component = readFileSync(new URL("../src/web-ui/launch-policy-settings.tsx
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
 
 describe("new session launch policy settings", () => {
+  it("points Notice Place incident model choice to its admin and explains Herder's launch role", () => {
+    expect(component).toContain('href="https://notify.bezrabotnyi.com/admin/#health-model"');
+    expect(component).toContain("Модель для анализа инцидентов Notice Place выбирается в");
+    expect(component).toContain("Herder проверяет допустимость запуска и запускает сессию.");
+    expect(component).toContain("Поля ниже задают локальный маршрут Herder и не меняют выбор модели в Notice Place.");
+    expect(component).toContain("<legend>Локальный маршрут инцидентов Herder</legend>");
+    expect(component).not.toContain("Диагностика и исправление инцидентов Noticeplace");
+    expect(component).not.toContain("Этот выбор сохраняется отдельно для новых расследований и исправлений.");
+  });
   it.each(["", "   "])("clears route override %j and saves the inherited global model through production validation", (empty) => {
     const project = "/project";
     const draft = { ...DEFAULT_LAUNCH_POLICY, projectRoutes: { [project]: {
@@ -67,10 +76,6 @@ describe("new session launch policy settings", () => {
   });
 
   it("loads and saves only through the launch-policy API with an explicit save action", () => {
-    expect(component).toContain('requestJson<unknown>("/api/automation/launch-policy")');
-    expect(component).toContain('requestJson<unknown>("/api/automation/launch-policy", {');
-    expect(component).toContain('method: "PUT"');
-    expect(component).toContain("body: JSON.stringify(policy)");
     expect(component).toContain('requestJson<{ adapters?: Array<{ id: string; name: string; active: boolean }> }>("/api/adapters")');
     expect(component).toContain(".filter((item) => item.active)");
     expect(component).toContain("/api/models?harness=");
@@ -81,11 +86,30 @@ describe("new session launch policy settings", () => {
     expect(component).not.toContain("/api/sessions");
   });
 
+  it("writes the whole document only over the version it was read from", () => {
+    expect(component).toContain('fetch("/api/automation/launch-policy"');
+    expect(component).toContain('"/api/automation/launch-policy"');
+    expect(component).toContain('method: "PUT"');
+    expect(component).toContain("body: JSON.stringify(policy)");
+    expect(component).toContain('"if-match": etag');
+    expect(component).toContain("response.status === 412");
+    // A broken document is not a missing one: only an absent one may be created.
+    expect(component).toContain('state === "absent"');
+    expect(component).toContain('state === "invalid"');
+    expect(component).toContain("Политика запуска повреждена");
+  });
+
+  it("keeps the draft and reports a conflict instead of overwriting a newer policy", () => {
+    expect(component).toContain("Политика запуска изменилась в другой вкладке");
+    expect(component).toContain("Обновить и применить заново");
+    expect(component).toContain("mergePolicyChanges");
+  });
+
   it("exposes launch policy as its own desktop and mobile settings entry", () => {
     expect(main).toContain('"autocontinue" | "autopilot" | "launch-policy"');
     expect(main).toContain('aria-label="Новая сессия"');
     expect(main).toContain('>Настройки запуска новых сессий</button>');
     expect(main).toContain('setAutomationSettings("launch-policy")');
-    expect(main).toContain("<LaunchPolicySettings />");
+    expect(main).toContain("<LaunchPolicySettings onOpenProjects=");
   });
 });

@@ -2,8 +2,8 @@ import type { BackgroundAutopilotStop } from "../autopilot/background-stop.js";
 import type { AutopilotRunnerInput } from "../autopilot-runner.js";
 import { projectSessionInventory } from "./session-inventory.js";
 import { SessionImageStore } from "../session-images.js";
-import { homedir } from "node:os";
-import { UserMessageDelivery } from "../user-message-delivery.js";
+import { homedir, hostname } from "node:os";
+import { UserMessageDelivery, type UserMessageRoute } from "../user-message-delivery.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { execFile } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
@@ -17,13 +17,20 @@ import type { AgentSession, HarnessAdapter, SessionDetails } from "../types/inde
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "../session-convert.js";
 import { askHuman, HumanRequestLockUnavailableError, HumanRequestRegistry, resumeHumanRequestOnce } from "../human-request/index.js";
 import type { ProjectLaunchDispatcher } from "../automation/project-launch-dispatch.js";
+import type { IntegratorFleetRuntime } from "../integrator-fleet-runtime.js";
+import { NOTICEPLACE_HEALTH_AUTHORIZED, NOTICEPLACE_HEALTH_PURPOSE, hasNoticeplaceHealthBearer, validateNoticeplaceHealthLaunch } from "../automation/noticeplace-health-launch.js";
 import { buildSessionProgress } from "../health-progress.js";
+import { NoticeplaceHealthObserver } from "../automation/noticeplace-health-observer.js";
+import { NOTICEPLACE_HEALTH_MODELS, resolveLaunchHealthPlan } from "../automation/noticeplace-health-policy.js";
+import { readArmedHealthCandidates, recoverNoticeplaceHealthObservation } from "../automation/noticeplace-health-recovery.js";
+import { createMiniMaxQuotaPreflight } from "../automation/minimax-quota-preflight.js";
 import { healthModelForHarness, normalizeHealthExecution } from "../health-remediation.js";
 import { convertHermesExport } from "../hermes-conversion.js";
 import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "../resume-transport.js";
 import { ChoiceRegistry, ChoiceRegistryLockUnavailableError, type PendingChoice } from "../autopilot/choice-registry.js";
 import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../autopilot/policy-store.js";
-import { parseNoticeIncident } from "../autopilot/notice-incident.js";
+import { parseNoticeIncident, readIncidentBinding, NoticeIncidentBindingError, isHealthPlanId, HEALTH_PLAN_IDS, type HealthPlanId } from "../autopilot/notice-incident.js";
+import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import type { AutoCompactService, AutoCompactStore } from "../autocontinue/auto-compact.js";
@@ -34,7 +41,7 @@ import { boundedCoordinationContext, coordinationNotes, type CoordinationConflic
 import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
 import { getAgentActivityStatistics, withSessionPortfolioStatistics } from "../session-statistics.js";
 import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { toNodeHandler, type NodeMcpRequestHandler } from "@modelcontextprotocol/node";
 import type { AdapterRegistry } from "../adapter-registry.js";
 import type { HerderEventBus } from "../herder-events.js";
@@ -76,6 +83,10 @@ export interface WebDependencies {
   jobs?: HerderJobRegistry;
   /** Reuse the process-owned supervisor when the daemon starts observation before HTTP. */
   supervisor?: SessionSupervisor;
+  /** Resolve exact H34-bound native addresses before owner-HTTP session access. */
+  integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">;
+  /** Build an ordinary supervisor facade over a request-owned adapter map. */
+  scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor;
   /** Disable local observer lifecycle when a process-owned supervisor already manages it. */
   sessionObservationManagedExternally?: boolean;
   /** Optional profile-scoped fleet API; its handler authenticates each request. */
@@ -612,6 +623,70 @@ export function liveAutopilotTargetMatchesChoice(
 const htmlPath = join(dirname(fileURLToPath(import.meta.url)), "index.html");
 const webRoot = dirname(htmlPath);
 
+/**
+ * The model catalog of a harness, refreshed when the cache is stale.
+ *
+ * A stale cache is not a refusal: the background refresh is awaited and the
+ * catalog is read again, so only a model that is missing from the fresh
+ * catalog is refused.
+ */
+async function freshModelCatalog(supervisor: SessionSupervisor, harness: string, timeoutMs = 5_000): Promise<{ models: string[]; stale: boolean }> {
+  let catalog = await supervisor.getModels(harness);
+  if (!catalog.stale) return catalog;
+  const deadline = Date.now() + timeoutMs;
+  while (catalog.stale && Date.now() < deadline) {
+    await new Promise((resolve) => { setTimeout(resolve, 100).unref?.(); });
+    catalog = await supervisor.getModels(harness);
+  }
+  return catalog;
+}
+
+let healthQuotaPreflight: ReturnType<typeof createMiniMaxQuotaPreflight> | undefined;
+
+/** The MiniMax subscription quota check of one health launch. */
+function noticeplaceHealthQuotaPreflight(): ReturnType<typeof createMiniMaxQuotaPreflight> {
+  healthQuotaPreflight ??= createMiniMaxQuotaPreflight({ token: process.env.MINIMAX_API_KEY });
+  return healthQuotaPreflight;
+}
+
+/** Compare two secrets without leaking their length or prefix through time. */
+function sameSecret(left: string | undefined, right: string | undefined): boolean {
+  if (!left || !right) return false;
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  return timingSafeEqual(digest(left), digest(right));
+}
+
+/** How a native session is reached: ordinary, project-scoped or refused. */
+type SessionRoute =
+  | { kind: "ordinary"; adapters: Map<string, HarnessAdapter> }
+  | { kind: "deny"; reason: string }
+  | { kind: "scoped"; adapter: HarnessAdapter; adapters: Map<string, HarnessAdapter>; supervisor?: SessionSupervisor };
+
+/**
+ * The one project-scope guard of a native session read.
+ *
+ * Every reader of a native session passes this guard, including the detached
+ * health observer: a revoked or rotated project binding must stop the read
+ * exactly as it stops an HTTP route.
+ */
+async function resolveSessionRouteFor(
+  integratorRuntime: Pick<IntegratorFleetRuntime, "adapterForSession"> | undefined,
+  adapters: Map<string, HarnessAdapter>,
+  scopedSupervisorFactory: ((adapters: Map<string, HarnessAdapter>) => SessionSupervisor) | undefined,
+  harness: string,
+  sessionId: string,
+): Promise<SessionRoute> {
+  if (!integratorRuntime) return { kind: "ordinary", adapters };
+  let resolution: Awaited<ReturnType<IntegratorFleetRuntime["adapterForSession"]>>;
+  try { resolution = await integratorRuntime.adapterForSession({ hostId: hostname(), harness: harness as "codex" | "zcode" | "opencode", nativeSessionId: sessionId }); }
+  catch { return { kind: "deny", reason: "binding_lookup_failed" }; }
+  if (resolution.kind === "ordinary") return { kind: "ordinary", adapters };
+  if (resolution.kind === "deny") return { kind: "deny", reason: resolution.reason };
+  const scopedAdapters = new Map(adapters);
+  scopedAdapters.set(harness, resolution.adapter);
+  return { kind: "scoped", adapter: resolution.adapter, adapters: scopedAdapters, supervisor: scopedSupervisorFactory?.(scopedAdapters) };
+}
+
 export function createWebServer(dependencies: WebDependencies): Server {
   const supervisor = dependencies.supervisor ?? new SessionSupervisor(dependencies.adapters, dependencies.converter, dependencies.lineageStore, { events: dependencies.herderEvents });
   const stopSessionObservation = dependencies.herderEvents && !dependencies.sessionObservationManagedExternally
@@ -631,12 +706,48 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const userMessageDelivery = dependencies.jobs ? new UserMessageDelivery(dependencies.adapters, supervisor, dependencies.jobs) : undefined;
   const sessionImages = dependencies.sessionImageStore ?? new SessionImageStore(join(homedir(), ".local/state/agent-herder/session-images"));
   const rag = agentHerderRag();
+  // The health plan of a launch, remembered between the launch call and the
+  // arming call of the same session: the center states the selected plan in
+  // the launch message, while the arming call carries only the incident id.
+  const launchHealthPlans = new Map<string, HealthPlanId>();
+  // The center's observer is bounded so the incident card is never held back.
+  // This one keeps the same native session under observation until it ends.
+  const noticeplaceHealthObserver = new NoticeplaceHealthObserver({
+    readDetails: async (harness, sessionId) => {
+      // The observer reads the same native session as the HTTP routes, so it
+      // passes the same project-scope guard before it reads anything.
+      const route = await resolveSessionRouteFor(dependencies.integratorRuntime, dependencies.adapters, dependencies.scopedSupervisorFactory, harness, sessionId);
+      if (route.kind === "deny") throw new Error("Project-scoped session binding could not be verified.");
+      const reader = route.kind === "scoped" ? route.supervisor : supervisor;
+      if (!reader) throw new Error("Scoped session read port is unavailable.");
+      return await reader.getSessionDetails(harness, sessionId, { limit: 5, history: "auto" });
+    },
+    readActiveTurn: async (harness, sessionId) => {
+      const adapter = dependencies.adapters.get(harness);
+      if (!adapter?.getCoordinationActiveTurnId) return null;
+      return await adapter.getCoordinationActiveTurnId(sessionId);
+    },
+    validateTarget: async (target) => {
+      try {
+        await readIncidentBinding(target.binding);
+        return undefined;
+      } catch (error) {
+        // An unreachable center proves nothing about the binding; only a
+        // definite refusal stops the observation.
+        if (error instanceof NoticeIncidentBindingError && error.kind === "rejected") return error.message;
+        console.error(`Notice health observer could not confirm the incident ${target.binding.incidentId}: ${error instanceof Error ? error.message : String(error)}`);
+        return undefined;
+      }
+    },
+    onPublished: (update) => console.log(`Notice health observer published ${update.fingerprint} for ${update.binding.incidentId} plan ${update.planId}`),
+    onError: (message) => console.error(message),
+  });
   const server = createServer(async (request, response) => {
     try {
       if (dependencies.fleetHttpGuard && await dependencies.fleetHttpGuard(request, response)) return;
       if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
       if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -654,9 +765,41 @@ export function createWebServer(dependencies: WebDependencies): Server {
   server.once("close", () => {
     userMessageDelivery?.close();
     stopSessionObservation?.();
+    // The detached observers publish into the incident cards: they must stop
+    // with the server instead of running on into the next process.
+    noticeplaceHealthObserver.stop();
     unsubscribeMcpEvents?.();
     if (mcpHttp) void mcpHttp.close();
   });
+  /**
+   * A restart of herder must not leave the incident cards of the live
+   * executors silent: the armed sessions of the durable store are observed
+   * again, in small batches, as soon as the server starts listening.
+   */
+  const recoverHealthObservation = async (): Promise<void> => {
+    try {
+      const candidates = await readArmedHealthCandidates(join(resolveAutopilotStateDir(), "sessions.json"));
+      if (!candidates.length) return;
+      const result = await recoverNoticeplaceHealthObservation({
+        candidates,
+        isAlive: async (candidate) => {
+          const session = await supervisor.getSession(candidate.harness, candidate.sessionId).catch(() => null);
+          if (!session) return false;
+          return session.status !== "stopped" && session.status !== "error";
+        },
+        arm: async (candidate) => await noticeplaceHealthObserver.start({
+          harness: candidate.harness,
+          sessionId: candidate.sessionId,
+          cwd: candidate.cwd,
+          binding: candidate.binding,
+        }),
+      });
+      console.log(`Notice health observer recovered ${result.armed} armed sessions after the restart (${result.skipped} skipped)`);
+    } catch (error) {
+      console.error(`Notice health observer recovery failed: ${(error as Error).message}`);
+    }
+  };
+  server.once("listening", () => { void recoverHealthObservation(); });
   if (dependencies.choiceRegistry && dependencies.autopilotPolicyStore) {
     const sweep = () => sweepAutopilotChoices({
       choiceRegistry: dependencies.choiceRegistry!,
@@ -708,8 +851,9 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: Map<string, HealthPlanId>): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
+  const resolveSessionRoute = async (harness: string, sessionId: string) => await resolveSessionRouteFor(integratorRuntime, adapters, scopedSupervisorFactory, harness, sessionId);
   if (url.pathname === "/api/resources/s21-lease" && request.method === "GET") {
     response.setHeader("cache-control", "no-store");
     return sendJson(response, 200, await getS21Ownership());
@@ -905,6 +1049,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     if (request.method === "DELETE") {
       await autopilotSessionStore.delete(harness, sessionId);
+      // The incident binding of this session is gone: its card must not keep
+      // receiving progress from this session.
+      noticeplaceHealthObserver?.stopTarget({ harness, sessionId });
       const retained = await autopilotSessionStore.get(harness, sessionId);
       const effective = autopilotPolicyStore ? await autopilotPolicyStore.readEffective() : undefined;
       const cwd = url.searchParams.get("cwd") || retained?.cwd || "/";
@@ -920,14 +1067,35 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 400, { error: "enabled and cwd are required" });
     }
     try {
-      const record = await autopilotSessionStore.set({ harness, sessionId, cwd: body.cwd, ...(body.noticeIncident === undefined ? {} : { noticeIncident: parseNoticeIncident(body.noticeIncident) }) }, body.enabled);
+      const previous = await autopilotSessionStore.get(harness, sessionId);
+      const requested = body.noticeIncident === undefined ? undefined : parseNoticeIncident(body.noticeIncident);
+      // The center states the incident binding; the selected plan of that
+      // binding comes from the launch request of the same session and is
+      // remembered by the store. The observer never publishes a guessed plan:
+      // the center only accepts progress for the selected plan.
+      const planId = requested?.planId
+        ?? previous?.noticeIncident?.planId
+        ?? (requested ? launchHealthPlans?.get(`${harness}:${sessionId}`) : undefined);
+      const noticeIncident = requested === undefined ? undefined : { ...requested, ...(planId ? { planId } : {}) };
+      const record = await autopilotSessionStore.set({ harness, sessionId, cwd: body.cwd, ...(noticeIncident === undefined ? {} : { noticeIncident }) }, body.enabled);
+      if (body.enabled && record.noticeIncident) {
+        // The center armed this session for one original incident: watch it
+        // until it ends and keep that incident's card truthful meanwhile.
+        await noticeplaceHealthObserver?.start({ harness, sessionId, cwd: body.cwd, binding: record.noticeIncident });
+      } else {
+        // The session is not armed any more: stop watching it.
+        noticeplaceHealthObserver?.stopTarget({ harness, sessionId });
+      }
       return sendJson(response, 200, { ...record, source: "session" });
     } catch (error) {
       return sendJson(response, 400, { error: (error as Error).message });
     }
   }
   if (url.pathname === "/api/automation/launch-policy" && (request.method === "GET" || request.method === "PUT")) {
-    if (!automationLaunchPolicyStore) return sendJson(response, 503, { error: "Launch policy is not configured" });
+    if (request.method === "PUT" && hasNoticeplaceHealthBearer(request.headers.authorization)) {
+      return sendJson(response, 403, { error: "Токен анализа инцидентов не разрешает менять политику запуска." });
+    }
+    if (!automationLaunchPolicyStore) return sendJson(response, 503, { error: "Launch policy is not configured", state: "unavailable" });
     if (request.method === "GET") {
       const loaded = await automationLaunchPolicyStore.readDocument();
       // The document identity travels with every read, so a later full write
@@ -995,8 +1163,20 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   if (url.pathname === "/api/automation/project-launch" && request.method === "POST") {
     if (!projectLaunchDispatch) return sendJson(response, 503, { error: "Project launch routing is not configured" });
     const body = await readJson(request);
+    const healthAnalysis = body.purpose === NOTICEPLACE_HEALTH_PURPOSE;
+    const healthBearer = hasNoticeplaceHealthBearer(request.headers.authorization);
+    if (healthAnalysis && !healthBearer) return sendJson(response, 401, { error: "Для анализа инцидента нужен отдельный токен Notice Place." });
+    if (healthBearer && !healthAnalysis) return sendJson(response, 403, { error: "Токен Notice Place разрешает только анализ инцидента." });
+    if (healthAnalysis) {
+      const error = validateNoticeplaceHealthLaunch({ harness: body.harness, model: body.model, operationId: body.operation_id });
+      if (error) return sendJson(response, 400, { error });
+    }
+    if (!validSourceSessions(body.sourceSessions) || !validProjectLaunchSourceSessions(body.sourceSessions)) {
+      return sendJson(response, 400, { error: "source session references are invalid or lack host identity" });
+    }
     try {
       const result = await projectLaunchDispatch({
+        ...(healthAnalysis ? { [NOTICEPLACE_HEALTH_AUTHORIZED]: true as const } : {}),
         project: typeof body.project === "string" ? body.project : "",
         cwd: typeof body.cwd === "string" ? body.cwd : "",
         message: typeof body.message === "string" ? body.message : "",
@@ -1005,7 +1185,15 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         ...(body.mode === "queue" ? { mode: "queue" as const } : {}),
         ...(typeof body.operation_id === "string" ? { operationId: body.operation_id } : {}),
         ...(typeof body.name === "string" ? { name: body.name } : {}),
+        ...(Array.isArray(body.sourceSessions) ? { sourceSessions: body.sourceSessions as Array<{ harness: HarnessType; sessionId: string; hostId: string }> } : {}),
       });
+      // The center states the selected health plan in the launch message; the
+      // arming call of the same session carries only the incident id, so the
+      // plan of that launch is remembered here.
+      if (result.outcome !== "no_harness") {
+        const plan = resolveLaunchHealthPlan(typeof body.message === "string" ? body.message : "")?.planId;
+        if (plan && result.sessionId) launchHealthPlans?.set(`${result.harness ?? (typeof body.harness === "string" ? body.harness : "")}:${result.sessionId}`, plan);
+      }
       return sendJson(response, result.outcome === "no_harness" ? 409 : 200, result);
     } catch (error) {
       return sendJson(response, 400, { error: (error as Error).message });
@@ -1272,7 +1460,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   const webChoiceSelection = url.pathname === "/api/autopilot/choices/select";
   if (request.method === "POST" && (internalChoiceSelection || webChoiceSelection)) {
     if (!choiceRegistry) return sendJson(response, 503, { error: "Choice registry is disabled" });
-    if (internalChoiceSelection && mcpAuthToken && request.headers.authorization !== `Bearer ${mcpAuthToken}`) return sendJson(response, 401, { error: "unauthorized" });
+    if (internalChoiceSelection && mcpAuthToken && !sameSecret(request.headers.authorization, `Bearer ${mcpAuthToken}`)) return sendJson(response, 401, { error: "unauthorized" });
     const body = await readJson(request);
     if (!isUuid(body.request_id) || typeof body.choice_id !== "string" || body.choice_id.trim() === "") return sendJson(response, 400, { error: "request_id and choice_id are required" });
     const claimed = await choiceRegistry.claimForResume(body.request_id, body.choice_id);
@@ -1351,7 +1539,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
   }
   if (url.pathname === "/mcp" && (request.method === "POST" || request.method === "GET" || request.method === "DELETE")) {
-    if (mcpAuthToken && request.headers.authorization !== `Bearer ${mcpAuthToken}`) {
+    if (mcpAuthToken && !sameSecret(request.headers.authorization, `Bearer ${mcpAuthToken}`)) {
       return sendJson(response, 401, { error: "unauthorized" });
     }
     if (!mcpNodeHandler) return sendJson(response, 503, { error: "MCP HTTP transport is disabled" });
@@ -1592,6 +1780,12 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     return sendJson(response, 405, { error: "method_not_allowed", route: "/api/health/remediation" });
   }
   if (request.method === "POST" && url.pathname === "/api/health/remediation") {
+    // The authorization of this endpoint is off by default: the center calls
+    // herder without a bearer today. It becomes mandatory with one
+    // environment variable, once the center sends the dedicated token.
+    if (process.env.NOTICEPLACE_HEALTH_REMEDIATION_REQUIRE_BEARER === "1" && !hasNoticeplaceHealthBearer(request.headers.authorization)) {
+      return sendJson(response, 401, { error: "Для починки инцидента нужен отдельный токен Notice Place." });
+    }
     const body = await readJson(request);
     let incidentId: string;
     let planId: string;
@@ -1600,6 +1794,20 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       planId = boundedHealthIdentifier(body.plan_id, "plan_id");
     } catch (error) {
       return sendJson(response, 400, { error: (error as Error).message });
+    }
+    // The center accepts progress only for the selected plan, so the plan of
+    // the launch is a validated contract value and never a free string.
+    if (!isHealthPlanId(planId)) {
+      return sendJson(response, 400, { error: `health remediation plan_id must be one of ${HEALTH_PLAN_IDS.join(", ")}` });
+    }
+    // The incident of the launch is confirmed at the center when the caller
+    // names its project; the read is project-scoped and never resolves.
+    if (typeof body.project === "string" && body.project.trim()) {
+      try {
+        await readIncidentBinding({ incidentId, project: body.project.trim() });
+      } catch (error) {
+        return sendJson(response, 409, { error: `health remediation incident is not confirmed: ${(error as Error).message}` });
+      }
     }
     const harness = body.harness === undefined ? "zcode" : body.harness;
     if (harness !== "opencode" && harness !== "codex" && harness !== "hermes" && harness !== "zcode" && harness !== "fast-agent") {
@@ -1628,14 +1836,29 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (harness !== execution.runtime) {
       return sendJson(response, 409, { error: `health remediation harness must match execution runtime (${execution.runtime})` });
     }
-    const model = healthModelForHarness(harness, execution);
+    // One model allowlist for the analysis and the repair of an incident: the
+    // approved MiniMax routes only, no other provider and no fallback.
+    const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
+    if (requestedModel && !NOTICEPLACE_HEALTH_MODELS.includes(requestedModel)) {
+      return sendJson(response, 409, { error: "Noticeplace incidents allow only the approved MiniMax models; no provider fallback" });
+    }
+    const model = requestedModel || healthModelForHarness(harness, execution);
     if (harness === "opencode") {
-      if (execution.provider !== "minimax-coding-plan" || model !== "minimax-coding-plan/MiniMax-M3.1-Flash") {
-        return sendJson(response, 409, { error: "Noticeplace incidents require OpenCode / MiniMax по подписке; no provider fallback" });
+      if (!NOTICEPLACE_HEALTH_MODELS.includes(model)) {
+        return sendJson(response, 409, { error: "Noticeplace incidents require an approved MiniMax model; no provider fallback" });
       }
-      const catalog = await supervisor.getModels("opencode");
-      if (catalog.stale || !catalog.models.includes(model)) {
-        return sendJson(response, 409, { error: `OpenCode subscription model unavailable: ${model}; no provider fallback` });
+      // A stale catalog is not a refusal: the cache is refreshed and read
+      // again, and only a model that is missing from the fresh catalog is
+      // refused.
+      const catalog = await freshModelCatalog(supervisor, "opencode");
+      if (!catalog.models.includes(model)) {
+        return sendJson(response, 409, { error: `OpenCode model unavailable: ${model}; no provider fallback` });
+      }
+      // An exhausted MiniMax subscription quota is an explicit reason to
+      // refuse, not a random 429 in the middle of the repair.
+      const quota = await noticeplaceHealthQuotaPreflight()(model);
+      if (quota === "quota_exhausted") {
+        return sendJson(response, 409, { error: `Квота модели ${model} исчерпана; починка не запускается.` });
       }
     }
     const message = [
@@ -1655,6 +1878,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       sourceHarness: typeof body.sourceHarness === "string" ? body.sourceHarness : undefined,
       sourceSessions: body.sourceSessions as Array<{ harness: string; sessionId: string }> | undefined,
     });
+    // The plan of this launch belongs to the launched executor: the arming
+    // call of the same session carries only the incident id.
+    if (result.ok && result.sessionId) launchHealthPlans?.set(`${harness}:${result.sessionId}`, planId);
     return sendJson(response, result.ok ? 200 : 502, { ...result, incident_id: incidentId, plan_id: planId, execution, model });
   }
   if (request.method === "POST" && url.pathname === "/api/sessions") {
@@ -1703,24 +1929,51 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   if (messageStatusMatch && request.method === "GET") {
     const inputId = url.searchParams.get("inputId");
     if (!inputId || inputId.length > 512) return sendJson(response, 400, { error: "inputId is required" });
-    const receipt = await userMessageDelivery?.reconcile(decodeURIComponent(messageStatusMatch[1]), decodeURIComponent(messageStatusMatch[2]), inputId);
+    const harness = decodeURIComponent(messageStatusMatch[1]), sessionId = decodeURIComponent(messageStatusMatch[2]);
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    const receipt = await userMessageDelivery?.reconcile(harness, sessionId, inputId, route.kind === "scoped" ? route.adapter : undefined);
     return sendJson(response, receipt ? 200 : 404, receipt || { error: "Доставка сообщения не найдена; автоматический повтор запрещён" });
   }
   const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
   if (sessionMatch && request.method === "GET") {
-    const session = await supervisor.getSession(decodeURIComponent(sessionMatch[1]), decodeURIComponent(sessionMatch[2]));
+    const harness = decodeURIComponent(sessionMatch[1]), sessionId = decodeURIComponent(sessionMatch[2]);
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    const session = route.kind === "scoped" ? await route.adapter.getSession(sessionId) : await supervisor.getSession(harness, sessionId);
+    if (session && (session.id !== sessionId || session.harness !== harness)) return sendJson(response, 409, { error: "Exact native session identity mismatch." });
     if (!session) return sendJson(response, 404, { error: "Session not found" });
     return sendJson(response, 200, { session });
   }
-  if (await handleIntegratorSessionTranscript(request, response, url, adapters)) return;
+  const transcriptMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/transcript$/u);
+  if (transcriptMatch && request.method === "GET") {
+    let harness: string, sessionId: string;
+    try { harness = decodeURIComponent(transcriptMatch[1]); sessionId = decodeURIComponent(transcriptMatch[2]); }
+    catch { return void await handleIntegratorSessionTranscript(request, response, url, adapters); }
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    return void await handleIntegratorSessionTranscript(request, response, url, route.adapters);
+  }
   const detailsMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/details$/);
   if (detailsMatch && request.method === "GET") {
+    const harness = decodeURIComponent(detailsMatch[1]), sessionId = decodeURIComponent(detailsMatch[2]);
     const limitValue = Number(url.searchParams.get("limit") || "3");
     const history = url.searchParams.get("history") as "auto" | "acp" | "files" | null;
     const quick = url.searchParams.get("quick") === "1" || url.searchParams.get("quick") === "true";
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
+    if (route.kind === "scoped") {
+      const details = await route.supervisor!.getSessionDetails(
+        harness, sessionId,
+        { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto", quick },
+      );
+      if (details.session.id !== sessionId || details.session.harness !== harness) return sendJson(response, 409, { error: "Exact native session identity mismatch." });
+      return sendJson(response, 200, details);
+    }
     const details = await supervisor.getSessionDetails(
-      decodeURIComponent(detailsMatch[1]),
-      decodeURIComponent(detailsMatch[2]),
+      harness,
+      sessionId,
       { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto", quick },
     );
     return sendJson(response, 200, details);
@@ -1730,7 +1983,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const harness = decodeURIComponent(visualizationMatch[1]);
     const sessionId = decodeURIComponent(visualizationMatch[2]);
     if (!sessionVisualizer) return sendJson(response, 503, { error: "session visualization is disabled" });
-    const details = await supervisor.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" });
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
+    const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" })
+      : await supervisor.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" });
     const html = await sessionVisualizer(details);
     response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     response.end(html);
@@ -1738,13 +1995,16 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
   const progressMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/progress$/);
   if (progressMatch && request.method === "GET") {
+    const harness = decodeURIComponent(progressMatch[1]);
+    const sessionId = decodeURIComponent(progressMatch[2]);
     const limitValue = Number(url.searchParams.get("limit") || "5");
     const history = url.searchParams.get("history") as "auto" | "acp" | "files" | null;
-    const details = await supervisor.getSessionDetails(
-      decodeURIComponent(progressMatch[1]),
-      decodeURIComponent(progressMatch[2]),
-      { limit: Number.isFinite(limitValue) ? limitValue : 5, history: history || "auto" },
-    );
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
+    const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId,
+      { limit: Number.isFinite(limitValue) ? limitValue : 5, history: history || "auto" })
+      : await supervisor.getSessionDetails(harness, sessionId, { limit: Number.isFinite(limitValue) ? limitValue : 5, history: history || "auto" });
     return sendJson(response, 200, buildSessionProgress(details, Number.isFinite(limitValue) ? limitValue : 5));
   }
   const actionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/(resume|message|stop|terminate|cancel|recover|fork|archive|compact|model|permissions\/([^/]+))$/);
@@ -1754,15 +2014,21 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const id = decodeURIComponent(actionMatch[2]);
     const action = actionMatch[3];
     if (body.humanRequested !== undefined && typeof body.humanRequested !== "boolean") return sendJson(response, 400, { error: "humanRequested must be boolean" });
+    const route = await resolveSessionRoute(harness, id);
+    if (route.kind === "deny") return sendJson(response, 409, { ok: false, state: "not_attempted", nonRetryable: true, error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { ok: false, state: "not_attempted", nonRetryable: true, error: "Scoped session control port is unavailable." });
+    if (route.kind === "scoped" && !["message", "resume", "stop"].includes(action)) return sendJson(response, 409, { ok: false, state: "not_attempted", nonRetryable: true, error: "This project-scoped control is not supported." });
+    const sessionSupervisor = route.kind === "scoped" ? route.supervisor! : supervisor;
     if (["stop", "cancel", "terminate"].includes(action)) userMessageDelivery?.cancelSession(harness, id);
     if (action === "resume") {
       if (body.inputId !== undefined && (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512)) {
         return sendJson(response, 400, { error: "inputId must be a non-empty string of at most 512 characters" });
       }
-      return sendOperationResult(response, await supervisor.resumeSession(harness, id, optionalString(body.message), body.humanRequested === true, optionalString(body.inputId)));
+      if (route.kind === "scoped" && (!body.inputId || body.humanRequested !== true)) return sendJson(response, 400, { error: "Scoped resume requires explicit human intent and a stable inputId." });
+      return sendOperationResult(response, await sessionSupervisor.resumeSession(harness, id, optionalString(body.message), body.humanRequested === true, optionalString(body.inputId)));
     }
     if (action === "stop") {
-      return sendOperationResult(response, await supervisor.stopSession(harness, id));
+      return sendOperationResult(response, await sessionSupervisor.stopSession(harness, id));
     }
     if (action === "terminate") {
       return sendOperationResult(response, await supervisor.terminateSession(harness, id));
@@ -1819,21 +2085,25 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     if (body.mode !== undefined && (typeof body.mode !== "string" || !["queue", "steer", "sync"].includes(body.mode))) return sendJson(response, 400, { error: "invalid delivery mode" });
     if (body.inputId !== undefined && (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512)) return sendJson(response, 400, { error: "invalid inputId" });
+    if (route.kind === "scoped" && (body.humanRequested !== true || typeof body.inputId !== "string" || !["queue", "steer"].includes(String(body.mode)))) {
+      return sendJson(response, 400, { error: "Project-scoped message requires explicit human intent, stable inputId, and queue or steer mode." });
+    }
     let images: import("../types/index.js").MessageImage[];
     try {
-      if (body.imageIds !== undefined && !adapters.get(harness)?.controlCapabilities?.imageInput) throw new Error("Эта среда пока не принимает изображения.");
+      if (body.imageIds !== undefined && !(route.kind === "scoped" ? route.adapter : adapters.get(harness))?.controlCapabilities?.imageInput) throw new Error("Эта среда пока не принимает изображения.");
       images = await sessionImages!.resolve(harness, id, body.imageIds);
     } catch (error) { return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
-    if (body.humanRequested === true && (body.mode === "queue" || body.mode === "steer") && body.inputId !== undefined) {
+    if (route.kind === "scoped" || (body.humanRequested === true && (body.mode === "queue" || body.mode === "steer") && body.inputId !== undefined)) {
       if (!userMessageDelivery) return sendJson(response, 503, { error: "Надёжная очередь сообщений недоступна" });
+      const deliveryRoute: UserMessageRoute | undefined = route.kind === "scoped" ? { adapter: route.adapter, supervisor: sessionSupervisor } : undefined;
       try {
-        const receipt = userMessageDelivery.submit({ harness, sessionId: id, inputId: body.inputId as string, message: body.message, mode: body.mode, images });
+        const receipt = userMessageDelivery.submit({ harness, sessionId: id, inputId: body.inputId as string, message: body.message, mode: body.mode as "queue" | "steer", images }, deliveryRoute);
         return sendJson(response, receipt.pending ? 202 : receipt.ok ? 200 : 502, receipt);
       } catch (error) {
         return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
       }
     }
-    return sendOperationResult(response, await supervisor.sendMessage(harness, id, {
+    return sendOperationResult(response, await sessionSupervisor.sendMessage(harness, id, {
       message: body.message,
       origin: body.humanRequested === true ? "human" : "automation",
       images,
@@ -1886,7 +2156,13 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
 
 function validSourceSessions(value: unknown): boolean {
   return value === undefined || (Array.isArray(value) && value.length <= 32 && value.every((ref) => ref && typeof ref === "object" && !Array.isArray(ref)
-    && ["codex", "zcode", "opencode", "fast-agent"].includes(ref.harness) && typeof ref.sessionId === "string" && ref.sessionId.trim().length > 0 && ref.sessionId.length <= 512 && !hasControlCharacters(ref.sessionId)));
+    && ["codex", "zcode", "opencode", "fast-agent"].includes(ref.harness) && typeof ref.sessionId === "string" && ref.sessionId.trim().length > 0 && ref.sessionId.length <= 512 && !hasControlCharacters(ref.sessionId)
+    && (ref.hostId === undefined || (typeof ref.hostId === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(ref.hostId)))));
+}
+
+function validProjectLaunchSourceSessions(value: unknown): boolean {
+  return value === undefined || (Array.isArray(value) && value.every((ref) =>
+    typeof ref.hostId === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(ref.hostId)));
 }
 
 function validSourceSessionFields(value: Record<string, unknown>): boolean {

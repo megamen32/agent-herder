@@ -19,6 +19,17 @@ export type LaunchPolicy = {
 
 export type LaunchRuntimeOption = { id: string; name: string; active: boolean };
 
+/** The top-level parts of the launch policy document an editor may own. */
+export type LaunchPolicyField = "allowedHarnesses" | "preferredHarness" | "models" | "incidentExecution" | "projectRoutes";
+
+export const LAUNCH_POLICY_FIELDS: readonly LaunchPolicyField[] = [
+  "allowedHarnesses",
+  "preferredHarness",
+  "models",
+  "incidentExecution",
+  "projectRoutes",
+];
+
 export const DEFAULT_LAUNCH_POLICY: LaunchPolicy = {
   version: 1,
   allowedHarnesses: ["codex", "zcode"],
@@ -29,7 +40,10 @@ export const DEFAULT_LAUNCH_POLICY: LaunchPolicy = {
   },
 };
 
-const FALLBACK_LABELS: Record<string, string> = {
+/** The document identity of a policy that was never saved. */
+export const ABSENT_POLICY_ETAG = '"absent"';
+
+export const FALLBACK_LABELS: Record<string, string> = {
   codex: "Codex",
   zcode: "ZCode",
   opencode: "OpenCode",
@@ -122,7 +136,7 @@ export function parseProjectRoutes(value: unknown): Record<string, ProjectLaunch
   return routes;
 }
 
-function parseLaunchPolicy(value: unknown): LaunchPolicy {
+export function parseLaunchPolicy(value: unknown): LaunchPolicy {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Ответ настроек запуска имеет неверный формат");
   const candidate = value as Record<string, unknown>;
   if (candidate.version !== 1 || !Array.isArray(candidate.allowedHarnesses)
@@ -147,6 +161,29 @@ function parseLaunchPolicy(value: unknown): LaunchPolicy {
   return policy;
 }
 
+/**
+ * Apply only the fields the operator actually changed onto a newer document.
+ *
+ * A save that lost the race must not carry the stale copy of every untouched
+ * field back to the server: a concurrent change of the global allowlist or of
+ * the incident route stays untouched.
+ */
+export function mergePolicyChanges(
+  fresh: LaunchPolicy,
+  draft: LaunchPolicy,
+  dirty: readonly LaunchPolicyField[],
+): LaunchPolicy {
+  const changed = new Set(dirty);
+  return {
+    ...fresh,
+    ...(changed.has("allowedHarnesses") ? { allowedHarnesses: draft.allowedHarnesses } : {}),
+    ...(changed.has("preferredHarness") ? { preferredHarness: draft.preferredHarness } : {}),
+    ...(changed.has("models") ? { models: draft.models } : {}),
+    ...(changed.has("incidentExecution") ? { incidentExecution: draft.incidentExecution } : {}),
+    ...(changed.has("projectRoutes") ? { projectRoutes: draft.projectRoutes } : {}),
+  };
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -156,75 +193,350 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-function errorForPerson(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  const status = message.match(/^(\d{3})/)?.[1];
-  if (status === "503") return "Сервис настроек запуска временно недоступен.";
-  if (status === "400") return "Сервер не принял настройки. Проверьте выбранные среды и модели.";
-  if (status) return `Не удалось выполнить запрос к серверу (код ${status}).`;
-  if (/формат|среда|разрешён/i.test(message)) return message;
-  return "Не удалось связаться с сервером настроек. Проверьте соединение и повторите попытку.";
+export type PolicyLoad =
+  | { kind: "ready"; policy: LaunchPolicy; etag: string }
+  | { kind: "absent"; etag: string }
+  | { kind: "invalid"; error: string }
+  | { kind: "unavailable"; error: string };
+
+/**
+ * Read the launch policy together with the identity of the stored document.
+ *
+ * An absent document and a broken document are different states: only an
+ * absent one may be created from the form, a broken one must be shown as an
+ * error instead of being replaced.
+ */
+export async function loadLaunchPolicy(): Promise<PolicyLoad> {
+  let response: Response;
+  try {
+    response = await fetch("/api/automation/launch-policy", { headers: { accept: "application/json" }, cache: "no-store" });
+  } catch {
+    return { kind: "unavailable", error: "Не удалось связаться с сервером настроек запуска." };
+  }
+  const etag = response.headers.get("etag") ?? "";
+  const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (response.ok) {
+    if (!etag) return { kind: "unavailable", error: "Сервер не вернул версию настроек запуска. Обновите страницу и повторите." };
+    try {
+      return { kind: "ready", policy: parseLaunchPolicy(body), etag };
+    } catch (error) {
+      return { kind: "invalid", error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  const state = typeof body.state === "string" ? body.state : "";
+  const detail = typeof body.detail === "string" && body.detail
+    ? body.detail
+    : typeof body.error === "string" ? body.error : "";
+  if (response.status === 503 && state === "absent") return { kind: "absent", etag: etag || ABSENT_POLICY_ETAG };
+  if (response.status === 503 && state === "invalid") return { kind: "invalid", error: detail || "Политика запуска повреждена." };
+  return { kind: "unavailable", error: detail || `Сервер настроек запуска ответил кодом ${response.status}.` };
 }
 
-function labelFor(harness: string, runtimes: LaunchRuntimeOption[]): string {
-  const label = runtimes.find((runtime) => runtime.id === harness)?.name ?? FALLBACK_LABELS[harness];
-  if (label) return label;
-  const humanized = harness.replace(/[-_]+/g, " ").trim();
-  return humanized ? humanized[0]!.toUpperCase() + humanized.slice(1) : harness;
+export type PolicySave =
+  | { kind: "saved"; policy: LaunchPolicy; etag: string }
+  | { kind: "conflict" }
+  | { kind: "rejected"; error: string };
+
+/** Write the whole document, but only over the exact version that was read. */
+export async function saveLaunchPolicy(policy: LaunchPolicy, etag: string): Promise<PolicySave> {
+  let response: Response;
+  try {
+    response = await fetch("/api/automation/launch-policy", {
+      method: "PUT",
+      headers: { "content-type": "application/json", "if-match": etag },
+      body: JSON.stringify(policy),
+    });
+  } catch {
+    return { kind: "rejected", error: "Не удалось связаться с сервером настроек запуска." };
+  }
+  if (response.status === 412) return { kind: "conflict" };
+  const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok) {
+    const message = typeof body.error === "string" && body.error
+      ? body.error
+      : `Сервер отклонил настройки (код ${response.status}).`;
+    return { kind: "rejected", error: message };
+  }
+  try {
+    return { kind: "saved", policy: parseLaunchPolicy(body), etag: response.headers.get("etag") ?? etag };
+  } catch (error) {
+    return { kind: "rejected", error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
-function inputId(harness: string): string {
-  return `launch-model-${harness.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+export type LaunchPolicyDraft = {
+  /** The document the form shows. It is the draft until it is saved. */
+  policy: LaunchPolicy;
+  /** The parts of the document the operator actually changed. */
+  dirty: LaunchPolicyField[];
+  /** The identity of the stored document the draft was read from. */
+  etag: string;
+  /** "absent" means the policy was never saved; "invalid" means it is broken. */
+  phase: "loading" | "ready" | "absent" | "invalid" | "error";
+  loadError?: string;
+  saveError?: string;
+  /** The server holds a newer document than the one this form was read from. */
+  conflict: boolean;
+  /** The project keys that could not be merged after a conflict. */
+  conflicts: string[];
+  saving: boolean;
+  saved: boolean;
+};
+
+/** The result of merging a draft into a newer document. */
+export type PolicyMergeResult = {
+  /** The document to send to the server. */
+  merged: LaunchPolicy;
+  /** The project keys whose server value changed and whose draft was kept. */
+  conflicts: string[];
+  /** The draft route values that stay in the form instead of being saved. */
+  kept?: Record<string, ProjectLaunchRoute | undefined>;
+};
+
+export type PolicyMergeContext = {
+  /** The document the form was read from. */
+  base: LaunchPolicy;
+  /** The document the server holds right now. */
+  fresh: LaunchPolicy;
+  /** The document the form shows. */
+  draft: LaunchPolicy;
+  /** The parts the operator changed since the last read. */
+  dirty: LaunchPolicyField[];
+  /** The route values that already lost a conflict and were not re-edited. */
+  kept: Record<string, ProjectLaunchRoute | undefined>;
+};
+
+export type PolicyMergeStrategy = (context: PolicyMergeContext) => PolicyMergeResult;
+
+/** Compare two project routes by value. */
+export function sameProjectRoute(left?: ProjectLaunchRoute, right?: ProjectLaunchRoute): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  if (left.harnesses.length !== right.harnesses.length) return false;
+  if (!left.harnesses.every((harness, index) => harness === right.harnesses[index])) return false;
+  if (!sameStringMap(left.models, right.models)) return false;
+  return sameStringList(left.aliases, right.aliases);
 }
 
-export function LaunchPolicySettings() {
+function sameStringMap(left?: Record<string, string>, right?: Record<string, string>): boolean {
+  const leftKeys = Object.keys(left ?? {}).sort();
+  const rightKeys = Object.keys(right ?? {}).sort();
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key, index) => key === rightKeys[index] && left![key] === right![key]);
+}
+
+function sameStringList(left?: string[], right?: string[]): boolean {
+  const a = left ?? [];
+  const b = right ?? [];
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+/** The default merge: only the parts the operator changed are carried over. */
+export const defaultPolicyMerge: PolicyMergeStrategy = ({ fresh, draft, dirty }) => ({
+  merged: mergePolicyChanges(fresh, draft, dirty),
+  conflicts: [],
+});
+
+/** Put the kept draft values back into the document the form shows. */
+function withKeptDraft(document: LaunchPolicy, kept: Record<string, ProjectLaunchRoute | undefined>, draft: LaunchPolicy): LaunchPolicy {
+  const keys = Object.keys(kept);
+  if (keys.length === 0) return document;
+  const routes = { ...(document.projectRoutes ?? {}) };
+  for (const key of keys) {
+    const value = draft.projectRoutes?.[key];
+    if (value === undefined) delete routes[key];
+    else routes[key] = value;
+  }
+  return { ...document, projectRoutes: routes };
+}
+
+/** The document to send: the kept values stay at the server's version. */
+function withoutKeptDraft(document: LaunchPolicy, base: LaunchPolicy, kept: Record<string, ProjectLaunchRoute | undefined>): LaunchPolicy {
+  const keys = Object.keys(kept);
+  if (keys.length === 0) return document;
+  const baseRoutes = base.projectRoutes ?? {};
+  const routes = { ...(document.projectRoutes ?? {}) };
+  for (const key of keys) {
+    const value = baseRoutes[key];
+    if (value === undefined) delete routes[key];
+    else routes[key] = value;
+  }
+  return { ...document, projectRoutes: routes };
+}
+
+/**
+ * One editable copy of the launch policy document.
+ *
+ * Every write carries the identity of the document it was read from, so a
+ * concurrent change is reported instead of being overwritten. A conflict
+ * keeps the draft: the operator's edits stay in the form until they are
+ * applied on top of a fresh read or thrown away explicitly.
+ */
+export function useLaunchPolicyDraft(options: { merge?: PolicyMergeStrategy } = {}) {
+  const merge = options.merge ?? defaultPolicyMerge;
   const [policy, setPolicy] = React.useState<LaunchPolicy>(DEFAULT_LAUNCH_POLICY);
-  const [runtimes, setRuntimes] = React.useState<LaunchRuntimeOption[]>([]);
-  const [modelOptions, setModelOptions] = React.useState<Record<string, string[]>>({});
-  const [loading, setLoading] = React.useState(true);
-  const [needsSetup, setNeedsSetup] = React.useState(false);
+  const [base, setBase] = React.useState<LaunchPolicy>(DEFAULT_LAUNCH_POLICY);
+  const [dirty, setDirty] = React.useState<LaunchPolicyField[]>([]);
+  const [kept, setKept] = React.useState<Record<string, ProjectLaunchRoute | undefined>>({});
+  const [etag, setEtag] = React.useState(ABSENT_POLICY_ETAG);
+  const [phase, setPhase] = React.useState<LaunchPolicyDraft["phase"]>("loading");
   const [loadError, setLoadError] = React.useState<string>();
+  const [saveError, setSaveError] = React.useState<string>();
+  const [conflict, setConflict] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
-  const [saveError, setSaveError] = React.useState<string>();
-  const [newProject, setNewProject] = React.useState("");
-  const [newProjectHarnesses, setNewProjectHarnesses] = React.useState<string[]>([]);
+  // The kept values are exactly the parts that lost a conflict.
+  const conflicts = Object.keys(kept);
 
-  React.useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      const [policyResult, runtimeResult] = await Promise.allSettled([
-        requestJson<unknown>("/api/automation/launch-policy"),
-        requestJson<{ adapters?: Array<{ id: string; name: string; active: boolean }> }>("/api/adapters"),
-      ]);
-      if (cancelled) return;
-      if (policyResult.status === "fulfilled") {
-        try {
-          setPolicy(parseLaunchPolicy(policyResult.value));
-          setNeedsSetup(false);
-          setLoadError(undefined);
-        } catch (error) {
-          setLoadError(error instanceof Error ? error.message : String(error));
-        }
-      } else {
-        const error = policyResult.reason instanceof Error ? policyResult.reason.message : String(policyResult.reason);
-        if (error.startsWith("503")) {
-          setPolicy(DEFAULT_LAUNCH_POLICY);
-          setNeedsSetup(true);
-          setLoadError(undefined);
-      } else setLoadError(errorForPerson(error));
-      }
-      const active = runtimeResult.status === "fulfilled"
-        ? (runtimeResult.value.adapters ?? []).filter((item) => item.active).map(({ id, name, active: isActive }) => ({ id, name, active: isActive }))
-        : [];
-      setRuntimes(active);
-      setLoading(false);
-    };
-    void load();
-    return () => { cancelled = true; };
+  const load = React.useCallback(async () => {
+    setPhase("loading");
+    const result = await loadLaunchPolicy();
+    if (result.kind === "ready") {
+      setPolicy(result.policy);
+      setBase(result.policy);
+      setKept({});
+      setEtag(result.etag);
+      setPhase("ready");
+      setLoadError(undefined);
+      return;
+    }
+    if (result.kind === "absent") {
+      setPolicy(DEFAULT_LAUNCH_POLICY);
+      setBase(DEFAULT_LAUNCH_POLICY);
+      setKept({});
+      setEtag(result.etag || ABSENT_POLICY_ETAG);
+      setPhase("absent");
+      setLoadError(undefined);
+      return;
+    }
+    setPhase(result.kind === "invalid" ? "invalid" : "error");
+    setLoadError(result.error);
   }, []);
 
+  React.useEffect(() => { void load(); }, [load]);
+
+  /** Record an edit of one part of the document. */
+  const edit = React.useCallback((next: LaunchPolicy, field: LaunchPolicyField) => {
+    setPolicy(next);
+    setDirty((current) => (current.includes(field) ? current : [...current, field]));
+    // A value that changed after it lost a conflict is an explicit re-edit.
+    setKept((current) => {
+      const keys = Object.keys(current);
+      if (keys.length === 0) return current;
+      const nextKept: Record<string, ProjectLaunchRoute | undefined> = { ...current };
+      for (const key of keys) {
+        if (!sameProjectRoute(current[key], next.projectRoutes?.[key])) delete nextKept[key];
+      }
+      return nextKept;
+    });
+    setSaved(false);
+    setSaveError(undefined);
+  }, []);
+
+  const save = React.useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
+    setSaved(false);
+    setSaveError(undefined);
+    try {
+      const result = await saveLaunchPolicy(withoutKeptDraft(policy, base, kept), etag);
+      if (result.kind === "saved") {
+        setPolicy(withKeptDraft(result.policy, kept, policy));
+        setBase(result.policy);
+        setDirty([]);
+        setConflict(false);
+        setSaved(true);
+        setPhase("ready");
+        return;
+      }
+      if (result.kind === "conflict") {
+        // The draft stays untouched: nothing of the operator's work is lost.
+        setConflict(true);
+        return;
+      }
+      setSaveError(result.error);
+    } finally {
+      setSaving(false);
+    }
+  }, [policy, base, kept, etag, saving]);
+
+  /**
+   * Read the current document and apply the draft on top of it.
+   *
+   * Only the parts the operator changed are carried over, so a concurrent
+   * change of the untouched parts survives the retry.
+   */
+  const resolveConflict = React.useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(undefined);
+    try {
+      const fresh = await loadLaunchPolicy();
+      if (fresh.kind !== "ready" && fresh.kind !== "absent") {
+        setSaveError(fresh.kind === "invalid" ? fresh.error : "Не удалось получить актуальную политику запуска.");
+        return;
+      }
+      const freshPolicy = fresh.kind === "ready" ? fresh.policy : DEFAULT_LAUNCH_POLICY;
+      const result = merge({ base, fresh: freshPolicy, draft: policy, dirty, kept });
+      const saved = await saveLaunchPolicy(result.merged, fresh.etag || ABSENT_POLICY_ETAG);
+      if (saved.kind === "saved") {
+        setPolicy(withKeptDraft(saved.policy, result.kept ?? {}, policy));
+        setBase(saved.policy);
+        setKept(result.kept ?? {});
+        setDirty([]);
+        setConflict(false);
+        setSaved(true);
+        setPhase("ready");
+        return;
+      }
+      if (saved.kind === "conflict") {
+        setConflict(true);
+        setSaveError("Политика запуска изменилась ещё раз. Повторите обновление.");
+        return;
+      }
+      setSaveError(saved.error);
+    } finally {
+      setSaving(false);
+    }
+  }, [base, policy, dirty, kept, merge, saving]);
+
+  return {
+    policy,
+    base,
+    dirty,
+    kept,
+    etag,
+    phase,
+    loadError,
+    saveError,
+    conflict,
+    conflicts,
+    saving,
+    saved,
+    edit,
+    save,
+    reload: load,
+    resolveConflict,
+  } as const;
+}
+
+/** The runtime names and the model list of every active harness. */
+export function useRuntimeModels() {
+  const [runtimes, setRuntimes] = React.useState<LaunchRuntimeOption[]>([]);
+  const [modelOptions, setModelOptions] = React.useState<Record<string, string[]>>({});
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await requestJson<{ adapters?: Array<{ id: string; name: string; active: boolean }> }>("/api/adapters");
+        if (cancelled) return;
+        setRuntimes((result.adapters ?? []).filter((item) => item.active).map(({ id, name, active: isActive }) => ({ id, name, active: isActive })));
+      } catch {
+        if (!cancelled) setRuntimes([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   React.useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -239,8 +551,37 @@ export function LaunchPolicySettings() {
     if (runtimes.length > 0) void load();
     return () => { cancelled = true; };
   }, [runtimes]);
+  return { runtimes, modelOptions };
+}
 
-  const known = new Map(runtimes.map((runtime) => [runtime.id, runtime]));
+export function labelFor(harness: string, runtimes: LaunchRuntimeOption[]): string {
+  const label = runtimes.find((runtime) => runtime.id === harness)?.name ?? FALLBACK_LABELS[harness];
+  if (label) return label;
+  const humanized = harness.replace(/[-_]+/g, " ").trim();
+  return humanized ? humanized[0]!.toUpperCase() + humanized.slice(1) : harness;
+}
+
+export function inputId(harness: string): string {
+  return `launch-model-${harness.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+/** A unique list id for one model field of one project route. */
+export function routeInputId(project: string, harness: string): string {
+  return `launch-model-${project.replace(/[^a-zA-Z0-9_-]/g, "-")}-${harness.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+export function LaunchPolicySettings({ onOpenProjects }: { onOpenProjects?: () => void } = {}) {
+  const draft = useLaunchPolicyDraft();
+  const { runtimes, modelOptions } = useRuntimeModels();
+  const policy = draft.policy;
+  const loading = draft.phase === "loading";
+  const needsSetup = draft.phase === "absent";
+  const loadError = draft.loadError;
+  const saving = draft.saving;
+  const saved = draft.saved;
+  const saveError = draft.saveError;
+
+  const known = [...runtimes];
   const displayedHarnesses = [...new Set([
     ...runtimes.map(({ id }) => id),
     ...policy.allowedHarnesses,
@@ -263,43 +604,26 @@ export function LaunchPolicySettings() {
       return Boolean(model?.trim()) && model.length <= 256 && !/[\u0000-\u001f\u007f]/u.test(model);
     });
 
-  const save = async () => {
-    if (!valid || saving || loading || Boolean(loadError)) return;
-    setSaving(true);
-    setSaved(false);
-    setSaveError(undefined);
-    try {
-      const savedPolicy = parseLaunchPolicy(await requestJson<unknown>("/api/automation/launch-policy", {
-        method: "PUT",
-        body: JSON.stringify(policy),
-      }));
-      setPolicy(savedPolicy);
-      setNeedsSetup(false);
-      setSaved(true);
-    } catch (error) {
-      setSaveError(errorForPerson(error));
-    } finally { setSaving(false); }
-  };
-
   return <section className="global-autopilot-card launch-policy-settings" aria-label="Запуск новых сессий">
     <div className="global-autopilot-head">
       <div><span className="eyebrow">НОВЫЕ СЕССИИ</span><h3>Запуск новых сессий</h3><p>Выберите, где Herder может создавать новые сессии и какая среда основная. Текущие сессии и автопродолжение это не затрагивает.</p></div>
     </div>
     {loading ? <p className="settings-loading" role="status">Загружаем настройки запуска…</p> : <>
       {needsSetup && <p className="launch-policy-notice" role="status">Настройки запуска ещё не сохранены. До сохранения автоматический запуск новых сессий запрещён.</p>}
-      {loadError && <p className="autopilot-error" role="alert">Не удалось загрузить настройки запуска: {loadError}. Обновите страницу и повторите.</p>}
-      <details className="settings-advanced"><summary>Дополнительно: автоматическое исправление инцидентов</summary>
+      {draft.phase === "invalid" && <p className="autopilot-error" role="alert">Политика запуска повреждена, поэтому сохранить её из формы нельзя: {loadError}. Файл политики на сервере нужно исправить вручную.</p>}
+      {draft.phase === "error" && <p className="autopilot-error" role="alert">Не удалось загрузить настройки запуска: {loadError}. Обновите страницу и повторите.</p>}
+      <details className="settings-advanced"><summary>Дополнительно: локальный маршрут инцидентов Herder</summary>
       <fieldset className="settings-group" disabled={saving || Boolean(loadError)}>
-        <legend>Диагностика и исправление инцидентов Noticeplace</legend>
-        <p>MiniMax по подписке. Этот выбор сохраняется отдельно для новых расследований и исправлений. Разрешённые среды ниже относятся к обычным задачам; маршрут инцидентов использует свой выбор.</p>
-        <label className="launch-policy-field"><span>Среда исполнения инцидентов</span>
-          <select aria-label="Среда исполнения инцидентов" value={policy.incidentExecution?.runtime ?? ""} onChange={() => {
-            setPolicy((current) => ({ ...current, incidentExecution: { ...INCIDENT_EXECUTION } })); setSaved(false);
+        <legend>Локальный маршрут инцидентов Herder</legend>
+        <p>Модель для анализа инцидентов Notice Place выбирается в <a href="https://notify.bezrabotnyi.com/admin/#health-model">админке Notice Place</a>. Herder проверяет допустимость запуска и запускает сессию. Поля ниже задают локальный маршрут Herder и не меняют выбор модели в Notice Place.</p>
+        <label className="launch-policy-field"><span>Среда локального маршрута Herder</span>
+          <select aria-label="Среда локального маршрута Herder" value={policy.incidentExecution?.runtime ?? ""} onChange={() => {
+            draft.edit({ ...policy, incidentExecution: { ...INCIDENT_EXECUTION } }, "incidentExecution");
           }}><option value="" disabled>Выберите среду</option><option value="opencode">OpenCode · MiniMax по подписке</option></select>
         </label>
-        <label className="launch-policy-field"><span>Модель для инцидентов · MiniMax по подписке</span>
-          <select aria-label="Модель для инцидентов" value={policy.incidentExecution ? `${policy.incidentExecution.provider}/${policy.incidentExecution.model}` : ""}
-            onChange={() => { setPolicy((current) => ({ ...current, incidentExecution: { ...INCIDENT_EXECUTION } })); setSaved(false); }}>
+        <label className="launch-policy-field"><span>Модель локального маршрута Herder · MiniMax по подписке</span>
+          <select aria-label="Модель локального маршрута Herder" value={policy.incidentExecution ? `${policy.incidentExecution.provider}/${policy.incidentExecution.model}` : ""}
+            onChange={() => { draft.edit({ ...policy, incidentExecution: { ...INCIDENT_EXECUTION } }, "incidentExecution"); }}>
             <option value="" disabled>Выберите доступную модель</option>
             <option value="minimax-coding-plan/MiniMax-M3.1-Flash" disabled={!(modelOptions.opencode ?? []).includes("minimax-coding-plan/MiniMax-M3.1-Flash")}>
               {`MiniMax-M3.1-Flash · MiniMax по подписке${(modelOptions.opencode ?? []).includes("minimax-coding-plan/MiniMax-M3.1-Flash") ? "" : " · доступность не подтверждена"}`}
@@ -318,7 +642,7 @@ export function LaunchPolicySettings() {
         {displayedHarnesses.length === 0
           ? <p className="settings-help">Нет доступных сред запуска.</p>
           : <div className="launch-runtime-list">{displayedHarnesses.map((harness) => {
-            const harnessLabel = labelFor(harness, [...known.values()]);
+            const harnessLabel = labelFor(harness, known);
             const allowed = policy.allowedHarnesses.includes(harness);
             return <label className="launch-runtime-option" key={harness} title={harness === harnessLabel ? undefined : harness}>
               <span>
@@ -326,20 +650,19 @@ export function LaunchPolicySettings() {
                 <small aria-hidden="true">{allowed ? "вкл" : "выкл"}</small>
               </span>
               <input type="checkbox" checked={allowed} aria-label={`${harnessLabel}: ${allowed ? "вкл" : "выкл"}`} onChange={(event) => {
-              setPolicy((current) => updateAllowedHarness(current, harness, event.target.checked));
-              setSaved(false);
-            }} />
+                const next = updateAllowedHarness(policy, harness, event.target.checked);
+                draft.edit(next, "allowedHarnesses");
+                draft.edit(next, "preferredHarness");
+              }} />
             </label>;
           })}</div>}
         {policy.allowedHarnesses.length > 0 && <label className="launch-policy-field"><span>Основная среда</span><select value={policy.preferredHarness} aria-label="Основная среда запуска" onChange={(event) => {
-          setPolicy((current) => updatePreferredHarness(current, event.target.value));
-          setSaved(false);
-        }}>{optionsForSelect.map((harness) => <option value={harness} key={harness}>{labelFor(harness, [...known.values()])}</option>)}</select></label>}
+          draft.edit(updatePreferredHarness(policy, event.target.value), "preferredHarness");
+        }}>{optionsForSelect.map((harness) => <option value={harness} key={harness}>{labelFor(harness, known)}</option>)}</select></label>}
         {policy.allowedHarnesses.map((harness) => <label className="launch-policy-field" key={harness}>
-          <span>Модель · {labelFor(harness, [...known.values()])}</span>
-          <input type="text" maxLength={256} list={inputId(harness)} value={policy.models[harness] ?? ""} placeholder="Укажите модель" aria-label={`Модель для среды ${labelFor(harness, [...known.values()])}`} onChange={(event) => {
-            setPolicy((current) => ({ ...current, models: { ...current.models, [harness]: event.target.value } }));
-            setSaved(false);
+          <span>Модель · {labelFor(harness, known)}</span>
+          <input type="text" maxLength={256} list={inputId(harness)} value={policy.models[harness] ?? ""} placeholder="Укажите модель" aria-label={`Модель для среды ${labelFor(harness, known)}`} onChange={(event) => {
+            draft.edit({ ...policy, models: { ...policy.models, [harness]: event.target.value } }, "models");
           }} />
           <datalist id={inputId(harness)}>{(modelOptions[harness] ?? []).map((model) => <option value={model} key={model} />)}</datalist>
         </label>)}
@@ -347,92 +670,28 @@ export function LaunchPolicySettings() {
       </fieldset>
       <fieldset className="settings-group" disabled={saving || Boolean(loadError)}>
         <legend>Порядок сред для проектов</legend>
-        <p>Для явно настроенного проекта Herder идёт по списку сверху вниз и переключается только после отказа, когда запуск точно не состоялся. Проекты без маршрута работают как раньше.</p>
+        <p>Маршрут каждого проекта задаётся на вкладке «Проекты»: порядок сред, модель маршрута и идентификаторы карточек. Здесь видно только текущее состояние.</p>
         {projectRoutes.length === 0
           ? <p className="settings-help">Маршруты проектов не настроены. Для всех проектов используется основная среда.</p>
           : <div className="launch-runtime-list">{projectRoutes.map(([project, route]) => <div className="launch-runtime-option" key={project}>
             <span>
               <strong>{project}</strong>
               <small aria-hidden="true">
-                {route.harnesses.map((harness) => labelFor(harness, [...known.values()])).join(" → ")}
+                {route.harnesses.map((harness) => labelFor(harness, known)).join(" → ")}
                 {route.aliases?.length ? ` · карточки: ${route.aliases.join(", ")}` : ""}
               </small>
             </span>
-            <button type="button" aria-label={`Удалить маршрут проекта ${project}`} onClick={() => {
-              setPolicy((current) => {
-                const routes = { ...(current.projectRoutes ?? {}) };
-                delete routes[project];
-                return { ...current, projectRoutes: routes };
-              });
-              setSaved(false);
-            }}>Удалить</button>
+            {onOpenProjects && <button type="button" aria-label={`Изменить маршрут проекта ${project}`} onClick={onOpenProjects}>Изменить</button>}
           </div>)}</div>}
-        {projectRoutes.map(([project, route]) => <div key={`${project}-harnesses`}>
-          <p className="settings-help">{project}</p>
-          <div className="launch-runtime-list">{route.harnesses.map((harness, index) => <div className="launch-runtime-option" key={harness}>
-            <span>
-              <strong>{index + 1}. {labelFor(harness, [...known.values()])}</strong>
-              <small aria-hidden="true">{route.models?.[harness] ?? policy.models[harness] ?? "модель не задана"}</small>
-            </span>
-            <span>
-              <button type="button" aria-label={`Поднять ${labelFor(harness, [...known.values()])} выше в маршруте ${project}`} disabled={index === 0}
-                onClick={() => { setPolicy((current) => updateProjectRoute(current, project, (value) => moveProjectRouteHarness(value, harness, -1))); setSaved(false); }}>↑</button>
-              <button type="button" aria-label={`Опустить ${labelFor(harness, [...known.values()])} ниже в маршруте ${project}`} disabled={index === route.harnesses.length - 1}
-                onClick={() => { setPolicy((current) => updateProjectRoute(current, project, (value) => moveProjectRouteHarness(value, harness, 1))); setSaved(false); }}>↓</button>
-              <button type="button" aria-label={`Убрать ${labelFor(harness, [...known.values()])} из маршрута ${project}`}
-                onClick={() => { setPolicy((current) => updateProjectRoute(current, project, (value) => removeProjectRouteHarness(value, harness))); setSaved(false); }}>Убрать</button>
-            </span>
-          </div>)}</div>
-          <label className="launch-policy-field">
-            <span>Идентификаторы карточек · {project}</span>
-            <input type="text" value={(route.aliases ?? []).join(", ")} placeholder="tg-commentator, autotelegramviews"
-              aria-label={`Идентификаторы карточек проекта ${project}`} onChange={(event) => {
-                const aliases = event.target.value.split(",").map((alias) => alias.trim()).filter(Boolean);
-                setPolicy((current) => updateProjectRoute(current, project, (value) => (aliases.length > 0 ? { ...value, aliases } : { ...value, aliases: undefined })));
-                setSaved(false);
-              }} />
-            <small>Через запятую. Карточка приходит с таким идентификатором, а не с путём к папке.</small>
-          </label>
-          {route.harnesses.map((harness) => <label className="launch-policy-field" key={`${project}-${harness}`}>
-            <span>Модель маршрута · {project} · {labelFor(harness, [...known.values()])}</span>
-            <input type="text" maxLength={256} list={inputId(`route-${harness}`)} value={route.models?.[harness] ?? ""}
-              placeholder={policy.models[harness] ?? "Укажите модель"} aria-label={`Модель маршрута для ${project} и среды ${labelFor(harness, [...known.values()])}`} onChange={(event) => {
-                setPolicy((current) => updateProjectRoute(current, project, (value) => updateProjectRouteModel(value, harness, event.target.value)));
-                setSaved(false);
-              }} />
-            <datalist id={inputId(`route-${harness}`)}>{(modelOptions[harness] ?? []).map((model) => <option value={model} key={model} />)}</datalist>
-            <small>Пустое поле использует общую модель среды {labelFor(harness, [...known.values()])}.</small>
-          </label>)}
-        </div>)}
-        <label className="launch-policy-field"><span>Новый проект</span>
-          <input type="text" value={newProject} placeholder="/home/user/project" aria-label="Абсолютный путь проекта для маршрута" onChange={(event) => setNewProject(event.target.value)} />
-        </label>
-        <div className="launch-runtime-list">{optionsForSelect.map((harness) => {
-          const label = labelFor(harness, [...known.values()]);
-          const selected = newProjectHarnesses.includes(harness);
-          return <label className="launch-runtime-option" key={`add-${harness}`}>
-            <span><strong>{label}</strong><small aria-hidden="true">{selected ? `позиция ${newProjectHarnesses.indexOf(harness) + 1}` : "не в маршруте"}</small></span>
-            <input type="checkbox" checked={selected} aria-label={`Добавить ${label} в маршрут нового проекта`} onChange={(event) => {
-              setNewProjectHarnesses((current) => event.target.checked
-                ? [...current, harness].slice(-4)
-                : current.filter((item) => item !== harness));
-            }} />
-          </label>;
-        })}</div>
-        <button type="button" aria-label="Добавить маршрут проекта" disabled={!normalizeProjectKey(newProject).startsWith("/") || newProjectHarnesses.length === 0}
-          onClick={() => {
-            const key = normalizeProjectKey(newProject);
-            if (!key.startsWith("/") || newProjectHarnesses.length === 0) return;
-            setPolicy((current) => ({ ...current, projectRoutes: { ...(current.projectRoutes ?? {}), [key]: { harnesses: [...newProjectHarnesses] } } }));
-            setNewProject("");
-            setNewProjectHarnesses([]);
-            setSaved(false);
-          }}>Добавить маршрут</button>
-        {policy.allowedHarnesses.length === 0 && projectRoutes.length > 0 && <p className="settings-help">Маршруты используют только разрешённые среды. Пока выбор пуст, они не применяются.</p>}
+        {onOpenProjects && <button type="button" className="quiet-button" aria-label="Открыть настройки проектов" onClick={onOpenProjects}>Открыть проекты</button>}
+        {!routesValid && <p className="settings-help" role="alert">Маршрут проекта задан некорректно. Исправьте его на вкладке «Проекты», иначе политика запуска не сохранится.</p>}
       </fieldset>
+      {draft.conflict && <p className="autopilot-error" role="alert">Политика запуска изменилась в другой вкладке. Ваши правки сохранены в форме и не отправлены.
+        <button type="button" className="quiet-button" aria-label="Обновить политику запуска и применить правки заново" disabled={saving} onClick={() => void draft.resolveConflict()}>Обновить и применить заново</button>
+      </p>}
       {saveError && <p className="autopilot-error" role="alert">Не удалось сохранить настройки: {saveError}</p>}
       <div className="settings-save-row"><span>{saved ? <span className="settings-saved" role="status">Настройки сохранены</span> : needsSetup ? "Сохраните выбор, чтобы разрешить создание сессий." : "Изменения применятся только к новым сессиям."}</span>
-        <button className="primary-button" aria-label="Сохранить настройки запуска" disabled={!valid || saving || loading || Boolean(loadError)} onClick={() => void save()}>{saving ? "Сохраняем…" : "Сохранить"}</button></div>
+        <button className="primary-button" aria-label="Сохранить настройки запуска" disabled={!valid || saving || loading || Boolean(loadError)} onClick={() => void draft.save()}>{saving ? "Сохраняем…" : "Сохранить"}</button></div>
     </>}
   </section>;
 }

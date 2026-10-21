@@ -25,6 +25,8 @@ import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopil
 import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "./autopilot/session-store.js";
 import { AutomationLaunchPolicyStore } from "./automation-launch-policy.js";
+import { IntegratorSessionBindingStore } from "./integrator-session-binding.js";
+import { IntegratorFleetRuntime } from "./integrator-fleet-runtime.js";
 import { dispatchProjectLaunch, namedSessionRunner, ProjectLaunchAttemptLog, type ProjectLaunchDispatcher } from "./automation/project-launch-dispatch.js";
 import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
 import { applyOutboundFamilyToProcess } from "./net/outbound-family.js";
@@ -148,6 +150,8 @@ const sessionAutostartStore = new SessionAutostartStore(
 );
 const autoCompactStore = new AutoCompactStore(join(autopilotStateDir, "auto-compact.json"));
 const automationLaunchPolicyStore = new AutomationLaunchPolicyStore(join(autopilotStateDir, "automation-launch-policy.json"));
+const integratorSessionBindingStore = new IntegratorSessionBindingStore({ persistencePath: join(autopilotStateDir, "integrator-session-bindings.json") });
+const integratorFleetRuntime = new IntegratorFleetRuntime({ policyStore: automationLaunchPolicyStore, bindingStore: integratorSessionBindingStore, codexBin: process.env.CODEX_BIN });
 const humanStopStore = getHumanStopStore();
 const herderGenerationId=`process-${process.pid}-${randomUUID()}`;
 const persistNativeOwner:NonNullable<import("./adapters/zcode.js").ZcodeAdapterOptions["persistNativeOwner"]>=async(id,proof,current)=>{
@@ -573,13 +577,13 @@ function registerTools(
     queryReceipt: humanResumeQuery ?? ((request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters)),
   });
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
-  registerSessionTools(server, { adapters, jobs, events });
+  registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime });
   registerRagTools(server, adapters);
   registerResourceOwnershipTools(server);
   const workspaceTransport = new FleetDirectTransport(directFleetPeers.filter(peer => peer.hostId !== "MacBook-Pro-User.local"));
   registerHarnessMeshTools(server, { adapters, gptadmin: workspaceTransport });
   registerWorkspaceTools(server, { transport: workspaceTransport });
-  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined });
+  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime });
 }
 
 /**
@@ -847,6 +851,10 @@ async function main() {
     autoCompact: autoCompactService,
     admissionGate: recoveryAdmissionGate,
   });
+  const scopedSupervisorFactory = (sessionAdapters: Map<string, HarnessAdapter>) => new SessionSupervisor(sessionAdapters, processSessionConverter, lineageStore, {
+    humanStopStore, events: herderEvents, unfinishedSessions: unfinishedSessionLauncher,
+    autoCompact: autoCompactService, admissionGate: recoveryAdmissionGate,
+  });
   const resumeAfterRuntime = createResumeAfterRuntime(adapters, processSupervisor, (harness,id) => humanStopStore.isHeld(harness,id));
   const stopResumeAfter = resumeAfterRuntime.start();
   process.once("exit", stopResumeAfter);
@@ -871,9 +879,10 @@ async function main() {
         const native = await deliverAutopilotGoal(input, goal, inputId, {
           adapter: adapters.get("opencode") as OpenCodeAdapter | undefined,
         });
-        if (native.status === "delivered") return native;
-        return await resumeSelectedTarget({ target: { agent: input.harness as "codex", session_id: input.sessionId, cwd: input.cwd },
-          goal, prompt: goal, result_ref: `agent-herder://autopilot/stop/${inputId}`, idempotency_key: inputId }, processSupervisor, "automation", false, "autopilot");
+        // deliverAutopilotGoal owns the durable Agent Resume fallback too.
+        // Falling through here after a failed/unknown receipt can admit the same
+        // continuation a second time through the process supervisor.
+        return native;
       }
       return resumeSelectedTarget({ target: { agent: input.harness as "codex", session_id: input.sessionId, cwd: input.cwd },
         goal, prompt: goal, result_ref: `agent-herder://autopilot/stop/${inputId}`, idempotency_key: inputId }, processSupervisor, "automation", false, "autopilot");
@@ -933,6 +942,8 @@ async function main() {
     for (const stop of stopNativeTurnObservers) stop();
     void (async () => {
       const zcode = adapters.get('zcode') as ZcodeAdapter | undefined;
+      try { await integratorFleetRuntime.dispose(); }
+      catch (error) { console.error('[agent-herder] scoped Codex shutdown failed:', String(error)); }
       try { await zcode?.checkpointOwnedRuntimeShutdown(); await zcode?.dispose(); }
       catch (error) { console.error('[agent-herder] owned ZCode shutdown checkpoint failed:', String(error)); }
       finally { process.exit(0); }
@@ -960,6 +971,8 @@ async function main() {
       herderEvents,
       jobs: herderJobs,
       supervisor: processSupervisor,
+      integratorRuntime: integratorFleetRuntime,
+      scopedSupervisorFactory,
       sessionObservationManagedExternally: true,
       mcpAuthToken: httpToken,
       fleetApiHandler: createConfiguredFleetApiHandler(),

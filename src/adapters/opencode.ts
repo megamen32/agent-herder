@@ -125,6 +125,18 @@ function aliasesIntersect(aliases: Record<string, string>, modelIds: readonly st
 }
 
 /**
+ * True when one of the model ids is itself used as an alias name. An alias
+ * name shadows the id it points at, so the model id no longer identifies one
+ * route. An alias that only points at a model gives that model a second public
+ * name; it does not change which provider the id reaches, so it is not an
+ * identity conflict.
+ */
+function aliasesNamed(aliases: Record<string, string>, modelIds: readonly string[]): boolean {
+  const names = new Set(modelIds);
+  return Object.keys(aliases).some((alias) => names.has(alias));
+}
+
+/**
  * Agent Herder's OpenCode adapter: orchestration on top of the shared core.
  *
  * The protocol — OpenCode 2's `/api` surface, its `{ data }` envelopes, session
@@ -191,6 +203,8 @@ export class OpenCodeAdapter implements HarnessAdapter {
     }
     const nativeTurn = detail.status === "error" ? await this.client.getTerminalTurnContext(id) : null;
     const nativeFailure = nativeTurn ? await this.client.getTerminalFailureContext(id) : null;
+    const nativeRejectedAttempt = detail.status === "error" && !nativeTurn
+      ? await this.client.getTerminalRejectedAttemptContext(id) : null;
     const sameNativeTurn = Boolean(nativeTurn && nativeFailure
       && nativeFailure.sessionId === nativeTurn.sessionId
       && nativeFailure.nativeTurnId === nativeTurn.turnId
@@ -212,6 +226,8 @@ export class OpenCodeAdapter implements HarnessAdapter {
       resetAt: nativeFailure.resetAt,
     }) : null;
     const meta = { ...(result.meta ?? {}) };
+    delete meta.nativeRejectedAttempt;
+    if (nativeRejectedAttempt) meta.nativeRejectedAttempt = nativeRejectedAttempt;
     const previousNativeLastTurn = meta.nativeLastTurn && typeof meta.nativeLastTurn === "object"
       ? meta.nativeLastTurn as Record<string, unknown> : {};
     const retainedNativeLastTurn = { ...previousNativeLastTurn };
@@ -547,7 +563,10 @@ export class OpenCodeAdapter implements HarnessAdapter {
         mappingRows.push({ id, comboId, comboName, pattern, enabled: row.enabled });
       }
       if (selected.owner !== "combo") {
-        if (mappingRows.some((row) => row.enabled)) return null;
+        // Only an enabled mapping that claims this exact model can rewrite its
+        // route. A mapping that serves an unrelated model leaves this one alone.
+        if (mappingRows.some((row) => row.enabled
+          && (row.pattern === modelId || row.pattern.startsWith(`${modelId}/`)))) return null;
         return { ...base, resolvedProviderLeaves: [{ providerId: selected.owner, modelId: selected.root }] };
       }
       // This model is an actual top-level combo only when the native gateway
@@ -568,10 +587,6 @@ export class OpenCodeAdapter implements HarnessAdapter {
       const rootCandidates = combos.filter((combo) => combo.name === modelId);
       if (rootCandidates.length !== 1) return null;
       const rootCombo = rootCandidates[0]!;
-      const relevantMappings = mappingRows.filter((row) => row.enabled && (
-        row.comboId === rootCombo.id || row.comboName === rootCombo.name || row.pattern.startsWith(`${rootCombo.name}/`)
-      ));
-      if (relevantMappings.length > 1) return null;
       const catalogById = new Map(modelCatalog.map((entry) => [entry.id, entry]));
       const expand = (combo: OmniRouteCombo, ancestors: ReadonlySet<string>): OpenCodeProviderLeaf[] | null => {
         if (ancestors.has(combo.id) || combo.models.length === 0) return null;
@@ -598,13 +613,30 @@ export class OpenCodeAdapter implements HarnessAdapter {
       const leaves = expand(rootCombo, new Set());
       if (!leaves) return null;
       const uniqueLeaves = [...new Map(leaves.map((leaf) => [`${leaf.providerId}\0${leaf.modelId}`, leaf])).values()];
-      if (aliasesIntersect(modelAliases, uniqueLeaves.map((leaf) => leaf.modelId))) return null;
-      if (relevantMappings.length === 1) {
-        const mapping = relevantMappings[0]!;
-        const identityModels = [...new Set(uniqueLeaves.map((leaf) => leaf.modelId.split("/").at(-1)!).filter(Boolean))];
-        if (mapping.comboId !== rootCombo.id || mapping.comboName !== rootCombo.name
-          || identityModels.length !== 1 || mapping.pattern !== `${rootCombo.name}/${identityModels[0]}`) return null;
-      }
+      // A leaf id must not itself be an alias name, because an alias name
+      // shadows the id it points at. An alias that only points at the leaf gives
+      // the same model a second public name without changing its provider.
+      if (aliasesNamed(modelAliases, uniqueLeaves.map((leaf) => leaf.modelId))) return null;
+      const identityModels = [...new Set(uniqueLeaves.map((leaf) => leaf.modelId.split("/").at(-1)!).filter(Boolean))];
+      // A verifiable combo serves one model identity under several providers.
+      // A combo whose legs are different models has no single identity for its
+      // mapping to name, so its route is not provable here.
+      if (identityModels.length !== 1) return null;
+      const identityPattern = `${rootCombo.name}/${identityModels[0]}`;
+      // Enabled mappings are judged per route. Only a mapping that claims the
+      // selected identity can redirect it, and no enabled mapping may rewrite a
+      // sibling name inside the selected combo's own namespace. A second enabled
+      // mapping that serves the same combo under an unrelated name is a
+      // separate route, not a conflict.
+      const claiming = mappingRows.filter((row) => row.enabled && row.pattern === identityPattern);
+      if (claiming.length > 1) return null;
+      if (claiming.length === 1
+        && (claiming[0]!.comboId !== rootCombo.id || claiming[0]!.comboName !== rootCombo.name)) return null;
+      const conflicting = mappingRows.filter((row) => row.enabled && (
+        row.pattern === rootCombo.name
+        || (row.pattern.startsWith(`${rootCombo.name}/`) && row.pattern !== identityPattern)
+      ));
+      if (conflicting.length > 0) return null;
       return { ...base, resolvedProviderLeaves: uniqueLeaves };
     } catch {
       return null;

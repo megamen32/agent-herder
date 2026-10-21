@@ -79,6 +79,13 @@ export function transcriptForAddress(transcript:TranscriptView|undefined,address
  return transcript?.scope.hostId===address.hostId&&transcript.scope.harness===address.harness&&transcript.scope.nativeSessionId===address.nativeSessionId?transcript:undefined;
 }
 
+/** Finds only an exact native turn ID; never substitutes a nearby event. */
+export function firstEventIndexForTurn(events:readonly NativeTranscriptEvent[],turnId:string|undefined):number|undefined{
+ if(!turnId)return undefined;
+ const index=events.findIndex(event=>event.turnId===turnId);
+ return index<0?undefined:index;
+}
+
 export async function fetchIntegratorTranscriptPage(input:{address:MeshAddress;expectedHostId:string;cursor?:string;fetcher?:typeof fetch}):Promise<TranscriptRouteResponse>{
  const query=new URLSearchParams({limit:'50'});if(input.cursor!==undefined)query.set('cursor',input.cursor);
  const path=`/api/sessions/${encodeURIComponent(input.address.harness)}/${encodeURIComponent(input.address.nativeSessionId)}/transcript?${query}`;
