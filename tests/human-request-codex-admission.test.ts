@@ -42,6 +42,9 @@ async function fixture(active = false, malformedAck = false) {
       const reply = (result: unknown) => socket.send(JSON.stringify({ id: request.id, result }));
       if (request.method === "initialize") return reply({ userAgent: "fixture" });
       if (request.method === "initialized") return;
+      // The supervisor reads the native model catalog before it resumes the
+      // session; without this answer the resume fails before the native turn.
+      if (request.method === "model/list") return reply({ data: [{ model: "gpt-5-codex", isDefault: true }], nextCursor: null });
       if (request.method === "thread/read") return reply({ thread: thread() });
       if (request.method === "thread/turns/list") return reply({ data: turnId ? [{ id: turnId, status: "inProgress" }] : [] });
       if (request.method === "thread/resume") return reply({ thread: thread() });
