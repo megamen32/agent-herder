@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  LatestQuotaStatusRequest,
+  quotaWaitStateLabel,
   quotaWaitStatusPath,
   readQuotaWaitStatus,
   readWaitForQuota,
@@ -8,6 +10,12 @@ import {
 } from "../src/web-ui/quota-recovery-controls.js";
 
 const session: QuotaRecoverySession = { harness: "opencode", id: "native:session id", cwd: "/workspace with spaces" };
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -66,6 +74,46 @@ describe("quota recovery controls API client", () => {
   it("returns null only for an explicit empty queue response", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ waits: [] })));
     await expect(readQuotaWaitStatus(session)).resolves.toBeNull();
+  });
+
+  it("aborts session A and ignores its late response after switching to session B", async () => {
+    const sessionA = { ...session, id: "session-a" };
+    const sessionB = { ...session, id: "session-b" };
+    const delayedA = deferred<Response>();
+    let signalA: AbortSignal | undefined;
+    const fetch = vi.fn((path: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(path), "http://local.test");
+      if (url.searchParams.get("sessionId") === sessionA.id) {
+        signalA = init?.signal ?? undefined;
+        // Deliberately resolve despite abort to model a transport that settles late.
+        return delayedA.promise;
+      }
+      return Promise.resolve(jsonResponse({ wait: { state: "accepted" } }));
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    const gate = new LatestQuotaStatusRequest();
+    let visibleState: string | undefined;
+    const load = async (selected: QuotaRecoverySession) => {
+      const request = gate.begin();
+      const status = await readQuotaWaitStatus(selected, request.signal);
+      if (request.isCurrent()) visibleState = status?.state;
+    };
+
+    const requestA = load(sessionA);
+    const requestB = load(sessionB);
+    await requestB;
+    expect(signalA?.aborted).toBe(true);
+    delayedA.resolve(jsonResponse({ wait: { state: "held" } }));
+    await requestA;
+
+    expect(visibleState).toBe("accepted");
+  });
+
+  it("shows user-facing Russian labels for all terminal dispatch states", () => {
+    expect(quotaWaitStateLabel("dispatching")).toBe("Продолжение отправляется");
+    expect(quotaWaitStateLabel("accepted")).toBe("Продолжение принято агентом");
+    expect(quotaWaitStateLabel("exhausted")).toBe("Запасные модели исчерпаны");
   });
 
   it("rejects incomplete effective settings rather than defaulting to enabled or disabled", async () => {

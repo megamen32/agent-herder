@@ -28,7 +28,7 @@ import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/sessi
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import type { AutoCompactService, AutoCompactStore } from "../autocontinue/auto-compact.js";
 import type { SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
-import { AutomationLaunchPolicyStore, MAX_MODEL_LENGTH } from "../automation-launch-policy.js";
+import { AutomationLaunchPolicyStore, LaunchPolicyConflictError, MAX_MODEL_LENGTH, validateAutomationLaunchPolicy } from "../automation-launch-policy.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { boundedCoordinationContext, coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
 import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
@@ -929,14 +929,37 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   if (url.pathname === "/api/automation/launch-policy" && (request.method === "GET" || request.method === "PUT")) {
     if (!automationLaunchPolicyStore) return sendJson(response, 503, { error: "Launch policy is not configured" });
     if (request.method === "GET") {
-      const loaded = await automationLaunchPolicyStore.load();
+      const loaded = await automationLaunchPolicyStore.readDocument();
+      // The document identity travels with every read, so a later full write
+      // can be rejected instead of overwriting a newer policy.
+      response.setHeader("etag", loaded.etag);
+      response.setHeader("cache-control", "no-store");
       if (loaded.kind === "valid") return sendJson(response, 200, loaded.policy);
-      if (loaded.kind === "absent") return sendJson(response, 503, { error: "Launch policy is not configured" });
-      return sendJson(response, 503, { error: "Launch policy is invalid", detail: loaded.error });
+      if (loaded.kind === "absent") return sendJson(response, 503, { error: "Launch policy is not configured", state: "absent" });
+      return sendJson(response, 503, { error: "Launch policy is invalid", state: "invalid", detail: loaded.error });
     }
     try {
-      return sendJson(response, 200, await automationLaunchPolicyStore.replace(await readJson(request)));
+      const body = await readJson(request);
+      validateAutomationLaunchPolicy(body);
+      const header = request.headers["if-match"];
+      const expected = (Array.isArray(header) ? header[0] : header)?.trim();
+      if (!expected) {
+        return sendJson(response, 428, {
+          error: "Полное сохранение требует заголовок If-Match с версией политики, полученной при чтении.",
+          state: "precondition_required",
+        });
+      }
+      const saved = await automationLaunchPolicyStore.replace(body, { ifMatch: expected });
+      response.setHeader("etag", saved.etag);
+      response.setHeader("cache-control", "no-store");
+      return sendJson(response, 200, saved.policy);
     } catch (error) {
+      if (error instanceof LaunchPolicyConflictError) {
+        return sendJson(response, 412, {
+          error: "Политика запуска изменилась в другой вкладке. Ваши правки сохранены в форме и не отправлены.",
+          state: "conflict",
+        });
+      }
       return sendJson(response, 400, { error: (error as Error).message });
     }
   }
@@ -988,6 +1011,18 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 400, { error: (error as Error).message });
     }
   }
+  if (url.pathname === "/api/quota-recovery/waits" && request.method === "GET") {
+    const harness = url.searchParams.get("harness")?.trim();
+    const sessionId = url.searchParams.get("sessionId")?.trim();
+    const cwd = url.searchParams.get("cwd")?.trim();
+    if (!harness || !sessionId || !cwd) return sendJson(response, 400, { error: "harness, sessionId, and cwd are required" });
+    try {
+      const wait = await supervisor.getQuotaRecoveryWaitStatus(harness, sessionId, cwd);
+      return sendJson(response, 200, { wait });
+    } catch (error) {
+      return sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
   if (url.pathname === "/api/session-autostart" && (request.method === "GET" || request.method === "PUT")) {
     if (!sessionAutostartStore) return sendJson(response, 503, { error: "Session autostart settings are disabled" });
     if (request.method === "GET") return sendJson(response, 200, await sessionAutostartStore.getSettings());
@@ -999,9 +1034,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       if ((body.recoverOnFailure !== undefined && typeof body.recoverOnFailure !== "boolean") || (body.recoverOnDisconnect !== undefined && typeof body.recoverOnDisconnect !== "boolean")) {
         return sendJson(response, 400, { error: "autocontinue recovery settings must be boolean" });
       }
+      if (body.waitForQuota !== undefined && typeof body.waitForQuota !== "boolean") return sendJson(response, 400, { error: "waitForQuota must be a boolean" });
       try {
-        return sendJson(response, 200, { ...await sessionAutostartStore.setRuntimeSettings({
+        const saved = await sessionAutostartStore.setRuntimeSettings({
           enabled: body.enabled,
+          waitForQuota: body.waitForQuota,
           pinActiveSessions: body.pinActiveSessions,
           rolloverExpiredCache: body.rolloverExpiredCache,
           movePinnedOnRollover: body.movePinnedOnRollover,
@@ -1014,13 +1051,21 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
           autopilotJudgeModel: body.autopilotJudgeModel,
           recoverOnFailure: body.recoverOnFailure,
           recoverOnDisconnect: body.recoverOnDisconnect,
-        }), source: "persisted" });
+        });
+        await supervisor.reconcileQuotaRecoverySettings();
+        return sendJson(response, 200, { ...saved, source: "persisted" });
       } catch (error) {
         return sendJson(response, 400, { error: (error as Error).message });
       }
     }
-    if (typeof body.enabled !== "boolean") return sendJson(response, 400, { error: "enabled is required" });
-    return sendJson(response, 200, { ...await sessionAutostartStore.setGlobal(body.enabled), source: "persisted" });
+    if ((body.enabled !== undefined && typeof body.enabled !== "boolean")
+      || (body.waitForQuota !== undefined && typeof body.waitForQuota !== "boolean")) {
+      return sendJson(response, 400, { error: "enabled and waitForQuota must be booleans" });
+    }
+    if (body.enabled === undefined && body.waitForQuota === undefined) return sendJson(response, 400, { error: "enabled or waitForQuota is required" });
+    const saved = await sessionAutostartStore.setGlobalOptions({ enabled: body.enabled, waitForQuota: body.waitForQuota });
+    await supervisor.reconcileQuotaRecoverySettings();
+    return sendJson(response, 200, { ...saved, source: "persisted" });
   }
   const autostartHarnessMatch = url.pathname.match(/^\/api\/session-autostart\/harnesses\/([^/]+)$/);
   if (autostartHarnessMatch && (request.method === "GET" || request.method === "PUT" || request.method === "DELETE")) {
@@ -1030,11 +1075,19 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       if (request.method === "GET") return sendJson(response, 200, { harness, ...await sessionAutostartStore.getHarnessEffective(harness) });
       if (request.method === "DELETE") {
         await sessionAutostartStore.deleteHarness(harness);
+        await supervisor.reconcileQuotaRecoverySettings();
         return sendJson(response, 200, { harness, ...await sessionAutostartStore.getHarnessEffective(harness) });
       }
       const body = await readJson(request);
-      if (typeof body.enabled !== "boolean") return sendJson(response, 400, { error: "enabled is required" });
-      return sendJson(response, 200, { ...await sessionAutostartStore.setHarness(harness, body.enabled), source: "harness" });
+      const hasEnabled = body.enabled !== undefined;
+      const hasQuota = Object.hasOwn(body, "waitForQuota");
+      if (!hasEnabled && !hasQuota) return sendJson(response, 400, { error: "enabled or waitForQuota is required" });
+      if (hasEnabled && typeof body.enabled !== "boolean") return sendJson(response, 400, { error: "enabled must be a boolean" });
+      if (hasQuota && body.waitForQuota !== null && typeof body.waitForQuota !== "boolean") return sendJson(response, 400, { error: "waitForQuota must be a boolean or null" });
+      if (hasEnabled) await sessionAutostartStore.setHarness(harness, body.enabled as boolean);
+      if (hasQuota) await sessionAutostartStore.setHarnessWaitForQuota(harness, body.waitForQuota as boolean | null);
+      await supervisor.reconcileQuotaRecoverySettings();
+      return sendJson(response, 200, { harness, ...await sessionAutostartStore.getHarnessEffective(harness) });
     } catch (error) {
       return sendJson(response, 400, { error: (error as Error).message });
     }
@@ -1049,12 +1102,19 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       if (request.method === "GET") return sendJson(response, 200, { harness, sessionId, ...await sessionAutostartStore.getEffective(harness, sessionId, cwd) });
       if (request.method === "DELETE") {
         await sessionAutostartStore.deleteSession(harness, sessionId);
+        await supervisor.reconcileQuotaRecoverySettings();
         return sendJson(response, 200, { harness, sessionId, ...await sessionAutostartStore.getEffective(harness, sessionId, cwd) });
       }
       const body = await readJson(request);
-      if (typeof body.enabled !== "boolean" || typeof body.cwd !== "string" || !body.cwd.trim()) return sendJson(response, 400, { error: "enabled and cwd are required" });
-      const saved = await sessionAutostartStore.setSession({ harness, sessionId, cwd: body.cwd, ...(body.noticeIncident === undefined ? {} : { noticeIncident: body.noticeIncident }) }, body.enabled);
-      return sendJson(response, 200, { ...saved, source: "session" });
+      const hasEnabled = body.enabled !== undefined;
+      const hasQuota = Object.hasOwn(body, "waitForQuota");
+      if ((!hasEnabled && !hasQuota) || typeof body.cwd !== "string" || !body.cwd.trim()) return sendJson(response, 400, { error: "enabled or waitForQuota and cwd are required" });
+      if (hasEnabled && typeof body.enabled !== "boolean") return sendJson(response, 400, { error: "enabled must be a boolean" });
+      if (hasQuota && body.waitForQuota !== null && typeof body.waitForQuota !== "boolean") return sendJson(response, 400, { error: "waitForQuota must be a boolean or null" });
+      if (hasEnabled) await sessionAutostartStore.setSession({ harness, sessionId, cwd: body.cwd, ...(body.noticeIncident === undefined ? {} : { noticeIncident: body.noticeIncident }) }, body.enabled as boolean);
+      if (hasQuota) await sessionAutostartStore.setSessionWaitForQuota({ harness, sessionId, cwd: body.cwd }, body.waitForQuota as boolean | null);
+      await supervisor.reconcileQuotaRecoverySettings();
+      return sendJson(response, 200, { harness, sessionId, ...await sessionAutostartStore.getEffective(harness, sessionId, body.cwd) });
     } catch (error) {
       return sendJson(response, 400, { error: (error as Error).message });
     }

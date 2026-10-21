@@ -64,6 +64,8 @@ export type ProjectLaunchRunner = (request: {
   message: string;
   model?: string;
   mode: NamedSessionMode;
+  /** Ordered same-session model fallbacks; only definite pre-admission rejection advances. */
+  fallbackModels?: string[];
   /** Stable per operation and harness, so a repeat attempt is deduplicated natively. */
   inputId: string;
   /** Only an explicit project route may authorize subscription quota fallback. */
@@ -269,7 +271,9 @@ export async function dispatchProjectLaunch(
     return projectReceipt({ operationId, project, attempts, completed });
   }
 
-  const nativeResult = await run({ harness, cwd, message: input.message, ...(model ? { model } : {}), mode, inputId, configuredRoute: resolution.kind === "launch" });
+  const nativeResult = await run({ harness, cwd, message: input.message, ...(model ? { model } : {}), mode, inputId,
+    ...(input.policy.fallbackModels?.[harness as "opencode" | "zcode"] ? { fallbackModels: input.policy.fallbackModels[harness as "opencode" | "zcode"] } : {}),
+    configuredRoute: resolution.kind === "launch" });
   // Optional undefined fields disappear in JSON. Project the same durable shape
   // on the first response so a restart cannot change its receipt or model.
   const result = Object.fromEntries(Object.entries(nativeResult).filter(([, value]) => value !== undefined)) as NamedSessionResult;
@@ -385,6 +389,11 @@ function isHumanHold(error: string | undefined): boolean {
 /** Build the production runner over the existing named-session seam. */
 export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: string, quotaPreflight?: MiniMaxQuotaPreflight): ProjectLaunchRunner {
   return async (request) => {
+    // These policy lists are OmniRoute-only. Do not turn an unrelated
+    // provider's definite pre-admission rejection into a cross-provider retry.
+    const omniRouteFallbacks = typeof request.model === "string" && /^omniroute\//iu.test(request.model)
+      ? request.fallbackModels
+      : undefined;
     if (request.configuredRoute && request.harness === "opencode" && request.model === MINIMAX_SUBSCRIPTION_MODEL
       && quotaPreflight && await quotaPreflight(request.model).catch(() => "unknown") === "quota_exhausted") {
       return {
@@ -400,6 +409,7 @@ export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: 
       message: request.message,
       mode: request.mode,
       ...(request.model ? { model: request.model } : {}),
+      ...(omniRouteFallbacks ? { fallbackModels: omniRouteFallbacks } : {}),
       ...(request.inputId ? { inputId: request.inputId } : {}),
     });
   };

@@ -73,7 +73,7 @@ export interface SessionSupervisorOptions {
   /** Initial retry delay; subsequent failed resumes use exponential backoff. */
   autoResumeDelayMs?: number;
   /** Durable restart launcher for unfinished turns; independent from autopilot. */
-  unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook">>);
+  unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook" | "getQuotaRecoveryWaitStatus" | "reconcileQuotaRecoverySettings">>);
   /** Native compact maintenance outcomes; never a task prompt or a resume. */
   autoCompact?: Pick<AutoCompactService, "observe">;
 }
@@ -125,7 +125,7 @@ export class SessionSupervisor {
   private readonly automaticResumes = new Map<string, AutomaticResumeState>();
   private readonly humanStops: HumanStopStore;
   private readonly immediateStops = new Set<string>();
-  private readonly unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook">>);
+  private readonly unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook" | "getQuotaRecoveryWaitStatus" | "reconcileQuotaRecoverySettings">>);
   private readonly autoCompact?: Pick<AutoCompactService, "observe">;
 
   constructor(
@@ -156,6 +156,14 @@ export class SessionSupervisor {
     const held = session ? await this.humanStops.observe(session) : await this.humanStops.isHeld(harness, id);
     if (!held) this.immediateStops.delete(sessionKey(harness, id));
     return held;
+  }
+
+  async getQuotaRecoveryWaitStatus(harness: string, sessionId: string, cwd: string) {
+    return this.unfinishedSessions?.getQuotaRecoveryWaitStatus?.(harness, sessionId, cwd) ?? null;
+  }
+
+  async reconcileQuotaRecoverySettings(): Promise<void> {
+    await this.unfinishedSessions?.reconcileQuotaRecoverySettings?.();
   }
 
   async releaseHumanStop(harness: string, id: string, prompt?: { id: string; at: string; turnId?: string; text?: string }): Promise<boolean> {

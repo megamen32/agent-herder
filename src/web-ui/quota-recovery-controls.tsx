@@ -72,8 +72,8 @@ export function quotaWaitStatusPath(session: QuotaRecoverySession): string {
   return `/api/quota-recovery/waits?${query.toString()}`;
 }
 
-export async function readQuotaWaitStatus(session: QuotaRecoverySession): Promise<QuotaRecoveryWait | null> {
-  const response = await fetch(quotaWaitStatusPath(session), { headers: { accept: "application/json" }, cache: "no-store" });
+export async function readQuotaWaitStatus(session: QuotaRecoverySession, signal?: AbortSignal): Promise<QuotaRecoveryWait | null> {
+  const response = await fetch(quotaWaitStatusPath(session), { headers: { accept: "application/json" }, cache: "no-store", signal });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const body = await response.json() as { wait?: unknown; waits?: unknown };
   const candidate = body.wait ?? (Array.isArray(body.waits) ? body.waits[0] : undefined)
@@ -96,11 +96,39 @@ const WAIT_STATE_LABELS: Record<string, string> = {
   reset_due: "Наступило время проверки",
   probing: "Проверяется состояние квоты",
   ready: "Готово к безопасному продолжению",
+  dispatching: "Продолжение отправляется",
+  accepted: "Продолжение принято агентом",
   held: "Приостановлено",
+  exhausted: "Запасные модели исчерпаны",
   delivery_unknown: "Результат продолжения уточняется",
   completed: "Продолжение принято",
   cancelled: "Ожидание отменено",
 };
+
+export function quotaWaitStateLabel(state: string): string | undefined {
+  return WAIT_STATE_LABELS[state];
+}
+
+/** Cancels superseded status reads and identifies which response may update the UI. */
+export class LatestQuotaStatusRequest {
+  private active?: { id: number; controller: AbortController };
+  private nextId = 0;
+
+  begin() {
+    this.active?.controller.abort();
+    const request = { id: ++this.nextId, controller: new AbortController() };
+    this.active = request;
+    return {
+      signal: request.controller.signal,
+      isCurrent: () => this.active?.id === request.id && !request.controller.signal.aborted,
+    };
+  }
+
+  cancel() {
+    this.active?.controller.abort();
+    this.active = undefined;
+  }
+}
 
 function sourceLabel(source: WaitForQuotaSource): string {
   if (source === "session") return "сессия";
@@ -117,12 +145,12 @@ function describeTime(value: string): string {
 function statusLine(wait: QuotaRecoveryWait | null) {
   if (!wait) return <p className="settings-help" role="status">Нет ожидающего восстановления по квоте.</p>;
   return <div className="quota-recovery-wait" role="status">
-    <strong>{WAIT_STATE_LABELS[wait.state] ?? "Состояние ожидания обновлено"}</strong>
+    <strong>{quotaWaitStateLabel(wait.state) ?? "Состояние ожидания обновлено"}</strong>
     {wait.reason && <p>{wait.reason}</p>}
     {wait.resetAt && <p>Следующая проверка: {describeTime(wait.resetAt)}</p>}
     {wait.currentModel && <p>Текущая модель: <code>{wait.currentModel}</code></p>}
     {wait.selectedModel && <p>Выбранная модель: <code>{wait.selectedModel}</code></p>}
-    {!WAIT_STATE_LABELS[wait.state] && <small>Код состояния: {wait.state}</small>}
+    {!quotaWaitStateLabel(wait.state) && <small>Код состояния: {wait.state}</small>}
   </div>;
 }
 
@@ -141,6 +169,8 @@ export function QuotaRecoveryControls({ session }: { session?: QuotaRecoverySess
   const [statusLoading, setStatusLoading] = React.useState(false);
   const [saving, setSaving] = React.useState<string>();
   const [error, setError] = React.useState<string>();
+  const statusRequest = React.useRef<LatestQuotaStatusRequest | null>(null);
+  if (statusRequest.current === null) statusRequest.current = new LatestQuotaStatusRequest();
 
   const refreshSettings = React.useCallback(async () => {
     setLoading(true);
@@ -165,20 +195,28 @@ export function QuotaRecoveryControls({ session }: { session?: QuotaRecoverySess
 
   const refreshStatus = React.useCallback(async () => {
     if (!session) return;
+    const request = statusRequest.current!.begin();
     setStatusLoading(true);
     setStatusError(false);
+    setWaitStatus(null);
     try {
-      setWaitStatus(await readQuotaWaitStatus(session));
+      const result = await readQuotaWaitStatus(session, request.signal);
+      if (request.isCurrent()) setWaitStatus(result);
     } catch {
-      setWaitStatus(null);
-      setStatusError(true);
+      if (request.isCurrent()) {
+        setWaitStatus(null);
+        setStatusError(true);
+      }
     } finally {
-      setStatusLoading(false);
+      if (request.isCurrent()) setStatusLoading(false);
     }
   }, [session?.harness, session?.id, session?.cwd]);
 
   React.useEffect(() => { void refreshSettings(); }, [refreshSettings]);
-  React.useEffect(() => { if (session) void refreshStatus(); }, [refreshStatus]);
+  React.useEffect(() => {
+    if (session) void refreshStatus();
+    return () => statusRequest.current?.cancel();
+  }, [refreshStatus]);
 
   const save = async (scope: WaitForQuotaScope, key: string, value: boolean | null) => {
     setSaving(key);

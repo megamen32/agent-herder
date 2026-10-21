@@ -430,7 +430,7 @@ describe("explicit unfinished inventory pure contracts", () => {
         await writeFile(path, JSON.stringify({ version: 1, enabled: true, sessions: [] }));
         const settingsStore = new SessionAutostartStore(path, {});
         expect(await settingsStore.getSettings()).toMatchObject({
-            version: 7,
+            version: 8,
             enabled: true,
             pinActiveSessions: true,
             rolloverExpiredCache: false,
@@ -453,7 +453,7 @@ describe("explicit unfinished inventory pure contracts", () => {
             judgeModel: "MiniMax-M3.1-Flash", autopilotJudgeModel: "MiniMax-M3", harnesses: [], sessions: [],
         }));
         const settingsStore = new SessionAutostartStore(path, {});
-        await expect(settingsStore.getSettings()).resolves.toMatchObject({ version: 7, pinActiveSessions: true, rolloverExpiredCache: false, movePinnedOnRollover: false, evidenceMessageCount: 200, source: "persisted" });
+        await expect(settingsStore.getSettings()).resolves.toMatchObject({ version: 8, pinActiveSessions: true, rolloverExpiredCache: false, movePinnedOnRollover: false, evidenceMessageCount: 200, source: "persisted" });
         await settingsStore.setRuntimeSettings({
             inventoryWindowHours: 48,
             evidenceMessageCount: 4,
@@ -463,7 +463,7 @@ describe("explicit unfinished inventory pure contracts", () => {
             rolloverExpiredCache: false,
             movePinnedOnRollover: false,
         });
-        await expect(new SessionAutostartStore(path, {}).getSettings()).resolves.toMatchObject({ version: 7, pinActiveSessions: false, rolloverExpiredCache: false, movePinnedOnRollover: false, evidenceMessageCount: 4, source: "persisted" });
+        await expect(new SessionAutostartStore(path, {}).getSettings()).resolves.toMatchObject({ version: 8, pinActiveSessions: false, rolloverExpiredCache: false, movePinnedOnRollover: false, evidenceMessageCount: 4, source: "persisted" });
     });
     it("migrates v6 settings to v7 with active-session pinning enabled", async () => {
         const root = await mkdtemp(join(tmpdir(), "agent-herder-autostart-v6-"));
@@ -484,7 +484,7 @@ describe("explicit unfinished inventory pure contracts", () => {
             sessions: [],
         }));
         await expect(new SessionAutostartStore(path, {}).getSettings()).resolves.toMatchObject({
-            version: 7,
+            version: 8,
             pinActiveSessions: true,
             rolloverExpiredCache: false,
             movePinnedOnRollover: false,

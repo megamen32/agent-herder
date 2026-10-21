@@ -89,6 +89,21 @@ function nativeAdapter(type: "opencode" | "zcode" | "codex", outcome: Outcome, l
 }
 
 describe("project launch dispatch", () => {
+  it("does not apply OmniRoute policy fallbacks to a non-OmniRoute model", async () => {
+    const cwd = await workspace();
+    const attempts: Array<{ harness: string; inputId?: string }> = [];
+    const run = namedSessionRunner(new Map([
+      ["opencode", nativeAdapter("opencode", "quota", attempts, cwd)],
+    ]), "non-omni-route");
+    const result = await run({
+      harness: "opencode", cwd, message: "check safely", mode: "sync", model: "anthropic/claude-sonnet",
+      fallbackModels: ["omniroute/openai/fallback"], inputId: "non-omni-route-input", configuredRoute: true,
+    });
+
+    expect(attempts).toHaveLength(1);
+    expect(result).toMatchObject({ delivery: "failed", model: "anthropic/claude-sonnet" });
+  });
+
   it.each([
     { ok: true, admitted: true, delivery: "accepted" as const, pending: false },
     { ok: true, admitted: false, delivery: "accepted_unconfirmed" as const, pending: true },

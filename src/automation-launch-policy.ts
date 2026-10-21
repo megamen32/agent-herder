@@ -1,5 +1,5 @@
 import { normalizeIncidentExecution, type HealthExecutionProfile } from "./health-remediation.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink, writeFile, chmod } from "node:fs/promises";
 import { dirname } from "node:path";
 import lockfile from "proper-lockfile";
@@ -29,6 +29,8 @@ export interface AutomationLaunchPolicy {
   allowedHarnesses: HarnessType[];
   preferredHarness: HarnessType;
   models: Partial<Record<HarnessType, string>>;
+  /** Ordered, fully qualified OmniRoute fallback models for these native harnesses. */
+  fallbackModels?: Partial<Record<"opencode" | "zcode", string[]>>;
   incidentExecution?: HealthExecutionProfile;
   /** Ordered harness fallback per canonical project root. Absent for most projects. */
   projectRoutes?: Record<string, ProjectLaunchRoute>;
@@ -159,13 +161,40 @@ export type AutomationLaunchPolicyLoad =
   | { kind: "valid"; policy: AutomationLaunchPolicy }
   | { kind: "invalid"; error: string };
 
+/** The stored document together with the identity of the exact stored bytes. */
+export type AutomationLaunchPolicyDocument =
+  | { kind: "absent"; etag: string }
+  | { kind: "valid"; policy: AutomationLaunchPolicy; etag: string }
+  | { kind: "invalid"; error: string; etag: string };
+
+/** The document identity of a launch policy that does not exist yet. */
+export const ABSENT_LAUNCH_POLICY_ETAG = '"absent"';
+
+/**
+ * A strong opaque ETag over the stored document.
+ *
+ * The value is a hash of the exact file bytes, so it identifies the document
+ * without exposing its content and changes whenever the document changes.
+ */
+export function launchPolicyEtag(raw: string | Buffer): string {
+  return `"${createHash("sha256").update(raw).digest("hex").slice(0, 32)}"`;
+}
+
+/** A full-document write lost the race against a newer document. */
+export class LaunchPolicyConflictError extends Error {
+  constructor(readonly expected: string, readonly actual: string) {
+    super("The launch policy changed since it was loaded");
+    this.name = "LaunchPolicyConflictError";
+  }
+}
+
 const HARNESSES: readonly HarnessType[] = ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
 export const MAX_MODEL_LENGTH = 256;
 
 export function validateAutomationLaunchPolicy(value: unknown): AutomationLaunchPolicy {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Launch policy must be an object");
   const input = value as Record<string, unknown>;
-  const keys = new Set(["version", "allowedHarnesses", "preferredHarness", "models", "incidentExecution", "projectRoutes"]);
+  const keys = new Set(["version", "allowedHarnesses", "preferredHarness", "models", "fallbackModels", "incidentExecution", "projectRoutes"]);
   for (const key of Object.keys(input)) if (!keys.has(key)) throw new Error(`Unknown launch policy field '${key}'`);
   if (input.version !== 1) throw new Error("Launch policy version must be 1");
   if (!Array.isArray(input.allowedHarnesses)) throw new Error("allowedHarnesses must be an array");
@@ -194,15 +223,55 @@ export function validateAutomationLaunchPolicy(value: unknown): AutomationLaunch
   for (const harness of allowedHarnesses) {
     if (!models[harness]) throw new Error(`A model is required for allowed harness '${harness}'`);
   }
+  const fallbackModels = input.fallbackModels === undefined ? undefined : validateFallbackModels(input.fallbackModels);
   const projectRoutes = input.projectRoutes === undefined ? undefined : validateProjectRoutes(input.projectRoutes, allowedHarnesses, models);
   return {
     version: 1,
     allowedHarnesses,
     preferredHarness: input.preferredHarness,
     models,
+    ...(fallbackModels ? { fallbackModels } : {}),
     ...(input.incidentExecution === undefined ? {} : { incidentExecution: normalizeIncidentExecution(input.incidentExecution) }),
     ...(projectRoutes ? { projectRoutes } : {}),
   };
+}
+
+const MAX_FALLBACK_MODELS = 8;
+const FALLBACK_MODEL_HARNESSES = ["opencode", "zcode"] as const;
+
+function validateFallbackModels(value: unknown): Partial<Record<"opencode" | "zcode", string[]>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("fallbackModels must be an object");
+  const input = value as Record<string, unknown>;
+  for (const key of Object.keys(input)) if (!FALLBACK_MODEL_HARNESSES.includes(key as typeof FALLBACK_MODEL_HARNESSES[number])) {
+    throw new Error(`fallbackModels does not support '${key}'`);
+  }
+  const output: Partial<Record<"opencode" | "zcode", string[]>> = {};
+  for (const harness of FALLBACK_MODEL_HARNESSES) {
+    const candidate = input[harness];
+    if (candidate === undefined) continue;
+    if (!Array.isArray(candidate) || candidate.length > 64) {
+      throw new Error(`fallbackModels.${harness} must be an ordered list of at most 64 entries`);
+    }
+    const seen = new Set<string>();
+    const models: string[] = [];
+    for (const model of candidate) {
+      if (typeof model !== "string") throw new Error(`fallbackModels.${harness} entries must be model IDs`);
+      const normalized = model.trim();
+      if (normalized.length === 0 || normalized.length > MAX_MODEL_LENGTH || /[\u0000-\u0020\u007f]/u.test(normalized)
+        || !/^omniroute\/[A-Za-z0-9._-]+\/[^/\\]+(?:\/[^/\\]+)*$/iu.test(normalized)) {
+        throw new Error(`fallbackModels.${harness} entries must be fully qualified OmniRoute model IDs`);
+      }
+      const key = normalized.toLocaleLowerCase("en-US");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      models.push(normalized);
+      if (models.length > MAX_FALLBACK_MODELS) {
+        throw new Error(`fallbackModels.${harness} may contain at most ${MAX_FALLBACK_MODELS} unique models`);
+      }
+    }
+    output[harness] = models;
+  }
+  return output;
 }
 
 const MAX_PROJECT_ROUTES = 64;
@@ -296,16 +365,38 @@ export class AutomationLaunchPolicyStore {
   }
 
   async load(): Promise<AutomationLaunchPolicyLoad> {
+    const document = await this.readDocument();
+    if (document.kind === "valid") return { kind: "valid", policy: document.policy };
+    if (document.kind === "absent") return { kind: "absent" };
+    return { kind: "invalid", error: document.error };
+  }
+
+  /** Read the stored document and the identity of the exact stored bytes. */
+  async readDocument(): Promise<AutomationLaunchPolicyDocument> {
+    let raw: Buffer;
     try {
-      return { kind: "valid", policy: validateAutomationLaunchPolicy(JSON.parse(await readFile(this.path, "utf8")) as unknown) };
+      raw = await readFile(this.path);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "absent" };
-      return { kind: "invalid", error: (error as Error).message };
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "absent", etag: ABSENT_LAUNCH_POLICY_ETAG };
+      return { kind: "invalid", error: (error as Error).message, etag: ABSENT_LAUNCH_POLICY_ETAG };
+    }
+    const etag = launchPolicyEtag(raw);
+    try {
+      return { kind: "valid", policy: validateAutomationLaunchPolicy(JSON.parse(raw.toString("utf8")) as unknown), etag };
+    } catch (error) {
+      return { kind: "invalid", error: (error as Error).message, etag };
     }
   }
 
-  async replace(value: unknown): Promise<AutomationLaunchPolicy> {
-    const policy = validateAutomationLaunchPolicy(value);
+  /**
+   * Replace the whole document.
+   *
+   * With `ifMatch` the write is a compare-and-swap: the current document is
+   * read under the same lock that writes it, so a concurrent change is
+   * reported as a conflict instead of being silently overwritten.
+   */
+  async replace(value: unknown, options: { ifMatch?: string } = {}): Promise<{ policy: AutomationLaunchPolicy; etag: string }> {
+    let policy = validateAutomationLaunchPolicy(value);
     return this.serial(async () => {
       await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
       await writeFile(this.lockTarget, "", { flag: "a", mode: 0o600 });
@@ -317,16 +408,30 @@ export class AutomationLaunchPolicyStore {
       });
       const temporary = `${this.path}.${randomUUID()}.tmp`;
       try {
+        if (options.ifMatch !== undefined) {
+          const current = await this.currentEtag();
+          if (options.ifMatch !== current) throw new LaunchPolicyConflictError(options.ifMatch, current);
+        }
+        // Older full-document clients reconstruct only known fields. Preserve
+        // the newer fallback list when such a client omits it; an explicit {}
+        // remains the intentional clear operation.
+        if (policy.fallbackModels === undefined) {
+          const current = await this.load();
+          if (current.kind === "valid" && current.policy.fallbackModels !== undefined) {
+            policy = { ...policy, fallbackModels: current.policy.fallbackModels };
+          }
+        }
+        const bytes = Buffer.from(`${JSON.stringify(policy, null, 2)}\n`, "utf8");
         const handle = await open(temporary, "wx", 0o600);
         try {
-          await handle.writeFile(`${JSON.stringify(policy, null, 2)}\n`, "utf8");
+          await handle.writeFile(bytes);
           await handle.sync();
         } finally {
           await handle.close();
         }
         await chmod(temporary, 0o600);
         await rename(temporary, this.path);
-        return policy;
+        return { policy, etag: launchPolicyEtag(bytes) };
       } catch (error) {
         try { await unlink(temporary); } catch (cleanupError) {
           if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT") throw cleanupError;
@@ -336,6 +441,16 @@ export class AutomationLaunchPolicyStore {
         await release();
       }
     });
+  }
+
+  /** The identity of the document as it is stored right now. */
+  private async currentEtag(): Promise<string> {
+    try {
+      return launchPolicyEtag(await readFile(this.path));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return ABSENT_LAUNCH_POLICY_ETAG;
+      throw error;
+    }
   }
 
   private serial<T>(operation: () => Promise<T>): Promise<T> {

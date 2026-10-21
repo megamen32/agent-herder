@@ -15,6 +15,7 @@ import type { CodexTrackedTurnCompletion } from "../adapters/codex-app-server.js
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
+import lockfile from "proper-lockfile";
 
 import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessType, SendMessageResult, SessionMessageView } from "../types/index.js";
 import type { HumanStopStore } from "../human-stop-store.js";
@@ -46,6 +47,7 @@ const DEFAULT_BATCH_PLAN_CONCURRENCY = 3;
 const MAX_REPAIRED_CHUNKS = 6;
 /** Enough to leave a dead pooled connection behind, short enough to keep the phase budget. */
 const TRANSIENT_PLANNER_RETRY_DELAY_MS = 5_000;
+const QUOTA_DISPATCH_CLAIM_LEASE_MS = 30_000;
 const MAX_OMISSION_DECISION_CONCURRENCY = 4;
 const MAX_PERSISTENT_OMISSION_DECISIONS = 4;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
@@ -133,8 +135,50 @@ export function isArchivedSessionFailure(error: unknown): boolean {
   return typeof error === "string" && /\bis archived\b/i.test(error);
 }
 
+export type QuotaFailureEvidence = {
+  classification: "quota_exhausted";
+  nativeTurnId: string;
+  inputId: string;
+  providerId: string;
+  modelId: string;
+  resetAt?: string;
+};
+
+export type QuotaRecoveryState = "waiting" | "dispatching" | "accepted" | "held" | "exhausted";
+
+export type QuotaRecoveryRecord = {
+  evidence: QuotaFailureEvidence;
+  state: QuotaRecoveryState;
+  nextAttemptAt: string;
+  candidateModels: string[];
+  candidateIndex: number;
+  attempts: number;
+  revision: number;
+  selectedModel?: string;
+  dispatchInputId?: string;
+  dispatchNativeInputId?: string;
+  dispatchTurnId?: string;
+  claimedAt?: string;
+  updatedAt: string;
+  reasonCode?: "quota_waiting" | "quota_probe_due" | "dispatching" | "delivery_unknown" | "model_unavailable" | "candidate_exhausted" | "recovery_disabled";
+};
+
+export type QuotaRecoveryWaitStatus = {
+  harness: "opencode" | "zcode";
+  sessionId: string;
+  cwd: string;
+  state: QuotaRecoveryState;
+  reason: string;
+  nextAttemptAt: string;
+  resetAt?: string;
+  currentModel: string;
+  selectedModel?: string;
+  attempts: number;
+};
+
 type NativeLastTurn = {
   turnId?: string;
+  inputId?: string;
   status?: string;
   startedAt?: string;
   completedAt?: string;
@@ -151,6 +195,7 @@ type NativeLastTurn = {
   errorType?: string;
   errorCode?: string;
   transportLost?: boolean;
+  quotaFailure?: QuotaFailureEvidence;
 };
 
 function nativeTimestamp(value: unknown): string | undefined {
@@ -168,11 +213,14 @@ function nativeLastTurn(session: AgentSession | null | undefined): NativeLastTur
   const startedAt = nativeTimestamp(record.startedAt);
   const completedAt = nativeTimestamp(record.completedAt);
   const userMessageId = nonEmptyText(record.userMessageId);
+  const inputId = nonEmptyText(record.inputId);
+  const quotaFailure = normalizeQuotaFailureEvidence(record.quotaFailure);
   const errorType = nonEmptyText(record.errorType);
   const errorCode = nonEmptyText(record.errorCode);
   const blockedReason = nonEmptyText(record.blockedReason);
   return turnId || status ? {
     ...(turnId ? { turnId } : {}), ...(status ? { status } : {}),
+    ...(inputId ? { inputId } : {}),
     ...(startedAt ? { startedAt } : {}), ...(completedAt ? { completedAt } : {}),
     ...(userMessageId ? { userMessageId } : {}),
     ...(typeof record.rootSession === "boolean" ? { rootSession: record.rootSession } : {}),
@@ -186,7 +234,94 @@ function nativeLastTurn(session: AgentSession | null | undefined): NativeLastTur
     ...(typeof record.transportLost === "boolean" ? { transportLost: record.transportLost } : {}),
     ...(blockedReason ? { blockedReason } : {}),
     ...(errorType ? { errorType } : {}), ...(errorCode ? { errorCode } : {}),
+    ...(quotaFailure ? { quotaFailure } : {}),
   } : undefined;
+}
+
+function normalizeQuotaFailureEvidence(value: unknown): QuotaFailureEvidence | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const input = value as Record<string, unknown>;
+  if (input.classification !== "quota_exhausted") return undefined;
+  const nativeTurnId = nonEmptyText(input.nativeTurnId);
+  const inputId = nonEmptyText(input.inputId);
+  const providerId = nonEmptyText(input.providerId);
+  const modelId = nonEmptyText(input.modelId);
+  if (!nativeTurnId || !inputId || !providerId || !modelId
+    || [nativeTurnId, inputId, providerId, modelId].some((part) => /[\u0000-\u001f\u007f]/u.test(part) || part.length > 512)) return undefined;
+  const resetAt = input.resetAt === undefined ? undefined : nativeTimestamp(input.resetAt);
+  if (input.resetAt !== undefined && !resetAt) return undefined;
+  return { classification: "quota_exhausted", nativeTurnId, inputId, providerId, modelId, ...(resetAt ? { resetAt } : {}) };
+}
+
+function sameQuotaFailure(left: QuotaFailureEvidence | undefined, right: QuotaFailureEvidence | undefined): boolean {
+  return Boolean(left && right
+    && left.nativeTurnId === right.nativeTurnId
+    && left.inputId === right.inputId
+    && left.providerId === right.providerId
+    && left.modelId === right.modelId);
+}
+
+function quotaModelId(evidence: QuotaFailureEvidence): string | undefined {
+  if (evidence.providerId.toLocaleLowerCase("en-US") !== "omniroute") return undefined;
+  const model = evidence.modelId.replace(/^omniroute\//iu, "");
+  const fullId = `omniroute/${model}`;
+  return model && model.length <= 256 && /^omniroute\/[A-Za-z0-9._-]+\/[^/\\]+(?:\/[^/\\]+)*$/iu.test(fullId)
+    ? fullId : undefined;
+}
+
+function exactTerminalQuotaSnapshot(session: AgentSession | null | undefined, evidence: QuotaFailureEvidence): boolean {
+  const last = nativeLastTurn(session);
+  return Boolean(session && last
+    && (last.status === "failed" || last.status === "error")
+    && last.cancelledByUser !== true
+    && last.turnId === evidence.nativeTurnId
+    && last.inputId === evidence.inputId
+    && sameQuotaFailure(last.quotaFailure, evidence));
+}
+
+function quotaCandidateModels(fallbackModels: readonly string[], currentModel: string): string[] {
+  const seen = new Set<string>([currentModel.toLocaleLowerCase("en-US")]);
+  const candidates: string[] = [];
+  for (const raw of fallbackModels) {
+    const model = typeof raw === "string" ? raw.trim() : "";
+    if (!model || model.length > 256 || /[\u0000-\u0020\u007f]/u.test(model) || !/^omniroute\//iu.test(model)) continue;
+    const key = model.toLocaleLowerCase("en-US");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push(model);
+    if (candidates.length >= 8) break;
+  }
+  candidates.push(currentModel);
+  return candidates;
+}
+
+function quotaBackoffMs(attempts: number): number {
+  return Math.min(5 * 60_000, 30_000 * (2 ** Math.max(0, Math.min(3, attempts - 1))));
+}
+
+function confirmedQuotaFailureText(value: unknown): boolean {
+  return typeof value === "string"
+    && /(?:\b4292056\b|\b2056\b|\b(?:1308|1310|1316|1317|1318|1319|1320|1321)\b|quota[_ -]exhausted|quota exceeded|usage limit exceeded)/iu.test(value);
+}
+
+function quotaNextAttemptAt(evidence: QuotaFailureEvidence, now: Date): Date {
+  const resetAt = evidence.resetAt ? Date.parse(evidence.resetAt) : Number.NaN;
+  if (Number.isFinite(resetAt)) return resetAt > now.getTime() ? new Date(resetAt) : now;
+  return new Date(now.getTime() + quotaBackoffMs(0));
+}
+
+function quotaRecoveryReason(quota: QuotaRecoveryRecord): string {
+  if (quota.state === "waiting") return quota.evidence.resetAt
+    ? "Ожидает срока сброса квоты; затем проверит точную нативную сессию перед продолжением."
+    : "Ожидает ограниченной повторной попытки; неизвестная квота не считается доступной.";
+  if (quota.state === "dispatching" && quota.reasonCode === "delivery_unknown") return "Квитанция отправки пока не подтверждена; повторная отправка запрещена, идёт точная сверка.";
+  if (quota.state === "dispatching") return "Продолжение отправляется; повторная отправка запрещена до сверки нативной квитанции.";
+  if (quota.state === "accepted") return "Нативный ввод принят; ожидается результат этого точного ввода.";
+  if (quota.state === "exhausted" || quota.reasonCode === "candidate_exhausted") return "Запасные модели исчерпаны; автоматическая отправка остановлена.";
+  if (quota.reasonCode === "delivery_unknown") return "Результат доставки неизвестен; автоматическая повторная отправка остановлена.";
+  if (quota.reasonCode === "model_unavailable") return "Выбранная модель недоступна или не подтверждена нативным runtime.";
+  if (quota.reasonCode === "recovery_disabled") return "Автовозобновление квоты отключено для этой сессии.";
+  return "Автоматическое продолжение удержано до безопасной проверки.";
 }
 
 function coldFailureBlockReason(turn: NativeLastTurn): string | undefined {
@@ -223,9 +358,27 @@ export type SessionAutostartHarnessOverride = {
   updatedAt: string;
 };
 
+export type WaitForQuotaSource = "session" | "harness" | "global" | "default";
+
+export type WaitForQuotaHarnessOverride = {
+  harness: HarnessType;
+  waitForQuota: boolean;
+  updatedAt: string;
+};
+
+export type WaitForQuotaSessionOverride = {
+  harness: HarnessType;
+  sessionId: string;
+  cwd: string;
+  waitForQuota: boolean;
+  updatedAt: string;
+};
+
 export type SessionAutostartFile = {
-  version: 7;
+  version: 8;
   enabled: boolean;
+  /** Independent opt-in for exact terminal provider quota recovery. */
+  waitForQuota: boolean;
   /** Keep Codex/ZCode sessions visible while Autocontinue is responsible for them. */
   pinActiveSessions: boolean;
   /** Start a compact replacement after the provider cache window expires. */
@@ -243,6 +396,8 @@ export type SessionAutostartFile = {
   autopilotJudgeModel: string;
   harnesses: SessionAutostartHarnessOverride[];
   sessions: SessionAutostartOverride[];
+  waitForQuotaHarnesses: WaitForQuotaHarnessOverride[];
+  waitForQuotaSessions: WaitForQuotaSessionOverride[];
 };
 
 /** Independent opt-out setting for restart continuation; it does not read autopilot policy. */
@@ -251,32 +406,94 @@ export class SessionAutostartStore {
 
   constructor(private readonly path: string, private readonly env: NodeJS.ProcessEnv = process.env) {}
 
-  async getSettings(): Promise<SessionAutostartFile & { source: "persisted" | "default" }> {
+  async getSettings(): Promise<SessionAutostartFile & { source: "persisted" | "default"; waitForQuotaSource: "global" | "default" }> {
     const loaded = await this.readOptional();
     return loaded
-      ? { ...cloneAutostartFile(loaded), source: "persisted" }
-      : { ...defaultAutostartFile(this.env), source: "default" };
+      ? { ...cloneAutostartFile(loaded), source: "persisted", waitForQuotaSource: "global" }
+      : { ...defaultAutostartFile(this.env), source: "default", waitForQuotaSource: "default" };
   }
 
-  async getEffective(harness: string, sessionId: string, cwd: string): Promise<{ enabled: boolean; source: "session" | "harness" | "global" | "default"; cwd: string; updatedAt?: string }> {
+  async getEffective(harness: string, sessionId: string, cwd: string): Promise<{
+    enabled: boolean;
+    source: "session" | "harness" | "global" | "default";
+    cwd: string;
+    updatedAt?: string;
+    waitForQuota: boolean;
+    waitForQuotaSource: WaitForQuotaSource;
+    waitForQuotaOverride?: boolean;
+  }> {
     const normalizedHarness = harnessType(harness);
     const normalizedCwd = normalize(bounded(cwd, "cwd"));
     const normalizedSessionId = bounded(sessionId, "sessionId");
     const settings = await this.getSettings();
     const aliases = settings.sessions.filter((record) => record.harness === normalizedHarness && record.sessionId === normalizedSessionId);
     const override = resolveSessionOverride(aliases, normalizedCwd);
-    if (override) return { enabled: override.enabled, source: "session", cwd: override.cwd, updatedAt: override.updatedAt };
+    const quota = resolveWaitForQuota(settings, normalizedHarness, normalizedSessionId, normalizedCwd);
+    if (override) return { enabled: override.enabled, source: "session", cwd: override.cwd, updatedAt: override.updatedAt, ...quota };
     const harnessOverride = settings.harnesses.find((record) => record.harness === normalizedHarness);
     return harnessOverride
-      ? { enabled: harnessOverride.enabled, source: "harness", cwd: normalize(bounded(cwd, "cwd")), updatedAt: harnessOverride.updatedAt }
-      : { enabled: settings.enabled, source: settings.source === "persisted" ? "global" : "default", cwd: normalizedCwd };
+      ? { enabled: harnessOverride.enabled, source: "harness", cwd: normalize(bounded(cwd, "cwd")), updatedAt: harnessOverride.updatedAt, ...quota }
+      : { enabled: settings.enabled, source: settings.source === "persisted" ? "global" : "default", cwd: normalizedCwd, ...quota };
+  }
+
+  async setGlobalWaitForQuota(waitForQuota: boolean): Promise<SessionAutostartFile> {
+    if (typeof waitForQuota !== "boolean") throw new Error("waitForQuota must be a boolean");
+    return this.setGlobalOptions({ waitForQuota });
+  }
+
+  async setHarnessWaitForQuota(harness: string, waitForQuota: boolean | null, now = new Date()): Promise<void> {
+    const normalizedHarness = harnessType(harness);
+    if (waitForQuota !== null && typeof waitForQuota !== "boolean") throw new Error("waitForQuota must be a boolean or null");
+    await this.mutate((file) => {
+      const index = file.waitForQuotaHarnesses.findIndex((record) => record.harness === normalizedHarness);
+      if (waitForQuota === null) {
+        if (index >= 0) file.waitForQuotaHarnesses.splice(index, 1);
+        return;
+      }
+      const record = { harness: normalizedHarness, waitForQuota, updatedAt: now.toISOString() };
+      if (index < 0) file.waitForQuotaHarnesses.push(record);
+      else file.waitForQuotaHarnesses[index] = record;
+      file.waitForQuotaHarnesses.sort((left, right) => left.harness.localeCompare(right.harness));
+    });
+  }
+
+  async setSessionWaitForQuota(target: { harness: string; sessionId: string; cwd: string }, waitForQuota: boolean | null, now = new Date()): Promise<void> {
+    const normalized = {
+      harness: harnessType(target.harness),
+      sessionId: bounded(target.sessionId, "sessionId"),
+      cwd: normalize(bounded(target.cwd, "cwd")),
+    };
+    if (waitForQuota !== null && typeof waitForQuota !== "boolean") throw new Error("waitForQuota must be a boolean or null");
+    await this.mutate((file) => {
+      const key = sessionKey(normalized.harness, normalized.sessionId, normalized.cwd);
+      const index = file.waitForQuotaSessions.findIndex((record) => sessionKey(record.harness, record.sessionId, record.cwd) === key);
+      if (waitForQuota === null) {
+        if (index >= 0) file.waitForQuotaSessions.splice(index, 1);
+        return;
+      }
+      const record = { ...normalized, waitForQuota, updatedAt: now.toISOString() };
+      if (index < 0) file.waitForQuotaSessions.push(record);
+      else file.waitForQuotaSessions[index] = record;
+      file.waitForQuotaSessions.sort((left, right) => sessionKey(left.harness, left.sessionId, left.cwd).localeCompare(sessionKey(right.harness, right.sessionId, right.cwd)));
+    });
   }
 
   async setGlobal(enabled: boolean): Promise<SessionAutostartFile> {
-    return this.mutate((file) => { file.enabled = enabled; return cloneAutostartFile(file); });
+    return this.setGlobalOptions({ enabled });
   }
 
-  async setRuntimeSettings(input: { enabled?: boolean; pinActiveSessions?: boolean; inventoryWindowHours: number; evidenceMessageCount: number; judgeModel: string; autopilotJudgeModel: string; rolloverExpiredCache?: boolean; movePinnedOnRollover?: boolean; recoverOnFailure?: boolean; recoverOnDisconnect?: boolean; watchdogEnabled?: boolean; watchdogIntervalSeconds?: number; stalledTurnMinutes?: number }): Promise<SessionAutostartFile> {
+  async setGlobalOptions(input: { enabled?: boolean; waitForQuota?: boolean }): Promise<SessionAutostartFile> {
+    if (input.enabled === undefined && input.waitForQuota === undefined) throw new Error("at least one global setting is required");
+    if (input.enabled !== undefined && typeof input.enabled !== "boolean") throw new Error("enabled must be a boolean");
+    if (input.waitForQuota !== undefined && typeof input.waitForQuota !== "boolean") throw new Error("waitForQuota must be a boolean");
+    return this.mutate((file) => {
+      if (input.enabled !== undefined) file.enabled = input.enabled;
+      if (input.waitForQuota !== undefined) file.waitForQuota = input.waitForQuota;
+      return cloneAutostartFile(file);
+    });
+  }
+
+  async setRuntimeSettings(input: { enabled?: boolean; waitForQuota?: boolean; pinActiveSessions?: boolean; inventoryWindowHours: number; evidenceMessageCount: number; judgeModel: string; autopilotJudgeModel: string; rolloverExpiredCache?: boolean; movePinnedOnRollover?: boolean; recoverOnFailure?: boolean; recoverOnDisconnect?: boolean; watchdogEnabled?: boolean; watchdogIntervalSeconds?: number; stalledTurnMinutes?: number }): Promise<SessionAutostartFile> {
     const inventoryWindowHours = positiveInteger(input.inventoryWindowHours, -1);
     if (inventoryWindowHours < 1 || inventoryWindowHours > 24 * 90) throw new Error("inventoryWindowHours must be an integer from 1 to 2160");
     const evidenceMessageCount = positiveInteger(input.evidenceMessageCount, -1);
@@ -285,6 +502,7 @@ export class SessionAutostartStore {
     const autopilotJudgeModel = boundedText(input.autopilotJudgeModel, "autopilotJudgeModel", 256).trim();
     if (!judgeModel || !autopilotJudgeModel) throw new Error("judge models must not be empty");
     if (input.enabled !== undefined && typeof input.enabled !== "boolean") throw new Error("enabled must be a boolean");
+    if (input.waitForQuota !== undefined && typeof input.waitForQuota !== "boolean") throw new Error("waitForQuota must be a boolean");
     if (input.pinActiveSessions !== undefined && typeof input.pinActiveSessions !== "boolean") throw new Error("pinActiveSessions must be a boolean");
     if (input.rolloverExpiredCache !== undefined && typeof input.rolloverExpiredCache !== "boolean") throw new Error("rolloverExpiredCache must be a boolean");
     if (input.movePinnedOnRollover !== undefined && typeof input.movePinnedOnRollover !== "boolean") throw new Error("movePinnedOnRollover must be a boolean");
@@ -295,6 +513,7 @@ export class SessionAutostartStore {
     const stalledTurnMinutes = boundedInteger(input.stalledTurnMinutes ?? 2, 1, 120, "stalledTurnMinutes");
     return this.mutate((file) => {
       if (input.enabled !== undefined) file.enabled = input.enabled;
+      if (input.waitForQuota !== undefined) file.waitForQuota = input.waitForQuota;
       if (input.pinActiveSessions !== undefined) file.pinActiveSessions = input.pinActiveSessions;
       file.inventoryWindowHours = inventoryWindowHours;
       file.evidenceMessageCount = evidenceMessageCount;
@@ -311,13 +530,24 @@ export class SessionAutostartStore {
     });
   }
 
-  async getHarnessEffective(harness: string): Promise<{ enabled: boolean; source: "harness" | "global" | "default"; updatedAt?: string }> {
+  async getHarnessEffective(harness: string): Promise<{
+    enabled: boolean;
+    source: "harness" | "global" | "default";
+    updatedAt?: string;
+    waitForQuota: boolean;
+    waitForQuotaSource: Exclude<WaitForQuotaSource, "session">;
+    waitForQuotaOverride?: boolean;
+  }> {
     const normalizedHarness = harnessType(harness);
     const settings = await this.getSettings();
     const override = settings.harnesses.find((record) => record.harness === normalizedHarness);
+    const quotaOverride = settings.waitForQuotaHarnesses.find((record) => record.harness === normalizedHarness);
+    const quota = quotaOverride
+      ? { waitForQuota: quotaOverride.waitForQuota, waitForQuotaSource: "harness" as const, waitForQuotaOverride: quotaOverride.waitForQuota }
+      : { waitForQuota: settings.waitForQuota, waitForQuotaSource: settings.waitForQuotaSource };
     return override
-      ? { enabled: override.enabled, source: "harness", updatedAt: override.updatedAt }
-      : { enabled: settings.enabled, source: settings.source === "persisted" ? "global" : "default" };
+      ? { enabled: override.enabled, source: "harness", updatedAt: override.updatedAt, ...quota }
+      : { enabled: settings.enabled, source: settings.source === "persisted" ? "global" : "default", ...quota };
   }
 
   async setHarness(harness: string, enabled: boolean, now = new Date()): Promise<SessionAutostartHarnessOverride> {
@@ -338,9 +568,10 @@ export class SessionAutostartStore {
   async deleteHarness(harness: string): Promise<boolean> {
     return this.mutate((file) => {
       const normalizedHarness = harnessType(harness);
-      const before = file.harnesses.length;
+      const before = file.harnesses.length + file.waitForQuotaHarnesses.length;
       file.harnesses = file.harnesses.filter((record) => record.harness !== normalizedHarness);
-      return file.harnesses.length !== before;
+      file.waitForQuotaHarnesses = file.waitForQuotaHarnesses.filter((record) => record.harness !== normalizedHarness);
+      return file.harnesses.length + file.waitForQuotaHarnesses.length !== before;
     });
   }
 
@@ -366,9 +597,10 @@ export class SessionAutostartStore {
     return this.mutate((file) => {
       const normalizedHarness = harnessType(harness);
       const normalizedSessionId = bounded(sessionId, "sessionId");
-      const before = file.sessions.length;
+      const before = file.sessions.length + file.waitForQuotaSessions.length;
       file.sessions = file.sessions.filter((record) => record.harness !== normalizedHarness || record.sessionId !== normalizedSessionId);
-      return file.sessions.length !== before;
+      file.waitForQuotaSessions = file.waitForQuotaSessions.filter((record) => record.harness !== normalizedHarness || record.sessionId !== normalizedSessionId);
+      return file.sessions.length + file.waitForQuotaSessions.length !== before;
     });
   }
 
@@ -455,12 +687,13 @@ export interface UnfinishedSessionRecord {
   /** Native admission crossed the idempotency boundary and then failed terminally. */
   nonRetryableAdmission?: boolean;
   /** Native proof authorizing same-session crash recovery. Semantic verdicts never set this. */
-  recoveryCause?: "turn.failed" | "process.disconnected" | "stalled";
+  recoveryCause?: "turn.failed" | "process.disconnected" | "stalled" | "quota_exhausted";
   /** Native receipt proves this turn must remain visible but must never be replayed automatically. */
   recoveryBlockedReason?: string;
   recoveryObservedAt?: string;
   recoveryTurnId?: string;
   recoveryInputId?: string;
+  quotaRecovery?: QuotaRecoveryRecord;
   activeNativeOwner?: NativeOwnerProof;
   activeTurnStartedAt?: string;
   activeTurnId?: string;
@@ -585,11 +818,14 @@ export interface UnfinishedSessionNotice {
 /** Durable, process-independent list of autopilot turns that have not completed. */
 export class UnfinishedSessionStore {
   private operation: Promise<unknown> = Promise.resolve();
+  private readonly lockTarget: string;
 
-  constructor(private readonly path: string) {}
+  constructor(private readonly path: string) {
+    this.lockTarget = `${path}.lock`;
+  }
 
   async list(): Promise<UnfinishedSessionRecord[]> {
-    return (await this.read()).sessions.map((record) => ({ ...record }));
+    return (await this.read()).sessions.map(cloneUnfinishedSessionRecord);
   }
 
   async listInventory(): Promise<UnfinishedSessionInventoryRecord[]> {
@@ -675,12 +911,12 @@ export class UnfinishedSessionStore {
     return this.mutate((file) => {
       const beforeSessions = file.sessions.length;
       const beforeInventory = file.inventory?.length ?? 0;
-      file.sessions = file.sessions.filter((record) => isAutocontinueInventoryHarness(record.harness));
+      file.sessions = file.sessions.filter((record) => isAutocontinueInventoryHarness(record.harness) || Boolean(record.quotaRecovery));
       if (file.inventory) {
         const cutoff = inventoryCutoff.getTime();
         file.inventory = file.inventory.filter((record) => {
           const lastActivity = Date.parse(record.lastActivity);
-          return isAutocontinueInventoryHarness(record.harness)
+          return (isAutocontinueInventoryHarness(record.harness) || record.harness === "opencode")
             && Number.isFinite(lastActivity)
             && lastActivity >= cutoff;
         });
@@ -733,6 +969,7 @@ export class UnfinishedSessionStore {
           ...(existing.recoveryTurnId ? { recoveryTurnId: existing.recoveryTurnId } : {}),
           ...(existing.recoveryInputId ? { recoveryInputId: existing.recoveryInputId } : {}),
         } : {}),
+        ...(existing?.quotaRecovery ? { quotaRecovery: cloneQuotaRecovery(existing.quotaRecovery) } : {}),
         ...(existing?.activeNativeOwner ? {activeNativeOwner:existing.activeNativeOwner} : {}),
         ...(existing?.activeTurnStartedAt ? {
           activeTurnStartedAt: existing.activeTurnStartedAt,
@@ -800,6 +1037,223 @@ export class UnfinishedSessionStore {
       record.updatedAt = now.toISOString();
       return { ...record };
     });
+  }
+
+  /** Persist exact terminal quota evidence and an idempotent candidate schedule. */
+  async markQuotaRecoveryEligible(
+    session: AgentSession,
+    rawEvidence: QuotaFailureEvidence,
+    fallbackModels: readonly string[],
+    generationId = "quota-recovery",
+    now = new Date(),
+  ): Promise<UnfinishedSessionRecord> {
+    const evidence = normalizeQuotaFailureEvidence(rawEvidence);
+    const currentModel = evidence ? quotaModelId(evidence) : undefined;
+    if (!evidence || !currentModel || !["opencode", "zcode"].includes(session.harness)) throw new Error("invalid terminal quota recovery evidence");
+    const normalized = normalizeRecordTarget({ harness: harnessType(session.harness), sessionId: session.id, cwd: session.cwd,
+      model: session.model, title: session.title, threadSource: nonEmptyText(session.meta?.threadSource) });
+    const candidates = quotaCandidateModels(fallbackModels, currentModel);
+    const nowIso = now.toISOString();
+    const nextAttemptAt = quotaNextAttemptAt(evidence, now).toISOString();
+    return this.mutate((file) => {
+      const workspaceIdentity = sessionWorkspaceIdentity(session);
+      const key = sessionKey(normalized.harness, session.id, workspaceIdentity);
+      const index = file.sessions.findIndex((record) => unfinishedRecordKey(record) === key);
+      const existing = index < 0 ? undefined : file.sessions[index];
+      if (existing?.quotaRecovery
+        && existing.quotaRecovery.evidence.nativeTurnId === evidence.nativeTurnId
+        && existing.quotaRecovery.evidence.inputId === evidence.inputId) return { ...existing };
+      const quotaRecovery: QuotaRecoveryRecord = {
+        evidence,
+        state: "waiting",
+        nextAttemptAt,
+        candidateModels: candidates,
+        candidateIndex: 0,
+        attempts: 0,
+        revision: (existing?.quotaRecovery?.revision ?? 0) + 1,
+        updatedAt: nowIso,
+        reasonCode: "quota_waiting",
+      };
+      const record: UnfinishedSessionRecord = {
+        ...(existing ?? {
+          ...normalized,
+          workspaceIdentity,
+          startedAt: nowIso,
+          generationId: bounded(generationId, "generationId"),
+          attempts: 0,
+          state: "active" as const,
+        }),
+        ...normalized,
+        workspaceIdentity,
+        updatedAt: nowIso,
+        state: "active",
+        recoveryCause: "quota_exhausted",
+        recoveryObservedAt: nowIso,
+        recoveryTurnId: evidence.nativeTurnId,
+        recoveryInputId: evidence.inputId,
+        quotaRecovery,
+        nextAttemptAt,
+        admissionPhase: existing?.acceptedAt ? "terminal_observed" : existing?.admissionPhase,
+        ...(existing?.acceptedAt ? { terminalReason: "turn.failed" as const, terminalObservedAt: nowIso } : {}),
+      };
+      delete record.activeTurnStartedAt;
+      delete record.activeTurnId;
+      delete record.activeInputId;
+      delete record.recoveryBlockedReason;
+      delete record.lastError;
+      if (index < 0) file.sessions.push(record);
+      else file.sessions[index] = record;
+      sortRecords(file.sessions);
+      return { ...record };
+    });
+  }
+
+  /** Atomically claim one due model attempt across all service processes. */
+  async claimQuotaRecoveryAttempt(snapshot: UnfinishedSessionRecord, selectedModel: string, now = new Date()): Promise<UnfinishedSessionRecord | null> {
+    return this.mutate((file) => {
+      const record = file.sessions.find((item) => unfinishedRecordKey(item) === unfinishedRecordKey(snapshot));
+      const quota = record?.quotaRecovery;
+      if (!record || !quota || quota.state !== "waiting" || quota.revision !== snapshot.quotaRecovery?.revision
+        || Date.parse(quota.nextAttemptAt) > now.getTime() || quota.candidateModels[quota.candidateIndex] !== selectedModel) return null;
+      quota.state = "dispatching";
+      quota.selectedModel = bounded(selectedModel, "selectedModel");
+      quota.dispatchInputId = `herder-quota:${randomUUID()}`;
+      quota.claimedAt = now.toISOString();
+      quota.attempts += 1;
+      quota.revision += 1;
+      quota.updatedAt = now.toISOString();
+      quota.reasonCode = "dispatching";
+      record.state = "recovering";
+      delete record.nextAttemptAt;
+      record.updatedAt = now.toISOString();
+      return { ...record, quotaRecovery: { ...quota, evidence: { ...quota.evidence }, candidateModels: [...quota.candidateModels] } };
+    }, (record) => record !== null);
+  }
+
+  /** Settle a claimed native attempt; accepted/unknown receipts are never requeued. */
+  async settleQuotaRecoveryAttempt(
+    snapshot: UnfinishedSessionRecord,
+    outcome: "accepted" | "unknown" | "quota_pre_admission" | "rejected",
+    receipt: { turnId?: string; nativeInputMessageId?: string } = {},
+    now = new Date(),
+  ): Promise<UnfinishedSessionRecord | null> {
+    return this.mutate((file) => {
+      const record = file.sessions.find((item) => unfinishedRecordKey(item) === unfinishedRecordKey(snapshot));
+      const quota = record?.quotaRecovery;
+      if (!record || !quota || quota.state !== "dispatching" || quota.revision !== snapshot.quotaRecovery?.revision
+        || !quota.dispatchInputId) return null;
+      quota.revision += 1;
+      quota.updatedAt = now.toISOString();
+      delete quota.claimedAt;
+      if (outcome === "accepted") {
+        quota.state = "accepted";
+        quota.reasonCode = undefined;
+        if (receipt.turnId) quota.dispatchTurnId = bounded(receipt.turnId, "dispatchTurnId");
+        if (receipt.nativeInputMessageId) quota.dispatchNativeInputId = bounded(receipt.nativeInputMessageId, "dispatchNativeInputId");
+        record.state = "active";
+        record.acceptedAt = now.toISOString();
+        record.admissionPhase = "accepted_pending";
+        record.terminalRetryCount = 0;
+        delete record.nextAttemptAt;
+      } else if (outcome === "unknown") {
+        quota.state = "held";
+        quota.reasonCode = "delivery_unknown";
+        record.state = "active";
+        delete record.nextAttemptAt;
+      } else if (outcome === "quota_pre_admission") {
+        const next = quota.candidateIndex + 1;
+        delete quota.dispatchInputId;
+        delete quota.dispatchTurnId;
+        if (next >= quota.candidateModels.length) {
+          quota.state = "exhausted";
+          quota.reasonCode = "candidate_exhausted";
+          record.state = "exhausted";
+          delete record.nextAttemptAt;
+        } else {
+          quota.state = "waiting";
+          quota.candidateIndex = next;
+          quota.nextAttemptAt = new Date(now.getTime() + quotaBackoffMs(quota.attempts)).toISOString();
+          quota.reasonCode = "quota_waiting";
+          record.state = "active";
+          record.nextAttemptAt = quota.nextAttemptAt;
+        }
+      } else {
+        quota.state = "held";
+        quota.reasonCode = "model_unavailable";
+        record.state = "active";
+        delete record.nextAttemptAt;
+      }
+      record.updatedAt = now.toISOString();
+      return { ...record, quotaRecovery: { ...quota, evidence: { ...quota.evidence }, candidateModels: [...quota.candidateModels] } };
+    }, (record) => record !== null);
+  }
+
+  async holdQuotaRecovery(snapshot: UnfinishedSessionRecord, reasonCode: QuotaRecoveryRecord["reasonCode"], now = new Date()): Promise<void> {
+    await this.mutate((file) => {
+      const record = file.sessions.find((item) => unfinishedRecordKey(item) === unfinishedRecordKey(snapshot));
+      const quota = record?.quotaRecovery;
+      if (!record || !quota || quota.revision !== snapshot.quotaRecovery?.revision) return false;
+      quota.state = "held";
+      quota.reasonCode = reasonCode ?? "model_unavailable";
+      quota.revision += 1;
+      quota.updatedAt = now.toISOString();
+      record.state = "active";
+      delete record.nextAttemptAt;
+      record.updatedAt = now.toISOString();
+      return true;
+    }, (changed) => changed);
+  }
+
+  /** Mark an aged dispatch as not yet reconciled without fencing its live sender. */
+  async markQuotaDeliveryUnconfirmed(snapshot: UnfinishedSessionRecord, now = new Date()): Promise<void> {
+    await this.mutate((file) => {
+      const record = file.sessions.find((item) => unfinishedRecordKey(item) === unfinishedRecordKey(snapshot));
+      const quota = record?.quotaRecovery;
+      if (!quota || quota.state !== "dispatching" || quota.revision !== snapshot.quotaRecovery?.revision
+        || quota.dispatchInputId !== snapshot.quotaRecovery?.dispatchInputId) return false;
+      quota.reasonCode = "delivery_unknown";
+      quota.updatedAt = now.toISOString();
+      record.updatedAt = now.toISOString();
+      return true;
+    }, Boolean);
+  }
+
+  async clearWaitingQuotaRecovery(snapshot: UnfinishedSessionRecord): Promise<void> {
+    await this.mutate((file) => {
+      const record = file.sessions.find((item) => unfinishedRecordKey(item) === unfinishedRecordKey(snapshot));
+      if (!record?.quotaRecovery || record.quotaRecovery.state !== "waiting"
+        || record.quotaRecovery.revision !== snapshot.quotaRecovery?.revision
+        || !sameQuotaFailure(record.quotaRecovery.evidence, snapshot.quotaRecovery?.evidence)) return false;
+      delete record.quotaRecovery;
+      delete record.recoveryCause;
+      delete record.recoveryTurnId;
+      delete record.recoveryInputId;
+      delete record.recoveryObservedAt;
+      delete record.nextAttemptAt;
+      record.state = "active";
+      record.updatedAt = new Date().toISOString();
+      return true;
+    }, Boolean);
+  }
+
+  async getQuotaRecoveryWaitStatus(harness: string, sessionId: string, cwd: string): Promise<QuotaRecoveryWaitStatus | null> {
+    const normalizedHarness = harnessType(harness);
+    if (normalizedHarness !== "opencode" && normalizedHarness !== "zcode") return null;
+    const record = findUnfinishedRecord(await this.read().then((file) => file.sessions), normalizedHarness, sessionId, cwd);
+    const quota = record?.quotaRecovery;
+    if (!record || !quota) return null;
+    return {
+      harness: normalizedHarness,
+      sessionId: record.sessionId,
+      cwd: record.cwd,
+      state: quota.state,
+      reason: quotaRecoveryReason(quota),
+      nextAttemptAt: quota.nextAttemptAt,
+      ...(quota.evidence.resetAt ? { resetAt: quota.evidence.resetAt } : {}),
+      currentModel: quotaModelId(quota.evidence) ?? quota.evidence.modelId,
+      ...(quota.selectedModel ? { selectedModel: quota.selectedModel } : {}),
+      attempts: quota.attempts,
+    };
   }
 
   async ingestColdFailure(
@@ -1246,13 +1700,22 @@ export class UnfinishedSessionStore {
     this.operation = new Promise<void>((resolve) => { release = resolve; });
     await previous;
     try {
-      const file = await this.read();
-      const result = await operation(file);
-      if (shouldWrite(result)) {
-        await mkdir(dirname(this.path), { recursive: true });
-        await atomicWrite(this.path, file);
+      await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
+      await writeFile(this.lockTarget, "", { flag: "a", mode: 0o600 });
+      const release = await lockfile.lock(this.lockTarget, {
+        realpath: false,
+        stale: 30_000,
+        update: 10_000,
+        retries: { retries: 30, minTimeout: 25, maxTimeout: 100, factor: 1.5, randomize: true },
+      });
+      try {
+        const file = await this.read();
+        const result = await operation(file);
+        if (shouldWrite(result)) await atomicWrite(this.path, file);
+        return result;
+      } finally {
+        await release();
       }
-      return result;
     } finally {
       release();
     }
@@ -1263,6 +1726,7 @@ export interface UnfinishedSessionLauncherOptions {
   adapters: Map<string, HarnessAdapter>;
   store: UnfinishedSessionStore;
   settingsStore: SessionAutostartStore;
+  fallbackModelsForHarness?: (harness: "opencode" | "zcode") => Promise<string[]>;
   /** Rechecks owning fleet authorization before any automatic native work. */
   admissionGate?: RecoveryAdmissionGate;
   maxAttempts?: number;
@@ -1442,7 +1906,7 @@ export class UnfinishedSessionLauncher {
   }
 
   private async handleEventSerialized(provider: string, event: HarnessEvent, eventGeneration: number, providerGeneration = this.providerTurnGenerations.get(provider) ?? 0): Promise<void> {
-    if (!isAutocontinueInventoryHarness(provider)) return;
+    if (!isAutocontinueInventoryHarness(provider) && !(provider === "opencode" && (event.kind === "turn.started" || event.kind === "turn.failed" || event.kind === "turn.completed"))) return;
     if (!event.sessionId) {
       // A controller-wide transport exit can arrive after its per-session
       // event cache was lost. Use only already persisted active identities;
@@ -1506,6 +1970,25 @@ export class UnfinishedSessionLauncher {
       this.activeNativeTurns.delete(eventKey);
       if (!activeIdentity || (event.kind === "turn.failed" && !sameNativeRecoveryIdentity(activeIdentity, identity))) return;
       const settings = await this.options.settingsStore.getSettings();
+      const quotaEvidence = event.kind === "turn.failed" ? normalizeQuotaFailureEvidence(event.data?.quotaFailure) : undefined;
+      if (quotaEvidence) {
+        const eventMatches = identity.turnId === quotaEvidence.nativeTurnId && identity.inputId === quotaEvidence.inputId
+          && activeIdentity.turnId === quotaEvidence.nativeTurnId && activeIdentity.inputId === quotaEvidence.inputId;
+        if (!eventMatches || !quotaModelId(quotaEvidence) || !settings.recoverOnFailure || !this.options.fallbackModelsForHarness) return;
+        let session: AgentSession | null | undefined;
+        try { session = await this.options.adapters.get(provider)?.getSession(event.sessionId); } catch { return; }
+        if (!session || session.id !== event.sessionId || session.harness !== provider
+          || !exactTerminalQuotaSnapshot(session, quotaEvidence) || isSubagentSession(session)
+          || session.needsPermission || session.status === "needs_input"
+          || await this.suppressIfHumanStopped(provider, event.sessionId, session.cwd, session)) return;
+        const effective = await this.options.settingsStore.getEffective(provider, session.id, session.cwd);
+        if (!effective.enabled || !effective.waitForQuota || !await this.mayWorkOnSession(provider, session.id, session.cwd)) return;
+        const fallbackModels = await this.options.fallbackModelsForHarness(provider as "opencode" | "zcode");
+        await this.options.store.markQuotaRecoveryEligible(session, quotaEvidence, fallbackModels, this.generationId);
+        this.queueUrgentSession(sessionSourceKey(session));
+        this.scheduleUrgentRecovery(0);
+        return;
+      }
       if ((event.kind === "turn.failed" && !settings.recoverOnFailure)
         || (event.kind === "process.disconnected" && !settings.recoverOnDisconnect)) return;
       const adapter = this.options.adapters.get(provider);
@@ -1547,6 +2030,16 @@ export class UnfinishedSessionLauncher {
       const startedFence = nativeTurnFenceKey(provider, event.sessionId, identity);
       if (startedFence) this.eagerCompletions.delete(startedFence);
       this.activeNativeTurns.set(eventKey, identity);
+      const quotaSnapshot = (await this.options.store.list()).find((record) => record.harness === provider
+        && record.sessionId === event.sessionId && normalize(record.workspaceIdentity || record.cwd) === normalize(session.cwd));
+      if (quotaSnapshot?.quotaRecovery?.state === "dispatching"
+        && (identity.inputId === quotaSnapshot.quotaRecovery.dispatchInputId
+          || identity.inputId === quotaSnapshot.quotaRecovery.dispatchNativeInputId)) {
+        await this.options.store.settleQuotaRecoveryAttempt(quotaSnapshot, "accepted", { ...(identity.turnId ? { turnId: identity.turnId } : {}) });
+      } else if (quotaSnapshot?.quotaRecovery?.state === "waiting"
+        && (identity.turnId !== quotaSnapshot.quotaRecovery.evidence.nativeTurnId || identity.inputId !== quotaSnapshot.quotaRecovery.evidence.inputId)) {
+        await this.options.store.clearWaitingQuotaRecovery(quotaSnapshot);
+      }
       await this.options.store.markNativeTurnStarted(session, identity, this.generationId);
       this.watchdogObservations.delete(sessionSourceKey(session));
       const progressed = await this.options.store.markAdmissionInProgress(
@@ -1642,6 +2135,21 @@ export class UnfinishedSessionLauncher {
     if (!isSupportedHarness(harness)) return;
     this.completedSessions.add(sessionKey(harness, sessionId));
     await this.options.store.remove(harness, sessionId);
+  }
+
+  async getQuotaRecoveryWaitStatus(harness: string, sessionId: string, cwd: string): Promise<QuotaRecoveryWaitStatus | null> {
+    return this.options.store.getQuotaRecoveryWaitStatus(harness, sessionId, cwd);
+  }
+
+  async reconcileQuotaRecoverySettings(): Promise<void> {
+    const runtime = await this.options.settingsStore.getSettings();
+    for (const record of await this.options.store.list()) {
+      if (!record.quotaRecovery || record.quotaRecovery.state !== "waiting") continue;
+      const effective = await this.options.settingsStore.getEffective(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
+      if (!effective.enabled || !effective.waitForQuota || !runtime.recoverOnFailure) {
+        await this.options.store.clearWaitingQuotaRecovery(record);
+      }
+    }
   }
 
   private async suppressIfHumanStopped(harness: string, sessionId: string, cwd?: string, session?: AgentSession | null): Promise<boolean> {
@@ -1915,14 +2423,18 @@ export class UnfinishedSessionLauncher {
     this.retryTimer = undefined;
     let pending: UnfinishedSessionRecord[] = [];
     try {
-      pending = (await this.options.store.list()).filter((record) => record.state !== "exhausted" && record.nextAttemptAt);
+      pending = (await this.options.store.list()).filter((record) => record.quotaRecovery
+        ? record.quotaRecovery.state === "waiting" || record.quotaRecovery.state === "dispatching"
+        : record.state !== "exhausted" && Boolean(record.nextAttemptAt));
     } catch (error) {
       console.error(`[agent-herder] не удалось прочитать реестр перед следующей сверкой: ${errorText(error)}`);
     }
     const now = Date.now();
     const retryDelay = pending.length === 0
       ? this.reconcileIntervalMs
-      : Math.max(1, Math.min(...pending.map((record) => record.nextAttemptAt ? Date.parse(record.nextAttemptAt) - now : 0)));
+      : Math.max(1, Math.min(...pending.map((record) => record.quotaRecovery?.state === "dispatching"
+        ? this.reconcileIntervalMs
+        : record.nextAttemptAt ? Date.parse(record.nextAttemptAt) - now : this.reconcileIntervalMs)));
     const delay = Math.max(1, Math.min(this.reconcileIntervalMs, retryDelay));
     if (!this.started) return;
     this.retryTimer = setTimeout(() => {
@@ -1958,6 +2470,8 @@ export class UnfinishedSessionLauncher {
     }
     await this.ingestColdZcodeFailures(runtimeSettings, lifecycleEpoch);
     if (!this.lifecycleActive(lifecycleEpoch)) return;
+    await this.reconcileQuotaRecoveryStartup(lifecycleEpoch);
+    if (!this.lifecycleActive(lifecycleEpoch)) return;
     // Crash recovery consumes only durable native evidence. Semantic inventory
     // has a separate explicit audit path and is never scanned from this loop.
     // Deliberately sequential: a restart must not multiply the host's agent workload.
@@ -1969,6 +2483,10 @@ export class UnfinishedSessionLauncher {
     for (const snapshot of records) {
       let record = snapshot;
       if (!this.lifecycleActive(lifecycleEpoch)) break;
+      if (record.quotaRecovery) {
+        await this.processQuotaRecovery(record, lifecycleEpoch);
+        continue;
+      }
       if (!isAutocontinueInventoryHarness(record.harness)) continue;
       const recordKey = unfinishedRecordKey(record);
       let recoveryFence = nativeTurnFenceKey(record.harness, record.sessionId, { turnId: record.recoveryTurnId, inputId: record.recoveryInputId });
@@ -2147,6 +2665,163 @@ export class UnfinishedSessionLauncher {
     }
     await Promise.all(launches);
     if (!this.lifecycleActive(lifecycleEpoch)) return;
+  }
+
+  private async reconcileQuotaRecoveryStartup(epoch: number): Promise<void> {
+    if (!this.options.fallbackModelsForHarness) return;
+    const runtime = await this.options.settingsStore.getSettings();
+    if (!runtime.recoverOnFailure) return;
+    for (const harness of ["opencode", "zcode"] as const) {
+      const hasOptIn = runtime.waitForQuota
+        || runtime.waitForQuotaHarnesses.some((record) => record.harness === harness && record.waitForQuota)
+        || runtime.waitForQuotaSessions.some((record) => record.harness === harness && record.waitForQuota);
+      if (!hasOptIn) continue;
+      const adapter = this.options.adapters.get(harness);
+      if (!adapter?.listSessions || !adapter.getSession) continue;
+      let sessions: AgentSession[];
+      try { sessions = await adapter.listSessions(); } catch { continue; }
+      for (const listed of sessions) {
+        if (!this.lifecycleActive(epoch) || listed.harness !== harness || isSubagentSession(listed)) continue;
+        const effective = await this.options.settingsStore.getEffective(harness, listed.id, listed.cwd);
+        if (!effective.enabled || !effective.waitForQuota || !await this.mayWorkOnSession(harness, listed.id, listed.cwd)) continue;
+        let fresh: AgentSession | null;
+        try { fresh = await adapter.getSession(listed.id); } catch { continue; }
+        const evidence = nativeLastTurn(fresh)?.quotaFailure;
+        if (!evidence || !quotaModelId(evidence) || !exactTerminalQuotaSnapshot(fresh, evidence) || fresh?.needsPermission
+          || fresh?.status === "needs_input" || await this.suppressIfHumanStopped(harness, listed.id, listed.cwd, fresh)) continue;
+        const fallbacks = await this.options.fallbackModelsForHarness(harness);
+        await this.options.store.markQuotaRecoveryEligible(fresh!, evidence, fallbacks, this.generationId);
+      }
+    }
+  }
+
+  private async processQuotaRecovery(snapshot: UnfinishedSessionRecord, epoch: number): Promise<void> {
+    const quota = snapshot.quotaRecovery;
+    if (!quota || snapshot.harness !== "opencode" && snapshot.harness !== "zcode") return;
+    const harness = snapshot.harness;
+    if (quota.state === "dispatching") {
+      const claimedAt = quota.claimedAt ? Date.parse(quota.claimedAt) : Number.NaN;
+      if (!Number.isFinite(claimedAt) || Date.now() - claimedAt < QUOTA_DISPATCH_CLAIM_LEASE_MS) return;
+      const adapter = this.options.adapters.get(harness);
+      if (!quota.dispatchInputId) return;
+      if (!adapter?.getMessageAdmission) {
+        await this.options.store.markQuotaDeliveryUnconfirmed(snapshot);
+        return;
+      }
+      let receipt;
+      try { receipt = await adapter.getMessageAdmission(snapshot.sessionId, quota.dispatchInputId, snapshot.cwd); }
+      catch { return; }
+      if (receipt.state === "admitted") await this.options.store.settleQuotaRecoveryAttempt(snapshot, "accepted", {
+        ...(typeof (receipt as typeof receipt & { nativeInputMessageId?: unknown }).nativeInputMessageId === "string"
+          ? { nativeInputMessageId: (receipt as typeof receipt & { nativeInputMessageId: string }).nativeInputMessageId } : {}),
+      });
+      else await this.options.store.markQuotaDeliveryUnconfirmed(snapshot);
+      return;
+    }
+    if (quota.state !== "waiting") return;
+    const enabled = async (): Promise<boolean> => {
+      const [effective, runtime] = await Promise.all([
+        this.options.settingsStore.getEffective(harness, snapshot.sessionId, snapshot.workspaceIdentity || snapshot.cwd),
+        this.options.settingsStore.getSettings(),
+      ]);
+      return effective.enabled && effective.waitForQuota && runtime.recoverOnFailure;
+    };
+    if (!await enabled()) {
+      await this.options.store.clearWaitingQuotaRecovery(snapshot);
+      return;
+    }
+    if (Date.parse(quota.nextAttemptAt) > Date.now()) return;
+    const adapter = this.options.adapters.get(harness);
+    if (!adapter?.getSession || !adapter.changeModel || !adapter.listModels || !this.options.fallbackModelsForHarness) return;
+    if (!this.lifecycleActive(epoch) || await this.pendingQuestionBlocks(harness, snapshot.sessionId, snapshot.cwd)) return;
+    let session: AgentSession | null;
+    try { session = await adapter.getSession(snapshot.sessionId); } catch { return; }
+    if (!session) return;
+    const observedLast = nativeLastTurn(session);
+    const workspaceChanged = session.harness !== harness || normalize(session.cwd) !== normalize(snapshot.workspaceIdentity || snapshot.cwd);
+    const newTurnObserved = session.status === "running"
+      || Boolean(observedLast?.turnId && observedLast.turnId !== quota.evidence.nativeTurnId)
+      || Boolean(observedLast?.inputId && observedLast.inputId !== quota.evidence.inputId);
+    if (workspaceChanged || newTurnObserved) {
+      await this.options.store.clearWaitingQuotaRecovery(snapshot);
+      return;
+    }
+    if (session.needsPermission || session.status === "needs_input" || !exactTerminalQuotaSnapshot(session, quota.evidence)) return;
+    if (await this.suppressIfHumanStopped(harness, session.id, session.cwd, session)
+      || !await this.admissionAllowed(session, "resume")) return;
+    const models = await adapter.listModels();
+    if (!models.includes(quota.candidateModels[quota.candidateIndex]!)) {
+      await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
+      return;
+    }
+    const selectedModel = quota.candidateModels[quota.candidateIndex]!;
+    if (session.model !== selectedModel) {
+      const changed = await adapter.changeModel(session.id, selectedModel);
+      if (!changed.ok) {
+        await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
+        return;
+      }
+    }
+    let verified: AgentSession | null;
+    try { verified = await adapter.getSession(snapshot.sessionId); } catch { return; }
+    const verifiedLast = nativeLastTurn(verified);
+    if (verified && (verified.status === "running"
+      || Boolean(verifiedLast?.turnId && verifiedLast.turnId !== quota.evidence.nativeTurnId)
+      || Boolean(verifiedLast?.inputId && verifiedLast.inputId !== quota.evidence.inputId))) {
+      await this.options.store.clearWaitingQuotaRecovery(snapshot);
+      return;
+    }
+    if (!verified || verified.model !== selectedModel || !exactTerminalQuotaSnapshot(verified, quota.evidence)
+      || verified.needsPermission
+      || await this.suppressIfHumanStopped(harness, verified.id, verified.cwd, verified)
+      || !await enabled() || await this.pendingQuestionBlocks(harness, verified.id, verified.cwd)
+      || !this.lifecycleActive(epoch) || !await this.admissionAllowed(verified, "resume")) return;
+    const last = nativeLastTurn(verified);
+    if (!last?.userMessageId || !last.completedAt) {
+      await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
+      return;
+    }
+    const claimed = await this.options.store.claimQuotaRecoveryAttempt(snapshot, selectedModel);
+    const claimedQuota = claimed?.quotaRecovery;
+    if (!claimed || !claimedQuota?.dispatchInputId) return;
+    // Claim is durable before send. Re-read all mutable gates after the claim;
+    // any uncertainty becomes held and can only be reconciled by receipt.
+    let current: AgentSession | null;
+    try { current = await adapter.getSession(snapshot.sessionId); } catch { current = null; }
+    if (!current || current.model !== selectedModel || !exactTerminalQuotaSnapshot(current, quota.evidence)
+      || current.status === "running" || current.needsPermission
+      || !await enabled() || await this.suppressIfHumanStopped(harness, snapshot.sessionId, snapshot.cwd, current)
+      || await this.pendingQuestionBlocks(harness, snapshot.sessionId, snapshot.cwd)
+      || !this.lifecycleActive(epoch) || !await this.admissionAllowed(current, "resume")) {
+      await this.options.store.holdQuotaRecovery(claimed, "recovery_disabled");
+      return;
+    }
+    let result;
+    try {
+      result = await adapter.sendMessage(snapshot.sessionId, {
+        message: this.continuationMessage,
+        queue: true,
+        model: selectedModel,
+        inputId: claimedQuota.dispatchInputId,
+        origin: "automation",
+        recoveryBoundary: { turnId: quota.evidence.nativeTurnId, userMessageId: last.userMessageId, completedAt: Date.parse(last.completedAt) },
+      });
+    } catch {
+      await this.options.store.settleQuotaRecoveryAttempt(claimed, "unknown");
+      return;
+    }
+    if (result.admitted || result.pending) {
+      await this.options.store.settleQuotaRecoveryAttempt(claimed, "accepted", {
+        ...(result.turnId ? { turnId: result.turnId } : {}),
+        ...(result.nativeInputMessageId ? { nativeInputMessageId: result.nativeInputMessageId } : {}),
+      });
+    } else if (result.admissionUnknown || result.nonRetryable || (!result.notSubmitted && result.ok)) {
+      await this.options.store.settleQuotaRecoveryAttempt(claimed, "unknown");
+    } else if (confirmedQuotaFailureText(result.error)) {
+      await this.options.store.settleQuotaRecoveryAttempt(claimed, "quota_pre_admission");
+    } else {
+      await this.options.store.settleQuotaRecoveryAttempt(claimed, "rejected");
+    }
   }
 
   private async reconcileSurvivingCodexTurn(record: UnfinishedSessionRecord, epoch: number): Promise<void> {
@@ -3963,25 +4638,29 @@ export class UnfinishedSessionLauncher {
 function parseAutostartFile(value: unknown, env: NodeJS.ProcessEnv = process.env): SessionAutostartFile {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("session autostart settings must be an object");
   const object = value as Record<string, unknown>;
-  if ((object.version !== 1 && object.version !== 2 && object.version !== 3 && object.version !== 4 && object.version !== 5 && object.version !== 6 && object.version !== 7) || typeof object.enabled !== "boolean" || !Array.isArray(object.sessions)) throw new Error("invalid session autostart settings");
-  const harnesses = object.version === 2 || object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 || object.version === 7 ? object.harnesses : [];
+  if ((object.version !== 1 && object.version !== 2 && object.version !== 3 && object.version !== 4 && object.version !== 5 && object.version !== 6 && object.version !== 7 && object.version !== 8) || typeof object.enabled !== "boolean" || !Array.isArray(object.sessions)) throw new Error("invalid session autostart settings");
+  const harnesses = object.version >= 2 ? object.harnesses : [];
   if (!Array.isArray(harnesses)) throw new Error("invalid session autostart harness overrides");
+  const waitForQuotaHarnesses = object.version === 8 ? (object.waitForQuotaHarnesses ?? []) : [];
+  const waitForQuotaSessions = object.version === 8 ? (object.waitForQuotaSessions ?? []) : [];
+  if (!Array.isArray(waitForQuotaHarnesses) || !Array.isArray(waitForQuotaSessions)) throw new Error("invalid waitForQuota overrides");
   const defaults = defaultAutostartFile(env);
   return {
-    version: 7,
+    version: 8,
     enabled: object.enabled,
-    pinActiveSessions: object.version === 7 && object.pinActiveSessions !== undefined ? booleanSetting(object.pinActiveSessions, "pinActiveSessions") : defaults.pinActiveSessions,
-    rolloverExpiredCache: object.version === 4 || object.version === 5 || object.version === 6 || object.version === 7 ? booleanSetting(object.rolloverExpiredCache, "rolloverExpiredCache") : defaults.rolloverExpiredCache,
-    movePinnedOnRollover: object.version === 5 || object.version === 6 || object.version === 7 ? booleanSetting(object.movePinnedOnRollover, "movePinnedOnRollover") : defaults.movePinnedOnRollover,
-    inventoryWindowHours: object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 || object.version === 7 ? runtimeHours(object.inventoryWindowHours) : defaults.inventoryWindowHours,
-    evidenceMessageCount: (object.version === 6 || object.version === 7) && object.evidenceMessageCount !== undefined ? evidenceCount(object.evidenceMessageCount) : defaults.evidenceMessageCount,
+    waitForQuota: object.version === 8 && object.waitForQuota !== undefined ? booleanSetting(object.waitForQuota, "waitForQuota") : false,
+    pinActiveSessions: object.version === 8 && object.pinActiveSessions !== undefined ? booleanSetting(object.pinActiveSessions, "pinActiveSessions") : defaults.pinActiveSessions,
+    rolloverExpiredCache: object.version >= 4 ? booleanSetting(object.rolloverExpiredCache, "rolloverExpiredCache") : defaults.rolloverExpiredCache,
+    movePinnedOnRollover: object.version >= 5 ? booleanSetting(object.movePinnedOnRollover, "movePinnedOnRollover") : defaults.movePinnedOnRollover,
+    inventoryWindowHours: object.version >= 3 ? runtimeHours(object.inventoryWindowHours) : defaults.inventoryWindowHours,
+    evidenceMessageCount: object.version >= 6 && object.evidenceMessageCount !== undefined ? evidenceCount(object.evidenceMessageCount) : defaults.evidenceMessageCount,
     recoverOnFailure: object.recoverOnFailure === undefined ? defaults.recoverOnFailure : booleanSetting(object.recoverOnFailure, "recoverOnFailure"),
     recoverOnDisconnect: object.recoverOnDisconnect === undefined ? defaults.recoverOnDisconnect : booleanSetting(object.recoverOnDisconnect, "recoverOnDisconnect"),
-    watchdogEnabled: (object.version === 6 || object.version === 7) && object.watchdogEnabled !== undefined ? booleanSetting(object.watchdogEnabled, "watchdogEnabled") : defaults.watchdogEnabled,
-    watchdogIntervalSeconds: (object.version === 6 || object.version === 7) && object.watchdogIntervalSeconds !== undefined ? boundedInteger(object.watchdogIntervalSeconds, 5, 300, "watchdogIntervalSeconds") : defaults.watchdogIntervalSeconds,
-    stalledTurnMinutes: (object.version === 6 || object.version === 7) && object.stalledTurnMinutes !== undefined ? boundedInteger(object.stalledTurnMinutes, 1, 120, "stalledTurnMinutes") : defaults.stalledTurnMinutes,
-    judgeModel: object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 || object.version === 7 ? runtimeModel(object.judgeModel, "judgeModel") : defaults.judgeModel,
-    autopilotJudgeModel: object.version === 3 || object.version === 4 || object.version === 5 || object.version === 6 || object.version === 7 ? runtimeModel(object.autopilotJudgeModel, "autopilotJudgeModel") : defaults.autopilotJudgeModel,
+    watchdogEnabled: object.version >= 6 && object.watchdogEnabled !== undefined ? booleanSetting(object.watchdogEnabled, "watchdogEnabled") : defaults.watchdogEnabled,
+    watchdogIntervalSeconds: object.version >= 6 && object.watchdogIntervalSeconds !== undefined ? boundedInteger(object.watchdogIntervalSeconds, 5, 300, "watchdogIntervalSeconds") : defaults.watchdogIntervalSeconds,
+    stalledTurnMinutes: object.version >= 6 && object.stalledTurnMinutes !== undefined ? boundedInteger(object.stalledTurnMinutes, 1, 120, "stalledTurnMinutes") : defaults.stalledTurnMinutes,
+    judgeModel: object.version >= 3 ? runtimeModel(object.judgeModel, "judgeModel") : defaults.judgeModel,
+    autopilotJudgeModel: object.version >= 3 ? runtimeModel(object.autopilotJudgeModel, "autopilotJudgeModel") : defaults.autopilotJudgeModel,
     harnesses: harnesses.map((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid session autostart harness override");
       const record = value as Record<string, unknown>;
@@ -4004,13 +4683,25 @@ function parseAutostartFile(value: unknown, env: NodeJS.ProcessEnv = process.env
         updatedAt: isoDate(record.updatedAt, "updatedAt"),
       };
     }),
+    waitForQuotaHarnesses: waitForQuotaHarnesses.map((value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid waitForQuota harness override");
+      const record = value as Record<string, unknown>;
+      return { harness: harnessType(record.harness), waitForQuota: booleanSetting(record.waitForQuota, "waitForQuota"), updatedAt: isoDate(record.updatedAt, "updatedAt") };
+    }),
+    waitForQuotaSessions: waitForQuotaSessions.map((value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid waitForQuota session override");
+      const record = value as Record<string, unknown>;
+      return { harness: harnessType(record.harness), sessionId: bounded(record.sessionId, "sessionId"), cwd: normalize(bounded(record.cwd, "cwd")),
+        waitForQuota: booleanSetting(record.waitForQuota, "waitForQuota"), updatedAt: isoDate(record.updatedAt, "updatedAt") };
+    }),
   };
 }
 
 function defaultAutostartFile(env: NodeJS.ProcessEnv): SessionAutostartFile {
   return {
-    version: 7,
+    version: 8,
     enabled: env.AGENT_HERDER_UNFINISHED_AUTOSTART !== "false",
+    waitForQuota: false,
     pinActiveSessions: env.AGENT_HERDER_UNFINISHED_PIN_ACTIVE_SESSIONS !== "false",
     rolloverExpiredCache: false,
     movePinnedOnRollover: false,
@@ -4025,6 +4716,8 @@ function defaultAutostartFile(env: NodeJS.ProcessEnv): SessionAutostartFile {
     autopilotJudgeModel: env.AGENT_HERDER_AUTOPILOT_JUDGE_MODEL?.trim() || "MiniMax-M3",
     harnesses: [],
     sessions: [],
+    waitForQuotaHarnesses: [],
+    waitForQuotaSessions: [],
   };
 }
 
@@ -4056,7 +4749,22 @@ function cloneAutostartFile(file: SessionAutostartFile): SessionAutostartFile {
     ...file,
     harnesses: file.harnesses.map((record) => ({ ...record })),
     sessions: file.sessions.map((record) => ({ ...record })),
+    waitForQuotaHarnesses: file.waitForQuotaHarnesses.map((record) => ({ ...record })),
+    waitForQuotaSessions: file.waitForQuotaSessions.map((record) => ({ ...record })),
   };
+}
+
+function resolveWaitForQuota(
+  settings: SessionAutostartFile & { source?: "persisted" | "default" },
+  harness: HarnessType,
+  sessionId: string,
+  cwd: string,
+): { waitForQuota: boolean; waitForQuotaSource: WaitForQuotaSource; waitForQuotaOverride?: boolean } {
+  const session = settings.waitForQuotaSessions.find((record) => sessionKey(record.harness, record.sessionId, record.cwd) === sessionKey(harness, sessionId, cwd));
+  if (session) return { waitForQuota: session.waitForQuota, waitForQuotaSource: "session", waitForQuotaOverride: session.waitForQuota };
+  const byHarness = settings.waitForQuotaHarnesses.find((record) => record.harness === harness);
+  if (byHarness) return { waitForQuota: byHarness.waitForQuota, waitForQuotaSource: "harness", waitForQuotaOverride: byHarness.waitForQuota };
+  return { waitForQuota: settings.waitForQuota, waitForQuotaSource: settings.source === "persisted" ? "global" : "default" };
 }
 
 function parseFile(value: unknown): UnfinishedSessionFile {
@@ -4478,8 +5186,9 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
     ...(record.terminalRetryCount === undefined ? {} : { terminalRetryCount: nonNegativeInteger(record.terminalRetryCount, 0) }),
     ...(record.terminalAssistantObserved === true ? { terminalAssistantObserved: true } : {}),
     ...(record.nonRetryableAdmission === true ? { nonRetryableAdmission: true } : {}),
-    ...(record.recoveryCause === "turn.failed" || record.recoveryCause === "process.disconnected" || record.recoveryCause === "stalled"
+    ...(record.recoveryCause === "turn.failed" || record.recoveryCause === "process.disconnected" || record.recoveryCause === "stalled" || record.recoveryCause === "quota_exhausted"
       ? { recoveryCause: record.recoveryCause } : {}),
+    ...(parseQuotaRecovery(record.quotaRecovery) ? { quotaRecovery: parseQuotaRecovery(record.quotaRecovery)! } : {}),
     ...(record.recoveryBlockedReason ? { recoveryBlockedReason: bounded(record.recoveryBlockedReason, "recoveryBlockedReason") } : {}),
     ...(record.recoveryObservedAt ? { recoveryObservedAt: isoDate(record.recoveryObservedAt, "recoveryObservedAt") } : {}),
     ...(record.recoveryTurnId ? { recoveryTurnId: bounded(record.recoveryTurnId, "recoveryTurnId") } : {}),
@@ -4495,6 +5204,45 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
     ...(record.lastError ? { lastError: bounded(record.lastError, "lastError") } : {}),
     ...(record.notifiedAt ? { notifiedAt: isoDate(record.notifiedAt, "notifiedAt") } : {}),
   };
+}
+
+function parseQuotaRecovery(value: unknown): QuotaRecoveryRecord | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const evidence = normalizeQuotaFailureEvidence(record.evidence);
+  if (!evidence || !["waiting", "dispatching", "accepted", "held", "exhausted"].includes(String(record.state))) return undefined;
+  if (!Array.isArray(record.candidateModels) || !record.candidateModels.length || record.candidateModels.length > 9
+    || !record.candidateModels.every((item) => typeof item === "string" && item.startsWith("omniroute/"))) return undefined;
+  const candidateIndex = nonNegativeInteger(record.candidateIndex, -1);
+  const attempts = nonNegativeInteger(record.attempts, -1);
+  const revision = positiveInteger(record.revision, -1);
+  if (candidateIndex < 0 || candidateIndex >= record.candidateModels.length || attempts < 0 || revision < 1) return undefined;
+  const reasonCode = ["quota_waiting", "quota_probe_due", "dispatching", "delivery_unknown", "model_unavailable", "candidate_exhausted", "recovery_disabled"].includes(String(record.reasonCode))
+    ? record.reasonCode as QuotaRecoveryRecord["reasonCode"] : undefined;
+  return {
+    evidence,
+    state: record.state as QuotaRecoveryState,
+    nextAttemptAt: isoDate(record.nextAttemptAt, "quotaRecovery.nextAttemptAt"),
+    candidateModels: record.candidateModels.map((item) => bounded(item as string, "quotaRecovery.candidateModel")),
+    candidateIndex,
+    attempts,
+    revision,
+    ...(typeof record.selectedModel === "string" ? { selectedModel: bounded(record.selectedModel, "quotaRecovery.selectedModel") } : {}),
+    ...(typeof record.dispatchInputId === "string" ? { dispatchInputId: bounded(record.dispatchInputId, "quotaRecovery.dispatchInputId") } : {}),
+    ...(typeof record.dispatchNativeInputId === "string" ? { dispatchNativeInputId: bounded(record.dispatchNativeInputId, "quotaRecovery.dispatchNativeInputId") } : {}),
+    ...(typeof record.dispatchTurnId === "string" ? { dispatchTurnId: bounded(record.dispatchTurnId, "quotaRecovery.dispatchTurnId") } : {}),
+    ...(typeof record.claimedAt === "string" ? { claimedAt: isoDate(record.claimedAt, "quotaRecovery.claimedAt") } : {}),
+    updatedAt: isoDate(record.updatedAt, "quotaRecovery.updatedAt"),
+    ...(reasonCode ? { reasonCode } : {}),
+  };
+}
+
+function cloneQuotaRecovery(record: QuotaRecoveryRecord): QuotaRecoveryRecord {
+  return { ...record, evidence: { ...record.evidence }, candidateModels: [...record.candidateModels] };
+}
+
+function cloneUnfinishedSessionRecord(record: UnfinishedSessionRecord): UnfinishedSessionRecord {
+  return { ...record, ...(record.quotaRecovery ? { quotaRecovery: cloneQuotaRecovery(record.quotaRecovery) } : {}) };
 }
 
 function normalizeRecordTarget(input: { harness: HarnessType; sessionId: string; cwd: string; model?: string; title?: string; threadSource?: string }) {

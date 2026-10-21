@@ -4,7 +4,7 @@ import { mkdtemp, readFile, stat, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { AutomationLaunchPolicyStore, validateAutomationLaunchPolicy } from "../src/automation-launch-policy.js";
+import { ABSENT_LAUNCH_POLICY_ETAG, AutomationLaunchPolicyStore, validateAutomationLaunchPolicy } from "../src/automation-launch-policy.js";
 import { createWebServer } from "../src/web/server.js";
 
 const servers: Server[] = [];
@@ -49,6 +49,19 @@ describe("automation launch policy", () => {
     }
   });
 
+  it("stable-deduplicates fallback models without rejecting the policy", () => {
+    const validated = validateAutomationLaunchPolicy({
+      ...policy,
+      fallbackModels: {
+        opencode: ["omniroute/openai/gpt-5.6", " OmniRoute/OpenAI/GPT-5.6 ", "omniroute/anthropic/claude", "omniroute/google/gemini", "omniroute/meta/llama", "omniroute/mistral/mistral-large", "omniroute/qwen/qwen3", "omniroute/deepseek/deepseek-v4", "omniroute/openai/gpt-5.6"],
+      },
+    });
+    expect(validated.fallbackModels?.opencode).toEqual([
+      "omniroute/openai/gpt-5.6", "omniroute/anthropic/claude", "omniroute/google/gemini", "omniroute/meta/llama",
+      "omniroute/mistral/mistral-large", "omniroute/qwen/qwen3", "omniroute/deepseek/deepseek-v4",
+    ]);
+  });
+
   it("atomically persists validated policy with private file permissions", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-launch-policy-"));
     directories.push(root);
@@ -56,10 +69,21 @@ describe("automation launch policy", () => {
     const store = new AutomationLaunchPolicyStore(path);
     await expect(store.load()).resolves.toEqual({ kind: "absent" });
     await expect(store.replace({ ...policy, allowedHarnesses: ["codex"], preferredHarness: "codex", models: { codex: "gpt-5.6-sol" } }))
-      .resolves.toEqual({ version: 1, allowedHarnesses: ["codex"], preferredHarness: "codex", models: { codex: "gpt-5.6-sol" } });
+      .resolves.toMatchObject({ policy: { version: 1, allowedHarnesses: ["codex"], preferredHarness: "codex", models: { codex: "gpt-5.6-sol" } } });
     await expect(store.load()).resolves.toMatchObject({ kind: "valid", policy: { allowedHarnesses: ["codex"] } });
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ version: 1, allowedHarnesses: ["codex"], preferredHarness: "codex", models: { codex: "gpt-5.6-sol" } });
     expect((await stat(path)).mode & 0o777).toBe(0o600);
+  });
+
+  it("preserves fallback models when a legacy full-document update omits them, and allows explicit clear", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-launch-policy-legacy-"));
+    directories.push(root);
+    const store = new AutomationLaunchPolicyStore(join(root, "automation-launch-policy.json"));
+    const initial = await store.replace({ ...policy, fallbackModels: { zcode: ["omniroute/openai/gpt-5.6"] } });
+    const legacy = await store.replace({ ...policy, models: { ...policy.models, codex: "gpt-5.6" } }, { ifMatch: initial.etag });
+    expect(legacy.policy.fallbackModels?.zcode).toEqual(["omniroute/openai/gpt-5.6"]);
+    const cleared = await store.replace({ ...legacy.policy, fallbackModels: {} }, { ifMatch: legacy.etag });
+    expect(cleared.policy.fallbackModels).toEqual({});
   });
 
   it("fails closed when absent and validates HTTP writes before persistence", async () => {
@@ -79,15 +103,25 @@ describe("automation launch policy", () => {
 
     const missing = await fetch(url);
     expect(missing.status).toBe(503);
-    await expect(missing.json()).resolves.toEqual({ error: "Launch policy is not configured" });
+    await expect(missing.json()).resolves.toEqual({ error: "Launch policy is not configured", state: "absent" });
+    expect(missing.headers.get("etag")).toBe(ABSENT_LAUNCH_POLICY_ETAG);
     const rejected = await fetch(url, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...policy, allowedHarnesses: ["future"] }) });
     expect(rejected.status).toBe(400);
     await expect(store.load()).resolves.toEqual({ kind: "absent" });
-    const saved = await fetch(url, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(policy) });
+    // A full-document write without the version it was read from is refused.
+    const unconditional = await fetch(url, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(policy) });
+    expect(unconditional.status).toBe(428);
+    await expect(store.load()).resolves.toEqual({ kind: "absent" });
+    const saved = await fetch(url, { method: "PUT", headers: { "content-type": "application/json", "if-match": ABSENT_LAUNCH_POLICY_ETAG }, body: JSON.stringify(policy) });
     expect(saved.status).toBe(200);
     await expect(saved.json()).resolves.toEqual(policy);
     const loaded = await fetch(url);
     expect(loaded.status).toBe(200);
     await expect(loaded.json()).resolves.toEqual(policy);
+    // The stored document keeps its identity, so a stale write is a conflict.
+    const stale = await fetch(url, { method: "PUT", headers: { "content-type": "application/json", "if-match": ABSENT_LAUNCH_POLICY_ETAG }, body: JSON.stringify(policy) });
+    expect(stale.status).toBe(412);
+    await expect(stale.json()).resolves.toMatchObject({ state: "conflict" });
+    await expect((await fetch(url)).json()).resolves.toEqual(policy);
   });
 });

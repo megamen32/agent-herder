@@ -815,6 +815,10 @@ async function main() {
     adapters,
     store: unfinishedSessionStore,
     settingsStore: sessionAutostartStore,
+    fallbackModelsForHarness: async (harness) => {
+      const loaded = await automationLaunchPolicyStore.load();
+      return loaded.kind === "valid" ? loaded.policy.fallbackModels?.[harness] ?? [] : [];
+    },
     autopilotPolicyStore,
     autopilotSessionStore,
     notify: createUnfinishedSessionNotifier(),
