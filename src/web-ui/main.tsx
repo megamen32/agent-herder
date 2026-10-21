@@ -3,7 +3,7 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { SESSION_LIST_REFRESH_MS, sessionListRefreshDelay, sampleSessionActivity, filterAndArrangeSessions, matchesSessionQuery, projectFor, sessionKey, sessionKeyFromHash, selectionAfterSessionRefresh, type SessionListEntry, type SessionListSession, type SessionListSettings, type SessionListSort } from "./session-list.js";
+import { SESSION_LIST_REFRESH_MS, sessionListRefreshDelay, sampleSessionActivity, filterAndArrangeSessions, matchesSessionQuery, projectFor, sessionKey, sessionTurnLinkFromHash, selectionAfterSessionRefresh, type SessionListEntry, type SessionListSession, type SessionListSettings, type SessionListSort } from "./session-list.js";
 import { QuotaPanel } from "./quota-panel.js";
 import { QuotaRecoveryControls } from "./quota-recovery-controls.js";
 import { AutoCompactSettingsPanel } from "./auto-compact-settings.js";
@@ -16,7 +16,7 @@ import "./interface-polish.css";
 import { CodexNavigation } from "./codex-navigation.js";
 import {useFleetDirectory} from './fleet/use-directory.js';
 import {directorySession} from './fleet/session-directory.js';
-import {RemoteSessionView,TranscriptRequestOwner,fetchIntegratorTranscriptPage,integratorEventDisplay,localTranscriptAddressFor,mergeTranscriptPageIfCurrent,transcriptForAddress,transcriptValueIfCurrent,type TranscriptView} from './fleet/RemoteSessionView.js';
+import {RemoteSessionView,TranscriptRequestOwner,fetchIntegratorTranscriptPage,firstEventIndexForTurn,integratorEventDisplay,localTranscriptAddressFor,mergeTranscriptPageIfCurrent,transcriptForAddress,transcriptValueIfCurrent,type TranscriptView} from './fleet/RemoteSessionView.js';
 import {SessionViewCache,indexedViewCacheStore,readViewCacheSettings,writeViewCacheSettings,type ViewCacheSettings} from './fleet/view-cache.js';
 import type {MeshAddress} from '../mesh/protocol.js';
 import { FleetCabinet } from "./fleet/FleetCabinet.js";
@@ -106,10 +106,13 @@ const splitKey = (key: string) => {
 
 // deep link: #/session/<harness>:<id> — восстанавливает выбор сессии из URL
 const readSessionFromHash = (): string | undefined => {
-  return sessionKeyFromHash(window.location.hash);
+  return sessionTurnLinkFromHash(window.location.hash)?.sessionKey;
 };
+const readTurnFromHash = (): string | undefined => sessionTurnLinkFromHash(window.location.hash)?.turnId;
 const writeSessionToHash = (key?: string) => {
-  const target = key ? `#/session/${encodeURIComponent(key)}` : `${window.location.pathname}${window.location.search}`;
+  const linked=sessionTurnLinkFromHash(window.location.hash);
+  const focus=key&&linked?.sessionKey===key&&linked.turnId?`?turn=${encodeURIComponent(linked.turnId)}`:"";
+  const target = key ? `#/session/${encodeURIComponent(key)}${focus}` : `${window.location.pathname}${window.location.search}`;
   if (window.location.hash !== (key ? target : "")) {
     history.replaceState(null, "", key ? target : target || window.location.pathname);
   }
@@ -695,6 +698,7 @@ function App() {
   const changeCacheSettings=(next:ViewCacheSettings)=>{setViewCacheSettings(next);try{writeViewCacheSettings(window.localStorage,next);}catch{}void viewCache.prune();};
   const [sessions, setSessions] = React.useState<HerderSession[]>([]);
   const [activeKey, setActiveKey] = React.useState<string | undefined>(() => readSessionFromHash() ?? window.localStorage.getItem("agent-herder.active-session") ?? undefined);
+  const [linkedTurnId, setLinkedTurnId] = React.useState<string | undefined>(() => readTurnFromHash());
   const activeKeyRef = React.useRef(activeKey);
   React.useLayoutEffect(() => { activeKeyRef.current = activeKey; }, [activeKey]);
   // сессия, выбранная через deep link (#/session/...) — не сбрасывается фильтром списка
@@ -996,6 +1000,7 @@ function App() {
   React.useEffect(() => {
     const followHash = () => {
       const key = readSessionFromHash();
+      setLinkedTurnId(readTurnFromHash());
       setDeepLinkKey(key);
       setActiveKey(key);
       setMobileView(key ? "chat" : "sessions");
@@ -1151,6 +1156,24 @@ function App() {
     return()=>localTranscriptOwnerRef.current?.cancel(localTranscriptKey);
   },[localTranscriptKey,readLocalTranscript]);
   const currentLocalTranscript=localTranscriptAddress?transcriptForAddress(localTranscript,localTranscriptAddress):undefined;
+  const turnFocusKey=linkedTurnId&&localTranscriptAddress?JSON.stringify([localTranscriptAddress.hostId,localTranscriptAddress.harness,localTranscriptAddress.nativeSessionId,linkedTurnId]):"";
+  const turnFocusPagesRef=React.useRef<{key:string;pages:number}>({key:"",pages:0});
+  const turnFocusExhausted=turnFocusKey!==""&&turnFocusPagesRef.current.key===turnFocusKey&&turnFocusPagesRef.current.pages>=20;
+  React.useEffect(()=>{
+    if(!turnFocusKey||!currentLocalTranscript||!linkedTurnId)return;
+    if(turnFocusPagesRef.current.key!==turnFocusKey)turnFocusPagesRef.current={key:turnFocusKey,pages:0};
+    const exactIndex=firstEventIndexForTurn(currentLocalTranscript.events,linkedTurnId);
+    if(exactIndex!==undefined){
+      const event=currentLocalTranscript.events[exactIndex];
+      const target=Array.from(chatScrollRef.current?.querySelectorAll<HTMLElement>("[data-turn-id]")??[]).find(element=>element.dataset.turnId===event.turnId);
+      target?.scrollIntoView({block:"center"});
+      return;
+    }
+    if(currentLocalTranscript.nextCursor&&!localTranscriptLoading&&turnFocusPagesRef.current.pages<20){
+      turnFocusPagesRef.current.pages++;
+      void readLocalTranscript(currentLocalTranscript.nextCursor);
+    }
+  },[turnFocusKey,currentLocalTranscript,linkedTurnId,localTranscriptLoading,readLocalTranscript]);
   React.useEffect(() => {
     if (!activeSession || !["codex", "opencode", "claude", "hermes", "zcode"].includes(activeSession.harness)) {
       setAutopilotSession(undefined);
@@ -1914,11 +1937,12 @@ function App() {
           {detailsHydrating && details && <div className="history-loading-banner"><span className="inline-loading-dot" /> Последние {formatLoadTiming(latestTimingMs)} · подгружаю историю и метрики…</div>}
           {localTranscriptAddress&&<div className="local-transcript-controls"><button type="button" className="quiet-button" disabled={localTranscriptLoading} onClick={()=>void readLocalTranscript(undefined,true)}>Обновить историю</button>{localTranscriptLoading&&<span role="status">Загружаю историю сессии…</span>}</div>}
           {localTranscriptError&&<p role="alert" className="remote-chat-error">{localTranscriptError}</p>}
+          {linkedTurnId&&turnFocusKey&&currentLocalTranscript&&firstEventIndexForTurn(currentLocalTranscript.events,linkedTurnId)===undefined&&<p role="status">{currentLocalTranscript.nextCursor?(turnFocusExhausted?"Связанное сообщение пока не найдено. Загрузите следующую страницу истории.":"Ищу точное сообщение по ссылке…"):currentLocalTranscript.complete?"Связанное сообщение не найдено в истории этой сессии.":"История продолжается; точное сообщение пока не найдено. Загрузите следующую страницу истории."}</p>}
           {currentLocalTranscript ? currentLocalTranscript.events.map((event,index)=>{
             const {message,attribution,visualRole}=integratorEventDisplay(event);
             if(!hasVisibleMessage(message,showReasoning,showTools))return null;
             const noteLabel=serviceNoteLabel(message);
-            return <article className={`message ${visualRole}`} key={message.id??index}><div className="message-meta"><span>{attribution}</span><time>{formatTime(message.timestamp||"")}</time></div>{noteLabel?<ServiceNote label={noteLabel} message={message}/>:<CollapsibleMessage message={message} showReasoning={showReasoning} showTools={showTools} jsonRendering={jsonRendering} collapseLongMessages={collapseLongMessages}/>}</article>;
+            return <article className={`message ${visualRole}`} key={message.id??index} data-turn-id={event.turnId} data-event-id={event.eventId}><div className="message-meta"><span>{attribution}</span><time>{formatTime(message.timestamp||"")}</time></div>{noteLabel?<ServiceNote label={noteLabel} message={message}/>:<CollapsibleMessage message={message} showReasoning={showReasoning} showTools={showTools} jsonRendering={jsonRendering} collapseLongMessages={collapseLongMessages}/>}</article>;
           }) : groupSessionMessages(chatDelivery.messages).map((group, groupIndex, groups) => {
             const visible = group.messages.filter((message) => hasVisibleMessage(message, showReasoning, showTools));
             if (visible.length === 0) return null;
