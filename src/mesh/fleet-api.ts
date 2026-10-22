@@ -8,8 +8,16 @@ const createSchema=z.object({hostId:z.string().min(1).max(512),harness:z.enum(['
 export function createFleetApiHandler(resolve:FleetCabinetService|((request:IncomingMessage)=>FleetCabinetService|Promise<FleetCabinetService>),localHostId=hostname()){
  return async(request:IncomingMessage,response:ServerResponse):Promise<boolean>=>{
   const url=new URL(request.url??'/', 'http://localhost');
-  if(!['/api/fleet/hosts','/api/fleet/sessions','/api/fleet/create','/api/fleet/session','/api/fleet/inventory','/api/fleet/control'].includes(url.pathname))return false;
+  if(!['/api/fleet/hosts','/api/fleet/sessions','/api/fleet/create','/api/fleet/session','/api/fleet/inventory','/api/fleet/control','/api/fleet/access'].includes(url.pathname))return false;
   const send=(status:number,value:unknown)=>{response.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify(value));};
+  // The access check asks whether the owner may use the cabinet at all. It
+  // needs no cabinet of its own, so it is answered before one is resolved:
+  // the panel asks it over the loopback, and a path the handler does not
+  // know is a path that answers 404.
+  if(url.pathname==='/api/fleet/access'){
+   if(request.method!=='GET'){send(405,{error:'Проверка доступа принимает только чтение'});return true;}
+   response.writeHead(204,{'Cache-Control':'no-store'});response.end();return true;
+  }
   try{
    const service=typeof resolve==='function'?await resolve(request):resolve;
    if(url.pathname==='/api/fleet/control'&&['GET','POST'].includes(request.method??'')){
