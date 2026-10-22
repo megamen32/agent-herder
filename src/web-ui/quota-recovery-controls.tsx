@@ -14,6 +14,7 @@ export type QuotaRecoveryWait = {
   state: string;
   reason?: string;
   resetAt?: string;
+  nextAttemptAt?: string;
   currentModel?: string;
   selectedModel?: string;
 };
@@ -107,10 +108,13 @@ export async function readQuotaWaitStatus(session: QuotaRecoverySession, signal?
     state: wait.state,
     ...(typeof wait.reason === "string" ? { reason: wait.reason } : {}),
     ...(typeof wait.resetAt === "string" ? { resetAt: wait.resetAt } : {}),
+    ...(typeof wait.nextAttemptAt === "string" ? { nextAttemptAt: wait.nextAttemptAt } : {}),
     ...(typeof wait.currentModel === "string" ? { currentModel: wait.currentModel } : {}),
     ...(typeof wait.selectedModel === "string" ? { selectedModel: wait.selectedModel } : {}),
   };
 }
+
+const UNKNOWN_QUOTA_HELP = "Если квоту проверить нельзя, включённый режим разрешает одну ограниченную попытку для каждой модели с интервалом между проверками. Подтверждённое исчерпание квоты откладывает попытку. Принятый или неизвестный результат отправки останавливает повторы до проверки квитанции.";
 
 const WAIT_STATE_LABELS: Record<string, string> = {
   waiting: "Ожидает проверки квоты",
@@ -168,7 +172,8 @@ function statusLine(wait: QuotaRecoveryWait | null) {
   return <div className="quota-recovery-wait" role="status">
     <strong>{quotaWaitStateLabel(wait.state) ?? "Состояние ожидания обновлено"}</strong>
     {wait.reason && <p>{wait.reason}</p>}
-    {wait.resetAt && <p>Следующая проверка: {describeTime(wait.resetAt)}</p>}
+    {wait.nextAttemptAt && <p>Следующая проверка или попытка: {describeTime(wait.nextAttemptAt)}</p>}
+    {wait.resetAt && <p>Ориентир сброса квоты: {describeTime(wait.resetAt)}. Это не подтверждение её восстановления.</p>}
     {wait.currentModel && <p>Текущая модель: <code>{wait.currentModel}</code></p>}
     {wait.selectedModel && <p>Выбранная модель: <code>{wait.selectedModel}</code></p>}
     {!quotaWaitStateLabel(wait.state) && <small>Код состояния: {wait.state}</small>}
@@ -262,6 +267,7 @@ export function QuotaRecoveryControls({ session }: { session?: QuotaRecoverySess
     const overridden = typeof setting?.waitForQuotaOverride === "boolean" || typeof setting?.fallbackForQuotaOverride === "boolean";
     return <fieldset className="settings-group quota-recovery-settings" aria-label="Ожидание восстановления квоты">
       <legend>Восстановление после квоты</legend>
+      <p className="settings-help">{UNKNOWN_QUOTA_HELP}</p>
       {setting && <>
         <label className="launch-policy-field"><span>Поведение при исчерпании квоты</span>
           <select aria-label="Политика квоты для текущей сессии" disabled={Boolean(saving)}
@@ -290,6 +296,7 @@ export function QuotaRecoveryControls({ session }: { session?: QuotaRecoverySess
 
   return <fieldset className="settings-group quota-recovery-settings" aria-label="Ожидание восстановления квоты">
     <legend>Восстановление после квоты</legend>
+    <p className="settings-help">{UNKNOWN_QUOTA_HELP}</p>
     <p className="settings-help">Политики действуют независимо от общего автопродолжения. Сохранённый список запасных моделей сам по себе не включает переключение. Выключение сохраняет его порядок.</p>
     {globalSetting && <label className="runtime-toggle-setting timeout-setting">
       <span><strong>Разрешить ожидание после квоты по умолчанию</strong><small>По умолчанию выключено. Настройки среды и отдельной сессии имеют приоритет.</small></span>

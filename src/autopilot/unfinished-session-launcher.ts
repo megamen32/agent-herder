@@ -1739,15 +1739,18 @@ export class UnfinishedSessionStore {
       const record = file.sessions.find(item => unfinishedRecordKey(item) === unfinishedRecordKey(snapshot));
       const quota = record?.quotaRecovery;
       if (!record || !quota || quota.state !== "waiting" || quota.revision !== snapshot.quotaRecovery?.revision) return false;
-      if (quota.candidateIndex < quota.candidateModels.length - 1) quota.candidateIndex += 1;
+      const hasNextCandidate = quota.candidateIndex < quota.candidateModels.length - 1;
+      if (hasNextCandidate) quota.candidateIndex += 1;
       else if (quota.waitForOriginal === false) {
         quota.state = "exhausted";
         quota.reasonCode = "candidate_exhausted";
         record.state = "exhausted";
       }
       const resetMs = Date.parse(resetAt ?? "");
-      quota.nextAttemptAt = new Date(Number.isFinite(resetMs) && resetMs > now.getTime()
-        ? Math.min(resetMs, now.getTime() + 15 * 60_000) : now.getTime() + quotaBackoffMs(quota.attempts + 1)).toISOString();
+      // A skipped model's reset cannot delay an independent next candidate.
+      quota.nextAttemptAt = new Date(hasNextCandidate ? now.getTime()
+        : Number.isFinite(resetMs) && resetMs > now.getTime()
+          ? Math.min(resetMs, now.getTime() + 15 * 60_000) : now.getTime() + quotaBackoffMs(quota.attempts + 1)).toISOString();
       quota.revision += 1;
       quota.updatedAt = now.toISOString();
       record.nextAttemptAt = quota.state === "waiting" ? quota.nextAttemptAt : undefined;

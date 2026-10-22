@@ -922,6 +922,20 @@ describe("terminal quota recovery", () => {
     } finally {await rm(root,{recursive:true,force:true});}
   });
 
+  it("skips a freshly exhausted fallback without waiting for that candidate's reset before trying the next", async () => {
+    const root = await mkdtemp(join(tmpdir(), "quota-skip-exhausted-next-"));
+    try {
+      const current = quotaSession();
+      const sent: Array<{model?:string;inputId?:string}> = [];
+      const models = ["omniroute/test/A","omniroute/test/B"];
+      const launcher = new UnfinishedSessionLauncher({adapters:new Map([["opencode",quotaAdapter(()=>current,sent,[...models,current.model!])]]),store:new UnfinishedSessionStore(join(root,"unfinished.json")),settingsStore:await optedInSettings(root),fallbackModelsForHarness:async()=>models,
+        probeRecoveryQuota:async model=>({state:model===models[0]?"exhausted":"available",source:"exact-test-account",checkedAt:new Date().toISOString(),resetAt:new Date(Date.now()+86400000).toISOString()})});
+      await launcher.recoverPending();
+      await launcher.recoverPending();
+      expect(sent.map(row=>row.model)).toEqual([models[1]]);
+    } finally {await rm(root,{recursive:true,force:true});}
+  });
+
   it("queues an exact opted-in terminal event and sends one durable fallback continuation", async () => {
     const root = await mkdtemp(join(tmpdir(), "quota-recovery-event-"));
     try {

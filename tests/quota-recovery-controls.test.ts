@@ -138,3 +138,8 @@ it("writes both explicit mode flags without erasing unrelated options", async ()
  expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body))).toEqual({waitForQuota:true,fallbackForQuota:false,cwd:session.cwd});
  expect(result).toMatchObject({waitForQuota:true,fallbackForQuota:false});
 });
+
+it("preserves the scheduled next attempt separately from the provider reset hint", async () => {
+ vi.stubGlobal("fetch",vi.fn(async()=>jsonResponse({wait:{state:"waiting",resetAt:"2026-10-24T18:00:00Z",nextAttemptAt:"2026-10-23T01:00:00Z",reason:"Доступность квоты не подтверждена"}})));
+ await expect(readQuotaWaitStatus(session)).resolves.toMatchObject({resetAt:"2026-10-24T18:00:00Z",nextAttemptAt:"2026-10-23T01:00:00Z"});
+});
