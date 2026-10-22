@@ -19,9 +19,10 @@ export type SettingsRecord = {
   scope: { kind: SettingsScopeKind; path?: string };
   source: "default" | "inherited" | "override";
   origin: "default" | "file" | "explicit";
-  desired: { value: unknown; version: number; fingerprint?: string };
+  code_revision: string;
+  desired: { value: unknown; desired_revision: number; fingerprint?: string };
   confirmed: {
-    version: number;
+    applied_revision: number;
     state: SettingsApplyState;
     appliedAt: string | null;
     applyMode: SettingsApplyMode;
@@ -247,7 +248,7 @@ export function baseVersions(view: SettingsView, ids: string[]): Record<string, 
   const versions: Record<string, number> = {};
   for (const id of ids) {
     const record = view.records.find((candidate) => candidate.id === id);
-    if (record) versions[id] = record.desired.version;
+    if (record) versions[id] = record.desired.desired_revision;
   }
   return versions;
 }

@@ -86,6 +86,19 @@ export function settingsFingerprint(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 16)}`;
 }
 
+/**
+ * The revision of a setting that is really in effect.
+ *
+ * The desired revision is what the owner wants; the applied revision is what
+ * the running service really has. While a change waits for a restart the
+ * applied revision is behind the desired one: the file of the product already
+ * holds the new value, but the service still runs with the old one. The
+ * revision `0` means that no recorded revision is in effect.
+ */
+export function appliedRevisionOf(desiredRevision: number, applied: boolean): number {
+  return applied ? desiredRevision : Math.max(0, desiredRevision - 1);
+}
+
 /** Whether the key holds a secret, by the known list or by the name of the key. */
 export function isSecretKey(key: string): boolean {
   const known = HERDER_ENV_KEYS.find((spec) => spec.key === key);
@@ -190,11 +203,29 @@ export interface SettingsRecord {
    * `explicit` — the owner set this value through the API.
    */
   origin: "default" | "file" | "explicit";
-  /** The value the owner set, and its version. */
-  desired: { value: unknown; version: number; fingerprint?: string };
+  /**
+   * The revision of the sources that is running here.
+   *
+   * The revision of the sources is the identity of the build, not the version
+   * of a setting: two machines with the same sources do not have the same
+   * settings, and two machines with different settings may have the same
+   * sources. The revision of the sources is what says that a node confirmed
+   * a setting.
+   */
+  code_revision: string;
+  /** The value the owner set for the scope, and its revision. */
+  desired: { value: unknown; desired_revision: number; fingerprint?: string };
   /** What the running product really has. */
   confirmed: {
-    version: number;
+    /**
+     * The revision that is really in effect.
+     *
+     * While a change waits for a restart the applied revision is behind the
+     * desired one: the file of the product already holds the new value, but
+     * the running service still has the old one. The revision `0` means that
+     * no recorded revision is in effect.
+     */
+    applied_revision: number;
     state: SettingsApplyState;
     appliedAt: string | null;
     applyMode: SettingsApplyMode;
@@ -922,6 +953,9 @@ export class SettingsStore {
     const records: SettingsRecord[] = [];
 
     const startTime = Date.now() - Math.round(process.uptime() * 1000);
+    // The revision of the sources that is running here: the identity of the
+    // build of this node.
+    const codeRevision = typeof nodeConfig.config?.sourceSha === "string" ? nodeConfig.config.sourceSha : "unknown";
     const environmentTime = await this.modifiedAt(this.envPath);
     const nodeConfigTime = await this.modifiedAt(this.nodeConfigPath);
 
@@ -942,13 +976,14 @@ export class SettingsStore {
         scope: { kind: "node", path: environment.path },
         source,
         origin: isSet ? (explicit ? "explicit" : "file") : "default",
+        code_revision: codeRevision,
         desired: {
           value: secret ? null : (view.kind === "value" ? view.value ?? null : null),
-          version,
+          desired_revision: version,
           ...(secret && view.fingerprint ? { fingerprint: view.fingerprint } : {}),
         },
         confirmed: {
-          version,
+          applied_revision: appliedRevisionOf(version, applied.applied),
           state: applied.applied ? "Применено" : "Записано",
           appliedAt: applied.applied ? this.now().toISOString() : null,
           applyMode: applied.applyMode,
@@ -973,9 +1008,10 @@ export class SettingsStore {
           scope: { kind: "node", path: nodeConfig.path },
           source: "override",
           origin: last ? "explicit" : "file",
-          desired: { value, version },
+          code_revision: codeRevision,
+          desired: { value, desired_revision: version },
           confirmed: {
-            version,
+            applied_revision: appliedRevisionOf(version, applied === "applied"),
             state: applied ? "Применено" : "Записано",
             appliedAt: applied ? this.now().toISOString() : null,
             applyMode: applied ? "сразу" : "после перезапуска",
@@ -998,9 +1034,10 @@ export class SettingsStore {
         scope: profile.scope,
         source: "override",
         origin: last ? "explicit" : "file",
-        desired: { value: profile, version },
+        code_revision: codeRevision,
+        desired: { value: profile, desired_revision: version },
         confirmed: {
-          version,
+          applied_revision: version,
           state: "Применено",
           appliedAt: last?.at ?? null,
           applyMode: "к новым задачам",
@@ -1040,13 +1077,13 @@ export class SettingsStore {
     for (const [id, baseVersion] of Object.entries(bases)) {
       const record = records.find((candidate) => candidate.id === id);
       if (!record) continue;
-      if (record.desired.version === baseVersion) continue;
+      if (record.desired.desired_revision === baseVersion) continue;
       difference.push({
         id: record.id,
         key: id.split("/").slice(1).join("/"),
         entity: id.startsWith("node-config") ? "node-config" : "herder.env",
         baseVersion,
-        currentVersion: record.desired.version,
+        currentVersion: record.desired.desired_revision,
         changedBy: record.changedBy,
         changedAt: record.changedAt,
       });

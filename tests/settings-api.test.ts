@@ -371,7 +371,7 @@ describe("the settings of the herder are managed by the owner from one API", () 
     const port = await startServer();
     const etag = await currentEtag(port);
     const before = await readSettings(port);
-    const baseVersion = before.records.find((candidate: any) => candidate.id === "herder.env/NOTIFY_CENTER_PROJECT").desired.version;
+    const baseVersion = before.records.find((candidate: any) => candidate.id === "herder.env/NOTIFY_CENTER_PROJECT").desired.desired_revision;
 
     // Another owner changed the setting after the first one read it.
     await putSettings(port, { environment: { NOTIFY_CENTER_PROJECT: "changed-by-another" } });
@@ -451,8 +451,16 @@ describe("the settings of the herder are managed by the owner from one API", () 
     expect(["default", "file", "explicit"]).toContain(record.origin);
     // The desired version and the confirmed state are two things.
     expect(record.desired.value).toBe("agent-herder-contract");
-    expect(record.desired.version).toBeGreaterThan(0);
-    expect(record.confirmed.version).toBe(record.desired.version);
+    expect(record.desired.desired_revision).toBeGreaterThan(0);
+    // The applied revision is the revision that is really in effect: it is
+    // behind the desired one while the change waits for a restart.
+    expect(record.confirmed.applied_revision).toBeLessThanOrEqual(record.desired.desired_revision);
+    expect(record.confirmed.applied_revision).toBe(
+      record.confirmed.state === "Применено" ? record.desired.desired_revision : record.desired.desired_revision - 1,
+    );
+    // The revision of the sources is the identity of the build, not a version
+    // of the setting.
+    expect(record.code_revision).toBe("abc123");
     expect(["Записано", "Применяется", "Применено", "Применено частично", "Ошибка"]).toContain(record.confirmed.state);
     expect(["сразу", "к новым задачам", "после перезапуска"]).toContain(record.confirmed.applyMode);
     // Who changed it and when.
@@ -466,6 +474,21 @@ describe("the settings of the herder are managed by the owner from one API", () 
     expect(secret.desired.value).toBeNull();
     expect(secret.desired.fingerprint).toBeTruthy();
     expect(JSON.stringify(secret)).not.toContain("center-token-value");
+  });
+
+  it("shows the applied revision behind the desired one while a change waits for a restart", async () => {
+    const port = await startServer();
+    // The owner changes the setting: the file of the product holds the new
+    // value, but the running service still has the old one.
+    await putSettings(port, { environment: { NOTIFY_CENTER_PROJECT: "written-for-a-later-restart" } });
+    const view = await readSettings(port);
+    const record = view.records.find((candidate: any) => candidate.id === "herder.env/NOTIFY_CENTER_PROJECT");
+    expect(record.confirmed.state).toBe("Записано");
+    expect(record.confirmed.requiresRestart).toBe(true);
+    // The applied revision is behind: the running service has not the new
+    // value yet.
+    expect(record.desired.desired_revision).toBeGreaterThan(record.confirmed.applied_revision);
+    expect(record.confirmed.applied_revision).toBe(record.desired.desired_revision - 1);
   });
 
   it("carries the lifecycle of a secret without its value", async () => {
