@@ -46,6 +46,7 @@ import type { GptAdminTransport } from "../mesh/gptadmin.js";
 import { unwrapResult, type MeshAddress } from "../mesh/protocol.js";
 import { FleetDirectTransport, directFleetPeers } from "../mesh/fleet-direct-transport.js";
 import { assertModelAllowedForDirectory, assertModelAllowedForDirectoryWithPolicy, policyRestrictsModels, type ProjectModelPolicyProvider } from "../project-model-gate.js";
+import { checkDeliveryModel, resolveSessionWorkDirectory, type ProjectModelPolicyStateProvider } from "../project-model-delivery-gate.js";
 import { applySessionTarget } from "../session-target.js";
 
 const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]);
@@ -82,6 +83,8 @@ export function registerSessionTools(server: McpServer, deps: {
   fleet?: FleetSessionTargetRouter;
   /** Reads the current launch policy for the per-project model gate. */
   launchPolicy?: ProjectModelPolicyProvider;
+  /** Reads the current launch policy state for the per-project model gate of a delivery. */
+  deliveryPolicy?: ProjectModelPolicyStateProvider;
 }): void {
   const { adapters, jobs, events } = deps;
   const coordination = deps.coordination ?? coordinationNotes;
@@ -116,6 +119,57 @@ export function registerSessionTools(server: McpServer, deps: {
     return { adapters: routed, args: { ...args, harness: "codex" } as T, denied: false, hostTargetUnavailable: undefined as string | undefined };
   }
   const publishSessionsChanged = () => events.publish({ kind: "sessions", uri: "herder://sessions", action: "changed" });
+
+  /**
+   * The per-project model gate of one delivery.
+   *
+   * A session that was born outside herder's tools never passed through the
+   * tool gate, so the delivery checks the model the session would run on
+   * itself. The project is the work place of the session: its declared work
+   * place first, then its own working directory.
+   */
+  async function assertDeliveryModelAllowed(
+    sessionAdapters: Map<string, HarnessAdapter>,
+    target: { sessionId?: string; harness?: string; cwd?: string; model?: string },
+  ): Promise<void> {
+    if (!deps.deliveryPolicy) return;
+    const state = await deps.deliveryPolicy();
+    const directory = target.cwd?.trim() || null;
+    if (directory) {
+      checkDeliveryModel(state, { directory, harness: target.harness ?? "", model: target.model });
+      return;
+    }
+    if (!target.sessionId) return;
+    const session = await findSessionForGate(sessionAdapters, target.sessionId, target.harness);
+    // A session that does not exist starts no work, so there is nothing to guard.
+    if (!session) return;
+    const declared = await coordination.activeWorkspaceObservation(target.sessionId).catch(() => undefined);
+    checkDeliveryModel(state, {
+      directory: resolveSessionWorkDirectory(session, declared?.cwd),
+      harness: session.harness,
+      model: target.model,
+    });
+  }
+
+  /** The session behind a delivery target, when it exists. */
+  async function findSessionForGate(
+    sessionAdapters: Map<string, HarnessAdapter>,
+    sessionId: string,
+    harness?: string,
+  ): Promise<{ id: string; harness: string; cwd: string; meta?: Record<string, unknown> } | null> {
+    const candidates = harness
+      ? [sessionAdapters.get(harness)].filter(Boolean) as HarnessAdapter[]
+      : [...sessionAdapters.values()];
+    for (const adapter of candidates) {
+      try {
+        const session = await adapter.getSession(sessionId);
+        if (session) return session as { id: string; harness: string; cwd: string; meta?: Record<string, unknown> };
+      } catch {
+        // A session that cannot be read is a session that cannot be guarded.
+      }
+    }
+    return null;
+  }
 
   /** The working directory of one session, or undefined when it cannot be read. */
   async function sessionCwd(
@@ -253,6 +307,7 @@ export function registerSessionTools(server: McpServer, deps: {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
+    await assertDeliveryModelAllowed(route.adapters, { sessionId: args.sessionId, harness: args.harness });
     const result = await handleSendMessage(route.adapters, route.args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
@@ -271,7 +326,7 @@ export function registerSessionTools(server: McpServer, deps: {
     const result = await handleNewOrResume(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed.", inputSchema: DeliverSchema }, async(args)=>{ const route=await sessionRoute(args);if(route.denied)throw new Error("project_session_scope_unavailable");if(route.hostTargetUnavailable)throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);const result=await handleDeliver(route.adapters,route.args);publishSessionsChanged();return {content:[{type:"text" as const,text:result}]}; });
+  server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed.", inputSchema: DeliverSchema }, async(args)=>{ const route=await sessionRoute(args);if(route.denied)throw new Error("project_session_scope_unavailable");if(route.hostTargetUnavailable)throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);await assertDeliveryModelAllowed(route.adapters,{sessionId:args.sessionId,harness:args.harness,cwd:args.cwd,model:args.model});const result=await handleDeliver(route.adapters,route.args);publishSessionsChanged();return {content:[{type:"text" as const,text:result}]}; });
   server.registerTool("stop_agent", { description: "Stop / abort a running agent session. A session of another machine is stopped there, through its own native session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional().describe("Machine that owns the session. Omitted stops a session of this machine.") }) }, async (args) => {
     const owner = typeof args.hostId === "string" ? normalizeHostId(args.hostId, hostname()) : hostname();
     // Another machine owns its own native session, so the stop runs there.

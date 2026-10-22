@@ -537,6 +537,10 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
         transport: "minimax-code-local-runtime-store",
         readOnly: true,
         liveStatus: "unknown",
+        // The runtime keeps one working directory for every session, so the
+        // reported cwd is a pseudo project: the work directory of a session is
+        // only known once the session declares it.
+        workDirectory: "pseudo",
         layout: entry.manifest.layout,
         source: entry.manifest.source,
         sessionDir: entry.dir,

@@ -7,6 +7,7 @@ import type {MeshDelivery} from "./gptadmin.js";
 import {MeshDeliveryLedger} from "./delivery-ledger.js";
 import {inventoryHarnesses} from "./inventory.js";
 import {coordinationNotes,type CoordinationNoteStore} from "../coordination-notes.js";
+import {checkDeliveryModel,deliveryRefusalText,resolveSessionWorkDirectory,type ProjectModelPolicyStateProvider} from "../project-model-delivery-gate.js";
 import {MINIMAX_CODE_HARNESS_CWD} from "../adapters/minimax-code-store.js";
 import {MINIMAX_CODE_HARNESS,observeMinimaxCode,runMinimaxCodeDelivery} from "./native-minimax-code.js";
 export interface HarnessMeshCapability {harness:string;discovery:"available"|"unavailable";delivery:"available"|"unsupported";reason?:string}
@@ -14,7 +15,7 @@ export interface HarnessMeshCapability {harness:string;discovery:"available"|"un
 export type MeshNotesInjector=(session:{id:string;harness:string;cwd:string;hostId?:string},message:string)=>Promise<string>;
 /** Independent native observation of one exact session of this host. */
 export type MeshNativeObserver=(harness:string,nativeSessionId:string)=>Promise<{nativeSessionId:string;status:string;cwd?:string|null}|null>;
-type Dependencies={hostId?:string;adapters:Map<string,HarnessAdapter>;send?:(args:Record<string,unknown>)=>Promise<unknown>;ledgerPath?:string;readDeadlineMs?:number;projectStore?:Pick<CoordinationNoteStore,"activeWorkspaceForSession"> & Partial<Pick<CoordinationNoteStore,"activeWorkspaceObservation">>;notes?:MeshNotesInjector;nativeObserve?:MeshNativeObserver};
+type Dependencies={hostId?:string;adapters:Map<string,HarnessAdapter>;send?:(args:Record<string,unknown>)=>Promise<unknown>;ledgerPath?:string;readDeadlineMs?:number;projectStore?:Pick<CoordinationNoteStore,"activeWorkspaceForSession"> & Partial<Pick<CoordinationNoteStore,"activeWorkspaceObservation">>;notes?:MeshNotesInjector;nativeObserve?:MeshNativeObserver;deliveryPolicy?:ProjectModelPolicyStateProvider};
 export class LocalHarnessMesh {
  readonly hostId:string;
  private readonly ids=new Map<string,string>();
@@ -67,6 +68,10 @@ export class LocalHarnessMesh {
   return this.ledger.once(request,async()=>{
    const adapter=this.deps.adapters.get(request.target.harness);
    if(!adapter)return reject("adapter_not_registered");
+   // A native session that was born outside herder's tools never passed
+   // through the tool gate, so the delivery guards the model itself.
+   const refusal=await this.checkDeliveryModel(request,adapter);
+   if(refusal)return refusal;
    // A native MiniMax Code session owns its own turn inside the desktop
    // runtime, so the delivery is queued there and proven by its receipt.
    if(request.target.harness===MINIMAX_CODE_HARNESS)return this.deliverMinimaxCode(request,adapter);
@@ -79,6 +84,27 @@ export class LocalHarnessMesh {
    const raw=this.deps.send?await this.deps.send(args):await handleSendMessage(this.deps.adapters,args);
    return parseNativeReceipt(typeof raw==="string"?{content:[{type:"text",text:raw}]}:raw,request.inputId);
   });
+ }
+ /**
+  * The per-project model gate of one delivery.
+  *
+  * The project is the work place of the session: its declared work place
+  * first, then its own working directory. A refusal is not retryable, so the
+  * ledger keeps it and the same intent is never delivered again.
+  */
+ private async checkDeliveryModel(request:MeshDelivery,adapter:HarnessAdapter):Promise<(NativeReceipt&{reason?:string})|null>{
+  const provider=this.deps.deliveryPolicy;
+  if(!provider)return null;
+  const state=await provider().catch(()=>({kind:"invalid" as const,error:"the project model policy could not be read"}));
+  const sessionId=this.ids.get(addressKey(request.target))||request.target.nativeSessionId;
+  const session=await adapter.getSession(sessionId).catch(()=>null);
+  const declared=await this.deps.projectStore?.activeWorkspaceObservation?.(sessionId)?.catch(()=>undefined);
+  try{
+   checkDeliveryModel(state,{directory:resolveSessionWorkDirectory(session,declared?.cwd),harness:request.target.harness});
+  }catch(error){
+   return {state:"not_attempted",inputId:request.inputId,retryable:false,reason:deliveryRefusalText(error)};
+  }
+  return null;
  }
  /** One native MiniMax Code delivery, proven by the admission of the runtime. */
  private async deliverMinimaxCode(request:MeshDelivery,adapter:HarnessAdapter):Promise<NativeReceipt&{reason?:string}>{

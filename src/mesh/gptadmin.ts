@@ -3,6 +3,8 @@ import {CoordinationDeliveryBudget} from "../coordination-delivery-budget.js";
 import {addressKey,unwrapResult,type MeshAddress,type MeshSession,type NativeReceipt} from "./protocol.js";
 import {inventoryHarnesses} from "./inventory.js";
 import type {FleetSessionControl,FleetSessionResponse} from './fleet-session-control.js';
+import {checkDeliveryModel,deliveryRefusalText,type ProjectModelPolicyStateProvider} from "../project-model-delivery-gate.js";
+import {coordinationNotes} from "../coordination-notes.js";
 
 /** Supplied by the authenticated consumer; mesh does not mint tokens or bypass profiles. */
 export interface GptAdminTransport {
@@ -19,7 +21,7 @@ export interface MeshDelivery {target:MeshAddress;sender:MeshAddress;inputId:str
 export interface MeshHostReceipt {hostId:string;target?:string;state:"available"|"unavailable";reason?:string;complete?:boolean;harnesses?:unknown[]}
 export interface MeshDiscovery {sessions:MeshSession[];hosts:MeshHostReceipt[];complete:boolean;limited:boolean}
 type DeliveryReceipt=NativeReceipt & {reason?:string};
-type Route={target:string;nativeIds:Set<string>};
+type Route={target:string;nativeIds:Set<string>;projects:Map<string,string|null>};
 const shortReason=(value:string)=>value.slice(0,192).replace(/[\x00-\x1f\x7f]/g,"").slice(0,96);
 const display=(value:unknown,limit:number,fallback="")=>typeof value==="string"?value.slice(0,limit*2).replace(/[\x00-\x1f\x7f]/g,"").slice(0,limit):fallback;
 export function projectPeerSession(raw:unknown,hostId:string):MeshSession|null{
@@ -54,7 +56,7 @@ export class GptAdminMesh {
   private routes=new Map<string,Route>();
   private readonly budget=new CoordinationDeliveryBudget();
   private readonly inputs=new Map<string,{digest:string;result:Promise<DeliveryReceipt>}>();
-  constructor(private readonly hub:GptAdminTransport,private readonly deadlineMs=5000){}
+  constructor(private readonly hub:GptAdminTransport,private readonly deadlineMs=5000,private readonly deliveryPolicy?:ProjectModelPolicyStateProvider){}
   private async bounded<T>(read:Promise<T>):Promise<T>{
     let timer:ReturnType<typeof setTimeout>|undefined;
     try {return await Promise.race([read,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("mesh_read_deadline")),this.deadlineMs);})]);}
@@ -87,14 +89,17 @@ export class GptAdminMesh {
         const truncated=snapshot.sessions.length>limit||snapshot.limited===true;
         if(truncated)peerLimited=true;
         const nativeIds=new Set<string>();
+        const projects=new Map<string,string|null>();
         const projected:MeshSession[]=[];let invalidSession=false;
         for(const raw of snapshot.sessions.slice(0,limit)){
           const s=projectPeerSession(raw,hostId);
           if(!s){invalidSession=true;continue;}
-          nativeIds.add(addressKey(s.address));projected.push(s);
+          const key=addressKey(s.address);nativeIds.add(key);projected.push(s);
+          // The work place of the peer session, as far as it is confirmed.
+          projects.set(key,s.project.currentCwd??s.project.launchCwd??null);
         }
         sessions.push(...projected);
-        if(tools.some(t=>t.name==="mesh_deliver"))freshRoutes.set(hostId,{target:peer.server_id,nativeIds});
+        if(tools.some(t=>t.name==="mesh_deliver"))freshRoutes.set(hostId,{target:peer.server_id,nativeIds,projects});
         const capabilities=compactHarnesses(snapshot.harnesses);
         receipt={hostId,target:peer.server_id,state:"available",complete:snapshot.complete===true&&!invalidSession&&!capabilities.partial&&!truncated,harnesses:capabilities.rows,...(invalidSession?{reason:"invalid_peer_session"}:capabilities.partial?{reason:"peer_capabilities_incomplete"}:{})};
       }catch(error){receipt.reason=error instanceof Error?shortReason(error.message):"mesh_read_failed";}
@@ -118,6 +123,10 @@ export class GptAdminMesh {
     // Re-resolve read-only identity/schema; never retry a native mutation here.
     if(!route){try{await this.discover(12);route=this.routes.get(request.target.hostId);}catch{/* unavailable remains explicit */}}
     if(!route)return {state:"not_attempted",inputId:request.inputId,retryable:true,reason:"mesh_route_unavailable"};
+    // A native session of another machine never passed through the tool gate
+    // of herder, so the delivery guards the model the session would run on.
+    const refusal=await this.checkDeliveryModel(request,route);
+    if(refusal)return refusal;
     const result=this.budget.run({target:addressKey(request.target),sender:addressKey(request.sender),inputId:request.inputId,message:request.message},async()=>{
       try{
         // One call only: a timeout or lost admission response is UNKNOWN, never replayed.
@@ -131,5 +140,24 @@ export class GptAdminMesh {
     const receipt=await result;
     if(receipt.state==="not_attempted"&&receipt.retryable)this.inputs.delete(key);
     return receipt;
+  }
+  /**
+   * The per-project model gate of one delivery to another machine.
+   *
+   * The project is the work place of the session: the work place declared on
+   * this machine first, then the one the peer confirmed. A refusal is not
+   * retryable, so the same intent is never delivered again.
+   */
+  private async checkDeliveryModel(request:MeshDelivery,route:Route):Promise<DeliveryReceipt|null>{
+   if(!this.deliveryPolicy)return null;
+   const state=await this.deliveryPolicy().catch(()=>({kind:"invalid" as const,error:"the project model policy could not be read"}));
+   const declared=await coordinationNotes.activeWorkspaceObservation(request.target.nativeSessionId).catch(()=>undefined);
+   const directory=declared?.cwd??route.projects.get(addressKey(request.target))??null;
+   try{
+    checkDeliveryModel(state,{directory,harness:request.target.harness});
+   }catch(error){
+    return {state:"not_attempted",inputId:request.inputId,retryable:false,reason:deliveryRefusalText(error)};
+   }
+   return null;
   }
 }

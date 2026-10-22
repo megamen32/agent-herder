@@ -82,9 +82,46 @@ is the single gate the callers use.
    back to the default of the harness. The same rule applies to the
    `fallbackModels` of `new_or_resume`: a fallback is a model the project would
    run on, so the project rules apply to it too.
+4. **Deliveries.** A session that was born outside herder's tools never passed
+   through the tool gate: a session the user started in the app, or a session
+   that a note delivery woke up. Such a session could still run a model the
+   project forbids. Every delivery therefore checks the model itself, with the
+   same rules: a delivery that names a model is checked against that model, a
+   delivery that names none is checked against
+   `route.models[harness] ?? policy.models[harness]` of the project of the
+   session. The gate lives in `src/project-model-delivery-gate.ts` and covers
+   the tools `send_message` and `deliver`, the local mesh delivery
+   (`mesh_deliver` of the local mesh) and the delivery to another machine
+   (`mesh_deliver` of the remote mesh). The refusal is the same error with the
+   same code `model_not_permitted_for_project`, it names the project and the
+   model, and it is not retryable: the mesh ledger keeps the refusal, so the
+   same intent is never delivered again.
 
 The tools receive the policy through a provider that reads the same stored
-document as the launcher (`readLaunchPolicyForGate` in `src/index.ts`).
+document as the launcher (`readLaunchPolicyForGate` in `src/index.ts`). The
+delivery gate reads the same document with its **state**
+(`readLaunchPolicyStateForGate`): a document that cannot be read is not a
+permission, so every delivery is refused while it is broken.
+
+### The work place of a session
+
+The project of a session is its work place, and the work place is resolved the
+same way everywhere:
+
+- the **declared** work place of the session (the coordination store, written by
+  `workspace_declare`) wins, because it is the directory the session really
+  works in;
+- otherwise the **own working directory** of the session;
+- a harness that reports a **pseudo project** - one working directory for the
+  whole runtime, as MiniMax Code does - does not know where its session works.
+  Its work place stays unknown until the session declares it, and a delivery
+  into such a session is refused while the policy restricts models anywhere.
+
+Two answers are refused instead of guessed: a policy document that cannot be
+read, and a work place that cannot be determined. A project **without a route**
+keeps the global policy and is unaffected, and a policy without any model list
+restricts nothing, so the gate stays quiet for a fleet that does not use the
+feature.
 
 ## How the operator configures it
 
