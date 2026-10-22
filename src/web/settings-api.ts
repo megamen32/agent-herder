@@ -28,7 +28,12 @@ import {
 } from "./settings-store.js";
 import { SettingsConnectionStore, probeConnection } from "./settings-connection.js";
 import { UnfinishedSessionLauncher } from "../autopilot/unfinished-session-launcher.js";
-import type { SettingsProfile } from "./settings-catalog.js";
+import { SettingsValueNotAllowedError, type SettingsProfile } from "./settings-catalog.js";
+
+import {
+  readFleetConfirmation,
+  type SettingsFleetConfirmation,
+} from "./settings-fleet-confirmation.js";
 
 /**
  * The API of the settings of the herder.
@@ -85,6 +90,16 @@ export interface SettingsApiOptions {
     /** The transport that reaches the other nodes of the fleet. */
     transport?: FleetDisarmTransport;
   };
+  /**
+   * The reader of the confirmation of the fleet.
+   *
+   * The reader asks the other nodes what they hold, so the owner asks for it
+   * and it is not read with every view of the settings.
+   */
+  fleetConfirmation?: (input: {
+    desiredRevision: string | null;
+    localKind: "valid" | "absent" | "invalid";
+  }) => Promise<SettingsFleetConfirmation>;
 }
 
 /** The answer of the owner check. */
@@ -653,6 +668,29 @@ const CONNECTION_TOKEN_KEY = "NOTIFY_CENTER_TOKEN";
         respond(response, 200, await readView());
         return true;
       }
+      if (request.method === "GET" && url.pathname === "/api/settings/fleet-confirmation") {
+        // The confirmation of the fleet: which node holds the wanted revision
+        // and which node did not answer. The poll reaches the other nodes of
+        // the fleet, so the owner asks for it and it is not read with every
+        // view of the settings.
+        let desiredRevision: string | null = null;
+        let localKind: "valid" | "absent" | "invalid" = "valid";
+        if (options.launchPolicy) {
+          try {
+            const policy = await options.launchPolicy.read();
+            desiredRevision = policy.etag;
+            localKind = policy.kind;
+          } catch {
+            // The policy is not readable on this node: there is no version of
+            // the owner to compare the nodes with, and the reader says so.
+          }
+        }
+        const confirmation = options.fleetConfirmation
+          ? await options.fleetConfirmation({ desiredRevision, localKind })
+          : await readFleetConfirmation({ desiredRevision, localKind, hostId });
+        respond(response, 200, confirmation);
+        return true;
+      }
       if (request.method === "GET" && url.pathname === "/api/settings/audit") {
         const limit = Number(url.searchParams.get("limit") ?? 100);
         respond(response, 200, {
@@ -761,6 +799,13 @@ const CONNECTION_TOKEN_KEY = "NOTIFY_CENTER_TOKEN";
     } catch (error) {
       // The message of an error never carries a value of a secret: the store
       // refuses a value before it is written and names the key, not the value.
+      if (error instanceof SettingsValueNotAllowedError) {
+        // The refusal of a value that does not fit the contract of its key:
+        // the answer names the key, the allowed values and the received
+        // value, and never a stack and never an internal id.
+        respond(response, 400, { ok: false, applied: false, error: error.message });
+        return true;
+      }
       respond(response, 400, { ok: false, error: (error as Error).message });
       return true;
     }

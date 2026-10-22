@@ -214,6 +214,11 @@
   color: var(--status-error);
 }
 
+/* A node that did not answer is not a failure of the change: it is unknown. */
+.herder-settings-state-unreachable {
+  color: var(--status-error);
+}
+
 .herder-settings-secret {
   display: inline-block;
   padding: 6px 10px;

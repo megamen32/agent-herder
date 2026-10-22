@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   catalogFor,
   DEFAULT_PROFILES,
+  envValueRefusal,
+  SettingsValueNotAllowedError,
   type SettingsApplyMode,
   type SettingsApplyState,
   type SettingsProfile,
@@ -161,7 +163,7 @@ export interface SettingsAuditRecord {
   id: string;
   at: string;
   actor: string;
-  action: "set" | "delete" | "rollback";
+  action: "set" | "delete" | "rollback" | "refused";
   entity: SettingsEntity;
   key: string;
   kind: "value" | "secret";
@@ -171,6 +173,13 @@ export interface SettingsAuditRecord {
   changed: boolean;
   /** The entry of the undo stack that carries the previous value. */
   historyId?: string;
+  /**
+   * Why the change was refused, in the language of the owner.
+   *
+   * A record of a refusal names the key and the reason. The value of a secret
+   * is never in the reason.
+   */
+  reason?: string;
 }
 
 /**
@@ -562,12 +571,10 @@ export class SettingsStore {
    */
   async validate(changes: { environment?: Record<string, unknown>; fleetNode?: Record<string, unknown> }): Promise<void> {
     if (changes.environment) {
+      const current = await this.currentEnvironmentValues();
       for (const [key, change] of Object.entries(changes.environment)) {
-        if (!ENV_KEY_PATTERN.test(key)) throw new Error(`the name of the setting is not a key of an environment file: ${key}`);
-        if (typeof change !== "string" && change !== null) throw new Error(`the value of the setting ${key} must be a string or null`);
-        if (typeof change === "string" && /[\r\n\0]/.test(change)) {
-          throw new Error(`the value of the setting ${key} must not contain a line break`);
-        }
+        const refusal = this.environmentRefusal(key, change);
+        if (refusal) await this.refuseEnvironmentChange(key, refusal.error, refusal.reason, current.get(key));
       }
     }
     if (changes.fleetNode) {
@@ -739,6 +746,92 @@ export class SettingsStore {
     return records;
   }
 
+  /**
+   * The refusal of a change of the environment of the herder.
+   *
+   * The refusal is computed here and recorded by `refuseEnvironmentChange`:
+   * the message of the error is what the API answers, the reason is what the
+   * owner reads in the journal of the changes.
+   *
+   * The contract of a key is the one of the catalog and the one of the
+   * service: the store refuses exactly what the service would refuse, so the
+   * file of the product never receives a value on which the service refuses
+   * to start.
+   */
+  private environmentRefusal(key: string, change: unknown): { error: Error; reason: string } | undefined {
+    if (!ENV_KEY_PATTERN.test(key)) {
+      return {
+        error: new Error(`the name of the setting is not a key of an environment file: ${key}`),
+        reason: `Настройка ${key}: имя не является ключом файла окружения.`,
+      };
+    }
+    if (typeof change !== "string" && change !== null) {
+      return {
+        error: new Error(`the value of the setting ${key} must be a string or null`),
+        reason: `Настройка ${key}: значение должно быть строкой.`,
+      };
+    }
+    if (typeof change === "string" && /[\r\n\0]/.test(change)) {
+      return {
+        error: new Error(`the value of the setting ${key} must not contain a line break`),
+        reason: `Настройка ${key}: значение не должно содержать перевод строки.`,
+      };
+    }
+    if (typeof change === "string") {
+      const message = envValueRefusal(key, change, { secret: isSecretKey(key) });
+      if (message) return { error: new SettingsValueNotAllowedError(key, message), reason: message };
+    }
+    return undefined;
+  }
+
+  /**
+   * The record of a refused change of the environment of the herder.
+   *
+   * A refusal is a record of the journal too: the owner sees that the panel
+   * refused the value and why. The record names the key and the reason, it
+   * never changes the value, and it never goes into the undo stack: a change
+   * that never happened cannot be rolled back.
+   *
+   * The value of a secret is never in the record and never a shadow of it:
+   * the record of a secret names the key and says whether the key is set.
+   */
+  private async refuseEnvironmentChange(
+    key: string,
+    error: Error,
+    reason: string,
+    current?: string,
+  ): Promise<never> {
+    const secret = isSecretKey(key);
+    const state: SettingsAuditValue = secret
+      ? { present: current !== undefined, configured: current !== undefined && current.length > 0 }
+      : { present: current !== undefined, ...(current !== undefined ? { value: current } : {}) };
+    await this.appendAudit({
+      id: randomUUID(),
+      at: this.now().toISOString(),
+      actor: this.actor,
+      action: "refused",
+      entity: "herder.env",
+      key,
+      kind: secret ? "secret" : "value",
+      before: { ...state },
+      after: { ...state },
+      changed: false,
+      reason,
+    });
+    throw error;
+  }
+
+  /** The values of the environment file of the product, as they are now. */
+  private async currentEnvironmentValues(): Promise<Map<string, string>> {
+    let text = "";
+    try {
+      text = await readFile(this.envPath, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    return parseEnvFile(text).values;
+  }
+
   /** The write of the environment without the lock of the store. */
   private async applyEnvironmentUnsafe(
     changes: Record<string, string | null>,
@@ -751,14 +844,16 @@ export class SettingsStore {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
     const { entries, values } = parseEnvFile(text);
+    // The value of every key is checked before the first write: a refused
+    // value leaves the file of the product exactly as it was, and the refusal
+    // is recorded as a refusal and never as a change.
+    for (const [key, change] of Object.entries(changes)) {
+      const refusal = this.environmentRefusal(key, change);
+      if (refusal) await this.refuseEnvironmentChange(key, refusal.error, refusal.reason, values.get(key));
+    }
     const records: SettingsAuditRecord[] = [];
     const pendingHistory: SettingsHistoryEntry[] = [];
     for (const [key, change] of Object.entries(changes)) {
-      if (!ENV_KEY_PATTERN.test(key)) throw new Error(`the name of the setting is not a key of an environment file: ${key}`);
-      if (typeof change !== "string" && change !== null) throw new Error(`the value of the setting ${key} must be a string or null`);
-      if (typeof change === "string" && /[\r\n\0]/.test(change)) {
-        throw new Error(`the value of the setting ${key} must not contain a line break`);
-      }
       const secret = isSecretKey(key);
       const previous = values.get(key);
       const before = secret
