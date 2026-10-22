@@ -208,9 +208,17 @@ export async function dispatchProjectLaunch(
   // disarmed runtime refuses it here, before any harness is touched. The
   // refusal names the reason and never changes the owner state: a retry, a
   // policy reload or a re-dispatch cannot lift the lever.
+  //
+  // The work of a dispatch has two project names: the project the caller
+  // asked for and the project the route governs. A route may resolve a
+  // directory to the root that contains it, so the key the owner blocked can
+  // be either of the two names. The gate checks both of them, so a block
+  // never falls silent when the route resolution of a project changes.
+  const requestedWorkKey = projectWorkKey(canonicalProjectKey(input.project));
+  const routedWorkKey = projectWorkKey(project);
   const disarm = await automationDisarmDecision(
     AutomationDisarmStore.forRuntime(),
-    [projectWorkKey(project)],
+    requestedWorkKey === routedWorkKey ? [requestedWorkKey] : [requestedWorkKey, routedWorkKey],
     "automation",
   );
   if (!disarm.allowed) {
