@@ -263,13 +263,26 @@ def prepare_packages(fleet: Path, sha: str, previous_sha: str,
         if metadata.get("name") != "agent-resume-mcp":
             raise RuntimeError("candidate packages/agent-resume is not agent-resume-mcp")
         if target.exists() or target.is_symlink():
-            raise RuntimeError("release-local node_modules must be absent before package preparation")
+            # Only the symlink to the store may be replaced: a symlink carries
+            # no bytes, and the store itself stays untouched, because the
+            # rollback release still resolves its package through it.
+            link_target = os.path.realpath(target.parent / os.readlink(target)) if target.is_symlink() else ""
+            if link_target != os.path.realpath(store):
+                raise RuntimeError("release-local node_modules must be absent before package preparation")
+            target.unlink()
         previous_resolution = package_resolution(fleet / "releases" / previous_sha)
-        subprocess.run(["cp", "-al", str(store), str(target)], check=True)
+        target.mkdir(parents=True)
+        # Hard links: the release gets its own tree that shares the bytes of
+        # the store. The store element agent-resume-mcp is left out on purpose,
+        # because the release must use its own package, not the one of the
+        # store. The store element may be a symlink or a real directory; in
+        # both cases it stays exactly as it is.
+        children = [child for child in sorted(store.iterdir()) if child.name != "agent-resume-mcp"]
+        if children:
+            subprocess.run(["cp", "-al"] + [str(child) for child in children] + [str(target)], check=True)
         resume = target / "agent-resume-mcp"
-        if not resume.is_symlink():
-            raise RuntimeError("root package store agent-resume-mcp is not a symlink")
-        resume.unlink()
+        if resume.exists() or resume.is_symlink():
+            raise RuntimeError("release-local node_modules already carries agent-resume-mcp")
         os.symlink("../packages/agent-resume", resume)
         candidate_resolution = package_resolution(fleet / "releases" / sha)
         if candidate_resolution != str(candidate_package.resolve(strict=True)):
@@ -370,6 +383,11 @@ def main() -> int:
         print("the managed Codex socket is not there; nothing was switched")
         return 1
     backup = fleet / f"node-config-before-{arguments.sha[:8]}.json"
+    if backup.exists():
+        # An earlier record of this release must not be overwritten: it holds
+        # the configuration of the node from before that release was installed.
+        backup = fleet / (f"node-config-before-{arguments.sha[:8]}."
+                          f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json")
     shutil.copy2(config_path, backup)
     previous_sha = config.get("sourceSha")
     config["sourceSha"] = arguments.sha
