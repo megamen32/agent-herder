@@ -738,16 +738,6 @@ async function currentLaunchPolicyRevision(
 const MAX_SESSION_LIST_WINDOW = 500;
 
 /**
- * The window of the quick list when the caller names none.
- *
- * The quick list is the one the panel reads. The whole list of the mesh is
- * megabytes of JSON, so the quick branch answers a window by default and
- * says that it is a window: the answer carries `truncated`, `total` and
- * `limit`, so a caller that needs the rest asks for more.
- */
-const DEFAULT_SESSION_LIST_WINDOW = 100;
-
-/**
  * The budget of the answer of the list, in bytes.
  *
  * The size of a session is not uniform: a session with a long history is
@@ -2217,15 +2207,16 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (url.searchParams.get("quick") === "1") {
       const snapshot = supervisor.listSessionsFast(filters);
       const total = snapshot.sessions.length;
-      // The quick branch answers a window by default. The answer says that
-      // it is a window: `truncated`, `total` and `limit` travel with it, so
-      // the caller knows that the list is longer and can ask for more.
-      const limit = asked ?? DEFAULT_SESSION_LIST_WINDOW;
-      const visible = sessionListWindow(snapshot.sessions, limit);
+      // The window of the list applies when the caller names it: a caller
+      // that asks for the whole list gets the whole list, and the answer
+      // carries the counter of the list either way. The panel of the herder
+      // names its window, and the answer says that it is a window:
+      // `truncated`, `total` and `limit` travel with it.
+      const visible = asked === undefined ? snapshot.sessions : sessionListWindow(snapshot.sessions, asked);
       const truncated = visible.length < total;
       return sendJson(response, 200, url.searchParams.get("inventory") === "1"
-        ? { sessions: projectSessionInventory(visible), warming: snapshot.warming, total, limit, truncated }
-        : { ...snapshot, sessions: visible, total, limit, truncated });
+        ? { sessions: projectSessionInventory(visible), warming: snapshot.warming, total, ...(asked === undefined ? {} : { limit: asked, truncated }) }
+        : { ...snapshot, sessions: visible, total, ...(asked === undefined ? {} : { limit: asked, truncated }) });
     }
     const sessions = await supervisor.listSessions(filters);
     const total = sessions.length;

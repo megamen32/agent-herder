@@ -75,23 +75,16 @@ describe("the list of the sessions is a window with a counter", () => {
     expect(body.truncated).toBe(true);
   });
 
-  it("answers the default window when the caller names none, and says that it is a window", async () => {
+  it("answers the whole list when the caller names no window, and says how many sessions there are", async () => {
     const base = await startServer(150);
     const response = await fetch(`${base}/api/sessions?quick=1`);
     const body = await response.json() as { sessions: unknown[]; total?: number; limit?: number; truncated?: boolean };
-    expect(body.sessions.length).toBe(100);
+    // A caller that names no window gets the whole list: a contour that
+    // counts the sessions of the mesh must not lose half of them silently.
+    expect(body.sessions.length).toBe(150);
     expect(body.total).toBe(150);
-    expect(body.limit).toBe(100);
-    expect(body.truncated).toBe(true);
-  });
-
-  it("keeps the whole list when it is shorter than the default window", async () => {
-    const base = await startServer(25);
-    const response = await fetch(`${base}/api/sessions?quick=1`);
-    const body = await response.json() as { sessions: unknown[]; total?: number; limit?: number; truncated?: boolean };
-    expect(body.sessions.length).toBe(25);
-    expect(body.total).toBe(25);
-    expect(body.truncated).toBe(false);
+    expect(body.limit).toBeUndefined();
+    expect(body.truncated).toBeUndefined();
   });
 
   it("bounds the window and never answers more than the bound", async () => {
@@ -119,10 +112,10 @@ describe("the list of the sessions is a window with a counter", () => {
     const base = await startServer(25);
     const response = await fetch(`${base}/api/sessions?quick=1&limit=many`);
     const body = await response.json() as { sessions: unknown[]; total?: number; limit?: number; truncated?: boolean };
-    // A window that is not a number is no window: the default answers.
+    // A window that is not a number is no window: the whole list answers.
     expect(body.sessions.length).toBe(25);
     expect(body.total).toBe(25);
-    expect(body.limit).toBe(100);
-    expect(body.truncated).toBe(false);
+    expect(body.limit).toBeUndefined();
+    expect(body.truncated).toBeUndefined();
   });
 });
