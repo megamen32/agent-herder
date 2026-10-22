@@ -117,6 +117,11 @@ def load_models(source):
     return models, document
 
 
+def default_models():
+    """The fleet model map that ships with the deploy, and its document."""
+    return load_models(None)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state-dir", required=True, help="the node autopilot state directory")
