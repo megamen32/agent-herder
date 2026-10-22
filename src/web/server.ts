@@ -21,7 +21,7 @@ import type { IntegratorFleetRuntime } from "../integrator-fleet-runtime.js";
 import { NOTICEPLACE_HEALTH_AUTHORIZED, NOTICEPLACE_HEALTH_PURPOSE, hasNoticeplaceHealthBearer, qualifyNoticeplaceHealthModel, validateNoticeplaceHealthLaunch } from "../automation/noticeplace-health-launch.js";
 import { buildSessionProgress } from "../health-progress.js";
 import { NoticeplaceHealthObserver } from "../automation/noticeplace-health-observer.js";
-import { appendHealthRefusalAudit, healthRefusalAuditPath } from "../automation/health-reason-codes.js";
+import { appendHealthRefusalAudit, healthRefusalAuditPath, type HealthReasonRefusal } from "../automation/health-reason-codes.js";
 import { NOTICEPLACE_HEALTH_MODELS, resolveLaunchHealthPlan } from "../automation/noticeplace-health-policy.js";
 import { readArmedHealthCandidates, recoverNoticeplaceHealthObservation } from "../automation/noticeplace-health-recovery.js";
 import { createMiniMaxQuotaPreflight } from "../automation/minimax-quota-preflight.js";
@@ -51,7 +51,7 @@ import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
 import { createHash } from "node:crypto";
 import { toNodeHandler, type NodeMcpRequestHandler } from "@modelcontextprotocol/node";
 import type { AdapterRegistry } from "../adapter-registry.js";
-import type { HerderEventBus } from "../herder-events.js";
+import { publishHealthRefusal, type HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { handleQuotaLensRequest } from "./quota-lens.js";
 import { getS21Ownership } from "../s21-resource-ownership.js";
@@ -768,6 +768,34 @@ export function createWebServer(dependencies: WebDependencies): Server {
   // The machine-readable trail of the refusals of the health contour. A reader
   // counts the refusals by their code in this file and never parses a wording.
   const healthRefusalAudit = healthRefusalAuditPath(resolveAutopilotStateDir());
+  /**
+   * The refusal of the health contour travels into the journal of the events.
+   *
+   * A reader of the events reads the class of the refusal and not its
+   * wording, so the class travels in the `reason_code` of the event and
+   * the incident in its uri. The bus of the runtime is used only when it
+   * is there: a herder without a bus has no journal of the runtime to
+   * publish into, and the refusal stays in the durable trail.
+   */
+  const publishHealthRefusalEvent = (refusal: HealthReasonRefusal): void => {
+    const bus = dependencies.herderEvents;
+    // The bus of the runtime is passed explicitly. The module bus of the
+    // events is a different journal, and a silent publication into it
+    // would hide the refusal from the reader of the runtime.
+    if (!bus) return;
+    try {
+      publishHealthRefusal({
+        incidentId: refusal.incidentId,
+        reasonCode: refusal.code,
+        source: refusal.detail ?? refusal.workKey,
+      }, bus);
+    } catch (error) {
+      // A refusal whose class is unknown has no machine-readable meaning,
+      // so the journal refuses it. The failure is loud: a refusal that was
+      // not published must never look like a published one.
+      console.error(`Health refusal for incident ${refusal.incidentId} was not published into the event journal: ${(error as Error).message}`);
+    }
+  };
   // The center's observer is bounded so the incident card is never held back.
   // This one keeps the same native session under observation until it ends.
   const noticeplaceHealthObserver = new NoticeplaceHealthObserver({
@@ -800,7 +828,10 @@ export function createWebServer(dependencies: WebDependencies): Server {
     // The refusal of the observer reaches the consumer as a machine-readable
     // record: the class of the refusal is a field of the record, not a part of
     // the wording of the log line.
-    onRefused: (refusal) => { void appendHealthRefusalAudit(healthRefusalAudit, refusal); },
+    onRefused: (refusal) => {
+      void appendHealthRefusalAudit(healthRefusalAudit, refusal);
+      publishHealthRefusalEvent(refusal);
+    },
     onPublished: (update) => console.log(`Notice health observer published ${update.fingerprint} for ${update.binding.incidentId} plan ${update.planId}`),
     onError: (message) => console.error(message),
   });
@@ -881,7 +912,10 @@ export function createWebServer(dependencies: WebDependencies): Server {
       console.log(`Notice health observer recovered ${result.armed} armed sessions after the restart (${result.skipped} skipped)`);
       // The refusals of the repair reach the consumer in the same trail the
       // live observer writes into.
-      for (const refusal of result.refusals) await appendHealthRefusalAudit(healthRefusalAudit, refusal);
+      for (const refusal of result.refusals) {
+        await appendHealthRefusalAudit(healthRefusalAudit, refusal);
+        publishHealthRefusalEvent(refusal);
+      }
       // The reason of every skipped session is the operator's evidence: the
       // counters alone do not say why a session was not observed. The reasons
       // name a session and a cause, never a secret of the incident.
