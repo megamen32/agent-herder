@@ -21,6 +21,10 @@ describe("registered Codex communication delivery", () => {
     const root = await mkdtemp(join(tmpdir(), "rc-"));
     const previous = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
     process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(root, "stops.json");
+    // The quota guard reads its policy from the autopilot state dir. An empty
+    // one is the default policy: enabled, reserve 20%, unknown blocks.
+    const previousAutopilotStateDir = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR;
+    process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR = join(root, "autopilot");
     const listInbox = vi.spyOn(deferredMessages, "list").mockResolvedValue([]);
     const removeInbox = vi.spyOn(deferredMessages, "remove").mockImplementation(async () => { listInbox.mockResolvedValue([]); });
     const deferred = vi.spyOn(deferredMessages, "add").mockImplementation(async (sessionId, message) => ({ id: "fixture-deferred", sessionId, message, createdAt: new Date().toISOString() }));
@@ -44,6 +48,9 @@ describe("registered Codex communication delivery", () => {
       switch (req.method) {
         case "initialize": return reply({});
         case "initialized": return;
+        // The quota guard asks the native server for its rate limits before
+        // every admission: a healthy reading opens the path.
+        case "account/rateLimits/read": return reply({ rateLimits: { primary: { used_percent: 10, reset_at: Math.floor(Date.now() / 1000) + 3600 }, secondary: { used_percent: 10, reset_at: Math.floor(Date.now() / 1000) + 7200 } } });
         case "thread/read": return reply({ thread });
         case "thread/list": return reply({ data: [thread], nextCursor: null });
         case "thread/resume": return reply({ thread });
@@ -121,6 +128,8 @@ describe("registered Codex communication delivery", () => {
       await new Promise<void>(resolve => http.close(() => resolve()));
       if (previous === undefined) delete process.env.AGENT_HERDER_HUMAN_STOP_STORE;
       else process.env.AGENT_HERDER_HUMAN_STOP_STORE = previous;
+      if (previousAutopilotStateDir === undefined) delete process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR;
+      else process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR = previousAutopilotStateDir;
       await rm(root, { recursive: true, force: true });
     }
   }, 15_000);
