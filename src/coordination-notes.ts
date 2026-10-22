@@ -449,6 +449,59 @@ export class CoordinationNoteStore {
     });
   }
 
+  /**
+   * Live work-place declarations of every session: one read of the ledger.
+   * The read is lock-free on purpose. The ledger is replaced atomically, so
+   * a reader always sees a whole file, and a long list of sessions must not
+   * wait for the write lock of another process. Expired declarations are
+   * left in the file; the next write of the ledger prunes them.
+   */
+  async activeWorkspaceDeclarations(): Promise<Map<string, WorkspaceDeclaration>> {
+    const file = await this.read();
+    const now = Date.now();
+    const declarations = new Map<string, WorkspaceDeclaration>();
+    for (const entry of file.workspaceDeclarations ?? []) {
+      if (Date.parse(entry.expiresAt) > now) declarations.set(entry.sessionId, entry);
+    }
+    return declarations;
+  }
+
+  /**
+   * Work place of many sessions from declarations that are already read.
+   * The answer is the same as the single observation of every session: a
+   * live declaration wins, an expired one is ignored, and local coordination
+   * activity is the fallback. Session ids without any signal are simply
+   * absent from the result.
+   */
+  workspaceObservations(declarations: Map<string, WorkspaceDeclaration>, sessionIds: string[]): Map<string, WorkspaceObservation> {
+    const observations = new Map<string, WorkspaceObservation>();
+    for (const sessionId of wantedSessionIds(sessionIds)) {
+      const declaration = declarations.get(sessionId);
+      if (declaration) {
+        this.workspaceCache.set(sessionId, declaration);
+        observations.set(sessionId, { hostId: declaration.hostId, cwd: declaration.cwd, source: "declared", expiresAt: declaration.expiresAt });
+        continue;
+      }
+      this.workspaceCache.delete(sessionId);
+      const cwd = this.activeWorkspaceForSession(sessionId);
+      if (cwd) observations.set(sessionId, { hostId: this.localHostId, cwd, source: "coordination_activity" });
+    }
+    return observations;
+  }
+
+  /**
+   * Work place of many sessions from one read of the ledger.
+   * The session list holds thousands of sessions, so one observation per
+   * session would turn a single listing into thousands of reads and writes
+   * of the ledger.
+   */
+  async activeWorkspaceObservations(sessionIds: string[]): Promise<Map<string, WorkspaceObservation>> {
+    const wanted = wantedSessionIds(sessionIds);
+    if (!wanted.length) return new Map<string, WorkspaceObservation>();
+    const declarations = await this.activeWorkspaceDeclarations();
+    return this.workspaceObservations(declarations, wanted);
+  }
+
   async declareWorkspace(input: { sessionId: string; harness: string; hostId?: string; cwd: string; ttlSeconds?: number }): Promise<WorkspaceDeclaration> {
     return this.serial(async () => {
       const file = await this.readAndPrune();
@@ -613,6 +666,9 @@ function boundedTtl(value?: number): number {
   const ttl = value ?? DEFAULT_TTL_SECONDS;
   if (!Number.isFinite(ttl) || ttl < 60 || ttl > MAX_TTL_SECONDS) throw new Error(`ttlSeconds must be between 60 and ${MAX_TTL_SECONDS}`);
   return Math.round(ttl);
+}
+function wantedSessionIds(sessionIds: string[]): string[] {
+  return [...new Set((Array.isArray(sessionIds) ? sessionIds : []).map((id) => (typeof id === "string" ? id.trim() : "")).filter(Boolean))];
 }
 function requiredText(value: string, field: string, max: number): string {
   const text = value?.trim();
