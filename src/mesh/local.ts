@@ -8,6 +8,8 @@ import {MeshDeliveryLedger} from "./delivery-ledger.js";
 import {inventoryHarnesses} from "./inventory.js";
 import {coordinationNotes,type CoordinationNoteStore} from "../coordination-notes.js";
 import {checkDeliveryModel,deliveryRefusalText,resolveSessionWorkDirectory,type ProjectModelPolicyStateProvider} from "../project-model-delivery-gate.js";
+import {holdManualStop} from "../human-stop-actions.js";
+import {getHumanStopStore} from "../human-stop-store.js";
 import {MINIMAX_CODE_HARNESS_CWD} from "../adapters/minimax-code-store.js";
 import {MINIMAX_CODE_HARNESS,observeMinimaxCode,runMinimaxCodeDelivery} from "./native-minimax-code.js";
 export interface HarnessMeshCapability {harness:string;discovery:"available"|"unavailable";delivery:"available"|"unsupported";reason?:string}
@@ -136,10 +138,14 @@ export class LocalHarnessMesh {
   if(compactSession(this.hostId,session).address.nativeSessionId!==request.target.nativeSessionId)return rejected("native_session_identity_mismatch");
   // One stable intent stops the session once; an unproven stop keeps its receipt.
   const receipt=await this.ledger.once({target:request.target,sender:request.target,inputId:request.inputId,message:"stop"},async()=>{
+   // The fence of the stop: the same manual hold the local path writes, on
+   // this host, so the delivery path of this host sees the stopped session.
+   await holdManualStop(session);
+   const held=await getHumanStopStore().isHeld(session.harness,session.id).catch(()=>false);
    let result;
-   try{result=await adapter.stopSession(sessionId);}catch{return {state:"unknown" as const,inputId:request.inputId,retryable:false,reason:"native_stop_unknown"};}
-   if(!result.ok)return {state:"not_attempted" as const,inputId:request.inputId,retryable:true,reason:result.error||"native_stop_failed"};
-   return {state:"admitted" as const,inputId:request.inputId,retryable:false,reason:"native_session_stopped"};
+   try{result=await adapter.stopSession(sessionId);}catch{return {state:"unknown" as const,inputId:request.inputId,retryable:false,reason:"native_stop_unknown",held};}
+   if(!result.ok)return {state:"not_attempted" as const,inputId:request.inputId,retryable:true,reason:result.error||"native_stop_failed",held};
+   return {state:"admitted" as const,inputId:request.inputId,retryable:false,reason:held?"native_session_stopped":"native_session_stopped_without_hold",held};
   });
   return {...receipt,hostId:this.hostId,harness:request.target.harness,nativeSessionId:request.target.nativeSessionId};
  }

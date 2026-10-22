@@ -702,9 +702,16 @@ async function stopRemoteSession(
     return `Failed to stop agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}': ${error instanceof Error ? error.message : String(error)}`;
   }
   const state = String(reply.state ?? "");
-  if (state === "admitted") return `Stopped agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}'.`;
-  if (state === "unknown") return `Stop of agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}' is unproven and must not be replayed.`;
+  // The hold of the stop is the fence: a session that is stopped but not held
+  // is still open to automatic deliveries, and that is said out loud.
+  const held = reply.held === true || reply.reason === "native_session_stopped";
   const reason = typeof reply.reason === "string" && reply.reason ? `: ${reply.reason}` : "";
+  if (state === "admitted") {
+    if (held) return `Stopped agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}'.`;
+    return `Stopped agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}', but the hold was not recorded there: automatic deliveries may still reach that session.`;
+  }
+  if (state === "unknown") return `Stop of agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}' is unproven and must not be replayed.`;
+  if (held) return `Agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}' was held, but the stop failed${reason}`;
   return `Failed to stop agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}'${reason}`;
 }
 

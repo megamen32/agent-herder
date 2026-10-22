@@ -4,7 +4,8 @@ export interface ProjectObservation { launchCwd: string | null; currentCwd: stri
 export interface MeshSession { address: MeshAddress; project: ProjectObservation; status: string; title: string; lastActivity: string; createdAt?: string; model?: string }
 export interface NativeReceipt { state: "admitted" | "not_attempted" | "unknown"; inputId: string; turnId?: string; retryable: boolean; reason?:string; retryAfterMs?:number }
 /** Receipt of one native stop. An unproven stop is never replayed. */
-export interface NativeStopReceipt extends NativeReceipt { hostId: string; harness: string; nativeSessionId: string }
+export interface NativeStopReceipt extends NativeReceipt { hostId: string; harness: string; nativeSessionId: string; /** The manual stop of the session was recorded on this host. */
+  held?: boolean }
 type SessionInput = { id: string; harness: string; cwd: string; status: string; title: string; lastActivity: string; model?: string; meta?: Record<string, unknown> };
 export function addressKey(address: MeshAddress): string {
   for (const value of [address.hostId,address.harness,address.nativeSessionId]) if (!value || value.length>512 || /[\x00-\x1f\x7f]/.test(value)) throw new Error("Invalid native mesh address");

@@ -5,6 +5,8 @@ import {inventoryHarnesses} from "./inventory.js";
 import type {FleetSessionControl,FleetSessionResponse} from './fleet-session-control.js';
 import {checkDeliveryModel,deliveryRefusalText,type ProjectModelPolicyStateProvider} from "../project-model-delivery-gate.js";
 import {coordinationNotes} from "../coordination-notes.js";
+import {compactAutomaticMessage} from "../long-messages.js";
+import {MINIMAX_CODE_HARNESS} from "./native-minimax-code.js";
 
 /** Supplied by the authenticated consumer; mesh does not mint tokens or bypass profiles. */
 export interface GptAdminTransport {
@@ -130,7 +132,8 @@ export class GptAdminMesh {
     const result=this.budget.run({target:addressKey(request.target),sender:addressKey(request.sender),inputId:request.inputId,message:request.message},async()=>{
       try{
         // One call only: a timeout or lost admission response is UNKNOWN, never replayed.
-        const reply=unwrapResult(await this.bounded(this.hub.call(route.target,"mesh_deliver",{...request},createHash("sha256").update(key).digest("hex"))));
+        const message=await this.prepareMessage(request,route);
+        const reply=unwrapResult(await this.bounded(this.hub.call(route.target,"mesh_deliver",{...request,message},createHash("sha256").update(key).digest("hex"))));
         if(reply.inputId!==request.inputId||!["admitted","not_attempted","unknown"].includes(String(reply.state)))return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
         if(reply.state==="admitted"&&typeof reply.turnId!=="string")return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
         return JSON.stringify({state:reply.state,...(reply.state==="not_attempted"&&reply.retryable===true?{delivery:"not_attempted"}:{}),inputId:request.inputId,...(typeof reply.turnId==="string"?{turnId:reply.turnId}:{}),retryable:reply.state==="not_attempted"&&reply.retryable===true,...(typeof reply.reason==="string"?{reason:reply.reason}:{}),...(typeof reply.retryAfterMs==="number"?{retryAfterMs:reply.retryAfterMs}:{})});
@@ -140,6 +143,30 @@ export class GptAdminMesh {
     const receipt=await result;
     if(receipt.state==="not_attempted"&&receipt.retryable)this.inputs.delete(key);
     return receipt;
+  }
+  /**
+   * The message of one delivery to another machine.
+   *
+   * The notes of the hub and the notes of the client machine are different
+   * files, so the hub carries its own active notes for the target session in
+   * the message. The injection rules are the rules of the local path: the same
+   * `<agent-herder-coordination>` block, and only a material change is injected
+   * again. The remote side skips its own injection when the block is already
+   * there, so the message never carries two coordination blocks.
+   *
+   * The codex lane keeps its observable behaviour: only the native lane of the
+   * MiniMax Code runtime carries the notes of the hub.
+   */
+  private async prepareMessage(request:MeshDelivery,route:Route):Promise<string>{
+   if(request.target.harness!==MINIMAX_CODE_HARNESS)return request.message;
+   const declared=await coordinationNotes.activeWorkspaceObservation(request.target.nativeSessionId).catch(()=>undefined);
+   const cwd=declared?.cwd??route.projects.get(addressKey(request.target))??null;
+   // Without a work place the board of the session is unknown, and there are
+   // no notes of the hub that belong to it.
+   if(!cwd)return request.message;
+   const session={id:request.target.nativeSessionId,harness:request.target.harness,cwd,hostId:request.target.hostId};
+   const injected=await coordinationNotes.inject(session,request.message);
+   return compactAutomaticMessage(injected,1200,request.message);
   }
   /**
    * The per-project model gate of one delivery to another machine.
