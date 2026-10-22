@@ -1,6 +1,10 @@
-import {describe,it,expect,vi} from 'vitest';
+import {afterEach,beforeEach,describe,it,expect,vi} from 'vitest';
+// An empty state dir means the default quota policy: enabled, reserve 20%.
+const POLICY_DIR='/tmp/herder-quota-policy-none';
 import {FleetGptAdminTransport} from '../src/mesh/fleet-gptadmin-transport.js';
 describe('GPTAdmin tenant fleet transport (focused integration; expected 2s, maximum 20s)',()=>{
+ beforeEach(()=>vi.stubEnv('AGENT_HERDER_AUTOPILOT_STATE_DIR',POLICY_DIR));
+ afterEach(()=>vi.unstubAllEnvs());
  it('requests full native DTOs and schemas rather than human compact previews (regression; expected 1s, maximum 5s)',async()=>{
   const requests:any[]=[];
   const fake=vi.fn(async(_url:any,init:any)=>{
@@ -9,7 +13,9 @@ describe('GPTAdmin tenant fleet transport (focused integration; expected 2s, max
    let result:any={protocolVersion:'2025-11-25'};
    if(r.method==='tools/call'){
     requests.push(r.params);const full=r.params.arguments.detail==='full';
-    result=r.params.name==='schema'?(full?{tools:[{name:'mesh_snapshot',inputSchema:{type:'object'}}]}:{preview:'schema preview'}):(full?{hostId:'roomhacker-server-100',sessions:[]}:{bytes:128,preview:'native snapshot preview',status:'completed'});
+    // The fleet guard reads the recipient's own Codex quota before an admission.
+    if(r.params.name==='execute'&&r.params.arguments.tool==='model_quotas')result={structuredContent:{checkedAt:new Date().toISOString(),providers:[{provider:'codex',state:'reported',checkedAt:new Date().toISOString(),details:{primary_used:10,secondary_used:10,allowed:true,limit_reached:false}}]}};
+    else result=r.params.name==='schema'?(full?{tools:[{name:'mesh_snapshot',inputSchema:{type:'object'}}]}:{preview:'schema preview'}):(full?{hostId:'roomhacker-server-100',sessions:[]}:{bytes:128,preview:'native snapshot preview',status:'completed'});
    }
    return new Response(JSON.stringify({id:r.id,result}));
   });
@@ -26,14 +32,15 @@ describe('GPTAdmin tenant fleet transport (focused integration; expected 2s, max
    const tool=request.params?.name;let result:any={protocolVersion:'2025-11-25',capabilities:{},serverInfo:{name:'hub',version:'1'}};
    if(tool==='discover')result={structuredContent:{status:'completed',response:{servers:[]}}};
    if(tool==='schema')result={content:[{type:'text',text:JSON.stringify({status:'completed',server_id:'mcp:shell:88:AgentHerder',response:{tools:[{name:'create_session'}]}})}]};
-   if(tool==='execute')result={structuredContent:{status:'running',job_id:'j',owner_target:'shell:88'}};
+   if(tool==='execute')result=request.params.arguments.tool==='model_quotas'?{structuredContent:{checkedAt:new Date().toISOString(),providers:[{provider:'codex',state:'reported',checkedAt:new Date().toISOString(),details:{primary_used:10,secondary_used:10,allowed:true,limit_reached:false}}]}}:{structuredContent:{status:'running',job_id:'j',owner_target:'shell:88'}};
    if(tool==='job'){expect(request.params.arguments.id).toBe('j');result={structuredContent:{status:'completed',result:{content:[{type:'text',text:JSON.stringify({ok:true,created:true,harness:'codex',sessionId:'native',cwd:'/work'})}]}}};}
    return new Response(JSON.stringify({jsonrpc:'2.0',id:request.id,result}),{headers:{'Content-Type':'application/json','Mcp-Session-Id':'owned-session'}});
   });
   const transport=new FleetGptAdminTransport({endpoint:'https://hub.test/mcp/tenant',headersProvider:()=>({Authorization:'protected-memory-only'}),fetch:fake as any});
   await transport.discover();expect((await transport.schema('mcp:shell:88:AgentHerder') as any).tools[0].name).toBe('create_session');
   expect((await transport.call('mcp:shell:88:AgentHerder','create_session',{harness:'codex'},'digest') as any).sessionId).toBe('native');
-  expect(calls.filter(r=>r.params?.name==='execute')).toHaveLength(1);expect(calls.filter(r=>r.method==='initialize')).toHaveLength(1);
+  // The quota preflight is one more execute; the mutation itself stays single.
+  expect(calls.filter(r=>r.params?.name==='execute'&&r.params.arguments.tool==='create_session')).toHaveLength(1);expect(calls.filter(r=>r.method==='initialize')).toHaveLength(1);
  });
  it('does not retry a lost mutation response and never shares session headers with another transport',async()=>{
   const first=vi.fn(async(_url:any,init:any)=>{const r=JSON.parse(init.body);if(r.method==='initialize')return new Response(JSON.stringify({id:r.id,result:{protocolVersion:'2025-11-25'}}),{headers:{'Mcp-Session-Id':'one'}});if(r.method==='notifications/initialized')return new Response(null,{status:202});throw new Error('lost after mutation');});

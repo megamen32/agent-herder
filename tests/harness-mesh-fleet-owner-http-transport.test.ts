@@ -7,8 +7,13 @@ vi.mock('node:os',()=>({hostname:vi.fn(()=> 'roomhacker-server-100')}));
 import {FleetOwnerHttpTransport} from '../src/mesh/fleet-owner-http-transport.js';
 
 const target44='mcp:shell:server-44:AgentHerder',target88='mcp:shell:roomhacker-server-88:AgentHerder';
+// An empty state dir means the default quota policy: enabled, reserve 20%.
+const POLICY_DIR='/tmp/herder-quota-policy-none';
+// The fleet guard reads the recipient's own Codex quota before an admission.
+const reportedCodexQuota=()=>({checkedAt:new Date().toISOString(),providers:[{provider:'codex',state:'reported',checkedAt:new Date().toISOString(),details:{primary_used:10,secondary_used:10,allowed:true,limit_reached:false}}]});
 type Context={cookie:string;credentialGeneration:string};
 function fixture(){
+ vi.stubEnv('AGENT_HERDER_AUTOPILOT_STATE_DIR',POLICY_DIR);
  let context:Context|undefined={cookie:'session=owner-a',credentialGeneration:'a'};
  const calls:Array<{options:RequestOptions;body?:any;req:any;res?:any}>=[];
  let handler=(call:typeof calls[number]):unknown=>{
@@ -19,6 +24,7 @@ function fixture(){
   const host=String((call.options.headers as any).Host)==='agent88.bezrabotnyi.com'?'roomhacker-server-88':'server-44';
   if(body.params?.name==='fleet_node_info')return {content:[{type:'text',text:JSON.stringify({hostId:host,nativeUser:'roomhacker'})}]};
   if(body.params?.name==='mesh_snapshot')return {structuredContent:{hostId:host,sessions:[]}};
+  if(body.params?.name==='model_quotas')return {structuredContent:reportedCodexQuota()};
   return {structuredContent:{state:'unknown'}};
  };
  const respond=(call:typeof calls[number],data:unknown,status=200,headers:Record<string,unknown>={})=>{
@@ -43,7 +49,7 @@ function fixture(){
  const transport=new FleetOwnerHttpTransport({ownerContext:()=>context},request);
  return {transport,calls,request,respond,setContext:(c:Context|undefined)=>{context=c;},setHandler:(h:typeof handler)=>{handler=h;},hold:()=>{held=true;},release:()=>{held=false;}};
 }
-afterEach(()=>{vi.useRealTimers();vi.mocked(hostname).mockReturnValue('roomhacker-server-100');});
+afterEach(()=>{vi.useRealTimers();vi.unstubAllEnvs();vi.mocked(hostname).mockReturnValue('roomhacker-server-100');});
 describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=>{
  it('uses only approved TLS aliases/physicalHAOS and required own Origin, with no bearer/pooled socket',async()=>{
   const f=fixture();expect(await f.transport.schema(target44)).toEqual({tools:[{name:'create_session'}]});
@@ -126,7 +132,11 @@ describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=
   vi.useFakeTimers();const pending=f.transport.call(target44,'create_session',{harness:'codex',cwd:'/work',name:'n',inputId:'wrong'},'a'.repeat(64));
   await Promise.resolve();await Promise.resolve();const info=f.calls.at(-1)!;
   f.respond(info,{id:info.body.id,result:{structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}}});
-  for(let i=0;i<8;i++)await Promise.resolve();
+  // The guard reads the recipient's own quota before the mutation.
+  for(let i=0;i<40;i++){await vi.advanceTimersByTimeAsync(1);if(f.calls.at(-1)?.body?.params?.name==='model_quotas')break;}
+  const quota=f.calls.at(-1)!;expect(quota.body.params.name).toBe('model_quotas');
+  f.respond(quota,{id:quota.body.id,result:{structuredContent:reportedCodexQuota()}});
+  for(let i=0;i<40;i++){await vi.advanceTimersByTimeAsync(1);if(f.calls.at(-1)?.body?.params?.name==='fleet_create_session')break;}
   const create=f.calls.at(-1)!;expect(create.body.params).toMatchObject({name:'fleet_create_session',arguments:{inputId:'a'.repeat(64)}});
   const rejected=expect(pending).rejects.toThrow('owner_http_deadline');await vi.advanceTimersByTimeAsync(30000);await rejected;
   expect(f.calls.filter(c=>c.body?.params?.name==='fleet_create_session')).toHaveLength(1);expect(vi.getTimerCount()).toBe(0);
@@ -181,7 +191,7 @@ describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=
 // Remote human controls reuse the existing owner API, not mesh AI delivery.
 describe('remote session human controls (focused integration; expected2s/max20s)',()=>{
  it('sends exactly once to the selected owner/native SID with stable input and human origin',async()=>{
-  const f=fixture();f.setHandler(c=>{if(c.options.method==='GET')return {session:{id:'accepted-44',harness:'codex'}};if(c.body.humanRequested)return {ok:true,inputId:c.body.inputId,admitted:true};if(c.body.method==='initialize')return {protocolVersion:'2025-11-25',capabilities:{}};return {structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}};});
+  const f=fixture();f.setHandler(c=>{if(c.options.method==='GET')return {session:{id:'accepted-44',harness:'codex'}};if(c.body.params?.name==='model_quotas')return {structuredContent:reportedCodexQuota()};if(c.body.humanRequested)return {ok:true,inputId:c.body.inputId,admitted:true};if(c.body.method==='initialize')return {protocolVersion:'2025-11-25',capabilities:{}};return {structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}};});
   const r=await f.transport.requestSession(target44,'codex','accepted-44',{operation:'message',inputId:'owned-input',message:'hello',mode:'queue'});
   expect(r).toEqual({hostId:'server-44',status:200,body:{ok:true,inputId:'owned-input',admitted:true}});
   const writes=f.calls.filter(c=>c.body?.humanRequested);expect(writes).toHaveLength(1);expect(writes[0].options.path).toBe('/api/sessions/codex/accepted-44/message');expect(writes[0].body).toEqual({humanRequested:true,inputId:'owned-input',message:'hello',mode:'queue'});
@@ -190,7 +200,7 @@ describe('remote session human controls (focused integration; expected2s/max20s)
   const f=fixture();await expect(f.transport.requestSession(target44,'codex','different',{operation:'stop',inputId:'stop-once'})).rejects.toThrow('session_identity_mismatch');expect(f.calls.some(c=>c.body?.humanRequested)).toBe(false);expect(f.calls.every(c=>(c.options.headers as any).Host==='agent44.bezrabotnyi.com')).toBe(true);
  });
  it('a lost native POST remains unknown with no second POST',async()=>{
-  const f=fixture();await f.transport.schema(target44);f.setHandler(c=>{if(c.options.method==='GET'){f.hold();return {session:{id:'accepted-44',harness:'codex'}};}return {structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}};});
+  const f=fixture();await f.transport.schema(target44);f.setHandler(c=>{if(c.options.method==='GET')return {session:{id:'accepted-44',harness:'codex'}};if(c.body.params?.name==='model_quotas'){f.hold();return {structuredContent:reportedCodexQuota()};}return {structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}};});
   const pending=f.transport.requestSession(target44,'codex','accepted-44',{operation:'message',inputId:'lost-input',message:'do once'});const rejected=expect(pending).rejects.toThrow();
   await vi.waitFor(()=>expect(f.calls.filter(c=>c.body?.humanRequested)).toHaveLength(1));f.calls.find(c=>c.body?.humanRequested)!.req.emit('error',new Error('lost'));await rejected;expect(f.calls.filter(c=>c.body?.humanRequested)).toHaveLength(1);
  });
