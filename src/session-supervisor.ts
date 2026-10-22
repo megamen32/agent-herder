@@ -159,7 +159,7 @@ export class SessionSupervisor {
   }
 
   async isAutomationHeld(harness: string, id: string): Promise<boolean> {
-    if (harness !== "codex" && harness !== "zcode") return false;
+    if (harness !== "codex" && harness !== "zcode" && harness !== "opencode") return false;
     if (await this.humanStops.isHeld(harness, id)) return true;
     const session = await this.adapters.get(harness)?.getSession(id);
     const held = session ? await this.humanStops.observe(session) : await this.humanStops.isHeld(harness, id);
@@ -186,7 +186,7 @@ export class SessionSupervisor {
   }
 
   async releaseHumanStop(harness: string, id: string, prompt?: { id: string; at: string; turnId?: string; text?: string }): Promise<boolean> {
-    if (harness !== "codex" && harness !== "zcode") return false;
+    if (harness !== "codex" && harness !== "zcode" && harness !== "opencode") return false;
     if (prompt && await this.humanStops.isGeneratedPrompt(harness, id, prompt)) return false;
     if (!prompt) {
       const session = await this.adapters.get(harness)?.getSession(id);
@@ -223,7 +223,7 @@ export class SessionSupervisor {
   }
 
   private async holdExplicitStop(harness: string, id: string): Promise<void> {
-    if (harness !== "codex" && harness !== "zcode") return;
+    if (harness !== "codex" && harness !== "zcode" && harness !== "opencode") return;
     this.immediateStops.add(sessionKey(harness, id));
     this.clearAutomaticResume(harness, id);
     const evidence = { id: `explicit-stop:${randomUUID()}`, at: new Date().toISOString(), reason: "explicit-stop" };
