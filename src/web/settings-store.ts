@@ -1259,6 +1259,25 @@ export class SettingsStore {
   }
 
   /**
+   * The value of a secret of the product, in the memory of the server.
+   *
+   * The value never leaves the server: the API names a secret by its
+   * fingerprint, and only a probe of the server itself — a check of the
+   * connection with the center — may use the value, and it uses it without
+   * showing it.
+   */
+  async readSecretValue(key: string): Promise<string | undefined> {
+    let text = "";
+    try {
+      text = await readFile(this.envPath, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    const { values } = parseEnvFile(text);
+    return values.get(key);
+  }
+
+  /**
    * Check a secret without revealing it.
    *
    * The check says whether the secret is in the file of the product, whether

@@ -15,6 +15,7 @@ import {
   type SettingsView,
 } from "./settings-client.js";
 import { StopControl } from "./stop-control.js";
+import { ConnectionsSection } from "./connections-section.js";
 import "./settings.css";
 
 /**
@@ -329,6 +330,7 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
         )}
       </section>
 
+      <ConnectionsSection />
       <StopControl />
 
       <section className="herder-settings-block" aria-label="Журнал изменений">

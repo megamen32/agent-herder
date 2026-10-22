@@ -26,6 +26,7 @@ import {
   type SettingsEntity,
   type SettingsProject,
 } from "./settings-store.js";
+import { SettingsConnectionStore, probeConnection } from "./settings-connection.js";
 import type { SettingsProfile } from "./settings-catalog.js";
 
 /**
@@ -61,6 +62,13 @@ export interface SettingsApiOptions {
   verifyOwnerCookie?: (cookie: string) => Promise<boolean>;
   /** The hostname of this node. */
   hostId?: string;
+  /**
+   * The store of the connection to the Notice Place.
+   *
+   * The connection is isolated: the herder keeps its own part of it in its
+   * own store, and there is no shared env file.
+   */
+  connections?: SettingsConnectionStore;
   /**
    * The state of the lever of the owner over the automation.
    *
@@ -458,7 +466,13 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
     }
   };
 
-  /** The answer of the API: always without a cache and always as JSON. */
+  /**
+ * The key of the product that holds the token of the service account of the
+ * herder for the center of notifications.
+ */
+const CONNECTION_TOKEN_KEY = "NOTIFY_CENTER_TOKEN";
+
+/** The answer of the API: always without a cache and always as JSON. */
   const respond = (response: ServerResponse, status: number, body: unknown): void => {
     response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
     response.end(JSON.stringify(body));
@@ -480,6 +494,82 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
     if (isChangingMethod(request.method) && !isSameOrigin(request)) {
       respond(response, 403, { ok: false, error: "Изменение доступно из своего кабинета" });
       return true;
+    }
+
+    if (url.pathname.startsWith("/api/settings/connections")) {
+      const connections = options.connections;
+      if (!connections) {
+        respond(response, 503, { ok: false, error: "хранилище подключений не настроено на этой ноде" });
+        return true;
+      }
+      if (url.pathname === "/api/settings/connections" && request.method === "GET") {
+        respond(response, 200, { ok: true, connection: await connections.read() });
+        return true;
+      }
+      if (url.pathname === "/api/settings/connections" && request.method === "POST") {
+        let body: Record<string, unknown>;
+        try {
+          body = await readJson(request) as Record<string, unknown>;
+        } catch (error) {
+          respond(response, 400, { ok: false, error: `Некорректное тело запроса: ${(error as Error).message}` });
+          return true;
+        }
+        const centerUrl = typeof body.centerUrl === "string" ? body.centerUrl.trim() : "";
+        if (!/^https?:\/\/[^\s]+$/.test(centerUrl)) {
+          respond(response, 400, { ok: false, error: "адрес центра должен быть http(s)-адресом" });
+          return true;
+        }
+        const purpose = typeof body.purpose === "string" ? body.purpose.trim() : "";
+        if (!purpose) {
+          respond(response, 400, { ok: false, error: "подключению нужна цель: центр её проверяет" });
+          return true;
+        }
+        const permissions = Array.isArray(body.permissions)
+          ? body.permissions.filter((item): item is string => typeof item === "string" && item.trim() !== "").map((item) => item.trim())
+          : [];
+        // The token of the service account is a secret of the product: it goes
+        // into the file of the product, it is audited by its fingerprint and
+        // it is never answered.
+        let tokenFingerprint: string | undefined;
+        if (typeof body.token === "string" && body.token.trim()) {
+          await store.applyEnvironment({ [CONNECTION_TOKEN_KEY]: body.token.trim() });
+          tokenFingerprint = (await store.checkSecret(CONNECTION_TOKEN_KEY)).fingerprint;
+        }
+        const connection = await connections.connect({
+          centerUrl,
+          purpose,
+          permissions,
+          ...(tokenFingerprint ? { tokenFingerprint } : {}),
+        });
+        respond(response, 200, { ok: true, connection });
+        return true;
+      }
+      if (url.pathname === "/api/settings/connections/check" && request.method === "POST") {
+        const connection = await connections.read();
+        if (!connection) {
+          respond(response, 409, { ok: false, error: "подключение не настроено" });
+          return true;
+        }
+        if (connection.state === "revoked") {
+          respond(response, 409, { ok: false, error: "подключение отозвано владельцем" });
+          return true;
+        }
+        // The check reads the readiness of the center: it starts no executor
+        // of the herder and creates no event in the center.
+        const token = await store.readSecretValue(CONNECTION_TOKEN_KEY);
+        const check = await probeConnection({ centerUrl: connection.centerUrl, purpose: connection.purpose, token });
+        respond(response, 200, { ok: true, connection, check });
+        return true;
+      }
+      if (url.pathname === "/api/settings/connections/revoke" && request.method === "POST") {
+        try {
+          const connection = await connections.revoke();
+          respond(response, 200, { ok: true, connection });
+        } catch (error) {
+          respond(response, 409, { ok: false, error: (error as Error).message });
+        }
+        return true;
+      }
     }
 
     if (url.pathname === "/api/settings/automation/disarm" && (request.method === "GET" || request.method === "POST")) {
