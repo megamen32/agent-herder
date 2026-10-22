@@ -1092,6 +1092,9 @@ export class SettingsStore {
     const nodeConfig = await this.readNodeConfig();
     const profiles = await this.readProfiles();
     const projects = await this.readProjects();
+    // The values of the file of the product, read once for the comparison
+    // with the running process.
+    const envValues = await this.readEnvValues();
     const records: SettingsRecord[] = [];
 
     const startTime = Date.now() - Math.round(process.uptime() * 1000);
@@ -1108,7 +1111,12 @@ export class SettingsStore {
       const secret = view.kind === "secret";
       const isSet = secret ? view.configured === true : view.present;
       const source: SettingsSource = isSet ? "override" : "default";
-      const fileValue = isSet ? (secret ? (view.kind === "secret" ? undefined : undefined) : (view.kind === "value" ? view.value : undefined)) : undefined;
+      // The secret is compared with the running process in the memory of the
+      // server: the value is read, compared and dropped. The answer carries
+      // the sign and never the value.
+      const fileValue = isSet
+        ? (secret ? envValues.get(key) : (view.kind === "value" ? view.value : undefined))
+        : undefined;
       const applied = this.appliedState(key, fileValue);
       const explicit = last !== undefined;
       records.push({
@@ -1267,14 +1275,25 @@ export class SettingsStore {
    * showing it.
    */
   async readSecretValue(key: string): Promise<string | undefined> {
+    return (await this.readEnvValues()).get(key);
+  }
+
+  /**
+   * The values of the file of the product, in the memory of the server.
+   *
+   * The values never leave the server: the API names a secret by its
+   * fingerprint, and only a comparison of the server itself — is the value of
+   * the file in effect in the running process? — may read them, and it reads
+   * them without showing them.
+   */
+  private async readEnvValues(): Promise<Map<string, string>> {
     let text = "";
     try {
       text = await readFile(this.envPath, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
-    const { values } = parseEnvFile(text);
-    return values.get(key);
+    return parseEnvFile(text).values;
   }
 
   /**

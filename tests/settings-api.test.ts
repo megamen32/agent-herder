@@ -407,6 +407,17 @@ describe("the settings of the herder are managed by the owner from one API", () 
     expect(record.confirmed.applyMode).toBe("после перезапуска");
     expect(record.confirmed.appliedAt).toBeNull();
 
+    // The secret of the product is compared in the memory of the server: the
+    // value is in the file and the running process does not carry it yet, so
+    // the state is honest.
+    const secret = view.records.find((candidate: any) => candidate.id === "herder.env/NOTIFY_CENTER_TOKEN");
+    expect(secret).toBeTruthy();
+    expect(secret.confirmed.state).toBe("Записано");
+    expect(secret.confirmed.requiresRestart).toBe(true);
+    expect(secret.confirmed.applyMode).toBe("после перезапуска");
+    // The value of the secret is never in the answer.
+    expect(JSON.stringify(view)).not.toContain("center-token-value");
+
     // A value that the running process already has is applied right away.
     const inProcess = process.env.NOTIFY_CENTER_RECIPIENT;
     expect(inProcess).toBeUndefined();
