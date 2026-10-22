@@ -913,7 +913,7 @@ export class OpenCodeClient implements HarnessClient {
     }
   }
 
-  async send(id: string, request: HarnessSendRequest): Promise<HarnessSendResult> {
+  async send(id: string, request: HarnessSendRequest): Promise<HarnessSendResult & { admission?: "not_submitted" | "accepted" | "pending" | "unknown"; notSubmitted?: boolean; admissionUnknown?: boolean; quotaFailure?: { classification: "quota_exhausted" } }> {
     await this.probeProtocol();
     if (!this.isV2) {
       // Legacy servers admit a queued input at `prompt_async` and a direct one
@@ -947,8 +947,21 @@ export class OpenCodeClient implements HarnessClient {
           : undefined;
         return { ok: true, admitted: true, ...(nativeInputMessageId ? { nativeInputMessageId } : {}) };
       }
+      const proof = await res.clone().json().catch(() => undefined) as Record<string, unknown> | undefined;
+      const raw = unwrapEnvelope<Record<string, unknown>>(proof);
+      const refusal = raw?.error && typeof raw.error === "object" ? raw.error as Record<string, unknown> : raw;
+      const accepted = raw?.admitted === true || raw?.pending === true || Boolean(raw?.nativeInputMessageId || raw?.turnId)
+        || raw?.admission === "accepted" || raw?.admission === "pending";
+      const uncertain = raw?.admissionUnknown === true || raw?.admission === "unknown";
+      const notSubmitted = !accepted && !uncertain && (raw?.notSubmitted === true || raw?.admission === "not_submitted");
+      const code = typeof refusal?.code === "string" ? refusal.code : "";
+      const explicitQuota = res.status !== 401 && res.status !== 403 && res.status < 500
+        && /^(?:quota[_-](?:exhausted|exceeded)|insufficient[_-]quota|usage[_-]limit[_-](?:exceeded|exhausted))$/i.test(code);
       const hint = await this.errorHint(res);
-      return { ok: false, error: `HTTP ${res.status}${hint}` };
+      return { ok: false, error: `HTTP ${res.status}${hint}`,
+        ...(accepted ? { admitted: true, admission: raw?.pending === true ? "pending" as const : "accepted" as const } : notSubmitted
+          ? { notSubmitted: true, admission: "not_submitted" as const, ...(explicitQuota ? { quotaFailure: { classification: "quota_exhausted" as const } } : {}) }
+          : { admissionUnknown: true, admission: "unknown" as const }) };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }

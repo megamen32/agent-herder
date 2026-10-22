@@ -1,3 +1,4 @@
+import { isRecoveryModelReference } from "./recovery-model-reference.js";
 import { normalizeIncidentExecution, type HealthExecutionProfile } from "./health-remediation.js";
 import { createHash, randomUUID } from "node:crypto";
 import { appendFile, mkdir, open, readFile, rename, unlink, writeFile, chmod } from "node:fs/promises";
@@ -467,14 +468,8 @@ function validateFallbackModels(value: unknown): Partial<Record<"opencode" | "zc
     for (const model of candidate) {
       if (typeof model !== "string") throw new Error(`fallbackModels.${harness} entries must be model IDs`);
       const normalized = model.trim();
-      // A gateway route of OmniRoute, or the MiniMax subscription route as a
-      // fallback of the gateway route: the owner keeps the paid route allowed
-      // and only asks that the gateway combo route stays first.
-      const gatewayRoute = /^omniroute\/[A-Za-z0-9._-]+(?:\/[^/\\]+(?:\/[^/\\]+)*)?$/iu.test(normalized);
-      const subscriptionRoute = /^minimax-coding-plan\/[^/\\]+$/iu.test(normalized);
-      if (normalized.length === 0 || normalized.length > MAX_MODEL_LENGTH || /[\u0000-\u0020\u007f]/u.test(normalized)
-      || (!gatewayRoute && !subscriptionRoute)) {
-        throw new Error(`fallbackModels.${harness} entries must be fully qualified OmniRoute model IDs or a MiniMax subscription route`);
+      if (!isRecoveryModelReference(normalized, harness)) {
+        throw new Error(`fallbackModels.${harness} entries must be fully qualified native model IDs`);
       }
       const key = normalized.toLocaleLowerCase("en-US");
       if (seen.has(key)) continue;

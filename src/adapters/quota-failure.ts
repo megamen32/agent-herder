@@ -63,7 +63,15 @@ export function terminalQuotaFailure(evidence: TerminalQuotaFailureEvidence): Te
   const errorType = nonEmpty(evidence.errorType);
   const modelErrorType = nonEmpty(evidence.modelErrorType);
   const message = nonEmpty(evidence.errorMessage);
-  if (unsafeFailure.test(`${errorCode ?? ""} ${errorType ?? ""} ${message ?? ""}`)) return undefined;
+  // Native ZCode wraps this exact ZAI provider payload in UNKNOWN_ERROR.
+  // The wrapper is not the provider classification; retain all auth/transport
+  // exclusions and require both native model lineage and the provider code.
+  const glmQuotaWrapper = /^(?:account:)?(?:zai-individual-coding-plan|zai-coding-plan|zai|z-ai)$/i.test(providerId)
+    && /^GLM-/i.test(modelId) && modelErrorType === "rate_limited"
+    && /^\[1310\]\[?Weekly\/Monthly Limit Exhausted\b/i.test(message ?? "");
+  const checkedCode = glmQuotaWrapper && /^UNKNOWN_ERROR$/i.test(errorCode ?? "") ? "" : errorCode ?? "";
+  const checkedType = glmQuotaWrapper && /^unknown_error$/i.test(errorType ?? "") ? "" : errorType ?? "";
+  if (unsafeFailure.test(`${checkedCode} ${checkedType} ${message ?? ""}`)) return undefined;
 
   const explicitCode = [errorCode, modelErrorType].some((value) => value && explicitQuotaCode.test(value));
   const explicitMessage = Boolean(message && explicitQuotaMessage.test(message));
@@ -102,4 +110,34 @@ export function safeNativeErrorField(value: unknown, limit: number): string | un
     .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{8,}\b/gi, "[redacted-key]")
     .replace(/((?:api[_-]?key|token|password|secret)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi, "$1[redacted]")
     .slice(0, limit);
+}
+
+/** Normalize transport receipts before the recovery queue can consider fallback.
+ * No HTTP status or nonRetryable text establishes that a native write did not occur. */
+export function normalizeSendAdmission<T extends {
+  ok: boolean; admission?: "not_submitted" | "accepted" | "pending" | "unknown";
+  notSubmitted?: boolean; admitted?: boolean; pending?: boolean; admissionUnknown?: boolean;
+  turnId?: string; nativeInputMessageId?: string; error?: string;
+  quotaFailure?: { classification: "quota_exhausted"; resetAt?: string };
+}>(result: T): T & { admission: "not_submitted" | "accepted" | "pending" | "unknown"; quotaFailure?: { classification: "quota_exhausted"; resetAt?: string } } {
+  const accepted = result.admitted === true || Boolean(result.turnId || result.nativeInputMessageId) || result.admission === "accepted";
+  const pending = result.pending === true || result.admission === "pending";
+  const uncertain = result.admissionUnknown === true || result.admission === "unknown";
+  const admission = accepted ? (pending ? "pending" : "accepted") : pending ? "pending" : uncertain ? "unknown"
+    : result.notSubmitted === true || result.admission === "not_submitted" ? "not_submitted"
+    : result.ok ? "accepted" : "unknown";
+  const next = { ...result, admission } as T & { admission: typeof admission; quotaFailure?: { classification: "quota_exhausted"; resetAt?: string } };
+  // A caller-supplied inputId alone is not a native admission receipt.
+  if (admission !== "not_submitted") {
+    if (result.notSubmitted) next.notSubmitted = false;
+    delete next.quotaFailure;
+  } else {
+    next.notSubmitted = true;
+    const error = result.error ?? "";
+    if (!unsafeFailure.test(error) && !/\bHTTP[_ : -]*(?:401|403|502)\b/i.test(error)
+      && (result.quotaFailure?.classification === "quota_exhausted" || explicitQuotaMessage.test(error))) {
+      next.quotaFailure = result.quotaFailure ?? { classification: "quota_exhausted" };
+    } else delete next.quotaFailure;
+  }
+  return next;
 }

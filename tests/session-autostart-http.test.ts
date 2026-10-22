@@ -18,6 +18,32 @@ afterEach(async () => {
 });
 
 describe("session autostart settings HTTP", () => {
+  it("saves four explicit quota modes, retains off after legacy migration, and clears mode inheritance", async () => {
+    const root = await mkdtemp(join(tmpdir(), "quota-mode-http-"));
+    directories.push(root);
+    const store = new SessionAutostartStore(join(root,"settings.json"),{});
+    const server = createWebServer({adapters:new Map(),converter:{async convert(){throw new Error("unused");}},sessionAutostartStore:store});
+    servers.push(server);
+    await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+    const address = server.address(); if(!address || typeof address === "string") throw new Error("no address");
+    const origin = `http://127.0.0.1:${address.port}`;
+    const harness = `${origin}/api/session-autostart/harnesses/zcode`;
+    const session = `${origin}/api/session-autostart/sessions/zcode/owned?cwd=/owned`;
+    const put = (url:string,body:unknown)=>fetch(url,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+    await expect((await fetch(harness)).json()).resolves.toMatchObject({fallbackForQuota:false,waitForQuota:false});
+    for(const [fallbackForQuota,waitForQuota] of [[false,false],[true,false],[false,true],[true,true]]) {
+      const response = await put(harness,{fallbackForQuota,waitForQuota});
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({fallbackForQuota,waitForQuota,waitForQuotaSource:"harness"});
+    }
+    await put(session,{cwd:"/owned",waitForQuota:false});
+    await expect((await fetch(session)).json()).resolves.toMatchObject({fallbackForQuota:true,waitForQuota:false,waitForQuotaSource:"session"});
+    await put(session,{cwd:"/owned",fallbackForQuota:false,waitForQuota:true});
+    await expect((await fetch(session)).json()).resolves.toMatchObject({fallbackForQuota:false,waitForQuota:true,waitForQuotaSource:"session"});
+    await put(session,{cwd:"/owned",fallbackForQuota:null,waitForQuota:null});
+    await expect((await fetch(session)).json()).resolves.toMatchObject({fallbackForQuota:true,waitForQuota:true,waitForQuotaSource:"harness"});
+  });
+
   it("defaults on independently and exposes global plus per-session opt-out", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-session-autostart-http-"));
     const store = new SessionAutostartStore(join(root, "settings.json"), {});

@@ -1782,10 +1782,12 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         return sendJson(response, 400, { error: "autocontinue recovery settings must be boolean" });
       }
       if (body.waitForQuota !== undefined && typeof body.waitForQuota !== "boolean") return sendJson(response, 400, { error: "waitForQuota must be a boolean" });
+      if (body.fallbackForQuota !== undefined && typeof body.fallbackForQuota !== "boolean") return sendJson(response, 400, { error: "fallbackForQuota must be a boolean" });
       try {
         const saved = await sessionAutostartStore.setRuntimeSettings({
           enabled: body.enabled,
           waitForQuota: body.waitForQuota,
+          fallbackForQuota: body.fallbackForQuota,
           pinActiveSessions: body.pinActiveSessions,
           rolloverExpiredCache: body.rolloverExpiredCache,
           movePinnedOnRollover: body.movePinnedOnRollover,
@@ -1806,11 +1808,12 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       }
     }
     if ((body.enabled !== undefined && typeof body.enabled !== "boolean")
-      || (body.waitForQuota !== undefined && typeof body.waitForQuota !== "boolean")) {
+      || (body.waitForQuota !== undefined && typeof body.waitForQuota !== "boolean")
+      || (body.fallbackForQuota !== undefined && typeof body.fallbackForQuota !== "boolean")) {
       return sendJson(response, 400, { error: "enabled and waitForQuota must be booleans" });
     }
-    if (body.enabled === undefined && body.waitForQuota === undefined) return sendJson(response, 400, { error: "enabled or waitForQuota is required" });
-    const saved = await sessionAutostartStore.setGlobalOptions({ enabled: body.enabled, waitForQuota: body.waitForQuota });
+    if (body.enabled === undefined && body.waitForQuota === undefined && body.fallbackForQuota === undefined) return sendJson(response, 400, { error: "enabled or waitForQuota is required" });
+    const saved = await sessionAutostartStore.setGlobalOptions({ enabled: body.enabled, waitForQuota: body.waitForQuota, fallbackForQuota: body.fallbackForQuota });
     await supervisor.reconcileQuotaRecoverySettings();
     return sendJson(response, 200, { ...saved, source: "persisted" });
   }
@@ -1828,11 +1831,14 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       const body = await readJson(request);
       const hasEnabled = body.enabled !== undefined;
       const hasQuota = Object.hasOwn(body, "waitForQuota");
+      const hasFallback = Object.hasOwn(body, "fallbackForQuota");
+      if (hasFallback && body.fallbackForQuota !== null && typeof body.fallbackForQuota !== "boolean") return sendJson(response, 400, {error: "fallbackForQuota must be a boolean or null"});
+      if (hasFallback && !hasQuota) return sendJson(response, 400, {error: "waitForQuota is required with fallbackForQuota"});
       if (!hasEnabled && !hasQuota) return sendJson(response, 400, { error: "enabled or waitForQuota is required" });
       if (hasEnabled && typeof body.enabled !== "boolean") return sendJson(response, 400, { error: "enabled must be a boolean" });
       if (hasQuota && body.waitForQuota !== null && typeof body.waitForQuota !== "boolean") return sendJson(response, 400, { error: "waitForQuota must be a boolean or null" });
       if (hasEnabled) await sessionAutostartStore.setHarness(harness, body.enabled as boolean);
-      if (hasQuota) await sessionAutostartStore.setHarnessWaitForQuota(harness, body.waitForQuota as boolean | null);
+      if (hasQuota) await sessionAutostartStore.setHarnessWaitForQuota(harness, body.waitForQuota as boolean | null, new Date(), body.fallbackForQuota as boolean | null | undefined);
       await supervisor.reconcileQuotaRecoverySettings();
       return sendJson(response, 200, { harness, ...await sessionAutostartStore.getHarnessEffective(harness) });
     } catch (error) {
@@ -1855,11 +1861,14 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       const body = await readJson(request);
       const hasEnabled = body.enabled !== undefined;
       const hasQuota = Object.hasOwn(body, "waitForQuota");
+      const hasFallback = Object.hasOwn(body, "fallbackForQuota");
+      if (hasFallback && body.fallbackForQuota !== null && typeof body.fallbackForQuota !== "boolean") return sendJson(response, 400, {error: "fallbackForQuota must be a boolean or null"});
+      if (hasFallback && !hasQuota) return sendJson(response, 400, {error: "waitForQuota is required with fallbackForQuota"});
       if ((!hasEnabled && !hasQuota) || typeof body.cwd !== "string" || !body.cwd.trim()) return sendJson(response, 400, { error: "enabled or waitForQuota and cwd are required" });
       if (hasEnabled && typeof body.enabled !== "boolean") return sendJson(response, 400, { error: "enabled must be a boolean" });
       if (hasQuota && body.waitForQuota !== null && typeof body.waitForQuota !== "boolean") return sendJson(response, 400, { error: "waitForQuota must be a boolean or null" });
       if (hasEnabled) await sessionAutostartStore.setSession({ harness, sessionId, cwd: body.cwd, ...(body.noticeIncident === undefined ? {} : { noticeIncident: body.noticeIncident }) }, body.enabled as boolean);
-      if (hasQuota) await sessionAutostartStore.setSessionWaitForQuota({ harness, sessionId, cwd: body.cwd }, body.waitForQuota as boolean | null);
+      if (hasQuota) await sessionAutostartStore.setSessionWaitForQuota({ harness, sessionId, cwd: body.cwd }, body.waitForQuota as boolean | null, new Date(), body.fallbackForQuota as boolean | null | undefined);
       await supervisor.reconcileQuotaRecoverySettings();
       return sendJson(response, 200, { harness, sessionId, ...await sessionAutostartStore.getEffective(harness, sessionId, body.cwd) });
     } catch (error) {

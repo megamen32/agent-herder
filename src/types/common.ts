@@ -106,6 +106,10 @@ export interface HarnessCapabilities {
 }
 
 export interface SendMessageResult {
+  /** Explicit native admission state; accepted IDs dominate contradictory flags. */
+  admission?: "not_submitted" | "accepted" | "pending" | "unknown";
+  /** Explicit provider quota proof, usable for fallback only before admission. */
+  quotaFailure?: { classification: "quota_exhausted"; resetAt?: string };
   /** Scoped hook reservation, not a native input/turn-start or model receipt. */
   admissionKind?: "current_turn_context";
   /** Dispatch was cancelled before invoking any native writer. */

@@ -1,3 +1,6 @@
+import { probeRecoveryModelQuota, type RecoveryModelQuota } from "../model-quota.js";
+import { normalizeSendAdmission } from "../adapters/quota-failure.js";
+import { isRecoveryModelReference, quotaEvidenceModelReference } from "../recovery-model-reference.js";
 import { JudgeRequestTrace, JudgeRequestError } from "./judge-request.js";
 import { UserStyleStore, USER_STYLE_PROMPT, type StyleObservation } from "./user-style.js";
 import type { RecoveryAdmissionGate, RecoveryOperation } from "./recovery-admission.js";
@@ -26,7 +29,6 @@ import { effectivePolicyAllowsTarget, type EffectivePolicy } from "./policy.js";
 import type { AutopilotPolicyStore } from "./policy-store.js";
 import type { AutopilotSessionStore } from "./session-store.js";
 import { AutomationLaunchPolicyStore, findProjectRoute, operatorCohortRecoveryAllowed } from "../automation-launch-policy.js";
-import { NOTICEPLACE_HEALTH_MODELS } from "../automation/noticeplace-health-policy.js";
 import { resolveAutopilotStateDir } from "./state-dir.js";
 import { automationDisarmDecision, sessionWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
 
@@ -240,6 +242,7 @@ export type QuotaRecoveryRecord = {
   nextAttemptAt: string;
   candidateModels: string[];
   candidateIndex: number;
+  waitForOriginal?: boolean;
   attempts: number;
   revision: number;
   selectedModel?: string;
@@ -260,7 +263,7 @@ export type QuotaRecoveryHistoryEntry = {
 };
 
 export type QuotaRecoveryWaitStatus = {
-  harness: "opencode" | "zcode";
+  harness: "opencode" | "zcode" | "codex";
   sessionId: string;
   cwd: string;
   state: QuotaRecoveryState;
@@ -483,11 +486,8 @@ function sameQuotaFailure(left: QuotaFailureEvidence | undefined, right: QuotaFa
 }
 
 function quotaModelId(evidence: QuotaFailureEvidence): string | undefined {
-  if (evidence.providerId.toLocaleLowerCase("en-US") !== "omniroute") return undefined;
-  const model = evidence.modelId.replace(/^omniroute\//iu, "");
-  const fullId = `omniroute/${model}`;
-  return model && model.length <= 256 && /^omniroute\/[A-Za-z0-9._-]+\/[^/\\]+(?:\/[^/\\]+)*$/iu.test(fullId)
-    ? fullId : undefined;
+  if (evidence.providerId === "codex" && isRecoveryModelReference(evidence.modelId, "codex")) return evidence.modelId;
+  return quotaEvidenceModelReference(evidence.providerId, evidence.modelId);
 }
 
 function exactTerminalQuotaSnapshot(session: AgentSession | null | undefined, evidence: QuotaFailureEvidence): boolean {
@@ -511,28 +511,21 @@ function exactTerminalRecoverySnapshot(session: AgentSession | null | undefined,
     && last.completedAt && Date.parse(last.completedAt) === Date.parse(evidence.completedAt));
 }
 
-/**
- * The models a quota recovery may continue on.
- *
- * The candidates are limited by the allowlist of the Notice Place health
- * work: the launcher must not be a way around it. A route of the OmniRoute
- * gateway and the MiniMax subscription route are approved; no other provider
- * is, and there is no automatic fallback outside the allowlist.
- */
+/** Ordered native session models. Incident-purpose restrictions remain in the incident launcher. */
 function quotaCandidateModels(fallbackModels: readonly string[], currentModel: string | readonly string[]): string[] {
   const currentModels = typeof currentModel === "string" ? [currentModel] : [...currentModel];
   const seen = new Set<string>(currentModels.map((model) => model.toLocaleLowerCase("en-US")));
   const candidates: string[] = [];
   for (const raw of fallbackModels) {
     const model = typeof raw === "string" ? raw.trim() : "";
-    if (!model || model.length > 256 || /[\u0000-\u0020\u007f]/u.test(model) || !NOTICEPLACE_HEALTH_MODELS.includes(model)) continue;
+    if (!model || model.length > 256 || /[\u0000-\u0020\u007f]/u.test(model) || !isRecoveryModelReference(model) && !isRecoveryModelReference(model, "codex")) continue;
     const key = model.toLocaleLowerCase("en-US");
     if (seen.has(key)) continue;
     seen.add(key);
     candidates.push(model);
     if (candidates.length >= 8) break;
   }
-  candidates.push(...currentModels.filter((model) => NOTICEPLACE_HEALTH_MODELS.includes(model)));
+  candidates.push(...currentModels.filter((model) => isRecoveryModelReference(model) || isRecoveryModelReference(model, "codex")));
   return candidates;
 }
 
@@ -742,6 +735,7 @@ export type WaitForQuotaSource = "session" | "harness" | "global" | "default";
 export type WaitForQuotaHarnessOverride = {
   harness: HarnessType;
   waitForQuota: boolean;
+  fallbackForQuota?: boolean;
   updatedAt: string;
 };
 
@@ -750,6 +744,7 @@ export type WaitForQuotaSessionOverride = {
   sessionId: string;
   cwd: string;
   waitForQuota: boolean;
+  fallbackForQuota?: boolean;
   updatedAt: string;
 };
 
@@ -758,6 +753,7 @@ export type SessionAutostartFile = {
   enabled: boolean;
   /** Independent opt-in for exact terminal provider quota recovery. */
   waitForQuota: boolean;
+  fallbackForQuota?: boolean;
   /** Keep Codex/ZCode sessions visible while Autocontinue is responsible for them. */
   pinActiveSessions: boolean;
   /** Start a compact replacement after the provider cache window expires. */
@@ -798,6 +794,7 @@ export class SessionAutostartStore {
     cwd: string;
     updatedAt?: string;
     waitForQuota: boolean;
+  fallbackForQuota?: boolean;
     waitForQuotaSource: WaitForQuotaSource;
     waitForQuotaOverride?: boolean;
   }> {
@@ -807,7 +804,8 @@ export class SessionAutostartStore {
     const settings = await this.getSettings();
     const aliases = settings.sessions.filter((record) => record.harness === normalizedHarness && record.sessionId === normalizedSessionId);
     const override = resolveSessionOverride(aliases, normalizedCwd);
-    const quota = resolveWaitForQuota(settings, normalizedHarness, normalizedSessionId, normalizedCwd);
+    const resolvedQuota = resolveWaitForQuota(settings, normalizedHarness, normalizedSessionId, normalizedCwd);
+    const quota = { ...resolvedQuota, fallbackForQuota: normalizedHarness === "codex" ? false : resolvedQuota.fallbackForQuota };
     if (override) return { enabled: override.enabled, source: "session", cwd: override.cwd, updatedAt: override.updatedAt, ...quota };
     const harnessOverride = settings.harnesses.find((record) => record.harness === normalizedHarness);
     return harnessOverride
@@ -820,29 +818,33 @@ export class SessionAutostartStore {
     return this.setGlobalOptions({ waitForQuota });
   }
 
-  async setHarnessWaitForQuota(harness: string, waitForQuota: boolean | null, now = new Date()): Promise<void> {
+  async setHarnessWaitForQuota(harness: string, waitForQuota: boolean | null, now = new Date(), fallbackForQuota?: boolean | null): Promise<void> {
     const normalizedHarness = harnessType(harness);
+    if (normalizedHarness === "codex" && fallbackForQuota === true) throw new Error("Codex supports original-model quota waiting only");
     if (waitForQuota !== null && typeof waitForQuota !== "boolean") throw new Error("waitForQuota must be a boolean or null");
+    if (fallbackForQuota != null && typeof fallbackForQuota !== "boolean") throw new Error("fallbackForQuota must be a boolean or null");
     await this.mutate((file) => {
       const index = file.waitForQuotaHarnesses.findIndex((record) => record.harness === normalizedHarness);
       if (waitForQuota === null) {
         if (index >= 0) file.waitForQuotaHarnesses.splice(index, 1);
         return;
       }
-      const record = { harness: normalizedHarness, waitForQuota, updatedAt: now.toISOString() };
+      const record = { harness: normalizedHarness, waitForQuota, fallbackForQuota: fallbackForQuota ?? file.waitForQuotaHarnesses[index]?.fallbackForQuota ?? file.fallbackForQuota ?? false, updatedAt: now.toISOString() };
       if (index < 0) file.waitForQuotaHarnesses.push(record);
       else file.waitForQuotaHarnesses[index] = record;
       file.waitForQuotaHarnesses.sort((left, right) => left.harness.localeCompare(right.harness));
     });
   }
 
-  async setSessionWaitForQuota(target: { harness: string; sessionId: string; cwd: string }, waitForQuota: boolean | null, now = new Date()): Promise<void> {
+  async setSessionWaitForQuota(target: { harness: string; sessionId: string; cwd: string }, waitForQuota: boolean | null, now = new Date(), fallbackForQuota?: boolean | null): Promise<void> {
     const normalized = {
       harness: harnessType(target.harness),
       sessionId: bounded(target.sessionId, "sessionId"),
       cwd: normalize(bounded(target.cwd, "cwd")),
     };
+    if (normalized.harness === "codex" && fallbackForQuota === true) throw new Error("Codex supports original-model quota waiting only");
     if (waitForQuota !== null && typeof waitForQuota !== "boolean") throw new Error("waitForQuota must be a boolean or null");
+    if (fallbackForQuota != null && typeof fallbackForQuota !== "boolean") throw new Error("fallbackForQuota must be a boolean or null");
     await this.mutate((file) => {
       const key = sessionKey(normalized.harness, normalized.sessionId, normalized.cwd);
       const index = file.waitForQuotaSessions.findIndex((record) => sessionKey(record.harness, record.sessionId, record.cwd) === key);
@@ -850,7 +852,7 @@ export class SessionAutostartStore {
         if (index >= 0) file.waitForQuotaSessions.splice(index, 1);
         return;
       }
-      const record = { ...normalized, waitForQuota, updatedAt: now.toISOString() };
+      const record = { ...normalized, waitForQuota, fallbackForQuota: fallbackForQuota ?? file.waitForQuotaSessions[index]?.fallbackForQuota ?? file.waitForQuotaHarnesses.find(row => row.harness === normalized.harness)?.fallbackForQuota ?? file.fallbackForQuota ?? false, updatedAt: now.toISOString() };
       if (index < 0) file.waitForQuotaSessions.push(record);
       else file.waitForQuotaSessions[index] = record;
       file.waitForQuotaSessions.sort((left, right) => sessionKey(left.harness, left.sessionId, left.cwd).localeCompare(sessionKey(right.harness, right.sessionId, right.cwd)));
@@ -861,18 +863,20 @@ export class SessionAutostartStore {
     return this.setGlobalOptions({ enabled });
   }
 
-  async setGlobalOptions(input: { enabled?: boolean; waitForQuota?: boolean }): Promise<SessionAutostartFile> {
-    if (input.enabled === undefined && input.waitForQuota === undefined) throw new Error("at least one global setting is required");
+  async setGlobalOptions(input: { enabled?: boolean; waitForQuota?: boolean; fallbackForQuota?: boolean }): Promise<SessionAutostartFile> {
+    if (input.enabled === undefined && input.waitForQuota === undefined && input.fallbackForQuota === undefined) throw new Error("at least one global setting is required");
     if (input.enabled !== undefined && typeof input.enabled !== "boolean") throw new Error("enabled must be a boolean");
     if (input.waitForQuota !== undefined && typeof input.waitForQuota !== "boolean") throw new Error("waitForQuota must be a boolean");
+    if (input.fallbackForQuota !== undefined && typeof input.fallbackForQuota !== "boolean") throw new Error("fallbackForQuota must be a boolean");
     return this.mutate((file) => {
       if (input.enabled !== undefined) file.enabled = input.enabled;
       if (input.waitForQuota !== undefined) file.waitForQuota = input.waitForQuota;
+      if (input.fallbackForQuota !== undefined) file.fallbackForQuota = input.fallbackForQuota;
       return cloneAutostartFile(file);
     });
   }
 
-  async setRuntimeSettings(input: { enabled?: boolean; waitForQuota?: boolean; pinActiveSessions?: boolean; inventoryWindowHours: number; evidenceMessageCount: number; judgeModel: string; autopilotJudgeModel: string; rolloverExpiredCache?: boolean; movePinnedOnRollover?: boolean; recoverOnFailure?: boolean; recoverOnDisconnect?: boolean; watchdogEnabled?: boolean; watchdogIntervalSeconds?: number; stalledTurnMinutes?: number }): Promise<SessionAutostartFile> {
+  async setRuntimeSettings(input: { enabled?: boolean; waitForQuota?: boolean; fallbackForQuota?: boolean; pinActiveSessions?: boolean; inventoryWindowHours: number; evidenceMessageCount: number; judgeModel: string; autopilotJudgeModel: string; rolloverExpiredCache?: boolean; movePinnedOnRollover?: boolean; recoverOnFailure?: boolean; recoverOnDisconnect?: boolean; watchdogEnabled?: boolean; watchdogIntervalSeconds?: number; stalledTurnMinutes?: number }): Promise<SessionAutostartFile> {
     const inventoryWindowHours = positiveInteger(input.inventoryWindowHours, -1);
     if (inventoryWindowHours < 1 || inventoryWindowHours > 24 * 90) throw new Error("inventoryWindowHours must be an integer from 1 to 2160");
     const evidenceMessageCount = positiveInteger(input.evidenceMessageCount, -1);
@@ -882,6 +886,7 @@ export class SessionAutostartStore {
     if (!judgeModel || !autopilotJudgeModel) throw new Error("judge models must not be empty");
     if (input.enabled !== undefined && typeof input.enabled !== "boolean") throw new Error("enabled must be a boolean");
     if (input.waitForQuota !== undefined && typeof input.waitForQuota !== "boolean") throw new Error("waitForQuota must be a boolean");
+    if (input.fallbackForQuota !== undefined && typeof input.fallbackForQuota !== "boolean") throw new Error("fallbackForQuota must be a boolean");
     if (input.pinActiveSessions !== undefined && typeof input.pinActiveSessions !== "boolean") throw new Error("pinActiveSessions must be a boolean");
     if (input.rolloverExpiredCache !== undefined && typeof input.rolloverExpiredCache !== "boolean") throw new Error("rolloverExpiredCache must be a boolean");
     if (input.movePinnedOnRollover !== undefined && typeof input.movePinnedOnRollover !== "boolean") throw new Error("movePinnedOnRollover must be a boolean");
@@ -893,6 +898,7 @@ export class SessionAutostartStore {
     return this.mutate((file) => {
       if (input.enabled !== undefined) file.enabled = input.enabled;
       if (input.waitForQuota !== undefined) file.waitForQuota = input.waitForQuota;
+      if (input.fallbackForQuota !== undefined) file.fallbackForQuota = input.fallbackForQuota;
       if (input.pinActiveSessions !== undefined) file.pinActiveSessions = input.pinActiveSessions;
       file.inventoryWindowHours = inventoryWindowHours;
       file.evidenceMessageCount = evidenceMessageCount;
@@ -914,6 +920,7 @@ export class SessionAutostartStore {
     source: "harness" | "global" | "default";
     updatedAt?: string;
     waitForQuota: boolean;
+  fallbackForQuota?: boolean;
     waitForQuotaSource: Exclude<WaitForQuotaSource, "session">;
     waitForQuotaOverride?: boolean;
   }> {
@@ -922,8 +929,8 @@ export class SessionAutostartStore {
     const override = settings.harnesses.find((record) => record.harness === normalizedHarness);
     const quotaOverride = settings.waitForQuotaHarnesses.find((record) => record.harness === normalizedHarness);
     const quota = quotaOverride
-      ? { waitForQuota: quotaOverride.waitForQuota, waitForQuotaSource: "harness" as const, waitForQuotaOverride: quotaOverride.waitForQuota }
-      : { waitForQuota: settings.waitForQuota, waitForQuotaSource: settings.waitForQuotaSource };
+      ? { waitForQuota: quotaOverride.waitForQuota, fallbackForQuota: normalizedHarness === "codex" ? false : quotaOverride.fallbackForQuota ?? false, waitForQuotaSource: "harness" as const, waitForQuotaOverride: quotaOverride.waitForQuota }
+      : { waitForQuota: settings.waitForQuota, fallbackForQuota: normalizedHarness === "codex" ? false : settings.fallbackForQuota ?? false, waitForQuotaSource: settings.waitForQuotaSource };
     return override
       ? { enabled: override.enabled, source: "harness", updatedAt: override.updatedAt, ...quota }
       : { enabled: settings.enabled, source: settings.source === "persisted" ? "global" : "default", ...quota };
@@ -1427,13 +1434,15 @@ export class UnfinishedSessionStore {
     fallbackModels: readonly string[],
     generationId = "quota-recovery",
     now = new Date(),
+    waitForOriginal = true,
   ): Promise<UnfinishedSessionRecord> {
     const evidence = normalizeQuotaFailureEvidence(rawEvidence);
     const currentModel = evidence ? quotaModelId(evidence) : undefined;
-    if (!evidence || !currentModel || !["opencode", "zcode"].includes(session.harness)) throw new Error("invalid terminal quota recovery evidence");
+    if (!evidence || !currentModel || !["opencode", "zcode", "codex"].includes(session.harness)) throw new Error("invalid terminal quota recovery evidence");
     const normalized = normalizeRecordTarget({ harness: harnessType(session.harness), sessionId: session.id, cwd: session.cwd,
       model: session.model, title: session.title, threadSource: nonEmptyText(session.meta?.threadSource) });
-    const candidates = quotaCandidateModels(fallbackModels, currentModel);
+    const candidates = quotaCandidateModels(fallbackModels, currentModel).filter(model => waitForOriginal || model !== currentModel);
+    if (!candidates.length) throw new Error("quota recovery mode has no candidates");
     const nowIso = now.toISOString();
     const nextAttemptAt = quotaNextAttemptAt(evidence, now).toISOString();
     return this.mutate((file) => {
@@ -1450,6 +1459,7 @@ export class UnfinishedSessionStore {
         state: "waiting",
         nextAttemptAt,
         candidateModels: candidates,
+        waitForOriginal,
         candidateIndex: 0,
         attempts: 0,
         revision: (existing?.quotaRecovery?.revision ?? 0) + 1,
@@ -1695,7 +1705,8 @@ export class UnfinishedSessionStore {
         record.state = "active";
         delete record.nextAttemptAt;
       } else if (outcome === "quota_pre_admission") {
-        const next = quota.candidateIndex + 1;
+        const next = quota.waitForOriginal !== false && quota.evidence.classification === "quota_exhausted"
+          && quota.candidateIndex === quota.candidateModels.length - 1 ? quota.candidateIndex : quota.candidateIndex + 1;
         delete quota.dispatchInputId;
         delete quota.dispatchTurnId;
         if (next >= quota.candidateModels.length) {
@@ -1720,6 +1731,29 @@ export class UnfinishedSessionStore {
       record.updatedAt = now.toISOString();
       return { ...record, quotaRecovery: { ...quota, evidence: { ...quota.evidence }, candidateModels: [...quota.candidateModels] } };
     }, (record) => record !== null);
+  }
+
+  /** Read-only exhausted probes advance without native input; original waits remain armed. */
+  async deferQuotaRecoveryProbe(snapshot: UnfinishedSessionRecord, resetAt?: string, now = new Date()): Promise<void> {
+    await this.mutate(file => {
+      const record = file.sessions.find(item => unfinishedRecordKey(item) === unfinishedRecordKey(snapshot));
+      const quota = record?.quotaRecovery;
+      if (!record || !quota || quota.state !== "waiting" || quota.revision !== snapshot.quotaRecovery?.revision) return false;
+      if (quota.candidateIndex < quota.candidateModels.length - 1) quota.candidateIndex += 1;
+      else if (quota.waitForOriginal === false) {
+        quota.state = "exhausted";
+        quota.reasonCode = "candidate_exhausted";
+        record.state = "exhausted";
+      }
+      const resetMs = Date.parse(resetAt ?? "");
+      quota.nextAttemptAt = new Date(Number.isFinite(resetMs) && resetMs > now.getTime()
+        ? Math.min(resetMs, now.getTime() + 15 * 60_000) : now.getTime() + quotaBackoffMs(quota.attempts + 1)).toISOString();
+      quota.revision += 1;
+      quota.updatedAt = now.toISOString();
+      record.nextAttemptAt = quota.state === "waiting" ? quota.nextAttemptAt : undefined;
+      record.updatedAt = now.toISOString();
+      return true;
+    }, changed => changed);
   }
 
   async holdQuotaRecovery(snapshot: UnfinishedSessionRecord, reasonCode: QuotaRecoveryRecord["reasonCode"], now = new Date()): Promise<void> {
@@ -1772,7 +1806,7 @@ export class UnfinishedSessionStore {
 
   async getQuotaRecoveryWaitStatus(harness: string, sessionId: string, cwd: string): Promise<QuotaRecoveryWaitStatus | null> {
     const normalizedHarness = harnessType(harness);
-    if (normalizedHarness !== "opencode" && normalizedHarness !== "zcode") return null;
+    if (normalizedHarness !== "opencode" && normalizedHarness !== "zcode" && normalizedHarness !== "codex") return null;
     const record = findUnfinishedRecord(await this.read().then((file) => file.sessions), normalizedHarness, sessionId, cwd);
     const quota = record?.quotaRecovery;
     if (!record || !quota) return null;
@@ -2267,6 +2301,7 @@ export interface UnfinishedSessionLauncherOptions {
   adapters: Map<string, HarnessAdapter>;
   store: UnfinishedSessionStore;
   settingsStore: SessionAutostartStore;
+  probeRecoveryQuota?: (modelId: string) => Promise<RecoveryModelQuota>;
   fallbackModelsForHarness?: (harness: "opencode" | "zcode") => Promise<string[]>;
   /** Existing project launch policy is the authority for operator-cohort model admission. */
   projectLaunchPolicyStore?: Pick<AutomationLaunchPolicyStore, "load">;
@@ -2537,8 +2572,8 @@ export class UnfinishedSessionLauncher {
       const quotaEvidence = event.kind === "turn.failed" ? normalizeQuotaFailureEvidence(event.data?.quotaFailure) : undefined;
       if (quotaEvidence) {
         const eventMatches = identity.turnId === quotaEvidence.nativeTurnId && identity.inputId === quotaEvidence.inputId
-          && activeIdentity.turnId === quotaEvidence.nativeTurnId && activeIdentity.inputId === quotaEvidence.inputId;
-        if (!eventMatches || !quotaModelId(quotaEvidence) || !settings.recoverOnFailure || !this.options.fallbackModelsForHarness) return;
+          && activeIdentity.turnId === quotaEvidence.nativeTurnId && (activeIdentity.inputId === quotaEvidence.inputId || provider === "codex" && !activeIdentity.inputId);
+        if (!eventMatches || !quotaModelId(quotaEvidence)) return;
         let session: AgentSession | null | undefined;
         try { session = await this.options.adapters.get(provider)?.getSession(event.sessionId); } catch { return; }
         if (!session || session.id !== event.sessionId || session.harness !== provider
@@ -2546,9 +2581,10 @@ export class UnfinishedSessionLauncher {
           || session.needsPermission || session.status === "needs_input"
           || await this.suppressIfHumanStopped(provider, event.sessionId, session.cwd, session)) return;
         const effective = await this.options.settingsStore.getEffective(provider, session.id, session.cwd);
-        if (!effective.enabled || !effective.waitForQuota || !await this.mayWorkOnSession(provider, session.id, session.cwd)) return;
-        const fallbackModels = await this.options.fallbackModelsForHarness(provider as "opencode" | "zcode");
-        await this.options.store.markQuotaRecoveryEligible(session, quotaEvidence, fallbackModels, this.generationId);
+        if ((!effective.waitForQuota && !effective.fallbackForQuota) || await this.pendingQuestionBlocks(provider, session.id, session.cwd)) return;
+        const fallbackModels = effective.fallbackForQuota && provider !== "codex" ? await this.options.fallbackModelsForHarness?.(provider as "opencode" | "zcode") ?? [] : [];
+        if (!effective.waitForQuota && !fallbackModels.length) return;
+        await this.options.store.markQuotaRecoveryEligible(session, quotaEvidence, fallbackModels, this.generationId, new Date(), effective.waitForQuota);
         this.queueUrgentSession(sessionSourceKey(session));
         this.scheduleUrgentRecovery(0);
         return;
@@ -2589,7 +2625,10 @@ export class UnfinishedSessionLauncher {
       return;
     }
     if (await this.suppressIfHumanStopped(provider, event.sessionId, session?.cwd, session)) return;
-    if (session && await this.mayWorkOnSession(session.harness, session.id, session.cwd)) {
+    const quotaSettings = session ? await this.options.settingsStore.getEffective(provider, session.id, session.cwd) : undefined;
+    const quotaOptIn = (quotaSettings?.waitForQuota || quotaSettings?.fallbackForQuota)
+      && !await this.pendingQuestionBlocks(provider, event.sessionId, session?.cwd ?? "/");
+    if (session && (quotaOptIn || await this.mayWorkOnSession(session.harness, session.id, session.cwd))) {
       if (!identity.turnId && !identity.inputId) return;
       const startedFence = nativeTurnFenceKey(provider, event.sessionId, identity);
       if (startedFence) this.eagerCompletions.delete(startedFence);
@@ -2850,13 +2889,11 @@ export class UnfinishedSessionLauncher {
   }
 
   async reconcileQuotaRecoverySettings(): Promise<void> {
-    const runtime = await this.options.settingsStore.getSettings();
     for (const record of await this.options.store.list()) {
       if (!record.quotaRecovery || record.quotaRecovery.state !== "waiting") continue;
       const effective = await this.options.settingsStore.getEffective(record.harness, record.sessionId, record.workspaceIdentity || record.cwd);
-      const operatorIntent = isOperatorRecoveryEvidence(record.quotaRecovery.evidence);
       const oneShotOperatorContinuation = record.quotaRecovery.evidence.classification === "operator_continuation";
-      if (!oneShotOperatorContinuation && ((!operatorIntent && !effective.enabled) || !effective.waitForQuota || (!operatorIntent && !runtime.recoverOnFailure))) {
+      if (!oneShotOperatorContinuation && !effective.waitForQuota && !effective.fallbackForQuota) {
         await this.options.store.clearWaitingQuotaRecovery(record);
       }
     }
@@ -3378,13 +3415,11 @@ export class UnfinishedSessionLauncher {
   }
 
   private async reconcileQuotaRecoveryStartup(epoch: number): Promise<void> {
-    if (!this.options.fallbackModelsForHarness) return;
     const runtime = await this.options.settingsStore.getSettings();
-    if (!runtime.recoverOnFailure) return;
-    for (const harness of ["opencode", "zcode"] as const) {
-      const hasOptIn = runtime.waitForQuota
-        || runtime.waitForQuotaHarnesses.some((record) => record.harness === harness && record.waitForQuota)
-        || runtime.waitForQuotaSessions.some((record) => record.harness === harness && record.waitForQuota);
+    for (const harness of ["opencode", "zcode", "codex"] as const) {
+      const hasOptIn = runtime.waitForQuota || runtime.fallbackForQuota
+        || runtime.waitForQuotaHarnesses.some((record) => record.harness === harness && (record.waitForQuota || record.fallbackForQuota))
+        || runtime.waitForQuotaSessions.some((record) => record.harness === harness && (record.waitForQuota || record.fallbackForQuota));
       if (!hasOptIn) continue;
       const adapter = this.options.adapters.get(harness);
       if (!adapter?.listSessions || !adapter.getSession) continue;
@@ -3393,14 +3428,15 @@ export class UnfinishedSessionLauncher {
       for (const listed of sessions) {
         if (!this.lifecycleActive(epoch) || listed.harness !== harness || isSubagentSession(listed)) continue;
         const effective = await this.options.settingsStore.getEffective(harness, listed.id, listed.cwd);
-        if (!effective.enabled || !effective.waitForQuota || !await this.mayWorkOnSession(harness, listed.id, listed.cwd)) continue;
+        if ((!effective.waitForQuota && !effective.fallbackForQuota) || await this.pendingQuestionBlocks(harness, listed.id, listed.cwd)) continue;
         let fresh: AgentSession | null;
         try { fresh = await adapter.getSession(listed.id); } catch { continue; }
         const evidence = nativeLastTurn(fresh)?.quotaFailure;
         if (!evidence || !quotaModelId(evidence) || !exactTerminalQuotaSnapshot(fresh, evidence) || fresh?.needsPermission
           || fresh?.status === "needs_input" || await this.suppressIfHumanStopped(harness, listed.id, listed.cwd, fresh)) continue;
-        const fallbacks = await this.options.fallbackModelsForHarness(harness);
-        await this.options.store.markQuotaRecoveryEligible(fresh!, evidence, fallbacks, this.generationId);
+        const fallbacks = effective.fallbackForQuota && harness !== "codex" ? await this.options.fallbackModelsForHarness?.(harness) ?? [] : [];
+        if (!effective.waitForQuota && !fallbacks.length) continue;
+        await this.options.store.markQuotaRecoveryEligible(fresh!, evidence, fallbacks, this.generationId, new Date(), effective.waitForQuota);
       }
     }
   }
@@ -3428,7 +3464,7 @@ export class UnfinishedSessionLauncher {
 
   private async processQuotaRecovery(snapshot: UnfinishedSessionRecord, epoch: number): Promise<void> {
     const quota = snapshot.quotaRecovery;
-    if (!quota || snapshot.harness !== "opencode" && snapshot.harness !== "zcode") return;
+    if (!quota || snapshot.harness !== "opencode" && snapshot.harness !== "zcode" && snapshot.harness !== "codex") return;
     const harness = snapshot.harness;
     const operatorIntent = isOperatorRecoveryEvidence(quota.evidence);
     const operatorContinuation = quota.evidence.classification === "operator_continuation" ? quota.evidence : undefined;
@@ -3457,13 +3493,10 @@ export class UnfinishedSessionLauncher {
     }
     if (quota.state !== "waiting") return;
     const enabled = async (): Promise<boolean> => {
-      const [effective, runtime] = await Promise.all([
-        this.options.settingsStore.getEffective(harness, snapshot.sessionId, snapshot.workspaceIdentity || snapshot.cwd),
-        this.options.settingsStore.getSettings(),
-      ]);
+      const effective = await this.options.settingsStore.getEffective(harness, snapshot.sessionId, snapshot.workspaceIdentity || snapshot.cwd);
       // This is a one-shot operator authorization, not persistent auto-wait
       // enrollment; do not mutate or require the independent waitForQuota flag.
-      return Boolean(operatorContinuation) || effective.waitForQuota && (operatorIntent || effective.enabled && runtime.recoverOnFailure);
+      return Boolean(operatorContinuation) || (operatorIntent ? effective.waitForQuota : effective.waitForQuota || Boolean(effective.fallbackForQuota));
     };
     if (!await enabled()) {
       if (operatorContinuation) {
@@ -3475,7 +3508,7 @@ export class UnfinishedSessionLauncher {
     }
     if (Date.parse(quota.nextAttemptAt) > Date.now()) return;
     const adapter = this.options.adapters.get(harness);
-    if (!adapter?.getSession || !adapter.changeModel || !adapter.listModels || !this.options.fallbackModelsForHarness) return;
+    if (!adapter?.getSession || !adapter.changeModel || !adapter.listModels) return;
     if (!this.lifecycleActive(epoch)) return;
     if (operatorContinuation
       ? await this.operatorContinuationPendingQuestionBlocks(snapshot.sessionId, snapshot.cwd)
@@ -3516,10 +3549,24 @@ export class UnfinishedSessionLauncher {
     if (!await this.admissionAllowed(session, "resume")) return;
     const models = await adapter.listModels();
     const selectedModel = quota.candidateModels[quota.candidateIndex]!;
-    const currentPolicyModels = await this.options.fallbackModelsForHarness(harness);
-    if (!currentPolicyModels.includes(selectedModel) || !models.includes(selectedModel)
+    const modelAllowed = async () => {
+      const fallbacks = harness !== "codex" ? await this.options.fallbackModelsForHarness?.(harness) ?? [] : [];
+      const effective = await this.options.settingsStore.getEffective(harness, snapshot.sessionId, snapshot.workspaceIdentity || snapshot.cwd);
+      return (operatorIntent || effective.fallbackForQuota) && fallbacks.includes(selectedModel)
+        || !operatorIntent && effective.waitForQuota && selectedModel === recoveryEvidenceModelId(quota.evidence);
+    };
+    if (!await modelAllowed() || !models.includes(selectedModel)
       || operatorIntent && !await this.operatorProjectModelAllowed(session, selectedModel)) {
       await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
+      return;
+    }
+    // Unknown quota is an explicit bounded admission trial of this candidate.
+    // It never relaxes the exact native delivery boundary after send.
+    let probe: RecoveryModelQuota;
+    try { probe = await (this.options.probeRecoveryQuota ?? probeRecoveryModelQuota)(selectedModel); }
+    catch { return; }
+    if (probe.state === "exhausted") {
+      await this.options.store.deferQuotaRecoveryProbe(snapshot, probe.resetAt);
       return;
     }
     if (session.model !== selectedModel) {
@@ -3573,7 +3620,7 @@ export class UnfinishedSessionLauncher {
       await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
       return;
     }
-    if (!(await this.options.fallbackModelsForHarness(harness)).includes(selectedModel)
+    if (!await modelAllowed()
       || operatorIntent && !await this.operatorProjectModelAllowed(verified, selectedModel)) {
       await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
       return;
@@ -3590,7 +3637,7 @@ export class UnfinishedSessionLauncher {
       : exactTerminalRecoverySnapshot(current, quota.evidence);
     if (!current || current.model !== selectedModel || !currentTerminalSnapshotMatches
       || current.status === "running" || current.needsPermission
-      || !(await this.options.fallbackModelsForHarness(harness)).includes(selectedModel)
+      || !await modelAllowed()
       || operatorIntent && !await this.operatorProjectModelAllowed(current, selectedModel)
       || !await enabled() || (!operatorContinuation && await this.suppressIfHumanStopped(harness, snapshot.sessionId, snapshot.cwd, current))
       || (operatorContinuation
@@ -3612,7 +3659,7 @@ export class UnfinishedSessionLauncher {
     }
     let result;
     try {
-      result = await adapter.sendMessage(snapshot.sessionId, {
+      result = normalizeSendAdmission(await adapter.sendMessage(snapshot.sessionId, {
         message: this.continuationMessage,
         queue: true,
         model: selectedModel,
@@ -3620,19 +3667,19 @@ export class UnfinishedSessionLauncher {
         origin: "automation",
         ...(last?.userMessageId && last.completedAt && recoveryEvidenceTurnId(quota.evidence)
           ? { recoveryBoundary: { turnId: recoveryEvidenceTurnId(quota.evidence)!, userMessageId: last.userMessageId, completedAt: Date.parse(last.completedAt) } } : {}),
-      });
+      }));
     } catch {
       await this.options.store.settleQuotaRecoveryAttempt(claimed, "unknown");
       return;
     }
-    if (result.admitted || result.pending) {
+    if (result.admission === "accepted" || result.admission === "pending" || result.admitted || result.pending) {
       await this.options.store.settleQuotaRecoveryAttempt(claimed, "accepted", {
         ...(result.turnId ? { turnId: result.turnId } : {}),
         ...(result.nativeInputMessageId ? { nativeInputMessageId: result.nativeInputMessageId } : {}),
       });
-    } else if (result.admissionUnknown || result.nonRetryable || (!result.notSubmitted && result.ok)) {
+    } else if (result.admission !== "not_submitted" || result.admissionUnknown) {
       await this.options.store.settleQuotaRecoveryAttempt(claimed, "unknown");
-    } else if (confirmedQuotaFailureText(result.error)) {
+    } else if (result.quotaFailure?.classification === "quota_exhausted") {
       await this.options.store.settleQuotaRecoveryAttempt(claimed, "quota_pre_admission");
     } else {
       await this.options.store.settleQuotaRecoveryAttempt(claimed, "rejected");
@@ -5705,6 +5752,7 @@ function parseAutostartFile(value: unknown, env: NodeJS.ProcessEnv = process.env
   return {
     version: 8,
     enabled: object.enabled,
+    fallbackForQuota: object.fallbackForQuota === undefined ? false : booleanSetting(object.fallbackForQuota, "fallbackForQuota"),
     waitForQuota: object.version === 8 && object.waitForQuota !== undefined ? booleanSetting(object.waitForQuota, "waitForQuota") : false,
     pinActiveSessions: object.version === 8 && object.pinActiveSessions !== undefined ? booleanSetting(object.pinActiveSessions, "pinActiveSessions") : defaults.pinActiveSessions,
     rolloverExpiredCache: object.version >= 4 ? booleanSetting(object.rolloverExpiredCache, "rolloverExpiredCache") : defaults.rolloverExpiredCache,
@@ -5743,13 +5791,13 @@ function parseAutostartFile(value: unknown, env: NodeJS.ProcessEnv = process.env
     waitForQuotaHarnesses: waitForQuotaHarnesses.map((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid waitForQuota harness override");
       const record = value as Record<string, unknown>;
-      return { harness: harnessType(record.harness), waitForQuota: booleanSetting(record.waitForQuota, "waitForQuota"), updatedAt: isoDate(record.updatedAt, "updatedAt") };
+      return { harness: harnessType(record.harness), waitForQuota: booleanSetting(record.waitForQuota, "waitForQuota"), fallbackForQuota: record.fallbackForQuota === undefined ? false : booleanSetting(record.fallbackForQuota, "fallbackForQuota"), updatedAt: isoDate(record.updatedAt, "updatedAt") };
     }),
     waitForQuotaSessions: waitForQuotaSessions.map((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid waitForQuota session override");
       const record = value as Record<string, unknown>;
       return { harness: harnessType(record.harness), sessionId: bounded(record.sessionId, "sessionId"), cwd: normalize(bounded(record.cwd, "cwd")),
-        waitForQuota: booleanSetting(record.waitForQuota, "waitForQuota"), updatedAt: isoDate(record.updatedAt, "updatedAt") };
+        waitForQuota: booleanSetting(record.waitForQuota, "waitForQuota"), fallbackForQuota: record.fallbackForQuota === undefined ? false : booleanSetting(record.fallbackForQuota, "fallbackForQuota"), updatedAt: isoDate(record.updatedAt, "updatedAt") };
     }),
   };
 }
@@ -5759,6 +5807,7 @@ function defaultAutostartFile(env: NodeJS.ProcessEnv): SessionAutostartFile {
     version: 8,
     enabled: env.AGENT_HERDER_UNFINISHED_AUTOSTART !== "false",
     waitForQuota: false,
+    fallbackForQuota: false,
     pinActiveSessions: env.AGENT_HERDER_UNFINISHED_PIN_ACTIVE_SESSIONS !== "false",
     rolloverExpiredCache: false,
     movePinnedOnRollover: false,
@@ -5816,12 +5865,12 @@ function resolveWaitForQuota(
   harness: HarnessType,
   sessionId: string,
   cwd: string,
-): { waitForQuota: boolean; waitForQuotaSource: WaitForQuotaSource; waitForQuotaOverride?: boolean } {
+): { waitForQuota: boolean; fallbackForQuota: boolean; waitForQuotaSource: WaitForQuotaSource; waitForQuotaOverride?: boolean } {
   const session = settings.waitForQuotaSessions.find((record) => sessionKey(record.harness, record.sessionId, record.cwd) === sessionKey(harness, sessionId, cwd));
-  if (session) return { waitForQuota: session.waitForQuota, waitForQuotaSource: "session", waitForQuotaOverride: session.waitForQuota };
+  if (session) return { waitForQuota: session.waitForQuota, fallbackForQuota: session.fallbackForQuota ?? false, waitForQuotaSource: "session", waitForQuotaOverride: session.waitForQuota };
   const byHarness = settings.waitForQuotaHarnesses.find((record) => record.harness === harness);
-  if (byHarness) return { waitForQuota: byHarness.waitForQuota, waitForQuotaSource: "harness", waitForQuotaOverride: byHarness.waitForQuota };
-  return { waitForQuota: settings.waitForQuota, waitForQuotaSource: settings.source === "persisted" ? "global" : "default" };
+  if (byHarness) return { waitForQuota: byHarness.waitForQuota, fallbackForQuota: byHarness.fallbackForQuota ?? false, waitForQuotaSource: "harness", waitForQuotaOverride: byHarness.waitForQuota };
+  return { waitForQuota: settings.waitForQuota, fallbackForQuota: settings.fallbackForQuota ?? false, waitForQuotaSource: settings.source === "persisted" ? "global" : "default" };
 }
 
 function parseFile(value: unknown): UnfinishedSessionFile {
@@ -6271,12 +6320,9 @@ function parseQuotaRecovery(value: unknown): QuotaRecoveryRecord | undefined {
   const record = value as Record<string, unknown>;
   const evidence = normalizeQuotaRecoveryEvidence(record.evidence);
   if (!evidence || !["waiting", "dispatching", "accepted", "held", "exhausted"].includes(String(record.state))) return undefined;
-  // The candidates are read with the same allowlist the producer writes them
-  // with (quotaCandidateModels): a stricter check would drop a record the
-  // producer has just written, and the recovery of that session would be
-  // lost. A candidate outside the allowlist is still refused, record and all.
+  // Native syntax matches the producer. Catalog and current execution policy are rechecked before dispatch.
   if (!Array.isArray(record.candidateModels) || !record.candidateModels.length || record.candidateModels.length > 9
-    || !record.candidateModels.every((item) => typeof item === "string" && NOTICEPLACE_HEALTH_MODELS.includes(item))) return undefined;
+    || !record.candidateModels.every((item) => typeof item === "string" && (isRecoveryModelReference(item) || isRecoveryModelReference(item, "codex")))) return undefined;
   const candidateIndex = nonNegativeInteger(record.candidateIndex, -1);
   const attempts = nonNegativeInteger(record.attempts, -1);
   const revision = positiveInteger(record.revision, -1);
@@ -6289,6 +6335,7 @@ function parseQuotaRecovery(value: unknown): QuotaRecoveryRecord | undefined {
     nextAttemptAt: isoDate(record.nextAttemptAt, "quotaRecovery.nextAttemptAt"),
     candidateModels: record.candidateModels.map((item) => bounded(item as string, "quotaRecovery.candidateModel")),
     candidateIndex,
+    waitForOriginal: record.waitForOriginal === undefined ? true : booleanSetting(record.waitForOriginal, "waitForOriginal"),
     attempts,
     revision,
     ...(typeof record.selectedModel === "string" ? { selectedModel: bounded(record.selectedModel, "quotaRecovery.selectedModel") } : {}),

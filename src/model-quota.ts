@@ -165,3 +165,63 @@ export function readMiniMaxQuota(options: { token?: string; fetchImpl?: typeof f
   return providerRequest("minimax", "https://www.minimax.io/v1/token_plan/remains", options.token,
     options.fetchImpl ?? fetch, options.now ?? Date.now, undefined, options.signal);
 }
+
+export type RecoveryModelQuota = {
+  state: "available" | "exhausted" | "unknown";
+  source: string;
+  checkedAt: string;
+  resetAt?: string;
+  reason?: string;
+};
+
+function recoveryQuotaProvider(modelId: string): ProviderQuota["provider"] | undefined {
+  const ref = modelId.replace(/\$[^/]+$/, "");
+  // A combo name is not proof of its current provider/account. Do not infer
+  // quota from a suggestive model substring or change its working route.
+  if (/^(?:account:)?(?:zai|z-ai|zai-individual-coding-plan|zai-coding-plan|glm)\//i.test(ref)
+    || /^omniroute\/(?:zai|z-ai|zai-individual-coding-plan|zai-coding-plan|glm)\//i.test(ref)) return "glm";
+  if (/^(?:minimax-coding-plan|account:minimax-coding-plan)\//i.test(ref)
+    || /^omniroute\/minimax-coding-plan\//i.test(ref)) return "minimax";
+  if (/^(?:codex\/|gpt-)/i.test(ref)) return "codex";
+  return undefined;
+}
+
+/** Pure freshness/provider binding used by the scheduler and focused regression. */
+export function recoveryModelQuotaFromProvider(modelId: string, quota: ProviderQuota | undefined, now = Date.now()): RecoveryModelQuota {
+  const provider = recoveryQuotaProvider(modelId);
+  const checkedAt = quota?.checkedAt ?? new Date(now).toISOString();
+  const source = provider ? `${provider}:official-usage-api` : "route:unresolved";
+  const unknown = (reason: string): RecoveryModelQuota => ({ state: "unknown", source, checkedAt, reason });
+  if (!provider) return unknown("provider_account_not_resolved");
+  if (!quota || quota.provider !== provider) return unknown("provider_quota_not_matched");
+  const checkedMs = Date.parse(checkedAt);
+  if (!Number.isFinite(checkedMs) || checkedMs > now + 5_000 || now - checkedMs > 300_000) return unknown("quota_snapshot_stale");
+  if (quota.validUntilMs !== undefined && now >= quota.validUntilMs) return unknown("quota_snapshot_expired");
+  if (quota.state === "unknown") return unknown(quota.error ?? "quota_unknown");
+  // Reset deadlines are scheduling hints; only freshly reported allowance may
+  // establish available, never the passage of time alone.
+  const details = quota.details && typeof quota.details === "object" ? quota.details as Record<string, unknown> : {};
+  const resets = [quota.validUntilMs, ...records(details.limits).map(row => row.nextResetTime)].filter(finite).filter(value => value > now);
+  const resetAt = resets.length ? new Date(Math.min(...resets)).toISOString() : undefined;
+  return { state: quota.state === "quota_exhausted" ? "exhausted" : "available", source, checkedAt,
+    ...(resetAt ? { resetAt } : {}), reason: quota.state === "quota_exhausted" ? "provider_reports_exhausted" : "provider_reports_allowance" };
+}
+
+/** Official read-only usage endpoints only: no inference, LLM judge or reservation. */
+export async function probeRecoveryModelQuota(modelId: string, options: { now?: number } = {}): Promise<RecoveryModelQuota> {
+  const now = options.now ?? Date.now();
+  const provider = recoveryQuotaProvider(modelId);
+  if (!provider) return recoveryModelQuotaFromProvider(modelId, undefined, now);
+  let quota: ProviderQuota;
+  if (provider === "glm") {
+    const credential = await readGlmCredential(process.env);
+    quota = await providerRequest("glm", "https://api.z.ai/api/monitor/usage/quota/limit", credential.token, fetch, () => Date.now(), credential.error);
+  } else if (provider === "minimax") {
+    quota = await readMiniMaxQuota({ token: process.env.MINIMAX_API_KEY });
+  } else {
+    // The existing read-only reader owns Codex's protected usage access.
+    const snapshot = await readModelQuotas({ env: {} });
+    quota = snapshot.providers.find(row => row.provider === "codex")!;
+  }
+  return recoveryModelQuotaFromProvider(modelId, quota, options.now ?? Date.now());
+}

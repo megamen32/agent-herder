@@ -55,7 +55,7 @@ describe("ZCode registered communication native command admission", () => {
   it("keeps a staged native guide pending until attribution proves current-turn delivery", async () => {
     const client = new NativeCommands();
     client.reply = ({ envelope }) => ({ commandId: envelope.commandId, status: "accepted", revisionAtDecision: 5, result: { type: "inputAccepted", inputId: "native", delivery: "queue" } });
-    expect(await adapter(client).sendMessage("owned", { ...message, steer: true })).toEqual({ ok: true, pending: true, inputId: "operation-1" });
+    expect(await adapter(client).sendMessage("owned", { ...message, steer: true })).toEqual({ ok: true, pending: true, admission: "pending", inputId: "operation-1" });
     expect(client.calls).toHaveLength(2);
   });
   it("rejects an unrelated command receipt without retry or false admission", async () => {
@@ -80,6 +80,23 @@ describe("ZCode registered communication native command admission", () => {
     client.reply = ({ envelope }) => ({ commandId: envelope.commandId, status: "rejected", revisionAtDecision: 5, reasonCode: "guide_not_supported", message: "Native guide unsupported" });
     expect(await adapter(client).sendMessage("owned", { ...message, steer: true })).toMatchObject({ ok: false, admitted: false, inputId: "operation-1", error: expect.stringContaining("guide_not_supported") });
     expect(client.calls).toHaveLength(2);
+  });
+  it("keeps contradictory accepted input proof ahead of a rejected envelope", async () => {
+    const client = new NativeCommands();
+    client.reply = ({envelope}) => ({commandId:envelope.commandId,status:"rejected",reasonCode:"quota_exhausted",result:{type:"inputAccepted",inputId:"native",delivery:"queue"}});
+    const result=await adapter(client).sendMessage("owned",{...message,queue:true});
+    expect(result).toMatchObject({admission:"accepted",admitted:true});
+    expect(result.notSubmitted).not.toBe(true);
+    expect(result.quotaFailure).toBeUndefined();
+  });
+  it.each(["unknown", undefined, "pending"])("keeps ambiguous native ACK %s unknown despite quota text", async status => {
+    const client = new NativeCommands();
+    client.reply = ({envelope}) => ({commandId:envelope.commandId,...(status ? {status} : {}),reasonCode:"quota_exhausted"});
+    const result = await adapter(client).sendMessage("owned",{...message,queue:true});
+    expect(result).toMatchObject({admission:"unknown",admissionUnknown:true});
+    expect(result.notSubmitted).not.toBe(true);
+    expect(result.quotaFailure).toBeUndefined();
+    expect(client.calls.filter(c=>c.method === "sendConversationCommandV4")).toHaveLength(1);
   });
   it("lets native idle guide resolve to startNow without inventing an active turnId", async () => {
     const client = new NativeCommands();

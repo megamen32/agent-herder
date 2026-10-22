@@ -13,7 +13,7 @@ import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, Harn
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { throwIfAborted } from "../abort-utils.js";
-import { terminalQuotaFailure } from "./quota-failure.js";
+import { terminalQuotaFailure, normalizeSendAdmission } from "./quota-failure.js";
 
 export { normalizeOpenCodeEvent, openCodeConnectedModels, openCodeMessageParts, openCodeModelCatalogEntries, parseOpenCodeServerCommand, unwrapEnvelope } from "agent-resume-mcp";
 export type { OpenCodeEvent, OpenCodeModelCatalogEntry } from "agent-resume-mcp";
@@ -623,7 +623,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
-    return this.client.send(id, { message: options.message, delivery: options.queue ? "queue" : "steer", ...(options.inputId ? { inputId: options.inputId } : {}) });
+    return normalizeSendAdmission(await this.client.send(id, { message: options.message, delivery: options.queue ? "queue" : "steer", ...(options.inputId ? { inputId: options.inputId } : {}) }));
   }
 
   async stopSession(id: string): Promise<{ ok: boolean; error?: string }> {

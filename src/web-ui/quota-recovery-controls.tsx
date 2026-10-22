@@ -4,6 +4,9 @@ export type QuotaRecoverySession = { harness: string; id: string; cwd: string };
 export type WaitForQuotaSource = "session" | "harness" | "global" | "default" | string;
 export type WaitForQuotaSettings = {
   waitForQuota: boolean;
+  fallbackForQuota?: boolean;
+  fallbackForQuotaSource?: WaitForQuotaSource;
+  fallbackForQuotaOverride?: boolean | null;
   waitForQuotaSource: WaitForQuotaSource;
   waitForQuotaOverride?: boolean | null;
 };
@@ -15,11 +18,23 @@ export type QuotaRecoveryWait = {
   selectedModel?: string;
 };
 
-export const QUOTA_RECOVERY_HARNESSES = ["opencode", "zcode"] as const;
+export const QUOTA_RECOVERY_HARNESSES = ["opencode", "zcode", "codex"] as const;
 const HARNESS_LABELS: Record<(typeof QUOTA_RECOVERY_HARNESSES)[number], string> = {
   opencode: "OpenCode",
   zcode: "ZCode",
+  codex: "Codex",
 };
+
+export type QuotaRecoveryMode = "off" | "fallback" | "wait" | "fallback-then-wait";
+export function quotaRecoveryMode(wait: boolean, fallback: boolean): QuotaRecoveryMode {
+  return wait ? fallback ? "fallback-then-wait" : "wait" : fallback ? "fallback" : "off";
+}
+export function quotaRecoveryModeFlags(mode: QuotaRecoveryMode) {
+  return { waitForQuota: mode === "wait" || mode === "fallback-then-wait", fallbackForQuota: mode === "fallback" || mode === "fallback-then-wait" };
+}
+function modeOptions(codex = false) {
+  return <><option value="off">Выключено</option>{!codex && <option value="fallback">Переключиться на запасную модель</option>}<option value="wait">Ждать квоту исходной модели</option>{!codex && <option value="fallback-then-wait">Запасные модели, затем ждать исходную</option>}</>;
+}
 
 export type WaitForQuotaScope =
   | { kind: "global" }
@@ -44,16 +59,19 @@ export async function readWaitForQuota(scope: WaitForQuotaScope): Promise<WaitFo
   }
   return {
     waitForQuota: body.waitForQuota,
+    ...(typeof body.fallbackForQuota === "boolean" ? { fallbackForQuota: body.fallbackForQuota } : {}),
+    ...(typeof body.fallbackForQuotaSource === "string" ? { fallbackForQuotaSource: body.fallbackForQuotaSource } : {}),
+    ...(body.fallbackForQuotaOverride === undefined ? {} : { fallbackForQuotaOverride: body.fallbackForQuotaOverride }),
     waitForQuotaSource: body.waitForQuotaSource,
     ...(body.waitForQuotaOverride === undefined ? {} : { waitForQuotaOverride: body.waitForQuotaOverride }),
   };
 }
 
-export async function writeWaitForQuota(scope: WaitForQuotaScope, value: boolean | null): Promise<WaitForQuotaSettings> {
+export async function writeWaitForQuota(scope: WaitForQuotaScope, value: boolean | null, fallbackForQuota?: boolean | null): Promise<WaitForQuotaSettings> {
   const response = await fetch(settingsPath(scope), {
     method: "PUT",
     headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ waitForQuota: value, ...(scope.kind === "session" ? { cwd: scope.session.cwd } : {}) }),
+    body: JSON.stringify({ waitForQuota: value, ...(fallbackForQuota === undefined ? {} : { fallbackForQuota }), ...(scope.kind === "session" ? { cwd: scope.session.cwd } : {}) }),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const body = await response.json() as Partial<WaitForQuotaSettings>;
@@ -62,6 +80,9 @@ export async function writeWaitForQuota(scope: WaitForQuotaScope, value: boolean
   }
   return {
     waitForQuota: body.waitForQuota,
+    ...(typeof body.fallbackForQuota === "boolean" ? { fallbackForQuota: body.fallbackForQuota } : {}),
+    ...(typeof body.fallbackForQuotaSource === "string" ? { fallbackForQuotaSource: body.fallbackForQuotaSource } : {}),
+    ...(body.fallbackForQuotaOverride === undefined ? {} : { fallbackForQuotaOverride: body.fallbackForQuotaOverride }),
     waitForQuotaSource: body.waitForQuotaSource,
     ...(body.waitForQuotaOverride === undefined ? {} : { waitForQuotaOverride: body.waitForQuotaOverride }),
   };
@@ -218,11 +239,11 @@ export function QuotaRecoveryControls({ session }: { session?: QuotaRecoverySess
     return () => statusRequest.current?.cancel();
   }, [refreshStatus]);
 
-  const save = async (scope: WaitForQuotaScope, key: string, value: boolean | null) => {
+  const save = async (scope: WaitForQuotaScope, key: string, value: boolean | null, fallbackForQuota?: boolean | null) => {
     setSaving(key);
     setError(undefined);
     try {
-      const saved = await writeWaitForQuota(scope, value);
+      const saved = await writeWaitForQuota(scope, value, fallbackForQuota);
       if (scope.kind === "global") setGlobalSetting(saved);
       else if (scope.kind === "harness") setHarnessSettings((current) => ({ ...current, [scope.harness]: saved }));
       else setSessionSetting(saved);
@@ -238,10 +259,17 @@ export function QuotaRecoveryControls({ session }: { session?: QuotaRecoverySess
 
   if (session) {
     const setting = sessionSetting;
-    const overridden = typeof setting?.waitForQuotaOverride === "boolean";
+    const overridden = typeof setting?.waitForQuotaOverride === "boolean" || typeof setting?.fallbackForQuotaOverride === "boolean";
     return <fieldset className="settings-group quota-recovery-settings" aria-label="Ожидание восстановления квоты">
       <legend>Восстановление после квоты</legend>
       {setting && <>
+        <label className="launch-policy-field"><span>Поведение при исчерпании квоты</span>
+          <select aria-label="Политика квоты для текущей сессии" disabled={Boolean(saving)}
+            value={quotaRecoveryMode(setting.waitForQuota, session.harness === "codex" ? false : setting.fallbackForQuota === true)}
+            onChange={event => { const flags = quotaRecoveryModeFlags(event.target.value as QuotaRecoveryMode); void save({kind:"session",session},"session",flags.waitForQuota,flags.fallbackForQuota); }}>
+            {modeOptions(session.harness === "codex")}
+          </select></label>
+        {session.harness === "codex" && <p className="settings-help">Codex: ожидание исходной модели. Независимая квота запасных моделей не подтверждена.</p>}
         <label className="runtime-toggle-setting timeout-setting">
           <span><strong>Продолжить эту сессию после восстановления квоты</strong>
             <small>Сейчас {setting.waitForQuota ? "включено" : "выключено"}; значение берётся из настройки: {sourceLabel(setting.waitForQuotaSource)}.</small>
@@ -250,7 +278,7 @@ export function QuotaRecoveryControls({ session }: { session?: QuotaRecoverySess
             disabled={Boolean(saving)} onChange={(event) => void save({ kind: "session", session }, "session", event.target.checked)} />
         </label>
         {overridden && <button type="button" className="quiet-button" disabled={Boolean(saving)}
-          onClick={() => void save({ kind: "session", session }, "session", null)}>Использовать настройку среды</button>}
+          onClick={() => void save({ kind: "session", session }, "session", null, null)}>Использовать настройку среды</button>}
       </>}
       {error && <p className="autopilot-error" role="alert">{error}</p>}
       <div className="settings-save-row"><strong>Состояние ожидания</strong>
@@ -262,23 +290,34 @@ export function QuotaRecoveryControls({ session }: { session?: QuotaRecoverySess
 
   return <fieldset className="settings-group quota-recovery-settings" aria-label="Ожидание восстановления квоты">
     <legend>Восстановление после квоты</legend>
-    <p className="settings-help">Эта отдельная настройка разрешает безопасное продолжение только после подтверждённого терминального отказа по квоте.</p>
+    <p className="settings-help">Политики действуют независимо от общего автопродолжения. Сохранённый список запасных моделей сам по себе не включает переключение. Выключение сохраняет его порядок.</p>
     {globalSetting && <label className="runtime-toggle-setting timeout-setting">
       <span><strong>Разрешить ожидание после квоты по умолчанию</strong><small>По умолчанию выключено. Настройки среды и отдельной сессии имеют приоритет.</small></span>
       <input type="checkbox" role="switch" aria-label="Ожидание квоты по умолчанию" checked={globalSetting.waitForQuota}
         disabled={Boolean(saving)} onChange={(event) => void save({ kind: "global" }, "global", event.target.checked)} />
+    </label>}
+    {globalSetting && <label className="launch-policy-field"><span>Политика квоты по умолчанию</span>
+      <select aria-label="Политика квоты по умолчанию" disabled={Boolean(saving)}
+        value={quotaRecoveryMode(globalSetting.waitForQuota, globalSetting.fallbackForQuota === true)}
+        onChange={event => {const flags=quotaRecoveryModeFlags(event.target.value as QuotaRecoveryMode);void save({kind:"global"},"global",flags.waitForQuota,flags.fallbackForQuota);}}>
+        {modeOptions()}
+      </select><small>Codex использует только ожидание; список приоритетов хранится отдельно и не включает политику.</small>
     </label>}
     <div className="harness-automation-list" aria-label="Ожидание квоты по средам">
       {QUOTA_RECOVERY_HARNESSES.map((harness) => {
         const setting = harnessSettings[harness];
         return <section className="harness-setting-row" key={harness} aria-label={`Ожидание квоты · ${HARNESS_LABELS[harness]}`}>
           <div><strong>{HARNESS_LABELS[harness]}</strong><small>{setting ? `${setting.waitForQuota ? "Разрешено" : "Выключено"} · источник: ${sourceLabel(setting.waitForQuotaSource)}` : "Не загружено"}</small>
-            {setting && typeof setting.waitForQuotaOverride === "boolean" && <button type="button" className="inherit-button" disabled={Boolean(saving)}
-              onClick={() => void save({ kind: "harness", harness }, harness, null)}>Использовать общую настройку</button>}
+            {setting && (typeof setting.waitForQuotaOverride === "boolean" || typeof setting.fallbackForQuotaOverride === "boolean") && <button type="button" className="inherit-button" disabled={Boolean(saving)}
+              onClick={() => void save({ kind: "harness", harness }, harness, null, null)}>Использовать общую настройку</button>}
           </div>
-          <button className={`switch-control ${setting?.waitForQuota ? "enabled" : ""}`} role="switch" aria-label={`Ожидание квоты · ${HARNESS_LABELS[harness]}`}
-            aria-checked={setting?.waitForQuota ?? false} disabled={!setting || Boolean(saving)}
-            onClick={() => setting && void save({ kind: "harness", harness }, harness, !setting.waitForQuota)}><span /></button>
+          <label className="launch-policy-field"><span className="sr-only">Политика квоты · {HARNESS_LABELS[harness]}</span>
+            <select aria-label={`Политика квоты · ${HARNESS_LABELS[harness]}`} disabled={!setting || Boolean(saving)}
+              value={setting ? quotaRecoveryMode(setting.waitForQuota, harness === "codex" ? false : setting.fallbackForQuota === true) : "off"}
+              onChange={event => { const flags=quotaRecoveryModeFlags(event.target.value as QuotaRecoveryMode); void save({kind:"harness",harness},harness,flags.waitForQuota,flags.fallbackForQuota); }}>
+              {modeOptions(harness === "codex")}
+            </select>
+          </label>
         </section>;
       })}
     </div>

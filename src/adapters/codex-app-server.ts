@@ -1,3 +1,4 @@
+import { terminalQuotaFailure, type TerminalQuotaFailure } from "./quota-failure.js";
 import { execFile, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
@@ -167,6 +168,20 @@ function threadTimestamp(value: string | number | undefined): string | undefined
   return undefined;
 }
 
+/** Exact failed native turn only; generic RPC errors and missing native input stay unknown. */
+export function codexTerminalQuotaEvidence(value: unknown, model: string | null | undefined): TerminalQuotaFailure | undefined {
+  if (!value || typeof value !== "object" || !model) return undefined;
+  const turn = value as Record<string, unknown>;
+  if (turn.status !== "failed" || !threadTimestamp(turn.completedAt as string | number | undefined)) return undefined;
+  const items = Array.isArray(turn.items) ? turn.items as Array<Record<string, unknown>> : [];
+  const user = [...items].reverse().find(item => item.type === "userMessage" && typeof item.id === "string");
+  const error = turn.error && typeof turn.error === "object" ? turn.error as Record<string, unknown> : {};
+  return terminalQuotaFailure({ terminal: true, status: "failed", nativeTurnId: typeof turn.id === "string" ? turn.id : undefined,
+    inputId: typeof user?.id === "string" ? user.id : undefined, providerId: "codex", modelId: model,
+    errorCode: typeof error.codexErrorInfo === "string" ? error.codexErrorInfo : undefined,
+    errorMessage: typeof error.message === "string" ? error.message : undefined });
+}
+
 interface TurnCompletion {
   resolve: (result: ControlResult) => void;
   timer: NodeJS.Timeout;
@@ -242,7 +257,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly projectThreadIds = new Set<string>();
   private readonly activeTurns = new Map<string, string>();
   private readonly eventStartedTurns = new Set<string>();
-  private readonly lastNativeTurns = new Map<string, { turnId: string; status: string; completedAt?: string }>();
+  private readonly lastNativeTurns = new Map<string, { turnId: string; status: string; completedAt?: string; inputId?: string; userMessageId?: string; quotaFailure?: TerminalQuotaFailure }>();
   private readonly unavailableNativeTurnStates = new Set<string>();
   private readonly completions = new Map<string, TurnCompletion>();
   private readonly internalInterrupts = new Map<string, { turnId: string; expiresAt: number }>();
@@ -1449,7 +1464,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const turn = result.data?.find((candidate) => candidate.status === "inProgress" && typeof candidate.id === "string");
       const latest = result.data?.[0];
       if (typeof latest?.id === "string" && typeof latest.status === "string") {
+        const previous = this.lastNativeTurns.get(id);
+        const quotaFailure = codexTerminalQuotaEvidence(latest, this.threads.get(id)?.model)
+          ?? (previous?.turnId === latest.id && latest.status === "failed" ? previous.quotaFailure : undefined);
         this.lastNativeTurns.set(id, {
+          ...(quotaFailure ? { quotaFailure, inputId: quotaFailure.inputId, userMessageId: quotaFailure.inputId } : {}),
           turnId: latest.id,
           status: latest.status,
           ...(threadTimestamp(latest.completedAt ?? undefined) ? { completedAt: threadTimestamp(latest.completedAt ?? undefined) } : {}),
@@ -2285,7 +2304,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const completedTurn = params.turn as { id?: string; status?: string; completedAt?: string | number } | undefined;
       if (completedTurn?.id && completedTurn.status) {
         this.unavailableNativeTurnStates.delete(threadId);
+        const quotaFailure = codexTerminalQuotaEvidence(completedTurn, this.threads.get(threadId)?.model);
         this.lastNativeTurns.set(threadId, {
+          ...(quotaFailure ? { quotaFailure, inputId: quotaFailure.inputId, userMessageId: quotaFailure.inputId } : {}),
           turnId: completedTurn.id,
           status: completedTurn.status,
           ...(threadTimestamp(completedTurn.completedAt) ? { completedAt: threadTimestamp(completedTurn.completedAt) } : {}),
@@ -2312,7 +2333,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
           data: { automationStop, turnId: completedTurn.id },
         });
       } else {
-        this.emitEvent({ kind: completedTurn?.status === "failed" ? "turn.failed" : "turn.completed", harness: "codex", sessionId: threadId, nativeType: message.method, status: completedTurn?.status === "failed" ? "error" : "idle", data: { turnId: completedTurn?.id } });
+        this.emitEvent({ kind: completedTurn?.status === "failed" ? "turn.failed" : "turn.completed", harness: "codex", sessionId: threadId, nativeType: message.method, status: completedTurn?.status === "failed" ? "error" : "idle", data: { turnId: completedTurn?.id, ...(this.lastNativeTurns.get(threadId)?.quotaFailure ? { quotaFailure: this.lastNativeTurns.get(threadId)!.quotaFailure, inputId: this.lastNativeTurns.get(threadId)!.inputId } : {}) } });
       }
       const completion = this.completions.get(threadId);
       if (completion) {

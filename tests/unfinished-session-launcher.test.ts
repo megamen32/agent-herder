@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -798,8 +798,8 @@ describe("terminal quota recovery", () => {
 
   async function optedInSettings(root: string): Promise<SessionAutostartStore> {
     const settings = new SessionAutostartStore(join(root, "settings.json"), {});
-    await settings.setGlobal(true);
-    await settings.setSessionWaitForQuota({ harness: "opencode", sessionId: "quota-session", cwd: "/tmp/recovery" }, true);
+    await settings.setGlobalOptions({enabled: true, fallbackForQuota: true});
+    await settings.setSessionWaitForQuota({ harness: "opencode", sessionId: "quota-session", cwd: "/tmp/recovery" }, true, new Date(), true);
     return settings;
   }
 
@@ -813,6 +813,114 @@ describe("terminal quota recovery", () => {
       async sendMessage(_id, options) { sent.push({ model: options.model, inputId: options.inputId }); return { ok: true, admitted: true, inputId: options.inputId }; },
     };
   }
+
+  it("waits independently with general autopilot disabled and no fallbacks", async () => {
+    const root = await mkdtemp(join(tmpdir(), "quota-independent-wait-"));
+    try {
+      const current = quotaSession();
+      const sent: Array<{ model?: string; inputId?: string }> = [];
+      const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+      const settings = await optedInSettings(root);
+      await settings.setGlobalOptions({enabled: false, fallbackForQuota: false});
+      await settings.setSessionWaitForQuota({harness: current.harness, sessionId: current.id, cwd: current.cwd}, true, new Date(), false);
+      const launcher = new UnfinishedSessionLauncher({ adapters: new Map([["opencode", quotaAdapter(() => current, sent)]]), store, settingsStore: settings, fallbackModelsForHarness: async () => [] });
+      await launcher.recoverPending();
+      await launcher.reconcileQuotaRecoverySettings();
+      await launcher.recoverPending();
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.model).toBe(current.model);
+      expect((await store.list())[0]?.quotaRecovery?.state).toBe("accepted");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("runs fallback-only without auto-continuation and never retries the original model", async () => {
+    const root = await mkdtemp(join(tmpdir(), "quota-fallback-only-"));
+    try {
+      const current = quotaSession();
+      const sent: Array<{ model?: string; inputId?: string }> = [];
+      const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+      const settings = await optedInSettings(root);
+      await settings.setGlobal(false);
+      await settings.setSessionWaitForQuota({ harness: current.harness, sessionId: current.id, cwd: current.cwd }, false, new Date(), true);
+      const launcher = new UnfinishedSessionLauncher({ adapters: new Map([["opencode", quotaAdapter(() => current, sent)]]), store, settingsStore: settings, fallbackModelsForHarness: async () => ["omniroute/anthropic/fallback"] });
+      await launcher.recoverPending();
+      expect(sent.map(item => item.model)).toEqual(["omniroute/anthropic/fallback"]);
+      expect((await store.list())[0]?.quotaRecovery?.candidateModels).toEqual(["omniroute/anthropic/fallback"]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("keeps original-model wait armed after a definite refusal instead of exhausting it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "quota-original-rewait-"));
+    try {
+      const current = quotaSession();
+      const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+      const evidence = (current.meta!.nativeLastTurn as Record<string, unknown>).quotaFailure as import("../src/autopilot/unfinished-session-launcher.js").QuotaFailureEvidence;
+      const enrolled = await store.markQuotaRecoveryEligible(current, evidence, [], "test", new Date(Date.now() - 100_000));
+      const claim = await store.claimQuotaRecoveryAttempt(enrolled, current.model!);
+      await store.settleQuotaRecoveryAttempt(claim!, "quota_pre_admission");
+      expect((await store.list())[0]?.quotaRecovery).toMatchObject({ state: "waiting", candidateIndex: 0 });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("does not send after a fresh exhausted probe even after reset deadline", async () => {
+    const root = await mkdtemp(join(tmpdir(), "quota-exhausted-probe-"));
+    try {
+      const current = quotaSession();
+      const sent: Array<{ model?: string; inputId?: string }> = [];
+      const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+      const launcher = new UnfinishedSessionLauncher({ adapters: new Map([["opencode", quotaAdapter(() => current, sent)]]), store, settingsStore: await optedInSettings(root), fallbackModelsForHarness: async () => ["omniroute/anthropic/fallback"], probeRecoveryQuota: async () => ({state:"exhausted",source:"provider",checkedAt:new Date().toISOString()}) });
+      await launcher.recoverPending();
+      expect(sent).toEqual([]);
+      expect((await store.list())[0]?.quotaRecovery?.state).toBe("waiting");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("supports Codex wait-only on its exact original native model without GPT quota-pool assumptions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-original-wait-"));
+    try {
+      const evidence = {classification:"quota_exhausted" as const,nativeTurnId:"codex-turn",inputId:"codex-user",providerId:"codex",modelId:"gpt-6.1-sol",resetAt:new Date(Date.now()-1000).toISOString()};
+      const current: AgentSession = {...quotaSession(),harness:"codex",model:"gpt-6.1-sol",meta:{nativeLastTurn:{turnId:"codex-turn",inputId:"codex-user",userMessageId:"codex-user",status:"failed",completedAt:Date.now()-1000,quotaFailure:evidence}}};
+      const sent: Array<{model?:string;inputId?:string}> = [];
+      const base = quotaAdapter(() => current,sent,["gpt-6.1-sol","gpt-6-luna"]);
+      const adapter = {...base,type:"codex" as const};
+      const settings = await optedInSettings(root);
+      await settings.setGlobalOptions({enabled:false});
+      await settings.setSessionWaitForQuota({harness:"codex",sessionId:current.id,cwd:current.cwd},true);
+      const launcher = new UnfinishedSessionLauncher({adapters:new Map([["codex",adapter]]),store:new UnfinishedSessionStore(join(root,"unfinished.json")),settingsStore:settings,
+        probeRecoveryQuota:async()=>({state:"available",source:"test-exact-model",checkedAt:new Date().toISOString()}),fallbackModelsForHarness:async()=>{throw new Error("Codex must not consume fallback lists");}});
+      await launcher.recoverPending();
+      await launcher.recoverPending();
+      expect(sent.map(row=>row.model)).toEqual(["gpt-6.1-sol"]);
+    } finally {await rm(root,{recursive:true,force:true});}
+  });
+
+  it.each(["unknown", "accepted-conflict", "priority-refusals"])("respects native admission before traversing candidates: %s", async outcome => {
+    const root = await mkdtemp(join(tmpdir(), "quota-admission-traversal-"));
+    try {
+      const current = quotaSession();
+      const models = ["omniroute/test/A","omniroute/test/B","omniroute/test/C"];
+      const sent: string[] = [];
+      const base = quotaAdapter(() => current,[],[...models,current.model!]);
+      const adapter: HarnessAdapter = {...base,async sendMessage(_id,options) {
+        sent.push(options.model!);
+        if(outcome === "unknown") return {ok:false,admission:"unknown",error:"quota exhausted"};
+        if(outcome === "accepted-conflict") return {ok:false,admission:"not_submitted",notSubmitted:true,turnId:"native-admitted",error:"quota exhausted"};
+        return sent.length < 3 ? {ok:false,admission:"not_submitted",notSubmitted:true,nonRetryable:true,quotaFailure:{classification:"quota_exhausted"},error:"quota exhausted"} : {ok:true,admitted:true,turnId:"native-C"};
+      }};
+      const settings = await optedInSettings(root);
+      const path = join(root,"unfinished.json");
+      const store = new UnfinishedSessionStore(path);
+      const create = () => new UnfinishedSessionLauncher({adapters:new Map([["opencode",adapter]]),store,settingsStore:settings,fallbackModelsForHarness:async()=>[models[0]!,models[0]!,current.model!,...models.slice(1)],probeRecoveryQuota:async()=>({state:"unknown",source:"explicit-trial",checkedAt:new Date().toISOString()})});
+      for(let i=0;i<4;i++) {
+        await create().recoverPending();
+        const raw = JSON.parse(await readFile(path,"utf8"));
+        for(const row of raw.sessions) if(row.quotaRecovery?.state === "waiting") row.quotaRecovery.nextAttemptAt = new Date(Date.now()-1000).toISOString();
+        await writeFile(path,JSON.stringify(raw));
+      }
+      expect(sent).toEqual(outcome === "priority-refusals" ? models : [models[0]]);
+      expect((await store.list())[0]?.quotaRecovery?.state).toBe(outcome === "unknown" ? "held" : "accepted");
+    } finally {await rm(root,{recursive:true,force:true});}
+  });
 
   it("queues an exact opted-in terminal event and sends one durable fallback continuation", async () => {
     const root = await mkdtemp(join(tmpdir(), "quota-recovery-event-"));

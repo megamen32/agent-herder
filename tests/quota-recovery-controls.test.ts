@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   LatestQuotaStatusRequest,
+  quotaRecoveryMode,
+  quotaRecoveryModeFlags,
   quotaWaitStateLabel,
   quotaWaitStatusPath,
   readQuotaWaitStatus,
@@ -120,4 +122,19 @@ describe("quota recovery controls API client", () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ waitForQuota: true })));
     await expect(readWaitForQuota({ kind: "global" })).rejects.toThrow("Invalid waitForQuota settings response");
   });
+});
+
+it("keeps fallback authorization independent of a retained priority list and general autopilot", () => {
+ expect(quotaRecoveryMode(false,false)).toBe("off");
+ expect(quotaRecoveryMode(true,false)).toBe("wait");
+ expect(quotaRecoveryMode(false,true)).toBe("fallback");
+ expect(quotaRecoveryMode(true,true)).toBe("fallback-then-wait");
+ expect(quotaRecoveryModeFlags("off")).toEqual({waitForQuota:false,fallbackForQuota:false});
+});
+it("writes both explicit mode flags without erasing unrelated options", async () => {
+ const fetch=vi.fn(async()=>jsonResponse({waitForQuota:true,waitForQuotaSource:"session",fallbackForQuota:false,fallbackForQuotaSource:"session"}));
+ vi.stubGlobal("fetch",fetch);
+ const result=await writeWaitForQuota({kind:"session",session},true,false);
+ expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body))).toEqual({waitForQuota:true,fallbackForQuota:false,cwd:session.cwd});
+ expect(result).toMatchObject({waitForQuota:true,fallbackForQuota:false});
 });

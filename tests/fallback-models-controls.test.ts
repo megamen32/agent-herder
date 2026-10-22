@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   loadFallbackModelPolicy,
+  loadFallbackModelOptions,
   saveFallbackModelPolicy,
   fallbackModelIssue,
   fallbackModelsSaveIssue,
@@ -49,11 +50,12 @@ describe("OmniRoute fallback model controls", () => {
     expect(fallbackModelIssue("model-only")).toMatch(/провайдер\/модель/i);
   });
 
-  it("allows the MiniMax subscription route in the fallback list and refuses a foreign provider", () => {
+  it("allows supported native model refs alongside working OmniRoute", () => {
     expect(fallbackModelIssue("minimax-coding-plan/MiniMax-M3.1-Flash")).toBeUndefined();
     expect(fallbackModelIssue("omniroute/minimax-coding-plan/MiniMax-M3.1-Flash")).toBeUndefined();
     expect(fallbackModelsSaveIssue({ opencode: ["minimax-coding-plan/MiniMax-M3.1-Flash"] })).toBeUndefined();
-    expect(fallbackModelIssue("zai/GLM-4.6")).toBeTruthy();
+    expect(fallbackModelIssue("account:zai-individual-coding-plan/GLM-5.3-Flash$high")).toBeUndefined();
+    expect(fallbackModelIssue("zai/GLM-4.6")).toBeUndefined();
   });
 
   it("loads fallback choices with the launch policy document version", async () => {
@@ -166,4 +168,10 @@ describe("OmniRoute fallback model controls", () => {
     const [, init] = fetch.mock.calls[0]!;
     expect(JSON.parse(String(init?.body))).toMatchObject({ fallbackModels: { zcode: models } });
   });
+});
+
+it("loads native IDs from the selected harness catalog without switching routes", async()=>{
+ const fetch=vi.fn(async()=>Response.json({models:["account:zai-individual-coding-plan/GLM-5.3-Flash$high","omniroute/minimax-combo-m3.1","bare model",123]}));vi.stubGlobal("fetch",fetch);
+ expect(await loadFallbackModelOptions("zcode")).toEqual(["account:zai-individual-coding-plan/GLM-5.3-Flash$high","omniroute/minimax-combo-m3.1"]);
+ expect(fetch.mock.calls[0]![0]).toBe("/api/models?harness=zcode");
 });

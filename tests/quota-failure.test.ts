@@ -71,3 +71,11 @@ describe("terminal quota evidence", () => {
     expect(splitProviderModel("MiniMax-M3.1-Flash")).toBeUndefined();
   });
 });
+
+it("accepts the exact native GLM1310 quota payload inside a generic UNKNOWN_ERROR envelope",()=>{
+ const native={terminal:true,status:"error",nativeTurnId:"exact-native-turn",inputId:"exact-input",providerId:"account:zai-individual-coding-plan",modelId:"GLM-5.3",errorType:"unknown_error",errorCode:"UNKNOWN_ERROR",modelErrorType:"rate_limited",errorMessage:"[1310][Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-10-24 02:06:22]"};
+ expect(terminalQuotaFailure(native)).toMatchObject({classification:"quota_exhausted",nativeTurnId:"exact-native-turn"});
+ expect(terminalQuotaFailure({...native,statusCode:502})).toBeUndefined();
+ expect(terminalQuotaFailure({...native,errorMessage:"network failed; [1310] Weekly/Monthly Limit Exhausted"})).toBeUndefined();
+ expect(terminalQuotaFailure({...native,providerId:"foreign",modelId:"other"})).toBeUndefined();
+});

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { isRecoveryModelReference } from "../recovery-model-reference.js";
 
 export const FALLBACK_MODEL_HARNESSES = ["opencode", "zcode"] as const;
 export type FallbackModelHarness = typeof FALLBACK_MODEL_HARNESSES[number];
@@ -20,12 +21,8 @@ export function fallbackModelIssue(model: string): string | undefined {
   const value = model.trim();
   if (!value) return "Укажите полный OmniRoute ID: omniroute/модель или omniroute/провайдер/модель.";
   if (value.length > 256 || /[\u0000-\u0020\u007f]/u.test(value)) return "Имя модели должно содержать не более 256 символов и не содержать пробелов.";
-  // The same rule as the server: the provider segment may be omitted, so the
-  // two-segment form of the live route is a valid identifier too.
-  const gateway = /^omniroute\/[A-Za-z0-9._-]+(?:\/[^/\\]+(?:\/[^/\\]+)*)?$/iu.test(value);
-  const subscription = /^minimax-coding-plan\/[^/\\]+$/iu.test(value);
-  if (!gateway && !subscription) {
-    return "Укажите полный OmniRoute ID: omniroute/модель или omniroute/провайдер/модель (либо маршрут MiniMax по подписке).";
+  if (!isRecoveryModelReference(value)) {
+    return "Укажите полный OmniRoute ID или поддерживаемый нативный ID вида провайдер/модель.";
   }
   return undefined;
 }
@@ -142,12 +139,15 @@ export function FallbackModelsControls({
   currentModels,
   onChange,
   disabled = false,
+  modelOptions = {},
 }: {
   fallbackModels: FallbackModelMap;
   currentModels: Partial<Record<FallbackModelHarness, string>>;
   onChange: (next: FallbackModelMap) => void;
   disabled?: boolean;
+  modelOptions?: Partial<Record<FallbackModelHarness, string[]>>;
 }) {
+  const listId = React.useId();
   const update = (harness: FallbackModelHarness, models: string[]) => {
     const next = { ...fallbackModels };
     if (models.length) next[harness] = models;
@@ -157,13 +157,14 @@ export function FallbackModelsControls({
 
   return <fieldset className="settings-group" disabled={disabled}>
     <legend>Запасные модели при исчерпании квоты</legend>
-    <p className="settings-help">Укажите полные OmniRoute ID вида omniroute/модель или omniroute/провайдер/модель в порядке попытки. Список применяется только после подтверждённого отказа по квоте. Текущая модель и повторы будут пропущены.</p>
+    <p className="settings-help">Укажите полные ID в порядке попытки: рабочий OmniRoute или нативный провайдер/модель для выбранной среды. Список применяется только после подтверждённого отказа по квоте. Текущая модель и повторы будут пропущены.</p>
     {FALLBACK_MODEL_HARNESSES.map((harness) => {
       const models = fallbackModels[harness] ?? [];
       return <section className="launch-runtime-option fallback-model-harness" key={harness} aria-label={`Запасные модели · ${LABELS[harness]}`}
         style={{ flexDirection: "column", alignItems: "stretch", cursor: "default" }}>
         <span className="fallback-model-heading"><strong>{LABELS[harness]}</strong><small>Модель в общей политике: {currentModels[harness] || "не задана"} · маршрут проекта может её изменить</small></span>
         {models.length === 0 && <small className="settings-help">Запасные модели не заданы.</small>}
+        <datalist id={`${listId}-${harness}`}>{(modelOptions[harness] ?? []).map(model => <option key={model} value={model} />)}</datalist>
         <ol className="fallback-model-list" style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: "8px" }}>
           {models.map((model, index) => {
             const issue = fallbackModelIssue(model);
@@ -174,7 +175,7 @@ export function FallbackModelsControls({
               <span className="fallback-model-position" aria-hidden="true">{index + 1}.</span>
               <label className="launch-policy-field" style={{ gridTemplateColumns: "minmax(0, 1fr)", gap: 0, minWidth: 0 }}>
                 <span className="sr-only">Запасная модель {index + 1} для {LABELS[harness]}</span>
-                <input type="text" maxLength={256} value={model} placeholder="omniroute/провайдер/модель"
+                <input type="text" maxLength={256} value={model} list={`${listId}-${harness}`} placeholder="omniroute/провайдер/модель"
                   aria-label={`Запасная модель ${index + 1} для ${LABELS[harness]}`}
                   aria-invalid={Boolean(issue)} onChange={(event) => {
                     const next = [...models];
@@ -202,7 +203,24 @@ export function FallbackModelsControls({
   </fieldset>;
 }
 
+export async function loadFallbackModelOptions(harness: FallbackModelHarness): Promise<string[]> {
+  const response = await fetch(`/api/models?harness=${encodeURIComponent(harness)}`, { headers: {accept:"application/json"}, cache:"no-store" });
+  if (!response.ok) throw new Error("Не удалось загрузить каталог моделей среды.");
+  const body = await response.json() as {models?:unknown};
+  if (!Array.isArray(body.models)) throw new Error("Каталог моделей имеет неверный формат.");
+  return [...new Set(body.models.filter((model):model is string => typeof model === "string" && isRecoveryModelReference(model,harness)))];
+}
+
 export function FallbackModelsSettings() {
+  const [modelOptions, setModelOptions] = React.useState<Partial<Record<FallbackModelHarness,string[]>>>({});
+  const [catalogError, setCatalogError] = React.useState(false);
+  React.useEffect(() => {
+    let current=true;
+    void Promise.all(FALLBACK_MODEL_HARNESSES.map(async harness => [harness,await loadFallbackModelOptions(harness)] as const))
+      .then(rows => {if(current){setModelOptions(Object.fromEntries(rows));setCatalogError(false);}})
+      .catch(() => {if(current)setCatalogError(true);});
+    return () => {current=false;};
+  }, []);
   const [document, setDocument] = React.useState<LaunchPolicyFallbackDocument>();
   const [draft, setDraft] = React.useState<FallbackModelMap>({});
   const [loading, setLoading] = React.useState(true);
@@ -256,8 +274,9 @@ export function FallbackModelsSettings() {
   if (!document) return <section className="settings-group" aria-label="Запасные модели"><p className="autopilot-error" role="alert">{error || "Настройки запуска недоступны."}</p><button type="button" className="quiet-button" onClick={() => void load()}>Повторить загрузку</button></section>;
 
   return <section className="settings-group fallback-model-settings" aria-label="Настройки запасных моделей">
-    <FallbackModelsControls fallbackModels={draft} currentModels={document.currentModels} disabled={saving || loading}
+    <FallbackModelsControls fallbackModels={draft} currentModels={document.currentModels} modelOptions={modelOptions} disabled={saving || loading}
       onChange={(next) => { setDraft(next); setSaved(false); setError(undefined); }} />
+    {catalogError && <p className="settings-help">Каталог среды пока недоступен. Сохранённые ID видны; доступность проверяется перед запуском.</p>}
     {error && <p className="autopilot-error" role="alert">{error}</p>}
     {conflict && <p className="autopilot-error" role="alert">Политика запуска изменилась в другой вкладке. Черновик запасных моделей сохранён.
       <button type="button" className="quiet-button" disabled={saving} onClick={async () => {

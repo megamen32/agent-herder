@@ -31,7 +31,7 @@ import { ownedShutdownMatches, ownedZcodeActiveInput, zcodeRecoveryBoundaryCurre
 import { configuredGptAdminMcp } from "./zcode-gptadmin-mcp.js";
 import { captureZcodeInput, validateRetainedInput, zcodeUndeliveredFence, zcodeRetainedAttemptReceipt, sameRetainedModel, type ZcodeRetainedInput } from "./zcode-undelivered.js";
 import {workspaceInputBoundary, workspaceCrashCurrent, workspaceProcessProbe, nativeHookTurn, nativeOwnerCrashCurrent, nativeOwnerCancellationMatches, type NativeOwnerProof, type NativeHookTurn, type WorkspaceProcessProbe, type WorkspaceCrash, type WorkspaceProcess} from './zcode-workspace-lifecycle.js';
-import { normalizeQuotaResetAt, splitProviderModel, terminalQuotaFailure, type TerminalQuotaFailure } from "./quota-failure.js";
+import { normalizeSendAdmission, normalizeQuotaResetAt, splitProviderModel, terminalQuotaFailure, type TerminalQuotaFailure } from "./quota-failure.js";
 
 interface ZcodeWorkspaceRef {
   workspacePath: string;
@@ -2091,7 +2091,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions & {workspaceCrashBoundary?:WorkspaceCrash}): Promise<SendMessageResult> {
-    if (options.steer || options.queue || options.images?.length) return this.sendConversationInput(id, options);
+    if (options.steer || options.queue || options.images?.length) return normalizeSendAdmission(await this.sendConversationInput(id, options));
     const origin = options.origin === "human" ? "human" : "automation";
     const send = async (): Promise<{
       ok: boolean;
@@ -2229,7 +2229,18 @@ export class ZcodeAdapter implements HarnessAdapter {
       if (ack.commandId !== commandId) throw new Error("ZCode вернул подтверждение другой команды; доставка не установлена.");
       const nativeInput = record(ack.result);
       if (ack.status !== "accepted" && ack.status !== "duplicate") {
-        return { ok: false, admitted: false, inputId, nonRetryable: true,
+        // Contradictory envelopes must not erase positive native input proof.
+        if (nativeInput.type === "inputAccepted" && nonEmptyString(nativeInput.inputId)) {
+          return { ok: false, admitted: true, admission: "accepted", inputId, nonRetryable: true,
+            error: "Native вернул противоречивую квитанцию с принятым вводом; повтор запрещён." };
+        }
+        if (ack.status !== "rejected" || ack.admissionUnknown === true || ack.admitted === true || ack.pending === true
+          || ack.admission === "accepted" || ack.admission === "pending" || ack.admission === "unknown"
+          || Object.keys(nativeInput).length > 0) {
+          return { ok: false, admitted: false, admissionUnknown: true, admission: "unknown", inputId, nonRetryable: true,
+            error: "ZCode не подтвердил ни приём, ни точный отказ до отправки; повтор запрещён." };
+        }
+        return { ok: false, admitted: false, notSubmitted: true, admission: "not_submitted", inputId, nonRetryable: true,
           error: `ZCode не принял ${requestedDelivery === "guide" ? "доставку в текущий ход" : "сообщение в очередь"}: ${String(ack.reasonCode || ack.status || "invalid_receipt")}${ack.message ? ` (${String(ack.message)})` : ""}` };
       }
       if (nativeInput.type !== "inputAccepted" || !nonEmptyString(nativeInput.inputId)

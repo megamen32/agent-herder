@@ -22,6 +22,12 @@ afterEach(async () => {
 });
 
 describe("automation launch policy", () => {
+  it("accepts native GLM fallback references and retains priority without case duplicates", () => {
+    const model = "account:zai-individual-coding-plan/GLM-5.3-Flash$high";
+    expect(validateAutomationLaunchPolicy({ ...policy, fallbackModels: { zcode: [model, model.toLowerCase(), "omniroute/minimax-combo-m3.1"] } }).fallbackModels?.zcode)
+      .toEqual([model, "omniroute/minimax-combo-m3.1"]);
+  });
+
   it("accepts live hosted search only for the exact Codex Luna integrator route", () => {
     const routed = validateAutomationLaunchPolicy({
       ...policy,
