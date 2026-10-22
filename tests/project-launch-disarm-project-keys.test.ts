@@ -279,10 +279,11 @@ describe("the refusal of the owner-level disarm gate names the blocked work", ()
     expect(result.routingReasonDetail).toBe("automation_disarmed");
     expect(result.routingReasonWorkKey).toBeUndefined();
     expect(Object.keys(result)).not.toContain("routingReasonWorkKey");
-    // The refusal is the one of before, field for field and in the same order.
+    // The refusal keeps its class fields, and the route facts the receipt
+    // carries are appended after them, in the same order.
     expect(Object.keys(result)).toEqual([
       "operationId", "project", "attempts", "outcome", "routingReason", "error",
-      "routingReasonCode", "routingReasonDetail",
+      "routingReasonCode", "routingReasonDetail", "routeKey", "workspaceReplaced",
     ]);
     expect(JSON.parse(JSON.stringify(result))).toEqual({
       operationId: "op-global-disarm",
@@ -293,6 +294,8 @@ describe("the refusal of the owner-level disarm gate names the blocked work", ()
       error: AUTOMATION_DISARMED_MESSAGE,
       routingReasonCode: AUTOMATION_DISABLED_CODE,
       routingReasonDetail: "automation_disarmed",
+      routeKey: ROUTE_ROOT,
+      workspaceReplaced: true,
     });
     expect(run).not.toHaveBeenCalled();
   });
