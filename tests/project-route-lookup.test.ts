@@ -14,12 +14,15 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  findGoverningProjectRoute,
+  findGoverningProjectRouteMatch,
   findProjectRoute,
   findProjectRouteKey,
   findProjectRouteMatch,
   resolveProjectLaunch,
   type AutomationLaunchPolicy,
 } from "../src/automation-launch-policy.js";
+import { attemptKeyOf, routeKeyOf } from "../src/automation/project-launch-dispatch.js";
 import {
   effectiveModelForProject,
   findModelPolicyRoute,
@@ -148,17 +151,19 @@ describe("the model gate of a directory inside a routed project", () => {
   });
 });
 
-describe("the shared route lookup", () => {
-  it("resolves the same route for the launch permission and for the gate", () => {
+describe("the containment lookup of the model contour", () => {
+  it("resolves the same route for the model resolution of the launch and for the gate", () => {
     const root = projectRoot();
     const policy = policyWith({
       [`${root}/app`]: { harnesses: ["opencode"], aliases: ["app-card"] },
     });
-    const directory = `${root}/app/src`;
-    expect(findProjectRoute(policy, directory)).toBe(policy.projectRoutes![`${root}/app`]);
-    expect(findModelPolicyRouteForPath(policy.projectRoutes, directory)).toBe(policy.projectRoutes![`${root}/app`]);
-    expect(findModelPolicyRoute(policy.projectRoutes, directory)).toBe(policy.projectRoutes![`${root}/app`]);
-    expect(findProjectRouteKey(policy, directory)).toBe(`${root}/app`);
+    for (const directory of [`${root}/app`, `${root}/app/src`]) {
+      const governingRoute = findGoverningProjectRoute(policy, directory);
+      expect(governingRoute).toBe(policy.projectRoutes![`${root}/app`]);
+      expect(findModelPolicyRouteForPath(policy.projectRoutes, directory)).toBe(governingRoute);
+      expect(findModelPolicyRoute(policy.projectRoutes, directory)).toBe(governingRoute);
+      expect(findGoverningProjectRouteMatch(policy, directory)?.routeKey).toBe(`${root}/app`);
+    }
   });
 
   it("still finds a route by its exact folder, its case and its alias", () => {
@@ -182,9 +187,9 @@ describe("the shared route lookup", () => {
     });
     const parent = policy.projectRoutes![`${root}/app`]!;
     const child = policy.projectRoutes![`${root}/app/sub`]!;
-    expect(findProjectRoute(policy, `${root}/app/src`)).toBe(parent);
-    expect(findProjectRoute(policy, `${root}/app/sub/src`)).toBe(child);
-    expect(findProjectRouteKey(policy, `${root}/app/sub/src`)).toBe(`${root}/app/sub`);
+    expect(findGoverningProjectRoute(policy, `${root}/app/src`)).toBe(parent);
+    expect(findGoverningProjectRoute(policy, `${root}/app/sub/src`)).toBe(child);
+    expect(findGoverningProjectRouteMatch(policy, `${root}/app/sub/src`)?.routeKey).toBe(`${root}/app/sub`);
     expect(modelPermittedForProject(policy, `${root}/app/sub/src`, "route-model")).toBe(true);
     expect(modelPermittedForProject(policy, `${root}/app/src`, "route-model")).toBe(false);
   });
@@ -194,6 +199,7 @@ describe("the shared route lookup", () => {
     const policy = policyWith({ [`${root}/app`]: { harnesses: ["opencode"] } });
     expect(findProjectRoute(policy, `${root}/app-other`)).toBeUndefined();
     expect(findProjectRoute(policy, `${root}/app-other/src`)).toBeUndefined();
+    expect(findGoverningProjectRoute(policy, `${root}/app-other/src`)).toBeUndefined();
   });
 
   it("reports how a directory matched the route", () => {
@@ -212,6 +218,59 @@ describe("the shared route lookup", () => {
     expect(findProjectModelRoute(routes, `${root}/APP`)?.routeKey).toBe(`${root}/app`);
     expect(findProjectModelRoute(routes, "app-card")?.routeKey).toBe(`${root}/app`);
     expect(findProjectModelRoute(routes, `${root}/app/src`)?.routeKey).toBe(`${root}/app`);
+  });
+});
+
+describe("the split of the two lookups", () => {
+  it("keeps the identity of a subdirectory and gives it the rules of its project", () => {
+    const root = projectRoot();
+    const policy = policyWith({
+      [`${root}/app`]: { harnesses: ["opencode"], deniedModels: ["route-model"], aliases: ["app-card"] },
+    });
+    const directory = `${root}/app/src`;
+    // The identity: the subdirectory is not the project and has no route of its own.
+    expect(findProjectRoute(policy, directory)).toBeUndefined();
+    expect(findProjectRouteKey(policy, directory)).toBeUndefined();
+    expect(findProjectRouteMatch(policy, directory)).toBeUndefined();
+    // The containment: the subdirectory inherits the rules of the project.
+    expect(findGoverningProjectRoute(policy, directory)).toBe(policy.projectRoutes![`${root}/app`]);
+    expect(findGoverningProjectRouteMatch(policy, directory)?.matchKind).toBe("nested");
+  });
+
+  it("launches a subdirectory on the model of the route that governs it", () => {
+    const root = projectRoot();
+    const policy = policyWith({
+      [`${root}/app`]: { harnesses: ["opencode"], models: { opencode: "route-model" } },
+    });
+    expect(resolveProjectLaunch(policy, { project: `${root}/app/src` }))
+      .toMatchObject({ kind: "launch", harness: "opencode", model: "route-model" });
+    expect(resolveProjectLaunch(policy, { project: `${root}/app` }))
+      .toMatchObject({ kind: "launch", harness: "opencode", model: "route-model" });
+  });
+
+  it("keeps the working folder and the work key of a subdirectory", () => {
+    const root = projectRoot();
+    const policy = policyWith({
+      [`${root}/app`]: { harnesses: ["opencode"], models: { opencode: "route-model" } },
+    });
+    // The work key of a subdirectory is its own path, so the launch keeps the
+    // requested working folder and never moves it to the root of the route.
+    expect(routeKeyOf(policy, `${root}/app/src`)).toBeUndefined();
+    expect(attemptKeyOf(policy, `${root}/app/src`)).toBe(`${root}/app/src`);
+    expect(routeKeyOf(policy, `${root}/app`)).toBe(`${root}/app`);
+    expect(attemptKeyOf(policy, `${root}/app`)).toBe(`${root}/app`);
+  });
+
+  it("captures a folder with a common prefix by neither rule", () => {
+    const root = projectRoot();
+    const policy = policyWith({
+      [`${root}/a/b`]: { harnesses: ["opencode"], deniedModels: ["route-model"] },
+    });
+    for (const directory of [`${root}/a/bc`, `${root}/a/b-backup`, `${root}/a/bc/src`]) {
+      expect(findProjectRoute(policy, directory)).toBeUndefined();
+      expect(findGoverningProjectRoute(policy, directory)).toBeUndefined();
+      expect(modelPermittedForProject(policy, directory, "route-model")).toBe(true);
+    }
   });
 });
 
@@ -413,14 +472,20 @@ describe("the gate and the launch of one directory", () => {
       [`${root}/app`]: { harnesses: ["opencode"], deniedModels: ["denied-model"], aliases: ["app-card"] },
     });
     for (const directory of [`${root}/app`, `${root}/app/src`, `${root}/app/src/deep`]) {
-      const launchRoute = findProjectRoute(policy, directory);
-      expect(findModelPolicyRouteForPath(policy.projectRoutes, directory)).toBe(launchRoute);
-      expect(findModelPolicyRoute(policy.projectRoutes, directory)).toBe(launchRoute);
-      expect(findProjectRouteKey(policy, directory)).toBe(`${root}/app`);
-      expect(findProjectRouteMatch(policy, directory)?.routeKey).toBe(`${root}/app`);
+      // The gate of the tools and the model resolution of the launch share one
+      // containment lookup, so they can never judge a directory differently.
+      const governingRoute = findGoverningProjectRoute(policy, directory);
+      expect(findModelPolicyRouteForPath(policy.projectRoutes, directory)).toBe(governingRoute);
+      expect(findModelPolicyRoute(policy.projectRoutes, directory)).toBe(governingRoute);
+      expect(findGoverningProjectRouteMatch(policy, directory)?.routeKey).toBe(`${root}/app`);
     }
-    expect(findProjectRouteMatch(policy, `${root}/app`)?.matchKind).toBe("exact");
-    expect(findProjectRouteMatch(policy, `${root}/app/src`)?.matchKind).toBe("nested");
+    expect(findGoverningProjectRouteMatch(policy, `${root}/app`)?.matchKind).toBe("exact");
+    expect(findGoverningProjectRouteMatch(policy, `${root}/app/src`)?.matchKind).toBe("nested");
+    // The identity of the project stays separate: a subdirectory is not the project.
+    expect(findProjectRoute(policy, `${root}/app`)).toBe(policy.projectRoutes![`${root}/app`]);
+    expect(findProjectRoute(policy, `${root}/app/src`)).toBeUndefined();
+    expect(findProjectRouteKey(policy, `${root}/app/src`)).toBeUndefined();
+    expect(findProjectRouteMatch(policy, `${root}/app/src`)).toBeUndefined();
   });
 
   it("refuse the same model at the tool boundary and at the launch", async () => {
