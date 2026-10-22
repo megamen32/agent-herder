@@ -11,6 +11,28 @@
  * the owner named it in the allowlist, and the secrets of the herder are
  * never in it. The values themselves are never written anywhere by this
  * module.
+ *
+ * REQUIREMENT TO THE CONTOUR OF THE ADAPTERS.
+ *
+ * The module is the rule of the allowlist, and the rule is not in force
+ * while the adapters spawn a process with the whole environment of the
+ * herder. Two places do that today, and they are the places that must call
+ * this module:
+ *
+ *   - src/adapters/acp.ts:343 — the process of the adapter of the ACP is
+ *     spawned with the environment of the herder;
+ *   - src/adapters/fast-agent.ts:157 — the process of the fast agent is
+ *     spawned with the environment of the herder.
+ *
+ * The workload launcher that they share is src/workload-launcher.ts:105: it
+ * is the seam where the environment of a spawned process is built, and the
+ * allowlist of this module belongs there.
+ *
+ * The files of the adapters are not the files of this change: the requirement
+ * is recorded here so that it lives in the code and not only in the body of
+ * a commit. Until the adapters call this module, a spawned agent can still
+ * read the secrets of the herder, and the isolation of the secrets of the
+ * contour is not in force.
  */
 
 /** The names that never reach a spawned process, whatever the allowlist says. */
