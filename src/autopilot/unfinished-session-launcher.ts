@@ -60,6 +60,16 @@ const CODEX_CLAUDE_RESTRICTED_PROJECT_ROOTS = [
 const MAX_OMISSION_DECISION_CONCURRENCY = 4;
 const MAX_PERSISTENT_OMISSION_DECISIONS = 4;
 const MAX_SESSION_EVIDENCE_CHARS = 120_000;
+
+/**
+ * Statuses that mean the executor is gone for good.
+ *
+ * The same vocabulary the health observer uses: "stopped" (finished or
+ * aborted) and "error" (crashed) end the execution, while "idle" only means
+ * the executor waits for the next prompt.
+ */
+const TERMINAL_EXECUTOR_STATUS = new Set<AgentSession["status"]>(["stopped", "error"]);
+
 // Version 3 invalidates completion inferred from matching titles or lifecycle
 // exclusion. Original task evidence must be assessed independently.
 const CURRENT_EVIDENCE_VERSION = 3;
@@ -4764,9 +4774,10 @@ export class UnfinishedSessionLauncher {
         if (!this.lifecycleActive(lifecycleEpoch)) return;
         // The owner-level automation lever: the launcher starts new work on
         // its own, so it is refused while the owner forbade automation.
+        const continuationName = continuationTitle(group.topic);
         const disarm = await automationDisarmDecision(
           AutomationDisarmStore.forRuntime(),
-          [sessionWorkKey(primary.adapter.type, continuationTitle(group.topic), primary.session.cwd)],
+          [sessionWorkKey(primary.adapter.type, continuationName, primary.session.cwd)],
           "automation",
         );
         if (!disarm.allowed) {
@@ -4775,12 +4786,26 @@ export class UnfinishedSessionLauncher {
           console.error(`[agent-herder] автоматический запуск запрещён владельцем: ${disarm.reason ?? ""}`);
           continue;
         }
-        const created = await primary.adapter.createSession({
-          name: continuationTitle(group.topic),
-          cwd: primary.session.cwd,
-          model: continuationModel,
-          fullAccess: true,
-        });
+        // The continuation title is deterministic, so a repeated pass over the
+        // same topic would create a second session with the same name and two
+        // executors would run one logical work. The adapter's own named search
+        // is the authority: an existing executor is reused, never duplicated.
+        const existing = await this.findContinuationExecutor(primary.adapter, continuationName, primary.session.cwd);
+        if (existing.kind !== "none" && existing.kind !== "found") {
+          launched = Math.max(0, launched - 1);
+          for (const source of sources) pushInventory(source);
+          console.error(`[agent-herder] единый план не запустил «${group.topic}»: ${existing.reason}`);
+          if (existing.kind === "ambiguous") await this.notifyContinuationRefusal(group.topic, existing.reason, sources);
+          continue;
+        }
+        const created = existing.kind === "found"
+          ? existing.session
+          : await primary.adapter.createSession({
+            name: continuationName,
+            cwd: primary.session.cwd,
+            model: continuationModel,
+            fullAccess: true,
+          });
         if (!this.lifecycleActive(lifecycleEpoch)) return;
         if (!runtimeSettings.movePinnedOnRollover) await this.pinActiveSession(primary.adapter, created.id, runtimeSettings);
         if (!this.lifecycleActive(lifecycleEpoch)) return;
@@ -4853,6 +4878,51 @@ export class UnfinishedSessionLauncher {
       }
     }
     if (this.lifecycleActive(lifecycleEpoch)) await this.options.store.upsertInventoryBatch(inventoryBatch);
+  }
+
+  /**
+   * The executor of one continuation title, when the adapter can answer.
+   *
+   * Idempotence by the (name, cwd) pair, exactly like the general named
+   * session path: the adapter's own named search is the authority. One live
+   * executor is reused, several live executors are a refusal (a second
+   * executor for one work is never started), and an adapter without the named
+   * search keeps the previous behaviour.
+   */
+  private async findContinuationExecutor(
+    adapter: HarnessAdapter,
+    name: string,
+    cwd: string,
+  ): Promise<{ kind: "none" } | { kind: "found"; session: AgentSession } | { kind: "ambiguous"; reason: string } | { kind: "unknown"; reason: string }> {
+    if (!adapter.findNamedSessions) return { kind: "none" };
+    let matches: AgentSession[];
+    try {
+      matches = await adapter.findNamedSessions(name, cwd);
+    } catch (error) {
+      // The absence of the session cannot be proven, so a second executor for
+      // the same work would be started blind.
+      return { kind: "unknown", reason: `поиск сессии «${name}» в ${cwd} не удался: ${errorText(error)}` };
+    }
+    const executors = matches.filter((session) => !TERMINAL_EXECUTOR_STATUS.has(session.status));
+    if (executors.length === 1) return { kind: "found", session: executors[0]! };
+    if (executors.length > 1) {
+      return { kind: "ambiguous", reason: `сессия «${name}» в ${cwd} уже ведётся ${executors.length} исполнителями: ${executors.map((session) => session.id).join(", ")}` };
+    }
+    return { kind: "none" };
+  }
+
+  /** One named refusal for the owner; the reason itself is in the log. */
+  private async notifyContinuationRefusal(topic: string, reason: string, sources: AssessedSession[]): Promise<void> {
+    if (!this.options.notify) return;
+    const correlation = createHash("sha256").update(sources.map(({ sourceKey }) => sourceKey).sort().join("\n")).digest("hex").slice(0, 24);
+    await this.options.notify({
+      title: "Agent Herder не запустил второго исполнителя одной задачи",
+      body: `Продолжение «${topic}» не запущено: ${reason}. Второй исполнитель не создан; работа ждёт следующего цикла.`,
+      dedupKey: `agent-herder:continuation-refused:${correlation}`,
+      correlationId: `continuation-refused-${correlation}`,
+      sourceId: "agent-herder-autocontinue-admission",
+      signalType: "continuation-refused",
+    });
   }
 
   private async semanticAutopilotPolicy(): Promise<EffectivePolicy | null> {
