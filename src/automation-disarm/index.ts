@@ -4,19 +4,36 @@ export {
   AutomationDisarmStore,
   armedState,
   unreadableState,
+  automationDisarmEtag,
+  buildDocument,
+  parseDisarmDocument,
+  sortRecords,
   type AutomationDisarmChange,
   type AutomationDisarmChangeResult,
   type AutomationDisarmDocument,
+  type AutomationDisarmNodeState,
+  type AutomationDisarmRecord,
+  type AutomationDisarmRecordChange,
   type AutomationDisarmSource,
 } from "./state.js";
 export {
   AUTOMATION_DISARMED_MESSAGE,
+  AUTOMATION_FORBIDDEN_CODE,
+  AUTOMATION_SCOPE_FORBIDDEN_MESSAGE,
   AUTOMATION_WORK_DISARMED_MESSAGE,
   automationDisarmDecision,
   automationDisarmDecisionWithWork,
   type AutomationDisarmDecision,
   type AutomationLaunchSource,
 } from "./guard.js";
+export {
+  ALL_SCOPES,
+  canonicalScopePath,
+  scopeCovers,
+  scopeOfWorkKey,
+  scopeSpecificity,
+  workKeyDirectory,
+} from "./scope.js";
 export {
   sessionWorkKey,
   projectWorkKey,
@@ -28,13 +45,18 @@ export {
 } from "./work-key.js";
 export {
   setAutomationDisarm,
+  setAutomationDisarmRecord,
+  readFleetDisarmState,
   defaultFleetPeerIds,
   blocksFleetSuccess,
   buildAutomationDisarmSummary,
+  buildAutomationDisarmStateSummary,
   type FleetDisarmNodeResult,
   type FleetDisarmRequest,
   type FleetDisarmTransport,
   type SetAutomationDisarmRequest,
   type SetAutomationDisarmResult,
+  type SetAutomationDisarmRecordRequest,
+  type SetAutomationDisarmRecordResult,
 } from "./service.js";
 export { DirectFleetDisarmTransport } from "./direct-transport.js";

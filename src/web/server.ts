@@ -38,7 +38,18 @@ import type { AutoCompactService, AutoCompactStore } from "../autocontinue/auto-
 import type { OperatorCohortEnrollmentTarget, OperatorContinuationEnrollmentTarget, SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
 import { AutomationLaunchPolicyStore, LaunchPolicyConflictError, MAX_MODEL_LENGTH, appendLaunchPolicyAudit, findProjectRoute, launchPolicyAuditRecord, validateAutomationLaunchPolicy } from "../automation-launch-policy.js";
 import { bearerToken, sameSecret } from "../secret-compare.js";
-import { AutomationDisarmStore, AUTOMATION_CANNOT_CHANGE_DISARM_REASON, buildAutomationDisarmSummary, humanWorkKeys, setAutomationDisarm } from "../automation-disarm/index.js";
+import {
+  ALL_SCOPES,
+  AutomationDisarmStore,
+  AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
+  automationDisarmEtag,
+  buildAutomationDisarmStateSummary,
+  buildAutomationDisarmSummary,
+  humanWorkKeys,
+  readFleetDisarmState,
+  setAutomationDisarm,
+  setAutomationDisarmRecord,
+} from "../automation-disarm/index.js";
 import { DirectFleetDisarmTransport } from "../automation-disarm/direct-transport.js";
 import type { FleetDisarmNodeResult, FleetDisarmTransport } from "../automation-disarm/service.js";
 import type { AutomationDisarmDocument } from "../automation-disarm/state.js";
@@ -689,6 +700,29 @@ function configuredDisarmToken(): string | undefined {
   return process.env.AGENT_HERDER_DISARM_TOKEN?.trim() || undefined;
 }
 
+/**
+ * The revision of the live launch policy at this moment.
+ *
+ * The revision travels with every owner decision, so the audit trail of the
+ * lever says which launch policy was in force when the owner decided. The
+ * policy is the sibling of the lever state, so it is read from there when the
+ * runtime does not hold a configured store.
+ */
+async function currentLaunchPolicyRevision(
+  store: AutomationLaunchPolicyStore | undefined,
+  disarmStore: AutomationDisarmStore,
+): Promise<string | undefined> {
+  try {
+    const policyStore = store ?? new AutomationLaunchPolicyStore(
+      join(dirname(disarmStore.path), "automation-launch-policy.json"),
+    );
+    const document = await policyStore.readDocument();
+    return document.etag;
+  } catch {
+    return undefined;
+  }
+}
+
 /** How a native session is reached: ordinary, project-scoped or refused. */
 type SessionRoute =
   | { kind: "ordinary"; adapters: Map<string, HarnessAdapter> }
@@ -1232,32 +1266,19 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 400, { error: (error as Error).message });
     }
   }
-  if (url.pathname === "/api/automation/disarm" && request.method === "POST") {
+  if (url.pathname === "/api/automation/disarm" && (request.method === "GET" || request.method === "POST")) {
     // The owner-level automation lever. The state is durable, survives a
     // restart and is confirmed across the fleet nodes, so the answer always
     // names every node and what it reported.
     const disarmStore = automationDisarmStore ?? AutomationDisarmStore.forRuntime();
-    const current = await disarmStore.read();
-    const answer = (ok: boolean, applied: boolean, disarmed: boolean, state: AutomationDisarmDocument, nodes: FleetDisarmNodeResult[], summary: string, error?: string) => sendJson(response, 200, {
-      ok, applied, disarmed,
-      state: { ...state, blockedWorkKeysHuman: humanWorkKeys(state.blockedWorkKeys) },
-      nodes: nodes.map((node) => ({ hostId: node.hostId, status: node.status, reason: node.reason ?? null })),
-      summary,
-      ...(error ? { error } : {}),
-    });
-    let body: Record<string, unknown>;
-    try {
-      body = await readJson(request) as Record<string, unknown>;
-    } catch (error) {
-      return sendJson(response, 400, { ok: false, applied: false, error: `Некорректное тело запроса: ${(error as Error).message}`, nodes: [] });
-    }
-    // A real secret is required. A node without a configured token fails
-    // closed: it never moves the lever for an unauthenticated caller.
+    const disarmTransport = automationDisarmTransport ?? new DirectFleetDisarmTransport();
+    // The state names the areas of the projects, so it is not public: the
+    // read needs the same owner secret as the write. A node without a
+    // configured secret fails closed for both.
     const expectedToken = configuredDisarmToken();
     if (!expectedToken) {
       return sendJson(response, 503, {
-        ok: false, applied: false, disarmed: current.disarmed,
-        state: { ...current, blockedWorkKeysHuman: humanWorkKeys(current.blockedWorkKeys) },
+        ok: false, applied: false, records: [],
         nodes: [],
         summary: "the disarm token is not configured on this node — the lever was not moved",
         error: "AGENT_HERDER_DISARM_TOKEN is not configured on this node",
@@ -1267,27 +1288,58 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const presented = bearerToken(request.headers.authorization);
     if (!presented || !sameSecret(presented, expectedToken)) {
       return sendJson(response, 401, {
-        ok: false, applied: false, disarmed: current.disarmed,
-        state: { ...current, blockedWorkKeysHuman: humanWorkKeys(current.blockedWorkKeys) },
+        ok: false, applied: false, records: [],
         nodes: [],
         summary: "the disarm token is missing or wrong — the lever was not moved",
         error: "unauthorized",
         reason: "unauthorized",
       });
     }
+    const stateView = (state: AutomationDisarmDocument) => ({
+      ...state,
+      blockedWorkKeysHuman: humanWorkKeys(state.blockedWorkKeys),
+    });
+    const nodeView = (nodes: FleetDisarmNodeResult[]) => nodes.map((node) => ({
+      hostId: node.hostId, status: node.status, reason: node.reason ?? null,
+    }));
+    if (request.method === "GET") {
+      // The read names the state, its revision and every node of the fleet.
+      const state = await disarmStore.read();
+      const etag = automationDisarmEtag(state);
+      const nodes = await readFleetDisarmState({ transport: disarmTransport, state });
+      response.setHeader("etag", etag);
+      response.setHeader("cache-control", "no-store");
+      return sendJson(response, 200, {
+        ok: true,
+        records: state.records,
+        state: stateView(state),
+        nodes: nodeView(nodes),
+        summary: buildAutomationDisarmStateSummary({ records: state.records, nodes }),
+        etag,
+      });
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await readJson(request) as Record<string, unknown>;
+    } catch (error) {
+      return sendJson(response, 400, { ok: false, applied: false, error: `Некорректное тело запроса: ${(error as Error).message}`, nodes: [] });
+    }
     // The secret proves who asks. The intent marker says what is asked: the
     // lever moves only for an explicit owner action.
     if (body.source !== "owner") {
       return sendJson(response, 403, {
-        ok: false, applied: false, disarmed: current.disarmed,
-        state: { ...current, blockedWorkKeysHuman: humanWorkKeys(current.blockedWorkKeys) },
+        ok: false, applied: false, records: [],
         nodes: [],
         summary: "the request is not an explicit owner action — the lever was not moved",
         error: AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
         reason: AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
       });
     }
-    if (typeof body.disarmed !== "boolean") return sendJson(response, 400, { ok: false, applied: false, error: "disarmed must be a boolean", nodes: [] });
+    // The revision of the state the caller read. Without it the write is
+    // allowed, and the answer always carries the new revision.
+    const ifMatchHeader = request.headers["if-match"];
+    const ifMatch = (Array.isArray(ifMatchHeader) ? ifMatchHeader[0] : ifMatchHeader)?.trim();
+    const policyRevision = await currentLaunchPolicyRevision(automationLaunchPolicyStore, disarmStore);
     let workKeys: string[] | undefined;
     if (body.workKeys !== undefined) {
       if (!Array.isArray(body.workKeys) || body.workKeys.some((key: unknown) => typeof key !== "string")) {
@@ -1295,18 +1347,92 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       }
       workKeys = body.workKeys as string[];
     }
+    const answer = (result: {
+      ok: boolean; applied: boolean; scope: string; forbidden: boolean;
+      state: AutomationDisarmDocument; nodes: FleetDisarmNodeResult[]; summary: string;
+    }) => {
+      const etag = automationDisarmEtag(result.state);
+      response.setHeader("etag", etag);
+      response.setHeader("cache-control", "no-store");
+      return sendJson(response, 200, {
+        ok: result.ok, applied: result.applied,
+        scope: result.scope, forbidden: result.forbidden,
+        disarmed: result.state.disarmed,
+        state: stateView(result.state),
+        records: result.state.records,
+        nodes: nodeView(result.nodes),
+        summary: result.summary,
+        etag,
+      });
+    };
+    // The scope shape: one record per scope, and the same interface lifts a
+    // prohibition as it sets one.
+    if (body.scope !== undefined) {
+      if (typeof body.scope !== "string" || !body.scope.trim()) {
+        return sendJson(response, 400, { ok: false, applied: false, error: "scope must be * or an absolute project path", nodes: [] });
+      }
+      const scope = body.scope.trim();
+      if (scope !== ALL_SCOPES && !isAbsolute(scope)) {
+        return sendJson(response, 400, { ok: false, applied: false, error: "scope must be * or an absolute project path", nodes: [] });
+      }
+      if (typeof body.forbidden !== "boolean") {
+        return sendJson(response, 400, { ok: false, applied: false, error: "forbidden must be a boolean", nodes: [] });
+      }
+      const result = await setAutomationDisarmRecord({
+        scope,
+        forbidden: body.forbidden,
+        ...(typeof body.owner === "string" && body.owner.trim() ? { owner: body.owner.trim().slice(0, 200) } : {}),
+        ...(typeof body.reason === "string" && body.reason.trim() ? { reason: body.reason.trim().slice(0, 500) } : {}),
+        ...(workKeys === undefined ? {} : { workKeys }),
+        ...(ifMatch ? { ifMatch } : {}),
+        ...(policyRevision ? { policyRevision } : {}),
+        reach: "fleet",
+        source: "owner",
+        store: disarmStore,
+        transport: disarmTransport,
+      });
+      if (!result.applied && result.code === "state_conflict") {
+        // The state moved under the caller: nothing was written.
+        const etag = automationDisarmEtag(result.state);
+        response.setHeader("etag", etag);
+        response.setHeader("cache-control", "no-store");
+        return sendJson(response, 412, {
+          ok: false, applied: false, scope, forbidden: body.forbidden,
+          records: result.state.records,
+          state: stateView(result.state),
+          nodes: [],
+          summary: "the state changed since it was read — nothing was written",
+          error: "state_conflict",
+          reason: result.reason,
+          etag,
+        });
+      }
+      return answer({
+        ok: result.ok, applied: result.applied, scope: result.scope, forbidden: result.forbidden,
+        state: result.state, nodes: result.nodes,
+        summary: buildAutomationDisarmSummary({
+          applied: result.applied, disarmed: result.forbidden, nodes: result.nodes, scope: result.scope,
+        }),
+      });
+    }
+    // The earlier flat shape: the catch-all scope and the flat list of works.
+    if (typeof body.disarmed !== "boolean") return sendJson(response, 400, { ok: false, applied: false, error: "disarmed must be a boolean", nodes: [] });
     const result = await setAutomationDisarm({
       disarmed: body.disarmed,
       ...(workKeys === undefined ? {} : { workKeys }),
       ...(typeof body.reason === "string" && body.reason.trim() ? { reason: body.reason.trim().slice(0, 500) } : {}),
+      ...(policyRevision ? { policyRevision } : {}),
       scope: "fleet",
       source: "owner",
       store: disarmStore,
-      transport: automationDisarmTransport ?? new DirectFleetDisarmTransport(),
+      transport: disarmTransport,
     });
-    // The request was processed. Whether the fleet confirmed it is read from
-    // the body, never from the status code.
-    return answer(result.ok, result.applied, result.disarmed, result.state, result.nodes, buildAutomationDisarmSummary(result));
+    return answer({
+      ok: result.ok, applied: result.applied,
+      scope: ALL_SCOPES, forbidden: result.disarmed,
+      state: result.state, nodes: result.nodes,
+      summary: buildAutomationDisarmSummary(result),
+    });
   }
   if (url.pathname === "/api/session-images" && request.method === "POST") {
     if (!sessionImages) return sendJson(response, 503, { error: "Прикрепление изображений недоступно." });

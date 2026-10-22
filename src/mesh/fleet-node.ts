@@ -9,14 +9,15 @@ import {sessionInventoryPage,type LocalInventorySnapshot} from './session-page.j
 import {fleetHarnesses} from './fleet-contract.js';
 import type {IntegratorFleetRuntime,IntegratorProjectReadinessSnapshot} from '../integrator-fleet-runtime.js';
 import {assertModelAllowedForDirectoryWithPolicy,type ProjectModelPolicyProvider} from '../project-model-gate.js';
-import { AutomationDisarmStore, buildAutomationDisarmSummary, humanWorkKeys } from '../automation-disarm/index.js';
+import { AutomationDisarmStore, buildAutomationDisarmSummary, humanWorkKeys, type AutomationDisarmRecord } from '../automation-disarm/index.js';
 import { sameSecret } from '../secret-compare.js';
 // One process generation across all MCP connections and authenticated contexts.
 let viewReads=0;
 const processGeneration=Date.now()-Math.floor(process.uptime()*1000);
 /** Attach to the existing local controller. No override, native activation, private writer or subprocess. */
 export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<string,HarnessAdapter>;inventorySnapshot?:()=>LocalInventorySnapshot;readSupervisor?:Pick<SessionSupervisor,'getSession'|'getSessionDetails'>;integratorRuntime?:IntegratorFleetRuntime;ownerJournal?:Pick<FleetCreateJournal,'once'>;launchPolicy?:ProjectModelPolicyProvider}):void{
- server.registerTool('automation_disarm',{description:'Hold or release the owner-level automation lever on this node. The state is durable on disk and survives a restart of the runtime. The caller must hold the owner token of this node (AGENT_HERDER_DISARM_TOKEN) and state an explicit owner action; a node without a configured token fails closed and never moves the lever. The answer always names this node and the state it now holds, so a fleet answer can tell a confirmed node from an unreachable one.',inputSchema:z.object({disarmed:z.boolean(),workKeys:z.array(z.string().min(1).max(1024)).max(256).optional(),reason:z.string().max(500).optional(),decisionId:z.string().min(1).max(128).optional(),source:z.literal('owner').optional(),token:z.string().min(1).max(512).optional()}).strict()},async(request)=>{
+ const disarmRecordSchema=z.object({scope:z.string().min(1).max(4096),forbidden:z.boolean(),owner:z.string().max(200).optional(),reason:z.string().max(500).optional(),createdAt:z.string().max(64).optional(),policyRevision:z.string().max(128).optional(),workKeys:z.array(z.string().min(1).max(1024)).max(256).optional()}).strict();
+ server.registerTool('automation_disarm',{description:'Hold or release the owner-level automation lever on this node. The state is durable on disk and survives a restart of the runtime. The caller must hold the owner token of this node (AGENT_HERDER_DISARM_TOKEN) and state an explicit owner action; a node without a configured token fails closed and never moves the lever. The records of the owner decision travel with the request and are the authority on this node; the flat lever and the flat list of works travel with them for a node of the earlier format. In read mode the node only reports the state it holds and changes nothing. The answer always names this node and the state it now holds, so a fleet answer can tell a confirmed node from an unreachable one.',inputSchema:z.object({mode:z.enum(['apply','read']).optional(),disarmed:z.boolean().optional(),workKeys:z.array(z.string().min(1).max(1024)).max(256).optional(),records:z.array(disarmRecordSchema).max(256).optional(),reason:z.string().max(500).optional(),decisionId:z.string().min(1).max(128).optional(),source:z.literal('owner').optional(),token:z.string().min(1).max(512).optional()}).strict()},async(request)=>{
   const refuse=(code:string,reason:string)=>{const refused={ok:false,hostId:hostname(),code,reason,decisionId:request.decisionId??null};return {structuredContent:refused,content:[{type:'text' as const,text:JSON.stringify(refused)}]};};
   // The secret proves who asks, the intent marker says what is asked. A node
   // without a configured token fails closed: it never moves the lever for a
@@ -25,7 +26,21 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
   if(!expected)return refuse('disarm_token_not_configured','AGENT_HERDER_DISARM_TOKEN is not configured on this node, so the lever was not moved.');
   if(!request.token||!sameSecret(request.token,expected))return refuse('unauthorized','The disarm token is missing or wrong, so the lever was not moved.');
   if(request.source!=='owner')return refuse('not_owner_action','The request is not an explicit owner action, so the lever was not moved.');
-  const change=await AutomationDisarmStore.forRuntime().apply({source:'owner',disarmed:request.disarmed,...(request.workKeys===undefined?{}:{workKeys:request.workKeys}),...(request.reason?{reason:request.reason}:{})});
+  const store=AutomationDisarmStore.forRuntime();
+  // A read reports the state of this node and changes nothing at all.
+  if(request.mode=='read'){
+   const state=await store.read();
+   const read={ok:true,hostId:hostname(),mode:'read',state:{...state,blockedWorkKeysHuman:humanWorkKeys(state.blockedWorkKeys)},summary:buildAutomationDisarmSummary({applied:true,disarmed:state.disarmed,nodes:[{hostId:hostname(),status:'confirmed'}]}),decisionId:request.decisionId??null};
+   return {structuredContent:read,content:[{type:'text' as const,text:JSON.stringify(read)}]};
+  }
+  // The records of the decision are the authority here; the flat shape of the
+  // earlier format is still accepted for a node that sends only that.
+  const change=request.records?.length
+   ?await store.replaceRecords({source:'owner',records:request.records as AutomationDisarmRecord[],...(request.reason?{reason:request.reason}:{})})
+   :typeof request.disarmed==='boolean'
+    ?await store.apply({source:'owner',disarmed:request.disarmed,...(request.workKeys===undefined?{}:{workKeys:request.workKeys}),...(request.reason?{reason:request.reason}:{})})
+    :undefined;
+  if(!change)return refuse('invalid_request','The request names neither the records of a decision nor a lever position, so the lever was not moved.');
   if(!change.ok)return refuse(change.code,change.reason);
   const payload={ok:true,hostId:hostname(),state:{...change.state,blockedWorkKeysHuman:humanWorkKeys(change.state.blockedWorkKeys)},summary:buildAutomationDisarmSummary({applied:true,disarmed:change.state.disarmed,nodes:[{hostId:hostname(),status:'confirmed'}]}),decisionId:request.decisionId??null};
   return {structuredContent:payload,content:[{type:'text' as const,text:JSON.stringify(payload)}]};

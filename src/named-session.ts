@@ -10,7 +10,15 @@ import { getHumanStopStore } from "./human-stop-store.js";
 import { automaticDeliveryHeld, HUMAN_STOP_MESSAGE } from "./human-stop-actions.js";
 import { isCoordinationActive, sendCurrentTurnOnly, previousCoordinationReceipt } from "./coordination-active-delivery.js";
 import { agentRelayEnvelope } from "./agent-relay-envelope.js";
-import { automationDisarmDecision, sessionWorkKey, AutomationDisarmStore, type AutomationLaunchSource } from "./automation-disarm/index.js";
+import {
+  automationDisarmDecision,
+  sessionWorkKey,
+  AutomationDisarmStore,
+  AUTOMATION_DISARMED_MESSAGE,
+  AUTOMATION_FORBIDDEN_CODE,
+  type AutomationDisarmDecision,
+  type AutomationLaunchSource,
+} from "./automation-disarm/index.js";
 import { resolveAutopilotStateDir } from "./autopilot/state-dir.js";
 
 export type NamedSessionMode = "queue" | "sync";
@@ -52,7 +60,15 @@ export interface NamedSessionResult {
   nonRetryable?: boolean;
   pending?: boolean;
   /** Definite provider rejection observed before session creation/input admission. */
-  failureCode?: "quota_exhausted";
+  failureCode?: "quota_exhausted" | "automation_disabled";
+  /**
+   * The area of the refusal, as a structured field beside the code.
+   *
+   * The area never travels inside the wording alone: the code says that the
+   * automation is off, and this field says where. The catch-all scope keeps
+   * its own literal, so a reader tells the whole contour from one project.
+   */
+  routingReasonDetail?: string;
   model?: string;
   requestedModel?: string;
   fallbackFrom?: string;
@@ -80,13 +96,35 @@ const RECENT_NAMED_SESSION_TTL_MS = 60_000;
 async function automationDisarmRefusal(
   normalized: NamedSessionRequest,
   source: AutomationLaunchSource,
-): Promise<string | undefined> {
+): Promise<AutomationDisarmDecision | undefined> {
   const decision = await automationDisarmDecision(
     AutomationDisarmStore.forRuntime(),
     [sessionWorkKey(normalized.harness, normalized.name, normalized.cwd)],
     source,
   );
-  return decision.allowed ? undefined : decision.reason;
+  return decision.allowed ? undefined : decision;
+}
+
+/**
+ * The refusal of the owner lever, in the shape of a failed result.
+ *
+ * The refusal carries the stable code of the lever next to the human text, so
+ * a caller can tell "the owner forbids this scope" from "a person stopped
+ * this chat" without reading the text. The area of the refusal travels in
+ * its own field beside the code, so nobody has to parse the wording to learn
+ * where the owner put the lever. A forbidden launch is not a delivery
+ * failure: a retry would be refused the same way, so it is not retryable.
+ */
+function disarmFailed(
+  request: NamedSessionRequest,
+  decision: AutomationDisarmDecision,
+): NamedSessionResult {
+  return failed(request, decision.reason ?? AUTOMATION_DISARMED_MESSAGE, "not_attempted", {
+    failureCode: AUTOMATION_FORBIDDEN_CODE,
+    // The area is a field of its own, next to the code and not inside the text.
+    ...(decision.routingReasonDetail ? { routingReasonDetail: decision.routingReasonDetail } : {}),
+    nonRetryable: true,
+  });
 }
 
 /**
@@ -246,8 +284,8 @@ export async function createNamedSession(
   return withNamedSessionLock(request, async (normalized) => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
     if (sourceError) return failed(normalized, sourceError, "not_attempted");
-    const disarmError = await automationDisarmRefusal(normalized, "explicit");
-    if (disarmError) return failed(normalized, disarmError, "not_attempted");
+    const disarm = await automationDisarmRefusal(normalized, "explicit");
+    if (disarm) return disarmFailed(normalized, disarm);
     const adapter = adapters.get(normalized.harness);
     if (!adapter) return failed(normalized, `Harness '${normalized.harness}' is not configured`);
     if (!adapter.createSession) return failed(normalized, `${adapter.name} does not support session creation`);
@@ -278,8 +316,8 @@ export async function newOrResumeNamedSession(
   const resolved = await withNamedSessionLock<NamedSessionResolution>(request, async (normalized) => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
     if (sourceError) return { kind: "error", result: failed(normalized, sourceError, "not_attempted") };
-    const disarmError = await automationDisarmRefusal(normalized, request.humanRequested === true ? "human" : "automation");
-    if (disarmError) return { kind: "error", result: failed(normalized, disarmError, "not_attempted") };
+    const disarm = await automationDisarmRefusal(normalized, request.humanRequested === true ? "human" : "automation");
+    if (disarm) return { kind: "error", result: disarmFailed(normalized, disarm) };
     const adapter = adapters.get(normalized.harness);
     if (!adapter) return { kind: "error", result: failed(normalized, `Harness '${normalized.harness}' is not configured`, "not_attempted") };
     if (!adapter.createSession) return { kind: "error", result: failed(normalized, `${adapter.name} does not support session creation`, "not_attempted") };
@@ -633,8 +671,9 @@ function failed(
   request: NamedSessionRequest,
   error: string,
   delivery?: NamedSessionResult["delivery"],
+  extra?: Partial<NamedSessionResult>,
 ): NamedSessionResult {
-  return { ok: false, created: false, error, ...(delivery ? { delivery } : {}), ...request };
+  return { ok: false, created: false, error, ...(delivery ? { delivery } : {}), ...request, ...extra };
 }
 
 export type DeliverActivation = "always" | "if_running" | "defer";
@@ -659,8 +698,8 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
   return withNamedSessionLock(request, async normalized => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
     if (sourceError) return { ...failed(normalized, sourceError, "not_attempted"), activated: false };
-    const disarmError = await automationDisarmRefusal(normalized, request.humanRequested === true ? "human" : "automation");
-    if (disarmError) return { ...failed(normalized, disarmError, "not_attempted"), activated: false };
+    const disarm = await automationDisarmRefusal(normalized, request.humanRequested === true ? "human" : "automation");
+    if (disarm) return { ...disarmFailed(normalized, disarm), activated: false };
     const deliveryIdentity = namedDeliveryIdentity(normalized, request.message);
     const priorDelivery = recentNamedDelivery(deliveryIdentity);
     if (priorDelivery) return {...priorDelivery,activated:false};
