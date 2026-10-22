@@ -38,6 +38,19 @@ the global model of the harness decides, exactly as before this feature.
 - **Matching.** A model id matches an entry by exact comparison after trimming
   and ignoring the case, or by prefix when the entry ends with `*`. The entry
   `omniroute/minimax-*` therefore covers `omniroute/minimax-combo-m3.1`.
+- **The lists name the route, not the catalog.** An entry of a list is the
+  identifier of the route in the policy document, that is the `provider/model`
+  of `models[harness]` or of `route.models[harness]`. It is never an
+  identifier of the catalog of a runtime and never a leaf of a provider. The
+  same route resolves to a different catalog identifier on every runtime: the
+  route `omniroute/minimax-combo-m3.1` resolves to
+  `minimax-code/mmcode/MiniMax-M3.1-Flash` on the 100, to the direct identifier
+  on the 44 and on the MacBook Pro, and the catalog of opencode is empty on the
+  88 while the opencode adapter is enabled. A list written with a leaf
+  identifier therefore matches nothing: it refuses where the launch would have
+  passed, and it stays silent where the runtime really runs the leaf. The gate
+  compares the policy level identifier, so a list written with the route
+  behaves the same on every runtime.
 - **A denial always wins.** A model that matches `deniedModels` is never used
   in that project, even when it is also listed in `allowedModels`, and even
   when it is the effective model of a harness of the route.
@@ -81,6 +94,30 @@ the global model of the harness decides, exactly as before this feature.
   the lexicographically smaller canonical root wins, and the comparison is by
   code unit, so two documents with the same content resolve a directory to the
   same route whatever order their keys have.
+- **A directory is canonicalized before it is matched.** The segments of the
+  directory are resolved: the empty segments and the `.` segments are dropped
+  and a `..` segment removes the segment before it, so `/a/b/../c` is `/a/c`.
+  The root of a route is canonicalized by the same rule, so a directory that
+  walks out of a route with `..` is matched against the route it really lies
+  in and never inherits the lists of the route it left.
+
+## The keys of a block
+
+The route of a launch is the key of the route, and the key of a launch of a
+directory inside a routed project is the root of that route. Two consequences
+follow. Both are stated here before the gate is released.
+
+- **The block key of a subdirectory becomes the root of the route.** A block of
+  the form `project|<subdirectory>` stops firing, and a block of the form
+  `project|<root>` starts to cover the subdirectories. The gate of the dispatch
+  therefore has to check the union of the keys
+  `{projectWorkKey(canonicalProjectKey(input.project)), projectWorkKey(root of
+  the route)}`, so that the old block of the subdirectory and the new block of
+  the root both fire and the fail-closed rule is not weakened.
+- **The session key holds the root of the route.** The working folder of a
+  launch of a routed project is forced to the root of the route, so a block of
+  the form `opencode|<subdirectory>|<name>` stops matching: the directory of
+  the session key is the root of the route.
 
 ## The resolvers of a project route
 
@@ -154,7 +191,10 @@ The receipt of a launch names the route that governed it. `routeKey` is the key
 of the route, and `workspaceReplaced` states that the root of the route
 replaced the requested working folder, which is the case for a directory inside
 the root of a route. The fact is therefore readable from the receipt and not
-only from the routing text.
+only from the routing text. The `model` of the receipt is the identifier of
+the route in the policy document, not the identifier the runtime puts into its
+catalog: the same route resolves to a different catalog identifier on every
+runtime.
 
 ## How the operator configures it
 

@@ -79,6 +79,35 @@ export function canonicalProjectKey(project: string): string {
   return typeof project === "string" ? project.replace(/\/+$/, "") : "";
 }
 
+/**
+ * Canonical path of a project: its segments, resolved.
+ *
+ * The empty segments and the `.` segments are dropped, and a `..` segment
+ * removes the segment before it, so `/a/b/../c` is `/a/c` and `/a/b/./c` is
+ * `/a/b/c`. A `..` without a segment to remove is dropped as well, so a path
+ * never leaves its root. A relative path stays relative: it is the name of a
+ * project, not a path below a root.
+ *
+ * The directory of a session and the root of a route are canonicalized by this
+ * one rule, so a directory that walks out of a route with `..` cannot inherit
+ * the lists of that route.
+ */
+export function normalizeProjectPath(value: string): string {
+  if (typeof value !== "string") return "";
+  const absolute = value.startsWith("/");
+  const segments: string[] = [];
+  for (const segment of value.split("/")) {
+    if (segment.length === 0 || segment === ".") continue;
+    if (segment === "..") {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  const joined = segments.join("/");
+  return absolute ? `/${joined}` : joined;
+}
+
 /** Case-folded comparison key for a project path or a declared alias. */
 export function foldProjectKey(value: string): string {
   return canonicalProjectKey(value).toLocaleLowerCase("en-US");
@@ -97,7 +126,7 @@ export type ProjectRouteMatchKind = "exact" | "case" | "alias" | "nested";
 export interface ProjectRouteResolution<T extends ProjectModelRoute> {
   /** The route that governs the directory. */
   route: T;
-  /** The key of the route in the routes map: the canonical path of the project root. */
+  /** The key of the route in the routes map: the path the route is configured under. */
   routeKey: string;
   /** How the directory matched the route. */
   matchKind: ProjectRouteMatchKind;
@@ -159,6 +188,10 @@ function betterCandidate<T extends ProjectModelRoute>(
  * root of its route, but an alias is never a root itself: containment is only
  * ever tested against the canonical path a route is configured under.
  *
+ * The directory and the root are canonicalized by the same rule, so a
+ * directory that walks out of a route with `..` is matched against the route
+ * it really lies in and never inherits the lists of the route it left.
+ *
  * Containment is a segment boundary, not a string prefix. The root `/a/b`
  * contains `/a/b/c` and does not contain `/a/bc` nor `/a/b-backup`, so a
  * sibling project cannot be captured by a common prefix.
@@ -184,35 +217,42 @@ export function findProjectModelRoute<T extends ProjectModelRoute>(
   directory: string,
 ): ProjectRouteResolution<T> | undefined {
   if (!routes) return undefined;
-  const key = canonicalProjectKey(directory);
-  const exact = routes[key];
-  if (exact) return { route: exact, routeKey: key, matchKind: "exact" };
+  // The directory and the root of every route are canonicalized by the same
+  // rule, so a directory that walks out of a route with `..` is matched
+  // against the route it really lies in.
+  const key = normalizeProjectPath(directory);
+  const entries = Object.entries(routes).map(([routeKey, route]) => ({
+    route,
+    routeKey,
+    root: normalizeProjectPath(routeKey),
+  }));
+
+  const exact = entries.find((entry) => entry.root === key);
+  if (exact) return { route: exact.route, routeKey: exact.routeKey, matchKind: "exact" };
   const folded = foldProjectKey(key);
-  const entries = Object.entries(routes);
 
   // A case variant of the key is nearer to the key than a declared alias, so
   // the case is decided before the alias, whatever order the keys have.
   let byCase: RouteCandidate<T> | undefined;
-  for (const [candidate, route] of entries) {
-    if (foldProjectKey(candidate) !== folded) continue;
-    byCase = betterCandidate(byCase, { route, routeKey: candidate, root: canonicalProjectKey(candidate) });
+  for (const entry of entries) {
+    if (foldProjectKey(entry.root) !== folded) continue;
+    byCase = betterCandidate(byCase, entry);
   }
   if (byCase) return { route: byCase.route, routeKey: byCase.routeKey, matchKind: "case" };
 
   let byAlias: RouteCandidate<T> | undefined;
-  for (const [candidate, route] of entries) {
-    if (!route.aliases?.some((alias) => foldProjectKey(alias) === folded)) continue;
-    byAlias = betterCandidate(byAlias, { route, routeKey: candidate, root: canonicalProjectKey(candidate) });
+  for (const entry of entries) {
+    if (!entry.route.aliases?.some((alias) => foldProjectKey(alias) === folded)) continue;
+    byAlias = betterCandidate(byAlias, entry);
   }
   if (byAlias) return { route: byAlias.route, routeKey: byAlias.routeKey, matchKind: "alias" };
 
   // Nesting: the longest route root that contains the directory governs it.
   let nested: RouteCandidate<T> | undefined;
-  for (const [candidate, route] of entries) {
-    const root = canonicalProjectKey(candidate);
-    if (!root.startsWith("/")) continue;
-    if (key !== root && !key.startsWith(`${root}/`)) continue;
-    nested = betterCandidate(nested, { route, routeKey: candidate, root });
+  for (const entry of entries) {
+    if (!entry.root.startsWith("/")) continue;
+    if (key !== entry.root && !key.startsWith(`${entry.root}/`)) continue;
+    nested = betterCandidate(nested, entry);
   }
   if (nested) return { route: nested.route, routeKey: nested.routeKey, matchKind: "nested" };
   return undefined;

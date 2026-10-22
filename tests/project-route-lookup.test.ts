@@ -314,6 +314,98 @@ describe("the matrix of nested roots", () => {
   });
 });
 
+describe("a directory that walks with a relative segment", () => {
+  it("does not inherit the lists of the route it walks out of", async () => {
+    const root = projectRoot();
+    const policy = policyWith({
+      [`${root}/workspace/app`]: { harnesses: ["opencode"], deniedModels: ["denied-model"] },
+    });
+    const directory = `${root}/workspace/app/../other`;
+    expect(findProjectModelRoute(policy.projectRoutes, directory)).toBeUndefined();
+    expect(findProjectRoute(policy, directory)).toBeUndefined();
+    expect(modelPermittedForProject(policy, directory, "denied-model")).toBe(true);
+    await expect(assertModelAllowedForDirectoryWithPolicy(async () => policy, directory, "denied-model"))
+      .resolves.toBeUndefined();
+  });
+
+  it("lands in the route it really lies in", () => {
+    const root = projectRoot();
+    const policy = policyWith({
+      [`${root}/workspace/app`]: { harnesses: ["opencode"], deniedModels: ["denied-model"] },
+      [`${root}/workspace/other`]: { harnesses: ["opencode"], models: { opencode: "route-model" } },
+    });
+    const directory = `${root}/workspace/app/../other`;
+    expect(findProjectModelRoute(policy.projectRoutes, directory)?.routeKey).toBe(`${root}/workspace/other`);
+    expect(findProjectModelRoute(policy.projectRoutes, directory)?.matchKind).toBe("exact");
+    expect(modelPermittedForProject(policy, directory, "denied-model")).toBe(true);
+  });
+
+  it("stays under the route it walks inside of", () => {
+    const root = projectRoot();
+    const policy = policyWith({
+      [`${root}/workspace/app`]: { harnesses: ["opencode"], deniedModels: ["denied-model"] },
+    });
+    const directory = `${root}/workspace/app/src/../lib`;
+    expect(findProjectModelRoute(policy.projectRoutes, directory)?.routeKey).toBe(`${root}/workspace/app`);
+    expect(findProjectModelRoute(policy.projectRoutes, directory)?.matchKind).toBe("nested");
+    expect(modelPermittedForProject(policy, directory, "denied-model")).toBe(false);
+  });
+
+  it("keeps the boundary of a root against a sibling with a common prefix", () => {
+    const root = projectRoot();
+    const policy = policyWith({
+      [`${root}/workspace/app`]: { harnesses: ["opencode"] },
+    });
+    expect(findProjectModelRoute(policy.projectRoutes, `${root}/workspace/appX`)).toBeUndefined();
+    expect(findProjectModelRoute(policy.projectRoutes, `${root}/workspace/app/../appX`)).toBeUndefined();
+  });
+
+  it("canonicalizes the directory the same way as the root", () => {
+    const root = projectRoot();
+    const policy = policyWith({
+      [`${root}/workspace/app`]: { harnesses: ["opencode"] },
+    });
+    expect(findProjectModelRoute(policy.projectRoutes, `${root}/workspace/app/./src`)?.routeKey)
+      .toBe(`${root}/workspace/app`);
+    expect(findProjectModelRoute(policy.projectRoutes, `${root}/workspace/./app`)?.matchKind).toBe("exact");
+  });
+});
+
+describe("the identifiers of the model lists", () => {
+  it("does not let a catalog leaf identifier stand in for the route", async () => {
+    const root = projectRoot();
+    const policy = policyWith({
+      [`${root}/app`]: {
+        harnesses: ["opencode"],
+        allowedModels: ["omniroute/minimax-combo-m3.1"],
+        deniedModels: ["gpt-6.1-sol"],
+      },
+    });
+    const directory = `${root}/app/src`;
+    // The leaf of the catalog is a different identifier than the route, so it
+    // is not on the allow list of the route and the gate refuses it.
+    await expect(assertModelAllowedForDirectoryWithPolicy(async () => policy, directory, "mmcode/MiniMax-M3.1-Flash"))
+      .rejects.toThrow(/model_not_permitted_for_project/u);
+    await expect(assertModelAllowedForDirectoryWithPolicy(async () => policy, directory, "minimax-code/mmcode/MiniMax-M3.1-Flash"))
+      .rejects.toThrow(/model_not_permitted_for_project/u);
+    // The route of the policy is the identifier of the model of the project.
+    await expect(assertModelAllowedForDirectoryWithPolicy(async () => policy, directory, "omniroute/minimax-combo-m3.1"))
+      .resolves.toBeUndefined();
+  });
+
+  it("does not deny the route by a leaf identifier", () => {
+    const root = projectRoot();
+    const policy = policyWith({
+      [`${root}/app`]: { harnesses: ["opencode"], deniedModels: ["mmcode/MiniMax-M3.1-Flash"] },
+    });
+    // A deny list written with a leaf identifier does not match the route: the
+    // route of the policy stays permitted.
+    expect(modelPermittedForProject(policy, `${root}/app/src`, "omniroute/minimax-combo-m3.1")).toBe(true);
+    // The leaf identifier itself is denied, because the list names it exactly.
+    expect(modelPermittedForProject(policy, `${root}/app/src`, "mmcode/MiniMax-M3.1-Flash")).toBe(false);
+  });
+});
+
 describe("the gate and the launch of one directory", () => {
   it("find the same route, also inside a routed project", async () => {
     const root = projectRoot();
