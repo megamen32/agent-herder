@@ -15,9 +15,9 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
    selectedHarness?: HarnessType;
    model?: string;
    mode?: "create" | "resume" | "handoff_required";
-+  /** The route key that governed this launch, when a route matched the project. */
++  /** The key of the route the project is, when the project has a route of its own. */
 +  routeKey?: string;
-+  /** The requested working folder was replaced by the root of the route. */
++  /** The root of the route replaced the requested working folder. */
 +  workspaceReplaced?: boolean;
    sessionId?: string;
    delivery?: NamedSessionResult["delivery"];
@@ -26,9 +26,9 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
    const healthAnalysis = input[NOTICEPLACE_HEALTH_AUTHORIZED] === true;
    const routeKey = routeKeyOf(input.policy, input.project);
    const healthRoute = routeKey ? input.policy.projectRoutes?.[routeKey] : undefined;
-+  // The receipt names the route that governed the launch and states whether the
-+  // root of the route replaced the requested working folder, so the fact is
-+  // readable from the receipt and not only from the routing text.
++  // The receipt names the route the project IS and states whether the root of
++  // that route replaced the requested working folder, so the fact is readable
++  // from the receipt and not only from the routing text.
 +  const routeReceipt = routeReceiptOf(input.policy, input.project, input.cwd);
    if (healthAnalysis) {
      const error = validateNoticeplaceHealthLaunch(input)
@@ -178,19 +178,19 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
  
 +/** The route facts of one launch, as the receipt states them. */
 +export interface ProjectLaunchRouteReceipt {
-+  /** The route key that governed the launch. */
++  /** The key of the route the project is. */
 +  routeKey: string;
-+  /** The requested working folder was replaced by the root of the route. */
++  /** The root of the route replaced the requested working folder. */
 +  workspaceReplaced: boolean;
 +}
 +
 +/**
 + * The route facts of one launch.
 + *
-+ * The route key names the route that governed the launch, found by the one
-+ * lookup rule of this base. The flag states that the root of the route
-+ * replaced the requested working folder, which is the case for a directory
-+ * inside the root of a route and for a folder the route is authoritative over.
++ * The route key names the route the project IS: the exact folder, its case
++ * variant or a declared alias, found by the identity lookup of this base.
++ * The flag states that the root of that route replaced the requested
++ * working folder; a directory inside a route has no route of its own.
 + *
 + * The flag reads the requested folder only, never the spelling of the
 + * project: an alias and the route root name one launch, so the receipt of

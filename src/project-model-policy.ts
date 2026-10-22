@@ -16,11 +16,12 @@
  * - an empty or absent allow list means no restriction at all: the global
  *   policy of the harness decides.
  *
- * The module also holds the one lookup that resolves a directory to the route
- * that governs it, so the launch resolution and the model gate can never
- * disagree about the project of a session. Every caller that needs the route
- * of a directory goes through that lookup; the wrappers below exist only to
- * name the two sides of it.
+ * The module also holds the two lookups of a project route. The containment
+ * lookup resolves a directory to the route that GOVERNS it, so the launch
+ * resolution and the model gate can never disagree about the model of a
+ * session. The identity lookup resolves a directory to the route it IS, so the
+ * working folder and the work key of a session stay its own. The wrappers
+ * below exist only to name the two sides of them.
  */
 
 /** The parts of a project route this module reads. */
@@ -173,7 +174,7 @@ function betterCandidate<T extends ProjectModelRoute>(
 }
 
 /**
- * The one lookup that resolves a directory to the route that governs it.
+ * The containment lookup that resolves a directory to the route that governs it.
  *
  * The rule is the same for the launch permission and for the model gate:
  * 1. the exact canonical folder of the route wins;
@@ -188,10 +189,6 @@ function betterCandidate<T extends ProjectModelRoute>(
  * root of its route, but an alias is never a root itself: containment is only
  * ever tested against the canonical path a route is configured under.
  *
- * The directory and the root are canonicalized by the same rule, so a
- * directory that walks out of a route with `..` is matched against the route
- * it really lies in and never inherits the lists of the route it left.
- *
  * Containment is a segment boundary, not a string prefix. The root `/a/b`
  * contains `/a/b/c` and does not contain `/a/bc` nor `/a/b-backup`, so a
  * sibling project cannot be captured by a common prefix.
@@ -204,6 +201,10 @@ function betterCandidate<T extends ProjectModelRoute>(
  * The nesting is matched literally, because the production paths are
  * case-sensitive, while the exact folder and the alias are matched
  * case-insensitively, exactly as before.
+ *
+ * This lookup answers the question "which model is allowed in this project and
+ * which route governs it". The question "which project is this directory" is
+ * answered by {@link findProjectRouteIdentity}, which knows no containment.
  */
 // TODO(owner of src/integrator-fleet-runtime.ts): that file resolves a route by
 // exact key and alias only (src/integrator-fleet-runtime.ts:382) and reports
@@ -216,10 +217,44 @@ export function findProjectModelRoute<T extends ProjectModelRoute>(
   routes: Record<string, T> | undefined,
   directory: string,
 ): ProjectRouteResolution<T> | undefined {
+  const identity = findProjectRouteIdentity(routes, directory);
+  if (identity) return identity;
   if (!routes) return undefined;
-  // The directory and the root of every route are canonicalized by the same
-  // rule, so a directory that walks out of a route with `..` is matched
-  // against the route it really lies in.
+  const key = normalizeProjectPath(directory);
+  const entries = Object.entries(routes).map(([routeKey, route]) => ({
+    route,
+    routeKey,
+    root: normalizeProjectPath(routeKey),
+  }));
+
+  // Nesting: the longest route root that contains the directory governs it.
+  let nested: RouteCandidate<T> | undefined;
+  for (const entry of entries) {
+    if (!entry.root.startsWith("/")) continue;
+    if (key !== entry.root && !key.startsWith(`${entry.root}/`)) continue;
+    nested = betterCandidate(nested, entry);
+  }
+  if (nested) return { route: nested.route, routeKey: nested.routeKey, matchKind: "nested" };
+  return undefined;
+}
+
+/**
+ * The lookup that answers which project a directory is.
+ *
+ * The rule is the identity of a project: the exact canonical folder of the
+ * route, then the same folder in another case, then a declared alias of the
+ * route. A directory inside a routed project is not the project: it has no
+ * route of its own, so it keeps its own working folder and its own work key.
+ *
+ * The containment of {@link findProjectModelRoute} belongs to the model
+ * contour alone, where a directory inherits the rules and the model of the
+ * project that contains it.
+ */
+export function findProjectRouteIdentity<T extends ProjectModelRoute>(
+  routes: Record<string, T> | undefined,
+  directory: string,
+): ProjectRouteResolution<T> | undefined {
+  if (!routes) return undefined;
   const key = normalizeProjectPath(directory);
   const entries = Object.entries(routes).map(([routeKey, route]) => ({
     route,
@@ -246,24 +281,17 @@ export function findProjectModelRoute<T extends ProjectModelRoute>(
     byAlias = betterCandidate(byAlias, entry);
   }
   if (byAlias) return { route: byAlias.route, routeKey: byAlias.routeKey, matchKind: "alias" };
-
-  // Nesting: the longest route root that contains the directory governs it.
-  let nested: RouteCandidate<T> | undefined;
-  for (const entry of entries) {
-    if (!entry.root.startsWith("/")) continue;
-    if (key !== entry.root && !key.startsWith(`${entry.root}/`)) continue;
-    nested = betterCandidate(nested, entry);
-  }
-  if (nested) return { route: nested.route, routeKey: nested.routeKey, matchKind: "nested" };
   return undefined;
 }
 
 /**
  * Find the route that governs a project.
  *
- * A thin wrapper over the one lookup {@link findProjectModelRoute}: the exact
- * canonical folder, its case variant, a declared alias and finally the longest
- * route root that contains the project.
+ * A thin wrapper over the containment lookup {@link findProjectModelRoute}:
+ * the exact canonical folder, its case variant, a declared alias and finally
+ * the longest route root that contains the project. This is the lookup of the
+ * model contour: the lists of a project are the lists of the route that
+ * contains it.
  */
 export function findModelPolicyRoute<T extends ProjectModelRoute>(
   routes: Record<string, T> | undefined,
@@ -275,15 +303,31 @@ export function findModelPolicyRoute<T extends ProjectModelRoute>(
 /**
  * Find the route that governs a working directory.
  *
- * A thin wrapper over the same one lookup {@link findProjectModelRoute},
- * because a session that runs in a subdirectory of a project is governed by
- * the rules of that project.
+ * A thin wrapper over the same containment lookup
+ * {@link findProjectModelRoute}, because a session that runs in a subdirectory
+ * of a project is governed by the rules of that project. The gate of the tools
+ * and the model resolution of the launch share this one lookup.
  */
 export function findModelPolicyRouteForPath<T extends ProjectModelRoute>(
   routes: Record<string, T> | undefined,
   directory: string,
 ): T | undefined {
   return findProjectModelRoute(routes, directory)?.route;
+}
+
+/**
+ * Find the route a directory IS, without the containment of a parent route.
+ *
+ * A thin wrapper over the identity lookup {@link findProjectRouteIdentity}:
+ * the exact canonical folder, its case variant and a declared alias. It answers
+ * which project a directory is, so it never returns the route of a parent
+ * directory.
+ */
+export function findModelPolicyRouteIdentity<T extends ProjectModelRoute>(
+  routes: Record<string, T> | undefined,
+  project: string,
+): T | undefined {
+  return findProjectRouteIdentity(routes, project)?.route;
 }
 
 /** Normalized comparison form of one model list entry. */
@@ -338,7 +382,7 @@ export function effectiveModelForProject(
 /**
  * May this model be used in this project?
  *
- * The project is resolved by the one route lookup, so a directory inside a
+ * The project is resolved by the containment lookup, so a directory inside a
  * routed project is judged by the rules of that project. A project without a
  * route keeps the global policy unchanged.
  */

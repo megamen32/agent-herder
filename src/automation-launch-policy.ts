@@ -8,6 +8,7 @@ import {
   canonicalProjectKey,
   findModelPolicyRoute,
   findProjectModelRoute,
+  findProjectRouteIdentity,
   modelPermittedForRoute,
   validateProjectModelLists,
   type ProjectRouteResolution,
@@ -105,6 +106,12 @@ export type ProjectLaunchResolution =
 /**
  * Resolve the next harness for one project.
  *
+ * The route is the one that GOVERNS the project: a directory inside a routed
+ * project inherits the harness and the model of the route that contains it, so
+ * the launch of a subdirectory runs the model of its project. The gate of the
+ * tools resolves the route of the same directory by the same lookup, so a
+ * subdirectory can never be launched by one rule and policed by another.
+ *
  * Only a definite pre-admission failure advances the ordered list. An accepted
  * launch and an unknown admission both stop the chain, so a semantic repair
  * failure or a pending human answer can never produce a second executor.
@@ -113,7 +120,7 @@ export function resolveProjectLaunch(
   policy: AutomationLaunchPolicy,
   request: ProjectLaunchRequest,
 ): ProjectLaunchResolution {
-  const route = findProjectRoute(policy, request.project);
+  const route = findGoverningProjectRoute(policy, request.project);
   if (!route || route.harnesses.length === 0) return { kind: "unconfigured" };
   if (request.outcome === "accepted") return { kind: "exhausted", reason: "accepted" };
   if (request.outcome === "admission_unknown") return { kind: "exhausted", reason: "admission_unknown" };
@@ -143,15 +150,59 @@ export function resolveProjectLaunch(
 }
 
 /**
- * Find the route that governs a project.
+ * Find the route that IS the project.
  *
- * The lookup is the one rule of `findProjectModelRoute`: the exact canonical
- * folder of the route, its case variant, a declared alias and finally the
- * longest route root that contains the project. A directory inside a routed
- * project is therefore governed by that project, exactly as the model gate
- * judges it.
+ * The identity rule: the exact canonical folder of the route, its case variant
+ * and a declared alias. A directory inside a routed project is not the project:
+ * it has no route of its own, so it keeps its own working folder and its own
+ * work key. The callers are the ones that decide which project a session is:
+ * the work key and the working folder of the launch, and the two consumers
+ * that must not catch a subdirectory.
  */
 export function findProjectRoute(
+  policy: AutomationLaunchPolicy,
+  project: string,
+): ProjectLaunchRoute | undefined {
+  return findProjectRouteIdentity(policy.projectRoutes, project)?.route;
+}
+
+/**
+ * The canonical key of the route that IS the project.
+ *
+ * The key is the path the route is configured under, so the project root, its
+ * case variant and an alias share one key and therefore one authority. A
+ * directory inside the project has no key of its own: it keeps its own.
+ */
+export function findProjectRouteKey(
+  policy: AutomationLaunchPolicy,
+  project: string,
+): string | undefined {
+  return findProjectRouteIdentity(policy.projectRoutes, project)?.routeKey;
+}
+
+/**
+ * The route that IS the project, with the key it is configured under and the
+ * kind of the match.
+ *
+ * The kind tells the caller how the project was found: `exact`, `case` or
+ * `alias`. A directory inside the root of a route has no match here.
+ */
+export function findProjectRouteMatch(
+  policy: AutomationLaunchPolicy,
+  project: string,
+): ProjectRouteResolution<ProjectLaunchRoute> | undefined {
+  return findProjectRouteIdentity(policy.projectRoutes, project);
+}
+
+/**
+ * The route that GOVERNS the project.
+ *
+ * The containment rule: the identity of the project and then the longest route
+ * root that contains it. A directory inside a routed project is governed by
+ * that project, so it inherits its rules and its model. This is the lookup of
+ * the model contour, and the gate of the tools uses the same one.
+ */
+export function findGoverningProjectRoute(
   policy: AutomationLaunchPolicy,
   project: string,
 ): ProjectLaunchRoute | undefined {
@@ -159,37 +210,29 @@ export function findProjectRoute(
 }
 
 /**
- * The canonical key of the route that governs a project.
- *
- * The key is the path the route is configured under, so a project root, its
- * case variant, an alias and a directory inside the project all share one
- * key and therefore one authority.
- */
-export function findProjectRouteKey(
-  policy: AutomationLaunchPolicy,
-  project: string,
-): string | undefined {
-  return findProjectModelRoute(policy.projectRoutes, project)?.routeKey;
-}
-
-/**
- * The route that governs a project, with the key it is configured under and
+ * The route that GOVERNS the project, with the key it is configured under and
  * the kind of the match.
  *
- * The kind tells the caller how the project was found: `exact`, `case` or
- * `alias` name the project itself, `nested` means the project lies inside the
- * root of the route and that the root is the working folder of the launch.
+ * The kind `nested` means the project lies inside the root of the route: it
+ * inherits the rules and the model of that route, while its own working folder
+ * and its own work key stay untouched.
  */
-export function findProjectRouteMatch(
+export function findGoverningProjectRouteMatch(
   policy: AutomationLaunchPolicy,
   project: string,
 ): ProjectRouteResolution<ProjectLaunchRoute> | undefined {
   return findProjectModelRoute(policy.projectRoutes, project);
 }
 
-/** Historical operator enrollment has stricter scope than ordinary launch routing. */
+/**
+ * Historical operator enrollment has stricter scope than ordinary launch routing.
+ *
+ * The guard follows the route that GOVERNS the project, not the route the
+ * project is: a session in a subdirectory of a guarded project stays guarded.
+ * A restriction never loosens because a session works deeper in the tree.
+ */
 export function operatorCohortRecoveryAllowed(policy: AutomationLaunchPolicy, project: string): boolean {
-  const route = findProjectRoute(policy, project);
+  const route = findGoverningProjectRoute(policy, project);
   if (route && (!route.harnesses.includes("opencode") || route.operatorCohortRecovery === "deny")) return false;
   const key = foldProjectKey(project);
   // These two product projects are the explicitly restricted cohort; keep
