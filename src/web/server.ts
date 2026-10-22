@@ -68,6 +68,16 @@ import { checkCodexQuota, saveCodexQuotaPolicy } from "../codex-quota-guard.js";
 import { handleQuotaLensRequest } from "./quota-lens.js";
 import { createSettingsApi } from "./settings-api.js";
 import { SettingsStore } from "./settings-store.js";
+import {
+  CommonSettingsStateStore,
+  DirectCommonSettingsTransport,
+  hooksLeverFromStore,
+  readCommonSettingsConfig,
+  readOwnerDocument,
+  restoreCommonSettingsLocalValues,
+  type HooksProhibitionsStoreLike,
+} from "../common-settings/index.js";
+import { defaultFleetConfirmationPeers } from "./settings-fleet-confirmation.js";
 import { getS21Ownership } from "../s21-resource-ownership.js";
 import { getHumanStopStore } from "../human-stop-store.js";
 import { deferredMessages, renderDeferredMessages } from "../deferred-messages.js";
@@ -102,6 +112,14 @@ export interface WebDependencies {
   automationLaunchPolicyStore?: AutomationLaunchPolicyStore;
   /** The settings of the product: a test names its own store, the runtime keeps its own files. */
   settingsStore?: SettingsStore;
+  /**
+   * The store of the lever of the prohibitions of the hooks.
+   *
+   * The lever belongs to the hooks and is not rewritten here: the store is
+   * passed as it is, and the common settings read it and write it through it.
+   * A node without the lever has no common lever either.
+   */
+  hooksProhibitionsStore?: HooksProhibitionsStoreLike;
   backgroundAutopilotStop?: BackgroundAutopilotStop;
   autopilotSweepIntervalMs?: number;
   sessionVisualizer?: (details: SessionDetails) => Promise<string>;
@@ -926,6 +944,15 @@ export function createWebServer(dependencies: WebDependencies): Server {
   // configuration of this node, and nothing else: the files of the other
   // products of the contour are never opened here.
   const settingsStore = dependencies.settingsStore ?? new SettingsStore({ actor: userInfo().username, hostId: hostname() });
+  // The common settings of the fleet: the document of the owner and the nodes
+  // that take it. A node without the owner named in its environment has no
+  // common settings and claims nothing about the fleet.
+  const commonSettingsConfig = readCommonSettingsConfig(process.env, hostname());
+  const commonSettingsState = new CommonSettingsStateStore();
+  const commonSettingsPeers = defaultFleetConfirmationPeers(hostname());
+  const commonSettingsHooks = dependencies.hooksProhibitionsStore
+    ? hooksLeverFromStore(dependencies.hooksProhibitionsStore)
+    : undefined;
   const settingsApi = createSettingsApi({
     store: settingsStore,
     actor: userInfo().username,
@@ -940,6 +967,51 @@ export function createWebServer(dependencies: WebDependencies): Server {
         },
       }
       : {}),
+    ...(commonSettingsConfig.role === "none"
+      ? {}
+      : {
+        commonSettings: {
+          role: commonSettingsConfig.role,
+          ownerHostId: commonSettingsConfig.ownerHostId,
+          // The document of the owner is read from the files of this node: the
+          // common settings are never a second copy of the settings. A member
+          // answers with the document it holds: it has no document of its own.
+          readDocument: async () => {
+            if (commonSettingsConfig.role === "member") {
+              return (await commonSettingsState.read()).document;
+            }
+            return await readOwnerDocument({
+              owner: hostname(),
+              store: {
+                readEnvironment: async () => await settingsStore.readEnvironment(),
+                readSecretValue: async (key: string) => await settingsStore.readSecretValue(key),
+              },
+              ...(dependencies.automationLaunchPolicyStore
+                ? {
+                  launchPolicy: {
+                    read: async () => {
+                      const document = await dependencies.automationLaunchPolicyStore!.readDocument();
+                      return document.kind === "valid"
+                        ? { kind: "valid" as const, policy: document.policy }
+                        : { kind: document.kind };
+                    },
+                  },
+                }
+                : {}),
+              ...(commonSettingsHooks ? { hooks: commonSettingsHooks } : {}),
+            });
+          },
+          peers: commonSettingsPeers,
+          transport: new DirectCommonSettingsTransport(),
+          state: async () => await commonSettingsState.read(),
+          setLocalOptIn: async (enabled: boolean) => { await commonSettingsState.setOptIn(enabled); },
+          restoreLocal: async () => await restoreCommonSettingsLocalValues({
+            target: settingsStore,
+            state: await commonSettingsState.read(),
+            hostId: hostname(),
+          }),
+        },
+      }),
   });
   const server = createServer(async (request, response) => {
     try {

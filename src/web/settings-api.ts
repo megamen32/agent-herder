@@ -35,6 +35,18 @@ import {
   type SettingsFleetConfirmation,
 } from "./settings-fleet-confirmation.js";
 
+import {
+  commonEnvironmentKeys,
+  isCommonSettingId,
+  readCommonSettingsFleet,
+  redactCommonDocument,
+  type CommonSettingsApplyResult,
+  type CommonSettingsDocument,
+  type CommonSettingsNodeState,
+  type CommonSettingsRole,
+  type CommonSettingsTransport,
+} from "../common-settings/index.js";
+
 /**
  * The API of the settings of the herder.
  *
@@ -100,6 +112,32 @@ export interface SettingsApiOptions {
     desiredRevision: string | null;
     localKind: "valid" | "absent" | "invalid";
   }) => Promise<SettingsFleetConfirmation>;
+  /**
+   * The common settings of the fleet.
+   *
+   * The document of the common settings is read from the files of the owner,
+   * and the nodes that take it are asked over the transport of the fleet. The
+   * option is absent on a node that has no common settings configured: such a
+   * node answers that it has none and claims nothing.
+   */
+  commonSettings?: {
+    /** The role of this node in the contour of the common settings. */
+    role: CommonSettingsRole;
+    /** The node that owns the document. */
+    ownerHostId: string | null;
+    /** The document of the common settings, read from the files of this node. */
+    readDocument: () => Promise<CommonSettingsDocument | null>;
+    /** The peers of the fleet: the node and the address of its runtime. */
+    peers: readonly { hostId: string; target: string }[];
+    /** The transport that reaches the other nodes of the fleet. */
+    transport: CommonSettingsTransport;
+    /** The state of this node. */
+    state: () => Promise<CommonSettingsNodeState>;
+    /** The opt-in flag of this node, set by the owner of this node. */
+    setLocalOptIn?: (enabled: boolean) => Promise<void>;
+    /** The local values of this node are put back. */
+    restoreLocal?: () => Promise<CommonSettingsApplyResult>;
+  };
 }
 
 /** The answer of the owner check. */
@@ -262,6 +300,9 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
       generatedAt: new Date().toISOString(),
       actor,
       product: "agent-herder",
+      // The keys that travel to the nodes of the fleet: the form marks them,
+      // so the owner sees where a common setting is changed once.
+      commonSettings: { keys: commonEnvironmentKeys() },
       // The version of the whole document: a change that was made after the
       // owner read it is a conflict, and the owner sees the difference.
       etag,
@@ -289,6 +330,56 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
       },
       launchPolicy,
       audit,
+    };
+  };
+
+  /**
+   * The common settings of the fleet, as the owner reads them.
+   *
+   * The document of the owner is read from the files of this node and the
+   * nodes that take it are asked what they hold. A node that did not answer is
+   * unknown, and unknown is never agreement.
+   *
+   * With `distribute` the nodes that hold another revision are told that the
+   * document moved: they take it and apply it by themselves.
+   */
+  const readCommonView = async (input: { distribute?: boolean } = {}): Promise<Record<string, unknown>> => {
+    const checkedAt = new Date().toISOString();
+    const common = options.commonSettings;
+    if (!common) {
+      return {
+        ok: false,
+        role: "none",
+        owner: null,
+        revision: null,
+        createdAt: null,
+        document: null,
+        nodes: [],
+        notParticipating: [],
+        state: "Записано",
+        confirmed: 0,
+        total: 0,
+        unconfirmed: [],
+        checkedAt,
+        error: "Общие настройки флота не настроены на этой ноде.",
+      };
+    }
+    const document = await common.readDocument();
+    const fleet = await readCommonSettingsFleet({
+      transport: common.transport,
+      peers: common.peers,
+      revision: document?.revision ?? null,
+      ...(input.distribute ? { distribute: true } : {}),
+    });
+    return {
+      ok: true,
+      role: common.role,
+      owner: common.ownerHostId,
+      revision: document?.revision ?? null,
+      createdAt: document?.createdAt ?? null,
+      document: document ? redactCommonDocument(document) : null,
+      ...fleet,
+      checkedAt,
     };
   };
 
@@ -691,6 +782,99 @@ const CONNECTION_TOKEN_KEY = "NOTIFY_CENTER_TOKEN";
         respond(response, 200, confirmation);
         return true;
       }
+      if (request.method === "GET" && url.pathname === "/api/settings/common") {
+        // The common settings of the fleet: the revision of the document and
+        // what every node that takes it holds. The poll reaches the other
+        // nodes, so the owner asks for it.
+        respond(response, 200, await readCommonView());
+        return true;
+      }
+      if (request.method === "POST" && url.pathname === "/api/settings/common/sync") {
+        // The owner asks the nodes to take the document now. The nodes take it
+        // by themselves and answer with the revision they hold.
+        respond(response, 200, await readCommonView({ distribute: true }));
+        return true;
+      }
+      if (request.method === "POST" && url.pathname === "/api/settings/common/opt-in") {
+        // The opt-in of a node: the node itself declares that it takes the
+        // common settings. The rights are the rights of the other settings:
+        // the owner of the panel, and nothing else.
+        const common = options.commonSettings;
+        if (!common) {
+          respond(response, 503, { ok: false, error: "Общие настройки флота не настроены на этой ноде." });
+          return true;
+        }
+        let body: Record<string, unknown>;
+        try {
+          body = await readJson(request) as Record<string, unknown>;
+        } catch (error) {
+          respond(response, 400, { ok: false, error: `Некорректное тело запроса: ${(error as Error).message}` });
+          return true;
+        }
+        if (typeof body.enabled !== "boolean") {
+          respond(response, 400, { ok: false, error: "enabled must be a boolean" });
+          return true;
+        }
+        const target = typeof body.hostId === "string" && body.hostId.trim() ? body.hostId.trim() : hostId;
+        if (target !== hostId) {
+          const peer = common.peers.find((candidate) => candidate.hostId === target);
+          if (!peer) {
+            respond(response, 404, { ok: false, error: `Нода ${target} не найдена во флоте.` });
+            return true;
+          }
+          try {
+            const status = await common.transport.setOptIn(peer.target, body.enabled);
+            respond(response, 200, { ...await readCommonView(), node: status });
+          } catch (error) {
+            respond(response, 502, { ok: false, error: `Нода ${target} не ответила: ${(error as Error).message}` });
+          }
+          return true;
+        }
+        if (!common.setLocalOptIn) {
+          respond(response, 503, { ok: false, error: "Эта нода не умеет объявлять opt-in." });
+          return true;
+        }
+        await common.setLocalOptIn(body.enabled);
+        respond(response, 200, { ok: true, ...await readCommonView() });
+        return true;
+      }
+      if (request.method === "POST" && url.pathname === "/api/settings/common/restore") {
+        // The local values of a node are put back after the common document
+        // replaced them. The common value wins again at the next round.
+        const common = options.commonSettings;
+        if (!common) {
+          respond(response, 503, { ok: false, error: "Общие настройки флота не настроены на этой ноде." });
+          return true;
+        }
+        let body: Record<string, unknown> = {};
+        try {
+          body = (await readJson(request) ?? {}) as Record<string, unknown>;
+        } catch {
+          body = {};
+        }
+        const target = typeof body.hostId === "string" && body.hostId.trim() ? body.hostId.trim() : hostId;
+        if (target !== hostId) {
+          const peer = common.peers.find((candidate) => candidate.hostId === target);
+          if (!peer) {
+            respond(response, 404, { ok: false, error: `Нода ${target} не найдена во флоте.` });
+            return true;
+          }
+          try {
+            const status = await common.transport.restore(peer.target);
+            respond(response, 200, { ...await readCommonView(), node: status });
+          } catch (error) {
+            respond(response, 502, { ok: false, error: `Нода ${target} не ответила: ${(error as Error).message}` });
+          }
+          return true;
+        }
+        if (!common.restoreLocal) {
+          respond(response, 503, { ok: false, error: "Эта нода не хранит отклонения общих настроек." });
+          return true;
+        }
+        const result = await common.restoreLocal();
+        respond(response, 200, { ...await readCommonView(), restored: result });
+        return true;
+      }
       if (request.method === "GET" && url.pathname === "/api/settings/audit") {
         const limit = Number(url.searchParams.get("limit") ?? 100);
         respond(response, 200, {
@@ -729,6 +913,15 @@ const CONNECTION_TOKEN_KEY = "NOTIFY_CENTER_TOKEN";
         const applied: SettingsAuditRecord[] = [];
         const results: Record<string, unknown> = {};
         if (environment) applied.push(...await store.applyEnvironment(environment));
+        // A common setting changed: the nodes that take the common settings
+        // are told that the document moved. The round of taking happens in the
+        // background: the owner sees who confirmed when it polls the fleet.
+        const commonChanged = environment
+          ? Object.keys(environment).some((key) => isCommonSettingId(`herder.env/${key}`))
+          : false;
+        if (commonChanged && options.commonSettings) {
+          void readCommonView({ distribute: true }).catch(() => { /* the fleet answers on the next poll */ });
+        }
         if (fleetNode) applied.push(...await store.applyNodeConfig(fleetNode));
         if (secrets) {
           for (const [key, operation] of Object.entries(secrets)) {

@@ -323,3 +323,49 @@
     padding: 14px 14px 16px;
   }
 }
+
+/*
+ * A common setting is changed in one place and reaches every node that takes
+ * the common settings. The badge says so before the owner saves it.
+ */
+.herder-settings-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-m, 10px);
+  background: var(--accent-soft);
+  color: var(--text-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .herder-settings-badge {
+    display: block;
+    width: fit-content;
+    margin: 6px 0 0;
+  }
+}
+
+/*
+ * The common settings of the fleet: the revisions and the names of the nodes
+ * are long, and the screen of a phone is narrow. The text wraps instead of
+ * pushing the screen sideways.
+ */
+.herder-settings-common code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 720px) {
+  .herder-settings-common .herder-settings-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .herder-settings-common .herder-settings-actions .herder-settings-button {
+    flex: 1 1 auto;
+  }
+}

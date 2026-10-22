@@ -46,6 +46,11 @@ import { boundResumeReceiptQuery, createWebServer, resumeSelectedTarget } from "
 import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "./resume-transport.js";
 import { createConfiguredFleetApiHandler, createManagedFleetHttpGuard, isManagedFleetNode } from "./web/fleet-wiring.js";
 import { registerFleetNodeTools } from "./mesh/fleet-node.js";
+import {
+  commonSettingsService,
+  registerCommonSettingsTools,
+  startCommonSettingsSyncLoop,
+} from "./common-settings/index.js";
 import { fleetPolicyRevisionLedgerPath } from "./mesh/fleet-policy-revision.js";
 import type { ProjectModelPolicyState } from "./project-model-delivery-gate.js";
 import { createConfiguredBrowserWakeService } from "./browser-wake.js";
@@ -609,6 +614,10 @@ function registerTools(
   registerHarnessMeshTools(server, { adapters, gptadmin: workspaceTransport, deliveryPolicy: readLaunchPolicyStateForGate });
   registerWorkspaceTools(server, { transport: workspaceTransport });
   registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, launchPolicyRevision: readLaunchPolicyRevision, fleetTransport: workspaceTransport, fleetPeers: directFleetPeers.filter(peer => peer.hostId !== "MacBook-Pro-User.local").map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), policyRevisionLedgerPath: fleetPolicyRevisionLedgerPath(autopilotStateDir) });
+  // The common settings of the fleet: a node that has no owner of the document
+  // named in its environment registers no tool and claims nothing.
+  const commonSettings = commonSettingsService();
+  if (commonSettings) registerCommonSettingsTools(server, { service: commonSettings });
 }
 
 /**
@@ -1019,6 +1028,11 @@ async function main() {
   if (startSelectedStdio(webPort, createStdioMcpServer, (error) => console.error(`[agent-herder] MCP stdio error: ${error.message}`))) {
     console.error("[agent-herder] MCP v2 server running on stdio (2026-07-28 + legacy fallback)");
   }
+
+  // The node takes the document of the common settings by itself. A node that
+  // was off catches up when it comes back: nobody does it by hand.
+  const commonSettingsNode = commonSettingsService();
+  if (commonSettingsNode) startCommonSettingsSyncLoop(commonSettingsNode);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

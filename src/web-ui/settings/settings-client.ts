@@ -107,6 +107,8 @@ export type SettingsView = {
   actor: string;
   product: string;
   etag: string;
+  /** The keys of the environment that travel to the nodes of the fleet. */
+  commonSettings?: { keys: string[] };
   records: SettingsRecord[];
   profiles: SettingsProfile[];
   projects: SettingsProject[];
@@ -306,4 +308,114 @@ export function baseVersions(view: SettingsView, ids: string[]): Record<string, 
     if (record) versions[id] = record.desired.desired_revision;
   }
   return versions;
+}
+
+/**
+ * The common settings of the fleet, as the owner reads them.
+ *
+ * The document of the common settings is owned by one node and the nodes that
+ * take it hold the same values. A node that did not answer is unknown, and
+ * the answer says so: unknown is never agreement.
+ */
+
+/** The state of one node of the fleet, in the words of the owner. */
+export type CommonSettingsNodeStatus = "подтвердил" | "расходится" | "не подтвердил";
+
+/** One deviation of a node from the common value. */
+export type CommonSettingsConflict = {
+  /** The setting the node holds differently. */
+  id: string;
+  /** The value of the common document. */
+  commonValue: string | null;
+  /** The value the node held before the document was applied. */
+  localValue: string | null;
+  /** How the deviation was found. */
+  kind: "adopted" | "local-change";
+  /** When the deviation was found. */
+  detectedAt: string;
+  /** Whether the deviation is in force on the node. */
+  open?: boolean;
+  /** The lever of the hooks is named apart: it is not a string. */
+  hooksChanged?: boolean;
+  /** The position of the lever of the hooks on the node. */
+  localHooksState?: { prohibitionsEnabled: boolean; disabledHooks: string[] } | null;
+  /** The position of the lever of the hooks in the common document. */
+  commonHooksState?: { prohibitionsEnabled: boolean; disabledHooks: string[] };
+  /** A note about the deviation. */
+  note?: string;
+};
+
+/** One node of the fleet, as the owner reads it. */
+export type CommonSettingsNodeView = {
+  hostId: string;
+  optIn: boolean;
+  status: CommonSettingsNodeStatus;
+  appliedRevision: string | null;
+  confirmedAt: string | null;
+  reason: string | null;
+  conflicts: CommonSettingsConflict[];
+};
+
+/** The common settings of the fleet, as the owner reads them. */
+export type CommonSettingsView = {
+  ok: boolean;
+  role: "owner" | "member" | "none";
+  owner: string | null;
+  revision: string | null;
+  createdAt: string | null;
+  document: {
+    format: string;
+    revision: string;
+    owner: string;
+    createdAt: string;
+    environment: Record<string, { value: string | null; secret: boolean; fingerprint?: string }>;
+    launchPolicy?: unknown;
+    hooks?: { prohibitionsEnabled: boolean; disabledHooks: string[] };
+  } | null;
+  nodes: CommonSettingsNodeView[];
+  notParticipating: string[];
+  state: SettingsApplyState;
+  confirmed: number;
+  total: number;
+  unconfirmed: string[];
+  checkedAt: string;
+  error?: string;
+};
+
+/**
+ * The common settings of the fleet.
+ *
+ * The poll reaches the other nodes of the fleet, so the owner asks for it and
+ * it is not read with every view of the settings.
+ */
+export async function loadCommonSettings(): Promise<CommonSettingsView> {
+  return await requestJson<CommonSettingsView>("/api/settings/common");
+}
+
+/**
+ * The owner asks the nodes to take the document now.
+ *
+ * The nodes take it by themselves and answer with the revision they hold, so
+ * the answer says who confirmed and who did not.
+ */
+export async function syncCommonSettings(): Promise<CommonSettingsView> {
+  return await requestJson<CommonSettingsView>("/api/settings/common/sync", { method: "POST" });
+}
+
+/** The opt-in of a node: the node itself declares that it takes the common settings. */
+export async function setCommonSettingsOptIn(enabled: boolean, hostId?: string): Promise<CommonSettingsView> {
+  return await requestJson<CommonSettingsView>("/api/settings/common/opt-in", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ enabled, ...(hostId ? { hostId } : {}) }),
+  });
+}
+
+/** The local values of a node are put back after the common document replaced them. */
+export async function restoreCommonSettingsLocal(hostId?: string): Promise<CommonSettingsView> {
+  return await requestJson<CommonSettingsView>("/api/settings/common/restore", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(hostId ? { hostId } : {}),
+  });
 }
