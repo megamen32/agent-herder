@@ -105,7 +105,10 @@ describe("the prediction of a blocked model request", () => {
     expect(checks[0]?.state).toBe("blocked");
     expect(checks[0]?.reason).toBe("маршрут не совпал с подтверждённым нативным маршрутом среды");
     expect(checks[0]?.action).toContain("omniroute/minimax-combo-m3.1");
-    expect(checks[0]?.action).toContain("не отменяют");
+    // The action names the button, and it never blames the lists of the
+    // project for a block that comes from the environment.
+    expect(checks[0]?.action).toContain("Поставить рабочую модель");
+    expect(checks[0]?.action).not.toContain("не отменяют");
   });
 
   it("blocks a route of a closed provider", () => {
@@ -188,8 +191,8 @@ describe("the screen of the projects", () => {
     expect(page).toContain("/api/fleet/sessions");
   });
 
-  it("explains the block once and says that the lists of models do not cause it", () => {
-    const explainer = "Списки «Разрешённые модели» и «Запрещённые модели» не управляют блокировкой запроса модели.";
+  it("explains the block once and says what the lists of models do", () => {
+    const explainer = "Списки моделей — это фильтр проекта.";
     expect(page.split(explainer)).toHaveLength(2);
     expect(page).toContain("enforceRestrictedModelRequest");
     expect(page).toContain("integrations/opencode/agent-herder-autopilot.js");
