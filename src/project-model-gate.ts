@@ -36,8 +36,8 @@ export {
   normalizeModelEntry,
   type ProjectModelPolicy,
   type ProjectModelRoute,
-  type ProjectRouteMatch,
   type ProjectRouteMatchKind,
+  type ProjectRouteResolution,
 } from "./project-model-policy.js";
 
 /**

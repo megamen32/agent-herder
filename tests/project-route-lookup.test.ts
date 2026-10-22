@@ -16,6 +16,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   findProjectRoute,
   findProjectRouteKey,
+  findProjectRouteMatch,
   resolveProjectLaunch,
   type AutomationLaunchPolicy,
 } from "../src/automation-launch-policy.js";
@@ -198,9 +199,167 @@ describe("the shared route lookup", () => {
   it("reports how a directory matched the route", () => {
     const root = projectRoot();
     const routes = { [`${root}/app`]: { harnesses: ["opencode"] as const, aliases: ["app-card"] } };
-    expect(findProjectModelRoute(routes, `${root}/app`)?.kind).toBe("exact");
-    expect(findProjectModelRoute(routes, `${root}/APP`)?.kind).toBe("case");
-    expect(findProjectModelRoute(routes, "app-card")?.kind).toBe("alias");
-    expect(findProjectModelRoute(routes, `${root}/app/src`)?.kind).toBe("nested");
+    expect(findProjectModelRoute(routes, `${root}/app`)?.matchKind).toBe("exact");
+    expect(findProjectModelRoute(routes, `${root}/APP`)?.matchKind).toBe("case");
+    expect(findProjectModelRoute(routes, "app-card")?.matchKind).toBe("alias");
+    expect(findProjectModelRoute(routes, `${root}/app/src`)?.matchKind).toBe("nested");
+  });
+
+  it("names the route key of every kind of match", () => {
+    const root = projectRoot();
+    const routes = { [`${root}/app`]: { harnesses: ["opencode"] as const, aliases: ["app-card"] } };
+    expect(findProjectModelRoute(routes, `${root}/app`)?.routeKey).toBe(`${root}/app`);
+    expect(findProjectModelRoute(routes, `${root}/APP`)?.routeKey).toBe(`${root}/app`);
+    expect(findProjectModelRoute(routes, "app-card")?.routeKey).toBe(`${root}/app`);
+    expect(findProjectModelRoute(routes, `${root}/app/src`)?.routeKey).toBe(`${root}/app`);
+  });
+});
+
+describe("the boundary of a route root", () => {
+  it("does not capture a folder that only starts with the same characters", () => {
+    const root = projectRoot();
+    const routes = { [`${root}/app/deep`]: { harnesses: ["opencode"] as const } };
+    expect(findProjectModelRoute(routes, `${root}/app/deep/child`)?.matchKind).toBe("nested");
+    expect(findProjectModelRoute(routes, `${root}/app/deepx`)).toBeUndefined();
+    expect(findProjectModelRoute(routes, `${root}/app/deep-backup`)).toBeUndefined();
+  });
+
+  it("resolves an alias to the route and never uses it as a root", () => {
+    const root = projectRoot();
+    const routes = { [`${root}/app`]: { harnesses: ["opencode"] as const, aliases: ["app-card"] } };
+    expect(findProjectModelRoute(routes, "app-card")?.routeKey).toBe(`${root}/app`);
+    expect(findProjectModelRoute(routes, "app-card")?.matchKind).toBe("alias");
+    expect(findProjectModelRoute(routes, "app-card/child")).toBeUndefined();
+  });
+});
+
+describe("the determinism of the lookup", () => {
+  it("breaks a tie between two roots of the same length by the smaller root", () => {
+    const root = projectRoot();
+    // The same length, inserted in reverse alphabetical order.
+    const routes = {
+      [`${root}/app/sub`]: { harnesses: ["opencode"] as const },
+      [`${root}/app/SUB`]: { harnesses: ["opencode"] as const },
+    };
+    expect(findProjectModelRoute(routes, `${root}/app/Sub`)?.matchKind).toBe("case");
+    expect(findProjectModelRoute(routes, `${root}/app/Sub`)?.routeKey).toBe(`${root}/app/SUB`);
+  });
+
+  it("resolves the same route whatever the order of the keys of the document", () => {
+    const root = projectRoot();
+    const first = {
+      [`${root}/app/sub`]: { harnesses: ["opencode"] as const, aliases: ["shared-card"] },
+      [`${root}/app/SUB`]: { harnesses: ["opencode"] as const, aliases: ["shared-card"] },
+      [`${root}/app/deep`]: { harnesses: ["opencode"] as const },
+    };
+    const second = {
+      [`${root}/app/deep`]: { harnesses: ["opencode"] as const },
+      [`${root}/app/SUB`]: { harnesses: ["opencode"] as const, aliases: ["shared-card"] },
+      [`${root}/app/sub`]: { harnesses: ["opencode"] as const, aliases: ["shared-card"] },
+    };
+    for (const directory of [`${root}/app/Sub`, `${root}/app/sub/src`, `${root}/app/deep/src`, "shared-card"]) {
+      expect(findProjectModelRoute(second, directory)?.routeKey)
+        .toBe(findProjectModelRoute(first, directory)?.routeKey);
+    }
+    expect(findProjectModelRoute(first, "shared-card")?.routeKey).toBe(`${root}/app/SUB`);
+    expect(findProjectModelRoute(second, "shared-card")?.routeKey).toBe(`${root}/app/SUB`);
+  });
+
+  it("gives the longer root the directory it contains", () => {
+    const root = projectRoot();
+    const routes = {
+      [`${root}/app`]: { harnesses: ["opencode"] as const },
+      [`${root}/app/sub`]: { harnesses: ["opencode"] as const },
+    };
+    expect(findProjectModelRoute(routes, `${root}/app/sub/src`)?.routeKey).toBe(`${root}/app/sub`);
+    expect(findProjectModelRoute(routes, `${root}/app/src`)?.routeKey).toBe(`${root}/app`);
+  });
+});
+
+describe("the matrix of nested roots", () => {
+  it("gives the deeper route to the deeper folder", () => {
+    const root = projectRoot();
+    const parent = `${root}/a`;
+    const child = `${root}/a/b`;
+    const routes = {
+      [parent]: { harnesses: ["opencode"] as const },
+      [child]: { harnesses: ["opencode"] as const },
+    };
+    expect(findProjectModelRoute(routes, child)?.routeKey).toBe(child);
+    expect(findProjectModelRoute(routes, `${child}/src`)?.routeKey).toBe(child);
+    expect(findProjectModelRoute(routes, `${parent}/src`)?.routeKey).toBe(parent);
+  });
+
+  it("keeps a sibling of the deeper route on the parent route", () => {
+    const root = projectRoot();
+    const parent = `${root}/a`;
+    const child = `${root}/a/b`;
+    const routes = {
+      [parent]: { harnesses: ["opencode"] as const },
+      [child]: { harnesses: ["opencode"] as const },
+    };
+    // /a/bc and /a/b-backup are children of /a, not of /a/b.
+    expect(findProjectModelRoute(routes, `${parent}/bc`)?.routeKey).toBe(parent);
+    expect(findProjectModelRoute(routes, `${parent}/b-backup`)?.routeKey).toBe(parent);
+  });
+
+  it("does not let the deeper route capture its siblings", () => {
+    const root = projectRoot();
+    const parent = `${root}/a`;
+    const child = `${root}/a/b`;
+    const routes = { [child]: { harnesses: ["opencode"] as const } };
+    expect(findProjectModelRoute(routes, `${parent}/bc`)).toBeUndefined();
+    expect(findProjectModelRoute(routes, `${parent}/b-backup`)).toBeUndefined();
+    expect(findProjectModelRoute(routes, `${child}/src`)?.routeKey).toBe(child);
+  });
+});
+
+describe("the gate and the launch of one directory", () => {
+  it("find the same route, also inside a routed project", async () => {
+    const root = projectRoot();
+    const policy = policyWith({
+      [`${root}/app`]: { harnesses: ["opencode"], deniedModels: ["denied-model"], aliases: ["app-card"] },
+    });
+    for (const directory of [`${root}/app`, `${root}/app/src`, `${root}/app/src/deep`]) {
+      const launchRoute = findProjectRoute(policy, directory);
+      expect(findModelPolicyRouteForPath(policy.projectRoutes, directory)).toBe(launchRoute);
+      expect(findModelPolicyRoute(policy.projectRoutes, directory)).toBe(launchRoute);
+      expect(findProjectRouteKey(policy, directory)).toBe(`${root}/app`);
+      expect(findProjectRouteMatch(policy, directory)?.routeKey).toBe(`${root}/app`);
+    }
+    expect(findProjectRouteMatch(policy, `${root}/app`)?.matchKind).toBe("exact");
+    expect(findProjectRouteMatch(policy, `${root}/app/src`)?.matchKind).toBe("nested");
+  });
+
+  it("refuse the same model at the tool boundary and at the launch", async () => {
+    const root = projectRoot();
+    const policy = policyWith({
+      [`${root}/app`]: {
+        harnesses: ["opencode"],
+        models: { opencode: "denied-model" },
+        deniedModels: ["denied-model"],
+      },
+    });
+    const directory = `${root}/app/src`;
+    expect(resolveProjectLaunch(policy, { project: directory }))
+      .toEqual({ kind: "exhausted", reason: "model_not_permitted" });
+    await expect(assertModelAllowedForDirectoryWithPolicy(async () => policy, directory, "denied-model"))
+      .rejects.toThrow(/model_not_permitted_for_project/u);
+  });
+});
+
+describe("a project without a route", () => {
+  it("keeps the global policy of the harness", async () => {
+    const root = projectRoot();
+    const policy = policyWith({ [`${root}/other`]: { harnesses: ["opencode"] } });
+    const directory = `${root}/app/src`;
+    expect(resolveProjectLaunch(policy, { project: directory })).toEqual({ kind: "unconfigured" });
+    expect(findProjectRoute(policy, directory)).toBeUndefined();
+    expect(findProjectRouteKey(policy, directory)).toBeUndefined();
+    expect(findProjectRouteMatch(policy, directory)).toBeUndefined();
+    expect(modelPermittedForProject(policy, directory, "any-model")).toBe(true);
+    expect(effectiveModelForProject(policy, directory, "opencode")).toBe(globalModel);
+    await expect(assertModelAllowedForDirectoryWithPolicy(async () => policy, directory, "any-model"))
+      .resolves.toBeUndefined();
   });
 });

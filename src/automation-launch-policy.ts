@@ -10,6 +10,7 @@ import {
   findProjectModelRoute,
   modelPermittedForRoute,
   validateProjectModelLists,
+  type ProjectRouteResolution,
 } from "./project-model-policy.js";
 
 export { canonicalProjectKey } from "./project-model-policy.js";
@@ -168,7 +169,22 @@ export function findProjectRouteKey(
   policy: AutomationLaunchPolicy,
   project: string,
 ): string | undefined {
-  return findProjectModelRoute(policy.projectRoutes, project)?.key;
+  return findProjectModelRoute(policy.projectRoutes, project)?.routeKey;
+}
+
+/**
+ * The route that governs a project, with the key it is configured under and
+ * the kind of the match.
+ *
+ * The kind tells the caller how the project was found: `exact`, `case` or
+ * `alias` name the project itself, `nested` means the project lies inside the
+ * root of the route and that the root is the working folder of the launch.
+ */
+export function findProjectRouteMatch(
+  policy: AutomationLaunchPolicy,
+  project: string,
+): ProjectRouteResolution<ProjectLaunchRoute> | undefined {
+  return findProjectModelRoute(policy.projectRoutes, project);
 }
 
 /** Historical operator enrollment has stricter scope than ordinary launch routing. */
