@@ -91,6 +91,7 @@ FOREIGN_ENV_FILES = (
     "%h/.config/agent-herder/autopilot.env",
     "%h/.config/agent-herder/noticeplace.env",
     "%h/.config/agent-resume/hermes.env",
+    "%h/.config/agent-resume/hermes.env",
     "%h/.config/minimax/env",
     "/etc/omniroute.env",
     "/etc/notification-center.env",
@@ -150,12 +151,24 @@ def write_file_atomically(path: Path, text: str, mode: int) -> None:
         raise
 
 
-def collect_moves(env_file: Path) -> tuple[dict[str, str], list[str], list[str]]:
-    """The values to move, the names moved and the names already in place."""
+def transfer_keys() -> set[str]:
+    """The names of the keys the script moves."""
+    return {key for _source, keys in SOURCES for key in keys}
+
+
+def collect_moves(env_file: Path, force: bool = False) -> tuple[dict[str, str], list[str], list[str], list[str]]:
+    """The values to move, the names moved, the names already in place and the conflicts.
+
+    A key that is already in the file of the product with a different value is
+    never overwritten silently: a rotated value would go back to the stale
+    source of another product. The conflict is reported by its name, and only
+    the explicit `--force` overwrites it.
+    """
     current = parse_env_file(env_file.read_text(encoding="utf-8")) if env_file.exists() else {}
     moved: dict[str, str] = {}
     names: list[str] = []
     already: list[str] = []
+    conflicts: list[str] = []
     for source, keys in SOURCES:
         if not source.exists():
             continue
@@ -169,23 +182,34 @@ def collect_moves(env_file: Path) -> tuple[dict[str, str], list[str], list[str]]
             if current.get(key) == value:
                 already.append(key)
                 continue
+            if current.get(key) and not force:
+                conflicts.append(key)
+                continue
             moved[key] = value
             names.append(key)
-    return moved, names, already
+    return moved, names, already, conflicts
 
 
 def collect_optional_present() -> list[str]:
-    """The optional keys that have a value in a file of another product.
+    """The keys that have a value in a file of another product and are not moved.
 
-    The names only: the values of the other products are never printed.
+    The scan is general: every key of every source file that is not in the
+    list of the transfer is named here, so that a value can never be swallowed
+    in silence. The names only: the values of the other products are never
+    printed.
     """
     present: list[str] = []
+    transferring = transfer_keys()
     for source, _keys in SOURCES:
         if not source.exists():
             continue
         values = parse_env_file(source.read_text(encoding="utf-8"))
-        for key in OPTIONAL_NOT_TRANSFERRED:
-            if values.get(key) and key not in present:
+        for key, value in values.items():
+            if not value:
+                continue
+            if key in transferring:
+                continue
+            if key not in present:
                 present.append(key)
     return present
 
@@ -222,6 +246,11 @@ def clean_unit(text: str) -> tuple[str, list[str]]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-n", "--dry-run", action="store_true", help="only report what would be done")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite a value of the product that differs from the source (never by default)",
+    )
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE, help="the file of the product")
     parser.add_argument("--unit-file", type=Path, default=DEFAULT_UNIT_FILE, help="the unit of the herder")
     parser.add_argument(
@@ -236,7 +265,7 @@ def main() -> int:
     unit_file = arguments.unit_file
     dropin_dir = arguments.unit_dropin_dir or unit_file.with_name(f"{unit_file.name}.d")
 
-    moved, names, already = collect_moves(env_file)
+    moved, names, already, conflicts = collect_moves(env_file, arguments.force)
     removed: list[tuple[str, str]] = []
 
     # The unit of the herder and its drop-ins: the files of the other products
@@ -246,6 +275,12 @@ def main() -> int:
     if dropin_dir.exists():
         targets.extend(sorted(path for path in dropin_dir.glob("*.conf") if path.is_file()))
 
+    if conflicts:
+        print("Расхождение значений: перенос остановлен, значения не перезаписаны.")
+        for key in conflicts:
+            print(f"  {key}")
+        print("Перезапись — только по явному флагу --force.")
+
     if arguments.dry_run:
         print("Сухой запуск: ничего не записано.")
         for path in targets:
@@ -254,7 +289,11 @@ def main() -> int:
             _, entries = clean_unit(path.read_text(encoding="utf-8"))
             removed.extend((path.name, entry) for entry in entries)
     else:
-        if moved:
+        if conflicts:
+            # Fail closed: a conflict stops the whole transfer. Nothing is
+            # written until the owner decides about the value that differs.
+            print("Перенос не выполнен: в файле продукта есть значения, которые отличаются от источника.")
+        elif moved:
             current = parse_env_file(env_file.read_text(encoding="utf-8")) if env_file.exists() else {}
             current.update(moved)
             write_file_atomically(env_file, render_env_file(current), 0o600)
@@ -288,6 +327,8 @@ def main() -> int:
     print(f"Файл продукта: {env_file}")
     print(f"Юнит: {unit_file}")
     print("Осталось за рантайм-владельцем: daemon-reload и рестарт сервиса.")
+    if conflicts:
+        return 1
     return 0
 
 
