@@ -60,7 +60,15 @@ export interface NamedSessionResult {
   nonRetryable?: boolean;
   pending?: boolean;
   /** Definite provider rejection observed before session creation/input admission. */
-  failureCode?: "quota_exhausted" | "automation_forbidden_for_scope";
+  failureCode?: "quota_exhausted" | "automation_disabled";
+  /**
+   * The area of the refusal, as a structured field beside the code.
+   *
+   * The area never travels inside the wording alone: the code says that the
+   * automation is off, and this field says where. The catch-all scope keeps
+   * its own literal, so a reader tells the whole contour from one project.
+   */
+  routingReasonDetail?: string;
   model?: string;
   requestedModel?: string;
   fallbackFrom?: string;
@@ -102,7 +110,9 @@ async function automationDisarmRefusal(
  *
  * The refusal carries the stable code of the lever next to the human text, so
  * a caller can tell "the owner forbids this scope" from "a person stopped
- * this chat" without reading the text. A forbidden launch is not a delivery
+ * this chat" without reading the text. The area of the refusal travels in
+ * its own field beside the code, so nobody has to parse the wording to learn
+ * where the owner put the lever. A forbidden launch is not a delivery
  * failure: a retry would be refused the same way, so it is not retryable.
  */
 function disarmFailed(
@@ -111,6 +121,8 @@ function disarmFailed(
 ): NamedSessionResult {
   return failed(request, decision.reason ?? AUTOMATION_DISARMED_MESSAGE, "not_attempted", {
     failureCode: AUTOMATION_FORBIDDEN_CODE,
+    // The area is a field of its own, next to the code and not inside the text.
+    ...(decision.routingReasonDetail ? { routingReasonDetail: decision.routingReasonDetail } : {}),
     nonRetryable: true,
   });
 }

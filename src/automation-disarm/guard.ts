@@ -9,8 +9,13 @@ import { ALL_SCOPES, canonicalScopePath, scopeCovers, scopeSpecificity, workKeyD
  * that a person stopped this chat. A caller may retry a failed delivery, but
  * a retry of a forbidden launch is pointless: only an explicit owner action
  * lifts it.
+ *
+ * The literal is the one the whole cluster agreed on: `automation_disabled`,
+ * the same class the health contour already names in its set of refusal
+ * codes. One line carries one value, so a third spelling of the same refusal
+ * is not introduced.
  */
-export const AUTOMATION_FORBIDDEN_CODE = "automation_forbidden_for_scope";
+export const AUTOMATION_FORBIDDEN_CODE = "automation_disabled";
 
 /** The reason an automatic run is refused because the whole lever is on. */
 export const AUTOMATION_DISARMED_MESSAGE =
@@ -43,6 +48,15 @@ export interface AutomationDisarmDecision {
   workKey?: string;
   /** The scope that refused the run. */
   scope?: string;
+  /**
+   * The area of the refusal, as a structured value beside the code.
+   *
+   * The area is never carried by the wording alone: the code says that the
+   * automation is off, and this field says where. The catch-all scope keeps
+   * its own literal, so a reader tells the whole contour from one project
+   * without reading the wording.
+   */
+  routingReasonDetail?: string;
 }
 
 /**
@@ -121,7 +135,7 @@ async function decisionOf(
 }
 
 /** The refusal of the records that forbid a whole scope, without a work key. */
-function refuseWithoutWorkKey(state: AutomationDisarmDocument): AutomationDisarmDecision {
+async function refuseWithoutWorkKey(state: AutomationDisarmDocument): Promise<AutomationDisarmDecision> {
   const broad = state.records
     .filter((record) => record.scope === ALL_SCOPES && !record.workKeys?.length)
     .sort((left, right) => scopeSpecificity(right.scope, false) - scopeSpecificity(left.scope, false))[0];
@@ -162,11 +176,11 @@ async function canonicalDirectory(workKey: string): Promise<string | undefined> 
 }
 
 /** The refusal of one record, in words and in code. */
-function refusal(
+async function refusal(
   record: AutomationDisarmRecord,
   workKey: string | undefined,
   namedWork: string | undefined,
-): AutomationDisarmDecision {
+): Promise<AutomationDisarmDecision> {
   const message = namedWork
     ? AUTOMATION_WORK_DISARMED_MESSAGE
     : record.scope === ALL_SCOPES
@@ -179,5 +193,20 @@ function refusal(
     reason,
     ...(workKey ? { workKey } : {}),
     scope: record.scope,
+    // The area travels beside the code, never inside the wording.
+    routingReasonDetail: await scopeDetail(record),
   };
+}
+
+/**
+ * The area of one refusal, in its canonical form.
+ *
+ * The catch-all scope is the whole contour and keeps its own literal, so a
+ * reader of the field tells "every automatic launch" from "this project"
+ * without reading the wording. A path scope is canonicalized here, so the
+ * field names one area in one form whatever the state file holds.
+ */
+async function scopeDetail(record: AutomationDisarmRecord): Promise<string> {
+  if (record.scope === ALL_SCOPES) return ALL_SCOPES;
+  return canonicalScopePath(record.scope);
 }

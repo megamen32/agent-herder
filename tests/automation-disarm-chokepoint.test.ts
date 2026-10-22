@@ -101,6 +101,9 @@ describe("owner-level automation lever: the launch chokepoint", () => {
     expect(automatic.ok).toBe(false);
     expect(automatic.delivery).toBe("not_attempted");
     expect(automatic.error).toContain("запрещён владельцем");
+    // The whole contour names itself in the structured field beside the code.
+    expect(automatic.failureCode).toBe("automation_disabled");
+    expect(automatic.routingReasonDetail).toBe("*");
     expect(creates()).toBe(2);
   });
 

@@ -80,7 +80,10 @@ describe("the owner lever: one record per scope", () => {
     await durable.applyRecord({ source: "owner", scope: first, forbidden: true });
     const state = await durable.read();
     const scopes = state.records.map((record) => record.scope);
-    expect(scopes).toEqual([...scopes].sort());
+    // The implementation orders the scopes with localeCompare, so the
+    // expectation uses the same collation: the default sort compares the
+    // random part of a temporary path differently and would flake.
+    expect(scopes).toEqual([...scopes].sort((left, right) => left.localeCompare(right)));
     expect(scopes).toHaveLength(2);
   });
 
@@ -238,11 +241,15 @@ describe("the owner lever: the machine-readable refusal", () => {
     const decision = await automationDisarmDecision(durable, [sessionWorkKey("opencode", "card", area)], "automation");
     expect(decision.allowed).toBe(false);
     expect(decision.code).toBe(AUTOMATION_FORBIDDEN_CODE);
-    expect(decision.code).toBe("automation_forbidden_for_scope");
+    expect(decision.code).toBe("automation_disabled");
     // The human stop says something else entirely: this chat was stopped by
     // a person, that lever was lifted by the owner for a whole area.
     expect(decision.reason).not.toBe(HUMAN_STOP_MESSAGE);
     expect(decision.reason).toContain("запрещён владельцем");
+    // The area travels beside the code as a field of its own.
+    expect(decision.routingReasonDetail).toBe(area);
+    // The wording is not the carrier of the area.
+    expect(decision.reason).not.toContain(area);
   });
 
   it("gives every refusal of the lever the same code", async () => {
@@ -253,6 +260,31 @@ describe("the owner lever: the machine-readable refusal", () => {
     const named = await automationDisarmDecision(durable, [sessionWorkKey("opencode", "card", area)], "automation");
     expect(catchAll.code).toBe(AUTOMATION_FORBIDDEN_CODE);
     expect(named.code).toBe(AUTOMATION_FORBIDDEN_CODE);
+  });
+
+  it("names the area of every refusal as a structured value", async () => {
+    const area = await workspace();
+    const project = await workspace("sub");
+    const named = sessionWorkKey("opencode", "card", project);
+
+    // The whole contour keeps the literal of the catch-all scope.
+    const whole = await store();
+    await whole.applyRecord({ source: "owner", scope: "*", forbidden: true });
+    const everywhere = await automationDisarmDecision(whole, [sessionWorkKey("opencode", "card", area)], "automation");
+    expect(everywhere.routingReasonDetail).toBe("*");
+
+    // A project area is named by its canonical path.
+    const byProject = await store();
+    await byProject.applyRecord({ source: "owner", scope: project, forbidden: true });
+    const projectArea = await automationDisarmDecision(byProject, [named], "automation");
+    expect(projectArea.routingReasonDetail).toBe(project);
+
+    // A record with named works names the same area beside the code.
+    const byWork = await store();
+    await byWork.applyRecord({ source: "owner", scope: project, forbidden: true, workKeys: [named] });
+    const workArea = await automationDisarmDecision(byWork, [named], "automation");
+    expect(workArea.routingReasonDetail).toBe(project);
+    expect(workArea.workKey).toBe(named);
   });
 });
 

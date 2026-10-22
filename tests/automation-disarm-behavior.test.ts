@@ -88,7 +88,9 @@ describe("the owner lever: what a prohibition does", () => {
     expect(automatic.delivery).toBe("not_attempted");
     // The refusal carries the stable code next to the human text.
     expect(automatic.failureCode).toBe(AUTOMATION_FORBIDDEN_CODE);
-    expect(automatic.failureCode).toBe("automation_forbidden_for_scope");
+    expect(automatic.failureCode).toBe("automation_disabled");
+    // The area travels in its own field, beside the code.
+    expect(automatic.routingReasonDetail).toBe(area);
     expect(automatic.error).toContain("запрещён владельцем");
     expect(automatic.error).not.toBe(HUMAN_STOP_MESSAGE);
     // A retry of a forbidden launch is pointless, so it is not retryable.
@@ -200,9 +202,17 @@ describe("the owner lever: the code in the answer of a launch", () => {
     const raw = await handleNewOrResume(adapters, {
       harness: "opencode", name: "auto-card", cwd: area, message: "работа",
     });
-    const body = JSON.parse(raw) as { ok: boolean; failureCode?: string; error?: string; nonRetryable?: boolean };
+    const body = JSON.parse(raw) as {
+      ok: boolean; failureCode?: string; routingReasonDetail?: string; error?: string; nonRetryable?: boolean;
+    };
     expect(body.ok).toBe(false);
     expect(body.failureCode).toBe(AUTOMATION_FORBIDDEN_CODE);
+    expect(body.failureCode).toBe("automation_disabled");
+    // The area travels in its own field, beside the code.
+    expect(body.routingReasonDetail).toBe(area);
+    expect(body.routingReasonDetail).toBeTruthy();
+    // The wording is not the carrier of the area.
+    expect(body.error).not.toContain(area);
     expect(body.error).toContain("запрещён владельцем");
     expect(body.nonRetryable).toBe(true);
   });
@@ -226,9 +236,17 @@ describe("the owner lever: the code in the answer of a launch", () => {
       body: JSON.stringify({ harness: "opencode", name: "auto-card", cwd: area, message: "работа" }),
     });
     expect(response.status).not.toBe(200);
-    const body = await response.json() as { ok: boolean; failureCode?: string; error?: string };
+    const body = await response.json() as {
+      ok: boolean; failureCode?: string; routingReasonDetail?: string; error?: string;
+    };
     expect(body.ok).toBe(false);
     expect(body.failureCode).toBe(AUTOMATION_FORBIDDEN_CODE);
+    expect(body.failureCode).toBe("automation_disabled");
+    // The area travels in its own field, beside the code.
+    expect(body.routingReasonDetail).toBe(area);
+    expect(body.routingReasonDetail).toBeTruthy();
+    // The wording is not the carrier of the area.
+    expect(body.error).not.toContain(area);
     expect(body.error).toContain("запрещён владельцем");
   });
 });
