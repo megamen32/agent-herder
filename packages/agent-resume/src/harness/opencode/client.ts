@@ -69,7 +69,7 @@ interface OpenCodePermissionRequest {
   message?: string;
 }
 
-interface OpenCodeModelCatalogEntry {
+export interface OpenCodeModelCatalogEntry {
   id?: string;
   modelID?: string;
   providerID?: string;
@@ -403,6 +403,23 @@ export function openCodeConnectedModels(catalog: OpenCodeProviderCatalog): strin
     for (const id of ids) if (id) models.push(`${providerId}/${id}`);
   }
   return [...new Set(models)];
+}
+
+/**
+ * Normalize the live catalog into complete entries. An entry without a
+ * provider or without a key names no model OpenCode can select, so it is
+ * dropped instead of being reported as an available model.
+ */
+function normalizeModelCatalogEntries(entries: OpenCodeModelCatalogEntry[]): OpenCodeModelCatalogEntry[] {
+  const normalized: OpenCodeModelCatalogEntry[] = [];
+  for (const entry of entries ?? []) {
+    const provider = typeof entry?.providerID === "string" ? entry.providerID.trim() : "";
+    const id = typeof entry?.id === "string" ? entry.id.trim() : "";
+    if (!provider || !id) continue;
+    const modelID = typeof entry?.modelID === "string" && entry.modelID.trim() ? entry.modelID.trim() : id;
+    normalized.push({ providerID: provider, id, modelID });
+  }
+  return normalized;
 }
 
 export function openCodeModelCatalogEntries(entries: OpenCodeModelCatalogEntry[]): string[] {
@@ -947,6 +964,36 @@ export class OpenCodeClient implements HarnessClient {
       if (config.model) return [config.model];
     } catch { /* an unreadable catalog must not fabricate availability */ }
     return [...defaultModels];
+  }
+
+  /**
+   * The live selectable model catalog with both spellings of every entry: the
+   * key OpenCode accepts (`id`) and the gateway id behind it (`modelID`).
+   * `listModels()` collapses the two into the gateway spelling only, so a
+   * caller that must hand OpenCode an id it can actually dispatch needs both.
+   *
+   * Unlike `listModels()` this never falls back to a static default list: an
+   * unreadable catalog throws, so the caller can fail closed instead of
+   * guessing a dispatchable id.
+   */
+  async listModelCatalogEntries(): Promise<OpenCodeModelCatalogEntry[]> {
+    await this.probeProtocol();
+    if (this.isV2) {
+      const entries = await this.fetchJson<OpenCodeModelCatalogEntry[]>(this.api("/model"));
+      return normalizeModelCatalogEntries(entries);
+    }
+    // Legacy v1 catalog: provider/model keys only, no separate gateway spelling.
+    const catalog = await this.fetchJson<OpenCodeProviderCatalog>(this.api("/provider"));
+    const entries: OpenCodeModelCatalogEntry[] = [];
+    for (const provider of catalog.all ?? []) {
+      const providerId = typeof provider?.id === "string" ? provider.id.trim() : "";
+      if (!providerId) continue;
+      const ids = Array.isArray(provider.models)
+        ? provider.models.map((model) => typeof model?.id === "string" ? model.id.trim() : "")
+        : Object.keys(provider.models ?? {});
+      for (const id of ids) if (id) entries.push({ providerID: providerId, id, modelID: id });
+    }
+    return entries;
   }
 
   subscribe(

@@ -7,6 +7,7 @@ import {
   parseOpenCodeServerCommand,
   unwrapEnvelope,
   type OpenCodeEvent,
+  type OpenCodeModelCatalogEntry,
 } from "agent-resume-mcp";
 import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, HarnessEvent, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SendMessageResult, SetPermissionsOptions, SessionMessagePart, SessionMessageView, localSessionHostId } from "../types/index.js";
 import { randomUUID } from "node:crypto";
@@ -14,7 +15,7 @@ import { throwIfAborted } from "../abort-utils.js";
 import { terminalQuotaFailure } from "./quota-failure.js";
 
 export { normalizeOpenCodeEvent, openCodeConnectedModels, openCodeMessageParts, openCodeModelCatalogEntries, parseOpenCodeServerCommand, unwrapEnvelope } from "agent-resume-mcp";
-export type { OpenCodeEvent } from "agent-resume-mcp";
+export type { OpenCodeEvent, OpenCodeModelCatalogEntry } from "agent-resume-mcp";
 
 export interface OpenCodeProviderLeaf {
   providerId: string;
@@ -137,6 +138,105 @@ function aliasesNamed(aliases: Record<string, string>, modelIds: readonly string
 }
 
 /**
+ * One entry of the live OpenCode model catalog.
+ *
+ * `id` is the key OpenCode accepts (`omniroute/minimax/MiniMax-M3.1-Flash`),
+ * `modelId` is the gateway id behind it (`minimax-combo-m3.1`). The route-proof
+ * gate verifies the gateway spelling, OpenCode dispatches the key.
+ */
+export interface OpenCodeCatalogModel {
+  providerId: string;
+  id: string;
+  modelId: string;
+}
+
+export interface OpenCodeDispatchableModel {
+  /** The id the caller asked for, e.g. `omniroute/minimax-combo-m3.1`. */
+  requested: string;
+  /** The id OpenCode can dispatch, e.g. `omniroute/minimax/MiniMax-M3.1-Flash`. */
+  dispatchable: string;
+  /** The native route the request names. */
+  nativeRoute: string;
+  /**
+   * `catalog-key` when the request was already a catalog key, `native-route`
+   * when the native id was translated to the key that serves it,
+   * `unqualified` when the request named no provider at all, and `unverified`
+   * when the catalog could not be read, so no translation was possible.
+   */
+  kind: "catalog-key" | "native-route" | "unqualified" | "unverified";
+  /** Every catalog key that serves the native id, sorted. */
+  candidates: string[];
+}
+
+export interface OpenCodeDispatchableModelFailure {
+  ok: false;
+  requested: string;
+  reason: string;
+}
+
+export type OpenCodeDispatchableModelResult =
+  | ({ ok: true } & OpenCodeDispatchableModel)
+  | OpenCodeDispatchableModelFailure;
+
+/** Where the model catalog comes from. Named in every fail-closed reason. */
+export const OPENCODE_MODEL_CATALOG_SOURCE = "the live OpenCode model catalog (GET /api/model)";
+
+/**
+ * Translate a model id into one OpenCode can actually dispatch.
+ *
+ * Herder, the launch policy and the Notice Place centre all name the route
+ * form `omniroute/<gateway-id>`, but OpenCode only accepts the key from its
+ * own catalog. An id that is already a catalog key passes through unchanged; a
+ * native id is translated to the key that carries it. An id that matches no
+ * catalog entry fails closed here, so the request never reaches OpenCode to
+ * fail with an opaque "Model unavailable".
+ */
+export function resolveOpenCodeDispatchableModel(
+  catalog: ReadonlyArray<OpenCodeCatalogModel>,
+  requested: string,
+): OpenCodeDispatchableModelResult {
+  const wanted = typeof requested === "string" ? requested.trim() : "";
+  const separator = wanted.indexOf("/");
+  if (separator <= 0 || separator === wanted.length - 1) {
+    // No provider at all: not a route, and not ours to translate. The id is
+    // passed on unchanged, exactly as before.
+    return {
+      ok: true,
+      requested,
+      dispatchable: wanted,
+      nativeRoute: wanted,
+      kind: "unqualified",
+      candidates: [],
+    };
+  }
+  const providerId = wanted.slice(0, separator);
+  const modelId = wanted.slice(separator + 1);
+  const nativeRoute = `${providerId}/${modelId}`;
+  const entries = (catalog ?? []).filter((entry) => entry && entry.providerId === providerId);
+  const exact = entries.filter((entry) => entry.id === modelId).map((entry) => entry.id).sort();
+  if (exact.length > 0) {
+    return { ok: true, requested, dispatchable: wanted, nativeRoute, kind: "catalog-key", candidates: exact };
+  }
+  const native = entries.filter((entry) => entry.modelId === modelId).sort((a, b) => a.id.localeCompare(b.id));
+  if (native.length === 0) {
+    return {
+      ok: false,
+      requested,
+      reason: `OpenCode model "${nativeRoute}" is not dispatchable: ${OPENCODE_MODEL_CATALOG_SOURCE} has no entry for native id "${modelId}" under provider "${providerId}"`,
+    };
+  }
+  const chosen = native[0]!;
+  return {
+    ok: true,
+    requested,
+    dispatchable: `${providerId}/${chosen.id}`,
+    nativeRoute,
+    kind: "native-route",
+    candidates: native.map((entry) => entry.id),
+  };
+}
+
+/**
  * Agent Herder's OpenCode adapter: orchestration on top of the shared core.
  *
  * The protocol — OpenCode 2's `/api` surface, its `{ data }` envelopes, session
@@ -253,11 +353,53 @@ export class OpenCodeAdapter implements HarnessAdapter {
     return result;
   }
 
+  /**
+   * The model id OpenCode can dispatch, or a bounded failure.
+   *
+   * The route-proof gate verifies the native route (`omniroute/<native-id>`),
+   * while OpenCode only accepts the key from its own live catalog
+   * (`omniroute/minimax/MiniMax-M3.1-Flash`). Handing OpenCode the native id
+   * fails there with an opaque "Model unavailable", so the route spelling is
+   * translated here, on the way to OpenCode. The gate keeps proving the
+   * native route, unchanged.
+   */
+  async resolveDispatchableModel(requested: string): Promise<OpenCodeDispatchableModelResult> {
+    let catalog: OpenCodeCatalogModel[];
+    try {
+      const entries = await this.client.listModelCatalogEntries();
+      catalog = entries.map((entry) => ({
+        providerId: entry.providerID ?? "",
+        id: entry.id ?? "",
+        modelId: entry.modelID ?? entry.id ?? "",
+      }));
+    } catch (error) {
+      // The catalog could not be read, so no translation is possible. The id
+      // is passed on unchanged, exactly as before this translation existed,
+      // and the gap is named instead of being hidden.
+      const unchanged = requested.trim();
+      console.warn(`[agent-herder-opencode] model id "${unchanged}" was not translated: ${OPENCODE_MODEL_CATALOG_SOURCE} is unreadable (${(error as Error).message}); the id was sent to OpenCode unchanged`);
+      return { ok: true, requested, dispatchable: unchanged, nativeRoute: unchanged, kind: "unverified", candidates: [] };
+    }
+    const resolution = resolveOpenCodeDispatchableModel(catalog, requested);
+    if (resolution.ok && resolution.kind === "native-route" && resolution.candidates.length > 1) {
+      // Several catalog keys serve the same native id. The pick is
+      // deterministic (sorted) and named, never a silent guess.
+      console.warn(`[agent-herder-opencode] model id "${requested}" is served by ${resolution.candidates.length} catalog keys (${resolution.candidates.join(", ")}); chose "${resolution.dispatchable}"`);
+    }
+    return resolution;
+  }
+
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
+    let model: string | undefined;
+    if (options.model) {
+      const resolution = await this.resolveDispatchableModel(options.model);
+      if (!resolution.ok) throw new Error(resolution.reason);
+      model = resolution.dispatchable;
+    }
     const created = await this.client.createSession({
       title: options.name,
       cwd: options.cwd,
-      ...(options.model ? { model: options.model } : {}),
+      ...(model ? { model } : {}),
       ...(options.fullAccess ? { fullAccess: true } : {}),
     });
     // A session Herder created knows who it is from its first turn: otherwise
@@ -489,7 +631,9 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 
   async changeModel(sessionId: string, model: string): Promise<{ ok: boolean; error?: string }> {
-    return this.client.changeModel(sessionId, model);
+    const resolution = await this.resolveDispatchableModel(model);
+    if (!resolution.ok) return { ok: false, error: resolution.reason };
+    return this.client.changeModel(sessionId, resolution.dispatchable);
   }
 
   async listModels(): Promise<string[]> {
