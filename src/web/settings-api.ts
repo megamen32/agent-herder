@@ -27,6 +27,7 @@ import {
   type SettingsProject,
 } from "./settings-store.js";
 import { SettingsConnectionStore, probeConnection } from "./settings-connection.js";
+import { UnfinishedSessionLauncher } from "../autopilot/unfinished-session-launcher.js";
 import type { SettingsProfile } from "./settings-catalog.js";
 
 /**
@@ -570,6 +571,76 @@ const CONNECTION_TOKEN_KEY = "NOTIFY_CENTER_TOKEN";
         }
         return true;
       }
+    }
+
+    if (url.pathname === "/api/settings/automation/stop-current" && request.method === "POST") {
+      // The order of the owner: the state of the scope is forbidden first and
+      // the live executors are stopped after it. Nothing new starts while the
+      // old ones are stopped, and a later permission does not revive what was
+      // stopped.
+      let body: Record<string, unknown>;
+      try {
+        body = await readJson(request) as Record<string, unknown>;
+      } catch (error) {
+        respond(response, 400, {
+          ok: false, applied: false, scope: "*", stopped: [], stillRunning: [],
+          error: `Некорректное тело запроса: ${(error as Error).message}`,
+        });
+        return true;
+      }
+      if (body.source !== "owner") {
+        respond(response, 403, {
+          ok: false, applied: false, scope: "*", stopped: [], stillRunning: [],
+          error: AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
+          reason: AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
+        });
+        return true;
+      }
+      const scope = typeof body.scope === "string" && body.scope.trim() ? body.scope.trim() : "*";
+      if (scope !== ALL_SCOPES && !isAbsolute(scope)) {
+        respond(response, 400, {
+          ok: false, applied: false, scope, stopped: [], stillRunning: [],
+          error: "scope must be * or an absolute project path",
+        });
+        return true;
+      }
+      const disarmStore = options.disarm?.store ?? AutomationDisarmStore.forRuntime();
+      const disarmTransport = options.disarm?.transport ?? new DirectFleetDisarmTransport();
+      if (!process.env.AGENT_HERDER_DISARM_TOKEN?.trim()) {
+        respond(response, 503, {
+          ok: false, applied: false, scope, stopped: [], stillRunning: [],
+          error: "AGENT_HERDER_DISARM_TOKEN is not configured on this node",
+          reason: "AGENT_HERDER_DISARM_TOKEN is not configured on this node",
+        });
+        return true;
+      }
+      const policyRevision = await currentPolicyRevision();
+      const forbid = await setAutomationDisarmRecord({
+        scope,
+        forbidden: true,
+        ...(typeof body.reason === "string" && body.reason.trim() ? { reason: body.reason.trim().slice(0, 500) } : {}),
+        ...(policyRevision ? { policyRevision } : {}),
+        reach: "fleet",
+        source: "owner",
+        store: disarmStore,
+        transport: disarmTransport,
+      });
+      // Then the live executors of the scope are stopped. The launcher of the
+      // running process masks the records of the unfinished sessions and stops
+      // the native sessions one by one: nothing is deleted.
+      const launcher = UnfinishedSessionLauncher.forRuntime();
+      const outcome = launcher
+        ? await launcher.stopAutomaticSessionsOfScope(scope)
+        : { stopped: [], stillRunning: [] };
+      respond(response, 200, {
+        ok: true,
+        applied: forbid.applied,
+        scope,
+        stopped: outcome.stopped,
+        stillRunning: outcome.stillRunning,
+        ...(launcher ? {} : { detail: "автоматика не запущена на этой ноде: живых автоматических исполнителей здесь нет" }),
+      });
+      return true;
     }
 
     if (url.pathname === "/api/settings/automation/disarm" && (request.method === "GET" || request.method === "POST")) {

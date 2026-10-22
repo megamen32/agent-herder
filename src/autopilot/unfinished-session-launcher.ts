@@ -2315,6 +2315,21 @@ export interface UnfinishedSessionLauncherOptions {
 
 /** Reconciles durable unfinished turns for the lifetime of the Agent Herder process. */
 export class UnfinishedSessionLauncher {
+  /** The launcher of the running process, when there is one. */
+  private static runtime: UnfinishedSessionLauncher | undefined;
+
+  /**
+   * The launcher of this process.
+   *
+   * The parts of the product that live outside the runtime of the launcher —
+   * the panel of the settings — ask the launcher that runs, and they get the
+   * live store, the live adapters and the live fences. There is no second
+   * launcher and no second state.
+   */
+  static forRuntime(): UnfinishedSessionLauncher | undefined {
+    return UnfinishedSessionLauncher.runtime;
+  }
+
   private readonly maxAttempts: number;
   private readonly retryDelayMs: number;
   private readonly deterministicRetryDelayMs: number;
@@ -2372,6 +2387,7 @@ export class UnfinishedSessionLauncher {
   private readonly continuedThisRecovery = new Set<string>();
 
   constructor(private readonly options: UnfinishedSessionLauncherOptions) {
+    UnfinishedSessionLauncher.runtime = this;
     this.projectLaunchPolicyStore = options.projectLaunchPolicyStore
       ?? new AutomationLaunchPolicyStore(join(resolveAutopilotStateDir(), "automation-launch-policy.json"));
     this.maxAttempts = positiveInteger(options.maxAttempts ?? Number(process.env.AGENT_HERDER_AUTOSTART_MAX_ATTEMPTS || 3), 3);
@@ -5573,6 +5589,98 @@ export class UnfinishedSessionLauncher {
     if (!await this.isEnabled(harness, sessionId, cwd)) return false;
     return !(await this.pendingQuestionBlocks(harness, sessionId, cwd));
   }
+
+  /**
+   * Stop the automatic executors of a scope that are alive now.
+   *
+   * The order belongs to the owner: the state of the scope is forbidden first
+   * and the live executors are stopped after it, so that nothing new starts
+   * while the old ones are being stopped, and a later permission does not
+   * revive what was stopped.
+   *
+   * A stopped session is masked, never deleted: the record of the unfinished
+   * session stays, the durable fence of the human stop stays, and the native
+   * session is stopped through its own adapter — one exact session, the path
+   * of the mesh.
+   *
+   * A session that stays alive is named with the reason: the answer never
+   * promises a stop that did not happen. The sessions of the other nodes of
+   * the mesh are not touched here: stopping a session of another node is the
+   * path of the mesh, and the answer says so.
+   */
+  async stopAutomaticSessionsOfScope(scope: string): Promise<{
+    stopped: Array<{ harness: string; sessionId: string; cwd: string }>;
+    stillRunning: Array<{ harness: string; sessionId: string; cwd: string; reason: string }>;
+  }> {
+    const records = await this.options.store.list();
+    const candidates = records.filter((record) =>
+      (record.state === "active" || record.state === "recovering")
+      && scopeCoversDirectory(scope, record.cwd));
+    const stopped: Array<{ harness: string; sessionId: string; cwd: string }> = [];
+    const stillRunning: Array<{ harness: string; sessionId: string; cwd: string; reason: string }> = [];
+    for (const record of candidates) {
+      const fence = this.options.humanStopStore;
+      const held = fence ? await fence.isHeld(record.harness, record.sessionId) : false;
+      if (fence && !held) {
+        // The mask: the fence of the human stop. The autopilot stops driving
+        // the session and never resumes it, and the record itself stays.
+        await fence.hold(
+          { harness: record.harness, id: record.sessionId, cwd: record.cwd },
+          {
+            id: `owner-scope-stop:${record.harness}:${record.sessionId}`,
+            at: new Date().toISOString(),
+            reason: "Автоматическое исполнение области остановлено владельцем.",
+          },
+        );
+      }
+      const adapter = this.options.adapters.get(record.harness);
+      if (!adapter) {
+        stillRunning.push({
+          harness: record.harness,
+          sessionId: record.sessionId,
+          cwd: record.cwd,
+          reason: `среда ${record.harness} недоступна на этой ноде`,
+        });
+        continue;
+      }
+      let alive = true;
+      try {
+        alive = Boolean(await adapter.getSession(record.sessionId));
+      } catch {
+        alive = true;
+      }
+      if (!alive) {
+        stopped.push({ harness: record.harness, sessionId: record.sessionId, cwd: record.cwd });
+        continue;
+      }
+      const result = await adapter.stopSession(record.sessionId);
+      if (result.ok) {
+        stopped.push({ harness: record.harness, sessionId: record.sessionId, cwd: record.cwd });
+      } else {
+        stillRunning.push({
+          harness: record.harness,
+          sessionId: record.sessionId,
+          cwd: record.cwd,
+          reason: result.error ?? "остановка не подтверждена",
+        });
+      }
+    }
+    return { stopped, stillRunning };
+  }
+}
+
+/**
+ * Whether the scope of the lever covers the directory of a session.
+ *
+ * The scope is the project and everything inside it, and the catch-all scope
+ * covers everything. The rule is the rule of the lever, so the panel and the
+ * lever speak of the same area.
+ */
+export function scopeCoversDirectory(scope: string, directory: string | undefined): boolean {
+  if (scope === "*") return true;
+  if (!directory) return false;
+  const base = scope.endsWith("/") ? scope : `${scope}/`;
+  return directory === scope || directory.startsWith(base);
 }
 
 function parseAutostartFile(value: unknown, env: NodeJS.ProcessEnv = process.env): SessionAutostartFile {

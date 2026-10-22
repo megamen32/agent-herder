@@ -28,6 +28,16 @@ export type DisarmRecord = {
   workKeys?: string[];
 };
 
+export type StopCurrentResult = {
+  ok?: boolean;
+  applied?: boolean;
+  scope?: string;
+  stopped?: Array<{ harness?: string; sessionId?: string; cwd?: string }>;
+  stillRunning?: Array<{ harness?: string; sessionId?: string; cwd?: string; reason?: string }>;
+  error?: string;
+  detail?: string;
+};
+
 export type DisarmState = {
   ok?: boolean;
   applied?: boolean;
@@ -45,6 +55,15 @@ export type DisarmState = {
 
 /** The endpoint the panel asks: the server moves the lever on behalf of the owner. */
 export const DISARM_PANEL_ENDPOINT = "/api/settings/automation/disarm";
+
+/**
+ * The endpoint that stops the live automatic executors of a scope.
+ *
+ * The server forbids the scope first and stops the live ones after it, in
+ * that order. The answer names both: what was stopped and what stayed alive
+ * with the reason.
+ */
+export const STOP_CURRENT_ENDPOINT = "/api/settings/automation/stop-current";
 
 /**
  * What the lever does and what it does not do.
@@ -103,6 +122,7 @@ export function StopControl({ onState }: { onState?: (state: DisarmState | null)
   const [state, setState] = React.useState<DisarmState | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [stopped, setStopped] = React.useState<StopCurrentResult | null>(null);
 
   const accept = React.useCallback((body: DisarmState): void => {
     setState(body);
@@ -134,6 +154,50 @@ export function StopControl({ onState }: { onState?: (state: DisarmState | null)
   }, [accept]);
 
   React.useEffect(() => { void read(); }, [read]);
+
+  /**
+   * The stop of the live automatic executors of the scope.
+   *
+   * The server forbids the scope first and stops the live ones after it. The
+   * answer names what stayed alive: the screen never promises a stop that did
+   * not happen.
+   */
+  const stopCurrent = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(STOP_CURRENT_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(state?.etag ? { "if-match": state.etag } : {}),
+        },
+        body: JSON.stringify({
+          source: "owner",
+          scope: scope.trim() || "*",
+          reason: "остановка автоматики владельцем из панели",
+        }),
+      });
+      const text = await response.text();
+      let body: StopCurrentResult = {};
+      try {
+        body = text ? JSON.parse(text) as StopCurrentResult : {};
+      } catch {
+        body = {};
+      }
+      if (!response.ok) {
+        setError(body.error ?? `сервер ответил ${response.status}`);
+        await read();
+        return;
+      }
+      setStopped(body);
+      await read();
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const move = async (forbidden: boolean): Promise<void> => {
     setBusy(true);
@@ -201,10 +265,18 @@ export function StopControl({ onState }: { onState?: (state: DisarmState | null)
         <button
           type="button"
           className="herder-settings-button herder-settings-button-danger"
+          onClick={() => { void stopCurrent(); }}
+          disabled={busy}
+        >
+          {busy ? "Применяю…" : "Остановить: новые и текущие"}
+        </button>
+        <button
+          type="button"
+          className="herder-settings-button"
           onClick={() => { void move(true); }}
           disabled={busy}
         >
-          {busy ? "Применяю…" : "Запретить новые запуски"}
+          Только запретить новые запуски
         </button>
         <button
           type="button"
@@ -220,6 +292,20 @@ export function StopControl({ onState }: { onState?: (state: DisarmState | null)
       </div>
       <p className="herder-settings-hint">{LEVER_LIFT_NOTICE}</p>
 
+      {stopped ? (
+        <div className="herder-settings-notice" role="status">
+          <p>
+            Остановлено живых автоматических исполнителей: {stopped.stopped?.length ?? 0}.
+            Продолжают работать: {stopped.stillRunning?.length ?? 0}.
+          </p>
+          {stopped.detail ? <p>{stopped.detail}</p> : null}
+          {stopped.stillRunning?.map((item, index) => (
+            <p key={`${item.sessionId ?? index}`}>
+              {item.harness ?? "сессия"} {item.sessionId ?? ""} — {item.reason ?? "причина не названа"}
+            </p>
+          ))}
+        </div>
+      ) : null}
       {error ? <p className="herder-settings-error" role="alert">{error}</p> : null}
       {notice ? <p className="herder-settings-notice" role="status">{notice}</p> : null}
       {state?.summary ? <p className="herder-settings-hint">{state.summary}</p> : null}
