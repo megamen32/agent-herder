@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { hostname } from "node:os";
 import { z } from "zod";
-import type { HarnessAdapter, AgentSession } from "../types/index.js";
+import type { HarnessAdapter } from "../types/index.js";
 import { sessionIdentity } from "../session-identity.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
@@ -46,6 +46,7 @@ import type { GptAdminTransport } from "../mesh/gptadmin.js";
 import { unwrapResult, type MeshAddress } from "../mesh/protocol.js";
 import { FleetDirectTransport, directFleetPeers } from "../mesh/fleet-direct-transport.js";
 import { assertModelAllowedForDirectory, assertModelAllowedForDirectoryWithPolicy, policyRestrictsModels, type ProjectModelPolicyProvider } from "../project-model-gate.js";
+import { applySessionTarget } from "../session-target.js";
 
 const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]);
 
@@ -57,9 +58,6 @@ const sessionSchema = z.object({
 
 /** Work target of a live session: the machine it works on and the directory it works in. */
 export interface SessionWorkTarget { hostId: string; cwd: string }
-
-/** A declared work target stays valid for one day and can be re-declared at any time. */
-const WORK_TARGET_TTL_SECONDS = 24 * 60 * 60;
 
 /** Router that can retarget a session living on another machine of the fleet. */
 export interface FleetSessionTargetRouter {
@@ -88,59 +86,18 @@ export function registerSessionTools(server: McpServer, deps: {
   const { adapters, jobs, events } = deps;
   const coordination = deps.coordination ?? coordinationNotes;
   let peerTransport: GptAdminTransport | undefined = deps.transport;
-  const peerTransportOrDefault = (): GptAdminTransport => {
-    if (!peerTransport) peerTransport = new FleetDirectTransport(directFleetPeers.filter((peer) => peer.hostId !== "MacBook-Pro-User.local"));
-    return peerTransport;
-  };
-  /** Canonical spelling of a machine, so one machine always has one name. */
-  const canonicalPeer = (hostId: string) => directFleetPeers.find((peer) => peer.hostId.toLowerCase() === hostId.toLowerCase());
-  const findLiveSession = async (sessionId: string, harness?: string): Promise<AgentSession | undefined> => {
-    const names = harness ? [harness] : [...adapters.keys()];
-    for (const name of names) {
-      const adapter = adapters.get(name);
-      if (!adapter) continue;
-      const found = await adapter.getSession(sessionId).catch(() => null);
-      if (found) return found;
-    }
-    return undefined;
-  };
   /**
    * Override the work machine and/or work directory of a live session.
    * The declaration is the existing workspace mechanism, so the mesh projection
    * and the coordination roster observe the new target without a second truth.
+   * The web surface calls the same implementation, so both answer alike.
    */
   async function setSessionTarget(args: { sessionId: string; harness?: string; hostId?: string; cwd?: string }) {
-    const localHostId = hostname();
-    const session = await findLiveSession(args.sessionId, args.harness);
-    if (!session) throw new Error(`session_not_found:${args.sessionId}`);
-    const harness = session.harness;
-    const declared = await coordination.activeWorkspaceObservation(args.sessionId);
-    const previous = { hostId: declared?.hostId ?? session.hostId, cwd: declared?.cwd ?? session.cwd };
-    const targetHostId = args.hostId ? normalizeHostId(args.hostId, localHostId) : previous.hostId;
-    const targetCwd = args.cwd ? args.cwd.trim() : previous.cwd;
-    const receipt = (state: "updated" | "unchanged" | "unreachable" | "unsupported", hostId: string, cwd: string, reason?: string) => ({
-      sessionId: args.sessionId, harness, hostId, cwd, previous, state, ...(reason ? { reason } : {}),
-    });
-    if (targetHostId.toLowerCase() === previous.hostId.toLowerCase() && targetCwd === previous.cwd) {
-      return receipt("unchanged", previous.hostId, previous.cwd);
-    }
-    if (targetHostId.toLowerCase() === localHostId.toLowerCase()) {
-      await coordination.declareWorkspace({ sessionId: args.sessionId, harness, hostId: localHostId, cwd: targetCwd, ttlSeconds: WORK_TARGET_TTL_SECONDS });
-      return receipt("updated", localHostId, targetCwd);
-    }
-    // Another machine: the directory must be proven on that machine first.
-    const peer = canonicalPeer(targetHostId);
-    if (!peer) return receipt("unreachable", targetHostId, targetCwd, `host_target_unavailable:${targetHostId}`);
-    let verifiedCwd: string;
-    try {
-      const probed = unwrapResult(await peerTransportOrDefault().call(`mcp:shell:${peer.hostId}:AgentHerder`, "workspace_probe", { cwd: targetCwd }));
-      if (probed.hostId !== peer.hostId || typeof probed.cwd !== "string" || !probed.cwd.startsWith("/")) throw new Error("workspace_probe_invalid");
-      verifiedCwd = probed.cwd;
-    } catch {
-      return receipt("unreachable", peer.hostId, targetCwd, `host_target_unavailable:${peer.hostId}`);
-    }
-    await coordination.declareWorkspace({ sessionId: args.sessionId, harness, hostId: peer.hostId, cwd: verifiedCwd, ttlSeconds: WORK_TARGET_TTL_SECONDS });
-    return receipt("updated", peer.hostId, verifiedCwd);
+    return await applySessionTarget({
+      adapters,
+      coordination,
+      ...(peerTransport ? { transport: peerTransport } : {}),
+    }, args);
   }
   async function sessionRoute<T extends { sessionId?: string; harness?: string; hostId?: string }>(args: T) {
     if (!args.sessionId || !deps.integratorRuntime) return { adapters, args, denied: false, hostTargetUnavailable: undefined as string | undefined };

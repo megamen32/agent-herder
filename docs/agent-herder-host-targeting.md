@@ -94,6 +94,33 @@ is one edit in `src/mesh/fleet-contract.ts`, but every node must already
 observe that harness first — a node that cannot has to fail closed instead of
 disappearing from the fleet view.
 
+## The work target in the web interface
+
+The chat of a live session shows its work place in the block **«Рабочая
+машина»**: the machine (its label and the exact `hostId`) and the working
+directory. The machine is picked from the fleet directory, and a machine that
+is not in the directory yet can be named by its own `hostId`.
+
+The block asks the server; it never decides on its own:
+
+```text
+POST /api/session-target {sessionId, harness?, hostId?, cwd?}
+→ {sessionId, harness, hostId, cwd, previous:{hostId,cwd}, state, reason?}
+```
+
+The answer is shown as it is. `updated` — «Рабочая машина и каталог
+обновлены», `unchanged` — «Ничего не изменилось», `unreachable` — «Машина
+недоступна: <reason>», `unsupported` — «Эта машина не поддерживает смену
+рабочего места: <reason>». An unreachable machine is never shown as done, and
+the old work place stays the current one.
+
+`GET /api/session-target?sessionId=…&harness=…` reads the effective work place
+of a live session without changing anything and answers with the same receipt
+and `state:"unchanged"`.
+
+The web route and the MCP tool are one implementation (`src/session-target.ts`),
+so the two surfaces cannot answer differently about the same session.
+
 ## Out of scope
 
 - `minimax-code` is not a fleet harness yet. Before it can be one, the
