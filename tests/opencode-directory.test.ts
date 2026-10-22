@@ -89,8 +89,8 @@ describe("OpenCode project directory readback", () => {
     const adapter = await fixture();
     const a = await adapter.createSession({ name: "a", cwd: directory });
     const b = await adapter.createSession({ name: "b", cwd: "/project/other" });
-    expect(await adapter.sendMessage(a.id, { message: "fixture only", queue: true })).toEqual({ ok: true, admitted: true });
-    expect(await adapter.sendMessage(b.id, { message: "fixture only" })).toEqual({ ok: true });
+    expect(await adapter.sendMessage(a.id, { message: "fixture only", queue: true })).toEqual({ ok: true, admitted: true, admission: "accepted" });
+    expect(await adapter.sendMessage(b.id, { message: "fixture only" })).toEqual({ ok: true, admission: "accepted" });
     expect(await adapter.changeModel(b.id, "minimax-coding-plan/MiniMax-M3")).toEqual({ ok: true });
     expect(requests.filter((r) => r.path.includes("created-")).map((r) => r.directory)).toEqual([directory, "/project/other", "/project/other"]);
   });
