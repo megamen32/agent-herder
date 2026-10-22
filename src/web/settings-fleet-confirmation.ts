@@ -169,15 +169,18 @@ function ledgerNodes(ledger: SettingsConfirmationLedger): SettingsConfirmationNo
 }
 
 /** The peers of the fleet, as the confirmation asks them. */
-export function defaultFleetConfirmationPeers(): FleetPolicyRevisionPeer[] {
+export function defaultFleetConfirmationPeers(localHostId?: string): FleetPolicyRevisionPeer[] {
   return directFleetPeers
     .filter((peer) => peer.hostId !== "MacBook-Pro-User.local")
+    .filter((peer) => peer.hostId !== localHostId)
     .map((peer) => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` }));
 }
 
 /** The transport to the other nodes, as the confirmation asks them. */
-function defaultFleetConfirmationTransport(): FleetPolicyRevisionTransport {
-  return new FleetDirectTransport(directFleetPeers.filter((peer) => peer.hostId !== "MacBook-Pro-User.local"));
+function defaultFleetConfirmationTransport(localHostId?: string): FleetPolicyRevisionTransport {
+  return new FleetDirectTransport(directFleetPeers.filter((peer) => (
+    peer.hostId !== "MacBook-Pro-User.local" && peer.hostId !== localHostId
+  )));
 }
 
 /** What the reader of the confirmation needs to know. */
@@ -232,8 +235,8 @@ export async function readFleetConfirmation(
     };
   }
 
-  const peers = options.peers ?? defaultFleetConfirmationPeers();
-  const transport = options.transport ?? defaultFleetConfirmationTransport();
+  const peers = options.peers ?? defaultFleetConfirmationPeers(hostId);
+  const transport = options.transport ?? defaultFleetConfirmationTransport(hostId);
   let summary: FleetPolicyRevisionSummary | null = null;
   let error: string | undefined;
   try {
