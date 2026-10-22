@@ -270,6 +270,9 @@ describe("OpenCode native recovery controls", () => {
         return response.end(JSON.stringify([]));
       }
       if (request.url === "/session/status" && request.method === "GET") return response.end(JSON.stringify({}));
+      if ((request.url ?? "").split("?")[0] === "/session/health-session" && request.method === "GET") {
+        return response.end(JSON.stringify({ id: "health-session", title: "health", directory: "/tmp" }));
+      }
       if (request.url === "/session?directory=%2Ftmp" && request.method === "POST") {
         return response.end(JSON.stringify({ id: "health-session", title: "health", directory: "/tmp" }));
       }

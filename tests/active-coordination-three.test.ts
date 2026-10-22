@@ -90,8 +90,9 @@ it.each(['opencode','hermes'] as const)('real supervisor context reads late pers
  try{
   await deferredMessages.addActive(harness,id,'exact-live-identity','late-once','must not enter stopped context');
   await stops.hold(session as any,{id:'manual-stop',at:new Date().toISOString(),reason:'explicit human Stop'});
-  // This historical supervisor API intentionally does not cover these harnesses.
-  expect(await supervisor.isAutomationHeld(harness,id)).toBe(false);
+  // The manual stop fences the opencode harness as well; the historical API
+  // still does not cover the harnesses it never covered.
+  expect(await supervisor.isAutomationHeld(harness,id)).toBe(harness==='opencode');
   const response=await fetch(`http://127.0.0.1:${(server.address() as any).port}/api/coordination/context?${new URLSearchParams({harness,sessionId:id,cwd:root,activeTurnId:'exact-live-identity',consumeActive:'1'})}`);
   const body=await response.json();expect(body.humanStopHeld).toBe(true);expect(body.activeInboxIds).toEqual([]);expect(body.activeInboxContext).toBeNull();
   expect((await deferredMessages.activeReceipt(harness,id,'late-once'))?.activeTurn?.state).toBe('expired');
