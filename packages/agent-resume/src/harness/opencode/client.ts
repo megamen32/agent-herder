@@ -125,6 +125,7 @@ export interface OpenCodeTerminalFailureContext {
   status: "failed";
   nativeTurnId: string;
   assistantMessageId: string;
+  userMessageId?: string;
   inputId: string;
   providerId: string;
   modelId: string;
@@ -829,7 +830,7 @@ export class OpenCodeClient implements HarnessClient {
       const statusFrames = messages
         .map((message, index) => ({ message, index }))
         .filter(({ message }) => isOpenCodeTurnStatusFrame(message));
-      const latest = statusFrames.at(-1);
+      const latest = statusFrames.filter(({ message }) => message.type !== "model-switched").at(-1);
       if (!latest || !latest.message.id || (terminalEventId && latest.message.id !== terminalEventId) || latest.message.outcome !== "failed") return null;
       if (messages.slice(latest.index + 1).some((message) =>
         openCodeMessageRole(message) === "user" || openCodeMessageRole(message) === "assistant")) return null;
@@ -864,6 +865,30 @@ export class OpenCodeClient implements HarnessClient {
       const userMessageId = openCodeMessageId(user.message);
       const assistantMessageId = openCodeMessageId(failedAssistant);
       if (!userMessageId || !assistantMessageId) return null;
+      // A supported model selection appends a config-only native audit frame.
+      // It does not erase the preceding failed turn, but no other trail is safe.
+      const controls = messages.slice(latest.index + 1);
+      if (controls.length) {
+        if (controls.length !== 1) return null;
+        const control = controls[0]! as OpenCodeMessagePayload & { previous?: OpenCodeMessagePayload["model"] };
+        const allowedKeys = new Set(["id", "type", "time", "model", "previous"]);
+        const modelEqual = (left: OpenCodeMessagePayload["model"], right: OpenCodeMessagePayload["model"]): boolean =>
+          Boolean(left?.providerID && left.id && right?.providerID === left.providerID && right.id === left.id);
+        const safeModel = (value: unknown): boolean => Boolean(value && typeof value === "object"
+          && Object.keys(value).every((key) => ["providerID", "id", "variant"].includes(key))
+          && typeof (value as Record<string, unknown>).providerID === "string"
+          && typeof (value as Record<string, unknown>).id === "string"
+          && ((value as Record<string, unknown>).variant === undefined || typeof (value as Record<string, unknown>).variant === "string"));
+        if (control.type !== "model-switched" || Object.keys(control).some((key) => !allowedKeys.has(key))
+          || !control.id || messages.filter((frame) => openCodeMessageId(frame) === control.id).length !== 1
+          || !safeModel(control.model) || !safeModel(control.previous)
+          || !modelEqual(control.previous, failedAssistant.model)
+          || !modelEqual(control.model, typeof session.model === "object" ? session.model : undefined)
+          || !control.time || Object.keys(control.time).some((key) => key !== "created")
+          || typeof control.time.created !== "number" || !Number.isFinite(control.time.created)
+          || typeof latest.message.time?.created !== "number" || control.time.created < latest.message.time.created) return null;
+      }
+
       const proofLinked = sessionProof?.status === "failed"
         && sessionProof.userMessageId === userMessageId
         && sessionProof.parentMessageId === userMessageId
@@ -885,12 +910,12 @@ export class OpenCodeClient implements HarnessClient {
       // This binds terminal evidence only; it never establishes pre-admission refusal.
       const linearLinked = (() => {
         if (assistantParentId || !userInputId || userInputId !== inputId) return false;
-        if (incompleteTranscript || latest.index !== messages.length - 1 || fetched.length >= 150) return false;
+        if (incompleteTranscript || fetched.length >= 150) return false;
         const boundary = statusFrames.filter((frame) => frame.index < user.index).at(-1);
         if (boundary && (boundary.message.type !== "idle"
           || !["succeeded", "failed", "interrupted"].includes(boundary.message.outcome ?? ""))) return false;
         const start = boundary ? boundary.index + 1 : 0;
-        const packet = messages.slice(start);
+        const packet = messages.slice(start, latest.index + 1);
         if (packet.length !== 3 || packet[0] !== user.message || packet[1] !== failedAssistant
           || packet[2] !== latest.message || user.message.type !== "user"
           || failedAssistant.type !== "assistant" || latest.message.type !== "idle") return false;
@@ -983,7 +1008,7 @@ export class OpenCodeClient implements HarnessClient {
         : typeof terminalCompletedAt === "number" && Number.isFinite(terminalCompletedAt)
           ? terminalCompletedAt : undefined;
       return {
-        sessionId: id, status: "failed", nativeTurnId, assistantMessageId, inputId, ...model,
+        sessionId: id, status: "failed", nativeTurnId, assistantMessageId, userMessageId, inputId, ...model,
         ...(completedAt !== undefined ? { completedAt } : {}),
         ...(errorType ? { errorType } : {}),
         ...(errorCode ? { errorCode } : {}),

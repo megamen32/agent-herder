@@ -461,6 +461,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
     const retainedNativeLastTurn = { ...previousNativeLastTurn };
     delete retainedNativeLastTurn.quotaFailure;
     delete retainedNativeLastTurn.inputId;
+    delete retainedNativeLastTurn.userMessageId;
     if (nativeTurn) {
       meta.nativeLastTurn = {
         ...retainedNativeLastTurn,
@@ -471,7 +472,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
         modelId: nativeTurn.modelId,
         status: nativeTurn.status,
         completedAt: nativeTurn.completedAt,
-        ...(sameNativeTurn && nativeFailure ? { inputId: nativeFailure.inputId } : {}),
+        ...(sameNativeTurn && nativeFailure ? { inputId: nativeFailure.inputId, userMessageId: nativeFailure.userMessageId } : {}),
         ...(quotaFailure ? { quotaFailure } : {}),
       };
     } else {
