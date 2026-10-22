@@ -2,6 +2,8 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { journal, readProhibitions, reportActivity } from "./hooks-prohibitions.mjs";
+
 let raw = "";
 for await (const chunk of process.stdin) raw += chunk;
 
@@ -16,6 +18,18 @@ const pluginRoot = process.env.PLUGIN_ROOT?.trim()
   : resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 if (!sessionId) {
+  process.stdout.write("{}");
+  process.exit(0);
+}
+
+// The lever of the owner. While the prohibitions of the Stop hook are on,
+// the hook may hold the stop of the session and continue the same turn.
+// When they are off — or when the state of the lever cannot be read at all —
+// the hook stays quiet: it never holds the stop of a session.
+const prohibition = await readProhibitions("Stop");
+await reportActivity("Stop", { outcome: "fired", sessionId, harness: "codex" });
+if (!prohibition.enabled) {
+  await journal("Stop", { event: "prohibitions-off", sessionId, known: prohibition.known });
   process.stdout.write("{}");
   process.exit(0);
 }
@@ -61,6 +75,13 @@ if (sessionId) {
       if (await humanStopHeld()) await exitWithoutContinuation();
       if (!await rememberGeneratedPrompt(payload.inboxContext)) await exitWithoutContinuation();
       if (await humanStopHeld()) await exitWithoutContinuation();
+      // The hook refuses to stop the session: the panel shows the refusal.
+      await reportActivity("Stop", {
+        outcome: "refused",
+        reason: "сессия не остановлена: хук продолжил ход по входящему сообщению",
+        sessionId,
+        harness: "codex",
+      });
       process.stdout.write(JSON.stringify({ decision: "block", reason: payload.inboxContext }));
       if (payload.inboxIds?.length) await fetch(`${endpoint}/api/coordination/inbox-ack`, {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId,ids:payload.inboxIds}),signal:AbortSignal.timeout(1200)}).catch(()=>{});
       process.exit(0);

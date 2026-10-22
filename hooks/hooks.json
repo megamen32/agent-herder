@@ -1,12 +1,12 @@
 {
-  "description": "Agent Herder Claude Code autopilot Stop hook.",
+  "description": "Agent Herder Claude Code autopilot Stop hook and coordination hooks. Every command is safe: a hook that cannot start leaves the session alone.",
   "hooks": {
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/claude-autopilot-hook-launcher.sh\"",
+            "command": "AGENT_HERDER_HARNESS=claude node \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks-stop-gate.mjs\" -- bash \"${CLAUDE_PLUGIN_ROOT}/scripts/claude-autopilot-hook-launcher.sh\" 2>/dev/null || true",
             "timeout": 45,
             "statusMessage": "Checking Agent Herder autopilot decision"
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "AGENT_HERDER_HARNESS=claude node \"${CLAUDE_PLUGIN_ROOT}/scripts/coordination-hook.mjs\"",
+            "command": "AGENT_HERDER_HARNESS=claude node \"${CLAUDE_PLUGIN_ROOT}/scripts/coordination-hook.mjs\" 2>/dev/null || true",
             "timeout": 3,
             "statusMessage": "Syncing Agent Herder coordination"
           }
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "AGENT_HERDER_HARNESS=claude node \"${CLAUDE_PLUGIN_ROOT}/scripts/coordination-hook.mjs\"",
+            "command": "AGENT_HERDER_HARNESS=claude node \"${CLAUDE_PLUGIN_ROOT}/scripts/coordination-hook.mjs\" 2>/dev/null || true",
             "timeout": 3,
             "statusMessage": "Syncing Agent Herder coordination"
           }
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "AGENT_HERDER_HARNESS=claude node \"${CLAUDE_PLUGIN_ROOT}/scripts/coordination-hook.mjs\"",
+            "command": "AGENT_HERDER_HARNESS=claude node \"${CLAUDE_PLUGIN_ROOT}/scripts/coordination-hook.mjs\" 2>/dev/null || true",
             "timeout": 3,
             "statusMessage": "Syncing Agent Herder coordination"
           }
@@ -55,7 +55,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "AGENT_HERDER_HARNESS=claude node \"${CLAUDE_PLUGIN_ROOT}/scripts/coordination-hook.mjs\"",
+            "command": "AGENT_HERDER_HARNESS=claude node \"${CLAUDE_PLUGIN_ROOT}/scripts/coordination-hook.mjs\" 2>/dev/null || true",
             "timeout": 3,
             "statusMessage": "Syncing Agent Herder coordination"
           }

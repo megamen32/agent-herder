@@ -62,6 +62,8 @@
     "LICENSE",
     "package.json",
     "scripts/coordination-hook.mjs",
+    "scripts/hooks-prohibitions.mjs",
+    "scripts/hooks-stop-gate.mjs",
     "integrations/fast-agent/coordination_hooks.py",
     "integrations/zcode/agent-herder-autopilot/hooks/coordination.mjs",
     "skills/chat-triage"

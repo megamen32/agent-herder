@@ -1,0 +1,37 @@
+export {
+  HOOK_CATALOG,
+  HOOK_KINDS,
+  PROHIBITING_HOOK_KINDS,
+  hookDescriptor,
+  isHookKind,
+  type HookDescriptor,
+  type HookKind,
+} from "./catalog.js";
+export {
+  AUTOMATION_CANNOT_CHANGE_PROHIBITIONS_REASON,
+  HOOKS_PROHIBITIONS_AUDIT_FILE_NAME,
+  HOOKS_PROHIBITIONS_FILE_NAME,
+  HooksProhibitionsStore,
+  appendHooksProhibitionsAudit,
+  defaultHooksProhibitions,
+  hooksProhibitionsEtag,
+  parseHooksProhibitions,
+  sameHooksProhibitions,
+  type HooksProhibitionsAuditRecord,
+  type HooksProhibitionsChange,
+  type HooksProhibitionsChangeResult,
+  type HooksProhibitionsDocument,
+  type HooksProhibitionsSource,
+} from "./state.js";
+export {
+  HOOKS_ACTIVITY_FILE_NAME,
+  HooksActivityStore,
+  HooksService,
+  hookProhibitionsEnabled,
+  type HooksActivityDocument,
+  type HooksActivityRefusal,
+  type HooksActivityReport,
+  type HooksPanelHook,
+  type HooksPanelView,
+  type HooksProhibitionsRead,
+} from "./service.js";

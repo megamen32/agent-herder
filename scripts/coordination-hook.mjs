@@ -2,6 +2,8 @@
 import { randomUUID } from "node:crypto";
 import { resolve, isAbsolute } from "node:path";
 
+import { readProhibitions, reportActivity } from "./hooks-prohibitions.mjs";
+
 const endpoint = process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787";
 let raw = "";
 for await (const chunk of process.stdin) raw += chunk;
@@ -11,6 +13,20 @@ const event = input.hook_event_name || input.hookEventName || "";
 const sessionId = String(input.session_id || input.sessionId || "");
 const cwd = String(input.cwd || process.cwd());
 const harness = process.env.AGENT_HERDER_HARNESS || "codex";
+// The lever of the owner. While the prohibitions of this hook are on, the
+// hook may put a conflict into the context of the tool call. When they are
+// off — or when the state of the lever cannot be read at all — the hook
+// passes no prohibition on: a hook that cannot work never gets in the way.
+const HOOK_EVENTS = ["Stop", "PreToolUse", "PostToolUse", "SessionStart", "UserPromptSubmit"];
+const prohibition = HOOK_EVENTS.includes(event) ? await readProhibitions(event) : { known: false, enabled: false };
+// The prohibition content of the coordination context: the soft lock that
+// asks the agent to agree before it edits an overlapping path.
+function withoutProhibitions(context) {
+  return String(context ?? "")
+    .replace(/<agent-herder-path-conflict>[\s\S]*?<\/agent-herder-path-conflict>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 const output = (name, context) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: name, ...(context ? { additionalContext: context } : {}) } }));
 const fetchJson = async (url, options) => { const r = await fetch(url, { ...options, signal: AbortSignal.timeout(1200) }); if (!r.ok) throw new Error(String(r.status)); return r.json(); };
 function stringCommand(value) {
@@ -216,6 +232,7 @@ function normalizePaths(paths, workdir = cwd) {
   return [...new Set(result)].slice(0, 32);
 }
 try {
+  if (event === "SessionStart" || event === "UserPromptSubmit") await reportActivity(event, { outcome: "fired", sessionId, harness });
   if (event === "SessionStart") {
     const q = new URLSearchParams({ harness, sessionId, cwd, touch: "1", consume: "1" });
     const data = await fetchJson(`${endpoint}/api/coordination/context?${q}`);
@@ -253,10 +270,18 @@ try {
     const observedWorkdir = declaredWorkdir || literalWorkdir;
     const workdir = typeof observedWorkdir === "string" && isAbsolute(observedWorkdir) ? resolve(observedWorkdir) : cwd;
     const paths = isWriteActivity(input.tool_name, input.tool_input) ? normalizePaths(collectPaths(input.tool_input), workdir) : [];
-    const data = await fetchJson(`${endpoint}/api/coordination/activity`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ harness, sessionId, cwd: workdir, launchCwd: cwd, paths }) });
+    const data = await fetchJson(`${endpoint}/api/coordination/activity`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ harness, sessionId, cwd: workdir, launchCwd: cwd, paths, hook: event }) });
     const activeTurnId=typeof input.turn_id==='string'?input.turn_id:typeof input.turnId==='string'?input.turnId:undefined;
     const current=harness==='zcode'&&activeTurnId?await fetchJson(`${endpoint}/api/coordination/context?${new URLSearchParams({harness,sessionId,cwd,activeTurnId,consumeActive:'1'})}`):null;
-    output(event,[data.context,current?.activeInboxContext].filter(Boolean).join('\n\n')||undefined);
+    const combined = [data.context,current?.activeInboxContext].filter(Boolean).join('\n\n');
+    // The prohibition content travels only while the prohibitions of this
+    // hook are on; the rest of the context is still useful.
+    const context = prohibition.enabled ? (combined || undefined) : (withoutProhibitions(combined) || undefined);
+    output(event,context);
+    if (prohibition.enabled && combined.includes("<agent-herder-path-conflict>")) {
+      // The hook refused the tool call: the panel shows the refusal.
+      await reportActivity(event, { outcome: "refused", reason: "вызов инструмента получил конфликт по путям: другой агент недавно работал с тем же файлом", sessionId, harness });
+    }
     if(current?.activeInboxIds?.length)await fetchJson(`${endpoint}/api/coordination/inbox-ack`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sessionId,ids:current.activeInboxIds})});
     if (data.inboxIds?.length) await fetchJson(`${endpoint}/api/coordination/inbox-ack`, {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId,ids:data.inboxIds})});
   }
