@@ -97,15 +97,31 @@ def release_bytes(root: Path) -> int:
     return total
 
 
-def trim_releases(releases_root: Path, rollback_root: Path, keep: str, prefer: str = "") -> dict:
-    """Move the superseded releases to rollback/ until the budget holds.
+def trim_releases(releases_root: Path, rollback_root: Path, keep: str, prefer: str = "",
+                  keep_only: bool = False) -> dict:
+    """Move the superseded releases to rollback/.
 
-    The bytes are never deleted. The release that is live now is moved last:
-    it is the point of rollback, so it is only given up when the budget leaves
-    no other choice.
+    The bytes are never deleted. With keep_only the owner node keeps one
+    release directory: the new one. The release that is live now is the point
+    of rollback, so its drop-in is rewritten to the place it moves to, and
+    the rollback stays a real, startable release.
+
+    Without keep_only the budget decides: the release that is live now is
+    moved last, so it is only given up when the budget leaves no other choice.
     """
     rollback_root.mkdir(parents=True, exist_ok=True)
     moved = {}
+    if keep_only:
+        for release in release_dirs(releases_root):
+            if release.name == keep:
+                continue
+            shutil.move(str(release), str(rollback_root / release.name))
+            moved[release.name] = str(rollback_root / release.name)
+            print("trimmed", release.name, "-> rollback/")
+        print("releases:", [item.name for item in release_dirs(releases_root)])
+        print("rollback:", sorted(item.name for item in rollback_root.iterdir()))
+        print("budget bytes:", release_bytes(releases_root))
+        return moved
     while True:
         current = release_dirs(releases_root)
         if len(current) <= MAX_RELEASES and release_bytes(releases_root) <= BUDGET_MIB * 1024 ** 2:
@@ -162,8 +178,12 @@ def node_side_owner(arguments) -> int:
         for line in drop_in.read_text().splitlines():
             if line.startswith("ExecStart=") and "dist/index.js" in line:
                 previous = line.split("=", 1)[1].strip()
-    moved = trim_releases(catalog / "releases", catalog / "rollback", sha, arguments.previous_sha)
     unpack_release(Path(arguments.archive), release)
+    # The owner node keeps one release directory: the new one. The release that
+    # is live now moves to rollback/ with its bytes, and the saved drop-in is
+    # rewritten below to the place it moved to, so the rollback stays real.
+    moved = trim_releases(catalog / "releases", catalog / "rollback", sha,
+                           arguments.previous_sha, keep_only=True)
     unit_dir.mkdir(parents=True, exist_ok=True)
     backup = Path(f"{drop_in}.bak-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}")
     if previous:
@@ -294,8 +314,7 @@ def main() -> int:
             ssh_port = str(node.get("sshPort", 22))
             for local, remote in ((archive, remote_archive),
                                   (HERE / "rollout-node.py", "/tmp/rollout-node.py"),
-                                  (HERE / "accept-node.py", "/tmp/accept-node.py"),
-                                  (HERE / "release-rules.py", "/tmp/release-rules.py")):
+                                  (HERE / "accept-node.py", "/tmp/accept-node.py")):
                 command = ["scp", "-q", "-P", ssh_port, str(local), f"{host}:{remote}"]
                 copied = subprocess.run(command, capture_output=True, text=True, check=False)
                 if copied.returncode != 0:
