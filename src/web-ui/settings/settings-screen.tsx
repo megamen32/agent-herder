@@ -35,7 +35,7 @@ import "./settings.css";
  * contour; the herder does not touch it, it only gives it a place.
  */
 
-export type SettingsTab = "herder" | "projects";
+export type SettingsTab = "herder" | "projects" | "hooks";
 
 /**
  * The one line that says how the state of a setting is in effect.
@@ -108,10 +108,23 @@ export function SettingsScreen({
           >
             Модели проекта
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "hooks"}
+            className={tab === "hooks" ? "herder-settings-tab herder-settings-tab-active" : "herder-settings-tab"}
+            onClick={() => onTabChange("hooks")}
+          >
+            Хуки
+          </button>
         </div>
       </header>
       <div className="herder-settings-panel" role="tabpanel">
-        {tab === "herder" ? <HerderSettings onOpenLaunchSettings={onOpenLaunchSettings} /> : <ProjectsSettings onOpenLaunchSettings={onOpenLaunchSettings} />}
+        {tab === "herder"
+          ? <HerderSettings onOpenLaunchSettings={onOpenLaunchSettings} />
+          : tab === "projects"
+            ? <ProjectsSettings onOpenLaunchSettings={onOpenLaunchSettings} />
+            : <HooksSection />}
       </div>
     </section>
   );
@@ -406,8 +419,6 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
       <RuntimeSection />
       <ConnectionsSection />
       <StopControl />
-
-      <HooksSection />
 
       <FleetConfirmation />
 
