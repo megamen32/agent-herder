@@ -147,19 +147,27 @@ async function readSettings(port: number): Promise<Record<string, any>> {
  * sends it too: the origin of the loopback of the test is the origin of the
  * request.
  */
-async function putSettings(port: number, body: unknown): Promise<Response> {
+async function putSettings(port: number, body: unknown, etag?: string): Promise<Response> {
+  const version = etag ?? await currentEtag(port);
   return await fetch(`http://127.0.0.1:${port}/api/settings`, {
     method: "PUT",
-    headers: { "content-type": "application/json", origin: `http://127.0.0.1:${port}` },
+    headers: { "content-type": "application/json", origin: `http://127.0.0.1:${port}`, "if-match": version },
     body: JSON.stringify(body),
   });
 }
 
+/** The version of the settings the owner reads before a change. */
+async function currentEtag(port: number): Promise<string> {
+  const view = await (await fetch(`http://127.0.0.1:${port}/api/settings`)).json() as Record<string, any>;
+  return view.etag as string;
+}
+
 /** A rollback of the owner. */
-async function rollbackSettings(port: number, body: unknown): Promise<Response> {
+async function rollbackSettings(port: number, body: unknown, etag?: string): Promise<Response> {
+  const version = etag ?? await currentEtag(port);
   return await fetch(`http://127.0.0.1:${port}/api/settings/rollback`, {
     method: "POST",
-    headers: { "content-type": "application/json", origin: `http://127.0.0.1:${port}` },
+    headers: { "content-type": "application/json", origin: `http://127.0.0.1:${port}`, "if-match": version },
     body: JSON.stringify(body),
   });
 }
@@ -341,6 +349,204 @@ describe("the settings of the herder are managed by the owner from one API", () 
     expect(text).not.toContain("center-token-value");
     // The value before the change is back in the file of the product.
     expect(await readFile(envPath, "utf8")).toContain("NOTIFY_CENTER_TOKEN=center-token-value");
+  });
+
+  it("refuses a change without the version it was made on", async () => {
+    const port = await startServer();
+    const before = await readFile(envPath, "utf8");
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/settings`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", origin: `http://127.0.0.1:${port}` },
+      body: JSON.stringify({ environment: { NOTIFY_CENTER_PROJECT: "written-without-a-version" } }),
+    });
+    // The same rule as the launch policy: a change without the version is
+    // refused, and the file is not touched.
+    expect(response.status).toBe(428);
+    expect((await response.json() as Record<string, any>).code).toBe("precondition_required");
+    expect(await readFile(envPath, "utf8")).toBe(before);
+  });
+
+  it("refuses a change whose version moved on and names the difference", async () => {
+    const port = await startServer();
+    const etag = await currentEtag(port);
+    const before = await readSettings(port);
+    const baseVersion = before.records.find((candidate: any) => candidate.id === "herder.env/NOTIFY_CENTER_PROJECT").desired.version;
+
+    // Another owner changed the setting after the first one read it.
+    await putSettings(port, { environment: { NOTIFY_CENTER_PROJECT: "changed-by-another" } });
+    const text = await readFile(envPath, "utf8");
+
+    const response = await putSettings(port, {
+      environment: { NOTIFY_CENTER_PROJECT: "mine" },
+      baseVersion: { "herder.env/NOTIFY_CENTER_PROJECT": baseVersion },
+    }, etag);
+    expect(response.status).toBe(412);
+    const conflict = await response.json() as Record<string, any>;
+    expect(conflict.code).toBe("version_conflict");
+    expect(conflict.difference[0].id).toBe("herder.env/NOTIFY_CENTER_PROJECT");
+    expect(conflict.difference[0].baseVersion).toBe(baseVersion);
+    expect(conflict.difference[0].currentVersion).toBeGreaterThan(baseVersion);
+    expect(conflict.current.etag).not.toBe(etag);
+    // The change of the owner was not applied: nothing was overwritten.
+    expect(await readFile(envPath, "utf8")).toBe(text);
+  });
+
+  it("says that a change of the file waits for the restart of the service", async () => {
+    const port = await startServer();
+    await putSettings(port, { environment: { NOTIFY_CENTER_PROJECT: "brand-new-project" } });
+
+    const view = await readSettings(port);
+    const record = view.records.find((candidate: any) => candidate.id === "herder.env/NOTIFY_CENTER_PROJECT");
+    // The owner set the value explicitly.
+    expect(record.origin).toBe("explicit");
+    // The running process does not carry it yet: the service reads its
+    // environment file when it starts.
+    expect(record.confirmed.state).toBe("Записано");
+    expect(record.confirmed.requiresRestart).toBe(true);
+    expect(record.confirmed.applyMode).toBe("после перезапуска");
+    expect(record.confirmed.appliedAt).toBeNull();
+
+    // A value that the running process already has is applied right away.
+    const inProcess = process.env.NOTIFY_CENTER_RECIPIENT;
+    expect(inProcess).toBeUndefined();
+  });
+
+  it("names the origin of a value: the default, the file or the owner", async () => {
+    const port = await startServer();
+    const view = await readSettings(port);
+
+    // A value that nobody touched through the API is in the file: it came
+    // from the file of the product.
+    const fromFile = view.records.find((candidate: any) => candidate.id === "herder.env/NOTIFY_CENTER_EVENT_URL");
+    expect(fromFile.origin).toBe("file");
+
+    // A value the owner sets through the API is his.
+    await putSettings(port, { environment: { NOTIFY_CENTER_EVENT_URL: "https://center.example/v2/events" } });
+    const after = await readSettings(port);
+    const explicit = after.records.find((candidate: any) => candidate.id === "herder.env/NOTIFY_CENTER_EVENT_URL");
+    expect(explicit.origin).toBe("explicit");
+  });
+
+  it("describes every setting with the contract of the settings", async () => {
+    const port = await startServer();
+    // The owner changes the setting, so the record names him and the moment.
+    await putSettings(port, { environment: { NOTIFY_CENTER_PROJECT: "agent-herder-contract" } });
+    const view = await readSettings(port);
+
+    // The version of the whole document travels with the read.
+    expect(typeof view.etag).toBe("string");
+    expect(Array.isArray(view.records)).toBe(true);
+
+    const record = view.records.find((candidate: any) => candidate.id === "herder.env/NOTIFY_CENTER_PROJECT");
+    // The human name and the action of the setting come from the catalog: not
+    // the name of the variable, but what the setting is for.
+    expect(record.humanName).toBe("Подключение к центру уведомлений: проект");
+    expect(typeof record.action).toBe("string");
+    expect(record.action.length).toBeGreaterThan(10);
+    // The scope of the setting.
+    expect(record.scope.kind).toBe("node");
+    // Where the value came from.
+    expect(["default", "inherited", "override"]).toContain(record.source);
+    expect(["default", "file", "explicit"]).toContain(record.origin);
+    // The desired version and the confirmed state are two things.
+    expect(record.desired.value).toBe("agent-herder-contract");
+    expect(record.desired.version).toBeGreaterThan(0);
+    expect(record.confirmed.version).toBe(record.desired.version);
+    expect(["Записано", "Применяется", "Применено", "Применено частично", "Ошибка"]).toContain(record.confirmed.state);
+    expect(["сразу", "к новым задачам", "после перезапуска"]).toContain(record.confirmed.applyMode);
+    // Who changed it and when.
+    expect(record.changedBy).toBe("roomhacker");
+    expect(typeof record.changedAt).toBe("string");
+    // The entry that carries the value before the change.
+    expect(record.rollbackRef).toBeTruthy();
+
+    // A secret is described without its value.
+    const secret = view.records.find((candidate: any) => candidate.id === "herder.env/NOTIFY_CENTER_TOKEN");
+    expect(secret.desired.value).toBeNull();
+    expect(secret.desired.fingerprint).toBeTruthy();
+    expect(JSON.stringify(secret)).not.toContain("center-token-value");
+  });
+
+  it("carries the lifecycle of a secret without its value", async () => {
+    const port = await startServer();
+
+    // The purpose and the date of a secret.
+    const saved = await putSettings(port, {
+      secrets: { NOTIFY_CENTER_TOKEN: { purpose: "подпись событий для центра", expiresAt: "2026-12-01T00:00:00.000Z" } },
+    });
+    expect(saved.status).toBe(200);
+    const view = await readSettings(port);
+    const lifecycle = view.secrets.find((candidate: any) => candidate.key === "NOTIFY_CENTER_TOKEN");
+    expect(lifecycle.purpose).toBe("подпись событий для центра");
+    expect(lifecycle.expiresAt).toBe("2026-12-01T00:00:00.000Z");
+    // The list of the connections that use the secret.
+    expect(lifecycle.consumers.length).toBeGreaterThan(0);
+    expect(lifecycle.configured).toBe(true);
+    expect(lifecycle.fingerprint).toBeTruthy();
+    expect(JSON.stringify(lifecycle)).not.toContain("center-token-value");
+
+    // A check of the secret says whether it is the one the owner read.
+    const checked = await putSettings(port, {
+      secrets: { NOTIFY_CENTER_TOKEN: { operation: "check", fingerprint: lifecycle.fingerprint } },
+    });
+    const result = (await checked.json() as Record<string, any>).results.NOTIFY_CENTER_TOKEN;
+    expect(result.state).toBe("ok");
+    expect(result.present).toBe(true);
+    expect(result.matches).toBe(true);
+    expect(result.consumers.length).toBeGreaterThan(0);
+
+    // A check against another fingerprint says the secret changed.
+    const changed = await putSettings(port, {
+      secrets: { NOTIFY_CENTER_TOKEN: { operation: "check", fingerprint: "sha256:0000000000000000" } },
+    });
+    const changedResult = (await changed.json() as Record<string, any>).results.NOTIFY_CENTER_TOKEN;
+    expect(changedResult.state).toBe("changed");
+    expect(changedResult.matches).toBe(false);
+
+    // A revoke takes the secret out of the file of the product.
+    const revoked = await putSettings(port, { secrets: { NOTIFY_CENTER_TOKEN: { operation: "revoke" } } });
+    expect(revoked.status).toBe(200);
+    expect(await readFile(envPath, "utf8")).not.toContain("NOTIFY_CENTER_TOKEN=");
+  });
+
+  it("never carries the value of a secret in any answer", async () => {
+    const port = await startServer();
+    const secret = "the-value-that-must-not-leak";
+    await putSettings(port, { environment: { NOTIFY_CENTER_TOKEN: secret } });
+
+    for (const path of ["/api/settings", "/api/settings/audit"]) {
+      const text = await (await fetch(`http://127.0.0.1:${port}${path}`)).text();
+      expect(text).not.toContain(secret);
+    }
+    const checked = await (await putSettings(port, { secrets: { NOTIFY_CENTER_TOKEN: { operation: "check" } } })).text();
+    expect(checked).not.toContain(secret);
+    // The value is in the file of the product: the form manages the file, it
+    // does not replace it.
+    expect(await readFile(envPath, "utf8")).toContain(`NOTIFY_CENTER_TOKEN=${secret}`);
+  });
+
+  it("keeps the profiles of the mesh as named entities of the settings", async () => {
+    const port = await startServer();
+    const view = await readSettings(port);
+    // A profile is reusable by many projects and lives in the layer of the
+    // settings, so the launch policy refers to it and does not repeat it.
+    expect(Array.isArray(view.profiles)).toBe(true);
+    expect(view.profiles.length).toBeGreaterThan(0);
+    expect(view.profiles[0].id).toBeTruthy();
+    expect(view.profiles[0].scope.kind).toBe("mesh");
+
+    const saved = await putSettings(port, {
+      profiles: [{ id: "profile/custom", humanName: "Свой профиль", harness: "codex", model: "gpt-5.6-sol" }],
+    });
+    expect(saved.status).toBe(200);
+    const after = await readSettings(port);
+    const profile = after.profiles.find((candidate: any) => candidate.id === "profile/custom");
+    expect(profile.humanName).toBe("Свой профиль");
+    expect(profile.harness).toBe("codex");
+    // The profile is a record of the settings too.
+    const record = after.records.find((candidate: any) => candidate.id === "profile/profile/custom");
+    expect(record).toBeTruthy();
   });
 
   it("never touches the file of another product", async () => {
