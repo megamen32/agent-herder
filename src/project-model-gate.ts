@@ -97,6 +97,37 @@ export async function assertModelAllowedForProject(
 }
 
 /**
+ * Reject a model the caller named that the route of the project forbids.
+ *
+ * The launch path judges the effective model of the route: the model the route
+ * configures for the harness. A request may carry another model, and on the
+ * analysis path that model is the one that really starts, so the lists of the
+ * route have to judge it too. Without this check the lists of a project stay
+ * incomplete: they permit the model of the route and never see the model of
+ * the request.
+ *
+ * The route is resolved by the one shared lookup, so a project is judged by the
+ * rules of the route that governs it. A project without a route keeps the
+ * global policy and is not checked.
+ */
+export function assertModelAllowedForProjectRoute(
+  policy: ProjectModelPolicy | undefined,
+  project: string,
+  model: string | undefined,
+): void {
+  if (!policy || !model) return;
+  const resolution = findProjectModelRoute(policy.projectRoutes, project);
+  if (!resolution) return;
+  if (modelPermittedForRoute(resolution.route, model)) return;
+  throw new ModelNotPermittedError(
+    project,
+    model,
+    resolution.route.allowedModels ?? [],
+    resolution.route.deniedModels ?? [],
+  );
+}
+
+/**
  * Does the policy restrict the models of any project at all?
  *
  * A gate that has nothing to enforce must not make the caller do extra work.
