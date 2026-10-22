@@ -59,14 +59,55 @@ def worktree_for(sha: str, worktrees: Path) -> Path:
     return worktrees / f"herder-fleet-candidate-{sha[:8]}"
 
 
+def materialize_packages(worktree: Path):
+    """Give the worktree its own node_modules of symlinks.
+
+    A single symlink to the shared store is not enough: the workspace links
+    inside it (node_modules/<pkg> -> ../packages/<pkg>) are relative, so they
+    resolve into the SHARED store - the workspace package of the live checkout
+    gets built instead of the one of this head, and the release is contaminated
+    by another tree. Owning the directory makes every relative link resolve
+    inside the worktree, while the packages themselves stay shared.
+    """
+    store = REPO / "node_modules"
+    target = worktree / "node_modules"
+    if target.is_symlink():
+        target.unlink()
+    if target.exists():
+        return
+    target.mkdir(parents=True, exist_ok=True)
+    for entry in sorted(store.iterdir()):
+        if entry.name == ".bin":
+            binary = target / ".bin"
+            binary.mkdir(exist_ok=True)
+            for item in entry.iterdir():
+                os.symlink(os.path.realpath(item), binary / item.name)
+            continue
+        if entry.name.startswith("@") and entry.is_dir():
+            scope = target / entry.name
+            scope.mkdir(exist_ok=True)
+            for item in entry.iterdir():
+                os.symlink(os.path.realpath(item), scope / item.name)
+            continue
+        if entry.is_symlink():
+            resolved = entry.resolve()
+            packages = REPO / "packages"
+            if str(resolved).startswith(str(packages)):
+                # A workspace package: link the one of this worktree.
+                relative = os.path.relpath(worktree / "packages" / resolved.relative_to(packages), target)
+                os.symlink(relative, target / entry.name)
+                continue
+            os.symlink(resolved, target / entry.name)
+            continue
+        os.symlink(entry, target / entry.name)
+
+
 def prepare_worktree(sha: str, worktrees: Path) -> Path:
     worktree = worktree_for(sha, worktrees)
     branch = f"fleet/candidate-{sha[:8]}"
     if not worktree.exists():
         run(["git", "-C", str(REPO), "worktree", "add", str(worktree), "-b", branch, sha])
-    packages = worktree / "node_modules"
-    if not packages.exists():
-        packages.symlink_to(REPO / "node_modules")
+    materialize_packages(worktree)
     return worktree
 
 
