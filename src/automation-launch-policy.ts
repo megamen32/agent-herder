@@ -1,7 +1,7 @@
 import { normalizeIncidentExecution, type HealthExecutionProfile } from "./health-remediation.js";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, unlink, writeFile, chmod } from "node:fs/promises";
-import { dirname } from "node:path";
+import { appendFile, mkdir, open, readFile, rename, unlink, writeFile, chmod } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
 import type { HarnessType } from "./types/common.js";
 import {
@@ -231,6 +231,87 @@ export class LaunchPolicyConflictError extends Error {
   }
 }
 
+/** The sibling audit log of a launch policy document. */
+export function launchPolicyAuditPath(policyPath: string): string {
+  return join(dirname(policyPath), "automation-launch-policy.audit.jsonl");
+}
+
+/** One recorded change of the launch policy. */
+export interface LaunchPolicyAuditRecord {
+  /** When the change was recorded. */
+  at: string;
+  /** The names of the changed parts of the document. */
+  changed: string[];
+  /** The model strings the change carried. */
+  models: string[];
+}
+
+/** Every string value of a map of strings or of a map of string lists. */
+function stringValues(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(stringValues);
+  if (!value || typeof value !== "object") return [];
+  return Object.values(value as Record<string, unknown>).flatMap(stringValues);
+}
+
+/** The model strings of one changed part of the policy document. */
+function changedModelStrings(key: string, value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  if (key === "models" || key === "fallbackModels") return stringValues(value);
+  if (key === "incidentExecution") {
+    const model = (value as Record<string, unknown>).model;
+    return typeof model === "string" ? [model] : [];
+  }
+  if (key === "projectRoutes") {
+    return Object.values(value as Record<string, unknown>).flatMap((route) =>
+      stringValues((route as Record<string, unknown>).models));
+  }
+  return [];
+}
+
+/** A model id never carries a secret, but a copied one must not reach the log. */
+function redactSecret(value: string): string {
+  return value.replace(/sk-[A-Za-z0-9._-]{8,}/gu, "[redacted]").replace(/Bearer\s+\S+/gu, "Bearer [redacted]");
+}
+
+/**
+ * The record of one change of the policy document.
+ *
+ * The record names the changed parts and the model strings they carried. It
+ * never holds a token or a key: only model ids are written.
+ */
+export function launchPolicyAuditRecord(previous: unknown, next: unknown): LaunchPolicyAuditRecord {
+  const before = (previous && typeof previous === "object" ? previous : {}) as Record<string, unknown>;
+  const after = (next && typeof next === "object" ? next : {}) as Record<string, unknown>;
+  const changed: string[] = [];
+  const models: string[] = [];
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (JSON.stringify(before[key] ?? null) === JSON.stringify(after[key] ?? null)) continue;
+    changed.push(key);
+    models.push(...changedModelStrings(key, before[key]), ...changedModelStrings(key, after[key]));
+  }
+  return {
+    at: new Date().toISOString(),
+    changed,
+    models: [...new Set(models.map((model) => redactSecret(model).slice(0, 256)))],
+  };
+}
+
+/**
+ * Append one change of the policy document to the audit log.
+ *
+ * The log is a trail, not a gate: a failed write never fails the save.
+ */
+export async function appendLaunchPolicyAudit(policyPath: string, record: LaunchPolicyAuditRecord): Promise<void> {
+  const target = launchPolicyAuditPath(policyPath);
+  try {
+    await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+    await appendFile(target, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+  } catch {
+    // The audit trail must not break the save of the policy.
+  }
+}
+
 const HARNESSES: readonly HarnessType[] = ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
 export const MAX_MODEL_LENGTH = 256;
 
@@ -300,9 +381,14 @@ function validateFallbackModels(value: unknown): Partial<Record<"opencode" | "zc
     for (const model of candidate) {
       if (typeof model !== "string") throw new Error(`fallbackModels.${harness} entries must be model IDs`);
       const normalized = model.trim();
+      // A gateway route of OmniRoute, or the MiniMax subscription route as a
+      // fallback of the gateway route: the owner keeps the paid route allowed
+      // and only asks that the gateway combo route stays first.
+      const gatewayRoute = /^omniroute\/[A-Za-z0-9._-]+(?:\/[^/\\]+(?:\/[^/\\]+)*)?$/iu.test(normalized);
+      const subscriptionRoute = /^minimax-coding-plan\/[^/\\]+$/iu.test(normalized);
       if (normalized.length === 0 || normalized.length > MAX_MODEL_LENGTH || /[\u0000-\u0020\u007f]/u.test(normalized)
-      || !/^omniroute\/[A-Za-z0-9._-]+(?:\/[^/\\]+(?:\/[^/\\]+)*)?$/iu.test(normalized)) {
-        throw new Error(`fallbackModels.${harness} entries must be fully qualified OmniRoute model IDs`);
+      || (!gatewayRoute && !subscriptionRoute)) {
+        throw new Error(`fallbackModels.${harness} entries must be fully qualified OmniRoute model IDs or a MiniMax subscription route`);
       }
       const key = normalized.toLocaleLowerCase("en-US");
       if (seen.has(key)) continue;
@@ -426,6 +512,11 @@ export class AutomationLaunchPolicyStore {
 
   constructor(private readonly path: string) {
     this.lockTarget = `${path}.lock`;
+  }
+
+  /** The path of the stored document. */
+  get filePath(): string {
+    return this.path;
   }
 
   async load(): Promise<AutomationLaunchPolicyLoad> {

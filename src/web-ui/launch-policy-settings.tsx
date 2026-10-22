@@ -723,6 +723,61 @@ export function inputId(harness: string): string {
   return `launch-model-${harness.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
+/** The datalist id of the incident model field. */
+export const INCIDENT_MODEL_LIST_ID = "launch-model-incident";
+
+/**
+ * The fully qualified route of the incident model of the policy.
+ *
+ * The stored model is the route the owner typed. A bare model id is carried
+ * by the approved OmniRoute provider, so the route of both forms is the same.
+ */
+export function incidentModelRoute(policy: LaunchPolicy): string {
+  const execution = policy.incidentExecution;
+  if (!execution) return "";
+  const model = execution.model.trim();
+  if (!model) return "";
+  return model.includes("/") ? model : `${execution.provider}/${model}`;
+}
+
+/** The problem of a hand-typed model, if there is one. */
+export function modelValueIssue(value: string): string | undefined {
+  const model = value.trim();
+  if (!model) return "Укажите модель.";
+  if (model.length > 256) return "Модель должна быть не длиннее 256 символов.";
+  if (/[\u0000-\u001f\u007f]/u.test(model)) return "Модель не должна содержать управляющие символы.";
+  return undefined;
+}
+
+/** The problem of a hand-typed incident model, if there is one. */
+export function incidentModelIssue(value: string): string | undefined {
+  const issue = modelValueIssue(value);
+  if (issue) return issue;
+  const model = value.trim();
+  const gateway = model.toLocaleLowerCase("en-US").startsWith("omniroute/");
+  const subscription = model.toLocaleLowerCase("en-US").startsWith("minimax-coding-plan/");
+  if (model.includes("/") && !gateway && !subscription) {
+    return "Маршрут инцидента должен вести через OmniRoute (или через MiniMax по подписке), без подмены провайдера.";
+  }
+  return undefined;
+}
+
+/**
+ * The warning of a hand-typed model that the harness catalog does not list.
+ *
+ * The owner is the authority, so an unknown model is never refused: the form
+ * only says that the model is not in the live catalog and cannot be
+ * route-verified.
+ */
+export function modelCatalogIssue(harness: string, value: string, options: readonly string[] | undefined): string | undefined {
+  const model = value.trim();
+  if (!model) return undefined;
+  const catalog = options ?? [];
+  if (catalog.length === 0) return undefined;
+  if (catalog.includes(model)) return undefined;
+  return `Модель «${model}» не найдена в каталоге harness ${harness} — будет сохранена как есть.`;
+}
+
 /** A unique list id for one model field of one project route. */
 export function routeInputId(project: string, harness: string): string {
   return `launch-model-${project.replace(/[^a-zA-Z0-9_-]/g, "-")}-${harness.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
@@ -754,13 +809,22 @@ export function LaunchPolicySettings({ onOpenProjects }: { onOpenProjects?: () =
       const model = route.models?.[harness] ?? policy.models[harness];
       return Boolean(model?.trim()) && model.length <= 256;
     }));
+  // The gateway combo route stays the first choice; the MiniMax subscription
+  // route is allowed as a fallback, so nothing is filtered out of the list.
+  const incidentModelOptions = (() => {
+    const options = [...(modelOptions.opencode ?? [])];
+    const first = "omniroute/minimax-combo-m3.1";
+    return options.sort((left, right) => (left === first ? -1 : right === first ? 1 : 0));
+  })();
+  const incidentIssue = policy.incidentExecution ? incidentModelIssue(policy.incidentExecution.model) : undefined;
+  const incidentWarning = policy.incidentExecution
+    ? modelCatalogIssue("opencode", incidentModelRoute(policy), modelOptions.opencode)
+    : undefined;
   const valid = routesValid
     && (policy.allowedHarnesses.length === 0 || policy.allowedHarnesses.includes(policy.preferredHarness))
     && policy.preferredHarness.length > 0
-    && policy.allowedHarnesses.every((harness) => {
-      const model = policy.models[harness];
-      return Boolean(model?.trim()) && model.length <= 256 && !/[\u0000-\u001f\u007f]/u.test(model);
-    });
+    && policy.allowedHarnesses.every((harness) => !modelValueIssue(policy.models[harness] ?? ""))
+    && !incidentIssue;
 
   return <section className="global-autopilot-card launch-policy-settings" aria-label="Запуск новых сессий">
     <div className="global-autopilot-head">
@@ -779,20 +843,19 @@ export function LaunchPolicySettings({ onOpenProjects }: { onOpenProjects?: () =
             draft.edit({ ...policy, incidentExecution: { ...INCIDENT_EXECUTION } }, "incidentExecution");
           }}><option value="" disabled>Выберите среду</option><option value="opencode">OpenCode · MiniMax через OmniRoute</option></select>
         </label>
-        <label className="launch-policy-field"><span>Модель локального маршрута Herder · MiniMax M3.1 через OmniRoute</span>
-          <select aria-label="Модель локального маршрута Herder" value={policy.incidentExecution ? `${policy.incidentExecution.provider}/${policy.incidentExecution.model}` : ""}
-            onChange={() => { draft.edit({ ...policy, incidentExecution: { ...INCIDENT_EXECUTION } }, "incidentExecution"); }}>
-            <option value="" disabled>Выберите доступную модель</option>
-            <option value="omniroute/minimax-combo-m3.1" disabled={!(modelOptions.opencode ?? []).includes("omniroute/minimax-combo-m3.1")}>
-              {`MiniMax M3.1 Flash · OmniRoute${(modelOptions.opencode ?? []).includes("omniroute/minimax-combo-m3.1") ? "" : " · доступность не подтверждена"}`}
-            </option>
-          </select>
+        <label className="launch-policy-field"><span>Модель локального маршрута Herder</span>
+          <input type="text" maxLength={256} list={INCIDENT_MODEL_LIST_ID} value={policy.incidentExecution?.model ?? ""}
+            placeholder="omniroute/провайдер/модель" aria-label="Модель локального маршрута Herder" aria-invalid={Boolean(incidentIssue)}
+            onChange={(event) => {
+              draft.edit({ ...policy, incidentExecution: { ...(policy.incidentExecution ?? INCIDENT_EXECUTION), model: event.target.value } }, "incidentExecution");
+            }} />
+          <datalist id={INCIDENT_MODEL_LIST_ID}>{incidentModelOptions.map((model) => <option value={model} key={model} />)}</datalist>
         </label>
-        <p className="settings-help" role="status">Модель: MiniMax M3.1 Flash · OmniRoute · {(modelOptions.opencode ?? []).includes("omniroute/minimax-combo-m3.1") ? "есть в списке OpenCode" : "доступность не подтверждена"}.</p>
+        {incidentIssue && <small className="autopilot-error" role="alert">{incidentIssue}</small>}
+        {incidentWarning && <small className="settings-help" role="status">{incidentWarning}</small>}
         <small>Провайдер: omniroute. При отказе запуск сохраняет причину и не меняет провайдера.</small>
+        {policy.incidentExecution && <small className="settings-help">Маршрут запуска: {incidentModelRoute(policy)}</small>}
         {!policy.incidentExecution && <p role="status">Маршрут инцидентов ещё не сохранён.</p>}
-        {policy.incidentExecution && !(modelOptions.opencode ?? []).includes("omniroute/minimax-combo-m3.1") &&
-          <p role="alert">Маршрут OmniRoute к MiniMax M3.1 пока не подтверждён OpenCode. Запуск будет отклонён без смены провайдера.</p>}
       </fieldset>
       </details>
       <fieldset className="settings-group" disabled={saving || Boolean(loadError)}>
@@ -817,13 +880,20 @@ export function LaunchPolicySettings({ onOpenProjects }: { onOpenProjects?: () =
         {policy.allowedHarnesses.length > 0 && <label className="launch-policy-field"><span>Основная среда</span><select value={policy.preferredHarness} aria-label="Основная среда запуска" onChange={(event) => {
           draft.edit(updatePreferredHarness(policy, event.target.value), "preferredHarness");
         }}>{optionsForSelect.map((harness) => <option value={harness} key={harness}>{labelFor(harness, known)}</option>)}</select></label>}
-        {policy.allowedHarnesses.map((harness) => <label className="launch-policy-field" key={harness}>
-          <span>Модель · {labelFor(harness, known)}</span>
-          <input type="text" maxLength={256} list={inputId(harness)} value={policy.models[harness] ?? ""} placeholder="Укажите модель" aria-label={`Модель для среды ${labelFor(harness, known)}`} onChange={(event) => {
-            draft.edit({ ...policy, models: { ...policy.models, [harness]: event.target.value } }, "models");
-          }} />
-          <datalist id={inputId(harness)}>{(modelOptions[harness] ?? []).map((model) => <option value={model} key={model} />)}</datalist>
-        </label>)}
+        {policy.allowedHarnesses.map((harness) => {
+          const model = policy.models[harness] ?? "";
+          const issue = modelValueIssue(model);
+          const warning = modelCatalogIssue(harness, model, modelOptions[harness]);
+          return <label className="launch-policy-field" key={harness}>
+            <span>Модель · {labelFor(harness, known)}</span>
+            <input type="text" maxLength={256} list={inputId(harness)} value={model} placeholder="Укажите модель" aria-label={`Модель для среды ${labelFor(harness, known)}`} aria-invalid={Boolean(issue)} onChange={(event) => {
+              draft.edit({ ...policy, models: { ...policy.models, [harness]: event.target.value } }, "models");
+            }} />
+            <datalist id={inputId(harness)}>{(modelOptions[harness] ?? []).map((model) => <option value={model} key={model} />)}</datalist>
+            {issue && <small className="autopilot-error" role="alert">{issue}</small>}
+            {warning && <small className="settings-help" role="status">{warning}</small>}
+          </label>;
+        })}
         {policy.allowedHarnesses.length === 0 && <p className="settings-help">Автоматический запуск новых сессий отключён. Основной вариант сохранён и будет доступен после выбора разрешённой среды.</p>}
       </fieldset>
       <fieldset className="settings-group" disabled={saving || Boolean(loadError)}>

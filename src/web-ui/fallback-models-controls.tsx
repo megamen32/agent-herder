@@ -18,10 +18,14 @@ export function moveFallbackModel(models: string[], index: number, offset: -1 | 
 
 export function fallbackModelIssue(model: string): string | undefined {
   const value = model.trim();
-  if (!value) return "Укажите полный OmniRoute ID: omniroute/провайдер/модель.";
+  if (!value) return "Укажите полный OmniRoute ID: omniroute/модель или omniroute/провайдер/модель.";
   if (value.length > 256 || /[\u0000-\u0020\u007f]/u.test(value)) return "Имя модели должно содержать не более 256 символов и не содержать пробелов.";
-  if (!/^omniroute\/[A-Za-z0-9._-]+\/[^/\\]+(?:\/[^/\\]+)*$/iu.test(value)) {
-    return "Укажите полный OmniRoute ID: omniroute/провайдер/модель.";
+  // The same rule as the server: the provider segment may be omitted, so the
+  // two-segment form of the live route is a valid identifier too.
+  const gateway = /^omniroute\/[A-Za-z0-9._-]+(?:\/[^/\\]+(?:\/[^/\\]+)*)?$/iu.test(value);
+  const subscription = /^minimax-coding-plan\/[^/\\]+$/iu.test(value);
+  if (!gateway && !subscription) {
+    return "Укажите полный OmniRoute ID: omniroute/модель или omniroute/провайдер/модель (либо маршрут MiniMax по подписке).";
   }
   return undefined;
 }
@@ -153,7 +157,7 @@ export function FallbackModelsControls({
 
   return <fieldset className="settings-group" disabled={disabled}>
     <legend>Запасные модели при исчерпании квоты</legend>
-    <p className="settings-help">Укажите полные OmniRoute ID вида omniroute/провайдер/модель в порядке попытки. Список применяется только после подтверждённого отказа по квоте. Текущая модель и повторы будут пропущены.</p>
+    <p className="settings-help">Укажите полные OmniRoute ID вида omniroute/модель или omniroute/провайдер/модель в порядке попытки. Список применяется только после подтверждённого отказа по квоте. Текущая модель и повторы будут пропущены.</p>
     {FALLBACK_MODEL_HARNESSES.map((harness) => {
       const models = fallbackModels[harness] ?? [];
       return <section className="launch-runtime-option fallback-model-harness" key={harness} aria-label={`Запасные модели · ${LABELS[harness]}`}

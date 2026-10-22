@@ -70,10 +70,22 @@ describe("Notice Place health-launch HTTP admission", () => {
     expect((await post()).status).toBe(401);
     expect(run).not.toHaveBeenCalled();
   });
-  it.each(["other/model", `${model} `, "omniroute/minimax/MiniMax-M3.1-Flash", "omniroute/GLM-5.3-Flash-MiniMax-M3.1"])("rejects non-allowlisted exact model %s", async invalid => {
+  it.each(["other/model", `${model} `])("rejects a model outside the approved gateway route %s", async invalid => {
     const { post, run } = await fixture();
     expect((await post({ model: invalid })).status).toBe(400);
     expect(run).not.toHaveBeenCalled();
+  });
+  it.each([
+    "omniroute/glm-5.3-flash-minimax-m3.1",
+    "omniroute/any-provider/any-model",
+    "omniroute/minimax/MiniMax-M3.1-Flash",
+    "minimax-coding-plan/MiniMax-M3.1-Flash",
+    "omniroute/minimax-coding-plan/MiniMax-M3.1-Flash",
+  ])("accepts the hand-picked gateway route %s", async approved => {
+    const { post, run } = await fixture();
+    const response = await post({ model: approved });
+    expect(response.status).toBe(200);
+    expect(run).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ harness: "opencode", model: approved }));
   });
   it("rejects another harness and missing stable operation identity", async () => {
     const { post, run } = await fixture();

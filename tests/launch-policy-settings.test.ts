@@ -2,11 +2,16 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LAUNCH_POLICY,
+  incidentModelIssue,
+  incidentModelRoute,
+  modelCatalogIssue,
+  modelValueIssue,
   updateAllowedHarness,
   updatePreferredHarness,
   updateProjectRoute,
   updateProjectRouteModel,
   removeProjectRouteHarness,
+  type LaunchPolicy,
 } from "../src/web-ui/launch-policy-settings.js";
 import { resolveProjectLaunch, validateAutomationLaunchPolicy } from "../src/automation-launch-policy.js";
 
@@ -103,6 +108,40 @@ describe("new session launch policy settings", () => {
     expect(component).toContain("Политика запуска изменилась в другой вкладке");
     expect(component).toContain("Обновить и применить заново");
     expect(component).toContain("mergePolicyChanges");
+  });
+
+  it("lets the operator type the incident model and warns about an unknown one", () => {
+    const incident = { runtime: "opencode", provider: "omniroute", model: "omniroute/hand-typed-model", reasoning: "default", topic: "health" } as const;
+    const policy: LaunchPolicy = { ...DEFAULT_LAUNCH_POLICY, incidentExecution: incident };
+    expect(incidentModelRoute(policy)).toBe("omniroute/hand-typed-model");
+    // The owner is the authority: a model outside the catalog is saved as it is.
+    expect(incidentModelIssue("omniroute/hand-typed-model")).toBeUndefined();
+    expect(modelCatalogIssue("opencode", "omniroute/hand-typed-model", ["omniroute/minimax-combo-m3.1"])).toContain("не найдена в каталоге harness");
+    expect(modelCatalogIssue("opencode", "omniroute/hand-typed-model", ["omniroute/hand-typed-model"])).toBeUndefined();
+    // An empty catalog carries no verdict about the model.
+    expect(modelCatalogIssue("opencode", "omniroute/hand-typed-model", [])).toBeUndefined();
+  });
+
+  it("allows the MiniMax subscription route and refuses a provider substitution", () => {
+    expect(modelValueIssue("minimax-coding-plan/MiniMax-M3.1-Flash")).toBeUndefined();
+    expect(modelValueIssue("omniroute/minimax/MiniMax-M3.1-Flash")).toBeUndefined();
+    expect(incidentModelIssue("minimax-coding-plan/MiniMax-M3.1-Flash")).toBeUndefined();
+    expect(incidentModelIssue("zai/GLM-4.6")).toBeTruthy();
+    expect(incidentModelIssue("omniroute/minimax-combo-m3.1")).toBeUndefined();
+  });
+
+  it("saves a hand-typed incident model through the production validation", () => {
+    const draft = { ...DEFAULT_LAUNCH_POLICY, incidentExecution: { runtime: "opencode", provider: "omniroute", model: "omniroute/hand-typed-model", reasoning: "default", topic: "health" } };
+    const saved = validateAutomationLaunchPolicy(JSON.parse(JSON.stringify(draft)));
+    expect(saved.incidentExecution?.model).toBe("omniroute/hand-typed-model");
+  });
+
+  it("edits the incident model by hand instead of choosing a pinned option", () => {
+    expect(component).toContain("list={INCIDENT_MODEL_LIST_ID}");
+    expect(component).toContain("<datalist id={INCIDENT_MODEL_LIST_ID}>");
+    expect(component).not.toContain("Модель локального маршрута Herder · MiniMax M3.1 через OmniRoute");
+    expect(component).toContain("не найдена в каталоге harness");
+    expect(component).toContain("будет сохранена как есть");
   });
 
   it("exposes launch policy as its own desktop and mobile settings entry", () => {

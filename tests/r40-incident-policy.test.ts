@@ -13,6 +13,28 @@ describe('R40 incident OmniRoute combo policy',()=>{
  it('maps OpenCode to exact native OmniRoute combo model',()=>{
   const profile=normalizeHealthExecution(incidentExecution); expect(healthModelForHarness('opencode',profile)).toBe('omniroute/minimax-combo-m3.1');
  });
+ it('accepts a hand-typed free route of the incident model',()=>{
+  for (const model of ['omniroute/glm-5.3-flash-minimax-m3.1','omniroute/any-provider/any-model','minimax-combo-m3.1']) {
+   const saved=validateAutomationLaunchPolicy({...general,incidentExecution:{...incidentExecution,model}});
+   expect(saved.incidentExecution?.model).toBe(model);
+   expect(healthModelForHarness('opencode',saved.incidentExecution!)).toBe(model.includes('/')?model:`omniroute/${model}`);
+  }
+ });
+ it('allows the paid subscription route through the gateway as the incident model',()=>{
+  for (const model of ['omniroute/minimax-coding-plan/MiniMax-M3.1-Flash','omniroute/minimax/MiniMax-M3.1-Flash','minimax-coding-plan/MiniMax-M3.1-Flash']) {
+   const saved=validateAutomationLaunchPolicy({...general,incidentExecution:{...incidentExecution,model}});
+   expect(saved.incidentExecution?.model).toBe(model);
+  }
+  // A route of another provider stays refused: that is a substitution.
+  for (const model of ['minimax/MiniMax-M3.1-Flash']) {
+   expect(()=>validateAutomationLaunchPolicy({...general,incidentExecution:{...incidentExecution,model}})).toThrow();
+  }
+ });
+ it('rejects a provider substitution and an unbounded incident model',()=>{
+  expect(()=>validateAutomationLaunchPolicy({...general,incidentExecution:{...incidentExecution,model:'zai/GLM-4.6'}})).toThrow();
+  expect(()=>validateAutomationLaunchPolicy({...general,incidentExecution:{...incidentExecution,model:'x'.repeat(257)}})).toThrow();
+  expect(()=>validateAutomationLaunchPolicy({...general,incidentExecution:{...incidentExecution,model:'bad\nmodel'}})).toThrow();
+ });
 });
 
 import { AutomationLaunchPolicyStore } from '../src/automation-launch-policy.js';
