@@ -849,6 +849,36 @@ describe("terminal quota recovery", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it.each(["exact", "unverified", "foreign", "ambiguous", "missing", "late-change"])("verifies native catalog fallback dispatch identity: %s", async (kind) => {
+    const root = await mkdtemp(join(tmpdir(), "quota-native-model-readback-"));
+    try {
+      const current = quotaSession();
+      const requested = "omniroute/minimax-combo-m3.1", dispatchable = "omniroute/minimax/MiniMax-M3.1-Flash";
+      const sent: Array<{model?:string;inputId?:string}> = [];
+      const store = new UnfinishedSessionStore(join(root,"unfinished.json"));
+      const settings = await optedInSettings(root);
+      await settings.setGlobal(false);
+      await settings.setSessionWaitForQuota({harness:current.harness,sessionId:current.id,cwd:current.cwd},false,new Date(),true);
+      const adapter = quotaAdapter(()=>current,sent,[requested]) as HarnessAdapter & {resolveDispatchableModel?: (model:string)=>Promise<unknown>};
+      adapter.changeModel=async()=>{current.model=dispatchable;return {ok:true};};
+      let resolutions=0;
+      if(kind!=="missing") adapter.resolveDispatchableModel=async()=>{
+        resolutions+=1;
+        return {ok:true,requested,nativeRoute:kind==="foreign" || kind==="late-change" && resolutions>=3 ?"foreign/model":requested,dispatchable,kind:kind==="unverified"?"unverified":"native-route",candidates:kind==="ambiguous"?["one","two"]:["minimax/MiniMax-M3.1-Flash"]};
+      };
+      const launcher=new UnfinishedSessionLauncher({adapters:new Map([["opencode",adapter]]),store,settingsStore:settings,fallbackModelsForHarness:async()=>[requested]});
+      await launcher.recoverPending();
+      expect(sent).toHaveLength(kind==="exact"?1:0);
+      if(kind==="exact") {
+        expect(sent[0]?.model).toBe(requested);
+        expect(sent[0]?.inputId).not.toBe("native-input-1");
+        await launcher.recoverPending();
+        expect(sent).toHaveLength(1);
+        expect((await store.list())[0]?.quotaRecovery?.state).toBe("accepted");
+      }
+    }finally{await rm(root,{recursive:true,force:true});}
+  });
+
   it("keeps original-model wait armed after a definite refusal instead of exhausting it", async () => {
     const root = await mkdtemp(join(tmpdir(), "quota-original-rewait-"));
     try {
