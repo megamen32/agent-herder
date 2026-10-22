@@ -10,11 +10,47 @@ import {
 } from "agent-resume-mcp";
 import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, HarnessEvent, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SendMessageResult, SetPermissionsOptions, SessionMessagePart, SessionMessageView, localSessionHostId } from "../types/index.js";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { throwIfAborted } from "../abort-utils.js";
 import { terminalQuotaFailure } from "./quota-failure.js";
 
 export { normalizeOpenCodeEvent, openCodeConnectedModels, openCodeMessageParts, openCodeModelCatalogEntries, parseOpenCodeServerCommand, unwrapEnvelope } from "agent-resume-mcp";
 export type { OpenCodeEvent } from "agent-resume-mcp";
+
+/**
+ * Rows a name search may return before the answer stops being complete.
+ *
+ * OpenCode 2 answers a text search over the whole catalog of one directory,
+ * so the window has to cover that catalog: the busiest workspace already
+ * holds more than two thousand sessions, and a search also matches the bodies
+ * of the messages.
+ */
+const NAMED_SEARCH_LIMIT = 5000;
+
+/** The bounded listing used when the server cannot answer a name search. */
+const NAMED_SEARCH_LISTING_LIMIT = 500;
+
+/**
+ * The URL of the running OpenCode server.
+ *
+ * The core client resolves it the same way, so both talk to one server even
+ * when it is not published under a fixed address.
+ */
+function resolveOpenCodeBaseUrl(configured?: string): string {
+  return configured?.trim()
+    || process.env.OPENCODE_URL?.trim()
+    || discoverOpenCodeServerUrl(process.env.OPENCODE_PID)
+    || "http://127.0.0.1:4096";
+}
+
+function discoverOpenCodeServerUrl(pid: string | undefined): string | undefined {
+  if (!pid || !/^\d+$/u.test(pid)) return undefined;
+  try {
+    return parseOpenCodeServerCommand(readFileSync(`/proc/${pid}/cmdline`, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
 
 export interface OpenCodeProviderLeaf {
   providerId: string;
@@ -162,6 +198,10 @@ export class OpenCodeAdapter implements HarnessAdapter {
   };
 
   private readonly client: OpenCodeClient;
+  /** URL of the same OpenCode server the core client talks to. */
+  private readonly baseUrl: string;
+  /** Basic authorization of that server, when it is protected. */
+  private readonly authorization: string | undefined;
   /** Native v2 emits the inbox delivery before execution.started, whose frame has no input ID. */
   private readonly deliveredInboxBySession = new Map<string, string | null>();
 
@@ -171,6 +211,10 @@ export class OpenCodeAdapter implements HarnessAdapter {
       ...(config.password ? { password: config.password } : {}),
       ...(config.protocol ? { protocol: config.protocol } : {}),
     });
+    this.baseUrl = resolveOpenCodeBaseUrl(config.baseUrl);
+    const password = config.password ?? process.env.OPENCODE_SERVER_PASSWORD;
+    const username = process.env.OPENCODE_SERVER_USERNAME || "opencode";
+    this.authorization = password ? `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}` : undefined;
   }
 
   /** True once the server answered as an OpenCode 2 (`/api`) instance. */
@@ -185,6 +229,69 @@ export class OpenCodeAdapter implements HarnessAdapter {
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
     const sessions = await this.client.listSessions({ cwd: options.cwd, limit: options.limit });
     return sessions.map((session) => this.toAgentSession(session));
+  }
+
+  /**
+   * Exact lookup of the sessions that carry a name.
+   *
+   * The core client only offers a bounded listing of the newest sessions, and
+   * OpenCode 2 caps that request at 500 rows. A busy workspace holds thousands
+   * of sessions, so a repeated delivery could not see the session it created
+   * and created a second one under the same name. OpenCode 2 answers a text
+   * search over the whole catalog, so the name is resolved on the server side
+   * and the answer does not depend on the window.
+   */
+  async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {
+    const normalized = name.trim();
+    if (!normalized) return [];
+    const searched = await this.searchNamedOnServer(normalized, cwd);
+    if (searched) return searched;
+    // The server cannot answer a name search, so the listing is the only
+    // source. That listing is bounded, and a full window cannot prove that a
+    // session does not exist.
+    const sessions = await this.listSessions({ cwd, limit: NAMED_SEARCH_LISTING_LIMIT });
+    const matches = sessions.filter((session) => session.title === normalized);
+    if (matches.length === 0 && sessions.length >= NAMED_SEARCH_LISTING_LIMIT) {
+      throw new Error(`OpenCode named session '${normalized}' was not found in ${cwd}, but the last ${NAMED_SEARCH_LISTING_LIMIT} sessions fill the whole listing window: the server does not answer a name search, so the absence of the session cannot be proven`);
+    }
+    return matches;
+  }
+
+  /** Sessions whose title is exactly the name, or null when the server cannot search. */
+  private async searchNamedOnServer(name: string, cwd: string): Promise<AgentSession[] | null> {
+    let rows: Array<{ id?: string; title?: string }>;
+    try {
+      rows = await this.fetchNamedRows(name, cwd);
+    } catch {
+      return null;
+    }
+    const exact = rows.filter((row) => typeof row.id === "string" && row.title === name);
+    if (exact.length === 0 && rows.length >= NAMED_SEARCH_LIMIT) {
+      throw new Error(`OpenCode named session '${name}' was not found in ${cwd}, but the search window of ${NAMED_SEARCH_LIMIT} rows is full: the absence of the session cannot be proven`);
+    }
+    const sessions: AgentSession[] = [];
+    for (const row of exact) {
+      const detail = await this.client.getSession(row.id!);
+      if (detail) sessions.push(this.toAgentSession(detail));
+    }
+    return sessions;
+  }
+
+  /** Raw read of the OpenCode 2 session index for one name. */
+  private async fetchNamedRows(name: string, cwd: string): Promise<Array<{ id?: string; title?: string }>> {
+    const params = new URLSearchParams();
+    params.set("directory", cwd);
+    params.set("search", name);
+    params.set("limit", String(NAMED_SEARCH_LIMIT));
+    const response = await fetch(`${this.baseUrl}/api/session?${params.toString()}`, {
+      headers: this.authorization ? { Authorization: this.authorization } : {},
+    });
+    // An OpenCode 1 server has no /api prefix; the caller falls back to the
+    // listing, which is exhaustive there.
+    if (!response.ok) throw new Error(`OpenCode named session search failed: HTTP ${response.status}`);
+    const payload = unwrapEnvelope<unknown>(await response.json());
+    if (!Array.isArray(payload)) throw new Error("OpenCode named session search returned an unexpected payload");
+    return payload as Array<{ id?: string; title?: string }>;
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
