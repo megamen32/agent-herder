@@ -5,7 +5,7 @@ import { getHumanStopStore } from "./human-stop-store.js";
 export const HUMAN_STOP_MESSAGE = "Чат явно остановлен. Автопродолжение заблокировано; требуется новое сообщение человека или явное продолжение.";
 
 export async function automaticDeliveryHeld(session: AgentSession, humanRequested = false, adapter?: HarnessAdapter): Promise<boolean> {
-  if (session.harness !== "codex" && session.harness !== "zcode") return false;
+  if (session.harness !== "codex" && session.harness !== "zcode" && session.harness !== "opencode") return false;
   const store = getHumanStopStore();
   const current = adapter ? await adapter.getSession(session.id) : undefined;
   await store.observe(current ?? session);
@@ -14,7 +14,7 @@ export async function automaticDeliveryHeld(session: AgentSession, humanRequeste
 }
 
 export async function holdManualStop(session: AgentSession): Promise<void> {
-  if (session.harness !== "codex" && session.harness !== "zcode") return;
+  if (session.harness !== "codex" && session.harness !== "zcode" && session.harness !== "opencode") return;
   const turnId = typeof session.meta?.activeTurnId === "string" ? session.meta.activeTurnId
     : typeof session.meta?.nativeTurnId === "string" ? session.meta.nativeTurnId : undefined;
   await getHumanStopStore().hold(session, {
