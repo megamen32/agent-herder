@@ -16,7 +16,8 @@ import { newOrResumeNamedSession, type NamedSessionMode, type NamedSessionResult
 import { HUMAN_STOP_MESSAGE } from "../human-stop-actions.js";
 import { MINIMAX_SUBSCRIPTION_MODEL, type MiniMaxQuotaPreflight } from "./minimax-quota-preflight.js";
 import { NOTICEPLACE_HEALTH_AUTHORIZED, validateNoticeplaceHealthLaunch } from "./noticeplace-health-launch.js";
-import { MODEL_NOT_PERMITTED_CODE } from "../project-model-policy.js";
+import { MODEL_NOT_PERMITTED_CODE, ModelNotPermittedError } from "../project-model-policy.js";
+import { assertModelAllowedForProjectRoute } from "../project-model-gate.js";
 import { AUTOMATION_DISABLED_CODE } from "./health-reason-codes.js";
 import { automationDisarmDecision, humanWorkKey, projectWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
 
@@ -83,6 +84,10 @@ export interface ProjectLaunchDispatchResult extends Partial<NamedSessionResult>
   selectedHarness?: HarnessType;
   model?: string;
   mode?: "create" | "resume" | "handoff_required";
+  /** The key of the route the project is, when the project has a route of its own. */
+  routeKey?: string;
+  /** The root of the route replaced the requested working folder. */
+  workspaceReplaced?: boolean;
   sessionId?: string;
   delivery?: NamedSessionResult["delivery"];
   error?: string;
@@ -204,6 +209,10 @@ export async function dispatchProjectLaunch(
   const healthAnalysis = input[NOTICEPLACE_HEALTH_AUTHORIZED] === true;
   const routeKey = routeKeyOf(input.policy, input.project);
   const healthRoute = routeKey ? input.policy.projectRoutes?.[routeKey] : undefined;
+  // The receipt names the route the project IS and states whether the root of
+  // that route replaced the requested working folder, so the fact is readable
+  // from the receipt and not only from the routing text.
+  const routeReceipt = routeReceiptOf(input.policy, input.project, input.cwd);
   if (healthAnalysis) {
     const error = validateNoticeplaceHealthLaunch(input)
       ?? (!input.policy.allowedHarnesses.includes("opencode") || (healthRoute && !healthRoute.harnesses.includes("opencode"))
@@ -212,6 +221,7 @@ export async function dispatchProjectLaunch(
       return {
         operationId, project, attempts: [], outcome: "no_harness", routingReason: error, error,
         routingReasonCode: ROUTING_CODE_INCIDENT_SCOPE_NOT_PERMITTED,
+        ...routeReceipt,
       };
     }
   }
@@ -249,6 +259,7 @@ export async function dispatchProjectLaunch(
       // a project that is not blocked and cannot tell what to unblock. A
       // forbidden automation has no blocked work and names none.
       ...(disarm.workKey ? { routingReasonWorkKey: humanWorkKey(disarm.workKey) } : {}),
+      ...routeReceipt,
     };
   }
 
@@ -263,12 +274,13 @@ export async function dispatchProjectLaunch(
       routingReasonCode: ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
       selectedHarness: reserved.harness,
       ...(reserved.model ? { model: reserved.model } : {}),
+      ...routeReceipt,
     };
   }
   if (attempts.some((attempt) => STOP_OUTCOMES.has(attempt.outcome as LaunchOutcome | "human_hold"))) {
     // The chain already ended: a repeat callback reports it and touches no harness.
     const last = attempts[attempts.length - 1]!;
-    return projectReceipt({ operationId, project, attempts, completed: last });
+    return projectReceipt({ operationId, project, attempts, completed: last, routeReceipt });
   }
 
   const attempted = attempts.map((attempt) => attempt.harness);
@@ -277,6 +289,7 @@ export async function dispatchProjectLaunch(
       operationId, project, attempts, outcome: "no_harness",
       routingReason: "Попытка анализа инцидента уже завершилась отказом. Переключение среды и провайдера запрещено.",
       routingReasonCode: ROUTING_CODE_INCIDENT_ATTEMPT_FAILED,
+      ...routeReceipt,
     };
   }
   const previous = attempts[attempts.length - 1];
@@ -309,6 +322,7 @@ export async function dispatchProjectLaunch(
           ? `Среда ${harnessLabel(input.harness)} не разрешена для автоматического запуска.`
           : "Для проекта нет маршрута, а автоматический запуск новых сессий выключен.",
         routingReasonCode: input.harness ? ROUTING_CODE_HARNESS_NOT_ALLOWED : AUTOMATION_DISABLED_CODE,
+        ...routeReceipt,
       };
     }
     harness = fallback.harness;
@@ -332,12 +346,35 @@ export async function dispatchProjectLaunch(
           ? MODEL_NOT_PERMITTED_CODE
           : ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
       ...(attempts.length > 0 ? { selectedHarness: attempts[attempts.length - 1]!.harness } : {}),
+      ...routeReceipt,
     };
   } else {
     // A configured project is authoritative: the route decides harness, model
     // and workspace. A profile value is reported as overridden, never rejected.
     harness = resolution.harness;
     model = healthAnalysis ? input.model : resolution.model;
+    // The analysis path runs the model of the request, and the lists of the
+    // route judge the model of the route only. The model of the request is
+    // judged by the same lists here, so a project that permits the model of
+    // its route and forbids the model of the request refuses the launch
+    // instead of running the forbidden model. The check stands before the
+    // session is reserved, so a forbidden model never reaches a harness.
+    if (healthAnalysis && input.model) {
+      try {
+        assertModelAllowedForProjectRoute(input.policy, project, input.model);
+      } catch (error) {
+        if (!(error instanceof ModelNotPermittedError)) throw error;
+        return {
+          operationId,
+          project,
+          attempts,
+          outcome: "no_harness",
+          routingReason: `Модель ${input.model} не разрешена для проекта ${project}. Проверьте списки «Разрешённые модели» и «Запрещённые модели» в настройке проектов. Переключение среды и провайдера запрещено.`,
+          routingReasonCode: MODEL_NOT_PERMITTED_CODE,
+          ...routeReceipt,
+        };
+      }
+    }
     const routeProject = routeKeyOf(input.policy, input.project);
     let prefix = "";
     if (routeProject?.startsWith("/")) {
@@ -368,6 +405,7 @@ export async function dispatchProjectLaunch(
         ...(resolution.model ? { model: resolution.model } : {}),
         mode: "handoff_required",
         ...(resolution.sessionId ? { sessionId: resolution.sessionId } : {}),
+        ...routeReceipt,
       };
     }
     routingReason = `${prefix}${attempts.length === 0
@@ -397,12 +435,13 @@ export async function dispatchProjectLaunch(
         routingReasonCode: ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
         selectedHarness: completed.harness,
         ...(completed.model ? { model: completed.model } : {}),
+        ...routeReceipt,
       };
     }
     if (!STOP_OUTCOMES.has(completed.outcome as LaunchOutcome | "human_hold")) {
       return dispatchProjectLaunch({ ...input, operationId }, log, run);
     }
-    return projectReceipt({ operationId, project, attempts, completed });
+    return projectReceipt({ operationId, project, attempts, completed, routeReceipt });
   }
 
   const nativeResult = await run({ harness, cwd, message: input.message, ...(model ? { model } : {}), mode, inputId,
@@ -438,6 +477,7 @@ export async function dispatchProjectLaunch(
     return projectReceipt({
       operationId, project, attempts: recorded, completed: attempt,
       ...(routingReasonCode ? { routingReasonCode } : {}),
+      routeReceipt,
     });
   }
   // A definite pre-admission failure: continue down the ordered route.
@@ -456,6 +496,7 @@ export async function dispatchProjectLaunch(
       ? ROUTING_CODE_ADMISSION_NOT_CONFIRMED
       : exhaustedRouteCode(next) ?? routingReasonCode ?? ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
     ...(result.error ? { error: result.error } : {}),
+    ...routeReceipt,
   };
 }
 
@@ -481,6 +522,8 @@ function projectReceipt(input: {
   completed: ProjectLaunchAttempt;
   /** The class of the routing decision, when the dispatch made one. */
   routingReasonCode?: string;
+  /** The route facts of the launch, when a route governed it. */
+  routeReceipt?: ProjectLaunchRouteReceipt;
 }): ProjectLaunchDispatchResult {
   const { completed } = input;
   // A confirmed launch carries no class of refusal; an unconfirmed or held one
@@ -496,6 +539,7 @@ function projectReceipt(input: {
     ...completed.result,
     operationId: input.operationId,
     project: input.project,
+    ...input.routeReceipt,
     attempts: [...input.attempts.filter((attempt) => attempt.inputId !== completed.inputId), completed],
     outcome: completed.outcome as LaunchOutcome | "human_hold",
     routingReason: completed.reason,
@@ -503,6 +547,44 @@ function projectReceipt(input: {
     selectedHarness: completed.harness,
     mode: (completed.result?.created ?? completed.created) === false ? "resume" : "create",
   };
+}
+
+/** The route facts of one launch, as the receipt states them. */
+export interface ProjectLaunchRouteReceipt {
+  /** The key of the route the project is. */
+  routeKey: string;
+  /** The root of the route replaced the requested working folder that was named. */
+  workspaceReplaced: boolean;
+}
+
+/**
+ * The route facts of one launch.
+ *
+ * The route key names the route the project IS: the exact folder, its case
+ * variant or a declared alias, found by the identity lookup of this base.
+ * The flag states that the root of that route replaced the requested
+ * working folder: a folder that was named and the root ignored. A launch that
+ * named no folder has nothing replaced by the route; a directory inside a
+ * route has no route of its own.
+ *
+ * The flag reads the requested folder only, never the spelling of the
+ * project: an alias and the route root name one launch, so the receipt of
+ * the first response and the receipt of the restart replay stay equal.
+ */
+function routeReceiptOf(
+  policy: AutomationLaunchPolicy,
+  project: string,
+  cwd?: string,
+): ProjectLaunchRouteReceipt | undefined {
+  const routeKey = routeKeyOf(policy, project);
+  if (!routeKey) return undefined;
+  const root = canonicalProjectKey(routeKey);
+  const requested = canonicalProjectKey(cwd ?? "");
+  // The flag is true only when a working folder was actually named and the
+  // root of the route ignored it. A route that supplies the folder of a launch
+  // that named none replaces nothing, and the dispatch says the same: it
+  // reports an ignored folder only when a folder was passed.
+  return { routeKey, workspaceReplaced: root.startsWith("/") && Boolean(cwd) && requested !== root };
 }
 
 /** The durable key of a project: its configured route key, else the canonical name. */
