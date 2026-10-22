@@ -5,8 +5,10 @@ import { verifyFleetOwnerCookie } from "./fleet-owner-auth.js";
 import {
   SettingsStore,
   type SettingsAuditRecord,
+  type SettingsDifference,
   type SettingsEntity,
 } from "./settings-store.js";
+import type { SettingsProfile } from "./settings-catalog.js";
 
 /**
  * The API of the settings of the herder.
@@ -109,6 +111,48 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
   const hostId = options.hostId ?? hostname();
   const verifyOwnerCookie = options.verifyOwnerCookie ?? verifyFleetOwnerCookie;
 
+  /**
+   * The conflict of a change: what moved since the owner read the settings.
+   *
+   * The answer names the difference and the current state, and the change is
+   * not applied: the owner decides, the server never overwrites silently.
+   */
+  const findPrecondition = async (
+    request: IncomingMessage,
+    baseVersions: Record<string, number>,
+  ): Promise<{ status: number; body: Record<string, unknown> } | null> => {
+    const header = request.headers["if-match"];
+    const expected = typeof header === "string" ? header.trim().replace(/^W\//, "").replace(/^"|"$/g, "") : undefined;
+    if (expected === undefined) {
+      // The same rule as the launch policy and the lever of the owner: a
+      // change without the version it was made on is refused.
+      return {
+        status: 428,
+        body: {
+          ok: false,
+          code: "precondition_required",
+          error: "Нужна версия настроек, на которых вы правили: заголовок If-Match",
+          current: { etag: await store.documentEtag() },
+        },
+      };
+    }
+    const current = await store.documentEtag();
+    if (expected === current) return null;
+    const difference: SettingsDifference[] = await store.difference(baseVersions);
+    const records = await store.readRecords();
+    return {
+      status: 412,
+      body: {
+        ok: false,
+        code: "version_conflict",
+        error: "Настройки изменились, пока вы их правили. Посмотрите разницу и повторите.",
+        current: { etag: current, records },
+        difference,
+      },
+    };
+  };
+
+
   /** The owner of the request: the native owner or the owner of the cabinet. */
   const checkOwner = async (request: IncomingMessage): Promise<OwnerCheck> => {
     const cookie = request.headers.cookie;
@@ -130,6 +174,10 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
     const environment = await store.readEnvironment();
     const fleetNode = await store.readNodeConfig();
     const audit = await store.readAudit(20);
+    const records = await store.readRecords();
+    const etag = await store.documentEtag();
+    const profiles = await store.readProfiles();
+    const secrets = await store.readSecretLifecycle();
     let launchPolicy: Record<string, unknown>;
     if (!options.launchPolicy) {
       launchPolicy = {
@@ -156,6 +204,12 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
       generatedAt: new Date().toISOString(),
       actor,
       product: "agent-herder",
+      // The version of the whole document: a change that was made after the
+      // owner read it is a conflict, and the owner sees the difference.
+      etag,
+      records,
+      profiles,
+      secrets,
       environment: {
         entity: "herder.env",
         path: environment.path,
@@ -227,13 +281,73 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
         }
         const environment = readChanges(body.environment, "environment") as Record<string, string | null> | undefined;
         const fleetNode = readChanges(body.fleetNode, "fleetNode");
+        const secrets = readChanges(body.secrets, "secrets");
+        const profiles = readArray(body.profiles, "profiles");
+        const baseVersions = readBaseVersions(body.baseVersion);
+
+        // The precondition of the write is checked before everything else: a
+        // change made on a base that moved on is never applied silently.
+        const precondition = await findPrecondition(request, baseVersions);
+        if (precondition) {
+          respond(response, precondition.status, precondition.body);
+          return true;
+        }
+
         // Everything is checked before the first write: a refused value never
         // leaves a half applied change behind.
         await store.validate({ environment, fleetNode });
         const applied: SettingsAuditRecord[] = [];
+        const results: Record<string, unknown> = {};
         if (environment) applied.push(...await store.applyEnvironment(environment));
         if (fleetNode) applied.push(...await store.applyNodeConfig(fleetNode));
-        respond(response, 200, { ...await readView(), applied });
+        if (secrets) {
+          for (const [key, operation] of Object.entries(secrets)) {
+            const request = (operation ?? {}) as Record<string, unknown>;
+            const kind = request.operation;
+            if (kind === "revoke") {
+              await store.revokeSecret(key);
+              results[key] = { revoked: true };
+              continue;
+            }
+            if (kind === "check") {
+              const expected = typeof request.fingerprint === "string" ? request.fingerprint : undefined;
+              results[key] = await store.checkSecret(key, expected);
+              continue;
+            }
+            const purpose = typeof request.purpose === "string" ? request.purpose : undefined;
+            const expiresAt = typeof request.expiresAt === "string" ? request.expiresAt : undefined;
+            if (purpose === undefined && expiresAt === undefined) {
+              results[key] = await store.checkSecret(key);
+              continue;
+            }
+            results[key] = await store.setSecretMeta(key, { ...(purpose !== undefined ? { purpose } : {}), ...(expiresAt !== undefined ? { expiresAt } : {}) });
+          }
+        }
+        if (profiles) {
+          const current = await store.readProfiles();
+          for (const profile of profiles) {
+            const id = profile.id;
+            if (!id || typeof id !== "string") throw new Error("the profile needs an id");
+            const index = current.findIndex((candidate) => candidate.id === id);
+            const next: SettingsProfile = {
+              id,
+              humanName: typeof profile.humanName === "string" ? profile.humanName : id,
+              action: typeof profile.action === "string" ? profile.action : "Профиль ИИ.",
+              scope: isScope(profile.scope) ? profile.scope : { kind: "mesh" },
+              harness: typeof profile.harness === "string" ? profile.harness : "codex",
+              ...(typeof profile.model === "string" ? { model: profile.model } : {}),
+              ...(Array.isArray(profile.fallbackModels) ? { fallbackModels: stringList(profile.fallbackModels) } : {}),
+              ...(Array.isArray(profile.allowedTools) ? { allowedTools: stringList(profile.allowedTools) } : {}),
+              ...(profile.limits && typeof profile.limits === "object" && !Array.isArray(profile.limits)
+                ? { limits: profile.limits as Record<string, unknown> }
+                : {}),
+            };
+            if (index >= 0) current[index] = next;
+            else current.push(next);
+          }
+          await store.writeProfiles(current);
+        }
+        respond(response, 200, { ...await readView(), applied, ...(Object.keys(results).length > 0 ? { results } : {}) });
         return true;
       }
       if (request.method === "POST" && url.pathname === "/api/settings/rollback") {
@@ -263,6 +377,35 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
 /** Whether the method changes something. */
 function isChangingMethod(method: string | undefined): boolean {
   return method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+}
+
+/** The versions of the records the owner edited. */
+function readBaseVersions(value: unknown): Record<string, number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const versions: Record<string, number> = {};
+  for (const [id, version] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof version === "number" && Number.isFinite(version)) versions[id] = version;
+  }
+  return versions;
+}
+
+/** The strings of a list of the request. */
+function stringList(value: unknown[]): string[] {
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+/** Whether the value is a scope of a setting. */
+function isScope(value: unknown): value is { kind: "mesh" | "project" | "node" | "user"; path?: string } {
+  if (!value || typeof value !== "object") return false;
+  const kind = (value as { kind?: unknown }).kind;
+  return kind === "mesh" || kind === "project" || kind === "node" || kind === "user";
+}
+
+/** The list of profiles of the request. */
+function readArray(value: unknown, field: string): Array<Record<string, unknown>> | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value)) throw new Error(`${field} must be a list of profiles`);
+  return value as Array<Record<string, unknown>>;
 }
 
 /**

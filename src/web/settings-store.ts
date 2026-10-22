@@ -1,4 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
+import {
+  catalogFor,
+  DEFAULT_PROFILES,
+  type SettingsApplyMode,
+  type SettingsApplyState,
+  type SettingsProfile,
+  type SettingsScope,
+  type SettingsSource,
+} from "./settings-catalog.js";
+
 import { appendFile, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -150,6 +160,97 @@ interface SettingsHistoryEntry {
   auditId: string;
   /** Set when the change was rolled back. */
   rolledBackBy?: string;
+}
+
+/**
+ * One record of a setting: what the owner wants and what the product has.
+ *
+ * The desired version is the value the owner set. The confirmed state is
+ * what the running product really has: a change of the file of the product
+ * reaches the running service when the service starts, so the confirmed
+ * state of a fresh change is `pending` until the service starts again.
+ */
+export interface SettingsRecord {
+  /** The stable id of the setting: the entity and the key. */
+  id: string;
+  /** The human name of the setting. */
+  humanName: string;
+  /** What the setting does, in one line. */
+  action: string;
+  /** The scope the setting lives in. */
+  scope: SettingsScope;
+  /** Where the value comes from: the default, the parent scope or the owner. */
+  source: SettingsSource;
+  /**
+   * Where the value of this very record comes from.
+   *
+   * `default` — the value is the default of the code, the file says nothing.
+   * `file` — the value is in the file of the product, but nobody set it
+   * through the API: it was put there by hand or by the migration.
+   * `explicit` — the owner set this value through the API.
+   */
+  origin: "default" | "file" | "explicit";
+  /** The value the owner set, and its version. */
+  desired: { value: unknown; version: number; fingerprint?: string };
+  /** What the running product really has. */
+  confirmed: {
+    version: number;
+    state: SettingsApplyState;
+    appliedAt: string | null;
+    applyMode: SettingsApplyMode;
+    /** Whether the running product still waits for a restart to take the value. */
+    requiresRestart: boolean;
+  };
+  /** Who changed the setting last. */
+  changedBy: string | null;
+  /** When the setting was changed last. */
+  changedAt: string | null;
+  /** The entry of the undo stack that carries the value before the change. */
+  rollbackRef: string | null;
+}
+
+/** The metadata of a secret: everything about it except its value. */
+export interface SettingsSecretMeta {
+  /** What the secret is for. */
+  purpose?: string;
+  /** When the secret stops being valid. */
+  expiresAt?: string;
+  /** When the metadata was written. */
+  updatedAt: string;
+  /** Who wrote the metadata. */
+  updatedBy: string;
+}
+
+/** The result of a check of a secret: never the value of the secret. */
+export interface SettingsSecretCheck {
+  key: string;
+  /** Whether the secret is in the file of the product. */
+  present: boolean;
+  /** Whether the secret is the one the owner read. */
+  matches: boolean;
+  /** Whether the secret is past its date. */
+  expired: boolean;
+  /** The state of the secret. */
+  state: "ok" | "absent" | "changed" | "expired";
+  /** The places of the herder that use the secret. */
+  consumers: string[];
+  /** The stable fingerprint of the secret. */
+  fingerprint?: string;
+}
+
+/** What changed between the base of the owner and the current state. */
+export interface SettingsDifference {
+  id: string;
+  key: string;
+  entity: SettingsEntity;
+  /** The version the owner had. */
+  baseVersion: number;
+  /** The version that is in effect now. */
+  currentVersion: number;
+  /** Who changed the setting after the owner read it. */
+  changedBy: string | null;
+  /** When the setting was changed after the owner read it. */
+  changedAt: string | null;
 }
 
 export interface SettingsStoreOptions {
@@ -687,6 +788,365 @@ export class SettingsStore {
     const temporary = `${this.nodeConfigPath}.${randomUUID()}.tmp`;
     await writeFile(temporary, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
     await rename(temporary, this.nodeConfigPath);
+  }
+
+  /** The profiles of the mesh. */
+  get profilesPath(): string {
+    return join(this.stateDir, "profiles.json");
+  }
+
+  /** The metadata of the secrets: everything but their value. */
+  get secretsPath(): string {
+    return join(this.stateDir, "secrets.json");
+  }
+
+  /**
+   * The profiles of the mesh.
+   *
+   * A profile is a named entity of the settings: the launch policy of a
+   * project refers to it by its id, so the profile is not written in two
+   * places.
+   */
+  async readProfiles(): Promise<SettingsProfile[]> {
+    try {
+      const raw = await readFile(this.profilesPath, "utf8");
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) return parsed as SettingsProfile[];
+      return [];
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [...DEFAULT_PROFILES];
+      throw error;
+    }
+  }
+
+  /** Write the profiles of the mesh. */
+  async writeProfiles(profiles: SettingsProfile[]): Promise<void> {
+    await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
+    const temporary = `${this.profilesPath}.${randomUUID()}.tmp`;
+    await writeFile(temporary, `${JSON.stringify(profiles, null, 2)}\n`, { mode: 0o600 });
+    await rename(temporary, this.profilesPath);
+  }
+
+  /** The metadata of the secrets. */
+  async readSecretMeta(): Promise<Record<string, SettingsSecretMeta>> {
+    try {
+      const raw = await readFile(this.secretsPath, "utf8");
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, SettingsSecretMeta>;
+      }
+      return {};
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+      throw error;
+    }
+  }
+
+  /** Write the metadata of the secrets. */
+  async writeSecretMeta(meta: Record<string, SettingsSecretMeta>): Promise<void> {
+    await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
+    const temporary = `${this.secretsPath}.${randomUUID()}.tmp`;
+    await writeFile(temporary, `${JSON.stringify(meta, null, 2)}\n`, { mode: 0o600 });
+    await rename(temporary, this.secretsPath);
+  }
+
+  /**
+   * The version of the whole document of the settings.
+   *
+   * The version is the identity of the state the owner read. A change that
+   * was made after that read is a conflict, and the owner sees the
+   * difference instead of a silent overwrite.
+   */
+  async documentEtag(): Promise<string> {
+    const parts: string[] = [];
+    for (const path of [this.envPath, this.nodeConfigPath, this.profilesPath, this.secretsPath]) {
+      try {
+        parts.push(await readFile(path, "utf8"));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        parts.push("");
+      }
+    }
+    const records = await this.readAudit(500);
+    parts.push(records.map((record) => `${record.id}:${record.at}`).join(","));
+    return `sha256:${createHash("sha256").update(parts.join("\u0000")).digest("hex").slice(0, 16)}`;
+  }
+
+  /**
+   * Whether the running product really has the value of the file.
+   *
+   * The file of the product and the environment of the running process are
+   * two different things: the service reads its environment file when it
+   * starts. The server compares the two and says whether the value is in
+   * effect now. The comparison of a secret happens in the memory of the
+   * server: the answer carries the sign and never the value.
+   */
+  private appliedState(key: string, fileValue: string | undefined): {
+    applied: boolean;
+    requiresRestart: boolean;
+    applyMode: SettingsApplyMode;
+  } {
+    const inProcess = process.env[key];
+    if (fileValue === undefined) {
+      // The default of the code is in effect as long as the file says nothing.
+      return { applied: true, requiresRestart: false, applyMode: "сразу" };
+    }
+    if (inProcess === fileValue) return { applied: true, requiresRestart: false, applyMode: "сразу" };
+    return { applied: false, requiresRestart: true, applyMode: "после перезапуска" };
+  }
+
+  /** The version of one setting: the number of the changes of it. */
+  private async versionOf(entity: SettingsEntity, key: string): Promise<number> {
+    const records = await this.readAudit(500);
+    return records.filter((record) => record.entity === entity && record.key === key).length + 1;
+  }
+
+  /** The last change of one setting. */
+  private async lastChangeOf(entity: SettingsEntity, key: string): Promise<SettingsAuditRecord | undefined> {
+    const records = await this.readAudit(500);
+    return [...records].reverse().find((record) => record.entity === entity && record.key === key);
+  }
+
+  /**
+   * The records of every setting of the product.
+   *
+   * The record of a setting names the value the owner wants and the state
+   * the running product really has. A change of the file of the product
+   * reaches the running service when the service starts, so the confirmed
+   * state of a fresh change is `pending` until then.
+   */
+  async readRecords(): Promise<SettingsRecord[]> {
+    const environment = await this.readEnvironment();
+    const nodeConfig = await this.readNodeConfig();
+    const profiles = await this.readProfiles();
+    const records: SettingsRecord[] = [];
+
+    const startTime = Date.now() - Math.round(process.uptime() * 1000);
+    const environmentTime = await this.modifiedAt(this.envPath);
+    const nodeConfigTime = await this.modifiedAt(this.nodeConfigPath);
+
+    for (const [key, view] of Object.entries(environment.values)) {
+      const described = catalogFor("herder.env").find((entry) => entry.id === `herder.env/${key}`);
+      const version = await this.versionOf("herder.env", key);
+      const last = await this.lastChangeOf("herder.env", key);
+      const secret = view.kind === "secret";
+      const isSet = secret ? view.configured === true : view.present;
+      const source: SettingsSource = isSet ? "override" : "default";
+      const fileValue = isSet ? (secret ? (view.kind === "secret" ? undefined : undefined) : (view.kind === "value" ? view.value : undefined)) : undefined;
+      const applied = this.appliedState(key, fileValue);
+      const explicit = last !== undefined;
+      records.push({
+        id: `herder.env/${key}`,
+        humanName: described?.humanName ?? key,
+        action: described?.action ?? "Значение окружения продукта herder.",
+        scope: { kind: "node", path: environment.path },
+        source,
+        origin: isSet ? (explicit ? "explicit" : "file") : "default",
+        desired: {
+          value: secret ? null : (view.kind === "value" ? view.value ?? null : null),
+          version,
+          ...(secret && view.fingerprint ? { fingerprint: view.fingerprint } : {}),
+        },
+        confirmed: {
+          version,
+          state: applied.applied ? "Применено" : "Записано",
+          appliedAt: applied.applied ? this.now().toISOString() : null,
+          applyMode: applied.applyMode,
+          requiresRestart: applied.requiresRestart,
+        },
+        changedBy: last?.actor ?? null,
+        changedAt: last?.at ?? null,
+        rollbackRef: last?.historyId ?? null,
+      });
+    }
+
+    if (nodeConfig.config) {
+      for (const [key, value] of Object.entries(nodeConfig.config)) {
+        const described = catalogFor("node-config").find((entry) => entry.id === `node-config/${key}`);
+        const version = await this.versionOf("node-config", key);
+        const last = await this.lastChangeOf("node-config", key);
+        const applied = nodeConfigTime !== null && nodeConfigTime.getTime() > startTime ? "pending" : "applied";
+        records.push({
+          id: `node-config/${key}`,
+          humanName: described?.humanName ?? key,
+          action: described?.action ?? "Значение конфигурации узла.",
+          scope: { kind: "node", path: nodeConfig.path },
+          source: "override",
+          origin: last ? "explicit" : "file",
+          desired: { value, version },
+          confirmed: {
+            version,
+            state: applied ? "Применено" : "Записано",
+            appliedAt: applied ? this.now().toISOString() : null,
+            applyMode: applied ? "сразу" : "после перезапуска",
+            requiresRestart: !applied,
+          },
+          changedBy: last?.actor ?? null,
+          changedAt: last?.at ?? null,
+          rollbackRef: last?.historyId ?? null,
+        });
+      }
+    }
+
+    for (const profile of profiles) {
+      const version = await this.versionOf("node-config", `profile/${profile.id}`);
+      const last = await this.lastChangeOf("node-config", `profile/${profile.id}`);
+      records.push({
+        id: `profile/${profile.id}`,
+        humanName: profile.humanName,
+        action: profile.action,
+        scope: profile.scope,
+        source: "override",
+        origin: last ? "explicit" : "file",
+        desired: { value: profile, version },
+        confirmed: {
+          version,
+          state: "Применено",
+          appliedAt: last?.at ?? null,
+          applyMode: "к новым задачам",
+          requiresRestart: false,
+        },
+        changedBy: last?.actor ?? null,
+        changedAt: last?.at ?? null,
+        rollbackRef: last?.historyId ?? null,
+      });
+    }
+
+    return records;
+  }
+
+  /** When the file was written the last time. */
+  private async modifiedAt(path: string): Promise<Date | null> {
+    try {
+      const info = await stat(path);
+      return info.mtime;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  }
+
+  /**
+   * What changed between the base of the owner and the current state.
+   *
+   * The owner reads the settings, edits them and sends them back with the
+   * version it read. When the state moved on, the difference says what moved
+   * and who moved it — the owner decides, the server never overwrites
+   * silently.
+   */
+  async difference(bases: Record<string, number>): Promise<SettingsDifference[]> {
+    const records = await this.readRecords();
+    const difference: SettingsDifference[] = [];
+    for (const [id, baseVersion] of Object.entries(bases)) {
+      const record = records.find((candidate) => candidate.id === id);
+      if (!record) continue;
+      if (record.desired.version === baseVersion) continue;
+      difference.push({
+        id: record.id,
+        key: id.split("/").slice(1).join("/"),
+        entity: id.startsWith("node-config") ? "node-config" : "herder.env",
+        baseVersion,
+        currentVersion: record.desired.version,
+        changedBy: record.changedBy,
+        changedAt: record.changedAt,
+      });
+    }
+    return difference;
+  }
+
+  /**
+   * Check a secret without revealing it.
+   *
+   * The check says whether the secret is in the file of the product, whether
+   * it is the one the owner read and whether it is past its date. The value
+   * of the secret is never part of the answer.
+   */
+  async checkSecret(key: string, expectedFingerprint?: string): Promise<SettingsSecretCheck> {
+    const environment = await this.readEnvironment();
+    const view = environment.values[key];
+    const meta = (await this.readSecretMeta())[key];
+    const consumers = catalogFor("herder.env").find((entry) => entry.id === `herder.env/${key}`)?.consumers ?? [];
+    const present = view?.kind === "secret" ? view.configured === true : false;
+    const fingerprint = view?.kind === "secret" ? view.fingerprint : undefined;
+    const expired = meta?.expiresAt ? new Date(meta.expiresAt).getTime() < Date.now() : false;
+    const matches = expectedFingerprint === undefined || expectedFingerprint === fingerprint;
+    return {
+      key,
+      present,
+      matches,
+      expired,
+      state: !present ? "absent" : expired ? "expired" : matches ? "ok" : "changed",
+      consumers,
+      ...(fingerprint ? { fingerprint } : {}),
+    };
+  }
+
+  /**
+   * The lifecycle of a secret: what it is for, until when it is valid, and
+   * who uses it. The value of the secret is not part of it.
+   */
+  async readSecretLifecycle(): Promise<Array<{
+    key: string;
+    purpose?: string;
+    expiresAt?: string;
+    consumers: string[];
+    configured: boolean;
+    fingerprint?: string;
+  }>> {
+    const environment = await this.readEnvironment();
+    const meta = await this.readSecretMeta();
+    const lifecycle: Array<{
+      key: string;
+      purpose?: string;
+      expiresAt?: string;
+      consumers: string[];
+      configured: boolean;
+      fingerprint?: string;
+    }> = [];
+    // The secrets of the catalog come first: a secret that is not set yet is
+    // part of the lifecycle of the product and the owner must see it.
+    const keys = [
+      ...catalogFor("herder.env").filter((entry) => entry.secret).map((entry) => entry.id.split("/")[1]!),
+      ...Object.entries(environment.values).filter(([, view]) => view.kind === "secret").map(([key]) => key),
+    ];
+    for (const key of [...new Set(keys)]) {
+      const view = environment.values[key];
+      const described = catalogFor("herder.env").find((entry) => entry.id === `herder.env/${key}`);
+      lifecycle.push({
+        key,
+        ...(meta[key]?.purpose ? { purpose: meta[key]!.purpose } : {}),
+        ...(meta[key]?.expiresAt ? { expiresAt: meta[key]!.expiresAt } : {}),
+        consumers: described?.consumers ?? [],
+        configured: view?.kind === "secret" ? view.configured === true : false,
+        ...(view?.kind === "secret" && view.fingerprint ? { fingerprint: view.fingerprint } : {}),
+      });
+    }
+    return lifecycle;
+  }
+
+  /** Write the metadata of a secret. */
+  async setSecretMeta(key: string, meta: { purpose?: string; expiresAt?: string }): Promise<SettingsSecretMeta> {
+    const all = await this.readSecretMeta();
+    const next: SettingsSecretMeta = {
+      ...(all[key] ?? { updatedAt: this.now().toISOString(), updatedBy: this.actor }),
+      ...(meta.purpose !== undefined ? { purpose: meta.purpose } : {}),
+      ...(meta.expiresAt !== undefined ? { expiresAt: meta.expiresAt } : {}),
+      updatedAt: this.now().toISOString(),
+      updatedBy: this.actor,
+    };
+    all[key] = next;
+    await this.writeSecretMeta(all);
+    return next;
+  }
+
+  /** Revoke a secret: the value leaves the file of the product and its metadata leaves with it. */
+  async revokeSecret(key: string): Promise<void> {
+    await this.applyEnvironment({ [key]: null });
+    const all = await this.readSecretMeta();
+    if (all[key]) {
+      delete all[key];
+      await this.writeSecretMeta(all);
+    }
   }
 
   /** The writes of the settings are one after another. */
