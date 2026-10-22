@@ -1,3 +1,4 @@
+import {assertRemoteCodexAdmission} from "../codex-quota-guard.js";
 import {spawn} from 'node:child_process';
 import {hostname,userInfo} from 'node:os';
 import type {GptAdminTransport} from './gptadmin.js';
@@ -141,11 +142,12 @@ export class FleetDirectTransport implements GptAdminTransport {
  }
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}
  schema(target:string):Promise<unknown>{return this.rpc(this.peer(target),'tools/list',{},this.deadlineMs);}
- call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
-  if(!['fleet_node_info','mesh_snapshot','create_session','fleet_session_page','mesh_deliver','mesh_stop','workspace_probe','workspace_reserve','workspace_owners','automation_disarm'].includes(tool))throw new Error('direct_tool_not_authorized');
+ async call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
+  if(!['model_quotas','fleet_node_info','mesh_snapshot','create_session','fleet_session_page','mesh_deliver','mesh_stop','workspace_probe','workspace_reserve','workspace_owners','automation_disarm'].includes(tool))throw new Error('direct_tool_not_authorized');
   if(tool==='mesh_deliver' && (args.sender as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
   if(tool==='workspace_reserve' && (args.owner as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
   if(tool==='mesh_stop' && (args.target as any)?.hostId!==this.peer(target).hostId)throw new Error('direct_stop_host_mismatch');
+  await assertRemoteCodexAdmission(tool,args,()=>this.rpc(this.peer(target),'tools/call',{name:'model_quotas',arguments:{}},this.deadlineMs));
   if(tool==='create_session'){
    if(!idempotencyKey||!/^[a-f0-9]{64}$/.test(idempotencyKey))throw new Error('direct_create_identity_missing');
    return this.rpc(this.peer(target),'tools/call',{name:'fleet_create_session',arguments:{...args,inputId:idempotencyKey}},30000);

@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { isAbsolute, join, resolve } from "node:path";
 import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
+import { assertCodexQuota, CodexQuotaBlockedError, type QuotaReader } from "../codex-quota-guard.js";
 import { CodexDeliveryReceipts } from "./codex-delivery-receipts.js";
 import WebSocket from "ws";
 import { getHumanStopStore } from "../human-stop-store.js";
@@ -207,6 +208,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   };
 
   private readonly codexBin: string;
+  private readonly quotaReader?: QuotaReader;
   private readonly processArgs: string[];
   private readonly cwd: string;
   private readonly socketPath?: string;
@@ -256,6 +258,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   };
 
   constructor(config: {
+    /** Trusted dependency for embedding/tests; never populated from tool arguments. */
+    quotaReader?: QuotaReader;
     codexBin?: string;
     /** Exact process arguments. Defaults to the native `app-server` command. */
     args?: string[];
@@ -276,6 +280,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     onMaterializationProgress?: (progress: CodexMaterializationProgress) => void;
     signal?: AbortSignal;
   } = {}) {
+    this.quotaReader = config.quotaReader;
     this.codexBin = config.codexBin || process.env.CODEX_BIN || "codex";
     this.projectRuntimePolicy = config.projectRuntimePolicy;
     this.projectToolDenyList = config.projectToolDenyList;
@@ -1282,6 +1287,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         }
         return { ok: true, admitted: true, turnId: expectedTurnId, ...(options.inputId ? { inputId: options.inputId } : {}) };
       } catch (error) {
+        if (error instanceof CodexQuotaBlockedError) return {ok:false,notSubmitted:true,admitted:false,nonRetryable:true,error:error.message};
         // Only an explicit native pre-admission rejection permits refresh.
         // A timeout/disconnect may follow acceptance and must never be replayed.
         if (attempt === 0 && error instanceof CodexRpcError && error.code === -32600
@@ -1351,6 +1357,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         try {
           await getHumanStopStore().rememberGeneratedPrompt("codex", id, options.message, turnId);
         } catch (error) {
+      if (error instanceof CodexQuotaBlockedError) { if (completion) this.clearCompletion(id); return {ok:false,notSubmitted:true,admitted:false,nonRetryable:true,error:error.message}; }
           if (turnId && result.turn?.status === "inProgress") this.activeTurns.set(id, turnId);
           if (completion) this.clearCompletion(id);
           return {
@@ -2131,10 +2138,20 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     this.writeMessage({ method, params });
   }
 
-  private request(method: string, params: unknown, stage = method): Promise<unknown> {
+  async readQuota(): Promise<unknown> {
+    await this.ensureReady();
+    return this.request("account/rateLimits/read", {});
+  }
+
+  private async request(method: string, params: unknown, stage = method): Promise<unknown> {
     try { this.assertLifecycleActive(); }
     catch (error) { return Promise.reject(error); }
     if (!this.isTransportWritable()) return Promise.reject(new Error("Codex app-server is not connected"));
+    if (["thread/start", "thread/fork", "turn/start", "turn/steer"].includes(method)) {
+      await assertCodexQuota(method, this.quotaReader ?? (() => this.request("account/rateLimits/read", {})));
+      this.assertLifecycleActive();
+      if (!this.isTransportWritable()) throw new Error("Codex app-server disconnected during quota check");
+    }
     const id = this.nextRequestId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

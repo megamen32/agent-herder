@@ -1,3 +1,4 @@
+import {assertRemoteCodexAdmission} from "../codex-quota-guard.js";
 import {randomUUID} from 'node:crypto';
 import {unwrapResult} from './protocol.js';
 import type {GptAdminTransport} from './gptadmin.js';
@@ -59,8 +60,9 @@ export class FleetGptAdminTransport implements GptAdminTransport {
  }
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}
  schema(target:string):Promise<unknown>{return this.facade('schema',{target,detail:'full'},Date.now()+(this.options.readDeadlineMs??10000));}
- call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
+ async call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
   if(idempotencyKey&&idempotencyKey.length>200)throw new Error('gptadmin_idempotency_key_too_long');
+  await assertRemoteCodexAdmission(tool,args,()=>this.call(target,"model_quotas",{}));
   // Programmatic consumers require the native DTO, not GPTAdmin's human preview envelope.
   return this.facade('execute',{target,tool,args,...(idempotencyKey?{idempotency_key:idempotencyKey}:{}),detail:'full'},Date.now()+(tool==='create_session'?this.options.createDeadlineMs??30000:this.options.readDeadlineMs??10000));
  }

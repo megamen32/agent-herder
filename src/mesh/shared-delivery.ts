@@ -1,3 +1,4 @@
+import {assertCodexQuota,CodexQuotaBlockedError} from "../codex-quota-guard.js";
 import type {MeshDelivery} from "./gptadmin.js";
 import type {MeshDeliveryLedger} from "./delivery-ledger.js";
 import type {NativeReceipt} from "./protocol.js";
@@ -30,6 +31,8 @@ export async function deliverSharedCodex(request:MeshDelivery,deps:{client:Rpc;l
   if(!active)return rejected("idle_native_writer_ownership_unproven");
   if(await stops.isHeld("codex",request.target.nativeSessionId))return rejected("human_stopped_native_session");
   const message=`Источник: ${request.sender.hostId} / ${request.sender.harness} / ${request.sender.nativeSessionId}.\n${request.message}`;
+  try {await assertCodexQuota("mesh/turn-steer",()=>deps.client.request("account/rateLimits/read",{}));}
+  catch(error){if(error instanceof CodexQuotaBlockedError)return {state:"not_attempted" as const,inputId:request.inputId,retryable:false,reason:error.message};throw error;}
   await stops.rememberGeneratedPrompt("codex",request.target.nativeSessionId,message,active.id);
   const r=await deps.client.request("turn/steer",{threadId:request.target.nativeSessionId,expectedTurnId:active.id,input:[{type:"text",text:message}]});
   return r.turnId===active.id?{state:"admitted" as const,inputId:request.inputId,turnId:r.turnId,retryable:false}:{state:"unknown" as const,inputId:request.inputId,retryable:false};

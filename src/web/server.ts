@@ -64,6 +64,7 @@ import { toNodeHandler, type NodeMcpRequestHandler } from "@modelcontextprotocol
 import type { AdapterRegistry } from "../adapter-registry.js";
 import { publishHealthRefusal, type HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
+import { checkCodexQuota, saveCodexQuotaPolicy } from "../codex-quota-guard.js";
 import { handleQuotaLensRequest } from "./quota-lens.js";
 import { createSettingsApi } from "./settings-api.js";
 import { SettingsStore } from "./settings-store.js";
@@ -1096,6 +1097,24 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   if (url.pathname === "/api/resources/s21-lease" && request.method === "GET") {
     response.setHeader("cache-control", "no-store");
     return sendJson(response, 200, await getS21Ownership());
+  }
+  if (url.pathname === "/api/codex-quota-guard") {
+    response.setHeader("cache-control", "no-store");
+    const adapter = adapters.get("codex") as (HarnessAdapter & {readQuota?:()=>Promise<unknown>}) | undefined;
+    const readQuota = () => adapter?.readQuota ? adapter.readQuota() : Promise.resolve({error:"codex_adapter_unavailable"});
+    if (request.method === "GET") return sendJson(response,200,await checkCodexQuota(readQuota));
+    if (request.method === "PUT") {
+      const origin = request.headers.origin;
+      if (request.headers["sec-fetch-site"] === "cross-site") return sendJson(response,403,{error:"cross-site settings write refused"});
+      if (origin) {try {if(new URL(origin).host!==request.headers.host)return sendJson(response,403,{error:"origin mismatch"});} catch {return sendJson(response,403,{error:"invalid origin"});}}
+      try {
+        const body=await readJson(request);
+        if(Object.keys(body).some(k=>k!=="policy"&&k!=="revision"))return sendJson(response,400,{error:"Unknown quota settings field"});
+        await saveCodexQuotaPolicy(body.policy,typeof body.revision==="string"?body.revision:"");
+        return sendJson(response,200,await checkCodexQuota(readQuota));
+      } catch(error) {const message=(error as Error).message;return sendJson(response,message.startsWith("quota_policy_conflict")?409:400,{error:message});}
+    }
+    return sendJson(response,405,{error:"GET or PUT required"});
   }
   if (url.pathname.startsWith("/api/quota-lens") && request.method === "GET") {
     const body = await handleQuotaLensRequest(url.pathname, url.searchParams);

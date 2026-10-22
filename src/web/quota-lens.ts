@@ -50,8 +50,7 @@ async function omniQuerySafe<T = Record<string, unknown>>(sql: string, params: u
   }
 }
 
-function localCodexAuth(): { token: string; accountId: string } {
-  const path = codexAuthFile();
+function localCodexAuth(path = codexAuthFile()): { token: string; accountId: string } {
   if (!existsSync(path)) return { token: "", accountId: "" };
   const parsed = JSON.parse(readFileSync(path, "utf8")) as { tokens?: { access_token?: string; account_id?: string } };
   const token = parsed.tokens?.access_token ?? "";
@@ -81,8 +80,8 @@ function quotaWindow(value: any): Record<string, unknown> | null {
     .map((key) => [key, value[key]]));
 }
 
-export async function readCodexUsage(): Promise<Record<string, unknown>> {
-  const { token, accountId } = localCodexAuth();
+export async function readCodexUsage(authPath?: string): Promise<Record<string, unknown>> {
+  const { token, accountId } = localCodexAuth(authPath);
   if (!token) return { error: "no local ~/.codex/auth.json" };
   try {
     const response = await fetch("https://chatgpt.com/backend-api/wham/usage", {
