@@ -85,6 +85,12 @@ else:
  if value.get('error'):raise RuntimeError('direct_rpc_failed')
  print(json.dumps(value['result']))
 `;
+let sharedFleetTransport:GptAdminTransport|undefined;
+/** The peer transport of the fleet that the native mesh operations work with. */
+export function fleetDirectTransport():GptAdminTransport{
+ if(!sharedFleetTransport)sharedFleetTransport=new FleetDirectTransport(directFleetPeers.filter(peer=>peer.hostId!=="MacBook-Pro-User.local"));
+ return sharedFleetTransport;
+}
 export class FleetDirectTransport implements GptAdminTransport {
  constructor(private readonly peers:readonly DirectPeer[]=directFleetPeers,private readonly deadlineMs=10000){
   if(!peers.length||peers.length>5||new Set(peers.map(p=>p.hostId)).size!==peers.length)throw new Error('direct_peer_limit');
@@ -113,9 +119,10 @@ export class FleetDirectTransport implements GptAdminTransport {
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}
  schema(target:string):Promise<unknown>{return this.rpc(this.peer(target),'tools/list',{},this.deadlineMs);}
  call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
-  if(!['fleet_node_info','mesh_snapshot','create_session','fleet_session_page','mesh_deliver','workspace_probe','workspace_reserve','workspace_owners'].includes(tool))throw new Error('direct_tool_not_authorized');
+  if(!['fleet_node_info','mesh_snapshot','create_session','fleet_session_page','mesh_deliver','mesh_stop','workspace_probe','workspace_reserve','workspace_owners'].includes(tool))throw new Error('direct_tool_not_authorized');
   if(tool==='mesh_deliver' && (args.sender as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
   if(tool==='workspace_reserve' && (args.owner as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
+  if(tool==='mesh_stop' && (args.target as any)?.hostId!==this.peer(target).hostId)throw new Error('direct_stop_host_mismatch');
   if(tool==='create_session'){
    if(!idempotencyKey||!/^[a-f0-9]{64}$/.test(idempotencyKey))throw new Error('direct_create_identity_missing');
    return this.rpc(this.peer(target),'tools/call',{name:'fleet_create_session',arguments:{...args,inputId:idempotencyKey}},30000);

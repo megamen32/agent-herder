@@ -2,13 +2,19 @@ import {homedir,hostname} from "node:os";
 import {join} from "node:path";
 import type {HarnessAdapter} from "../types/index.js";
 import {handleSendMessage} from "../mcp-tools/handlers.js";
-import {compactSession,parseNativeReceipt,addressKey,type MeshSession,type NativeReceipt} from "./protocol.js";
+import {compactSession,parseNativeReceipt,addressKey,type MeshAddress,type MeshSession,type NativeReceipt,type NativeStopReceipt} from "./protocol.js";
 import type {MeshDelivery} from "./gptadmin.js";
 import {MeshDeliveryLedger} from "./delivery-ledger.js";
 import {inventoryHarnesses} from "./inventory.js";
 import {coordinationNotes,type CoordinationNoteStore} from "../coordination-notes.js";
+import {MINIMAX_CODE_HARNESS_CWD} from "../adapters/minimax-code-store.js";
+import {MINIMAX_CODE_HARNESS,observeMinimaxCode,runMinimaxCodeDelivery} from "./native-minimax-code.js";
 export interface HarnessMeshCapability {harness:string;discovery:"available"|"unavailable";delivery:"available"|"unsupported";reason?:string}
-type Dependencies={hostId?:string;adapters:Map<string,HarnessAdapter>;send?:(args:Record<string,unknown>)=>Promise<unknown>;ledgerPath?:string;readDeadlineMs?:number;projectStore?:Pick<CoordinationNoteStore,"activeWorkspaceForSession"> & Partial<Pick<CoordinationNoteStore,"activeWorkspaceObservation">>};
+/** Injects the active coordination notes of the target into a delivered message. */
+export type MeshNotesInjector=(session:{id:string;harness:string;cwd:string;hostId?:string},message:string)=>Promise<string>;
+/** Independent native observation of one exact session of this host. */
+export type MeshNativeObserver=(harness:string,nativeSessionId:string)=>Promise<{nativeSessionId:string;status:string;cwd?:string|null}|null>;
+type Dependencies={hostId?:string;adapters:Map<string,HarnessAdapter>;send?:(args:Record<string,unknown>)=>Promise<unknown>;ledgerPath?:string;readDeadlineMs?:number;projectStore?:Pick<CoordinationNoteStore,"activeWorkspaceForSession"> & Partial<Pick<CoordinationNoteStore,"activeWorkspaceObservation">>;notes?:MeshNotesInjector;nativeObserve?:MeshNativeObserver};
 export class LocalHarnessMesh {
  readonly hostId:string;
  private readonly ids=new Map<string,string>();
@@ -43,7 +49,8 @@ export class LocalHarnessMesh {
      const session=compactSession(this.hostId,projected);sessions.push(session);freshIds.set(addressKey(session.address),row.id);
     }
     // Existing API implementations do not all provide native admission proof.
-    harnesses.push({harness,discovery:"available",delivery:harness==="codex"?"available":"unsupported",...(harness!=="codex"?{reason:"native_admission_receipt_unverified"}:{})});
+    const deliverable=harness==="codex"||harness===MINIMAX_CODE_HARNESS;
+    harnesses.push({harness,discovery:"available",delivery:deliverable?"available":"unsupported",...(deliverable?{}:{reason:"native_admission_receipt_unverified"})});
    }catch{complete=false;harnesses.push({harness,discovery:"unavailable",delivery:"unsupported",reason:"native_discovery_failed"});}
   };
   let next=0;await Promise.all(Array.from({length:3},async()=>{for(;;){const harness=inventoryHarnesses[next++];if(!harness)return;await inspect(harness);}}));
@@ -60,6 +67,9 @@ export class LocalHarnessMesh {
   return this.ledger.once(request,async()=>{
    const adapter=this.deps.adapters.get(request.target.harness);
    if(!adapter)return reject("adapter_not_registered");
+   // A native MiniMax Code session owns its own turn inside the desktop
+   // runtime, so the delivery is queued there and proven by its receipt.
+   if(request.target.harness===MINIMAX_CODE_HARNESS)return this.deliverMinimaxCode(request,adapter);
    if(request.target.harness!=="codex")return reject("native_admission_receipt_unverified");
    const sessionId=this.ids.get(addressKey(request.target))||request.target.nativeSessionId;
    const session=await adapter.getSession(sessionId);
@@ -69,5 +79,42 @@ export class LocalHarnessMesh {
    const raw=this.deps.send?await this.deps.send(args):await handleSendMessage(this.deps.adapters,args);
    return parseNativeReceipt(typeof raw==="string"?{content:[{type:"text",text:raw}]}:raw,request.inputId);
   });
+ }
+ /** One native MiniMax Code delivery, proven by the admission of the runtime. */
+ private async deliverMinimaxCode(request:MeshDelivery,adapter:HarnessAdapter):Promise<NativeReceipt&{reason?:string}>{
+  const notes=this.deps.notes??((session,message)=>coordinationNotes.inject(session,message));
+  return runMinimaxCodeDelivery(request,{
+   port:{enqueue:async(id,message,inputId)=>adapter.sendMessage(id,{message,queue:true,inputId,origin:"automation"})},
+   observe:id=>this.observeNative(MINIMAX_CODE_HARNESS,id),
+   notes,
+  });
+ }
+ /** Independent native observation: the writer alone never proves identity. */
+ private async observeNative(harness:string,nativeSessionId:string):Promise<{nativeSessionId:string;status:string;cwd?:string|null}|null>{
+  if(this.deps.nativeObserve)return this.deps.nativeObserve(harness,nativeSessionId);
+  if(harness!==MINIMAX_CODE_HARNESS)return null;
+  const observed=await observeMinimaxCode(1,undefined,this.hostId,nativeSessionId).catch(()=>null);
+  const session=observed?.sessions[0];
+  return session?{nativeSessionId:session.address.nativeSessionId,status:session.status,cwd:session.project.currentCwd??session.project.launchCwd??MINIMAX_CODE_HARNESS_CWD}:null;
+ }
+ /** Stop one exact native session of this host. An unproven stop is never replayed. */
+ async stop(request:{target:MeshAddress;inputId:string}):Promise<NativeStopReceipt>{
+  addressKey(request.target);
+  const rejected=(reason:string,retryable=true,state:"not_attempted"|"unknown"="not_attempted"):NativeStopReceipt=>({state,inputId:request.inputId,hostId:request.target.hostId,harness:request.target.harness,nativeSessionId:request.target.nativeSessionId,retryable,reason});
+  if(request.target.hostId!==this.hostId)return rejected("native_host_identity_mismatch");
+  const adapter=this.deps.adapters.get(request.target.harness);
+  if(!adapter)return rejected("adapter_not_registered");
+  const sessionId=this.ids.get(addressKey(request.target))||request.target.nativeSessionId;
+  const session=await adapter.getSession(sessionId).catch(()=>null);
+  if(!session)return rejected("native_session_not_found");
+  if(compactSession(this.hostId,session).address.nativeSessionId!==request.target.nativeSessionId)return rejected("native_session_identity_mismatch");
+  // One stable intent stops the session once; an unproven stop keeps its receipt.
+  const receipt=await this.ledger.once({target:request.target,sender:request.target,inputId:request.inputId,message:"stop"},async()=>{
+   let result;
+   try{result=await adapter.stopSession(sessionId);}catch{return {state:"unknown" as const,inputId:request.inputId,retryable:false,reason:"native_stop_unknown"};}
+   if(!result.ok)return {state:"not_attempted" as const,inputId:request.inputId,retryable:true,reason:result.error||"native_stop_failed"};
+   return {state:"admitted" as const,inputId:request.inputId,retryable:false,reason:"native_session_stopped"};
+  });
+  return {...receipt,hostId:this.hostId,harness:request.target.harness,nativeSessionId:request.target.nativeSessionId};
  }
 }

@@ -1,8 +1,8 @@
 import { open, readdir, stat } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { MinimaxCodeControl } from "./minimax-code-control.js";
+import { MINIMAX_CODE_HARNESS_CWD, MINIMAX_CODE_SESSION_STORE } from "./minimax-code-store.js";
 import type {
   AgentSession,
   ControlResult,
@@ -16,14 +16,8 @@ import type {
 } from "../types/index.js";
 import { localSessionHostId } from "../types/index.js";
 
-/** Root of the MiniMax Code local-runtime session store. */
-export const MINIMAX_CODE_SESSION_STORE = join(homedir(), ".minimax", "v2", "sessions");
-
-/**
- * MiniMax Code keeps one working directory for the whole runtime, so its
- * sessions are reported under this pseudo project.
- */
-export const MINIMAX_CODE_HARNESS_CWD = join(homedir(), ".minimax");
+/** Store of the MiniMax Code local runtime, shared with the mesh observer. */
+export { MINIMAX_CODE_SESSION_STORE, MINIMAX_CODE_HARNESS_CWD };
 
 const MAX_MANIFEST_BYTES = 64 * 1024;
 const MAX_MODEL_BYTES = 512 * 1024;
@@ -437,13 +431,13 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
       const result = await control.steer(id, options.message);
       if (!result.ok) return { ok: false, error: result.error };
       const body = (result.body ?? {}) as { success?: boolean; turn_id?: string; item_id?: string };
-      return { ok: true, admitted: true, turnId: body.turn_id ?? body.item_id };
+      return { ok: true, admitted: true, turnId: body.turn_id ?? body.item_id, ...(options.inputId ? { inputId: options.inputId } : {}) };
     }
     if (options.queue === true) {
       const result = await control.enqueue(id, options.message);
       if (!result.ok) return { ok: false, error: result.error };
       const body = (result.body ?? {}) as { item_id?: string; status?: string };
-      return { ok: true, admitted: true, turnId: body.item_id };
+      return { ok: true, admitted: true, turnId: body.item_id, ...(options.inputId ? { inputId: options.inputId } : {}) };
     }
     const result = await control.sendMessage(id, options.message);
     if (!result.ok) {
@@ -453,10 +447,10 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
       const queued = await control.enqueue(id, options.message);
       if (!queued.ok) return { ok: false, error: queued.error };
       const body = (queued.body ?? {}) as { item_id?: string };
-      return { ok: true, admitted: true, turnId: body.item_id };
+      return { ok: true, admitted: true, turnId: body.item_id, ...(options.inputId ? { inputId: options.inputId } : {}) };
     }
     const body = (result.body ?? {}) as { turn_id?: string; id?: string };
-    return { ok: true, admitted: true, turnId: body.turn_id ?? body.id };
+    return { ok: true, admitted: true, turnId: body.turn_id ?? body.id, ...(options.inputId ? { inputId: options.inputId } : {}) };
   }
 
   async stopSession(id: string): Promise<ControlResult> {
