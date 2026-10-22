@@ -277,6 +277,9 @@ def remote_ref_for(sha: str) -> tuple[str, list]:
     names = []
     for line in lines:
         name = line.strip().lstrip("* ").strip()
+        if " -> " in name:
+            # a symbolic ref (origin/HEAD -> origin/main) is not a branch
+            continue
         if name.startswith("origin/") and name not in names:
             names.append(name)
     if not names:
