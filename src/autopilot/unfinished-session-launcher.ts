@@ -6033,8 +6033,12 @@ function parseQuotaRecovery(value: unknown): QuotaRecoveryRecord | undefined {
   const record = value as Record<string, unknown>;
   const evidence = normalizeQuotaRecoveryEvidence(record.evidence);
   if (!evidence || !["waiting", "dispatching", "accepted", "held", "exhausted"].includes(String(record.state))) return undefined;
+  // The candidates are read with the same allowlist the producer writes them
+  // with (quotaCandidateModels): a stricter check would drop a record the
+  // producer has just written, and the recovery of that session would be
+  // lost. A candidate outside the allowlist is still refused, record and all.
   if (!Array.isArray(record.candidateModels) || !record.candidateModels.length || record.candidateModels.length > 9
-    || !record.candidateModels.every((item) => typeof item === "string" && item.startsWith("omniroute/"))) return undefined;
+    || !record.candidateModels.every((item) => typeof item === "string" && NOTICEPLACE_HEALTH_MODELS.includes(item))) return undefined;
   const candidateIndex = nonNegativeInteger(record.candidateIndex, -1);
   const attempts = nonNegativeInteger(record.attempts, -1);
   const revision = positiveInteger(record.revision, -1);

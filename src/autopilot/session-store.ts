@@ -210,18 +210,36 @@ function parseFile(value: unknown): SessionFile {
 /**
  * The remembered launch plans of the durable file.
  *
- * An unknown plan id is refused instead of being dropped: a file that names a
- * plan the center does not accept must not be read as a file without plans.
+ * An unknown plan id is ignored instead of refused. The launch plan is a
+ * pending hint that fills in the missing plan of an arming call, so one
+ * unusable entry must not make the whole file unreadable: the armed records
+ * of the live state would be lost with it. The plan of a binding stays
+ * strict, because there the plan is the published one.
  */
 function parseLaunchPlans(value: unknown): Record<string, HealthPlanId> | undefined {
   if (value === undefined) return undefined;
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid autopilot launch plans");
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    console.error("autopilot launch plans are not a map: the remembered launch plans are ignored");
+    return undefined;
+  }
   const plans: Record<string, HealthPlanId> = {};
   for (const [key, plan] of Object.entries(value as Record<string, unknown>)) {
-    if (!isHealthPlanId(plan)) throw new Error("invalid autopilot launch plan entry");
+    if (!isHealthPlanId(plan)) {
+      reportUnknownLaunchPlan(key);
+      continue;
+    }
     plans[key] = plan;
   }
   return plans;
+}
+
+/** One reason per unusable entry: the file is read on every operation. */
+const reportedLaunchPlans = new Set<string>();
+
+function reportUnknownLaunchPlan(key: string): void {
+  if (reportedLaunchPlans.has(key)) return;
+  reportedLaunchPlans.add(key);
+  console.error(`autopilot launch plan of ${key} is not a selected health plan: the entry is ignored`);
 }
 
 function normalizeTarget(target: { harness: AutopilotHarness; sessionId: string; cwd: string }) {

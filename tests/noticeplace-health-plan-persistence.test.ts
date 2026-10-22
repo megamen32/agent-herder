@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -117,6 +117,36 @@ describe("the arming call of the center", () => {
         enabled: true,
         noticeIncident: { incidentId: "inc_1", project: "omniroute-guard", planId: "repair" },
       });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("an unusable launch plan in the durable file", () => {
+  it("ignores the unknown plan and keeps the armed records readable", async () => {
+    const root = await mkdtemp(join(tmpdir(), "herder-health-plan-unknown-"));
+    try {
+      const path = join(root, "sessions.json");
+      // A file with an unknown plan id of a future release next to the armed
+      // records of the live state.
+      await writeFile(path, JSON.stringify({
+        version: 1,
+        sessions: [
+          { harness: "opencode", sessionId: "ses_armed_1", cwd: "/work", enabled: true, updatedAt: "2026-10-22T00:00:00.000Z", noticeIncident: { incidentId: "inc_1", project: "omniroute-guard" } },
+          { harness: "opencode", sessionId: "ses_armed_2", cwd: "/work", enabled: true, updatedAt: "2026-10-22T00:00:00.000Z", noticeIncident: { incidentId: "inc_2", project: "fleet-health" } },
+        ],
+        launchPlans: { "opencode:ses_armed_1": "repair", "opencode:ses_armed_2": "plan-of-a-future-release" },
+      }));
+
+      const store = new AutopilotSessionStore(path);
+      // The armed records stay readable: one unusable entry does not make
+      // the whole file unreadable.
+      expect((await store.get("opencode", "ses_armed_1"))?.noticeIncident?.incidentId).toBe("inc_1");
+      expect((await store.get("opencode", "ses_armed_2"))?.noticeIncident?.incidentId).toBe("inc_2");
+      // The known plan is kept, the unknown one is ignored.
+      expect(await store.getLaunchPlan("opencode", "ses_armed_1")).toBe("repair");
+      expect(await store.getLaunchPlan("opencode", "ses_armed_2")).toBeUndefined();
     } finally {
       await rm(root, { recursive: true, force: true });
     }
