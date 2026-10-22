@@ -803,8 +803,28 @@ export class OpenCodeClient implements HarnessClient {
       const activeType = active[id]?.type ?? active[id]?.status;
       if ((activeType !== undefined && activeType !== "idle") || permissions.some((request) => request?.sessionID === id)) return null;
 
-      const fetched = await this.fetchJson<OpenCodeMessagePayload[]>(this.api(`/session/${encodeURIComponent(id)}/message?limit=150&order=desc`));
+      const response = await this.fetch(this.api(`/session/${encodeURIComponent(id)}/message?limit=150&order=desc`), { cache: "no-store" });
+      if (!response.ok || response.headers.get("age") && response.headers.get("age") !== "0") return null;
+      const envelope = await response.json();
+      const fetched = unwrapEnvelope(envelope) as OpenCodeMessagePayload[];
       if (!Array.isArray(fetched)) return null;
+      const pageIncomplete = (page: Record<string, any>): boolean =>
+        [page, page?.metadata, page?.info, page?.cursor].some((scope) => scope
+          && (scope.partial === true || scope.cached === true || scope.truncated === true
+            || scope.hasMore === true || Boolean(scope.next)));
+      let incompleteTranscript = pageIncomplete(envelope);
+      // Native V2 emits cursors even at the end. Cursor requests carry their own
+      // order/boundary; combining them with order/limit is rejected by the API.
+      if (incompleteTranscript && typeof envelope?.cursor?.next === "string"
+        && !pageIncomplete({ ...envelope, cursor: { ...envelope.cursor, next: null } }) && fetched.length < 150) {
+        const tailResponse = await this.fetch(this.api(`/session/${encodeURIComponent(id)}/message?cursor=${encodeURIComponent(envelope.cursor.next)}`), { cache: "no-store" });
+        if (tailResponse.ok && (!tailResponse.headers.get("age") || tailResponse.headers.get("age") === "0")) {
+          const tailEnvelope = await tailResponse.json();
+          const tail = unwrapEnvelope(tailEnvelope);
+          incompleteTranscript = !Array.isArray(tail) || tail.length !== 0
+            || pageIncomplete(tailEnvelope);
+        }
+      }
       const messages = [...fetched].reverse();
       const statusFrames = messages
         .map((message, index) => ({ message, index }))
@@ -854,13 +874,79 @@ export class OpenCodeClient implements HarnessClient {
       const assistantInputId = stringValue(failedAssistant.inputId, failedAssistant.info?.inputId, assistantMetadata?.agentHerderInputId);
       if (assistantInputId && assistantInputId !== inputId) return null;
       const assistantParentId = stringValue(failedAssistant.parentID, failedAssistant.info?.parentID, assistantMetadata?.parentID);
+      if (assistantParentId && assistantParentId !== userMessageId) return null;
       // OpenCode's assistant message is the native turn identity when this
       // transcript does not expose a turnId, but only with an exact parent
       // link to the submitted user message. A status-frame ID is never a turn ID.
       const parentLinked = assistantParentId === userMessageId;
       const inputLinked = assistantInputId === inputId
         && (persistedInputId === inputId || observedInputId === inputId);
-      if (!parentLinked && !inputLinked && !proofLinked) return null;
+      // V2 also emits a linear user/assistant/idle packet without parentID.
+      // This binds terminal evidence only; it never establishes pre-admission refusal.
+      const linearLinked = (() => {
+        if (assistantParentId || !userInputId || userInputId !== inputId) return false;
+        if (incompleteTranscript || latest.index !== messages.length - 1 || fetched.length >= 150) return false;
+        const boundary = statusFrames.filter((frame) => frame.index < user.index).at(-1);
+        if (boundary && (boundary.message.type !== "idle"
+          || !["succeeded", "failed", "interrupted"].includes(boundary.message.outcome ?? ""))) return false;
+        const start = boundary ? boundary.index + 1 : 0;
+        const packet = messages.slice(start);
+        if (packet.length !== 3 || packet[0] !== user.message || packet[1] !== failedAssistant
+          || packet[2] !== latest.message || user.message.type !== "user"
+          || failedAssistant.type !== "assistant" || latest.message.type !== "idle") return false;
+        const ids = messages.map(openCodeMessageId);
+        if (ids.some((value) => !value) || new Set(ids).size !== ids.length) return false;
+        const expectedTurn = assistantMessageId;
+        if ((observedTurnId && observedTurnId !== expectedTurn) || (persistedTurnId && persistedTurnId !== expectedTurn)) return false;
+        if (messages.some((frame) => frame !== user.message
+          && (frame.metadata?.agentHerderInputId === inputId || frame.info?.metadata?.agentHerderInputId === inputId)
+          && openCodeMessageRole(frame) === "user")) return false;
+        for (const frame of packet) {
+          const raw = frame as unknown as Record<string, unknown>;
+          const metadata = frame.metadata ?? frame.info?.metadata;
+          if (frame.parentID !== undefined || frame.info?.parentID !== undefined || (frame.metadata?.parentID !== undefined || frame.info?.metadata?.parentID !== undefined)) return false;
+          for (const sessionId of [raw.sessionID, raw.sessionId, frame.info?.sessionID]) {
+            if (sessionId !== undefined && sessionId !== id) return false;
+          }
+          for (const linkedInput of [frame.inputId, frame.info?.inputId, frame.metadata?.agentHerderInputId, frame.info?.metadata?.agentHerderInputId]) {
+            if (linkedInput !== undefined && linkedInput !== inputId) return false;
+          }
+          for (const linkedTurn of [frame.turnId, frame.info?.turnId, frame.metadata?.turnId, frame.info?.metadata?.turnId]) {
+            if (linkedTurn !== undefined && linkedTurn !== expectedTurn) return false;
+          }
+          if ([raw, raw.info, frame.metadata, frame.info?.metadata].some((scope) => scope && typeof scope === "object"
+            && ["partial", "cached", "truncated"].some((key) => (scope as Record<string, unknown>)[key] === true))) return false;
+        }
+        // Empty assistant output is the only currently supported linear failure packet.
+        // Reject unknown parts, tools/actions/approvals and changed snapshots fail closed.
+        const unsafe = (value: unknown): boolean => {
+          if (!value || typeof value !== "object") return false;
+          if (Array.isArray(value)) return value.some(unsafe);
+          return Object.entries(value).some(([key, item]) =>
+            /tool|action|approval|permission/i.test(key)
+              ? item !== undefined && item !== null && item !== false
+                && !(Array.isArray(item) && item.length === 0)
+              : (key === "type" && typeof item === "string" && /tool|action|approval|permission/i.test(item)) || unsafe(item));
+        };
+        if (packet.some(unsafe)) return false;
+        if ((failedAssistant.parts?.length ?? 0) > 0 || (failedAssistant.content?.length ?? 0) > 0) return false;
+        const snapshot = (failedAssistant as unknown as { snapshot?: { files?: unknown[] } }).snapshot;
+        if (snapshot?.files && (!Array.isArray(snapshot.files) || snapshot.files.length > 0)) return false;
+        const created = packet.map((frame) => frame.time?.created);
+        const completed = failedAssistant.time?.completed;
+        if (created.some((value) => typeof value !== "number" || !Number.isFinite(value))
+          || typeof completed !== "number" || !Number.isFinite(completed)
+          || !(created[0]! <= created[1]! && created[1]! <= completed && completed <= created[2]!)) return false;
+        if (boundary && (typeof boundary.message.time?.created !== "number"
+          || boundary.message.time.created > created[0]!)) return false;
+        const assistantError = failedAssistant.error;
+        const terminalError = latest.message.error;
+        if (!assistantError || !terminalError || failedAssistant.finish !== "error") return false;
+        return ["type", "code", "message", "status", "statusCode"].every((key) =>
+          (assistantError as Record<string, unknown>)[key] === (terminalError as Record<string, unknown>)[key])
+          && typeof assistantError.message === "string" && assistantError.message.length > 0;
+      })();
+      if (!parentLinked && !inputLinked && !proofLinked && !linearLinked) return null;
       const assistantTurnId = stringValue(failedAssistant.turnId, failedAssistant.info?.turnId, assistantMetadata?.turnId);
       if (persistedTurnId && assistantTurnId && persistedTurnId !== assistantTurnId) return null;
       if (observedTurnId && assistantTurnId && observedTurnId !== assistantTurnId) return null;
