@@ -126,6 +126,25 @@ def assemble(sha: str, worktree: Path, catalog: Path) -> Path:
     release = catalog / "releases" / sha
     release.mkdir(parents=True, exist_ok=True)
     shutil.copytree(worktree / "dist", release / "dist", dirs_exist_ok=True)
+    # The node release carries the workspace packages and the lock files too:
+    # the runtime resolves the agent-resume workspace from the release.
+    for name in ("package.json", "package-lock.json"):
+        source = worktree / name
+        if source.is_file():
+            shutil.copy2(source, release / name)
+    packages = worktree / "packages"
+    if packages.is_dir():
+        for package in packages.iterdir():
+            if not package.is_dir():
+                continue
+            target = release / "packages" / package.name
+            target.mkdir(parents=True, exist_ok=True)
+            for item in ("package.json", "scripts", "dist"):
+                source = package / item
+                if source.is_dir():
+                    shutil.copytree(source, target / item, dirs_exist_ok=True, symlinks=True)
+                elif source.is_file():
+                    shutil.copy2(source, target / item)
     packages = release / "node_modules"
     if not packages.exists():
         packages.symlink_to(REPO / "node_modules")
