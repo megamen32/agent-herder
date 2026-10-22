@@ -1,6 +1,7 @@
 import { buildSessionProgress, type SessionProgressSummary } from "../health-progress.js";
 import { createIncidentUpdateSink, type IncidentProgressUpdate, type IncidentUpdateSink, type NoticeIncidentBinding } from "../autopilot/notice-incident.js";
 import { describeHealthStep } from "./noticeplace-health-text.js";
+import { AUTOMATION_DISABLED_CODE, INCIDENT_NOT_OPEN_CODE, NO_SELECTED_HEALTH_PLAN_CODE, healthOwnerGate, healthWorkKeys, type HealthReasonRefusal } from "./health-reason-codes.js";
 import type { SessionDetails } from "../types/index.js";
 
 /** One native executor session bound to one original Notice Place incident. */
@@ -40,6 +41,8 @@ export interface NoticeplaceHealthObserverOptions {
   retryIntervalMs?: number;
   /** Verify the incident binding at the center before anything is published. */
   validateTarget?: (target: NoticeplaceHealthTarget) => Promise<string | undefined>;
+  /** The machine-readable class of a refusal, for a reader that counts them. */
+  onRefused?: (refusal: HealthReasonRefusal) => void;
   onError?: (message: string) => void;
 }
 
@@ -115,8 +118,12 @@ export class NoticeplaceHealthObserver {
     if (this.stopped) return "refused";
     const key = targetKey(target);
     if (this.targets.has(key)) return "duplicate";
+    // The owner-level lever comes before every automatic act of the observer:
+    // while automation is forbidden, no executor state is created and nothing
+    // is published into the incident. The card stays open for the operator.
+    if (await this.refuseWhenAutomationIsDisabled(target)) return "refused";
     if (!target.binding.planId) {
-      this.options.onError?.(`Notice health observer refused ${target.sessionId}: the incident ${target.binding.incidentId} has no selected health plan`);
+      this.refuse(target, `Notice health observer refused ${target.sessionId}: the incident ${target.binding.incidentId} has no selected health plan`, NO_SELECTED_HEALTH_PLAN_CODE);
       return "refused";
     }
     const maxTargets = this.options.maxTargets ?? DEFAULT_MAX_TARGETS;
@@ -144,11 +151,51 @@ export class NoticeplaceHealthObserver {
     }
     if (refusal) {
       this.targets.delete(key);
-      this.options.onError?.(`Notice health observer refused ${target.sessionId} incident ${target.binding.incidentId}: ${refusal}`);
+      this.refuse(target, `Notice health observer refused ${target.sessionId} incident ${target.binding.incidentId}: ${refusal}`, bindingRefusalCode(refusal));
       return "refused";
     }
     void this.tick(target, state);
     return "started";
+  }
+
+  /**
+   * The owner-level lever decides before the observer does anything.
+   *
+   * A forbidden run creates no executor state and publishes nothing: the
+   * incident card stays open and waits for the operator. The refusal names the
+   * machine-readable class of the cause, so a reader never has to parse the
+   * wording of the reason.
+   */
+  private async refuseWhenAutomationIsDisabled(target: NoticeplaceHealthTarget): Promise<boolean> {
+    const decision = await healthOwnerGate({
+      workKeys: healthWorkKeys({
+        harness: target.harness,
+        sessionId: target.sessionId,
+        cwd: target.cwd,
+        project: target.binding.project,
+      }),
+    });
+    if (decision.allowed) return false;
+    this.refuse(target, `Notice health observer refused ${target.sessionId} incident ${target.binding.incidentId}: ${decision.reason ?? "the owner forbids automation"}`, AUTOMATION_DISABLED_CODE);
+    return true;
+  }
+
+  /**
+   * Record one refusal with its machine-readable class.
+   *
+   * The wording an operator reads stays exactly as it was; the class is added
+   * next to it, so a reader counts the refusals without parsing the text. A
+   * refusal without a known class stays a plain refusal.
+   */
+  private refuse(target: NoticeplaceHealthTarget, message: string, code?: string): void {
+    this.options.onError?.(code ? `${message} [${code}]` : message);
+    if (!code) return;
+    this.options.onRefused?.({
+      code,
+      reason: message,
+      sessionId: target.sessionId,
+      incidentId: target.binding.incidentId,
+    });
   }
 
   /** Stop every observation; used on shutdown. */
@@ -350,7 +397,7 @@ export class NoticeplaceHealthObserver {
    * better than a progress under a guessed plan.
    */
   private refuseWithoutPlan(target: NoticeplaceHealthTarget): void {
-    this.options.onError?.(`Notice health observer published nothing for ${target.sessionId} incident ${target.binding.incidentId}: the incident has no selected health plan`);
+    this.refuse(target, `Notice health observer published nothing for ${target.sessionId} incident ${target.binding.incidentId}: the incident has no selected health plan`, NO_SELECTED_HEALTH_PLAN_CODE);
   }
 
   private async send(update: IncidentProgressUpdate): Promise<void> {
@@ -380,6 +427,20 @@ export class NoticeplaceHealthObserver {
 
 function targetKey(target: NoticeplaceHealthTarget): string {
   return `${target.harness}:${target.sessionId}`;
+}
+
+/**
+ * The class of a refused incident binding.
+ *
+ * The center refuses a binding with a free wording, and the known refusals of
+ * the health contour are told apart by that wording: an incident that is not
+ * open any more is not the same refusal as a binding that belongs to another
+ * project. Only a known wording gets a class; an unknown refusal stays a
+ * plain refusal.
+ */
+function bindingRefusalCode(refusal: string): string | undefined {
+  if (/is not open/i.test(refusal)) return INCIDENT_NOT_OPEN_CODE;
+  return undefined;
 }
 
 /** A short real step in Russian; never a verdict and never an invented fact. */

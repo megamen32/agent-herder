@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { parseNoticeIncident, type HealthPlanId, type NoticeIncidentBinding } from "../autopilot/notice-incident.js";
+import { AUTOMATION_DISABLED_CODE, NO_SELECTED_HEALTH_PLAN_CODE, healthOwnerGate, healthWorkKeys } from "./health-reason-codes.js";
 
 /** One armed session of the durable autopilot store that carries an incident binding. */
 export interface NoticeplaceHealthRecoveryCandidate {
@@ -90,6 +91,22 @@ export async function recoverNoticeplaceHealthObservation(options: {
   for (let index = 0; index < options.candidates.length; index += concurrency) {
     const batch = options.candidates.slice(index, index + concurrency);
     await Promise.all(batch.map(async (candidate) => {
+      // The owner-level lever decides before the repair: while automation is
+      // forbidden, the observation is not armed again and the incident card
+      // stays open for the operator.
+      const gate = await healthOwnerGate({
+        workKeys: healthWorkKeys({
+          harness: candidate.harness,
+          sessionId: candidate.sessionId,
+          cwd: candidate.cwd,
+          project: candidate.binding.project,
+        }),
+      });
+      if (!gate.allowed) {
+        result.skipped += 1;
+        result.reasons.push(`${candidate.sessionId}: ${gate.reason ?? "the owner forbids automation"} [${AUTOMATION_DISABLED_CODE}]`);
+        return;
+      }
       let alive = false;
       try {
         alive = await options.isAlive(candidate);
@@ -106,7 +123,7 @@ export async function recoverNoticeplaceHealthObservation(options: {
         // The observer publishes only for the selected plan of the incident:
         // an unknown plan is a refusal, never a guess.
         result.skipped += 1;
-        result.reasons.push(`${candidate.sessionId}: the incident ${candidate.binding.incidentId} has no selected health plan`);
+        result.reasons.push(`${candidate.sessionId}: the incident ${candidate.binding.incidentId} has no selected health plan [${NO_SELECTED_HEALTH_PLAN_CODE}]`);
         return;
       }
       const outcome = await options.arm(planId === candidate.binding.planId

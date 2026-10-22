@@ -16,6 +16,7 @@ import { HUMAN_STOP_MESSAGE } from "../human-stop-actions.js";
 import { MINIMAX_SUBSCRIPTION_MODEL, type MiniMaxQuotaPreflight } from "./minimax-quota-preflight.js";
 import { NOTICEPLACE_HEALTH_AUTHORIZED, validateNoticeplaceHealthLaunch } from "./noticeplace-health-launch.js";
 import { MODEL_NOT_PERMITTED_CODE } from "../project-model-policy.js";
+import { AUTOMATION_DISABLED_CODE } from "./health-reason-codes.js";
 import { automationDisarmDecision, projectWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
 
 /**
@@ -147,7 +148,6 @@ function harnessLabel(harness: string): string {
  * launch field and the tool error code name the same refusal.
  */
 const ROUTING_CODE_HARNESS_NOT_ALLOWED = "harness_not_allowed";
-const ROUTING_CODE_AUTOMATION_DISABLED = "automation_disabled";
 const ROUTING_CODE_NO_ROUTE = "no_route";
 const ROUTING_CODE_NO_HARNESS_LEFT = "no_harness_left";
 const ROUTING_CODE_ADMISSION_NOT_CONFIRMED = "admission_not_confirmed";
@@ -207,7 +207,12 @@ export async function dispatchProjectLaunch(
   );
   if (!disarm.allowed) {
     const reason = disarm.reason ?? "Автоматический запуск запрещён владельцем.";
-    return { operationId, project, attempts, outcome: "no_harness", routingReason: reason, error: reason };
+    return {
+      operationId, project, attempts, outcome: "no_harness", routingReason: reason, error: reason,
+      // The class of the refusal is the same one the owner gate names, so an
+      // observer reads the class and not the wording of the reason.
+      routingReasonCode: AUTOMATION_DISABLED_CODE,
+    };
   }
 
   if (attempts.some((attempt) => attempt.outcome === "in_flight")) {
@@ -266,7 +271,7 @@ export async function dispatchProjectLaunch(
         routingReason: input.harness
           ? `Среда ${harnessLabel(input.harness)} не разрешена для автоматического запуска.`
           : "Для проекта нет маршрута, а автоматический запуск новых сессий выключен.",
-        routingReasonCode: input.harness ? ROUTING_CODE_HARNESS_NOT_ALLOWED : ROUTING_CODE_AUTOMATION_DISABLED,
+        routingReasonCode: input.harness ? ROUTING_CODE_HARNESS_NOT_ALLOWED : AUTOMATION_DISABLED_CODE,
       };
     }
     harness = fallback.harness;
@@ -410,9 +415,25 @@ export async function dispatchProjectLaunch(
     routingReason: healthAnalysis
       ? "OpenCode не подтвердил запуск анализа инцидента. Переключение среды и провайдера запрещено."
       : `${attempt.reason} Других сред в маршруте нет.`,
-    routingReasonCode: healthAnalysis ? ROUTING_CODE_ADMISSION_NOT_CONFIRMED : routingReasonCode ?? ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
+    routingReasonCode: healthAnalysis
+      ? ROUTING_CODE_ADMISSION_NOT_CONFIRMED
+      : exhaustedRouteCode(next) ?? routingReasonCode ?? ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
     ...(result.error ? { error: result.error } : {}),
   };
+}
+
+/**
+ * The class of an exhausted route.
+ *
+ * The route itself knows why it is exhausted: a route without a harness left
+ * and a route whose remaining models are all forbidden are two different
+ * refusals, and neither of them is an unconfirmed admission.
+ */
+function exhaustedRouteCode(next: ProjectLaunchResolution): string | undefined {
+  if (next.kind !== "exhausted") return undefined;
+  if (next.reason === "model_not_permitted") return MODEL_NOT_PERMITTED_CODE;
+  if (next.reason === "no_harness_left") return ROUTING_CODE_NO_HARNESS_LEFT;
+  return undefined;
 }
 
 /** Project first delivery and every replay from the same durable native receipt. */
