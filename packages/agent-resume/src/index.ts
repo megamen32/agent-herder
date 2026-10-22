@@ -30,6 +30,7 @@ export type {
   parseOpenCodeServerCommand,
   unwrapEnvelope,
   type OpenCodeCreateRequest,
+  type OpenCodeModelCatalogEntry,
   type SessionIdentity,
   type OpenCodeEvent,
   type OpenCodePermissionDetails,
