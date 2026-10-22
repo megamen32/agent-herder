@@ -316,8 +316,8 @@ export function envValueRefusal(key: string, value: string, options: { secret?: 
   if (fitsContract(value, contract)) return undefined;
   const secret = entry.secret === true || options.secret === true;
   const received = secret
-    ? "получено значение, которое не подходит; значение секрета в сообщении не приводится"
-    : `получено: «${value}»`;
+    ? "Получено значение, которое не подходит; значение секрета в сообщении не приводится"
+    : `Получено: «${value}»`;
   return `Настройка ${key} принимает только: ${describeContract(contract)}. ${received}.`;
 }
 
