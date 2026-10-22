@@ -491,6 +491,58 @@ describe("the settings of the herder are managed by the owner from one API", () 
     expect(record.confirmed.applied_revision).toBe(record.desired.desired_revision - 1);
   });
 
+  it("keeps the escalation of a project a reference to the object of the center", async () => {
+    const port = await startServer();
+    const saved = await putSettings(port, {
+      profiles: [{ id: "profile-1", humanName: "Профиль", harness: "codex", model: "model-a" }],
+      projects: [{
+        id: "project-1",
+        name: "Проект",
+        path: "/tmp/project-1",
+        profileId: "profile-1",
+        escalation: { noticePlaceObjectId: "NP-42" },
+      }],
+    });
+    expect(saved.status).toBe(200);
+    const view = await readSettings(port);
+    const record = view.records.find((candidate: any) => candidate.id === "project/project-1");
+    expect(record).toBeTruthy();
+    // The project names the profile of the herder and the object of the
+    // center, and the rule of the escalation is not copied here.
+    expect(record.desired.value.profileId).toBe("profile-1");
+    expect(record.desired.value.escalation).toEqual({ noticePlaceObjectId: "NP-42" });
+    expect(record.scope.kind).toBe("project");
+    // The state of the project is confirmed: it lives in the store of the
+    // product and is read by every new task.
+    expect(record.confirmed.state).toBe("Применено");
+    expect(record.confirmed.applied_revision).toBe(record.desired.desired_revision);
+  });
+
+  it("refuses a rule of the escalation instead of keeping a second copy", async () => {
+    const port = await startServer();
+    const refused = await putSettings(port, {
+      projects: [{
+        id: "project-2",
+        name: "Проект",
+        path: "/tmp/project-2",
+        escalation: { noticePlaceObjectId: "NP-1", rule: "send-now" },
+      }],
+    });
+    expect(refused.status).toBe(400);
+    const body = await refused.json() as { error?: string };
+    expect(body.error).toContain("center");
+  });
+
+  it("refuses a project that names a profile that does not exist", async () => {
+    const port = await startServer();
+    const refused = await putSettings(port, {
+      projects: [{ id: "project-3", name: "Проект", path: "/tmp/project-3", profileId: "no-such-profile" }],
+    });
+    expect(refused.status).toBe(400);
+    const body = await refused.json() as { error?: string };
+    expect(body.error).toContain("profile");
+  });
+
   it("carries the lifecycle of a secret without its value", async () => {
     const port = await startServer();
 

@@ -17,6 +17,7 @@ import {
 import { StopControl } from "./stop-control.js";
 import { ConnectionsSection } from "./connections-section.js";
 import { RuntimeSection } from "./runtime-section.js";
+import { ProjectsSection } from "./projects-section.js";
 import "./settings.css";
 
 /**
@@ -33,6 +34,19 @@ import "./settings.css";
  */
 
 export type SettingsTab = "herder" | "projects";
+
+/** The routes of the projects of the launch policy, as the policy names them. */
+export function projectRoutes(policy: unknown): Array<{ project: string; profileId?: string }> {
+  if (!policy || typeof policy !== "object") return [];
+  const routes = (policy as Record<string, unknown>).projectRoutes;
+  if (!Array.isArray(routes)) return [];
+  return routes.map((route) => {
+    const record = (route ?? {}) as Record<string, unknown>;
+    const project = typeof record.project === "string" ? record.project : "маршрут без имени";
+    const profileId = typeof record.profileId === "string" && record.profileId.trim() ? record.profileId.trim() : undefined;
+    return { project, ...(profileId ? { profileId } : {}) };
+  });
+}
 
 export function SettingsScreen({
   tab,
@@ -320,6 +334,32 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
                 ))}
               </tbody>
             </table>
+            {projectRoutes(view.launchPolicy.policy).length ? (
+              <table className="herder-settings-table">
+                <thead>
+                  <tr><th>Маршрут проекта</th><th>Профиль ИИ</th></tr>
+                </thead>
+                <tbody>
+                  {projectRoutes(view.launchPolicy.policy).map((route) => (
+                    <tr key={route.project}>
+                      <td>{route.project}</td>
+                      <td>
+                        {route.profileId ? (
+                          <>
+                            <code>{route.profileId}</code>{" "}
+                            {/* The profile lives in the herder: the link opens
+                                it here instead of editing it in two places. */}
+                            <a href="#herder-projects">Открыть профиль в Herder</a>
+                          </>
+                        ) : (
+                          <span>профиль не назван</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null}
           </>
         ) : (
           <div className="herder-settings-not-configured">
@@ -337,6 +377,7 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
         )}
       </section>
 
+      <ProjectsSection view={view} onSave={save} />
       <RuntimeSection />
       <ConnectionsSection />
       <StopControl />

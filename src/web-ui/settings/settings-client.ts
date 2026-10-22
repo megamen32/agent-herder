@@ -76,6 +76,21 @@ export type SettingsProfile = {
   limits?: Record<string, unknown>;
 };
 
+/**
+ * A project of the mesh.
+ *
+ * The project names the AI profile it runs in and the object of the Notice
+ * Place that carries its escalation rule. The rule belongs to the center:
+ * the herder keeps the reference and never a second copy of the rule.
+ */
+export type SettingsProject = {
+  id: string;
+  name: string;
+  path: string;
+  profileId?: string;
+  escalation?: { noticePlaceObjectId: string };
+};
+
 export type SettingsSecretLifecycle = {
   key: string;
   purpose?: string;
@@ -93,6 +108,7 @@ export type SettingsView = {
   etag: string;
   records: SettingsRecord[];
   profiles: SettingsProfile[];
+  projects: SettingsProject[];
   secrets: SettingsSecretLifecycle[];
   environment: {
     entity: "herder.env";
@@ -140,6 +156,8 @@ export type SettingsChanges = {
   fleetNode?: Record<string, unknown>;
   secrets?: Record<string, { operation?: "check" | "revoke"; purpose?: string; expiresAt?: string; fingerprint?: string }>;
   profiles?: Array<Record<string, unknown>>;
+  /** The projects of the mesh and the reference to the rule of the center. */
+  projects?: Array<Record<string, unknown>>;
   /** The versions of the records the owner edited: the precondition of the change. */
   baseVersion?: Record<string, number>;
 };
