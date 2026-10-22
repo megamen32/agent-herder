@@ -334,10 +334,12 @@ def dependency_check(release: Path, store_modules: Path) -> dict:
     copied, offenders = release_rules.copied_bytes(packages)
     linked_cache = sorted(name for name in offenders
                           if name.split("/")[0] not in release_rules.MUTABLE_ENTRIES)
+    shared_cache = release_rules.shared_cache_files(packages)
     resume = packages / "agent-resume-mcp"
     return {
         "ok": (not difference["missing"] and not difference["extra"] and not linked_cache
-               and resume.is_symlink() and os.readlink(resume) == "../packages/agent-resume"),
+               and not shared_cache and resume.is_symlink()
+               and os.readlink(resume) == "../packages/agent-resume"),
         "store_packages": difference["expected"],
         "release_packages": difference["actual"],
         "missing": difference["missing"][:5],
@@ -346,6 +348,8 @@ def dependency_check(release: Path, store_modules: Path) -> dict:
         "copied_files": len(offenders),
         "copied_only_tool_caches": not linked_cache,
         "linked_cache_files": linked_cache[:5],
+        "shared_cache_files": shared_cache[:5],
+        "cache_owns_its_bytes": not shared_cache,
         "workspace_link": os.readlink(resume) if resume.is_symlink() else "absent",
     }
 
@@ -558,6 +562,9 @@ def main() -> int:
          f"from_store={workspace.get('imports_store_package')} "
          f"tree_ok={workspace.get('imported_tree_sha256') == workspace.get('release_tree_sha256')}"
          + (f" error={workspace.get('error')}" if workspace.get("error") else "")),
+        ("the tool caches of the release are its own bytes (nlink=1)",
+         dependencies.get("cache_owns_its_bytes", False),
+         f"shared with the store: {dependencies.get('shared_cache_files', []) or 'none'}"),
         ("the release carries the full set of the store, nothing copied",
          dependencies.get("ok", False),
          f"store={dependencies.get('store_packages')} release={dependencies.get('release_packages')} "

@@ -421,6 +421,8 @@ def main() -> int:
     arguments = parser.parse_args()
 
     sha = run(["git", "-C", str(REPO), "rev-parse", arguments.sha])
+    store = REPO / "node_modules"
+    store_before = release_rules.mutable_state(store)
     worktree = prepare_worktree(sha, Path(arguments.worktrees))
     if not arguments.skip_build:
         build(worktree)
@@ -431,6 +433,10 @@ def main() -> int:
     print("packages:", packages)
     bundle = write_bundle_manifest(sha, release, Path(arguments.catalog), worktree)
     results, manifest, unique_mib, bundle_manifest = checks(sha, release, Path(arguments.catalog))
+    results = list(results) + [
+        ("the build did not write into the store", store_before == store_after,
+         f"{len(store_before)} cache files of the store, unchanged = {store_before == store_after}"),
+    ]
 
     print("== candidate release ==")
     print(f"script       : {Path(__file__).resolve()}")
@@ -442,9 +448,11 @@ def main() -> int:
     print(f"payload files: {len(manifest['payload'])}")
     print(f"sha256 index : {sha256(release / 'dist' / 'index.js')}")
     print(f"bundle       : {bundle_manifest['bundleFingerprint']} files={bundle_manifest['bundleFiles']}")
+    store_after = release_rules.mutable_state(store)
     size_report = release_rules.size_report(release)
     print(f"size         : unique {size_report['unique_mib']} MiB (disk increment), "
           f"apparent {size_report['apparent_mib']} MiB (the store counted again)")
+    print(f"store caches : unchanged by the build = {store_before == store_after}")
     print("== checks ==")
     failed = 0
     for name, ok, detail in results:

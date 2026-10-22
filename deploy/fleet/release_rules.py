@@ -128,6 +128,51 @@ def copied_bytes(root: Path) -> tuple[int, list[str]]:
     return copied, offenders
 
 
+def file_state(path: Path) -> str:
+    """The identity of a file: inode, modification time and size."""
+    info = Path(path).stat()
+    return f"{info.st_ino}:{info.st_mtime_ns}:{info.st_size}"
+
+
+def mutable_state(root: Path) -> dict:
+    """The state of the tool caches of a store, file by file.
+
+    The build writes into those caches. A build that changed them would
+    change the store, and the bytes of every release that shares the store
+    would change with it.
+    """
+    root = Path(root)
+    state = {}
+    for name in MUTABLE_ENTRIES:
+        base = root / name
+        if base.is_symlink() or not base.exists():
+            continue
+        if base.is_file():
+            state[name] = file_state(base)
+            continue
+        for path in sorted(base.rglob("*")):
+            if path.is_symlink() or not path.is_file():
+                continue
+            state[path.relative_to(root).as_posix()] = file_state(path)
+    return state
+
+
+def shared_cache_files(root: Path) -> list[str]:
+    """The tool caches of a release that are still shared with the store."""
+    root = Path(root)
+    shared = []
+    for name in MUTABLE_ENTRIES:
+        base = root / name
+        if base.is_symlink() or not base.exists():
+            continue
+        candidates = [base] if base.is_file() else [p for p in sorted(base.rglob("*"))
+                                                    if p.is_file() and not p.is_symlink()]
+        for path in candidates:
+            if path.stat().st_nlink > 1:
+                shared.append(path.relative_to(root).as_posix())
+    return shared
+
+
 def bundle_entries(root: Path, exclude=()) -> dict:
     """Every file and every link of a bundle, by name."""
     entries = {}
