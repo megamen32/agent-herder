@@ -2,7 +2,7 @@ import type { BackgroundAutopilotStop } from "../autopilot/background-stop.js";
 import type { AutopilotRunnerInput } from "../autopilot-runner.js";
 import { projectSessionInventory } from "./session-inventory.js";
 import { SessionImageStore } from "../session-images.js";
-import { homedir, hostname } from "node:os";
+import { homedir, hostname, userInfo } from "node:os";
 import { UserMessageDelivery, type UserMessageRoute } from "../user-message-delivery.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { execFile } from "node:child_process";
@@ -65,6 +65,8 @@ import type { AdapterRegistry } from "../adapter-registry.js";
 import { publishHealthRefusal, type HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { handleQuotaLensRequest } from "./quota-lens.js";
+import { createSettingsApi } from "./settings-api.js";
+import { SettingsStore } from "./settings-store.js";
 import { getS21Ownership } from "../s21-resource-ownership.js";
 import { getHumanStopStore } from "../human-stop-store.js";
 import { deferredMessages, renderDeferredMessages } from "../deferred-messages.js";
@@ -97,6 +99,8 @@ export interface WebDependencies {
   autoCompactService?: AutoCompactService;
   autoCompactStore?: AutoCompactStore;
   automationLaunchPolicyStore?: AutomationLaunchPolicyStore;
+  /** The settings of the product: a test names its own store, the runtime keeps its own files. */
+  settingsStore?: SettingsStore;
   backgroundAutopilotStop?: BackgroundAutopilotStop;
   autopilotSweepIntervalMs?: number;
   sessionVisualizer?: (details: SessionDetails) => Promise<string>;
@@ -869,10 +873,34 @@ export function createWebServer(dependencies: WebDependencies): Server {
     onPublished: (update) => console.log(`Notice health observer published ${update.fingerprint} for ${update.binding.incidentId} plan ${update.planId}`),
     onError: (message) => console.error(message),
   });
+  // The settings of the herder product, managed by the owner from one
+  // form. The store touches the environment file of the product and the
+  // configuration of this node, and nothing else: the files of the other
+  // products of the contour are never opened here.
+  const settingsStore = dependencies.settingsStore ?? new SettingsStore({ actor: userInfo().username, hostId: hostname() });
+  const settingsApi = createSettingsApi({
+    store: settingsStore,
+    actor: userInfo().username,
+    hostId: hostname(),
+    // The launch policy keeps its own endpoint and its own version
+    // check: the settings API reads it and never writes it twice.
+    ...(dependencies.automationLaunchPolicyStore
+      ? {
+        launchPolicy: {
+          endpoint: "/api/automation/launch-policy",
+          read: async () => await dependencies.automationLaunchPolicyStore!.readDocument(),
+        },
+      }
+      : {}),
+  });
   const server = createServer(async (request, response) => {
     try {
       if (dependencies.fleetHttpGuard && await dependencies.fleetHttpGuard(request, response)) return;
       if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
+      // The settings of the owner keep the order of the checks of the
+      // panel: the guard of the fleet runs before them, and the API
+      // checks the owner of the request itself.
+      if (await settingsApi(request, response)) return;
       if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
       await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport);
     } catch (err) {
