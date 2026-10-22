@@ -33,7 +33,7 @@
     {
       "id": "100",
       "kind": "owner",
-      "hostId": "server-100",
+      "hostId": "roomhacker-server-100",
       "address": "104.bezrabotnyi.com",
       "sshPort": 22104,
       "sshUser": "roomhacker",

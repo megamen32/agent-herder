@@ -455,6 +455,126 @@ def budget_check(releases_root: Path, rollback_root: Path) -> dict:
     }
 
 
+def mcp_call(port: int, tool: str, arguments: dict, timeout: float = 30.0) -> dict:
+    """One tool call of the node itself, over its own MCP."""
+    base = f"http://127.0.0.1:{port}/mcp"
+
+    def post(payload):
+        request = urllib.request.Request(base, data=json.dumps(payload).encode(), method="POST",
+                                         headers={"Content-Type": "application/json",
+                                                  "Accept": "application/json, text/event-stream"})
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = response.read(200000).decode(errors="replace")
+        for line in body.splitlines():
+            if line.startswith("data:"):
+                return json.loads(line[5:].strip())
+        return json.loads(body) if body.strip() else {}
+
+    post({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+          "params": {"protocolVersion": "2024-11-05", "capabilities": {},
+                     "clientInfo": {"name": "acceptance", "version": "1"}}})
+    try:
+        post({"jsonrpc": "2.0", "method": "notifications/initialized"})
+    except Exception:
+        pass
+    answer = post({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                   "params": {"name": tool, "arguments": arguments}})
+    return answer
+
+
+def peer_reachability(port: int, peer_host: str) -> dict:
+    """From this node to the second node: the two calls the guard does not touch."""
+    result = {"tools": {}, "peer_answers": False, "guard_blocked": False}
+    for tool, arguments in (("fleet_node_info", {}), ("fleet_session_page", {"limit": 5})):
+        try:
+            answer = mcp_call(port, tool, arguments)
+        except Exception as error:
+            result["tools"][tool] = {"error": str(error)[:160]}
+            continue
+        text = json.dumps(answer, ensure_ascii=False)
+        blocked = "codex_quota_guard" in text
+        result["tools"][tool] = {
+            "answered": "result" in answer,
+            "error": (answer.get("error") or {}).get("message", "")[:160] if answer.get("error") else "",
+            "guard_blocked": blocked,
+        }
+        if blocked:
+            result["guard_blocked"] = True
+        if peer_host and peer_host in text:
+            result["peer_answers"] = True
+    return result
+
+
+def fleet_confirmation(port: int) -> dict:
+    """The confirmation of the fleet: who holds the wanted revision, and when."""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/settings/fleet-confirmation",
+                                    timeout=30) as response:
+            return json.loads(response.read(400000).decode())
+    except urllib.error.HTTPError as error:
+        return {"error": f"HTTP {error.code}"}
+    except Exception as error:
+        return {"error": str(error)[:160]}
+
+
+def guard_policy(release: Path) -> dict:
+    """The shipped guard: what it does to a session creation without a harness.
+
+    The module of the release is asked, not the source of the repository: the
+    policy is proved on the code that runs.
+    """
+    module = release / "dist" / "codex-quota-guard.js"
+    if not module.is_file():
+        return {"ok": False, "error": f"the release carries no guard: {module}"}
+    script = r"""
+import { assertRemoteCodexAdmission } from process.argv[2];
+const reader = async () => ({});
+const out = {};
+for (const [name, args] of [["without harness", {}], ["harness opencode", { harness: "opencode" }], ["harness codex", { harness: "codex" }]]) {
+  try {
+    await assertRemoteCodexAdmission("fleet_create_session", args, reader);
+    out[name] = { allowed: true };
+  } catch (error) {
+    out[name] = { allowed: false, code: error.code, message: String(error.message).slice(0, 200), decision: error.decision ? { allowed: error.decision.allowed, reason: error.decision.reason } : undefined };
+  }
+}
+console.log(JSON.stringify(out));
+"""
+    path = Path("/tmp/acceptance-guard-probe.mjs")
+    path.write_text(script, encoding="utf-8")
+    try:
+        result = subprocess.run(["/usr/local/bin/node", str(path), str(module)],
+                                capture_output=True, text=True, check=False, timeout=30)
+        data = json.loads(result.stdout.strip().splitlines()[-1])
+    except Exception as error:
+        return {"ok": False, "error": str(error)[:200]}
+    without = data.get("without harness", {})
+    with_opencode = data.get("harness opencode", {})
+    return {
+        "ok": without.get("allowed") is False and without.get("code") == "codex_quota_guard"
+              and with_opencode.get("allowed") is True,
+        "without_harness": without,
+        "with_opencode": with_opencode,
+        "with_codex": data.get("harness codex", {}),
+        "guard_module": str(module),
+    }
+
+
+def panel_session_creation(release: Path) -> dict:
+    """Does the panel of this release create sessions, and with which harness?"""
+    web = release / "dist" / "web"
+    hits = []
+    for path in sorted(web.rglob("*.js")):
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        for needle in ("new_or_resume", "create_session", "send_message"):
+            if needle in text:
+                hits.append(f"{path.relative_to(web).as_posix()}:{needle}")
+    return {"panel_creates_sessions": bool(hits), "hits": hits[:10]}
+
+
 def management_check(port: int, kind: str) -> dict:
     base = f"http://127.0.0.1:{port}"
     result = {
@@ -481,6 +601,8 @@ def main() -> int:
     parser.add_argument("--releases-root", default="")
     parser.add_argument("--rollback-root", default="")
     parser.add_argument("--expect-host", default="", help="the host id this node must answer to")
+    parser.add_argument("--peer-host", default="",
+                        help="the host id of the second node: the one this node must reach")
     parser.add_argument("--node-bin", default="/usr/local/bin/node",
                         help="the node binary of this node; the probes run with it")
     parser.add_argument("--json", action="store_true", help="print the summary as JSON")
@@ -508,6 +630,10 @@ def main() -> int:
     workspace = import_check_workspace(release, store_modules, arguments.node_bin)
     dependencies = dependency_check(release, store_modules)
     management = management_check(arguments.port, arguments.kind)
+    reachability = peer_reachability(arguments.port, arguments.peer_host) if arguments.peer_host else {}
+    confirmation = fleet_confirmation(arguments.port)
+    guard = guard_policy(release)
+    panel = panel_session_creation(release)
     lever = lever_check(state_dir, release, arguments.node_bin)
     budget = budget_check(releases_root, rollback_root)
     release_size = release_rules.size_report(release)
@@ -577,6 +703,25 @@ def main() -> int:
          f"state={lever.get('state')} scope={lever.get('scope')} mechanism={lever.get('mechanism')} "
          f"changedBy={lever.get('changed_by')} live={lever.get('live_decision')}"
          + (f" error={lever.get('error')}" if lever.get("error") else "")),
+        ("from this node the second node is reachable (the two calls the guard does not touch)",
+         bool(reachability) and all(tool.get("answered") for tool in reachability.get("tools", {}).values())
+         and not reachability.get("guard_blocked"),
+         f"peer={arguments.peer_host or 'any'} tools="
+         + " ".join(f"{name}:{'ok' if tool.get('answered') else tool.get('error', 'no')}"
+                    for name, tool in reachability.get("tools", {}).items())
+         + f" guard_blocked={reachability.get('guard_blocked')}"),
+        ("the fleet names the nodes that hold the wanted revision",
+         not confirmation.get("error") and bool(confirmation.get("nodes")),
+         f"desiredRevision={confirmation.get('desiredRevision')} state={confirmation.get('state')} "
+         f"confirmed={confirmation.get('confirmed')}/{confirmation.get('total')} "
+         f"nodes=" + " ".join(f"{node.get('hostId')}:{node.get('status')}@{(node.get('confirmedAt') or 'нет')}"
+                              for node in (confirmation.get("nodes") or []))
+         + (f" error={confirmation.get('error')}" if confirmation.get("error") else "")),
+        ("the guard of the release blocks a session creation without a harness",
+         guard.get("ok", False),
+         f"without harness={guard.get('without_harness', {}).get('code')} "
+         f"reason={(guard.get('without_harness', {}).get('decision') or {}).get('reason')} "
+         f"with opencode allowed={guard.get('with_opencode', {}).get('allowed')}"),
         ("the release budget holds", budget.get("ok", False),
          f"directories={budget.get('directories')}/{MAX_RELEASES} "
          f"unique={budget.get('unique_mib')} MiB/{BUDGET_MIB} MiB (disk increment) "
@@ -594,6 +739,10 @@ def main() -> int:
         "kind": arguments.kind,
         "release": str(release),
         "release_size": release_size,
+        "peer_reachability": reachability,
+        "fleet_confirmation": confirmation,
+        "guard_policy": guard,
+        "panel_session_creation": panel,
         "passed": len(checks) - failed,
         "total": len(checks),
         "verdict": "ACCEPTED" if not failed else "REFUSED",
