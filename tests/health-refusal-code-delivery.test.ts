@@ -158,7 +158,7 @@ describe("the refusal code of the health contour reaches a machine-readable cons
     // The class of the refusal is a field of the record: a reader counts it
     // without parsing the wording.
     expect(refusal?.code).toBe("automation_disabled");
-    expect(refusal?.detail).toBe("automation_disarmed");
+    expect(refusal?.detail).toBe("*");
     expect(refusal?.incidentId).toBe("inc_trail");
     expect(refusal?.harness).toBe("opencode");
     // Every record of the trail is one JSON object, so a JSON reader takes it.
@@ -206,10 +206,12 @@ describe("the refusal code of the health contour reaches a machine-readable cons
 
     // The top-level class is the one agreed class of a disarm refusal.
     expect(refusals.map((refusal) => refusal.code)).toEqual(["automation_disabled", "automation_disabled"]);
-    // The detail tells the two causes apart without reading the wording.
-    expect(refusals[0]?.detail).toBe("automation_disarmed");
-    expect(refusals[0]?.workKey).toBeUndefined();
-    expect(refusals[1]?.detail).toBe("work_disarmed");
+    // The area travels beside the class. A project named by a name has no
+    // path of its own, so its area is the catch-all scope of the contour, and
+    // the work the refusal was made on is named beside it.
+    expect(refusals[0]?.detail).toBe("*");
+    expect(refusals[0]?.workKey).toBe(projectWorkKey(binding.project));
+    expect(refusals[1]?.detail).toBe("*");
     expect(refusals[1]?.workKey).toBe(projectWorkKey(binding.project));
   });
 
@@ -226,10 +228,10 @@ describe("the refusal code of the health contour reaches a machine-readable cons
     expect(result.skipped).toBe(1);
     // The wording of the operator's log is unchanged.
     expect(result.reasons.join("\n")).toContain("[automation_disabled]");
-    // The record carries the class of the refusal and the class of the cause.
+    // The record carries the class of the refusal and the area of it.
     expect(result.refusals).toHaveLength(1);
     expect(result.refusals[0]?.code).toBe("automation_disabled");
-    expect(result.refusals[0]?.detail).toBe("automation_disarmed");
+    expect(result.refusals[0]?.detail).toBe("*");
     expect(result.refusals[0]?.sessionId).toBe("ses_recovery");
   });
 
@@ -245,7 +247,7 @@ describe("the refusal code of the health contour reaches a machine-readable cons
     }, new ProjectLaunchAttemptLog(join(workDir, "attempts-global.json")), acceptingRunner());
 
     expect(global.routingReasonCode).toBe("automation_disabled");
-    expect(global.routingReasonDetail).toBe("automation_disarmed");
+    expect(global.routingReasonDetail).toBe("*");
     // The wording of the reason is unchanged.
     expect(global.routingReason).toContain("Автоматический запуск запрещён владельцем");
 
@@ -264,6 +266,7 @@ describe("the refusal code of the health contour reaches a machine-readable cons
     }, new ProjectLaunchAttemptLog(join(workDir, "attempts-work.json")), acceptingRunner());
 
     expect(blocked.routingReasonCode).toBe("automation_disabled");
-    expect(blocked.routingReasonDetail).toBe("work_disarmed");
+    // The area of the blocked work is the canonical path of its scope.
+    expect(blocked.routingReasonDetail).toBe("/workspace/guarded");
   });
 });

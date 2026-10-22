@@ -1,7 +1,7 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { automationDisarmDecision, projectWorkKey, sessionWorkKey, AutomationDisarmStore, type AutomationDisarmDecision } from "../automation-disarm/index.js";
+import { automationDisarmDecision, projectWorkKey, sessionWorkKey, AutomationDisarmStore, AUTOMATION_FORBIDDEN_CODE, ALL_SCOPES, type AutomationDisarmDecision } from "../automation-disarm/index.js";
 
 /**
  * The machine-readable classes of the refusals of the health contour.
@@ -41,14 +41,15 @@ export interface HealthReasonRefusal {
   /** The incident the refusal belongs to. */
   incidentId: string;
   /**
-   * The stable ASCII class of the cause behind the refusal.
+   * The area of the refusal, as a structured value beside the class.
    *
-   * The code names the class of the refusal itself; this field names the class
-   * of the cause inside it, so a reader tells a forbidden automation from a
-   * blocked work without reading the wording.
+   * The code names the class of the refusal; this field names where it
+   * happened: the canonical path of the scope that refused, or the catch-all
+   * scope of the whole contour. The area is never carried by the wording
+   * alone, so a reader tells one project from another without reading it.
    */
   detail?: string;
-  /** The logical work key the refusal was made on, when one work is blocked. */
+  /** The logical work key the refusal was made on. */
   workKey?: string;
   /** The harness of the refused run. */
   harness?: string;
@@ -68,6 +69,13 @@ export interface HealthOwnerGateDecision {
    * without reading the wording of the reason.
    */
   disarmCode?: AutomationDisarmDecision["code"];
+  /**
+   * The area of the refusal, in the canonical form of the scope.
+   *
+   * The owner lever names the area beside the class: the path of the scope
+   * that refused, or the catch-all scope for the whole automation.
+   */
+  routingReasonDetail?: string;
   /** The logical work key the refusal was made on. */
   workKey?: string;
 }
@@ -100,6 +108,8 @@ export async function healthOwnerGate(options: {
       // The class of the decision travels with the wording: a reader counts the
       // refusals by the class and never parses the reason.
       ...(decision.code ? { disarmCode: decision.code } : {}),
+      // The area travels beside the class, never inside the wording.
+      ...(decision.routingReasonDetail ? { routingReasonDetail: decision.routingReasonDetail } : {}),
       ...(decision.workKey ? { workKey: decision.workKey } : {}),
     };
   } catch (error) {
@@ -107,8 +117,10 @@ export async function healthOwnerGate(options: {
       allowed: false,
       reason: `Состояние запрета автоматики не прочитано: ${(error as Error).message}`,
       // A state that cannot be read is the global lever, so the class of the
-      // decision is the class of the global lever.
-      disarmCode: "automation_disarmed",
+      // decision is the class of the global lever and the area is the area of
+      // the whole contour.
+      disarmCode: AUTOMATION_FORBIDDEN_CODE,
+      routingReasonDetail: ALL_SCOPES,
     };
   }
 }

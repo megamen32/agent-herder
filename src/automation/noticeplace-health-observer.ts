@@ -181,9 +181,9 @@ export class NoticeplaceHealthObserver {
       `Notice health observer refused ${target.sessionId} incident ${target.binding.incidentId}: ${decision.reason ?? "the owner forbids automation"}`,
       AUTOMATION_DISABLED_CODE,
       {
-        // The class of the disarm decision itself: a forbidden automation and a
-        // blocked work are one class of refusal, but not the same cause.
-        ...(decision.disarmCode ? { detail: decision.disarmCode } : {}),
+        // The area of the refusal, beside its class: the path of the scope
+        // that refused, or the catch-all scope of the whole contour.
+        ...(decision.routingReasonDetail ? { detail: decision.routingReasonDetail } : {}),
         ...(decision.workKey ? { workKey: decision.workKey } : {}),
       },
     );
@@ -206,8 +206,9 @@ export class NoticeplaceHealthObserver {
       sessionId: target.sessionId,
       incidentId: target.binding.incidentId,
       harness: target.harness,
-      // The class of the cause travels with the class of the refusal, so the
-      // consumer counts both without reading the wording.
+      // The area of the refusal travels with its class, so the consumer counts
+      // the refusals and tells one area from another without reading the
+      // wording.
       ...(cause?.detail ? { detail: cause.detail } : {}),
       ...(cause?.workKey ? { workKey: cause.workKey } : {}),
     });

@@ -156,8 +156,9 @@ describe("the owner-level disarm gate of a project launch", () => {
     // The class of the refusal is the one the owner gate names.
     expect(result.routingReasonCode).toBe(AUTOMATION_DISABLED_CODE);
     expect(result.routingReasonCode).toBe("automation_disabled");
-    // The cause is told apart from a forbidden automation.
-    expect(result.routingReasonDetail).toBe("work_disarmed");
+    // The area tells where the refusal happened: the canonical path of the
+    // scope that refused.
+    expect(result.routingReasonDetail).toBe(ROUTE_SUBDIR);
     // The reason a person reads is the one of before.
     expect(result.routingReason).toBe(AUTOMATION_WORK_DISARMED_MESSAGE);
     expect(result.error).toBe(AUTOMATION_WORK_DISARMED_MESSAGE);
@@ -177,7 +178,9 @@ describe("the owner-level disarm gate of a project launch", () => {
     );
 
     expect(decision.allowed).toBe(false);
-    expect(decision.code).toBe("work_disarmed");
+    expect(decision.code).toBe("automation_disabled");
+    // The area travels beside the class, never inside the wording.
+    expect(decision.routingReasonDetail).toBe(ROUTE_SUBDIR);
     // The decision names the key it was made on: the requested project first.
     expect(decision.workKey).toBe(projectWorkKey(ROUTE_SUBDIR));
   });
@@ -214,7 +217,7 @@ describe("the owner-level disarm gate of a project launch", () => {
 
     const { result, run } = await launch(policy, ROUTE_SUBDIR, "op-governed");
     expect(result.outcome).toBe("no_harness");
-    expect(result.routingReasonDetail).toBe("work_disarmed");
+    expect(result.routingReasonDetail).toBe(ROUTE_SUBDIR);
     expect(run).not.toHaveBeenCalled();
   });
 
@@ -226,7 +229,7 @@ describe("the owner-level disarm gate of a project launch", () => {
 
     const { result, run } = await launch(policy, ROUTE_SUBDIR, "op-requested-name");
     expect(result.outcome).toBe("no_harness");
-    expect(result.routingReasonDetail).toBe("work_disarmed");
+    expect(result.routingReasonDetail).toBe(ROUTE_SUBDIR);
     expect(run).not.toHaveBeenCalled();
   });
 });
@@ -268,22 +271,21 @@ describe("the refusal of the owner-level disarm gate names the blocked work", ()
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("keeps the refusal of a forbidden automation without a work key", async () => {
-    // The whole automation is forbidden: no work is blocked, so there is no
-    // blocked key to name.
+  it("keeps the refusal of a forbidden automation with the work it was made on", async () => {
+    // The whole automation is forbidden: the area is the whole contour, and
+    // the work the refusal was made on is named beside it.
     await AutomationDisarmStore.forRuntime().apply({ source: "owner", disarmed: true });
     const { result, run } = await launch(policyWithAliasedRoute(), ROUTE_SUBDIR, "op-global-disarm");
 
     expect(result.outcome).toBe("no_harness");
     expect(result.routingReasonCode).toBe(AUTOMATION_DISABLED_CODE);
-    expect(result.routingReasonDetail).toBe("automation_disarmed");
-    expect(result.routingReasonWorkKey).toBeUndefined();
-    expect(Object.keys(result)).not.toContain("routingReasonWorkKey");
-    // The refusal keeps its class fields, and the route facts the receipt
-    // carries are appended after them, in the same order.
+    expect(result.routingReasonDetail).toBe("*");
+    expect(result.routingReasonWorkKey).toBe("project|/workspace/root/sub");
+    // The refusal keeps its class fields, the work it was made on, and the
+    // route facts the receipt carries, in the same order.
     expect(Object.keys(result)).toEqual([
       "operationId", "project", "attempts", "outcome", "routingReason", "error",
-      "routingReasonCode", "routingReasonDetail", "routeKey", "workspaceReplaced",
+      "routingReasonCode", "routingReasonDetail", "routingReasonWorkKey", "routeKey", "workspaceReplaced",
     ]);
     expect(JSON.parse(JSON.stringify(result))).toEqual({
       operationId: "op-global-disarm",
@@ -293,7 +295,8 @@ describe("the refusal of the owner-level disarm gate names the blocked work", ()
       routingReason: AUTOMATION_DISARMED_MESSAGE,
       error: AUTOMATION_DISARMED_MESSAGE,
       routingReasonCode: AUTOMATION_DISABLED_CODE,
-      routingReasonDetail: "automation_disarmed",
+      routingReasonDetail: "*",
+      routingReasonWorkKey: "project|/workspace/root/sub",
       routeKey: ROUTE_ROOT,
       workspaceReplaced: true,
     });

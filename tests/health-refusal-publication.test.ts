@@ -142,8 +142,8 @@ describe("the health refusal of the production path travels into the journal of 
     expect(event.id).toBe("inc_publish");
     // The uri names the incident, so the refusals of one incident are read apart.
     expect(event.uri).toBe(healthRefusalUri("inc_publish"));
-    // The source is the class of the cause of the refusal.
-    expect(event.source).toBe("automation_disarmed");
+    // The source is the area of the refusal.
+    expect(event.source).toBe("*");
   });
 
   it("maps the refusal of the trail into the event one to one", async () => {
@@ -157,10 +157,10 @@ describe("the health refusal of the production path travels into the journal of 
 
     const records = await waitForTrail("ses_mapping");
     const refusal = records.find((record) => record.sessionId === "ses_mapping");
-    // The refusal of the trail names the class of the refusal and the class of
-    // the cause, and the blocked work beside them.
+    // The refusal of the trail names the class of the refusal and the area of
+    // it, and the blocked work beside them.
     expect(refusal?.code).toBe("automation_disabled");
-    expect(refusal?.detail).toBe("work_disarmed");
+    expect(refusal?.detail).toBe("*");
     expect(refusal?.workKey).toBe(projectWorkKey(PROJECT));
 
     const events = await waitForHealthEvents(bus, "inc_mapping");
@@ -171,8 +171,8 @@ describe("the health refusal of the production path travels into the journal of 
     expect(event.reason_code).toBe(refusal?.code);
     expect(event.id).toBe(refusal?.incidentId);
     expect(event.source).toBe(refusal?.detail ?? refusal?.workKey);
-    // The source is the class of the cause and never the blocked work key.
-    expect(event.source).toBe("work_disarmed");
+    // The source is the area of the refusal and never the blocked work key.
+    expect(event.source).toBe("*");
     expect(event.source).not.toBe(refusal?.workKey);
   });
 
@@ -196,7 +196,7 @@ describe("the health refusal of the production path travels into the journal of 
     expect(events[0]!.kind).toBe("health");
     expect(events[0]!.reason_code).toBe("automation_disabled");
     expect(events[0]!.id).toBe("inc_recovery");
-    expect(events[0]!.source).toBe("automation_disarmed");
+    expect(events[0]!.source).toBe("*");
     expect(events[0]!.uri).toBe(healthRefusalUri("inc_recovery"));
   });
 

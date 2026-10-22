@@ -122,7 +122,9 @@ export async function recoverNoticeplaceHealthObservation(options: {
           sessionId: candidate.sessionId,
           incidentId: candidate.binding.incidentId,
           harness: candidate.harness,
-          ...(gate.disarmCode ? { detail: gate.disarmCode } : {}),
+          // The area of the refusal, beside its class: the path of the scope
+          // that refused, or the catch-all scope of the whole contour.
+          ...(gate.routingReasonDetail ? { detail: gate.routingReasonDetail } : {}),
           ...(gate.workKey ? { workKey: gate.workKey } : {}),
         });
         return;

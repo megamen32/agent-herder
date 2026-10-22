@@ -250,14 +250,16 @@ export async function dispatchProjectLaunch(
       // The class of the refusal is the same one the owner gate names, so an
       // observer reads the class and not the wording of the reason.
       routingReasonCode: AUTOMATION_DISABLED_CODE,
-      // The class of the disarm decision itself: the whole automation is
-      // forbidden, or this one work is blocked.
-      ...(disarm.code ? { routingReasonDetail: disarm.code } : {}),
-      // The blocked work itself, in the readable form of a work key. The gate
-      // checks the requested and the routed name, so the blocked work is not
+      // The area of the refusal, as a structured value beside the class: the
+      // canonical path of the scope that refused, or the catch-all scope when
+      // the whole automation is forbidden.
+      ...(disarm.routingReasonDetail ? { routingReasonDetail: disarm.routingReasonDetail } : {}),
+      // The work the refusal was made on, in the readable form of a work key.
+      // The gate checks the requested and the routed name, so the work is not
       // always the project of the refusal: without the key an operator reads
-      // a project that is not blocked and cannot tell what to unblock. A
-      // forbidden automation has no blocked work and names none.
+      // a project that was not refused and cannot tell what to look at. The
+      // area beside the class says what to unblock: the whole contour or one
+      // scope of it.
       ...(disarm.workKey ? { routingReasonWorkKey: humanWorkKey(disarm.workKey) } : {}),
       ...routeReceipt,
     };
