@@ -104,10 +104,10 @@ def command(argv,deadline=None):
         raise Refused('native_observation_failed')
     return result.stdout.decode('utf8', errors='strict')
 
-def json_file(path):
+def json_file(path, max_bytes=65536):
     with path.open('rb') as handle:
-        data=handle.read(65537)
-    if len(data)>65536:raise Refused('config_size_limit')
+        data=handle.read(max_bytes+1)
+    if len(data)>max_bytes:raise Refused('config_size_limit')
     value=json.loads(data)
     if not isinstance(value,dict):raise Refused('config_shape_invalid')
     return value
@@ -734,7 +734,9 @@ def validate_launchagent(path,entrypoint='mac-node-watchdog.py'):
     return value
 
 def verify_manifest(base,source):
-    manifest=json_file(base/'current/dist/fleet-deployment-manifest.json')
+    # The deployment manifest carries the full payload and source pins of the
+    # release, so it is larger than the node config; its own cap is 1 MiB.
+    manifest=json_file(base/'current/dist/fleet-deployment-manifest.json', 1024*1024)
     if (not isinstance(source,str) or not re.fullmatch('[a-f0-9]{40}',source)
             or manifest.get('source_sha')!=source or manifest.get('source_dirty') is not False):
         raise Refused('source_identity_mismatch')
