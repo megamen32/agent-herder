@@ -18,6 +18,7 @@ import { StopControl } from "./stop-control.js";
 import { ConnectionsSection } from "./connections-section.js";
 import { RuntimeSection } from "./runtime-section.js";
 import { ProjectsSection } from "./projects-section.js";
+import { FleetConfirmation } from "./fleet-confirmation.js";
 import "./settings.css";
 
 /**
@@ -39,7 +40,7 @@ export type SettingsTab = "herder" | "projects";
  * The one line that says how the state of a setting is in effect.
  *
  * The state itself is one word — «Записано», «Применено», «Применено
- * частично», «Ошибка» — and the application is one line. The two say
+ * частично», «Узел недоступен» — and the application is one line. The two say
  * different things, so the screen never repeats one of them twice.
  */
 export function applicationText(confirmed: { state: string; applyMode: string; requiresRestart: boolean }): string {
@@ -53,7 +54,7 @@ export function applicationText(confirmed: { state: string; applyMode: string; r
 export function stateClass(state: string): string {
   const base = "herder-settings-state";
   if (state === "Применено") return `${base} herder-settings-state-applied`;
-  if (state === "Ошибка") return `${base} herder-settings-state-error`;
+  if (state === "Узел недоступен") return `${base} herder-settings-state-unreachable`;
   if (state === "Применяется") return `${base} herder-settings-state-running`;
   return `${base} herder-settings-state-pending`;
 }
@@ -404,6 +405,8 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
       <RuntimeSection />
       <ConnectionsSection />
       <StopControl />
+
+      <FleetConfirmation />
 
       <section className="herder-settings-block" aria-label="Журнал изменений">
         <h2>Журнал изменений</h2>

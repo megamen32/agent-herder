@@ -32,9 +32,9 @@ export type SettingsApplyMode = "сразу" | "к новым задачам" | 
  * What the running product did with the change.
  *
  * The names are the names of the contract: «Записано», «Применяется»,
- * «Применено», «Применено частично», «Ошибка».
+ * «Применено», «Применено частично», «Узел недоступен».
  */
-export type SettingsApplyState = "Записано" | "Применяется" | "Применено" | "Применено частично" | "Ошибка";
+export type SettingsApplyState = "Записано" | "Применяется" | "Применено" | "Применено частично" | "Узел недоступен";
 
 /**
  * The contract of the value of a setting: what the service accepts.
