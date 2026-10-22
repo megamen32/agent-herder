@@ -21,6 +21,7 @@ import type { IntegratorFleetRuntime } from "../integrator-fleet-runtime.js";
 import { NOTICEPLACE_HEALTH_AUTHORIZED, NOTICEPLACE_HEALTH_PURPOSE, hasNoticeplaceHealthBearer, validateNoticeplaceHealthLaunch } from "../automation/noticeplace-health-launch.js";
 import { buildSessionProgress } from "../health-progress.js";
 import { NoticeplaceHealthObserver } from "../automation/noticeplace-health-observer.js";
+import { appendHealthRefusalAudit, healthRefusalAuditPath } from "../automation/health-reason-codes.js";
 import { NOTICEPLACE_HEALTH_MODELS, resolveLaunchHealthPlan } from "../automation/noticeplace-health-policy.js";
 import { readArmedHealthCandidates, recoverNoticeplaceHealthObservation } from "../automation/noticeplace-health-recovery.js";
 import { createMiniMaxQuotaPreflight } from "../automation/minimax-quota-preflight.js";
@@ -764,6 +765,9 @@ export function createWebServer(dependencies: WebDependencies): Server {
     return launchHealthPlanMemory.get(`${harness}:${sessionId}`);
   };
   const launchHealthPlans: LaunchHealthPlans = { remember: rememberLaunchHealthPlan, recall: recallLaunchHealthPlan };
+  // The machine-readable trail of the refusals of the health contour. A reader
+  // counts the refusals by their code in this file and never parses a wording.
+  const healthRefusalAudit = healthRefusalAuditPath(resolveAutopilotStateDir());
   // The center's observer is bounded so the incident card is never held back.
   // This one keeps the same native session under observation until it ends.
   const noticeplaceHealthObserver = new NoticeplaceHealthObserver({
@@ -793,6 +797,10 @@ export function createWebServer(dependencies: WebDependencies): Server {
         return undefined;
       }
     },
+    // The refusal of the observer reaches the consumer as a machine-readable
+    // record: the class of the refusal is a field of the record, not a part of
+    // the wording of the log line.
+    onRefused: (refusal) => { void appendHealthRefusalAudit(healthRefusalAudit, refusal); },
     onPublished: (update) => console.log(`Notice health observer published ${update.fingerprint} for ${update.binding.incidentId} plan ${update.planId}`),
     onError: (message) => console.error(message),
   });
@@ -871,6 +879,9 @@ export function createWebServer(dependencies: WebDependencies): Server {
         }),
       });
       console.log(`Notice health observer recovered ${result.armed} armed sessions after the restart (${result.skipped} skipped)`);
+      // The refusals of the repair reach the consumer in the same trail the
+      // live observer writes into.
+      for (const refusal of result.refusals) await appendHealthRefusalAudit(healthRefusalAudit, refusal);
       // The reason of every skipped session is the operator's evidence: the
       // counters alone do not say why a session was not observed. The reasons
       // name a session and a cause, never a secret of the incident.
