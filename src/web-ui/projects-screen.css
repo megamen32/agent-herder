@@ -1,0 +1,504 @@
+/*
+ * The Projects screen of the panel.
+ *
+ * The list of the projects is collapsed: one row per project with the name,
+ * the machine, the counts and the time of the last change. The body of a row
+ * opens on demand and holds the form of the route.
+ *
+ * The file also carries the mobile navigation of the panel. At 390px the left
+ * rail used to disappear completely, so there was no way to move between the
+ * screens; it is now a bar at the bottom of the window.
+ */
+
+/* ---------- Справка страницы ---------- */
+.projects-explainer {
+  max-width: 1100px;
+  margin: 0 auto 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--surface-1);
+  padding: 12px 16px;
+}
+.projects-explainer > summary {
+  cursor: pointer;
+  font-weight: 500;
+  min-height: 24px;
+}
+.projects-explainer-body {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.projects-explainer-body p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+.projects-explainer-body code {
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Панель поиска и порядка ---------- */
+.projects-toolbar {
+  max-width: 1100px;
+  margin: 0 auto 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 16px;
+  align-items: end;
+}
+.projects-toolbar .projects-field {
+  gap: 6px;
+}
+.projects-sort-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.projects-sort-switch button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border-2);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+.projects-sort-switch button:hover { color: var(--text); background: var(--surface-hover); }
+.projects-sort-switch button.active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+/* ---------- Группировка по машинам ---------- */
+.projects-machine-group {
+  display: grid;
+  gap: 12px;
+}
+.projects-machine-group-title {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: var(--text-md);
+  font-weight: 550;
+  color: var(--text);
+}
+.projects-machine-group-title small {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+/* ---------- Строка проекта ---------- */
+.projects-item {
+  display: grid;
+  gap: 12px;
+}
+.projects-card {
+  display: block;
+  padding: 0;
+  overflow: visible;
+}
+.projects-card-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 14px 52px 14px 16px;
+  cursor: pointer;
+  list-style: none;
+  border-radius: var(--radius-m);
+}
+.projects-card-summary::-webkit-details-marker { display: none; }
+.projects-card-summary:hover { background: var(--surface-hover); }
+.projects-card[open] > .projects-card-summary { border-bottom: 1px solid var(--border); border-radius: var(--radius-m) var(--radius-m) 0 0; }
+.projects-card-name {
+  font-size: var(--text-lg);
+  font-weight: 550;
+  color: var(--text);
+}
+.projects-alias-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.projects-machine-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  padding: 2px 10px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+.projects-machine-chip-unknown { color: var(--muted); border-style: dashed; }
+.projects-card-counts {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+.projects-card-time {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.projects-card-path {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Состояние: значок и подпись ---------- */
+.projects-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 2px 10px;
+  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+.projects-state-done { border-color: var(--status-done); color: var(--status-done); }
+.projects-state-partial { border-color: var(--status-waiting); color: var(--status-waiting); }
+.projects-state-unknown { border-color: var(--border-2); color: var(--muted); }
+.projects-state-line {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+.projects-state-line strong { color: var(--text); font-weight: 500; }
+
+/* ---------- Меню карточки ---------- */
+.projects-card-tools {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+}
+.projects-card-menu-button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-2);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+.projects-card-menu-button:hover { color: var(--text); background: var(--surface-hover); }
+.projects-card-menu {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  min-width: 180px;
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  background: var(--surface-1);
+  box-shadow: var(--shadow-menu);
+}
+.projects-card-menu button {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--status-error);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+}
+.projects-card-menu button:hover:not(:disabled) { background: var(--surface-hover); }
+.projects-card-menu button:disabled { color: var(--muted); cursor: not-allowed; }
+
+/* ---------- Тело карточки ---------- */
+.projects-card-body {
+  display: grid;
+  gap: 18px;
+  padding: 16px;
+}
+.projects-card-new {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+  max-width: 1100px;
+  margin: 0 auto 20px;
+}
+
+/* ---------- Модели: имя рядом с идентификатором ---------- */
+.projects-model-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid var(--border-2);
+  vertical-align: -3px;
+}
+.projects-model-badge-allowed { border-color: var(--status-done); color: var(--status-done); }
+.projects-model-badge-denied { border-color: var(--status-error); color: var(--status-error); }
+.projects-model-entry {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.projects-model-entry-name {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.projects-model-entry-id {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.projects-model-item-denied { border-color: var(--status-error); }
+.projects-model-item-denied .projects-model-entry-name { color: var(--text-2); }
+.projects-model-empty {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  padding: 6px 0;
+}
+.projects-model-notice {
+  margin: 0;
+  min-height: 18px;
+  color: var(--status-done);
+  font-size: var(--text-xs);
+}
+.projects-effective {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 4px 16px;
+  align-items: start;
+}
+.projects-effective-environment,
+.projects-effective-model {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.projects-effective-model {
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+}
+.projects-model-caption {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.projects-model-route {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+/* ---------- Блокировка модели ---------- */
+.projects-blocked {
+  border: 1px solid var(--status-error);
+  border-radius: var(--radius-m);
+  background: var(--surface-1);
+  padding: 14px 16px;
+  display: grid;
+  gap: 10px;
+}
+.projects-blocked-title {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--status-error);
+  font-size: var(--text-md);
+  font-weight: 550;
+}
+.projects-blocked-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+.projects-blocked-facts {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.projects-blocked-facts > div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 4px 12px;
+}
+.projects-blocked-facts dt {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.projects-blocked-facts dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.projects-blocked-facts dd small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.projects-blocked-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.projects-blocked-route {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.projects-blocked-route p { margin: 0 0 6px; color: var(--text-2); font-size: var(--text-sm); }
+.projects-blocked-route ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+.projects-blocked-route li { display: grid; gap: 2px; }
+.projects-blocked-route code { font-size: var(--text-xs); overflow-wrap: anywhere; }
+.projects-blocked-route small { color: var(--muted); font-size: var(--text-xs); }
+
+/* ---------- Несохранённые изменения и недоступные кнопки ---------- */
+.projects-dirty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--status-waiting);
+  font-weight: 500;
+}
+.projects-page .primary-button:disabled,
+.projects-page .quiet-button:disabled,
+.projects-page button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  background: var(--surface-3);
+  color: var(--muted);
+  border-color: var(--border);
+}
+
+/* ---------- Длинные значения не обрезают карточку ---------- */
+.projects-field input,
+.projects-field select {
+  min-width: 0;
+}
+
+/* ---------- Мобильный вид ---------- */
+@media (max-width: 900px) {
+  /* Навигация больше не исчезает: она лежит внизу окна и остаётся доступной. */
+  .oc-app > .codex-navigation {
+    display: flex;
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 60;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0;
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+    border-right: 0;
+    border-top: 1px solid var(--border);
+    background: var(--surface-1);
+  }
+  .oc-app > .codex-navigation .codex-navigation-items {
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .oc-app > .codex-navigation .codex-navigation-items::-webkit-scrollbar { display: none; }
+  .oc-app > .codex-navigation button {
+    flex: 1 0 48px;
+    width: auto;
+    min-width: 48px;
+    height: 52px;
+    gap: 3px;
+    padding: 4px 2px;
+  }
+  .oc-app > .codex-navigation .nav-label { font-size: 9px; line-height: 11px; }
+  .oc-app > .codex-navigation .codex-navigation-mark { display: none; }
+
+  /* Полоса навигации не закрывает содержимое окна. */
+  .oc-app > .chat-pane,
+  .oc-app > .sessions-pane { padding-bottom: 72px; }
+
+  /*
+   * Экран настроек должен прокручиваться, а не обрезаться окном.
+   * Правило живёт здесь, потому что файл settings.css ведёт другая линия
+   * работы; при следующем его обновлении его можно перенести туда.
+   */
+  .herder-settings-page {
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+    padding-bottom: 96px;
+  }
+
+  /*
+   * Действие сохранения остаётся под рукой и показывает несохранённые правки.
+   * Оно закреплено над полосой навигации, а не после формы: строка внутри
+   * прокручиваемой страницы не может остаться на виду.
+   */
+  .projects-save-row {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(60px + env(safe-area-inset-bottom));
+    z-index: 45;
+    margin: 0;
+    padding: 8px 14px;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface-1);
+    border-top: 1px solid var(--border);
+  }
+  .projects-save-row > span {
+    flex: 1 1 auto;
+    flex-basis: auto;
+    min-width: 0;
+  }
+  .projects-save-row .primary-button {
+    width: auto;
+    flex: 0 0 auto;
+  }
+  .projects-page {
+    padding-bottom: 148px;
+  }
+  .projects-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .projects-blocked-facts > div { grid-template-columns: minmax(0, 1fr); }
+}
