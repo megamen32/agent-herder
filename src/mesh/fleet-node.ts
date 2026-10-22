@@ -9,11 +9,17 @@ import {sessionInventoryPage,type LocalInventorySnapshot} from './session-page.j
 import {fleetHarnesses} from './fleet-contract.js';
 import type {IntegratorFleetRuntime,IntegratorProjectReadinessSnapshot} from '../integrator-fleet-runtime.js';
 import {assertModelAllowedForDirectoryWithPolicy,type ProjectModelPolicyProvider} from '../project-model-gate.js';
+import { AutomationDisarmStore } from '../automation-disarm/index.js';
 // One process generation across all MCP connections and authenticated contexts.
 let viewReads=0;
 const processGeneration=Date.now()-Math.floor(process.uptime()*1000);
 /** Attach to the existing local controller. No override, native activation, private writer or subprocess. */
 export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<string,HarnessAdapter>;inventorySnapshot?:()=>LocalInventorySnapshot;readSupervisor?:Pick<SessionSupervisor,'getSession'|'getSessionDetails'>;integratorRuntime?:IntegratorFleetRuntime;ownerJournal?:Pick<FleetCreateJournal,'once'>;launchPolicy?:ProjectModelPolicyProvider}):void{
+ server.registerTool('automation_disarm',{description:'Hold or release the owner-level automation lever on this node. The state is durable on disk and survives a restart of the runtime. The answer always names this node and the state it now holds, so a fleet answer can tell a confirmed node from an unreachable one.',inputSchema:z.object({disarmed:z.boolean(),workKeys:z.array(z.string().min(1).max(1024)).max(256).optional(),reason:z.string().max(500).optional(),decisionId:z.string().min(1).max(128).optional()}).strict()},async(request)=>{
+  const change=await AutomationDisarmStore.forRuntime().apply({source:'owner',disarmed:request.disarmed,...(request.workKeys===undefined?{}:{workKeys:request.workKeys}),...(request.reason?{reason:request.reason}:{})});
+  const payload=change.ok?{ok:true,hostId:hostname(),state:change.state,decisionId:request.decisionId??null}:{ok:false,hostId:hostname(),state:change.state,reason:change.reason,code:change.code,decisionId:request.decisionId??null};
+  return {structuredContent:payload,content:[{type:'text' as const,text:JSON.stringify(payload)}]};
+ });
  server.registerTool('fleet_session_page',{description:'Read one page of the existing local session metadata snapshot, with native IDs, observation time and partial state. No history or native activation.',annotations:{readOnlyHint:true},inputSchema:z.object({cursor:z.string().max(2048).optional(),limit:z.number().int().min(1).max(100).default(100)}).strict()},async({cursor,limit})=>{
   const snapshot=deps.inventorySnapshot?.()??{sessions:[],warming:true,observedAt:null};
   const result=sessionInventoryPage(hostname(),snapshot,cursor,limit);

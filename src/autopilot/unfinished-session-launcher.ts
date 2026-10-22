@@ -27,6 +27,7 @@ import type { AutopilotPolicyStore } from "./policy-store.js";
 import type { AutopilotSessionStore } from "./session-store.js";
 import { AutomationLaunchPolicyStore, findProjectRoute, operatorCohortRecoveryAllowed } from "../automation-launch-policy.js";
 import { resolveAutopilotStateDir } from "./state-dir.js";
+import { automationDisarmDecision, sessionWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
 
 const SUPPORTED_HARNESSES: readonly HarnessType[] = ["codex", "opencode", "claude", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
 const DEFAULT_CONTINUATION = "Продолжи незавершённую задачу с того места, где выполнение было прервано. Сначала проверь текущее состояние и не повторяй уже завершённые действия.";
@@ -4752,6 +4753,19 @@ export class UnfinishedSessionLauncher {
         }
         if (!await this.groupAdmissionAllowed(sources.map((source) => source.session), "create")) { launched -= 1; continue; }
         if (!this.lifecycleActive(lifecycleEpoch)) return;
+        // The owner-level automation lever: the launcher starts new work on
+        // its own, so it is refused while the owner forbade automation.
+        const disarm = await automationDisarmDecision(
+          AutomationDisarmStore.forRuntime(),
+          [sessionWorkKey(primary.adapter.type, continuationTitle(group.topic), primary.session.cwd)],
+          "automation",
+        );
+        if (!disarm.allowed) {
+          launched = Math.max(0, launched - 1);
+          for (const source of sources) pushInventory(source);
+          console.error(`[agent-herder] автоматический запуск запрещён владельцем: ${disarm.reason ?? ""}`);
+          continue;
+        }
         const created = await primary.adapter.createSession({
           name: continuationTitle(group.topic),
           cwd: primary.session.cwd,

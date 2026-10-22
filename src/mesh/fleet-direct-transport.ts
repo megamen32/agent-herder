@@ -113,7 +113,7 @@ export class FleetDirectTransport implements GptAdminTransport {
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}
  schema(target:string):Promise<unknown>{return this.rpc(this.peer(target),'tools/list',{},this.deadlineMs);}
  call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
-  if(!['fleet_node_info','mesh_snapshot','create_session','fleet_session_page','mesh_deliver','workspace_probe','workspace_reserve','workspace_owners'].includes(tool))throw new Error('direct_tool_not_authorized');
+  if(!['fleet_node_info','mesh_snapshot','create_session','fleet_session_page','mesh_deliver','workspace_probe','workspace_reserve','workspace_owners','automation_disarm'].includes(tool))throw new Error('direct_tool_not_authorized');
   if(tool==='mesh_deliver' && (args.sender as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
   if(tool==='workspace_reserve' && (args.owner as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
   if(tool==='create_session'){

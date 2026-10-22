@@ -6,6 +6,7 @@ import type { AgentSession, HarnessAdapter, SessionMessageView } from "./types/i
 import type { CacheHandoffAdmissionCheckpoint, LineageRecord, LineageStore } from "./lineage-store.js";
 import type { HumanStopStore } from "./human-stop-store.js";
 import { spawnIsolatedWorkload } from "./workload-launcher.js";
+import { automationDisarmDecision, sessionWorkKey, AutomationDisarmStore } from "./automation-disarm/index.js";
 
 const MAX_SOURCE_CHARS = 120_000;
 const MAX_SUMMARY_CHARS = 16_000;
@@ -197,6 +198,15 @@ export class CacheHandoffService {
       if (!summary) throw new Error("MiniMax вернул пустой handoff");
       const continuationModel = continuationModelFor(session);
       if (await humanStopHeld()) return { kind: "held", ageMs, cache };
+      // The owner-level automation lever: a cache rollover is an automatic
+      // run of the same logical work, so it is refused while the owner
+      // forbade automation. The key is the work, not the session id.
+      const disarm = await automationDisarmDecision(
+        AutomationDisarmStore.forRuntime(),
+        [sessionWorkKey(session.harness, `${session.title.slice(0, 180)} · продолжение`, session.cwd)],
+        "automation",
+      );
+      if (!disarm.allowed) return { kind: "held", ageMs, cache };
       created = await adapter.createSession({
         name: `${session.title.slice(0, 180)} · продолжение`, cwd: session.cwd, model: continuationModel,
         fullAccess: true,
