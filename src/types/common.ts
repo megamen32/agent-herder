@@ -1,5 +1,7 @@
 // ===== Shared types for all agent harness adapters =====
 
+import { hostname } from "node:os";
+
 export type HarnessType = "opencode" | "claude" | "codex" | "qoder" | "hermes" | "zcode" | "fast-agent" | "chatgpt" | "minimax-code";
 
 export type AgentStatus =
@@ -160,6 +162,10 @@ export interface AgentSession {
   title: string;
   /** Working directory / project path */
   cwd: string;
+  /** Machine the work runs on. "localhost" means the local host of the process. */
+  hostId: string;
+  /** Directory the session was launched from (cwd is the current effective one). */
+  launchCwd?: string;
   /** Last activity timestamp (ISO 8601) */
   lastActivity: string;
   /** Current model being used */
@@ -414,6 +420,23 @@ const CONTROL_KEYS: Array<keyof HarnessCapabilities> = [
   "subagents",
   "events",
 ];
+
+/** Machine identity of the process that owns a locally created session. */
+export function localSessionHostId(): string {
+  return hostname();
+}
+
+/** Native session view before the owning host attaches its machine identity. */
+export type AgentSessionInit = Omit<AgentSession, "hostId"> & { hostId?: string };
+
+/**
+ * Attach the mandatory work-host identity to a native session view.
+ * The owning process is the default; only an explicit owner may name another machine.
+ */
+export function createAgentSession(input: AgentSessionInit): AgentSession {
+  const hostId = input.hostId?.trim() || localSessionHostId();
+  return { ...input, hostId, ...(input.launchCwd === undefined ? { launchCwd: input.cwd } : {}) };
+}
 
 /** Resolve the effective transport capabilities for API/UI feature gating. */
 export function getHarnessCapabilities(adapter: HarnessAdapter): HarnessCapabilities {

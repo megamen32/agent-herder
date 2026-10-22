@@ -18,6 +18,7 @@ import { dirname, join, normalize } from "node:path";
 import lockfile from "proper-lockfile";
 
 import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessType, SendMessageResult, SessionMessageView } from "../types/index.js";
+import { localSessionHostId } from "../types/index.js";
 import type { HumanStopStore } from "../human-stop-store.js";
 import { cacheWindowFor, continuationModelFor, movePinnedContinuation, semanticTranscript, unfinishedProbeDelayMs, type CacheHandoffService } from "../cache-handoff.js";
 import { deferredMessages, isBusyCodexWriter, type DeferredMessageStore } from "../deferred-messages.js";
@@ -3178,7 +3179,7 @@ export class UnfinishedSessionLauncher {
       if(record.harness==='zcode'&&record.activeNativeOwner&&record.activeTurnId&&record.activeInputId
         &&record.generationId!==this.generationId){
         const proof=record.activeNativeOwner,adapter=this.options.adapters.get('zcode') as (HarnessAdapter&WorkspaceLifecycleAdapter)|undefined;
-        const target:AgentSession={id:record.sessionId,harness:'zcode',cwd:record.cwd,title:record.title??record.sessionId,model:record.model,status:'error',lastActivity:record.updatedAt,needsPermission:false};
+        const target:AgentSession={id:record.sessionId,harness:'zcode',cwd:record.cwd,hostId:localSessionHostId(),title:record.title??record.sessionId,model:record.model,status:'error',lastActivity:record.updatedAt,needsPermission:false};
         if(!this.lifecycleActive(lifecycleEpoch)||!await this.admissionAllowed(target,'attempt')
           ||await this.options.humanStopStore?.isHeld('zcode',record.sessionId))continue;
         this.pendingQuestions?.invalidate();
@@ -3217,7 +3218,7 @@ export class UnfinishedSessionLauncher {
       // Check durable owner authority before an adapter read can initialize a
       // workspace runtime during startup reconciliation.
       const admissionTarget: AgentSession = { id: record.sessionId, harness: record.harness,
-        cwd: record.cwd, title: record.title ?? record.sessionId, status: "idle", lastActivity: record.updatedAt, needsPermission: false };
+        cwd: record.cwd, hostId: localSessionHostId(), title: record.title ?? record.sessionId, status: "idle", lastActivity: record.updatedAt, needsPermission: false };
       if (!await this.admissionAllowed(admissionTarget, "attempt")) continue;
       if (!this.lifecycleActive(lifecycleEpoch)) break;
       if (await this.suppressIfHumanStopped(record.harness, record.sessionId, record.workspaceIdentity || record.cwd)) continue;
@@ -3620,7 +3621,7 @@ export class UnfinishedSessionLauncher {
       const held = await this.options.humanStopStore?.isHeld("codex", record.sessionId);
       return current() && !held;
     };
-    const target: AgentSession = {id: record.sessionId, harness: "codex", cwd: record.cwd, title: record.title ?? record.sessionId,
+    const target: AgentSession = {id: record.sessionId, harness: "codex", cwd: record.cwd, hostId: localSessionHostId(), title: record.title ?? record.sessionId,
       status: "idle", needsPermission: false, lastActivity: record.updatedAt};
     if (!await allowed(target)) return;
     let proof: CodexTrackedTurnCompletion | null;
@@ -3782,6 +3783,7 @@ export class UnfinishedSessionLauncher {
       status: "running" as const,
       title: record.title || "Незавершённая задача",
       cwd: record.cwd,
+      hostId: localSessionHostId(),
       lastActivity: new Date().toISOString(),
       model: record.model,
       needsPermission: false,

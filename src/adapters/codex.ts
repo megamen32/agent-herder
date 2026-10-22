@@ -1,4 +1,4 @@
-import { HarnessAdapter, AgentSession, ControlResult, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessageView, SessionSnapshotReceipt } from "../types/index.js";
+import { HarnessAdapter, AgentSession, ControlResult, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessageView, SessionSnapshotReceipt, localSessionHostId } from "../types/index.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createReadStream, existsSync, realpathSync } from "node:fs";
@@ -194,6 +194,7 @@ export class CodexAdapter implements HarnessAdapter {
         status: persistedStatus ?? (runningPids.has(entry.id) ? "running" as const : "stopped" as const),
         title: entry.thread_name || "Untitled session",
         cwd: state?.cwd || process.cwd(),
+        hostId: localSessionHostId(),
         lastActivity: entry.updated_at || new Date(0).toISOString(),
         model: state?.model,
         needsPermission: false,
@@ -456,7 +457,7 @@ export class CodexAdapter implements HarnessAdapter {
     }
     return {
       id, harness: "codex", title: state.title || "Untitled session",
-      cwd: state.cwd || process.cwd(), model: tail?.model || state.model,
+      cwd: state.cwd || process.cwd(), hostId: localSessionHostId(), model: tail?.model || state.model,
       // Persisted lifecycle is metadata, not a live native turn observation.
       status: "stopped", needsPermission: false,
       lastActivity: new Date(tail?.updatedAtMs || state.updatedAtMs || 0).toISOString(),

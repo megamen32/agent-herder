@@ -14,6 +14,7 @@ import type {
   SessionMessageView,
   SetPermissionsOptions,
 } from "../types/index.js";
+import { localSessionHostId } from "../types/index.js";
 
 /** Root of the MiniMax Code local-runtime session store. */
 export const MINIMAX_CODE_SESSION_STORE = join(homedir(), ".minimax", "v2", "sessions");
@@ -533,6 +534,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
       status: "idle",
       title,
       cwd: this.cwd,
+      hostId: localSessionHostId(),
       lastActivity: new Date(entry.updatedAtMs || entry.createdAtMs || 0).toISOString(),
       model,
       needsPermission: false,

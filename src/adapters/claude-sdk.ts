@@ -1,4 +1,4 @@
-import { HarnessAdapter, AgentSession, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
+import { HarnessAdapter, AgentSession, SendMessageOptions, SetPermissionsOptions, localSessionHostId } from "../types/index.js";
 import {
   listSessions,
   getSessionInfo,
@@ -238,6 +238,7 @@ export class ClaudeSDKAdapter implements HarnessAdapter {
       status: isRecent ? "running" : "stopped",
       title: info.summary || info.firstPrompt || info.customTitle || "Untitled session",
       cwd: info.cwd || process.cwd(),
+      hostId: localSessionHostId(),
       lastActivity: new Date(lastMod).toISOString(),
       model,
       needsPermission: this.pendingPermissions.size > 0,

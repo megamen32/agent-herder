@@ -11,6 +11,7 @@ import type {
   SendMessageOptions,
   SetPermissionsOptions,
 } from "../types/index.js";
+import { localSessionHostId } from "../types/index.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -98,6 +99,7 @@ export class QoderAdapter implements HarnessAdapter {
             status: running.has(id) ? "running" : "stopped",
             title: info.title,
             cwd: info.cwd,
+            hostId: localSessionHostId(),
             lastActivity: info.lastActivity,
             model: this.modelOverrides.get(id) || info.model,
             needsPermission: false,
