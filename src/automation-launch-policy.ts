@@ -4,6 +4,14 @@ import { mkdir, open, readFile, rename, unlink, writeFile, chmod } from "node:fs
 import { dirname } from "node:path";
 import lockfile from "proper-lockfile";
 import type { HarnessType } from "./types/common.js";
+import {
+  canonicalProjectKey,
+  findModelPolicyRoute,
+  modelPermittedForRoute,
+  validateProjectModelLists,
+} from "./project-model-policy.js";
+
+export { canonicalProjectKey } from "./project-model-policy.js";
 
 /**
  * Ordered harness fallback for one project root.
@@ -26,6 +34,16 @@ export interface ProjectLaunchRoute {
    * example `tg-commentator` or `autotelegramviews`, not the checkout path.
    */
   aliases?: string[];
+  /**
+   * Model ids this project may run on. An empty or absent list means no
+   * restriction: the global model of the harness decides.
+   */
+  allowedModels?: string[];
+  /**
+   * Model ids this project must never run on. A denial always wins over an
+   * allowance and over the global model of the harness.
+   */
+  deniedModels?: string[];
 }
 
 export interface AutomationLaunchPolicy {
@@ -71,7 +89,7 @@ export interface ProjectLaunchRequest {
 
 export type ProjectLaunchResolution =
   | { kind: "unconfigured" }
-  | { kind: "exhausted"; reason: "accepted" | "admission_unknown" | "no_harness_left" }
+  | { kind: "exhausted"; reason: "accepted" | "admission_unknown" | "no_harness_left" | "model_not_permitted" }
   | {
       kind: "launch";
       harness: HarnessType;
@@ -101,8 +119,16 @@ export function resolveProjectLaunch(
     return { kind: "exhausted", reason: "no_harness_left" };
   }
   const attempted = new Set(request.attempted ?? []);
-  const harness = route.harnesses.find((candidate) => !attempted.has(candidate));
-  if (!harness) return { kind: "exhausted", reason: "no_harness_left" };
+  const candidates = route.harnesses.filter((candidate) => !attempted.has(candidate));
+  if (candidates.length === 0) return { kind: "exhausted", reason: "no_harness_left" };
+  // A model the project forbids is a definite pre-admission refusal, exactly
+  // like an unavailable harness: the route moves on to the next harness
+  // instead of launching a model the operator denied.
+  const harness = candidates.find((candidate) => {
+    const candidateModel = route.models?.[candidate] ?? policy.models[candidate];
+    return !candidateModel || modelPermittedForRoute(route, candidateModel);
+  });
+  if (!harness) return { kind: "exhausted", reason: "model_not_permitted" };
   const model = route.models?.[harness] ?? policy.models[harness];
   const active = request.activeSession;
   if (!active) return { kind: "launch", harness, ...(model ? { model } : {}), mode: "create" };
@@ -153,11 +179,6 @@ export function operatorCohortRecoveryAllowed(policy: AutomationLaunchPolicy, pr
 /** Case-folded comparison key for a project path or a declared alias. */
 function foldProjectKey(value: string): string {
   return canonicalProjectKey(value).toLocaleLowerCase("en-US");
-}
-
-/** Canonical project key: an absolute path without a trailing separator. */
-export function canonicalProjectKey(project: string): string {
-  return typeof project === "string" ? project.replace(/\/+$/, "") : "";
 }
 
 /**
@@ -381,12 +402,18 @@ function validateProjectRoutes(
     if (input.operatorCohortRecovery !== undefined && input.operatorCohortRecovery !== "deny") {
       throw new Error(`Project route '${project}' operatorCohortRecovery must be 'deny' when present`);
     }
+    const modelLists = validateProjectModelLists(project, {
+      allowedModels: input.allowedModels,
+      deniedModels: input.deniedModels,
+    });
     routes[key] = {
       harnesses,
       ...(routeModels && Object.keys(routeModels).length > 0 ? { models: routeModels } : {}),
       ...(aliases ? { aliases } : {}),
       ...(input.nativeWebSearch === "live" ? { nativeWebSearch: "live" as const } : {}),
       ...(input.operatorCohortRecovery === "deny" ? { operatorCohortRecovery: "deny" as const } : {}),
+      ...(modelLists.allowedModels ? { allowedModels: modelLists.allowedModels } : {}),
+      ...(modelLists.deniedModels ? { deniedModels: modelLists.deniedModels } : {}),
     };
   }
   return routes;
@@ -467,8 +494,27 @@ export class AutomationLaunchPolicyStore {
           let changed = false;
           for (const [project, route] of Object.entries(routes)) {
             const old = currentPolicy.policy.projectRoutes[project];
-            if (old?.operatorCohortRecovery === "deny" && route.operatorCohortRecovery === undefined) {
-              routes[project] = { ...route, operatorCohortRecovery: "deny" };
+            if (!old) continue;
+            // The per-project model lists are preserved the same way: an older
+            // editor that does not know the fields omits them, and that must
+            // not wipe a list the operator configured. An explicit empty list
+            // stays the intentional clear operation.
+            const preserved: ProjectLaunchRoute = { ...route };
+            let routeChanged = false;
+            if (old.operatorCohortRecovery === "deny" && route.operatorCohortRecovery === undefined) {
+              preserved.operatorCohortRecovery = "deny";
+              routeChanged = true;
+            }
+            if (old.allowedModels !== undefined && route.allowedModels === undefined) {
+              preserved.allowedModels = old.allowedModels;
+              routeChanged = true;
+            }
+            if (old.deniedModels !== undefined && route.deniedModels === undefined) {
+              preserved.deniedModels = old.deniedModels;
+              routeChanged = true;
+            }
+            if (routeChanged) {
+              routes[project] = preserved;
               changed = true;
             }
           }

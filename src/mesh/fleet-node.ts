@@ -8,11 +8,12 @@ import type {HarnessAdapter} from '../types/index.js';
 import {sessionInventoryPage,type LocalInventorySnapshot} from './session-page.js';
 import {fleetHarnesses} from './fleet-contract.js';
 import type {IntegratorFleetRuntime,IntegratorProjectReadinessSnapshot} from '../integrator-fleet-runtime.js';
+import {assertModelAllowedForDirectoryWithPolicy,type ProjectModelPolicyProvider} from '../project-model-gate.js';
 // One process generation across all MCP connections and authenticated contexts.
 let viewReads=0;
 const processGeneration=Date.now()-Math.floor(process.uptime()*1000);
 /** Attach to the existing local controller. No override, native activation, private writer or subprocess. */
-export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<string,HarnessAdapter>;inventorySnapshot?:()=>LocalInventorySnapshot;readSupervisor?:Pick<SessionSupervisor,'getSession'|'getSessionDetails'>;integratorRuntime?:IntegratorFleetRuntime;ownerJournal?:Pick<FleetCreateJournal,'once'>}):void{
+export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<string,HarnessAdapter>;inventorySnapshot?:()=>LocalInventorySnapshot;readSupervisor?:Pick<SessionSupervisor,'getSession'|'getSessionDetails'>;integratorRuntime?:IntegratorFleetRuntime;ownerJournal?:Pick<FleetCreateJournal,'once'>;launchPolicy?:ProjectModelPolicyProvider}):void{
  server.registerTool('fleet_session_page',{description:'Read one page of the existing local session metadata snapshot, with native IDs, observation time and partial state. No history or native activation.',annotations:{readOnlyHint:true},inputSchema:z.object({cursor:z.string().max(2048).optional(),limit:z.number().int().min(1).max(100).default(100)}).strict()},async({cursor,limit})=>{
   const snapshot=deps.inventorySnapshot?.()??{sessions:[],warming:true,observedAt:null};
   const result=sessionInventoryPage(hostname(),snapshot,cursor,limit);
@@ -46,6 +47,8 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
  // Receiver owns the once-record across sender-node failure and client disconnect.
  const readinessSchema=z.object({state:z.literal('ready').optional(),projectId:z.string(),projectRoot:z.string(),rootIdentity:z.string(),policyRevision:z.string(),hostId:z.string(),harness:z.literal('codex'),harnessVersion:z.string(),model:z.literal('gpt-6-luna'),requiredTools:z.array(z.string()),availableTools:z.array(z.string()),availableModels:z.array(z.string()),resourceReady:z.boolean(),runtimeInstanceId:z.string(),cwd:z.string(),pathResolution:z.object({requestedCwd:z.string(),canonicalCwd:z.string(),rootPath:z.string(),contained:z.boolean(),identityMatches:z.boolean()}).strict(),observedAtMs:z.number()}).strict();
  server.registerTool('fleet_create_session',{description:'Create one local empty session with a durable exact intent identity. An uncertain result is never replayed.',inputSchema:z.object({inputId:z.string().regex(/^[a-f0-9]{64}$/),harness:z.enum(['codex','zcode','opencode']),name:z.string().trim().min(1).max(128),cwd:z.string().min(1).max(4096),model:z.string().min(1).max(128).optional(),project:z.string().trim().min(1).max(512).optional(),projectReadinessContract:z.literal('integrator-host-readiness-v1').optional(),projectReadiness:readinessSchema.optional()}).strict()},async(request)=>{
+  // A model the project forbids must not reach a session, whatever created it.
+  await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy,request.cwd,request.model);
   if(request.project!==undefined){
    if(request.harness!=='codex'||!deps.integratorRuntime||request.projectReadinessContract!=='integrator-host-readiness-v1'||!request.projectReadiness
      ||!await deps.integratorRuntime.validateReadiness({project:request.project,inputId:request.inputId,name:request.name,cwd:request.cwd,...(request.model?{model:request.model}:{}),projectReadinessContract:request.projectReadinessContract,projectReadiness:request.projectReadiness as IntegratorProjectReadinessSnapshot})){

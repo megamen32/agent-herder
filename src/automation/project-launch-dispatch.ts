@@ -233,7 +233,9 @@ export async function dispatchProjectLaunch(
       outcome: "no_harness",
       routingReason: resolution.reason === "no_harness_left"
         ? "Все среды маршрута уже tried и ни одна не подтвердила запуск."
-        : routingReasonOf(attempts),
+        : resolution.reason === "model_not_permitted"
+          ? `Ни одна среда маршрута не использует модель, разрешённую для проекта ${project}. Проверьте списки «Разрешённые модели» и «Запрещённые модели» в настройке проектов.`
+          : routingReasonOf(attempts),
       ...(attempts.length > 0 ? { selectedHarness: attempts[attempts.length - 1]!.harness } : {}),
     };
   } else {

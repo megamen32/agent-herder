@@ -45,6 +45,7 @@ import { coordinationNotes, normalizeHostId, type CoordinationNoteStore } from "
 import type { GptAdminTransport } from "../mesh/gptadmin.js";
 import { unwrapResult, type MeshAddress } from "../mesh/protocol.js";
 import { FleetDirectTransport, directFleetPeers } from "../mesh/fleet-direct-transport.js";
+import { assertModelAllowedForDirectory, assertModelAllowedForDirectoryWithPolicy, policyRestrictsModels, type ProjectModelPolicyProvider } from "../project-model-gate.js";
 
 const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]);
 
@@ -81,6 +82,8 @@ export function registerSessionTools(server: McpServer, deps: {
   transport?: GptAdminTransport;
   /** Fleet router used to retarget a session that lives on another machine. */
   fleet?: FleetSessionTargetRouter;
+  /** Reads the current launch policy for the per-project model gate. */
+  launchPolicy?: ProjectModelPolicyProvider;
 }): void {
   const { adapters, jobs, events } = deps;
   const coordination = deps.coordination ?? coordinationNotes;
@@ -157,6 +160,25 @@ export function registerSessionTools(server: McpServer, deps: {
   }
   const publishSessionsChanged = () => events.publish({ kind: "sessions", uri: "herder://sessions", action: "changed" });
 
+  /** The working directory of one session, or undefined when it cannot be read. */
+  async function sessionCwd(
+    sessionAdapters: Map<string, HarnessAdapter>,
+    sessionId: string,
+    harness?: string,
+  ): Promise<string | undefined> {
+    const candidates = harness
+      ? [sessionAdapters.get(harness)].filter(Boolean) as HarnessAdapter[]
+      : [...sessionAdapters.values()];
+    for (const adapter of candidates) {
+      try {
+        const session = await adapter.getSession(sessionId);
+        if (session?.cwd) return session.cwd;
+      } catch {
+        continue;
+      }
+    }
+    return undefined;
+  }
 
   server.registerTool("list_agents", { description: "List all coding agent sessions, including ZCode. Filter by harness, status, age (maxAge seconds), folder (CWD prefix like ~/apps) or machine (hostId). Omitted hostId lists sessions of every machine. Can show last message preview.", inputSchema: z.object({
     harness: z.enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().default("all"),
@@ -278,10 +300,12 @@ export function registerSessionTools(server: McpServer, deps: {
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("create_session", { description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory.", inputSchema: CreateSessionSchema }, async (args) => {
+    await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy, args.cwd, args.model);
     const result = await handleCreateSession(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("new_or_resume", { description: "Reuse the exact named session for harness+CWD or create it, then deliver one message. OpenCode GLM 5.3 Flash uses MiniMax M3.1 Flash as its default fallback after a pre-admission HTTP 429 or provider quota rejection; fallbackModels overrides that route. Unknown/accepted delivery and manual stops never trigger fallback. Call model_quotas to inspect current provider allowances.", inputSchema: NewOrResumeSchema }, async (args) => {
+    await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy, args.cwd, args.model);
     const result = await handleNewOrResume(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
@@ -316,6 +340,16 @@ export function registerSessionTools(server: McpServer, deps: {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
+    // A per-session change is bound to the project of that session: the
+    // working directory decides, not the harness the session happens to run on.
+    // The session is only looked up when the policy actually restricts models.
+    if (args.sessionId && deps.launchPolicy) {
+      const policy = await deps.launchPolicy();
+      if (policyRestrictsModels(policy)) {
+        const cwd = await sessionCwd(route.adapters, args.sessionId, args.harness);
+        if (cwd) assertModelAllowedForDirectory(policy, cwd, args.model);
+      }
+    }
     const result = await handleChangeModel(route.adapters, route.args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });

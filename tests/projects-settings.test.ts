@@ -4,6 +4,7 @@ import { mergePolicyChanges, sameProjectRoute, type LaunchPolicy } from "../src/
 import { mergeProjectRoutes } from "../src/web-ui/projects-settings.js";
 
 const page = readFileSync(new URL("../src/web-ui/projects-settings.tsx", import.meta.url), "utf8");
+const policyModule = readFileSync(new URL("../src/web-ui/launch-policy-settings.tsx", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../src/web-ui/codex-navigation.tsx", import.meta.url), "utf8");
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
 
@@ -179,5 +180,111 @@ describe("project route comparison", () => {
     expect(sameProjectRoute(route, { harnesses: ["opencode", "codex"], models: { opencode: "m" }, aliases: ["b"] })).toBe(false);
     expect(sameProjectRoute(route, undefined)).toBe(false);
     expect(sameProjectRoute(undefined, undefined)).toBe(true);
+  });
+
+  it("sees the allowed and the denied model lists", () => {
+    const route = { harnesses: ["opencode"], allowedModels: ["model-a"], deniedModels: ["model-b"] };
+    expect(sameProjectRoute(route, { harnesses: ["opencode"], allowedModels: ["model-a"], deniedModels: ["model-b"] })).toBe(true);
+    expect(sameProjectRoute(route, { harnesses: ["opencode"], allowedModels: ["model-c"], deniedModels: ["model-b"] })).toBe(false);
+    expect(sameProjectRoute(route, { harnesses: ["opencode"], allowedModels: ["model-a"], deniedModels: ["model-c"] })).toBe(false);
+    expect(sameProjectRoute(route, { harnesses: ["opencode"], allowedModels: ["model-a"] })).toBe(false);
+  });
+});
+
+describe("the project model policy merge", () => {
+  it("keeps an edit of the model lists next to a concurrent route edit", () => {
+    const base = policy();
+    const draft = policy({
+      projectRoutes: {
+        "/workspace/one": { harnesses: ["codex", "opencode"], aliases: ["one"], deniedModels: ["gpt-6.1-sol"] },
+        "/workspace/two": { harnesses: ["opencode"] },
+      },
+    });
+    const fresh = policy({
+      projectRoutes: {
+        "/workspace/one": { harnesses: ["opencode", "codex"], aliases: ["one"] },
+        "/workspace/two": { harnesses: ["opencode"] },
+      },
+    });
+
+    const result = mergeProjectRoutes({ base, fresh, draft, kept: {} });
+    expect(result.conflicts).toEqual([]);
+    // The model list edit survives and the concurrent route change survives too.
+    expect(result.merged.projectRoutes?.["/workspace/one"]?.deniedModels).toEqual(["gpt-6.1-sol"]);
+    expect(result.merged.projectRoutes?.["/workspace/one"]?.harnesses).toEqual(["opencode", "codex"]);
+  });
+
+  it("keeps a route edit next to a concurrent model list edit", () => {
+    const base = policy();
+    const draft = policy({
+      projectRoutes: {
+        "/workspace/one": { harnesses: ["opencode", "codex"], aliases: ["one"] },
+        "/workspace/two": { harnesses: ["opencode"] },
+      },
+    });
+    const fresh = policy({
+      projectRoutes: {
+        "/workspace/one": { harnesses: ["codex", "opencode"], aliases: ["one"], deniedModels: ["gpt-6.1-sol"] },
+        "/workspace/two": { harnesses: ["opencode"] },
+      },
+    });
+
+    const result = mergeProjectRoutes({ base, fresh, draft, kept: {} });
+    expect(result.conflicts).toEqual([]);
+    expect(result.merged.projectRoutes?.["/workspace/one"]?.harnesses).toEqual(["opencode", "codex"]);
+    expect(result.merged.projectRoutes?.["/workspace/one"]?.deniedModels).toEqual(["gpt-6.1-sol"]);
+  });
+
+  it("reports a conflict when both sides changed the same model list", () => {
+    const base = policy();
+    const draft = policy({
+      projectRoutes: {
+        "/workspace/one": { harnesses: ["codex", "opencode"], aliases: ["one"], deniedModels: ["gpt-6.1-sol"] },
+        "/workspace/two": { harnesses: ["opencode"] },
+      },
+    });
+    const fresh = policy({
+      projectRoutes: {
+        "/workspace/one": { harnesses: ["codex", "opencode"], aliases: ["one"], deniedModels: ["other-model"] },
+        "/workspace/two": { harnesses: ["opencode"] },
+      },
+    });
+
+    const result = mergeProjectRoutes({ base, fresh, draft, kept: {} });
+    expect(result.conflicts).toEqual(["/workspace/one"]);
+    // The server value of the conflicting list survives the merge.
+    expect(result.merged.projectRoutes?.["/workspace/one"]?.deniedModels).toEqual(["other-model"]);
+    expect(result.kept?.["/workspace/one"]?.deniedModels).toEqual(["gpt-6.1-sol"]);
+  });
+});
+
+describe("the project model policy form", () => {
+  it("renders the allowed and the denied model blocks", () => {
+    expect(page).toContain("Модели проекта");
+    expect(page).toContain("Разрешённые модели");
+    expect(page).toContain("Запрещённые модели");
+    expect(page).toContain("Пустой список разрешённых");
+  });
+
+  it("offers the model catalog and a free model id", () => {
+    expect(page).toContain("useHarnessModelCatalog");
+    expect(policyModule).toContain("/api/models?harness=");
+    expect(page).toContain("placeholder=\"model id\"");
+  });
+
+  it("shows the effective model of every harness of the route", () => {
+    expect(page).toContain("Эффективная модель по средам маршрута");
+    expect(page).toContain("routeModelViolation");
+  });
+
+  it("blocks the save when a model is allowed and denied at the same time", () => {
+    expect(page).toContain("conflictingModelEntries");
+    expect(page).toContain("указана и как разрешённая, и как запрещённая");
+  });
+
+  it("offers the known project paths next to the path field", () => {
+    expect(page).toContain("useKnownProjectPaths");
+    expect(page).toContain("Выберите папку проекта");
+    expect(page).toContain("/api/sessions?quick=1");
   });
 });

@@ -6,6 +6,10 @@ export type ProjectLaunchRoute = {
   models?: Record<string, string>;
   /** Real card project identifiers that resolve to this route. */
   aliases?: string[];
+  /** Model ids this project may run on. Empty or absent means no restriction. */
+  allowedModels?: string[];
+  /** Model ids this project must never run on. A denial always wins. */
+  deniedModels?: string[];
 };
 
 export type LaunchPolicy = {
@@ -105,6 +109,41 @@ export function removeProjectRouteHarness(route: ProjectLaunchRoute, harness: st
   return { ...updated, harnesses: route.harnesses.filter((item) => item !== harness) };
 }
 
+/** One model list of a project route, read from the stored document. */
+function parseModelList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const models = value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0 && entry.length <= 256);
+  return models.length > 0 ? [...new Set(models)] : undefined;
+}
+
+/** Add or remove one model in the allowed or the denied list of a route. */
+export function updateProjectRouteModelList(
+  route: ProjectLaunchRoute,
+  field: "allowedModels" | "deniedModels",
+  model: string,
+): ProjectLaunchRoute {
+  const normalized = model.trim();
+  const current = route[field] ?? [];
+  if (normalized.length === 0) return route;
+  if (current.some((entry) => entry.trim().toLocaleLowerCase("en-US") === normalized.toLocaleLowerCase("en-US"))) return route;
+  return { ...route, [field]: [...current, normalized] };
+}
+
+/** Remove one model from the allowed or the denied list of a route. */
+export function removeProjectRouteModelList(
+  route: ProjectLaunchRoute,
+  field: "allowedModels" | "deniedModels",
+  model: string,
+): ProjectLaunchRoute {
+  const current = route[field] ?? [];
+  const next = current.filter((entry) => entry !== model);
+  if (next.length === current.length) return route;
+  return { ...route, [field]: next };
+}
+
 export function parseProjectRoutes(value: unknown): Record<string, ProjectLaunchRoute> {
   if (value === undefined) return {};
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Маршруты проектов должны быть объектом");
@@ -127,10 +166,14 @@ export function parseProjectRoutes(value: unknown): Record<string, ProjectLaunch
       ? Object.fromEntries(Object.entries(route.models as Record<string, unknown>)
         .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0 && entry[1].length <= 256))
       : undefined;
+    const allowedModels = parseModelList((route as { allowedModels?: unknown }).allowedModels);
+    const deniedModels = parseModelList((route as { deniedModels?: unknown }).deniedModels);
     routes[key] = {
       harnesses: [...new Set(route.harnesses as string[])],
       ...(models && Object.keys(models).length > 0 ? { models } : {}),
       ...(aliases && aliases.length > 0 ? { aliases } : {}),
+      ...(allowedModels ? { allowedModels } : {}),
+      ...(deniedModels ? { deniedModels } : {}),
     };
   }
   return routes;
@@ -315,7 +358,95 @@ export function sameProjectRoute(left?: ProjectLaunchRoute, right?: ProjectLaunc
   if (left.harnesses.length !== right.harnesses.length) return false;
   if (!left.harnesses.every((harness, index) => harness === right.harnesses[index])) return false;
   if (!sameStringMap(left.models, right.models)) return false;
+  if (!sameStringList(left.allowedModels, right.allowedModels)) return false;
+  if (!sameStringList(left.deniedModels, right.deniedModels)) return false;
   return sameStringList(left.aliases, right.aliases);
+}
+
+/**
+ * The parts of a project route that differ between two values.
+ *
+ * The merge uses this to tell a parallel edit of one part from a real
+ * conflict on the same part: an edit of the model lists must not overwrite a
+ * route change made elsewhere, and the other way round. The model map is
+ * compared per harness, so two harnesses do not conflict with each other.
+ */
+export type ProjectRoutePart = "harnesses" | "aliases" | "allowedModels" | "deniedModels" | `model:${string}`;
+
+export function changedProjectRouteParts(
+  left?: ProjectLaunchRoute,
+  right?: ProjectLaunchRoute,
+): Set<ProjectRoutePart> {
+  const parts = new Set<ProjectRoutePart>();
+  if (!left || !right) {
+    if (left || right) {
+      parts.add("harnesses");
+      parts.add("aliases");
+      parts.add("allowedModels");
+      parts.add("deniedModels");
+      for (const harness of new Set([...Object.keys(left?.models ?? {}), ...Object.keys(right?.models ?? {})])) {
+        parts.add(`model:${harness}`);
+      }
+    }
+    return parts;
+  }
+  if (left.harnesses.length !== right.harnesses.length
+    || !left.harnesses.every((harness, index) => harness === right.harnesses[index])) parts.add("harnesses");
+  if (!sameStringList(left.aliases, right.aliases)) parts.add("aliases");
+  if (!sameStringList(left.allowedModels, right.allowedModels)) parts.add("allowedModels");
+  if (!sameStringList(left.deniedModels, right.deniedModels)) parts.add("deniedModels");
+  for (const harness of new Set([...Object.keys(left.models ?? {}), ...Object.keys(right.models ?? {})])) {
+    if ((left.models ?? {})[harness] !== (right.models ?? {})[harness]) parts.add(`model:${harness}`);
+  }
+  return parts;
+}
+
+/**
+ * Merge one project route part by part.
+ *
+ * A part the operator changed and the server did not is taken from the
+ * operator. A part both sides changed is a real conflict and keeps the server
+ * value; the caller then reports the project as conflicted.
+ */
+export function mergeProjectRouteParts(
+  base: ProjectLaunchRoute | undefined,
+  fresh: ProjectLaunchRoute | undefined,
+  draft: ProjectLaunchRoute | undefined,
+): { route?: ProjectLaunchRoute; conflict: boolean } {
+  if (!base) return { route: draft ?? fresh, conflict: false };
+  if (!draft) return { route: fresh, conflict: false };
+  if (!fresh) return { route: draft, conflict: false };
+  const draftParts = changedProjectRouteParts(base, draft);
+  const freshParts = changedProjectRouteParts(base, fresh);
+  const models: Record<string, string> = { ...(fresh.models ?? {}) };
+  const merged: ProjectLaunchRoute = {
+    harnesses: [...fresh.harnesses],
+    ...(fresh.aliases ? { aliases: [...fresh.aliases] } : {}),
+    ...(fresh.allowedModels ? { allowedModels: [...fresh.allowedModels] } : {}),
+    ...(fresh.deniedModels ? { deniedModels: [...fresh.deniedModels] } : {}),
+  };
+  let conflict = false;
+  for (const part of draftParts) {
+    // A part both sides changed is a real conflict: the server value stays.
+    if (freshParts.has(part)) {
+      conflict = true;
+      continue;
+    }
+    switch (part) {
+      case "harnesses": merged.harnesses = [...draft.harnesses]; break;
+      case "aliases": merged.aliases = draft.aliases ? [...draft.aliases] : undefined; break;
+      case "allowedModels": merged.allowedModels = draft.allowedModels ? [...draft.allowedModels] : undefined; break;
+      case "deniedModels": merged.deniedModels = draft.deniedModels ? [...draft.deniedModels] : undefined; break;
+      default: {
+        const harness = part.slice("model:".length);
+        const model = draft.models?.[harness];
+        if (model) models[harness] = model;
+        else delete models[harness];
+      }
+    }
+  }
+  if (Object.keys(models).length > 0) merged.models = models;
+  return { route: merged, conflict };
 }
 
 function sameStringMap(left?: Record<string, string>, right?: Record<string, string>): boolean {
@@ -552,6 +683,33 @@ export function useRuntimeModels() {
     return () => { cancelled = true; };
   }, [runtimes]);
   return { runtimes, modelOptions };
+}
+
+/**
+ * The model catalog of the given harnesses.
+ *
+ * The route may name a harness that is not an active adapter, so the catalog
+ * is requested per harness of the route instead of reusing the runtime list.
+ */
+export function useHarnessModelCatalog(harnesses: string[]) {
+  const [catalog, setCatalog] = React.useState<Record<string, string[]>>({});
+  const key = [...new Set(harnesses)].sort().join(",");
+  React.useEffect(() => {
+    let cancelled = false;
+    const targets = key ? key.split(",") : [];
+    const load = async () => {
+      const results = await Promise.all(targets.map(async (harness) => {
+        try {
+          const result = await requestJson<{ models?: string[] }>(`/api/models?harness=${encodeURIComponent(harness)}`);
+          return [harness, result.models ?? []] as const;
+        } catch { return [harness, []] as const; }
+      }));
+      if (!cancelled) setCatalog(Object.fromEntries(results));
+    };
+    if (targets.length > 0) void load();
+    return () => { cancelled = true; };
+  }, [key]);
+  return catalog;
 }
 
 export function labelFor(harness: string, runtimes: LaunchRuntimeOption[]): string {

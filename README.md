@@ -367,6 +367,14 @@ another harness it returns `mode: "handoff_required"` for the caller to use the
 existing context-preserving handoff; it never clones a running session
 silently.
 
+A route may also carry `allowedModels` and `deniedModels`: the models that
+project may run on, and the models it must never run on. A denied model is
+skipped during the route walk like an unavailable harness, and the explicit
+model tools (`create_session`, `new_or_resume`, `change_model`,
+`fleet_create_session`) refuse it with `model_not_permitted_for_project`. An
+empty allow list means no restriction. The operator sets both lists in the
+**Проекты** tab of the web UI; see `docs/project-model-policy.md`.
+
 Restart continuation settings are available at `GET/PUT
 /api/session-autostart` and `GET/PUT/DELETE
 /api/session-autostart/sessions/{harness}/{sessionId}`. `PUT

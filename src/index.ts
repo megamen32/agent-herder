@@ -152,6 +152,12 @@ const autoCompactStore = new AutoCompactStore(join(autopilotStateDir, "auto-comp
 const automationLaunchPolicyStore = new AutomationLaunchPolicyStore(join(autopilotStateDir, "automation-launch-policy.json"));
 const integratorSessionBindingStore = new IntegratorSessionBindingStore({ persistencePath: join(autopilotStateDir, "integrator-session-bindings.json") });
 const integratorFleetRuntime = new IntegratorFleetRuntime({ policyStore: automationLaunchPolicyStore, bindingStore: integratorSessionBindingStore, codexBin: process.env.CODEX_BIN });
+// The per-project model gate reads the same stored document as the launcher,
+// so a denied model is refused at every place a model can be applied.
+const readLaunchPolicyForGate = async () => {
+  const loaded = await automationLaunchPolicyStore.load();
+  return loaded.kind === "valid" ? loaded.policy : undefined;
+};
 const humanStopStore = getHumanStopStore();
 const herderGenerationId=`process-${process.pid}-${randomUUID()}`;
 const persistNativeOwner:NonNullable<import("./adapters/zcode.js").ZcodeAdapterOptions["persistNativeOwner"]>=async(id,proof,current)=>{
@@ -577,13 +583,13 @@ function registerTools(
     queryReceipt: humanResumeQuery ?? ((request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters)),
   });
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
-  registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime });
+  registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate });
   registerRagTools(server, adapters);
   registerResourceOwnershipTools(server);
   const workspaceTransport = new FleetDirectTransport(directFleetPeers.filter(peer => peer.hostId !== "MacBook-Pro-User.local"));
   registerHarnessMeshTools(server, { adapters, gptadmin: workspaceTransport });
   registerWorkspaceTools(server, { transport: workspaceTransport });
-  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime });
+  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate });
 }
 
 /**

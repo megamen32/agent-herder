@@ -816,6 +816,67 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
   opacity: .5;
   cursor: default;
 }
+.projects-model-list {
+  min-width: 0;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+}
+.projects-model-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  padding: 6px 12px;
+  display: flex;
+  flex-wrap: wrap;
+}
+.projects-model-item code {
+  overflow-wrap: anywhere;
+}
+.projects-model-item-warn {
+  border-color: var(--danger-border, var(--border-2));
+}
+.projects-model-warn {
+  color: var(--danger, var(--text-2));
+  font-size: var(--text-sm);
+}
+.projects-model-add {
+  align-items: center;
+  gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.projects-model-add label {
+  grid-column: 1 / -1;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+.projects-model-add input {
+  min-width: 0;
+}
+.projects-model-add button {
+  min-height: 40px;
+  border: 1px solid var(--border-2);
+  border-radius: 9px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  padding: 0 12px;
+  font-size: var(--text-sm);
+}
+.projects-model-add button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.projects-model-add button:disabled {
+  opacity: .5;
+  cursor: default;
+}
 .projects-card-new {
   max-width: 1100px;
   margin: 0 auto 20px;
