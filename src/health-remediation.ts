@@ -32,7 +32,7 @@ export function isApprovedHealthRoute(value: unknown): value is string {
 }
 
 const CANONICAL_PROFILES: Record<HealthExecutionProfile["runtime"], HealthExecutionProfile> = {
-  opencode: { runtime: "opencode", provider: "omniroute", model: "omniroute/glm-5.3-flash-minimax-m3.1", reasoning: "default", topic: "health" },
+  opencode: { runtime: "opencode", provider: "omniroute", model: "omniroute/minimax-combo-m3.1", reasoning: "default", topic: "health" },
   "fast-agent": { runtime: "fast-agent", provider: "minimax", model: "MiniMax-M3.1-Flash", reasoning: "default", topic: "health" },
   zcode: {
     runtime: "zcode",
