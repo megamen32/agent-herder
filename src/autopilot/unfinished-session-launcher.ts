@@ -26,6 +26,7 @@ import { effectivePolicyAllowsTarget, type EffectivePolicy } from "./policy.js";
 import type { AutopilotPolicyStore } from "./policy-store.js";
 import type { AutopilotSessionStore } from "./session-store.js";
 import { AutomationLaunchPolicyStore, findProjectRoute, operatorCohortRecoveryAllowed } from "../automation-launch-policy.js";
+import { NOTICEPLACE_HEALTH_MODELS } from "../automation/noticeplace-health-policy.js";
 import { resolveAutopilotStateDir } from "./state-dir.js";
 
 const SUPPORTED_HARNESSES: readonly HarnessType[] = ["codex", "opencode", "claude", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
@@ -499,20 +500,28 @@ function exactTerminalRecoverySnapshot(session: AgentSession | null | undefined,
     && last.completedAt && Date.parse(last.completedAt) === Date.parse(evidence.completedAt));
 }
 
+/**
+ * The models a quota recovery may continue on.
+ *
+ * The candidates are limited by the allowlist of the Notice Place health
+ * work: the launcher must not be a way around it. A route of the OmniRoute
+ * gateway and the MiniMax subscription route are approved; no other provider
+ * is, and there is no automatic fallback outside the allowlist.
+ */
 function quotaCandidateModels(fallbackModels: readonly string[], currentModel: string | readonly string[]): string[] {
   const currentModels = typeof currentModel === "string" ? [currentModel] : [...currentModel];
   const seen = new Set<string>(currentModels.map((model) => model.toLocaleLowerCase("en-US")));
   const candidates: string[] = [];
   for (const raw of fallbackModels) {
     const model = typeof raw === "string" ? raw.trim() : "";
-    if (!model || model.length > 256 || /[\u0000-\u0020\u007f]/u.test(model) || !/^omniroute\//iu.test(model)) continue;
+    if (!model || model.length > 256 || /[\u0000-\u0020\u007f]/u.test(model) || !NOTICEPLACE_HEALTH_MODELS.includes(model)) continue;
     const key = model.toLocaleLowerCase("en-US");
     if (seen.has(key)) continue;
     seen.add(key);
     candidates.push(model);
     if (candidates.length >= 8) break;
   }
-  candidates.push(...currentModels);
+  candidates.push(...currentModels.filter((model) => NOTICEPLACE_HEALTH_MODELS.includes(model)));
   return candidates;
 }
 

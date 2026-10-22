@@ -54,6 +54,9 @@ import { deferredMessages, renderDeferredMessages } from "../deferred-messages.j
 import { agentHerderRag } from "../rag-search.js";
 import { handleIntegratorSessionTranscript } from "../integrator-session-route.js";
 
+/** How many skipped sessions of one recovery are named in the operator's log. */
+const MAX_LOGGED_SKIP_REASONS = 50;
+
 export interface WebDependencies {
   sessionImageStore?: SessionImageStore;
   adapters: Map<string, HarnessAdapter>;
@@ -99,6 +102,21 @@ export type AutopilotSweepOutcome = {
   requestId?: string;
   status: "resumed" | "failed" | "human-required";
   reason?: string;
+};
+
+/**
+ * The selected health plan of a launch, remembered between the launch call
+ * and the arming call of the same session.
+ *
+ * The center states the plan in the launch message and the arming call carries
+ * only the incident id, so the plan of a launch has to outlive the process
+ * that stated it: it is written into the durable session state.
+ */
+type LaunchHealthPlans = {
+  /** Remember the plan of one launch. */
+  remember: (harness: string, sessionId: string, planId: HealthPlanId) => Promise<void>;
+  /** The plan of one launch, when it is known. */
+  recall: (harness: string, sessionId: string) => Promise<HealthPlanId | undefined>;
 };
 
 /** Build the immutable Agent Resume request from the saved timeout choice. */
@@ -710,7 +728,29 @@ export function createWebServer(dependencies: WebDependencies): Server {
   // The health plan of a launch, remembered between the launch call and the
   // arming call of the same session: the center states the selected plan in
   // the launch message, while the arming call carries only the incident id.
-  const launchHealthPlans = new Map<string, HealthPlanId>();
+  // The plan is remembered durably, so a restart of herder between the two
+  // calls does not lose the plan of a live incident.
+  const launchHealthPlanMemory = new Map<string, HealthPlanId>();
+  const rememberLaunchHealthPlan = async (harness: string, sessionId: string, planId: HealthPlanId): Promise<void> => {
+    launchHealthPlanMemory.set(`${harness}:${sessionId}`, planId);
+    if (!dependencies.autopilotSessionStore || !isAutopilotHarness(harness)) return;
+    try {
+      await dependencies.autopilotSessionStore.setLaunchPlan(harness, sessionId, planId);
+    } catch (error) {
+      // The launch itself already happened: a plan that could not be written
+      // down must not fail it. The observer refuses to publish without a
+      // known plan, so nothing is published under a wrong one.
+      console.error(`Notice health plan of ${harness}:${sessionId} could not be remembered: ${(error as Error).message}`);
+    }
+  };
+  const recallLaunchHealthPlan = async (harness: string, sessionId: string): Promise<HealthPlanId | undefined> => {
+    if (dependencies.autopilotSessionStore && isAutopilotHarness(harness)) {
+      const stored = await dependencies.autopilotSessionStore.getLaunchPlan(harness, sessionId);
+      if (stored) return stored;
+    }
+    return launchHealthPlanMemory.get(`${harness}:${sessionId}`);
+  };
+  const launchHealthPlans: LaunchHealthPlans = { remember: rememberLaunchHealthPlan, recall: recallLaunchHealthPlan };
   // The center's observer is bounded so the incident card is never held back.
   // This one keeps the same native session under observation until it ends.
   const noticeplaceHealthObserver = new NoticeplaceHealthObserver({
@@ -788,6 +828,28 @@ export function createWebServer(dependencies: WebDependencies): Server {
           if (!session) return false;
           return session.status !== "stopped" && session.status !== "error";
         },
+        resolvePlan: async (candidate) => {
+          // The plan of a launch is remembered durably: a record written
+          // without a plan is repaired here, so the next restart observes the
+          // session without asking the center again.
+          const planId = await recallLaunchHealthPlan(candidate.harness, candidate.sessionId);
+          if (!planId) return undefined;
+          if (dependencies.autopilotSessionStore && isAutopilotHarness(candidate.harness)) {
+            try {
+              await dependencies.autopilotSessionStore.set({
+                harness: candidate.harness,
+                sessionId: candidate.sessionId,
+                cwd: candidate.cwd,
+                noticeIncident: { ...candidate.binding, planId },
+              }, true);
+            } catch (error) {
+              // The observation is armed with the known plan anyway: a record
+              // that could not be repaired is repaired by the next arming.
+              console.error(`Notice health plan of ${candidate.harness}:${candidate.sessionId} could not be repaired: ${(error as Error).message}`);
+            }
+          }
+          return planId;
+        },
         arm: async (candidate) => await noticeplaceHealthObserver.start({
           harness: candidate.harness,
           sessionId: candidate.sessionId,
@@ -796,6 +858,15 @@ export function createWebServer(dependencies: WebDependencies): Server {
         }),
       });
       console.log(`Notice health observer recovered ${result.armed} armed sessions after the restart (${result.skipped} skipped)`);
+      // The reason of every skipped session is the operator's evidence: the
+      // counters alone do not say why a session was not observed. The reasons
+      // name a session and a cause, never a secret of the incident.
+      for (const reason of result.reasons.slice(0, MAX_LOGGED_SKIP_REASONS)) {
+        console.log(`Notice health observer skipped a session: ${reason}`);
+      }
+      if (result.reasons.length > MAX_LOGGED_SKIP_REASONS) {
+        console.log(`Notice health observer skipped a session: ... and ${result.reasons.length - MAX_LOGGED_SKIP_REASONS} more`);
+      }
     } catch (error) {
       console.error(`Notice health observer recovery failed: ${(error as Error).message}`);
     }
@@ -852,7 +923,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: Map<string, HealthPlanId>): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   const resolveSessionRoute = async (harness: string, sessionId: string) => await resolveSessionRouteFor(integratorRuntime, adapters, scopedSupervisorFactory, harness, sessionId);
   if (url.pathname === "/api/resources/s21-lease" && request.method === "GET") {
@@ -1076,7 +1147,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       // the center only accepts progress for the selected plan.
       const planId = requested?.planId
         ?? previous?.noticeIncident?.planId
-        ?? (requested ? launchHealthPlans?.get(`${harness}:${sessionId}`) : undefined);
+        ?? (requested ? await launchHealthPlans?.recall(harness, sessionId) : undefined);
       const noticeIncident = requested === undefined ? undefined : { ...requested, ...(planId ? { planId } : {}) };
       const record = await autopilotSessionStore.set({ harness, sessionId, cwd: body.cwd, ...(noticeIncident === undefined ? {} : { noticeIncident }) }, body.enabled);
       if (body.enabled && record.noticeIncident) {
@@ -1198,7 +1269,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       // plan of that launch is remembered here.
       if (result.outcome !== "no_harness") {
         const plan = resolveLaunchHealthPlan(typeof body.message === "string" ? body.message : "")?.planId;
-        if (plan && result.sessionId) launchHealthPlans?.set(`${result.harness ?? (typeof body.harness === "string" ? body.harness : "")}:${result.sessionId}`, plan);
+        if (plan && result.sessionId) await launchHealthPlans?.remember(result.harness ?? (typeof body.harness === "string" ? body.harness : ""), result.sessionId, plan);
       }
       return sendJson(response, result.outcome === "no_harness" ? 409 : 200, result);
     } catch (error) {
@@ -1902,7 +1973,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     });
     // The plan of this launch belongs to the launched executor: the arming
     // call of the same session carries only the incident id.
-    if (result.ok && result.sessionId) launchHealthPlans?.set(`${harness}:${result.sessionId}`, planId);
+    if (result.ok && result.sessionId) await launchHealthPlans?.remember(harness, result.sessionId, planId);
     return sendJson(response, result.ok ? 200 : 502, { ...result, incident_id: incidentId, plan_id: planId, execution, model });
   }
   if (request.method === "POST" && url.pathname === "/api/sessions") {

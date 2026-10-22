@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { parseNoticeIncident, type NoticeIncidentBinding } from "../autopilot/notice-incident.js";
+import { parseNoticeIncident, type HealthPlanId, type NoticeIncidentBinding } from "../autopilot/notice-incident.js";
 
 /** One armed session of the durable autopilot store that carries an incident binding. */
 export interface NoticeplaceHealthRecoveryCandidate {
@@ -60,6 +60,10 @@ export async function readArmedHealthCandidates(path: string): Promise<Noticepla
  *
  * The candidates are armed in small batches: a restart with hundreds of armed
  * sessions must not turn into a burst of native reads against the harness.
+ *
+ * A candidate whose record does not carry the selected plan is armed only when
+ * the plan of its launch is known: the center accepts the progress of one
+ * selected plan, so a guessed plan would only produce refused publications.
  */
 export async function recoverNoticeplaceHealthObservation(options: {
   candidates: NoticeplaceHealthRecoveryCandidate[];
@@ -67,6 +71,14 @@ export async function recoverNoticeplaceHealthObservation(options: {
   isAlive: (candidate: NoticeplaceHealthRecoveryCandidate) => Promise<boolean>;
   /** Arm one observation; it reports whether the observation actually started. */
   arm: (candidate: NoticeplaceHealthRecoveryCandidate) => "started" | "duplicate" | "refused" | Promise<"started" | "duplicate" | "refused">;
+  /**
+   * The selected plan of a candidate whose record does not carry one.
+   *
+   * The plan of a launch is stated by the center and remembered durably, so a
+   * record written without a plan can be repaired after a restart instead of
+   * being skipped for good.
+   */
+  resolvePlan?: (candidate: NoticeplaceHealthRecoveryCandidate) => Promise<HealthPlanId | undefined>;
   /** How many candidates are checked and armed at the same time. */
   concurrency?: number;
   /** Pause between two batches. */
@@ -89,7 +101,17 @@ export async function recoverNoticeplaceHealthObservation(options: {
         result.reasons.push(`${candidate.sessionId}: the session is gone or finished`);
         return;
       }
-      const outcome = await options.arm(candidate);
+      const planId = candidate.binding.planId ?? await resolvePlan(options.resolvePlan, candidate);
+      if (!planId) {
+        // The observer publishes only for the selected plan of the incident:
+        // an unknown plan is a refusal, never a guess.
+        result.skipped += 1;
+        result.reasons.push(`${candidate.sessionId}: the incident ${candidate.binding.incidentId} has no selected health plan`);
+        return;
+      }
+      const outcome = await options.arm(planId === candidate.binding.planId
+        ? candidate
+        : { ...candidate, binding: { ...candidate.binding, planId } });
       if (outcome === "started") {
         result.armed += 1;
         return;
@@ -100,4 +122,17 @@ export async function recoverNoticeplaceHealthObservation(options: {
     if (batchDelayMs && index + concurrency < options.candidates.length) await new Promise((resolve) => { setTimeout(resolve, batchDelayMs).unref?.(); });
   }
   return result;
+}
+
+/** The plan of a launch, when the caller knows one; an unreadable plan is no plan. */
+async function resolvePlan(
+  resolver: ((candidate: NoticeplaceHealthRecoveryCandidate) => Promise<HealthPlanId | undefined>) | undefined,
+  candidate: NoticeplaceHealthRecoveryCandidate,
+): Promise<HealthPlanId | undefined> {
+  if (!resolver) return undefined;
+  try {
+    return await resolver(candidate);
+  } catch {
+    return undefined;
+  }
 }
