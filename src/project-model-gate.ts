@@ -5,6 +5,12 @@
  * a denied model cannot reach a launch through one path while another path
  * still allows it.
  *
+ * The gate resolves the route of a directory by the containment lookup of
+ * `src/project-model-policy.ts`: a directory inside a routed project inherits
+ * the rules and the model of that project. The model resolution of the launch
+ * uses the same lookup, so a subdirectory can never be launched by one rule
+ * and policed by another.
+ *
  * The module is free of node imports: it only reads the plain shape of the
  * policy document, so the web UI can reuse the same rules to warn the operator
  * before a route is saved.
@@ -16,7 +22,9 @@ import {
   effectiveModelForProject,
   findModelPolicyRoute,
   findModelPolicyRouteForPath,
+  findModelPolicyRouteIdentity,
   findProjectModelRoute,
+  findProjectRouteIdentity,
   modelMatchesEntry,
   modelPermittedForRoute,
   type ProjectModelPolicy,
@@ -29,7 +37,9 @@ export {
   conflictingModelEntries,
   findModelPolicyRoute,
   findModelPolicyRouteForPath,
+  findModelPolicyRouteIdentity,
   findProjectModelRoute,
+  findProjectRouteIdentity,
   modelMatchesEntry,
   modelPermittedForProject,
   modelPermittedForRoute,
@@ -97,6 +107,38 @@ export async function assertModelAllowedForProject(
 }
 
 /**
+ * Reject a model the caller named that the route of the project forbids.
+ *
+ * The launch path judges the effective model of the route: the model the route
+ * configures for the harness. A request may carry another model, and on the
+ * analysis path that model is the one that really starts, so the lists of the
+ * route have to judge it too. Without this check the lists of a project stay
+ * incomplete: they permit the model of the route and never see the model of
+ * the request.
+ *
+ * The route is resolved by the containment lookup, the same one the model
+ * resolution of the launch uses, so a project is judged by the rules of the
+ * route that governs it. A project without a route keeps the
+ * global policy and is not checked.
+ */
+export function assertModelAllowedForProjectRoute(
+  policy: ProjectModelPolicy | undefined,
+  project: string,
+  model: string | undefined,
+): void {
+  if (!policy || !model) return;
+  const resolution = findProjectModelRoute(policy.projectRoutes, project);
+  if (!resolution) return;
+  if (modelPermittedForRoute(resolution.route, model)) return;
+  throw new ModelNotPermittedError(
+    project,
+    model,
+    resolution.route.allowedModels ?? [],
+    resolution.route.deniedModels ?? [],
+  );
+}
+
+/**
  * Does the policy restrict the models of any project at all?
  *
  * A gate that has nothing to enforce must not make the caller do extra work.
@@ -112,8 +154,8 @@ export function policyRestrictsModels(policy: ProjectModelPolicy | undefined): b
  *
  * A session may run in a subdirectory of its project, so the governing route is
  * the one that contains that directory. The route is resolved by the one
- * shared lookup, the same one the launch permission uses, so a directory can
- * never be launched by one rule and policed by another.
+ * containment lookup, the same one the model resolution of the launch uses, so
+ * a directory can never be launched by one rule and policed by another.
  *
  * When the caller names no model, the model the project would run on for that
  * harness decides: a project that forbids its own model must not start a

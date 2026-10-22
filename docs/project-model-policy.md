@@ -59,10 +59,16 @@ the global model of the harness decides, exactly as before this feature.
   refused.
 - **A project without a route keeps the global policy unchanged.** No new
   restriction is introduced for a project nobody configured.
-- **One lookup finds the route of a directory.** Every caller that needs the
-  route of a directory goes through one function, `findProjectModelRoute` in
-  `src/project-model-policy.ts`. The launch permission and the model gate
-  resolve the project of a session by the same rule, in this order:
+- **A directory inside a routed project inherits the rules and the model of the
+  project, but not its identity.** A directory inside a routed project is
+  governed by that project: it inherits the allow list, the deny list, the
+  harness and the model of the route that contains it. It does not become the
+  project: the working folder stays the requested one and the work key stays
+  its own. The two halves are decided by two different lookups, and the
+  containment belongs to the model contour alone.
+- **The model contour resolves by containment.** The model gate and the model
+  resolution of the launch share one lookup, `findProjectModelRoute` in
+  `src/project-model-policy.ts`, in this order:
   1. the exact canonical folder of the route
      (`/home/roomhacker/ServersAdministartion`);
   2. the same folder in another case
@@ -80,6 +86,16 @@ the global model of the harness decides, exactly as before this feature.
   subdirectory. The nesting is matched literally, because the production paths
   are case-sensitive, while the exact folder and the alias are matched
   case-insensitively.
+- **The identity contour resolves without containment.** The lookup of the
+  identity is `findProjectRouteIdentity` in `src/project-model-policy.ts`: the
+  exact canonical folder, its case variant and a declared alias, and nothing
+  else. A directory inside a routed project has no route of its own, so it
+  keeps its own working folder and its own work key. The callers are
+  `routeKeyOf` in `src/automation/project-launch-dispatch.ts`, which decides
+  the working folder and the work key of a launch, and `findProjectRoute` in
+  `src/automation-launch-policy.ts`, whose two callers
+  (`src/web/server.ts` and `src/autopilot/unfinished-session-launcher.ts`)
+  must not catch a subdirectory.
 - **The root of a route is the canonical path of its key.** An alias resolves
   to the route of its key, but an alias is never a root itself: containment is
   only ever tested against the canonical path a route is configured under.
@@ -107,41 +123,53 @@ The route of a launch is the key of the route, and the key of a launch of a
 directory inside a routed project is the root of that route. Two consequences
 follow. Both are stated here before the gate is released.
 
-- **The block key of a subdirectory becomes the root of the route.** A block of
-  the form `project|<subdirectory>` stops firing, and a block of the form
-  `project|<root>` starts to cover the subdirectories. The gate of the dispatch
-  therefore has to check the union of the keys
+- **The work key of a launch stays the identity of the requested directory.** A
+  launch of the project root carries the key of the route, and a launch of a
+  subdirectory carries its own path. A block of the form `project|<subdirectory>`
+  therefore keeps firing, and a block of the form `project|<root>` does not
+  cover the subdirectories.
+- **The rules of the project still follow the root.** The model rules follow the
+  containment, so the gate of the dispatch has to check the union of the keys
   `{projectWorkKey(canonicalProjectKey(input.project)), projectWorkKey(root of
-  the route)}`, so that the old block of the subdirectory and the new block of
-  the root both fire and the fail-closed rule is not weakened.
-- **The session key holds the root of the route.** The working folder of a
-  launch of a routed project is forced to the root of the route, so a block of
-  the form `opencode|<subdirectory>|<name>` stops matching: the directory of
-  the session key is the root of the route.
+  the route that governs the project)}`, so that the block of the subdirectory
+  and the block of the root both fire and the fail-closed rule is not weakened.
+- **The session key holds the requested directory.** The working folder of a
+  launch is the requested one, so a block of the form
+  `opencode|<subdirectory>|<name>` keeps matching the session of that
+  subdirectory.
 
 ## The resolvers of a project route
 
-One lookup knows the containment of a directory. Every other resolver is a
-thin wrapper over it, or a deliberate exception.
+Two lookups, with different rules. One knows the containment of a directory and
+belongs to the model contour; the other knows the identity of a project and
+belongs to the working folder and the work key.
 
-- `findProjectModelRoute` in `src/project-model-policy.ts` — the one lookup.
-  It is the only place that knows the containment of a directory.
+- `findProjectModelRoute` in `src/project-model-policy.ts` — the containment
+  lookup of the model contour. It is the only place that knows the containment
+  of a directory.
 - `findModelPolicyRoute` and `findModelPolicyRouteForPath` in
-  `src/project-model-policy.ts` — wrappers over the one lookup. The first is
-  used by the model lists, the second by the tools gate.
+  `src/project-model-policy.ts` — wrappers over the containment lookup. The
+  first is used by the model lists, the second by the tools gate.
+- `findProjectRouteIdentity` and `findModelPolicyRouteIdentity` in
+  `src/project-model-policy.ts` — the identity lookup: the exact canonical
+  folder, its case variant and a declared alias, and no containment.
+- `findGoverningProjectRoute` and `findGoverningProjectRouteMatch` in
+  `src/automation-launch-policy.ts` — wrappers over the containment lookup.
+  They decide the route of a launch and the model of that launch.
 - `findProjectRoute`, `findProjectRouteKey` and `findProjectRouteMatch` in
-  `src/automation-launch-policy.ts` — wrappers over the one lookup. They are
-  used by the launch permission, the web UI and the dispatch.
+  `src/automation-launch-policy.ts` — wrappers over the identity lookup. They
+  decide which project a session is: the working folder and the work key of
+  the launch, and the two callers that must not catch a subdirectory.
 - `routeKeyOf` in `src/automation/project-launch-dispatch.ts` — a wrapper over
-  the one lookup, so the attempt log and the receipt of a launch name the
-  same route.
+  the identity lookup, so the attempt log and the receipt of a launch name the
+  project itself.
 - `assertModelAllowedForDirectory` in `src/project-model-gate.ts` — resolves
-  the route of a working directory through the one lookup.
+  the route of a working directory through the containment lookup.
 - `resolveConfiguredProject` in `src/integrator-fleet-runtime.ts:382` — its
   own lookup, by exact key and declared alias only. It stays that way on
   purpose: its contract is a single route whose first harness is `codex`, and
   it is the only path that may create a session of that route. Giving it the
-  containment of the one lookup would move a launch of a subdirectory into a
+  containment of the model contour would move a launch of a subdirectory into a
   route it did not ask for, and it would change the `project_route_ambiguous`
   answer into a silent choice. It changes only when the owner of that file
   agrees to it.
@@ -149,17 +177,16 @@ thin wrapper over it, or a deliberate exception.
 ## Where the gate applies
 
 One module decides, so a denied model cannot slip through another path:
-`src/project-model-policy.ts` holds the rules and the one route lookup
-(`findProjectModelRoute`), and `src/project-model-gate.ts` is the single gate
-the callers use. The launch permission of `src/automation-launch-policy.ts`
-uses the same lookup, so a directory can never be launched by one rule and
-policed by another.
+`src/project-model-policy.ts` holds the rules and the two lookups, and
+`src/project-model-gate.ts` is the single gate the callers use. The model
+resolution of the launch uses the containment lookup, the same one the gate
+uses, so a directory can never be launched by one rule and policed by another.
 
 1. **Automatic launch** (`resolveProjectLaunch` in
    `src/automation-launch-policy.ts`). The route of the launch is the route
-   found by the one lookup above, so a launch of a directory inside a routed
-   project is governed by that project instead of falling back to the global
-   profile. The effective model of a harness is
+   that governs the project, found by the containment lookup, so a launch of a
+   directory inside a routed project is governed by that project instead of
+   falling back to the global profile. The effective model of a harness is
    `route.models[harness] ?? policy.models[harness]`. When that model is not
    permitted, the harness is skipped and the route moves to the next harness —
    the same treatment as an unavailable harness. When no harness of the route
