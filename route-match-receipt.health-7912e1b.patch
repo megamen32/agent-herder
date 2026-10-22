@@ -1,7 +1,17 @@
 diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-launch-dispatch.ts
 --- a/src/automation/project-launch-dispatch.ts
 +++ b/src/automation/project-launch-dispatch.ts
-@@ -71,6 +71,10 @@
+@@ -15,7 +15,8 @@
+ import { HUMAN_STOP_MESSAGE } from "../human-stop-actions.js";
+ import { MINIMAX_SUBSCRIPTION_MODEL, type MiniMaxQuotaPreflight } from "./minimax-quota-preflight.js";
+ import { NOTICEPLACE_HEALTH_AUTHORIZED, validateNoticeplaceHealthLaunch } from "./noticeplace-health-launch.js";
+-import { MODEL_NOT_PERMITTED_CODE } from "../project-model-policy.js";
++import { MODEL_NOT_PERMITTED_CODE, ModelNotPermittedError } from "../project-model-policy.js";
++import { assertModelAllowedForProjectRoute } from "../project-model-gate.js";
+ import { AUTOMATION_DISABLED_CODE } from "./health-reason-codes.js";
+ import { automationDisarmDecision, projectWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
+ 
+@@ -71,6 +72,10 @@
    selectedHarness?: HarnessType;
    model?: string;
    mode?: "create" | "resume" | "handoff_required";
@@ -12,7 +22,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
    sessionId?: string;
    delivery?: NamedSessionResult["delivery"];
    error?: string;
-@@ -192,6 +196,10 @@
+@@ -192,6 +197,10 @@
    const healthAnalysis = input[NOTICEPLACE_HEALTH_AUTHORIZED] === true;
    const routeKey = routeKeyOf(input.policy, input.project);
    const healthRoute = routeKey ? input.policy.projectRoutes?.[routeKey] : undefined;
@@ -23,7 +33,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
    if (healthAnalysis) {
      const error = validateNoticeplaceHealthLaunch(input)
        ?? (!input.policy.allowedHarnesses.includes("opencode") || (healthRoute && !healthRoute.harnesses.includes("opencode"))
-@@ -200,6 +208,7 @@
+@@ -200,6 +209,7 @@
        return {
          operationId, project, attempts: [], outcome: "no_harness", routingReason: error, error,
          routingReasonCode: ROUTING_CODE_INCIDENT_SCOPE_NOT_PERMITTED,
@@ -31,7 +41,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
        };
      }
    }
-@@ -223,6 +232,7 @@
+@@ -223,6 +233,7 @@
        // The class of the disarm decision itself: the whole automation is
        // forbidden, or this one work is blocked.
        ...(disarm.code ? { routingReasonDetail: disarm.code } : {}),
@@ -39,7 +49,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
      };
    }
  
-@@ -237,12 +247,13 @@
+@@ -237,12 +248,13 @@
        routingReasonCode: ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
        selectedHarness: reserved.harness,
        ...(reserved.model ? { model: reserved.model } : {}),
@@ -54,7 +64,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
    }
  
    const attempted = attempts.map((attempt) => attempt.harness);
-@@ -251,6 +262,7 @@
+@@ -251,6 +263,7 @@
        operationId, project, attempts, outcome: "no_harness",
        routingReason: "Попытка анализа инцидента уже завершилась отказом. Переключение среды и провайдера запрещено.",
        routingReasonCode: ROUTING_CODE_INCIDENT_ATTEMPT_FAILED,
@@ -62,7 +72,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
      };
    }
    const previous = attempts[attempts.length - 1];
-@@ -283,6 +295,7 @@
+@@ -283,6 +296,7 @@
            ? `Среда ${harnessLabel(input.harness)} не разрешена для автоматического запуска.`
            : "Для проекта нет маршрута, а автоматический запуск новых сессий выключен.",
          routingReasonCode: input.harness ? ROUTING_CODE_HARNESS_NOT_ALLOWED : AUTOMATION_DISABLED_CODE,
@@ -70,7 +80,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
        };
      }
      harness = fallback.harness;
-@@ -306,6 +319,7 @@
+@@ -306,12 +320,35 @@
            ? MODEL_NOT_PERMITTED_CODE
            : ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
        ...(attempts.length > 0 ? { selectedHarness: attempts[attempts.length - 1]!.harness } : {}),
@@ -78,7 +88,35 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
      };
    } else {
      // A configured project is authoritative: the route decides harness, model
-@@ -342,6 +356,7 @@
+     // and workspace. A profile value is reported as overridden, never rejected.
+     harness = resolution.harness;
+     model = healthAnalysis ? input.model : resolution.model;
++    // The analysis path runs the model of the request, and the lists of the
++    // route judge the model of the route only. The model of the request is
++    // judged by the same lists here, so a project that permits the model of
++    // its route and forbids the model of the request refuses the launch
++    // instead of running the forbidden model. The check stands before the
++    // session is reserved, so a forbidden model never reaches a harness.
++    if (healthAnalysis && input.model) {
++      try {
++        assertModelAllowedForProjectRoute(input.policy, project, input.model);
++      } catch (error) {
++        if (!(error instanceof ModelNotPermittedError)) throw error;
++        return {
++          operationId,
++          project,
++          attempts,
++          outcome: "no_harness",
++          routingReason: `Модель ${input.model} не разрешена для проекта ${project}. Проверьте списки «Разрешённые модели» и «Запрещённые модели» в настройке проектов. Переключение среды и провайдера запрещено.`,
++          routingReasonCode: MODEL_NOT_PERMITTED_CODE,
++          ...routeReceipt,
++        };
++      }
++    }
+     const routeProject = routeKeyOf(input.policy, input.project);
+     let prefix = "";
+     if (routeProject?.startsWith("/")) {
+@@ -342,6 +379,7 @@
          ...(resolution.model ? { model: resolution.model } : {}),
          mode: "handoff_required",
          ...(resolution.sessionId ? { sessionId: resolution.sessionId } : {}),
@@ -86,7 +124,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
        };
      }
      routingReason = `${prefix}${attempts.length === 0
-@@ -371,12 +386,13 @@
+@@ -371,12 +409,13 @@
          routingReasonCode: ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
          selectedHarness: completed.harness,
          ...(completed.model ? { model: completed.model } : {}),
@@ -101,7 +139,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
    }
  
    const nativeResult = await run({ harness, cwd, message: input.message, ...(model ? { model } : {}), mode, inputId,
-@@ -412,6 +428,7 @@
+@@ -412,6 +451,7 @@
      return projectReceipt({
        operationId, project, attempts: recorded, completed: attempt,
        ...(routingReasonCode ? { routingReasonCode } : {}),
@@ -109,7 +147,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
      });
    }
    // A definite pre-admission failure: continue down the ordered route.
-@@ -430,6 +447,7 @@
+@@ -430,6 +470,7 @@
        ? ROUTING_CODE_ADMISSION_NOT_CONFIRMED
        : exhaustedRouteCode(next) ?? routingReasonCode ?? ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
      ...(result.error ? { error: result.error } : {}),
@@ -117,7 +155,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
    };
  }
  
-@@ -455,6 +473,8 @@
+@@ -455,6 +496,8 @@
    completed: ProjectLaunchAttempt;
    /** The class of the routing decision, when the dispatch made one. */
    routingReasonCode?: string;
@@ -126,7 +164,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
  }): ProjectLaunchDispatchResult {
    const { completed } = input;
    // A confirmed launch carries no class of refusal; an unconfirmed or held one
-@@ -470,6 +490,7 @@
+@@ -470,6 +513,7 @@
      ...completed.result,
      operationId: input.operationId,
      project: input.project,
@@ -134,7 +172,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
      attempts: [...input.attempts.filter((attempt) => attempt.inputId !== completed.inputId), completed],
      outcome: completed.outcome as LaunchOutcome | "human_hold",
      routingReason: completed.reason,
-@@ -479,6 +500,38 @@
+@@ -479,6 +523,38 @@
    };
  }
  
@@ -173,3 +211,44 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
  /** The durable key of a project: its configured route key, else the canonical name. */
  export function attemptKeyOf(policy: AutomationLaunchPolicy, project: string): string {
    return routeKeyOf(policy, project) ?? canonicalProjectKey(project);
+diff --git a/src/project-model-gate.ts b/src/project-model-gate.ts
+--- a/src/project-model-gate.ts
++++ b/src/project-model-gate.ts
+@@ -92,6 +92,37 @@
+   assertModelPermittedForProject(policy, project, model);
+ }
+ 
++/**
++ * Reject a model the caller named that the route of the project forbids.
++ *
++ * The launch path judges the effective model of the route: the model the route
++ * configures for the harness. A request may carry another model, and on the
++ * analysis path that model is the one that really starts, so the lists of the
++ * route have to judge it too. Without this check the lists of a project stay
++ * incomplete: they permit the model of the route and never see the model of
++ * the request.
++ *
++ * The route is resolved by the lookup of the launch, so a project is judged by
++ * the rules of the route that governs it. A project without a route keeps the
++ * global policy and is not checked.
++ */
++export function assertModelAllowedForProjectRoute(
++  policy: ProjectModelPolicy | undefined,
++  project: string,
++  model: string | undefined,
++): void {
++  if (!policy || !model) return;
++  const route = findModelPolicyRoute(policy.projectRoutes, project);
++  if (!route) return;
++  if (modelPermittedForRoute(route, model)) return;
++  throw new ModelNotPermittedError(
++    project,
++    model,
++    route.allowedModels ?? [],
++    route.deniedModels ?? [],
++  );
++}
++
+ /**
+  * Does the policy restrict the models of any project at all?
+  *
