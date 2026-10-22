@@ -4,6 +4,23 @@ import { MAX_MODEL_LENGTH } from "../automation-launch-policy.js";
 
 // ===== Schemas for tool inputs =====
 
+/** Machine identity of the work machine. One spelling per machine. */
+const hostIdentity = z
+  .string()
+  .trim()
+  .min(1)
+  .max(512)
+  .refine((value) => !/[\s\x00-\x1f\x7f/\\]/u.test(value), "hostId contains invalid characters");
+
+/** Target machine of an operation. Absent means the local host (localhost). */
+export const HOST_TARGET_DESCRIPTION =
+  "Machine the work runs on; defaults to localhost (this Agent Herder host).";
+/** Machine filter. Absent keeps every machine, which is the current behaviour. */
+export const HOST_FILTER_DESCRIPTION =
+  "Filter by machine. Omitted lists sessions of every machine.";
+
+const hostTarget = (description: string) => hostIdentity.optional().describe(description);
+
 export const ListAgentsSchema = z.object({
   harness: z
     .enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"])
@@ -25,6 +42,7 @@ export const ListAgentsSchema = z.object({
     "For example, '~/apps' will show only sessions whose CWD starts with that path. " +
     "Useful for finding all agent sessions working within a specific project tree."
   ),
+  hostId: hostTarget(HOST_FILTER_DESCRIPTION),
   includeLastMessage: z.boolean().optional().default(false).describe(
     "If true, include a preview of the last message in each session."
   ),
@@ -43,6 +61,7 @@ export const AgentInfoSchema = z.object({
     .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"])
     .optional()
     .describe("Which harness the session belongs to. If omitted, searches all."),
+  hostId: hostTarget(HOST_TARGET_DESCRIPTION),
 });
 
 export const FindParentSchema = z.object({
@@ -78,6 +97,7 @@ export const SendMessageSchema = z.object({
   humanRequested: z.boolean().optional().describe("True only for an explicit human new task/send/resume. Otherwise coordination is active-turn-only and never wakes or defers to an inactive chat."),
   sessionId: z.string().describe("Target session ID."),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().describe("Harness (optional if ID is unique)."),
+  hostId: hostTarget(HOST_TARGET_DESCRIPTION),
   message: z.string().describe("Message to send to the agent."),
   fromSessionId: z.string().optional().describe("Supply your full native sender session ID for AI messages. Herder checks that session for reply attribution; this does not authenticate the caller. Omitted/unverified sources are labelled unknown."),
   fromHarness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().describe("Declared sender harness for checked reply attribution, not caller authentication."),
@@ -94,6 +114,7 @@ const NamedSessionBaseSchema = z.object({
   harness: z.enum(["opencode", "codex", "zcode", "fast-agent"]).describe("Harness that owns the named session."),
   name: z.string().trim().min(1).max(128).describe("Stable session name, for example repair_100."),
   cwd: z.string().min(1).describe("Absolute working directory. It is canonicalized before identity matching."),
+  hostId: hostTarget(HOST_TARGET_DESCRIPTION),
   model: z.string().trim().min(1).max(MAX_MODEL_LENGTH).regex(/^[^\u0000-\u001f\u007f]*$/).optional().describe("Optional model selected before the first message is delivered."),
 });
 
@@ -117,6 +138,7 @@ export const DeliverSchema = z.object({
   sourceHarness: z.enum(["codex", "zcode", "opencode", "fast-agent"]).optional(),
   sessionId: z.string().optional().describe("Exact target session ID. Use either sessionId or harness+name+cwd."),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional(),
+  hostId: hostTarget(HOST_TARGET_DESCRIPTION),
   name: z.string().trim().min(1).max(128).optional(),
   cwd: z.string().min(1).optional(),
   message: z.string().min(1).refine((message) => message.trim().length > 0, "Message cannot be blank"),
@@ -128,6 +150,27 @@ export const DeliverSchema = z.object({
   const named=Boolean(v.harness && v.name && v.cwd);
   if (!v.sessionId && !named) ctx.addIssue({code:z.ZodIssueCode.custom,message:"Provide sessionId or harness+name+cwd"});
   if (v.sessionId && (v.name || v.cwd)) ctx.addIssue({code:z.ZodIssueCode.custom,message:"Use either sessionId or named target fields, not both"});
+});
+
+/** Override the work machine and/or work directory of an already live session. */
+export const SetSessionTargetSchema = z.object({
+  sessionId: z.string().trim().min(1).max(512).describe("Exact native session ID whose work target is overridden."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().describe("Harness (optional if the ID is unique)."),
+  hostId: hostTarget("Work machine the session runs on; defaults to the current machine of that session."),
+  cwd: z.string().trim().min(1).max(4096).optional().describe("Work directory on the target machine."),
+}).superRefine((v,ctx)=>{
+  if (v.hostId === undefined && v.cwd === undefined) ctx.addIssue({code:z.ZodIssueCode.custom,message:"Provide hostId or cwd"});
+});
+
+/** Receipt of one work-target override. Never claims success for an unreachable machine. */
+export const SetSessionTargetResultSchema = z.object({
+  sessionId: z.string(),
+  harness: z.string(),
+  hostId: z.string(),
+  cwd: z.string(),
+  previous: z.object({ hostId: z.string(), cwd: z.string() }),
+  state: z.enum(["updated", "unchanged", "unreachable", "unsupported"]),
+  reason: z.string().optional(),
 });
 
 export const StopAgentSchema = z.object({
@@ -235,6 +278,7 @@ export const toolDefinitions: Tool[] = [
         limit: { type: "number", default: 20, description: "Max sessions to return" },
         maxAge: { type: "number", description: "Max session age in seconds (e.g. 3600 for 1h, 86400 for 24h)" },
         folder: { type: "string", description: "Filter by CWD prefix (e.g. '~/apps' for sessions in that tree)" },
+        hostId: { type: "string", description: "Filter by machine; omitted lists sessions of every machine" },
         includeLastMessage: { type: "boolean", default: false, description: "Include last message preview" },
       },
     },
@@ -262,6 +306,7 @@ export const toolDefinitions: Tool[] = [
         harness: { type: "string", enum: ["opencode", "codex", "zcode", "fast-agent"], description: "Target harness" },
         name: { type: "string", description: "Stable session name, for example repair_100" },
         cwd: { type: "string", description: "Absolute working directory" },
+        hostId: { type: "string", description: "Machine the work runs on; defaults to localhost (this Agent Herder host)" },
         model: { type: "string", maxLength: MAX_MODEL_LENGTH, description: "Optional model selected before first delivery" },
       },
       required: ["harness", "name", "cwd"],
@@ -276,6 +321,7 @@ export const toolDefinitions: Tool[] = [
         harness: { type: "string", enum: ["opencode", "codex", "zcode", "fast-agent"], description: "Target harness" },
         name: { type: "string", description: "Stable session name, for example repair_100" },
         cwd: { type: "string", description: "Absolute working directory" },
+        hostId: { type: "string", description: "Machine the work runs on; defaults to localhost (this Agent Herder host)" },
         message: { type: "string", description: "Message to deliver" },
         mode: { type: "string", enum: ["queue", "sync"], default: "sync", description: "Delivery mode" },
         model: { type: "string", maxLength: MAX_MODEL_LENGTH, description: "Optional model selected before first delivery" },
@@ -295,6 +341,7 @@ export const toolDefinitions: Tool[] = [
       properties: {
         sessionId: { type: "string", description: "Session ID to inspect" },
         harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
+        hostId: { type: "string", description: "Machine the work runs on; defaults to localhost (this Agent Herder host)" },
       },
       required: ["sessionId"],
     },
@@ -353,6 +400,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Target session ID" },
+        hostId: { type: "string", description: "Machine the work runs on; defaults to localhost (this Agent Herder host)" },
         humanRequested: {type:"boolean",description:"True only for an explicit human new task/send/resume; automatic coordination must omit it."},
         inputId: { type: "string", description: "Stable idempotent delivery ID (Codex: 24 hour retry window)" },
         harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
@@ -376,6 +424,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string" }, harness: { type: "string", enum: ["opencode","claude","codex","qoder","hermes","zcode","fast-agent", "chatgpt"] },
+        hostId: { type: "string", description: "Machine the work runs on; defaults to localhost (this Agent Herder host)" },
         name: { type: "string" }, cwd: { type: "string" }, message: { type: "string" },
         inputId: { type: "string", description: "Stable idempotent delivery ID (Codex: 24 hour retry window)" },
         create: { type: "string", enum: ["if_missing","never"], default: "if_missing" },
@@ -383,6 +432,23 @@ export const toolDefinitions: Tool[] = [
         mode: { type: "string", enum: ["queue","sync"], default: "queue" }, model: { type: "string" },
       },
       required: ["message"],
+    },
+  },
+  {
+    name: "set_session_target",
+    description:
+      "Override the work machine and/or work directory of an already live session. " +
+      "The machine defaults to the current machine of that session and the directory defaults to its current one; " +
+      "at least one of hostId and cwd must be given. An unreachable machine is reported as unreachable, never as applied.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        sessionId: { type: "string", description: "Exact native session ID" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"], description: "Harness (optional if the ID is unique)" },
+        hostId: { type: "string", description: "Work machine the session runs on; defaults to the current machine of that session" },
+        cwd: { type: "string", description: "Work directory on the target machine" },
+      },
+      required: ["sessionId"],
     },
   },
   {

@@ -1,7 +1,8 @@
 import {createHash} from 'node:crypto';
 import {addressKey,unwrapResult} from './protocol.js';
 import {projectPeerSession,type GptAdminTransport} from './gptadmin.js';
-import {fleetHarnesses,type FleetHostDefinition,type FleetHost,type FleetScope,type FleetView,type FleetSession,type FleetCreateRequest,type FleetCreateReceipt} from './fleet-contract.js';
+import {fleetHarnesses,type FleetHostDefinition,type FleetHost,type FleetScope,type FleetView,type FleetSession,type FleetCreateRequest,type FleetCreateReceipt,type FleetSessionTarget,type FleetSessionTargetReceipt} from './fleet-contract.js';
+import {normalizeHostId} from '../coordination-notes.js';
 import {FleetCreateJournal} from './fleet-create-journal.js';
 import type {SessionInventoryPage,InventorySession} from './session-page.js';
 import type {RustCoreHostSelector} from './rust-core-client.js';
@@ -58,6 +59,36 @@ export class FleetCabinetService {
   const transport=this.transport(address.hostId);if(!transport.readSession||this.sessionReads>=3)throw new Error('fleet_session_read_unavailable');
   this.sessionReads++;
   try{return await transport.readSession(`mcp:shell:${address.hostId}:AgentHerder`,address.harness,address.nativeSessionId);}finally{this.sessionReads--;}
+ }
+ /** Canonical spelling of a configured machine, so one machine has one name. */
+ private canonicalHost(hostId:string):string|undefined{
+  const wanted=typeof hostId==='string'?hostId.trim().toLowerCase():'';
+  return this.deps.hosts.find(h=>h.hostId.toLowerCase()===wanted)?.hostId;
+ }
+ /**
+  * Address one already existing fleet session and override its work machine and/or
+  * work directory. The mutation travels through the existing session control channel,
+  * so fleet sessions keep one remote path instead of a second one.
+  */
+ async setSessionTarget(address:{hostId:string;harness:string;nativeSessionId:string},target:FleetSessionTarget):Promise<FleetSessionTargetReceipt>{
+  const cwd=target.cwd??'';
+  const canonical=this.canonicalHost(address.hostId);
+  if(!canonical||!fleetHarnesses.includes(address.harness as any)||!validText(address.nativeSessionId,512))
+   return {state:'unsupported',hostId:address.hostId,cwd,reason:'fleet_session_invalid'};
+  const node=this.cache.get(canonical);
+  if(node&&!['ready','metadata_only'].includes(node.host.state))
+   return {state:'unreachable',hostId:canonical,cwd,reason:node.host.reason??'host_unavailable'};
+  const requestedHost=target.hostId?normalizeHostId(target.hostId,canonical):canonical;
+  if(!this.transport(canonical).requestSession)return {state:'unsupported',hostId:requestedHost,cwd,reason:'fleet_session_control_unavailable'};
+  try{
+   const response=await this.requestSession({hostId:canonical,harness:address.harness,nativeSessionId:address.nativeSessionId},{operation:'set-target',hostId:requestedHost,...(target.cwd?{cwd:target.cwd}:{})});
+   const body=record(response.body);
+   if(response.status===200)return {state:body?.state==='unchanged'?'unchanged':'updated',hostId:typeof body?.hostId==='string'?body.hostId:requestedHost,cwd:typeof body?.cwd==='string'?body.cwd:cwd};
+   if(response.status===502)return {state:'unreachable',hostId:requestedHost,cwd,reason:'host_unreachable'};
+   return {state:'unsupported',hostId:requestedHost,cwd,reason:'owner_target_route_unavailable'};
+  }catch(error){
+   return {state:'unreachable',hostId:requestedHost,cwd,reason:error instanceof Error?error.message.slice(0,96):'fleet_target_unreachable'};
+  }
  }
  get browserScopeKey(){return createHash('sha256').update(JSON.stringify([this.deps.scope.profileId,this.deps.scope.userId])).digest('hex');}
  /** Browser directory pages are independent of the compact agent-discovery window. */
@@ -190,6 +221,7 @@ export class FleetCabinetService {
  }
 }
 const validText=(s:unknown,n:number):s is string=>typeof s==='string'&&!!s.trim()&&s.length<=n&&!/[\x00-\x1f\x7f]/.test(s);
+const record=(value:unknown):Record<string,any>|undefined=>value&&typeof value==='object'?value as Record<string,any>:undefined;
 const absolutePath=(s:string)=>/^(\/|[A-Za-z]:[\\/]|\\\\)/.test(s);
 
 function fairWindow(sessions:FleetSession[],hostIds:string[],limit:number):FleetSession[]{

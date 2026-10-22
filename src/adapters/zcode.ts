@@ -21,6 +21,7 @@ import {
   type SessionMessagePart,
   type SessionMessageView,
   type SetPermissionsOptions,
+  localSessionHostId,
 } from "../types/index.js";
 import { ZcodeAppServerClient, type ZcodeClientLike } from "./zcode-protocol.js";
 import { readExistingZcodeRuntimeObservation } from "./zcode-runtime-observation.js";
@@ -638,6 +639,7 @@ function mapSession(
     status,
     title: session.title || fallbackTitle || "Untitled ZCode session",
     cwd,
+    hostId: localSessionHostId(),
     lastActivity: timestamp(session.updatedAt ?? session.createdAt),
     model: modelName(record(record(root.settings).model).current as ZcodeModelRef) ?? modelName(session.model),
     needsPermission: pendingRequestIds.length > 0,
@@ -1809,6 +1811,7 @@ export class ZcodeAdapter implements HarnessAdapter {
             status,
             title: row.title || "Untitled ZCode session",
             cwd,
+            hostId: localSessionHostId(),
             lastActivity: timestamp(lastActivityMs),
             model: nonEmptyString(row.model),
             needsPermission: status === "needs_input",

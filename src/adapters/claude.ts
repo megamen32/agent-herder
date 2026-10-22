@@ -1,4 +1,4 @@
-import { HarnessAdapter, AgentSession, CreateSessionOptions, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
+import { HarnessAdapter, AgentSession, CreateSessionOptions, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, localSessionHostId } from "../types/index.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile, readdir, stat, access, open } from "node:fs/promises";
@@ -76,6 +76,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
         status: runningPids.has(id) ? "running" : "stopped",
         title: parsed.title,
         cwd: parsed.cwd,
+        hostId: localSessionHostId(),
         lastActivity: parsed.lastActivity,
         model: parsed.model,
         needsPermission: false,
@@ -130,6 +131,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
     spawnDetachedWorkload(this.claudeBin, args, { label: "claude-session", cwd, stdio: "ignore" });
     return {
       id, harness: "claude", status: "running", title: options.name, cwd,
+      hostId: localSessionHostId(),
       lastActivity: new Date().toISOString(), model: options.model, needsPermission: false, messageCount: 0,
       meta: { transientLaunch: true },
     };
@@ -287,6 +289,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
             harness: "claude" as const,
             title: info.title,
             cwd: info.cwd,
+            hostId: localSessionHostId(),
             lastActivity: info.lastActivity,
             model: info.model,
             needsPermission: false,

@@ -29,6 +29,7 @@ import type {
   HarnessCapabilities,
   HarnessEvent,
 } from "../types/index.js";
+import { localSessionHostId } from "../types/index.js";
 import { spawnIsolatedWorkload } from "../workload-launcher.js";
 
 export interface AcpAgentConfig {
@@ -113,6 +114,7 @@ export class AcpAdapter implements HarnessAdapter {
       status: "idle",
       title: info.title || "Untitled ACP session",
       cwd: info.cwd,
+      hostId: localSessionHostId(),
       lastActivity: info.updatedAt || new Date().toISOString(),
       needsPermission: false,
       meta: { transport: "acp", profile: this.config.profile, nativeSessionId: info.sessionId },
@@ -133,6 +135,7 @@ export class AcpAdapter implements HarnessAdapter {
     const id = this.externalId(created.sessionId);
     const session = this.cacheSession({
       id, harness: this.type, status: "idle", title: options.name, cwd: resolve(options.cwd),
+      hostId: localSessionHostId(),
       lastActivity: new Date().toISOString(), model: options.model, needsPermission: false, messageCount: 0,
       meta: { transport: "acp", profile: this.config.profile, nativeSessionId: created.sessionId },
     });

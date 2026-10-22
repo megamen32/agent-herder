@@ -16,6 +16,7 @@ import type {
   SessionMessageView,
   SetPermissionsOptions,
 } from "../types/index.js";
+import { localSessionHostId } from "../types/index.js";
 
 type PersistedMessage = {
   role?: unknown;
@@ -425,6 +426,7 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       status: record.launchError ? "error" : record.launchRunning ? "running" : status,
       title: title.slice(0, 240),
       cwd: stringValue(record.snapshot.continuation?.cwd) || stringValue((record.snapshot.metadata as Record<string, unknown> | undefined)?.cwd) || this.fallbackCwd,
+      hostId: localSessionHostId(),
       lastActivity,
       model,
       needsPermission: status === "needs_input",

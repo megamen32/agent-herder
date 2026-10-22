@@ -21,6 +21,7 @@ import type {
 import { throwIfAborted } from "./abort-utils.js";
 import { createNamedSession, newOrResumeNamedSession, type NamedSessionRequest, type NamedSessionResult, type NewOrResumeNamedSessionRequest } from "./named-session.js";
 import { getHarnessCapabilities } from "./types/index.js";
+import { localSessionHostId } from "./types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "./session-convert.js";
 import { LineageStore, type LineageRecord } from "./lineage-store.js";
 import { ModelsDevPricing } from "./model-pricing.js";
@@ -203,11 +204,11 @@ export class SessionSupervisor {
     if(event==='user-prompt'&&proof.origin==='real_user'&&current())released=await this.releaseHumanStop('zcode',sessionId,{id:proof.inputId,at:proof.at,turnId:proof.turnId});
     if(await this.humanStops.isHeld('zcode',sessionId)||!current())return {origin:proof.origin,released,recorded:false};
     if(event==='user-prompt'||event==='tool-progress'){
-      recorded=await this.unfinishedSessions?.recordNativeHook?.({id:sessionId,harness:'zcode',cwd:proof.cwd,title:'ZCode',status:'running',lastActivity:proof.at,needsPermission:false,meta:{workspaceIdentity:proof.cwd}},
+      recorded=await this.unfinishedSessions?.recordNativeHook?.({id:sessionId,harness:'zcode',cwd:proof.cwd,hostId:localSessionHostId(),title:'ZCode',status:'running',lastActivity:proof.at,needsPermission:false,meta:{workspaceIdentity:proof.cwd}},
         identity,event==='user-prompt'?'begin':'progress',proof.progress,current)??false;
       if(recorded)adapter?.registerNativeHookTurn?.(proof);
     }else if(event==='turn-end'&&outcome==='success'&&proof.finished&&current()){
-      recorded=await this.unfinishedSessions?.recordNativeHook?.({id:sessionId,harness:'zcode',cwd:proof.cwd,title:'ZCode',status:'idle',lastActivity:proof.at,needsPermission:false,meta:{workspaceIdentity:proof.cwd}},identity,'success',proof.progress,
+      recorded=await this.unfinishedSessions?.recordNativeHook?.({id:sessionId,harness:'zcode',cwd:proof.cwd,hostId:localSessionHostId(),title:'ZCode',status:'idle',lastActivity:proof.at,needsPermission:false,meta:{workspaceIdentity:proof.cwd}},identity,'success',proof.progress,
         ()=>current()&&adapter?.getNativeHookTurn?.(sessionId,turnId,cwd)?.finished===true)??false;
       if(recorded)adapter?.completeNativeHookTurn?.(proof);
     }
@@ -1070,7 +1071,7 @@ export class SessionSupervisor {
     if (!this.admissionGate) return { allowed: true };
     try {
       return await this.admissionGate({ id: sessionId, harness: adapter.type,
-        cwd: "", title: "", status: "error", lastActivity: new Date().toISOString(), needsPermission: false }, operation);
+        cwd: "", hostId: localSessionHostId(), title: "", status: "error", lastActivity: new Date().toISOString(), needsPermission: false }, operation);
     } catch (error) {
       return { allowed: false, reason: error instanceof Error ? error.message : "Fleet admission check failed before native work" };
     }

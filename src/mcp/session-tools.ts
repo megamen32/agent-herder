@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { hostname } from "node:os";
 import { z } from "zod";
-import type { HarnessAdapter } from "../types/index.js";
+import type { HarnessAdapter, AgentSession } from "../types/index.js";
 import { sessionIdentity } from "../session-identity.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
@@ -11,6 +11,8 @@ import {
   NewOrResumeSchema,
   DeliverSchema,
   ResumeAgentSchema,
+  SetSessionTargetSchema,
+  SetSessionTargetResultSchema,
 } from "../mcp-tools/definitions.js";
 import {
   listAgentsResult,
@@ -39,42 +41,133 @@ import {
 import { startJobResult } from "./results.js";
 import { readModelQuotas } from "../model-quota.js";
 import type { IntegratorFleetRuntime } from "../integrator-fleet-runtime.js";
+import { coordinationNotes, normalizeHostId, type CoordinationNoteStore } from "../coordination-notes.js";
+import type { GptAdminTransport } from "../mesh/gptadmin.js";
+import { unwrapResult, type MeshAddress } from "../mesh/protocol.js";
+import { FleetDirectTransport, directFleetPeers } from "../mesh/fleet-direct-transport.js";
 
 const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]);
 
 const sessionSchema = z.object({
-  id: z.string(), harness: harnessSchema, status: z.enum(["running", "idle", "needs_input", "stopped", "error"]), title: z.string(), cwd: z.string(), lastActivity: z.string(),
+  id: z.string(), harness: harnessSchema, status: z.enum(["running", "idle", "needs_input", "stopped", "error"]), title: z.string(), cwd: z.string(), hostId: z.string(), launchCwd: z.string().optional(), lastActivity: z.string(),
   model: z.string().optional(), needsPermission: z.boolean(), permissionDetails: z.object({ id: z.string(), type: z.string(), description: z.string(), toolName: z.string().optional(), details: z.string().optional() }).optional(),
   messageCount: z.number().optional(), costUsd: z.number().optional(), durationSec: z.number().optional(), lastMessage: z.string().optional(), meta: z.record(z.string(), z.unknown()).optional(),
 });
+
+/** Work target of a live session: the machine it works on and the directory it works in. */
+export interface SessionWorkTarget { hostId: string; cwd: string }
+
+/** A declared work target stays valid for one day and can be re-declared at any time. */
+const WORK_TARGET_TTL_SECONDS = 24 * 60 * 60;
+
+/** Router that can retarget a session living on another machine of the fleet. */
+export interface FleetSessionTargetRouter {
+  setSessionTarget(address: MeshAddress, target: { hostId: string; cwd?: string }): Promise<{
+    state: "updated" | "unchanged" | "unreachable" | "unsupported";
+    hostId: string;
+    cwd: string;
+    reason?: string;
+  }>;
+}
 
 export function registerSessionTools(server: McpServer, deps: {
   adapters: Map<string, HarnessAdapter>;
   jobs: HerderJobRegistry;
   events: HerderEventBus;
   integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">;
+  /** Session work target store. Defaults to the process-wide coordination store. */
+  coordination?: CoordinationNoteStore;
+  /** Peer transport used to verify a work directory on another machine. */
+  transport?: GptAdminTransport;
+  /** Fleet router used to retarget a session that lives on another machine. */
+  fleet?: FleetSessionTargetRouter;
 }): void {
   const { adapters, jobs, events } = deps;
-  async function sessionRoute<T extends { sessionId?: string; harness?: string }>(args: T) {
-    if (!args.sessionId || !deps.integratorRuntime) return { adapters, args, denied: false };
-    const resolution = await deps.integratorRuntime.adapterForSession({ hostId: hostname(), harness: "codex", nativeSessionId: args.sessionId });
-    if (resolution.kind === "deny") return { adapters, args, denied: true };
-    if (resolution.kind === "ordinary") return { adapters, args, denied: false };
-    if (args.harness && args.harness !== "codex") return { adapters, args, denied: true };
+  const coordination = deps.coordination ?? coordinationNotes;
+  let peerTransport: GptAdminTransport | undefined = deps.transport;
+  const peerTransportOrDefault = (): GptAdminTransport => {
+    if (!peerTransport) peerTransport = new FleetDirectTransport(directFleetPeers.filter((peer) => peer.hostId !== "MacBook-Pro-User.local"));
+    return peerTransport;
+  };
+  /** Canonical spelling of a machine, so one machine always has one name. */
+  const canonicalPeer = (hostId: string) => directFleetPeers.find((peer) => peer.hostId.toLowerCase() === hostId.toLowerCase());
+  const findLiveSession = async (sessionId: string, harness?: string): Promise<AgentSession | undefined> => {
+    const names = harness ? [harness] : [...adapters.keys()];
+    for (const name of names) {
+      const adapter = adapters.get(name);
+      if (!adapter) continue;
+      const found = await adapter.getSession(sessionId).catch(() => null);
+      if (found) return found;
+    }
+    return undefined;
+  };
+  /**
+   * Override the work machine and/or work directory of a live session.
+   * The declaration is the existing workspace mechanism, so the mesh projection
+   * and the coordination roster observe the new target without a second truth.
+   */
+  async function setSessionTarget(args: { sessionId: string; harness?: string; hostId?: string; cwd?: string }) {
+    const localHostId = hostname();
+    const session = await findLiveSession(args.sessionId, args.harness);
+    if (!session) throw new Error(`session_not_found:${args.sessionId}`);
+    const harness = session.harness;
+    const declared = await coordination.activeWorkspaceObservation(args.sessionId);
+    const previous = { hostId: declared?.hostId ?? session.hostId, cwd: declared?.cwd ?? session.cwd };
+    const targetHostId = args.hostId ? normalizeHostId(args.hostId, localHostId) : previous.hostId;
+    const targetCwd = args.cwd ? args.cwd.trim() : previous.cwd;
+    const receipt = (state: "updated" | "unchanged" | "unreachable" | "unsupported", hostId: string, cwd: string, reason?: string) => ({
+      sessionId: args.sessionId, harness, hostId, cwd, previous, state, ...(reason ? { reason } : {}),
+    });
+    if (targetHostId.toLowerCase() === previous.hostId.toLowerCase() && targetCwd === previous.cwd) {
+      return receipt("unchanged", previous.hostId, previous.cwd);
+    }
+    if (targetHostId.toLowerCase() === localHostId.toLowerCase()) {
+      await coordination.declareWorkspace({ sessionId: args.sessionId, harness, hostId: localHostId, cwd: targetCwd, ttlSeconds: WORK_TARGET_TTL_SECONDS });
+      return receipt("updated", localHostId, targetCwd);
+    }
+    // Another machine: the directory must be proven on that machine first.
+    const peer = canonicalPeer(targetHostId);
+    if (!peer) return receipt("unreachable", targetHostId, targetCwd, `host_target_unavailable:${targetHostId}`);
+    let verifiedCwd: string;
+    try {
+      const probed = unwrapResult(await peerTransportOrDefault().call(`mcp:shell:${peer.hostId}:AgentHerder`, "workspace_probe", { cwd: targetCwd }));
+      if (probed.hostId !== peer.hostId || typeof probed.cwd !== "string" || !probed.cwd.startsWith("/")) throw new Error("workspace_probe_invalid");
+      verifiedCwd = probed.cwd;
+    } catch {
+      return receipt("unreachable", peer.hostId, targetCwd, `host_target_unavailable:${peer.hostId}`);
+    }
+    await coordination.declareWorkspace({ sessionId: args.sessionId, harness, hostId: peer.hostId, cwd: verifiedCwd, ttlSeconds: WORK_TARGET_TTL_SECONDS });
+    return receipt("updated", peer.hostId, verifiedCwd);
+  }
+  async function sessionRoute<T extends { sessionId?: string; harness?: string; hostId?: string }>(args: T) {
+    if (!args.sessionId || !deps.integratorRuntime) return { adapters, args, denied: false, hostTargetUnavailable: undefined as string | undefined };
+    const hostId = normalizeHostId(args.hostId, hostname());
+    const resolution = await deps.integratorRuntime.adapterForSession({ hostId, harness: "codex", nativeSessionId: args.sessionId });
+    if (resolution.kind === "deny") return { adapters, args, denied: true, hostTargetUnavailable: undefined as string | undefined };
+    if (resolution.kind === "ordinary") {
+      // Another machine has no adapter in this process. Say so instead of
+      // reporting a missing local session.
+      const unavailable = hostId === hostname() ? undefined : hostId;
+      return { adapters, args, denied: false, hostTargetUnavailable: unavailable };
+    }
+    if (args.harness && args.harness !== "codex") return { adapters, args, denied: true, hostTargetUnavailable: undefined as string | undefined };
     const routed = new Map(adapters);
     routed.set("codex", resolution.adapter);
-    return { adapters: routed, args: { ...args, harness: "codex" } as T, denied: false };
+    return { adapters: routed, args: { ...args, harness: "codex" } as T, denied: false, hostTargetUnavailable: undefined as string | undefined };
   }
   const publishSessionsChanged = () => events.publish({ kind: "sessions", uri: "herder://sessions", action: "changed" });
 
-  server.registerTool("list_agents", { description: "List all coding agent sessions, including ZCode. Filter by harness, status, age (maxAge seconds), or folder (CWD prefix like ~/apps). Can show last message preview.", inputSchema: z.object({
+
+  server.registerTool("list_agents", { description: "List all coding agent sessions, including ZCode. Filter by harness, status, age (maxAge seconds), folder (CWD prefix like ~/apps) or machine (hostId). Omitted hostId lists sessions of every machine. Can show last message preview.", inputSchema: z.object({
     harness: z.enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().default("all"),
     status: z.enum(["all", "running", "idle", "needs_input", "stopped", "error"]).optional().default("all"),
-    limit: z.number().int().min(1).max(100).optional().default(20), maxAge: z.number().int().min(0).optional(), folder: z.string().optional(), includeLastMessage: z.boolean().optional().default(false),
+    limit: z.number().int().min(1).max(100).optional().default(20), maxAge: z.number().int().min(0).optional(), folder: z.string().optional(),
+    hostId: z.string().trim().min(1).max(512).optional().describe("Filter by machine. Omitted lists sessions of every machine."),
+    includeLastMessage: z.boolean().optional().default(false),
   }), outputSchema: z.object({
     complete: z.boolean(), unavailable: z.array(z.object({harness:z.string(),error:z.string()})),
     sessions: z.array(sessionSchema), total: z.number().int().min(0), limited: z.boolean(),
-    filters: z.object({ harness: z.string(), status: z.string(), maxAge: z.number().optional(), folder: z.string().optional(), includeLastMessage: z.boolean() }),
+    filters: z.object({ harness: z.string(), status: z.string(), maxAge: z.number().optional(), folder: z.string().optional(), hostId: z.string().optional(), includeLastMessage: z.boolean() }),
   }) }, async (args) => {
     const result = await listAgentsResult(adapters, args);
     return { content: [{ type: "text" as const, text: formatListAgentsResult(result) }], structuredContent: result };
@@ -91,6 +184,7 @@ export function registerSessionTools(server: McpServer, deps: {
   server.registerTool("agent_info", { description: "Get detailed info about a specific session. Always shows model and last message.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }), outputSchema: z.object({ session: sessionSchema.nullable() }) }, async (args) => {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     const session = await agentInfoResult(route.adapters, route.args);
     return { content: [{ type: "text" as const, text: session ? formatSession(session, true) : `Session '${args.sessionId}' not found.` }], structuredContent: { session } };
   });
@@ -111,6 +205,7 @@ export function registerSessionTools(server: McpServer, deps: {
   }, async (args) => {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     const harness = route.args.harness ? [route.args.harness] : [...route.adapters.keys()];
     let owned: HarnessAdapter | undefined;
     for (const name of harness) {
@@ -141,6 +236,7 @@ export function registerSessionTools(server: McpServer, deps: {
   server.registerTool("list_children", { description: "List the native child sessions of an agent session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }), outputSchema: z.object({ session: sessionSchema.nullable(), children: z.array(sessionSchema), supported: z.boolean(), error: z.string().optional() }) }, async (args) => {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     const result = await listChildrenResult(route.adapters, route.args);
     return { content: [{ type: "text" as const, text: formatListChildrenResult(args.sessionId, result) }], structuredContent: result };
   });
@@ -148,20 +244,36 @@ export function registerSessionTools(server: McpServer, deps: {
   server.registerTool("export_transcript", { description: "Export the raw adapter-owned transcript and return a filesystem navigation card.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }) }, async (args) => {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     return { content: [{ type: "text" as const, text: await handleExportTranscript(route.adapters, route.args) }] };
   });
   server.registerTool("export_transcript_async", { description: "Export a raw adapter-owned transcript as a Herder background job.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), ownerSessionId: z.string().optional() }) }, async (args) => {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     return startJobResult(jobs, "transcript-export", async (signal, progress) => {
       progress(0.1, "Exporting transcript");
       return handleExportTranscript(route.adapters, route.args, undefined, signal);
     }, args.ownerSessionId);
   });
 
+  server.registerTool("set_session_target", {
+    description:
+      "Override the work machine and/or work directory of an already live session. " +
+      "hostId and cwd are both optional, but at least one of them must be given; an omitted one keeps the current value. " +
+      "A machine that cannot be reached is reported as unreachable and never applied locally.",
+    inputSchema: SetSessionTargetSchema,
+    outputSchema: SetSessionTargetResultSchema,
+  }, async (args) => {
+    const result = await setSessionTarget(args);
+    publishSessionsChanged();
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
+  });
+
   server.registerTool("send_message", { description: "Send a message to an agent. Ordinary coordination is active-turn-only, including queue mode: inactive/completed targets return skipped_inactive without new turns or deferred debt. Explicit humanRequested=true permits a human new task/send/resume. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. Modes: sync (wait), queue (fire-and-forget), steer (redirect).", inputSchema: SendMessageSchema }, async (args) => {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     const result = await handleSendMessage(route.adapters, route.args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
@@ -173,32 +285,37 @@ export function registerSessionTools(server: McpServer, deps: {
     const result = await handleNewOrResume(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed.", inputSchema: DeliverSchema }, async(args)=>{ const route=await sessionRoute(args);if(route.denied)throw new Error("project_session_scope_unavailable");const result=await handleDeliver(route.adapters,route.args);publishSessionsChanged();return {content:[{type:"text" as const,text:result}]}; });
+  server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed.", inputSchema: DeliverSchema }, async(args)=>{ const route=await sessionRoute(args);if(route.denied)throw new Error("project_session_scope_unavailable");if(route.hostTargetUnavailable)throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);const result=await handleDeliver(route.adapters,route.args);publishSessionsChanged();return {content:[{type:"text" as const,text:result}]}; });
   server.registerTool("stop_agent", { description: "Stop / abort a running agent session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }) }, async (args) => {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     const result = await handleStopAgent(route.adapters, route.args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("respond_permission", { description: "Respond to a pending permission request (allow/deny). OpenCode, Claude SDK, and ZCode support this.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), permissionId: z.string(), response: z.enum(["allow", "deny"]), remember: z.boolean().optional() }) }, async (args) => {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     return { content: [{ type: "text" as const, text: await handleRespondPermission(route.adapters, route.args) }] };
   });
   server.registerTool("set_permissions", { description: "Set permissions for an agent. Claude/Codex set these at launch time.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), allowedTools: z.string().optional(), mode: z.string().optional() }) }, async (args) => {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     return { content: [{ type: "text" as const, text: await handleSetPermissions(route.adapters, route.args) }] };
   });
   server.registerTool("resume_agent", { description: "Resume a stopped agent session. Optionally provide a message.", inputSchema: ResumeAgentSchema }, async (args) => {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     const result = await handleResumeAgent(route.adapters, route.args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("change_model", { description: "Change the AI model for a harness. For OpenCode: per-session or global. For Claude/Codex/Qoder/ZCode: per-session where supported by the harness.", inputSchema: z.object({ sessionId: z.string().optional(), harness: harnessSchema, model: z.string() }) }, async (args) => {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     const result = await handleChangeModel(route.adapters, route.args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });

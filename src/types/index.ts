@@ -28,4 +28,7 @@ export {
   type CompactSessionOptions,
   type MessageImage,
   getHarnessCapabilities,
+  localSessionHostId,
+  createAgentSession,
+  type AgentSessionInit,
 } from "./common.js";

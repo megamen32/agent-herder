@@ -16,6 +16,7 @@ import type {
   MessageAdmissionResult,
   CreateSessionOptions,
 } from "../../types/index.js";
+import { localSessionHostId } from "../../types/index.js";
 import { spawnIsolatedWorkload } from "../../workload-launcher.js";
 
 type JsonObject = Record<string, unknown>;
@@ -730,6 +731,7 @@ export class HermesAdapter implements HarnessAdapter {
       status: job.status,
       title: job.title,
       cwd: job.cwd,
+      hostId: localSessionHostId(),
       lastActivity: job.lastActivity,
       model: job.model,
       needsPermission: false,
@@ -759,6 +761,7 @@ export class HermesAdapter implements HarnessAdapter {
       status: "idle",
       title: row.display_name || row.chat_name || id,
       cwd: this.config.cwd || process.cwd(),
+      hostId: localSessionHostId(),
       lastActivity: iso(row.updated_at),
       model: row.model,
       needsPermission: false,

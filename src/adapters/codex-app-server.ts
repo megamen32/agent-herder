@@ -38,6 +38,7 @@ import type {
   SessionMessageView,
   SessionSnapshotReceipt,
 } from "../types/index.js";
+import { localSessionHostId } from "../types/index.js";
 import type { IntegratorCurrentProjectScopeEvidence } from "../integrator-session-admission.js";
 import { IntegratorSessionBindingStore, type IntegratorAttemptScope, type IntegratorHarness } from "../integrator-session-binding.js";
 import { resolveProjectExecutionScope, type TrustedRuntimeOwnerResolver } from "../project-execution-scope.js";
@@ -2390,6 +2391,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       // full preview as lastMessage; display text must not invalidate STOP reads.
       title: (thread.name?.trim() || thread.preview?.trim() || "Untitled session").slice(0, 500),
       cwd: thread.cwd || thread.path || this.cwd,
+      hostId: localSessionHostId(),
       lastActivity: threadTimestamp(thread.updatedAt) || threadTimestamp(thread.createdAt) || new Date(0).toISOString(),
       ...(typeof thread.model === "string" ? { model: thread.model } : {}),
       needsPermission: activeFlags.includes("waitingOnApproval"),

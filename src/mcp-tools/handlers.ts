@@ -24,14 +24,14 @@ import { automaticDeliveryHeld, holdManualStop, HUMAN_STOP_MESSAGE } from "../hu
 import { buildMessageProvenanceHeader } from "../message-provenance.js";
 import { compactAutomaticMessage, readLongMessage, saveLongMessageToWorkspace } from "../long-messages.js";
 import { createNamedSession, newOrResumeNamedSession, deliverNamedSession, selectDeliveryModel } from "../named-session.js";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { createHash } from "node:crypto";
 import { relative, resolve, sep } from "node:path";
 import { realpath } from "node:fs/promises";
 import { auditWorktrees } from "../worktree-audit.js";
 import { BrowserWakeService } from "../browser-wake.js";
 import { deliveryBudgetFor } from "../coordination-delivery-budget.js";
-import { coordinationNotes } from "../coordination-notes.js";
+import { coordinationNotes, normalizeHostId } from "../coordination-notes.js";
 import { isCoordinationActive, sendCurrentTurnOnly, skippedCoordination, previousCoordinationReceipt } from "../coordination-active-delivery.js";
 import { deferredMessages, isBusyCodexWriter, withDeferred } from "../deferred-messages.js";
 import {
@@ -222,7 +222,7 @@ export interface ListAgentsResult {
   sessions: AgentSession[];
   total: number;
   limited: boolean;
-  filters: { harness: string; status: string; maxAge?: number; folder?: string; includeLastMessage: boolean };
+  filters: { harness: string; status: string; maxAge?: number; folder?: string; hostId?: string; includeLastMessage: boolean };
   complete: boolean;
   unavailable: Array<{ harness: string; error: string }>;
 }
@@ -250,8 +250,11 @@ export async function listAgentsResult(
         new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Discovery exceeded 3 seconds")), 3000); }),
       ]);
       allSessions.push(...sessions.map(session => {
-        const activeCwd = coordinationNotes.activeWorkspaceForSession(session.id);
-        return activeCwd ? {...session, cwd:activeCwd, meta:{...session.meta,launchCwd:session.cwd,activeCwd,projectSource:"coordination_activity"}} : session;
+        // The declared work target is the effective machine and directory of the session.
+        const workspace = coordinationNotes.cachedWorkspaceObservation(session.id);
+        const activeCwd = workspace?.cwd ?? coordinationNotes.activeWorkspaceForSession(session.id);
+        const hostId = workspace?.hostId ?? session.hostId ?? hostname();
+        return activeCwd ? {...session, cwd:activeCwd, hostId, meta:{...session.meta,launchCwd:session.meta?.launchCwd??session.cwd,activeCwd,workspaceHostId:hostId,workspaceExpiresAt:workspace?.expiresAt,projectSource:workspace?.source??"coordination_activity"}} : {...session, hostId};
       }));
       const receipt = adapter.getSessionSnapshotReceipt?.();
       if (receipt?.reason === "bounded_native_page") discoveryLimited = true;
@@ -285,6 +288,16 @@ export async function listAgentsResult(
     });
   }
 
+  // Filter by machine. A session belongs to the machine it currently works on.
+  if (parsed.hostId) {
+    const wanted = normalizeHostId(parsed.hostId, hostname()).toLowerCase();
+    const owners = await Promise.all(filtered.map(async (s) => {
+      const declared = await coordinationNotes.activeWorkspaceObservation(s.id);
+      return { session: s, hostId: (declared?.hostId ?? s.hostId).toLowerCase() };
+    }));
+    filtered = owners.filter((row) => row.hostId === wanted).map((row) => row.session);
+  }
+
   // Sort by last activity
   filtered.sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
 
@@ -298,7 +311,7 @@ export async function listAgentsResult(
     }),
     total: filtered.length,
     limited: filtered.length > parsed.limit || discoveryLimited,
-    filters: { harness: parsed.harness, status: parsed.status, ...(parsed.maxAge !== undefined ? { maxAge: parsed.maxAge } : {}), ...(parsed.folder ? { folder: parsed.folder } : {}), includeLastMessage: parsed.includeLastMessage },
+    filters: { harness: parsed.harness, status: parsed.status, ...(parsed.maxAge !== undefined ? { maxAge: parsed.maxAge } : {}), ...(parsed.folder ? { folder: parsed.folder } : {}), ...(parsed.hostId ? { hostId: normalizeHostId(parsed.hostId, hostname()) } : {}), includeLastMessage: parsed.includeLastMessage },
   };
 }
 
@@ -358,10 +371,20 @@ export async function handleAuditWorktrees(args: unknown): Promise<string> {
   return lines.join("\n");
 }
 
+/**
+ * Every emitted session names the machine it works on. A session that arrives
+ * without an identity (an older peer, a native view that predates the field)
+ * belongs to the machine that received it.
+ */
+export function withSessionHost(session: AgentSession): AgentSession {
+  return session.hostId ? session : { ...session, hostId: hostname() };
+}
+
 export async function agentInfoResult(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<AgentSession | null> {
   const parsed = AgentInfoSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
-  return found ? found.adapter.getSession(found.session.id, {includeMetrics:true}) : null;
+  const session = found ? await found.adapter.getSession(found.session.id, {includeMetrics:true}) : null;
+  return session ? withSessionHost(session) : null;
 }
 
 export async function handleAgentInfo(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
@@ -374,11 +397,12 @@ export async function findParentResult(adapters: Map<string, HarnessAdapter>, ar
   const parsed = FindParentSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return { session: null, parent: null, supported: false };
-  if (!found.adapter.getParent) return { session: found.session, parent: null, supported: false };
+  if (!found.adapter.getParent) return { session: withSessionHost(found.session), parent: null, supported: false };
   try {
-    return { session: found.session, parent: await found.adapter.getParent(parsed.sessionId), supported: true };
+    const parent = await found.adapter.getParent(parsed.sessionId);
+    return { session: withSessionHost(found.session), parent: parent ? withSessionHost(parent) : null, supported: true };
   } catch (error) {
-    return { session: found.session, parent: null, supported: false, error: error instanceof Error ? error.message : "Native parent lineage could not be verified" };
+    return { session: withSessionHost(found.session), parent: null, supported: false, error: error instanceof Error ? error.message : "Native parent lineage could not be verified" };
   }
 }
 
@@ -401,11 +425,12 @@ export async function listChildrenResult(adapters: Map<string, HarnessAdapter>, 
   const parsed = ListChildrenSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return { session: null, children: [], supported: false };
-  if (!found.adapter.listChildren) return { session: found.session, children: [], supported: false };
+  if (!found.adapter.listChildren) return { session: withSessionHost(found.session), children: [], supported: false };
   try {
-    return { session: found.session, children: await found.adapter.listChildren(parsed.sessionId), supported: true };
+    const children = await found.adapter.listChildren(parsed.sessionId);
+    return { session: withSessionHost(found.session), children: children.map((child) => withSessionHost(child)), supported: true };
   } catch (error) {
-    return { session: found.session, children: [], supported: false, error: error instanceof Error ? error.message : "Native child lineage could not be verified" };
+    return { session: withSessionHost(found.session), children: [], supported: false, error: error instanceof Error ? error.message : "Native child lineage could not be verified" };
   }
 }
 

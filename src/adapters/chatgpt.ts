@@ -7,6 +7,7 @@ import type {
   SendMessageOptions,
   SetPermissionsOptions,
 } from "../types/index.js";
+import { localSessionHostId } from "../types/index.js";
 import type { ChatGptHarnessDriver, ChatGptHarnessChat } from "../cdp-chat.js";
 
 export const CHATGPT_HARNESS_CWD = "/home/roomhacker/.chatgpt";
@@ -97,6 +98,7 @@ export class ChatGptAdapter implements HarnessAdapter {
       status: chat.working ? "running" : "idle",
       title: chat.title,
       cwd: this.cwd,
+      hostId: localSessionHostId(),
       lastActivity: chat.updatedAt,
       needsPermission: false,
       meta: {

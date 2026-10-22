@@ -8,7 +8,7 @@ import {
   unwrapEnvelope,
   type OpenCodeEvent,
 } from "agent-resume-mcp";
-import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, HarnessEvent, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SendMessageResult, SetPermissionsOptions, SessionMessagePart, SessionMessageView } from "../types/index.js";
+import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, HarnessEvent, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SendMessageResult, SetPermissionsOptions, SessionMessagePart, SessionMessageView, localSessionHostId } from "../types/index.js";
 import { randomUUID } from "node:crypto";
 import { throwIfAborted } from "../abort-utils.js";
 import { terminalQuotaFailure } from "./quota-failure.js";
@@ -699,6 +699,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
       status: session.status ?? "idle",
       title: session.title,
       cwd: session.cwd,
+      hostId: localSessionHostId(),
       lastActivity: session.lastActivity ?? new Date(0).toISOString(),
       ...(session.model ? { model: session.model } : {}),
       needsPermission: session.needsPermission === true,

@@ -46,6 +46,21 @@ export function defaultCoordinationNotePath(): string {
   return process.env.AGENT_HERDER_COORDINATION_NOTES || resolve(homedir(), ".local", "state", "agent-herder", "coordination-notes.json");
 }
 
+/**
+ * The one normalization point for a machine identity.
+ * Undefined, blank and the loopback aliases mean "the machine this process runs on";
+ * every other value is trimmed and lower-cased so the same machine always has one spelling.
+ */
+export function normalizeHostId(input: string | undefined | null, localHostId: string): string {
+  const local = typeof localHostId === "string" ? localHostId.trim() : "";
+  const raw = typeof input === "string" ? input.trim() : "";
+  if (!raw) return local;
+  const lowered = raw.toLowerCase();
+  if (lowered === "localhost" || lowered === "127.0.0.1" || lowered === "::1" || lowered === "[::1]") return local;
+  if (local && lowered === local.toLowerCase()) return local;
+  return lowered;
+}
+
 export class CoordinationNoteStore {
   private chain: Promise<unknown> = Promise.resolve();
   /** Per receiving session+board: last injected roster signature + when.
@@ -101,7 +116,7 @@ export class CoordinationNoteStore {
       const file = await this.readAndPrune();
       const now = new Date();
       const ttl = boundedTtl(input.ttlSeconds);
-      const hostId = normalizeHostId(input.hostId ?? this.localHostId);
+      const hostId = requireHostId(input.hostId ?? this.localHostId);
       const cwd = normalizeWorkspaceCwd(input.cwd, hostId, this.localHostId);
       const note: CoordinationNote = {
         id: randomUUID(),
@@ -130,7 +145,7 @@ export class CoordinationNoteStore {
   async list(filters: { cwd?: string; hostId?: string; path?: string; authorSessionId?: string; includeExpired?: boolean } = {}): Promise<CoordinationNote[]> {
     return this.serial(async () => {
       const file = filters.includeExpired ? await this.read() : await this.readAndPrune();
-      const hostId = normalizeHostId(filters.hostId ?? this.localHostId);
+      const hostId = requireHostId(filters.hostId ?? this.localHostId);
       const cwd = filters.cwd ? normalizeWorkspaceCwd(filters.cwd, hostId, this.localHostId) : undefined;
       const path = filters.path?.trim();
       return file.notes
@@ -181,7 +196,7 @@ export class CoordinationNoteStore {
   async reservePaths(input: { harness: string; sessionId: string; cwd: string; hostId?: string; paths: string[]; ttlSeconds?: number }): Promise<CoordinationReservationResult> {
     return this.serial(async () => {
       const file = await this.readAndPrune();
-      const hostId = normalizeHostId(input.hostId ?? this.localHostId);
+      const hostId = requireHostId(input.hostId ?? this.localHostId);
       const cwd = normalizeWorkspaceCwd(input.cwd, hostId, this.localHostId);
       this.touchPresence(input.sessionId, hostId, cwd);
       const paths = normalizePathsForCwd(input.paths, cwd, hostId !== this.localHostId).filter(path => !isDeviceSink(path));
@@ -224,7 +239,7 @@ export class CoordinationNoteStore {
   async heartbeatSession(input: { sessionId: string; cwd: string; hostId?: string; ttlSeconds?: number }): Promise<CoordinationNote[]> {
     return this.serial(async () => {
       const file = await this.readAndPrune();
-      const hostId = normalizeHostId(input.hostId ?? this.localHostId);
+      const hostId = requireHostId(input.hostId ?? this.localHostId);
       const cwd = normalizeWorkspaceCwd(input.cwd, hostId, this.localHostId);
       this.touchPresence(input.sessionId, hostId, cwd);
       const ttl = boundedTtl(input.ttlSeconds ?? autoTtlSeconds());
@@ -247,7 +262,7 @@ export class CoordinationNoteStore {
   }
 
   async findConflicts(input: { sessionId: string; cwd: string; hostId?: string; paths: string[] }): Promise<CoordinationConflict[]> {
-    const hostId = normalizeHostId(input.hostId ?? this.localHostId);
+    const hostId = requireHostId(input.hostId ?? this.localHostId);
     const cwd = normalizeWorkspaceCwd(input.cwd, hostId, this.localHostId);
     const paths = normalizePathsForCwd(input.paths, cwd, hostId !== this.localHostId).filter(path => !isDeviceSink(path));
     const notes = await this.list({ hostId, cwd });
@@ -439,7 +454,7 @@ export class CoordinationNoteStore {
       const file = await this.readAndPrune();
       const sessionId = requiredText(input.sessionId, "sessionId", 256);
       const harness = requiredText(input.harness, "harness", 64);
-      const hostId = normalizeHostId(input.hostId ?? this.localHostId);
+      const hostId = requireHostId(input.hostId ?? this.localHostId);
       const cwd = normalizeWorkspaceCwd(input.cwd, hostId, this.localHostId);
       const expiresAt = new Date(Date.now() + boundedTtl(input.ttlSeconds) * 1000).toISOString();
       const declaration = { sessionId, harness, hostId, cwd, expiresAt };
@@ -488,7 +503,7 @@ export class CoordinationNoteStore {
   }
 
   presenceForWorkspace(cwd: string, hostId = this.localHostId): Array<{ sessionId: string; lastSeenAt: string }> {
-    const canonicalHost = normalizeHostId(hostId);
+    const canonicalHost = requireHostId(hostId);
     const canonical = normalizeWorkspaceCwd(cwd, canonicalHost, this.localHostId);
     return this.presenceSnapshot()
       .flatMap((entry) => entry.boards.filter((board) => board.hostId === canonicalHost && sameWorkspace(board.cwd, canonical)).map((board) => ({ sessionId: entry.sessionId, lastSeenAt: board.lastSeenAt })))
@@ -544,10 +559,10 @@ export class CoordinationNoteStore {
   private async read(): Promise<NoteFile> {
     try {
       const parsed = JSON.parse(await readFile(this.filePath, "utf8")) as NoteFile;
-      const notes = (Array.isArray(parsed.notes) ? parsed.notes : []).map((note) => ({ ...note, hostId: normalizeHostId(note.hostId ?? this.localHostId) }));
+      const notes = (Array.isArray(parsed.notes) ? parsed.notes : []).map((note) => ({ ...note, hostId: requireHostId(note.hostId ?? this.localHostId) }));
       const declarations = (Array.isArray(parsed.workspaceDeclarations) ? parsed.workspaceDeclarations : []).flatMap((entry) => {
         try {
-          const hostId = normalizeHostId(entry.hostId);
+          const hostId = requireHostId(entry.hostId);
           const cwd = normalizeWorkspaceCwd(entry.cwd, hostId, this.localHostId);
           const sessionId = requiredText(entry.sessionId, "sessionId", 256);
           const harness = requiredText(entry.harness, "harness", 64);
@@ -606,7 +621,7 @@ function requiredText(value: string, field: string, max: number): string {
   return text;
 }
 function boundedMessage(value: string): string { return requiredText(value, "message", 4000); }
-function normalizeHostId(value: string): string {
+function requireHostId(value: string): string {
   const hostId = requiredText(value, "hostId", 512);
   if (/[\s\x00-\x1f\x7f/\\]/u.test(hostId)) throw new Error("hostId contains invalid characters");
   return hostId;
