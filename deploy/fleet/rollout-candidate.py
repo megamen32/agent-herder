@@ -314,7 +314,8 @@ def main() -> int:
             ssh_port = str(node.get("sshPort", 22))
             for local, remote in ((archive, remote_archive),
                                   (HERE / "rollout-node.py", "/tmp/rollout-node.py"),
-                                  (HERE / "accept-node.py", "/tmp/accept-node.py")):
+                                  (HERE / "accept-node.py", "/tmp/accept-node.py"),
+                                  (HERE / "release-rules.py", "/tmp/release-rules.py")):
                 command = ["scp", "-q", "-P", ssh_port, str(local), f"{host}:{remote}"]
                 copied = subprocess.run(command, capture_output=True, text=True, check=False)
                 if copied.returncode != 0:
