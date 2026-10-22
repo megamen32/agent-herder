@@ -31,6 +31,23 @@ const NAMED_SEARCH_LIMIT = 5000;
 /** The bounded listing used when the server cannot answer a name search. */
 const NAMED_SEARCH_LISTING_LIMIT = 500;
 
+/** A row of the OpenCode 2 session index, as the name search answers it. */
+type NamedSessionRow = { id?: string; title?: string; time?: { archived?: number | boolean } };
+
+/**
+ * True when a raw session row carries an archive timestamp.
+ *
+ * The archive state lives in `time.archived` of the session payload. A row
+ * without that field is treated as live: the field is missing on servers that
+ * do not report it, and a live session must never be dropped because of an
+ * incomplete answer.
+ */
+function isArchivedRow(row: NamedSessionRow): boolean {
+  const archived = row.time?.archived;
+  if (typeof archived === "number") return archived > 0;
+  return archived === true;
+}
+
 /**
  * The URL of the running OpenCode server.
  *
@@ -359,7 +376,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
 
   /** Sessions whose title is exactly the name, or null when the server cannot search. */
   private async searchNamedOnServer(name: string, cwd: string): Promise<AgentSession[] | null> {
-    let rows: Array<{ id?: string; title?: string }>;
+    let rows: NamedSessionRow[];
     try {
       rows = await this.fetchNamedRows(name, cwd);
     } catch {
@@ -371,14 +388,18 @@ export class OpenCodeAdapter implements HarnessAdapter {
     }
     const sessions: AgentSession[] = [];
     for (const row of exact) {
+      // An archived session is not a live one: it cannot serve the name, and
+      // two candidates under one name are an ambiguity the delivery refuses.
+      if (isArchivedRow(row)) continue;
       const detail = await this.client.getSession(row.id!);
-      if (detail) sessions.push(this.toAgentSession(detail));
+      if (!detail || detail.archived) continue;
+      sessions.push(this.toAgentSession(detail));
     }
     return sessions;
   }
 
   /** Raw read of the OpenCode 2 session index for one name. */
-  private async fetchNamedRows(name: string, cwd: string): Promise<Array<{ id?: string; title?: string }>> {
+  private async fetchNamedRows(name: string, cwd: string): Promise<NamedSessionRow[]> {
     const params = new URLSearchParams();
     params.set("directory", cwd);
     params.set("search", name);
@@ -391,7 +412,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
     if (!response.ok) throw new Error(`OpenCode named session search failed: HTTP ${response.status}`);
     const payload = unwrapEnvelope<unknown>(await response.json());
     if (!Array.isArray(payload)) throw new Error("OpenCode named session search returned an unexpected payload");
-    return payload as Array<{ id?: string; title?: string }>;
+    return payload as NamedSessionRow[];
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
@@ -943,7 +964,13 @@ export class OpenCodeAdapter implements HarnessAdapter {
     id: string; title: string; cwd: string; lastActivity?: string; model?: string;
     status?: AgentSession["status"]; parentId?: string; costUsd?: number;
     needsPermission?: boolean; permissionDetails?: { id: string; type: string; description: string; toolName?: string; details?: string };
+    archived?: boolean;
   }): AgentSession {
+    const meta: Record<string, unknown> = {};
+    if (session.parentId) meta.parentID = session.parentId;
+    // An archived session is not a live one: the flag lets the caller refuse
+    // it as a reuse candidate.
+    if (session.archived) meta.archived = true;
     return {
       id: session.id,
       harness: "opencode",
@@ -956,7 +983,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
       needsPermission: session.needsPermission === true,
       ...(session.permissionDetails ? { permissionDetails: session.permissionDetails } : {}),
       ...(session.costUsd !== undefined ? { costUsd: session.costUsd } : {}),
-      ...(session.parentId ? { meta: { parentID: session.parentId } } : {}),
+      ...(Object.keys(meta).length > 0 ? { meta } : {}),
     };
   }
 

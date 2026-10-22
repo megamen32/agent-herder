@@ -449,7 +449,7 @@ function isConfirmedQuotaExhaustion(error: string | undefined): boolean {
 async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string): Promise<AgentSession[]> {
   const identity = namedIdentity(adapter.type, name, cwd);
   const recent = recentNamedSessions.get(identity);
-  if (recent && Date.now() - recent.seenAt < RECENT_NAMED_SESSION_TTL_MS) return [recent.session];
+  if (recent && !isArchivedSession(recent.session) && Date.now() - recent.seenAt < RECENT_NAMED_SESSION_TTL_MS) return [recent.session];
   if (recent) recentNamedSessions.delete(identity);
 
   // A durable binding answers with the session id, so a repeated delivery
@@ -458,11 +458,13 @@ async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string):
   const bound = await namedSessionBindings().get(adapter.type, cwd, name);
   if (bound) {
     const session = await adapter.getSession(bound.sessionId);
-    if (session && session.title === name && await sameCwd(session.cwd, cwd)) {
+    // An archived session is not a live one: a binding to it is stale, and a
+    // stale binding must not keep a dead session in service.
+    if (session && !isArchivedSession(session) && session.title === name && await sameCwd(session.cwd, cwd)) {
       recentNamedSessions.set(identity, { session, seenAt: Date.now() });
       return [session];
     }
-    // The native session is gone or was renamed: the binding is stale.
+    // The native session is gone, was renamed or was archived: the binding is stale.
     await namedSessionBindings().remove(adapter.type, cwd, name);
   }
 
@@ -479,6 +481,11 @@ async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string):
     await rememberNamedSession(adapter, name, cwd, matches[0]!);
   }
   return matches;
+}
+
+/** True when the session was archived natively and cannot serve a delivery. */
+function isArchivedSession(session: AgentSession): boolean {
+  return session.meta?.archived === true;
 }
 
 /** True when the session really works in the requested canonical directory. */
@@ -521,6 +528,15 @@ function rememberNamedDelivery(identity: string, result: NamedSessionResult): vo
  * delivery: the native catalog is still the authority.
  */
 async function rememberNamedSession(adapter: HarnessAdapter, name: string, cwd: string, session: AgentSession): Promise<void> {
+  if (isArchivedSession(session)) {
+    // An archived session must not become the durable binding of the name.
+    try {
+      await namedSessionBindings().remove(adapter.type, cwd, name);
+    } catch (error) {
+      console.error(`[agent-herder] stale named session binding was not removed: ${(error as Error).message}`);
+    }
+    return;
+  }
   recentNamedSessions.set(namedIdentity(adapter.type, name, cwd), { session, seenAt: Date.now() });
   try {
     await namedSessionBindings().put({
