@@ -10,6 +10,7 @@ import { getHumanStopStore } from "./human-stop-store.js";
 import { automaticDeliveryHeld, HUMAN_STOP_MESSAGE } from "./human-stop-actions.js";
 import { isCoordinationActive, sendCurrentTurnOnly, previousCoordinationReceipt } from "./coordination-active-delivery.js";
 import { agentRelayEnvelope } from "./agent-relay-envelope.js";
+import { automationDisarmDecision, sessionWorkKey, AutomationDisarmStore, type AutomationLaunchSource } from "./automation-disarm/index.js";
 
 export type NamedSessionMode = "queue" | "sync";
 
@@ -67,6 +68,26 @@ const recentNamedSessions = new Map<string, { session: AgentSession; seenAt: num
 const recentNamedDeliveries = new Map<string, { result: NamedSessionResult; seenAt: number }>();
 const RECENT_NAMED_SESSION_TTL_MS = 60_000;
 
+/**
+ * The owner-level automation lever, read from the durable owner file.
+ *
+ * The lever is keyed by the logical work, never by a session id, so a repeat
+ * of the same work under a new session id resolves to the same key and stays
+ * refused. Only an automatic run is ever refused: work a person started, and
+ * an explicit creation request for one concrete session, keep running.
+ */
+async function automationDisarmRefusal(
+  normalized: NamedSessionRequest,
+  source: AutomationLaunchSource,
+): Promise<string | undefined> {
+  const decision = await automationDisarmDecision(
+    AutomationDisarmStore.forRuntime(),
+    [sessionWorkKey(normalized.harness, normalized.name, normalized.cwd)],
+    source,
+  );
+  return decision.allowed ? undefined : decision.reason;
+}
+
 export async function createNamedSession(
   adapters: Map<string, HarnessAdapter>,
   request: NamedSessionRequest,
@@ -74,6 +95,8 @@ export async function createNamedSession(
   return withNamedSessionLock(request, async (normalized) => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
     if (sourceError) return failed(normalized, sourceError, "not_attempted");
+    const disarmError = await automationDisarmRefusal(normalized, "explicit");
+    if (disarmError) return failed(normalized, disarmError, "not_attempted");
     const adapter = adapters.get(normalized.harness);
     if (!adapter) return failed(normalized, `Harness '${normalized.harness}' is not configured`);
     if (!adapter.createSession) return failed(normalized, `${adapter.name} does not support session creation`);
@@ -104,6 +127,8 @@ export async function newOrResumeNamedSession(
   const resolved = await withNamedSessionLock<NamedSessionResolution>(request, async (normalized) => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
     if (sourceError) return { kind: "error", result: failed(normalized, sourceError, "not_attempted") };
+    const disarmError = await automationDisarmRefusal(normalized, request.humanRequested === true ? "human" : "automation");
+    if (disarmError) return { kind: "error", result: failed(normalized, disarmError, "not_attempted") };
     const adapter = adapters.get(normalized.harness);
     if (!adapter) return { kind: "error", result: failed(normalized, `Harness '${normalized.harness}' is not configured`, "not_attempted") };
     if (!adapter.createSession) return { kind: "error", result: failed(normalized, `${adapter.name} does not support session creation`, "not_attempted") };
@@ -440,6 +465,8 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
   return withNamedSessionLock(request, async normalized => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
     if (sourceError) return { ...failed(normalized, sourceError, "not_attempted"), activated: false };
+    const disarmError = await automationDisarmRefusal(normalized, request.humanRequested === true ? "human" : "automation");
+    if (disarmError) return { ...failed(normalized, disarmError, "not_attempted"), activated: false };
     const deliveryIdentity = namedDeliveryIdentity(normalized, request.message);
     const priorDelivery = recentNamedDelivery(deliveryIdentity);
     if (priorDelivery) return {...priorDelivery,activated:false};
