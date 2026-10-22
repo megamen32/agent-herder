@@ -27,7 +27,7 @@ interface OpenCodeSessionPayload {
   path?: string;
   directory?: string;
   location?: { directory?: string };
-  time?: { created?: number; updated?: number };
+  time?: { created?: number; updated?: number; archived?: number | boolean };
   model?: string | { providerID?: string; id?: string };
   cost?: number;
   parentID?: string;
@@ -93,6 +93,15 @@ export interface OpenCodePermissionDetails {
 export interface OpenCodeSessionDetail extends HarnessSessionSummary {
   needsPermission: boolean;
   permissionDetails?: OpenCodePermissionDetails;
+  /**
+   * True when the native session was archived.
+   *
+   * An archived session is kept by the server, but it is not a live one: it
+   * must not be offered for reuse. A payload without an archive timestamp is
+   * treated as live, because the field is missing on servers that do not
+   * report it.
+   */
+  archived?: boolean;
 }
 
 export interface OpenCodeRawTranscript {
@@ -455,6 +464,20 @@ export interface OpenCodeCreateRequest {
   fullAccess?: boolean;
 }
 
+/**
+ * True when a session payload carries an archive timestamp.
+ *
+ * The archive state lives in `time.archived` of a session payload. A payload
+ * without that field is treated as live: the field is missing on servers that
+ * do not report it, and a live session must never be dropped because of an
+ * incomplete answer.
+ */
+function isArchivedSession(session: OpenCodeSessionPayload): boolean {
+  const archived = session.time?.archived;
+  if (typeof archived === "number") return archived > 0;
+  return archived === true;
+}
+
 export class OpenCodeClient implements HarnessClient {
   readonly kind = "opencode" as const;
   private baseUrl: string;
@@ -487,6 +510,14 @@ export class OpenCodeClient implements HarnessClient {
   }
 
   async listSessions(options: { cwd?: string; limit?: number } = {}): Promise<HarnessSessionSummary[]> {
+    const sessions = await this.listSessionDetails(options);
+    // An archived session is not a live one: it must never be offered for
+    // reuse, and the listing of a workspace holds only its live sessions.
+    return sessions.filter((session) => !session.archived);
+  }
+
+  /** The whole listing of the server, archived sessions included. */
+  private async listSessionDetails(options: { cwd?: string; limit?: number } = {}): Promise<OpenCodeSessionDetail[]> {
     await this.probeProtocol();
     const params = new URLSearchParams();
     if (options.cwd) params.set("directory", options.cwd);
@@ -506,7 +537,7 @@ export class OpenCodeClient implements HarnessClient {
     try {
       session = await this.fetchJson<OpenCodeSessionPayload>(this.api(`/session/${encodeURIComponent(id)}`));
     } catch {
-      const all = await this.listSessions({ limit: 200 });
+      const all = await this.listSessionDetails({ limit: 200 });
       const found = all.find((item) => item.id === id);
       return found ? { ...found, needsPermission: false } : null;
     }
@@ -1256,6 +1287,7 @@ export class OpenCodeClient implements HarnessClient {
       ...(typeof session.cost === "number" ? { costUsd: session.cost } : {}),
       needsPermission: status?.needsPermission === true || !!status?.permission,
       ...(status?.permission ? { permissionDetails: status.permission } : {}),
+      ...(isArchivedSession(session) ? { archived: true } : {}),
     };
   }
 

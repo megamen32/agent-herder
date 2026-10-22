@@ -10,7 +10,15 @@ import { getHumanStopStore } from "./human-stop-store.js";
 import { automaticDeliveryHeld, HUMAN_STOP_MESSAGE } from "./human-stop-actions.js";
 import { isCoordinationActive, sendCurrentTurnOnly, previousCoordinationReceipt } from "./coordination-active-delivery.js";
 import { agentRelayEnvelope } from "./agent-relay-envelope.js";
-import { automationDisarmDecision, sessionWorkKey, AutomationDisarmStore, type AutomationLaunchSource } from "./automation-disarm/index.js";
+import {
+  automationDisarmDecision,
+  sessionWorkKey,
+  AutomationDisarmStore,
+  AUTOMATION_DISARMED_MESSAGE,
+  AUTOMATION_FORBIDDEN_CODE,
+  type AutomationDisarmDecision,
+  type AutomationLaunchSource,
+} from "./automation-disarm/index.js";
 import { resolveAutopilotStateDir } from "./autopilot/state-dir.js";
 
 export type NamedSessionMode = "queue" | "sync";
@@ -52,7 +60,15 @@ export interface NamedSessionResult {
   nonRetryable?: boolean;
   pending?: boolean;
   /** Definite provider rejection observed before session creation/input admission. */
-  failureCode?: "quota_exhausted";
+  failureCode?: "quota_exhausted" | "automation_disabled";
+  /**
+   * The area of the refusal, as a structured field beside the code.
+   *
+   * The area never travels inside the wording alone: the code says that the
+   * automation is off, and this field says where. The catch-all scope keeps
+   * its own literal, so a reader tells the whole contour from one project.
+   */
+  routingReasonDetail?: string;
   model?: string;
   requestedModel?: string;
   fallbackFrom?: string;
@@ -80,13 +96,35 @@ const RECENT_NAMED_SESSION_TTL_MS = 60_000;
 async function automationDisarmRefusal(
   normalized: NamedSessionRequest,
   source: AutomationLaunchSource,
-): Promise<string | undefined> {
+): Promise<AutomationDisarmDecision | undefined> {
   const decision = await automationDisarmDecision(
     AutomationDisarmStore.forRuntime(),
     [sessionWorkKey(normalized.harness, normalized.name, normalized.cwd)],
     source,
   );
-  return decision.allowed ? undefined : decision.reason;
+  return decision.allowed ? undefined : decision;
+}
+
+/**
+ * The refusal of the owner lever, in the shape of a failed result.
+ *
+ * The refusal carries the stable code of the lever next to the human text, so
+ * a caller can tell "the owner forbids this scope" from "a person stopped
+ * this chat" without reading the text. The area of the refusal travels in
+ * its own field beside the code, so nobody has to parse the wording to learn
+ * where the owner put the lever. A forbidden launch is not a delivery
+ * failure: a retry would be refused the same way, so it is not retryable.
+ */
+function disarmFailed(
+  request: NamedSessionRequest,
+  decision: AutomationDisarmDecision,
+): NamedSessionResult {
+  return failed(request, decision.reason ?? AUTOMATION_DISARMED_MESSAGE, "not_attempted", {
+    failureCode: AUTOMATION_FORBIDDEN_CODE,
+    // The area is a field of its own, next to the code and not inside the text.
+    ...(decision.routingReasonDetail ? { routingReasonDetail: decision.routingReasonDetail } : {}),
+    nonRetryable: true,
+  });
 }
 
 /**
@@ -246,8 +284,8 @@ export async function createNamedSession(
   return withNamedSessionLock(request, async (normalized) => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
     if (sourceError) return failed(normalized, sourceError, "not_attempted");
-    const disarmError = await automationDisarmRefusal(normalized, "explicit");
-    if (disarmError) return failed(normalized, disarmError, "not_attempted");
+    const disarm = await automationDisarmRefusal(normalized, "explicit");
+    if (disarm) return disarmFailed(normalized, disarm);
     const adapter = adapters.get(normalized.harness);
     if (!adapter) return failed(normalized, `Harness '${normalized.harness}' is not configured`);
     if (!adapter.createSession) return failed(normalized, `${adapter.name} does not support session creation`);
@@ -278,8 +316,8 @@ export async function newOrResumeNamedSession(
   const resolved = await withNamedSessionLock<NamedSessionResolution>(request, async (normalized) => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
     if (sourceError) return { kind: "error", result: failed(normalized, sourceError, "not_attempted") };
-    const disarmError = await automationDisarmRefusal(normalized, request.humanRequested === true ? "human" : "automation");
-    if (disarmError) return { kind: "error", result: failed(normalized, disarmError, "not_attempted") };
+    const disarm = await automationDisarmRefusal(normalized, request.humanRequested === true ? "human" : "automation");
+    if (disarm) return { kind: "error", result: disarmFailed(normalized, disarm) };
     const adapter = adapters.get(normalized.harness);
     if (!adapter) return { kind: "error", result: failed(normalized, `Harness '${normalized.harness}' is not configured`, "not_attempted") };
     if (!adapter.createSession) return { kind: "error", result: failed(normalized, `${adapter.name} does not support session creation`, "not_attempted") };
@@ -449,7 +487,7 @@ function isConfirmedQuotaExhaustion(error: string | undefined): boolean {
 async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string): Promise<AgentSession[]> {
   const identity = namedIdentity(adapter.type, name, cwd);
   const recent = recentNamedSessions.get(identity);
-  if (recent && Date.now() - recent.seenAt < RECENT_NAMED_SESSION_TTL_MS) return [recent.session];
+  if (recent && !isArchivedSession(recent.session) && Date.now() - recent.seenAt < RECENT_NAMED_SESSION_TTL_MS) return [recent.session];
   if (recent) recentNamedSessions.delete(identity);
 
   // A durable binding answers with the session id, so a repeated delivery
@@ -458,11 +496,13 @@ async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string):
   const bound = await namedSessionBindings().get(adapter.type, cwd, name);
   if (bound) {
     const session = await adapter.getSession(bound.sessionId);
-    if (session && session.title === name && await sameCwd(session.cwd, cwd)) {
+    // An archived session is not a live one: a binding to it is stale, and a
+    // stale binding must not keep a dead session in service.
+    if (session && !isArchivedSession(session) && session.title === name && await sameCwd(session.cwd, cwd)) {
       recentNamedSessions.set(identity, { session, seenAt: Date.now() });
       return [session];
     }
-    // The native session is gone or was renamed: the binding is stale.
+    // The native session is gone, was renamed or was archived: the binding is stale.
     await namedSessionBindings().remove(adapter.type, cwd, name);
   }
 
@@ -479,6 +519,11 @@ async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string):
     await rememberNamedSession(adapter, name, cwd, matches[0]!);
   }
   return matches;
+}
+
+/** True when the session was archived natively and cannot serve a delivery. */
+function isArchivedSession(session: AgentSession): boolean {
+  return session.meta?.archived === true;
 }
 
 /** True when the session really works in the requested canonical directory. */
@@ -521,6 +566,15 @@ function rememberNamedDelivery(identity: string, result: NamedSessionResult): vo
  * delivery: the native catalog is still the authority.
  */
 async function rememberNamedSession(adapter: HarnessAdapter, name: string, cwd: string, session: AgentSession): Promise<void> {
+  if (isArchivedSession(session)) {
+    // An archived session must not become the durable binding of the name.
+    try {
+      await namedSessionBindings().remove(adapter.type, cwd, name);
+    } catch (error) {
+      console.error(`[agent-herder] stale named session binding was not removed: ${(error as Error).message}`);
+    }
+    return;
+  }
   recentNamedSessions.set(namedIdentity(adapter.type, name, cwd), { session, seenAt: Date.now() });
   try {
     await namedSessionBindings().put({
@@ -633,8 +687,9 @@ function failed(
   request: NamedSessionRequest,
   error: string,
   delivery?: NamedSessionResult["delivery"],
+  extra?: Partial<NamedSessionResult>,
 ): NamedSessionResult {
-  return { ok: false, created: false, error, ...(delivery ? { delivery } : {}), ...request };
+  return { ok: false, created: false, error, ...(delivery ? { delivery } : {}), ...request, ...extra };
 }
 
 export type DeliverActivation = "always" | "if_running" | "defer";
@@ -659,8 +714,8 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
   return withNamedSessionLock(request, async normalized => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
     if (sourceError) return { ...failed(normalized, sourceError, "not_attempted"), activated: false };
-    const disarmError = await automationDisarmRefusal(normalized, request.humanRequested === true ? "human" : "automation");
-    if (disarmError) return { ...failed(normalized, disarmError, "not_attempted"), activated: false };
+    const disarm = await automationDisarmRefusal(normalized, request.humanRequested === true ? "human" : "automation");
+    if (disarm) return { ...disarmFailed(normalized, disarm), activated: false };
     const deliveryIdentity = namedDeliveryIdentity(normalized, request.message);
     const priorDelivery = recentNamedDelivery(deliveryIdentity);
     if (priorDelivery) return {...priorDelivery,activated:false};
