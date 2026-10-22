@@ -261,17 +261,40 @@ def assemble(sha: str, worktree: Path, catalog: Path) -> Path:
     return release
 
 
-def remote_ref_for(sha: str) -> tuple[str, str]:
-    """The published branch this head belongs to, if there is one."""
+# The line the fleet calls canonical: the manifest names it, so the artifact
+# carries the name the owner uses and not the first name in the alphabet.
+# It is a preference, not a filter: the list of every published branch that
+# holds the head travels with the manifest.
+CANONICAL_BRANCHES = ("feat/herder-web-management-20261022",)
+
+
+def remote_ref_for(sha: str) -> tuple[str, list]:
+    """The canonical name of this head and every published branch that holds it."""
     try:
-        refs = run(["git", "-C", str(REPO), "branch", "-r", "--contains", sha]).splitlines()
+        lines = run(["git", "-C", str(REPO), "branch", "-r", "--contains", sha]).splitlines()
     except subprocess.CalledProcessError:
-        return "", ""
-    for ref in refs:
-        name = ref.strip().lstrip("* ").strip()
-        if name.startswith("origin/"):
-            return name, name
-    return "", ""
+        return "", []
+    names = []
+    for line in lines:
+        name = line.strip().lstrip("* ").strip()
+        if name.startswith("origin/") and name not in names:
+            names.append(name)
+    if not names:
+        return "", []
+    exact = []
+    for name in names:
+        try:
+            tip = run(["git", "-C", str(REPO), "rev-parse", name]).strip()
+        except subprocess.CalledProcessError:
+            continue
+        if tip == sha:
+            exact.append(name)
+    pool = exact or names
+    for canonical in CANONICAL_BRANCHES:
+        for name in pool:
+            if name == f"origin/{canonical}":
+                return canonical, names
+    return pool[0][len("origin/"):], names
 
 
 def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path) -> dict:
@@ -282,7 +305,7 @@ def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path
     they are computed again from the release that is on the disk.
     """
     topology = json.loads((HERE / "nodes.json").read_text())
-    branch, ref = remote_ref_for(sha)
+    branch, refs = remote_ref_for(sha)
     dist_manifest = json.loads((release / "dist" / "fleet-deployment-manifest.json").read_text())
     payload = dist_manifest["payload"]
     entries = release_rules.bundle_entries(release, exclude=(BUNDLE_MANIFEST,))
@@ -305,7 +328,8 @@ def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path
         "delivery": 2,
         "sourceSha": sha,
         "sourceBranch": branch or "unknown",
-        "sourceRef": ref or "unknown",
+        "sourceRef": branch or "unknown",
+        "sourceRefs": refs,
         "builtAt": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime()),
         "builder": {
             "script": str(Path(__file__).resolve()),
