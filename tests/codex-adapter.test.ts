@@ -15,7 +15,7 @@ async function makeCodexFixture(root: string, executable: string): Promise<Codex
   await writeFile(join(sessionDir, "rollout-thread-queued-stop.jsonl"), JSON.stringify({
     type: "session_meta", payload: { id: "thread-queued-stop", session_id: "thread-queued-stop", cwd: root },
   }) + "\n");
-  return new CodexAdapter({ codexBin: executable, codexDir });
+  return new CodexAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: executable, codexDir });
 }
 
 describe("Codex CLI queued prompt stop fence", () => {

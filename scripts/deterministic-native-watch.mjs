@@ -91,7 +91,7 @@ async function nativeReader(socketPath, manualControl = false) {
   socket.on("error", fail); socket.on("close", fail);
   await new Promise((resolve, reject) => { socket.once("open", resolve); socket.once("error", reject); socket.once("close", () => reject(new Error("native socket closed"))); });
   const request = (method, params) => {
-    if (!["initialize", "thread/read", "thread/turns/list", "thread/queue/list", ...(manualControl ? ["thread/resume", "turn/start"] : [])].includes(method)) throw new Error("native method gate");
+    if (!["initialize", "account/rateLimits/read", "thread/read", "thread/turns/list", "thread/queue/list", ...(manualControl ? ["thread/resume", "turn/start"] : [])].includes(method)) throw new Error("native method gate");
     const id = nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { pending.delete(id); reject(new Error("native read timed out")); }, 1500);
@@ -114,7 +114,7 @@ async function nativeReader(socketPath, manualControl = false) {
       return { clear: Array.isArray(queue?.data) && queue.data.length === 0 && !queue.nextCursor };
     },
     async resumeSession(id, model) { const result = await request("thread/resume", { threadId: id, model }); return { threadId: result?.thread?.id }; },
-    async startTurn(id, message, model) { const result = await request("turn/start", { threadId: id, input: [{ type: "text", text: message }], model }); return { turnId: result?.turn?.id }; },
+    async startTurn(id, message, model) { const {assertCodexQuota}=await import("../dist/codex-quota-guard.js"); await assertCodexQuota("manual-watch/turn-start",()=>request("account/rateLimits/read",{})); const result = await request("turn/start", { threadId: id, input: [{ type: "text", text: message }], model }); return { turnId: result?.turn?.id }; },
     async dispose() { fail(); socket.close(); },
   };
 }

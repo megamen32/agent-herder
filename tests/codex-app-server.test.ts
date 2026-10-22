@@ -129,7 +129,7 @@ describe("Codex app-server adapter", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-abort-child-"));
     const controller = new AbortController();
     const initGate = deferred<void>();
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, signal: controller.signal });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, cwd: root, signal: controller.signal });
     const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
     const internals = adapter as unknown as { child?: ChildProcessWithoutNullStreams; initializeTransport: () => Promise<void> };
     internals.child = child;
@@ -155,7 +155,7 @@ describe("Codex app-server adapter", () => {
   it("rejects disposal when the final SIGKILL wait cannot confirm owned-child exit", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-unconfirmed-child-"));
     const controller = new AbortController();
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, signal: controller.signal });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, cwd: root, signal: controller.signal });
     const fakeChildEvents = new EventEmitter();
     const child = Object.assign(fakeChildEvents, {
       exitCode: null as number | null,
@@ -207,7 +207,7 @@ describe("Codex app-server adapter", () => {
     });
     const owner = { resolve: async (binding: typeof policy.binding) => ({ kind: "trusted" as const,
       binding, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 10_000 }) };
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, codexDir: nativeHome,
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, cwd: root, codexDir: nativeHome,
       projectRuntimePolicy: policy, integratorSessionBindingStore: store, projectRuntimeOwner: owner,
       signal: controller.signal });
     const calls: string[] = [];
@@ -240,7 +240,7 @@ describe("Codex app-server adapter", () => {
       binding, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 10_000 }) };
     const controller = new AbortController();
     const readiness = deferred<void>();
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, codexDir: nativeHome,
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, cwd: root, codexDir: nativeHome,
       projectRuntimePolicy: policy, integratorSessionBindingStore: store, projectRuntimeOwner: owner,
       signal: controller.signal });
     const calls: string[] = [];
@@ -272,7 +272,7 @@ describe("Codex app-server adapter", () => {
     const progress: Array<Record<string, unknown>> = [];
     const owner = { resolve: async (binding: typeof policy.binding) => ({ kind: "trusted" as const,
       binding, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 10_000 }) };
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, codexDir: nativeHome,
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, cwd: root, codexDir: nativeHome,
       projectRuntimePolicy: policy, integratorSessionBindingStore: store, projectRuntimeOwner: owner,
       signal: controller.signal, onMaterializationProgress: event => progress.push({ ...event }) });
     const calls: string[] = [];
@@ -314,7 +314,7 @@ describe("Codex app-server adapter", () => {
     const runtimeOwner = { resolve: async (binding: typeof policy.binding) => ({
       kind: "trusted" as const, binding, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 10_000,
     }) };
-    const first = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, codexDir: nativeHome,
+    const first = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, cwd: root, codexDir: nativeHome,
       projectRuntimePolicy: policy, projectToolDenyList: { mcpServerIds: [], appIds: [], pluginIds: [] },
       integratorSessionBindingStore: store, projectRuntimeOwner: runtimeOwner,
       onMaterializationProgress: event => progress.push({ ...event }) });
@@ -356,7 +356,7 @@ describe("Codex app-server adapter", () => {
         operationId: policy.binding.attemptId, store, nativeDataHome: nativeHome });
       expect(restoredPolicy.binding.attemptId).toBe(policy.binding.attemptId);
       expect(restoredPolicy.binding.runtimeInstanceId).not.toBe(policy.binding.runtimeInstanceId);
-      const second = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, codexDir: nativeHome,
+      const second = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, cwd: root, codexDir: nativeHome,
         projectRuntimePolicy: restoredPolicy, projectToolDenyList: { mcpServerIds: [], appIds: [], pluginIds: [] },
         integratorSessionBindingStore: store, projectRuntimeOwner: runtimeOwner });
       const secondCalls: Array<{ method: string; params?: Record<string, unknown> }> = [];
@@ -402,7 +402,7 @@ describe("Codex app-server adapter", () => {
       receipt: { state: "unknown", inputId: reservation.attempt.inputId, retryable: false, reason: "test-unknown" } });
     const owner = { resolve: async (binding: typeof policy.binding) => ({ kind: "trusted" as const,
       binding, issuedAtMs: Date.now(), expiresAtMs: Date.now() + 10_000 }) };
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root, codexDir: nativeHome,
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, cwd: root, codexDir: nativeHome,
       projectRuntimePolicy: policy, integratorSessionBindingStore: store, projectRuntimeOwner: owner });
     const calls: string[] = [];
     const internals = adapter as unknown as { ensureReady: () => Promise<void>; assertEffectiveProjectToolIsolation: () => Promise<void>;
@@ -424,16 +424,16 @@ describe("Codex app-server adapter", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-policy-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "test-project", projectRoot: root });
     try {
-      expect(() => new CodexAppServerAdapter({ codexBin: "/unused", projectRuntimePolicy: policy, socketPath: join(root, "shared.sock") }))
+      expect(() => new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/unused", projectRuntimePolicy: policy, socketPath: join(root, "shared.sock") }))
         .toThrow("requires its own app-server process");
-      expect(() => new CodexAppServerAdapter({ codexBin: "/unused", projectRuntimePolicy: policy, args: ["app-server", "--config", "anything=1"] }))
+      expect(() => new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/unused", projectRuntimePolicy: policy, args: ["app-server", "--config", "anything=1"] }))
         .toThrow("requires its own app-server process");
-      expect(() => new CodexAppServerAdapter({ codexBin: "/unused", projectToolDenyList: { mcpServerIds: [], appIds: [], pluginIds: [] } }))
+      expect(() => new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/unused", projectToolDenyList: { mcpServerIds: [], appIds: [], pluginIds: [] } }))
         .toThrow("require a trusted project runtime policy");
-      const scoped = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+      const scoped = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
       expect((scoped as unknown as { processArgs: string[] }).processArgs).toContain("apps._default.enabled=false");
       expect((scoped as unknown as { processArgs: string[] }).processArgs).not.toContain("mcp_servers={}");
-      const denied = new CodexAppServerAdapter({
+      const denied = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),
         codexBin: "codex", projectRuntimePolicy: policy, cwd: root,
         projectToolDenyList: { mcpServerIds: ["mcp-one"], appIds: ["app-one"], pluginIds: ["plugin@market"] },
       });
@@ -451,7 +451,7 @@ describe("Codex app-server adapter", () => {
   it("keeps ephemeral project thread naming in adapter memory without metadata RPCs", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-ephemeral-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "ephemeral-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
     const calls: string[] = [];
     const internals = adapter as unknown as {
       ensureReady: () => Promise<void>;
@@ -484,7 +484,7 @@ describe("Codex app-server adapter", () => {
   it("rejects foreign project resume and recover before native RPC and preserves owned provenance", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-resume-admission-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "resume-admission-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
     const calls: Array<{ method: string; params?: Record<string, unknown> }> = [];
     let readyCalls = 0;
     const internals = adapter as unknown as {
@@ -528,7 +528,7 @@ describe("Codex app-server adapter", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-stale-resume-root-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "stale-resume-root-test", projectRoot: root });
     const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
-    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
     const calls: string[] = [];
     let readyCalls = 0;
     const internals = adapter as unknown as {
@@ -553,7 +553,7 @@ describe("Codex app-server adapter", () => {
   it("refuses foreign project history reads before transcript access, initialization, or RPC", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-foreign-history-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "foreign-history-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
     const calls = { transcript: 0, observation: 0, session: 0, messages: 0, firstUser: 0, ready: 0, rpc: [] as string[] };
     type TranscriptReads = {
       getRawTranscript: (id: string) => Promise<unknown>;
@@ -594,7 +594,7 @@ describe("Codex app-server adapter", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-stale-history-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "stale-history-test", projectRoot: root });
     const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
-    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
     const calls = { transcript: 0, observation: 0, session: 0, messages: 0, firstUser: 0, ready: 0, rpc: [] as string[] };
     type TranscriptReads = {
       getRawTranscript: (id: string) => Promise<unknown>;
@@ -636,7 +636,7 @@ describe("Codex app-server adapter", () => {
   it("permits owned project history reads while the bound root remains current", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-owned-history-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "owned-history-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
     const calls = { transcript: 0, observation: 0, session: 0, messages: 0, firstUser: 0, rpc: [] as string[] };
     type TranscriptReads = {
       getRawTranscript: (id: string) => Promise<unknown>;
@@ -682,7 +682,7 @@ describe("Codex app-server adapter", () => {
   it("scoped cold session listing never delegates to the global transcript index", async () => {
     const root = process.cwd();
     const policy = await createCodexProjectRuntimePolicy({ projectId: "cold-scoped-list-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
     const { calls } = stubScopedCollectionReads(adapter, {
       root,
       ready: false,
@@ -699,7 +699,7 @@ describe("Codex app-server adapter", () => {
   it("scoped ready session listing returns only in-memory owned IDs", async () => {
     const root = process.cwd();
     const policy = await createCodexProjectRuntimePolicy({ projectId: "ready-scoped-list-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
     const { calls, internals } = stubScopedCollectionReads(adapter, {
       root,
       ready: true,
@@ -722,7 +722,7 @@ describe("Codex app-server adapter", () => {
     const root = process.cwd();
     const policy = await createCodexProjectRuntimePolicy({ projectId: "stale-scoped-list-test", projectRoot: root });
     const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
-    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
     const { calls, internals } = stubScopedCollectionReads(adapter, {
       root,
       ready: false,
@@ -741,7 +741,7 @@ describe("Codex app-server adapter", () => {
   it("scoped named lookup ignores foreign index candidates before native reads", async () => {
     const root = process.cwd();
     const policy = await createCodexProjectRuntimePolicy({ projectId: "foreign-scoped-name-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
     const { calls } = stubScopedCollectionReads(adapter, {
       root,
       ready: true,
@@ -759,7 +759,7 @@ describe("Codex app-server adapter", () => {
     const root = process.cwd();
     const policy = await createCodexProjectRuntimePolicy({ projectId: "stale-scoped-name-test", projectRoot: root });
     const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
-    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
     const { calls, internals } = stubScopedCollectionReads(adapter, {
       root,
       ready: true,
@@ -778,7 +778,7 @@ describe("Codex app-server adapter", () => {
   it("scoped collection reads preserve positive access to locally owned threads", async () => {
     const root = process.cwd();
     const policy = await createCodexProjectRuntimePolicy({ projectId: "owned-scoped-collection-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
     const { calls, internals } = stubScopedCollectionReads(adapter, {
       root,
       ready: false,
@@ -813,7 +813,7 @@ describe("Codex app-server adapter", () => {
     let adapter: CodexAppServerAdapter | undefined;
     try {
       const policy = await createCodexProjectRuntimePolicy({ projectId: "current-scope-evidence-test", projectRoot: root });
-      adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+      adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
       const calls = { version: 0, rpc: [] as string[] };
       const internals = adapter as unknown as {
         verifiedNativeHarnessVersion: () => Promise<string | null>;
@@ -854,7 +854,7 @@ describe("Codex app-server adapter", () => {
       expect(calls).toEqual({ version: 1, rpc: [] });
 
       const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
-      const staleAdapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+      const staleAdapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
       const staleInternals = staleAdapter as unknown as {
         verifiedNativeHarnessVersion: () => Promise<string | null>;
         request: (method: string) => Promise<unknown>;
@@ -881,7 +881,7 @@ describe("Codex app-server adapter", () => {
   it("uses fresh native state for an owned ephemeral thread before its first rollout exists", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-ephemeral-state-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "ephemeral-state-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
     const threadId = "ephemeral-before-first-turn";
     const internals = adapter as unknown as {
       ensureReady: () => Promise<void>;
@@ -968,7 +968,7 @@ describe("Codex app-server adapter", () => {
       socket.on("close", () => sockets.delete(socket));
     });
     const listening = new Promise<void>((resolve) => server.listen(socketPath, resolve));
-    const adapter = new CodexAppServerAdapter({
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),
       codexBin: "/definitely/not-started",
       socketPath,
       requestTimeoutMs: 100,
@@ -1078,7 +1078,7 @@ describe("Codex app-server adapter", () => {
     const restoreProcessProbes: Array<() => void> = [];
     try {
       await listening;
-      adapter = new CodexAppServerAdapter({
+      adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),
         codexBin: "/definitely/not-started", socketPath, codexDir, requestTimeoutMs: 1_000,
       });
       // This fixture has no native Codex process: its real socket server and
@@ -1221,7 +1221,7 @@ describe("Codex app-server adapter", () => {
     db.exec("create table threads (id text primary key, is_pinned integer not null default 0)");
     db.prepare("insert into threads (id, is_pinned) values (?, 0)").run("thread-pin");
     db.close();
-    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/definitely/not-started", codexDir });
     try {
       await expect(adapter.setSessionPinned?.("thread-pin", true)).resolves.toMatchObject({ ok: true, sessionId: "thread-pin" });
       const reader = new DatabaseSync(dbPath, { readOnly: true });
@@ -1255,7 +1255,7 @@ describe("Codex app-server adapter", () => {
       "",
     ].join("\n"));
     await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-sparse", updated_at: new Date().toISOString() }) + "\n");
-    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/definitely/not-started", codexDir });
     try {
       const messages = await adapter.getSessionMessages?.("thread-sparse", 50);
       expect(messages?.map((item) => [item.role, item.text])).toEqual([
@@ -1286,7 +1286,7 @@ describe("Codex app-server adapter", () => {
       "",
     ].join("\n"));
     await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-long", updated_at: new Date().toISOString() }) + "\n");
-    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/definitely/not-started", codexDir });
     try {
       const tail = await adapter.getSessionMessages?.("thread-long", 200);
       expect(tail).toHaveLength(50);
@@ -1306,7 +1306,7 @@ describe("Codex app-server adapter", () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-numeric-timestamp-"));
     const previous = process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS;
     process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS = "1";
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       await adapter.init();
       const [session] = await adapter.listSessions();
@@ -1327,7 +1327,7 @@ describe("Codex app-server adapter", () => {
     const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
     process.env.CODEX_APP_SERVER_THREAD_COUNT = "325";
     process.env.CODEX_APP_SERVER_LOG = logPath;
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       await adapter.init();
       const sessions = await adapter.listSessions();
@@ -1357,7 +1357,7 @@ describe("Codex app-server adapter", () => {
     const previousFailure = process.env.CODEX_APP_SERVER_FAIL_LIST_CURSOR;
     process.env.CODEX_APP_SERVER_THREAD_COUNT = "325";
     process.env.CODEX_APP_SERVER_FAIL_LIST_CURSOR = "200";
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       await adapter.init();
       await expect(adapter.listSessions()).rejects.toThrow(/forced thread\/list failure at 200/);
@@ -1392,7 +1392,7 @@ describe("Codex app-server adapter", () => {
       "",
     ].join("\n"));
     await writeFile(join(codexDir, "session_index.jsonl"), JSON.stringify({ id: "thread-1", updated_at: new Date().toISOString() }) + "\n");
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       await adapter.init();
       await expect(adapter.listSessions()).resolves.toMatchObject([{ id: "thread-1", status: "idle" }]);
@@ -1423,7 +1423,7 @@ describe("Codex app-server adapter", () => {
     process.env.CODEX_APP_SERVER_THREAD_STATUS = status;
     if (permissionPending) process.env.CODEX_APP_SERVER_PERMISSION_WAIT = "1";
     else delete process.env.CODEX_APP_SERVER_PERMISSION_WAIT;
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       await adapter.init();
       await expect(adapter.archiveSession("thread-1")).resolves.toMatchObject({ ok: false });
@@ -1457,7 +1457,7 @@ describe("Codex app-server adapter", () => {
     db.prepare("insert into threads values (?, ?, ?, ?, ?, ?, ?, ?)").run("thread-db", rollout, "/workspace-db", "gpt-test", "working", Date.now(), "subagent", "worker");
     db.prepare("insert into thread_spawn_edges values (?, ?)").run("thread-db", "parent-db");
     db.close();
-    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/definitely/not-started", codexDir });
     try {
       await expect(adapter.listSessions()).resolves.toMatchObject([{
         id: "thread-db", status: "idle", cwd: "/workspace-db", model: "gpt-test",
@@ -1491,7 +1491,7 @@ describe("Codex app-server adapter", () => {
     }
     db.prepare("insert into thread_spawn_edges values (?, ?)").run("child-native", "parent-native");
     db.close();
-    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/definitely/not-started", codexDir });
     const lineageAdapter = adapter as unknown as {
       getParent(id: string): Promise<{ id: string; meta?: Record<string, unknown> } | null>;
       listChildren(id: string): Promise<Array<{ id: string; meta?: Record<string, unknown> }>>;
@@ -1510,7 +1510,7 @@ describe("Codex app-server adapter", () => {
 
   it("uses Codex app-server thread/list parentThreadId before local index fallback", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-native-lineage-"));
-    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/definitely/not-started", codexDir });
     const parent = { id: "native-parent", harness: "codex" as const, status: "idle" as const, title: "Parent", cwd: "/workspace", lastActivity: new Date(0).toISOString(), needsPermission: false, meta: {} };
     const child = { id: "native-child", harness: "codex" as const, status: "idle" as const, title: "Child", cwd: "/workspace", lastActivity: new Date(0).toISOString(), needsPermission: false, meta: { parentThreadId: "native-parent" } };
     const archivedChild = { id: "native-archived-child", harness: "codex" as const, status: "idle" as const, title: "Archived child", cwd: "/workspace", lastActivity: new Date(0).toISOString(), needsPermission: false, meta: { parentThreadId: "native-parent", archived: true } };
@@ -1577,7 +1577,7 @@ describe("Codex app-server adapter", () => {
     db.prepare("insert into threads values (?, ?, ?)").run("indexed-child", indexedChildPath, "subagent");
     db.prepare("insert into thread_spawn_edges values (?, ?)").run("indexed-child", "header-parent");
     db.close();
-    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/definitely/not-started", codexDir });
     const lineageAdapter = adapter as unknown as {
       listChildren(id: string): Promise<Array<{ id: string; meta?: Record<string, unknown> }>>;
     };
@@ -1603,7 +1603,7 @@ describe("Codex app-server adapter", () => {
     await writeFile(join(sessionDir, "rollout-thread-lazy.jsonl"), [
       JSON.stringify({ type: "session_meta", payload: { session_id: "thread-lazy", id: "thread-lazy", parent_thread_id: "thread-parent", thread_source: "subagent", agent_role: "worker", cwd: "/workspace" } }),
     ].join("\n") + "\n");
-    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/definitely/not-started", codexDir });
     try {
       const sessions = await adapter.listSessions();
       expect(sessions).toMatchObject([{ id: "thread-lazy", title: "Existing", cwd: "/workspace", meta: { parentThreadId: "thread-parent", threadSource: "subagent", agentRole: "worker" } }]);
@@ -1620,7 +1620,7 @@ describe("Codex app-server adapter", () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-external-running-"));
     const previous = process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD;
     process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD = "thread-1";
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       await adapter.init();
       const session = (await adapter.listSessions()).find((item) => item.id === "thread-1");
@@ -1648,7 +1648,7 @@ describe("Codex app-server adapter", () => {
       JSON.stringify({ type: "session_meta", payload: { id: "thread-1", session_id: "thread-1", cwd: "/workspace" } }),
       JSON.stringify({ type: "event_msg", payload: { type: marker } }),
     ].join("\n") + "\n");
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       await adapter.init();
       const session = (await adapter.listSessions()).find((item) => item.id === "thread-1");
@@ -1677,8 +1677,8 @@ describe("Codex app-server adapter", () => {
       "",
     ].join("\n"));
 
-    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
-    const restartedAdapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/definitely/not-started", codexDir });
+    const restartedAdapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/definitely/not-started", codexDir });
     try {
       for (const current of [adapter, restartedAdapter]) {
         const session = (await current.listSessions()).find((item) => item.id === "thread-stopped");
@@ -1711,7 +1711,7 @@ describe("Codex app-server adapter", () => {
     ].join("\n") + "\n");
     const old = new Date(Date.now() - 10 * 60_000);
     await utimes(rollout, old, old);
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       await adapter.init();
       expect((await adapter.listSessions()).find((item) => item.id === "thread-1")?.status).toBe("idle");
@@ -1731,7 +1731,7 @@ describe("Codex app-server adapter", () => {
       JSON.stringify({ type: "session_meta", payload: { id: "thread-1", session_id: "thread-1", cwd: "/workspace" } }),
       JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
     ].join("\n") + "\n");
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       await adapter.init();
       expect((await adapter.listSessions()).find((item) => item.id === "thread-1")?.status).toBe("idle");
@@ -1756,7 +1756,7 @@ describe("Codex app-server adapter", () => {
       "const fs=require('node:fs');fs.openSync(process.argv[1],'a');process.stdout.write('ready');setInterval(()=>{},1000)",
       rollout,
     ], { argv0: "codex-rollout-holder", stdio: ["ignore", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       await new Promise<void>((resolve, reject) => {
         holder.stdout.once("data", () => resolve());
@@ -1786,7 +1786,7 @@ describe("Codex app-server adapter", () => {
       "const fs=require('node:fs');fs.openSync(process.argv[1],'r');process.stdout.write('ready');setInterval(()=>{},1000)",
       rollout,
     ], { argv0: "codex-rollout-reader", stdio: ["ignore", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       await new Promise<void>((resolve, reject) => {
         holder.stdout.once("data", () => resolve());
@@ -1855,7 +1855,7 @@ describe("Codex app-server adapter", () => {
       JSON.stringify({ type: "session_meta", payload: { session_id: "thread-1", id: "thread-1", parent_thread_id: "thread-parent", thread_source: "subagent", agent_role: "worker", cwd: "/workspace" } }),
       '{"type":"response_item"}',
     ].join("\n") + "\n");
-    const adapter = new CodexAppServerAdapter({
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),
       codexBin: process.execPath,
       args: [fixture],
       modelIds: ["gpt-test", "gpt-test-2"],
@@ -1912,7 +1912,7 @@ describe("Codex app-server adapter", () => {
     const logPath = join(codexDir, "app-server.log");
     const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
     process.env.CODEX_APP_SERVER_LOG = logPath;
-    const adapter = new CodexAppServerAdapter({
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),
       codexBin: process.execPath,
       args: [fixture],
       codexDir,
@@ -1939,7 +1939,7 @@ describe("Codex app-server adapter", () => {
     const previousHumanStopStore = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
     process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(codexDir, "human-stops.json");
     const store = getHumanStopStore();
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     const message = "generated continuation text";
     try {
       await store.hold({ harness: "codex", id: "thread-1" }, {
@@ -1972,7 +1972,7 @@ describe("Codex app-server adapter", () => {
     const logPath = join(codexDir, "app-server.log");
     const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
     process.env.CODEX_APP_SERVER_LOG = logPath;
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       await expect(adapter.sendMessage("thread-1", { message: "first continuation" })).resolves.toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
       await expect(adapter.sendMessage("thread-1", { message: "second continuation" })).resolves.toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
@@ -2002,7 +2002,7 @@ describe("Codex app-server adapter", () => {
       JSON.stringify({ type: "session_meta", payload: { id: "thread-1", session_id: "thread-1", cwd: "/workspace" } }),
       JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
     ].join("\n") + "\n");
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     const events: Array<{ kind: string; sessionId?: string }> = [];
     const unsubscribe = adapter.subscribeEvents((event) => events.push(event));
     try {
@@ -2065,7 +2065,7 @@ describe("Codex app-server adapter", () => {
     const logPath = join(codexDir, "app-server.log");
     const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
     process.env.CODEX_APP_SERVER_LOG = logPath;
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       const [initialized, observed, resumed] = await Promise.all([
         adapter.init().then(() => true),
@@ -2093,7 +2093,7 @@ describe("Codex app-server adapter", () => {
     const previousCompleted = process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID;
     process.env.CODEX_APP_SERVER_TURN_STARTED_ID = "turn-other";
     process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID = "turn-1";
-    const adapter = new CodexAppServerAdapter({
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),
       codexBin: process.execPath,
       args: [fixture],
       codexDir,
@@ -2120,7 +2120,7 @@ describe("Codex app-server adapter", () => {
       type: "session_meta",
       payload: { session_id: "thread-parent", id: "thread-child", parent_thread_id: "thread-parent", thread_source: "subagent", agent_nickname: "worker", cwd: "/workspace" },
     }) + "\n");
-    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/definitely/not-started", codexDir });
     try {
       const sessions = await adapter.listSessions();
       expect(sessions).toMatchObject([{ id: "thread-child", meta: { parentThreadId: "thread-parent", threadSource: "subagent", agentRole: "worker" } }]);
@@ -2131,7 +2131,7 @@ describe("Codex app-server adapter", () => {
   });
   it("finds an exact named thread without reading the persisted transcript archive", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-named-"));
-    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       await adapter.init();
       const created = await adapter.createSession({ name: "Fixture", cwd: "/tmp/codex-fixture" });
@@ -2180,7 +2180,7 @@ describe("Codex app-server adapter", () => {
       });
     });
     const listening = new Promise<void>((resolve) => server.listen(socketPath, resolve));
-    const adapter = new CodexAppServerAdapter({ codexBin: "/definitely/not-started", socketPath, codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/definitely/not-started", socketPath, codexDir });
     try {
       await listening;
       await adapter.init();
@@ -2207,7 +2207,7 @@ describe("Codex app-server adapter", () => {
     const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
     const previousPersistedThread = process.env.CODEX_APP_SERVER_FULL_ACCESS_THREAD;
     process.env.CODEX_APP_SERVER_LOG = logPath;
-    let adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+    let adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
     try {
       await adapter.init();
       const created = await adapter.createSession({ name: "unattended task", cwd: "/tmp/codex-fixture", fullAccess: true });
@@ -2215,7 +2215,7 @@ describe("Codex app-server adapter", () => {
       await adapter.dispose();
 
       process.env.CODEX_APP_SERVER_FULL_ACCESS_THREAD = created.id;
-      adapter = new CodexAppServerAdapter({ codexBin: process.execPath, args: [fixture], codexDir });
+      adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
       await adapter.init();
       expect(await adapter.resumeSession(created.id)).toEqual({ ok: true });
       expect(await adapter.resumeSession(created.id)).toEqual({ ok: true });
@@ -2255,7 +2255,7 @@ describe("Codex app-server adapter", () => {
 it("sends a local image through Codex native turn/start", async () => {
  const codexDir=await mkdtemp(join(tmpdir(),"herder-codex-image-")), logPath=join(codexDir,"rpc.log");
  const previous=process.env.CODEX_APP_SERVER_LOG; process.env.CODEX_APP_SERVER_LOG=logPath;
- const adapter=new CodexAppServerAdapter({codexBin:process.execPath,args:[fixture],codexDir});
+ const adapter=new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),codexBin:process.execPath,args:[fixture],codexDir});
  try {
   await expect(adapter.sendMessage("thread-1",{message:"describe",images:[{id:"a".repeat(64),path:"/protected/image.png",fileName:"figure.png",mimeType:"image/png",bytes:90}]})).resolves.toMatchObject({ok:true,admitted:true});
   const requests=(await readFile(logPath,"utf8")).trim().split("\n").map(line=>JSON.parse(line));
@@ -2264,7 +2264,7 @@ it("sends a local image through Codex native turn/start", async () => {
 });
 
 it("reads only the latest Codex turn summary when this process missed its events", async () => {
- const adapter=new CodexAppServerAdapter({codexBin:"/not-started",socketPath:"/tmp/codex-turn-state-fixture.sock"});
+ const adapter=new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),codexBin:"/not-started",socketPath:"/tmp/codex-turn-state-fixture.sock"});
  const internals=adapter as unknown as {request(method:string,params:unknown):Promise<unknown>;refreshActiveTurnId(id:string):Promise<void>;toSession(thread:unknown):{meta?:Record<string,unknown>}};
  const request=vi.spyOn(internals,"request").mockResolvedValue({data:[{id:"external-turn",status:"completed",completedAt:"2026-10-20T09:59:00.000Z",items:[]}]});
  try {
@@ -2277,7 +2277,7 @@ it("reads only the latest Codex turn summary when this process missed its events
 });
 
 it("marks current Codex turn metadata unavailable instead of retaining a stale turn", async () => {
- const adapter=new CodexAppServerAdapter({codexBin:"/not-started",socketPath:"/tmp/codex-turn-state-fixture.sock"});
+ const adapter=new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),codexBin:"/not-started",socketPath:"/tmp/codex-turn-state-fixture.sock"});
  const internals=adapter as unknown as {request(method:string,params:unknown):Promise<unknown>;refreshActiveTurnId(id:string):Promise<void>;toSession(thread:unknown):{meta?:Record<string,unknown>}};
  const request=vi.spyOn(internals,"request");
  try {
@@ -2292,7 +2292,7 @@ it("marks current Codex turn metadata unavailable instead of retaining a stale t
 });
 
 it("drops summary-only terminal metadata after a failed stdio refresh but retains a live started event", async () => {
- const adapter=new CodexAppServerAdapter({codexBin:"/not-started"});
+ const adapter=new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),codexBin:"/not-started"});
  const internals=adapter as unknown as {
   request(method:string,params:unknown):Promise<unknown>;
   refreshActiveTurnId(id:string):Promise<void>;
@@ -2340,7 +2340,7 @@ it("returns schema-valid lineage errors through the real MCP client", async () =
 });
 
 it("recovers a durable proven pre-send refusal as failed while admitted and ambiguous receipts retain precedence", async () => {
- const adapter=new CodexAppServerAdapter({codexBin:"/not-started"});
+ const adapter=new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),codexBin:"/not-started"});
  const internals=adapter as unknown as {deliveryReceipts:{find(id:string,inputId:string):Promise<unknown>}};
  const find=vi.spyOn(internals.deliveryReceipts,"find");
  try {

@@ -7,6 +7,8 @@ import { open, readFile, readdir, readlink, realpath, stat, writeFile } from "no
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { spawnDetachedWorkload } from "../workload-launcher.js";
+import { assertCodexQuota, CodexQuotaBlockedError, type QuotaReader } from "../codex-quota-guard.js";
+import { readCodexUsage } from "../web/quota-lens.js";
 import { getHumanStopStore } from "../human-stop-store.js";
 
 const execFileAsync = promisify(execFile);
@@ -147,6 +149,7 @@ export class CodexAdapter implements HarnessAdapter {
   readonly name = "Codex CLI";
 
   private codexBin: string;
+  private readonly quotaReader?: QuotaReader;
   private codexDir: string;
   private sessionStatesCache?: Map<string, CodexSessionState>;
   private sessionStatesCachedAt = 0;
@@ -158,7 +161,8 @@ export class CodexAdapter implements HarnessAdapter {
     reason: "not_observed",
   };
 
-  constructor(config: { codexBin?: string; codexDir?: string } = {}) {
+  constructor(config: { codexBin?: string; codexDir?: string; quotaReader?: QuotaReader } = {}) {
+    this.quotaReader = config.quotaReader;
     this.codexBin = config.codexBin || process.env.CODEX_BIN || "codex";
     this.codexDir = config.codexDir || process.env.CODEX_DATA_DIR || join(homedir(), ".codex");
   }
@@ -532,7 +536,11 @@ export class CodexAdapter implements HarnessAdapter {
     }
   }
 
-  async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
+  async readQuota(): Promise<unknown> { return this.quotaReader ? this.quotaReader() : readCodexUsage(join(process.env.CODEX_HOME || this.codexDir, "auth.json")); }
+
+  async sendMessage(id: string, options: SendMessageOptions): Promise<ControlResult> {
+    try { await assertCodexQuota("cli/exec-resume", () => this.readQuota()); }
+    catch (error) { if(error instanceof CodexQuotaBlockedError) return {ok:false,notSubmitted:true,admitted:false,nonRetryable:true,error:error.message}; throw error; }
     const session = await this.getSession(id);
     if (!session) return { ok: false, error: `Session ${id} not found` };
 
