@@ -70,7 +70,7 @@ describe("Notice Place health-launch HTTP admission", () => {
     expect((await post()).status).toBe(401);
     expect(run).not.toHaveBeenCalled();
   });
-  it.each(["other/model", `${model} `, "omniroute/minimax/MiniMax-M3.1-Flash", "omniroute/glm-5.3-flash-minimax-m3.1"])("rejects non-allowlisted exact model %s", async invalid => {
+  it.each(["other/model", `${model} `, "omniroute/minimax/MiniMax-M3.1-Flash", "omniroute/GLM-5.3-Flash-MiniMax-M3.1"])("rejects non-allowlisted exact model %s", async invalid => {
     const { post, run } = await fixture();
     expect((await post({ model: invalid })).status).toBe(400);
     expect(run).not.toHaveBeenCalled();
