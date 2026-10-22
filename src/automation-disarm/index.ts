@@ -22,12 +22,15 @@ export {
   projectWorkKey,
   parseWorkKey,
   normalizeWorkKeyInput,
+  humanWorkKey,
+  humanWorkKeys,
   type WorkKey,
 } from "./work-key.js";
 export {
   setAutomationDisarm,
   defaultFleetPeerIds,
   blocksFleetSuccess,
+  buildAutomationDisarmSummary,
   type FleetDisarmNodeResult,
   type FleetDisarmRequest,
   type FleetDisarmTransport,

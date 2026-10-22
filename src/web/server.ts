@@ -36,16 +36,18 @@ import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAl
 import type { AutoCompactService, AutoCompactStore } from "../autocontinue/auto-compact.js";
 import type { OperatorCohortEnrollmentTarget, OperatorContinuationEnrollmentTarget, SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
 import { AutomationLaunchPolicyStore, LaunchPolicyConflictError, MAX_MODEL_LENGTH, appendLaunchPolicyAudit, findProjectRoute, launchPolicyAuditRecord, validateAutomationLaunchPolicy } from "../automation-launch-policy.js";
-import { AutomationDisarmStore, AUTOMATION_CANNOT_CHANGE_DISARM_REASON, setAutomationDisarm } from "../automation-disarm/index.js";
+import { bearerToken, sameSecret } from "../secret-compare.js";
+import { AutomationDisarmStore, AUTOMATION_CANNOT_CHANGE_DISARM_REASON, buildAutomationDisarmSummary, humanWorkKeys, setAutomationDisarm } from "../automation-disarm/index.js";
 import { DirectFleetDisarmTransport } from "../automation-disarm/direct-transport.js";
-import type { FleetDisarmTransport } from "../automation-disarm/service.js";
+import type { FleetDisarmNodeResult, FleetDisarmTransport } from "../automation-disarm/service.js";
+import type { AutomationDisarmDocument } from "../automation-disarm/state.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { boundedCoordinationContext, coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
 import { sessionTargetRequest } from "../session-target.js";
 import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
 import { getAgentActivityStatistics, withSessionPortfolioStatistics } from "../session-statistics.js";
 import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
 import { toNodeHandler, type NodeMcpRequestHandler } from "@modelcontextprotocol/node";
 import type { AdapterRegistry } from "../adapter-registry.js";
 import type { HerderEventBus } from "../herder-events.js";
@@ -658,10 +660,14 @@ function noticeplaceHealthQuotaPreflight(): ReturnType<typeof createMiniMaxQuota
 }
 
 /** Compare two secrets without leaking their length or prefix through time. */
-function sameSecret(left: string | undefined, right: string | undefined): boolean {
-  if (!left || !right) return false;
-  const digest = (value: string) => createHash("sha256").update(value).digest();
-  return timingSafeEqual(digest(left), digest(right));
+/**
+ * The owner lever moves only for a caller that proves it holds the owner
+ * secret. The token is configured per node, and a node without it fails
+ * closed rather than moving the lever on the word of an unauthenticated
+ * caller.
+ */
+function configuredDisarmToken(): string | undefined {
+  return process.env.AGENT_HERDER_DISARM_TOKEN?.trim() || undefined;
 }
 
 /** How a native session is reached: ordinary, project-scoped or refused. */
@@ -1148,31 +1154,62 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     // The owner-level automation lever. The state is durable, survives a
     // restart and is confirmed across the fleet nodes, so the answer always
     // names every node and what it reported.
+    const disarmStore = automationDisarmStore ?? AutomationDisarmStore.forRuntime();
+    const current = await disarmStore.read();
+    const answer = (ok: boolean, applied: boolean, disarmed: boolean, state: AutomationDisarmDocument, nodes: FleetDisarmNodeResult[], summary: string, error?: string) => sendJson(response, 200, {
+      ok, applied, disarmed,
+      state: { ...state, blockedWorkKeysHuman: humanWorkKeys(state.blockedWorkKeys) },
+      nodes: nodes.map((node) => ({ hostId: node.hostId, status: node.status, reason: node.reason ?? null })),
+      summary,
+      ...(error ? { error } : {}),
+    });
     let body: Record<string, unknown>;
     try {
       body = await readJson(request) as Record<string, unknown>;
     } catch (error) {
-      return sendJson(response, 400, { ok: false, error: `Некорректное тело запроса: ${(error as Error).message}` });
+      return sendJson(response, 400, { ok: false, applied: false, error: `Некорректное тело запроса: ${(error as Error).message}`, nodes: [] });
     }
-    const disarmStore = automationDisarmStore ?? AutomationDisarmStore.forRuntime();
-    // Only an explicit owner action moves the lever. A call from an automatic
-    // context carries no owner marker: it is refused with a reason and
-    // changes nothing.
-    if (body.source !== "owner") {
-      return sendJson(response, 403, {
-        ok: false,
-        applied: false,
-        error: AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
-        reason: AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
-        state: await disarmStore.read(),
+    // A real secret is required. A node without a configured token fails
+    // closed: it never moves the lever for an unauthenticated caller.
+    const expectedToken = configuredDisarmToken();
+    if (!expectedToken) {
+      return sendJson(response, 503, {
+        ok: false, applied: false, disarmed: current.disarmed,
+        state: { ...current, blockedWorkKeysHuman: humanWorkKeys(current.blockedWorkKeys) },
         nodes: [],
+        summary: "the disarm token is not configured on this node — the lever was not moved",
+        error: "AGENT_HERDER_DISARM_TOKEN is not configured on this node",
+        reason: "AGENT_HERDER_DISARM_TOKEN is not configured on this node",
       });
     }
-    if (typeof body.disarmed !== "boolean") return sendJson(response, 400, { ok: false, error: "disarmed must be a boolean" });
+    const presented = bearerToken(request.headers.authorization);
+    if (!presented || !sameSecret(presented, expectedToken)) {
+      return sendJson(response, 401, {
+        ok: false, applied: false, disarmed: current.disarmed,
+        state: { ...current, blockedWorkKeysHuman: humanWorkKeys(current.blockedWorkKeys) },
+        nodes: [],
+        summary: "the disarm token is missing or wrong — the lever was not moved",
+        error: "unauthorized",
+        reason: "unauthorized",
+      });
+    }
+    // The secret proves who asks. The intent marker says what is asked: the
+    // lever moves only for an explicit owner action.
+    if (body.source !== "owner") {
+      return sendJson(response, 403, {
+        ok: false, applied: false, disarmed: current.disarmed,
+        state: { ...current, blockedWorkKeysHuman: humanWorkKeys(current.blockedWorkKeys) },
+        nodes: [],
+        summary: "the request is not an explicit owner action — the lever was not moved",
+        error: AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
+        reason: AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
+      });
+    }
+    if (typeof body.disarmed !== "boolean") return sendJson(response, 400, { ok: false, applied: false, error: "disarmed must be a boolean", nodes: [] });
     let workKeys: string[] | undefined;
     if (body.workKeys !== undefined) {
       if (!Array.isArray(body.workKeys) || body.workKeys.some((key: unknown) => typeof key !== "string")) {
-        return sendJson(response, 400, { ok: false, error: "workKeys must be a list of strings" });
+        return sendJson(response, 400, { ok: false, applied: false, error: "workKeys must be a list of strings", nodes: [] });
       }
       workKeys = body.workKeys as string[];
     }
@@ -1185,15 +1222,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       store: disarmStore,
       transport: automationDisarmTransport ?? new DirectFleetDisarmTransport(),
     });
-    return sendJson(response, result.ok ? 200 : 502, {
-      ok: result.ok,
-      complete: result.complete,
-      applied: result.applied,
-      disarmed: result.disarmed,
-      state: result.state,
-      nodes: result.nodes,
-      ...(result.reason ? { reason: result.reason } : {}),
-    });
+    // The request was processed. Whether the fleet confirmed it is read from
+    // the body, never from the status code.
+    return answer(result.ok, result.applied, result.disarmed, result.state, result.nodes, buildAutomationDisarmSummary(result));
   }
   if (url.pathname === "/api/session-images" && request.method === "POST") {
     if (!sessionImages) return sendJson(response, 503, { error: "Прикрепление изображений недоступно." });

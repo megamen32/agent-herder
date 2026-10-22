@@ -56,6 +56,25 @@ export function normalizeWorkKeyInput(input: string): string | undefined {
   return undefined;
 }
 
+/**
+ * The readable form of a work key.
+ *
+ * The canonical key carries real NUL separators, which is a durable internal
+ * format. The readable form is `harness|каталог|имя` or `project|ключ`, the
+ * same shape the owner may type.
+ */
+export function humanWorkKey(workKey: string): string {
+  const parsed = parseWorkKey(workKey);
+  if (!parsed) return workKey;
+  if (parsed.kind === "project") return `project|${parsed.project}`;
+  return `${parsed.harness}|${parsed.cwd}|${parsed.name}`;
+}
+
+/** The readable form of every work key. */
+export function humanWorkKeys(workKeys: readonly string[]): string[] {
+  return workKeys.map(humanWorkKey);
+}
+
 /** Read a work key back, or `undefined` when the string is not one. */
 export function parseWorkKey(workKey: string): WorkKey | undefined {
   const parts = workKey.split("\u0000");

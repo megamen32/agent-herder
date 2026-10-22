@@ -12,7 +12,11 @@ import type { AutomationDisarmDocument } from "./state.js";
  * as unconfirmed rather than pretending the fleet agreed.
  */
 export class DirectFleetDisarmTransport implements FleetDisarmTransport {
-  constructor(private readonly transport: FleetDirectTransport = new FleetDirectTransport()) {}
+  constructor(
+    private readonly transport: FleetDirectTransport = new FleetDirectTransport(),
+    /** The owner secret of this runtime, carried to the other nodes. */
+    private readonly token: string | undefined = process.env.AGENT_HERDER_DISARM_TOKEN?.trim(),
+  ) {}
 
   async apply(nodeId: string, request: FleetDisarmRequest): Promise<{
     ok: boolean;
@@ -38,11 +42,17 @@ export class DirectFleetDisarmTransport implements FleetDisarmTransport {
         reason: "На ноде herder-рантайм без инструмента automation_disarm: состояние этой ноды не подтверждено.",
       };
     }
+    // The decision is carried with the owner secret of this runtime. A node
+    // that does not hold the same secret refuses it, and the refusal is
+    // reported instead of being taken for a confirmation.
+    if (!this.token) throw new Error("AGENT_HERDER_DISARM_TOKEN is not configured here, so the owner decision cannot be carried to a fleet node.");
     const result = await this.transport.call(target, "automation_disarm", {
       disarmed: request.disarmed,
       workKeys: request.workKeys,
       ...(request.reason ? { reason: request.reason } : {}),
       decisionId: request.decisionId,
+      source: "owner",
+      token: this.token,
     });
     const payload = readToolPayload(result);
     if (!payload) return { ok: false, reason: "Нода не вернула подтверждение состояния." };

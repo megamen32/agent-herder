@@ -94,6 +94,35 @@ export interface SetAutomationDisarmResult {
   reason?: string;
 }
 
+/**
+ * The owner answer, in words.
+ *
+ * The answer says whether the lever was saved, how many nodes confirmed the
+ * admission rule, and which node did not answer or declined. The count is
+ * the number of nodes that confirmed, not the number of fleet nodes. The
+ * executor side of the fleet is a different surface and is not claimed here.
+ */
+export function buildAutomationDisarmSummary(result: {
+  applied: boolean;
+  disarmed: boolean;
+  nodes: readonly FleetDisarmNodeResult[];
+}): string {
+  const parts: string[] = [
+    result.applied
+      ? (result.disarmed ? "new launches forbidden (saved)" : "new launches allowed")
+      : (result.disarmed ? "new launches forbidden (not saved)" : "new launches allowed (not saved)"),
+  ];
+  const confirmed = result.nodes.filter((node) => node.status === "confirmed").length;
+  parts.push(result.disarmed
+    ? `admission forbidden confirmed on ${confirmed} nodes`
+    : `admission allowed confirmed on ${confirmed} nodes`);
+  for (const node of result.nodes) {
+    if (node.status === "unreachable") parts.push(`node ${node.hostId} did not answer — its state is unknown`);
+    else if (node.status === "declined") parts.push(`node ${node.hostId} declined — its state differs`);
+  }
+  return parts.join("; ");
+}
+
 /** The fleet nodes the owner decision reaches by default. */
 export function defaultFleetPeerIds(localHostId: string = hostname()): string[] {
   return directFleetPeers.map((peer) => peer.hostId).filter((hostId) => hostId !== localHostId);
