@@ -47,6 +47,18 @@ export interface ProjectLaunchRoute {
    * allowance and over the global model of the harness.
    */
   deniedModels?: string[];
+  /**
+   * The identifier of the AI profile this project uses.
+   *
+   * A profile is a named entity of the herder settings: it names a harness, a
+   * model and a description, and many projects may share one. The route keeps
+   * the reference and never a second copy of the profile, so a profile is
+   * changed in one place and every project that names it follows.
+   *
+   * The identifier is opaque here: the herder stores it and hands it on, and
+   * the settings layer owns its spelling.
+   */
+  profileId?: string;
 }
 
 export interface AutomationLaunchPolicy {
@@ -386,6 +398,8 @@ export async function appendLaunchPolicyAudit(policyPath: string, record: Launch
 
 const HARNESSES: readonly HarnessType[] = ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
 export const MAX_MODEL_LENGTH = 256;
+/** The length of the reference to an AI profile: an identifier, not a document. */
+export const MAX_PROFILE_ID_LENGTH = 256;
 
 export function validateAutomationLaunchPolicy(value: unknown): AutomationLaunchPolicy {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Launch policy must be an object");
@@ -560,6 +574,16 @@ function validateProjectRoutes(
     if (input.operatorCohortRecovery !== undefined && input.operatorCohortRecovery !== "deny") {
       throw new Error(`Project route '${project}' operatorCohortRecovery must be 'deny' when present`);
     }
+    let profileId: string | undefined;
+    if (input.profileId !== undefined) {
+      if (typeof input.profileId !== "string" || input.profileId.trim().length === 0 || input.profileId.length > MAX_PROFILE_ID_LENGTH) {
+        throw new Error(`Project route '${project}' profileId must be a nonempty string of at most ${MAX_PROFILE_ID_LENGTH} characters`);
+      }
+      if (/[\u0000-\u001f\u007f]/u.test(input.profileId)) {
+        throw new Error(`Project route '${project}' profileId must not contain control characters`);
+      }
+      profileId = input.profileId.trim();
+    }
     const modelLists = validateProjectModelLists(project, {
       allowedModels: input.allowedModels,
       deniedModels: input.deniedModels,
@@ -572,6 +596,7 @@ function validateProjectRoutes(
       ...(input.operatorCohortRecovery === "deny" ? { operatorCohortRecovery: "deny" as const } : {}),
       ...(modelLists.allowedModels ? { allowedModels: modelLists.allowedModels } : {}),
       ...(modelLists.deniedModels ? { deniedModels: modelLists.deniedModels } : {}),
+      ...(profileId ? { profileId } : {}),
     };
   }
   return routes;

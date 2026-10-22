@@ -294,3 +294,35 @@ describe("project route editing", () => {
     expect(ui.updateProjectRoute({ version: 1, allowedHarnesses: [], preferredHarness: "opencode", models: {} }, "/missing", (value) => value).projectRoutes).toEqual({});
   });
 });
+
+describe("the AI profile reference of a project route", () => {
+  it("keeps the reference and never a second copy of the profile", () => {
+    const validated = validateAutomationLaunchPolicy({
+      ...policy,
+      projectRoutes: { "/workspace/x": { harnesses: ["codex"], profileId: "profile-writing-2026" } },
+    });
+    expect(validated.projectRoutes?.["/workspace/x"]?.profileId).toBe("profile-writing-2026");
+    // The route names the profile and nothing of the profile itself.
+    expect(Object.keys(validated.projectRoutes?.["/workspace/x"] ?? {}).sort()).toEqual(["harnesses", "profileId"]);
+  });
+
+  it("leaves the reference out when the project names no profile", () => {
+    const validated = validateAutomationLaunchPolicy({ ...policy, projectRoutes: { "/workspace/x": { harnesses: ["codex"] } } });
+    expect(validated.projectRoutes?.["/workspace/x"]?.profileId).toBeUndefined();
+  });
+
+  it("refuses an empty, a too long and a control-character reference", () => {
+    expect(() => validateAutomationLaunchPolicy({
+      ...policy,
+      projectRoutes: { "/workspace/x": { harnesses: ["codex"], profileId: "  " } },
+    })).toThrow("profileId");
+    expect(() => validateAutomationLaunchPolicy({
+      ...policy,
+      projectRoutes: { "/workspace/x": { harnesses: ["codex"], profileId: "x".repeat(257) } },
+    })).toThrow("profileId");
+    expect(() => validateAutomationLaunchPolicy({
+      ...policy,
+      projectRoutes: { "/workspace/x": { harnesses: ["codex"], profileId: "bad\u0000id" } },
+    })).toThrow("control characters");
+  });
+});
