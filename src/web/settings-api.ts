@@ -7,6 +7,7 @@ import {
   type SettingsAuditRecord,
   type SettingsDifference,
   type SettingsEntity,
+  type SettingsProject,
 } from "./settings-store.js";
 import type { SettingsProfile } from "./settings-catalog.js";
 
@@ -177,6 +178,7 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
     const records = await store.readRecords();
     const etag = await store.documentEtag();
     const profiles = await store.readProfiles();
+    const projects = await store.readProjects();
     const secrets = await store.readSecretLifecycle();
     let launchPolicy: Record<string, unknown>;
     if (!options.launchPolicy) {
@@ -209,6 +211,7 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
       etag,
       records,
       profiles,
+      projects,
       secrets,
       environment: {
         entity: "herder.env",
@@ -283,6 +286,7 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
         const fleetNode = readChanges(body.fleetNode, "fleetNode");
         const secrets = readChanges(body.secrets, "secrets");
         const profiles = readArray(body.profiles, "profiles");
+        const projects = readProjects(body.projects);
         const baseVersions = readBaseVersions(body.baseVersion);
 
         // The precondition of the write is checked before everything else: a
@@ -347,6 +351,7 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
           }
           await store.writeProfiles(current);
         }
+        if (projects) applied.push(...await store.applyProjects(projects));
         respond(response, 200, { ...await readView(), applied, ...(Object.keys(results).length > 0 ? { results } : {}) });
         return true;
       }
@@ -399,6 +404,51 @@ function isScope(value: unknown): value is { kind: "mesh" | "project" | "node" |
   if (!value || typeof value !== "object") return false;
   const kind = (value as { kind?: unknown }).kind;
   return kind === "mesh" || kind === "project" || kind === "node" || kind === "user";
+}
+
+/**
+ * The projects of the request.
+ *
+ * A project names the AI profile it runs in and the object of the Notice
+ * Place that carries its escalation rule. The rule belongs to the center: a
+ * project keeps the reference to the object and never a copy of the rule, so
+ * a rule that arrives here is refused instead of being stored twice.
+ */
+function readProjects(value: unknown): SettingsProject[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value)) throw new Error("projects must be a list of projects");
+  return value.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("a project must be an object");
+    const raw = item as Record<string, unknown>;
+    if (typeof raw.id !== "string" || !raw.id.trim()) throw new Error("the project needs an id");
+    if (typeof raw.name !== "string" || !raw.name.trim()) throw new Error(`the project ${raw.id} needs a name`);
+    if (typeof raw.path !== "string" || !raw.path.trim()) throw new Error(`the project ${raw.id} needs a path`);
+    const project: SettingsProject = { id: raw.id.trim(), name: raw.name.trim(), path: raw.path.trim() };
+    if (raw.profileId !== undefined && raw.profileId !== null && raw.profileId !== "") {
+      if (typeof raw.profileId !== "string") {
+        throw new Error(`the profile of the project ${project.id} must be a reference by id`);
+      }
+      project.profileId = raw.profileId.trim();
+    }
+    if (raw.escalation !== undefined && raw.escalation !== null) {
+      if (typeof raw.escalation !== "object" || Array.isArray(raw.escalation)) {
+        throw new Error(`the escalation of the project ${project.id} must be a reference to the object of the center`);
+      }
+      const escalation = raw.escalation as Record<string, unknown>;
+      const extra = Object.keys(escalation).filter((key) => key !== "noticePlaceObjectId");
+      if (extra.length > 0) {
+        throw new Error(
+          `the rule of the escalation belongs to the center: the project ${project.id} keeps the reference to the object and nothing else`,
+        );
+      }
+      const objectId = escalation.noticePlaceObjectId;
+      if (typeof objectId !== "string" || !objectId.trim()) {
+        throw new Error(`the escalation of the project ${project.id} must name the object of the center by its id`);
+      }
+      project.escalation = { noticePlaceObjectId: objectId.trim() };
+    }
+    return project;
+  });
 }
 
 /** The list of profiles of the request. */

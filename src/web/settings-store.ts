@@ -29,7 +29,31 @@ import { dirname, join } from "node:path";
  */
 
 /** The entities of the settings the owner manages. */
-export type SettingsEntity = "herder.env" | "node-config";
+export type SettingsEntity = "herder.env" | "node-config" | "project";
+
+/**
+ * A project of the mesh.
+ *
+ * A project is a named piece of work: it names the directory it lives in,
+ * the AI profile its tasks run in, and — when the owner wants an escalation —
+ * the object of the Notice Place that carries the rule of the escalation.
+ *
+ * The ownership is split: the profile belongs to the herder, and the rule of
+ * the escalation belongs to the center. The herder keeps the reference to the
+ * object of the center and never a second copy of the rule.
+ */
+export interface SettingsProject {
+  /** The stable id of the project. */
+  id: string;
+  /** The human name of the project. */
+  name: string;
+  /** The working directory of the project. */
+  path: string;
+  /** The AI profile the tasks of the project run in: the profile belongs to the herder. */
+  profileId?: string;
+  /** The object of the Notice Place that carries the escalation rule. */
+  escalation?: { noticePlaceObjectId: string };
+}
 
 /** The environment file of the herder product: the source of truth for the services. */
 export const HERDER_ENV_FILE = join(homedir(), ".config", "agent-herder", "herder.env");
@@ -589,6 +613,19 @@ export class SettingsStore {
   }
 
   /**
+   * Write the projects of the mesh.
+   *
+   * A project names the AI profile it runs in and the object of the Notice
+   * Place that carries its escalation rule. The profile must exist: a project
+   * names a profile of the herder and never carries a copy of it. The
+   * escalation is a reference to the object of the center: the rule itself
+   * belongs to the center and is never copied here.
+   */
+  async applyProjects(changes: SettingsProject[]): Promise<SettingsAuditRecord[]> {
+    return await this.serial(async () => await this.applyProjectsUnsafe(changes.map((project) => ({ project }))));
+  }
+
+  /**
    * Roll a change back to the value the key had before it.
    *
    * The rollback is a change of its own: it is written, audited and it can be
@@ -614,13 +651,91 @@ export class SettingsStore {
       };
       const records = entry.entity === "herder.env"
         ? await this.applyEnvironmentUnsafe({ [entry.key]: restore === undefined ? null : String(restore) }, change)
-        : await this.applyNodeConfigUnsafe({ [entry.key]: restore === undefined ? null : restore }, change);
+        : entry.entity === "node-config"
+          ? await this.applyNodeConfigUnsafe({ [entry.key]: restore === undefined ? null : restore }, change)
+          : await this.applyProjectsUnsafe(
+            restore === undefined ? [{ remove: entry.key }] : [{ project: JSON.parse(String(restore)) as SettingsProject }],
+            change,
+          );
       const record = records[0];
       if (!record) throw new Error("the rollback did not change the setting");
       entry.rolledBackBy = record.id;
       await this.writeHistory(history);
       return record;
     });
+  }
+
+  /** The write of the projects without the lock of the store. */
+  private async applyProjectsUnsafe(
+    changes: Array<{ project?: SettingsProject; remove?: string }>,
+    context?: SettingsChange,
+  ): Promise<SettingsAuditRecord[]> {
+    const profiles = await this.readProfiles();
+    const current = await this.readProjects();
+    const next = [...current];
+    const records: SettingsAuditRecord[] = [];
+    const pendingHistory: SettingsHistoryEntry[] = [];
+    for (const change of changes) {
+      const project = change.project;
+      const id = project?.id ?? change.remove;
+      if (!id || !id.trim()) throw new Error("the project needs an id");
+      if (project?.profileId !== undefined && !profiles.some((profile) => profile.id === project.profileId)) {
+        throw new Error(
+          `the profile ${project.profileId} does not exist: a project names a profile of the herder and never a copy of it`,
+        );
+      }
+      const index = next.findIndex((candidate) => candidate.id === id);
+      const previous = index >= 0 ? next[index] : undefined;
+      const before: SettingsAuditValue = previous === undefined
+        ? { present: false }
+        : { present: true, value: JSON.stringify(previous) };
+      const after: SettingsAuditValue = project === undefined
+        ? { present: false }
+        : { present: true, value: JSON.stringify(project) };
+      const changed = JSON.stringify(previous ?? null) !== JSON.stringify(project ?? null);
+      const historyId = changed && !context?.rollbackOf ? randomUUID() : undefined;
+      const record: SettingsAuditRecord = {
+        id: randomUUID(),
+        at: this.now().toISOString(),
+        actor: this.actor,
+        action: context?.action ?? (project === undefined ? "delete" : "set"),
+        entity: "project",
+        key: id,
+        kind: "value",
+        before,
+        after,
+        changed,
+        ...(historyId ? { historyId } : {}),
+        ...(context?.rollbackOf ? { historyId: context.rollbackOf } : {}),
+      };
+      if (historyId) {
+        pendingHistory.push({
+          id: historyId,
+          at: record.at,
+          actor: this.actor,
+          entity: "project",
+          key: id,
+          kind: "value",
+          previousPresent: previous !== undefined,
+          previousValue: previous === undefined ? undefined : JSON.stringify(previous),
+          auditId: record.id,
+        });
+      }
+      records.push(record);
+      if (project === undefined) {
+        if (index >= 0) next.splice(index, 1);
+      } else if (index >= 0) {
+        next[index] = project;
+      } else {
+        next.push(project);
+      }
+    }
+    // The file of the mesh is written before the journal claims the change:
+    // a refused write leaves no record of a change that never happened.
+    await this.writeProjects(next);
+    for (const entry of pendingHistory) await this.pushHistory(entry);
+    for (const record of records) await this.appendAudit(record);
+    return records;
   }
 
   /** The write of the environment without the lock of the store. */
@@ -858,6 +973,32 @@ export class SettingsStore {
     await rename(temporary, this.profilesPath);
   }
 
+  /** The file of the projects of the mesh. */
+  get projectsPath(): string {
+    return join(this.stateDir, "projects.json");
+  }
+
+  /** The projects of the mesh. */
+  async readProjects(): Promise<SettingsProject[]> {
+    try {
+      const raw = await readFile(this.projectsPath, "utf8");
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) return parsed as SettingsProject[];
+      return [];
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  /** Write the projects of the mesh. */
+  async writeProjects(projects: SettingsProject[]): Promise<void> {
+    await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
+    const temporary = `${this.projectsPath}.${randomUUID()}.tmp`;
+    await writeFile(temporary, `${JSON.stringify(projects, null, 2)}\n`, { mode: 0o600 });
+    await rename(temporary, this.projectsPath);
+  }
+
   /** The metadata of the secrets. */
   async readSecretMeta(): Promise<Record<string, SettingsSecretMeta>> {
     try {
@@ -890,7 +1031,7 @@ export class SettingsStore {
    */
   async documentEtag(): Promise<string> {
     const parts: string[] = [];
-    for (const path of [this.envPath, this.nodeConfigPath, this.profilesPath, this.secretsPath]) {
+    for (const path of [this.envPath, this.nodeConfigPath, this.profilesPath, this.projectsPath, this.secretsPath]) {
       try {
         parts.push(await readFile(path, "utf8"));
       } catch (error) {
@@ -950,6 +1091,7 @@ export class SettingsStore {
     const environment = await this.readEnvironment();
     const nodeConfig = await this.readNodeConfig();
     const profiles = await this.readProfiles();
+    const projects = await this.readProjects();
     const records: SettingsRecord[] = [];
 
     const startTime = Date.now() - Math.round(process.uptime() * 1000);
@@ -1036,6 +1178,31 @@ export class SettingsStore {
         origin: last ? "explicit" : "file",
         code_revision: codeRevision,
         desired: { value: profile, desired_revision: version },
+        confirmed: {
+          applied_revision: version,
+          state: "Применено",
+          appliedAt: last?.at ?? null,
+          applyMode: "к новым задачам",
+          requiresRestart: false,
+        },
+        changedBy: last?.actor ?? null,
+        changedAt: last?.at ?? null,
+        rollbackRef: last?.historyId ?? null,
+      });
+    }
+
+    for (const project of projects) {
+      const version = await this.versionOf("project", project.id);
+      const last = await this.lastChangeOf("project", project.id);
+      records.push({
+        id: `project/${project.id}`,
+        humanName: project.name,
+        action: "Проект меша: его каталог, профиль исполнения и ссылка на правило эскалации.",
+        scope: { kind: "project", path: project.path },
+        source: "override",
+        origin: last ? "explicit" : "file",
+        code_revision: codeRevision,
+        desired: { value: project, desired_revision: version },
         confirmed: {
           applied_revision: version,
           state: "Применено",
