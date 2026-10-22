@@ -29,32 +29,14 @@ export function hasRestrictedProviderToken(modelId: string): boolean {
 }
 
 /**
- * The providers of a paid plan.
+ * The panel does not judge money.
  *
- * A plan is a subscription with its own quota: `minimax-coding-plan/*`,
- * `zai-coding-plan/*`, `account:*` and `builtin:*`. The plan is not a route of
- * Herder: the gateway route of the model is named another way, and the plan
- * runs out of its quota on its own.
+ * A subscription, a free pool and a metered route look the same to the
+ * environment. The panel knows three things and only three: does the
+ * environment confirm this id, is the provider closed by the rule of the
+ * owner, and do the lists of the project allow it. The name of the plan is
+ * part of the id itself, and the owner reads it there.
  */
-const PAID_ROUTE_PATTERN = /(coding-plan|^account:|^builtin:)/i;
-
-/** True when the id belongs to a paid plan. */
-export function isPaidRoute(modelId: string): boolean {
-  return PAID_ROUTE_PATTERN.test(modelId.trim());
-}
-
-/**
- * The patterns of the paid routes.
- *
- * The one-click action of the denied list writes exactly these, so the owner
- * never types a pattern by hand.
- */
-export const PAID_ROUTE_PATTERNS: readonly string[] = [
-  "minimax-coding-plan/*",
-  "zai-coding-plan/*",
-  "account:*",
-  "builtin:*",
-];
 
 /**
  * The id the environment runs for a harness when the project names none.
@@ -81,7 +63,6 @@ export function workingModelId(
 /** What the panel knows about one model id. */
 export type ModelVerdictKind =
   | "works"
-  | "paid"
   | "unconfirmed"
   | "noModels"
   | "missing"
@@ -104,8 +85,6 @@ export type ModelVerdict = {
   /** What to press. Empty when there is nothing to press. */
   action: string;
   tone: ModelVerdictTone;
-  /** True when the model belongs to a paid plan. */
-  paid: boolean;
   /** The id that works instead, when this one does not. */
   worksInstead?: string;
 };
@@ -113,7 +92,6 @@ export type ModelVerdict = {
 /** The status of one model, in the words of the owner. */
 export const MODEL_VERDICT_LABELS: Readonly<Record<ModelVerdictKind, string>> = {
   works: "Работает",
-  paid: "Платный маршрут — среда его не отправляет",
   unconfirmed: "Среда не подтверждает этот id",
   noModels: "Среда не подтвердила ни одной модели",
   missing: "Модель не задана",
@@ -139,7 +117,6 @@ export const BLOCKED_MODEL_ACTION = "Нажмите «Поставить раб�
 export const MODEL_STATUS_WORDS = {
   works: "Работает",
   unconfirmed: "Не подтверждена",
-  paid: "Платная",
   closed: "Закрыта правилом",
 } as const;
 
@@ -167,7 +144,6 @@ export function modelVerdict(input: {
   const restricted = Boolean(input.restricted);
   const working = input.workingModel?.trim()
     || workingModelId(input.harness, { confirmed });
-  const paid = isPaidRoute(model);
   const put = working
     ? `Нажмите «Поставить рабочую модель» — запишется ${working}.`
     : BLOCKED_MODEL_ACTION;
@@ -180,7 +156,6 @@ export function modelVerdict(input: {
       reason: "модель не задана",
       action: "",
       tone: "unknown",
-      paid: false,
     };
   }
   if (restricted && hasRestrictedProviderToken(model)) {
@@ -191,7 +166,6 @@ export function modelVerdict(input: {
       reason: "маршрут ведёт к провайдеру, который закрыт правилом владельца (codex, claude или anthropic)",
       action: put,
       tone: "error",
-      paid: false,
     };
   }
   const deniedEntry = denied.find((entry) => modelMatchesEntry(model, entry));
@@ -203,7 +177,6 @@ export function modelVerdict(input: {
       reason: `модель запрещена в списке проекта (${deniedEntry})`,
       action: `Уберите модель из «Запрещённых моделей» или ${put.charAt(0).toLowerCase()}${put.slice(1)}`,
       tone: "error",
-      paid: false,
     };
   }
   if (allowed.length > 0 && !allowed.some((entry) => modelMatchesEntry(model, entry))) {
@@ -214,7 +187,6 @@ export function modelVerdict(input: {
       reason: "модели нет в списке разрешённых моделей проекта",
       action: `Нажмите «Добавить в разрешённые» или «Поставить рабочую модель» — запишется ${working || "рабочая модель среды"}.`,
       tone: "error",
-      paid: false,
     };
   }
   if (confirmed.length === 0) {
@@ -225,7 +197,6 @@ export function modelVerdict(input: {
       reason: "среда не подтвердила ни одной модели",
       action: "",
       tone: "unknown",
-      paid: false,
     };
   }
   if (!confirmed.includes(model)) {
@@ -238,22 +209,6 @@ export function modelVerdict(input: {
         : "модели нет в списке моделей среды — среда её не подтверждает",
       action: put,
       tone: restricted ? "error" : "warn",
-      paid,
-      worksInstead: working || undefined,
-    };
-  }
-  // The plan of the OpenCode environment is not a route of Herder: the
-  // environment sends the model by the subscription of the plan, and the plan
-  // has its own quota.
-  if (paid && input.harness === "opencode") {
-    return {
-      kind: "paid",
-      label: MODEL_VERDICT_LABELS.paid,
-      detail: `Это платный план (${model.split("/")[0]}). Рабочий маршрут этой среды: ${working || "не найден"}.`,
-      reason: "платный маршрут: среда его не отправляет",
-      action: put,
-      tone: restricted ? "error" : "warn",
-      paid: true,
       worksInstead: working || undefined,
     };
   }
@@ -264,7 +219,6 @@ export function modelVerdict(input: {
     reason: "",
     action: "",
     tone: "ok",
-    paid,
   };
 }
 

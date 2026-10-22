@@ -24,10 +24,8 @@ import { modelRouteLabel } from "./model-route-label.js";
 import {
   MODEL_STATUS_WORDS,
   MODEL_VERDICT_LABELS,
-  PAID_ROUTE_PATTERNS,
   explainModelListError,
   hasRestrictedProviderToken,
-  isPaidRoute,
   modelVerdict,
   unusedListEntries,
   workingModelId,
@@ -410,7 +408,7 @@ export function checkProjectModelRoutes(
     if (verdict.kind === "closed" || verdict.kind === "denied" || verdict.kind === "notAllowed") {
       return { harness, model, state: "blocked", reason: verdict.reason, action: verdict.action, verdict, working };
     }
-    if (verdict.kind === "unconfirmed" || verdict.kind === "paid") {
+    if (verdict.kind === "unconfirmed") {
       return {
         harness,
         model,
@@ -688,17 +686,11 @@ function ProjectModelList({
     <small className="projects-help">{hint}</small>
     {typedWarning && <p className="projects-model-warn" role="status">{typedWarning}</p>}
     <div className="projects-model-actions">
-      {allowed
-        ? <button type="button" aria-label={`Разрешить все модели проекта ${project}`} disabled={disabled}
-          onClick={() => {
-            onChange({ ...route, allowedModels: ["*"] });
-            setNotice("В список «Разрешённые модели» записано «*» — любая модель.");
-          }}>Разрешить все модели</button>
-        : <button type="button" aria-label={`Запретить платные маршруты проекта ${project}`} disabled={disabled}
-          onClick={() => {
-            onChange({ ...route, deniedModels: [...PAID_ROUTE_PATTERNS] });
-            setNotice(`В список «Запрещённые модели» записаны платные маршруты: ${PAID_ROUTE_PATTERNS.join(", ")}.`);
-          }}>Запретить платные маршруты</button>}
+      {allowed && <button type="button" aria-label={`Разрешить все модели проекта ${project}`} disabled={disabled}
+        onClick={() => {
+          onChange({ ...route, allowedModels: ["*"] });
+          setNotice("В список «Разрешённые модели» записано «*» — любая модель.");
+        }}>Разрешить все модели</button>}
       <button type="button" aria-label={`Очистить список «${title}» проекта ${project}`} disabled={disabled || models.length === 0}
         onClick={() => {
           onChange({ ...route, [field]: [] });
@@ -749,7 +741,6 @@ export function ProjectModelPolicyEditor({
   const statusOf = (model: string): string => {
     if (restricted && hasRestrictedProviderToken(model)) return MODEL_STATUS_WORDS.closed;
     if (!knownIds.includes(model)) return MODEL_STATUS_WORDS.unconfirmed;
-    if (isPaidRoute(model)) return MODEL_STATUS_WORDS.paid;
     return MODEL_STATUS_WORDS.works;
   };
 
@@ -759,7 +750,7 @@ export function ProjectModelPolicyEditor({
       <p><strong>«Разрешённые модели»</strong> — фильтр проекта: какие модели проект вообще может запускать. Пустой список — без ограничений. Шаблон с «*» в конце, например <code>omniroute/minimax-*</code>, разрешает всё с таким началом; <code>*</code> разрешает всё.</p>
       <p><strong>«Запрещённые модели»</strong> — что проект не может запускать никогда. Запрет сильнее разрешения.</p>
       <p><strong>Откуда берётся модель.</strong> Сначала модель маршрута проекта, иначе общая модель среды для этой среды.</p>
-      <p><strong>Доступность и платность — свойство среды.</strong> Списки проекта не решают, поедет ли модель: среда отправляет те id, которые подтверждает.</p>
+      <p><strong>Доступность модели — свойство среды.</strong> Панель показывает, подтверждает ли среда этот id, и больше ничего о нём не выдумывает: подписка, бесплатный пул и платный маршрут для среды выглядят одинаково.</p>
       <p><strong>Одно и то же бывает двумя написаниями.</strong> Маршрут <code>omniroute/minimax-combo-m3.1</code> и ключ каталога <code>omniroute/minimax/MiniMax-M3.1-Flash</code> — одна и та же модель. Пишите маршрут: его понимают политика и Herder.</p>
       <p><strong>Как убрать блок.</strong> В карточке блока написано, что заблокировано и почему. Нажмите «Поставить рабочую модель» — панель запишет id, который среда подтверждает.</p>
     </div>
@@ -798,7 +789,7 @@ export function ProjectModelPolicyEditor({
           // lists of the project and the rule of the owner, so it stays for the
           // verdicts of the policy and steps aside for the state of the
           // environment.
-          const environmentKind = verdict.kind === "works" || verdict.kind === "unconfirmed" || verdict.kind === "paid";
+          const environmentKind = verdict.kind === "works" || verdict.kind === "unconfirmed";
           const status = answer === undefined
             ? { label: "проверяем…", tone: "unknown" as const }
             : { label: verdict.label, tone: verdict.tone };
@@ -812,7 +803,6 @@ export function ProjectModelPolicyEditor({
               <code>{effective || "модель не задана"}</code>
               {effective && <small className="projects-model-route">{modelRouteTitle(effective)}</small>}
               {(!environmentKind || !label) && <span className={`projects-status projects-status-${status.tone}`} role="status">{status.label}</span>}
-              {verdict.paid && verdict.kind !== "paid" && <small className="projects-model-route">Платный план</small>}
             </span>
             {label && <span className={`projects-model-state projects-model-state-${label.tone}`}>
               <span className="projects-model-caption">Состояние</span>
@@ -1012,9 +1002,7 @@ export function BlockedModelNotice({
       ? `Модель ${check.model} запрещена в списке проекта — запуск на ней не пройдёт`
       : verdict.kind === "notAllowed"
         ? `Модель ${check.model} не разрешена в проекте — запуск на ней не пройдёт`
-        : verdict.kind === "paid"
-          ? `Модель ${check.model} — платный маршрут, среда его не отправляет`
-          : `Модель ${check.model} среда не подтверждает — запуск на ней не пройдёт`;
+        : `Модель ${check.model} среда не подтверждает — запуск на ней не пройдёт`;
   const working = check.working ?? "";
   return <div className="projects-blocked" role="alert">
     <p className="projects-blocked-title"><span aria-hidden="true">⛔</span> {title}</p>
@@ -1112,7 +1100,7 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
         model: model || "не задана",
         status: answer === undefined
           ? "проверяем…"
-          : verdict.paid ? `${verdict.label} · платный план` : verdict.label,
+          : verdict.label,
         tone: answer === undefined ? "unknown" as const : verdict.tone,
       };
     });

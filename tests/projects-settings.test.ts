@@ -93,7 +93,10 @@ describe("the model rules of the projects screen", () => {
     expect(page).toContain(">Поставить</button>");
     expect(page).toContain("Разрешить все модели");
     expect(page).toContain("Очистить список");
-    expect(page).toContain("Запретить платные маршруты");
+    // The panel does not judge money: it has no way to know, so it must not say.
+    expect(page).not.toContain("Запретить платные маршруты");
+    expect(page).not.toContain("Платный маршрут");
+    expect(page).not.toContain("платный план");
     expect(page).toContain("setRouteModel(route, harness, working)");
     expect(page).toContain("setRouteModel(route, harness, model)");
   });
@@ -104,7 +107,7 @@ describe("the model rules of the projects screen", () => {
     expect(page).toContain("фильтр проекта");
     expect(page).toContain("Запрет сильнее разрешения");
     expect(page).toContain("Откуда берётся модель");
-    expect(page).toContain("Доступность и платность — свойство среды");
+    expect(page).toContain("Доступность модели — свойство среды");
     expect(page).toContain("Как убрать блок");
   });
 

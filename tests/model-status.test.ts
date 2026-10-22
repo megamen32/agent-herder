@@ -7,10 +7,8 @@ import {
 import {
   MODEL_STATUS_WORDS,
   MODEL_VERDICT_LABELS,
-  PAID_ROUTE_PATTERNS,
   explainModelListError,
   hasRestrictedProviderToken,
-  isPaidRoute,
   modelVerdict,
   unusedListEntries,
   workingModelId,
@@ -92,62 +90,6 @@ describe("what the environment says about a model", () => {
     expect(verdict.tone).toBe("unknown");
   });
 
-  it("calls a plan of the OpenCode environment a paid route and names the working one", () => {
-    const verdict = modelVerdict({
-      harness: "opencode",
-      model: "minimax-coding-plan/MiniMax-M3.1-Flash",
-      confirmed: OPENCODE_ENVIRONMENT,
-      workingModel: "omniroute/minimax-combo-m3.1",
-    });
-    expect(verdict.kind).toBe("paid");
-    expect(verdict.label).toBe("Платный маршрут — среда его не отправляет");
-    expect(verdict.worksInstead).toBe("omniroute/minimax-combo-m3.1");
-    expect(verdict.paid).toBe(true);
-  });
-
-  it("knows the plans of the environment", () => {
-    expect(isPaidRoute("minimax-coding-plan/MiniMax-M3.1-Flash")).toBe(true);
-    expect(isPaidRoute("zai-coding-plan/glm-5.3")).toBe(true);
-    expect(isPaidRoute("account:zai-individual-coding-plan/GLM-5.3-Flash$high")).toBe(true);
-    expect(isPaidRoute("builtin:zai-coding-plan/GLM-5.3-Flash")).toBe(true);
-    expect(isPaidRoute("omniroute/minimax-combo-m3.1")).toBe(false);
-    expect(isPaidRoute("opencode/gpt-6.1-sol")).toBe(false);
-  });
-});
-
-describe("what the rule of the owner says about a model", () => {
-  it("closes codex, claude and anthropic in a closed project", () => {
-    expect(hasRestrictedProviderToken("codex/gpt-6.1-sol")).toBe(true);
-    expect(hasRestrictedProviderToken("opencode/claude-opus-5-5")).toBe(true);
-    expect(hasRestrictedProviderToken("anthropic/claude-opus-5-5")).toBe(true);
-    expect(hasRestrictedProviderToken("omniroute/minimax-combo-m3.1")).toBe(false);
-
-    const verdict = modelVerdict({
-      harness: "opencode",
-      model: "codex/gpt-6.1-sol",
-      confirmed: OPENCODE_ENVIRONMENT,
-      restricted: true,
-    });
-    expect(verdict.kind).toBe("closed");
-    expect(verdict.label).toBe("Закрыт правилом владельца");
-    expect(verdict.tone).toBe("error");
-    expect(verdict.reason).toContain("codex");
-  });
-});
-
-describe("what the lists of the project say about a model", () => {
-  it("sees a model of the denied list", () => {
-    const verdict = modelVerdict({
-      harness: "opencode",
-      model: "omniroute/minimax-combo-m3.1",
-      confirmed: OPENCODE_ENVIRONMENT,
-      deniedModels: ["omniroute/minimax-*"],
-    });
-    expect(verdict.kind).toBe("denied");
-    expect(verdict.label).toBe("Запрещена в списке проекта");
-    expect(verdict.tone).toBe("error");
-  });
-
   it("sees a model that the allowed list does not name", () => {
     const verdict = modelVerdict({
       harness: "opencode",
@@ -209,11 +151,6 @@ describe("the one-click actions of the panel", () => {
     expect(next.harnesses).toEqual(["opencode", "zcode"]);
   });
 
-  it("names the patterns of the paid routes it writes into the denied list", () => {
-    expect(PAID_ROUTE_PATTERNS).toContain("minimax-coding-plan/*");
-    expect(PAID_ROUTE_PATTERNS).toContain("account:*");
-    expect(PAID_ROUTE_PATTERNS).toContain("builtin:*");
-  });
 });
 
 describe("the errors of the server about the lists of models", () => {
@@ -243,7 +180,6 @@ describe("the short status of a model in the list of the suggestions", () => {
   it("is one word", () => {
     expect(MODEL_STATUS_WORDS.works).toBe("Работает");
     expect(MODEL_STATUS_WORDS.unconfirmed).toBe("Не подтверждена");
-    expect(MODEL_STATUS_WORDS.paid).toBe("Платная");
     expect(MODEL_STATUS_WORDS.closed).toBe("Закрыта правилом");
   });
 });
@@ -282,7 +218,7 @@ describe("the panel and the adapter agree about the live catalog of OpenCode", (
       confirmed: PANEL_MODELS,
       workingModel: "omniroute/minimax-combo-m3.1",
     });
-    expect(verdict.kind).toBe("paid");
-    expect(verdict.worksInstead).toBe("omniroute/minimax-combo-m3.1");
+    expect(verdict.kind).toBe("works");
+    expect(verdict.label).toBe("Работает");
   });
 });

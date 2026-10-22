@@ -12,14 +12,11 @@
  * anthropic is closed for a project under the restriction.
  */
 
-/** The plans the owner pays for. The owner keeps the paid route as the second one. */
-export const PAID_MODEL_PLANS = ["minimax-coding-plan"] as const;
-
 /** The state of a model of a project, in the words of the owner. */
-export type ModelRouteState = "рабочая" | "устаревшая" | "платная";
+export type ModelRouteState = "рабочая" | "устаревшая";
 
 /** The tone of the state: the colour of the badge, not the word of it. */
-export type ModelRouteTone = "ok" | "stale" | "paid";
+export type ModelRouteTone = "ok" | "stale";
 
 /** The state of a model and the reason of it. */
 export interface ModelRouteLabel {
@@ -41,9 +38,10 @@ export function modelProvider(modelId: string): string {
  * The state of a model of a project.
  *
  * A model the environment does not confirm is stale: its route cannot be
- * verified, and the request of it is refused by the guard of the node. A
- * model of a plan the owner pays for is paid, and the owner keeps it as the
- * second one. The rest is working: the environment confirms it.
+ * verified, and the request of it is refused by the guard of the node. The
+ * rest is working: the environment confirms it. The panel says nothing about
+ * money — a subscription, a free pool and a metered route look the same to
+ * the environment, and the name of the plan is part of the id itself.
  *
  * An empty catalog means the environment has not answered yet, and an unknown
  * state is not a state: the panel says nothing until the catalog is known.
@@ -51,25 +49,15 @@ export function modelProvider(modelId: string): string {
 export function modelRouteLabel(input: {
   modelId: string;
   confirmed: readonly string[];
-  paidPlans?: readonly string[];
 }): ModelRouteLabel | undefined {
   const modelId = input.modelId.trim();
   if (!modelId) return undefined;
   if (input.confirmed.length === 0) return undefined;
-  const paidPlans = input.paidPlans ?? PAID_MODEL_PLANS;
   if (!input.confirmed.includes(modelId)) {
     return {
       state: "устаревшая",
       tone: "stale",
       reason: "Маршрут не верифицируется: id отсутствует в каталоге моделей OpenCode.",
-    };
-  }
-  const provider = modelProvider(modelId);
-  if (provider && paidPlans.includes(provider)) {
-    return {
-      state: "платная",
-      tone: "paid",
-      reason: `Платный маршрут (${provider}). Владелец оставил его вторым.`,
     };
   }
   return {

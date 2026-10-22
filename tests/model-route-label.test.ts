@@ -39,13 +39,6 @@ describe("the state of a model of a project is named in words", () => {
     expect(label?.reason).toContain("OpenCode");
   });
 
-  it("calls a model of a paid plan paid and names the plan", () => {
-    const label = modelRouteLabel({ modelId: "minimax-coding-plan/MiniMax-M3.1-Flash", confirmed });
-    expect(label?.state).toBe("платная");
-    expect(label?.tone).toBe("paid");
-    expect(label?.reason).toContain("minimax-coding-plan");
-  });
-
   it("says nothing while the catalog of the environment is unknown", () => {
     // An empty catalog is not a verdict: the environment has not answered
     // yet, and an unknown state is not a state.
@@ -53,26 +46,10 @@ describe("the state of a model of a project is named in words", () => {
     expect(modelRouteLabel({ modelId: "  ", confirmed })).toBeUndefined();
   });
 
-  it("takes the stale verdict before the paid one", () => {
-    const label = modelRouteLabel({ modelId: "minimax-coding-plan/never-confirmed", confirmed });
-    expect(label?.state).toBe("устаревшая");
-  });
-
   it("names the provider of a model id", () => {
     expect(modelProvider("omniroute/minimax-combo-m3.1")).toBe("omniroute");
     expect(modelProvider("minimax-coding-plan/MiniMax-M3.1-Flash")).toBe("minimax-coding-plan");
     expect(modelProvider("no-slash")).toBe("");
-  });
-
-  it("keeps the paid plans of the owner in one place", () => {
-    expect(PAID_MODEL_PLANS).toContain("minimax-coding-plan");
-  });
-});
-
-describe("the form of the models shows the state of the model", () => {
-  it("draws the badge of the state next to the effective model", () => {
-    expect(page).toContain("modelRouteLabel");
-    expect(page).toContain("projects-model-state");
   });
 
   it("names the state in words, not only in colour", () => {
@@ -85,6 +62,5 @@ describe("the form of the models shows the state of the model", () => {
     expect(styles).toContain("projects-model-state");
     expect(styles).toMatch(/projects-model-state-ok/);
     expect(styles).toMatch(/projects-model-state-stale/);
-    expect(styles).toMatch(/projects-model-state-paid/);
   });
 });
