@@ -312,10 +312,13 @@ def main() -> int:
         if node["kind"] != "owner":
             host = f"{node['sshUser']}@{node['address']}"
             ssh_port = str(node.get("sshPort", 22))
+            # the node side runs this same script: it and the module of the
+            # rules travel with it, or the node has nothing to start
             for local, remote in ((archive, remote_archive),
+                                  (HERE / "rollout-candidate.py", "/tmp/rollout-candidate.py"),
                                   (HERE / "rollout-node.py", "/tmp/rollout-node.py"),
                                   (HERE / "accept-node.py", "/tmp/accept-node.py"),
-                                  (HERE / "release-rules.py", "/tmp/release-rules.py")):
+                                  (HERE / "release_rules.py", "/tmp/release_rules.py")):
                 command = ["scp", "-q", "-P", ssh_port, str(local), f"{host}:{remote}"]
                 copied = subprocess.run(command, capture_output=True, text=True, check=False)
                 if copied.returncode != 0:
