@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { automationDisarmDecision, AUTOMATION_WORK_DISARMED_MESSAGE } from "../src/automation-disarm/guard.js";
+import {
+  automationDisarmDecision,
+  AUTOMATION_DISARMED_MESSAGE,
+  AUTOMATION_WORK_DISARMED_MESSAGE,
+} from "../src/automation-disarm/guard.js";
 import { AutomationDisarmStore } from "../src/automation-disarm/state.js";
 import { projectWorkKey } from "../src/automation-disarm/work-key.js";
 import { AUTOMATION_DISABLED_CODE } from "../src/automation/health-reason-codes.js";
@@ -224,5 +228,138 @@ describe("the owner-level disarm gate of a project launch", () => {
     expect(result.outcome).toBe("no_harness");
     expect(result.routingReasonDetail).toBe("work_disarmed");
     expect(run).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The refusal of the owner-level disarm gate names the blocked work.
+ *
+ * The project of a refusal is the route the policy resolved, but the work the
+ * owner blocked may be the requested one, the one the card names. Without the
+ * blocked key an operator reads a project that is not blocked and cannot tell
+ * what to unblock, so the refusal carries the key of the blocked work in the
+ * readable form an owner may type.
+ */
+describe("the refusal of the owner-level disarm gate names the blocked work", () => {
+  it("names the blocked requested work and keeps the routed project", async () => {
+    // The owner blocked the work of the subdirectory the card names.
+    await blockProject(ROUTE_SUBDIR);
+    const { result, run } = await launch(policyWithAliasedRoute(), ROUTE_SUBDIR, "op-requested-key");
+
+    // The route resolves the subdirectory to its root, so the project of the
+    // refusal is the route one, and it is not the blocked work.
+    expect(result.project).toBe(ROUTE_ROOT);
+    expect(result.project).toBe("/workspace/root");
+    // The refusal names the blocked work in the readable form of a work key.
+    expect(result.routingReasonWorkKey).toBe("project|/workspace/root/sub");
+    // The readable form carries no NUL byte.
+    expect(result.routingReasonWorkKey).not.toContain("\u0000");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("names the blocked route work", async () => {
+    // The owner blocked the work of the root the route governs.
+    await blockProject(ROUTE_ROOT);
+    const { result, run } = await launch(policyWithAliasedRoute(), ROUTE_SUBDIR, "op-routed-key");
+
+    expect(result.project).toBe(ROUTE_ROOT);
+    expect(result.routingReasonWorkKey).toBe("project|/workspace/root");
+    expect(result.routingReasonWorkKey).not.toContain("\u0000");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("keeps the refusal of a forbidden automation without a work key", async () => {
+    // The whole automation is forbidden: no work is blocked, so there is no
+    // blocked key to name.
+    await AutomationDisarmStore.forRuntime().apply({ source: "owner", disarmed: true });
+    const { result, run } = await launch(policyWithAliasedRoute(), ROUTE_SUBDIR, "op-global-disarm");
+
+    expect(result.outcome).toBe("no_harness");
+    expect(result.routingReasonCode).toBe(AUTOMATION_DISABLED_CODE);
+    expect(result.routingReasonDetail).toBe("automation_disarmed");
+    expect(result.routingReasonWorkKey).toBeUndefined();
+    expect(Object.keys(result)).not.toContain("routingReasonWorkKey");
+    // The refusal is the one of before, field for field and in the same order.
+    expect(Object.keys(result)).toEqual([
+      "operationId", "project", "attempts", "outcome", "routingReason", "error",
+      "routingReasonCode", "routingReasonDetail",
+    ]);
+    expect(JSON.parse(JSON.stringify(result))).toEqual({
+      operationId: "op-global-disarm",
+      project: ROUTE_ROOT,
+      attempts: [],
+      outcome: "no_harness",
+      routingReason: AUTOMATION_DISARMED_MESSAGE,
+      error: AUTOMATION_DISARMED_MESSAGE,
+      routingReasonCode: AUTOMATION_DISABLED_CODE,
+      routingReasonDetail: "automation_disarmed",
+    });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("gives no work key to the accepted launch", async () => {
+    const { result, run } = await launch(policyWithAliasedRoute(), ROUTE_SUBDIR, "op-armed-outcome");
+
+    expect(result.outcome).toBe("accepted");
+    expect(result.routingReasonWorkKey).toBeUndefined();
+    expect(Object.keys(result)).not.toContain("routingReasonWorkKey");
+    expect(run).toHaveBeenCalled();
+  });
+
+  it("gives no work key to the reserved attempt in flight", async () => {
+    const log = new ProjectLaunchAttemptLog(join(workDir, "attempts-in-flight.json"));
+    await log.reserve(ROUTE_ROOT, "op-in-flight", {
+      harness: "opencode", reason: "reserved", inputId: "input-in-flight",
+    });
+    const run = acceptingRunner();
+
+    const result = await dispatchProjectLaunch({
+      policy: policyWithAliasedRoute(), project: ROUTE_SUBDIR, cwd: workDir,
+      message: "fix the incident", operationId: "op-in-flight",
+    }, log, run);
+
+    expect(result.outcome).toBe("in_flight");
+    expect(result.routingReasonWorkKey).toBeUndefined();
+    expect(Object.keys(result)).not.toContain("routingReasonWorkKey");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("gives no work key to the refusal of the project policy", async () => {
+    // The harness of the caller is not allowed for an automatic launch.
+    const run = acceptingRunner();
+    const result = await dispatchProjectLaunch({
+      policy: policyWithAliasedRoute(), project: "project-without-a-route", cwd: workDir,
+      message: "fix the incident", harness: "codex", operationId: "op-policy-refusal",
+    }, new ProjectLaunchAttemptLog(join(workDir, "attempts-policy.json")), run);
+
+    expect(result.outcome).toBe("no_harness");
+    expect(result.routingReasonCode).toBe("harness_not_allowed");
+    expect(result.routingReasonWorkKey).toBeUndefined();
+    expect(Object.keys(result)).not.toContain("routingReasonWorkKey");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("gives no work key to the exhausted route", async () => {
+    // The only harness of the route refuses before the admission.
+    const run = vi.fn(async (request: { harness: string; cwd: string; inputId: string }): Promise<NamedSessionResult> => ({
+      ok: false,
+      created: false,
+      harness: request.harness,
+      name: "disarm-project-keys",
+      cwd: request.cwd,
+      inputId: request.inputId,
+      delivery: "not_attempted",
+      error: "the harness refused the launch",
+    }));
+
+    const result = await dispatchProjectLaunch({
+      policy: policyWithAliasedRoute(), project: ROUTE_SUBDIR, cwd: workDir,
+      message: "fix the incident", operationId: "op-exhausted",
+    }, new ProjectLaunchAttemptLog(join(workDir, "attempts-exhausted.json")), run);
+
+    expect(result.outcome).toBe("no_harness");
+    expect(result.routingReasonCode).toBe("no_harness_left");
+    expect(result.routingReasonWorkKey).toBeUndefined();
+    expect(Object.keys(result)).not.toContain("routingReasonWorkKey");
   });
 });

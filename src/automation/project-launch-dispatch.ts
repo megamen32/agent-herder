@@ -17,7 +17,7 @@ import { MINIMAX_SUBSCRIPTION_MODEL, type MiniMaxQuotaPreflight } from "./minima
 import { NOTICEPLACE_HEALTH_AUTHORIZED, validateNoticeplaceHealthLaunch } from "./noticeplace-health-launch.js";
 import { MODEL_NOT_PERMITTED_CODE } from "../project-model-policy.js";
 import { AUTOMATION_DISABLED_CODE } from "./health-reason-codes.js";
-import { automationDisarmDecision, projectWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
+import { automationDisarmDecision, humanWorkKey, projectWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
 
 /**
  * One recorded attempt of one operation on one harness.
@@ -66,6 +66,17 @@ export interface ProjectLaunchDispatchResult extends Partial<NamedSessionResult>
    * blocked work without reading the wording of the reason.
    */
   routingReasonDetail?: string;
+  /**
+   * The logical work key the refusal was made on, in its readable form.
+   *
+   * A refusal of a blocked work names the work that is blocked, so an
+   * operator reads what to unblock and never guesses it from the project: the
+   * project of a refusal is the route the policy resolved, which is not
+   * necessarily the blocked one. The key is the readable form the owner may
+   * type, and it is present only when a work is blocked: a forbidden
+   * automation has no blocked work to name.
+   */
+  routingReasonWorkKey?: string;
   attempts: ProjectLaunchAttempt[];
   outcome: LaunchOutcome | "human_hold" | "in_flight" | "no_harness";
   selectedHarness?: HarnessType;
@@ -231,6 +242,12 @@ export async function dispatchProjectLaunch(
       // The class of the disarm decision itself: the whole automation is
       // forbidden, or this one work is blocked.
       ...(disarm.code ? { routingReasonDetail: disarm.code } : {}),
+      // The blocked work itself, in the readable form of a work key. The gate
+      // checks the requested and the routed name, so the blocked work is not
+      // always the project of the refusal: without the key an operator reads
+      // a project that is not blocked and cannot tell what to unblock. A
+      // forbidden automation has no blocked work and names none.
+      ...(disarm.workKey ? { routingReasonWorkKey: humanWorkKey(disarm.workKey) } : {}),
     };
   }
 
