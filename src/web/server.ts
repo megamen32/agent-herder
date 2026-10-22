@@ -38,6 +38,7 @@ import type { OperatorCohortEnrollmentTarget, OperatorContinuationEnrollmentTarg
 import { AutomationLaunchPolicyStore, LaunchPolicyConflictError, MAX_MODEL_LENGTH, findProjectRoute, validateAutomationLaunchPolicy } from "../automation-launch-policy.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { boundedCoordinationContext, coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
+import { sessionTargetRequest } from "../session-target.js";
 import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
 import { getAgentActivityStatistics, withSessionPortfolioStatistics } from "../session-statistics.js";
 import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
@@ -1761,6 +1762,22 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     return job ? sendJson(response, 200, { job }) : sendJson(response, 404, { error: "Job not found" });
   }
 
+  if (url.pathname === "/api/session-target" && (request.method === "GET" || request.method === "POST")) {
+    const body = request.method === "POST"
+      ? await readJson(request).catch(() => undefined)
+      : { sessionId: url.searchParams.get("sessionId") ?? "", harness: url.searchParams.get("harness") ?? undefined };
+    const outcome = await sessionTargetRequest({
+      adapters,
+      coordination: coordinationNotes,
+      resolveSession: async (harness, sessionId) => {
+        const sessionRoute = await resolveSessionRoute(harness, sessionId);
+        if (sessionRoute.kind === "deny") return undefined;
+        return sessionRoute.kind === "scoped" ? await sessionRoute.adapter.getSession(sessionId) : await supervisor.getSession(harness, sessionId);
+      },
+    }, { method: request.method === "POST" ? "POST" : "GET", body });
+    if (outcome.status === 200 && request.method === "POST") events?.publish({ kind: "sessions", uri: "herder://sessions", action: "changed" });
+    return sendJson(response, outcome.status, outcome.body);
+  }
   if (request.method === "GET" && url.pathname === "/api/sessions") {
     const filters = {
       harness: url.searchParams.get("harness") || undefined,
