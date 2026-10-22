@@ -153,7 +153,8 @@ describe("an unusable launch plan in the durable file", () => {
   });
 });
 
-describe("the recovery of the observation after a restart", () => {  const candidate = (overrides: Partial<NoticeplaceHealthRecoveryCandidate> = {}): NoticeplaceHealthRecoveryCandidate => ({
+describe("the recovery of the observation after a restart", () => {
+  const candidate = (overrides: Partial<NoticeplaceHealthRecoveryCandidate> = {}): NoticeplaceHealthRecoveryCandidate => ({
     harness: "opencode",
     sessionId: "ses_recovered",
     cwd: "/work",
