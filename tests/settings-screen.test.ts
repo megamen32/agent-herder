@@ -110,6 +110,17 @@ describe("the form of the settings", () => {
     expect(currentRunsNotice({ applied: true, reason: "" })).toBeNull();
   });
 
+  it("asks the server to move the lever of the owner and never takes its token", async () => {
+    const source = await readFile(join(process.cwd(), "src", "web-ui", "settings", "stop-control.tsx"), "utf8");
+    // The token of the lever stays on the server.
+    expect(source).not.toContain("AGENT_HERDER_DISARM_TOKEN");
+    expect(source).not.toContain("disarmToken");
+    // The flag of a human request is not an authority.
+    expect(source).not.toContain("humanRequested");
+    // The panel asks the server to move the lever on behalf of the owner.
+    expect(source).toContain("/api/settings/automation/disarm");
+  });
+
   it("starts no executor of the herder and keeps no secret in the browser", async () => {
     const root = join(process.cwd(), "src", "web-ui", "settings");
     const sources = await Promise.all([
