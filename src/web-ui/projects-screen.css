@@ -257,6 +257,28 @@
   border: 1px solid var(--border-2);
   vertical-align: -3px;
 }
+/* The state of a model of a project: the word of it and the tone of it.
+   The word carries the meaning, so the badge is readable without the colour. */
+.projects-model-state {
+  display: grid;
+  gap: 2px;
+  min-width: 190px;
+}
+
+.projects-model-state strong {
+  font-weight: 600;
+}
+
+.projects-model-state-reason {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+}
+
+.projects-model-state-ok strong { color: var(--status-done); }
+.projects-model-state-stale strong { color: var(--status-error); }
+.projects-model-state-paid strong { color: var(--status-waiting); }
+
 .projects-model-badge-allowed { border-color: var(--status-done); color: var(--status-done); }
 .projects-model-badge-denied { border-color: var(--status-error); color: var(--status-error); }
 .projects-model-entry {

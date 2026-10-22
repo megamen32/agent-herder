@@ -20,6 +20,7 @@ import {
   type ProjectLaunchRoute,
 } from "./launch-policy-settings.js";
 import { conflictingModelEntries, routeModelViolation } from "../project-model-gate.js";
+import { modelRouteLabel } from "./model-route-label.js";
 import { machineName } from "./fleet/machine-labels.js";
 
 /**
@@ -686,6 +687,7 @@ export function ProjectModelPolicyEditor({
       <ul className="projects-model-list" aria-label={`Эффективная модель по средам маршрута проекта ${project}`}>
         {route.harnesses.map((harness) => {
           const effective = route.models?.[harness] ?? policy.models[harness];
+          const label = effective ? modelRouteLabel({ modelId: effective, confirmed: catalog[harness] ?? [] }) : undefined;
           const violation = routeModelViolation(route, effective);
           const check = checks?.find((item) => item.harness === harness);
           return <li className={`projects-model-item projects-effective${violation ? " projects-model-item-warn" : ""}`} key={harness}>
@@ -698,6 +700,11 @@ export function ProjectModelPolicyEditor({
               <code>{effective || "модель не задана"}</code>
               {effective && <small className="projects-model-route">{modelRouteTitle(effective)}</small>}
             </span>
+            {label && <span className={`projects-model-state projects-model-state-${label.tone}`}>
+              <span className="projects-model-caption">Состояние</span>
+              <strong>{label.state}</strong>
+              <small className="projects-model-state-reason">{label.reason}</small>
+            </span>}
             {violation === "denied" && <span className="projects-model-warn" role="status">Модель запрещена в этом проекте: среда перестанет использоваться.</span>}
             {violation === "not_allowed" && <span className="projects-model-warn" role="status">Модель не разрешена в этом проекте: среда перестанет использоваться.</span>}
             {check?.state === "unconfirmed" && <span className="projects-model-warn" role="status">{check.reason}.</span>}
