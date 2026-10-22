@@ -9,7 +9,7 @@
 
 export type SettingsScopeKind = "mesh" | "project" | "node" | "user";
 export type SettingsApplyMode = "сразу" | "к новым задачам" | "после перезапуска";
-export type SettingsApplyState = "Записано" | "Применяется" | "Применено" | "Применено частично" | "Ошибка";
+export type SettingsApplyState = "Записано" | "Применяется" | "Применено" | "Применено частично" | "Узел недоступен";
 export type SettingsEntity = "herder.env" | "node-config";
 
 export type SettingsRecord = {
@@ -192,6 +192,42 @@ export async function loadSettings(): Promise<SettingsView> {
 export async function loadSettingsAudit(limit = 100): Promise<SettingsAuditRecord[]> {
   const body = await requestJson<{ records: SettingsAuditRecord[] }>(`/api/settings/audit?limit=${limit}`);
   return body.records;
+}
+
+/** The state of one node of the fleet, in the words of the owner. */
+export type SettingsConfirmationStatus = "подтвердил" | "не подтвердил" | "расходится";
+
+/** One node of the fleet, as the owner reads it. */
+export type SettingsConfirmationNode = {
+  hostId: string;
+  status: SettingsConfirmationStatus;
+  appliedRevision: string | null;
+  confirmedAt: string | null;
+  reason: string | null;
+};
+
+/** The confirmation of the fleet, as the owner reads it. */
+export type SettingsFleetConfirmation = {
+  ok: boolean;
+  desiredRevision: string | null;
+  state: SettingsApplyState;
+  confirmed: number;
+  total: number;
+  unconfirmed: string[];
+  nodes: SettingsConfirmationNode[];
+  source: string;
+  checkedAt: string;
+  error?: string;
+};
+
+/**
+ * The confirmation of the fleet.
+ *
+ * The poll reaches the other nodes of the fleet, so the owner asks for it and
+ * it is not read with every view of the settings.
+ */
+export async function loadFleetConfirmation(): Promise<SettingsFleetConfirmation> {
+  return await requestJson<SettingsFleetConfirmation>("/api/settings/fleet-confirmation");
 }
 
 /**
