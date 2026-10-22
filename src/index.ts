@@ -46,6 +46,7 @@ import { boundResumeReceiptQuery, createWebServer, resumeSelectedTarget } from "
 import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "./resume-transport.js";
 import { createConfiguredFleetApiHandler, createManagedFleetHttpGuard, isManagedFleetNode } from "./web/fleet-wiring.js";
 import { registerFleetNodeTools } from "./mesh/fleet-node.js";
+import type { ProjectModelPolicyState } from "./project-model-delivery-gate.js";
 import { createConfiguredBrowserWakeService } from "./browser-wake.js";
 import { coordinationNotes } from "./coordination-notes.js";
 import { herderEvents, type HerderEventBus } from "./herder-events.js";
@@ -157,6 +158,15 @@ const integratorFleetRuntime = new IntegratorFleetRuntime({ policyStore: automat
 const readLaunchPolicyForGate = async () => {
   const loaded = await automationLaunchPolicyStore.load();
   return loaded.kind === "valid" ? loaded.policy : undefined;
+};
+// A delivery may not start work in a project that restricts models, so the
+// delivery gate needs the state of the document and not only its content: an
+// unreadable policy is not a permission.
+const readLaunchPolicyStateForGate = async (): Promise<ProjectModelPolicyState> => {
+  const loaded = await automationLaunchPolicyStore.load().catch((error: unknown) => ({ kind: "invalid" as const, error: error instanceof Error ? error.message : String(error) }));
+  if (loaded.kind === "valid") return { kind: "valid", policy: loaded.policy };
+  if (loaded.kind === "absent") return { kind: "absent" };
+  return { kind: "invalid", error: loaded.error };
 };
 const humanStopStore = getHumanStopStore();
 const herderGenerationId=`process-${process.pid}-${randomUUID()}`;
@@ -583,11 +593,11 @@ function registerTools(
     queryReceipt: humanResumeQuery ?? ((request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters)),
   });
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
-  registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate });
+  registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate });
   registerRagTools(server, adapters);
   registerResourceOwnershipTools(server);
   const workspaceTransport = new FleetDirectTransport(directFleetPeers.filter(peer => peer.hostId !== "MacBook-Pro-User.local"));
-  registerHarnessMeshTools(server, { adapters, gptadmin: workspaceTransport });
+  registerHarnessMeshTools(server, { adapters, gptadmin: workspaceTransport, deliveryPolicy: readLaunchPolicyStateForGate });
   registerWorkspaceTools(server, { transport: workspaceTransport });
   registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate });
 }

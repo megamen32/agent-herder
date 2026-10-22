@@ -176,6 +176,7 @@ export const SetSessionTargetResultSchema = z.object({
 export const StopAgentSchema = z.object({
   sessionId: z.string().describe("Session ID to stop."),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().describe("Harness (optional if ID is unique)."),
+  hostId: z.string().trim().min(1).max(512).optional().describe("Machine that owns the session. Omitted stops a session of this machine; another machine is stopped through its own native session."),
 });
 
 export const RespondPermissionSchema = z.object({

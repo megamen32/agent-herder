@@ -7,8 +7,10 @@ import type { HarnessType } from "./types/common.js";
 import {
   canonicalProjectKey,
   findModelPolicyRoute,
+  findProjectModelRoute,
   modelPermittedForRoute,
   validateProjectModelLists,
+  type ProjectRouteResolution,
 } from "./project-model-policy.js";
 
 export { canonicalProjectKey } from "./project-model-policy.js";
@@ -140,22 +142,49 @@ export function resolveProjectLaunch(
   return { kind: "launch", harness, ...(model ? { model } : {}), mode: "handoff", sessionId: active.sessionId, fromHarness: active.harness };
 }
 
-/** Find the route of a project by canonical path, declared alias or case-folded key. */
+/**
+ * Find the route that governs a project.
+ *
+ * The lookup is the one rule of `findProjectModelRoute`: the exact canonical
+ * folder of the route, its case variant, a declared alias and finally the
+ * longest route root that contains the project. A directory inside a routed
+ * project is therefore governed by that project, exactly as the model gate
+ * judges it.
+ */
 export function findProjectRoute(
   policy: AutomationLaunchPolicy,
   project: string,
 ): ProjectLaunchRoute | undefined {
-  const routes = policy.projectRoutes;
-  if (!routes) return undefined;
-  const key = canonicalProjectKey(project);
-  const exact = routes[key];
-  if (exact) return exact;
-  const folded = foldProjectKey(key);
-  for (const [candidate, route] of Object.entries(routes)) {
-    if (foldProjectKey(candidate) === folded) return route;
-    if (route.aliases?.some((alias) => foldProjectKey(alias) === folded)) return route;
-  }
-  return undefined;
+  return findProjectModelRoute(policy.projectRoutes, project)?.route;
+}
+
+/**
+ * The canonical key of the route that governs a project.
+ *
+ * The key is the path the route is configured under, so a project root, its
+ * case variant, an alias and a directory inside the project all share one
+ * key and therefore one authority.
+ */
+export function findProjectRouteKey(
+  policy: AutomationLaunchPolicy,
+  project: string,
+): string | undefined {
+  return findProjectModelRoute(policy.projectRoutes, project)?.routeKey;
+}
+
+/**
+ * The route that governs a project, with the key it is configured under and
+ * the kind of the match.
+ *
+ * The kind tells the caller how the project was found: `exact`, `case` or
+ * `alias` name the project itself, `nested` means the project lies inside the
+ * root of the route and that the root is the working folder of the launch.
+ */
+export function findProjectRouteMatch(
+  policy: AutomationLaunchPolicy,
+  project: string,
+): ProjectRouteResolution<ProjectLaunchRoute> | undefined {
+  return findProjectModelRoute(policy.projectRoutes, project);
 }
 
 /** Historical operator enrollment has stricter scope than ordinary launch routing. */

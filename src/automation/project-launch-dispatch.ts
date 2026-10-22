@@ -5,6 +5,7 @@ import lockfile from "proper-lockfile";
 
 import {
   canonicalProjectKey,
+  findProjectRouteKey,
   resolveProjectLaunch,
   type AutomationLaunchPolicy,
   type LaunchOutcome,
@@ -484,17 +485,16 @@ export function attemptKeyOf(policy: AutomationLaunchPolicy, project: string): s
   return routeKeyOf(policy, project) ?? canonicalProjectKey(project);
 }
 
-/** The canonical route key of a project, when one is configured. */
+/**
+ * The canonical route key of a project, when one is configured.
+ *
+ * The lookup is the one rule of the shared route lookup: the exact canonical
+ * folder of the route, its case variant, a declared alias and finally the
+ * longest route root that contains the project. A directory inside a routed
+ * project therefore shares the key and the authority of that project.
+ */
 export function routeKeyOf(policy: AutomationLaunchPolicy, project: string): string | undefined {
-  const routes = policy.projectRoutes;
-  if (!routes) return undefined;
-  const key = canonicalProjectKey(project);
-  const folded = key.toLocaleLowerCase("en-US");
-  for (const [candidate, route] of Object.entries(routes)) {
-    if (candidate.toLocaleLowerCase("en-US") === folded) return candidate;
-    if (route.aliases?.some((alias) => alias.trim().toLocaleLowerCase("en-US") === folded)) return candidate;
-  }
-  return undefined;
+  return findProjectRouteKey(policy, project);
 }
 
 function normalizeWorkspace(cwd: string): string {

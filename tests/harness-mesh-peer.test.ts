@@ -4,6 +4,7 @@ const fixture=vi.hoisted(()=>({factory:undefined as undefined|(()=>unknown)}));
 const endListeners=new Set(process.stdin.rawListeners("end")),termListeners=new Set(process.rawListeners("SIGTERM"));
 vi.mock("@modelcontextprotocol/server/stdio",()=>({serveStdio:vi.fn(async(factory:()=>unknown)=>{fixture.factory=factory;})}));
 vi.mock("../src/mesh/native-observer.js",()=>({observeCodex:vi.fn(async()=>({sessions:[],complete:false}))}));
+vi.mock("../src/mesh/native-minimax-code.js",()=>({MINIMAX_CODE_HARNESS:"minimax-code",deliverMinimaxCode:vi.fn(),observeMinimaxCode:vi.fn(async()=>({sessions:[],complete:false}))}));
 describe("native leaf snapshot (focused integration; expected 2s, maximum 15s)",()=>{
  it("returns short capability reasons through the actual MCP envelope without repeated repair plans",async()=>{
   await import("../src/mesh/native-peer.js");const server=fixture.factory!() as any;
