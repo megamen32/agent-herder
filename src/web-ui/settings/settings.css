@@ -1,0 +1,303 @@
+/*
+ * The screen of the settings of the herder.
+ *
+ * The colours are the variables of the theme of the panel, so the screen is
+ * neutral in the light theme and in the dark one. One accent — the accent of
+ * the panel. The status colours mean what they mean in the rest of the
+ * panel: a warning is a warning, a failure is a failure.
+ */
+
+.herder-settings-page {
+  min-width: 0;
+  flex: 1;
+  overflow: auto;
+  padding: clamp(20px, 4vw, 44px) var(--space-4, 16px) 60px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.herder-settings-header {
+  max-width: 1100px;
+  margin: 0 auto 20px;
+}
+
+.herder-settings-header h1 {
+  margin: 6px 0 8px;
+  font-size: clamp(22px, 3.4vw, 30px);
+  font-weight: 550;
+}
+
+.herder-settings-header p {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+
+.herder-settings-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.herder-settings-tab {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-m, 10px);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.herder-settings-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.herder-settings-tab-active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+.herder-settings-panel {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.herder-settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.herder-settings-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l, 18px);
+  background: var(--surface-1);
+  padding: 18px 20px 20px;
+}
+
+.herder-settings-block h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 550;
+}
+
+.herder-settings-hint {
+  display: block;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.herder-settings-action {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+.herder-settings-details {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.herder-settings-details summary {
+  cursor: pointer;
+  min-height: 24px;
+}
+
+.herder-settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 14px;
+}
+
+.herder-settings-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.herder-settings-table td {
+  padding: 12px 10px 12px 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.herder-settings-input {
+  width: 100%;
+  min-width: 160px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-m, 10px);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.herder-settings-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.herder-settings-button {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 10px 16px;
+  margin: 4px 6px 0 0;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-m, 10px);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.herder-settings-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.herder-settings-button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.herder-settings-button-danger {
+  border-color: var(--status-error);
+  color: var(--status-error);
+  background: transparent;
+}
+
+.herder-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.herder-settings-state {
+  display: block;
+  font-weight: 500;
+}
+
+.herder-settings-secret {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: var(--radius-m, 10px);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.herder-settings-error {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-m, 10px);
+  border: 1px solid var(--status-error);
+  color: var(--status-error);
+}
+
+.herder-settings-notice {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-m, 10px);
+  border: 1px solid var(--border-2);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.herder-settings-not-configured {
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: 1px dashed var(--border-2);
+  border-radius: var(--radius-m, 10px);
+}
+
+.herder-settings-status-known {
+  color: var(--status-done);
+}
+
+.herder-settings-status-unknown {
+  color: var(--status-waiting);
+}
+
+.herder-settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  margin-top: 12px;
+}
+
+.herder-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 240px;
+  flex: 1;
+}
+
+.herder-settings-field span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.herder-settings-modes {
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-m, 10px);
+  padding: 10px 14px 12px;
+  color: var(--text-2);
+}
+
+.herder-settings-modes legend {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 4px;
+}
+
+.herder-settings-modes label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+@media (max-width: 720px) {
+  .herder-settings-table thead {
+    display: none;
+  }
+
+  .herder-settings-table tr {
+    display: block;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .herder-settings-table td {
+    display: block;
+    border: none;
+    padding: 4px 0;
+  }
+
+  .herder-settings-block {
+    padding: 14px 14px 16px;
+  }
+}
