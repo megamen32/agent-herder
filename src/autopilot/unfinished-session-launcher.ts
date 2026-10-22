@@ -3572,7 +3572,22 @@ export class UnfinishedSessionLauncher {
       await this.options.store.deferQuotaRecoveryProbe(snapshot, probe.resetAt);
       return;
     }
-    if (session.model !== selectedModel) {
+    const selectedModelMatches = async (observed: string | undefined): Promise<boolean> => {
+      if (observed === selectedModel) return true;
+      if (operatorContinuation || harness !== "opencode" || !observed) return false;
+      const resolver = (adapter as HarnessAdapter & {
+        resolveDispatchableModel?: (model: string) => Promise<{
+          ok: boolean; requested?: string; nativeRoute?: string; dispatchable?: string; kind?: string; candidates?: string[];
+        }>;
+      }).resolveDispatchableModel;
+      if (!resolver) return false;
+      try {
+        const resolved = await resolver.call(adapter, selectedModel);
+        return resolved.ok && resolved.requested === selectedModel && resolved.nativeRoute === selectedModel
+          && resolved.kind === "native-route" && resolved.dispatchable === observed && resolved.candidates?.length === 1;
+      } catch { return false; }
+    };
+    if (!await selectedModelMatches(session.model)) {
       if (operatorContinuation) {
         await this.options.store.holdQuotaRecovery(snapshot, "native_snapshot_changed");
         return;
@@ -3599,7 +3614,7 @@ export class UnfinishedSessionLauncher {
     const verifiedTerminalSnapshotMatches = operatorContinuation
       ? await this.operatorContinuationSnapshotMatches(verified, operatorContinuation, snapshot.sessionId, snapshot.cwd)
       : exactTerminalRecoverySnapshot(verified, quota.evidence);
-    if (!verified || verified.model !== selectedModel || !verifiedTerminalSnapshotMatches
+    if (!verified || !await selectedModelMatches(verified.model) || !verifiedTerminalSnapshotMatches
       || verified.needsPermission
       || (!operatorContinuation && await this.suppressIfHumanStopped(harness, verified.id, verified.cwd, verified))
       || !await enabled() || !this.lifecycleActive(epoch) || !await this.admissionAllowed(verified, "resume")) {
@@ -3638,7 +3653,7 @@ export class UnfinishedSessionLauncher {
     const currentTerminalSnapshotMatches = operatorContinuation
       ? await this.operatorContinuationSnapshotMatches(current, operatorContinuation, snapshot.sessionId, snapshot.cwd)
       : exactTerminalRecoverySnapshot(current, quota.evidence);
-    if (!current || current.model !== selectedModel || !currentTerminalSnapshotMatches
+    if (!current || !await selectedModelMatches(current.model) || !currentTerminalSnapshotMatches
       || current.status === "running" || current.needsPermission
       || !await modelAllowed()
       || operatorIntent && !await this.operatorProjectModelAllowed(current, selectedModel)

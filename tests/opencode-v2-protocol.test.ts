@@ -80,11 +80,14 @@ function v2Fixture(state: {
         if (!session) return json(response, { _tag: "SessionNotFoundError", sessionID: id, message: "session not found" });
         if (!rest) return json(response, { data: session });
         if (rest === "message" && request.method === "GET") {
+          if (url.searchParams.has("cursor") && session.emptyCursorTail === true) {
+            return json(response, {data:[],cursor:{previous:null,next:null},...session.tailEnvelope});
+          }
           const messages = session.messages ?? [];
           const limit = Number(url.searchParams.get("limit") ?? messages.length);
           const ordered = url.searchParams.get("order") === "desc" ? [...messages].reverse() : messages;
           const filtered = url.searchParams.get("type") ? ordered.filter((m) => m.type === url.searchParams.get("type")) : ordered;
-          return json(response, { data: filtered.slice(0, limit), cursor: {} });
+          return json(response, { data: filtered.slice(0, limit), cursor: {}, ...session.messageEnvelope });
         }
         if (rest === "prompt" && request.method === "POST") {
           const parsed = JSON.parse(body || "{}");
@@ -1033,4 +1036,66 @@ it("keeps a combo route verifiable when another enabled mapping serves the same 
   } finally {
     server.close();
   }
+});
+
+it('reads an exact native V2 linear turn packet without inventing a parentID',async()=>{
+ const {OpenCodeClient}=await import('../packages/agent-resume/src/harness/opencode/client.js');
+ const state=sessionFixture();const id='ses_linear_native';const error={type:'provider.quota',status:429,message:'[1310][Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-10-24 02:06:22]'};
+ const user={id:'user_linear',type:'user',metadata:{agentHerderInputId:'stable_linear'},time:{created:100}};
+ const assistant={id:'assistant_linear',type:'assistant',model:{providerID:'omniroute',id:'zc/glm-5.3-flash'},time:{created:110,completed:120},finish:'error',error};
+ const terminal={id:'idle_linear',type:'idle',outcome:'failed',time:{created:130},error};
+ state.sessions[id]={id,title:'native linear',location:{directory:'/tmp/project'},outcome:'failed',messages:[user,assistant,terminal]};state.active[id]={type:'idle'};
+ const server=v2Fixture(state);const client=new OpenCodeClient({baseUrl:await start(server)});
+ try{
+  await expect(client.getTerminalFailureContext(id)).resolves.toMatchObject({nativeTurnId:assistant.id,inputId:'stable_linear',statusCode:429});
+  for(const messages of [
+   [user,{...assistant,parentID:'wrong_parent'},terminal],
+   [user,{...assistant,parentID:'wrong_parent',inputId:'stable_linear'},terminal],
+   [user,{...user,id:'same_input_again'},assistant,terminal],
+   [user,{...user,id:'second_user',metadata:{agentHerderInputId:'different'}},assistant,terminal],
+   [user,{...assistant,id:'earlier_assistant'},assistant,terminal],
+   [{...user,metadata:{}},assistant,terminal],
+   [{id:'unknown_earlier_actor',type:'assistant'},user,assistant,terminal],
+   [{id:'unknown_boundary',type:'action',outcome:'failed',time:{created:90}},user,assistant,terminal],
+   [user,assistant,{...terminal,error:{...error,status:401}}],
+   [user,{...assistant,parts:[{type:'tool',state:{status:'completed'}}]},terminal],
+   [user,{...assistant,content:[{type:'tool-call',name:'read'}]},terminal],
+   [user,{...assistant,snapshot:{files:['changed']}},terminal],
+   [user,{...assistant,tool_calls:[{id:'call'}]},terminal],
+   [user,{id:'tool_step',type:'tool',time:{created:115}},assistant,terminal],
+   [user,{...assistant,sessionID:'wrong_session'},terminal],
+   [user,assistant,{...terminal,inputId:'wrong_input'}],
+   [user,{...assistant,metadata:{},info:{metadata:{agentHerderInputId:'wrong_input'}}},terminal],
+   [user,assistant,{...terminal,turnId:'wrong_turn'}],
+   [user,assistant,{...terminal,outcome:'succeeded'}],
+   [user,{...assistant,time:{created:99,completed:120}},terminal],
+   [user,{...assistant,time:{created:110}},terminal],
+   [user,{...assistant,cached:true},terminal],
+   [{...user,info:{metadata:{cached:true}}},assistant,terminal],
+   [user,{...assistant,info:{partial:true}},terminal],
+   [user,{...assistant,id:user.id},terminal],
+   [...Array.from({length:147},(_,i)=>({id:`old_${i}`,type:'unknown'})),user,assistant,terminal],
+  ]){state.sessions[id].messages=messages;expect(await client.getTerminalFailureContext(id)).toBeNull();}
+  state.sessions[id].messages=[user,assistant,terminal];
+  for (const messageEnvelope of [{partial:true},{cached:true},{truncated:true},{cursor:{next:'more'}}]) {
+   state.sessions[id].messageEnvelope=messageEnvelope;
+   expect(await client.getTerminalFailureContext(id)).toBeNull();
+  }
+  state.sessions[id].messageEnvelope={cursor:{next:'native_tail'}};
+  state.sessions[id].emptyCursorTail=true;
+  await expect(client.getTerminalFailureContext(id)).resolves.toMatchObject({inputId:'stable_linear'});
+  state.sessions[id].messageEnvelope={cursor:{next:'native_tail'},metadata:{partial:true}};
+  expect(await client.getTerminalFailureContext(id)).toBeNull();
+  state.sessions[id].messageEnvelope={cursor:{next:'native_tail'}};
+
+  for (const tailEnvelope of [{cursor:{next:'still-more'}},{metadata:{partial:true}},{hasMore:true},{info:{cached:true}}]) {
+   state.sessions[id].tailEnvelope=tailEnvelope;
+   expect(await client.getTerminalFailureContext(id)).toBeNull();
+  }
+  delete state.sessions[id].tailEnvelope;
+  delete state.sessions[id].emptyCursorTail;
+  delete state.sessions[id].messageEnvelope;
+  state.sessions[id].messages=[{id:'old_user',type:'user'},{id:'old_assistant',type:'assistant'},{id:'old_idle',type:'idle',outcome:'succeeded',time:{created:90}},user,assistant,terminal];
+  await expect(client.getTerminalFailureContext(id)).resolves.toMatchObject({nativeTurnId:assistant.id,inputId:'stable_linear'});
+ }finally{server.close();}
 });

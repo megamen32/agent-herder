@@ -20,6 +20,7 @@ import { ConnectionsSection } from "./connections-section.js";
 import { RuntimeSection } from "./runtime-section.js";
 import { ProjectsSection } from "./projects-section.js";
 import { FleetConfirmation } from "./fleet-confirmation.js";
+import { CommonSettingsSection } from "./common-settings-section.js";
 import "./settings.css";
 
 /**
@@ -264,10 +265,14 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
             {envRecords.map((record) => {
               const key = record.id.slice("herder.env/".length);
               const secret = record.desired.value === null && record.desired.fingerprint !== undefined;
+              // A common setting is changed here once and reaches every node
+              // that takes the common settings.
+              const common = (view.commonSettings?.keys ?? []).includes(key);
               return (
                 <tr key={record.id}>
                   <td>
                     <strong>{record.humanName}</strong>
+                    {common ? <span className="herder-settings-badge">общая настройка</span> : null}
                     <span className="herder-settings-action">{record.action}</span>
                     <details className="herder-settings-details">
                       <summary>Технические подробности</summary>
@@ -419,6 +424,8 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
       <RuntimeSection />
       <ConnectionsSection />
       <StopControl />
+
+      <CommonSettingsSection />
 
       <FleetConfirmation />
 
