@@ -60,6 +60,17 @@ def expand(value: str) -> str:
     return os.path.expanduser(value)
 
 
+def remote_live_sha(node: dict) -> str:
+    """The release the node runs now, read from the node itself."""
+    fleet = expand(node["fleetDir"])
+    command = ["ssh", "-o", "ConnectTimeout=30", "-p", str(node.get("sshPort", 22)),
+               f"{node['sshUser']}@{node['address']}", f"readlink {fleet}/current"]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        return ""
+    return os.path.basename(result.stdout.strip())
+
+
 def pack_release(release: Path, target: Path) -> Path:
     """The release without its own node_modules: the node builds its own."""
     with tarfile.open(target, "w") as archive:
@@ -248,10 +259,9 @@ def main() -> int:
         if current.is_symlink():
             live_sha = os.path.basename(os.readlink(current))
     else:
-        fleet = Path(expand(node["fleetDir"]))
-        current = fleet / "current"
-        if current.is_symlink():
-            live_sha = os.path.basename(os.readlink(current))
+        # The live release of a fleet node lives on that node: it is read
+        # there, not guessed here.
+        live_sha = remote_live_sha(node)
 
     with tempfile.TemporaryDirectory() as temporary:
         archive = Path(temporary) / f"rel-{arguments.sha}.tar"
