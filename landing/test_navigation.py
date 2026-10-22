@@ -24,11 +24,21 @@ class PublicNavigationTests(unittest.TestCase):
     def test_only_public_external_destinations(self):
         allowed = {'github.com', 'bezrabotnyi.com', 'agentherder.bezrabotnyi.com',
                    'shtatno.bezrabotnyi.com', 'notify.bezrabotnyi.com',
-                   'became.bezrabotnyi.com', 'msg.bezrabotnyi.com', 'airlockrun.ru'}
+                   'became.bezrabotnyi.com', 'msg.bezrabotnyi.com', 'airlockrun.ru',
+                   'notice.bezrabotnyi.com'}
         for link in self.links:
             host = urlsplit(link.get('href', '')).hostname
             if host:
                 self.assertIn(host, allowed)
+    def test_operator_console_button_points_to_notice_place(self):
+        console = [a for a in self.links if 'header-console' in a.get('class', '').split()]
+        self.assertEqual(len(console), 1)
+        button = console[0]
+        self.assertEqual(button['href'], 'https://notice.bezrabotnyi.com/admin/')
+        self.assertEqual(button.get('target'), '_blank')
+        self.assertIn('noopener', button.get('rel', ''))
+        self.assertIn('Кабинет', button.get('aria-label', ''))
+
     def test_hero_and_closing_start_self_hosted_install(self):
         primary = [a for a in self.links if 'primary' in a.get('class', '').split()]
         self.assertEqual(len(primary), 2)
