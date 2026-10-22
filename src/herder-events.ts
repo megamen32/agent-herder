@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-export type HerderEventKind = "coordination" | "human-request" | "sessions" | "presence" | "jobs" | "adapters";
+export type HerderEventKind = "coordination" | "human-request" | "sessions" | "presence" | "jobs" | "adapters" | "health";
 
 export interface HerderEvent {
   kind: HerderEventKind;
@@ -11,8 +11,63 @@ export interface HerderEvent {
   at: string;
   id?: string;
   source?: string;
+  /**
+   * The stable ASCII class of the refusal, when the event states one.
+   *
+   * A health refusal names the class of the refusal and not its wording, so an
+   * observer reads the code and not the Russian text of the reason. The value
+   * is one of the agreed codes, e.g. `automation_disabled` or
+   * `model_not_permitted_for_project`.
+   */
+  reason_code?: string;
   sequence: number;
   revision: number;
+}
+
+/**
+ * The uri of one health refusal.
+ *
+ * The uri names the incident the refusal belongs to, so an observer reads the
+ * refusals of one incident by the prefix of its uri and never by the wording
+ * of a reason.
+ */
+export function healthRefusalUri(incidentId: string): string {
+  return `herder://health/refusals/${encodeURIComponent(incidentId)}`;
+}
+
+/** One health refusal, as the event states it. */
+export interface HealthRefusalEventInput {
+  /** The incident the refusal belongs to. */
+  incidentId: string;
+  /** The stable ASCII class of the refusal, e.g. `automation_disabled`. */
+  reasonCode: string;
+  /** The source of the refusal, e.g. the harness or the blocked work key. */
+  source?: string;
+}
+
+/**
+ * The event of one health refusal.
+ *
+ * The kind is `health` and the class of the refusal travels in `reason_code`.
+ * The event states a fact and decides nothing: a policy refusal leaves the
+ * incident open and waits for the operator, and the observer reads the class
+ * and acts by it.
+ *
+ * The class of a refusal is required. A refusal whose class is unknown has no
+ * machine-readable meaning, and an event that states no class would be a
+ * refusal no observer can act on, so the builder refuses it instead.
+ */
+export function healthRefusalEvent(input: HealthRefusalEventInput): Omit<HerderEvent, "at" | "sequence" | "revision"> & { at?: string } {
+  const reasonCode = input.reasonCode.trim();
+  if (!reasonCode) throw new Error("a health refusal states the class of its refusal");
+  return {
+    kind: "health",
+    uri: healthRefusalUri(input.incidentId),
+    action: "changed",
+    id: input.incidentId,
+    ...(input.source ? { source: input.source } : {}),
+    reason_code: reasonCode,
+  };
 }
 
 interface PersistedEventJournal {
@@ -142,6 +197,21 @@ export class HerderEventBus {
     }, this.persistDebounceMs);
     this.persistTimer.unref?.();
   }
+}
+
+/**
+ * Publish one health refusal into the event journal.
+ *
+ * The refusal of the health contour travels through the bus of the herder, so
+ * an observer of the events reads the class of the refusal without reading
+ * the audit trail and without a second protocol. The caller states the refusal
+ * that already happened; publishing it never decides anything.
+ */
+export function publishHealthRefusal(
+  input: HealthRefusalEventInput,
+  bus: HerderEventBus = herderEvents,
+): HerderEvent {
+  return bus.publish(healthRefusalEvent(input));
 }
 
 export const herderEvents = new HerderEventBus({

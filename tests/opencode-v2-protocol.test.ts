@@ -261,10 +261,12 @@ it("reads OmniRoute models from the native catalog and confirms a session model 
     const fallback = "omniroute/glm/MiniMax-M3.1-Flash";
     expect(await adapter.listModels()).toEqual([fallback]);
     expect(await adapter.changeModel("ses_idle", fallback)).toEqual({ ok: true });
+    // The native catalog names the gateway id; OpenCode dispatches the
+    // catalog key that carries it, so the session reads back the key.
     const session = await adapter.getSession("ses_idle");
-    expect(session?.model).toBe(fallback);
+    expect(session?.model).toBe("omniroute/glm");
     const call = state.calls.find((entry) => entry.path === "/api/session/ses_idle/model" && entry.method === "POST");
-    expect(JSON.parse(call!.body!)).toEqual({ model: { providerID: "omniroute", id: "glm/MiniMax-M3.1-Flash" } });
+    expect(JSON.parse(call!.body!)).toEqual({ model: { providerID: "omniroute", id: "glm" } });
   } finally {
     server.close();
   }

@@ -18,7 +18,7 @@ import type { AgentHerderSessionConverter, ConvertSessionInput } from "../sessio
 import { askHuman, HumanRequestLockUnavailableError, HumanRequestRegistry, resumeHumanRequestOnce } from "../human-request/index.js";
 import type { ProjectLaunchDispatcher } from "../automation/project-launch-dispatch.js";
 import type { IntegratorFleetRuntime } from "../integrator-fleet-runtime.js";
-import { NOTICEPLACE_HEALTH_AUTHORIZED, NOTICEPLACE_HEALTH_PURPOSE, hasNoticeplaceHealthBearer, validateNoticeplaceHealthLaunch } from "../automation/noticeplace-health-launch.js";
+import { NOTICEPLACE_HEALTH_AUTHORIZED, NOTICEPLACE_HEALTH_PURPOSE, hasNoticeplaceHealthBearer, qualifyNoticeplaceHealthModel, validateNoticeplaceHealthLaunch } from "../automation/noticeplace-health-launch.js";
 import { buildSessionProgress } from "../health-progress.js";
 import { NoticeplaceHealthObserver } from "../automation/noticeplace-health-observer.js";
 import { appendHealthRefusalAudit, healthRefusalAuditPath } from "../automation/health-reason-codes.js";
@@ -1344,8 +1344,12 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const healthBearer = hasNoticeplaceHealthBearer(request.headers.authorization);
     if (healthAnalysis && !healthBearer) return sendJson(response, 401, { error: "Для анализа инцидента нужен отдельный токен Notice Place." });
     if (healthBearer && !healthAnalysis) return sendJson(response, 403, { error: "Токен Notice Place разрешает только анализ инцидента." });
+    // The center states the model of the incident execution bare (the modelID
+    // alone); a route is stated as provider/model. The analysis path accepts
+    // both spellings, exactly like the repair path does.
+    const launchModel = healthAnalysis ? qualifyNoticeplaceHealthModel(body.model) : body.model;
     if (healthAnalysis) {
-      const error = validateNoticeplaceHealthLaunch({ harness: body.harness, model: body.model, operationId: body.operation_id });
+      const error = validateNoticeplaceHealthLaunch({ harness: body.harness, model: launchModel, operationId: body.operation_id });
       if (error) return sendJson(response, 400, { error });
     }
     if (!validSourceSessions(body.sourceSessions) || !validProjectLaunchSourceSessions(body.sourceSessions)) {
@@ -1358,7 +1362,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         cwd: typeof body.cwd === "string" ? body.cwd : "",
         message: typeof body.message === "string" ? body.message : "",
         ...(typeof body.harness === "string" ? { harness: body.harness as HarnessType } : {}),
-        ...(typeof body.model === "string" ? { model: body.model } : {}),
+        ...(typeof launchModel === "string" ? { model: launchModel } : {}),
         ...(body.mode === "queue" ? { mode: "queue" as const } : {}),
         ...(typeof body.operation_id === "string" ? { operationId: body.operation_id } : {}),
         ...(typeof body.name === "string" ? { name: body.name } : {}),
