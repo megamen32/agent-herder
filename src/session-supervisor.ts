@@ -25,7 +25,7 @@ import { localSessionHostId } from "./types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "./session-convert.js";
 import { LineageStore, type LineageRecord } from "./lineage-store.js";
 import { ModelsDevPricing } from "./model-pricing.js";
-import { coordinationNotes, type WorkspaceDeclaration } from "./coordination-notes.js";
+import { coordinationNotes, type WorkspaceDeclaration, type WorkspaceObservation } from "./coordination-notes.js";
 import { herderEvents, type HerderEventBus } from "./herder-events.js";
 import { adapterResourceUri, sessionMessagesResourceUri, sessionResourceUri } from "./herder-resource-uris.js";
 import { harnessEventHealth, type HarnessEventHealthRegistry } from "./harness-event-health.js";
@@ -110,8 +110,12 @@ export class SessionNotFoundError extends Error {
 export class SessionSupervisor {
   private readonly sessionCacheTtlMs: number;
   private sessionSnapshot: SessionSnapshot | null = null;
-  /** The last served projection of the snapshot: native sessions with their declared work place. */
-  private projection: { snapshot: SessionSnapshot; sessions: AgentSession[] } | null = null;
+  /** The declared work place of every session, read once per update. */
+  private projection: { observations: Map<string, WorkspaceObservation>; at: number } | null = null;
+  /** The running projection update. */
+  private projectionUpdate: Promise<void> | null = null;
+  /** How long a served projection may stay before the ledger is read again. */
+  private readonly projectionTtlMs = 1_500;
   private sessionRefresh: Promise<void> | null = null;
   private readonly modelCacheTtlMs = 15 * 60_000;
   private readonly modelCache = new Map<string, { models: string[]; refreshedAt: number }>();
@@ -322,7 +326,7 @@ export class SessionSupervisor {
   private async serveSessions(filters: SessionFilters): Promise<AgentSession[]> {
     const snapshot = this.sessionSnapshot;
     if (!snapshot) return [];
-    return this.filterSessions(await this.projectWorkplace(snapshot), filters);
+    return this.filterSessions(this.applyProjection(snapshot, await this.currentProjection()), filters);
   }
 
   private filterSessions(sessions: AgentSession[], filters: SessionFilters): AgentSession[] {
@@ -341,6 +345,9 @@ export class SessionSupervisor {
         this.sessionSnapshot = { sessions, refreshedAt: Date.now() };
         if (previous) this.publishSnapshotDiff(previous, sessions);
         this.refreshStaleModelCaches();
+        // The declared work places of the new snapshot are read in the
+        // background: the snapshot itself never waits for the ledger.
+        void this.refreshProjection();
       })
       .finally(() => {
         this.sessionRefresh = null;
@@ -379,34 +386,81 @@ export class SessionSupervisor {
   }
 
   /**
-   * The declared work place of a session is the truth about the machine and
-   * the directory it works on. The ledger is read once for the whole list and
-   * the native snapshot stays untouched: the refresh diff compares native
-   * with native, so a moved session never looks like a changed session.
+   * Reads the declared work places of the sessions of the current snapshot.
+   * One file read covers the whole list, and the read never blocks the
+   * snapshot: the projection is served from the cache and refreshed in the
+   * background. The native snapshot stays untouched, so the refresh diff
+   * compares native with native and a moved session never looks changed.
    */
-  private async projectWorkplace(snapshot: SessionSnapshot): Promise<AgentSession[]> {
+  private async updateProjection(): Promise<void> {
+    const snapshot = this.sessionSnapshot;
+    if (!snapshot?.sessions.length) return;
     let declarations: Map<string, WorkspaceDeclaration>;
     try {
       declarations = await coordinationNotes.activeWorkspaceDeclarations();
     } catch {
-      // A locked or unreadable ledger must never take the session list down.
-      return snapshot.sessions;
+      // A locked or unreadable ledger keeps the previous projection.
+      return;
     }
-    const declared = coordinationNotes.workspaceObservations(declarations, snapshot.sessions.map((session) => session.id));
-    const sessions = snapshot.sessions.map((session) => {
-      const observation = declared.get(session.id);
+    const observations = coordinationNotes.workspaceObservations(declarations, snapshot.sessions.map((session) => session.id));
+    this.projection = { observations, at: Date.now() };
+  }
+
+  /** One projection update at a time; a new snapshot schedules the next one. */
+  private refreshProjection(): Promise<void> {
+    if (this.projectionUpdate) return this.projectionUpdate;
+    const snapshot = this.sessionSnapshot;
+    const run = this.updateProjection();
+    this.projectionUpdate = run;
+    void run.finally(() => {
+      if (this.projectionUpdate === run) this.projectionUpdate = null;
+      // The snapshot moved on while the ledger was read: the new snapshot
+      // needs its own projection.
+      if (this.sessionSnapshot !== snapshot) void this.refreshProjection();
+    });
+    return run;
+  }
+
+  /**
+   * The projection is stale when it is older than the snapshot it describes
+   * or when its time to live is over. A newer snapshot always gets its own
+   * projection, so the served work places never lag behind the session list.
+   */
+  private projectionStale(snapshot: SessionSnapshot): boolean {
+    const projection = this.projection;
+    if (!projection) return true;
+    if (projection.at < snapshot.refreshedAt) return true;
+    return Date.now() - projection.at > this.projectionTtlMs;
+  }
+
+  /** The projection of the current snapshot, read again when it is stale. */
+  private async currentProjection(): Promise<{ observations: Map<string, WorkspaceObservation>; at: number } | null> {
+    const snapshot = this.sessionSnapshot;
+    if (snapshot && !this.projectionStale(snapshot)) return this.projection;
+    await this.refreshProjection();
+    return this.projection;
+  }
+
+  /** The sessions with their declared work place; the native list without a projection. */
+  private applyProjection(snapshot: SessionSnapshot, projection: { observations: Map<string, WorkspaceObservation>; at: number } | null): AgentSession[] {
+    if (!projection) return snapshot.sessions;
+    return snapshot.sessions.map((session) => {
+      const observation = projection.observations.get(session.id);
       if (!observation) return session;
       return { ...session, hostId: observation.hostId, cwd: observation.cwd };
     });
-    this.projection = { snapshot, sessions };
-    return sessions;
   }
 
-  /** The served projection of the current snapshot; the native list until one exists. */
+  /**
+   * The served projection of the current snapshot. A stale projection is
+   * read again in the background, so a fast request never waits for the
+   * ledger and never reads it more than once per update.
+   */
   private projectedSessions(): AgentSession[] {
     const snapshot = this.sessionSnapshot;
     if (!snapshot) return [];
-    return this.projection?.snapshot === snapshot ? this.projection.sessions : snapshot.sessions;
+    if (this.projectionStale(snapshot)) void this.refreshProjection();
+    return this.applyProjection(snapshot, this.projection);
   }
 
   async getSession(harness: string, id: string, expectedCwd?: string, options?: {includeMetrics?:boolean;includeModelOptions?:boolean}): Promise<AgentSession | null> {

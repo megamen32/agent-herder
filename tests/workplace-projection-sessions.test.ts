@@ -128,3 +128,48 @@ describe("the session snapshot of a moved session", () => {
     expect(changed).toEqual([]);
   });
 });
+
+describe("the fast session list of the web surface", () => {
+  function fastSupervisor(sessions: AgentSession[], options: { sessionCacheTtlMs?: number } = {}): SessionSupervisor {
+    const dir = join(tmpdir(), `herder-workplace-fast-${Math.random().toString(36).slice(2)}`);
+    const adapter = {
+      type: "codex",
+      name: "codex",
+      async listSessions() { return sessions; },
+      async getSession(id: string) { return sessions.find((item) => item.id === id) ?? null; },
+    } as unknown as HarnessAdapter;
+    return new SessionSupervisor(
+      new Map([["codex", adapter]]),
+      { async convert() { return { success: true }; } } as never,
+      new LineageStore(join(dir, "lineage.json")),
+      { events: new HerderEventBus(), ...options },
+    );
+  }
+
+  it("serves the declared work place without a full list request", async () => {
+    const other = new CoordinationNoteStore(statePath);
+    await other.declareWorkspace({ sessionId: "moved", harness: "codex", hostId: "host-88", cwd: "/srv/remote/work", ttlSeconds: 600 });
+    const supervisor = fastSupervisor([session("moved", "/launch/dir")]);
+
+    // The web surface reads the list through the fast path only.
+    await vi.waitFor(() => {
+      const fast = supervisor.listSessionsFast();
+      expect(fast.sessions[0]).toMatchObject({ hostId: "host-88", cwd: "/srv/remote/work" });
+    }, { timeout: 3_000, interval: 20 });
+  });
+
+  it("recomputes the projection when the snapshot is refreshed", async () => {
+    const other = new CoordinationNoteStore(statePath);
+    await other.declareWorkspace({ sessionId: "moved", harness: "codex", hostId: "host-88", cwd: "/srv/remote/work", ttlSeconds: 600 });
+    const supervisor = fastSupervisor([session("moved", "/launch/dir")], { sessionCacheTtlMs: 0 });
+    await vi.waitFor(() => {
+      expect(supervisor.listSessionsFast().sessions[0]).toMatchObject({ hostId: "host-88" });
+    }, { timeout: 3_000, interval: 20 });
+
+    // The session moves to another machine: the next refresh must show it.
+    await other.declareWorkspace({ sessionId: "moved", harness: "codex", hostId: "host-44", cwd: "/srv/other/work", ttlSeconds: 600 });
+    await vi.waitFor(() => {
+      expect(supervisor.listSessionsFast().sessions[0]).toMatchObject({ hostId: "host-44", cwd: "/srv/other/work" });
+    }, { timeout: 3_000, interval: 20 });
+  });
+});
