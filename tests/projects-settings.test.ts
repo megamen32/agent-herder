@@ -78,6 +78,66 @@ describe("Projects page form", () => {
   });
 });
 
+describe("the model rules of the projects screen", () => {
+  it("blames the environment and not the policy of the project", () => {
+    expect(page).not.toContain("Запрос модели заблокирован политикой проекта");
+    expect(page).not.toContain("Это предсказание политики проекта");
+    expect(page).not.toContain("не отменяют");
+    expect(page).toContain("Модель ");
+    expect(page).toContain("среда не подтверждает — запуск на ней не пройдёт");
+    expect(page).toContain("Панель сверяет модель маршрута со списком моделей среды и со списками проекта");
+  });
+
+  it("offers the fix in one click", () => {
+    expect(page).toContain("Поставить рабочую модель");
+    expect(page).toContain(">Поставить</button>");
+    expect(page).toContain("Разрешить все модели");
+    expect(page).toContain("Очистить список");
+    expect(page).toContain("Запретить платные маршруты");
+    expect(page).toContain("setRouteModel(route, harness, working)");
+    expect(page).toContain("setRouteModel(route, harness, model)");
+  });
+
+  it("tells what the two lists of the project are", () => {
+    expect(page).toContain("«Разрешённые модели»");
+    expect(page).toContain("«Запрещённые модели»");
+    expect(page).toContain("фильтр проекта");
+    expect(page).toContain("Запрет сильнее разрешения");
+    expect(page).toContain("Откуда берётся модель");
+    expect(page).toContain("Доступность и платность — свойство среды");
+    expect(page).toContain("Как убрать блок");
+  });
+
+  it("says that one model has two spellings and asks for the route", () => {
+    expect(page).toContain("omniroute/minimax-combo-m3.1");
+    expect(page).toContain("omniroute/minimax/MiniMax-M3.1-Flash");
+    expect(page).toContain("одна и та же модель");
+    expect(page).toContain("Пишите маршрут");
+  });
+
+  it("shows the common models of the environments and where they are changed", () => {
+    expect(page).toContain("ОБЩИЕ МОДЕЛИ СРЕДЫ");
+    expect(page).toContain("общие модели среды: по умолчанию едет");
+    expect(page).toContain("Открыть настройки запуска");
+  });
+
+  it("says that a slow answer is coming instead of showing an empty cell", () => {
+    expect(page).toContain("обновляю…");
+    expect(page).toContain("Машина неизвестна");
+    expect(page).toContain("время неизвестно");
+  });
+
+  it("asks for a bounded part of the list of the sessions", () => {
+    expect(page).toContain("/api/sessions?quick=1&limit=100");
+    expect(page).not.toContain("\"/api/sessions?quick=1\"");
+  });
+
+  it("explains the errors of the server about the lists in Russian", () => {
+    expect(page).toContain("Не сохранено:");
+    expect(page).toContain("explainModelListError");
+  });
+});
+
 describe("project route merge after a conflict", () => {
   it("carries over only the edited project and leaves the other one alone", () => {
     const base = policy();

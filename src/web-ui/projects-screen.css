@@ -336,6 +336,84 @@
   font-size: var(--text-xs);
 }
 
+/* ---------- Статус модели: одно слово и цвет ---------- */
+.projects-status {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 8px;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  white-space: normal;
+}
+.projects-status-ok { border-color: var(--status-done); color: var(--status-done); }
+.projects-status-warn { border-color: var(--status-waiting); color: var(--status-waiting); }
+.projects-status-error { border-color: var(--status-error); color: var(--status-error); }
+.projects-status-unknown { border-color: var(--border-2); color: var(--muted); }
+.projects-model-status-error { border-color: var(--status-error); }
+.projects-model-status-warn { border-color: var(--status-waiting); }
+
+/* ---------- Легенда правил моделей ---------- */
+.projects-legend {
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--surface-1);
+  padding: 12px 14px;
+  display: grid;
+  gap: 6px;
+}
+.projects-legend p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.projects-legend strong { color: var(--text); font-weight: 550; }
+.projects-legend code {
+  overflow-wrap: anywhere;
+  font-size: var(--text-xs);
+}
+
+/* ---------- Кнопки одного клика ---------- */
+.projects-model-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.projects-model-actions button {
+  padding: 4px 10px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-s, 6px);
+  background: var(--surface-2, var(--surface-1));
+  color: var(--text);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.projects-model-actions button:hover:not(:disabled) { border-color: var(--text-2); }
+
+/* ---------- Общие модели среды ---------- */
+.projects-globals-models {
+  margin: 6px 0 4px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.projects-globals-models li {
+  display: grid;
+  gap: 2px;
+}
+.projects-globals-models strong { color: var(--text); font-size: var(--text-sm); }
+.projects-globals-model {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.projects-globals-models .projects-status { justify-self: start; }
+
 /* ---------- Блокировка модели ---------- */
 .projects-blocked {
   border: 1px solid var(--status-error);
@@ -394,6 +472,13 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+.projects-blocked-hint {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+.projects-blocked-hint code { overflow-wrap: anywhere; }
 .projects-blocked-route {
   border-top: 1px solid var(--border);
   padding-top: 10px;
@@ -406,9 +491,30 @@
   display: grid;
   gap: 4px;
 }
-.projects-blocked-route li { display: grid; gap: 2px; }
+.projects-blocked-route li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.projects-blocked-route-entry {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
 .projects-blocked-route code { font-size: var(--text-xs); overflow-wrap: anywhere; }
 .projects-blocked-route small { color: var(--muted); font-size: var(--text-xs); }
+.projects-blocked-route button {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-s, 6px);
+  background: var(--surface-2, var(--surface-1));
+  color: var(--text);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
 
 /* ---------- Несохранённые изменения и недоступные кнопки ---------- */
 .projects-dirty {
@@ -523,4 +629,12 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .projects-blocked-facts > div { grid-template-columns: minmax(0, 1fr); }
+  /* Модель и её статус в одну колонку: на 390px две не помещаются. */
+  .projects-effective { grid-template-columns: minmax(0, 1fr); }
+  .projects-effective-model {
+    border-left: none;
+    padding-left: 0;
+  }
+  /* Кнопки одного клика остаются в потоке и не обрезаются. */
+  .projects-model-actions { width: 100%; }
 }
