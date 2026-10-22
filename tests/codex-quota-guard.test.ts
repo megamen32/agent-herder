@@ -61,3 +61,28 @@ it("fleet uses the addressed provider and does not fetch or gate a non-Codex act
   expect(read).toHaveBeenCalledTimes(1);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+it("thread/resume is gated as well: a continuation cannot spend the reserve",async()=>{
+ const dir=await mkdtemp(join(tmpdir(),"quota-resume-"));vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR",dir);
+ try{
+  const a=new CodexAppServerAdapter({});const x=a as any;const calls:string[]=[];
+  x.isTransportWritable=()=>true;
+  x.writeMessage=(m:any)=>{calls.push(m.method);const p=x.pending.get(m.id);clearTimeout(p.timer);x.pending.delete(m.id);p.resolve(m.method==="account/rateLimits/read"?sample(86):{ok:true});};
+  await expect(x.request("thread/resume",{})).rejects.toBeInstanceOf(CodexQuotaBlockedError);
+  expect(calls).toEqual(["account/rateLimits/read"]);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+it("a refused resume is not submitted and must not be replayed",async()=>{
+ const dir=await mkdtemp(join(tmpdir(),"quota-refusal-"));vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR",dir);
+ try{
+  const a=new CodexAppServerAdapter({});const x=a as any;
+  x.isReady=()=>true;
+  x.isTransportWritable=()=>true;
+  x.writeMessage=(m:any)=>{const p=x.pending.get(m.id);clearTimeout(p.timer);x.pending.delete(m.id);p.resolve(m.method==="account/rateLimits/read"?sample(86):{ok:true});};
+  const result=await a.resumeSession("thread-quota-1");
+  expect(result.ok).toBe(false);
+  expect(result).toMatchObject({notSubmitted:true,admitted:false,nonRetryable:true,admissionUnknown:false});
+  expect(String((result as any).error)).toContain("codex_quota_guard");
+ }finally{await rm(dir,{recursive:true,force:true});}
+});

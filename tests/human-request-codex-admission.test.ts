@@ -16,11 +16,14 @@ afterEach(() => vi.unstubAllEnvs());
 
 // Real HTTP -> registry -> supervisor -> existing Codex adapter -> Unix WS RPC.
 // The synthetic model turn never finishes until cleanup; native ACK is gated.
-async function fixture(active = false, malformedAck = false) {
+async function fixture(active = false, malformedAck = false, quotaUsedPercent = 10) {
   const dir = await mkdtemp(join(tmpdir(), "herder-codex-human-ack-"));
   const codexDir = join(dir, "codex");
   await mkdir(join(codexDir, "sessions"), { recursive: true });
   vi.stubEnv("AGENT_HERDER_HUMAN_STOP_STORE", join(dir, "stops.json"));
+  // The quota guard reads its policy from the autopilot state dir. An empty
+  // one is the default policy: enabled, reserve 20%, unknown blocks.
+  vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR", join(dir, "autopilot"));
   const native: Server = createServer();
   const ws = new WebSocketServer({ server: native });
   // The bounded TMPDIR can exceed AF_UNIX's path limit. This short descriptor
@@ -45,6 +48,10 @@ async function fixture(active = false, malformedAck = false) {
       // The supervisor reads the native model catalog before it resumes the
       // session; without this answer the resume fails before the native turn.
       if (request.method === "model/list") return reply({ data: [{ model: "gpt-5-codex", isDefault: true }], nextCursor: null });
+      // The quota guard asks the native server for its rate limits before
+      // every admission: a healthy reading opens the path, a spent reserve
+      // refuses it before the write.
+      if (request.method === "account/rateLimits/read") return reply({ rateLimits: { primary: { used_percent: quotaUsedPercent, reset_at: Math.floor(Date.now() / 1000) + 3600 }, secondary: { used_percent: quotaUsedPercent, reset_at: Math.floor(Date.now() / 1000) + 7200 } } });
       if (request.method === "thread/read") return reply({ thread: thread() });
       if (request.method === "thread/turns/list") return reply({ data: turnId ? [{ id: turnId, status: "inProgress" }] : [] });
       if (request.method === "thread/resume") return reply({ thread: thread() });
@@ -157,5 +164,22 @@ it("keeps a newer human stop fenced before native Codex admission", async () => 
     expect(f.send).not.toHaveBeenCalled();
     expect(f.requests.some((request) => request.method === "turn/start" || request.method === "turn/steer")).toBe(false);
     expect(await f.stops.isHeld("codex", session.id)).toBe(true);
+  } finally { await f.close(); }
+});
+
+it("refuses the Codex admission while the quota reserve is spent", async () => {
+  // 95% used leaves 5% of the window, below the 20% reserve.
+  const f = await fixture(false, false, 95);
+  const pending = f.post();
+  try {
+    const response = await pending;
+    expect(response.status).toBe(502);
+    const body = await response.json() as { status: string; reason: string; retry: boolean };
+    expect(body.status).toBe("resume_failed");
+    expect(body.reason).toContain("codex_quota_guard");
+    // A refusal that was never submitted must not be replayed.
+    expect(body.retry).toBe(false);
+    // The guard reads the quota before the transport write: no turn was sent.
+    expect(f.requests.filter((request) => request.method === "turn/start" || request.method === "turn/steer")).toHaveLength(0);
   } finally { await f.close(); }
 });

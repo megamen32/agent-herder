@@ -10,7 +10,7 @@ vi.mock('node:os',()=>({hostname:()=> state.host,userInfo:()=>({username:'roomha
 vi.mock('node:child_process',()=>({spawn:(bin:string,args:string[])=>{
  const child=new EventEmitter() as any;
  child.stdout=new EventEmitter();child.stderr=new EventEmitter();child.kill=vi.fn(()=>queueMicrotask(()=>child.emit('close',137)));
- child.stdin=new EventEmitter();child.stdin.end=(body:string)=>{state.spawns.push({bin,args,body:JSON.parse(body),child});queueMicrotask(()=>{if(state.mode==='exit'){child.stderr.emit('data',Buffer.from(state.stderr));return child.emit('close',255);}if(state.mode==='huge')child.stdout.emit('data',Buffer.alloc(1048577));else child.stdout.emit('data',Buffer.from(JSON.stringify(state.reply)));child.emit('close',0);});};
+ child.stdin=new EventEmitter();child.stdin.end=(body:string)=>{const parsed=JSON.parse(body);state.spawns.push({bin,args,body:parsed,child});queueMicrotask(()=>{if(state.mode==='exit'){child.stderr.emit('data',Buffer.from(state.stderr));return child.emit('close',255);}if(state.mode==='huge')child.stdout.emit('data',Buffer.alloc(1048577));else child.stdout.emit('data',Buffer.from(JSON.stringify(parsed.params?.name==='model_quotas'?{structuredContent:{checkedAt:new Date().toISOString(),providers:[{provider:'codex',state:'reported',checkedAt:new Date().toISOString(),details:{primary_used:10,secondary_used:10,allowed:true,limit_reached:false}}]}}:state.reply)));child.emit('close',0);});};
  return child;
 }}));
 import {FleetDirectTransport} from '../src/mesh/fleet-direct-transport.js';
@@ -18,8 +18,10 @@ import {isDirectOwnerRequest,createManagedFleetHttpGuard,createConfiguredFleetAp
 import {FleetCabinetService} from '../src/mesh/fleet-service.js';
 import {registerFleetNodeTools} from '../src/mesh/fleet-node.js';
 const peer={hostId:'roomhacker-server-88',sshHost:'192.168.2.75',nativeUser:'roomhacker',port:18791,python:'/usr/bin/python3'};
-beforeEach(async()=>{const {tmpdir}=await vi.importActual<typeof import('node:os')>('node:os');state.home=await mkdtemp(join(tmpdir(),'direct-'));state.spawns=[];state.reply={tools:[]};state.mode='ok';state.auth=false;state.host='server-44';state.stderr='';});
-afterEach(async()=>{await rm(state.home,{recursive:true,force:true});vi.useRealTimers();});
+// An empty state dir means the default quota policy: enabled, reserve 20%.
+const POLICY_DIR='/tmp/herder-quota-policy-none';
+beforeEach(async()=>{const {tmpdir}=await vi.importActual<typeof import('node:os')>('node:os');state.home=await mkdtemp(join(tmpdir(),'direct-'));state.spawns=[];state.reply={tools:[]};state.mode='ok';state.auth=false;state.host='server-44';state.stderr='';vi.stubEnv('AGENT_HERDER_AUTOPILOT_STATE_DIR',POLICY_DIR);});
+afterEach(async()=>{await rm(state.home,{recursive:true,force:true});vi.useRealTimers();vi.unstubAllEnvs();});
 describe('owner direct route local logic only',()=>{
  // Focused integration expected1s/max3s: roaming Mac must use the authenticated canonical reverse route, never its LAN IP.
  it.each(['roomhacker-server-100','server-44'])('routes Mac through the existing server100 reverse SSH from %s',async(host)=>{
@@ -35,20 +37,24 @@ describe('owner direct route local logic only',()=>{
   const t=new FleetDirectTransport([peer]);await t.call('mcp:shell:roomhacker-server-88:AgentHerder','mesh_snapshot',{limit:3,name:'$(touch stolen)'});
   const s=state.spawns[0];expect(s.bin).toBe('/usr/bin/ssh');expect(s.args).toContain('StrictHostKeyChecking=yes');expect(s.args.join(' ')).not.toContain('$(touch stolen)');expect(s.body.params.arguments.name).toBe('$(touch stolen)');expect(s.args.join(' ')).toContain('http://127.0.0.1:');expect(s.args.join(' ')).not.toContain('dist/index.js');
  });
- it('cannot route arbitrary hosts or native tools',()=>{
-  const t=new FleetDirectTransport([peer]);expect(()=>t.schema('mcp:shell:foreign:AgentHerder')).toThrow('direct_target');expect(()=>t.call('mcp:shell:roomhacker-server-88:AgentHerder','shell_exec',{})).toThrow('direct_tool');
+ it('cannot route arbitrary hosts or native tools',async()=>{
+  const t=new FleetDirectTransport([peer]);expect(()=>t.schema('mcp:shell:foreign:AgentHerder')).toThrow('direct_target');await expect(t.call('mcp:shell:roomhacker-server-88:AgentHerder','shell_exec',{})).rejects.toThrow('direct_tool');
  });
  it('routes bounded mesh and workspace calls without allowing forged source hosts',async()=>{
   const t=new FleetDirectTransport([peer]);
   await t.call('mcp:shell:roomhacker-server-88:AgentHerder','workspace_probe',{cwd:'/repo'});
   await t.call('mcp:shell:roomhacker-server-88:AgentHerder','mesh_deliver',{sender:{hostId:state.host},inputId:'once'});
   expect(state.spawns.at(-1).body.params.name).toBe('mesh_deliver');
-  expect(()=>t.call('mcp:shell:roomhacker-server-88:AgentHerder','mesh_deliver',{sender:{hostId:'forged'}})).toThrow('direct_sender_host_mismatch');
-  expect(()=>t.call('mcp:shell:roomhacker-server-88:AgentHerder','workspace_reserve',{owner:{hostId:'forged'}})).toThrow('direct_sender_host_mismatch');
+  await expect(t.call('mcp:shell:roomhacker-server-88:AgentHerder','mesh_deliver',{sender:{hostId:'forged'}})).rejects.toThrow('direct_sender_host_mismatch');
+  await expect(t.call('mcp:shell:roomhacker-server-88:AgentHerder','workspace_reserve',{owner:{hostId:'forged'}})).rejects.toThrow('direct_sender_host_mismatch');
  });
  it('mutation requires exact durable receiver intent and never forwards retryable raw create_session',async()=>{
-  const t=new FleetDirectTransport([peer]);expect(()=>t.call('mcp:shell:roomhacker-server-88:AgentHerder','create_session',{})).toThrow('direct_create_identity');
-  await t.call('mcp:shell:roomhacker-server-88:AgentHerder','create_session',{harness:'codex',name:'empty',cwd:'/home/roomhacker'},'a'.repeat(64));expect(state.spawns[0].body.params.name).toBe('fleet_create_session');expect(state.spawns[0].body.params.arguments.inputId).toBe('a'.repeat(64));
+  const t=new FleetDirectTransport([peer]);await expect(t.call('mcp:shell:roomhacker-server-88:AgentHerder','create_session',{})).rejects.toThrow('direct_create_identity');
+  await t.call('mcp:shell:roomhacker-server-88:AgentHerder','create_session',{harness:'codex',name:'empty',cwd:'/home/roomhacker'},'a'.repeat(64));
+  // The guard reads the recipient's own quota before the mutation.
+  expect(state.spawns[0].body.params.name).toBe('model_quotas');
+  const create=state.spawns.find(s=>s.body.params.name==='fleet_create_session');
+  expect(create?.body.params.arguments.inputId).toBe('a'.repeat(64));
  });
  it('closed/offline route does not fabricate a response or retry',async()=>{
   state.mode='exit';await expect(new FleetDirectTransport([peer]).schema('mcp:shell:roomhacker-server-88:AgentHerder')).rejects.toThrow('direct_peer_unavailable');expect(state.spawns).toHaveLength(1);

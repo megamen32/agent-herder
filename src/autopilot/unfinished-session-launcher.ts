@@ -4692,7 +4692,16 @@ export class UnfinishedSessionLauncher {
           if (!await this.groupAdmissionAllowed(sources.map((source) => source.session), "resume")) { launched -= 1; continue; }
           if (!this.lifecycleActive(lifecycleEpoch)) return;
           const resumed = await primary.adapter.resumeSession(primary.session.id);
-          if (!resumed.ok) throw new Error(resumed.error || "возобновление исходной сессии отклонено");
+          if (!resumed.ok) {
+            // A refusal that was never submitted is a deferral: the launch is
+            // blocked, not failed, and it must not consume the retry budget.
+            if (resumed.notSubmitted && resumed.nonRetryable) {
+              console.error(`[agent-herder] запуск ${primary.session.harness}:${primary.session.id} отклонён до отправки: ${resumed.error}`);
+              launched = Math.max(0, launched - 1);
+              continue;
+            }
+            throw new Error(resumed.error || "возобновление исходной сессии отклонено");
+          }
           if (!this.lifecycleActive(lifecycleEpoch)) return;
           await this.pinActiveSession(primary.adapter, primary.session.id, runtimeSettings);
           if (!this.lifecycleActive(lifecycleEpoch)) return;
