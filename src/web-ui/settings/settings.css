@@ -197,6 +197,23 @@
   font-weight: 500;
 }
 
+/* The state of a setting is colored by its meaning, in both themes. */
+.herder-settings-state-applied {
+  color: var(--status-done);
+}
+
+.herder-settings-state-pending {
+  color: var(--status-waiting);
+}
+
+.herder-settings-state-running {
+  color: var(--status-running);
+}
+
+.herder-settings-state-error {
+  color: var(--status-error);
+}
+
 .herder-settings-secret {
   display: inline-block;
   padding: 6px 10px;

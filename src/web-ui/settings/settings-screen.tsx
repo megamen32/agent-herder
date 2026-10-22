@@ -35,6 +35,29 @@ import "./settings.css";
 
 export type SettingsTab = "herder" | "projects";
 
+/**
+ * The one line that says how the state of a setting is in effect.
+ *
+ * The state itself is one word — «Записано», «Применено», «Применено
+ * частично», «Ошибка» — and the application is one line. The two say
+ * different things, so the screen never repeats one of them twice.
+ */
+export function applicationText(confirmed: { state: string; applyMode: string; requiresRestart: boolean }): string {
+  if (confirmed.state === "Применено") return "работает сейчас";
+  if (confirmed.applyMode === "после перезапуска") return "применится после перезапуска";
+  if (confirmed.applyMode === "к новым задачам") return "применится к новым задачам";
+  return "применится сразу";
+}
+
+/** The state of a setting, colored by its meaning in both themes. */
+export function stateClass(state: string): string {
+  const base = "herder-settings-state";
+  if (state === "Применено") return `${base} herder-settings-state-applied`;
+  if (state === "Ошибка") return `${base} herder-settings-state-error`;
+  if (state === "Применяется") return `${base} herder-settings-state-running`;
+  return `${base} herder-settings-state-pending`;
+}
+
 /** The routes of the projects of the launch policy, as the policy names them. */
 export function projectRoutes(policy: unknown): Array<{ project: string; profileId?: string }> {
   if (!policy || typeof policy !== "object") return [];
@@ -252,9 +275,8 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
                     )}
                   </td>
                   <td>
-                    <span className="herder-settings-state">{record.confirmed.state}</span>
-                    <span className="herder-settings-hint">{record.confirmed.applyMode}</span>
-                    {record.confirmed.requiresRestart ? <span className="herder-settings-hint">нужен перезапуск</span> : null}
+                    <span className={stateClass(record.confirmed.state)}>{record.confirmed.state}</span>
+                    <span className="herder-settings-hint">{applicationText(record.confirmed)}</span>
                     {record.changedBy ? <span className="herder-settings-hint">{record.changedBy} · {record.changedAt}</span> : null}
                   </td>
                   <td className="herder-settings-actions">
@@ -306,8 +328,8 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
                 </td>
                 <td><code>{recordValue(record)}</code></td>
                 <td>
-                  <span className="herder-settings-state">{record.confirmed.state}</span>
-                  <span className="herder-settings-hint">{record.confirmed.applyMode}</span>
+                  <span className={stateClass(record.confirmed.state)}>{record.confirmed.state}</span>
+                  <span className="herder-settings-hint">{applicationText(record.confirmed)}</span>
                 </td>
               </tr>
             ))}

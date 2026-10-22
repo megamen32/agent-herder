@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { baseVersions, recordValue, recordsOf, saveSettings, type SettingsView } from "../src/web-ui/settings/settings-client.js";
 import { currentRunsNotice, nodeStatusText } from "../src/web-ui/settings/stop-control.js";
+import { applicationText, stateClass } from "../src/web-ui/settings/settings-screen.js";
 
 /**
  * The form of the settings of the herder.
@@ -110,6 +111,24 @@ describe("the form of the settings", () => {
   it("says when the current runs of the area were not stopped", () => {
     expect(currentRunsNotice({ applied: false, reason: "нет маппинга на живые сессии" })).toContain("не остановлены");
     expect(currentRunsNotice({ applied: true, reason: "" })).toBeNull();
+  });
+
+  it("says the state of a setting in two lines without a repeated meaning", () => {
+    // The state is one word, the application is one line: the screen never
+    // says the same thing twice in a row.
+    expect(applicationText({ state: "Записано", applyMode: "после перезапуска", requiresRestart: true }))
+      .toBe("применится после перезапуска");
+    expect(applicationText({ state: "Применено", applyMode: "после перезапуска", requiresRestart: false }))
+      .toBe("работает сейчас");
+    expect(applicationText({ state: "Применено", applyMode: "к новым задачам", requiresRestart: false }))
+      .toBe("работает сейчас");
+    expect(applicationText({ state: "Записано", applyMode: "сразу", requiresRestart: false }))
+      .toBe("применится сразу");
+    // The states differ by their meaning, and the meaning is visible.
+    expect(stateClass("Применено")).toContain("herder-settings-state-applied");
+    expect(stateClass("Записано")).toContain("herder-settings-state-pending");
+    expect(stateClass("Ошибка")).toContain("herder-settings-state-error");
+    expect(stateClass("Применяется")).toContain("herder-settings-state-running");
   });
 
   it("asks the server to move the lever of the owner and never takes its token", async () => {
