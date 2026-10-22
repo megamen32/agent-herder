@@ -16,6 +16,7 @@ import {
 } from "./settings-client.js";
 import { StopControl } from "./stop-control.js";
 import { ConnectionsSection } from "./connections-section.js";
+import { RuntimeSection } from "./runtime-section.js";
 import "./settings.css";
 
 /**
@@ -323,6 +324,12 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
         ) : (
           <div className="herder-settings-not-configured">
             <p>Политика запуска на этом узле не настроена.</p>
+            {/* The reason of the absence is named: an empty state that looks
+                like a finished answer is not an answer. */}
+            <p className="herder-settings-hint">
+              Состояние: {view.launchPolicy.state}
+              {view.launchPolicy.error ? ` — ${view.launchPolicy.error}` : ""}
+            </p>
             <button type="button" className="herder-settings-button" onClick={onOpenLaunchSettings}>
               Настройки запуска новых сессий →
             </button>
@@ -330,6 +337,7 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
         )}
       </section>
 
+      <RuntimeSection />
       <ConnectionsSection />
       <StopControl />
 

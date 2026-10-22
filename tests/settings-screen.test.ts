@@ -129,13 +129,18 @@ describe("the form of the settings", () => {
       readFile(join(root, "settings-screen.tsx"), "utf8"),
       readFile(join(root, "settings-client.ts"), "utf8"),
       readFile(join(root, "stop-control.tsx"), "utf8"),
+      readFile(join(root, "runtime-section.tsx"), "utf8"),
+      readFile(join(root, "connections-section.tsx"), "utf8"),
     ]);
     const code = sources.join("\n");
 
-    // Nothing that would start an executor of the herder.
+    // Nothing that would start an executor of the herder. The catalog of the
+    // models is a read: it is asked with the harness it belongs to and it
+    // starts nothing.
     expect(code).not.toContain("/api/sessions/new-or-resume");
-    expect(code).not.toContain("/api/models");
     expect(code).not.toContain("new-or-resume");
+    expect(code).toContain("/api/models");
+    expect(code).toContain("harness=");
     // The form keeps no secret in the storage of the browser and prints
     // nothing to the console.
     expect(code).not.toContain("localStorage");
