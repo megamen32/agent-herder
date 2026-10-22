@@ -498,11 +498,11 @@ const CONNECTION_TOKEN_KEY = "NOTIFY_CENTER_TOKEN";
     }
 
     if (url.pathname.startsWith("/api/settings/connections")) {
-      const connections = options.connections;
-      if (!connections) {
-        respond(response, 503, { ok: false, error: "хранилище подключений не настроено на этой ноде" });
-        return true;
-      }
+      // The part of the connection of the herder lives in the store of the
+      // product, next to the settings of the herder: no wiring line is
+      // needed and there is no shared env file.
+      const connections = options.connections
+        ?? new SettingsConnectionStore({ stateDir: store.stateDir });
       if (url.pathname === "/api/settings/connections" && request.method === "GET") {
         respond(response, 200, { ok: true, connection: await connections.read() });
         return true;

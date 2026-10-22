@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -42,7 +43,7 @@ afterEach(async () => {
   await rm(stateDir, { recursive: true, force: true });
 });
 
-async function startPanel(): Promise<string> {
+async function startPanel(options: { withoutWiring?: boolean } = {}): Promise<string> {
   const settingsApi = createSettingsApi({
     store: new SettingsStore({
       envPath,
@@ -52,7 +53,9 @@ async function startPanel(): Promise<string> {
       hostId: "roomhacker-server-100",
     }),
     actor: "roomhacker",
-    connections: new SettingsConnectionStore({ stateDir: join(stateDir, "connections") }),
+    connections: options.withoutWiring
+      ? undefined
+      : new SettingsConnectionStore({ stateDir: join(stateDir, "connections") }),
   });
   const server = createServer(async (request, response) => {
     if (await settingsApi(request, response)) return;
@@ -179,5 +182,34 @@ describe("the connection of the herder to the center", () => {
       body: JSON.stringify({ centerUrl: "https://center.example", purpose: "noticeplace.health-analysis" }),
     });
     expect(response.status).toBe(403);
+  });
+
+  it("keeps the connection in the store of the product without a wiring line", async () => {
+    // The route of the panel is mounted by prefix, and the wiring of the
+    // server is frozen: the part of the connection must live in the store
+    // of the product and not wait for a line of the server.
+    const base = await startPanel({ withoutWiring: true });
+    const response = await fetch(`${base}/api/settings/connections`);
+    expect(response.status).toBe(200);
+    const body = await response.json() as { ok: boolean; connection: unknown };
+    expect(body.ok).toBe(true);
+    expect(body.connection).toBeNull();
+
+    const connected = await fetch(`${base}/api/settings/connections`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: base },
+      body: JSON.stringify({
+        centerUrl: "https://center.example",
+        purpose: "noticeplace.health-analysis",
+        permissions: ["read"],
+      }),
+    });
+    expect(connected.status).toBe(200);
+
+    // The part of the connection lives next to the settings of the product.
+    const file = join(stateDir, "settings", "connections.json");
+    expect(existsSync(file)).toBe(true);
+    const stored = JSON.parse(await readFile(file, "utf8")) as { centerUrl: string };
+    expect(stored.centerUrl).toBe("https://center.example");
   });
 });
