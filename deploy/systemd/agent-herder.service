@@ -6,12 +6,15 @@ Wants=network-online.target opencode.service
 [Service]
 Type=simple
 WorkingDirectory=%h/agents-projects/agent-herder
-EnvironmentFile=-%h/.config/openchamber/startup.env
 UnsetEnvironment=OPENCHAMBER_UI_PASSWORD OPENCODE_DISABLE_CHANNEL_DB
 Environment=OPENCODE_URL=http://127.0.0.1:4095
-EnvironmentFile=-%h/.config/agent-herder/opencode.env
-EnvironmentFile=-%h/.config/agent-herder/noticeplace.env
-EnvironmentFile=-%h/.config/minimax/env
+# The environment of the herder lives in one file of the product. The files of
+# the other products are never sourced here: every value the herder needs is
+# copied into herder.env by deploy/systemd/migrate-herder-env.py.
+EnvironmentFile=-%h/.config/agent-herder/herder.env
+Environment=OPENAI_BASE_URL=http://127.0.0.1:20128/v1
+Environment=OPENAI_MODEL=minimax-combo-m3.1
+Environment=GRAPHIFY_OPENAI_MODEL=minimax-combo-m3.1
 Environment=CODEX_BIN=%h/.local/bin/codex
 Environment=CODEX_CWD=%h/ServersAdministartion
 Environment=CODEX_TRANSPORT=app-server
