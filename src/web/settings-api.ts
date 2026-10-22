@@ -1,5 +1,22 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { hostname } from "node:os";
+import { isAbsolute } from "node:path";
+
+import {
+  setAutomationDisarm,
+  setAutomationDisarmRecord,
+  ALL_SCOPES,
+  AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
+  AutomationDisarmStore,
+  automationDisarmEtag,
+  buildAutomationDisarmStateSummary,
+  buildAutomationDisarmSummary,
+  humanWorkKeys,
+  readFleetDisarmState,
+} from "../automation-disarm/index.js";
+import { DirectFleetDisarmTransport } from "../automation-disarm/direct-transport.js";
+import type { FleetDisarmNodeResult, FleetDisarmTransport } from "../automation-disarm/service.js";
+import type { AutomationDisarmDocument } from "../automation-disarm/state.js";
 
 import { verifyFleetOwnerCookie } from "./fleet-owner-auth.js";
 import {
@@ -44,6 +61,21 @@ export interface SettingsApiOptions {
   verifyOwnerCookie?: (cookie: string) => Promise<boolean>;
   /** The hostname of this node. */
   hostId?: string;
+  /**
+   * The state of the lever of the owner over the automation.
+   *
+   * The route of the panel reads and writes the same runtime store that the
+   * route of the herder uses, so the mesh has one state of the lever and not
+   * two. The store and the transport are optional: without them the runtime
+   * store of this node and the direct fleet transport are used, exactly as
+   * the route of the herder uses them.
+   */
+  disarm?: {
+    /** The durable store of the state of the lever. */
+    store?: AutomationDisarmStore;
+    /** The transport that reaches the other nodes of the fleet. */
+    transport?: FleetDisarmTransport;
+  };
 }
 
 /** The answer of the owner check. */
@@ -236,6 +268,196 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
     };
   };
 
+  /**
+   * The lever of the owner over the automation of the mesh.
+   *
+   * The route of the panel lives in this module because the mounting of the
+   * settings API is a prefix dispatcher: the frozen server keeps its own
+   * route for the bearer callers, and the panel asks here. Both read and
+   * write the same runtime store of the lever, so the mesh has one state and
+   * not two.
+   *
+   * The browser never carries the token of the lever: the rights are checked
+   * on the backend, by the same owner check as the other routes of the
+   * settings. A node without the token configured fails closed — the lever is
+   * not moved on the word of the panel alone.
+   */
+  const handleDisarm = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const disarmStore = options.disarm?.store ?? AutomationDisarmStore.forRuntime();
+    const disarmTransport = options.disarm?.transport ?? new DirectFleetDisarmTransport();
+    if (!process.env.AGENT_HERDER_DISARM_TOKEN?.trim()) {
+      respond(response, 503, {
+        ok: false, applied: false, records: [], nodes: [],
+        summary: "рычаг не настроен на этой ноде — рычаг не сдвинут",
+        error: "AGENT_HERDER_DISARM_TOKEN is not configured on this node",
+        reason: "AGENT_HERDER_DISARM_TOKEN is not configured on this node",
+      });
+      return;
+    }
+    const stateView = (state: AutomationDisarmDocument) => ({
+      ...state,
+      blockedWorkKeysHuman: humanWorkKeys(state.blockedWorkKeys),
+    });
+    const nodeView = (nodes: FleetDisarmNodeResult[]) => nodes.map((node) => ({
+      hostId: node.hostId, status: node.status, reason: node.reason ?? null,
+    }));
+    if (request.method === "GET") {
+      // The read names the state, its revision and every node of the fleet.
+      const state = await disarmStore.read();
+      const etag = automationDisarmEtag(state);
+      const nodes = await readFleetDisarmState({ transport: disarmTransport, state });
+      response.setHeader("etag", etag);
+      respond(response, 200, {
+        ok: true,
+        records: state.records,
+        state: stateView(state),
+        nodes: nodeView(nodes),
+        summary: buildAutomationDisarmStateSummary({ records: state.records, nodes }),
+        etag,
+      });
+      return;
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await readJson(request) as Record<string, unknown>;
+    } catch (error) {
+      respond(response, 400, { ok: false, applied: false, error: `Некорректное тело запроса: ${(error as Error).message}`, nodes: [] });
+      return;
+    }
+    // The intent marker says what is asked: the lever moves only for an
+    // explicit owner action, and a human request is not an authority.
+    if (body.source !== "owner") {
+      respond(response, 403, {
+        ok: false, applied: false, records: [], nodes: [],
+        summary: "запрос не является явным действием владельца — рычаг не сдвинут",
+        error: AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
+        reason: AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
+      });
+      return;
+    }
+    // The revision of the state the caller read. The answer always carries
+    // the new revision.
+    const ifMatchHeader = request.headers["if-match"];
+    const ifMatch = (Array.isArray(ifMatchHeader) ? ifMatchHeader[0] : ifMatchHeader)?.trim();
+    const policyRevision = await currentPolicyRevision();
+    let workKeys: string[] | undefined;
+    if (body.workKeys !== undefined) {
+      if (!Array.isArray(body.workKeys) || body.workKeys.some((key: unknown) => typeof key !== "string")) {
+        respond(response, 400, { ok: false, applied: false, error: "workKeys must be a list of strings", nodes: [] });
+        return;
+      }
+      workKeys = body.workKeys as string[];
+    }
+    const answer = (result: {
+      ok: boolean; applied: boolean; scope: string; forbidden: boolean;
+      state: AutomationDisarmDocument; nodes: FleetDisarmNodeResult[]; summary: string;
+    }): void => {
+      const etag = automationDisarmEtag(result.state);
+      response.setHeader("etag", etag);
+      respond(response, 200, {
+        ok: result.ok, applied: result.applied,
+        scope: result.scope, forbidden: result.forbidden,
+        disarmed: result.state.disarmed,
+        state: stateView(result.state),
+        records: result.state.records,
+        nodes: nodeView(result.nodes),
+        summary: result.summary,
+        etag,
+      });
+    };
+    // The scope shape: one record per scope, and the same interface lifts a
+    // prohibition as it sets one.
+    if (body.scope !== undefined) {
+      if (typeof body.scope !== "string" || !body.scope.trim()) {
+        respond(response, 400, { ok: false, applied: false, error: "scope must be * or an absolute project path", nodes: [] });
+        return;
+      }
+      const scope = body.scope.trim();
+      if (scope !== ALL_SCOPES && !isAbsolute(scope)) {
+        respond(response, 400, { ok: false, applied: false, error: "scope must be * or an absolute project path", nodes: [] });
+        return;
+      }
+      if (typeof body.forbidden !== "boolean") {
+        respond(response, 400, { ok: false, applied: false, error: "forbidden must be a boolean", nodes: [] });
+        return;
+      }
+      const result = await setAutomationDisarmRecord({
+        scope,
+        forbidden: body.forbidden,
+        ...(typeof body.owner === "string" && body.owner.trim() ? { owner: body.owner.trim().slice(0, 200) } : {}),
+        ...(typeof body.reason === "string" && body.reason.trim() ? { reason: body.reason.trim().slice(0, 500) } : {}),
+        ...(workKeys === undefined ? {} : { workKeys }),
+        ...(ifMatch ? { ifMatch } : {}),
+        ...(policyRevision ? { policyRevision } : {}),
+        reach: "fleet",
+        source: "owner",
+        store: disarmStore,
+        transport: disarmTransport,
+      });
+      if (!result.applied && result.code === "state_conflict") {
+        // The state moved under the caller: nothing was written.
+        const etag = automationDisarmEtag(result.state);
+        response.setHeader("etag", etag);
+        respond(response, 412, {
+          ok: false, applied: false, scope, forbidden: body.forbidden,
+          records: result.state.records,
+          state: stateView(result.state),
+          nodes: [],
+          summary: "состояние изменилось, пока вы его читали — ничего не записано",
+          error: "state_conflict",
+          reason: result.reason,
+          etag,
+        });
+        return;
+      }
+      answer({
+        ok: result.ok, applied: result.applied, scope: result.scope, forbidden: result.forbidden,
+        state: result.state, nodes: result.nodes,
+        summary: buildAutomationDisarmSummary({
+          applied: result.applied, disarmed: result.forbidden, nodes: result.nodes, scope: result.scope,
+        }),
+      });
+      return;
+    }
+    // The flat shape: the catch-all scope and the flat list of works.
+    if (typeof body.disarmed !== "boolean") {
+      respond(response, 400, { ok: false, applied: false, error: "disarmed must be a boolean", nodes: [] });
+      return;
+    }
+    const result = await setAutomationDisarm({
+      disarmed: body.disarmed,
+      ...(workKeys === undefined ? {} : { workKeys }),
+      ...(typeof body.reason === "string" && body.reason.trim() ? { reason: body.reason.trim().slice(0, 500) } : {}),
+      ...(policyRevision ? { policyRevision } : {}),
+      scope: "fleet",
+      source: "owner",
+      store: disarmStore,
+      transport: disarmTransport,
+    });
+    answer({
+      ok: result.ok, applied: result.applied,
+      scope: ALL_SCOPES, forbidden: result.disarmed,
+      state: result.state, nodes: result.nodes,
+      summary: buildAutomationDisarmSummary(result),
+    });
+  };
+
+  /**
+   * The revision of the live launch policy at this moment.
+   *
+   * The revision travels with every owner decision, so the journal of the
+   * lever says which launch policy was in force when the owner decided.
+   */
+  const currentPolicyRevision = async (): Promise<string | undefined> => {
+    if (!options.launchPolicy) return undefined;
+    try {
+      const policy = await options.launchPolicy.read();
+      return policy.etag;
+    } catch {
+      return undefined;
+    }
+  };
+
   /** The answer of the API: always without a cache and always as JSON. */
   const respond = (response: ServerResponse, status: number, body: unknown): void => {
     response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -257,6 +479,11 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
     // method, with a cookie of the cabinet and without one.
     if (isChangingMethod(request.method) && !isSameOrigin(request)) {
       respond(response, 403, { ok: false, error: "Изменение доступно из своего кабинета" });
+      return true;
+    }
+
+    if (url.pathname === "/api/settings/automation/disarm" && (request.method === "GET" || request.method === "POST")) {
+      await handleDisarm(request, response);
       return true;
     }
 
