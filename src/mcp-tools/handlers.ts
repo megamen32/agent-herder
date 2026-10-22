@@ -235,7 +235,7 @@ export async function listAgentsResult(
   args: unknown,
 ): Promise<ListAgentsResult> {
   const parsed = ListAgentsSchema.parse(args);
-  const allSessions: AgentSession[] = [];
+  const discovered: AgentSession[] = [];
 
   const targets =
     parsed.harness === "all"
@@ -252,13 +252,7 @@ export async function listAgentsResult(
         adapter.listSessions({limit:parsed.limit,...(adapter.type === "opencode" && parsed.folder ? {cwd:expandPath(parsed.folder)} : {})}),
         new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Discovery exceeded 3 seconds")), 3000); }),
       ]);
-      allSessions.push(...sessions.map(session => {
-        // The declared work target is the effective machine and directory of the session.
-        const workspace = coordinationNotes.cachedWorkspaceObservation(session.id);
-        const activeCwd = workspace?.cwd ?? coordinationNotes.activeWorkspaceForSession(session.id);
-        const hostId = workspace?.hostId ?? session.hostId ?? hostname();
-        return activeCwd ? {...session, cwd:activeCwd, hostId, meta:{...session.meta,launchCwd:session.meta?.launchCwd??session.cwd,activeCwd,workspaceHostId:hostId,workspaceExpiresAt:workspace?.expiresAt,projectSource:workspace?.source??"coordination_activity"}} : {...session, hostId};
-      }));
+      discovered.push(...sessions);
       const receipt = adapter.getSessionSnapshotReceipt?.();
       if (receipt?.reason === "bounded_native_page") discoveryLimited = true;
       else if (receipt && !receipt.exhaustive) unavailable.push({harness:adapter.type,error:receipt.reason || "Incomplete native discovery"});
@@ -266,6 +260,19 @@ export async function listAgentsResult(
       unavailable.push({harness:adapter.type,error:error instanceof Error ? error.message : String(error)});
     } finally { if (timer) clearTimeout(timer); }
   }));
+
+  // The declared work target is the effective machine and directory of a
+  // session. One read of the ledger covers the whole list, so a long list of
+  // sessions does not turn into thousands of reads.
+  const declaredPlaces = await coordinationNotes.activeWorkspaceObservations(discovered.map((session) => session.id));
+  const allSessions: AgentSession[] = discovered.map((session) => {
+    const declared = declaredPlaces.get(session.id);
+    const activeCwd = declared?.cwd;
+    const hostId = declared?.hostId ?? session.hostId ?? hostname();
+    return activeCwd
+      ? {...session, cwd:activeCwd, hostId, meta:{...session.meta,launchCwd:session.meta?.launchCwd??session.cwd,activeCwd,workspaceHostId:hostId,workspaceExpiresAt:declared?.expiresAt,projectSource:declared?.source??"coordination_activity"}}
+      : {...session, hostId};
+  });
 
   // Filter by status
   let filtered = allSessions;
@@ -291,14 +298,12 @@ export async function listAgentsResult(
     });
   }
 
-  // Filter by machine. A session belongs to the machine it currently works on.
+  // Filter by machine. A session belongs to the machine it currently works on:
+  // the declared machine when there is one, the native machine otherwise. The
+  // filter reads the same value the answer carries, so the two never disagree.
   if (parsed.hostId) {
     const wanted = normalizeHostId(parsed.hostId, hostname()).toLowerCase();
-    const owners = await Promise.all(filtered.map(async (s) => {
-      const declared = await coordinationNotes.activeWorkspaceObservation(s.id);
-      return { session: s, hostId: (declared?.hostId ?? s.hostId).toLowerCase() };
-    }));
-    filtered = owners.filter((row) => row.hostId === wanted).map((row) => row.session);
+    filtered = filtered.filter((s) => (s.hostId ?? "").toLowerCase() === wanted);
   }
 
   // Sort by last activity
