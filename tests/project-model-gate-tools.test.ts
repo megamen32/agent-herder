@@ -148,6 +148,49 @@ describe("the model gate of create_session and new_or_resume", () => {
     expect(result.isError).toBe(true);
     expect(createSession).not.toHaveBeenCalled();
   });
+  it("refuses the default model of a project that forbids it", async () => {
+    const createSession = vi.fn(async (options: { name: string; cwd: string; model?: string }) => ({
+      ...sessionOf(options.cwd, `created-${options.name}`), model: options.model,
+    }));
+    const client = await connect(createSession, vi.fn(async () => ({ ok: true })));
+    // The project now forbids the model the harness would use on its own.
+    policy.projectRoutes![projectRoot]!.deniedModels = ["omniroute/minimax-combo-m3.1"];
+    const result = await client.callTool({
+      name: "create_session",
+      arguments: { harness: "opencode", name: "app", cwd: projectRoot },
+    });
+    expect(result.isError).toBe(true);
+    expect(createSession).not.toHaveBeenCalled();
+  });
+
+  it("lets a session start when the default model of the project is allowed", async () => {
+    const createSession = vi.fn(async (options: { name: string; cwd: string; model?: string }) => ({
+      ...sessionOf(options.cwd, `created-${options.name}`), model: options.model,
+    }));
+    const client = await connect(createSession, vi.fn(async () => ({ ok: true })));
+    const result = await client.callTool({
+      name: "create_session",
+      arguments: { harness: "opencode", name: "app", cwd: projectRoot },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(createSession).toHaveBeenCalled();
+  });
+
+  it("refuses a denied fallback model of new_or_resume", async () => {
+    const createSession = vi.fn(async (options: { name: string; cwd: string; model?: string }) => ({
+      ...sessionOf(options.cwd, `created-${options.name}`), model: options.model,
+    }));
+    const client = await connect(createSession, vi.fn(async () => ({ ok: true })));
+    const result = await client.callTool({
+      name: "new_or_resume",
+      arguments: {
+        harness: "opencode", name: "app", cwd: projectRoot, model: "model-a",
+        fallbackModels: ["model-b"], message: "go",
+      },
+    });
+    expect(result.isError).toBe(true);
+    expect(createSession).not.toHaveBeenCalled();
+  });
 });
 
 describe("the model gate of change_model", () => {

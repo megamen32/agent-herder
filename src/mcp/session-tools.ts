@@ -300,12 +300,17 @@ export function registerSessionTools(server: McpServer, deps: {
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("create_session", { description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory.", inputSchema: CreateSessionSchema }, async (args) => {
-    await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy, args.cwd, args.model);
+    await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy, args.cwd, args.model, args.harness);
     const result = await handleCreateSession(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("new_or_resume", { description: "Reuse the exact named session for harness+CWD or create it, then deliver one message. OpenCode GLM 5.3 Flash uses MiniMax M3.1 Flash as its default fallback after a pre-admission HTTP 429 or provider quota rejection; fallbackModels overrides that route. Unknown/accepted delivery and manual stops never trigger fallback. Call model_quotas to inspect current provider allowances.", inputSchema: NewOrResumeSchema }, async (args) => {
-    await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy, args.cwd, args.model);
+    await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy, args.cwd, args.model, args.harness);
+    // A fallback model is a model the project would run on, so the project
+    // rules apply to it as well.
+    for (const fallback of args.fallbackModels ?? []) {
+      await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy, args.cwd, fallback, args.harness);
+    }
     const result = await handleNewOrResume(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });

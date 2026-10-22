@@ -75,6 +75,13 @@ is the single gate the callers use.
    alias is enforced as well. The refusal is an error with the code
    `model_not_permitted_for_project`; the message names the project, the model
    and the lists that decided it.
+3. **The model the project would use on its own.** When a tool names no model,
+   the model the project would run on for that harness decides:
+   `route.models[harness] ?? policy.models[harness]`. A project that forbids
+   that model therefore refuses to start a session at all, instead of falling
+   back to the default of the harness. The same rule applies to the
+   `fallbackModels` of `new_or_resume`: a fallback is a model the project would
+   run on, so the project rules apply to it too.
 
 The tools receive the policy through a provider that reads the same stored
 document as the launcher (`readLaunchPolicyForGate` in `src/index.ts`).

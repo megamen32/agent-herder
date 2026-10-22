@@ -25,11 +25,15 @@ export interface ProjectModelRoute {
   allowedModels?: string[];
   /** Model ids denied for work in this project. A denial always wins. */
   deniedModels?: string[];
+  /** The model of a harness inside this route, when the route overrides the global one. */
+  models?: Record<string, string>;
 }
 
 /** The parts of the launch policy document this module reads. */
 export interface ProjectModelPolicy {
   projectRoutes?: Record<string, ProjectModelRoute>;
+  /** The model of a harness in the whole fleet, used when a route does not override it. */
+  models?: Record<string, string>;
 }
 
 /** At most this many entries in one model list of a project route. */
@@ -151,6 +155,22 @@ export function modelPermittedForRoute(route: ProjectModelRoute, model: string):
   const allowed = route.allowedModels ?? [];
   if (allowed.length === 0) return true;
   return allowed.some((entry) => modelMatchesEntry(model, entry));
+}
+
+/**
+ * The model a project would run on for one harness when the caller names none.
+ *
+ * The route model wins over the global model of the harness, exactly like the
+ * launch resolution does. A project without a route falls back to the global
+ * model, and a harness without any model has none.
+ */
+export function effectiveModelForProject(
+  policy: ProjectModelPolicy,
+  project: string,
+  harness: string,
+): string | undefined {
+  const route = findModelPolicyRouteForPath(policy.projectRoutes, project);
+  return route?.models?.[harness] ?? policy.models?.[harness];
 }
 
 /**

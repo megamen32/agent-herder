@@ -13,6 +13,7 @@
 import {
   ModelNotPermittedError,
   assertModelPermittedForProject,
+  effectiveModelForProject,
   findModelPolicyRoute,
   findModelPolicyRouteForPath,
   modelMatchesEntry,
@@ -107,19 +108,26 @@ export function policyRestrictsModels(policy: ProjectModelPolicy | undefined): b
  *
  * A session may run in a subdirectory of its project, so the governing route is
  * the one that contains that directory.
+ *
+ * When the caller names no model, the model the project would run on for that
+ * harness decides: a project that forbids its own model must not start a
+ * session on it, not even through the default of the harness.
  */
 export function assertModelAllowedForDirectory(
   policy: ProjectModelPolicy | undefined,
   directory: string,
   model: string | undefined,
+  harness?: string,
 ): void {
-  if (!model || !policy) return;
+  if (!policy) return;
   const route = findModelPolicyRouteForPath(policy.projectRoutes, directory);
   if (!route) return;
-  if (modelPermittedForRoute(route, model)) return;
+  const effective = model ?? (harness ? effectiveModelForProject(policy, directory, harness) : undefined);
+  if (!effective) return;
+  if (modelPermittedForRoute(route, effective)) return;
   throw new ModelNotPermittedError(
     directory,
-    model,
+    effective,
     route.allowedModels ?? [],
     route.deniedModels ?? [],
   );
@@ -133,7 +141,10 @@ export async function assertModelAllowedForDirectoryWithPolicy(
   provider: ProjectModelPolicyProvider | undefined,
   directory: string,
   model: string | undefined,
+  harness?: string,
 ): Promise<void> {
-  if (!model || !provider) return;
-  assertModelAllowedForDirectory(await provider(), directory, model);
+  if (!provider) return;
+  const policy = await provider();
+  if (!policy) return;
+  assertModelAllowedForDirectory(policy, directory, model, harness);
 }
