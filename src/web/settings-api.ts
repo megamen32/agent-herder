@@ -28,7 +28,7 @@ import {
 } from "./settings-store.js";
 import { SettingsConnectionStore, probeConnection } from "./settings-connection.js";
 import { UnfinishedSessionLauncher } from "../autopilot/unfinished-session-launcher.js";
-import type { SettingsProfile } from "./settings-catalog.js";
+import { SettingsValueNotAllowedError, type SettingsProfile } from "./settings-catalog.js";
 
 /**
  * The API of the settings of the herder.
@@ -761,6 +761,13 @@ const CONNECTION_TOKEN_KEY = "NOTIFY_CENTER_TOKEN";
     } catch (error) {
       // The message of an error never carries a value of a secret: the store
       // refuses a value before it is written and names the key, not the value.
+      if (error instanceof SettingsValueNotAllowedError) {
+        // The refusal of a value that does not fit the contract of its key:
+        // the answer names the key, the allowed values and the received
+        // value, and never a stack and never an internal id.
+        respond(response, 400, { ok: false, applied: false, error: error.message });
+        return true;
+      }
       respond(response, 400, { ok: false, error: (error as Error).message });
       return true;
     }
