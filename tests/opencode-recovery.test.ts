@@ -1,5 +1,8 @@
 import { createServer, type Server } from "node:http";
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { OpenCodeAdapter, openCodeConnectedModels, parseOpenCodeServerCommand } from "../src/adapters/opencode.js";
 import { handleDeliver, handleFindParent, handleListChildren, handleSendMessage } from "../src/mcp-tools/handlers.js";
 import { newOrResumeNamedSession } from "../src/named-session.js";
@@ -7,10 +10,17 @@ import { newOrResumeNamedSession } from "../src/named-session.js";
 describe("OpenCode native recovery controls", () => {
   let server: Server | undefined;
   let port = 0;
+  let stateDir: string;
+  beforeEach(async () => {
+    stateDir = await mkdtemp(join(tmpdir(), "opencode-recovery-contract-"));
+    vi.stubEnv("AGENT_HERDER_HUMAN_STOP_STORE", join(stateDir, "stops.json"));
+  });
 
   afterEach(async () => {
     if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
     server = undefined;
+    vi.unstubAllEnvs();
+    await rm(stateDir, { recursive: true, force: true });
   });
 
   it("normalizes native OpenCode SSE events", async () => {
@@ -105,7 +115,7 @@ describe("OpenCode native recovery controls", () => {
     await adapter.init();
     expect(await adapter.listChildren("parent")).toHaveLength(1);
     expect(await adapter.forkSession("parent")).toEqual({ ok: true, sessionId: "forked" });
-    expect(await adapter.recover("parent", "please continue after the error")).toEqual({ ok: true, admitted: true });
+    expect(await adapter.recover("parent", "please continue after the error")).toEqual({ ok: true, admitted: true, admission: "accepted" });
     expect(recoveryPrompts).toBe(1);
   });
 
@@ -266,6 +276,12 @@ describe("OpenCode native recovery controls", () => {
     const order: string[] = [];
     server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");
+      // Automatic delivery now rechecks native identity for the durable Stop fence.
+      if (request.url === "/session/health-session?directory=%2Ftmp" && request.method === "GET") {
+        return response.end(JSON.stringify({ id: "health-session", title: "health", directory: "/tmp", model: "omniroute/subagent" }));
+      }
+      if (request.url?.startsWith("/session/health-session/message?") && request.method === "GET") return response.end(JSON.stringify([]));
+      if (request.url === "/provider" && request.method === "GET") return response.end(JSON.stringify({ connected: ["omniroute"], all: [{ id: "omniroute", models: { subagent: {} } }] }));
       if (request.url === "/session?directory=%2Ftmp" && request.method === "GET") {
         return response.end(JSON.stringify([]));
       }
