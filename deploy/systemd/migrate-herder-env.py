@@ -64,6 +64,25 @@ SOURCES: tuple[tuple[Path, tuple[str, ...]], ...] = (
     ),
 )
 
+# The keys the code reads, but that are optional and have no value today.
+#
+# If one of them ever gets a value in a file of another product, the transfer
+# becomes mandatory: the value would be lost in silence. The dry-run reports
+# every such key by name, so that nothing is swallowed silently.
+OPTIONAL_NOT_TRANSFERRED = (
+    "AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN",
+    "AGENT_HERDER_UNFINISHED_JUDGE_TOKEN",
+    "AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL",
+    "AGENT_HERDER_UNFINISHED_JUDGE_ENABLED",
+    "AGENT_HERDER_UNFINISHED_JUDGEMENTS_PER_CYCLE",
+)
+
+# The lines of the unit that would compete with the file of the product. The
+# value of the model of the judge must live in one place, and that place is
+# herder.env: the unit says a different value, and the file of the product
+# would win silently.
+CONFLICTING_UNIT_LINES = ("Environment=AGENT_HERDER_UNFINISHED_JUDGE_MODEL=",)
+
 # The files the unit of the herder must not source any more: they belong to
 # the other products of the contour, or they are a second file of the herder.
 FOREIGN_ENV_FILES = (
@@ -71,6 +90,7 @@ FOREIGN_ENV_FILES = (
     "%h/.config/agent-herder/opencode.env",
     "%h/.config/agent-herder/autopilot.env",
     "%h/.config/agent-herder/noticeplace.env",
+    "%h/.config/agent-resume/hermes.env",
     "%h/.config/minimax/env",
     "/etc/omniroute.env",
     "/etc/notification-center.env",
@@ -154,6 +174,22 @@ def collect_moves(env_file: Path) -> tuple[dict[str, str], list[str], list[str]]
     return moved, names, already
 
 
+def collect_optional_present() -> list[str]:
+    """The optional keys that have a value in a file of another product.
+
+    The names only: the values of the other products are never printed.
+    """
+    present: list[str] = []
+    for source, _keys in SOURCES:
+        if not source.exists():
+            continue
+        values = parse_env_file(source.read_text(encoding="utf-8"))
+        for key in OPTIONAL_NOT_TRANSFERRED:
+            if values.get(key) and key not in present:
+                present.append(key)
+    return present
+
+
 def clean_unit(text: str) -> tuple[str, list[str]]:
     """The unit without the references to the files of the other products."""
     kept: list[str] = []
@@ -161,6 +197,9 @@ def clean_unit(text: str) -> tuple[str, list[str]]:
     has_product_file = False
     for line in text.splitlines():
         stripped = line.strip()
+        if stripped.startswith(CONFLICTING_UNIT_LINES):
+            removed.append(stripped.rsplit("=", 1)[0] + "=...")
+            continue
         if stripped.startswith("EnvironmentFile="):
             path = stripped.split("=", 1)[1].lstrip("-")
             if path in FOREIGN_ENV_FILES:
@@ -185,42 +224,67 @@ def main() -> int:
     parser.add_argument("-n", "--dry-run", action="store_true", help="only report what would be done")
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE, help="the file of the product")
     parser.add_argument("--unit-file", type=Path, default=DEFAULT_UNIT_FILE, help="the unit of the herder")
+    parser.add_argument(
+        "--unit-dropin-dir",
+        type=Path,
+        default=None,
+        help="the directory of the drop-ins of the unit (default: next to the unit)",
+    )
     arguments = parser.parse_args()
 
     env_file = arguments.env_file
     unit_file = arguments.unit_file
+    dropin_dir = arguments.unit_dropin_dir or unit_file.with_name(f"{unit_file.name}.d")
 
     moved, names, already = collect_moves(env_file)
-    removed: list[str] = []
+    removed: list[tuple[str, str]] = []
+
+    # The unit of the herder and its drop-ins: the files of the other products
+    # are sourced from both places, and the product must source only its own
+    # file from both.
+    targets: list[Path] = [unit_file]
+    if dropin_dir.exists():
+        targets.extend(sorted(path for path in dropin_dir.glob("*.conf") if path.is_file()))
 
     if arguments.dry_run:
         print("Сухой запуск: ничего не записано.")
-        if unit_file.exists():
-            _, removed = clean_unit(unit_file.read_text(encoding="utf-8"))
+        for path in targets:
+            if not path.exists():
+                continue
+            _, entries = clean_unit(path.read_text(encoding="utf-8"))
+            removed.extend((path.name, entry) for entry in entries)
     else:
         if moved:
             current = parse_env_file(env_file.read_text(encoding="utf-8")) if env_file.exists() else {}
             current.update(moved)
             write_file_atomically(env_file, render_env_file(current), 0o600)
-        if unit_file.exists():
-            original = unit_file.read_text(encoding="utf-8")
-            cleaned, removed = clean_unit(original)
+        for path in targets:
+            if not path.exists():
+                continue
+            original = path.read_text(encoding="utf-8")
+            cleaned, entries = clean_unit(original)
+            removed.extend((path.name, entry) for entry in entries)
             if cleaned != original:
-                backup = unit_file.with_name(f"{unit_file.name}.bak-isolation-{time.strftime('%Y%m%dT%H%M%S')}")
-                shutil.copy2(unit_file, backup)
-                write_file_atomically(unit_file, cleaned, unit_file.stat().st_mode & 0o777)
+                backup = path.with_name(f"{path.name}.bak-isolation-{time.strftime('%Y%m%dT%H%M%S')}")
+                shutil.copy2(path, backup)
+                write_file_atomically(path, cleaned, path.stat().st_mode & 0o777)
 
     print("Перенесённые ключи:")
     for key in names:
         print(f"  {key}")
+    optional_present = collect_optional_present()
+    if optional_present:
+        print("Присутствуют, но не переносятся (значение в файле другого продукта — перенос обязателен):")
+        for key in optional_present:
+            print(f"  {key}")
     if already:
         print("Уже были в файле продукта:")
         for key in already:
             print(f"  {key}")
     if removed:
         print("Убраны ссылки юнита на файлы чужих продуктов:")
-        for path in removed:
-            print(f"  {path}")
+        for name, entry in removed:
+            print(f"  {name}: {entry}")
     print(f"Файл продукта: {env_file}")
     print(f"Юнит: {unit_file}")
     print("Осталось за рантайм-владельцем: daemon-reload и рестарт сервиса.")
