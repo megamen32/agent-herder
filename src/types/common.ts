@@ -403,7 +403,15 @@ export interface HarnessAdapter {
   getFirstUserMessage?(id: string): Promise<SessionMessageView | null>;
 
   /** Resume a session through its owning transport, when supported. */
-  resumeSession?(id: string): Promise<{ ok: boolean; error?: string }>;
+  resumeSession?(id: string): Promise<{
+    ok: boolean;
+    error?: string;
+    /** A refusal that was never submitted to the native harness. */
+    notSubmitted?: boolean;
+    /** The failure must not be replayed. */
+    nonRetryable?: boolean;
+    admitted?: boolean;
+  }>;
 
   /** List available models for this harness */
   listModels?(): Promise<string[]>;

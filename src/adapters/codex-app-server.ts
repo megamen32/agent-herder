@@ -1567,6 +1567,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       this.threads.set(id, result.thread);
       return { ok: true };
     } catch (error) {
+      const refusal = this.quotaRefusal(error);
+      if (refusal) return refusal;
       return { ok: false, error: (error as Error).message };
     }
   }
@@ -2143,11 +2145,20 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     return this.request("account/rateLimits/read", {});
   }
 
+  /**
+   * A quota refusal happens before the transport write: nothing was submitted,
+   * so the caller must not read it as an unknown admission it may retry.
+   */
+  private quotaRefusal(error: unknown): { ok: false; notSubmitted: true; admitted: false; nonRetryable: true; admissionUnknown: false; error: string } | undefined {
+    if (!(error instanceof CodexQuotaBlockedError)) return undefined;
+    return { ok: false, notSubmitted: true, admitted: false, nonRetryable: true, admissionUnknown: false, error: error.message };
+  }
+
   private async request(method: string, params: unknown, stage = method): Promise<unknown> {
     try { this.assertLifecycleActive(); }
     catch (error) { return Promise.reject(error); }
     if (!this.isTransportWritable()) return Promise.reject(new Error("Codex app-server is not connected"));
-    if (["thread/start", "thread/fork", "turn/start", "turn/steer"].includes(method)) {
+    if (["thread/start", "thread/fork", "thread/resume", "turn/start", "turn/steer"].includes(method)) {
       await assertCodexQuota(method, this.quotaReader ?? (() => this.request("account/rateLimits/read", {})));
       this.assertLifecycleActive();
       if (!this.isTransportWritable()) throw new Error("Codex app-server disconnected during quota check");
